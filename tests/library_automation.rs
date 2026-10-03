@@ -60,7 +60,10 @@ fn preview_is_read_only_and_application_is_idempotent_without_hiding_the_import(
     assert_eq!(files(&directory.0), before);
     assert_eq!(lock(&engine.store).unwrap().events(&original.id), events);
     assert!(children(&engine, &original.id).is_empty());
-    assert_eq!(library_ids(&engine), [original.id.clone()]);
+    assert_eq!(
+        library_ids(&engine).as_slice(),
+        std::slice::from_ref(&original.id)
+    );
 
     let applied = engine.check_upgrades(true).unwrap();
     assert_eq!(applied.get("apply"), Some(&Value::Bool(true)));
@@ -76,7 +79,10 @@ fn preview_is_read_only_and_application_is_idempotent_without_hiding_the_import(
     assert!(pending[0].request.source_path.is_none());
     assert_eq!(pending[0].request.media_key(), original.request.media_key());
     assert_eq!(pending[0].release.as_ref().unwrap().title, BETTER);
-    assert_eq!(library_ids(&engine), [original.id.clone()]);
+    assert_eq!(
+        library_ids(&engine).as_slice(),
+        std::slice::from_ref(&original.id)
+    );
     assert_eq!(queued(&engine.check_upgrades(true).unwrap()), 0);
     assert_eq!(children(&engine, &original.id).len(), 1);
     assert_eq!(
@@ -87,7 +93,10 @@ fn preview_is_read_only_and_application_is_idempotent_without_hiding_the_import(
     let cfg = engine.config.clone();
     drop(engine);
     let resumed = Engine::open(cfg).unwrap();
-    assert_eq!(library_ids(&resumed), [original.id.clone()]);
+    assert_eq!(
+        library_ids(&resumed).as_slice(),
+        std::slice::from_ref(&original.id)
+    );
     assert_eq!(children(&resumed, &original.id), pending);
 }
 
@@ -108,7 +117,10 @@ fn seed_count_alone_never_upgrades_and_a_lower_preference_never_replaces_a_bette
         &url,
     )]));
     assert_eq!(queued(&engine.check_upgrades(true).unwrap()), 0);
-    assert_eq!(library_ids(&engine), [original.id.clone()]);
+    assert_eq!(
+        library_ids(&engine).as_slice(),
+        std::slice::from_ref(&original.id)
+    );
 
     // A configured rejection is not evidence that the current file is worse.
     let cfg = engine.config.clone();
@@ -218,7 +230,10 @@ fn cancelled_and_failed_upgrades_leave_the_existing_file_current() {
             .state,
         "cancelled"
     );
-    assert_eq!(library_ids(&engine), [original.id.clone()]);
+    assert_eq!(
+        library_ids(&engine).as_slice(),
+        std::slice::from_ref(&original.id)
+    );
 
     indexer.replace(Value::Array(vec![release(
         BETTER,
@@ -348,7 +363,10 @@ fn unmonitoring_a_parent_prevents_its_queued_child_from_being_claimed() {
     let pending = lock(&engine.store).unwrap().get(&child.id).unwrap();
     assert_eq!(pending.state, "queued");
     assert!(pending.download_id.is_none());
-    assert_eq!(library_ids(&engine), [original.id.clone()]);
+    assert_eq!(
+        library_ids(&engine).as_slice(),
+        std::slice::from_ref(&original.id)
+    );
     engine.set_monitored(&original.id, true).unwrap();
     assert!(engine.tick().unwrap());
     assert_eq!(
@@ -520,7 +538,10 @@ fn native_upgrade_imports_a_distinct_version_and_retains_both_files_after_restar
             include_bytes!("../examples/demo.mp4")
         );
     }
-    assert_eq!(library_ids(&engine), [child.id.clone()]);
+    assert_eq!(
+        library_ids(&engine).as_slice(),
+        std::slice::from_ref(&child.id)
+    );
     assert!(engine.set_monitored(&original.id, false).is_err());
     assert_eq!(queued(&engine.check_upgrades(true).unwrap()), 0);
     let library = engine.library().unwrap();
@@ -713,7 +734,10 @@ fn plex_must_confirm_the_mapped_new_version_before_an_upgrade_becomes_current() 
         scanning.state, "scanning",
         "Plex reporting only the old file must not confirm the upgrade"
     );
-    assert_eq!(library_ids(&engine), [original.id.clone()]);
+    assert_eq!(
+        library_ids(&engine).as_slice(),
+        std::slice::from_ref(&original.id)
+    );
     assert_eq!(plex.refreshes.load(Ordering::Relaxed), 2);
     let relative = Path::new(&imported.imports[0])
         .strip_prefix(&local_root)
