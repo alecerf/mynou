@@ -1,6 +1,6 @@
 services:
   mynou:
-    image: mynou:0.7.0
+    image: mynou:0.8.0
     restart: unless-stopped
     user: "${MYNOU_UID:-1000}:${MYNOU_GID:-1000}"
     read_only: true

@@ -64,7 +64,10 @@ client does not consult CRLs or OCSP servers.
 Plex, TMDB, and indexers need valid addresses and credentials. Local-response tests
 do not mean the release has connected to your personal installation. Source
 selection is bounded by implemented formats and matching criteria; it does not
-perform a general Web search.
+perform a general Web search. Search and upgrade passes have a 90-second budget
+for HTTP/socket operations and processing checks. Synchronous standard-library
+DNS resolution can block beyond it, so this is not a strict wall-clock deadline;
+late results are rejected.
 
 TMDB responses are cached for one hour, with at most 256 entries and 32 MiB.
 Episodes already in a response are filtered by their air date during
@@ -76,7 +79,7 @@ Season-zero specials are excluded from automatic series expansion.
 
 ## Selection and library management
 
-0.7.0 adds named movie/episode profiles for release selection. Resolution,
+Named movie/episode profiles govern release selection. Resolution,
 source, codec and language markers are inferred from the matched release-title
 suffix. Required/blocked token phrases and additive scores filter candidates;
 custom score, ordered preferences and seed count determine the ranking. See
@@ -102,10 +105,30 @@ Preview reports display at most 1,000 candidate rows with explicit count and
 truncation fields. Retained candidate data is limited to 16 MiB; exceeding this
 budget reports an error instead of choosing from an incomplete set.
 
-The release does not provide automatic upgrades, quality cutoffs, persistent
-library monitoring policies, or replacement of an existing imported file.
-Import continues to avoid overwriting existing files. A higher-ranked release
-appearing later does not replace a completed request automatically.
+0.8.0 adds owned-library views, per-entry monitoring, resolution cutoffs and
+controlled upgrades. Background monitoring defaults to disabled. Older or
+explicitly submitted imports without a release baseline are ineligible until
+you supply a release-title claim. An initial Plex skip does not adopt that file
+as an owned import. The library view is not a scan of all existing Plex content.
+
+Upgrade comparisons use the current movie/episode profile for both the baseline
+and candidates. Acceptance is compared first: an accepted candidate may replace
+a baseline rejected by the current policy even with a lower raw rank. If both
+are accepted, a strict quality-rank improvement is required. A seed-count
+increase alone is insufficient. A cutoff stops
+further upgrades when an accepted baseline reaches that resolution or an earlier
+position in the configured preference order; it is not a numeric resolution
+threshold. These decisions still rely on release-name claims.
+
+Upgrades create child requests and unique imported filenames, preserving the
+earlier ready entry until a child is ready. With Plex enabled, confirmation
+requires the new file's `Part.file` path, optionally translated by configured
+path mappings. Failed or canceled children leave the earlier entry current.
+An unrelated same-media manual request cannot become ready while an upgrade is
+pending; cancel the pending child before completing that alternative. Promotion
+inherits the parent's current monitoring flag. Original imports and downloads
+remain on disk; there is no automatic cleanup, rollback deletion or
+library-directory adoption. See [library.md](library.md).
 
 The CLI and authenticated API have no web management interface. Plex integration
 does not provide multi-user approvals, quotas, permission policies, notifications
@@ -119,6 +142,11 @@ The [roadmap](roadmap.md) separates these capabilities into future releases.
 The Rust journal replaces SQLite and requires a single owner of its directory.
 Go-release files stay separate; no silent schema or torrent migration occurs.
 Preserve the library and downloads when changing versions.
+
+Offline library listing and upgrade previews use read-only storage. They do not
+create directories/files, change permissions, compact or repair the journal.
+Fresh storage returns an empty view; an interrupted tail reports explicit
+writable recovery is needed rather than changing data during a preview.
 
 History retains the most recent 1,000 events across the journal, then filters by
 request for `events`. Requests and their state remain in snapshots; event history

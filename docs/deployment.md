@@ -13,13 +13,13 @@ Download the source ZIP and image archive from
 Load the validated release image:
 
 ```sh
-docker load -i mynou-v0.7.0-linux-amd64-image.tar.gz
+docker load -i mynou-v0.8.0-linux-amd64-image.tar.gz
 ```
 
 Alternatively, build the image from the extracted sources:
 
 ```sh
-docker build -t mynou:0.7.0 .
+docker build -t mynou:0.8.0 .
 ```
 
 Use the image binary to prepare an installation in a new directory:
@@ -29,7 +29,7 @@ docker run --rm --network none \
   --user "$(id -u):$(id -g)" \
   --mount "type=bind,src=$PWD,dst=/work" \
   --workdir /work \
-  mynou:0.7.0 setup-docker --dir mynou-docker
+  mynou:0.8.0 setup-docker --dir mynou-docker
 ```
 
 If your account does not use UID/GID 1000, add its IDs to the generated `.env`:
@@ -88,7 +88,24 @@ media manager.
 Mount the same directories in Plex and Mynou. For example, mount the host
 `./library` directory at `/library` in both containers: movies are then in
 `/library/movies` and series in `/library/series`. Configuration paths are paths
-as seen inside the Mynou container.
+as seen inside the Mynou container. They resolve to absolute roots relative to
+the configuration location, even if `--config` uses a relative filename.
+
+If Plex mounts the same host directory at `/media` instead, add this field inside
+its existing `plex` configuration object:
+
+```json
+{
+  "path_mappings": [
+    {"mynou_prefix": "/library", "plex_prefix": "/media"}
+  ]
+}
+```
+
+Upgrade confirmation requires Plex to report the new imported file in
+`Part.file`. Mappings match complete lexical path components and use the longest
+matching prefix; without a mapping, paths must match exactly. They translate
+confirmation paths, not mounts or files. See [library monitoring](library.md).
 
 After changing secrets or configuration:
 
@@ -118,7 +135,50 @@ docker compose exec mynou /mynou search --title "Example Series" --kind episode 
 The report shows accepted/rejected candidates and the proposed winner. It omits
 acquisition URLs and credentials, and creates no download or journal request.
 The preview still contacts your configured sources. Release-title markers do
-not verify actual tracks, and 0.7.0 does not upgrade previously imported files.
+not verify actual tracks.
+
+## Configure library monitoring
+
+Background monitoring is disabled by default, including for existing
+configurations. Add a top-level `monitoring` object to enable it deliberately:
+
+```json
+{
+  "monitoring": {
+    "enabled": true,
+    "interval_secs": 3600,
+    "max_checks": 32
+  }
+}
+```
+
+The interval must be 60–86,400 seconds and the check limit 1–256 entries per
+pass. Configure profile cutoffs before enabling unattended upgrades. A cutoff
+is optional and follows resolution preference order. Restart after configuration
+changes, then inspect the current owned library and preview an upgrade pass:
+
+```sh
+docker compose up -d --force-recreate
+docker compose exec mynou /mynou library --config /config/mynou.json
+docker compose exec mynou /mynou upgrades --config /config/mynou.json
+```
+
+Use `upgrades --apply` for an explicit apply pass even when background monitoring
+is disabled. Manual passes ignore the polling interval; background passes honor
+it, with timestamps persisted even on failed searches. Use `monitor ID` or
+`unmonitor ID` to control an individual current entry. Earlier or explicit imports without a recorded release baseline remain
+ineligible until `baseline ID --release-title TITLE` supplies a matching release
+name for present, safe owned files with declared video streams. Plex files
+that Mynou skipped rather than imported are not adopted automatically.
+
+An upgrade keeps old imports and downloads and uses a unique filename for the
+replacement. Failed or canceled replacements leave the earlier ready entry
+current. A same-media manual request cannot become ready while an upgrade is
+pending; cancel that pending upgrade if you choose the manual alternative.
+Promotion preserves the parent's current monitoring choice. Plan disk space for
+retained versions; no automatic cleanup is included.
+The [library guide](library.md) covers baseline claims, preview/apply behavior,
+cutoffs and the authenticated API.
 
 ## Ports and management
 
@@ -151,7 +211,10 @@ share the torrent.
 Keep `mynou.json`, `.env`, `data`, and the library directories. For a consistent
 backup, stop the service before copying its data. The journal synchronizes
 confirmed transactions. After an abrupt interruption, an incomplete final write
-is recovered at the next start.
+is recovered at the next writable service start. Offline library listing and
+upgrade previews do not create files, change permissions or repair storage;
+fresh storage returns
+no entries and an interrupted tail asks for explicit writable recovery.
 
 Authenticated `POST /api/shutdown` lets the service finish its workers. The
 standard library does not provide the portable Unix SIGTERM handler this project

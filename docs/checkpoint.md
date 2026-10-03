@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.7.0
+# Project checkpoint — Mynou 0.8.0
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -24,10 +24,27 @@ preview automatic source selection without submitting a job; their public
 reports omit acquisition URLs and credentials. Missing `selection` configuration
 retains unrestricted behavior. See [selection.md](selection.md).
 
-Automatic upgrades, torrent controls and parallel peers, a web interface,
-series-pack/specials management, multi-user Plex policies, IRC automation,
-native indexer adapters, Usenet and cross-seeding remain future stages. See the
-[release roadmap](roadmap.md). Selection is the first stage, not full parity.
+The 0.8.0 change adds current owned-library records, per-entry monitoring,
+explicit baselines, preference-ordered resolution cutoffs and controlled upgrade
+children. The earlier ready entry remains current until the child is ready.
+Upgrade imports use unique filenames and preserve earlier imports/downloads.
+Plex confirmation requires the new file path, with optional path mappings.
+Background checks default to disabled; missing older baselines are not inferred.
+Preview passes contact indexers without journal writes, while explicit apply
+passes persist check times and deduplicated children. Offline listing/previews
+open read-only storage without creating files, changing permissions or repairing
+journal data; interrupted
+tails require explicit writable recovery. Pending upgrades block unrelated
+same-media promotion, and child promotion inherits the parent's current monitored
+choice. Search/pass budgets cover HTTP/socket work and processing; synchronous
+DNS may exceed the deadline, with late results rejected. Configured import roots
+are absolute even with a relative configuration filename.
+See [library.md](library.md).
+
+Torrent controls and parallel peers, a web interface, series-pack/specials
+management, multi-user Plex policies, IRC automation, native indexer adapters,
+Usenet and cross-seeding remain future stages. See the
+[release roadmap](roadmap.md). Monitoring is a focused stage, not full parity.
 
 Releases are hosted in [alecerf/mynou](https://github.com/alecerf/mynou/releases).
 A successful validation run on `trunk` publishes a new `Cargo.toml` version if it
@@ -35,13 +52,24 @@ has not already been released. The assets are a full source ZIP with the static
 Linux x86_64 binary, a separate static binary, a saved Docker image archive, and
 SHA-256 checksum files. There is no Docker Hub publication step.
 
+## Recorded 0.7.0 CI checkpoint
+
+The preceding selection release at commit
+`14686f01c17a88c6b9e45ce9d2672e0e3c66d21f` passed
+[Actions run 37137061361](https://github.com/alecerf/mynou/actions/runs/37137061361)
+and GitHub Actions published
+[v0.7.0](https://github.com/alecerf/mynou/releases/tag/v0.7.0).
+This is historical evidence for 0.7.0. The 0.8.0 changes require their own
+successful Actions run and CI-created release; no current passing result is
+recorded here until it has been observed.
+
 ## Recorded 0.6.1 CI checkpoint
 
 Commit `2a066c2c3b9aafda47a3fc898872d1c371b5f249` passed
 [Actions run 37134671116](https://github.com/alecerf/mynou/actions/runs/37134671116):
 131 tests plus formatting, Clippy, builds, demos and packaging. GitHub Actions
 published [v0.6.1](https://github.com/alecerf/mynou/releases/tag/v0.6.1).
-This preceding release does not validate the 0.7.0 changes. Record or inspect
+This preceding release does not validate later changes. Record or inspect
 their own successful Actions run before claiming validation or publication.
 
 ## Historical 0.6.0 evidence

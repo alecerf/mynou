@@ -36,8 +36,8 @@ steps. No Docker Hub repository is needed.
 Download the assets and checksum files from the same release. For example:
 
 ```sh
-sha256sum -c mynou-v0.7.0-source.zip.sha256
-sha256sum -c mynou-v0.7.0-linux-amd64-image.tar.gz.sha256
+sha256sum -c mynou-v0.8.0-source.zip.sha256
+sha256sum -c mynou-v0.8.0-linux-amd64-image.tar.gz.sha256
 ```
 
 To verify all downloaded assets together, download `SHA256SUMS` and every listed
@@ -57,18 +57,51 @@ sha256sum -c SHA256SUMS
 Checksum verification establishes integrity relative to the downloaded manifest.
 It does not replace reviewing the release's commit and successful Actions run.
 
-## Selection changes in 0.7.0
+## Monitoring changes in 0.8.0
 
-The new scope is profile validation, release-marker interpretation, ordered
-preferences, term filters and custom scores, shared automatic acquisition and
-CLI/API search previews. CI must check acceptance/rejection, deterministic
-ranking, backward-compatible unrestricted configuration, language ambiguity,
-and omission of source credentials from preview reports. It must also preserve
-the existing native and Docker end-to-end checks.
+The new scope is owned-library current-entry resolution, durable monitoring and
+baselines, profile cutoffs, strict quality improvement, deduplicated upgrade
+children, unique imports and file-specific Plex confirmation. CI must cover:
 
-These describe validation requirements, not a recorded passing result. Inspect
-the Actions run for the exact 0.7.0 source commit. Do not use the previous
-release's test count as evidence for changed selection code.
+- Backward-compatible configuration and journal decoding; background checks
+  default to disabled and missing baselines remain ineligible.
+- Cutoffs following preference order and current-profile comparisons. Acceptance
+  precedes rank: policy changes can replace rejected baselines with accepted
+  candidates; accepted baselines require a strict rank improvement. Seed count
+  or deterministic tie breaking alone cannot trigger an upgrade.
+- Read-only offline listing and previews without directory/file creation,
+  permission changes, compaction or tail repair; fresh storage returns no entries
+  and incomplete tails require explicit writable recovery.
+- Preview passes without journal writes, applied timestamp persistence even on
+  search failure, manual passes ignoring polling intervals, background passes
+  honoring them, bounded oldest-check scheduling and duplicate-child suppression.
+- Explicit baseline setup requiring matching identity, safe present owned files
+  and declared video streams without demanding acceptance by today's profile.
+- Earlier ready entries remaining current through queued, failed or canceled
+  children, including restart and transaction recovery. Pending upgrades block
+  unrelated same-media promotion, and ready children inherit their parent's
+  current monitoring choice.
+- Upgrade filenames preserving earlier imports and downloads, plus new-file Plex
+  confirmation with exact paths and longest component-prefix mappings,
+  including absolute roots resolved from a relative configuration filename.
+- Shared 90-second indexer HTTP/socket and processing budgets with late-result
+  rejection; synchronous DNS remains an explicitly documented timing limit.
+- CLI/API library, monitor/unmonitor, baseline and preview/apply operations,
+  authenticated access, bounded inputs and credential-free reports.
+
+These are validation requirements, not a recorded passing result. Inspect the
+Actions run for the exact 0.8.0 source commit. Preserve the existing dependency,
+formatting, Clippy, native/Docker demo and release-packaging checks. Do not use a
+previous release's test count as evidence for changed monitoring code.
+
+## Recorded 0.7.0 CI evidence
+
+[Run 37137061361](https://github.com/alecerf/mynou/actions/runs/37137061361)
+completed successfully for selection commit
+`14686f01c17a88c6b9e45ce9d2672e0e3c66d21f`, and GitHub Actions published
+[v0.7.0](https://github.com/alecerf/mynou/releases/tag/v0.7.0).
+This result validates that release, not the 0.8.0 changes or a personal Plex
+installation.
 
 ## Recorded 0.6.1 CI evidence
 
@@ -79,8 +112,8 @@ dependency graph, formatting, Clippy, GNU/musl builds, native and Docker demos,
 and release packaging. GitHub Actions published
 [v0.6.1](https://github.com/alecerf/mynou/releases/tag/v0.6.1).
 
-This is evidence for 0.6.1 only. It does not establish that 0.7.0 passed or that
-the project has been connected to a personal Plex installation.
+This is evidence for 0.6.1 only. It does not establish that later changes passed
+or that the project has been connected to a personal Plex installation.
 
 ## Historical 0.6.0 validation
 

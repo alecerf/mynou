@@ -2,8 +2,10 @@
 
 Mynou 0.7.0 introduces policies for choosing a release before automatic
 acquisition. Movie and episode requests can use different named profiles.
-Profiles filter candidates and rank those that remain. They do not replace a
-download that has already been imported.
+Profiles filter candidates and rank those that remain. Since 0.8.0, the same
+policies also compare an owned import's recorded baseline with proposed upgrade
+candidates. See [library monitoring](library.md) for preview/apply commands,
+per-entry policy and preservation of earlier files.
 
 ## Configure profiles
 
@@ -18,6 +20,7 @@ Add this optional object to `mynou.json` alongside `indexers`:
       "any": {},
       "hd": {
         "resolutions": [1080, 720],
+        "cutoff_resolution": null,
         "sources": ["web-dl", "bluray", "webrip"],
         "codecs": ["h265", "h264"],
         "languages": ["en"],
@@ -69,6 +72,14 @@ Supported canonical profile values are:
 Each allowlist is ordered from most preferred to least preferred. Unsupported
 configuration values produce an explicit error instead of silently changing
 the policy.
+
+The optional `cutoff_resolution` defaults to `null`. A non-null value must appear
+in the profile's `resolutions` list. For monitored upgrades, an accepted baseline
+at that position or an earlier preferred position has reached the cutoff and
+stops further upgrades. Preference order controls this rule, not numeric pixel
+height; `[720, 1080]` with cutoff `1080` also stops at `720`. A reached cutoff
+stops source, codec and score upgrades too. Initial candidate selection still
+uses the normal ranking below.
 
 Attributes are inferred from the release-title suffix after matching the
 requested title and year or episode identity. A media title containing words
@@ -154,7 +165,10 @@ Reports include `candidate_count`, `reported_count` and `truncated`. At most
 identifies the winner from the full evaluated set. Retained candidate data has
 a 16 MiB budget, and exceeding it produces an explicit error. Indexer counts
 show configured, successful and failed responses; a partially failed search
-can still select from successful sources.
+can still select from successful sources. Search has a 90-second budget for
+HTTP/socket operations and processing checks. Standard-library synchronous DNS
+may block longer; late results are rejected, so a DNS stall can exceed the
+nominal wall-clock budget.
 
 An API request containing `source_url` or `source_path` returns
 `manual_override: true` with no candidate selection, without echoing the value
@@ -167,10 +181,25 @@ in profile terms. Candidates with missing language or quality markers may be
 rejected by a restrictive profile; inspect the preview and adjust the policy
 deliberately if your sources use different naming conventions.
 
-## Scope of this release
+## Profiles and upgrades
 
-0.7.0 adds selection profiles and previews. It does not monitor imported files
-for upgrades, enforce a quality cutoff, replace an existing library entry,
-decode audio/video, or prove release-name claims. These are separate stages in
-the [roadmap](roadmap.md). See [limits](limits.md) for remaining torrent,
-integration, and series constraints.
+0.8.0 adds controlled upgrades for monitored owned imports with recorded release
+baselines. Both baseline and candidate are assessed using the current configured
+profile, even when the baseline was acquired under a different profile name.
+Profile acceptance comes before quality rank. A baseline outside the current
+profile can be replaced by an accepted candidate even with a lower raw rank;
+changing a required language is one example of this deliberate policy change.
+If the baseline is accepted, the candidate must have a strictly better custom
+score or ordered attribute preferences. More seeds or a tie-breaking title alone
+do not constitute an improvement.
+
+Previews contact indexers but do not write journal state or queue a child.
+Applying a decision queues a deduplicated replacement request. Earlier files
+remain current until the child is ready and remain on disk afterward. See the
+[library guide](library.md) for explicit baseline setup, cutoffs and Plex file
+confirmation.
+
+Selection and monitoring do not decode audio/video or prove release-name claims.
+Full series management, torrent controls and the web interface remain later
+stages in the [roadmap](roadmap.md). See [limits](limits.md) for remaining torrent,
+integration and series constraints.

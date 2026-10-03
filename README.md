@@ -1,4 +1,4 @@
-# Mynou 0.7.0 — Rust, standard library only
+# Mynou 0.8.0 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -43,8 +43,8 @@ from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, o
 build the image from the source archive:
 
 ```sh
-docker load -i mynou-v0.7.0-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.7.0 .
+docker load -i mynou-v0.8.0-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.8.0 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d
@@ -72,13 +72,16 @@ ownership, shared Plex paths, and installation without Rust on the host.
   language preferences, required/blocked title terms, custom scores, and a
   minimum score. CLI/API previews explain accepted and rejected candidates
   without submitting a job or exposing acquisition URLs.
+- Owned library records, per-entry monitoring, resolution cutoffs and controlled
+  upgrades. Preview before applying; keep earlier imports current until the
+  replacement is ready, with optional Plex path mappings for confirmation.
 
 Formats and protocols have explicit limits. Analysis does not decode pictures
 or sound and does not replace Plex transcoding. Older SQLite and Go state remain
 separate; this version does not migrate them implicitly. See the
 [supported formats and limits](docs/limits.md).
 
-## Release selection in 0.7.0
+## Release selection and upgrades
 
 Automatic acquisition can apply separate movie and episode profiles. An empty
 profile is unrestricted; existing configurations without `selection` retain
@@ -99,9 +102,29 @@ actual audio tracks or image quality before downloading. `VOSTFR` does not prove
 French audio, and `MULTI` does not identify individual languages. See the
 [selection guide](docs/selection.md) for configuration and decision details.
 
-Mynou remains an early integrated implementation. This release adds selection
-policies; it does not add automatic upgrades, a web interface, or full parity
-with Radarr, Sonarr, Pulsarr, qBittorrent, qui, autobrr, or Prowlarr. The
+Inspect ready imports and preview upgrades:
+
+```sh
+mynou library --config ./mynou.json
+mynou upgrades --config ./mynou.json
+mynou upgrades --apply --config ./mynou.json
+mynou unmonitor ID --config ./mynou.json
+```
+
+Background monitoring defaults to disabled. An upgrade needs a recorded release
+baseline. Under the current profile, an accepted baseline requires a strict
+quality-rank improvement; a baseline rejected by an explicit profile change can
+be replaced by an accepted candidate. More seeds alone are insufficient.
+Earlier or explicitly submitted imports without a baseline need an explicit
+`baseline` command before becoming eligible. Cutoffs
+follow resolution preference order. Upgrades use distinct filenames and keep
+old files and downloads; there is no automatic cleanup. With Plex enabled, the
+new imported path must be confirmed before the replacement becomes current.
+See the [library guide](docs/library.md) for configuration and API operations.
+
+Mynou remains an early integrated implementation. This release adds monitored
+upgrades; a web interface and full parity with Radarr, Sonarr, Pulsarr,
+qBittorrent, qui, autobrr or Prowlarr remain future work. The
 [release roadmap](docs/roadmap.md) separates the next stages.
 
 ## Configuration and commands
@@ -161,5 +184,6 @@ code perfection.
 
 [Architecture](docs/architecture.md) · [Docker installation](docs/deployment.md) ·
 [Dependencies](docs/dependencies.md) · [Formats and limits](docs/limits.md) ·
-[Release selection](docs/selection.md) · [Roadmap](docs/roadmap.md) ·
+[Release selection](docs/selection.md) · [Library upgrades](docs/library.md) ·
+[Roadmap](docs/roadmap.md) ·
 [Performance](docs/performance.md) · [Validation](docs/validation.md)
