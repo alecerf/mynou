@@ -12,7 +12,7 @@ pub(super) struct Modulus {
 impl Modulus {
     pub(super) fn new(bytes: &[u8]) -> Result<Self> {
         if bytes.is_empty() || bytes[0] == 0 || bytes.last().unwrap() & 1 == 0 {
-            return Err("Module public non canonique ou pair".into());
+            return Err("Public modulus is noncanonical or even".into());
         }
         let words = from_bytes(bytes, bytes.len().div_ceil(4));
         let mut inverse = 1u32;
@@ -36,11 +36,11 @@ impl Modulus {
     }
     pub(super) fn encode(&self, bytes: &[u8]) -> Result<Vec<u32>> {
         if bytes.len() > self.words.len() * 4 {
-            return Err("Entier public trop grand".into());
+            return Err("Public integer is too large".into());
         }
         let words = from_bytes(bytes, self.words.len());
         if compare(&words, &self.words) != std::cmp::Ordering::Less {
-            return Err("Entier public hors du module".into());
+            return Err("Public integer is outside the modulus".into());
         }
         Ok(self.multiply(&words, &self.r2))
     }
@@ -164,19 +164,19 @@ pub(super) fn to_bytes(words: &[u32], width: usize) -> Vec<u8> {
 
 fn rsa_message(modulus: &[u8], exponent: &[u8], signature: &[u8]) -> Result<(Vec<u8>, usize)> {
     if !(256..=1024).contains(&modulus.len()) || modulus[0] < 0x80 {
-        return Err("RSA : seules les clés de 2048 à 8192 bits sont acceptées".into());
+        return Err("RSA: only 2048- to 8192-bit keys are accepted".into());
     }
     if exponent.is_empty() || exponent.len() > 4 || exponent[0] == 0 {
-        return Err("RSA : exposant public invalide".into());
+        return Err("RSA: invalid public exponent".into());
     }
     let value = exponent
         .iter()
         .fold(0u32, |n, byte| (n << 8) | u32::from(*byte));
     if value < 3 || value & 1 == 0 {
-        return Err("RSA : exposant public invalide".into());
+        return Err("RSA: invalid public exponent".into());
     }
     if signature.len() != modulus.len() {
-        return Err("RSA : longueur de signature invalide".into());
+        return Err("RSA: invalid signature length".into());
     }
     let arithmetic = Modulus::new(modulus)?;
     let signature = arithmetic.encode(signature)?;
@@ -247,7 +247,7 @@ fn verify_pkcs1(
     if constant_time_eq(&encoded, &expected) {
         Ok(())
     } else {
-        Err("RSA : signature incorrecte".into())
+        Err("RSA: invalid signature".into())
     }
 }
 
@@ -283,7 +283,7 @@ fn verify_pss(
     let em_len = em_bits.div_ceil(8);
     let db_len = em_len - hash_len - 1;
     if encoded.len() != em_len || encoded[em_len - 1] != 0xbc || encoded[0] & 0x80 != 0 {
-        return Err("RSA-PSS : encodage incorrect".into());
+        return Err("RSA-PSS: invalid encoding".into());
     }
     let hash = &encoded[db_len..db_len + hash_len];
     let mut db = encoded[..db_len].to_vec();
@@ -298,7 +298,7 @@ fn verify_pss(
     db[0] &= 0x7f;
     let padding_len = db_len - hash_len - 1;
     if db[..padding_len].iter().any(|byte| *byte != 0) || db[padding_len] != 1 {
-        return Err("RSA-PSS : bourrage incorrect".into());
+        return Err("RSA-PSS: invalid padding".into());
     }
     let mut input = vec![0u8; 8];
     input.extend_from_slice(&message_hash);
@@ -306,7 +306,7 @@ fn verify_pss(
     if constant_time_eq(hash, &digest.hash(&input)) {
         Ok(())
     } else {
-        Err("RSA-PSS : signature incorrecte".into())
+        Err("RSA-PSS: invalid signature".into())
     }
 }
 

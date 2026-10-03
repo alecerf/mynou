@@ -1,4 +1,4 @@
-//! Import atomique : conserve le téléchargement et refuse tout écrasement.
+//! Atomic import preserves the download and refuses to overwrite existing files.
 
 use crate::Result;
 use crate::store::{Request, private_options, reject_symlinks, sync_directory};
@@ -25,7 +25,7 @@ fn filename_part(value: &str) -> Result<String> {
     }
     let result = result.trim().trim_matches('.').trim().to_owned();
     if result.is_empty() || result == "." || result == ".." {
-        return Err("le titre ne permet pas de créer un nom de fichier".to_owned());
+        return Err("title cannot produce a filename".to_owned());
     }
     Ok(result)
 }
@@ -36,7 +36,7 @@ fn validate_path(path: &Path) -> Result<()> {
             .components()
             .any(|part| matches!(part, Component::ParentDir))
     {
-        return Err("chemin vide ou traversée de dossier interdite".to_owned());
+        return Err("empty path or directory traversal not allowed".to_owned());
     }
     reject_symlinks(path)
 }
@@ -48,7 +48,7 @@ fn create_directory(path: &Path) -> Result<()> {
             .map_err(|error| error.to_string())?
             .is_dir()
         {
-            return Err("le dossier de bibliothèque est un fichier".to_owned());
+            return Err("library directory is a file".to_owned());
         }
         return Ok(());
     }
@@ -72,12 +72,12 @@ fn create_directory(path: &Path) -> Result<()> {
                 .map_err(|error| error.to_string())?
                 .is_dir()
             {
-                return Err("le dossier de bibliothèque est un fichier".to_owned());
+                return Err("library directory is a file".to_owned());
             }
         }
         Err(error) => {
             return Err(format!(
-                "création du dossier de bibliothèque impossible : {error}"
+                "cannot create library directory: {error}"
             ));
         }
     }
@@ -103,12 +103,12 @@ fn target(source: &Path, library: &Path, request: &Request) -> Result<PathBuf> {
     let extension = source
         .extension()
         .and_then(|extension| extension.to_str())
-        .ok_or_else(|| "extension média manquante ou non UTF-8".to_owned())?;
+        .ok_or_else(|| "media extension missing or not UTF-8".to_owned())?;
     if extension.is_empty()
         || extension.len() > 16
         || !extension.bytes().all(|byte| byte.is_ascii_alphanumeric())
     {
-        return Err("extension média incorrecte".to_owned());
+        return Err("invalid media extension".to_owned());
     }
     if request.kind == "episode" || (request.kind == "series" && request.episode > 0) {
         let season = format!("Season {:02}", request.season);
@@ -131,7 +131,7 @@ fn active_import(active: &AtomicBool) -> Result<()> {
     if active.load(Ordering::Acquire) {
         Ok(())
     } else {
-        Err("import annulé ou bail de traitement invalidé".to_owned())
+        Err("import cancelled or processing lease invalidated".to_owned())
     }
 }
 
@@ -184,9 +184,9 @@ fn same_bytes(source: &mut File, destination: &Path, active: &AtomicBool) -> Res
     }
 }
 
-/// Crée un lien physique lorsque les systèmes de fichiers le permettent, sinon
-/// copie vers un fichier temporaire. La publication finale utilise `hard_link`
-/// pour garantir que même un concurrent extérieur ne puisse être écrasé.
+/// Creates a hard link when the filesystems allow it, otherwise copies to a
+/// temporary file. Final publication uses `hard_link` to avoid overwriting
+/// a file created by a concurrent process.
 pub fn import_file(source: &Path, library: &Path, request: &Request) -> Result<PathBuf> {
     import_file_cancellable(source, library, request, &AtomicBool::new(true))
 }
@@ -198,7 +198,7 @@ pub fn import_file_cancellable(
     active: &AtomicBool,
 ) -> Result<PathBuf> {
     #[cfg(not(unix))]
-    return Err("l'import atomique requiert actuellement un système Unix".to_owned());
+    return Err("atomic import currently requires a Unix system".to_owned());
 
     #[cfg(unix)]
     {
@@ -209,18 +209,18 @@ pub fn import_file_cancellable(
             .map_err(|error| error.to_string())?
             .is_file()
         {
-            return Err("la source média doit être un fichier ordinaire".to_owned());
+            return Err("media source must be a regular file".to_owned());
         }
         let mut input = private_options()
             .read(true)
             .open(source)
-            .map_err(|error| format!("source média inaccessible : {error}"))?;
+            .map_err(|error| format!("cannot access media source: {error}"))?;
         if !input
             .metadata()
             .map_err(|error| error.to_string())?
             .is_file()
         {
-            return Err("la source média doit être un fichier ordinaire".to_owned());
+            return Err("media source must be a regular file".to_owned());
         }
         create_directory(library)?;
         let lock_path = library.join(".organizer.lock");
@@ -228,7 +228,7 @@ pub fn import_file_cancellable(
         if let Ok(metadata) = fs::symlink_metadata(&lock_path)
             && !metadata.is_file()
         {
-            return Err("le verrou d'import doit être un fichier ordinaire".to_owned());
+            return Err("import lock must be a regular file".to_owned());
         }
         let lock = private_options()
             .read(true)
@@ -238,11 +238,11 @@ pub fn import_file_cancellable(
             .open(&lock_path)
             .map_err(|error| error.to_string())?;
         lock.try_lock()
-            .map_err(|error| format!("un autre import est en cours : {error}"))?;
+            .map_err(|error| format!("another import is in progress: {error}"))?;
         let destination = target(source, library, request)?;
         let directory = destination
             .parent()
-            .ok_or_else(|| "dossier de destination manquant".to_owned())?;
+            .ok_or_else(|| "missing destination directory".to_owned())?;
         create_directory(directory)?;
         if destination
             .try_exists()
@@ -251,7 +251,7 @@ pub fn import_file_cancellable(
             return if same_bytes(&mut input, &destination, active)? {
                 Ok(destination)
             } else {
-                Err("la bibliothèque contient déjà un fichier différent".to_owned())
+                Err("library already contains a different file".to_owned())
             };
         }
         let timestamp = SystemTime::now()
@@ -268,14 +268,14 @@ pub fn import_file_cancellable(
             if fs::hard_link(source, &temporary).is_ok() {
                 owns_temporary = true;
                 if !same_bytes(&mut input, &temporary, active)? {
-                    return Err("la source a changé pendant l'import".to_owned());
+                    return Err("source changed during import".to_owned());
                 }
             } else {
                 let mut output = private_options()
                     .write(true)
                     .create_new(true)
                     .open(&temporary)
-                    .map_err(|error| format!("fichier temporaire inaccessible : {error}"))?;
+                    .map_err(|error| format!("cannot access temporary file: {error}"))?;
                 owns_temporary = true;
                 input
                     .seek(SeekFrom::Start(0))
@@ -286,42 +286,42 @@ pub fn import_file_cancellable(
                     active_import(active)?;
                     let count = input
                         .read(&mut buffer)
-                        .map_err(|error| format!("lecture média impossible : {error}"))?;
+                        .map_err(|error| format!("cannot read media: {error}"))?;
                     if count == 0 {
                         break;
                     }
                     output
                         .write_all(&buffer[..count])
-                        .map_err(|error| format!("copie média impossible : {error}"))?;
+                        .map_err(|error| format!("cannot copy media: {error}"))?;
                     copied = copied
                         .checked_add(count as u64)
-                        .ok_or_else(|| "média trop volumineux".to_owned())?;
+                        .ok_or_else(|| "media too large".to_owned())?;
                 }
                 if copied != input.metadata().map_err(|error| error.to_string())?.len() {
-                    return Err("la taille du média a changé pendant l'import".to_owned());
+                    return Err("media size changed during import".to_owned());
                 }
                 output
                     .flush()
                     .and_then(|_| output.sync_all())
                     .map_err(|error| error.to_string())?;
                 if !same_bytes(&mut input, &temporary, active)? {
-                    return Err("la source a changé pendant la copie".to_owned());
+                    return Err("source changed during copying".to_owned());
                 }
             }
             input
                 .sync_all()
-                .map_err(|error| format!("synchronisation du média impossible : {error}"))?;
+                .map_err(|error| format!("cannot synchronize media: {error}"))?;
             active_import(active)?;
             match fs::hard_link(&temporary, &destination) {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                     if !same_bytes(&mut input, &destination, active)? {
-                        return Err("la bibliothèque contient déjà un fichier différent".to_owned());
+                        return Err("library already contains a different file".to_owned());
                     }
                 }
                 Err(error) => {
                     return Err(format!(
-                        "publication atomique sans écrasement impossible sur ce système de fichiers : {error}"
+                        "atomic publication without overwriting is unsupported on this filesystem: {error}"
                     ));
                 }
             }
@@ -334,7 +334,7 @@ pub fn import_file_cancellable(
             Ok(())
         };
         if result.is_ok() {
-            cleanup.map_err(|error| format!("nettoyage de l'import impossible : {error}"))?;
+            cleanup.map_err(|error| format!("cannot clean up import: {error}"))?;
             sync_directory(directory)?;
         }
         result
@@ -365,7 +365,7 @@ mod tests {
     fn request() -> Request {
         Request {
             kind: "movie".to_owned(),
-            title: "Film".to_owned(),
+            title: "Movie".to_owned(),
             year: 2026,
             season: 0,
             episode: 0,
@@ -379,23 +379,23 @@ mod tests {
     fn import_is_idempotent_and_never_overwrites_different_content() {
         let directory = Directory::new();
         let source = directory.0.join("source.mkv");
-        fs::write(&source, b"contenu original").unwrap();
+        fs::write(&source, b"original content").unwrap();
         let library = directory.0.join("library");
         let destination = import_file(&source, &library, &request()).unwrap();
-        assert_eq!(fs::read(&source).unwrap(), b"contenu original");
-        assert_eq!(fs::read(&destination).unwrap(), b"contenu original");
+        assert_eq!(fs::read(&source).unwrap(), b"original content");
+        assert_eq!(fs::read(&destination).unwrap(), b"original content");
         assert_eq!(
             import_file(&source, &library, &request()).unwrap(),
             destination
         );
         let different = directory.0.join("other.mkv");
-        fs::write(&different, b"autre contenu").unwrap();
+        fs::write(&different, b"different content").unwrap();
         assert!(
             import_file(&different, &library, &request())
                 .unwrap_err()
-                .contains("différent")
+                .contains("different")
         );
-        assert_eq!(fs::read(&destination).unwrap(), b"contenu original");
+        assert_eq!(fs::read(&destination).unwrap(), b"original content");
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt;
@@ -414,7 +414,7 @@ mod tests {
         let library = directory.0.join("library");
         let mut request = request();
         request.kind = "episode".to_owned();
-        request.title = "../../ Série / danger".to_owned();
+        request.title = "../../ Series / danger".to_owned();
         request.season = 2;
         request.episode = 7;
         let destination = import_file(&source, &library, &request).unwrap();
@@ -442,13 +442,13 @@ mod tests {
     fn cancelled_import_has_no_filesystem_effect_and_preserves_source() {
         let directory = Directory::new();
         let source = directory.0.join("source.mkv");
-        fs::write(&source, b"source intacte").unwrap();
+        fs::write(&source, b"intact source").unwrap();
         let library = directory.0.join("library");
         let error = import_file_cancellable(&source, &library, &request(), &AtomicBool::new(false))
             .unwrap_err();
-        assert!(error.contains("annulé"), "{error}");
+        assert!(error.contains("cancelled"), "{error}");
         assert!(!library.exists());
-        assert_eq!(fs::read(source).unwrap(), b"source intacte");
+        assert_eq!(fs::read(source).unwrap(), b"intact source");
     }
 
     #[cfg(target_os = "linux")]

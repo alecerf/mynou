@@ -81,7 +81,7 @@ pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
         let head = input.read(0, 10)?;
         let version = head[3];
         if !(2..=4).contains(&version) {
-            return Err("Version ID3 non prise en charge".into());
+            return Err("Unsupported ID3 version".into());
         }
         let size = synchsafe(&head[6..10])?;
         let footer = version == 4 && head[5] & 0x10 != 0;
@@ -107,7 +107,7 @@ pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
             break;
         }
     }
-    let (offset, header) = found.ok_or("Aucune paire de trames MPEG audio valide trouvée")?;
+    let (offset, header) = found.ok_or("No valid pair of MPEG audio frames found")?;
     audio_start += offset as u64;
     let frame = input.read(audio_start, header.frame_size)?;
     let mut frames = None;
@@ -130,8 +130,8 @@ pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
     media.duration_seconds = frames
         .filter(|n| *n > 0)
         .map(|n| f64::from(n) * f64::from(header.samples) / f64::from(header.sample_rate));
-    // Le débit instantané d’une première trame n’établit pas la durée d’un VBR.
-    // Sans index de durée, on conserve None plutôt qu’une estimation trompeuse.
+    // The first frame's instantaneous bit rate does not establish VBR duration.
+    // Without a duration index, keep None to avoid a misleading estimate.
     media.bit_rate = if frames.is_none() {
         None
     } else {
@@ -161,7 +161,7 @@ pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
 
 fn synchsafe(bytes: &[u8]) -> Result<u32> {
     if bytes.len() != 4 || bytes.iter().any(|byte| byte & 0x80 != 0) {
-        return Err("Entier ID3 synchsafe invalide".into());
+        return Err("Invalid ID3 synchsafe integer".into());
     }
     Ok(bytes
         .iter()
@@ -169,20 +169,20 @@ fn synchsafe(bytes: &[u8]) -> Result<u32> {
 }
 
 fn id3(data: &[u8], version: u8, flags: u8, media: &mut MediaFile) -> Result<()> {
-    // Les tags avec compression/chiffrement/unsynchronisation restent sans
-    // métadonnées textuelles plutôt que d’être interprétés comme un autre format.
+    // Skip text metadata in compressed, encrypted or unsynchronized tags
+    // instead of interpreting transformed data as an ordinary text format.
     if flags & 0x80 != 0 || (version == 2 && flags & 0x40 != 0) {
         return Ok(());
     }
     let mut at = 0;
     if version >= 3 && flags & 0x40 != 0 {
         let size = if version == 4 {
-            synchsafe(data.get(..4).ok_or("En-tête ID3 étendu tronqué")?)? as usize
+            synchsafe(data.get(..4).ok_or("Truncated ID3 extended header")?)? as usize
         } else {
             u32be(data, 0)? as usize + 4
         };
         if size < 4 || size > data.len() {
-            return Err("En-tête ID3 étendu invalide".into());
+            return Err("Invalid ID3 extended header".into());
         }
         at = size;
     }
@@ -193,16 +193,16 @@ fn id3(data: &[u8], version: u8, flags: u8, media: &mut MediaFile) -> Result<()>
         }
         count += 1;
         if count > MAX_ELEMENTS {
-            return Err("Trop de trames ID3".into());
+            return Err("Too many ID3 frames".into());
         }
         let header_len = if version == 2 { 6 } else { 10 };
-        let head = data.get(at..at + header_len).ok_or("Trame ID3 tronquée")?;
+        let head = data.get(at..at + header_len).ok_or("Truncated ID3 frame")?;
         let id_len = if version == 2 { 3 } else { 4 };
         if !head[..id_len]
             .iter()
             .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
         {
-            return Err("Identifiant ID3 invalide".into());
+            return Err("Invalid ID3 identifier".into());
         }
         let length = if version == 2 {
             u32::from_be_bytes([0, head[3], head[4], head[5]])
@@ -212,8 +212,8 @@ fn id3(data: &[u8], version: u8, flags: u8, media: &mut MediaFile) -> Result<()>
             u32be(head, 4)?
         } as usize;
         let start = at + header_len;
-        let end = start.checked_add(length).ok_or("Trame ID3 débordante")?;
-        let body = data.get(start..end).ok_or("Trame ID3 hors limites")?;
+        let end = start.checked_add(length).ok_or("ID3 frame overflow")?;
+        let body = data.get(start..end).ok_or("ID3 frame is out of bounds")?;
         let transformed = version >= 3 && head[9] != 0;
         if !transformed
             && matches!(
@@ -234,7 +234,7 @@ fn id3(data: &[u8], version: u8, flags: u8, media: &mut MediaFile) -> Result<()>
 }
 
 fn id3_text(data: &[u8]) -> Result<String> {
-    let encoding = *data.first().ok_or("Texte ID3 vide")?;
+    let encoding = *data.first().ok_or("Empty ID3 text")?;
     let payload = &data[1..];
     match encoding {
         0 => Ok(payload
@@ -251,13 +251,13 @@ fn id3_text(data: &[u8]) -> Result<String> {
                 } else if payload.starts_with(&[0xfe, 0xff]) {
                     (false, &payload[2..])
                 } else {
-                    return Err("Texte ID3 UTF-16 sans marqueur d’ordre".into());
+                    return Err("ID3 UTF-16 text has no byte-order mark".into());
                 }
             } else {
                 (false, payload)
             };
             if !payload.len().is_multiple_of(2) {
-                return Err("Texte ID3 UTF-16 tronqué".into());
+                return Err("Truncated ID3 UTF-16 text".into());
             }
             let words = payload.as_chunks::<2>().0.iter().map(|pair| {
                 if little {
@@ -270,6 +270,6 @@ fn id3_text(data: &[u8]) -> Result<String> {
                 .trim_matches('\0')
                 .into())
         }
-        _ => Err("Encodage ID3 inconnu".into()),
+        _ => Err("Unknown ID3 encoding".into()),
     }
 }

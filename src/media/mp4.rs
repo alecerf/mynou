@@ -13,7 +13,7 @@ fn boxes(input: &mut Input, start: u64, end: u64) -> Result<Vec<BoxHeader>> {
     while at < end {
         input.count()?;
         if end - at < 8 {
-            return Err("En-tête MP4 tronqué".into());
+            return Err("Truncated MP4 header".into());
         }
         let head = input.read(at, 8)?;
         let short_size = u32be(&head, 0)?;
@@ -22,7 +22,7 @@ fn boxes(input: &mut Input, start: u64, end: u64) -> Result<Vec<BoxHeader>> {
             0 => end - at,
             1 => {
                 if end - at < 16 {
-                    return Err("Taille étendue MP4 tronquée".into());
+                    return Err("Truncated MP4 extended size".into());
                 }
                 header_size = 16;
                 u64be(&input.read(at + 8, 8)?, 0)?
@@ -33,14 +33,14 @@ fn boxes(input: &mut Input, start: u64, end: u64) -> Result<Vec<BoxHeader>> {
             header_size += 16;
         }
         if size < header_size {
-            return Err("Taille de boîte MP4 invalide".into());
+            return Err("Invalid MP4 box size".into());
         }
-        let next = at.checked_add(size).ok_or("Taille MP4 débordante")?;
+        let next = at.checked_add(size).ok_or("MP4 size overflow")?;
         if next > end {
-            return Err("Boîte MP4 au-delà de son conteneur".into());
+            return Err("MP4 box extends beyond its container".into());
         }
         result.push(BoxHeader {
-            kind: head[4..8].try_into().map_err(|_| "Type MP4 invalide")?,
+            kind: head[4..8].try_into().map_err(|_| "Invalid MP4 box type")?,
             data: at + header_size,
             end: next,
         });
@@ -57,7 +57,7 @@ pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
         match &top.kind {
             b"ftyp" => {
                 if top.end - top.data < 8 {
-                    return Err("Marque MP4 tronquée".into());
+                    return Err("Truncated MP4 brand".into());
                 }
                 if input.read(top.data, 4)? == b"qt  " {
                     media.container = "mov".into();
@@ -98,7 +98,7 @@ pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
         }
     }
     if !found_movie {
-        return Err("Le MP4 ne contient pas de boîte moov ; les métadonnées fragmentées isolées ne sont pas prises en charge".into());
+        return Err("The MP4 has no moov box; standalone fragmented metadata is unsupported".into());
     }
     Ok(())
 }
@@ -125,7 +125,7 @@ fn timing(data: &[u8]) -> Result<(u32, u64, u64)> {
                 u64be(data, 4)?,
             ))
         }
-        _ => Err("Version de chronologie MP4 non prise en charge".into()),
+        _ => Err("Unsupported MP4 timeline version".into()),
     }
 }
 
@@ -152,7 +152,7 @@ fn track(input: &mut Input, header: BoxHeader, media: &mut MediaFile, index: usi
             b"tkhd" => {
                 let data = input.read(item.data, (item.end - item.data).min(96) as usize)?;
                 if data.len() < 4 {
-                    return Err("En-tête de piste MP4 tronqué".into());
+                    return Err("Truncated MP4 track header".into());
                 }
                 parsed.default = data[3] & 1 != 0;
             }
@@ -170,9 +170,9 @@ fn track(input: &mut Input, header: BoxHeader, media: &mut MediaFile, index: usi
                 let data = input.read(item.data, (item.end - item.data).min(12) as usize)?;
                 parsed.kind = data
                     .get(8..12)
-                    .ok_or("Type de piste MP4 tronqué")?
+                    .ok_or("Truncated MP4 track type")?
                     .try_into()
-                    .map_err(|_| "Type de piste MP4 invalide")?;
+                    .map_err(|_| "Invalid MP4 track type")?;
             }
             b"mdhd" => {
                 let data = input.read(item.data, (item.end - item.data).min(36) as usize)?;
@@ -207,11 +207,11 @@ fn track(input: &mut Input, header: BoxHeader, media: &mut MediaFile, index: usi
                         let length = u64::from(count)
                             .checked_mul(8)
                             .and_then(|n| n.checked_add(8))
-                            .ok_or("Table temporelle MP4 débordante")?;
+                            .ok_or("MP4 timing table overflow")?;
                         if length != table.end - table.data || count as usize > MAX_ELEMENTS {
-                            return Err("Table temporelle MP4 invalide ou excessive".into());
+                            return Err("Invalid or oversized MP4 timing table".into());
                         }
-                        // Lecture par blocs : une table très longue ne devient pas une grosse allocation.
+                        // Read in blocks to keep long tables from causing large allocations.
                         let mut cursor = table.data + 8;
                         for chunk in 0..count.div_ceil(512) {
                             let entries = (count - chunk * 512).min(512);
@@ -220,14 +220,14 @@ fn track(input: &mut Input, header: BoxHeader, media: &mut MediaFile, index: usi
                                 parsed.frames = parsed
                                     .frames
                                     .checked_add(u64::from(u32be(&data, at)?))
-                                    .ok_or("Nombre d’images MP4 débordant")?;
+                                    .ok_or("MP4 frame count overflow")?;
                                 let span = u64::from(u32be(&data, at)?)
                                     .checked_mul(u64::from(u32be(&data, at + 4)?))
-                                    .ok_or("Durée de table MP4 débordante")?;
+                                    .ok_or("MP4 timing table duration overflow")?;
                                 parsed.sample_duration = parsed
                                     .sample_duration
                                     .checked_add(span)
-                                    .ok_or("Durée de table MP4 débordante")?;
+                                    .ok_or("MP4 timing table duration overflow")?;
                             }
                             cursor += data.len() as u64;
                         }
@@ -275,13 +275,13 @@ fn track(input: &mut Input, header: BoxHeader, media: &mut MediaFile, index: usi
 
 fn sample_description(input: &mut Input, table: BoxHeader, track: &mut Track) -> Result<()> {
     if table.end - table.data < 8 {
-        return Err("Description de flux MP4 tronquée".into());
+        return Err("Truncated MP4 stream description".into());
     }
     let head = input.read(table.data, 8)?;
     let count = u32be(&head, 4)? as usize;
     let entries = boxes(input, table.data + 8, table.end)?;
     if entries.len() != count {
-        return Err("Nombre de descriptions MP4 invalide".into());
+        return Err("Invalid MP4 description count".into());
     }
     let Some(entry) = entries.first() else {
         return Ok(());
@@ -304,7 +304,7 @@ fn sample_description(input: &mut Input, table: BoxHeader, track: &mut Track) ->
             track.channels = Some(u16be(&data, 16)?).filter(|n| *n > 0);
             track.sample_rate = Some(u32be(&data, 24)? >> 16).filter(|n| *n > 0);
         } else {
-            return Err("Version audio MOV non prise en charge".into());
+            return Err("Unsupported MOV audio version".into());
         }
         let child_offset = match version {
             0 => 28,
@@ -318,10 +318,10 @@ fn sample_description(input: &mut Input, table: BoxHeader, track: &mut Track) ->
                     let data = input.read(
                         child.data,
                         usize::try_from(child.end - child.data)
-                            .map_err(|_| "Description MPEG-4 excessive")?,
+                            .map_err(|_| "MPEG-4 description exceeds the size limit")?,
                     )?;
                     if data.len() < 4 {
-                        return Err("Description MPEG-4 tronquée".into());
+                        return Err("Truncated MPEG-4 description".into());
                     }
                     descriptors(&data[4..], track, 0)?;
                 }
@@ -333,7 +333,7 @@ fn sample_description(input: &mut Input, table: BoxHeader, track: &mut Track) ->
 
 fn descriptors(mut data: &[u8], track: &mut Track, depth: usize) -> Result<()> {
     if depth >= 8 {
-        return Err("Descriptions MPEG-4 trop imbriquées".into());
+        return Err("MPEG-4 descriptions are nested too deeply".into());
     }
     while !data.is_empty() {
         let kind = data[0];
@@ -341,11 +341,11 @@ fn descriptors(mut data: &[u8], track: &mut Track, depth: usize) -> Result<()> {
         let mut length = 0_usize;
         loop {
             if at > 4 {
-                return Err("Longueur de description MPEG-4 invalide".into());
+                return Err("Invalid MPEG-4 description length".into());
             }
             let byte = *data
                 .get(at)
-                .ok_or("Longueur de description MPEG-4 tronquée")?;
+                .ok_or("Truncated MPEG-4 description length")?;
             length = (length << 7) | usize::from(byte & 0x7f);
             at += 1;
             if byte & 0x80 == 0 {
@@ -354,37 +354,37 @@ fn descriptors(mut data: &[u8], track: &mut Track, depth: usize) -> Result<()> {
         }
         let end = at
             .checked_add(length)
-            .ok_or("Description MPEG-4 débordante")?;
-        let body = data.get(at..end).ok_or("Description MPEG-4 hors limites")?;
+            .ok_or("MPEG-4 description overflow")?;
+        let body = data.get(at..end).ok_or("MPEG-4 description is out of bounds")?;
         match kind {
             3 => {
-                let flags = *body.get(2).ok_or("Descripteur ES tronqué")?;
+                let flags = *body.get(2).ok_or("Truncated ES descriptor")?;
                 let mut skip = 3;
                 if flags & 0x80 != 0 {
                     skip += 2;
                 }
                 if flags & 0x40 != 0 {
-                    let size = *body.get(skip).ok_or("URL ES tronquée")? as usize;
+                    let size = *body.get(skip).ok_or("Truncated ES URL")? as usize;
                     skip += size + 1;
                 }
                 if flags & 0x20 != 0 {
                     skip += 2;
                 }
                 descriptors(
-                    body.get(skip..).ok_or("Descripteur ES tronqué")?,
+                    body.get(skip..).ok_or("Truncated ES descriptor")?,
                     track,
                     depth + 1,
                 )?;
             }
             4 => {
-                let object_type = *body.first().ok_or("Configuration MPEG-4 vide")?;
+                let object_type = *body.first().ok_or("Empty MPEG-4 configuration")?;
                 if matches!(object_type, 0x69 | 0x6b) {
                     track.codec = "mp3".into();
                 } else if matches!(object_type, 0x40 | 0x66..=0x68) {
                     track.codec = "aac".into();
                 }
                 descriptors(
-                    body.get(13..).ok_or("Configuration MPEG-4 tronquée")?,
+                    body.get(13..).ok_or("Truncated MPEG-4 configuration")?,
                     track,
                     depth + 1,
                 )?;
@@ -412,7 +412,7 @@ fn audio_specific_config(data: &[u8], track: &mut Track) -> Result<()> {
             8_000, 7_350,
         ]
         .get(frequency as usize)
-        .ok_or("Fréquence AAC réservée")?
+        .ok_or("Reserved AAC sample rate")?
     };
     let channel_config = bits(data, &mut at, 4)?;
     track.sample_rate = Some(rate).filter(|n| *n > 0);
@@ -420,7 +420,7 @@ fn audio_specific_config(data: &[u8], track: &mut Track) -> Result<()> {
         0 => None,
         1..=6 => Some(channel_config as u16),
         7 => Some(8),
-        _ => return Err("Configuration de canaux AAC réservée".into()),
+        _ => return Err("Reserved AAC channel configuration".into()),
     };
     if matches!(object, 5 | 29) {
         let extension_frequency = bits(data, &mut at, 4)?;
@@ -432,16 +432,16 @@ fn audio_specific_config(data: &[u8], track: &mut Track) -> Result<()> {
                 11_025, 8_000, 7_350,
             ]
             .get(extension_frequency as usize)
-            .ok_or("Fréquence AAC réservée")?
+            .ok_or("Reserved AAC sample rate")?
         };
         track.sample_rate = Some(rate).filter(|n| *n > 0);
     }
     Ok(())
 }
 fn bits(data: &[u8], at: &mut usize, count: usize) -> Result<u32> {
-    let end = at.checked_add(count).ok_or("Position AAC débordante")?;
+    let end = at.checked_add(count).ok_or("AAC offset overflow")?;
     if end > data.len() * 8 {
-        return Err("Configuration AAC tronquée".into());
+        return Err("Truncated AAC configuration".into());
     }
     let mut value = 0;
     while *at < end {
@@ -483,13 +483,13 @@ fn metadata(
     depth: usize,
 ) -> Result<()> {
     if depth >= 12 {
-        return Err("Métadonnées MP4 trop imbriquées".into());
+        return Err("MP4 metadata is nested too deeply".into());
     }
     let start = if &header.kind == b"meta" {
         if header.end - header.data < 4 {
-            return Err("Métadonnées MP4 tronquées".into());
+            return Err("Truncated MP4 metadata".into());
         }
-        // QuickTime historique peut omettre version/flags. La variante ISO est dominante.
+        // Legacy QuickTime may omit version/flags. The ISO variant is more common.
         let data = input.read(header.data, 4)?;
         if data == [0, 0, 0, 0] {
             header.data + 4
@@ -508,7 +508,7 @@ fn metadata(
                         continue;
                     }
                     if value.end - value.data < 8 {
-                        return Err("Valeur de métadonnée MP4 tronquée".into());
+                        return Err("Truncated MP4 metadata value".into());
                     }
                     let data = input.read(value.data, (value.end - value.data) as usize)?;
                     let kind = u32be(&data, 0)? & 0x00ff_ffff;

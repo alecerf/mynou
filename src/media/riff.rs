@@ -2,7 +2,7 @@ use super::*;
 
 pub(super) fn wave(input: &mut Input, media: &mut MediaFile) -> Result<()> {
     if input.len < 12 {
-        return Err("En-tête WAV tronqué".into());
+        return Err("Truncated WAV header".into());
     }
     media.container = "wav".into();
     let head = input.read(0, 12)?;
@@ -11,10 +11,10 @@ pub(super) fn wave(input: &mut Input, media: &mut MediaFile) -> Result<()> {
     let mut end = if rf64 {
         input.len
     } else {
-        riff_length.checked_add(8).ok_or("Taille WAV débordante")?
+        riff_length.checked_add(8).ok_or("WAV size overflow")?
     };
     if end > input.len || end < 12 {
-        return Err("Taille du conteneur WAV invalide".into());
+        return Err("Invalid WAV container size".into());
     }
     let mut data_size = 0_u64;
     let mut rf64_data = None;
@@ -24,38 +24,38 @@ pub(super) fn wave(input: &mut Input, media: &mut MediaFile) -> Result<()> {
     while at < end {
         input.count()?;
         if end - at < 8 {
-            return Err("Bloc WAV tronqué".into());
+            return Err("Truncated WAV chunk".into());
         }
         let chunk = input.read(at, 8)?;
         let advertised = u32le(&chunk, 4)?;
         let size = if rf64 && &chunk[0..4] == b"data" && advertised == u32::MAX {
-            rf64_data.ok_or("Le WAV RF64 doit fournir ds64 avant data")?
+            rf64_data.ok_or("RF64 WAV requires ds64 before data")?
         } else {
             u64::from(advertised)
         };
         let body = at + 8;
-        let next = body.checked_add(size).ok_or("Bloc WAV débordant")?;
+        let next = body.checked_add(size).ok_or("WAV chunk overflow")?;
         if next > end {
-            return Err("Bloc WAV au-delà du conteneur".into());
+            return Err("WAV chunk extends beyond its container".into());
         }
         match &chunk[0..4] {
             b"ds64" if rf64 => {
                 if size < 28 {
-                    return Err("Bloc RF64 ds64 tronqué".into());
+                    return Err("Truncated RF64 ds64 chunk".into());
                 }
                 let data = input.read(body, 28)?;
                 let declared_end = u64le(&data, 0)?
                     .checked_add(8)
-                    .ok_or("Taille RF64 débordante")?;
+                    .ok_or("RF64 size overflow")?;
                 if declared_end > input.len || declared_end < next {
-                    return Err("Taille RF64 invalide".into());
+                    return Err("Invalid RF64 size".into());
                 }
                 end = declared_end;
                 rf64_data = Some(u64le(&data, 8)?);
             }
             b"fmt " => {
                 if size < 16 {
-                    return Err("Description audio WAV tronquée".into());
+                    return Err("Truncated WAV audio description".into());
                 }
                 let data = input.read(body, size.min(64) as usize)?;
                 let mut format = u16le(&data, 0)?;
@@ -65,12 +65,12 @@ pub(super) fn wave(input: &mut Input, media: &mut MediaFile) -> Result<()> {
                 let bits = u16le(&data, 14)?;
                 if format == 0xfffe {
                     if size < 40 || u16le(&data, 16)? < 22 {
-                        return Err("Format WAV extensible tronqué".into());
+                        return Err("Truncated WAV extensible format".into());
                     }
                     format = u16le(&data, 24)?;
                 }
                 if channels == 0 || sample_rate == 0 || byte_rate == 0 {
-                    return Err("Paramètres audio WAV invalides".into());
+                    return Err("Invalid WAV audio parameters".into());
                 }
                 let codec = match format {
                     1 => match bits {
@@ -102,7 +102,7 @@ pub(super) fn wave(input: &mut Input, media: &mut MediaFile) -> Result<()> {
             b"data" => {
                 data_size = data_size
                     .checked_add(size)
-                    .ok_or("Taille de données WAV débordante")?
+                    .ok_or("WAV data size overflow")?
             }
             b"LIST" if size >= 4 && input.read(body, 4)? == b"INFO" => {
                 wave_info(input, body + 4, next, media)?;
@@ -111,15 +111,15 @@ pub(super) fn wave(input: &mut Input, media: &mut MediaFile) -> Result<()> {
         }
         at = next
             .checked_add(size & 1)
-            .ok_or("Alignement WAV débordant")?;
+            .ok_or("WAV alignment overflow")?;
         if at > end {
-            return Err("Octet d’alignement WAV manquant".into());
+            return Err("Missing WAV padding byte".into());
         }
     }
     if let Some(stream) = stream {
         media.audio_streams.push(stream);
     } else {
-        return Err("Bloc fmt WAV manquant".into());
+        return Err("Missing WAV fmt chunk".into());
     }
     if byte_rate > 0 && data_size > 0 {
         media.duration_seconds = Some(data_size as f64 / f64::from(byte_rate));
@@ -132,21 +132,21 @@ fn wave_info(input: &mut Input, mut at: u64, end: u64, media: &mut MediaFile) ->
     while at < end {
         input.count()?;
         if end - at < 8 {
-            return Err("Métadonnées WAV tronquées".into());
+            return Err("Truncated WAV metadata".into());
         }
         let head = input.read(at, 8)?;
         let size = u64::from(u32le(&head, 4)?);
         let body = at + 8;
         let next = body
             .checked_add(size)
-            .ok_or("Métadonnées WAV débordantes")?;
+            .ok_or("WAV metadata overflow")?;
         if next > end {
-            return Err("Métadonnées WAV hors limites".into());
+            return Err("WAV metadata is out of bounds".into());
         }
         if matches!(&head[0..4], b"INAM" | b"ICRD") {
             let value = text(&input.read(
                 body,
-                usize::try_from(size).map_err(|_| "Métadonnées WAV excessives")?,
+                usize::try_from(size).map_err(|_| "WAV metadata exceeds the size limit")?,
             )?);
             if &head[0..4] == b"INAM" {
                 set_title(media, value);
@@ -156,9 +156,9 @@ fn wave_info(input: &mut Input, mut at: u64, end: u64, media: &mut MediaFile) ->
         }
         at = next
             .checked_add(size & 1)
-            .ok_or("Alignement WAV débordant")?;
+            .ok_or("WAV alignment overflow")?;
         if at > end {
-            return Err("Alignement de métadonnée WAV tronqué".into());
+            return Err("Truncated WAV metadata alignment".into());
         }
     }
     Ok(())
@@ -176,17 +176,17 @@ pub(super) fn flac(input: &mut Input, media: &mut MediaFile) -> Result<()> {
         let last = head[0] & 0x80 != 0;
         let size = u32::from_be_bytes([0, head[1], head[2], head[3]]) as u64;
         let body = at + 4;
-        let next = body.checked_add(size).ok_or("Bloc FLAC débordant")?;
+        let next = body.checked_add(size).ok_or("FLAC block overflow")?;
         if next > input.len {
-            return Err("Bloc FLAC tronqué".into());
+            return Err("Truncated FLAC block".into());
         }
         if first && kind != 0 {
-            return Err("Le premier bloc FLAC doit être STREAMINFO".into());
+            return Err("The first FLAC block must be STREAMINFO".into());
         }
         match kind {
             0 => {
                 if saw_stream_info || size != 34 {
-                    return Err("Bloc STREAMINFO FLAC invalide".into());
+                    return Err("Invalid FLAC STREAMINFO block".into());
                 }
                 saw_stream_info = true;
                 let data = input.read(body, 34)?;
@@ -195,7 +195,7 @@ pub(super) fn flac(input: &mut Input, media: &mut MediaFile) -> Result<()> {
                 let channels = ((packed >> 41) & 7) as u16 + 1;
                 let total_samples = packed & 0x0000_000f_ffff_ffff;
                 if sample_rate == 0 {
-                    return Err("Fréquence FLAC nulle".into());
+                    return Err("FLAC sample rate is zero".into());
                 }
                 if total_samples > 0 {
                     media.duration_seconds = Some(total_samples as f64 / f64::from(sample_rate));
@@ -213,11 +213,11 @@ pub(super) fn flac(input: &mut Input, media: &mut MediaFile) -> Result<()> {
             4 => vorbis_comments(
                 &input.read(
                     body,
-                    usize::try_from(size).map_err(|_| "Commentaires FLAC excessifs")?,
+                    usize::try_from(size).map_err(|_| "FLAC comments exceed the size limit")?,
                 )?,
                 media,
             )?,
-            127 => return Err("Type de bloc FLAC interdit".into()),
+            127 => return Err("Forbidden FLAC block type".into()),
             _ => {}
         }
         at = next;
@@ -233,17 +233,17 @@ fn vorbis_comments(data: &[u8], media: &mut MediaFile) -> Result<()> {
     let vendor_len = u32le(data, 0)? as usize;
     let mut at = 4_usize
         .checked_add(vendor_len)
-        .ok_or("Commentaire FLAC débordant")?;
+        .ok_or("FLAC comment overflow")?;
     let count = u32le(data, at)? as usize;
     at += 4;
     if count > MAX_ELEMENTS {
-        return Err("Trop de commentaires FLAC".into());
+        return Err("Too many FLAC comments".into());
     }
     for _ in 0..count {
         let len = u32le(data, at)? as usize;
         at += 4;
-        let end = at.checked_add(len).ok_or("Commentaire FLAC débordant")?;
-        let comment = text(data.get(at..end).ok_or("Commentaire FLAC tronqué")?);
+        let end = at.checked_add(len).ok_or("FLAC comment overflow")?;
+        let comment = text(data.get(at..end).ok_or("Truncated FLAC comment")?);
         if let Some((key, value)) = comment.split_once('=') {
             if key.eq_ignore_ascii_case("TITLE") {
                 set_title(media, value.into());
@@ -254,7 +254,7 @@ fn vorbis_comments(data: &[u8], media: &mut MediaFile) -> Result<()> {
         at = end;
     }
     if at != data.len() {
-        return Err("Longueur des commentaires FLAC invalide".into());
+        return Err("Invalid FLAC comment length".into());
     }
     Ok(())
 }

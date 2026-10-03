@@ -23,7 +23,7 @@ impl<'a> Reader<'a> {
         if self.empty() {
             Ok(())
         } else {
-            Err("DER : données restantes".into())
+            Err("DER: trailing data".into())
         }
     }
     pub(super) fn peek(&self) -> Option<u8> {
@@ -31,47 +31,47 @@ impl<'a> Reader<'a> {
     }
     pub(super) fn read(&mut self) -> Result<Element<'a>> {
         let start = self.cursor;
-        let tag = *self.bytes.get(self.cursor).ok_or("DER : élément tronqué")?;
+        let tag = *self.bytes.get(self.cursor).ok_or("DER: truncated element")?;
         self.cursor += 1;
         if tag & 0x1f == 0x1f {
-            return Err("DER : numéro de tag étendu non pris en charge".into());
+            return Err("DER: extended tag numbers are unsupported".into());
         }
         let first = *self
             .bytes
             .get(self.cursor)
-            .ok_or("DER : longueur absente")?;
+            .ok_or("DER: missing length")?;
         self.cursor += 1;
         let length = if first & 0x80 == 0 {
             usize::from(first)
         } else {
             let count = usize::from(first & 0x7f);
             if count == 0 || count > 4 {
-                return Err("DER : longueur indéfinie ou excessive".into());
+                return Err("DER: indefinite or excessive length".into());
             }
             let raw = self
                 .bytes
                 .get(self.cursor..self.cursor + count)
-                .ok_or("DER : longueur tronquée")?;
+                .ok_or("DER: truncated length")?;
             if raw[0] == 0 {
-                return Err("DER : longueur non canonique".into());
+                return Err("DER: noncanonical length".into());
             }
             self.cursor += count;
             let value = raw
                 .iter()
                 .fold(0usize, |n, byte| (n << 8) | usize::from(*byte));
             if value < 128 {
-                return Err("DER : longueur non minimale".into());
+                return Err("DER: nonminimal length".into());
             }
             value
         };
         let end = self
             .cursor
             .checked_add(length)
-            .ok_or("DER : longueur débordante")?;
+            .ok_or("DER: length overflow")?;
         let body = self
             .bytes
             .get(self.cursor..end)
-            .ok_or("DER : élément tronqué")?;
+            .ok_or("DER: truncated element")?;
         self.cursor = end;
         Ok(Element {
             tag,
@@ -85,7 +85,7 @@ impl<'a> Reader<'a> {
             Ok(element)
         } else {
             Err(format!(
-                "DER : tag {tag:02x} attendu, reçu {:02x}",
+                "DER: expected tag {tag:02x}, received {:02x}",
                 element.tag
             ))
         }
@@ -101,11 +101,11 @@ pub(super) fn sequence(bytes: &[u8]) -> Result<Reader<'_>> {
 
 pub(super) fn positive_integer(bytes: &[u8]) -> Result<&[u8]> {
     if bytes.is_empty() || bytes[0] & 0x80 != 0 {
-        return Err("DER : entier positif attendu".into());
+        return Err("DER: positive integer expected".into());
     }
     if bytes.len() > 1 && bytes[0] == 0 {
         if bytes[1] & 0x80 == 0 {
-            return Err("DER : entier non minimal".into());
+            return Err("DER: nonminimal integer".into());
         }
         Ok(&bytes[1..])
     } else {
@@ -115,7 +115,7 @@ pub(super) fn positive_integer(bytes: &[u8]) -> Result<&[u8]> {
 
 pub(super) fn bit_string(bytes: &[u8]) -> Result<&[u8]> {
     if bytes.first() != Some(&0) {
-        return Err("DER : chaîne de bits non alignée".into());
+        return Err("DER: bit string is not byte-aligned".into());
     }
     Ok(&bytes[1..])
 }
@@ -124,7 +124,7 @@ pub(super) fn boolean(bytes: &[u8]) -> Result<bool> {
     match bytes {
         [0] => Ok(false),
         [0xff] => Ok(true),
-        _ => Err("DER : booléen non canonique".into()),
+        _ => Err("DER: noncanonical boolean".into()),
     }
 }
 

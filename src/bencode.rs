@@ -1,4 +1,4 @@
-//! Bencode borné ; l'infohash utilise toujours les octets d'origine.
+//! Bounded bencode; the infohash always uses the original bytes.
 use crate::Result;
 use std::collections::BTreeMap;
 
@@ -50,7 +50,7 @@ struct Parser<'a> {
 }
 impl Parser<'_> {
     fn error(&self, text: &str) -> String {
-        format!("Bencode à l’octet {} : {text}", self.at)
+        format!("Bencode at byte {}: {text}", self.at)
     }
     fn bytes(&mut self) -> Result<Vec<u8>> {
         let start = self.at;
@@ -58,31 +58,31 @@ impl Parser<'_> {
             self.at += 1;
         }
         if start == self.at || self.data.get(self.at) != Some(&b':') {
-            return Err(self.error("longueur invalide"));
+            return Err(self.error("invalid length"));
         }
         if self.at - start > 1 && self.data[start] == b'0' {
-            return Err(self.error("zéro initial interdit"));
+            return Err(self.error("leading zero not allowed"));
         }
         let length = std::str::from_utf8(&self.data[start..self.at])
-            .map_err(|_| self.error("longueur invalide"))?
+            .map_err(|_| self.error("invalid length"))?
             .parse::<usize>()
-            .map_err(|_| self.error("longueur excessive"))?;
+            .map_err(|_| self.error("length too large"))?;
         self.at += 1;
         let end = self
             .at
             .checked_add(length)
-            .ok_or_else(|| self.error("longueur excessive"))?;
+            .ok_or_else(|| self.error("length too large"))?;
         let bytes = self
             .data
             .get(self.at..end)
-            .ok_or_else(|| self.error("chaîne tronquée"))?
+            .ok_or_else(|| self.error("truncated string"))?
             .to_vec();
         self.at = end;
         Ok(bytes)
     }
     fn value(&mut self, depth: usize) -> Result<Value> {
         if depth > 64 || self.remaining == 0 {
-            return Err(self.error("complexité excessive"));
+            return Err(self.error("excessive complexity"));
         }
         self.remaining -= 1;
         match self.data.get(self.at) {
@@ -93,21 +93,21 @@ impl Parser<'_> {
                     self.at += 1;
                 }
                 if self.data.get(self.at) != Some(&b'e') {
-                    return Err(self.error("entier tronqué"));
+                    return Err(self.error("truncated integer"));
                 }
                 let text = std::str::from_utf8(&self.data[start..self.at])
-                    .map_err(|_| self.error("entier invalide"))?;
+                    .map_err(|_| self.error("invalid integer"))?;
                 if text.is_empty()
                     || text == "-0"
                     || text.starts_with('+')
                     || text.len() > 1 && text.starts_with('0')
                     || text.starts_with("-0")
                 {
-                    return Err(self.error("entier non canonique"));
+                    return Err(self.error("noncanonical integer"));
                 }
                 let n = text
                     .parse::<i64>()
-                    .map_err(|_| self.error("entier invalide ou excessif"))?;
+                    .map_err(|_| self.error("invalid or oversized integer"))?;
                 self.at += 1;
                 Ok(Value::Int(n))
             }
@@ -127,7 +127,7 @@ impl Parser<'_> {
                 while self.data.get(self.at) != Some(&b'e') {
                     let key = self.bytes()?;
                     if previous.as_ref().is_some_and(|p| p >= &key) {
-                        return Err(self.error("clés du dictionnaire non canoniques"));
+                        return Err(self.error("noncanonical dictionary keys"));
                     }
                     previous = Some(key.clone());
                     let value = self.value(depth + 1)?;
@@ -137,13 +137,13 @@ impl Parser<'_> {
                 Ok(Value::Dict(map))
             }
             Some(b'0'..=b'9') => self.bytes().map(Value::Bytes),
-            _ => Err(self.error("valeur invalide ou tronquée")),
+            _ => Err(self.error("invalid or truncated value")),
         }
     }
 }
 pub fn parse_prefix(data: &[u8]) -> Result<(Value, usize)> {
     if data.len() > 16 * 1024 * 1024 {
-        return Err("Bencode : document trop volumineux".into());
+        return Err("Bencode: document too large".into());
     }
     let mut p = Parser {
         data,
@@ -156,14 +156,14 @@ pub fn parse_prefix(data: &[u8]) -> Result<(Value, usize)> {
 pub fn parse(data: &[u8]) -> Result<Value> {
     let (v, end) = parse_prefix(data)?;
     if end != data.len() {
-        return Err("Bencode : données après le document".into());
+        return Err("Bencode: data after the document".into());
     }
     Ok(v)
 }
 pub fn parse_info_raw(data: &[u8]) -> Result<Vec<u8>> {
     let value = parse(data)?;
     if value.get(b"info").and_then(Value::as_dict).is_none() {
-        return Err("Torrent : dictionnaire info absent".into());
+        return Err("Torrent: missing info dictionary".into());
     }
     let mut p = Parser {
         data,
@@ -178,7 +178,7 @@ pub fn parse_info_raw(data: &[u8]) -> Result<Vec<u8>> {
             return Ok(data[start..p.at].to_vec());
         }
     }
-    Err("Torrent : dictionnaire info absent".into())
+    Err("Torrent: missing info dictionary".into())
 }
 pub fn encode(value: &Value) -> Vec<u8> {
     fn write(v: &Value, out: &mut Vec<u8>) {

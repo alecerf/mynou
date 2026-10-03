@@ -185,7 +185,7 @@ fn inverse(field: &Modulus, value: &[u32], modulus: &[u8]) -> Vec<u32> {
 fn public_point(field: &Modulus, bytes: &[u8], curve_b: &[u8]) -> Result<Point> {
     let width = field.width() * 4;
     if bytes.len() != 1 + 2 * width || bytes[0] != 4 {
-        return Err("Courbe : point public non compressé attendu".into());
+        return Err("Curve: uncompressed public point expected".into());
     }
     let x = field.encode(&bytes[1..1 + width])?;
     let y = field.encode(&bytes[1 + width..])?;
@@ -198,7 +198,7 @@ fn public_point(field: &Modulus, bytes: &[u8], curve_b: &[u8]) -> Result<Point> 
         &field.encode(curve_b)?,
     );
     if left != right {
-        return Err("Courbe : point public absent de la courbe".into());
+        return Err("Curve: public point is not on the curve".into());
     }
     // P-256 has cofactor one; every non-infinite curve point belongs to its group.
     Ok(Point {
@@ -254,7 +254,7 @@ fn reduce_bytes(bytes: &mut [u8], modulus: &[u8]) {
 fn verify_ecdsa(point: &[u8], message_hash: &[u8], signature: &[u8], curve: &Curve) -> Result<()> {
     let width = curve.prime.len();
     if signature.len() > 2 * width + 8 {
-        return Err("ECDSA : signature trop grande".into());
+        return Err("ECDSA: signature is too large".into());
     }
     let mut signature = sequence(signature)?;
     let r = positive_integer(signature.expect(0x02)?.body)?;
@@ -262,7 +262,7 @@ fn verify_ecdsa(point: &[u8], message_hash: &[u8], signature: &[u8], curve: &Cur
     signature.finish()?;
     if r.len() > width || s.len() > width || r.iter().all(|x| *x == 0) || s.iter().all(|x| *x == 0)
     {
-        return Err("ECDSA : entier de signature invalide".into());
+        return Err("ECDSA: invalid signature integer".into());
     }
     let order = Modulus::new(curve.order)?;
     let r = order.encode(r)?;
@@ -292,7 +292,7 @@ fn verify_ecdsa(point: &[u8], message_hash: &[u8], signature: &[u8], curve: &Cur
         &scalar_multiply(&field, &public, &u2),
     );
     if result.is_infinity() {
-        return Err("ECDSA : résultat à l'infini".into());
+        return Err("ECDSA: result is at infinity".into());
     }
     let inverse_z = inverse(&field, &result.z, curve.prime);
     let x = field.multiply(&result.x, &field.multiply(&inverse_z, &inverse_z));
@@ -301,7 +301,7 @@ fn verify_ecdsa(point: &[u8], message_hash: &[u8], signature: &[u8], curve: &Cur
     if order.encode(&x)? == r {
         Ok(())
     } else {
-        Err("ECDSA : signature incorrecte".into())
+        Err("ECDSA: invalid signature".into())
     }
 }
 

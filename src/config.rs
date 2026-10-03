@@ -117,7 +117,7 @@ fn text(v: &Value, k: &str, default: &str) -> Result<String> {
     match v.get(k) {
         None => Ok(default.into()),
         Some(Value::String(s)) if !s.trim().is_empty() => Ok(s.trim().into()),
-        _ => Err(format!("Configuration : {k} doit être une chaîne non vide")),
+        _ => Err(format!("Configuration: {k} must be a nonempty string")),
     }
 }
 fn number(v: &Value, k: &str, default: u64, max: u64) -> Result<u64> {
@@ -125,10 +125,10 @@ fn number(v: &Value, k: &str, default: u64, max: u64) -> Result<u64> {
         None => default,
         Some(v) => v
             .as_u64()
-            .ok_or_else(|| format!("Configuration : {k} doit être un entier"))?,
+            .ok_or_else(|| format!("Configuration: {k} must be an integer"))?,
     };
     if n > max {
-        return Err(format!("Configuration : {k} trop grand"));
+        return Err(format!("Configuration: {k} is too large"));
     }
     Ok(n)
 }
@@ -137,23 +137,23 @@ fn boolean(v: &Value, k: &str, default: bool) -> Result<bool> {
         None => Ok(default),
         Some(v) => v
             .as_bool()
-            .ok_or_else(|| format!("Configuration : {k} doit être un booléen")),
+            .ok_or_else(|| format!("Configuration: {k} must be a boolean")),
     }
 }
 fn section<'a>(v: &'a Value, k: &str) -> Result<&'a Value> {
     let s = v
         .get(k)
-        .ok_or_else(|| format!("Configuration : section {k} absente"))?;
+        .ok_or_else(|| format!("Configuration: missing section {k}"))?;
     if s.as_object().is_none() {
-        return Err(format!("Configuration : {k} doit être un objet"));
+        return Err(format!("Configuration: {k} must be an object"));
     }
     Ok(s)
 }
 fn keys(v: &Value, allowed: &[&str]) -> Result<()> {
-    let map = v.as_object().ok_or("Configuration : objet attendu")?;
+    let map = v.as_object().ok_or("Configuration: expected an object")?;
     for key in map.keys() {
         if !allowed.contains(&key.as_str()) {
-            return Err(format!("Configuration : champ inconnu {key}"));
+            return Err(format!("Configuration: unknown field {key}"));
         }
     }
     Ok(())
@@ -167,9 +167,9 @@ pub fn load(file: &Path) -> Result<Config> {
     let mut data = String::new();
     fs::File::open(file)
         .and_then(|f| f.take(1_048_577).read_to_string(&mut data))
-        .map_err(|e| format!("Configuration : {e}"))?;
+        .map_err(|e| format!("Configuration: {e}"))?;
     if data.len() > 1_048_576 {
-        return Err("Configuration trop grande (1 Mio maximum)".into());
+        return Err("Configuration is too large (maximum 1 MiB)".into());
     }
     let v = json::parse(&data)?;
     let base = file.parent().unwrap_or(Path::new("."));
@@ -197,7 +197,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
     )?;
     if number(v, "schema_version", 0, 1)? != 1 {
         return Err(
-            "Configuration : utiliser le schéma Rust 1 ; les données SQLite Go restent séparées"
+            "Configuration: use Rust schema 1; previous Go SQLite data remains separate"
                 .into(),
         );
     }
@@ -235,12 +235,12 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
     if let Some(indexers) = v.get("indexers") {
         for source in indexers
             .as_array()
-            .ok_or("Configuration : indexers doit être une liste")?
+            .ok_or("Configuration: indexers must be an array")?
         {
             keys(source, &["name", "kind", "url", "api_key_env"])?;
             let kind = text(source, "kind", "json")?;
             if !["rss", "json", "torznab"].contains(&kind.as_str()) {
-                return Err("Configuration : source rss, json ou torznab attendue".into());
+                return Err("Configuration: expected an rss, json or torznab source".into());
             }
             let url = text(source, "url", "")?;
             crate::net::parse_url(&url)?;
@@ -257,12 +257,12 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
     let poll_interval_ms = number(v, "poll_interval_ms", 500, 3600000)?;
     let lease_duration_secs = number(v, "lease_duration_secs", 60, 86400)?;
     if workers == 0 || max_active == 0 || poll_interval_ms < 10 || lease_duration_secs < 5 {
-        return Err("Configuration : concurrence ou délais invalides".into());
+        return Err("Configuration: invalid concurrency or timing settings".into());
     }
     let listen = text(v, "listen", "127.0.0.1:8787")?;
     listen
         .parse::<std::net::SocketAddr>()
-        .map_err(|_| "Configuration : listen exige une adresse IP et un port")?;
+        .map_err(|_| "Configuration: listen requires an IP address and port")?;
     for url in [
         text(p, "url", "http://host.docker.internal:32400")?,
         text(
@@ -320,9 +320,9 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
 pub fn secret(name: &str) -> Result<String> {
     let value = std::env::var(name).unwrap_or_default().trim().to_owned();
     if value.is_empty() {
-        Err(format!("Secret {name} absent"))
+        Err(format!("Missing secret {name}"))
     } else if value.contains(['\r', '\n', '\0']) {
-        Err(format!("Secret {name} invalide"))
+        Err(format!("Invalid secret {name}"))
     } else {
         Ok(value)
     }

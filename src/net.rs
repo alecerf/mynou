@@ -33,38 +33,38 @@ impl Url {
 
 pub fn parse_url(input: &str) -> Result<Url> {
     if input.len() > MAX_LINE || input.chars().any(|c| c.is_control()) {
-        return Err("URL trop longue ou caractères de contrôle".into());
+        return Err("URL is too long or contains control characters".into());
     }
     let (scheme, rest) = input
         .split_once("://")
-        .ok_or("URL absolue HTTP ou HTTPS requise")?;
+        .ok_or("An absolute HTTP or HTTPS URL is required")?;
     let scheme = scheme.to_ascii_lowercase();
     let default_port = match scheme.as_str() {
         "http" => 80,
         "https" => 443,
-        _ => return Err("Protocole URL non pris en charge".into()),
+        _ => return Err("Unsupported URL scheme".into()),
     };
     let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
     let authority = &rest[..end];
     if authority.is_empty() || authority.contains('@') || authority.contains('\\') {
-        return Err("Autorité URL invalide ; identifiants intégrés interdits".into());
+        return Err("Invalid URL authority; embedded credentials are forbidden".into());
     }
     let (host, port_text) = if let Some(ip) = authority.strip_prefix('[') {
-        let close = ip.find(']').ok_or("Adresse IPv6 URL invalide")?;
+        let close = ip.find(']').ok_or("Invalid IPv6 URL address")?;
         let host = &ip[..close];
         if !matches!(host.parse::<IpAddr>(), Ok(IpAddr::V6(_))) {
-            return Err("Adresse IPv6 URL invalide".into());
+            return Err("Invalid IPv6 URL address".into());
         }
         let tail = &ip[close + 1..];
         let port = if tail.is_empty() {
             None
         } else {
-            Some(tail.strip_prefix(':').ok_or("Port URL invalide")?)
+            Some(tail.strip_prefix(':').ok_or("Invalid URL port")?)
         };
         (host.to_owned(), port)
     } else {
         if authority.matches(':').count() > 1 {
-            return Err("Adresse IPv6 URL à entourer de crochets".into());
+            return Err("IPv6 URL addresses must be enclosed in brackets".into());
         }
         match authority.rsplit_once(':') {
             Some((host, port)) => (host.to_owned(), Some(port)),
@@ -83,17 +83,17 @@ pub fn parse_url(input: &str) -> Result<Url> {
                     && part.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
             }))
     {
-        return Err("Nom d’hôte URL invalide ; ASCII ou punycode requis".into());
+        return Err("Invalid URL hostname; ASCII or Punycode is required".into());
     }
     let port = match port_text {
         Some(text) if !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit()) => {
-            text.parse::<u16>().map_err(|_| "Port URL invalide")?
+            text.parse::<u16>().map_err(|_| "Invalid URL port")?
         }
-        Some(_) => return Err("Port URL invalide".into()),
+        Some(_) => return Err("Invalid URL port".into()),
         None => default_port,
     };
     if port == 0 {
-        return Err("Port URL nul interdit".into());
+        return Err("URL port zero is forbidden".into());
     }
     let suffix = rest[end..].split('#').next().unwrap_or_default();
     let suffix = if suffix.is_empty() {
@@ -113,14 +113,14 @@ pub fn parse_url(input: &str) -> Result<Url> {
                 || !bytes[i + 1].is_ascii_hexdigit()
                 || !bytes[i + 2].is_ascii_hexdigit()
             {
-                return Err("Échappement URL invalide".into());
+                return Err("Invalid URL escape".into());
             }
             path.push('%');
             path.push(bytes[i + 1] as char);
             path.push(bytes[i + 2] as char);
             i += 3;
         } else if b == b'\\' {
-            return Err("Antislash URL interdit".into());
+            return Err("Backslashes are forbidden in URLs".into());
         } else if b.is_ascii() && b != b' ' {
             path.push(b as char);
             i += 1;
@@ -199,13 +199,13 @@ impl HttpClient {
         body: &[u8],
     ) -> Result<Response> {
         if method.is_empty() || method.len() > 32 || !method.bytes().all(token_byte) {
-            return Err("Méthode HTTP invalide".into());
+            return Err("Invalid HTTP method".into());
         }
         if body.len() > self.max_body {
-            return Err("Corps HTTP envoyé au-delà de la limite".into());
+            return Err("HTTP request body exceeds the limit".into());
         }
         if headers.len() > 256 {
-            return Err("Trop d’en-têtes HTTP envoyés".into());
+            return Err("Too many HTTP request headers".into());
         }
         let mut header_size = 0usize;
         for (name, value) in headers {
@@ -213,9 +213,9 @@ impl HttpClient {
                 .checked_add(name.len())
                 .and_then(|size| size.checked_add(value.len()))
                 .and_then(|size| size.checked_add(4))
-                .ok_or("En-têtes HTTP envoyés trop grands")?;
+                .ok_or("HTTP request headers are too large")?;
             if header_size > MAX_HEADER - MAX_LINE - 512 {
-                return Err("En-têtes HTTP envoyés au-delà de la limite".into());
+                return Err("HTTP request headers exceed the limit".into());
             }
             validate_header(name, value)?;
             if matches!(
@@ -227,13 +227,13 @@ impl HttpClient {
                     | "proxy-authorization"
                     | "proxy-connection"
             ) {
-                return Err("En-tête HTTP de cadrage réservé".into());
+                return Err("Reserved HTTP framing header".into());
             }
         }
         let mut current = parse_url(url)?;
         let deadline = Instant::now()
             .checked_add(self.timeout)
-            .ok_or("Délai HTTP trop grand")?;
+            .ok_or("HTTP timeout is too large")?;
         let mut method = method.to_owned();
         let mut headers = headers.to_vec();
         let mut body = body;
@@ -246,17 +246,17 @@ impl HttpClient {
                 return Ok(response);
             };
             if hop == self.redirects {
-                return Err("Trop de redirections HTTP".into());
+                return Err("Too many HTTP redirects".into());
             }
             let next = resolve_redirect(&current, location)?;
             if current.scheme == "https" && next.scheme != "https" {
-                return Err("Redirection HTTPS vers HTTP refusée".into());
+                return Err("HTTPS to HTTP redirect rejected".into());
             }
             if current.origin() != next.origin() {
                 let changes_to_get = (response.status == 303 && method != "HEAD")
                     || (matches!(response.status, 301 | 302) && method == "POST");
                 if !body.is_empty() && !changes_to_get {
-                    return Err("Redirection d’un corps HTTP vers une autre origine refusée".into());
+                    return Err("Cross-origin redirect of an HTTP request body rejected".into());
                 }
                 headers.retain(|(name, _)| {
                     matches!(
@@ -281,7 +281,7 @@ impl HttpClient {
             }
             current = next;
         }
-        Err("Redirection HTTP impossible".into())
+        Err("Unable to follow HTTP redirect".into())
     }
 
     fn single_request(
@@ -300,23 +300,23 @@ impl HttpClient {
         let endpoint = proxy.as_ref().unwrap_or(url);
         let addresses = (endpoint.host.as_str(), endpoint.port)
             .to_socket_addrs()
-            .map_err(|_| "Résolution DNS impossible")?;
+            .map_err(|_| "Unable to resolve DNS")?;
         let mut connection = None;
         for address in addresses.take(16) {
             let remaining = deadline
                 .checked_duration_since(Instant::now())
                 .filter(|duration| !duration.is_zero())
-                .ok_or("Délai HTTP dépassé")?;
+                .ok_or("HTTP deadline exceeded")?;
             if let Ok(stream) = TcpStream::connect_timeout(&address, remaining) {
                 connection = Some(stream);
                 break;
             }
         }
-        let stream = connection.ok_or("Connexion HTTP impossible")?;
+        let stream = connection.ok_or("Unable to establish HTTP connection")?;
         stream
             .set_read_timeout(Some(self.timeout))
             .and_then(|()| stream.set_write_timeout(Some(self.timeout)))
-            .map_err(|_| "Configuration des délais réseau impossible")?;
+            .map_err(|_| "Unable to configure network timeouts")?;
         let _ = stream.set_nodelay(true);
         let mut stream = DeadlineStream::new(stream, deadline);
         if proxy.is_some() && url.scheme == "https" {
@@ -364,14 +364,14 @@ impl HttpClient {
             head.push_str("\r\n");
         }
         if head.len() > MAX_HEADER {
-            return Err("En-têtes HTTP envoyés au-delà de la limite".into());
+            return Err("HTTP request headers exceed the limit".into());
         }
         head.push_str("\r\n");
         transport
             .write_all(head.as_bytes())
             .and_then(|()| transport.write_all(body))
             .and_then(|()| transport.flush())
-            .map_err(|_| "Écriture HTTP impossible")?;
+            .map_err(|_| "Unable to write HTTP request")?;
         read_response(BufReader::new(transport), method == "HEAD", self.max_body)
     }
 }
@@ -409,10 +409,10 @@ fn environment_proxy(url: &Url) -> Result<Option<Url>> {
     if value.is_empty() {
         return Ok(None);
     }
-    let proxy = parse_url(&value).map_err(|_| "URL du proxy HTTP invalide")?;
+    let proxy = parse_url(&value).map_err(|_| "Invalid HTTP proxy URL")?;
     if proxy.scheme != "http" || proxy.path != "/" {
         return Err(
-            "Proxy : URL HTTP sans chemin requise ; TLS du proxy non pris en charge".into(),
+            "Proxy: an HTTP URL without a path is required; TLS to the proxy is unsupported".into(),
         );
     }
     Ok(Some(proxy))
@@ -494,13 +494,13 @@ fn connect_tunnel<R: Read + Write>(stream: &mut R, url: &Url) -> Result<()> {
     let request = format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n");
     stream
         .write_all(request.as_bytes())
-        .map_err(|_| "Écriture du tunnel HTTP impossible")?;
+        .map_err(|_| "Unable to write HTTP tunnel request")?;
     let mut reader = BufReader::new(stream);
     let mut budget = MAX_HEADER;
     let line = read_line(&mut reader, &mut budget)?;
     let mut fields = line.splitn(3, ' ');
     if !matches!(fields.next(), Some("HTTP/1.0" | "HTTP/1.1")) || fields.next() != Some("200") {
-        return Err("Le proxy a refusé le tunnel HTTPS".into());
+        return Err("Proxy rejected the HTTPS tunnel".into());
     }
     let headers = read_headers(&mut reader, &mut budget)?;
     if headers.contains_key("transfer-encoding")
@@ -509,7 +509,7 @@ fn connect_tunnel<R: Read + Write>(stream: &mut R, url: &Url) -> Result<()> {
             .is_some_and(|length| length != "0")
         || !reader.buffer().is_empty()
     {
-        return Err("Réponse de tunnel HTTP ambiguë".into());
+        return Err("Ambiguous HTTP tunnel response".into());
     }
     Ok(())
 }
@@ -535,7 +535,7 @@ impl DeadlineStream {
             .checked_duration_since(Instant::now())
             .filter(|duration| !duration.is_zero())
             .ok_or_else(|| {
-                std::io::Error::new(std::io::ErrorKind::TimedOut, "Délai réseau dépassé")
+                std::io::Error::new(std::io::ErrorKind::TimedOut, "Network deadline exceeded")
             })
     }
 }
@@ -596,7 +596,7 @@ fn validate_header(name: &str, value: &str) -> Result<()> {
         || !name.bytes().all(token_byte)
         || value.bytes().any(|b| (b < 32 && b != b'\t') || b == 127)
     {
-        return Err("En-tête HTTP invalide".into());
+        return Err("Invalid HTTP header".into());
     }
     Ok(())
 }
@@ -607,13 +607,13 @@ fn read_line<R: BufRead>(reader: &mut R, budget: &mut usize) -> Result<String> {
     let read = reader
         .take((limit + 1) as u64)
         .read_until(b'\n', &mut line)
-        .map_err(|_| "Lecture HTTP impossible ou délai dépassé")?;
+        .map_err(|_| "Unable to read HTTP response or deadline exceeded")?;
     if read == 0 || read > limit || !line.ends_with(b"\r\n") {
-        return Err("Ligne HTTP absente, trop longue ou invalide".into());
+        return Err("HTTP line is missing, too long or invalid".into());
     }
     *budget -= read;
     line.truncate(line.len() - 2);
-    String::from_utf8(line).map_err(|_| "En-tête HTTP non UTF-8".into())
+    String::from_utf8(line).map_err(|_| "HTTP header is not UTF-8".into())
 }
 
 fn read_headers<R: BufRead>(
@@ -626,7 +626,7 @@ fn read_headers<R: BufRead>(
         if line.is_empty() {
             return Ok(headers);
         }
-        let (name, value) = line.split_once(':').ok_or("En-tête HTTP sans séparateur")?;
+        let (name, value) = line.split_once(':').ok_or("HTTP header is missing a separator")?;
         validate_header(name, value)?;
         let name = name.to_ascii_lowercase();
         let value = value.trim_matches([' ', '\t']);
@@ -635,7 +635,7 @@ fn read_headers<R: BufRead>(
                 name.as_str(),
                 "content-length" | "transfer-encoding" | "location"
             ) {
-                return Err("En-tête HTTP de cadrage ambigu".into());
+                return Err("Ambiguous HTTP framing header".into());
             }
             existing.push_str(", ");
             existing.push_str(value);
@@ -643,7 +643,7 @@ fn read_headers<R: BufRead>(
             headers.insert(name, value.to_owned());
         }
     }
-    Err("Trop d’en-têtes HTTP".into())
+    Err("Too many HTTP headers".into())
 }
 
 fn read_response<R: BufRead>(mut reader: R, head_only: bool, max_body: usize) -> Result<Response> {
@@ -657,59 +657,59 @@ fn read_response<R: BufRead>(mut reader: R, head_only: bool, max_body: usize) ->
             || status_text.len() != 3
             || !status_text.bytes().all(|b| b.is_ascii_digit())
         {
-            return Err("Statut HTTP invalide".into());
+            return Err("Invalid HTTP status".into());
         }
-        let status: u16 = status_text.parse().map_err(|_| "Statut HTTP invalide")?;
+        let status: u16 = status_text.parse().map_err(|_| "Invalid HTTP status")?;
         if !(100..=599).contains(&status) || status == 101 {
-            return Err("Statut HTTP non pris en charge".into());
+            return Err("Unsupported HTTP status".into());
         }
         let headers = read_headers(&mut reader, &mut budget)?;
         if status < 200 {
             if interim == 4 {
-                return Err("Trop de réponses HTTP intermédiaires".into());
+                return Err("Too many informational HTTP responses".into());
             }
             continue;
         }
         if headers.contains_key("transfer-encoding") && headers.contains_key("content-length") {
-            return Err("Cadrage HTTP ambigu".into());
+            return Err("Ambiguous HTTP framing".into());
         }
         let body = if head_only || matches!(status, 204 | 304) {
             Vec::new()
         } else if let Some(encoding) = headers.get("transfer-encoding") {
             if !encoding.eq_ignore_ascii_case("chunked") {
-                return Err("Encodage HTTP de transfert non pris en charge".into());
+                return Err("Unsupported HTTP transfer encoding".into());
             }
             read_chunks(&mut reader, max_body)?
         } else if let Some(length) = headers.get("content-length") {
             if length.is_empty() || !length.bytes().all(|b| b.is_ascii_digit()) {
-                return Err("Longueur HTTP invalide".into());
+                return Err("Invalid HTTP content length".into());
             }
             let length = length
                 .parse::<usize>()
-                .map_err(|_| "Longueur HTTP excessive")?;
+                .map_err(|_| "HTTP content length exceeds the limit")?;
             if length > max_body {
-                return Err("Corps HTTP reçu au-delà de la limite".into());
+                return Err("HTTP response body exceeds the limit".into());
             }
             let mut body = vec![0; length];
             reader
                 .read_exact(&mut body)
-                .map_err(|_| "Corps HTTP incomplet")?;
+                .map_err(|_| "Incomplete HTTP body")?;
             body
         } else {
             let mut body = Vec::new();
             reader
                 .take(max_body.saturating_add(1) as u64)
                 .read_to_end(&mut body)
-                .map_err(|_| "Corps HTTP incomplet ou délai dépassé")?;
+                .map_err(|_| "Incomplete HTTP body or deadline exceeded")?;
             if body.len() > max_body {
-                return Err("Corps HTTP reçu au-delà de la limite".into());
+                return Err("HTTP response body exceeds the limit".into());
             }
             body
         };
         if let Some(encoding) = headers.get("content-encoding")
             && !encoding.eq_ignore_ascii_case("identity")
         {
-            return Err("Compression HTTP non prise en charge ; demander identity".into());
+            return Err("HTTP compression is unsupported; request identity encoding".into());
         }
         return Ok(Response {
             status,
@@ -717,7 +717,7 @@ fn read_response<R: BufRead>(mut reader: R, head_only: bool, max_body: usize) ->
             body,
         });
     }
-    Err("Réponse HTTP absente".into())
+    Err("Missing HTTP response".into())
 }
 
 fn read_chunks<R: BufRead>(reader: &mut R, max_body: usize) -> Result<Vec<u8>> {
@@ -727,9 +727,9 @@ fn read_chunks<R: BufRead>(reader: &mut R, max_body: usize) -> Result<Vec<u8>> {
         let line = read_line(reader, &mut framing_budget)?;
         let size = line.split(';').next().unwrap_or_default();
         if size.is_empty() || size.len() > 16 || !size.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err("Taille de bloc HTTP invalide".into());
+            return Err("Invalid HTTP chunk size".into());
         }
-        let size = usize::from_str_radix(size, 16).map_err(|_| "Bloc HTTP excessif")?;
+        let size = usize::from_str_radix(size, 16).map_err(|_| "HTTP chunk exceeds the limit")?;
         if size == 0 {
             let trailers = read_headers(reader, &mut framing_budget)?;
             if trailers.keys().any(|name| {
@@ -738,28 +738,28 @@ fn read_chunks<R: BufRead>(reader: &mut R, max_body: usize) -> Result<Vec<u8>> {
                     "content-length" | "transfer-encoding" | "host"
                 )
             }) {
-                return Err("En-tête terminal HTTP de cadrage interdit".into());
+                return Err("HTTP framing trailer is forbidden".into());
             }
             return Ok(body);
         }
-        let new_len = body.len().checked_add(size).ok_or("Corps HTTP excessif")?;
+        let new_len = body.len().checked_add(size).ok_or("HTTP body exceeds the limit")?;
         if new_len > max_body {
-            return Err("Corps HTTP reçu au-delà de la limite".into());
+            return Err("HTTP response body exceeds the limit".into());
         }
         let start = body.len();
         body.resize(new_len, 0);
         reader
             .read_exact(&mut body[start..])
-            .map_err(|_| "Bloc HTTP incomplet")?;
+            .map_err(|_| "Incomplete HTTP chunk")?;
         let mut crlf = [0; 2];
         reader
             .read_exact(&mut crlf)
-            .map_err(|_| "Bloc HTTP incomplet")?;
+            .map_err(|_| "Incomplete HTTP chunk")?;
         if crlf != *b"\r\n" {
-            return Err("Terminaison de bloc HTTP invalide".into());
+            return Err("Invalid HTTP chunk terminator".into());
         }
     }
-    Err("Trop de blocs HTTP".into())
+    Err("Too many HTTP chunks".into())
 }
 
 fn resolve_redirect(base: &Url, location: &str) -> Result<Url> {
@@ -978,7 +978,7 @@ mod tests {
             client
                 .request("GET\r\nINJECT", "http://127.0.0.1:1/", &[], &[])
                 .unwrap_err()
-                .contains("Méthode")
+                .contains("HTTP method")
         );
         let error = client
             .request(
@@ -988,7 +988,7 @@ mod tests {
                 &[],
             )
             .unwrap_err();
-        assert!(error.contains("En-tête"));
+        assert!(error.contains("HTTP header"));
         assert!(!error.contains("secret"));
     }
 

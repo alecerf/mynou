@@ -9,7 +9,7 @@ use std::{
 pub fn decode_peers(data: &[u8], ipv6: bool) -> Result<Vec<SocketAddr>> {
     let width = if ipv6 { 18 } else { 6 };
     if !data.len().is_multiple_of(width) || data.len() / width > 10_000 {
-        return Err("Liste de pairs compacte invalide".into());
+        return Err("Invalid compact peer list".into());
     }
     let mut out = Vec::new();
     for p in data.chunks_exact(width) {
@@ -138,23 +138,23 @@ pub fn query_url(url: &str, request: &TrackerRequest<'_>) -> String {
 
 pub fn tracker(url: &str, request: &TrackerRequest<'_>) -> Result<TrackerReply> {
     if url.len() > 8192 || url.chars().any(char::is_control) {
-        return Err("URL de tracker excessive ou caractères de contrôle".into());
+        return Err("Tracker URL is too long or contains control characters".into());
     }
     if request.port == 0 {
-        return Err("Annonce tracker : port nul interdit".into());
+        return Err("Tracker announcement cannot use port zero".into());
     }
     if url.starts_with("udp://") {
         return udp_tracker(url, request);
     }
     if !url.starts_with("http://") && !url.starts_with("https://") {
-        return Err("Protocole de tracker non pris en charge".into());
+        return Err("Unsupported tracker protocol".into());
     }
     let response = crate::net::HttpClient::new()
         .with_timeout(Duration::from_secs(5))
         .with_max_body(1024 * 1024)
         .get(&query_url(url, request))?;
     if response.status != 200 {
-        return Err("Le tracker a refusé la requête".into());
+        return Err("Tracker rejected request".into());
     }
     let value = crate::bencode::parse(&response.body)?;
     parse_tracker_reply(&value)
@@ -162,17 +162,17 @@ pub fn tracker(url: &str, request: &TrackerRequest<'_>) -> Result<TrackerReply> 
 
 fn parse_tracker_reply(value: &Value) -> Result<TrackerReply> {
     if !matches!(value, Value::Dict(_)) {
-        return Err("Réponse de tracker : dictionnaire attendu".into());
+        return Err("Tracker response must be a dictionary".into());
     }
     if field(value, b"failure reason").is_some() {
-        return Err("Le tracker a refusé l'annonce".into());
+        return Err("Tracker rejected announcement".into());
     }
     let seconds = |key: &[u8]| -> Result<Option<u64>> {
         match field(value, key) {
             Some(Value::Int(n)) => u64::try_from(*n)
                 .map(Some)
-                .map_err(|_| "Intervalle de tracker négatif".into()),
-            Some(_) => Err("Intervalle de tracker invalide".into()),
+                .map_err(|_| "Negative tracker interval".into()),
+            Some(_) => Err("Invalid tracker interval".into()),
             None => Ok(None),
         }
     };
@@ -183,7 +183,7 @@ fn parse_tracker_reply(value: &Value) -> Result<TrackerReply> {
         peers.extend(decode_peers(p, false)?);
     } else if let Some(Value::List(list)) = field(value, b"peers") {
         if list.len() > 10_000 {
-            return Err("Trop de pairs du tracker".into());
+            return Err("Too many tracker peers".into());
         }
         for p in list {
             let ip = value_bytes(field(p, b"ip"))
@@ -202,12 +202,12 @@ fn parse_tracker_reply(value: &Value) -> Result<TrackerReply> {
             }
         }
     } else if field(value, b"peers").is_some() {
-        return Err("Liste de pairs du tracker invalide".into());
+        return Err("Invalid tracker peer list".into());
     }
     if let Some(p) = value_bytes(field(value, b"peers6")) {
         peers.extend(decode_peers(p, true)?);
     } else if field(value, b"peers6").is_some() {
-        return Err("Liste de pairs IPv6 du tracker invalide".into());
+        return Err("Invalid tracker IPv6 peer list".into());
     }
     peers.sort_unstable();
     peers.dedup();
@@ -222,15 +222,15 @@ fn udp_exchange(socket: &UdpSocket, packet: &[u8], action: u32, tx: u32) -> Resu
     for _ in 0..2 {
         socket
             .send(packet)
-            .map_err(|_| "Envoi UDP au tracker impossible")?;
+            .map_err(|_| "Could not send UDP tracker request")?;
         match socket.recv(&mut buf) {
             Ok(n) if n >= 8 && buf[4..8] == tx.to_be_bytes() => {
-                if u32::from_be_bytes(buf[..4].try_into().map_err(|_| "Réponse UDP invalide")?) == 3
+                if u32::from_be_bytes(buf[..4].try_into().map_err(|_| "Invalid UDP response")?) == 3
                 {
-                    return Err("Le tracker UDP a refusé l'annonce".into());
+                    return Err("UDP tracker rejected announcement".into());
                 }
                 if buf[..4] != action.to_be_bytes() {
-                    return Err("Réponse UDP de tracker inattendue".into());
+                    return Err("Unexpected UDP tracker response".into());
                 }
                 return Ok(buf[..n].to_vec());
             }
@@ -238,31 +238,31 @@ fn udp_exchange(socket: &UdpSocket, packet: &[u8], action: u32, tx: u32) -> Resu
             Err(_) => continue,
         }
     }
-    Err("Le tracker UDP ne répond pas".into())
+    Err("UDP tracker did not respond".into())
 }
 fn udp_tracker(url: &str, request: &TrackerRequest<'_>) -> Result<TrackerReply> {
-    let rest = url.strip_prefix("udp://").ok_or("Tracker UDP invalide")?;
-    let authority = rest.split('/').next().ok_or("Tracker UDP invalide")?;
+    let rest = url.strip_prefix("udp://").ok_or("Invalid UDP tracker")?;
+    let authority = rest.split('/').next().ok_or("Invalid UDP tracker")?;
     if authority.contains('@') {
-        return Err("Adresse UDP de tracker invalide".into());
+        return Err("Invalid UDP tracker address".into());
     }
     let address = authority
         .to_socket_addrs()
-        .map_err(|_| "Résolution du tracker impossible")?
+        .map_err(|_| "Could not resolve tracker address")?
         .next()
-        .ok_or("Tracker sans adresse")?;
+        .ok_or("Tracker has no address")?;
     let socket = UdpSocket::bind(if address.is_ipv4() {
         "0.0.0.0:0"
     } else {
         "[::]:0"
     })
-    .map_err(|_| "Création UDP impossible")?;
+    .map_err(|_| "Could not create UDP socket")?;
     socket
         .connect(address)
-        .map_err(|_| "Connexion UDP au tracker impossible")?;
+        .map_err(|_| "Could not connect to UDP tracker")?;
     socket
         .set_read_timeout(Some(Duration::from_secs(2)))
-        .map_err(|_| "Délai UDP impossible")?;
+        .map_err(|_| "Could not configure UDP timeout")?;
     let tx = nonce()?;
     let mut connect = Vec::with_capacity(16);
     connect.extend_from_slice(&0x41727101980u64.to_be_bytes());
@@ -270,7 +270,7 @@ fn udp_tracker(url: &str, request: &TrackerRequest<'_>) -> Result<TrackerReply> 
     connect.extend_from_slice(&tx.to_be_bytes());
     let response = udp_exchange(&socket, &connect, 0, tx)?;
     if response.len() != 16 {
-        return Err("Réponse UDP de connexion invalide".into());
+        return Err("Invalid UDP connection response".into());
     }
     let tx = nonce()?;
     let mut announce = Vec::with_capacity(98);
@@ -289,12 +289,12 @@ fn udp_tracker(url: &str, request: &TrackerRequest<'_>) -> Result<TrackerReply> 
     announce.extend_from_slice(&request.port.to_be_bytes());
     let response = udp_exchange(&socket, &announce, 1, tx)?;
     if response.len() < 20 {
-        return Err("Réponse UDP d'annonce tronquée".into());
+        return Err("Truncated UDP announcement response".into());
     }
     let interval = u32::from_be_bytes(
         response[8..12]
             .try_into()
-            .map_err(|_| "Intervalle UDP tronqué")?,
+            .map_err(|_| "Truncated UDP interval")?,
     );
     let peers = decode_peers(&response[20..], address.is_ipv6())?;
     Ok(TrackerReply {
@@ -312,10 +312,10 @@ pub fn dht_lookup(
     stop: &AtomicBool,
     seeds: &[SocketAddr],
 ) -> Result<Vec<SocketAddr>> {
-    let socket = UdpSocket::bind("0.0.0.0:0").map_err(|_| "Création DHT impossible")?;
+    let socket = UdpSocket::bind("0.0.0.0:0").map_err(|_| "Could not create DHT socket")?;
     socket
         .set_read_timeout(Some(Duration::from_millis(250)))
-        .map_err(|_| "Délai DHT impossible")?;
+        .map_err(|_| "Could not configure DHT timeout")?;
     let id = crate::crypto::random_bytes::<20>()?;
     let mut nodes: Vec<SocketAddr> = seeds.iter().copied().filter(SocketAddr::is_ipv4).collect();
     if seeds.is_empty() {
@@ -357,7 +357,7 @@ pub fn dht_lookup(
         ]);
         socket
             .send_to(&crate::bencode::encode(&query), target)
-            .map_err(|_| "Envoi de requête DHT impossible")?;
+            .map_err(|_| "Could not send DHT request")?;
         let mut buf = [0; 4096];
         let (n, from) = match socket.recv_from(&mut buf) {
             Ok(v) => v,
@@ -451,7 +451,7 @@ mod tests {
     #[test]
     fn compact_peers_are_bounded() {
         assert_eq!(
-            decode_peers(&[127, 0, 0, 1, 0x1a, 0xe1], false).expect("pair")[0].port(),
+            decode_peers(&[127, 0, 0, 1, 0x1a, 0xe1], false).expect("peer")[0].port(),
             6881
         );
         assert!(decode_peers(&[1], false).is_err());
@@ -465,16 +465,16 @@ mod tests {
     #[test]
     fn real_udp_dht_lookup_and_authenticated_announce() {
         for announce in [false, true] {
-            let server = UdpSocket::bind("127.0.0.1:0").expect("DHT locale");
+            let server = UdpSocket::bind("127.0.0.1:0").expect("local DHT");
             server
                 .set_read_timeout(Some(Duration::from_secs(2)))
-                .expect("délai");
-            let address = server.local_addr().expect("adresse");
+                .expect("timeout");
+            let address = server.local_addr().expect("address");
             let hash = [19; 20];
             let worker = std::thread::spawn(move || {
                 let mut packet = [0; 4096];
                 let (n, peer) = server.recv_from(&mut packet).expect("get_peers");
-                let query = crate::bencode::parse(&packet[..n]).expect("requête");
+                let query = crate::bencode::parse(&packet[..n]).expect("request");
                 assert_eq!(
                     value_bytes(field(&query, b"q")),
                     Some(b"get_peers".as_slice())
@@ -501,10 +501,10 @@ mod tests {
                 ]);
                 server
                     .send_to(&crate::bencode::encode(&response), peer)
-                    .expect("réponse");
+                    .expect("response");
                 if announce {
                     let (n, _) = server.recv_from(&mut packet).expect("announce_peer");
-                    let query = crate::bencode::parse(&packet[..n]).expect("annonce");
+                    let query = crate::bencode::parse(&packet[..n]).expect("announcement");
                     assert_eq!(
                         value_bytes(field(&query, b"q")),
                         Some(b"announce_peer".as_slice())
@@ -516,9 +516,9 @@ mod tests {
                 }
             });
             let peers = dht_lookup(&hash, 6881, announce, &AtomicBool::new(false), &[address])
-                .expect("découverte");
-            assert_eq!(peers, vec!["127.0.0.1:6881".parse().expect("pair")]);
-            worker.join().expect("serveur");
+                .expect("discovery");
+            assert_eq!(peers, vec!["127.0.0.1:6881".parse().expect("peer")]);
+            worker.join().expect("server");
         }
     }
 
@@ -579,7 +579,7 @@ mod tests {
                         {
                             std::thread::sleep(Duration::from_millis(1))
                         }
-                        Err(error) => panic!("Tracker local absent : {error}"),
+                        Err(error) => panic!("Local tracker unavailable: {error}"),
                     }
                 };
                 stream
@@ -714,8 +714,8 @@ mod tests {
         let server = UdpSocket::bind("127.0.0.1:0").expect("tracker");
         server
             .set_read_timeout(Some(Duration::from_secs(2)))
-            .expect("délai");
-        let address = server.local_addr().expect("adresse");
+            .expect("timeout");
+        let address = server.local_addr().expect("address");
         let hash = [7; 20];
         let id = [9; 20];
         let worker = std::thread::spawn(move || {
@@ -755,9 +755,9 @@ mod tests {
                     event: TrackerEvent::Started
                 }
             )
-            .expect("pairs")
+            .expect("peers")
             .peers,
-            vec!["127.0.0.1:6881".parse().expect("pair")]
+            vec!["127.0.0.1:6881".parse().expect("peer")]
         );
         worker.join().expect("worker");
     }

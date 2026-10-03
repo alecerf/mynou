@@ -18,14 +18,14 @@ impl Scratch {
     fn new() -> Self {
         let n = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .expect("heure")
+            .expect("time")
             .as_nanos();
         let path = std::env::temp_dir().join(format!(
             "mynou-torrent-{}-{n}-{}",
             std::process::id(),
             SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ));
-        fs::create_dir_all(&path).expect("répertoire");
+        fs::create_dir_all(&path).expect("directory");
         Self(path)
     }
 }
@@ -66,7 +66,7 @@ fn fixture(data: &[u8], v1: bool, v2: bool) -> (Vec<u8>, String) {
 }
 fn fixture_with_piece(data: &[u8], v1: bool, v2: bool, piece: usize) -> (Vec<u8>, String) {
     let mut info = BTreeMap::new();
-    info.insert(b"name".to_vec(), b("film.bin"));
+    info.insert(b"name".to_vec(), b("movie.bin"));
     info.insert(b"piece length".to_vec(), Value::Int(piece as i64));
     info.insert(b"private".to_vec(), Value::Int(1));
     if v1 {
@@ -101,7 +101,7 @@ fn fixture_with_piece(data: &[u8], v1: bool, v2: bool, piece: usize) -> (Vec<u8>
         info.insert(
             b"file tree".to_vec(),
             d(&[(
-                b"film.bin",
+                b"movie.bin",
                 d(&[(
                     b"",
                     d(&[
@@ -146,13 +146,13 @@ fn config(root: &Path, seed: bool) -> DownloadConfig {
 fn ready(client: &Client, id: &str) -> DownloadStatus {
     let start = Instant::now();
     loop {
-        let status = client.check(id).expect("statut");
+        let status = client.check(id).expect("status");
         if status.ready {
             return status;
         }
         assert!(
             start.elapsed() < Duration::from_secs(15),
-            "Téléchargement non prêt: {} / {}",
+            "Download is not ready: {} / {}",
             status.progress,
             status.message
         );
@@ -170,7 +170,7 @@ fn transfer(v1: bool, v2: bool) {
     let seed_root = scratch.0.join("seeder");
     fs::create_dir_all(seed_root.join("downloads").join(&id)).expect("seed dir");
     fs::write(
-        seed_root.join("downloads").join(&id).join("film.bin"),
+        seed_root.join("downloads").join(&id).join("movie.bin"),
         &data,
     )
     .expect("seed");
@@ -192,12 +192,12 @@ fn transfer(v1: bool, v2: bool) {
     assert_eq!(status.id, id);
     let status = ready(&client, &id);
     assert_eq!(status.files.len(), 1);
-    assert_eq!(fs::read(&status.files[0]).expect("données"), data);
+    assert_eq!(fs::read(&status.files[0]).expect("data"), data);
     drop(client);
     drop(seeder);
-    let resumed = Client::open(config(&download_root, false)).expect("reprise");
+    let resumed = Client::open(config(&download_root, false)).expect("resume");
     let status = ready(&resumed, &id);
-    assert_eq!(fs::read(&status.files[0]).expect("reprise données"), data);
+    assert_eq!(fs::read(&status.files[0]).expect("resumed data"), data);
 }
 #[test]
 fn v1_magnet_real_transfer_and_offline_resume() {
@@ -225,7 +225,7 @@ fn v2_large_pieces_and_leaf_hash_proofs_use_the_file_merkle_root() {
     let source = scratch.0.join("v2.torrent");
     fs::write(&source, &torrent).expect("torrent");
     let root = scratch.0.join("seed");
-    let file = root.join("downloads").join(&id).join("film.bin");
+    let file = root.join("downloads").join(&id).join("movie.bin");
     fs::create_dir_all(file.parent().expect("parent")).expect("dir");
     fs::write(file, &data).expect("data");
     let seed = Client::open(config(&root, true)).expect("seed");
@@ -245,7 +245,7 @@ fn v2_large_pieces_and_leaf_hash_proofs_use_the_file_merkle_root() {
     let file_root = meta
         .get(b"info")
         .and_then(|v| v.get(b"file tree"))
-        .and_then(|v| v.get(b"film.bin"))
+        .and_then(|v| v.get(b"movie.bin"))
         .and_then(|v| v.get(b""))
         .and_then(|v| v.get(b"pieces root"))
         .and_then(Value::as_bytes)
@@ -326,15 +326,15 @@ fn pending_magnet_and_cancel_are_durable_and_resume_on_ensure() {
     client.cancel(&id).expect("pause");
     assert_eq!(
         client.check(&id).expect("paused").message,
-        "Téléchargement suspendu"
+        "Download paused"
     );
     drop(client);
     let client = Client::open(config(&scratch.0, false)).expect("restart");
     assert_eq!(
-        client.check(&id).expect("queue durable").message,
-        "Téléchargement suspendu"
+        client.check(&id).expect("durable queue").message,
+        "Download paused"
     );
-    assert_eq!(client.resume(&id).expect("resume cached").id, id);
+    assert_eq!(client.resume(&id).expect("cached resume").id, id);
     assert!(
         !scratch
             .0
@@ -357,7 +357,7 @@ fn native_client_drop_cancels_a_slow_incoming_handshake() {
     drop(client);
     assert!(
         started.elapsed() < Duration::from_secs(1),
-        "L'arrêt doit interrompre le handshake incomplet"
+        "Stopping must interrupt the incomplete handshake"
     );
 }
 
@@ -375,7 +375,7 @@ fn symlink_download_and_symlink_metadata_are_rejected() {
     fs::create_dir_all(&dir).expect("dir");
     let outside = scratch.0.join("outside");
     fs::write(&outside, b"protected").expect("outside");
-    symlink(&outside, dir.join("film.bin")).expect("symlink");
+    symlink(&outside, dir.join("movie.bin")).expect("symlink");
     let client = Client::open(config(&root, false)).expect("client");
     client
         .ensure(source.to_str().expect("path"))
@@ -399,22 +399,22 @@ fn v1_multifile_utf8_and_empty_file_transfer() {
     let files = Value::List(vec![
         d(&[
             (b"length", Value::Int(a.len() as i64)),
-            (b"path", Value::List(vec![b("été.mkv")])),
+            (b"path", Value::List(vec![b("café.mkv")])),
         ]),
         d(&[
             (b"length", Value::Int(0)),
-            (b"path", Value::List(vec![b("vide.bin")])),
+            (b"path", Value::List(vec![b("empty.bin")])),
         ]),
         d(&[
             (b"length", Value::Int(bdata.len() as i64)),
             (
                 b"path",
-                Value::List(vec![b("sous-dossier"), b("audio.bin")]),
+                Value::List(vec![b("subfolder"), b("audio.bin")]),
             ),
         ]),
     ]);
     let info = d(&[
-        (b"name", b("médias")),
+        (b"name", b("media-🎬")),
         (b"piece length", Value::Int(BLOCK as i64)),
         (b"private", Value::Int(1)),
         (b"files", files),
@@ -427,11 +427,11 @@ fn v1_multifile_utf8_and_empty_file_transfer() {
     let source = scratch.0.join("multi.torrent");
     fs::write(&source, encode(&d(&[(b"info", info)]))).expect("torrent");
     let seed_root = scratch.0.join("seed");
-    let base = seed_root.join("downloads").join(&id).join("médias");
-    fs::create_dir_all(base.join("sous-dossier")).expect("dirs");
-    fs::write(base.join("été.mkv"), &a).expect("a");
-    fs::write(base.join("vide.bin"), []).expect("vide");
-    fs::write(base.join("sous-dossier/audio.bin"), &bdata).expect("b");
+    let base = seed_root.join("downloads").join(&id).join("media-🎬");
+    fs::create_dir_all(base.join("subfolder")).expect("dirs");
+    fs::write(base.join("café.mkv"), &a).expect("a");
+    fs::write(base.join("empty.bin"), []).expect("empty");
+    fs::write(base.join("subfolder/audio.bin"), &bdata).expect("b");
     let seed = Client::open(config(&seed_root, true)).expect("seed");
     seed.ensure(source.to_str().expect("path")).expect("ensure");
     ready(&seed, &id);
@@ -444,14 +444,14 @@ fn v1_multifile_utf8_and_empty_file_transfer() {
         .expect("magnet");
     let result = ready(&client, &id);
     assert_eq!(result.files.len(), 3);
-    let target = scratch.0.join("target/downloads").join(id).join("médias");
-    assert_eq!(fs::read(target.join("été.mkv")).expect("a"), a);
+    let target = scratch.0.join("target/downloads").join(id).join("media-🎬");
+    assert_eq!(fs::read(target.join("café.mkv")).expect("a"), a);
     assert_eq!(
-        fs::metadata(target.join("vide.bin")).expect("vide").len(),
+        fs::metadata(target.join("empty.bin")).expect("empty").len(),
         0
     );
     assert_eq!(
-        fs::read(target.join("sous-dossier/audio.bin")).expect("b"),
+        fs::read(target.join("subfolder/audio.bin")).expect("b"),
         bdata
     );
 }

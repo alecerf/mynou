@@ -13,7 +13,7 @@ impl Fixture {
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
-        fs::create_dir(&dir).expect("répertoire de test");
+        fs::create_dir(&dir).expect("test directory");
         let path = dir.join(name);
         fs::write(&path, data).expect("fixture");
         Self(path)
@@ -60,9 +60,9 @@ fn wave_format() -> Vec<u8> {
 #[test]
 fn bundled_mp4_is_analyzed_without_ffprobe() {
     let media = analyze(&Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/demo.mp4"))
-        .expect("MP4 exemple");
+        .expect("example MP4");
     assert_eq!(media.container, "mp4");
-    assert_eq!(media.title, "Démo Mynou");
+    assert_eq!(media.title, "Mynou Demo!");
     assert_eq!(media.title_source, "metadata");
     assert_eq!(media.date.as_deref(), Some("2026-10-02"));
     assert_eq!(media.duration_seconds, Some(2.0));
@@ -82,7 +82,7 @@ fn bundled_mp4_is_analyzed_without_ffprobe() {
 #[test]
 fn mp4_extended_mdat_skips_four_gibibytes() {
     let source =
-        fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/demo.mp4")).expect("exemple");
+        fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/demo.mp4")).expect("example");
     let mut at = 0;
     let mut ftyp = Vec::new();
     let mut moov = Vec::new();
@@ -97,7 +97,7 @@ fn mp4_extended_mdat_skips_four_gibibytes() {
     }
     assert!(!moov.is_empty());
     let fixture = Fixture::new("sparse.mp4", &[]);
-    let mut file = File::create(fixture.path()).expect("fixture creuse");
+    let mut file = File::create(fixture.path()).expect("sparse fixture");
     file.write_all(&ftyp).unwrap();
     file.write_all(&1_u32.to_be_bytes()).unwrap();
     file.write_all(b"mdat").unwrap();
@@ -107,9 +107,9 @@ fn mp4_extended_mdat_skips_four_gibibytes() {
         .unwrap();
     file.write_all(&moov).unwrap();
     drop(file);
-    let result = analyze(fixture.path()).expect("mdat doit être sauté");
+    let result = analyze(fixture.path()).expect("mdat must be skipped");
     assert!(result.size_bytes > 4_u64 * 1024 * 1024 * 1024);
-    assert_eq!(result.title, "Démo Mynou");
+    assert_eq!(result.title, "Mynou Demo!");
     assert_eq!(result.video_streams[0].width, Some(640));
 }
 
@@ -147,7 +147,7 @@ fn malformed_mp4_lengths_are_rejected() {
 fn wave_metadata_and_unknown_fields() {
     let info = [
         b"INFO".as_slice(),
-        &riff_chunk(b"INAM", b"Titre local\0"),
+        &riff_chunk(b"INAM", b"Local title\0"),
         &riff_chunk(b"ICRD", b"2026-10-03\0"),
     ]
     .concat();
@@ -159,17 +159,17 @@ fn wave_metadata_and_unknown_fields() {
     .concat();
     let fixture = Fixture::new("test.wav", &riff(b"WAVE", &children));
     let media = analyze(fixture.path()).expect("WAV");
-    assert_eq!(media.title, "Titre local");
+    assert_eq!(media.title, "Local title");
     assert_eq!(media.date.as_deref(), Some("2026-10-03"));
     assert_eq!(media.duration_seconds, Some(1.0));
     assert_eq!(media.bit_rate, Some(128_000));
     assert_eq!(media.audio_streams[0].codec, "pcm_s16le");
     let fixture = Fixture::new(
-        "nom_fichier.wav",
+        "file_name.wav",
         &riff(b"WAVE", &riff_chunk(b"fmt ", &wave_format())),
     );
     let empty = analyze(fixture.path()).unwrap();
-    assert_eq!(empty.title, "nom fichier");
+    assert_eq!(empty.title, "file name");
     assert_eq!(empty.date, None);
     assert_eq!(empty.duration_seconds, None);
 }
@@ -224,7 +224,7 @@ fn flac_streaminfo_and_comments() {
     stream[10..18].copy_from_slice(&packed.to_be_bytes());
     let mut comments = vec![0, 0, 0, 0];
     comments.extend_from_slice(&2_u32.to_le_bytes());
-    for item in ["TITLE=Rust sans dépendance", "DATE=2026"] {
+    for item in ["TITLE=Dependency-free Rust", "DATE=2026"] {
         comments.extend_from_slice(&(item.len() as u32).to_le_bytes());
         comments.extend_from_slice(item.as_bytes());
     }
@@ -236,7 +236,7 @@ fn flac_streaminfo_and_comments() {
     .concat();
     let fixture = Fixture::new("test.flac", &bytes);
     let media = analyze(fixture.path()).unwrap();
-    assert_eq!(media.title, "Rust sans dépendance");
+    assert_eq!(media.title, "Dependency-free Rust");
     assert_eq!(media.duration_seconds, Some(2.0));
     assert_eq!(
         (
@@ -271,7 +271,7 @@ fn ebml_fixture(doctype: &str, unknown_segment: bool) -> Vec<u8> {
         &[
             element(0x2ad7b1, &[0x0f, 0x42, 0x40]),
             element(0x4489, &2_000_f64.to_be_bytes()),
-            element(0x7ba9, "Démo EBML".as_bytes()),
+            element(0x7ba9, "EBML Demo".as_bytes()),
         ]
         .concat(),
     );
@@ -297,7 +297,7 @@ fn ebml_fixture(doctype: &str, unknown_segment: bool) -> Vec<u8> {
         &[
             element(0x83, &[2]),
             element(0x86, b"A_OPUS"),
-            element(0x22b59c, b"fra"),
+            element(0x22b59c, b"eng"),
             element(
                 0xe1,
                 &[
@@ -323,7 +323,7 @@ fn matroska_webm_known_and_unknown_segment_sizes() {
         let fixture = Fixture::new("test.mkv", &ebml_fixture(doctype, unknown));
         let media = analyze(fixture.path()).unwrap();
         assert_eq!(media.container, doctype);
-        assert_eq!(media.title, "Démo EBML");
+        assert_eq!(media.title, "EBML Demo");
         assert_eq!(media.duration_seconds, Some(2.0));
         assert_eq!(
             (
@@ -334,7 +334,7 @@ fn matroska_webm_known_and_unknown_segment_sizes() {
             (Some(1_280), Some(720), Some(25.0))
         );
         assert_eq!(media.audio_streams[0].codec, "opus");
-        assert_eq!(media.audio_streams[0].language.as_deref(), Some("fra"));
+        assert_eq!(media.audio_streams[0].language.as_deref(), Some("eng"));
         assert_eq!(media.audio_streams[0].sample_rate, Some(48_000));
     }
     let fixture = Fixture::new("bad.mkv", &ebml_fixture("other", false));
@@ -382,7 +382,7 @@ fn mp3_id3_utf8_and_xing_duration() {
         ]
     }
     let mut tags = Vec::new();
-    for (kind, value) in [(b"TIT2", "Démo MP3"), (b"TDRC", "2026-10-03")] {
+    for (kind, value) in [(b"TIT2", "MP3 Demo – UTF-8"), (b"TDRC", "2026-10-03")] {
         tags.extend_from_slice(kind);
         tags.extend_from_slice(&safe_integer(value.len() + 1));
         tags.extend_from_slice(&[0, 0, 3]);
@@ -404,7 +404,7 @@ fn mp3_id3_utf8_and_xing_duration() {
     data.extend_from_slice(&frame);
     let fixture = Fixture::new("test.mp3", &data);
     let media = analyze(fixture.path()).unwrap();
-    assert_eq!(media.title, "Démo MP3");
+    assert_eq!(media.title, "MP3 Demo – UTF-8");
     assert_eq!(media.date.as_deref(), Some("2026-10-03"));
     assert_eq!(media.audio_streams[0].codec, "mp3");
     assert_eq!(

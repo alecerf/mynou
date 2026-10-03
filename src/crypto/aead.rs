@@ -19,7 +19,7 @@ impl ChaCha20Poly1305 {
         let total = plaintext
             .len()
             .checked_add(16)
-            .ok_or("AEAD : taille de sortie excessive")?;
+            .ok_or("AEAD: output size exceeds the limit")?;
         let mut ciphertext = Vec::with_capacity(total);
         ciphertext.extend_from_slice(plaintext);
         chacha_xor(&self.key, &nonce, &mut ciphertext);
@@ -31,13 +31,13 @@ impl ChaCha20Poly1305 {
     /// Authenticate before decrypting; errors never release unauthenticated data.
     pub fn open(&self, nonce: [u8; 12], aad: &[u8], ciphertext_and_tag: &[u8]) -> Result<Vec<u8>> {
         if ciphertext_and_tag.len() < 16 {
-            return Err("AEAD : étiquette d’authentification absente".into());
+            return Err("AEAD: missing authentication tag".into());
         }
         let (ciphertext, tag) = ciphertext_and_tag.split_at(ciphertext_and_tag.len() - 16);
         check_length(ciphertext.len())?;
         let expected = authenticate(&self.key, &nonce, aad, ciphertext);
         if !super::constant_time_eq(&expected, tag) {
-            return Err("AEAD : authentification invalide".into());
+            return Err("AEAD: authentication failed".into());
         }
         let mut plaintext = ciphertext.to_vec();
         chacha_xor(&self.key, &nonce, &mut plaintext);
@@ -48,7 +48,7 @@ impl ChaCha20Poly1305 {
 fn check_length(length: usize) -> Result<()> {
     // Counter 0 is reserved for the Poly1305 key; data uses 1 through 2^32 - 1.
     if (length as u128) > u128::from(u32::MAX) * 64 {
-        Err("ChaCha20 : espace de compteurs épuisé".into())
+        Err("ChaCha20: counter space exhausted".into())
     } else {
         Ok(())
     }
@@ -116,13 +116,13 @@ struct Poly1305 {
 
 fn load32(bytes: &[u8]) -> u64 {
     u64::from(u32::from_le_bytes(
-        bytes[..4].try_into().expect("mot Poly1305"),
+        bytes[..4].try_into().expect("Poly1305 word"),
     ))
 }
 
 impl Poly1305 {
     fn new(key: &[u8; 32]) -> Self {
-        let mut r_bytes: [u8; 16] = key[..16].try_into().expect("clé Poly1305");
+        let mut r_bytes: [u8; 16] = key[..16].try_into().expect("Poly1305 key");
         for i in [3, 7, 11, 15] {
             r_bytes[i] &= 15;
         }
@@ -240,7 +240,7 @@ impl Poly1305 {
 
 fn authenticate(key: &[u8; 32], nonce: &[u8; 12], aad: &[u8], ciphertext: &[u8]) -> [u8; 16] {
     let first_block = chacha_block(key, nonce, 0);
-    let poly_key = first_block[..32].try_into().expect("clé unique Poly1305");
+    let poly_key = first_block[..32].try_into().expect("Poly1305 one-time key");
     let mut poly = Poly1305::new(&poly_key);
     poly.update(aad);
     let padding = [0u8; 16];

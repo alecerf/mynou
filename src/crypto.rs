@@ -36,7 +36,7 @@ pub fn random_bytes<const N: usize>() -> Result<[u8; N]> {
     let mut out = [0u8; N];
     std::fs::File::open("/dev/urandom")
         .and_then(|mut file| file.read_exact(&mut out))
-        .map_err(|error| format!("Source aléatoire du système indisponible : {error}"))?;
+        .map_err(|error| format!("System random source is unavailable: {error}"))?;
     Ok(out)
 }
 
@@ -74,10 +74,10 @@ pub fn hkdf_extract(salt: &[u8], input_key_material: &[u8]) -> [u8; 32] {
 
 pub fn hkdf_expand(prk: &[u8], info: &[u8], length: usize) -> Result<Vec<u8>> {
     if prk.len() < 32 {
-        return Err("HKDF : clé extraite trop courte".into());
+        return Err("HKDF: extracted key is too short".into());
     }
     if length > 255 * 32 {
-        return Err("HKDF : sortie supérieure à 8160 octets".into());
+        return Err("HKDF: output exceeds 8160 bytes".into());
     }
     let mut output = Vec::with_capacity(length);
     let mut block = [0u8; 32];

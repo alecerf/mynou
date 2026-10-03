@@ -111,7 +111,7 @@ fn hex(input: &[u8]) -> String {
 }
 fn decode_hex<const N: usize>(input: &str) -> Result<[u8; N]> {
     if input.len() != N * 2 {
-        return Err("Empreinte torrent de taille invalide".into());
+        return Err("Invalid torrent hash length".into());
     }
     let mut out = [0; N];
     for (i, c) in input.as_bytes().as_chunks::<2>().0.iter().enumerate() {
@@ -120,7 +120,7 @@ fn decode_hex<const N: usize>(input: &str) -> Result<[u8; N]> {
                 b'0'..=b'9' => Ok(b - b'0'),
                 b'a'..=b'f' => Ok(b - b'a' + 10),
                 b'A'..=b'F' => Ok(b - b'A' + 10),
-                _ => Err("Empreinte torrent invalide".into()),
+                _ => Err("Invalid torrent hash".into()),
             }
         };
         out[i] = digit(c[0])? * 16 + digit(c[1])?;
@@ -129,7 +129,7 @@ fn decode_hex<const N: usize>(input: &str) -> Result<[u8; N]> {
 }
 fn decode_base32(input: &str) -> Result<[u8; 20]> {
     if input.len() != 32 {
-        return Err("Empreinte base32 invalide".into());
+        return Err("Invalid base32 hash".into());
     }
     let mut out = [0; 20];
     let mut acc = 0u32;
@@ -139,7 +139,7 @@ fn decode_base32(input: &str) -> Result<[u8; 20]> {
         let v = match b.to_ascii_uppercase() {
             b'A'..=b'Z' => b.to_ascii_uppercase() - b'A',
             b'2'..=b'7' => b - b'2' + 26,
-            _ => return Err("Empreinte base32 invalide".into()),
+            _ => return Err("Invalid base32 hash".into()),
         };
         acc = (acc << 5) | u32::from(v);
         bits += 5;
@@ -160,10 +160,10 @@ fn url_decode(s: &str) -> Result<String> {
         match b[i] {
             b'%' => {
                 if i + 2 >= b.len() {
-                    return Err("Échappement d'URL tronqué".into());
+                    return Err("Truncated URL escape".into());
                 }
                 let n = decode_hex::<1>(
-                    std::str::from_utf8(&b[i + 1..i + 3]).map_err(|_| "Échappement invalide")?,
+                    std::str::from_utf8(&b[i + 1..i + 3]).map_err(|_| "Invalid escape")?,
                 )?;
                 out.push(n[0]);
                 i += 3;
@@ -178,13 +178,13 @@ fn url_decode(s: &str) -> Result<String> {
             }
         }
     }
-    String::from_utf8(out).map_err(|_| "Paramètre magnet non UTF-8".into())
+    String::from_utf8(out).map_err(|_| "Magnet parameter is not valid UTF-8".into())
 }
 
 impl Source {
     fn parse(source: &str) -> Result<Self> {
         if source.len() > 64 * 1024 {
-            return Err("Source torrent trop longue".into());
+            return Err("Torrent source is too long".into());
         }
         let mut result = Self {
             original: source.to_owned(),
@@ -209,20 +209,20 @@ impl Source {
                                 decode_hex(hash)?
                             };
                             if result.v1.is_some_and(|v| v != hash) {
-                                return Err("Magnet avec empreintes v1 contradictoires".into());
+                                return Err("Magnet contains conflicting v1 hashes".into());
                             }
                             result.v1 = Some(hash);
                         } else if let Some(hash) = value.strip_prefix("urn:btmh:1220") {
                             let hash = decode_hex(hash)?;
                             if result.v2.is_some_and(|v| v != hash) {
-                                return Err("Magnet avec empreintes v2 contradictoires".into());
+                                return Err("Magnet contains conflicting v2 hashes".into());
                             }
                             result.v2 = Some(hash);
                         }
                     }
                     "tr" => {
                         if result.trackers.len() >= 256 {
-                            return Err("Trop de trackers magnet".into());
+                            return Err("Too many magnet trackers".into());
                         }
                         if value.starts_with("http://")
                             || value.starts_with("https://")
@@ -233,12 +233,12 @@ impl Source {
                     }
                     "x.pe" => {
                         if result.peers.len() >= 256 {
-                            return Err("Trop de pairs magnet".into());
+                            return Err("Too many magnet peers".into());
                         }
                         result.peers.extend(
                             value
                                 .to_socket_addrs()
-                                .map_err(|_| "Adresse x.pe invalide")?
+                                .map_err(|_| "Invalid x.pe address")?
                                 .take(4),
                         );
                     }
@@ -246,7 +246,7 @@ impl Source {
                 }
             }
             if result.v1.is_none() && result.v2.is_none() {
-                return Err("Magnet sans empreinte btih ou btmh valide".into());
+                return Err("Magnet has no valid btih or btmh hash".into());
             }
         } else {
             let encoded = if source.starts_with("http://") || source.starts_with("https://") {
@@ -254,15 +254,15 @@ impl Source {
                     .with_max_body(MAX_META)
                     .get(source)?;
                 if r.status != 200 {
-                    return Err("Téléchargement des métadonnées refusé".into());
+                    return Err("Metadata download was rejected".into());
                 }
                 r.body
             } else {
-                let file = File::open(source).map_err(|_| "Fichier torrent introuvable")?;
+                let file = File::open(source).map_err(|_| "Torrent file not found")?;
                 let mut data = Vec::new();
                 file.take((MAX_META + 1) as u64)
                     .read_to_end(&mut data)
-                    .map_err(|_| "Lecture du torrent impossible")?;
+                    .map_err(|_| "Could not read torrent file")?;
                 data
             };
             let meta = Meta::parse(&encoded)?;
@@ -273,7 +273,7 @@ impl Source {
         }
         if result.v1.is_some_and(|h| h == [0; 20]) || result.v2.is_some_and(|h| h[..20] == [0; 20])
         {
-            return Err("Empreinte torrent nulle interdite".into());
+            return Err("Zero torrent hash is not allowed".into());
         }
         Ok(result)
     }
@@ -296,16 +296,16 @@ impl Source {
 }
 
 fn mkdir_private(path: &Path) -> Result<()> {
-    fs::create_dir_all(path).map_err(|_| "Création du répertoire de téléchargement impossible")?;
-    let meta = fs::symlink_metadata(path).map_err(|_| "Répertoire introuvable")?;
+    fs::create_dir_all(path).map_err(|_| "Could not create download directory")?;
+    let meta = fs::symlink_metadata(path).map_err(|_| "Directory not found")?;
     if !meta.is_dir() || meta.file_type().is_symlink() {
-        return Err("Répertoire de téléchargement invalide".into());
+        return Err("Invalid download directory".into());
     }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(path, fs::Permissions::from_mode(0o700))
-            .map_err(|_| "Permissions du téléchargement impossibles")?;
+            .map_err(|_| "Could not set download permissions")?;
     }
     Ok(())
 }
@@ -313,16 +313,16 @@ fn mkdir_private(path: &Path) -> Result<()> {
 /// The caller must hold the application's offline store lock.
 pub fn pause_persisted(config: &DownloadConfig, id: &str) -> Result<()> {
     if !(id.len() == 40 || id.len() == 64) || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err("Identité de téléchargement invalide".into());
+        return Err("Invalid download identity".into());
     }
     atomic_write(&config.state_dir.join(format!("{id}.paused")), b"paused\n")
 }
 
 fn atomic_write(path: &Path, data: &[u8]) -> Result<()> {
-    let parent = path.parent().ok_or("Chemin d'état sans parent")?;
+    let parent = path.parent().ok_or("State path has no parent directory")?;
     mkdir_private(parent)?;
     if fs::symlink_metadata(path).is_ok_and(|m| !m.is_file() || m.file_type().is_symlink()) {
-        return Err("Fichier d'état spécial interdit".into());
+        return Err("Special state files are not allowed".into());
     }
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -339,14 +339,14 @@ fn atomic_write(path: &Path, data: &[u8]) -> Result<()> {
         }
         let mut file = options
             .open(&temporary)
-            .map_err(|_| "Création d'état impossible")?;
+            .map_err(|_| "Could not create state file")?;
         file.write_all(data)
             .and_then(|()| file.sync_all())
-            .map_err(|_| "Écriture d'état impossible")?;
-        fs::rename(&temporary, path).map_err(|_| "Publication d'état impossible")?;
+            .map_err(|_| "Could not write state file")?;
+        fs::rename(&temporary, path).map_err(|_| "Could not publish state file")?;
         File::open(parent)
             .and_then(|f| f.sync_all())
-            .map_err(|_| "Synchronisation du répertoire impossible")?;
+            .map_err(|_| "Could not synchronize directory")?;
         Ok(())
     })();
     if result.is_err() {
@@ -365,24 +365,24 @@ fn peer_id() -> Result<[u8; 20]> {
 impl Client {
     pub fn open(mut config: DownloadConfig) -> Result<Self> {
         if config.max_active == 0 || config.max_active > 128 {
-            return Err("Nombre de téléchargements actifs invalide".into());
+            return Err("Invalid active download count".into());
         }
         mkdir_private(&config.state_dir)?;
         mkdir_private(&config.data_dir)?;
         let listener = TcpListener::bind(("0.0.0.0", config.listen_port))
-            .map_err(|_| "Port BitTorrent indisponible")?;
+            .map_err(|_| "BitTorrent port unavailable")?;
         config.listen_port = listener
             .local_addr()
-            .map_err(|_| "Adresse BitTorrent indisponible")?
+            .map_err(|_| "BitTorrent address unavailable")?
             .port();
         listener
             .set_nonblocking(true)
-            .map_err(|_| "Configuration du port BitTorrent impossible")?;
+            .map_err(|_| "Could not configure the BitTorrent port")?;
         let mut map = BTreeMap::new();
         for entry in fs::read_dir(&config.state_dir)
-            .map_err(|_| "Lecture de l'état BitTorrent impossible")?
+            .map_err(|_| "Could not read BitTorrent state")?
         {
-            let entry = entry.map_err(|_| "Lecture de l'état BitTorrent impossible")?;
+            let entry = entry.map_err(|_| "Could not read BitTorrent state")?;
             let name = entry.file_name();
             let Some(name) = name.to_str() else { continue };
             let Some(id) = name.strip_suffix(".torrent") else {
@@ -393,37 +393,37 @@ impl Client {
             }
             let kind = entry
                 .file_type()
-                .map_err(|_| "Métadonnées persistées inaccessibles")?;
+                .map_err(|_| "Persisted metadata is inaccessible")?;
             if !kind.is_file() || kind.is_symlink() {
-                return Err("Métadonnées persistées spéciales interdites".into());
+                return Err("Special persisted metadata files are not allowed".into());
             }
             let file = File::open(entry.path())
-                .map_err(|_| "Lecture des métadonnées persistées impossible")?;
+                .map_err(|_| "Could not read persisted metadata")?;
             let mut encoded = Vec::new();
             file.take((MAX_META + 1) as u64)
                 .read_to_end(&mut encoded)
-                .map_err(|_| "Lecture des métadonnées persistées impossible")?;
+                .map_err(|_| "Could not read persisted metadata")?;
             let meta = Meta::parse(&encoded)?;
             if ![meta.v1.map(|h| hex(&h)), meta.v2.map(|h| hex(&h))]
                 .into_iter()
                 .flatten()
                 .any(|h| h == id)
             {
-                return Err("Empreinte d'état BitTorrent incohérente".into());
+                return Err("BitTorrent state hash mismatch".into());
             }
             let original_path = config.state_dir.join(format!("{id}.source"));
             let original = if original_path.exists() {
                 let m = fs::symlink_metadata(&original_path)
-                    .map_err(|_| "Source persistée inaccessible")?;
+                    .map_err(|_| "Persisted source is inaccessible")?;
                 if !m.is_file() || m.file_type().is_symlink() {
-                    return Err("Source persistée spéciale interdite".into());
+                    return Err("Special persisted source files are not allowed".into());
                 }
                 let mut value = String::new();
                 File::open(&original_path)
                     .and_then(|f| f.take(64 * 1024 + 1).read_to_string(&mut value))
-                    .map_err(|_| "Lecture de la source persistée impossible")?;
+                    .map_err(|_| "Could not read persisted source")?;
                 if value.len() > 64 * 1024 {
-                    return Err("Source persistée trop grande".into());
+                    return Err("Persisted source is too large".into());
                 }
                 value
             } else {
@@ -444,7 +444,7 @@ impl Client {
             if source.v1.is_some_and(|h| Some(h) != meta.v1)
                 || source.v2.is_some_and(|h| Some(h) != meta.v2)
             {
-                return Err("Source et métadonnées persistées incompatibles".into());
+                return Err("Persisted source and metadata are incompatible".into());
             }
             source.v1 = meta.v1;
             source.v2 = meta.v2;
@@ -458,7 +458,7 @@ impl Client {
                     .filter(|f| !f.padding)
                     .map(|f| config.data_dir.join(id).join(&f.path))
                     .collect(),
-                message: "Vérification des données persistées".into(),
+                message: "Verifying persisted data".into(),
             };
             map.insert(
                 id.to_owned(),
@@ -482,9 +482,9 @@ impl Client {
         }
         // Persisted magnets without metadata are also durable queue entries.
         for entry in fs::read_dir(&config.state_dir)
-            .map_err(|_| "Lecture de la file BitTorrent impossible")?
+            .map_err(|_| "Could not read BitTorrent queue")?
         {
-            let entry = entry.map_err(|_| "Lecture de la file BitTorrent impossible")?;
+            let entry = entry.map_err(|_| "Could not read BitTorrent queue")?;
             let name = entry.file_name();
             let Some(name) = name.to_str() else { continue };
             let Some(id) = name.strip_suffix(".source") else {
@@ -498,20 +498,20 @@ impl Client {
             }
             let kind = entry
                 .file_type()
-                .map_err(|_| "Source persistée inaccessible")?;
+                .map_err(|_| "Persisted source is inaccessible")?;
             if !kind.is_file() || kind.is_symlink() {
-                return Err("Source persistée spéciale interdite".into());
+                return Err("Special persisted source files are not allowed".into());
             }
             let mut original = String::new();
             File::open(entry.path())
                 .and_then(|f| f.take(64 * 1024 + 1).read_to_string(&mut original))
-                .map_err(|_| "Source persistée invalide")?;
+                .map_err(|_| "Invalid persisted source")?;
             if !original.starts_with("magnet:?") {
-                return Err("Métadonnées persistées absentes pour cette source".into());
+                return Err("Missing persisted metadata for this source".into());
             }
             let source = Source::parse(&original)?;
             if source.id() != id {
-                return Err("Empreinte de la file BitTorrent incohérente".into());
+                return Err("BitTorrent queue hash mismatch".into());
             }
             map.insert(
                 id.to_owned(),
@@ -523,7 +523,7 @@ impl Client {
                         progress: 0.0,
                         ready: false,
                         files: Vec::new(),
-                        message: "Reprise de la recherche de métadonnées".into(),
+                        message: "Resuming metadata discovery".into(),
                     },
                     running: false,
                     paused: config.state_dir.join(format!("{id}.paused")).exists(),
@@ -541,7 +541,7 @@ impl Client {
         }
         for job in map.values_mut() {
             if job.paused {
-                job.status.message = "Téléchargement suspendu".into();
+                job.status.message = "Download paused".into();
             }
         }
         let jobs = Arc::new(Mutex::new(map));
@@ -570,7 +570,7 @@ impl Client {
     pub fn ensure(&self, source: &str) -> Result<DownloadStatus> {
         let mut source = Source::parse(source)?;
         let id = source.id();
-        let mut jobs = self.jobs.lock().map_err(|_| "État BitTorrent verrouillé")?;
+        let mut jobs = self.jobs.lock().map_err(|_| "BitTorrent state lock is poisoned")?;
         if let Some(job) = jobs.values_mut().find(|job| {
             source.v1.is_some_and(|h| job.source.v1 == Some(h))
                 || source.v2.is_some_and(|h| job.source.v2 == Some(h))
@@ -578,7 +578,7 @@ impl Client {
             if (source.v1.is_some() && job.source.v1.is_none())
                 || (source.v2.is_some() && job.source.v2.is_none())
             {
-                return Err("Alias torrent supplémentaire non vérifié".into());
+                return Err("Additional torrent alias has not been verified".into());
             }
             if source
                 .v1
@@ -587,7 +587,7 @@ impl Client {
                     .v2
                     .is_some_and(|h| job.source.v2.is_some_and(|v| v != h))
             {
-                return Err("Alias d'empreinte torrent incompatible".into());
+                return Err("Incompatible torrent hash alias".into());
             }
             resume_job(&self.config, job)?;
             return Ok(job.status.clone());
@@ -617,7 +617,7 @@ impl Client {
                         .collect()
                 })
                 .unwrap_or_default(),
-            message: "Téléchargement en attente".into(),
+            message: "Download queued".into(),
         };
         let metadata = source.meta.take().map(Arc::new);
         jobs.insert(
@@ -643,30 +643,30 @@ impl Client {
     }
     /// Pause a native transfer without removing its verified files or metadata.
     pub fn cancel(&self, id: &str) -> Result<()> {
-        let mut jobs = self.jobs.lock().map_err(|_| "État BitTorrent verrouillé")?;
-        let job = jobs.get_mut(id).ok_or("Téléchargement inconnu")?;
+        let mut jobs = self.jobs.lock().map_err(|_| "BitTorrent state lock is poisoned")?;
+        let job = jobs.get_mut(id).ok_or("Unknown download")?;
         job.paused = true;
         job.cancel.store(true, Ordering::Release);
-        job.status.message = "Téléchargement suspendu".into();
+        job.status.message = "Download paused".into();
         atomic_write(
             &self.config.state_dir.join(format!("{id}.paused")),
             b"paused\n",
         )?;
         job.paused = true;
         job.cancel.store(true, Ordering::Release);
-        job.status.message = "Téléchargement suspendu".into();
+        job.status.message = "Download paused".into();
         Ok(())
     }
     /// Resume using the cached, authenticated identity; never reload a source URL.
     pub fn resume(&self, id: &str) -> Result<DownloadStatus> {
-        let mut jobs = self.jobs.lock().map_err(|_| "État BitTorrent verrouillé")?;
-        let job = jobs.get_mut(id).ok_or("Téléchargement inconnu")?;
+        let mut jobs = self.jobs.lock().map_err(|_| "BitTorrent state lock is poisoned")?;
+        let job = jobs.get_mut(id).ok_or("Unknown download")?;
         resume_job(&self.config, job)?;
         Ok(job.status.clone())
     }
     pub fn check(&self, id: &str) -> Result<DownloadStatus> {
-        let jobs = self.jobs.lock().map_err(|_| "État BitTorrent verrouillé")?;
-        let job = jobs.get(id).ok_or("Téléchargement inconnu")?;
+        let jobs = self.jobs.lock().map_err(|_| "BitTorrent state lock is poisoned")?;
+        let job = jobs.get(id).ok_or("Unknown download")?;
         if job.failed {
             return Err(job.status.message.clone());
         }
@@ -676,14 +676,14 @@ impl Client {
         Ok(self
             .jobs
             .lock()
-            .map_err(|_| "État BitTorrent verrouillé")?
+            .map_err(|_| "BitTorrent state lock is poisoned")?
             .values()
             .map(|j| j.status.clone())
             .collect())
     }
     pub fn transfer_stats(&self, id: &str) -> Result<(u64, u64)> {
-        let jobs = self.jobs.lock().map_err(|_| "État BitTorrent verrouillé")?;
-        let counters = &jobs.get(id).ok_or("Téléchargement inconnu")?.counters;
+        let jobs = self.jobs.lock().map_err(|_| "BitTorrent state lock is poisoned")?;
+        let counters = &jobs.get(id).ok_or("Unknown download")?.counters;
         Ok((
             counters.downloaded.load(Ordering::Relaxed),
             counters.uploaded.load(Ordering::Relaxed),
@@ -709,18 +709,18 @@ fn resume_job(config: &DownloadConfig, job: &mut Job) -> Result<()> {
     if job.paused || job.failed {
         let marker = config.state_dir.join(format!("{}.paused", job.status.id));
         if fs::symlink_metadata(&marker).is_ok() {
-            fs::remove_file(marker).map_err(|_| "Reprise du téléchargement impossible")?;
+            fs::remove_file(marker).map_err(|_| "Could not resume download")?;
             File::open(&config.state_dir)
                 .and_then(|f| f.sync_all())
-                .map_err(|_| "Synchronisation de la reprise impossible")?;
+                .map_err(|_| "Could not synchronize resumed state")?;
         }
         job.paused = false;
         job.failed = false;
         job.cancel = Arc::new(AtomicBool::new(false));
         job.status.message = if job.status.ready {
-            "Téléchargement vérifié et disponible"
+            "Download verified and available"
         } else {
-            "Téléchargement repris"
+            "Download resumed"
         }
         .into();
     }
@@ -1008,10 +1008,10 @@ fn update(
     config: &DownloadConfig,
 ) -> Result<()> {
     let (jobs, stop) = context;
-    let mut jobs = jobs.lock().map_err(|_| "État BitTorrent verrouillé")?;
-    let job = jobs.get_mut(id).ok_or("Téléchargement disparu")?;
+    let mut jobs = jobs.lock().map_err(|_| "BitTorrent state lock is poisoned")?;
+    let job = jobs.get_mut(id).ok_or("Download no longer exists")?;
     if job.paused || stop.load(Ordering::Acquire) || !std::ptr::eq(&*job.cancel, stop) {
-        return Err("Téléchargement interrompu".into());
+        return Err("Download interrupted".into());
     }
     job.status.progress = progress;
     job.status.ready = ready;
@@ -1050,8 +1050,8 @@ fn download(
     peer_id: &[u8; 20],
 ) -> Result<()> {
     let (mut source, mut meta, counters) = {
-        let jobs = jobs.lock().map_err(|_| "État BitTorrent verrouillé")?;
-        let job = jobs.get(id).ok_or("Téléchargement disparu")?;
+        let jobs = jobs.lock().map_err(|_| "BitTorrent state lock is poisoned")?;
+        let job = jobs.get(id).ok_or("Download no longer exists")?;
         (
             job.source.clone(),
             job.meta.as_ref().map(|m| (**m).clone()),
@@ -1105,11 +1105,11 @@ fn download(
                 Some(m),
                 progress,
                 false,
-                "Téléchargement en cours",
+                "Download in progress",
                 config,
             )?;
             if done == m.count() {
-                let mut complete = meta.take().ok_or("Métadonnées absentes")?;
+                let mut complete = meta.take().ok_or("Missing metadata")?;
                 authenticate_v2(&mut complete, &base, stop)?;
                 sync_files(&complete, &base, stop)?;
                 persist_meta(config, id, &complete)?;
@@ -1119,7 +1119,7 @@ fn download(
                     Some(&complete),
                     1.0,
                     true,
-                    "Téléchargement vérifié et disponible",
+                    "Download verified and available",
                     config,
                 )?;
                 return Ok(());
@@ -1152,7 +1152,7 @@ fn download(
         let mut advanced = false;
         for address in peers {
             if stop.load(Ordering::Relaxed) {
-                return Err("Téléchargement interrompu".into());
+                return Err("Download interrupted".into());
             }
             let mut peer = match wire::Peer::connect(
                 address,
@@ -1246,7 +1246,7 @@ fn download(
                             Some(m),
                             completed as f64 / m.count() as f64,
                             false,
-                            "Téléchargement en cours",
+                            "Download in progress",
                             config,
                         )?;
                     }
@@ -1271,24 +1271,24 @@ fn download(
                     have.iter().filter(|v| **v).count() as f64 / have.len() as f64
                 },
                 false,
-                "Recherche de pairs disponibles",
+                "Searching for available peers",
                 config,
             )?;
             for _ in 0..20 {
                 if stop.load(Ordering::Relaxed) {
-                    return Err("Téléchargement interrompu".into());
+                    return Err("Download interrupted".into());
                 }
                 thread::sleep(Duration::from_millis(100));
             }
         }
     }
-    Err("Téléchargement interrompu".into())
+    Err("Download interrupted".into())
 }
 
 fn prepare_files(meta: &Meta, base: &Path, stop: &AtomicBool) -> Result<()> {
     for f in &meta.files {
         if stop.load(Ordering::Acquire) {
-            return Err("Téléchargement interrompu".into());
+            return Err("Download interrupted".into());
         }
         if f.padding {
             continue;
@@ -1297,19 +1297,19 @@ fn prepare_files(meta: &Meta, base: &Path, stop: &AtomicBool) -> Result<()> {
         if let Some(parent) = path.parent() {
             let relative = parent
                 .strip_prefix(base)
-                .map_err(|_| "Chemin de fichier hors téléchargement")?;
+                .map_err(|_| "File path is outside the download directory")?;
             let mut current = base.to_path_buf();
             for part in relative.components() {
                 current.push(part);
                 if current.exists() {
                     let m = fs::symlink_metadata(&current)
-                        .map_err(|_| "Répertoire média inaccessible")?;
+                        .map_err(|_| "Media directory is inaccessible")?;
                     if !m.is_dir() || m.file_type().is_symlink() {
-                        return Err("Répertoire média spécial interdit".into());
+                        return Err("Special media directories are not allowed".into());
                     }
                 } else {
                     fs::create_dir(&current)
-                        .map_err(|_| "Création du répertoire média impossible")?;
+                        .map_err(|_| "Could not create media directory")?;
                 }
             }
         }
@@ -1322,22 +1322,22 @@ fn prepare_files(meta: &Meta, base: &Path, stop: &AtomicBool) -> Result<()> {
         }
         let file = options
             .open(&path)
-            .map_err(|_| "Ouverture du fichier média impossible")?;
+            .map_err(|_| "Could not open media file")?;
         if !file
             .metadata()
-            .map_err(|_| "Fichier média inaccessible")?
+            .map_err(|_| "Media file is inaccessible")?
             .is_file()
         {
-            return Err("Fichier média spécial interdit".into());
+            return Err("Special media files are not allowed".into());
         }
         if file
             .metadata()
-            .map_err(|_| "Fichier média inaccessible")?
+            .map_err(|_| "Media file is inaccessible")?
             .len()
             != f.length
         {
             file.set_len(f.length)
-                .map_err(|_| "Dimensionnement du fichier média impossible")?;
+                .map_err(|_| "Could not resize media file")?;
         }
     }
     Ok(())
@@ -1353,16 +1353,16 @@ fn read_piece(meta: &Meta, base: &Path, index: usize) -> Result<Vec<u8>> {
         let a = start.max(f.offset);
         let b = end.min(f.offset + f.length);
         let path = confined(base, &f.path)?;
-        let mut file = File::open(path).map_err(|_| "Lecture média impossible")?;
+        let mut file = File::open(path).map_err(|_| "Could not read media file")?;
         file.seek(SeekFrom::Start(a - f.offset))
             .and_then(|_| file.read_exact(&mut data[(a - start) as usize..(b - start) as usize]))
-            .map_err(|_| "Lecture média tronquée")?;
+            .map_err(|_| "Truncated media read")?;
     }
     Ok(data)
 }
 fn write_piece(meta: &Meta, base: &Path, index: usize, data: &[u8]) -> Result<()> {
     if !meta.verify(index, data) {
-        return Err("Pièce non authentifiée".into());
+        return Err("Piece has not been authenticated".into());
     }
     let start = index as u64 * meta.piece_length as u64;
     let end = start + data.len() as u64;
@@ -1375,7 +1375,7 @@ fn write_piece(meta: &Meta, base: &Path, index: usize, data: &[u8]) -> Result<()
         let block = &data[(a - start) as usize..(b - start) as usize];
         if f.padding {
             if block.iter().any(|b| *b != 0) {
-                return Err("Remplissage torrent non nul".into());
+                return Err("Torrent padding is not zero".into());
             }
             continue;
         }
@@ -1383,17 +1383,17 @@ fn write_piece(meta: &Meta, base: &Path, index: usize, data: &[u8]) -> Result<()
         let mut file = OpenOptions::new()
             .write(true)
             .open(path)
-            .map_err(|_| "Écriture média impossible")?;
+            .map_err(|_| "Could not write media file")?;
         file.seek(SeekFrom::Start(a - f.offset))
             .and_then(|_| file.write_all(block))
-            .map_err(|_| "Écriture média impossible")?;
+            .map_err(|_| "Could not write media file")?;
     }
     Ok(())
 }
 fn sync_files(meta: &Meta, base: &Path, stop: &AtomicBool) -> Result<()> {
     for f in &meta.files {
         if stop.load(Ordering::Acquire) {
-            return Err("Téléchargement interrompu".into());
+            return Err("Download interrupted".into());
         }
         if !f.padding {
             let path = confined(base, &f.path)?;
@@ -1401,12 +1401,12 @@ fn sync_files(meta: &Meta, base: &Path, stop: &AtomicBool) -> Result<()> {
                 .write(true)
                 .open(path)
                 .and_then(|f| f.sync_all())
-                .map_err(|_| "Synchronisation des fichiers média impossible")?;
+                .map_err(|_| "Could not synchronize media files")?;
         }
     }
     File::open(base)
         .and_then(|f| f.sync_all())
-        .map_err(|_| "Synchronisation du téléchargement impossible")?;
+        .map_err(|_| "Could not synchronize download")?;
     Ok(())
 }
 fn authenticate_v2(meta: &mut Meta, base: &Path, stop: &AtomicBool) -> Result<()> {
@@ -1420,7 +1420,7 @@ fn authenticate_v2(meta: &mut Meta, base: &Path, stop: &AtomicBool) -> Result<()
         let mut hashes = Vec::with_capacity(count);
         for i in 0..count {
             if stop.load(Ordering::Acquire) {
-                return Err("Téléchargement interrompu".into());
+                return Err("Download interrupted".into());
             }
             let data = read_piece(meta, base, start + i)?;
             let n = f
@@ -1436,7 +1436,7 @@ fn authenticate_v2(meta: &mut Meta, base: &Path, stop: &AtomicBool) -> Result<()
         }
         if metainfo::merkle_hashes(&hashes, metainfo::zero_hash(meta.piece_length / BLOCK)) != root
         {
-            return Err("Racine v2 des données téléchargées incorrecte".into());
+            return Err("Downloaded data does not match its v2 root".into());
         }
         for (i, h) in hashes.into_iter().enumerate() {
             meta.v2_pieces[start + i] = Some(h);
@@ -1543,10 +1543,10 @@ fn serve_peer(
 ) -> Result<()> {
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
-        .map_err(|_| "Configuration TCP impossible")?;
+        .map_err(|_| "Could not configure TCP")?;
     stream
         .set_write_timeout(Some(Duration::from_secs(2)))
-        .map_err(|_| "Configuration TCP impossible")?;
+        .map_err(|_| "Could not configure TCP")?;
     let mut incoming = [0; 68];
     wire::read_exact_deadline(
         &mut stream,
@@ -1555,12 +1555,12 @@ fn serve_peer(
         Instant::now() + Duration::from_secs(5),
     )?;
     if incoming[0] != 19 || &incoming[1..20] != b"BitTorrent protocol" {
-        return Err("Handshake entrant invalide".into());
+        return Err("Invalid incoming handshake".into());
     }
     let mut hash = [0; 20];
     hash.copy_from_slice(&incoming[28..48]);
     let (id, meta, ready, known_peers, cancel, counters) = {
-        let jobs = jobs.lock().map_err(|_| "État BitTorrent verrouillé")?;
+        let jobs = jobs.lock().map_err(|_| "BitTorrent state lock is poisoned")?;
         jobs.iter()
             .find_map(|(id, job)| {
                 if job.paused {
@@ -1581,7 +1581,7 @@ fn serve_peer(
                     None
                 }
             })
-            .ok_or("Torrent entrant inconnu")?
+            .ok_or("Unknown incoming torrent")?
     };
     let v2_wire = meta.v1 != Some(hash);
     let mut response = [0; 68];
@@ -1624,16 +1624,16 @@ fn serve_peer(
             2 if ready && config.seed => wire::write_message(&mut stream, 1, &[], Some(&cancel))?,
             6 if ready && config.seed => {
                 if payload.len() != 12 {
-                    return Err("Requête de bloc invalide".into());
+                    return Err("Invalid block request".into());
                 }
                 let index =
-                    u32::from_be_bytes(payload[..4].try_into().map_err(|_| "Index invalide")?)
+                    u32::from_be_bytes(payload[..4].try_into().map_err(|_| "Invalid index")?)
                         as usize;
                 let offset =
-                    u32::from_be_bytes(payload[4..8].try_into().map_err(|_| "Offset invalide")?)
+                    u32::from_be_bytes(payload[4..8].try_into().map_err(|_| "Invalid offset")?)
                         as usize;
                 let length =
-                    u32::from_be_bytes(payload[8..12].try_into().map_err(|_| "Longueur invalide")?)
+                    u32::from_be_bytes(payload[8..12].try_into().map_err(|_| "Invalid length")?)
                         as usize;
                 if index >= count
                     || length == 0
@@ -1642,16 +1642,16 @@ fn serve_peer(
                         .checked_add(length)
                         .is_none_or(|v| v > meta.wire_piece_size(index, v2_wire))
                 {
-                    return Err("Requête de bloc hors limites".into());
+                    return Err("Block request is out of bounds".into());
                 }
                 if cached_piece.as_ref().is_none_or(|(i, _)| *i != index) {
                     let data = read_piece(&meta, &base, index)?;
                     if !meta.verify(index, &data) {
-                        return Err("Données à partager altérées".into());
+                        return Err("Seeding data has been modified".into());
                     }
                     cached_piece = Some((index, data));
                 }
-                let data = &cached_piece.as_ref().ok_or("Pièce de partage absente")?.1;
+                let data = &cached_piece.as_ref().ok_or("Missing seeding piece")?.1;
                 let mut block = payload[..8].to_vec();
                 block.extend_from_slice(&data[offset..offset + length]);
                 wire::write_message(&mut stream, 7, &block, Some(&cancel))?;
@@ -1698,12 +1698,12 @@ fn serve_peer(
                     continue;
                 }
                 let Some(Value::Int(piece)) = discovery::value_field(&v, b"piece") else {
-                    return Err("Index de métadonnées absent".into());
+                    return Err("Missing metadata index".into());
                 };
-                let piece = usize::try_from(*piece).map_err(|_| "Index de métadonnées négatif")?;
-                let ext = metadata_id.ok_or("Extension métadonnées non négociée")?;
+                let piece = usize::try_from(*piece).map_err(|_| "Negative metadata index")?;
+                let ext = metadata_id.ok_or("Metadata extension has not been negotiated")?;
                 if piece >= meta.info.len().div_ceil(BLOCK) {
-                    return Err("Index de métadonnées hors limites".into());
+                    return Err("Metadata index is out of bounds".into());
                 }
                 let header = discovery::value_dict(&[
                     (b"msg_type", Value::Int(1)),

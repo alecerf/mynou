@@ -19,7 +19,7 @@ use std::{
     time::Duration,
 };
 
-const HELP: &str = "Mynou — automatisation multimédia, Rust std exclusivement\n\n  init [--config mynou.json]\n  analyze FICHIER [--json]\n  doctor [--config mynou.json]\n  serve [--config mynou.json]\n  submit --title TITRE [--kind movie|episode|series|file] [--year ANNÉE]\n         [--season N --episode N] [--path FICHIER | --url MAGNET_OU_TORRENT]\n         [--tmdb-id N] [--config mynou.json]\n  jobs | status | sync [--config mynou.json]\n  show | events | retry | cancel ID [--config mynou.json]\n  healthcheck [--config mynou.json]\n  setup-docker [--dir mynou-docker]\n  demo [--dir mynou-demo]\n  version\n\nLes commandes de gestion utilisent l'API si le service tourne, sinon le journal local.\nLa démo utilise exclusivement un média synthétique et des services locaux.\n";
+const HELP: &str = "Mynou — media automation using Rust std only\n\n  init [--config mynou.json]\n  analyze FILE [--json]\n  doctor [--config mynou.json]\n  serve [--config mynou.json]\n  submit --title TITLE [--kind movie|episode|series|file] [--year YEAR]\n         [--season N --episode N] [--path FILE | --url MAGNET_OR_TORRENT]\n         [--tmdb-id N] [--config mynou.json]\n  jobs | status | sync [--config mynou.json]\n  show | events | retry | cancel ID [--config mynou.json]\n  healthcheck [--config mynou.json]\n  setup-docker [--dir mynou-docker]\n  demo [--dir mynou-demo]\n  version\n\nManagement commands use the API while the service is running, otherwise the local journal.\nThe demo uses only synthetic media and local services.\n";
 struct Args {
     command: String,
     positions: Vec<String>,
@@ -38,10 +38,10 @@ impl Args {
                 } else {
                     args.next()
                         .filter(|v| !v.starts_with("--"))
-                        .ok_or_else(|| format!("Valeur absente pour --{key}"))?
+                        .ok_or_else(|| format!("Missing value for --{key}"))?
                 };
                 if options.insert(key.into(), value).is_some() {
-                    return Err(format!("Option --{key} dupliquée"));
+                    return Err(format!("Duplicate option --{key}"));
                 }
             } else {
                 positions.push(arg);
@@ -57,18 +57,18 @@ impl Args {
             "analyze" => &["json", "help"],
             "demo" | "setup-docker" => &["dir", "help"],
             "help" | "--help" | "version" | "--version" => &[],
-            _ => return Err(format!("Commande inconnue : {command}")),
+            _ => return Err(format!("Unknown command: {command}")),
         };
         for key in options.keys() {
             if !allowed.contains(&key.as_str()) {
-                return Err(format!("Option inconnue : --{key}"));
+                return Err(format!("Unknown option: --{key}"));
             }
         }
         let required = usize::from(
             ["analyze", "show", "events", "retry", "cancel"].contains(&command.as_str()),
         );
         if !options.contains_key("help") && positions.len() != required {
-            return Err(format!("{command} exige {required} argument(s)"));
+            return Err(format!("{command} requires {required} argument(s)"));
         }
         Ok(Self {
             command,
@@ -82,7 +82,7 @@ impl Args {
     fn number(&self, key: &str) -> Result<u32> {
         self.value(key, "0")
             .parse()
-            .map_err(|_| format!("--{key} exige un entier positif"))
+            .map_err(|_| format!("--{key} requires a nonnegative integer"))
     }
     fn config_path(&self) -> PathBuf {
         PathBuf::from(self.value("config", "mynou.json"))
@@ -101,7 +101,7 @@ fn private_write(path: &Path, data: &[u8]) -> Result<()> {
     }
     let mut file = options
         .open(path)
-        .map_err(|e| format!("Création de {} impossible : {e}", path.display()))?;
+        .map_err(|e| format!("Cannot create {}: {e}", path.display()))?;
     file.write_all(data)
         .and_then(|()| file.sync_all())
         .map_err(|e| e.to_string())
@@ -123,12 +123,12 @@ fn api_token(config: &Config, path: &Path) -> Result<String> {
         .and_then(|f| f.take(65_537).read_to_string(&mut data))
         .map_err(|_| {
             format!(
-                "Secret {} absent ; définir la variable ou utiliser init",
+                "Missing secret {}; set the environment variable or run init",
                 config.api_token_env
             )
         })?;
     if data.len() > 65_536 {
-        return Err("Fichier .env trop grand".into());
+        return Err(".env file is too large".into());
     }
     for line in data.lines() {
         if let Some((key, value)) = line.split_once('=')
@@ -140,13 +140,13 @@ fn api_token(config: &Config, path: &Path) -> Result<String> {
             return Ok(value.into());
         }
     }
-    Err(format!("Secret {} absent", config.api_token_env))
+    Err(format!("Missing secret {}", config.api_token_env))
 }
 fn endpoint(config: &Config) -> Result<String> {
     let addr = config
         .listen
         .parse::<std::net::SocketAddr>()
-        .map_err(|_| "Adresse API invalide")?;
+        .map_err(|_| "Invalid API address")?;
     let host = if addr.ip().is_unspecified() {
         if addr.is_ipv4() {
             "127.0.0.1".into()
@@ -194,12 +194,12 @@ fn call(
             ],
             &bytes,
         )?;
-    let value = json::parse(std::str::from_utf8(&response.body).map_err(|_| "Réponse non UTF-8")?)?;
+    let value = json::parse(std::str::from_utf8(&response.body).map_err(|_| "Response is not valid UTF-8")?)?;
     if !(200..300).contains(&response.status) {
         return Err(value
             .get("error")
             .and_then(Value::as_str)
-            .unwrap_or("Erreur API")
+            .unwrap_or("API error")
             .into());
     }
     Ok(value)
@@ -208,9 +208,9 @@ fn request(args: &Args) -> Result<Request> {
     let source_path = match args.options.get("path") {
         Some(p) => Some(
             fs::canonicalize(p)
-                .map_err(|e| format!("Fichier source : {e}"))?
+                .map_err(|e| format!("Source file: {e}"))?
                 .to_str()
-                .ok_or("Chemin source non UTF-8")?
+                .ok_or("Source path is not valid UTF-8")?
                 .into(),
         ),
         None => None,
@@ -226,7 +226,7 @@ fn request(args: &Args) -> Result<Request> {
                 },
             )
             .into(),
-        title: args.options.get("title").ok_or("--title requis")?.clone(),
+        title: args.options.get("title").ok_or("--title is required")?.clone(),
         year: args.number("year")?,
         season: args.number("season")?,
         episode: args.number("episode")?,
@@ -235,7 +235,7 @@ fn request(args: &Args) -> Result<Request> {
         tmdb_id: args
             .options
             .get("tmdb-id")
-            .map(|v| v.parse::<u64>().map_err(|_| "--tmdb-id invalide"))
+            .map(|v| v.parse::<u64>().map_err(|_| "Invalid --tmdb-id"))
             .transpose()?,
     };
     request.validate()?;
@@ -247,7 +247,7 @@ fn init(path: &Path, value: &Value) -> Result<()> {
     }
     let env = path.parent().unwrap_or(Path::new(".")).join(".env");
     if path.exists() || env.exists() {
-        return Err("Configuration ou .env déjà présent ; aucun écrasement".into());
+        return Err("Configuration or .env already exists; refusing to overwrite".into());
     }
     let token = random_token()?;
     private_write(&env,format!("MYNOU_API_TOKEN={token}\nMYNOU_PLEX_TOKEN=\nMYNOU_TMDB_TOKEN=\nMYNOU_TMDB_API_KEY=\nMYNOU_INDEXER_API_KEY=\n").as_bytes())?;
@@ -283,7 +283,7 @@ fn execute(args: Args) -> Result<()> {
         }
         "version" | "--version" => {
             println!(
-                "mynou {} — Rust std, 0 dépendance",
+                "mynou {} — Rust std, 0 dependencies",
                 env!("CARGO_PKG_VERSION")
             );
             return Ok(());
@@ -294,19 +294,19 @@ fn execute(args: Args) -> Result<()> {
                 output(&analyzed.to_json());
             } else {
                 println!(
-                    "{}\nConteneur : {}\nTaille : {} octets\nDurée : {} s\nVidéo : {} flux ; audio : {} flux",
+                    "{}\nContainer: {}\nSize: {} bytes\nDuration: {} s\nVideo: {} streams; audio: {} streams",
                     analyzed.title,
                     analyzed.container,
                     analyzed.size_bytes,
                     analyzed
                         .duration_seconds
-                        .map_or("inconnue".into(), |v| format!("{v:.3}")),
+                        .map_or("unknown".into(), |v| format!("{v:.3}")),
                     analyzed.video_streams.len(),
                     analyzed.audio_streams.len()
                 );
                 for stream in analyzed.video_streams {
                     println!(
-                        "  Vidéo {} : {} {}×{}",
+                        "  Video {}: {} {}×{}",
                         stream.index,
                         stream.codec,
                         stream.width.unwrap_or(0),
@@ -315,7 +315,7 @@ fn execute(args: Args) -> Result<()> {
                 }
                 for stream in analyzed.audio_streams {
                     println!(
-                        "  Audio {} : {} {} Hz, {} canal(aux)",
+                        "  Audio {}: {} {} Hz, {} channel(s)",
                         stream.index,
                         stream.codec,
                         stream.sample_rate.unwrap_or(0),
@@ -334,7 +334,7 @@ fn execute(args: Args) -> Result<()> {
         "init" => {
             init(&args.config_path(), &config::default_json())?;
             println!(
-                "Configuration et .env créés. Lance : mynou serve --config {}",
+                "Created configuration and .env. Run: mynou serve --config {}",
                 args.config_path().display()
             );
             return Ok(());
@@ -342,7 +342,7 @@ fn execute(args: Args) -> Result<()> {
         "setup-docker" => {
             let dir = Path::new(args.value("dir", "mynou-docker"));
             if dir.exists() {
-                return Err("Le dossier Docker doit être nouveau".into());
+                return Err("The Docker installation directory must not already exist".into());
             }
             fs::create_dir_all(dir).map_err(|e| e.to_string())?;
             init(&dir.join("mynou.json"), &docker_config())?;
@@ -354,8 +354,9 @@ fn execute(args: Args) -> Result<()> {
                 fs::create_dir_all(dir.join(name)).map_err(|e| e.to_string())?;
             }
             println!(
-                "Installation créée dans {}. Construis l'image depuis les sources : docker build -t mynou:0.6.0 . ; puis : cd {} && docker compose up -d",
+                "Created installation in {}. Build the image from source: docker build -t mynou:{} . ; then run: cd {} && docker compose up -d",
                 dir.display(),
+                env!("CARGO_PKG_VERSION"),
                 dir.display()
             );
             return Ok(());
@@ -370,7 +371,7 @@ fn execute(args: Args) -> Result<()> {
             .with_timeout(Duration::from_secs(2))
             .get(&format!("{}/readyz", endpoint(&config)?))?;
         if r.status != 200 {
-            return Err("Service indisponible".into());
+            return Err("Service unavailable".into());
         }
         return Ok(());
     }
@@ -378,11 +379,11 @@ fn execute(args: Args) -> Result<()> {
         let mut v = Value::object();
         v.insert("version", env!("CARGO_PKG_VERSION"));
         v.insert("dependencies", 0_u32);
-        v.insert("configuration", "valide");
+        v.insert("configuration", "valid");
         v.insert(
             "api_token",
             if api_token(&config, &path).is_ok() {
-                "présent"
+                "present"
             } else {
                 "absent"
             },
@@ -390,9 +391,9 @@ fn execute(args: Args) -> Result<()> {
         v.insert(
             "service",
             if running(&config) {
-                "actif"
+                "running"
             } else {
-                "arrêté"
+                "stopped"
             },
         );
         v.insert("plex_enabled", config.plex.enabled);
@@ -458,7 +459,7 @@ fn execute(args: Args) -> Result<()> {
             } else {
                 let store = Store::open(&config.store_dir)?;
                 let mut v = Value::object();
-                v.insert("service", "arrêté");
+                v.insert("service", "stopped");
                 v.insert("jobs", store.list().len() as u32);
                 output(&v);
             }
@@ -476,7 +477,7 @@ fn execute(args: Args) -> Result<()> {
         "show" | "events" | "retry" | "cancel" => {
             let id = &args.positions[0];
             if id.len() != 32 || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
-                return Err("ID de demande invalide".into());
+                return Err("Invalid job ID".into());
             }
             if online {
                 let route = if args.command == "show" {
@@ -493,7 +494,7 @@ fn execute(args: Args) -> Result<()> {
             } else {
                 let mut store = Store::open(&config.store_dir)?;
                 let v = match args.command.as_str() {
-                    "show" => public_job(&store.get(id).ok_or("Demande inconnue")?),
+                    "show" => public_job(&store.get(id).ok_or("Unknown job")?),
                     "events" => {
                         Value::Array(store.events(id).iter().map(|e| e.to_json()).collect())
                     }
@@ -526,13 +527,13 @@ fn execute(args: Args) -> Result<()> {
                 output(&v);
             }
         }
-        _ => return Err("Commande inconnue".into()),
+        _ => return Err("Unknown command".into()),
     }
     Ok(())
 }
 fn main() {
     if let Err(error) = Args::parse().and_then(execute) {
-        eprintln!("mynou : {error}");
+        eprintln!("mynou: {error}");
         std::process::exit(1);
     }
 }

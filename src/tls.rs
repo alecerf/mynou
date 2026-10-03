@@ -39,10 +39,10 @@ impl RecordKeys {
     fn new(secret: [u8; 32]) -> Result<Self> {
         let key = expand_label(&secret, "key", &[], 32)?
             .try_into()
-            .map_err(|_| "Clé TLS invalide")?;
+            .map_err(|_| "Invalid TLS key")?;
         let iv = expand_label(&secret, "iv", &[], 12)?
             .try_into()
-            .map_err(|_| "Nonce TLS invalide")?;
+            .map_err(|_| "Invalid TLS nonce")?;
         Ok(Self {
             secret,
             key,
@@ -60,26 +60,26 @@ impl RecordKeys {
     }
 
     fn advance(&mut self) -> Result<()> {
-        self.sequence = self.sequence.checked_add(1).ok_or("Compteur TLS épuisé")?;
+        self.sequence = self.sequence.checked_add(1).ok_or("TLS sequence counter exhausted")?;
         Ok(())
     }
 
     fn update(&mut self) -> Result<()> {
         let secret = expand_label(&self.secret, "traffic upd", &[], 32)?
             .try_into()
-            .map_err(|_| "Secret TLS invalide")?;
+            .map_err(|_| "Invalid TLS secret")?;
         *self = Self::new(secret)?;
         Ok(())
     }
 
     fn seal(&mut self, kind: u8, payload: &[u8]) -> Result<Vec<u8>> {
         if payload.len() > 16_384 {
-            return Err("Bloc TLS envoyé trop grand".into());
+            return Err("TLS record to send is too large".into());
         }
         let mut inner = Vec::with_capacity(payload.len() + 1);
         inner.extend_from_slice(payload);
         inner.push(kind);
-        let length = u16::try_from(inner.len() + 16).map_err(|_| "Bloc TLS trop grand")?;
+        let length = u16::try_from(inner.len() + 16).map_err(|_| "TLS record is too large")?;
         let mut record = vec![23, 3, 3];
         record.extend_from_slice(&length.to_be_bytes());
         let ciphertext = ChaCha20Poly1305::new(self.key).seal(self.nonce(), &record, &inner)?;
@@ -90,18 +90,18 @@ impl RecordKeys {
 
     fn open(&mut self, header: &[u8; 5], ciphertext: &[u8]) -> Result<(u8, Vec<u8>)> {
         if header[0] != 23 || header[1..3] != [3, 3] || ciphertext.len() < 17 {
-            return Err("Bloc TLS chiffré invalide".into());
+            return Err("Invalid encrypted TLS record".into());
         }
         let mut plaintext = ChaCha20Poly1305::new(self.key)
             .open(self.nonce(), header, ciphertext)
-            .map_err(|_| "Authentification du bloc TLS échouée")?;
+            .map_err(|_| "TLS record authentication failed")?;
         self.advance()?;
         while plaintext.last() == Some(&0) {
             plaintext.pop();
         }
-        let kind = plaintext.pop().ok_or("Bloc TLS sans type interne")?;
+        let kind = plaintext.pop().ok_or("TLS record has no inner content type")?;
         if plaintext.len() > 16_384 || !matches!(kind, 21..=23) {
-            return Err("Type ou longueur du bloc TLS invalide".into());
+            return Err("Invalid TLS record type or length".into());
         }
         Ok((kind, plaintext))
     }
@@ -111,11 +111,11 @@ impl TlsStream {
     pub fn connect(stream: TcpStream, hostname: &str) -> Result<Self> {
         let timeout = stream
             .read_timeout()
-            .map_err(|_| "Délai TCP TLS indisponible")?
+            .map_err(|_| "TLS TCP timeout is unavailable")?
             .unwrap_or(Duration::from_secs(30));
         let deadline = Instant::now()
             .checked_add(timeout)
-            .ok_or("Délai TLS trop grand")?;
+            .ok_or("TLS timeout is too large")?;
         Self::connect_stream(DeadlineStream::new(stream, deadline), hostname)
     }
 
@@ -134,8 +134,8 @@ impl TlsStream {
         let mut secret = [0; 32];
         secret.copy_from_slice(&random[..32]);
         let public = x25519_public_key(secret);
-        let client_random: [u8; 32] = random[32..64].try_into().map_err(|_| "Aléa TLS invalide")?;
-        let session_id: [u8; 32] = random[64..].try_into().map_err(|_| "Aléa TLS invalide")?;
+        let client_random: [u8; 32] = random[32..64].try_into().map_err(|_| "Invalid TLS random bytes")?;
+        let session_id: [u8; 32] = random[64..].try_into().map_err(|_| "Invalid TLS random bytes")?;
         let hello = client_hello(hostname, &client_random, &session_id, &public)?;
         let mut transcript = Sha256::new();
         transcript.update(&hello);
@@ -163,7 +163,7 @@ impl TlsStream {
             while buffered.len() >= 4 {
                 let length = u24(&buffered[1..4]);
                 if length > MAX_HANDSHAKE {
-                    return Err("Message TLS de négociation trop grand".into());
+                    return Err("TLS handshake message is too large".into());
                 }
                 if buffered.len() < length + 4 {
                     break;
@@ -178,34 +178,34 @@ impl TlsStream {
                         let chain = parse_certificates(&message[4..])?;
                         let now = SystemTime::now()
                             .duration_since(UNIX_EPOCH)
-                            .map_err(|_| "Horloge système invalide pour TLS")?
+                            .map_err(|_| "Invalid system clock for TLS")?
                             .as_secs();
                         leaf_key = Some(validate_chain(&chain, roots, hostname, now)?);
                         stage = 2;
                     }
                     (2, 15) => {
-                        let key = leaf_key.as_ref().ok_or("Certificat TLS absent")?;
+                        let key = leaf_key.as_ref().ok_or("Missing TLS certificate")?;
                         verify_certificate_signature(key, &message[4..], &transcript)?;
                         stage = 3;
                     }
                     (3, 20) => {
                         if message.len() != 36 {
-                            return Err("Message Finished TLS invalide".into());
+                            return Err("Invalid TLS Finished message".into());
                         }
                         let key = expand_label(&receive_secret, "finished", &[], 32)?;
                         let expected = hmac_sha256(&key, &transcript.clone().finalize());
                         if !constant_time_equal(&expected, &message[4..]) {
-                            return Err("Authentification Finished TLS échouée".into());
+                            return Err("TLS Finished authentication failed".into());
                         }
                         finished = true;
                         stage = 4;
                     }
                     (_, 13) => {
                         return Err(
-                            "Authentification TLS par certificat client non prise en charge".into(),
+                            "TLS client certificate authentication is unsupported".into(),
                         );
                     }
-                    _ => return Err("Ordre ou type de négociation TLS invalide".into()),
+                    _ => return Err("Invalid TLS handshake order or type".into()),
                 }
                 transcript.update(&message);
                 if finished {
@@ -218,27 +218,27 @@ impl TlsStream {
             let (header, payload) = read_record(&mut stream)?;
             if header[0] == 20 {
                 if payload != [1] {
-                    return Err("ChangeCipherSpec TLS invalide".into());
+                    return Err("Invalid TLS ChangeCipherSpec".into());
                 }
                 continue;
             }
             if header[0] == 21 {
-                return Err("Le serveur a refusé la négociation TLS".into());
+                return Err("Server rejected the TLS handshake".into());
             }
             let (kind, plaintext) = receive_hs.open(&header, &payload)?;
             match kind {
                 22 => {
                     if buffered.len() + plaintext.len() > MAX_HANDSHAKE + 4 {
-                        return Err("Négociation TLS au-delà de la limite".into());
+                        return Err("TLS handshake exceeds the limit".into());
                     }
                     buffered.extend_from_slice(&plaintext);
                 }
-                21 => return Err("Le serveur a refusé la négociation TLS".into()),
-                _ => return Err("Données TLS avant authentification".into()),
+                21 => return Err("Server rejected the TLS handshake".into()),
+                _ => return Err("TLS data received before authentication".into()),
             }
         }
         if !finished || !buffered.is_empty() {
-            return Err("Négociation TLS incomplète ou données prématurées".into());
+            return Err("Incomplete TLS handshake or premature data".into());
         }
         let server_finished_digest = transcript.clone().finalize();
         let master_derived = derive_secret(&handshake, "derived", &sha256(&[]))?;
@@ -258,7 +258,7 @@ impl TlsStream {
         let finish_record = send_hs.seal(22, &finish)?;
         stream
             .write_all(&finish_record)
-            .map_err(|_| "Envoi Finished TLS impossible")?;
+            .map_err(|_| "Unable to send TLS Finished")?;
         Ok(Self {
             stream,
             send,
@@ -277,7 +277,7 @@ impl TlsStream {
             match kind {
                 23 => {
                     if !self.post_handshake.is_empty() {
-                        return Err("Message TLS intermédiaire incomplet".into());
+                        return Err("Incomplete TLS post-handshake message".into());
                     }
                     if plaintext.is_empty() {
                         continue;
@@ -291,26 +291,26 @@ impl TlsStream {
                         self.closed = true;
                         return Ok(());
                     }
-                    return Err("Alerte TLS du serveur".into());
+                    return Err("TLS alert from server".into());
                 }
                 22 => {
                     if self.post_handshake.len() + plaintext.len() > MAX_HANDSHAKE {
-                        return Err("Message TLS intermédiaire trop grand".into());
+                        return Err("TLS post-handshake message is too large".into());
                     }
                     self.post_handshake.extend_from_slice(&plaintext);
                     self.process_post_handshake()?;
                 }
-                _ => return Err("Type de données TLS invalide".into()),
+                _ => return Err("Invalid TLS content type".into()),
             }
         }
-        Err("Trop de messages TLS sans données applicatives".into())
+        Err("Too many TLS messages without application data".into())
     }
 
     fn process_post_handshake(&mut self) -> Result<()> {
         while self.post_handshake.len() >= 4 {
             let length = u24(&self.post_handshake[1..4]);
             if length > MAX_HANDSHAKE - 4 {
-                return Err("Message TLS intermédiaire trop grand".into());
+                return Err("TLS post-handshake message is too large".into());
             }
             if self.post_handshake.len() < length + 4 {
                 return Ok(());
@@ -320,18 +320,18 @@ impl TlsStream {
                 4 => validate_ticket(&message[4..])?,
                 24 => {
                     if message.len() != 5 || message[4] > 1 || !self.post_handshake.is_empty() {
-                        return Err("Mise à jour de clé TLS invalide".into());
+                        return Err("Invalid TLS KeyUpdate".into());
                     }
                     self.receive.update()?;
                     if message[4] == 1 {
                         let reply = self.send.seal(22, &[24, 0, 0, 1, 0])?;
                         self.stream
                             .write_all(&reply)
-                            .map_err(|_| "Réponse de mise à jour TLS impossible")?;
+                            .map_err(|_| "Unable to send TLS KeyUpdate response")?;
                         self.send.update()?;
                     }
                 }
-                _ => return Err("Message TLS intermédiaire non pris en charge".into()),
+                _ => return Err("Unsupported TLS post-handshake message".into()),
             }
         }
         Ok(())
@@ -365,7 +365,7 @@ impl Write for TlsStream {
         if self.closed {
             return Err(io::Error::new(
                 io::ErrorKind::BrokenPipe,
-                "Connexion TLS fermée",
+                "TLS connection closed",
             ));
         }
         if data.is_empty() {
@@ -390,10 +390,10 @@ fn io_error(message: String) -> io::Error {
 
 fn secure_random(destination: &mut [u8]) -> Result<()> {
     let mut source = File::open("/dev/urandom")
-        .map_err(|_| "Source d’aléa système requise pour TLS (/dev/urandom)")?;
+        .map_err(|_| "TLS requires a system random source (/dev/urandom)")?;
     source
         .read_exact(destination)
-        .map_err(|_| "Lecture de l’aléa système impossible".into())
+        .map_err(|_| "Unable to read system random bytes".into())
 }
 
 fn load_roots() -> Result<Vec<u8>> {
@@ -409,29 +409,29 @@ fn load_roots() -> Result<Vec<u8>> {
         if let Ok(mut file) = File::open(path) {
             let metadata = file
                 .metadata()
-                .map_err(|_| "Lecture des autorités TLS impossible")?;
+                .map_err(|_| "Unable to read TLS trust anchors")?;
             if !metadata.is_file() || metadata.len() > 4 * 1024 * 1024 {
-                return Err("Fichier d’autorités TLS invalide ou trop grand".into());
+                return Err("TLS trust anchor file is invalid or too large".into());
             }
             let mut data = Vec::new();
             Read::by_ref(&mut file)
                 .take(4 * 1024 * 1024 + 1)
                 .read_to_end(&mut data)
-                .map_err(|_| "Lecture des autorités TLS impossible")?;
+                .map_err(|_| "Unable to read TLS trust anchors")?;
             if data.is_empty() || data.len() > 4 * 1024 * 1024 {
-                return Err("Fichier d’autorités TLS vide ou trop grand".into());
+                return Err("TLS trust anchor file is empty or too large".into());
             }
             return Ok(data);
         }
     }
-    Err("Autorités TLS absentes : fournir MYNOU_CA_FILE (bundle PEM)".into())
+    Err("Missing TLS trust anchors: set MYNOU_CA_FILE to a PEM bundle".into())
 }
 
 fn expand_label(secret: &[u8], label: &str, context: &[u8], length: usize) -> Result<Vec<u8>> {
-    let length = u16::try_from(length).map_err(|_| "Longueur HKDF TLS invalide")?;
+    let length = u16::try_from(length).map_err(|_| "Invalid TLS HKDF length")?;
     let full_label = format!("tls13 {label}");
-    let label_len = u8::try_from(full_label.len()).map_err(|_| "Étiquette HKDF TLS trop grande")?;
-    let context_len = u8::try_from(context.len()).map_err(|_| "Contexte HKDF TLS trop grand")?;
+    let label_len = u8::try_from(full_label.len()).map_err(|_| "TLS HKDF label is too large")?;
+    let context_len = u8::try_from(context.len()).map_err(|_| "TLS HKDF context is too large")?;
     let mut info = Vec::with_capacity(4 + full_label.len() + context.len());
     info.extend_from_slice(&length.to_be_bytes());
     info.push(label_len);
@@ -444,7 +444,7 @@ fn expand_label(secret: &[u8], label: &str, context: &[u8], length: usize) -> Re
 fn derive_secret(secret: &[u8], label: &str, digest: &[u8; 32]) -> Result<[u8; 32]> {
     expand_label(secret, label, digest, 32)?
         .try_into()
-        .map_err(|_| "Secret dérivé TLS invalide".into())
+        .map_err(|_| "Invalid derived TLS secret".into())
 }
 
 fn constant_time_equal(a: &[u8], b: &[u8]) -> bool {
@@ -459,7 +459,7 @@ fn constant_time_equal(a: &[u8], b: &[u8]) -> bool {
 
 fn handshake_message(kind: u8, body: &[u8]) -> Result<Vec<u8>> {
     if body.len() > MAX_HANDSHAKE {
-        return Err("Message TLS trop grand".into());
+        return Err("TLS message is too large".into());
     }
     let length = (body.len() as u32).to_be_bytes();
     let mut message = vec![kind, length[1], length[2], length[3]];
@@ -468,7 +468,7 @@ fn handshake_message(kind: u8, body: &[u8]) -> Result<Vec<u8>> {
 }
 
 fn extension(out: &mut Vec<u8>, kind: u16, body: &[u8]) -> Result<()> {
-    let length = u16::try_from(body.len()).map_err(|_| "Extension TLS trop grande")?;
+    let length = u16::try_from(body.len()).map_err(|_| "TLS extension is too large")?;
     out.extend_from_slice(&kind.to_be_bytes());
     out.extend_from_slice(&length.to_be_bytes());
     out.extend_from_slice(body);
@@ -489,7 +489,7 @@ fn client_hello(
     let mut extensions = Vec::new();
     if hostname.parse::<IpAddr>().is_err() {
         if hostname.is_empty() || hostname.len() > 253 || !hostname.is_ascii() {
-            return Err("Nom d’hôte TLS invalide".into());
+            return Err("Invalid TLS hostname".into());
         }
         let mut name = Vec::new();
         name.extend_from_slice(&((hostname.len() + 3) as u16).to_be_bytes());
@@ -519,32 +519,32 @@ fn client_hello(
 
 fn write_plain_record<W: Write>(stream: &mut W, kind: u8, data: &[u8]) -> Result<()> {
     if data.len() > 16_384 {
-        return Err("Bloc TLS initial trop grand".into());
+        return Err("Initial TLS record is too large".into());
     }
     let mut record = vec![kind, 3, 1];
     record.extend_from_slice(&(data.len() as u16).to_be_bytes());
     record.extend_from_slice(data);
     stream
         .write_all(&record)
-        .map_err(|_| "Écriture de la négociation TLS impossible".into())
+        .map_err(|_| "Unable to write TLS handshake".into())
 }
 
 fn read_record<R: Read>(stream: &mut R) -> Result<([u8; 5], Vec<u8>)> {
     let mut header = [0; 5];
     stream
         .read_exact(&mut header)
-        .map_err(|_| "Bloc TLS absent, incomplet ou délai dépassé")?;
+        .map_err(|_| "TLS record is missing, incomplete or deadline exceeded")?;
     if header[1] != 3 || !matches!(header[2], 1..=3) {
-        return Err("Version de bloc TLS invalide".into());
+        return Err("Invalid TLS record version".into());
     }
     let length = u16::from_be_bytes([header[3], header[4]]) as usize;
     if length == 0 || length > MAX_RECORD {
-        return Err("Longueur du bloc TLS invalide".into());
+        return Err("Invalid TLS record length".into());
     }
     let mut payload = vec![0; length];
     stream
         .read_exact(&mut payload)
-        .map_err(|_| "Bloc TLS incomplet ou délai dépassé")?;
+        .map_err(|_| "Incomplete TLS record or deadline exceeded")?;
     Ok((header, payload))
 }
 
@@ -555,33 +555,33 @@ fn read_server_hello<R: Read>(stream: &mut R) -> Result<Vec<u8>> {
         match header[0] {
             20 if data == [1] => continue,
             22 => {}
-            21 => return Err("Le serveur a refusé TLS 1.3 ou ses algorithmes".into()),
-            _ => return Err("Bloc initial TLS inattendu".into()),
+            21 => return Err("Server rejected TLS 1.3 or its algorithms".into()),
+            _ => return Err("Unexpected initial TLS record".into()),
         }
         buffered.extend_from_slice(&data);
         if buffered.len() > 4096 {
-            return Err("ServerHello TLS trop grand".into());
+            return Err("TLS ServerHello is too large".into());
         }
         if buffered.len() >= 4 {
             if buffered[0] != 2 {
-                return Err("ServerHello TLS attendu".into());
+                return Err("TLS ServerHello expected".into());
             }
             let length = u24(&buffered[1..4]);
             if length + 4 == buffered.len() {
                 return Ok(buffered);
             }
             if length > 4092 || length + 4 < buffered.len() {
-                return Err("ServerHello TLS invalide".into());
+                return Err("Invalid TLS ServerHello".into());
             }
         }
     }
-    Err("ServerHello TLS incomplet".into())
+    Err("Incomplete TLS ServerHello".into())
 }
 
 fn parse_server_hello(message: &[u8], session: &[u8; 32]) -> Result<[u8; 32]> {
-    let mut data = Decoder::new(message.get(4..).ok_or("ServerHello TLS incomplet")?);
+    let mut data = Decoder::new(message.get(4..).ok_or("Incomplete TLS ServerHello")?);
     if data.u16()? != 0x0303 {
-        return Err("Version ServerHello TLS invalide".into());
+        return Err("Invalid TLS ServerHello version".into());
     }
     let random = data.bytes(32)?;
     const RETRY: [u8; 32] = [
@@ -590,14 +590,14 @@ fn parse_server_hello(message: &[u8], session: &[u8; 32]) -> Result<[u8; 32]> {
         0x33, 0x9c,
     ];
     if random == RETRY {
-        return Err("TLS HelloRetryRequest non pris en charge ; X25519 requis".into());
+        return Err("TLS HelloRetryRequest is unsupported; X25519 is required".into());
     }
     let length = data.u8()? as usize;
     if data.bytes(length)? != session {
-        return Err("Identifiant de session ServerHello TLS invalide".into());
+        return Err("Invalid TLS ServerHello session ID".into());
     }
     if data.u16()? != 0x1303 || data.u8()? != 0 {
-        return Err("Le serveur doit sélectionner TLS_CHACHA20_POLY1305_SHA256".into());
+        return Err("Server must select TLS_CHACHA20_POLY1305_SHA256".into());
     }
     let length = data.u16()? as usize;
     let extensions = data.bytes(length)?;
@@ -615,16 +615,16 @@ fn parse_server_hello(message: &[u8], session: &[u8; 32]) -> Result<[u8; 32]> {
                 public = Some(
                     value[4..]
                         .try_into()
-                        .map_err(|_| "Clé X25519 TLS invalide")?,
+                        .map_err(|_| "Invalid TLS X25519 key")?,
                 );
             }
-            _ => return Err("Extension ServerHello TLS invalide ou non prise en charge".into()),
+            _ => return Err("Invalid or unsupported TLS ServerHello extension".into()),
         }
     }
     if !version {
-        return Err("Sélection TLS 1.3 absente".into());
+        return Err("TLS 1.3 selection is missing".into());
     }
-    public.ok_or("Clé X25519 TLS absente".into())
+    public.ok_or("TLS X25519 key is missing".into())
 }
 
 fn parse_encrypted_extensions(body: &[u8]) -> Result<()> {
@@ -639,7 +639,7 @@ fn parse_encrypted_extensions(body: &[u8]) -> Result<()> {
         let length = data.u16()? as usize;
         let value = data.bytes(length)?;
         if seen.contains(&kind) {
-            return Err("Extension TLS répétée".into());
+            return Err("Duplicate TLS extension".into());
         }
         seen.push(kind);
         match kind {
@@ -648,13 +648,13 @@ fn parse_encrypted_extensions(body: &[u8]) -> Result<()> {
                 let mut groups = Decoder::new(value);
                 let size = groups.u16()? as usize;
                 if size == 0 || !size.is_multiple_of(2) {
-                    return Err("Groupes TLS invalides".into());
+                    return Err("Invalid TLS supported groups".into());
                 }
                 groups.bytes(size)?;
                 groups.finish()?;
             }
             16 if value == b"\0\x09\x08http/1.1" => {}
-            _ => return Err("Extension TLS chiffrée non proposée ou invalide".into()),
+            _ => return Err("Unsolicited or invalid TLS encrypted extension".into()),
         }
     }
     Ok(())
@@ -663,7 +663,7 @@ fn parse_encrypted_extensions(body: &[u8]) -> Result<()> {
 fn parse_certificates(body: &[u8]) -> Result<Vec<Vec<u8>>> {
     let mut data = Decoder::new(body);
     if data.u8()? != 0 {
-        return Err("Contexte du certificat serveur TLS invalide".into());
+        return Err("Invalid TLS server certificate context".into());
     }
     let length = data.u24()?;
     let entries = data.bytes(length)?;
@@ -673,7 +673,7 @@ fn parse_certificates(body: &[u8]) -> Result<Vec<Vec<u8>>> {
     while !data.empty() {
         let length = data.u24()?;
         if length == 0 || length > 65_536 || chain.len() >= 8 {
-            return Err("Chaîne de certificats TLS au-delà de la limite".into());
+            return Err("TLS certificate chain exceeds the limit".into());
         }
         chain.push(data.bytes(length)?.to_vec());
         let length = data.u16()? as usize;
@@ -684,13 +684,13 @@ fn parse_certificates(body: &[u8]) -> Result<Vec<Vec<u8>>> {
             let length = extensions.u16()? as usize;
             extensions.bytes(length)?;
             if !matches!(kind, 5 | 18) || seen.contains(&kind) {
-                return Err("Extension de certificat TLS non proposée ou répétée".into());
+                return Err("Unsolicited or duplicate TLS certificate extension".into());
             }
             seen.push(kind);
         }
     }
     if chain.is_empty() {
-        return Err("Certificat serveur TLS absent".into());
+        return Err("Missing TLS server certificate".into());
     }
     Ok(chain)
 }
@@ -718,7 +718,7 @@ fn verify_certificate_signature(key: &PublicKey, body: &[u8], transcript: &Sha25
         (0x0503, PublicKey::EcdsaP384 { point }) => {
             verify_ecdsa_p384_sha384(point, &signed, signature)
         }
-        _ => Err("Signature CertificateVerify TLS non prise en charge".into()),
+        _ => Err("Unsupported TLS CertificateVerify signature".into()),
     }
 }
 
@@ -729,7 +729,7 @@ fn validate_ticket(body: &[u8]) -> Result<()> {
     data.bytes(length)?;
     let length = data.u16()? as usize;
     if length == 0 {
-        return Err("Ticket TLS vide".into());
+        return Err("Empty TLS session ticket".into());
     }
     data.bytes(length)?;
     let length = data.u16()? as usize;
@@ -740,7 +740,7 @@ fn validate_ticket(body: &[u8]) -> Result<()> {
         let size = extensions.u16()? as usize;
         let value = extensions.bytes(size)?;
         if kind != 42 || value.len() != 4 || seen.contains(&kind) {
-            return Err("Extension de ticket TLS invalide".into());
+            return Err("Invalid TLS session ticket extension".into());
         }
         seen.push(kind);
     }
@@ -764,11 +764,11 @@ impl<'a> Decoder<'a> {
         let end = self
             .position
             .checked_add(length)
-            .ok_or("Longueur TLS excessive")?;
+            .ok_or("TLS length exceeds the limit")?;
         let value = self
             .data
             .get(self.position..end)
-            .ok_or("Message TLS tronqué")?;
+            .ok_or("Truncated TLS message")?;
         self.position = end;
         Ok(value)
     }
@@ -789,7 +789,7 @@ impl<'a> Decoder<'a> {
         if self.empty() {
             Ok(())
         } else {
-            Err("Données TLS excédentaires".into())
+            Err("Trailing TLS data".into())
         }
     }
 }
@@ -823,7 +823,7 @@ mod tests {
                 .map_err(|e| e.to_string())?;
             let (header, client) = read_record(&mut stream)?;
             if header[0] != 22 || client.first() != Some(&1) {
-                return Err("ClientHello attendu".into());
+                return Err("ClientHello expected".into());
             }
             let mut data = Decoder::new(&client[4..]);
             data.bytes(34)?;
@@ -841,12 +841,12 @@ mod tests {
                 let length = extensions.u16()? as usize;
                 let value = extensions.bytes(length)?;
                 if kind == 51 && value.len() == 38 {
-                    peer = Some(value[6..].try_into().map_err(|_| "Clé client invalide")?);
+                    peer = Some(value[6..].try_into().map_err(|_| "Invalid client key")?);
                 }
             }
             let secret = [0x42; 32];
             let public = x25519_public_key(secret);
-            let shared = x25519(secret, peer.ok_or("Clé client absente")?)?;
+            let shared = x25519(secret, peer.ok_or("Missing client key")?)?;
             let mut hello = vec![3, 3];
             hello.extend_from_slice(&[0x73; 32]);
             hello.push(session.len() as u8);
@@ -922,14 +922,14 @@ mod tests {
             let (header, payload) = read_record(&mut stream)?;
             let (kind, client_finish) = receive_hs.open(&header, &payload)?;
             if kind != 22 || client_finish.len() != 36 || client_finish[0] != 20 {
-                return Err("Finished client invalide".into());
+                return Err("Invalid client Finished".into());
             }
             let finish_key = expand_label(&receive_secret, "finished", &[], 32)?;
             if !constant_time_equal(
                 &client_finish[4..],
                 &hmac_sha256(&finish_key, &transcript.clone().finalize()),
             ) {
-                return Err("Finished client non authentifié".into());
+                return Err("Client Finished authentication failed".into());
             }
             let derived = derive_secret(&handshake, "derived", &sha256(&[]))?;
             let master = hkdf_extract(&derived, &[0; 32]);
@@ -946,7 +946,7 @@ mod tests {
             let (header, payload) = read_record(&mut stream)?;
             let (kind, request) = receive.open(&header, &payload)?;
             if kind != 23 || request != b"ping" {
-                return Err("Données client invalides".into());
+                return Err("Invalid client data".into());
             }
             if matches!(fault, Fault::Application) {
                 let mut record = send.seal(23, b"pong")?;
@@ -971,7 +971,7 @@ mod tests {
             let (header, payload) = read_record(&mut stream)?;
             let (kind, reply) = receive.open(&header, &payload)?;
             if kind != 22 || reply != [24, 0, 0, 1, 0] {
-                return Err("Accusé KeyUpdate absent".into());
+                return Err("Missing KeyUpdate acknowledgment".into());
             }
             Ok(())
         });

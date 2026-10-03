@@ -12,24 +12,24 @@ struct Element {
 fn header(input: &mut Input, at: u64, end: u64) -> Result<Element> {
     input.count()?;
     if at >= end {
-        return Err("En-tête EBML absent".into());
+        return Err("Missing EBML header".into());
     }
     let bytes = input.read(at, (end - at).min(12) as usize)?;
     let (id, id_len, _) = vint(&bytes, 0, true)?;
     if id_len > 4 {
-        return Err("Identifiant EBML trop long".into());
+        return Err("EBML identifier is too long".into());
     }
     let (size, size_len, unknown) = vint(&bytes, id_len, false)?;
     let data = at
         .checked_add((id_len + size_len) as u64)
-        .ok_or("Position EBML débordante")?;
+        .ok_or("EBML offset overflow")?;
     let element_end = if unknown {
         end
     } else {
-        data.checked_add(size).ok_or("Taille EBML débordante")?
+        data.checked_add(size).ok_or("EBML size overflow")?
     };
     if data > end || element_end > end {
-        return Err("Élément EBML au-delà du conteneur".into());
+        return Err("EBML element extends beyond its container".into());
     }
     Ok(Element {
         id: id as u32,
@@ -40,12 +40,12 @@ fn header(input: &mut Input, at: u64, end: u64) -> Result<Element> {
 }
 
 fn vint(data: &[u8], at: usize, identifier: bool) -> Result<(u64, usize, bool)> {
-    let first = *data.get(at).ok_or("Entier EBML tronqué")?;
+    let first = *data.get(at).ok_or("Truncated EBML integer")?;
     if first == 0 {
-        return Err("Entier EBML sans marqueur de longueur".into());
+        return Err("EBML integer has no length marker".into());
     }
     let len = first.leading_zeros() as usize + 1;
-    let bytes = data.get(at..at + len).ok_or("Entier EBML tronqué")?;
+    let bytes = data.get(at..at + len).ok_or("Truncated EBML integer")?;
     let marker = 1_u8 << (8 - len);
     let mut value = u64::from(if identifier {
         first
@@ -65,7 +65,7 @@ fn children(input: &mut Input, parent: Element) -> Result<Vec<Element>> {
     while at < parent.end {
         let child = header(input, at, parent.end)?;
         if child.unknown {
-            return Err("Taille EBML inconnue dans les métadonnées".into());
+            return Err("Unknown EBML size in metadata".into());
         }
         at = child.end;
         result.push(child);
@@ -75,7 +75,7 @@ fn children(input: &mut Input, parent: Element) -> Result<Vec<Element>> {
 fn unsigned(input: &mut Input, element: Element) -> Result<u64> {
     let size = element.end - element.data;
     if size > 8 {
-        return Err("Entier de métadonnée EBML trop long".into());
+        return Err("EBML metadata integer is too long".into());
     }
     let data = input.read(element.data, size as usize)?;
     Ok(data
@@ -87,24 +87,24 @@ fn float(input: &mut Input, element: Element) -> Result<f64> {
     let value = match data.len() {
         4 => f64::from(f32::from_bits(u32be(&data, 0)?)),
         8 => f64::from_bits(u64be(&data, 0)?),
-        _ => return Err("Flottant EBML de longueur invalide".into()),
+        _ => return Err("Invalid EBML floating-point length".into()),
     };
     if !value.is_finite() {
-        return Err("Flottant EBML non fini".into());
+        return Err("Non-finite EBML floating-point value".into());
     }
     Ok(value)
 }
 fn string_value(input: &mut Input, element: Element) -> Result<String> {
     Ok(text(&input.read(
         element.data,
-        usize::try_from(element.end - element.data).map_err(|_| "Texte EBML excessif")?,
+        usize::try_from(element.end - element.data).map_err(|_| "EBML text exceeds the size limit")?,
     )?))
 }
 
 pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
     let ebml = header(input, 0, input.len)?;
     if ebml.id != 0x1a45dfa3 || ebml.unknown {
-        return Err("En-tête EBML invalide".into());
+        return Err("Invalid EBML header".into());
     }
     let mut doc_type = None;
     for item in children(input, ebml)? {
@@ -112,11 +112,11 @@ pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
             0x4282 => doc_type = Some(string_value(input, item)?),
             0x42f2 if unsigned(input, item)? > 4 => {
                 return Err(
-                    "Identifiants EBML supérieurs à quatre octets non pris en charge".into(),
+                    "EBML identifiers longer than four bytes are unsupported".into(),
                 );
             }
             0x42f3 if unsigned(input, item)? > 8 => {
-                return Err("Tailles EBML supérieures à huit octets non prises en charge".into());
+                return Err("EBML sizes longer than eight bytes are unsupported".into());
             }
             _ => {}
         }
@@ -124,19 +124,19 @@ pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
     media.container = match doc_type.as_deref() {
         Some("matroska") => "matroska".into(),
         Some("webm") => "webm".into(),
-        _ => return Err("Document EBML qui n’est ni Matroska ni WebM".into()),
+        _ => return Err("EBML document is neither Matroska nor WebM".into()),
     };
     let mut at = ebml.end;
     let segment = loop {
         if at >= input.len {
-            return Err("Segment Matroska absent".into());
+            return Err("Missing Matroska segment".into());
         }
         let element = header(input, at, input.len)?;
         if element.id == 0x18538067 {
             break element;
         }
         if element.unknown {
-            return Err("Taille EBML inconnue avant le segment".into());
+            return Err("Unknown EBML size before the segment".into());
         }
         at = element.end;
     };
@@ -165,13 +165,13 @@ pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
         let at = segment
             .data
             .checked_add(offset)
-            .ok_or("Position SeekHead débordante")?;
+            .ok_or("SeekHead offset overflow")?;
         if parsed.contains(&(id, at)) {
             continue;
         }
         let target = header(input, at, segment.end)?;
         if target.id != id || target.unknown {
-            return Err("Cible SeekHead Matroska invalide".into());
+            return Err("Invalid Matroska SeekHead target".into());
         }
         parse_metadata(input, target, media)?;
         parsed.insert((id, at));
@@ -202,7 +202,7 @@ fn seek_head(input: &mut Input, parent: Element, seeks: &mut Vec<(u32, u64)>) ->
 
 fn parse_metadata(input: &mut Input, parent: Element, media: &mut MediaFile) -> Result<()> {
     if parent.unknown {
-        return Err("Taille de métadonnées Matroska inconnue".into());
+        return Err("Unknown Matroska metadata size".into());
     }
     match parent.id {
         0x1549a966 => {
@@ -215,11 +215,11 @@ fn parse_metadata(input: &mut Input, parent: Element, media: &mut MediaFile) -> 
                     0x7ba9 => set_title(media, string_value(input, item)?),
                     0x4461 => {
                         if item.end - item.data != 8 {
-                            return Err("Date UTC Matroska de longueur invalide".into());
+                            return Err("Invalid Matroska UTC date length".into());
                         }
                         let data = input.read(item.data, 8)?;
                         let nanos = i64::from_be_bytes(
-                            data.try_into().map_err(|_| "Date UTC Matroska invalide")?,
+                            data.try_into().map_err(|_| "Invalid Matroska UTC date")?,
                         );
                         if let Some(date) = nanos
                             .div_euclid(1_000_000_000)
@@ -233,14 +233,14 @@ fn parse_metadata(input: &mut Input, parent: Element, media: &mut MediaFile) -> 
                 }
             }
             if scale == 0 {
-                return Err("Échelle temporelle Matroska nulle".into());
+                return Err("Matroska time scale is zero".into());
             }
             media.duration_seconds =
                 positive(duration.map(|duration| duration * scale as f64 / 1_000_000_000.0));
         }
         0x1654ae6b => {
             if !media.video_streams.is_empty() || !media.audio_streams.is_empty() {
-                return Err("Plusieurs sections Tracks Matroska".into());
+                return Err("Multiple Matroska Tracks sections".into());
             }
             for (index, entry) in children(input, parent)?
                 .into_iter()
@@ -295,14 +295,14 @@ fn track(input: &mut Input, parent: Element, media: &mut MediaFile, index: usize
                         0xb0 => {
                             width = Some(
                                 u32::try_from(unsigned(input, setting)?)
-                                    .map_err(|_| "Largeur Matroska excessive")?,
+                                    .map_err(|_| "Matroska width exceeds the limit")?,
                             )
                             .filter(|n| *n > 0)
                         }
                         0xba => {
                             height = Some(
                                 u32::try_from(unsigned(input, setting)?)
-                                    .map_err(|_| "Hauteur Matroska excessive")?,
+                                    .map_err(|_| "Matroska height exceeds the limit")?,
                             )
                             .filter(|n| *n > 0)
                         }
@@ -317,14 +317,14 @@ fn track(input: &mut Input, parent: Element, media: &mut MediaFile, index: usize
                         0xb5 | 0x78b5 => {
                             let rate = float(input, setting)?;
                             if !(1.0..=f64::from(u32::MAX)).contains(&rate) {
-                                return Err("Fréquence Matroska invalide".into());
+                                return Err("Invalid Matroska sample rate".into());
                             }
                             sample_rate = Some(rate.round() as u32);
                         }
                         0x9f => {
                             channels = Some(
                                 u16::try_from(unsigned(input, setting)?)
-                                    .map_err(|_| "Nombre de canaux Matroska excessif")?,
+                                    .map_err(|_| "Matroska channel count exceeds the limit")?,
                             )
                             .filter(|n| *n > 0)
                         }
@@ -336,7 +336,7 @@ fn track(input: &mut Input, parent: Element, media: &mut MediaFile, index: usize
         }
     }
     if codec_id.is_empty() && matches!(kind, 1 | 2) {
-        return Err("Codec Matroska absent".into());
+        return Err("Missing Matroska codec".into());
     }
     let codec = codec(&codec_id);
     if ietf_language.is_some() {
@@ -428,7 +428,7 @@ fn simple_tag(
     depth: usize,
 ) -> Result<()> {
     if depth >= 12 {
-        return Err("Tags Matroska trop imbriqués".into());
+        return Err("Matroska tags are nested too deeply".into());
     }
     let mut name = String::new();
     let mut value = None;

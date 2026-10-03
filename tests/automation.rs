@@ -1,4 +1,4 @@
-//! Chaîne locale réelle : API authentifiée, journal durable et import média.
+//! Local end-to-end workflow: authenticated API, durable journal and media import.
 use mynou::config::{self, Config};
 use mynou::engine::{Engine, lock};
 use mynou::json::{self, Value};
@@ -42,7 +42,7 @@ fn local_config(directory: &Path) -> Config {
     value.insert("listen", "127.0.0.1:0");
     value.insert("workers", 1_u32);
     let Value::Object(downloads) = value.get_mut("downloads").unwrap() else {
-        panic!("section downloads");
+        panic!("downloads section");
     };
     downloads.insert("enabled".into(), false.into());
     downloads.insert("listen_port".into(), 0_u32.into());
@@ -136,7 +136,7 @@ fn authenticated_api_import_dedup_events_and_restart() {
         401
     );
     assert_eq!(server.call("GET", "/api/unknown", Some(TOKEN), None).0, 404);
-    let request = local_request(&source, "Film local");
+    let request = local_request(&source, "Local Movie");
     let id = submit(&server, &request);
     assert_eq!(submit(&server, &request), id);
     let (_, jobs) = server.call("GET", "/api/jobs", Some(TOKEN), None);
@@ -185,7 +185,7 @@ fn native_torrent_cancel_and_retry_preserve_identity() {
     let server = Server::open(config.clone());
     let request = Request {
         kind: "movie".into(),
-        title: "Téléchargement local suspendu".into(),
+        title: "Paused Local Download".into(),
         year: 2026,
         season: 0,
         episode: 0,
@@ -230,9 +230,9 @@ fn native_torrent_cancel_and_retry_preserve_identity() {
 fn cancellation_invalidates_lease_and_retry_recovers_failure() {
     let directory = Directory::new();
     let source = directory.0.join("invalid.mp4");
-    fs::write(&source, b"fichier invalide").unwrap();
+    fs::write(&source, b"invalid file").unwrap();
     let server = Server::open(local_config(&directory.0));
-    let id = submit(&server, &local_request(&source, "Reprise"));
+    let id = submit(&server, &local_request(&source, "Recovery"));
     let stale = lock(&server.engine.store)
         .unwrap()
         .claim(store::now(), 60)
@@ -280,7 +280,7 @@ fn api_rejects_ambiguous_requests_and_non_json_media_types() {
     let source = directory.0.join("source.mp4");
     fs::write(&source, include_bytes!("../examples/demo.mp4")).unwrap();
     let server = Server::open(local_config(&directory.0));
-    let mut request = local_request(&source, "Ambigu");
+    let mut request = local_request(&source, "Ambiguous");
     request.source_url = Some("http://127.0.0.1/source.torrent".into());
     assert_eq!(
         server
@@ -421,7 +421,7 @@ fn cancellation_during_metadata_fetch_pauses_native_transfer_and_survives_restar
     let server = Server::open(config.clone());
     let request = Request {
         kind: "movie".into(),
-        title: "Métadonnées retardées".into(),
+        title: "Delayed Metadata".into(),
         year: 2026,
         season: 0,
         episode: 0,
@@ -435,7 +435,7 @@ fn cancellation_during_metadata_fetch_pauses_native_transfer_and_survives_restar
     metadata
         .requested
         .recv_timeout(Duration::from_secs(5))
-        .expect("la lecture HTTP des métadonnées doit être bloquée dans la fixture");
+        .expect("the fixture must block the HTTP metadata fetch");
     assert!(
         lock(&server.engine.store)
             .unwrap()
@@ -470,8 +470,8 @@ fn cancellation_during_metadata_fetch_pauses_native_transfer_and_survives_restar
             .is_file()
     );
     drop(server);
-    // Simule une interruption entre la confirmation d'annulation dans le
-    // journal et l'écriture de son marqueur natif : le journal est l'autorité.
+    // Simulate an interruption between recording cancellation in the journal
+    // and writing the native pause marker. The journal is authoritative.
     fs::remove_file(&pause).unwrap();
     let restarted = Server::open(config);
     let resumed = lock(&restarted.engine.store).unwrap().get(&id).unwrap();

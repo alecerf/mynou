@@ -72,7 +72,7 @@ pub struct Certificate {
 /// Parse a certificate with canonical definite DER lengths and bounded fields.
 pub fn parse_certificate(bytes: &[u8]) -> Result<Certificate> {
     if bytes.is_empty() || bytes.len() > MAX_CERTIFICATE {
-        return Err("Certificat : taille hors limite".into());
+        return Err("Certificate: size exceeds the limit".into());
     }
     let mut certificate = sequence(bytes)?;
     let tbs = certificate.expect(0x30)?;
@@ -87,21 +87,21 @@ pub fn parse_certificate(bytes: &[u8]) -> Result<Certificate> {
         let integer = version.expect(0x02)?;
         version.finish()?;
         match integer.body {
-            [0] => return Err("Certificat : version par défaut non canonique".into()),
+            [0] => return Err("Certificate: noncanonical default version".into()),
             [1] => 1,
             [2] => 2,
-            _ => return Err("Certificat : version inconnue".into()),
+            _ => return Err("Certificate: unknown version".into()),
         }
     } else {
         0
     };
     let serial = positive_integer(reader.expect(0x02)?.body)?;
     if serial.len() > 20 || serial.iter().all(|b| *b == 0) {
-        return Err("Certificat : numéro de série invalide".into());
+        return Err("Certificate: invalid serial number".into());
     }
     let inner_algorithm = reader.expect(0x30)?;
     if inner_algorithm.encoded != outer_algorithm.encoded {
-        return Err("Certificat : algorithmes de signature incohérents".into());
+        return Err("Certificate: inconsistent signature algorithms".into());
     }
     let issuer = reader.expect(0x30)?.encoded.to_vec();
     let mut validity = Reader::new(reader.expect(0x30)?.body);
@@ -109,7 +109,7 @@ pub fn parse_certificate(bytes: &[u8]) -> Result<Certificate> {
     let not_after = certificate_time(validity.read()?)?;
     validity.finish()?;
     if not_before > not_after {
-        return Err("Certificat : période de validité inversée".into());
+        return Err("Certificate: reversed validity period".into());
     }
     let subject = reader.expect(0x30)?.encoded.to_vec();
     let public_key = public_key(reader.expect(0x30)?.encoded)?;
@@ -131,11 +131,11 @@ pub fn parse_certificate(bytes: &[u8]) -> Result<Certificate> {
         server_auth: true,
     };
     if matches!(reader.peek(), Some(0x81 | 0x82)) {
-        return Err("Certificat : identifiants uniques non pris en charge".into());
+        return Err("Certificate: unique identifiers are unsupported".into());
     }
     if reader.peek() == Some(0xa3) {
         if version != 2 {
-            return Err("Certificat : extensions sans version v3".into());
+            return Err("Certificate: extensions require version v3".into());
         }
         let extensions = reader.expect(0xa3)?;
         parse_extensions(extensions.body, &mut parsed)?;
@@ -149,7 +149,7 @@ fn signature_algorithm(encoded: &[u8]) -> Result<SignatureAlgorithm> {
     let oid = reader.expect(0x06)?.body;
     let algorithm = if oid == RSA_SHA256 || oid == RSA_SHA384 {
         if reader.peek() == Some(0x05) && !reader.expect(0x05)?.body.is_empty() {
-            return Err("RSA : paramètre NULL invalide".into());
+            return Err("RSA: invalid NULL parameter".into());
         }
         if oid == RSA_SHA256 {
             SignatureAlgorithm::RsaSha256
@@ -178,10 +178,10 @@ fn signature_algorithm(encoded: &[u8]) -> Result<SignatureAlgorithm> {
 fn digest_algorithm(encoded: &[u8], expected_oid: &[u8]) -> Result<()> {
     let mut reader = sequence(encoded)?;
     if reader.expect(0x06)?.body != expected_oid {
-        return Err("PSS : algorithme de condensat incompatible".into());
+        return Err("PSS: incompatible hash algorithm".into());
     }
     if reader.peek() == Some(0x05) && !reader.expect(0x05)?.body.is_empty() {
-        return Err("PSS : paramètre de condensat invalide".into());
+        return Err("PSS: invalid hash parameter".into());
     }
     reader.finish()
 }
@@ -196,19 +196,19 @@ fn pss_parameters(encoded: &[u8]) -> Result<SignatureAlgorithm> {
     } else if oid == SHA384 {
         (48, SignatureAlgorithm::RsaPssSha384)
     } else {
-        return Err("PSS : SHA-256 ou SHA-384 requis".into());
+        return Err("PSS: SHA-256 or SHA-384 is required".into());
     };
     digest_algorithm(hash.body, oid)?;
     let mask = reader.expect(0xa1)?;
     let mut mask = sequence(mask.body)?;
     if mask.expect(0x06)?.body != MGF1 {
-        return Err("PSS : MGF1 requis".into());
+        return Err("PSS: MGF1 is required".into());
     }
     digest_algorithm(mask.expect(0x30)?.encoded, oid)?;
     mask.finish()?;
     let mut salt = Reader::new(reader.expect(0xa2)?.body);
     if salt.expect(0x02)?.body != [length] {
-        return Err("PSS : sel de la longueur du condensat requis".into());
+        return Err("PSS: salt length must equal the hash length".into());
     }
     salt.finish()?;
     // RFC 8017 defaults trailerField to 1. Explicit defaults are not DER.
@@ -224,7 +224,7 @@ fn public_key(encoded: &[u8]) -> Result<PublicKey> {
     reader.finish()?;
     let result = if oid == RSA {
         if algorithm.peek() == Some(0x05) && !algorithm.expect(0x05)?.body.is_empty() {
-            return Err("RSA : paramètre de clé invalide".into());
+            return Err("RSA: invalid key parameter".into());
         }
         let mut key = sequence(key)?;
         let modulus = positive_integer(key.expect(0x02)?.body)?.to_vec();
@@ -237,13 +237,13 @@ fn public_key(encoded: &[u8]) -> Result<PublicKey> {
             || exponent.len() > 4
             || exponent[0] == 0
         {
-            return Err("Certificat : clé RSA hors limites".into());
+            return Err("Certificate: RSA key size is out of bounds".into());
         }
         let value = exponent
             .iter()
             .fold(0u32, |n, byte| (n << 8) | u32::from(*byte));
         if value < 3 || value & 1 == 0 {
-            return Err("Certificat : exposant RSA invalide".into());
+            return Err("Certificate: invalid RSA exponent".into());
         }
         PublicKey::Rsa { modulus, exponent }
     } else if oid == EC {
@@ -259,10 +259,10 @@ fn public_key(encoded: &[u8]) -> Result<PublicKey> {
                 point: key.to_vec(),
             }
         } else {
-            return Err("Certificat : seule P-256 ou P-384 est prise en charge".into());
+            return Err("Certificate: only P-256 or P-384 is supported".into());
         }
     } else {
-        return Err("Certificat : type de clé non pris en charge".into());
+        return Err("Certificate: unsupported key type".into());
     };
     algorithm.finish()?;
     Ok(result)
@@ -273,18 +273,18 @@ fn parse_extensions(encoded: &[u8], certificate: &mut Certificate) -> Result<()>
     let mut seen: Vec<Vec<u8>> = Vec::new();
     while !extensions.empty() {
         if seen.len() >= 64 {
-            return Err("Certificat : trop d'extensions".into());
+            return Err("Certificate: too many extensions".into());
         }
         let mut extension = Reader::new(extensions.expect(0x30)?.body);
         let oid = extension.expect(0x06)?.body;
         if seen.iter().any(|seen| seen == oid) {
-            return Err("Certificat : extension dupliquée".into());
+            return Err("Certificate: duplicate extension".into());
         }
         seen.push(oid.to_vec());
         let critical = if extension.peek() == Some(0x01) {
             let value = boolean(extension.expect(0x01)?.body)?;
             if !value {
-                return Err("Certificat : valeur critique par défaut non canonique".into());
+                return Err("Certificate: noncanonical default critical value".into());
             }
             value
         } else {
@@ -297,13 +297,13 @@ fn parse_extensions(encoded: &[u8], certificate: &mut Certificate) -> Result<()>
             if constraints.peek() == Some(0x01) {
                 certificate.ca = boolean(constraints.expect(0x01)?.body)?;
                 if !certificate.ca {
-                    return Err("Certificat : contrainte CA par défaut non canonique".into());
+                    return Err("Certificate: noncanonical default CA constraint".into());
                 }
             }
             if constraints.peek() == Some(0x02) {
                 let number = positive_integer(constraints.expect(0x02)?.body)?;
                 if !certificate.ca || number.len() > 2 {
-                    return Err("Certificat : contrainte de chemin invalide".into());
+                    return Err("Certificate: invalid path constraint".into());
                 }
                 certificate.path_length = Some(
                     number
@@ -321,7 +321,7 @@ fn parse_extensions(encoded: &[u8], certificate: &mut Certificate) -> Result<()>
                 || usage[0] > 7
                 || usage.last().unwrap() & ((1u8 << usage[0]) - 1) != 0
             {
-                return Err("Certificat : usages de clé invalides".into());
+                return Err("Certificate: invalid key usage".into());
             }
             certificate.key_usage = Some(usage[1]);
         } else if oid == [0x55, 0x1d, 0x11] {
@@ -330,12 +330,12 @@ fn parse_extensions(encoded: &[u8], certificate: &mut Certificate) -> Result<()>
             while !names.empty() {
                 count += 1;
                 if count > 256 {
-                    return Err("Certificat : trop de noms alternatifs".into());
+                    return Err("Certificate: too many alternative names".into());
                 }
                 let name = names.read()?;
                 if name.tag == 0x82 {
                     let name = std::str::from_utf8(name.body)
-                        .map_err(|_| "Certificat : nom DNS invalide")?;
+                        .map_err(|_| "Certificate: invalid DNS name")?;
                     certificate.dns_names.push(normalize_dns(name, true)?);
                 } else if name.tag == 0x87 {
                     let address = match name.body {
@@ -345,13 +345,13 @@ fn parse_extensions(encoded: &[u8], certificate: &mut Certificate) -> Result<()>
                             address.copy_from_slice(bytes);
                             IpAddr::from(address)
                         }
-                        _ => return Err("Certificat : adresse IP SAN invalide".into()),
+                        _ => return Err("Certificate: invalid SAN IP address".into()),
                     };
                     certificate.ip_addresses.push(address);
                 }
             }
             if count == 0 {
-                return Err("Certificat : liste SAN vide".into());
+                return Err("Certificate: empty SAN list".into());
             }
         } else if oid == [0x55, 0x1d, 0x25] {
             let mut usages = sequence(value)?;
@@ -360,18 +360,18 @@ fn parse_extensions(encoded: &[u8], certificate: &mut Certificate) -> Result<()>
             while !usages.empty() {
                 count += 1;
                 if count > 32 {
-                    return Err("Certificat : trop d'usages étendus".into());
+                    return Err("Certificate: too many extended key usages".into());
                 }
                 let usage = usages.expect(0x06)?.body;
                 certificate.server_auth |= usage == SERVER_AUTH || usage == ANY_EKU;
             }
             if count == 0 {
-                return Err("Certificat : usages étendus vides".into());
+                return Err("Certificate: empty extended key usage".into());
             }
         } else if oid == [0x55, 0x1d, 0x1e] {
-            return Err("Certificat : contraintes de noms non prises en charge".into());
+            return Err("Certificate: name constraints are unsupported".into());
         } else if critical {
-            return Err("Certificat : extension critique non prise en charge".into());
+            return Err("Certificate: unsupported critical extension".into());
         }
     }
     Ok(())
@@ -380,7 +380,7 @@ fn parse_extensions(encoded: &[u8], certificate: &mut Certificate) -> Result<()>
 fn normalize_dns(name: &str, wildcard: bool) -> Result<String> {
     let name = name.strip_suffix('.').unwrap_or(name);
     if name.is_empty() || name.len() > 253 || !name.is_ascii() {
-        return Err("Nom DNS invalide".into());
+        return Err("Invalid DNS name".into());
     }
     let labels: Vec<_> = name.split('.').collect();
     for (i, label) in labels.iter().enumerate() {
@@ -395,7 +395,7 @@ fn normalize_dns(name: &str, wildcard: bool) -> Result<String> {
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b == b'-')
         {
-            return Err("Nom DNS ou joker invalide".into());
+            return Err("Invalid DNS name or wildcard".into());
         }
     }
     Ok(name.to_ascii_lowercase())
@@ -427,10 +427,10 @@ fn certificate_time(time: der::Element<'_>) -> Result<u64> {
             )
         }
         0x18 if time.body.len() == 15 => (decimal(&time.body[..4])?, &time.body[4..]),
-        _ => return Err("Certificat : date DER invalide".into()),
+        _ => return Err("Certificate: invalid DER date".into()),
     };
     if rest[10] != b'Z' || !(1970..=9999).contains(&year) {
-        return Err("Certificat : date hors limites".into());
+        return Err("Certificate: date is out of bounds".into());
     }
     let month = decimal(&rest[..2])?;
     let day = decimal(&rest[2..4])?;
@@ -461,7 +461,7 @@ fn certificate_time(time: der::Element<'_>) -> Result<u64> {
         || minute > 59
         || second > 59
     {
-        return Err("Certificat : date calendaire invalide".into());
+        return Err("Certificate: invalid calendar date".into());
     }
     let years = (1970..year)
         .map(|y| if leap(y) { 366 } else { 365 })
@@ -471,7 +471,7 @@ fn certificate_time(time: der::Element<'_>) -> Result<u64> {
 }
 fn decimal(bytes: &[u8]) -> Result<u64> {
     if !bytes.iter().all(u8::is_ascii_digit) {
-        return Err("Certificat : chiffres de date invalides".into());
+        return Err("Certificate: invalid date digits".into());
     }
     Ok(bytes
         .iter()
@@ -481,7 +481,7 @@ fn decimal(bytes: &[u8]) -> Result<u64> {
 fn verify_signature(certificate: &Certificate, issuer: &PublicKey) -> Result<()> {
     match (certificate.algorithm, issuer) {
         (SignatureAlgorithm::Unsupported, _) => {
-            Err("Certificat : algorithme de signature non pris en charge".into())
+            Err("Certificate: unsupported signature algorithm".into())
         }
         (SignatureAlgorithm::RsaSha256, PublicKey::Rsa { modulus, exponent }) => {
             verify_pkcs1_sha256(
@@ -527,25 +527,25 @@ fn verify_signature(certificate: &Certificate, issuer: &PublicKey) -> Result<()>
         (SignatureAlgorithm::EcdsaP256Sha256, PublicKey::EcdsaP384 { point }) => {
             ecc::verify_ecdsa_p384_sha256(point, &certificate.signed, &certificate.signature)
         }
-        _ => Err("Certificat : clé et signature incompatibles".into()),
+        _ => Err("Certificate: incompatible key and signature".into()),
     }
 }
 
 fn validate_ca(certificate: &Certificate, subordinate_cas: usize, now: u64) -> Result<()> {
     if now < certificate.not_before || now > certificate.not_after {
-        return Err("Certificat CA : validité expirée ou future".into());
+        return Err("CA certificate: expired or not yet valid".into());
     }
     if !certificate.ca
         || certificate.key_usage.is_some_and(|usage| usage & 0x04 == 0)
         || !certificate.server_auth
     {
-        return Err("Certificat : autorité de certification non autorisée".into());
+        return Err("Certificate: certificate authority is not authorized".into());
     }
     if certificate
         .path_length
         .is_some_and(|length| subordinate_cas > length)
     {
-        return Err("Certificat : longueur de chemin dépassée".into());
+        return Err("Certificate: path length exceeded".into());
     }
     Ok(())
 }
@@ -559,7 +559,7 @@ pub fn validate_chain(
     now: u64,
 ) -> Result<PublicKey> {
     if chain_der.is_empty() || chain_der.len() > 16 {
-        return Err("TLS : longueur de chaîne de certificats invalide".into());
+        return Err("TLS: invalid certificate chain length".into());
     }
     let chain: Vec<Certificate> = chain_der
         .iter()
@@ -567,19 +567,19 @@ pub fn validate_chain(
         .collect::<Result<_>>()?;
     let leaf = &chain[0];
     if now < leaf.not_before || now > leaf.not_after {
-        return Err("TLS : certificat expiré ou pas encore valide".into());
+        return Err("TLS: certificate is expired or not yet valid".into());
     }
     if leaf.ca || !leaf.server_auth || leaf.key_usage.is_some_and(|usage| usage & 0x80 == 0) {
-        return Err("TLS : certificat non autorisé pour un serveur".into());
+        return Err("TLS: certificate is not authorized for server authentication".into());
     }
     if !matches_hostname(leaf, hostname)? {
-        return Err("TLS : certificat incompatible avec le nom du serveur".into());
+        return Err("TLS: certificate does not match the server hostname".into());
     }
     for i in 1..chain.len() {
         let issuer = &chain[i];
         validate_ca(issuer, i - 1, now)?;
         if chain[i - 1].issuer != issuer.subject {
-            return Err("TLS : noms de la chaîne incohérents".into());
+            return Err("TLS: inconsistent certificate chain names".into());
         }
         verify_signature(&chain[i - 1], &issuer.public_key)?;
     }
@@ -603,30 +603,30 @@ pub fn validate_chain(
             return Ok(leaf.public_key.clone());
         }
     }
-    Err("TLS : chaîne sans racine de confiance compatible".into())
+    Err("TLS: certificate chain has no compatible trusted root".into())
 }
 
 /// Decode PEM certificate data only; private keys and unrelated blocks are ignored.
 pub fn certificates_from_pem(bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
     if bytes.len() > 4 * 1024 * 1024 {
-        return Err("Racines PEM : fichier trop grand".into());
+        return Err("PEM trust roots: file is too large".into());
     }
-    let text = std::str::from_utf8(bytes).map_err(|_| "Racines PEM : texte invalide")?;
+    let text = std::str::from_utf8(bytes).map_err(|_| "PEM trust roots: invalid text")?;
     const BEGIN: &str = "-----BEGIN CERTIFICATE-----";
     const END: &str = "-----END CERTIFICATE-----";
     let mut rest = text;
     let mut certificates = Vec::new();
     while let Some(begin) = rest.find(BEGIN) {
         rest = &rest[begin + BEGIN.len()..];
-        let end = rest.find(END).ok_or("Racines PEM : bloc incomplet")?;
+        let end = rest.find(END).ok_or("PEM trust roots: incomplete block")?;
         if certificates.len() >= 256 {
-            return Err("Racines PEM : trop de certificats".into());
+            return Err("PEM trust roots: too many certificates".into());
         }
         certificates.push(base64_certificate(&rest[..end])?);
         rest = &rest[end + END.len()..];
     }
     if certificates.is_empty() {
-        return Err("Racines PEM : aucun certificat".into());
+        return Err("PEM trust roots: no certificates".into());
     }
     Ok(certificates)
 }
@@ -640,7 +640,7 @@ fn base64_certificate(text: &str) -> Result<Vec<u8>> {
         || !chars.len().is_multiple_of(4)
         || chars.len() > MAX_CERTIFICATE * 4 / 3 + 4
     {
-        return Err("PEM : longueur base64 invalide".into());
+        return Err("PEM: invalid Base64 length".into());
     }
     let value = |byte: u8| -> Result<u32> {
         match byte {
@@ -649,7 +649,7 @@ fn base64_certificate(text: &str) -> Result<Vec<u8>> {
             b'0'..=b'9' => Ok(u32::from(byte - b'0') + 52),
             b'+' => Ok(62),
             b'/' => Ok(63),
-            _ => Err("PEM : caractère base64 invalide".into()),
+            _ => Err("PEM: invalid Base64 character".into()),
         }
     };
     let mut decoded = Vec::with_capacity(chars.len() / 4 * 3);
@@ -673,7 +673,7 @@ fn base64_certificate(text: &str) -> Result<Vec<u8>> {
             || padding == 2 && b & 15 != 0
             || padding == 1 && c & 3 != 0
         {
-            return Err("PEM : bourrage base64 non canonique".into());
+            return Err("PEM: noncanonical Base64 padding".into());
         }
         decoded.push(((a << 2) | (b >> 4)) as u8);
         if padding < 2 {
@@ -762,7 +762,7 @@ mod tests {
         assert!(
             parse_extensions(&extensions, &mut cert)
                 .unwrap_err()
-                .contains("contraintes de noms")
+                .contains("name constraints")
         );
     }
     #[test]
@@ -793,7 +793,7 @@ mod tests {
         assert!(validate_chain(&[LEAF384.to_vec()], ROOT, "localhost", now).is_ok());
         assert!(validate_chain(&[LEAF256.to_vec()], ROOT, "localhost", now).is_ok());
         let PublicKey::EcdsaP384 { point } = leaf.public_key else {
-            panic!("P-384 attendu")
+            panic!("P-384 expected")
         };
         let signature = include_bytes!("pki/fixtures/ec384-signature.der");
         verify_ecdsa_p384_sha384(&point, MESSAGE, signature).unwrap();
@@ -805,7 +805,7 @@ mod tests {
         )
         .unwrap();
         let PublicKey::EcdsaP256 { point } = parse_certificate(LEAF256).unwrap().public_key else {
-            panic!("P-256 attendu")
+            panic!("P-256 expected")
         };
         let signature = include_bytes!("pki/fixtures/ec256-signature.der");
         verify_ecdsa_p256_sha256(&point, MESSAGE, signature).unwrap();

@@ -1,4 +1,4 @@
-//! API HTTP locale, authentifiée et bornée, sans framework.
+//! Local authenticated HTTP API with bounded requests and no framework.
 use crate::{
     Result,
     crypto::constant_time_eq,
@@ -25,10 +25,10 @@ pub struct Api {
 impl Api {
     pub fn bind(engine: Arc<Engine>, token: String) -> Result<Self> {
         if token.len() < 32 || token.len() > 4096 || token.chars().any(char::is_control) {
-            return Err("Le jeton API doit contenir au moins 32 caractères sans contrôle".into());
+            return Err("The API token must contain 32 to 4096 bytes and no control characters".into());
         }
         let listener = TcpListener::bind(&engine.config.listen)
-            .map_err(|e| format!("Écoute API impossible : {e}"))?;
+            .map_err(|e| format!("Cannot bind the API listener: {e}"))?;
         listener.set_nonblocking(true).map_err(|e| e.to_string())?;
         Ok(Self {
             listener,
@@ -61,12 +61,12 @@ impl Api {
                 }
                 Ok((mut stream, _)) => {
                     let _ = stream.set_write_timeout(Some(Duration::from_millis(100)));
-                    let _ = respond(&mut stream, 503, error("API occupée"));
+                    let _ = respond(&mut stream, 503, error("API busy"));
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     thread::sleep(Duration::from_millis(20))
                 }
-                Err(e) => return Err(format!("Acceptation API impossible : {e}")),
+                Err(e) => return Err(format!("Cannot accept an API connection: {e}")),
             }
         }
         for h in threads {
@@ -99,16 +99,16 @@ fn read_request(stream: &mut TcpStream) -> Result<HttpRequest> {
     let mut byte = [0];
     while !data.ends_with(b"\r\n\r\n") {
         if data.len() >= MAX_HEADER || std::time::Instant::now() > deadline {
-            return Err("En-têtes trop grands ou trop lents".into());
+            return Err("Headers are too large or timed out".into());
         }
         stream
             .read_exact(&mut byte)
-            .map_err(|_| "En-têtes incomplets")?;
+            .map_err(|_| "Incomplete headers")?;
         data.push(byte[0]);
     }
-    let text = std::str::from_utf8(&data).map_err(|_| "En-têtes non UTF-8")?;
+    let text = std::str::from_utf8(&data).map_err(|_| "Headers are not valid UTF-8")?;
     let mut lines = text[..text.len() - 4].split("\r\n");
-    let first = lines.next().ok_or("Requête absente")?;
+    let first = lines.next().ok_or("Missing request")?;
     let parts: Vec<_> = first.split(' ').collect();
     if parts.len() != 3
         || parts[2] != "HTTP/1.1"
@@ -117,52 +117,52 @@ fn read_request(stream: &mut TcpStream) -> Result<HttpRequest> {
         || parts[1].len() > 4096
         || !parts[0].bytes().all(|b| b.is_ascii_uppercase())
     {
-        return Err("Ligne HTTP invalide".into());
+        return Err("Invalid HTTP request line".into());
     }
     let mut headers = BTreeMap::new();
     for line in lines {
-        let (key, value) = line.split_once(':').ok_or("En-tête invalide")?;
+        let (key, value) = line.split_once(':').ok_or("Invalid header")?;
         if key.is_empty()
             || !key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
             || value.bytes().any(|b| b < 32 && b != 9 || b == 127)
         {
-            return Err("En-tête invalide".into());
+            return Err("Invalid header".into());
         }
         let key = key.to_ascii_lowercase();
         if headers.insert(key, value.trim().to_owned()).is_some() {
-            return Err("En-tête dupliqué interdit".into());
+            return Err("Duplicate headers are not allowed".into());
         }
     }
     if !headers.contains_key("host")
         || headers.contains_key("transfer-encoding")
         || headers.contains_key("expect")
     {
-        return Err("Host requis ; transfert segmenté et Expect non pris en charge".into());
+        return Err("Host is required; Transfer-Encoding and Expect are not supported".into());
     }
     let length = match headers.get("content-length") {
         Some(v) if !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()) => {
-            v.parse::<usize>().map_err(|_| "Longueur invalide")?
+            v.parse::<usize>().map_err(|_| "Invalid content length")?
         }
-        Some(_) => return Err("Longueur invalide".into()),
+        Some(_) => return Err("Invalid content length".into()),
         None => 0,
     };
     if length > MAX_BODY {
-        return Err("Corps trop grand".into());
+        return Err("Request body is too large".into());
     }
     if parts[0] == "GET" && length != 0 {
-        return Err("Corps GET interdit".into());
+        return Err("GET requests must not have a body".into());
     }
     let mut body = vec![0; length];
     let mut offset = 0;
     while offset < length {
         if std::time::Instant::now() > deadline {
-            return Err("Corps trop lent".into());
+            return Err("Request body timed out".into());
         }
         let n = stream
             .read(&mut body[offset..])
-            .map_err(|_| "Corps incomplet")?;
+            .map_err(|_| "Incomplete request body")?;
         if n == 0 {
-            return Err("Corps incomplet".into());
+            return Err("Incomplete request body".into());
         }
         offset += n;
     }
@@ -209,7 +209,7 @@ fn connection(stream: &mut TcpStream, engine: &Arc<Engine>, token: &str) -> Resu
         .and_then(|v| v.strip_prefix("Bearer "))
         .unwrap_or("");
     if !constant_time_eq(bearer.as_bytes(), token.as_bytes()) {
-        return respond(stream, 401, error("Authentification requise"));
+        return respond(stream, 401, error("Authentication required"));
     }
     if method == "POST"
         && !body.is_empty()
@@ -217,7 +217,7 @@ fn connection(stream: &mut TcpStream, engine: &Arc<Engine>, token: &str) -> Resu
             .get("content-type")
             .is_none_or(|v| v.split(';').next() != Some("application/json"))
     {
-        return respond(stream, 415, error("Content-Type application/json requis"));
+        return respond(stream, 415, error("Content-Type application/json is required"));
     }
     match route(engine, &method, &path, &body) {
         Ok((status, value)) => respond(stream, status, value),
@@ -232,7 +232,7 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
             Value::Array(lock(&engine.store)?.list().iter().map(public_job).collect()),
         )),
         ("POST", "/api/jobs") => {
-            let v = json::parse(std::str::from_utf8(body).map_err(|_| "Corps non UTF-8")?)?;
+            let v = json::parse(std::str::from_utf8(body).map_err(|_| "Request body is not valid UTF-8")?)?;
             let request = Request::from_json(&v)?;
             Ok((
                 201,
@@ -255,12 +255,12 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
                 let parts: Vec<_> = tail.split('/').collect();
                 let id = parts[0];
                 if id.len() != 32 || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
-                    return Ok((404, error("Demande inconnue")));
+                    return Ok((404, error("Unknown job")));
                 }
                 if parts.len() == 1 && method == "GET" {
                     return Ok(match lock(&engine.store)?.get(id) {
                         Some(job) => (200, public_job(&job)),
-                        None => (404, error("Demande inconnue")),
+                        None => (404, error("Unknown job")),
                     });
                 }
                 if parts.len() == 2 {
@@ -283,7 +283,7 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
                     }
                 }
             }
-            Ok((404, error("Route inconnue")))
+            Ok((404, error("Unknown route")))
         }
     }
 }
@@ -306,7 +306,7 @@ fn respond(stream: &mut TcpStream, status: u16, value: Value) -> Result<()> {
     stream
         .write_all(head.as_bytes())
         .and_then(|()| stream.write_all(body.as_bytes()))
-        .map_err(|e| format!("Réponse impossible : {e}"))
+        .map_err(|e| format!("Cannot write the response: {e}"))
 }
 
 #[cfg(test)]

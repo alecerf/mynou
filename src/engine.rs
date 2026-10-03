@@ -1,4 +1,4 @@
-//! Orchestration durable. Les verrous ne couvrent jamais les imports ni Plex.
+//! Durable orchestration. Locks never cover imports or Plex requests.
 use crate::{
     Result,
     config::Config,
@@ -30,7 +30,7 @@ pub struct Engine {
 pub fn lock<T>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>> {
     mutex
         .lock()
-        .map_err(|_| "Verrou interne empoisonné".to_owned())
+        .map_err(|_| "Internal lock poisoned".to_owned())
 }
 
 impl Engine {
@@ -195,7 +195,7 @@ impl Engine {
                         Ok(true) => {}
                         Ok(false) => engine.wait(engine.config.poll_interval_ms),
                         Err(error) => {
-                            eprintln!("mynou : {error}");
+                            eprintln!("mynou: {error}");
                             engine.wait(1000);
                         }
                     }
@@ -229,18 +229,18 @@ impl Engine {
         }
     }
 
-    /// Exécute une étape et libère le bail avant toute attente du prochain tour.
+    /// Run one step and release the lease before waiting for the next poll.
     pub fn tick(self: &Arc<Self>) -> Result<bool> {
         let Some(mut job) =
             lock(&self.store)?.claim(store::now(), self.config.lease_duration_secs)?
         else {
             return Ok(false);
         };
-        let lease = job.lease_id.clone().ok_or("Bail absent")?;
+        let lease = job.lease_id.clone().ok_or("Missing lease")?;
         let heartbeat = Heartbeat::start(self.clone(), job.id.clone(), lease.clone());
         let result = self.advance(&mut job, &heartbeat.active);
         heartbeat.finish();
-        // Une annulation ou un autre propriétaire du bail rend ce résultat caduc.
+        // Cancellation or a new lease owner makes this result stale.
         let mut store = lock(&self.store)?;
         let Some(current) = store.get(&job.id) else {
             return Ok(true);
@@ -267,7 +267,7 @@ impl Engine {
 
     fn advance(&self, job: &mut Job, active: &AtomicBool) -> Result<()> {
         if !active.load(Ordering::Acquire) {
-            return Err("Traitement interrompu".into());
+            return Err("Processing interrupted".into());
         }
         job.last_error = None;
         if job.state == "processing"
@@ -276,7 +276,7 @@ impl Engine {
         {
             self.downloads
                 .as_ref()
-                .ok_or("Téléchargements désactivés")?
+                .ok_or("Downloads are disabled")?
                 .resume(id)?;
         }
         if self.config.plex.enabled
@@ -292,7 +292,7 @@ impl Engine {
             job.next_attempt_at = 0;
             return Ok(());
         }
-        // Un import confirmé est repris sans recopier après une interruption.
+        // Resume a confirmed import after interruption without copying it again.
         if !job.imports.is_empty() {
             if self.config.plex.enabled {
                 if job.state != "scanning" {
@@ -313,9 +313,9 @@ impl Engine {
             let client = self
                 .downloads
                 .as_ref()
-                .ok_or("Téléchargements désactivés")?;
+                .ok_or("Downloads are disabled")?;
             let status =
-                client.check(job.download_id.as_deref().ok_or("Téléchargement absent")?)?;
+                client.check(job.download_id.as_deref().ok_or("Missing download")?)?;
             if !status.ready {
                 job.state = "downloading".into();
                 job.progress = status.progress;
@@ -330,30 +330,30 @@ impl Engine {
                 let client = self
                     .downloads
                     .as_ref()
-                    .ok_or("Téléchargements désactivés")?;
+                    .ok_or("Downloads are disabled")?;
                 if job.acquisition_url.is_none() {
                     job.acquisition_url = Some(match &job.request.source_url {
                         Some(url) => url.clone(),
                         None => integrations::search(&self.config, &job.request)?,
                     });
-                    // Sauvegarder la sélection avant l'effet de bord réseau.
+                    // Persist the selection before performing network operations.
                     lock(&self.store)?.update(job.clone())?;
                 }
                 let status = if let Some(id) = &job.download_id {
                     client.check(id)?
                 } else {
-                    // La lecture des métadonnées précède le verrou interne du client.
-                    client.ensure(job.acquisition_url.as_deref().ok_or("Source absente")?)?
+                    // Fetch metadata before acquiring the client internal lock.
+                    client.ensure(job.acquisition_url.as_deref().ok_or("Missing source")?)?
                 };
                 job.download_id = Some(status.id.clone());
                 job.progress = status.progress;
                 job.state = "downloading".into();
-                // ensure peut lire une URL avant de créer le transfert. Une
-                // annulation pendant cette lecture doit aussi suspendre l'ID
-                // apparu après elle, sans dépendre du délai du heartbeat.
+                // ensure may fetch a URL before creating the transfer. Cancellation
+                // during that fetch must also pause the resulting transfer,
+                // without waiting for the next heartbeat.
                 {
                     let mut store = lock(&self.store)?;
-                    let current = store.get(&job.id).ok_or("Tâche absente")?;
+                    let current = store.get(&job.id).ok_or("Missing job")?;
                     if current.lease_id != job.lease_id || current.lease_until <= store::now() {
                         if current.state == "cancelled"
                             && current.acquisition_url == job.acquisition_url
@@ -370,14 +370,14 @@ impl Engine {
                                         && other.acquisition_url == job.acquisition_url))
                         });
                         if !shared {
-                            // Écriture locale seulement : aucun appel réseau
-                            // pendant la décision protégée par le verrou.
+                            // Only local writes: no network requests while
+                            // this decision is protected by the lock.
                             client.cancel(&status.id)?;
                         }
-                        return Err("Bail de traitement périmé".into());
+                        return Err("Processing lease expired".into());
                     }
-                    // Publier l'identité avant de poursuivre : cancel voit
-                    // désormais toujours le transfert associé à cette tâche.
+                    // Publish the identity before continuing so cancel
+                    // can always find the transfer associated with this job.
                     store.update(job.clone())?;
                 }
                 if !status.ready {
@@ -397,9 +397,9 @@ impl Engine {
         for file in &job.files {
             let p = Path::new(file);
             if !active.load(Ordering::Acquire) {
-                return Err("Traitement interrompu".into());
+                return Err("Processing interrupted".into());
             }
-            // Ignorer les fichiers annexes des torrents, analyser chaque média retenu.
+            // Ignore auxiliary torrent files and analyze each supported media file.
             let ext = p
                 .extension()
                 .and_then(|v| v.to_str())
@@ -420,12 +420,12 @@ impl Engine {
                 candidates.push((score, p));
             }
         }
-        // Une demande concerne un film ou un épisode ; le plus grand média évite
-        // d'importer les samples et de mélanger plusieurs épisodes d'un pack.
+        // Each request represents one movie or episode. Prefer the largest media
+        // file to avoid importing samples or mixing episodes from a pack.
         candidates.sort_by_key(|c| c.0);
         let source = candidates
             .last()
-            .ok_or("Aucun média pris en charge dans cette demande")?
+            .ok_or("No supported media found for this request")?
             .1;
         if job.request.kind == "episode" && job.files.len() > 1 {
             let marker = format!("s{:02}e{:02}", job.request.season, job.request.episode);
@@ -438,7 +438,7 @@ impl Engine {
                 .collect();
             if matching.len() != 1 {
                 return Err(
-                    "Pack ambigu : un seul fichier correspondant à l'épisode est requis".into(),
+                    "Ambiguous pack: exactly one file matching the episode is required".into(),
                 );
             }
             let path = matching[0].1;
@@ -461,7 +461,7 @@ impl Engine {
         job.progress = 1.0;
         job.state = "imported".into();
         job.next_attempt_at = 0;
-        // L'import est durable avant de demander un scan, qui sera repris au tour suivant.
+        // Persist the import before requesting a scan, which resumes on the next poll.
         Ok(())
     }
 }
@@ -500,9 +500,9 @@ impl Heartbeat {
                     break;
                 }
                 let valid = lock(&engine.store).and_then(|mut s| {
-                    let j = s.get(&id).ok_or("Tâche absente")?;
+                    let j = s.get(&id).ok_or("Missing job")?;
                     if j.lease_id.as_deref() != Some(&lease) || j.lease_until <= store::now() {
-                        return Err("Bail perdu".into());
+                        return Err("Lease lost".into());
                     }
                     if last.elapsed() >= period {
                         s.renew(&id, &lease, store::now(), engine.config.lease_duration_secs)?;
@@ -551,7 +551,7 @@ pub fn public_job(job: &Job) -> Value {
         {
             request.insert(
                 "source_url".into(),
-                Value::String("[source configurée]".into()),
+                Value::String("[configured source]".into()),
             );
         }
     }

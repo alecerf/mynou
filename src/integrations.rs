@@ -1,6 +1,6 @@
-//! Intégrations Plex, TMDB et indexeurs, sans dépendance externe.
-//! Les réponses et le XML sont bornés ; les erreurs ne contiennent jamais une
-//! URL de téléchargement ni une clé d'API.
+//! Plex, TMDB and indexer integrations without external dependencies.
+//! Responses and XML are bounded; errors never contain a download URL
+//! or an API key.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -27,8 +27,8 @@ struct CatalogEntry {
     payload_bytes: usize,
 }
 
-/// Seules les données JSON de TMDB sont conservées. Les clés sont des SHA-256
-/// cadrés de l'URL et des en-têtes ; aucune URL ou clé d'API n'est stockée ici.
+/// Only TMDB JSON data is retained. Keys are SHA-256 hashes of length-prefixed
+/// URLs and headers; no URL or API key is stored here.
 #[derive(Default)]
 struct CatalogCache {
     entries: BTreeMap<[u8; 32], CatalogEntry>,
@@ -146,7 +146,7 @@ fn query(url: &str, pairs: &[(&str, String)]) -> Result<String> {
 fn endpoint(base: &str, path: &str) -> Result<String> {
     let mut parsed = net::parse_url(base)?;
     if parsed.path.contains('?') {
-        return Err("URL de service : paramètres interdits dans la base".into());
+        return Err("Service URL: query parameters are forbidden in the base URL".into());
     }
     parsed.path = format!(
         "{}/{}",
@@ -167,13 +167,13 @@ fn fetch_json_sized(
 ) -> Result<(Value, usize)> {
     let response = client()
         .request("GET", url, headers, &[])
-        .map_err(|_| format!("{service} : requête réseau impossible"))?;
+        .map_err(|_| format!("{service}: network request failed"))?;
     if !(200..300).contains(&response.status) {
-        return Err(format!("{service} : réponse HTTP {}", response.status));
+        return Err(format!("{service}: HTTP response {}", response.status));
     }
     let text =
-        std::str::from_utf8(&response.body).map_err(|_| format!("{service} : UTF-8 invalide"))?;
-    let value = json::parse(text).map_err(|_| format!("{service} : réponse JSON invalide"))?;
+        std::str::from_utf8(&response.body).map_err(|_| format!("{service}: invalid UTF-8"))?;
+    let value = json::parse(text).map_err(|_| format!("{service}: invalid JSON response"))?;
     Ok((value, response.body.len()))
 }
 
@@ -190,7 +190,7 @@ fn optional_secret(name: &str) -> Result<Option<String>> {
     match std::env::var(name) {
         Ok(value) if !value.trim().is_empty() => config::secret(name).map(Some),
         Ok(_) | Err(std::env::VarError::NotPresent) => Ok(None),
-        Err(_) => Err(format!("Secret {name} invalide")),
+        Err(_) => Err(format!("Invalid secret {name}")),
     }
 }
 
@@ -212,14 +212,14 @@ fn plex_headers(config: &Config) -> Result<Vec<(String, String)>> {
 fn metadata_page(value: &Value) -> Result<(&[Value], Option<u64>)> {
     let container = value
         .get("MediaContainer")
-        .ok_or("Plex : MediaContainer absent")?;
+        .ok_or("Plex: missing MediaContainer")?;
     if container.as_object().is_none() {
-        return Err("Plex : MediaContainer invalide".into());
+        return Err("Plex: invalid MediaContainer".into());
     }
     let items = match container.get("Metadata") {
-        Some(v) => v.as_array().ok_or("Plex : Metadata invalide")?,
+        Some(v) => v.as_array().ok_or("Plex: invalid Metadata")?,
         None if integer(container, "size") == Some(0) => &[],
-        None => return Err("Plex : Metadata absent".into()),
+        None => return Err("Plex: missing Metadata".into()),
     };
     Ok((items, integer(container, "totalSize")))
 }
@@ -238,16 +238,16 @@ fn plex_items(url: &str, headers: &[(String, String)]) -> Result<Vec<Value>> {
         let value = fetch_json(&url, headers, "Plex")?;
         let (items, total) = metadata_page(&value)?;
         if out.len() + items.len() > MAX_ITEMS || total.is_some_and(|n| n > MAX_ITEMS as u64) {
-            return Err("Plex : trop de contenus".into());
+            return Err("Plex: too many items".into());
         }
         if items.is_empty() {
             if total.is_some_and(|n| n > out.len() as u64) {
-                return Err("Plex : pagination incomplète".into());
+                return Err("Plex: incomplete pagination".into());
             }
             return Ok(out);
         }
         if page > 0 && out.last() == items.last() {
-            return Err("Plex : pagination ignorée par le serveur".into());
+            return Err("Plex: pagination ignored by the server".into());
         }
         out.extend_from_slice(items);
         if total.is_some_and(|n| out.len() as u64 >= n)
@@ -256,7 +256,7 @@ fn plex_items(url: &str, headers: &[(String, String)]) -> Result<Vec<Value>> {
             return Ok(out);
         }
     }
-    Err("Plex : nombre de pages excessif".into())
+    Err("Plex: page count exceeds the limit".into())
 }
 
 fn tmdb_guid(item: &Value) -> Option<u64> {
@@ -272,7 +272,7 @@ fn tmdb_guid(item: &Value) -> Option<u64> {
     })
 }
 
-/// Lit la watchlist, puis développe les séries en épisodes déjà diffusés.
+/// Reads the watchlist and expands series into episodes that have already aired.
 pub fn watchlist(config: &Config) -> Result<Vec<Request>> {
     if !config.plex.enabled {
         return Ok(Vec::new());
@@ -293,7 +293,7 @@ pub fn watchlist(config: &Config) -> Result<Vec<Request>> {
         } else {
             string(&item, "title")
         }
-        .ok_or("Plex : titre absent")?;
+        .ok_or("Plex: missing title")?;
         let request = Request {
             kind: kind.into(),
             title: title.into(),
@@ -308,11 +308,11 @@ pub fn watchlist(config: &Config) -> Result<Vec<Request>> {
                 )
                 .unwrap_or(0),
             )
-            .map_err(|_| "Plex : année invalide")?,
+            .map_err(|_| "Plex: invalid year")?,
             season: u32::try_from(integer(&item, "parentIndex").unwrap_or(0))
-                .map_err(|_| "Plex : saison invalide")?,
+                .map_err(|_| "Plex: invalid season")?,
             episode: u32::try_from(integer(&item, "index").unwrap_or(0))
-                .map_err(|_| "Plex : épisode invalide")?,
+                .map_err(|_| "Plex: invalid episode")?,
             source_path: None,
             source_url: None,
             tmdb_id: if kind == "episode" {
@@ -324,7 +324,7 @@ pub fn watchlist(config: &Config) -> Result<Vec<Request>> {
         request.validate()?;
         for expanded in expand(config, &request)? {
             if out.len() >= MAX_ITEMS {
-                return Err("Watchlist : trop d'épisodes".into());
+                return Err("Watchlist: too many episodes".into());
             }
             if seen.insert(expanded.canonical_key()) {
                 out.push(expanded);
@@ -336,7 +336,7 @@ pub fn watchlist(config: &Config) -> Result<Vec<Request>> {
 
 fn catalog_json(config: &Config, path: &str, pairs: &[(&str, String)]) -> Result<Value> {
     if !config.catalog.enabled {
-        return Err("Catalogue TMDB désactivé".into());
+        return Err("TMDB catalog is disabled".into());
     }
     let mut headers = vec![("Accept".into(), "application/json".into())];
     let mut pairs = pairs.to_vec();
@@ -345,23 +345,23 @@ fn catalog_json(config: &Config, path: &str, pairs: &[(&str, String)]) -> Result
     } else if let Some(key) = optional_secret(&config.catalog.api_key_env)? {
         pairs.push(("api_key", key));
     } else {
-        return Err("Catalogue TMDB : jeton ou clé d'API absent".into());
+        return Err("TMDB catalog: missing token or API key".into());
     }
     let url = query(&endpoint(&config.catalog.url, path)?, &pairs)?;
     let key = catalog_cache_key(&url, &headers);
     let cached = catalog_cache()
         .lock()
-        .map_err(|_| "Catalogue TMDB : cache indisponible")?
+        .map_err(|_| "TMDB catalog: cache unavailable")?
         .lookup(&key, Instant::now());
     if let Some(value) = cached {
-        // La copie de l'arbre JSON reste en dehors du verrou partagé.
+        // Copy the JSON tree outside the shared lock.
         return Ok(value.as_ref().clone());
     }
     let (value, payload_bytes) = fetch_json_sized(&url, &headers, "Catalogue TMDB")?;
     let cached = Arc::new(value.clone());
     catalog_cache()
         .lock()
-        .map_err(|_| "Catalogue TMDB : cache indisponible")?
+        .map_err(|_| "TMDB catalog: cache unavailable")?
         .insert(key, cached, payload_bytes, Instant::now());
     Ok(value)
 }
@@ -386,7 +386,7 @@ fn resolve_catalog(config: &Config, request: &Request) -> Result<u64> {
     let items = value
         .get("results")
         .and_then(Value::as_array)
-        .ok_or("Catalogue TMDB : résultats absents")?;
+        .ok_or("TMDB catalog: missing results")?;
     let mut found = BTreeSet::new();
     for item in items {
         let title = string(item, if tv { "name" } else { "title" });
@@ -414,14 +414,14 @@ fn resolve_catalog(config: &Config, request: &Request) -> Result<u64> {
         }
     }
     if found.len() != 1 {
-        return Err("Catalogue TMDB : identification absente ou ambiguë ; préciser tmdb_id".into());
+        return Err("TMDB catalog: missing or ambiguous identification; specify tmdb_id".into());
     }
     Ok(*found
         .first()
-        .ok_or("Catalogue TMDB : identification absente")?)
+        .ok_or("TMDB catalog: missing identification")?)
 }
 
-// Date UTC courante, conversion grégorienne depuis le nombre de jours Unix.
+// Current UTC date, converted from Unix days to the Gregorian calendar.
 fn today() -> String {
     let days = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -468,7 +468,7 @@ fn valid_date(date: &str) -> bool {
     year >= 1800 && day != 0 && day <= max
 }
 
-/// Les séries sans source explicite deviennent des demandes d'épisodes.
+/// Series without an explicit source become episode requests.
 pub fn expand(config: &Config, request: &Request) -> Result<Vec<Request>> {
     request.validate()?;
     if request.kind != "series" {
@@ -491,11 +491,11 @@ pub fn expand(config: &Config, request: &Request) -> Result<Vec<Request>> {
         return Ok(vec![expanded]);
     }
     if request.source_path.is_some() || request.source_url.is_some() {
-        return Err("Série : soumettre un épisode pour une source explicite".into());
+        return Err("Series: submit an episode when providing an explicit source".into());
     }
     if !config.catalog.enabled {
         return Err(
-            "Série entière : activer TMDB pour identifier les épisodes déjà diffusés".into(),
+            "Complete series: enable TMDB to identify episodes that have already aired".into(),
         );
     }
     let id = resolve_catalog(config, request)?;
@@ -503,9 +503,9 @@ pub fn expand(config: &Config, request: &Request) -> Result<Vec<Request>> {
     let seasons = details
         .get("seasons")
         .and_then(Value::as_array)
-        .ok_or("Catalogue TMDB : saisons absentes")?;
+        .ok_or("TMDB catalog: missing seasons")?;
     if seasons.len() > 1_000 {
-        return Err("Catalogue TMDB : trop de saisons".into());
+        return Err("TMDB catalog: too many seasons".into());
     }
     let cutoff = today();
     let year = string(&details, "first_air_date")
@@ -516,11 +516,11 @@ pub fn expand(config: &Config, request: &Request) -> Result<Vec<Request>> {
     let mut seen = BTreeSet::new();
     for season in seasons {
         let number =
-            integer(season, "season_number").ok_or("Catalogue TMDB : numéro de saison absent")?;
+            integer(season, "season_number").ok_or("TMDB catalog: missing season number")?;
         if number == 0 || (request.season != 0 && number != u64::from(request.season)) {
             continue;
         }
-        let number = u32::try_from(number).map_err(|_| "Catalogue TMDB : saison invalide")?;
+        let number = u32::try_from(number).map_err(|_| "TMDB catalog: invalid season")?;
         if let Some(date) = string(season, "air_date").filter(|s| valid_date(s))
             && date > cutoff.as_str()
         {
@@ -530,9 +530,9 @@ pub fn expand(config: &Config, request: &Request) -> Result<Vec<Request>> {
         let episodes = value
             .get("episodes")
             .and_then(Value::as_array)
-            .ok_or("Catalogue TMDB : épisodes absents")?;
+            .ok_or("TMDB catalog: missing episodes")?;
         if episodes.len() > 1_000 {
-            return Err("Catalogue TMDB : trop d'épisodes dans une saison".into());
+            return Err("TMDB catalog: too many episodes in a season".into());
         }
         for episode in episodes {
             let Some(date) = string(episode, "air_date").filter(|s| valid_date(s)) else {
@@ -543,9 +543,9 @@ pub fn expand(config: &Config, request: &Request) -> Result<Vec<Request>> {
             }
             let episode = u32::try_from(
                 integer(episode, "episode_number")
-                    .ok_or("Catalogue TMDB : numéro d'épisode absent")?,
+                    .ok_or("TMDB catalog: missing episode number")?,
             )
-            .map_err(|_| "Catalogue TMDB : épisode invalide")?;
+            .map_err(|_| "TMDB catalog: invalid episode")?;
             if episode == 0
                 || (request.episode != 0 && episode != request.episode)
                 || !seen.insert((number, episode))
@@ -565,7 +565,7 @@ pub fn expand(config: &Config, request: &Request) -> Result<Vec<Request>> {
             expanded.validate()?;
             out.push(expanded);
             if out.len() > MAX_ITEMS {
-                return Err("Catalogue TMDB : trop d'épisodes".into());
+                return Err("TMDB catalog: too many episodes".into());
             }
         }
     }
@@ -656,7 +656,7 @@ fn release_matches(request: &Request, title: &str) -> bool {
     if request.year != 0 {
         rest.first().and_then(|s| s.parse::<u32>().ok()) == Some(request.year)
     } else {
-        // Sans année, un titre seul ou immédiatement suivi d'une année/qualité.
+        // Without a year, accept the title alone or directly followed by a year/quality.
         rest.first().is_none_or(|s| {
             s.parse::<u32>().is_ok_and(|n| (1888..=2200).contains(&n))
                 || [
@@ -670,7 +670,7 @@ fn release_matches(request: &Request, title: &str) -> bool {
 
 fn acquisition_url(url: &str, base: &str) -> Result<String> {
     if url.len() > 8_192 || url.chars().any(char::is_control) {
-        return Err("URL d'acquisition invalide".into());
+        return Err("Invalid acquisition URL".into());
     }
     if let Some(query) = url.strip_prefix("magnet:?") {
         if query
@@ -679,7 +679,7 @@ fn acquisition_url(url: &str, base: &str) -> Result<String> {
         {
             return Ok(url.into());
         }
-        return Err("Magnet : empreinte absente".into());
+        return Err("Magnet: missing hash".into());
     }
     let url = if url.starts_with('/') && !url.starts_with("//") {
         format!("{}{}", net::parse_url(base)?.origin(), url)
@@ -695,9 +695,9 @@ fn json_releases(value: &Value, base: &str) -> Result<Vec<Release>> {
         .as_array()
         .or_else(|| value.get("results").and_then(Value::as_array))
         .or_else(|| value.get("items").and_then(Value::as_array))
-        .ok_or("Indexeur JSON : liste results/items absente")?;
+        .ok_or("JSON indexer: missing results/items list")?;
     if items.len() > MAX_ITEMS {
-        return Err("Indexeur JSON : trop de résultats".into());
+        return Err("JSON indexer: too many results".into());
     }
     let mut out = Vec::new();
     for item in items {
@@ -769,11 +769,11 @@ fn source_releases(source: &Source, request: &Request) -> Result<Vec<Release>> {
             )],
             &[],
         )
-        .map_err(|_| "Indexeur : requête réseau impossible")?;
+        .map_err(|_| "Indexer: network request failed")?;
     if !(200..300).contains(&response.status) {
-        return Err(format!("Indexeur : réponse HTTP {}", response.status));
+        return Err(format!("Indexer: HTTP response {}", response.status));
     }
-    let text = std::str::from_utf8(&response.body).map_err(|_| "Indexeur : UTF-8 invalide")?;
+    let text = std::str::from_utf8(&response.body).map_err(|_| "Indexer: invalid UTF-8")?;
     if source.kind == "json" {
         json_releases(&json::parse(text)?, &source.url)
     } else {
@@ -781,20 +781,20 @@ fn source_releases(source: &Source, request: &Request) -> Result<Vec<Release>> {
     }
 }
 
-/// Sélection déterministe : identité exacte, puis nombre de seeders décroissant.
+/// Deterministic selection: exact identity, then descending seed count.
 pub fn search(config: &Config, request: &Request) -> Result<String> {
     request.validate()?;
     if let Some(source) = &request.source_url {
         return acquisition_url(source, &config.plex.url);
     }
     if !matches!(request.kind.as_str(), "movie" | "episode") {
-        return Err("Recherche : film ou épisode attendu".into());
+        return Err("Search: expected a movie or episode".into());
     }
     if config.sources.is_empty() {
-        return Err("Recherche : aucun indexeur configuré".into());
+        return Err("Search: no indexer configured".into());
     }
     if config.sources.len() > 1_000 {
-        return Err("Recherche : trop d'indexeurs".into());
+        return Err("Search: too many indexers".into());
     }
     let mut candidates = Vec::new();
     let mut successful = 0;
@@ -806,14 +806,14 @@ pub fn search(config: &Config, request: &Request) -> Result<String> {
                     && release_matches(request, &release.title)
             }) {
                 if candidates.len() >= MAX_ITEMS {
-                    return Err("Recherche : trop de candidats".into());
+                    return Err("Search: too many candidates".into());
                 }
                 candidates.push(release);
             }
         }
     }
     if successful == 0 {
-        return Err("Recherche : aucun indexeur n'a fourni une réponse exploitable".into());
+        return Err("Search: no indexer returned a usable response".into());
     }
     candidates.sort_by(|a, b| {
         b.seeders
@@ -821,7 +821,7 @@ pub fn search(config: &Config, request: &Request) -> Result<String> {
             .then_with(|| a.title.cmp(&b.title))
             .then_with(|| a.url.cmp(&b.url))
     });
-    candidates.into_iter().next().map(|r| r.url).ok_or_else(|| "Recherche : aucune release correspondant au titre, à l'année ou à l'épisode et au minimum de seeders".into())
+    candidates.into_iter().next().map(|r| r.url).ok_or_else(|| "Search: no release matches the title, year or episode and the minimum seed count".into())
 }
 
 fn plex_section<'a>(config: &'a Config, request: &Request) -> Result<&'a str> {
@@ -831,12 +831,12 @@ fn plex_section<'a>(config: &'a Config, request: &Request) -> Result<&'a str> {
         &config.plex.movies_section
     };
     if section.is_empty() || !section.bytes().all(|b| b.is_ascii_digit()) {
-        return Err("Plex : numéro de section invalide".into());
+        return Err("Plex: invalid section number".into());
     }
     Ok(section)
 }
 
-/// Demande à Plex de scanner la section après l'import atomique.
+/// Asks Plex to scan the section after the atomic import.
 pub fn refresh(config: &Config, request: &Request) -> Result<()> {
     if !config.plex.enabled {
         return Ok(());
@@ -851,9 +851,9 @@ pub fn refresh(config: &Config, request: &Request) -> Result<()> {
     )?;
     let response = client()
         .request("GET", &url, &headers, &[])
-        .map_err(|_| "Plex : rafraîchissement impossible")?;
+        .map_err(|_| "Plex: refresh failed")?;
     if !(200..300).contains(&response.status) {
-        return Err(format!("Plex : rafraîchissement HTTP {}", response.status));
+        return Err(format!("Plex: refresh HTTP response {}", response.status));
     }
     Ok(())
 }
@@ -883,7 +883,7 @@ fn playable(item: &Value) -> bool {
         })
 }
 
-/// La tâche reste en attente tant qu'une entrée lisible n'est pas indexée.
+/// The job remains pending until a readable entry has been indexed.
 pub fn available(config: &Config, request: &Request) -> Result<bool> {
     if !config.plex.enabled {
         return Ok(true);
@@ -909,9 +909,9 @@ pub fn available(config: &Config, request: &Request) -> Result<bool> {
             }
             continue;
         }
-        let key = string(item, "ratingKey").ok_or("Plex : ratingKey de série absent")?;
+        let key = string(item, "ratingKey").ok_or("Plex: missing series ratingKey")?;
         if key.is_empty() || !key.bytes().all(|b| b.is_ascii_digit()) {
-            return Err("Plex : ratingKey invalide".into());
+            return Err("Plex: invalid ratingKey".into());
         }
         let leaves = endpoint(
             &config.plex.url,
@@ -951,9 +951,9 @@ fn xml_unescape(text: &str) -> Result<String> {
     while let Some(at) = rest.find('&') {
         out.push_str(&rest[..at]);
         rest = &rest[at + 1..];
-        let end = rest.find(';').ok_or("XML : entité incomplète")?;
+        let end = rest.find(';').ok_or("XML: incomplete entity")?;
         if end > 16 {
-            return Err("XML : entité trop longue".into());
+            return Err("XML: entity is too long".into());
         }
         let entity = &rest[..end];
         let c = match entity {
@@ -971,7 +971,7 @@ fn xml_unescape(text: &str) -> Result<String> {
                 number
                     .and_then(char::from_u32)
                     .filter(|c| matches!(*c, '\t' | '\n' | '\r') || !c.is_control())
-                    .ok_or("XML : entité inconnue ou caractère invalide")?
+                    .ok_or("XML: unknown entity or invalid character")?
             }
         };
         out.push(c);
@@ -982,7 +982,7 @@ fn xml_unescape(text: &str) -> Result<String> {
         .chars()
         .any(|c| c.is_control() && !matches!(c, '\t' | '\r' | '\n'))
     {
-        return Err("XML : caractère invalide".into());
+        return Err("XML: invalid character".into());
     }
     Ok(out)
 }
@@ -1022,7 +1022,7 @@ impl Xml<'_> {
             || name.len() > 256
             || !name.as_bytes()[0].is_ascii_alphabetic() && name.as_bytes()[0] != b'_'
         {
-            return Err("XML : nom invalide".into());
+            return Err("XML: invalid name".into());
         }
         Ok(name.into())
     }
@@ -1031,20 +1031,20 @@ impl Xml<'_> {
         let end = self
             .tail()
             .find("-->")
-            .ok_or("XML : commentaire incomplet")?;
+            .ok_or("XML: incomplete comment")?;
         if self.tail()[..end].contains("--") {
-            return Err("XML : commentaire invalide".into());
+            return Err("XML: invalid comment".into());
         }
         self.at += end + 3;
         Ok(())
     }
     fn element(&mut self, depth: usize) -> Result<Element> {
         if depth > 64 || self.nodes >= MAX_ITEMS {
-            return Err("XML : complexité excessive".into());
+            return Err("XML: complexity exceeds the limit".into());
         }
         self.nodes += 1;
         if !self.tail().starts_with('<') {
-            return Err("XML : élément attendu".into());
+            return Err("XML: expected an element".into());
         }
         self.at += 1;
         let name = self.name()?;
@@ -1064,12 +1064,12 @@ impl Xml<'_> {
                 break;
             }
             if before == self.at || attrs.len() >= 64 {
-                return Err("XML : attributs invalides".into());
+                return Err("XML: invalid attributes".into());
             }
             let key = self.name()?;
             self.whitespace();
             if !self.tail().starts_with('=') {
-                return Err("XML : signe égal attendu".into());
+                return Err("XML: expected an equals sign".into());
             }
             self.at += 1;
             self.whitespace();
@@ -1079,19 +1079,19 @@ impl Xml<'_> {
                 .get(self.at)
                 .copied()
                 .filter(|q| matches!(q, b'\'' | b'"'))
-                .ok_or("XML : attribut non cité")?;
+                .ok_or("XML: unquoted attribute")?;
             self.at += 1;
             let end = self
                 .tail()
                 .find(quote as char)
-                .ok_or("XML : attribut incomplet")?;
+                .ok_or("XML: incomplete attribute")?;
             if end > 8192 || self.tail()[..end].contains('<') {
-                return Err("XML : attribut trop long ou invalide".into());
+                return Err("XML: attribute is too long or invalid".into());
             }
             let value = xml_unescape(&self.tail()[..end])?;
             self.at += end + 1;
             if attrs.insert(key, value).is_some() {
-                return Err("XML : attribut dupliqué".into());
+                return Err("XML: duplicate attribute".into());
             }
         }
         let mut out = Element {
@@ -1109,7 +1109,7 @@ impl Xml<'_> {
                 let name = self.name()?;
                 self.whitespace();
                 if name != out.name || !self.tail().starts_with('>') {
-                    return Err("XML : fermeture incorrecte".into());
+                    return Err("XML: incorrect closing tag".into());
                 }
                 self.at += 1;
                 return Ok(out);
@@ -1120,26 +1120,26 @@ impl Xml<'_> {
             }
             if self.tail().starts_with("<![CDATA[") {
                 self.at += 9;
-                let end = self.tail().find("]]>").ok_or("XML : CDATA incomplet")?;
+                let end = self.tail().find("]]>").ok_or("XML: incomplete CDATA")?;
                 let value = &self.tail()[..end];
                 if value
                     .chars()
                     .any(|c| c.is_control() && !matches!(c, '\t' | '\n' | '\r'))
                 {
-                    return Err("XML : CDATA invalide".into());
+                    return Err("XML: invalid CDATA".into());
                 }
                 out.text.push_str(value);
                 self.at += end + 3;
                 continue;
             }
             if self.tail().starts_with("<!") || self.tail().starts_with("<?") {
-                return Err("XML : DTD et instructions internes interdits".into());
+                return Err("XML: DTD and internal processing instructions are forbidden".into());
             }
             if self.tail().starts_with('<') {
                 out.children.push(self.element(depth + 1)?);
                 continue;
             }
-            let end = self.tail().find('<').ok_or("XML : élément incomplet")?;
+            let end = self.tail().find('<').ok_or("XML: incomplete element")?;
             out.text.push_str(&xml_unescape(&self.tail()[..end])?);
             self.at += end;
         }
@@ -1148,7 +1148,7 @@ impl Xml<'_> {
 
 fn parse_xml(text: &str) -> Result<Element> {
     if text.len() > MAX_XML {
-        return Err("XML : document trop grand".into());
+        return Err("XML: document is too large".into());
     }
     let mut parser = Xml {
         input: text.strip_prefix('\u{feff}').unwrap_or(text),
@@ -1160,15 +1160,15 @@ fn parse_xml(text: &str) -> Result<Element> {
         let end = parser
             .tail()
             .find("?>")
-            .ok_or("XML : déclaration incomplète")?;
+            .ok_or("XML: incomplete declaration")?;
         if end > 256
             || parser.tail()[..end].contains('<') && parser.tail()[..end].matches('<').count() > 1
         {
-            return Err("XML : déclaration invalide".into());
+            return Err("XML: invalid declaration".into());
         }
         let declaration = &parser.tail()[..end];
         if declaration.contains("encoding") && !declaration.to_ascii_lowercase().contains("utf-8") {
-            return Err("XML : seul UTF-8 est pris en charge".into());
+            return Err("XML: only UTF-8 is supported".into());
         }
         parser.at += end + 2;
     }
@@ -1184,7 +1184,7 @@ fn parse_xml(text: &str) -> Result<Element> {
         parser.whitespace();
     }
     if !parser.tail().is_empty() {
-        return Err("XML : données après le document".into());
+        return Err("XML: trailing data after the document".into());
     }
     Ok(element)
 }
@@ -1192,12 +1192,12 @@ fn parse_xml(text: &str) -> Result<Element> {
 fn rss_releases(text: &str, base: &str) -> Result<Vec<Release>> {
     let root = parse_xml(text)?;
     if root.local() == "error" {
-        return Err("Indexeur Torznab : erreur de service".into());
+        return Err("Torznab indexer: service error".into());
     }
     let channel = if root.local() == "rss" {
-        root.child("channel").ok_or("RSS : canal absent")?
+        root.child("channel").ok_or("RSS: missing channel")?
     } else {
-        return Err("RSS : racine rss attendue".into());
+        return Err("RSS: expected an rss root element".into());
     };
     let mut out = Vec::new();
     for item in channel
@@ -1335,7 +1335,7 @@ mod tests {
     fn movie() -> Request {
         Request {
             kind: "movie".into(),
-            title: "L'Été".into(),
+            title: "Café Night".into(),
             year: 2024,
             season: 0,
             episode: 0,
@@ -1348,32 +1348,32 @@ mod tests {
     #[test]
     fn release_identity_rejects_sequels_wrong_years_and_episodes() {
         let mut request = movie();
-        assert!(release_matches(&request, "L.Ete.2024.1080p.WEB-DL"));
-        assert!(!release_matches(&request, "L.Ete.2.2024.1080p"));
-        assert!(!release_matches(&request, "L.Ete.2023.1080p"));
-        assert!(!release_matches(&request, "L.Ete.2024.S01E01"));
-        assert!(!release_matches(&request, "La.Suite.De.L.Ete.2024"));
+        assert!(release_matches(&request, "Cafe.Night.2024.1080p.WEB-DL"));
+        assert!(!release_matches(&request, "Cafe.Night.2.2024.1080p"));
+        assert!(!release_matches(&request, "Cafe.Night.2023.1080p"));
+        assert!(!release_matches(&request, "Cafe.Night.2024.S01E01"));
+        assert!(!release_matches(&request, "The.Sequel.To.Cafe.Night.2024"));
         request.kind = "episode".into();
         request.season = 2;
         request.episode = 3;
-        assert!(release_matches(&request, "L.Ete.S02E03.1080p"));
-        assert!(release_matches(&request, "L.Ete.2024.2x03.1080p"));
-        assert!(!release_matches(&request, "L.Ete.S02E04.1080p"));
-        assert!(!release_matches(&request, "L.Ete.S02E03E04.1080p"));
-        assert!(!release_matches(&request, "L.Ete.S02E03-E04.1080p"));
-        assert!(!release_matches(&request, "L.Ete.S02E03.S03E01.1080p"));
-        assert!(!release_matches(&request, "L.Ete.Un.Autre.Show.S02E03"));
+        assert!(release_matches(&request, "Cafe.Night.S02E03.1080p"));
+        assert!(release_matches(&request, "Cafe.Night.2024.2x03.1080p"));
+        assert!(!release_matches(&request, "Cafe.Night.S02E04.1080p"));
+        assert!(!release_matches(&request, "Cafe.Night.S02E03E04.1080p"));
+        assert!(!release_matches(&request, "Cafe.Night.S02E03-E04.1080p"));
+        assert!(!release_matches(&request, "Cafe.Night.S02E03.S03E01.1080p"));
+        assert!(!release_matches(&request, "Cafe.Night.Another.Show.S02E03"));
     }
 
     #[test]
     fn rss_namespace_cdata_entities_and_enclosures_are_decoded() {
         let feed = r#"<?xml version="1.0" encoding="UTF-8"?>
             <rss xmlns:torznab="http://torznab.com/schemas/2015/feed"><channel>
-            <item><title><![CDATA[L'Été.2024.1080p]]></title>
+            <item><title><![CDATA[Café Night.2024.1080p]]></title>
             <link>https://invalid.example/details</link>
             <enclosure url="https://index.example/download?id=2&amp;key=a%26b"/>
             <torznab:attr name="seeders" value="19"/></item>
-            <item><title>Film &#xE9; &#233;</title><torznab:attr name="magneturl" value="magnet:?xt=urn:btih:abc&amp;dn=test"/>
+            <item><title>Movie &#xE9; &#233;</title><torznab:attr name="magneturl" value="magnet:?xt=urn:btih:abc&amp;dn=test"/>
             <seeders>4</seeders></item></channel></rss>"#;
         let releases = rss_releases(feed, "https://index.example/rss").unwrap();
         assert_eq!(releases.len(), 2);
@@ -1382,7 +1382,7 @@ mod tests {
             "https://index.example/download?id=2&key=a%26b"
         );
         assert_eq!(releases[0].seeders, 19);
-        assert_eq!(releases[1].title, "Film é é");
+        assert_eq!(releases[1].title, "Movie é é");
         assert_eq!(releases[1].url, "magnet:?xt=urn:btih:abc&dn=test");
     }
 

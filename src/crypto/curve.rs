@@ -168,7 +168,7 @@ pub fn x25519_public_key(secret: [u8; 32]) -> [u8; 32] {
 pub fn x25519(secret: [u8; 32], peer: [u8; 32]) -> Result<[u8; 32]> {
     let shared = ladder(secret, peer);
     if super::constant_time_eq(&shared, &[0u8; 32]) {
-        Err("X25519 : clé de pair de petit ordre refusée".into())
+        Err("X25519: low-order peer key rejected".into())
     } else {
         Ok(shared)
     }

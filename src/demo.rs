@@ -1,4 +1,4 @@
-//! Démonstration intégralement locale, média synthétique et pairs Mynou natifs.
+//! Fully local demonstration using synthetic media and native Mynou peers.
 use crate::{
     Result,
     bencode::{self, Value as B},
@@ -24,7 +24,7 @@ use std::{
 
 pub fn run(directory: &Path) -> Result<Value> {
     if directory.exists() {
-        return Err("Le dossier de démonstration doit être nouveau".into());
+        return Err("The demonstration directory must not already exist".into());
     }
     fs::create_dir_all(directory).map_err(|e| e.to_string())?;
     let directory = fs::canonicalize(directory).map_err(|e| e.to_string())?;
@@ -54,11 +54,11 @@ pub fn run(directory: &Path) -> Result<Value> {
         pex: false,
         max_active: 1,
     })?;
-    seeder.ensure(torrent_path.to_str().ok_or("Chemin démo non UTF-8")?)?;
+    seeder.ensure(torrent_path.to_str().ok_or("Demo path is not valid UTF-8")?)?;
     let deadline = Instant::now() + Duration::from_secs(15);
     while !seeder.check(&id)?.ready {
         if Instant::now() > deadline {
-            return Err("Le pair source de démonstration ne devient pas disponible".into());
+            return Err("The demo source peer did not become available".into());
         }
         thread::sleep(Duration::from_millis(50));
     }
@@ -138,11 +138,11 @@ pub fn run(directory: &Path) -> Result<Value> {
             d.insert("pex".into(), false.into());
         }
         let mut indexer = Value::object();
-        indexer.insert("name", "démo locale");
+        indexer.insert("name", "local demo");
         indexer.insert("kind", "json");
         indexer.insert("url", format!("{origin}/indexer"));
         value.insert("indexers", Value::Array(vec![indexer]));
-        // Le token de fixture est fourni par une API dédiée, sans modifier l'environnement.
+        // Supply the fixture token through a dedicated field without changing the environment.
         let mut cfg = config::from_json(&value, &directory)?;
         cfg.plex.token_override = Some("fixture-token-mynou-local".into());
         let engine = Engine::open(cfg)?;
@@ -171,11 +171,11 @@ pub fn run(directory: &Path) -> Result<Value> {
                     return Ok(output);
                 }
                 if job.state == "failed" {
-                    return Err(job.last_error.clone().unwrap_or("Échec démo".into()));
+                    return Err(job.last_error.clone().unwrap_or("Demo failed".into()));
                 }
             }
             if Instant::now() > deadline {
-                return Err("Démonstration : délai dépassé".into());
+                return Err("Demonstration timed out".into());
             }
             thread::sleep(Duration::from_millis(50));
         }

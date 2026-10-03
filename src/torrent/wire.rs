@@ -67,7 +67,7 @@ pub fn handshake(
     )?;
     if response[0] != 19 || &response[1..20] != b"BitTorrent protocol" || response[28..48] != *hash
     {
-        return Err("Handshake de pair invalide".into());
+        return Err("Invalid peer handshake".into());
     }
     if !outgoing {
         write_all_deadline(
@@ -88,16 +88,16 @@ pub fn read_exact_deadline(
 ) -> Result<()> {
     stream
         .set_read_timeout(Some(Duration::from_millis(100)))
-        .map_err(|_| "Configuration de lecture TCP impossible")?;
+        .map_err(|_| "Could not configure TCP reads")?;
     while !buffer.is_empty() {
         if stop.is_some_and(|s| s.load(Ordering::Acquire)) {
-            return Err("Téléchargement interrompu".into());
+            return Err("Download interrupted".into());
         }
         if Instant::now() >= deadline {
-            return Err("Le pair dépasse le délai de lecture".into());
+            return Err("Peer exceeded read deadline".into());
         }
         match stream.read(buffer) {
-            Ok(0) => return Err("Connexion du pair fermée".into()),
+            Ok(0) => return Err("Peer connection closed".into()),
             Ok(n) => {
                 let (_, remaining) = buffer.split_at_mut(n);
                 buffer = remaining;
@@ -109,7 +109,7 @@ pub fn read_exact_deadline(
                         | std::io::ErrorKind::TimedOut
                         | std::io::ErrorKind::Interrupted
                 ) => {}
-            Err(_) => return Err("Lecture du pair interrompue".into()),
+            Err(_) => return Err("Peer read interrupted".into()),
         }
     }
     Ok(())
@@ -122,16 +122,16 @@ pub fn write_all_deadline(
 ) -> Result<()> {
     stream
         .set_write_timeout(Some(Duration::from_millis(100)))
-        .map_err(|_| "Configuration d'écriture TCP impossible")?;
+        .map_err(|_| "Could not configure TCP writes")?;
     while !buffer.is_empty() {
         if stop.is_some_and(|s| s.load(Ordering::Acquire)) {
-            return Err("Téléchargement interrompu".into());
+            return Err("Download interrupted".into());
         }
         if Instant::now() >= deadline {
-            return Err("Le pair dépasse le délai d'écriture".into());
+            return Err("Peer exceeded write deadline".into());
         }
         match stream.write(buffer) {
-            Ok(0) => return Err("Connexion du pair fermée".into()),
+            Ok(0) => return Err("Peer connection closed".into()),
             Ok(n) => buffer = &buffer[n..],
             Err(e)
                 if matches!(
@@ -140,7 +140,7 @@ pub fn write_all_deadline(
                         | std::io::ErrorKind::TimedOut
                         | std::io::ErrorKind::Interrupted
                 ) => {}
-            Err(_) => return Err("Écriture au pair interrompue".into()),
+            Err(_) => return Err("Peer write interrupted".into()),
         }
     }
     Ok(())
@@ -151,8 +151,8 @@ pub fn write_message(
     payload: &[u8],
     stop: Option<&AtomicBool>,
 ) -> Result<()> {
-    let length = u32::try_from(payload.len().checked_add(1).ok_or("Message trop grand")?)
-        .map_err(|_| "Message trop grand")?;
+    let length = u32::try_from(payload.len().checked_add(1).ok_or("Message is too large")?)
+        .map_err(|_| "Message is too large")?;
     let deadline = Instant::now() + Duration::from_secs(15);
     write_all_deadline(stream, &length.to_be_bytes(), stop, deadline)?;
     write_all_deadline(stream, &[id], stop, deadline)?;
@@ -167,7 +167,7 @@ pub fn read_message(stream: &mut TcpStream, stop: Option<&AtomicBool>) -> Result
         return Ok((255, Vec::new()));
     }
     if length > MAX_META + 1024 {
-        return Err("Message de pair trop grand".into());
+        return Err("Peer message is too large".into());
     }
     let mut payload = vec![0; length];
     read_exact_deadline(stream, &mut payload, stop, deadline)?;
@@ -210,16 +210,16 @@ impl Peer {
             counters,
         } = settings;
         let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(2))
-            .map_err(|_| "Connexion au pair impossible")?;
+            .map_err(|_| "Could not connect to peer")?;
         stream
             .set_nodelay(true)
-            .map_err(|_| "Configuration TCP impossible")?;
+            .map_err(|_| "Could not configure TCP")?;
         stream
             .set_read_timeout(Some(Duration::from_secs(3)))
-            .map_err(|_| "Configuration TCP impossible")?;
+            .map_err(|_| "Could not configure TCP")?;
         stream
             .set_write_timeout(Some(Duration::from_secs(3)))
-            .map_err(|_| "Configuration TCP impossible")?;
+            .map_err(|_| "Could not configure TCP")?;
         let extensions = handshake(&mut stream, hash, id, true)?;
         if extensions {
             write_message(&mut stream, 20, &extended_handshake(meta, port, pex), None)?;
@@ -243,24 +243,24 @@ impl Peer {
         match id {
             0 => {
                 if !payload.is_empty() {
-                    return Err("Message choke invalide".into());
+                    return Err("Invalid choke message".into());
                 }
                 self.choked = true;
             }
             1 => {
                 if !payload.is_empty() {
-                    return Err("Message unchoke invalide".into());
+                    return Err("Invalid unchoke message".into());
                 }
                 self.choked = false;
             }
             4 => {
                 if payload.len() != 4 {
-                    return Err("Message have invalide".into());
+                    return Err("Invalid have message".into());
                 }
-                let n = u32::from_be_bytes(payload.try_into().map_err(|_| "Index have invalide")?)
+                let n = u32::from_be_bytes(payload.try_into().map_err(|_| "Invalid have index")?)
                     as usize;
                 if n >= 8 * 1024 * 1024 {
-                    return Err("Index have excessif".into());
+                    return Err("Have index exceeds limits".into());
                 }
                 if self.bitfield.len() <= n / 8 {
                     self.bitfield.resize(n / 8 + 1, 0);
@@ -269,7 +269,7 @@ impl Peer {
             }
             5 => {
                 if payload.len() > 1024 * 1024 {
-                    return Err("Bitfield excessif".into());
+                    return Err("Bitfield exceeds limits".into());
                 }
                 self.bitfield = payload.to_vec();
             }
@@ -286,9 +286,9 @@ impl Peer {
                     }
                 }
                 if let Some(Value::Int(n)) = value_field(&v, b"metadata_size") {
-                    let n = usize::try_from(*n).map_err(|_| "Taille de métadonnées invalide")?;
+                    let n = usize::try_from(*n).map_err(|_| "Invalid metadata size")?;
                     if !(1..=MAX_META).contains(&n) {
-                        return Err("Métadonnées de pair trop grandes".into());
+                        return Err("Peer metadata is too large".into());
                     }
                     self.metadata_size = Some(n);
                 }
@@ -309,11 +309,11 @@ impl Peer {
         stop: &AtomicBool,
     ) -> Result<Meta> {
         if !self.extensions {
-            return Err("Le pair ne fournit pas de métadonnées".into());
+            return Err("Peer does not provide metadata".into());
         }
         for _ in 0..64 {
             if stop.load(Ordering::Relaxed) {
-                return Err("Téléchargement interrompu".into());
+                return Err("Download interrupted".into());
             }
             if self.metadata_id.is_some() && self.metadata_size.is_some() {
                 break;
@@ -321,12 +321,12 @@ impl Peer {
             let (id, payload) = read_message(&mut self.stream, Some(stop))?;
             self.ancillary(id, &payload)?;
         }
-        let ext = self.metadata_id.ok_or("Extension métadonnées absente")?;
-        let size = self.metadata_size.ok_or("Taille de métadonnées absente")?;
+        let ext = self.metadata_id.ok_or("Missing metadata extension")?;
+        let size = self.metadata_size.ok_or("Missing metadata size")?;
         let mut info = vec![0; size];
         for piece in 0..size.div_ceil(BLOCK) {
             if stop.load(Ordering::Relaxed) {
-                return Err("Téléchargement interrompu".into());
+                return Err("Download interrupted".into());
             }
             let request = value_dict(&[
                 (b"msg_type", Value::Int(0)),
@@ -338,41 +338,41 @@ impl Peer {
             let mut received = false;
             for _ in 0..128 {
                 if stop.load(Ordering::Relaxed) {
-                    return Err("Téléchargement interrompu".into());
+                    return Err("Download interrupted".into());
                 }
                 let (id, payload) = read_message(&mut self.stream, Some(stop))?;
                 if id == 20 && payload.first() == Some(&EXT_METADATA) {
                     let (header, length) = crate::bencode::parse_prefix(&payload[1..])?;
                     let kind = match value_field(&header, b"msg_type") {
                         Some(Value::Int(n)) => *n,
-                        _ => return Err("Réponse métadonnées invalide".into()),
+                        _ => return Err("Invalid metadata response".into()),
                     };
                     let index = match value_field(&header, b"piece") {
                         Some(Value::Int(n)) => {
-                            usize::try_from(*n).map_err(|_| "Index métadonnées invalide")?
+                            usize::try_from(*n).map_err(|_| "Invalid metadata index")?
                         }
-                        _ => return Err("Index métadonnées absent".into()),
+                        _ => return Err("Missing metadata index".into()),
                     };
                     if index != piece {
                         continue;
                     }
                     if kind == 2 {
-                        return Err("Métadonnées refusées par le pair".into());
+                        return Err("Peer rejected metadata request".into());
                     }
                     if kind != 1 {
                         continue;
                     }
                     let actual_size = match value_field(&header, b"total_size") {
                         Some(Value::Int(n)) => {
-                            usize::try_from(*n).map_err(|_| "Taille métadonnées invalide")?
+                            usize::try_from(*n).map_err(|_| "Invalid metadata size")?
                         }
-                        _ => return Err("Taille métadonnées absente".into()),
+                        _ => return Err("Missing metadata size".into()),
                     };
                     let block = &payload[1 + length..];
                     let start = piece * BLOCK;
                     let n = (size - start).min(BLOCK);
                     if actual_size != size || block.len() != n {
-                        return Err("Bloc de métadonnées incohérent".into());
+                        return Err("Metadata block mismatch".into());
                     }
                     info[start..start + n].copy_from_slice(block);
                     received = true;
@@ -381,13 +381,13 @@ impl Peer {
                 self.ancillary(id, &payload)?;
             }
             if !received {
-                return Err("Bloc de métadonnées absent".into());
+                return Err("Missing metadata block".into());
             }
         }
         if expected_v1.is_some_and(|v| crate::crypto::sha1(&info) != v)
             || expected_v2.is_some_and(|v| crate::crypto::sha256(&info) != v)
         {
-            return Err("Empreinte des métadonnées incorrecte".into());
+            return Err("Metadata hash mismatch".into());
         }
         let mut encoded = b"d4:info".to_vec();
         encoded.extend_from_slice(&info);
@@ -401,14 +401,14 @@ impl Peer {
         stop: &AtomicBool,
     ) -> Result<Vec<u8>> {
         if index >= meta.count() {
-            return Err("Index de pièce invalide".into());
+            return Err("Invalid piece index".into());
         }
         if meta.v2.is_some() && meta.v2_pieces[index].is_none() && meta.pieces[index].is_none() {
             self.fetch_hashes(meta, index, stop)?;
         }
         for _ in 0..128 {
             if stop.load(Ordering::Relaxed) {
-                return Err("Téléchargement interrompu".into());
+                return Err("Download interrupted".into());
             }
             if !self.choked {
                 break;
@@ -417,7 +417,7 @@ impl Peer {
             self.ancillary(id, &payload)?;
         }
         if self.choked {
-            return Err("Le pair maintient le téléchargement bloqué".into());
+            return Err("Peer keeps the download choked".into());
         }
         let n = meta.wire_piece_size(index, self.v2_wire);
         let mut data = vec![0; meta.piece_size(index)];
@@ -428,11 +428,11 @@ impl Peer {
         let mut messages = received.len() * 8 + 256;
         while received.iter().any(|v| !v) {
             if Instant::now() >= deadline || messages == 0 {
-                return Err("Le pair ne livre pas la pièce demandée".into());
+                return Err("Peer did not provide the requested piece".into());
             }
             messages -= 1;
             if stop.load(Ordering::Relaxed) {
-                return Err("Téléchargement interrompu".into());
+                return Err("Download interrupted".into());
             }
             while next < received.len() && pending < 16 {
                 let offset = next * BLOCK;
@@ -448,17 +448,17 @@ impl Peer {
             let (id, payload) = read_message(&mut self.stream, Some(stop))?;
             if id == 7 {
                 if payload.len() < 8 {
-                    return Err("Bloc de pièce tronqué".into());
+                    return Err("Truncated piece block".into());
                 }
                 let piece = u32::from_be_bytes(
                     payload[..4]
                         .try_into()
-                        .map_err(|_| "Index pièce invalide")?,
+                        .map_err(|_| "Invalid piece index")?,
                 ) as usize;
                 let offset = u32::from_be_bytes(
                     payload[4..8]
                         .try_into()
-                        .map_err(|_| "Offset pièce invalide")?,
+                        .map_err(|_| "Invalid piece offset")?,
                 ) as usize;
                 if piece != index
                     || !offset.is_multiple_of(BLOCK)
@@ -466,7 +466,7 @@ impl Peer {
                     || payload.len() - 8 != (n - offset).min(BLOCK)
                     || offset / BLOCK >= next
                 {
-                    return Err("Bloc de pièce non sollicité ou incohérent".into());
+                    return Err("Unsolicited or inconsistent piece block".into());
                 }
                 self.counters
                     .downloaded
@@ -481,7 +481,7 @@ impl Peer {
             }
         }
         if !meta.verify(index, &data) {
-            return Err("Empreinte de pièce incorrecte".into());
+            return Err("Piece hash mismatch".into());
         }
         write_message(
             &mut self.stream,
@@ -492,11 +492,11 @@ impl Peer {
         Ok(data)
     }
     pub fn fetch_hashes(&mut self, meta: &mut Meta, piece: usize, stop: &AtomicBool) -> Result<()> {
-        let file = meta.v2_file(piece).ok_or("Fichier v2 absent")?.clone();
-        let root = file.root.ok_or("Racine v2 absente")?;
+        let file = meta.v2_file(piece).ok_or("Missing v2 file")?.clone();
+        let root = file.root.ok_or("Missing v2 root")?;
         let count = file.length.div_ceil(meta.piece_length as u64) as usize;
         if count <= 1 {
-            return Err("Empreinte v2 incohérente".into());
+            return Err("V2 hash mismatch".into());
         }
         let file_start = file.offset as usize / meta.piece_length;
         let index = piece - file_start;
@@ -514,22 +514,22 @@ impl Peer {
         write_message(&mut self.stream, 21, &request, Some(stop))?;
         for _ in 0..128 {
             if stop.load(Ordering::Relaxed) {
-                return Err("Téléchargement interrompu".into());
+                return Err("Download interrupted".into());
             }
             let (id, payload) = read_message(&mut self.stream, Some(stop))?;
             if id == 23 && payload == request {
-                return Err("Preuve v2 refusée par le pair".into());
+                return Err("Peer rejected v2 proof request".into());
             }
             if id == 22 {
                 if payload.len() != 48 + (2 + proof as usize) * 32 || payload[..48] != request {
-                    return Err("Preuve v2 non sollicitée ou incohérente".into());
+                    return Err("Unsolicited or inconsistent v2 proof".into());
                 }
                 let mut left = [0; 32];
                 left.copy_from_slice(&payload[48..80]);
                 let mut right = [0; 32];
                 right.copy_from_slice(&payload[80..112]);
                 if first + 1 >= count && right != zero_hash(meta.piece_length / BLOCK) {
-                    return Err("Remplissage de preuve v2 invalide".into());
+                    return Err("Invalid v2 proof padding".into());
                 }
                 let mut hash = pair(&left, &right);
                 for (level, sibling) in payload[112..].as_chunks::<32>().0.iter().enumerate() {
@@ -542,7 +542,7 @@ impl Peer {
                     };
                 }
                 if hash != root {
-                    return Err("Preuve v2 non authentifiée".into());
+                    return Err("V2 proof has not been authenticated".into());
                 }
                 meta.v2_pieces[file_start + first] = Some(left);
                 if first + 1 < count {
@@ -552,7 +552,7 @@ impl Peer {
             }
             self.ancillary(id, &payload)?;
         }
-        Err("Preuve de pièce v2 absente".into())
+        Err("Missing v2 piece proof".into())
     }
 }
 
@@ -562,7 +562,7 @@ pub fn hash_response(
     storage: Option<&std::path::Path>,
 ) -> Result<Vec<u8>> {
     if request.len() != 48 {
-        return Err("Requête de preuve v2 invalide".into());
+        return Err("Invalid v2 proof request".into());
     }
     let mut root = [0; 32];
     root.copy_from_slice(&request[..32]);
@@ -570,7 +570,7 @@ pub fn hash_response(
         Ok(u32::from_be_bytes(
             request[i..i + 4]
                 .try_into()
-                .map_err(|_| "Requête v2 invalide")?,
+                .map_err(|_| "Invalid v2 request")?,
         ) as usize)
     };
     let base = get(32)?;
@@ -581,7 +581,7 @@ pub fn hash_response(
         .files
         .iter()
         .find(|f| f.root == Some(root))
-        .ok_or("Racine v2 inconnue")?;
+        .ok_or("Unknown v2 root")?;
     let piece_base = (meta.piece_length / BLOCK).ilog2() as usize;
     let blocks = file.length.div_ceil(BLOCK as u64) as usize;
     let height = blocks.max(1).next_power_of_two().ilog2() as usize;
@@ -591,7 +591,7 @@ pub fn hash_response(
         || !length.is_power_of_two()
         || index % length != 0
     {
-        return Err("Géométrie de preuve v2 invalide".into());
+        return Err("Invalid v2 proof geometry".into());
     }
     let width = 1usize << (height - base);
     let subtree = length.ilog2() as usize;
@@ -599,7 +599,7 @@ pub fn hash_response(
         || index >= blocks.div_ceil(1 << base)
         || index.checked_add(length).is_none_or(|v| v > width)
     {
-        return Err("Étendue de preuve v2 invalide".into());
+        return Err("Invalid v2 proof range".into());
     }
     fn hash_at(
         meta: &Meta,
@@ -617,7 +617,7 @@ pub fn hash_response(
             let mut hashes = Vec::with_capacity(width);
             for i in first..first + width {
                 hashes.push(if i < count {
-                    meta.v2_pieces[start + i].ok_or("Couche v2 incomplète")?
+                    meta.v2_pieces[start + i].ok_or("Incomplete v2 layer")?
                 } else {
                     zero_hash(meta.piece_length / BLOCK)
                 });
@@ -632,16 +632,16 @@ pub fn hash_response(
         if offset >= file.length {
             return Ok(zero_hash(width));
         }
-        let storage = storage.ok_or("Données requises pour une preuve de blocs")?;
+        let storage = storage.ok_or("Block proof requires file data")?;
         let path = super::metainfo::confined(storage, &file.path)?;
-        let mut input = std::fs::File::open(path).map_err(|_| "Lecture des blocs v2 impossible")?;
+        let mut input = std::fs::File::open(path).map_err(|_| "Could not read v2 blocks")?;
         let length = (file.length - offset).min((width * BLOCK) as u64) as usize;
         let mut data = vec![0; length];
         use std::io::Seek;
         input
             .seek(std::io::SeekFrom::Start(offset))
             .and_then(|_| input.read_exact(&mut data))
-            .map_err(|_| "Lecture des blocs v2 tronquée")?;
+            .map_err(|_| "Truncated v2 block read")?;
         Ok(super::metainfo::merkle_data(&data, width))
     }
     let mut response = request.to_vec();
@@ -711,7 +711,7 @@ mod tests {
             (b"pieces", Value::Bytes(Vec::new())),
         ]);
         let encoded = crate::bencode::encode(&value_dict(&[(b"info", info)]));
-        let meta = Meta::parse(&encoded).expect("torrent vide");
+        let meta = Meta::parse(&encoded).expect("empty torrent");
         assert!(hash_response(&meta, &[0; 48], None).is_err());
     }
 

@@ -1,5 +1,5 @@
-//! Analyse locale, sans décodeur ni programme externe. Les gros blocs de données
-//! sont ignorés par déplacement dans le fichier ; seules les métadonnées sont lues.
+//! Local analysis without a decoder or external program. Large data blocks
+//! are skipped by seeking through the file; only metadata is read.
 mod avi;
 mod ebml;
 mod mp3;
@@ -61,7 +61,7 @@ pub fn analyze(path: &Path) -> Result<MediaFile> {
     let filename = path
         .file_name()
         .and_then(|s| s.to_str())
-        .ok_or_else(|| "Le nom du fichier média doit être un texte UTF-8 valide".to_string())?
+        .ok_or_else(|| "The media filename must be valid UTF-8".to_string())?
         .to_owned();
     let title = path
         .file_stem()
@@ -91,7 +91,7 @@ pub fn analyze(path: &Path) -> Result<MediaFile> {
         } else if prefix.get(8..12) == Some(b"AVI ") {
             avi::parse(&mut input, &mut media)?;
         } else {
-            return Err("Conteneur RIFF non pris en charge".into());
+            return Err("Unsupported RIFF container".into());
         }
     } else if prefix.starts_with(b"fLaC") {
         riff::flac(&mut input, &mut media)?;
@@ -105,10 +105,10 @@ pub fn analyze(path: &Path) -> Result<MediaFile> {
     }) {
         mp4::parse(&mut input, &mut media)?;
     } else {
-        return Err("Format média non pris en charge : MP4/MOV, Matroska/WebM, WAV, FLAC, MP3 ou AVI attendu".into());
+        return Err("Unsupported media format: expected MP4/MOV, Matroska/WebM, WAV, FLAC, MP3 or AVI".into());
     }
     if media.video_streams.is_empty() && media.audio_streams.is_empty() {
-        return Err("Le conteneur ne contient aucun flux audio ou vidéo analysable".into());
+        return Err("The container has no supported audio or video streams".into());
     }
     media.duration_seconds = positive(media.duration_seconds);
     if let Some(duration) = media.duration_seconds
@@ -223,12 +223,12 @@ impl Input {
         }
         let file = options
             .open(path)
-            .map_err(|e| format!("Impossible d’ouvrir le média : {e}"))?;
+            .map_err(|e| format!("Cannot open media: {e}"))?;
         let meta = file
             .metadata()
-            .map_err(|e| format!("Métadonnées du fichier : {e}"))?;
+            .map_err(|e| format!("File metadata: {e}"))?;
         if !meta.is_file() {
-            return Err("Le média doit être un fichier ordinaire".into());
+            return Err("The media must be a regular file".into());
         }
         Ok(Self {
             file: BufReader::with_capacity(16 * 1024, file),
@@ -240,77 +240,77 @@ impl Input {
     }
     fn read(&mut self, offset: u64, size: usize) -> Result<Vec<u8>> {
         if size > MAX_METADATA {
-            return Err("Bloc de métadonnées trop volumineux".into());
+            return Err("Metadata block is too large".into());
         }
         self.metadata_bytes = self
             .metadata_bytes
             .checked_add(size)
-            .ok_or("Volume de métadonnées débordant")?;
+            .ok_or("Metadata size overflow")?;
         if self.metadata_bytes > MAX_METADATA_TOTAL {
-            return Err("Volume total des métadonnées excessif".into());
+            return Err("Total metadata size exceeds the limit".into());
         }
         let end = offset
             .checked_add(size as u64)
-            .ok_or("Débordement de position média")?;
+            .ok_or("Media offset overflow")?;
         if end > self.len {
-            return Err("Fichier média tronqué".into());
+            return Err("Truncated media file".into());
         }
         let relative = i128::from(offset) - i128::from(self.position);
         if let Ok(relative) = i64::try_from(relative) {
             self.file
                 .seek_relative(relative)
-                .map_err(|e| format!("Déplacement média : {e}"))?;
+                .map_err(|e| format!("Media seek: {e}"))?;
         } else {
             self.file
                 .seek(SeekFrom::Start(offset))
-                .map_err(|e| format!("Déplacement média : {e}"))?;
+                .map_err(|e| format!("Media seek: {e}"))?;
         }
         let mut data = vec![0; size];
         self.file
             .read_exact(&mut data)
-            .map_err(|e| format!("Lecture média : {e}"))?;
+            .map_err(|e| format!("Media read: {e}"))?;
         self.position = end;
         Ok(data)
     }
     fn count(&mut self) -> Result<()> {
         self.elements += 1;
         if self.elements > MAX_ELEMENTS {
-            return Err("Trop d’éléments dans le conteneur média".into());
+            return Err("Too many elements in the media container".into());
         }
         Ok(())
     }
 }
 
 fn u16be(data: &[u8], at: usize) -> Result<u16> {
-    let bytes = data.get(at..at + 2).ok_or("Métadonnées tronquées")?;
+    let bytes = data.get(at..at + 2).ok_or("Truncated metadata")?;
     Ok(u16::from_be_bytes([bytes[0], bytes[1]]))
 }
 fn u32be(data: &[u8], at: usize) -> Result<u32> {
-    let bytes = data.get(at..at + 4).ok_or("Métadonnées tronquées")?;
+    let bytes = data.get(at..at + 4).ok_or("Truncated metadata")?;
     Ok(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
 }
 fn u64be(data: &[u8], at: usize) -> Result<u64> {
     let bytes: [u8; 8] = data
         .get(at..at + 8)
-        .ok_or("Métadonnées tronquées")?
+        .ok_or("Truncated metadata")?
         .try_into()
-        .map_err(|_| "Métadonnées tronquées")?;
+        .map_err(|_| "Truncated metadata")?;
     Ok(u64::from_be_bytes(bytes))
 }
 fn u16le(data: &[u8], at: usize) -> Result<u16> {
-    let bytes = data.get(at..at + 2).ok_or("Métadonnées tronquées")?;
+    let bytes = data.get(at..at + 2).ok_or("Truncated metadata")?;
     Ok(u16::from_le_bytes([bytes[0], bytes[1]]))
 }
 fn u32le(data: &[u8], at: usize) -> Result<u32> {
-    let bytes = data.get(at..at + 4).ok_or("Métadonnées tronquées")?;
+    let bytes = data.get(at..at + 4).ok_or("Truncated metadata")?;
     Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
 }
 fn u64le(data: &[u8], at: usize) -> Result<u64> {
     let bytes: [u8; 8] = data
         .get(at..at + 8)
-        .ok_or("Métadonnées tronquées")?
+        .ok_or("Truncated metadata")?
         .try_into()
-        .map_err(|_| "Métadonnées tronquées")?;
+        .map_err(|_| "Truncated metadata")?;
     Ok(u64::from_le_bytes(bytes))
 }
 fn text(data: &[u8]) -> String {
@@ -331,7 +331,7 @@ fn set_date(media: &mut MediaFile, date: String) {
     }
 }
 
-// Algorithme calendaire arithmétique ; aucun appel à la timezone du système.
+// Calendar arithmetic without consulting the system time zone.
 fn utc_date(unix_seconds: i64) -> Option<String> {
     let z = unix_seconds.div_euclid(86_400).checked_add(719_468)?;
     let era = z.div_euclid(146_097);

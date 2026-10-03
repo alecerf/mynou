@@ -1,4 +1,4 @@
-//! Le seul processus lancé par ces tests est le propre binaire Mynou.
+//! These tests launch only the Mynou binary itself.
 use mynou::config;
 use mynou::engine::Engine;
 use mynou::json::{self, Value};
@@ -62,13 +62,13 @@ fn parse(output: Output) -> Value {
 fn cli_init_analyze_offline_management_and_no_overwrite() {
     let directory = Directory::new();
     let version = success(command(&directory.0, &["version"]));
-    assert!(version.contains(env!("CARGO_PKG_VERSION")) && version.contains("0 dépendance"));
+    assert!(version.contains(env!("CARGO_PKG_VERSION")) && version.contains("0 dependencies"));
     success(command(&directory.0, &["init"]));
     assert!(directory.0.join("mynou.json").is_file());
     let env = fs::read(directory.0.join(".env")).unwrap();
     assert!(!command(&directory.0, &["init"]).status.success());
     assert_eq!(fs::read(directory.0.join(".env")).unwrap(), env);
-    // Le test du journal hors ligne ne doit pas contacter un service de l'hôte.
+    // The offline journal test must not contact a service running on the host.
     let path = directory.0.join("mynou.json");
     let mut value = json::parse(&fs::read_to_string(&path).unwrap()).unwrap();
     value.insert("listen", "127.0.0.1:0");
@@ -105,14 +105,14 @@ fn cli_init_analyze_offline_management_and_no_overwrite() {
     );
     assert_eq!(
         analysis.get("title").and_then(Value::as_str),
-        Some("Démo Mynou")
+        Some("Mynou Demo!")
     );
     let submitted = parse(command(
         &directory.0,
         &[
             "submit",
             "--title",
-            "Film CLI",
+            "CLI Movie",
             "--path",
             source.to_str().unwrap(),
         ],
@@ -152,7 +152,7 @@ fn cli_init_analyze_offline_management_and_no_overwrite() {
     let status = parse(command(&directory.0, &["status"]));
     assert_eq!(
         status.get("service").and_then(Value::as_str),
-        Some("arrêté")
+        Some("stopped")
     );
     assert_eq!(status.get("jobs").and_then(Value::as_u64), Some(1));
     assert!(
@@ -205,7 +205,7 @@ fn cli_routes_to_running_api_while_store_is_locked() {
             &[
                 "submit",
                 "--title",
-                "En ligne",
+                "Online",
                 "--path",
                 source.to_str().unwrap(),
             ],

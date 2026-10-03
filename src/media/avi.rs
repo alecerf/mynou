@@ -11,25 +11,25 @@ fn chunks(input: &mut Input, mut at: u64, end: u64) -> Result<Vec<Chunk>> {
     while at < end {
         input.count()?;
         if end - at < 8 {
-            return Err("Bloc AVI tronqué".into());
+            return Err("Truncated AVI chunk".into());
         }
         let head = input.read(at, 8)?;
         let size = u64::from(u32le(&head, 4)?);
         let body = at + 8;
-        let next = body.checked_add(size).ok_or("Taille AVI débordante")?;
+        let next = body.checked_add(size).ok_or("AVI size overflow")?;
         if next > end {
-            return Err("Bloc AVI hors limites".into());
+            return Err("AVI chunk is out of bounds".into());
         }
         result.push(Chunk {
-            kind: head[..4].try_into().map_err(|_| "Type AVI invalide")?,
+            kind: head[..4].try_into().map_err(|_| "Invalid AVI chunk type")?,
             data: body,
             end: next,
         });
         at = next
             .checked_add(size & 1)
-            .ok_or("Alignement AVI débordant")?;
+            .ok_or("AVI alignment overflow")?;
         if at > end {
-            return Err("Alignement AVI tronqué".into());
+            return Err("Truncated AVI alignment".into());
         }
     }
     Ok(result)
@@ -40,9 +40,9 @@ pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
     let head = input.read(0, 12)?;
     let end = u64::from(u32le(&head, 4)?)
         .checked_add(8)
-        .ok_or("Taille AVI débordante")?;
+        .ok_or("AVI size overflow")?;
     if end > input.len || end < 12 {
-        return Err("Taille RIFF AVI invalide".into());
+        return Err("Invalid AVI RIFF size".into());
     }
     let mut index = 0;
     for item in chunks(input, 12, end)? {
@@ -50,7 +50,7 @@ pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
             continue;
         }
         if item.end - item.data < 4 {
-            return Err("Liste AVI tronquée".into());
+            return Err("Truncated AVI list".into());
         }
         let kind = input.read(item.data, 4)?;
         if kind == b"hdrl" {
@@ -78,7 +78,7 @@ pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
                         &input.read(
                             entry.data,
                             usize::try_from(entry.end - entry.data)
-                                .map_err(|_| "Métadonnée AVI excessive")?,
+                                .map_err(|_| "AVI metadata exceeds the size limit")?,
                         )?,
                     );
                     if &entry.kind == b"INAM" {
@@ -108,15 +108,15 @@ fn stream(input: &mut Input, parent: Chunk, media: &mut MediaFile, index: usize)
             b"strn" => {
                 title = Some(text(&input.read(
                     entry.data,
-                    usize::try_from(entry.end - entry.data).map_err(|_| "Titre AVI excessif")?,
+                    usize::try_from(entry.end - entry.data).map_err(|_| "AVI title exceeds the size limit")?,
                 )?))
             }
             _ => {}
         }
     }
-    let header = header.ok_or("Description de piste AVI absente")?;
+    let header = header.ok_or("Missing AVI track description")?;
     if header.len() < 36 {
-        return Err("Description de piste AVI tronquée".into());
+        return Err("Truncated AVI track description".into());
     }
     let default = u32le(&header, 8)? & 1 == 0;
     if &header[..4] == b"vids" {
@@ -127,19 +127,19 @@ fn stream(input: &mut Input, parent: Chunk, media: &mut MediaFile, index: usize)
         } else {
             None
         };
-        let format = format.ok_or("Format vidéo AVI absent")?;
+        let format = format.ok_or("Missing AVI video format")?;
         if format.len() < 20 {
-            return Err("Format vidéo AVI tronqué".into());
+            return Err("Truncated AVI video format".into());
         }
         let width = i32::from_le_bytes(
             format[4..8]
                 .try_into()
-                .map_err(|_| "Largeur AVI invalide")?,
+                .map_err(|_| "Invalid AVI width")?,
         );
         let height = i32::from_le_bytes(
             format[8..12]
                 .try_into()
-                .map_err(|_| "Hauteur AVI invalide")?,
+                .map_err(|_| "Invalid AVI height")?,
         );
         let codec_bytes = if format[16..20] == [0, 0, 0, 0] {
             &header[4..8]
@@ -168,12 +168,12 @@ fn stream(input: &mut Input, parent: Chunk, media: &mut MediaFile, index: usize)
             default,
         });
     } else if &header[..4] == b"auds" {
-        let format = format.ok_or("Format audio AVI absent")?;
+        let format = format.ok_or("Missing AVI audio format")?;
         let id = u16le(&format, 0)?;
         let channels = u16le(&format, 2)?;
         let sample_rate = u32le(&format, 4)?;
         if channels == 0 || sample_rate == 0 {
-            return Err("Paramètres audio AVI invalides".into());
+            return Err("Invalid AVI audio parameters".into());
         }
         let codec = match id {
             1 => format!("pcm_s{}le", u16le(&format, 14)?),

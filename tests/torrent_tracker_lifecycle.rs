@@ -35,7 +35,7 @@ fn config(root: &std::path::Path, seed: bool) -> DownloadConfig {
 fn wait(mut predicate: impl FnMut() -> bool) {
     let started = Instant::now();
     while !predicate() {
-        assert!(started.elapsed() < Duration::from_secs(10), "Délai dépassé");
+        assert!(started.elapsed() < Duration::from_secs(10), "Deadline exceeded");
         thread::sleep(Duration::from_millis(10));
     }
 }
@@ -193,7 +193,7 @@ fn tracker_events_counters_and_interval_follow_real_transfer_and_pause() {
         !captured
             .iter()
             .any(|e| e.get("port") == Some(&seed_port) && !e.contains_key("event")),
-        "L'intervalle du tracker doit empêcher une annonce neutre précoce"
+        "Tracker interval must prevent an early periodic announcement"
     );
     seed.cancel(&id).expect("pause");
     wait(|| {

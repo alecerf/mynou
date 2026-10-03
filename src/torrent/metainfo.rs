@@ -39,35 +39,35 @@ fn dict(v: &Value) -> Result<&BTreeMap<Vec<u8>, Value>> {
     if let Value::Dict(v) = v {
         Ok(v)
     } else {
-        Err("Dictionnaire torrent attendu".into())
+        Err("Expected a torrent dictionary".into())
     }
 }
 pub fn bytes(v: &Value) -> Result<&[u8]> {
     if let Value::Bytes(v) = v {
         Ok(v)
     } else {
-        Err("Octets torrent attendus".into())
+        Err("Expected torrent bytes".into())
     }
 }
 pub fn integer(v: &Value) -> Result<i64> {
     if let Value::Int(v) = v {
         Ok(*v)
     } else {
-        Err("Entier torrent attendu".into())
+        Err("Expected a torrent integer".into())
     }
 }
 fn required<'a>(d: &'a BTreeMap<Vec<u8>, Value>, key: &[u8]) -> Result<&'a Value> {
     d.get(key)
-        .ok_or_else(|| "Métadonnée torrent absente".into())
+        .ok_or_else(|| "Missing torrent metadata field".into())
 }
 fn positive(v: &Value) -> Result<u64> {
-    u64::try_from(integer(v)?).map_err(|_| "Longueur torrent négative".into())
+    u64::try_from(integer(v)?).map_err(|_| "Negative torrent length".into())
 }
 fn component(v: &[u8]) -> Result<String> {
-    let s = std::str::from_utf8(v).map_err(|_| "Nom de fichier torrent non UTF-8")?;
+    let s = std::str::from_utf8(v).map_err(|_| "Torrent file name is not valid UTF-8")?;
     if s.is_empty() || s == "." || s == ".." || s.contains(['/', '\\', '\0', ':']) || s.len() > 255
     {
-        return Err("Chemin torrent interdit".into());
+        return Err("Torrent path is not allowed".into());
     }
     Ok(s.to_owned())
 }
@@ -76,7 +76,7 @@ pub fn confined(base: &Path, path: &Path) -> Result<PathBuf> {
         .components()
         .any(|c| !matches!(c, Component::Normal(_)))
     {
-        return Err("Chemin torrent interdit".into());
+        return Err("Torrent path is not allowed".into());
     }
     let mut current = base.to_path_buf();
     for part in path.components() {
@@ -84,7 +84,7 @@ pub fn confined(base: &Path, path: &Path) -> Result<PathBuf> {
         if let Ok(m) = std::fs::symlink_metadata(&current)
             && (m.file_type().is_symlink() || (!m.is_dir() && !m.is_file()))
         {
-            return Err("Lien ou fichier spécial interdit dans le téléchargement".into());
+            return Err("Links and special files are not allowed in downloads".into());
         }
     }
     Ok(current)
@@ -93,7 +93,7 @@ pub fn confined(base: &Path, path: &Path) -> Result<PathBuf> {
 // Extract the original info dictionary bytes: re-encoding would change noncanonical hashes.
 pub fn raw_info(input: &[u8]) -> Result<Vec<u8>> {
     if input.len() > MAX_META {
-        return Err("Métadonnées torrent trop grandes".into());
+        return Err("Torrent metadata is too large".into());
     }
     crate::bencode::parse_info_raw(input)
 }
@@ -105,7 +105,7 @@ impl Meta {
     }
     pub fn from_info(info: Vec<u8>, encoded: Vec<u8>) -> Result<Self> {
         if info.len() > MAX_META {
-            return Err("Métadonnées torrent trop grandes".into());
+            return Err("Torrent metadata is too large".into());
         }
         let root = crate::bencode::parse(&encoded)?;
         let top = dict(&root)?;
@@ -113,9 +113,9 @@ impl Meta {
         let d = dict(&value)?;
         let name = component(bytes(required(d, b"name")?)?)?;
         let piece_length = usize::try_from(positive(required(d, b"piece length")?)?)
-            .map_err(|_| "Taille de pièce excessive")?;
+            .map_err(|_| "Piece length exceeds limits")?;
         if !(BLOCK..=16 * 1024 * 1024).contains(&piece_length) || !piece_length.is_power_of_two() {
-            return Err("Taille de pièce torrent interdite".into());
+            return Err("Torrent piece length is not allowed".into());
         }
         let private = match d
             .get(b"private".as_slice())
@@ -125,7 +125,7 @@ impl Meta {
         {
             0 => false,
             1 => true,
-            _ => return Err("Indicateur privé torrent invalide".into()),
+            _ => return Err("Invalid torrent private flag".into()),
         };
         let v2 = d
             .get(b"meta version".as_slice())
@@ -135,7 +135,7 @@ impl Meta {
                 if v == 2 {
                     Ok(sha256(&info))
                 } else {
-                    Err("Version torrent inconnue")
+                    Err("Unknown torrent version")
                 }
             })
             .transpose()?;
@@ -145,7 +145,7 @@ impl Meta {
         let v1 = if let Some(p) = d.get(b"pieces".as_slice()) {
             let p = bytes(p)?;
             if p.len() % 20 != 0 {
-                return Err("Liste des empreintes v1 invalide".into());
+                return Err("Invalid v1 hash list".into());
             }
             for h in p.as_chunks::<20>().0 {
                 let mut a = [0; 20];
@@ -154,19 +154,19 @@ impl Meta {
             }
             if let Some(list) = d.get(b"files".as_slice()) {
                 let Value::List(list) = list else {
-                    return Err("Liste de fichiers torrent invalide".into());
+                    return Err("Invalid torrent file list".into());
                 };
                 if list.len() > 100_000 {
-                    return Err("Trop de fichiers torrent".into());
+                    return Err("Too many torrent files".into());
                 }
                 for entry in list {
                     let e = dict(entry)?;
                     let length = positive(required(e, b"length")?)?;
                     let Value::List(parts) = required(e, b"path")? else {
-                        return Err("Chemin torrent invalide".into());
+                        return Err("Invalid torrent path".into());
                     };
                     if parts.is_empty() || parts.len() > 64 {
-                        return Err("Chemin torrent invalide".into());
+                        return Err("Invalid torrent path".into());
                     }
                     let mut path = PathBuf::from(&name);
                     for part in parts {
@@ -186,7 +186,7 @@ impl Meta {
                     });
                     total = total
                         .checked_add(length)
-                        .ok_or("Taille torrent excessive")?;
+                        .ok_or("Torrent size exceeds limits")?;
                 }
             } else {
                 total = positive(required(d, b"length")?)?;
@@ -199,7 +199,7 @@ impl Meta {
                 });
             }
             if total.div_ceil(piece_length as u64) != v1_hashes.len() as u64 {
-                return Err("Nombre de pièces v1 incohérent".into());
+                return Err("V1 piece count mismatch".into());
             }
             Some(sha1(&info))
         } else {
@@ -216,12 +216,12 @@ impl Meta {
                 depth: usize,
             ) -> Result<()> {
                 if depth > 64 || out.len() > 100_000 {
-                    return Err("Arbre de fichiers v2 excessif".into());
+                    return Err("V2 file tree exceeds limits".into());
                 }
                 let d = dict(node)?;
                 if let Some(leaf) = d.get(b"".as_slice()) {
                     if d.len() != 1 {
-                        return Err("Arbre de fichiers v2 ambigu".into());
+                        return Err("Ambiguous v2 file tree".into());
                     }
                     let leaf = dict(leaf)?;
                     let length = positive(required(leaf, b"length")?)?;
@@ -230,7 +230,7 @@ impl Meta {
                     } else {
                         let root = bytes(required(leaf, b"pieces root")?)?;
                         if root.len() != 32 {
-                            return Err("Racine de Merkle v2 invalide".into());
+                            return Err("Invalid v2 Merkle root".into());
                         }
                         let mut hash = [0; 32];
                         hash.copy_from_slice(root);
@@ -250,7 +250,7 @@ impl Meta {
                     });
                     *offset = offset
                         .checked_add(length.div_ceil(piece as u64) * piece as u64)
-                        .ok_or("Taille torrent excessive")?;
+                        .ok_or("Torrent size exceeds limits")?;
                 } else {
                     for (part, child) in d {
                         walk(
@@ -286,11 +286,11 @@ impl Meta {
             } else {
                 let real: Vec<_> = files.iter().filter(|f| !f.padding).collect();
                 if real.len() != v2_files.len() {
-                    return Err("Listes de fichiers hybride incompatibles".into());
+                    return Err("Incompatible hybrid file lists".into());
                 }
                 for (a, b) in real.into_iter().zip(&v2_files) {
                     if a.path != b.path || a.length != b.length || a.offset != b.offset {
-                        return Err("Position de fichier hybride incompatible".into());
+                        return Err("Incompatible hybrid file position".into());
                     }
                 }
                 for f in &mut files {
@@ -302,20 +302,20 @@ impl Meta {
             }
         }
         if v1.is_none() && v2.is_none() {
-            return Err("Torrent sans empreinte v1 ni v2".into());
+            return Err("Torrent has neither a v1 nor a v2 hash".into());
         }
         if total > 16 * 1024 * 1024 * 1024 * 1024u64 {
-            return Err("Taille torrent excessive".into());
+            return Err("Torrent size exceeds limits".into());
         }
         let mut unique = std::collections::BTreeSet::new();
         for f in &files {
             if !unique.insert(f.path.clone()) {
-                return Err("Chemin torrent dupliqué".into());
+                return Err("Duplicate torrent path".into());
             }
         }
         let count = total.div_ceil(piece_length as u64) as usize;
         if count > 1_048_576 {
-            return Err("Trop de pièces torrent".into());
+            return Err("Too many torrent pieces".into());
         }
         let mut v2_pieces = vec![None; count];
         let layers = top.get(b"piece layers".as_slice()).map(dict).transpose()?;
@@ -328,7 +328,7 @@ impl Meta {
             } else if let Some(layer) = layers.and_then(|l| l.get(root.as_slice())) {
                 let layer = bytes(layer)?;
                 if layer.len() != n * 32 {
-                    return Err("Couche de pièces v2 incohérente".into());
+                    return Err("V2 piece layer mismatch".into());
                 }
                 let mut hashes = Vec::with_capacity(n);
                 for h in layer.as_chunks::<32>().0 {
@@ -337,7 +337,7 @@ impl Meta {
                     hashes.push(a);
                 }
                 if merkle_hashes(&hashes, zero_hash(piece_length / BLOCK)) != root {
-                    return Err("Couche de pièces v2 non authentifiée".into());
+                    return Err("V2 piece layer has not been authenticated".into());
                 }
                 for (i, h) in hashes.into_iter().enumerate() {
                     v2_pieces[start + i] = Some(h);
@@ -367,7 +367,7 @@ impl Meta {
             }
         }
         if trackers.len() > 256 {
-            return Err("Trop de trackers torrent".into());
+            return Err("Too many torrent trackers".into());
         }
         Ok(Self {
             info,

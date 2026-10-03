@@ -1,4 +1,4 @@
-//! Contrats des intégrations testés avec des services HTTP locaux synthétiques.
+//! Integration contracts tested with synthetic local HTTP services.
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::path::Path;
@@ -173,8 +173,8 @@ fn tmdb_expands_only_aired_episodes_and_rejects_disabled_catalog() {
     assert!(integrations::expand(&config, &series).is_err());
     config.catalog.enabled = true;
     config.catalog.url = format!("{}/3", fixture.url);
-    // PATH existe dans l'environnement de construction ; aucune mutation globale
-    // de l'environnement ni credential réel n'est nécessaire aux fixtures.
+    // PATH exists in the build environment; fixtures need neither global
+    // environment changes nor real credentials.
     config.catalog.token_env = "PATH".into();
     let episodes = integrations::expand(&config, &series).unwrap();
     assert_eq!(episodes.len(), 1);
@@ -316,7 +316,7 @@ fn catalog_ambiguous_titles_require_explicit_identity() {
     assert!(
         integrations::expand(&config, &series)
             .unwrap_err()
-            .contains("ambiguë")
+            .contains("ambiguous")
     );
 }
 

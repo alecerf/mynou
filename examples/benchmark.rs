@@ -1,5 +1,5 @@
-//! Mesures locales reproductibles : `cargo run --release --offline --example benchmark`.
-//! Les résultats dépendent du CPU, du système de fichiers et de son cache.
+//! Reproducible measurements: `cargo run --release --offline --example benchmark`.
+//! Results depend on the CPU, file system and its cache.
 use mynou::{crypto, json, media};
 use std::collections::BTreeMap;
 use std::hint::black_box;
@@ -27,13 +27,13 @@ fn run() -> mynou::Result<()> {
         .nth(2)
         .map(|n| n.parse())
         .transpose()
-        .map_err(|_| "Le nombre d’itérations doit être un entier".to_string())?
+        .map_err(|_| "The iteration count must be an integer".to_string())?
         .unwrap_or(2_000);
     if iterations == 0 || iterations > 1_000_000 {
-        return Err("Nombre d’itérations attendu entre 1 et 1000000".into());
+        return Err("Expected an iteration count between 1 and 1000000".into());
     }
     let probe = media::analyze(&path)?;
-    // Cache chaud explicitement : on mesure l’analyse, pas la latence d’un disque froid.
+    // Use a warm cache to measure analysis rather than cold-disk latency.
     for _ in 0..32 {
         black_box(media::analyze(black_box(&path))?);
     }
@@ -110,7 +110,7 @@ fn run() -> mynou::Result<()> {
 
 fn main() {
     if let Err(error) = run() {
-        eprintln!("Benchmark : {error}");
+        eprintln!("Benchmark: {error}");
         std::process::exit(1);
     }
 }
