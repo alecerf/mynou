@@ -35,7 +35,10 @@ fn config(root: &std::path::Path, seed: bool) -> DownloadConfig {
 fn wait(mut predicate: impl FnMut() -> bool) {
     let started = Instant::now();
     while !predicate() {
-        assert!(started.elapsed() < Duration::from_secs(10), "Deadline exceeded");
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "Deadline exceeded"
+        );
         thread::sleep(Duration::from_millis(10));
     }
 }

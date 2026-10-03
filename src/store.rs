@@ -123,8 +123,7 @@ fn fields(value: &Value) -> Result<&BTreeMap<String, Value>> {
 }
 
 fn field<'a>(map: &'a BTreeMap<String, Value>, key: &str) -> Result<&'a Value> {
-    map.get(key)
-        .ok_or_else(|| format!("missing field: {key}"))
+    map.get(key).ok_or_else(|| format!("missing field: {key}"))
 }
 
 fn string(map: &BTreeMap<String, Value>, key: &str) -> Result<String> {
@@ -136,9 +135,7 @@ fn string(map: &BTreeMap<String, Value>, key: &str) -> Result<String> {
 
 fn integer(map: &BTreeMap<String, Value>, key: &str) -> Result<u64> {
     match field(map, key)? {
-        Value::String(value) => value
-            .parse()
-            .map_err(|_| format!("invalid integer: {key}")),
+        Value::String(value) => value.parse().map_err(|_| format!("invalid integer: {key}")),
         Value::Number(value)
             if value.is_finite()
                 && *value >= 0.0
@@ -222,10 +219,7 @@ fn random_id() -> Result<String> {
 impl Request {
     pub fn validate(&self) -> Result<()> {
         if self.source_path.is_some() && self.source_url.is_some() {
-            return Err(
-                "a request cannot contain both a source file and a source URL"
-                    .to_owned(),
-            );
+            return Err("a request cannot contain both a source file and a source URL".to_owned());
         }
         if !matches!(self.kind.as_str(), "movie" | "series" | "episode" | "file") {
             return Err("invalid request kind".to_owned());
@@ -448,9 +442,7 @@ fn secure_file(path: &Path) -> Result<File> {
     {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
         if metadata.nlink() != 1 {
-            return Err(
-                "storage files cannot share hard links".to_owned(),
-            );
+            return Err("storage files cannot share hard links".to_owned());
         }
         file.set_permissions(fs::Permissions::from_mode(0o600))
             .map_err(|error| format!("cannot set storage permissions: {error}"))?;
@@ -503,18 +495,15 @@ impl Store {
                     .components()
                     .any(|component| matches!(component, std::path::Component::ParentDir))
             {
-                return Err(
-                    "storage requires a clean directory path without traversal".to_owned(),
-                );
+                return Err("storage requires a clean directory path without traversal".to_owned());
             }
             reject_symlinks(directory)?;
             create_private_directory(directory)?;
             fs::set_permissions(directory, fs::Permissions::from_mode(0o700))
                 .map_err(|error| format!("cannot set storage permissions: {error}"))?;
             let lock = secure_file(&directory.join(".lock"))?;
-            lock.try_lock().map_err(|error| {
-                format!("storage is already open or cannot be locked: {error}")
-            })?;
+            lock.try_lock()
+                .map_err(|error| format!("storage is already open or cannot be locked: {error}"))?;
             let journal = secure_file(&directory.join("journal.bin"))?;
             sync_directory(directory)?;
             let mut store = Self {
@@ -729,10 +718,7 @@ impl Store {
 
     fn commit(&mut self, job: Job, message: &str) -> Result<()> {
         if self.poisoned {
-            return Err(
-                "storage unavailable after a write error; reopen storage"
-                    .to_owned(),
-            );
+            return Err("storage unavailable after a write error; reopen storage".to_owned());
         }
         let sequence = self
             .sequence
@@ -762,9 +748,14 @@ impl Store {
         frame.extend_from_slice(&payload);
         let digest = sha256(&frame);
         frame.extend_from_slice(&digest);
-        let journal_bytes = self.journal_bytes.checked_add(frame.len() as u64)
+        let journal_bytes = self
+            .journal_bytes
+            .checked_add(frame.len() as u64)
             .filter(|bytes| *bytes <= MAX_JOURNAL_BYTES)
-            .ok_or_else(|| "journal full after a maintenance error; repair storage before continuing".to_owned())?;
+            .ok_or_else(|| {
+                "journal full after a maintenance error; repair storage before continuing"
+                    .to_owned()
+            })?;
         let write = self
             .journal
             .seek(SeekFrom::End(0))
@@ -900,8 +891,7 @@ impl Store {
         if encoded_length > MAX_SNAPSHOT as u64 || encoded_length.checked_add(48) != Some(length) {
             return Err("corrupt snapshot size".to_owned());
         }
-        let payload_length =
-            usize::try_from(encoded_length).map_err(|_| "snapshot too large")?;
+        let payload_length = usize::try_from(encoded_length).map_err(|_| "snapshot too large")?;
         if sha256(&bytes[..bytes.len() - 32]).as_slice() != &bytes[bytes.len() - 32..] {
             return Err("corrupt snapshot".to_owned());
         }
@@ -984,16 +974,11 @@ impl Store {
             if sha256(&header[..52]).as_slice() != &header[52..84] {
                 return Err(format!("corrupt journal header at byte {offset}"));
             }
-            let sequence = u64::from_le_bytes(
-                header[8..16]
-                    .try_into()
-                    .map_err(|_| "invalid sequence")?,
-            );
-            let payload_length = u32::from_le_bytes(
-                header[16..20]
-                    .try_into()
-                    .map_err(|_| "invalid length")?,
-            ) as usize;
+            let sequence =
+                u64::from_le_bytes(header[8..16].try_into().map_err(|_| "invalid sequence")?);
+            let payload_length =
+                u32::from_le_bytes(header[16..20].try_into().map_err(|_| "invalid length")?)
+                    as usize;
             let chain: [u8; 32] = header[20..52].try_into().map_err(|_| "invalid chain")?;
             if payload_length > MAX_RECORD {
                 return Err("journal transaction too large".to_owned());
@@ -1225,12 +1210,7 @@ mod tests {
         let mut snapshot = fs::read(directory.0.join("snapshot.bin")).unwrap();
         snapshot[22] ^= 1;
         fs::write(directory.0.join("snapshot.bin"), snapshot).unwrap();
-        assert!(
-            Store::open(&directory.0)
-                .err()
-                .unwrap()
-                .contains("corrupt")
-        );
+        assert!(Store::open(&directory.0).err().unwrap().contains("corrupt"));
     }
 
     #[test]
@@ -1406,12 +1386,7 @@ mod tests {
         let mut bytes = fs::read(&path).unwrap();
         bytes[8..16].copy_from_slice(&u64::MAX.to_le_bytes());
         fs::write(&path, bytes).unwrap();
-        assert!(
-            Store::open(&directory.0)
-                .err()
-                .unwrap()
-                .contains("corrupt")
-        );
+        assert!(Store::open(&directory.0).err().unwrap().contains("corrupt"));
     }
 
     #[test]
@@ -1452,12 +1427,7 @@ mod tests {
         store.submit(request("One owner")).unwrap();
         fs::create_dir(&alias).unwrap();
         fs::hard_link(original.join("journal.bin"), alias.join("journal.bin")).unwrap();
-        assert!(
-            Store::open(&alias)
-                .err()
-                .unwrap()
-                .contains("hard links")
-        );
+        assert!(Store::open(&alias).err().unwrap().contains("hard links"));
     }
 
     #[cfg(unix)]

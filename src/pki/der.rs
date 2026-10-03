@@ -31,15 +31,15 @@ impl<'a> Reader<'a> {
     }
     pub(super) fn read(&mut self) -> Result<Element<'a>> {
         let start = self.cursor;
-        let tag = *self.bytes.get(self.cursor).ok_or("DER: truncated element")?;
+        let tag = *self
+            .bytes
+            .get(self.cursor)
+            .ok_or("DER: truncated element")?;
         self.cursor += 1;
         if tag & 0x1f == 0x1f {
             return Err("DER: extended tag numbers are unsupported".into());
         }
-        let first = *self
-            .bytes
-            .get(self.cursor)
-            .ok_or("DER: missing length")?;
+        let first = *self.bytes.get(self.cursor).ok_or("DER: missing length")?;
         self.cursor += 1;
         let length = if first & 0x80 == 0 {
             usize::from(first)

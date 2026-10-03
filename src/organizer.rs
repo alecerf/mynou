@@ -76,9 +76,7 @@ fn create_directory(path: &Path) -> Result<()> {
             }
         }
         Err(error) => {
-            return Err(format!(
-                "cannot create library directory: {error}"
-            ));
+            return Err(format!("cannot create library directory: {error}"));
         }
     }
     #[cfg(unix)]

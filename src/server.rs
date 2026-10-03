@@ -25,7 +25,9 @@ pub struct Api {
 impl Api {
     pub fn bind(engine: Arc<Engine>, token: String) -> Result<Self> {
         if token.len() < 32 || token.len() > 4096 || token.chars().any(char::is_control) {
-            return Err("The API token must contain 32 to 4096 bytes and no control characters".into());
+            return Err(
+                "The API token must contain 32 to 4096 bytes and no control characters".into(),
+            );
         }
         let listener = TcpListener::bind(&engine.config.listen)
             .map_err(|e| format!("Cannot bind the API listener: {e}"))?;
@@ -217,7 +219,11 @@ fn connection(stream: &mut TcpStream, engine: &Arc<Engine>, token: &str) -> Resu
             .get("content-type")
             .is_none_or(|v| v.split(';').next() != Some("application/json"))
     {
-        return respond(stream, 415, error("Content-Type application/json is required"));
+        return respond(
+            stream,
+            415,
+            error("Content-Type application/json is required"),
+        );
     }
     match route(engine, &method, &path, &body) {
         Ok((status, value)) => respond(stream, status, value),
@@ -232,7 +238,9 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
             Value::Array(lock(&engine.store)?.list().iter().map(public_job).collect()),
         )),
         ("POST", "/api/jobs") => {
-            let v = json::parse(std::str::from_utf8(body).map_err(|_| "Request body is not valid UTF-8")?)?;
+            let v = json::parse(
+                std::str::from_utf8(body).map_err(|_| "Request body is not valid UTF-8")?,
+            )?;
             let request = Request::from_json(&v)?;
             Ok((
                 201,

@@ -379,8 +379,8 @@ impl Client {
             .set_nonblocking(true)
             .map_err(|_| "Could not configure the BitTorrent port")?;
         let mut map = BTreeMap::new();
-        for entry in fs::read_dir(&config.state_dir)
-            .map_err(|_| "Could not read BitTorrent state")?
+        for entry in
+            fs::read_dir(&config.state_dir).map_err(|_| "Could not read BitTorrent state")?
         {
             let entry = entry.map_err(|_| "Could not read BitTorrent state")?;
             let name = entry.file_name();
@@ -397,8 +397,7 @@ impl Client {
             if !kind.is_file() || kind.is_symlink() {
                 return Err("Special persisted metadata files are not allowed".into());
             }
-            let file = File::open(entry.path())
-                .map_err(|_| "Could not read persisted metadata")?;
+            let file = File::open(entry.path()).map_err(|_| "Could not read persisted metadata")?;
             let mut encoded = Vec::new();
             file.take((MAX_META + 1) as u64)
                 .read_to_end(&mut encoded)
@@ -481,8 +480,8 @@ impl Client {
             );
         }
         // Persisted magnets without metadata are also durable queue entries.
-        for entry in fs::read_dir(&config.state_dir)
-            .map_err(|_| "Could not read BitTorrent queue")?
+        for entry in
+            fs::read_dir(&config.state_dir).map_err(|_| "Could not read BitTorrent queue")?
         {
             let entry = entry.map_err(|_| "Could not read BitTorrent queue")?;
             let name = entry.file_name();
@@ -570,7 +569,10 @@ impl Client {
     pub fn ensure(&self, source: &str) -> Result<DownloadStatus> {
         let mut source = Source::parse(source)?;
         let id = source.id();
-        let mut jobs = self.jobs.lock().map_err(|_| "BitTorrent state lock is poisoned")?;
+        let mut jobs = self
+            .jobs
+            .lock()
+            .map_err(|_| "BitTorrent state lock is poisoned")?;
         if let Some(job) = jobs.values_mut().find(|job| {
             source.v1.is_some_and(|h| job.source.v1 == Some(h))
                 || source.v2.is_some_and(|h| job.source.v2 == Some(h))
@@ -643,7 +645,10 @@ impl Client {
     }
     /// Pause a native transfer without removing its verified files or metadata.
     pub fn cancel(&self, id: &str) -> Result<()> {
-        let mut jobs = self.jobs.lock().map_err(|_| "BitTorrent state lock is poisoned")?;
+        let mut jobs = self
+            .jobs
+            .lock()
+            .map_err(|_| "BitTorrent state lock is poisoned")?;
         let job = jobs.get_mut(id).ok_or("Unknown download")?;
         job.paused = true;
         job.cancel.store(true, Ordering::Release);
@@ -659,13 +664,19 @@ impl Client {
     }
     /// Resume using the cached, authenticated identity; never reload a source URL.
     pub fn resume(&self, id: &str) -> Result<DownloadStatus> {
-        let mut jobs = self.jobs.lock().map_err(|_| "BitTorrent state lock is poisoned")?;
+        let mut jobs = self
+            .jobs
+            .lock()
+            .map_err(|_| "BitTorrent state lock is poisoned")?;
         let job = jobs.get_mut(id).ok_or("Unknown download")?;
         resume_job(&self.config, job)?;
         Ok(job.status.clone())
     }
     pub fn check(&self, id: &str) -> Result<DownloadStatus> {
-        let jobs = self.jobs.lock().map_err(|_| "BitTorrent state lock is poisoned")?;
+        let jobs = self
+            .jobs
+            .lock()
+            .map_err(|_| "BitTorrent state lock is poisoned")?;
         let job = jobs.get(id).ok_or("Unknown download")?;
         if job.failed {
             return Err(job.status.message.clone());
@@ -682,7 +693,10 @@ impl Client {
             .collect())
     }
     pub fn transfer_stats(&self, id: &str) -> Result<(u64, u64)> {
-        let jobs = self.jobs.lock().map_err(|_| "BitTorrent state lock is poisoned")?;
+        let jobs = self
+            .jobs
+            .lock()
+            .map_err(|_| "BitTorrent state lock is poisoned")?;
         let counters = &jobs.get(id).ok_or("Unknown download")?.counters;
         Ok((
             counters.downloaded.load(Ordering::Relaxed),
@@ -1008,7 +1022,9 @@ fn update(
     config: &DownloadConfig,
 ) -> Result<()> {
     let (jobs, stop) = context;
-    let mut jobs = jobs.lock().map_err(|_| "BitTorrent state lock is poisoned")?;
+    let mut jobs = jobs
+        .lock()
+        .map_err(|_| "BitTorrent state lock is poisoned")?;
     let job = jobs.get_mut(id).ok_or("Download no longer exists")?;
     if job.paused || stop.load(Ordering::Acquire) || !std::ptr::eq(&*job.cancel, stop) {
         return Err("Download interrupted".into());
@@ -1050,7 +1066,9 @@ fn download(
     peer_id: &[u8; 20],
 ) -> Result<()> {
     let (mut source, mut meta, counters) = {
-        let jobs = jobs.lock().map_err(|_| "BitTorrent state lock is poisoned")?;
+        let jobs = jobs
+            .lock()
+            .map_err(|_| "BitTorrent state lock is poisoned")?;
         let job = jobs.get(id).ok_or("Download no longer exists")?;
         (
             job.source.clone(),
@@ -1308,8 +1326,7 @@ fn prepare_files(meta: &Meta, base: &Path, stop: &AtomicBool) -> Result<()> {
                         return Err("Special media directories are not allowed".into());
                     }
                 } else {
-                    fs::create_dir(&current)
-                        .map_err(|_| "Could not create media directory")?;
+                    fs::create_dir(&current).map_err(|_| "Could not create media directory")?;
                 }
             }
         }
@@ -1560,7 +1577,9 @@ fn serve_peer(
     let mut hash = [0; 20];
     hash.copy_from_slice(&incoming[28..48]);
     let (id, meta, ready, known_peers, cancel, counters) = {
-        let jobs = jobs.lock().map_err(|_| "BitTorrent state lock is poisoned")?;
+        let jobs = jobs
+            .lock()
+            .map_err(|_| "BitTorrent state lock is poisoned")?;
         jobs.iter()
             .find_map(|(id, job)| {
                 if job.paused {

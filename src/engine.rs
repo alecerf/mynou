@@ -310,12 +310,8 @@ impl Engine {
             return Ok(());
         }
         if job.imports.is_empty() && !job.files.is_empty() && job.download_id.is_some() {
-            let client = self
-                .downloads
-                .as_ref()
-                .ok_or("Downloads are disabled")?;
-            let status =
-                client.check(job.download_id.as_deref().ok_or("Missing download")?)?;
+            let client = self.downloads.as_ref().ok_or("Downloads are disabled")?;
+            let status = client.check(job.download_id.as_deref().ok_or("Missing download")?)?;
             if !status.ready {
                 job.state = "downloading".into();
                 job.progress = status.progress;
@@ -327,10 +323,7 @@ impl Engine {
             if let Some(path) = &job.request.source_path {
                 job.files.push(path.clone());
             } else {
-                let client = self
-                    .downloads
-                    .as_ref()
-                    .ok_or("Downloads are disabled")?;
+                let client = self.downloads.as_ref().ok_or("Downloads are disabled")?;
                 if job.acquisition_url.is_none() {
                     job.acquisition_url = Some(match &job.request.source_url {
                         Some(url) => url.clone(),

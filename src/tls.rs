@@ -60,7 +60,10 @@ impl RecordKeys {
     }
 
     fn advance(&mut self) -> Result<()> {
-        self.sequence = self.sequence.checked_add(1).ok_or("TLS sequence counter exhausted")?;
+        self.sequence = self
+            .sequence
+            .checked_add(1)
+            .ok_or("TLS sequence counter exhausted")?;
         Ok(())
     }
 
@@ -99,7 +102,9 @@ impl RecordKeys {
         while plaintext.last() == Some(&0) {
             plaintext.pop();
         }
-        let kind = plaintext.pop().ok_or("TLS record has no inner content type")?;
+        let kind = plaintext
+            .pop()
+            .ok_or("TLS record has no inner content type")?;
         if plaintext.len() > 16_384 || !matches!(kind, 21..=23) {
             return Err("Invalid TLS record type or length".into());
         }
@@ -134,8 +139,12 @@ impl TlsStream {
         let mut secret = [0; 32];
         secret.copy_from_slice(&random[..32]);
         let public = x25519_public_key(secret);
-        let client_random: [u8; 32] = random[32..64].try_into().map_err(|_| "Invalid TLS random bytes")?;
-        let session_id: [u8; 32] = random[64..].try_into().map_err(|_| "Invalid TLS random bytes")?;
+        let client_random: [u8; 32] = random[32..64]
+            .try_into()
+            .map_err(|_| "Invalid TLS random bytes")?;
+        let session_id: [u8; 32] = random[64..]
+            .try_into()
+            .map_err(|_| "Invalid TLS random bytes")?;
         let hello = client_hello(hostname, &client_random, &session_id, &public)?;
         let mut transcript = Sha256::new();
         transcript.update(&hello);
@@ -201,9 +210,7 @@ impl TlsStream {
                         stage = 4;
                     }
                     (_, 13) => {
-                        return Err(
-                            "TLS client certificate authentication is unsupported".into(),
-                        );
+                        return Err("TLS client certificate authentication is unsupported".into());
                     }
                     _ => return Err("Invalid TLS handshake order or type".into()),
                 }

@@ -542,8 +542,7 @@ pub fn expand(config: &Config, request: &Request) -> Result<Vec<Request>> {
                 continue;
             }
             let episode = u32::try_from(
-                integer(episode, "episode_number")
-                    .ok_or("TMDB catalog: missing episode number")?,
+                integer(episode, "episode_number").ok_or("TMDB catalog: missing episode number")?,
             )
             .map_err(|_| "TMDB catalog: invalid episode")?;
             if episode == 0
@@ -821,7 +820,9 @@ pub fn search(config: &Config, request: &Request) -> Result<String> {
             .then_with(|| a.title.cmp(&b.title))
             .then_with(|| a.url.cmp(&b.url))
     });
-    candidates.into_iter().next().map(|r| r.url).ok_or_else(|| "Search: no release matches the title, year or episode and the minimum seed count".into())
+    candidates.into_iter().next().map(|r| r.url).ok_or_else(|| {
+        "Search: no release matches the title, year or episode and the minimum seed count".into()
+    })
 }
 
 fn plex_section<'a>(config: &'a Config, request: &Request) -> Result<&'a str> {
@@ -1028,10 +1029,7 @@ impl Xml<'_> {
     }
     fn comment(&mut self) -> Result<()> {
         self.at += 4;
-        let end = self
-            .tail()
-            .find("-->")
-            .ok_or("XML: incomplete comment")?;
+        let end = self.tail().find("-->").ok_or("XML: incomplete comment")?;
         if self.tail()[..end].contains("--") {
             return Err("XML: invalid comment".into());
         }

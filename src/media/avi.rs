@@ -25,9 +25,7 @@ fn chunks(input: &mut Input, mut at: u64, end: u64) -> Result<Vec<Chunk>> {
             data: body,
             end: next,
         });
-        at = next
-            .checked_add(size & 1)
-            .ok_or("AVI alignment overflow")?;
+        at = next.checked_add(size & 1).ok_or("AVI alignment overflow")?;
         if at > end {
             return Err("Truncated AVI alignment".into());
         }
@@ -106,10 +104,13 @@ fn stream(input: &mut Input, parent: Chunk, media: &mut MediaFile, index: usize)
                 format = Some(input.read(entry.data, (entry.end - entry.data).min(64) as usize)?)
             }
             b"strn" => {
-                title = Some(text(&input.read(
-                    entry.data,
-                    usize::try_from(entry.end - entry.data).map_err(|_| "AVI title exceeds the size limit")?,
-                )?))
+                title = Some(text(
+                    &input.read(
+                        entry.data,
+                        usize::try_from(entry.end - entry.data)
+                            .map_err(|_| "AVI title exceeds the size limit")?,
+                    )?,
+                ))
             }
             _ => {}
         }
@@ -131,16 +132,9 @@ fn stream(input: &mut Input, parent: Chunk, media: &mut MediaFile, index: usize)
         if format.len() < 20 {
             return Err("Truncated AVI video format".into());
         }
-        let width = i32::from_le_bytes(
-            format[4..8]
-                .try_into()
-                .map_err(|_| "Invalid AVI width")?,
-        );
-        let height = i32::from_le_bytes(
-            format[8..12]
-                .try_into()
-                .map_err(|_| "Invalid AVI height")?,
-        );
+        let width = i32::from_le_bytes(format[4..8].try_into().map_err(|_| "Invalid AVI width")?);
+        let height =
+            i32::from_le_bytes(format[8..12].try_into().map_err(|_| "Invalid AVI height")?);
         let codec_bytes = if format[16..20] == [0, 0, 0, 0] {
             &header[4..8]
         } else {

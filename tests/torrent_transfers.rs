@@ -407,10 +407,7 @@ fn v1_multifile_utf8_and_empty_file_transfer() {
         ]),
         d(&[
             (b"length", Value::Int(bdata.len() as i64)),
-            (
-                b"path",
-                Value::List(vec![b("subfolder"), b("audio.bin")]),
-            ),
+            (b"path", Value::List(vec![b("subfolder"), b("audio.bin")])),
         ]),
     ]);
     let info = d(&[

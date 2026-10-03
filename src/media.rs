@@ -105,7 +105,10 @@ pub fn analyze(path: &Path) -> Result<MediaFile> {
     }) {
         mp4::parse(&mut input, &mut media)?;
     } else {
-        return Err("Unsupported media format: expected MP4/MOV, Matroska/WebM, WAV, FLAC, MP3 or AVI".into());
+        return Err(
+            "Unsupported media format: expected MP4/MOV, Matroska/WebM, WAV, FLAC, MP3 or AVI"
+                .into(),
+        );
     }
     if media.video_streams.is_empty() && media.audio_streams.is_empty() {
         return Err("The container has no supported audio or video streams".into());
@@ -224,9 +227,7 @@ impl Input {
         let file = options
             .open(path)
             .map_err(|e| format!("Cannot open media: {e}"))?;
-        let meta = file
-            .metadata()
-            .map_err(|e| format!("File metadata: {e}"))?;
+        let meta = file.metadata().map_err(|e| format!("File metadata: {e}"))?;
         if !meta.is_file() {
             return Err("The media must be a regular file".into());
         }

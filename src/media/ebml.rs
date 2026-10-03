@@ -95,10 +95,13 @@ fn float(input: &mut Input, element: Element) -> Result<f64> {
     Ok(value)
 }
 fn string_value(input: &mut Input, element: Element) -> Result<String> {
-    Ok(text(&input.read(
-        element.data,
-        usize::try_from(element.end - element.data).map_err(|_| "EBML text exceeds the size limit")?,
-    )?))
+    Ok(text(
+        &input.read(
+            element.data,
+            usize::try_from(element.end - element.data)
+                .map_err(|_| "EBML text exceeds the size limit")?,
+        )?,
+    ))
 }
 
 pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
@@ -111,9 +114,7 @@ pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
         match item.id {
             0x4282 => doc_type = Some(string_value(input, item)?),
             0x42f2 if unsigned(input, item)? > 4 => {
-                return Err(
-                    "EBML identifiers longer than four bytes are unsupported".into(),
-                );
+                return Err("EBML identifiers longer than four bytes are unsupported".into());
             }
             0x42f3 if unsigned(input, item)? > 8 => {
                 return Err("EBML sizes longer than eight bytes are unsupported".into());

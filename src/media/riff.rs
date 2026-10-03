@@ -109,9 +109,7 @@ pub(super) fn wave(input: &mut Input, media: &mut MediaFile) -> Result<()> {
             }
             _ => {}
         }
-        at = next
-            .checked_add(size & 1)
-            .ok_or("WAV alignment overflow")?;
+        at = next.checked_add(size & 1).ok_or("WAV alignment overflow")?;
         if at > end {
             return Err("Missing WAV padding byte".into());
         }
@@ -137,9 +135,7 @@ fn wave_info(input: &mut Input, mut at: u64, end: u64, media: &mut MediaFile) ->
         let head = input.read(at, 8)?;
         let size = u64::from(u32le(&head, 4)?);
         let body = at + 8;
-        let next = body
-            .checked_add(size)
-            .ok_or("WAV metadata overflow")?;
+        let next = body.checked_add(size).ok_or("WAV metadata overflow")?;
         if next > end {
             return Err("WAV metadata is out of bounds".into());
         }
@@ -154,9 +150,7 @@ fn wave_info(input: &mut Input, mut at: u64, end: u64, media: &mut MediaFile) ->
                 set_date(media, value);
             }
         }
-        at = next
-            .checked_add(size & 1)
-            .ok_or("WAV alignment overflow")?;
+        at = next.checked_add(size & 1).ok_or("WAV alignment overflow")?;
         if at > end {
             return Err("Truncated WAV metadata alignment".into());
         }

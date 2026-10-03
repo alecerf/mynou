@@ -194,7 +194,9 @@ fn call(
             ],
             &bytes,
         )?;
-    let value = json::parse(std::str::from_utf8(&response.body).map_err(|_| "Response is not valid UTF-8")?)?;
+    let value = json::parse(
+        std::str::from_utf8(&response.body).map_err(|_| "Response is not valid UTF-8")?,
+    )?;
     if !(200..300).contains(&response.status) {
         return Err(value
             .get("error")
@@ -226,7 +228,11 @@ fn request(args: &Args) -> Result<Request> {
                 },
             )
             .into(),
-        title: args.options.get("title").ok_or("--title is required")?.clone(),
+        title: args
+            .options
+            .get("title")
+            .ok_or("--title is required")?
+            .clone(),
         year: args.number("year")?,
         season: args.number("season")?,
         episode: args.number("episode")?,

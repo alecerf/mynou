@@ -98,7 +98,9 @@ pub(super) fn parse(input: &mut Input, media: &mut MediaFile) -> Result<()> {
         }
     }
     if !found_movie {
-        return Err("The MP4 has no moov box; standalone fragmented metadata is unsupported".into());
+        return Err(
+            "The MP4 has no moov box; standalone fragmented metadata is unsupported".into(),
+        );
     }
     Ok(())
 }
@@ -224,10 +226,11 @@ fn track(input: &mut Input, header: BoxHeader, media: &mut MediaFile, index: usi
                                 let span = u64::from(u32be(&data, at)?)
                                     .checked_mul(u64::from(u32be(&data, at + 4)?))
                                     .ok_or("MP4 timing table duration overflow")?;
-                                parsed.sample_duration = parsed
-                                    .sample_duration
-                                    .checked_add(span)
-                                    .ok_or("MP4 timing table duration overflow")?;
+                                parsed.sample_duration =
+                                    parsed
+                                        .sample_duration
+                                        .checked_add(span)
+                                        .ok_or("MP4 timing table duration overflow")?;
                             }
                             cursor += data.len() as u64;
                         }
@@ -343,9 +346,7 @@ fn descriptors(mut data: &[u8], track: &mut Track, depth: usize) -> Result<()> {
             if at > 4 {
                 return Err("Invalid MPEG-4 description length".into());
             }
-            let byte = *data
-                .get(at)
-                .ok_or("Truncated MPEG-4 description length")?;
+            let byte = *data.get(at).ok_or("Truncated MPEG-4 description length")?;
             length = (length << 7) | usize::from(byte & 0x7f);
             at += 1;
             if byte & 0x80 == 0 {
@@ -355,7 +356,9 @@ fn descriptors(mut data: &[u8], track: &mut Track, depth: usize) -> Result<()> {
         let end = at
             .checked_add(length)
             .ok_or("MPEG-4 description overflow")?;
-        let body = data.get(at..end).ok_or("MPEG-4 description is out of bounds")?;
+        let body = data
+            .get(at..end)
+            .ok_or("MPEG-4 description is out of bounds")?;
         match kind {
             3 => {
                 let flags = *body.get(2).ok_or("Truncated ES descriptor")?;

@@ -54,7 +54,11 @@ pub fn run(directory: &Path) -> Result<Value> {
         pex: false,
         max_active: 1,
     })?;
-    seeder.ensure(torrent_path.to_str().ok_or("Demo path is not valid UTF-8")?)?;
+    seeder.ensure(
+        torrent_path
+            .to_str()
+            .ok_or("Demo path is not valid UTF-8")?,
+    )?;
     let deadline = Instant::now() + Duration::from_secs(15);
     while !seeder.check(&id)?.ready {
         if Instant::now() > deadline {

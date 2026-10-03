@@ -197,8 +197,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
     )?;
     if number(v, "schema_version", 0, 1)? != 1 {
         return Err(
-            "Configuration: use Rust schema 1; previous Go SQLite data remains separate"
-                .into(),
+            "Configuration: use Rust schema 1; previous Go SQLite data remains separate".into(),
         );
     }
     let library = section(v, "library")?;
