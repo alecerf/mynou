@@ -6,6 +6,29 @@ use crate::{
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Monitoring {
+    pub enabled: bool,
+    pub interval_secs: u64,
+    pub max_checks: usize,
+}
+
+impl Default for Monitoring {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            interval_secs: 3600,
+            max_checks: 32,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PathMapping {
+    pub mynou_prefix: String,
+    pub plex_prefix: String,
+}
+
 #[derive(Clone, Debug)]
 pub struct Plex {
     pub enabled: bool,
@@ -15,6 +38,7 @@ pub struct Plex {
     pub movies_section: String,
     pub series_section: String,
     pub token_override: Option<String>,
+    pub path_mappings: Vec<PathMapping>,
 }
 #[derive(Clone, Debug)]
 pub struct Catalog {
@@ -45,6 +69,7 @@ pub struct Config {
     pub max_attempts: u32,
     pub minimum_seeders: u64,
     pub selection: crate::selection::SelectionConfig,
+    pub monitoring: Monitoring,
     pub plex: Plex,
     pub catalog: Catalog,
     pub sources: Vec<Source>,
@@ -70,6 +95,14 @@ pub fn default_json() -> Value {
         (
             "selection",
             crate::selection::SelectionConfig::default().to_json(),
+        ),
+        (
+            "monitoring",
+            object(vec![
+                ("enabled", false.into()),
+                ("interval_secs", n(3600)),
+                ("max_checks", n(32)),
+            ]),
         ),
         (
             "library",
@@ -103,6 +136,7 @@ pub fn default_json() -> Value {
                 ("token_env", "MYNOU_PLEX_TOKEN".into()),
                 ("movies_section", "1".into()),
                 ("series_section", "2".into()),
+                ("path_mappings", Value::Array(Vec::new())),
             ]),
         ),
         (
@@ -167,6 +201,75 @@ fn path(base: &Path, value: String) -> PathBuf {
     let p = PathBuf::from(value);
     if p.is_absolute() { p } else { base.join(p) }
 }
+
+fn mapping_path(value: &Value, name: &str) -> Result<String> {
+    let path = value
+        .get(name)
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("Configuration: path mapping {name} must be a string"))?;
+    if path.len() > 4096
+        || !path.starts_with('/')
+        || path.contains('\\')
+        || path.chars().any(char::is_control)
+        || (path != "/"
+            && path[1..]
+                .split('/')
+                .any(|component| matches!(component, "" | "." | "..")))
+    {
+        return Err(format!(
+            "Configuration: path mapping {name} requires a normalized absolute path of at most 4096 bytes"
+        ));
+    }
+    Ok(path.into())
+}
+
+fn path_mappings(plex: &Value) -> Result<Vec<PathMapping>> {
+    let Some(value) = plex.get("path_mappings") else {
+        return Ok(Vec::new());
+    };
+    let entries = value
+        .as_array()
+        .ok_or("Configuration: plex.path_mappings must be an array")?;
+    if entries.len() > 32 {
+        return Err("Configuration: plex.path_mappings allows at most 32 entries".into());
+    }
+    let mut mappings = Vec::with_capacity(entries.len());
+    let mut prefixes = std::collections::BTreeSet::new();
+    for entry in entries {
+        keys(entry, &["mynou_prefix", "plex_prefix"])?;
+        let mynou_prefix = mapping_path(entry, "mynou_prefix")?;
+        let plex_prefix = mapping_path(entry, "plex_prefix")?;
+        if !prefixes.insert(mynou_prefix.clone()) {
+            return Err("Configuration: duplicate Plex path mapping Mynou prefix".into());
+        }
+        mappings.push(PathMapping {
+            mynou_prefix,
+            plex_prefix,
+        });
+    }
+    Ok(mappings)
+}
+
+fn monitoring(value: &Value) -> Result<Monitoring> {
+    let Some(section) = value.get("monitoring") else {
+        return Ok(Monitoring::default());
+    };
+    keys(section, &["enabled", "interval_secs", "max_checks"])?;
+    let interval_secs = number(section, "interval_secs", 3600, 86400)?;
+    let max_checks = number(section, "max_checks", 32, 256)? as usize;
+    if interval_secs < 60 || max_checks == 0 {
+        return Err(
+            "Configuration: monitoring requires interval_secs between 60 and 86400 and max_checks between 1 and 256"
+                .into(),
+        );
+    }
+    Ok(Monitoring {
+        enabled: boolean(section, "enabled", false)?,
+        interval_secs,
+        max_checks,
+    })
+}
+
 pub fn load(file: &Path) -> Result<Config> {
     use std::io::Read;
     let mut data = String::new();
@@ -194,6 +297,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             "max_attempts",
             "minimum_seeders",
             "selection",
+            "monitoring",
             "library",
             "downloads",
             "plex",
@@ -232,6 +336,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             "token_env",
             "movies_section",
             "series_section",
+            "path_mappings",
         ],
     )?;
     let c = section(v, "catalog")?;
@@ -305,6 +410,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         max_attempts: number(v, "max_attempts", 10, 1000)? as u32,
         minimum_seeders: number(v, "minimum_seeders", 1, 1000000)?,
         selection,
+        monitoring: monitoring(v)?,
         plex: Plex {
             enabled: boolean(p, "enabled", false)?,
             url: text(p, "url", "http://host.docker.internal:32400")?,
@@ -317,6 +423,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             movies_section: text(p, "movies_section", "1")?,
             series_section: text(p, "series_section", "2")?,
             token_override: None,
+            path_mappings: path_mappings(p)?,
         },
         catalog: Catalog {
             enabled: boolean(c, "enabled", false)?,

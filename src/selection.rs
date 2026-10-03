@@ -89,6 +89,8 @@ impl SelectionConfig {
 pub struct Profile {
     /// Ordered from most preferred to least preferred; an empty list is unrestricted.
     pub resolutions: Vec<u32>,
+    /// Reaching this resolution or an earlier preference stops future upgrades.
+    pub cutoff_resolution: Option<u32>,
     pub sources: Vec<String>,
     pub codecs: Vec<String>,
     pub languages: Vec<String>,
@@ -115,6 +117,7 @@ impl Profile {
             value,
             &[
                 "resolutions",
+                "cutoff_resolution",
                 "sources",
                 "codecs",
                 "languages",
@@ -140,6 +143,23 @@ impl Profile {
             }
             resolutions.push(resolution);
         }
+        let cutoff_resolution = match value.get("cutoff_resolution") {
+            None | Some(Value::Null) => None,
+            Some(value) => {
+                let cutoff = value
+                    .as_u64()
+                    .and_then(|v| u32::try_from(v).ok())
+                    .filter(|v| RESOLUTIONS.contains(v))
+                    .ok_or("Selection: unsupported cutoff resolution")?;
+                if !resolutions.contains(&cutoff) {
+                    return Err(
+                        "Selection: cutoff resolution must appear in the ordered resolutions list"
+                            .into(),
+                    );
+                }
+                Some(cutoff)
+            }
+        };
         let mut score_rules = Vec::new();
         let mut seen_rules = BTreeSet::new();
         for rule in list(value, "score_rules")? {
@@ -158,6 +178,7 @@ impl Profile {
         }
         Ok(Self {
             resolutions,
+            cutoff_resolution,
             sources: choices(value, "sources", SOURCES)?,
             codecs: choices(value, "codecs", CODECS)?,
             languages: choices(value, "languages", LANGUAGES)?,
@@ -177,6 +198,12 @@ impl Profile {
             (
                 "resolutions",
                 Value::Array(self.resolutions.iter().copied().map(Value::from).collect()),
+            ),
+            (
+                "cutoff_resolution",
+                self.cutoff_resolution
+                    .map(Value::from)
+                    .unwrap_or(Value::Null),
             ),
             ("sources", strings(&self.sources)),
             ("codecs", strings(&self.codecs)),
@@ -206,6 +233,23 @@ impl Profile {
             ),
             ("minimum_score", number(self.minimum_score)),
         ])
+    }
+
+    pub fn cutoff_reached(&self, assessment: &Assessment) -> bool {
+        if !assessment.accepted {
+            return false;
+        }
+        let cutoff = self
+            .cutoff_resolution
+            .and_then(|cutoff| self.resolutions.iter().position(|value| *value == cutoff));
+        let current = assessment
+            .attributes
+            .resolution
+            .and_then(|resolution| self.resolutions.iter().position(|value| *value == resolution));
+        match (current, cutoff) {
+            (Some(current), Some(cutoff)) => current <= cutoff,
+            _ => false,
+        }
     }
 
     pub fn assess(&self, release_title: &str, media_title: &str) -> Assessment {

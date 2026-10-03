@@ -95,7 +95,19 @@ fn create_directory(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn target(source: &Path, library: &Path, request: &Request) -> Result<PathBuf> {
+fn validate_revision(revision: &str) -> Result<()> {
+    if revision.len() != 32 || !revision.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("import revision must contain exactly 32 hexadecimal characters".to_owned());
+    }
+    Ok(())
+}
+
+fn target(
+    source: &Path,
+    library: &Path,
+    request: &Request,
+    revision: Option<&str>,
+) -> Result<PathBuf> {
     request.validate()?;
     let title = filename_part(&request.title)?;
     let extension = source
@@ -108,10 +120,11 @@ fn target(source: &Path, library: &Path, request: &Request) -> Result<PathBuf> {
     {
         return Err("invalid media extension".to_owned());
     }
+    let suffix = revision.map_or_else(String::new, |value| format!(" [mynou-{value}]"));
     if request.kind == "episode" || (request.kind == "series" && request.episode > 0) {
         let season = format!("Season {:02}", request.season);
         let filename = format!(
-            "{title} - S{:02}E{:02}.{extension}",
+            "{title} - S{:02}E{:02}{suffix}.{extension}",
             request.season, request.episode
         );
         Ok(library.join(title).join(season).join(filename))
@@ -121,7 +134,9 @@ fn target(source: &Path, library: &Path, request: &Request) -> Result<PathBuf> {
         } else {
             title
         };
-        Ok(library.join(&name).join(format!("{name}.{extension}")))
+        Ok(library
+            .join(&name)
+            .join(format!("{name}{suffix}.{extension}")))
     }
 }
 
@@ -195,6 +210,41 @@ pub fn import_file_cancellable(
     request: &Request,
     active: &AtomicBool,
 ) -> Result<PathBuf> {
+    import_to_target(source, library, request, None, active)
+}
+
+/// Imports an upgrade beside the existing media without changing its title or
+/// directory. The revision must be a 32-character hexadecimal job identifier.
+/// Reusing a revision is safe only when the destination contains identical bytes.
+pub fn import_versioned_file(
+    source: &Path,
+    library: &Path,
+    request: &Request,
+    revision: &str,
+) -> Result<PathBuf> {
+    import_versioned_file_cancellable(source, library, request, revision, &AtomicBool::new(true))
+}
+
+pub fn import_versioned_file_cancellable(
+    source: &Path,
+    library: &Path,
+    request: &Request,
+    revision: &str,
+    active: &AtomicBool,
+) -> Result<PathBuf> {
+    import_to_target(source, library, request, Some(revision), active)
+}
+
+fn import_to_target(
+    source: &Path,
+    library: &Path,
+    request: &Request,
+    revision: Option<&str>,
+    active: &AtomicBool,
+) -> Result<PathBuf> {
+    if let Some(revision) = revision {
+        validate_revision(revision)?;
+    }
     #[cfg(not(unix))]
     return Err("atomic import currently requires a Unix system".to_owned());
 
@@ -203,6 +253,7 @@ pub fn import_file_cancellable(
         active_import(active)?;
         validate_path(source)?;
         validate_path(library)?;
+        let destination = target(source, library, request, revision)?;
         if !fs::symlink_metadata(source)
             .map_err(|error| error.to_string())?
             .is_file()
@@ -237,7 +288,6 @@ pub fn import_file_cancellable(
             .map_err(|error| error.to_string())?;
         lock.try_lock()
             .map_err(|error| format!("another import is in progress: {error}"))?;
-        let destination = target(source, library, request)?;
         let directory = destination
             .parent()
             .ok_or_else(|| "missing destination directory".to_owned())?;
