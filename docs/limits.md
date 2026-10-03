@@ -74,6 +74,37 @@ Automatic source selection requires a strict title match and an identified file
 for the requested episode. Packs and title variants are not resolved implicitly.
 Season-zero specials are excluded from automatic series expansion.
 
+## Selection and library management
+
+0.7.0 adds named movie/episode profiles for release selection. Resolution,
+source, codec and language markers are inferred from the matched release-title
+suffix. Required/blocked token phrases and additive scores filter candidates;
+custom score, ordered preferences and seed count determine the ranking. See
+[selection.md](selection.md) for the supported values and preview commands.
+
+These markers are claims in a name. Selection does not verify actual audio
+languages or decode video before acquisition. `VOSTFR` does not identify French
+audio, and `MULTI` does not establish which audio languages are present. A
+restricted attribute rejects unknown markers by default unless its explicit
+`allow_unknown_*` flag is enabled. Empty attribute lists remain unrestricted.
+
+Profiles apply to automatic source search. A source explicitly provided through
+`--url` or `--path` is not a newly searched candidate. Search previews contact
+configured sources but do not submit jobs or start torrents, and their public
+reports omit acquisition URLs and credentials.
+
+The release does not provide automatic upgrades, quality cutoffs, persistent
+library monitoring policies, or replacement of an existing imported file.
+Import continues to avoid overwriting existing files. A higher-ranked release
+appearing later does not replace a completed request automatically.
+
+The CLI and authenticated API have no web management interface. Plex integration
+does not provide multi-user approvals, quotas, permission policies, notifications
+or per-user routing. Indexer integrations support RSS/JSON/Torznab endpoints,
+not a general tracker adapter catalog, interactive logins, Usenet, or IRC
+announcement rules. Cross-seeding and bulk automation are not implemented.
+The [roadmap](roadmap.md) separates these capabilities into future releases.
+
 ## Persistence and platform
 
 The Rust journal replaces SQLite and requires a single owner of its directory.

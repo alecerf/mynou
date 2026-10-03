@@ -11,6 +11,8 @@ CLI / API                 Plex watchlist
                    |
        TMDB + RSS / JSON / Torznab
                    |
+       Release selection profiles
+                   |
        Native BitTorrent and verification
                    |
        Media metadata analysis
@@ -24,6 +26,13 @@ The components are independent of frameworks. `config` validates fields and
 resolves paths relative to the configuration file. `integrations` converts
 network responses into requests and sources. `engine` orchestrates transitions
 without holding the journal lock during a transfer or import.
+
+`selection` evaluates matched source candidates using the configured movie or
+episode profile. It extracts bounded release-title attributes, filters candidates
+and ranks accepted releases deterministically. Automatic acquisition and search
+previews share this decision path. Preview serialization exposes opaque IDs and
+assessments without acquisition URLs; a preview does not acquire the journal
+owner lock or create a job.
 
 `store` synchronizes each transaction before confirming it. Records form a
 SHA-256-verified chain: an incomplete tail after interruption is recoverable,

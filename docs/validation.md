@@ -36,8 +36,8 @@ steps. No Docker Hub repository is needed.
 Download the assets and checksum files from the same release. For example:
 
 ```sh
-sha256sum -c mynou-v0.6.1-source.zip.sha256
-sha256sum -c mynou-v0.6.1-linux-amd64-image.tar.gz.sha256
+sha256sum -c mynou-v0.7.0-source.zip.sha256
+sha256sum -c mynou-v0.7.0-linux-amd64-image.tar.gz.sha256
 ```
 
 To verify all downloaded assets together, download `SHA256SUMS` and every listed
@@ -57,11 +57,36 @@ sha256sum -c SHA256SUMS
 Checksum verification establishes integrity relative to the downloaded manifest.
 It does not replace reviewing the release's commit and successful Actions run.
 
+## Selection changes in 0.7.0
+
+The new scope is profile validation, release-marker interpretation, ordered
+preferences, term filters and custom scores, shared automatic acquisition and
+CLI/API search previews. CI must check acceptance/rejection, deterministic
+ranking, backward-compatible unrestricted configuration, language ambiguity,
+and omission of source credentials from preview reports. It must also preserve
+the existing native and Docker end-to-end checks.
+
+These describe validation requirements, not a recorded passing result. Inspect
+the Actions run for the exact 0.7.0 source commit. Do not use the previous
+release's test count as evidence for changed selection code.
+
+## Recorded 0.6.1 CI evidence
+
+[Run 37134671116](https://github.com/alecerf/mynou/actions/runs/37134671116)
+completed successfully on October 3, 2026, for commit
+`2a066c2c3b9aafda47a3fc898872d1c371b5f249`. Its 131 tests passed, as did the
+dependency graph, formatting, Clippy, GNU/musl builds, native and Docker demos,
+and release packaging. GitHub Actions published
+[v0.6.1](https://github.com/alecerf/mynou/releases/tag/v0.6.1).
+
+This is evidence for 0.6.1 only. It does not establish that 0.7.0 passed or that
+the project has been connected to a personal Plex installation.
+
 ## Historical 0.6.0 validation
 
 The following checks succeeded on October 3, 2026, before the CI-only policy was
 adopted and after fixing the cancellation/startup race. They are recorded evidence
-for **0.6.0**, not a passing result for 0.6.1.
+for **0.6.0**, not a passing result for later versions.
 
 | Check | Historical result |
 | --- | --- |

@@ -13,13 +13,13 @@ Download the source ZIP and image archive from
 Load the validated release image:
 
 ```sh
-docker load -i mynou-v0.6.1-linux-amd64-image.tar.gz
+docker load -i mynou-v0.7.0-linux-amd64-image.tar.gz
 ```
 
 Alternatively, build the image from the extracted sources:
 
 ```sh
-docker build -t mynou:0.6.1 .
+docker build -t mynou:0.7.0 .
 ```
 
 Use the image binary to prepare an installation in a new directory:
@@ -29,7 +29,7 @@ docker run --rm --network none \
   --user "$(id -u):$(id -g)" \
   --mount "type=bind,src=$PWD,dst=/work" \
   --workdir /work \
-  mynou:0.6.1 setup-docker --dir mynou-docker
+  mynou:0.7.0 setup-docker --dir mynou-docker
 ```
 
 If your account does not use UID/GID 1000, add its IDs to the generated `.env`:
@@ -97,6 +97,28 @@ docker compose up -d --force-recreate
 docker compose exec mynou /mynou sync --config /config/mynou.json
 docker compose exec mynou /mynou jobs --config /config/mynou.json
 ```
+
+## Configure selection before automatic acquisition
+
+The optional `selection` object defines named movie and episode profiles. Follow
+the [selection guide](selection.md) to restrict resolution, source, codec or
+language markers and configure required/blocked terms or scores. Existing
+configuration files without this object keep unrestricted selection.
+
+Restart the service after changing its configuration, then preview a request:
+
+```sh
+docker compose up -d --force-recreate
+docker compose exec mynou /mynou search --title "Example Movie" --year 2026 \
+  --config /config/mynou.json
+docker compose exec mynou /mynou search --title "Example Series" --kind episode \
+  --season 1 --episode 2 --config /config/mynou.json
+```
+
+The report shows accepted/rejected candidates and the proposed winner. It omits
+acquisition URLs and credentials, and creates no download or journal request.
+The preview still contacts your configured sources. Release-title markers do
+not verify actual tracks, and 0.7.0 does not upgrade previously imported files.
 
 ## Ports and management
 

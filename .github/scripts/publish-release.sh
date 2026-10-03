@@ -23,7 +23,13 @@ if existing=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,
 fi
 
 notes="$RUNNER_TEMP/mynou-release-notes.md"
-cat > "$notes" <<EOF
+: > "$notes"
+changes="$GITHUB_WORKSPACE/docs/releases/$version.md"
+if [[ -f "$changes" ]]; then
+  cat "$changes" >> "$notes"
+  printf '\n\n' >> "$notes"
+fi
+cat >> "$notes" <<EOF
 <!-- mynou-ci-release -->
 Mynou $version uses Rust 1.99.0 and the standard library only: no Cargo dependencies, unsafe code, FFI, or external programs at runtime.
 
@@ -34,6 +40,8 @@ The source ZIP includes the complete project and a static Linux x86_64 binary. T
 Load the Docker image with \`docker load -i mynou-v$version-linux-amd64-image.tar.gz\`, then follow the [Docker deployment guide]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/deployment.md). Configure your Plex server and media sources before enabling synchronization. [Protocol and format limits]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/limits.md) remain explicit.
 
 Source commit: \`$GITHUB_SHA\`. This repository is private; downloads require an authorized GitHub account.
+
+See the [release roadmap]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/roadmap.md) for implemented milestones and remaining feature gaps.
 EOF
 
 gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \

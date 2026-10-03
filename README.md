@@ -1,4 +1,4 @@
-# Mynou 0.6.1 — Rust, standard library only
+# Mynou 0.7.0 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -43,8 +43,8 @@ from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, o
 build the image from the source archive:
 
 ```sh
-docker load -i mynou-v0.6.1-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.6.1 .
+docker load -i mynou-v0.7.0-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.7.0 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d
@@ -68,11 +68,41 @@ ownership, shared Plex paths, and installation without Rust on the host.
   imports without overwriting existing files, and preservation of source files.
 - Plex watchlists, TMDB enrichment, RSS/JSON/Torznab sources, Plex refresh and
   availability confirmation, an authenticated local HTTP API, and management CLI.
+- Named movie and episode selection profiles: resolution, source, codec and
+  language preferences, required/blocked title terms, custom scores, and a
+  minimum score. CLI/API previews explain accepted and rejected candidates
+  without submitting a job or exposing acquisition URLs.
 
 Formats and protocols have explicit limits. Analysis does not decode pictures
 or sound and does not replace Plex transcoding. Older SQLite and Go state remain
 separate; this version does not migrate them implicitly. See the
 [supported formats and limits](docs/limits.md).
+
+## Release selection in 0.7.0
+
+Automatic acquisition can apply separate movie and episode profiles. An empty
+profile is unrestricted; existing configurations without `selection` retain
+that behavior. A configured profile filters candidates before ranking them by
+custom score, ordered preferences, and seed count.
+
+Preview a search before submitting it:
+
+```sh
+mynou search --title "Example Movie" --year 2026 --config ./mynou.json
+mynou search --title "Example Series" --kind episode --season 1 --episode 2 \
+  --config ./mynou.json
+```
+
+Searches contact configured sources. They do not start a download or change the
+request journal. Selection reads release-title markers, so it cannot verify
+actual audio tracks or image quality before downloading. `VOSTFR` does not prove
+French audio, and `MULTI` does not identify individual languages. See the
+[selection guide](docs/selection.md) for configuration and decision details.
+
+Mynou remains an early integrated implementation. This release adds selection
+policies; it does not add automatic upgrades, a web interface, or full parity
+with Radarr, Sonarr, Pulsarr, qBittorrent, qui, autobrr, or Prowlarr. The
+[release roadmap](docs/roadmap.md) separates the next stages.
 
 ## Configuration and commands
 
@@ -131,4 +161,5 @@ code perfection.
 
 [Architecture](docs/architecture.md) · [Docker installation](docs/deployment.md) ·
 [Dependencies](docs/dependencies.md) · [Formats and limits](docs/limits.md) ·
+[Release selection](docs/selection.md) · [Roadmap](docs/roadmap.md) ·
 [Performance](docs/performance.md) · [Validation](docs/validation.md)
