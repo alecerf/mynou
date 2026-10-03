@@ -11,12 +11,15 @@ use crate::config::{self, Config, Source};
 use crate::crypto::Sha256;
 use crate::json::{self, Value};
 use crate::net::{self, HttpClient};
+use crate::selection::{Assessment, tokens};
 use crate::store::Request;
 
 const MAX_ITEMS: usize = 100_000;
 const MAX_PAGES: usize = 1_000;
 const PAGE_SIZE: usize = 200;
 const MAX_XML: usize = 8 * 1024 * 1024;
+const MAX_REPORTED_CANDIDATES: usize = 1_000;
+const MAX_CANDIDATE_BYTES: usize = 16 * 1024 * 1024;
 const CATALOG_CACHE_TTL: Duration = Duration::from_secs(3_600);
 const CATALOG_CACHE_BYTES: usize = 32 * 1024 * 1024;
 const CATALOG_CACHE_ENTRIES: usize = 256;
@@ -579,24 +582,6 @@ struct Release {
     seeders: u64,
 }
 
-fn tokens(text: &str) -> Vec<String> {
-    let mut normalized = String::with_capacity(text.len());
-    for c in text.chars().flat_map(char::to_lowercase) {
-        let c = match c {
-            'à' | 'â' | 'ä' | 'á' | 'ã' | 'å' => 'a',
-            'é' | 'è' | 'ê' | 'ë' => 'e',
-            'ï' | 'î' | 'í' | 'ì' => 'i',
-            'ô' | 'ö' | 'ó' | 'ò' | 'õ' => 'o',
-            'ù' | 'û' | 'ü' | 'ú' => 'u',
-            'ç' => 'c',
-            'ñ' => 'n',
-            c => c,
-        };
-        normalized.push(if c.is_alphanumeric() { c } else { ' ' });
-    }
-    normalized.split_whitespace().map(str::to_owned).collect()
-}
-
 fn episode_marker(text: &str) -> Option<(u32, u32)> {
     if let Some(rest) = text.strip_prefix('s') {
         let (season, episode) = rest.split_once('e')?;
@@ -621,7 +606,13 @@ fn episode_marker(text: &str) -> Option<(u32, u32)> {
     {
         return None;
     }
-    Some((season.parse().ok()?, episode.parse().ok()?))
+    let season = season.parse::<u32>().ok()?;
+    // Match the title-policy parser: video-sized numeric pairs denote image
+    // dimensions, whereas small pairs such as 2x03 denote an episode.
+    if season >= 320 {
+        return None;
+    }
+    Some((season, episode.parse().ok()?))
 }
 
 fn release_matches(request: &Request, title: &str) -> bool {
@@ -780,15 +771,156 @@ fn source_releases(source: &Source, request: &Request) -> Result<Vec<Release>> {
     }
 }
 
-/// Deterministic selection: exact identity, then descending seed count.
-pub fn search(config: &Config, request: &Request) -> Result<String> {
-    request.validate()?;
-    if let Some(source) = &request.source_url {
-        return acquisition_url(source, &config.plex.url);
+struct Candidate {
+    release: Release,
+    source: String,
+    id: String,
+    assessment: Assessment,
+}
+
+impl Candidate {
+    fn to_json(&self) -> Value {
+        let mut value = Value::object();
+        value.insert("id", self.id.clone());
+        value.insert("title", report_text(&self.release.title, 2_048));
+        value.insert("source", report_text(&self.source, 128));
+        // An indexer may report integers outside JSON's exact range.
+        value.insert(
+            "seeders",
+            if self.release.seeders <= 9_007_199_254_740_991 {
+                Value::Number(self.release.seeders as f64)
+            } else {
+                Value::String(self.release.seeders.to_string())
+            },
+        );
+        value.insert("assessment", self.assessment.to_json());
+        value
     }
+}
+
+/// Display labels are bounded and cannot turn a malformed source name or title
+/// into a download URL in the public preview.
+fn report_text(text: &str, limit: usize) -> String {
+    let lowercase = text.to_ascii_lowercase();
+    if lowercase.contains("://")
+        || lowercase.contains("magnet:")
+        || ["apikey=", "api_key=", "token=", "authorization:"]
+            .iter()
+            .any(|marker| lowercase.contains(marker))
+    {
+        return "[redacted]".into();
+    }
+    let mut result = String::new();
+    for character in text.chars().filter(|character| !character.is_control()) {
+        if result.len() + character.len_utf8() > limit {
+            break;
+        }
+        result.push(character);
+    }
+    result
+}
+
+fn candidate_id(profile: &str, source: &str, release: &Release) -> String {
+    let mut hash = Sha256::new();
+    for field in [profile, source, &release.title, &release.url] {
+        hash.update(&(field.len() as u64).to_be_bytes());
+        hash.update(field.as_bytes());
+    }
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut id = String::with_capacity(64);
+    for byte in hash.finalize() {
+        id.push(HEX[(byte >> 4) as usize] as char);
+        id.push(HEX[(byte & 15) as usize] as char);
+    }
+    id
+}
+
+struct SearchResult {
+    profile: String,
+    candidates: Vec<Candidate>,
+    configured: usize,
+    successful: usize,
+}
+
+fn candidate_allocation_bytes(
+    release: &Release,
+    source_len: usize,
+    assessment: &Assessment,
+) -> usize {
+    let attributes = &assessment.attributes;
+    let string_bytes = assessment
+        .reasons
+        .iter()
+        .chain(&attributes.languages)
+        .chain(&attributes.issues)
+        .chain(attributes.source.iter())
+        .chain(attributes.codec.iter())
+        .map(String::capacity)
+        .sum::<usize>();
+    let vector_bytes = (assessment.reasons.capacity()
+        + attributes.languages.capacity()
+        + attributes.issues.capacity())
+        * std::mem::size_of::<String>();
+    // Fixed allowance covers the candidate, vector growth, its opaque ID and
+    // allocation metadata. Counting capacities also covers spare string space.
+    release.title.capacity()
+        + release.url.capacity()
+        + source_len
+        + string_bytes
+        + vector_bytes
+        + 512
+}
+
+impl SearchResult {
+    fn report(&self) -> Value {
+        let mut accepted = Vec::new();
+        let mut rejected = Vec::new();
+        for candidate in self.candidates.iter().take(MAX_REPORTED_CANDIDATES) {
+            if candidate.assessment.accepted {
+                accepted.push(candidate.to_json());
+            } else {
+                rejected.push(candidate.to_json());
+            }
+        }
+        let mut indexers = Value::object();
+        indexers.insert("configured", Value::Number(self.configured as f64));
+        indexers.insert("successful", Value::Number(self.successful as f64));
+        indexers.insert(
+            "failed",
+            Value::Number((self.configured - self.successful) as f64),
+        );
+        let mut report = Value::object();
+        report.insert("profile", report_text(&self.profile, 128));
+        report.insert("manual_override", false);
+        report.insert("indexers", indexers);
+        report.insert("accepted", Value::Array(accepted));
+        report.insert("rejected", Value::Array(rejected));
+        report.insert(
+            "candidate_count",
+            Value::Number(self.candidates.len() as f64),
+        );
+        report.insert(
+            "reported_count",
+            Value::Number(self.candidates.len().min(MAX_REPORTED_CANDIDATES) as f64),
+        );
+        report.insert("truncated", self.candidates.len() > MAX_REPORTED_CANDIDATES);
+        report.insert(
+            "selected_candidate_id",
+            self.candidates
+                .first()
+                .filter(|candidate| candidate.assessment.accepted)
+                .map_or(Value::Null, |candidate| candidate.id.clone().into()),
+        );
+        report
+    }
+}
+
+fn search_candidates(config: &Config, request: &Request) -> Result<SearchResult> {
+    request.validate()?;
     if !matches!(request.kind.as_str(), "movie" | "episode") {
         return Err("Search: expected a movie or episode".into());
     }
+    let (profile_name, profile) = config.selection.profile(&request.kind)?;
     if config.sources.is_empty() {
         return Err("Search: no indexer configured".into());
     }
@@ -796,18 +928,54 @@ pub fn search(config: &Config, request: &Request) -> Result<String> {
         return Err("Search: too many indexers".into());
     }
     let mut candidates = Vec::new();
+    let mut candidate_bytes = 0usize;
     let mut successful = 0;
     for source in &config.sources {
         if let Ok(releases) = source_releases(source, request) {
             successful += 1;
-            for release in releases.into_iter().filter(|release| {
-                release.seeders >= config.minimum_seeders
-                    && release_matches(request, &release.title)
-            }) {
+            // Hash and bound source metadata once, rather than duplicating an
+            // arbitrarily long configured label for every indexer result.
+            let source_identity = candidate_id(
+                profile_name,
+                &source.name,
+                &Release {
+                    title: String::new(),
+                    url: source.url.clone(),
+                    seeders: 0,
+                },
+            );
+            let source_label = report_text(&source.name, 128);
+            for release in releases {
                 if candidates.len() >= MAX_ITEMS {
                     return Err("Search: too many candidates".into());
                 }
-                candidates.push(release);
+                let mut assessment = profile.assess(&release.title, &request.title);
+                if !release_matches(request, &release.title) {
+                    assessment.accepted = false;
+                    assessment
+                        .reasons
+                        .push("Release does not match the requested title, year or episode".into());
+                }
+                if release.seeders < config.minimum_seeders {
+                    assessment.accepted = false;
+                    assessment
+                        .reasons
+                        .push("Release has fewer than the minimum seeders".into());
+                }
+                candidate_bytes = candidate_bytes.saturating_add(candidate_allocation_bytes(
+                    &release,
+                    source_label.len(),
+                    &assessment,
+                ));
+                if candidate_bytes > MAX_CANDIDATE_BYTES {
+                    return Err("Search: candidate data exceeds the memory limit".into());
+                }
+                candidates.push(Candidate {
+                    id: candidate_id(profile_name, &source_identity, &release),
+                    source: source_label.clone(),
+                    release,
+                    assessment,
+                });
             }
         }
     }
@@ -815,14 +983,66 @@ pub fn search(config: &Config, request: &Request) -> Result<String> {
         return Err("Search: no indexer returned a usable response".into());
     }
     candidates.sort_by(|a, b| {
-        b.seeders
-            .cmp(&a.seeders)
-            .then_with(|| a.title.cmp(&b.title))
-            .then_with(|| a.url.cmp(&b.url))
+        b.assessment
+            .accepted
+            .cmp(&a.assessment.accepted)
+            .then_with(|| b.assessment.rank.cmp(&a.assessment.rank))
+            .then_with(|| b.release.seeders.cmp(&a.release.seeders))
+            .then_with(|| a.release.title.cmp(&b.release.title))
+            .then_with(|| a.release.url.cmp(&b.release.url))
+            .then_with(|| a.source.cmp(&b.source))
+            .then_with(|| a.id.cmp(&b.id))
     });
-    candidates.into_iter().next().map(|r| r.url).ok_or_else(|| {
-        "Search: no release matches the title, year or episode and the minimum seed count".into()
+    Ok(SearchResult {
+        profile: profile_name.into(),
+        candidates,
+        configured: config.sources.len(),
+        successful,
     })
+}
+
+/// Explains source selection without downloading, storing or exposing URLs.
+/// Usable indexers with no accepted release produce an empty selection.
+pub fn search_report(config: &Config, request: &Request) -> Result<Value> {
+    request.validate()?;
+    if request.source_path.is_some() || request.source_url.is_some() {
+        if let Some(source) = &request.source_url {
+            acquisition_url(source, &config.plex.url)?;
+        }
+        let mut report = Value::object();
+        report.insert("profile", Value::Null);
+        report.insert("manual_override", true);
+        report.insert("accepted", Value::Array(Vec::new()));
+        report.insert("rejected", Value::Array(Vec::new()));
+        report.insert("candidate_count", Value::Number(0.0));
+        report.insert("reported_count", Value::Number(0.0));
+        report.insert("truncated", false);
+        report.insert("selected_candidate_id", Value::Null);
+        let mut indexers = Value::object();
+        indexers.insert("configured", Value::Number(config.sources.len() as f64));
+        indexers.insert("successful", Value::Number(0.0));
+        indexers.insert("failed", Value::Number(0.0));
+        report.insert("indexers", indexers);
+        return Ok(report);
+    }
+    search_candidates(config, request).map(|result| result.report())
+}
+
+/// Exact identity and profile preferences precede seed count. A manually
+/// supplied acquisition URL retains its explicit override semantics.
+pub fn search(config: &Config, request: &Request) -> Result<String> {
+    request.validate()?;
+    if let Some(source) = &request.source_url {
+        return acquisition_url(source, &config.plex.url);
+    }
+    search_candidates(config, request)?
+        .candidates
+        .into_iter()
+        .find(|candidate| candidate.assessment.accepted)
+        .map(|candidate| candidate.release.url)
+        .ok_or_else(|| {
+            "Search: no release satisfies the identity, seed count and selection profile".into()
+        })
 }
 
 fn plex_section<'a>(config: &'a Config, request: &Request) -> Result<&'a str> {
