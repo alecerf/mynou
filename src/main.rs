@@ -30,6 +30,10 @@ const HELP: &str = "Mynou — media automation using Rust std only
          [--tmdb-id N] [--config mynou.json]
   search --title TITLE [--kind movie|episode] [--year YEAR]
          [--season N --episode N] [--tmdb-id N] [--config mynou.json]
+  library [--config mynou.json]
+  upgrades [--apply] [--config mynou.json]
+  monitor | unmonitor ID [--config mynou.json]
+  baseline ID --release-title TITLE [--config mynou.json]
   jobs | status | sync [--config mynou.json]
   show | events | retry | cancel ID [--config mynou.json]
   healthcheck [--config mynou.json]
@@ -54,7 +58,7 @@ impl Args {
         let mut options: BTreeMap<String, String> = BTreeMap::new();
         while let Some(arg) = args.next() {
             if let Some(key) = arg.strip_prefix("--") {
-                let value = if ["json", "help"].contains(&key) {
+                let value = if ["json", "help", "apply"].contains(&key) {
                     "true".into()
                 } else {
                     args.next()
@@ -70,7 +74,9 @@ impl Args {
         }
         let allowed: &[&str] = match command.as_str() {
             "init" | "doctor" | "serve" | "jobs" | "status" | "sync" | "show" | "events"
-            | "retry" | "cancel" | "healthcheck" => &["config", "help"],
+            | "retry" | "cancel" | "healthcheck" | "library" | "monitor" | "unmonitor" => &["config", "help"],
+            "upgrades" => &["config", "help", "apply"],
+            "baseline" => &["config", "help", "release-title"],
             "submit" => &[
                 "config", "title", "kind", "year", "season", "episode", "path", "url", "tmdb-id",
                 "help",
@@ -89,7 +95,7 @@ impl Args {
             }
         }
         let required = usize::from(
-            ["analyze", "show", "events", "retry", "cancel"].contains(&command.as_str()),
+            ["analyze", "show", "events", "retry", "cancel", "monitor", "unmonitor", "baseline"].contains(&command.as_str()),
         );
         if !options.contains_key("help") && positions.len() != required {
             return Err(format!("{command} requires {required} argument(s)"));
@@ -114,6 +120,16 @@ impl Args {
 }
 fn output(value: &Value) {
     println!("{}", json::stringify(value));
+}
+
+fn existing_store(config: &Config) -> Result<bool> {
+    mynou::store::reject_symlinks(&config.store_dir)?;
+    match fs::symlink_metadata(&config.store_dir) {
+        Ok(metadata) if metadata.is_dir() => Ok(true),
+        Ok(_) => Err("Storage must be a directory".into()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(format!("Cannot access storage: {error}")),
+    }
 }
 fn private_write(path: &Path, data: &[u8]) -> Result<()> {
     let mut options = OpenOptions::new();
@@ -431,6 +447,7 @@ fn execute(args: Args) -> Result<()> {
         v.insert("movie_profile", config.selection.movie_profile.clone());
         v.insert("episode_profile", config.selection.episode_profile.clone());
         v.insert("downloads_enabled", config.downloads_enabled);
+        v.insert("monitoring_enabled", config.monitoring.enabled);
         v.insert(
             "native_media_formats",
             "MP4/MOV, Matroska/WebM, AVI, WAV/RF64, FLAC, MP3",
@@ -452,6 +469,59 @@ fn execute(args: Args) -> Result<()> {
     }
     let online = running(&config);
     match args.command.as_str() {
+        "library" => {
+            if online {
+                output(&call(&config, &path, "GET", "/api/library", None)?);
+            } else if existing_store(&config)? {
+                let store = Store::open_read_only(&config.store_dir)?;
+                output(&mynou::library::describe(&store.library_jobs(), &store.list()));
+            } else {
+                output(&Value::Array(Vec::new()));
+            }
+        }
+        "upgrades" => {
+            let apply = args.options.contains_key("apply");
+            if online {
+                let mut body = Value::object();
+                body.insert("apply", apply);
+                output(&call(&config, &path, "POST", "/api/upgrades", Some(&body))?);
+            } else if apply {
+                output(&Engine::open_for_management(config)?.check_upgrades(true)?);
+            } else if existing_store(&config)? {
+                output(&Engine::open_for_preview(config)?.check_upgrades(false)?);
+            } else {
+                output(&mynou::library::empty_preview());
+            }
+        }
+        "monitor" | "unmonitor" | "baseline" => {
+            let id = &args.positions[0];
+            if id.len() != 32 || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                return Err("Invalid library entry ID".into());
+            }
+            let baseline = args.command == "baseline";
+            let mut body = Value::object();
+            if baseline {
+                body.insert("release_title", args.options.get("release-title")
+                    .ok_or("--release-title is required")?.clone());
+            } else {
+                body.insert("enabled", args.command == "monitor");
+            }
+            if online {
+                let route = format!("/api/library/{id}/{}", if baseline { "baseline" } else { "monitor" });
+                output(&call(&config, &path, "POST", &route, Some(&body))?);
+            } else {
+                let mut store = Store::open(&config.store_dir)?;
+                let job = if baseline {
+                    let job = store.get(id).ok_or("Unknown library entry")?;
+                    let title = args.options.get("release-title").ok_or("--release-title is required")?;
+                    let release = mynou::library::validate_baseline(&config, &job, title)?;
+                    store.set_baseline(id, release)?
+                } else {
+                    store.set_monitored(id, args.command == "monitor")?
+                };
+                output(&public_job(&job));
+            }
+        }
         "search" => {
             let r = request(&args)?;
             if online {

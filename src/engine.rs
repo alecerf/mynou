@@ -5,7 +5,7 @@ use crate::{
     integrations,
     json::Value,
     media, organizer,
-    store::{self, Job, Request, Store},
+    store::{self, Job, RecordedRelease, Request, Store},
     torrent::Client,
 };
 use std::{
@@ -23,8 +23,11 @@ pub struct Engine {
     pub store: Mutex<Store>,
     downloads: Option<Client>,
     sync_lock: Mutex<()>,
+    pub(crate) upgrade_lock: Mutex<()>,
+    pub(crate) read_only: bool,
     pub stopped: AtomicBool,
     pub last_sync_error: Mutex<Option<String>>,
+    pub last_upgrade_error: Mutex<Option<String>>,
 }
 
 pub fn lock<T>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>> {
@@ -35,8 +38,27 @@ pub fn lock<T>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>> {
 
 impl Engine {
     pub fn open(config: Config) -> Result<Arc<Self>> {
+        Self::open_with_downloads(config, true)
+    }
+
+    /// Opens the journal for explicit management without starting native transfers.
+    pub fn open_for_management(config: Config) -> Result<Arc<Self>> {
+        Self::open_with_downloads(config, false)
+    }
+
+    /// Loads existing storage without creating, repairing, or changing its permissions.
+    pub fn open_for_preview(config: Config) -> Result<Arc<Self>> {
+        let store = Store::open_read_only(&config.store_dir)?;
+        Self::from_store(config, store, false, true)
+    }
+
+    fn open_with_downloads(config: Config, start_downloads: bool) -> Result<Arc<Self>> {
         let store = Store::open(&config.store_dir)?;
-        let downloads = if config.downloads_enabled {
+        Self::from_store(config, store, start_downloads, false)
+    }
+
+    fn from_store(config: Config, store: Store, start_downloads: bool, read_only: bool) -> Result<Arc<Self>> {
+        let downloads = if start_downloads && config.downloads_enabled {
             let client = Client::open(config.downloads.clone())?;
             let jobs = store.list();
             let active: std::collections::BTreeSet<_> = jobs
@@ -67,8 +89,11 @@ impl Engine {
             store: Mutex::new(store),
             downloads,
             sync_lock: Mutex::new(()),
+            upgrade_lock: Mutex::new(()),
+            read_only,
             stopped: AtomicBool::new(false),
             last_sync_error: Mutex::new(None),
+            last_upgrade_error: Mutex::new(None),
         }))
     }
 
@@ -109,16 +134,13 @@ impl Engine {
 
     pub fn retry(&self, id: &str) -> Result<Job> {
         let mut store = lock(&self.store)?;
-        let mut job = store.retry(id)?;
+        let previous = store.get(id).ok_or("Unknown job")?;
+        let job = store.retry(id)?;
         if job.imports.is_empty()
             && job.request.source_path.is_none()
             && job.request.source_url.is_none()
         {
-            let old_id = job.download_id.take();
-            job.acquisition_url = None;
-            job.files.clear();
-            job.progress = 0.0;
-            store.update(job.clone())?;
+            let old_id = previous.download_id;
             let shared = old_id.as_ref().is_some_and(|id| {
                 store.list().iter().any(|other| {
                     other.id != job.id
@@ -168,6 +190,13 @@ impl Engine {
                 .clone()
                 .map_or(Value::Null, Value::String),
         );
+        v.insert("monitoring_enabled", self.config.monitoring.enabled);
+        v.insert(
+            "last_upgrade_error",
+            lock(&self.last_upgrade_error)?
+                .clone()
+                .map_or(Value::Null, Value::String),
+        );
         if let Some(client) = &self.downloads {
             v.insert("peer_port", client.listen_port() as u32);
             let statuses = client.statuses()?;
@@ -214,6 +243,18 @@ impl Engine {
                 }
             }));
         }
+        if self.config.monitoring.enabled {
+            let engine = self.clone();
+            handles.push(thread::spawn(move || {
+                while !engine.stopped.load(Ordering::Acquire) {
+                    let error = engine.check_due_upgrades().err();
+                    if let Ok(mut current) = engine.last_upgrade_error.lock() {
+                        *current = error;
+                    }
+                    engine.wait(60_000);
+                }
+            }));
+        }
         Workers {
             engine: self.clone(),
             handles,
@@ -248,6 +289,7 @@ impl Engine {
         if current.lease_id.as_deref() != Some(&lease) || current.lease_until <= store::now() {
             return Ok(true);
         }
+        let result = result.and_then(|()| store.check_ready_promotion(&job));
         if let Err(error) = result {
             job.attempts = job.attempts.saturating_add(1);
             job.last_error = Some(error);
@@ -263,6 +305,20 @@ impl Engine {
             store.release_lease(&job.id, &lease)?;
         }
         Ok(true)
+    }
+
+    fn import_version(
+        &self,
+        source: &Path,
+        root: &Path,
+        job: &Job,
+        active: &AtomicBool,
+    ) -> Result<std::path::PathBuf> {
+        if job.upgrade_parent.is_some() {
+            organizer::import_versioned_file_cancellable(source, root, &job.request, &job.id, active)
+        } else {
+            organizer::import_file_cancellable(source, root, &job.request, active)
+        }
     }
 
     fn advance(&self, job: &mut Job, active: &AtomicBool) -> Result<()> {
@@ -299,7 +355,12 @@ impl Engine {
                     integrations::refresh(&self.config, &job.request)?;
                 }
                 job.state = "scanning".into();
-                if !integrations::available(&self.config, &job.request)? {
+                let available = if job.upgrade_parent.is_some() {
+                    integrations::available_import(&self.config, &job.request, &job.imports)?
+                } else {
+                    integrations::available(&self.config, &job.request)?
+                };
+                if !available {
                     job.next_attempt_at = store::now().saturating_add(5);
                     return Ok(());
                 }
@@ -327,7 +388,14 @@ impl Engine {
                 if job.acquisition_url.is_none() {
                     job.acquisition_url = Some(match &job.request.source_url {
                         Some(url) => url.clone(),
-                        None => integrations::search(&self.config, &job.request)?,
+                        None => {
+                            let selected = integrations::select_release(&self.config, &job.request)?;
+                            job.release = Some(RecordedRelease {
+                                title: selected.title,
+                                profile: selected.profile,
+                            });
+                            selected.url
+                        }
                     });
                     // Persist the selection before performing network operations.
                     lock(&self.store)?.update(job.clone())?;
@@ -435,12 +503,7 @@ impl Engine {
                 );
             }
             let path = matching[0].1;
-            let imported = organizer::import_file_cancellable(
-                path,
-                &self.config.series_root,
-                &job.request,
-                active,
-            )?;
+            let imported = self.import_version(path, &self.config.series_root, job, active)?;
             job.imports.push(imported.to_string_lossy().into_owned());
         } else {
             let root = if job.request.kind == "episode" {
@@ -448,7 +511,7 @@ impl Engine {
             } else {
                 &self.config.movies_root
             };
-            let imported = organizer::import_file_cancellable(source, root, &job.request, active)?;
+            let imported = self.import_version(source, root, job, active)?;
             job.imports.push(imported.to_string_lossy().into_owned());
         }
         job.progress = 1.0;
@@ -537,6 +600,11 @@ pub fn public_job(job: &Job) -> Value {
         map.remove("lease_id");
         map.remove("lease_until");
         map.remove("acquisition_url");
+        if let Some(Value::Object(release)) = map.get_mut("release")
+            && let Some(Value::String(title)) = release.get_mut("title")
+        {
+            *title = integrations::report_text(title, 2_048);
+        }
         if let Some(Value::Object(request)) = map.get_mut("request")
             && request
                 .get("source_url")

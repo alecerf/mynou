@@ -234,6 +234,15 @@ fn connection(stream: &mut TcpStream, engine: &Arc<Engine>, token: &str) -> Resu
 fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<(u16, Value)> {
     match (method, path) {
         ("GET", "/api/status") => Ok((200, engine.status()?)),
+        ("GET", "/api/library") => Ok((200, engine.library()?)),
+        ("POST", "/api/upgrades") => {
+            let value = control_body(body, &["apply"], true)?;
+            let apply = match value.get("apply") {
+                None => false,
+                Some(value) => value.as_bool().ok_or("apply must be a boolean")?,
+            };
+            Ok((200, engine.check_upgrades(apply)?))
+        }
         ("GET", "/api/jobs") => Ok((
             200,
             Value::Array(lock(&engine.store)?.list().iter().map(public_job).collect()),
@@ -268,6 +277,30 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
             Ok((200, v))
         }
         _ => {
+            if let Some(tail) = path.strip_prefix("/api/library/") {
+                let parts: Vec<_> = tail.split('/').collect();
+                if parts.len() != 2 || method != "POST" || parts[0].len() != 32
+                    || !parts[0].bytes().all(|byte| byte.is_ascii_hexdigit())
+                {
+                    return Ok((404, error("Unknown library route")));
+                }
+                let job = match parts[1] {
+                    "monitor" => {
+                        let value = control_body(body, &["enabled"], false)?;
+                        let enabled = value.get("enabled").and_then(Value::as_bool)
+                            .ok_or("enabled must be a boolean")?;
+                        engine.set_monitored(parts[0], enabled)?
+                    }
+                    "baseline" => {
+                        let value = control_body(body, &["release_title"], false)?;
+                        let title = value.get("release_title").and_then(Value::as_str)
+                            .ok_or("release_title must be a string")?;
+                        engine.set_baseline(parts[0], title)?
+                    }
+                    _ => return Ok((404, error("Unknown library route"))),
+                };
+                return Ok((200, public_job(&job)));
+            }
             if let Some(tail) = path.strip_prefix("/api/jobs/") {
                 let parts: Vec<_> = tail.split('/').collect();
                 let id = parts[0];
@@ -303,6 +336,19 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
             Ok((404, error("Unknown route")))
         }
     }
+}
+
+fn control_body(body: &[u8], allowed: &[&str], allow_empty: bool) -> Result<Value> {
+    let value = if allow_empty && body.is_empty() {
+        Value::object()
+    } else {
+        json::parse(std::str::from_utf8(body).map_err(|_| "Request body is not valid UTF-8")?)?
+    };
+    let fields = value.as_object().ok_or("Request body must be a JSON object")?;
+    if fields.keys().any(|key| !allowed.contains(&key.as_str())) {
+        return Err("Unexpected request field".into());
+    }
+    Ok(value)
 }
 fn respond(stream: &mut TcpStream, status: u16, value: Value) -> Result<()> {
     let body = json::stringify(&value);
