@@ -607,6 +607,17 @@ fn create_private_directory(path: &Path) -> Result<()> {
 }
 
 impl Store {
+    /// Checks an existing storage path without creating files or following symlinks.
+    pub fn directory_exists(directory: &Path) -> Result<bool> {
+        reject_symlinks(directory)?;
+        match fs::symlink_metadata(directory) {
+            Ok(metadata) if metadata.is_dir() => Ok(true),
+            Ok(_) => Err("storage must be a directory".to_owned()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(format!("cannot access storage: {error}")),
+        }
+    }
+
     pub fn open(directory: &Path) -> Result<Self> {
         #[cfg(not(unix))]
         return Err("durable storage currently requires a Unix system".to_owned());

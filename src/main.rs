@@ -134,15 +134,6 @@ fn output(value: &Value) {
     println!("{}", json::stringify(value));
 }
 
-fn existing_store(config: &Config) -> Result<bool> {
-    mynou::store::reject_symlinks(&config.store_dir)?;
-    match fs::symlink_metadata(&config.store_dir) {
-        Ok(metadata) if metadata.is_dir() => Ok(true),
-        Ok(_) => Err("Storage must be a directory".into()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(format!("Cannot access storage: {error}")),
-    }
-}
 fn private_write(path: &Path, data: &[u8]) -> Result<()> {
     let mut options = OpenOptions::new();
     options.create_new(true).write(true);
@@ -484,7 +475,7 @@ fn execute(args: Args) -> Result<()> {
         "library" => {
             if online {
                 output(&call(&config, &path, "GET", "/api/library", None)?);
-            } else if existing_store(&config)? {
+            } else if Store::directory_exists(&config.store_dir)? {
                 let store = Store::open_read_only(&config.store_dir)?;
                 output(&mynou::library::describe(
                     &store.library_jobs(),
@@ -502,7 +493,7 @@ fn execute(args: Args) -> Result<()> {
                 output(&call(&config, &path, "POST", "/api/upgrades", Some(&body))?);
             } else if apply {
                 output(&Engine::open_for_management(config)?.check_upgrades(true)?);
-            } else if existing_store(&config)? {
+            } else if Store::directory_exists(&config.store_dir)? {
                 output(&Engine::open_for_preview(config)?.check_upgrades(false)?);
             } else {
                 output(&mynou::library::empty_preview());
