@@ -20,6 +20,7 @@ const PAGE_SIZE: usize = 200;
 const MAX_XML: usize = 8 * 1024 * 1024;
 const MAX_REPORTED_CANDIDATES: usize = 1_000;
 const MAX_CANDIDATE_BYTES: usize = 16 * 1024 * 1024;
+const SEARCH_BUDGET: Duration = Duration::from_secs(90);
 const CATALOG_CACHE_TTL: Duration = Duration::from_secs(3_600);
 const CATALOG_CACHE_BYTES: usize = 32 * 1024 * 1024;
 const CATALOG_CACHE_ENTRIES: usize = 256;
@@ -658,6 +659,12 @@ fn release_matches(request: &Request, title: &str) -> bool {
     }
 }
 
+/// Verifies a recorded baseline against the same title, year and episode
+/// identity rules used for automatic indexer selection.
+pub fn release_identity_matches(request: &Request, title: &str) -> bool {
+    release_matches(request, title)
+}
+
 fn acquisition_url(url: &str, base: &str) -> Result<String> {
     if url.len() > 8_192 || url.chars().any(char::is_control) {
         return Err("Invalid acquisition URL".into());
@@ -718,7 +725,7 @@ fn json_releases(value: &Value, base: &str) -> Result<Vec<Release>> {
     Ok(out)
 }
 
-fn source_releases(source: &Source, request: &Request) -> Result<Vec<Release>> {
+fn source_releases(source: &Source, request: &Request, deadline: Instant) -> Result<Vec<Release>> {
     let mut pairs = vec![("q", request.title.clone())];
     if source.kind == "torznab" {
         pairs.push((
@@ -745,6 +752,7 @@ fn source_releases(source: &Source, request: &Request) -> Result<Vec<Release>> {
     }
     let url = query(&source.url, &pairs)?;
     let response = client()
+        .with_timeout(remaining_search_time(deadline)?.min(Duration::from_secs(20)))
         .request(
             "GET",
             &url,
@@ -760,15 +768,18 @@ fn source_releases(source: &Source, request: &Request) -> Result<Vec<Release>> {
             &[],
         )
         .map_err(|_| "Indexer: network request failed")?;
+    remaining_search_time(deadline)?;
     if !(200..300).contains(&response.status) {
         return Err(format!("Indexer: HTTP response {}", response.status));
     }
     let text = std::str::from_utf8(&response.body).map_err(|_| "Indexer: invalid UTF-8")?;
-    if source.kind == "json" {
+    let releases = if source.kind == "json" {
         json_releases(&json::parse(text)?, &source.url)
     } else {
         rss_releases(text, &source.url)
-    }
+    }?;
+    remaining_search_time(deadline)?;
+    Ok(releases)
 }
 
 struct Candidate {
@@ -800,7 +811,7 @@ impl Candidate {
 
 /// Display labels are bounded and cannot turn a malformed source name or title
 /// into a download URL in the public preview.
-fn report_text(text: &str, limit: usize) -> String {
+pub(crate) fn report_text(text: &str, limit: usize) -> String {
     let lowercase = text.to_ascii_lowercase();
     if lowercase.contains("://")
         || lowercase.contains("magnet:")
@@ -916,6 +927,26 @@ impl SearchResult {
 }
 
 fn search_candidates(config: &Config, request: &Request) -> Result<SearchResult> {
+    search_candidates_since(config, request, Instant::now())
+}
+
+fn search_candidates_since(
+    config: &Config,
+    request: &Request,
+    started: Instant,
+) -> Result<SearchResult> {
+    let deadline = started
+        .checked_add(SEARCH_BUDGET)
+        .ok_or("Search: invalid search time budget")?;
+    search_candidates_before(config, request, deadline)
+}
+
+fn search_candidates_before(
+    config: &Config,
+    request: &Request,
+    deadline: Instant,
+) -> Result<SearchResult> {
+    remaining_search_time(deadline)?;
     request.validate()?;
     if !matches!(request.kind.as_str(), "movie" | "episode") {
         return Err("Search: expected a movie or episode".into());
@@ -931,7 +962,8 @@ fn search_candidates(config: &Config, request: &Request) -> Result<SearchResult>
     let mut candidate_bytes = 0usize;
     let mut successful = 0;
     for source in &config.sources {
-        if let Ok(releases) = source_releases(source, request) {
+        remaining_search_time(deadline)?;
+        if let Ok(releases) = source_releases(source, request, deadline) {
             successful += 1;
             // Hash and bound source metadata once, rather than duplicating an
             // arbitrarily long configured label for every indexer result.
@@ -945,7 +977,10 @@ fn search_candidates(config: &Config, request: &Request) -> Result<SearchResult>
                 },
             );
             let source_label = report_text(&source.name, 128);
-            for release in releases {
+            for (index, release) in releases.into_iter().enumerate() {
+                if index % 64 == 0 {
+                    remaining_search_time(deadline)?;
+                }
                 if candidates.len() >= MAX_ITEMS {
                     return Err("Search: too many candidates".into());
                 }
@@ -979,6 +1014,7 @@ fn search_candidates(config: &Config, request: &Request) -> Result<SearchResult>
             }
         }
     }
+    remaining_search_time(deadline)?;
     if successful == 0 {
         return Err("Search: no indexer returned a usable response".into());
     }
@@ -993,12 +1029,20 @@ fn search_candidates(config: &Config, request: &Request) -> Result<SearchResult>
             .then_with(|| a.source.cmp(&b.source))
             .then_with(|| a.id.cmp(&b.id))
     });
+    remaining_search_time(deadline)?;
     Ok(SearchResult {
         profile: profile_name.into(),
         candidates,
         configured: config.sources.len(),
         successful,
     })
+}
+
+fn remaining_search_time(deadline: Instant) -> Result<Duration> {
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|remaining| !remaining.is_zero())
+        .ok_or_else(|| "Search: indexer search exceeded its time budget".into())
 }
 
 /// Explains source selection without downloading, storing or exposing URLs.
@@ -1035,14 +1079,61 @@ pub fn search(config: &Config, request: &Request) -> Result<String> {
     if let Some(source) = &request.source_url {
         return acquisition_url(source, &config.plex.url);
     }
-    search_candidates(config, request)?
+    selected_release(search_candidates(config, request)?).map(|release| release.url)
+}
+
+/// Acquisition metadata for an automatically selected release. The URL is
+/// private acquisition data and must never be included in public previews.
+pub struct SelectedRelease {
+    pub url: String,
+    pub title: String,
+    pub profile: String,
+    pub assessment: Assessment,
+    pub id: String,
+}
+
+fn selected_release(result: SearchResult) -> Result<SelectedRelease> {
+    let candidate = result
         .candidates
         .into_iter()
         .find(|candidate| candidate.assessment.accepted)
-        .map(|candidate| candidate.release.url)
-        .ok_or_else(|| {
-            "Search: no release satisfies the identity, seed count and selection profile".into()
-        })
+        .ok_or("Search: no release satisfies the identity, seed count and selection profile")?;
+    Ok(SelectedRelease {
+        url: candidate.release.url,
+        title: candidate.release.title,
+        profile: result.profile,
+        assessment: candidate.assessment,
+        id: candidate.id,
+    })
+}
+
+/// Selects the same accepted, ranked candidate as search and search_report,
+/// retaining its assessment for upgrade decisions and durable history.
+pub fn select_release(config: &Config, request: &Request) -> Result<SelectedRelease> {
+    let deadline = Instant::now()
+        .checked_add(SEARCH_BUDGET)
+        .ok_or("Search: invalid search time budget")?;
+    select_release_before(config, request, deadline)
+}
+
+/// Applies an existing monitoring-pass deadline to all indexer requests and
+/// candidate processing. Exceeding it discards the entire partial search.
+pub fn select_release_before(
+    config: &Config,
+    request: &Request,
+    deadline: Instant,
+) -> Result<SelectedRelease> {
+    let deadline = deadline.min(
+        Instant::now()
+            .checked_add(SEARCH_BUDGET)
+            .ok_or("Search: invalid search time budget")?,
+    );
+    remaining_search_time(deadline)?;
+    request.validate()?;
+    if request.source_path.is_some() || request.source_url.is_some() {
+        return Err("Search: manual sources do not have a verified release assessment".into());
+    }
+    selected_release(search_candidates_before(config, request, deadline)?)
 }
 
 fn plex_section<'a>(config: &'a Config, request: &Request) -> Result<&'a str> {
@@ -1109,6 +1200,108 @@ pub fn available(config: &Config, request: &Request) -> Result<bool> {
     if !config.plex.enabled {
         return Ok(true);
     }
+    plex_available(config, request, playable)
+}
+
+/// Checks Plex for every newly imported path, rather than accepting an older
+/// playable copy of the same movie or episode. Paths use absolute POSIX
+/// components; they are never compared by basename or suffix.
+pub fn available_import(config: &Config, request: &Request, imports: &[String]) -> Result<bool> {
+    if imports.is_empty() {
+        return Ok(false);
+    }
+    if !config.plex.enabled {
+        return Ok(true);
+    }
+    request.validate()?;
+    if !matches!(request.kind.as_str(), "movie" | "episode") {
+        return Err("Plex: import confirmation requires a movie or episode".into());
+    }
+    if imports.len() > MAX_ITEMS || config.plex.path_mappings.len() > 32 {
+        return Err("Plex: too many import paths or path mappings".into());
+    }
+    let mut mappings = Vec::new();
+    let mut prefixes = BTreeSet::new();
+    for mapping in &config.plex.path_mappings {
+        let local = absolute_path_components(&mapping.mynou_prefix)
+            .ok_or("Plex: invalid local path mapping prefix")?;
+        let remote = absolute_path_components(&mapping.plex_prefix)
+            .ok_or("Plex: invalid Plex path mapping prefix")?;
+        if !prefixes.insert(&mapping.mynou_prefix) {
+            return Err("Plex: duplicate local path mapping prefix".into());
+        }
+        mappings.push((local, remote));
+    }
+    let mut expected = BTreeSet::new();
+    let mut path_bytes = 0usize;
+    for imported in imports {
+        let components = absolute_path_components(imported)
+            .filter(|components| !components.is_empty())
+            .ok_or("Plex: invalid imported file path")?;
+        let mapped = mappings
+            .iter()
+            .filter(|(local, _)| components.starts_with(local))
+            .max_by_key(|(local, _)| local.len());
+        let path = if let Some((local, remote)) = mapped {
+            let mut mapped_components = remote.clone();
+            mapped_components.extend_from_slice(&components[local.len()..]);
+            format!("/{}", mapped_components.join("/"))
+        } else {
+            imported.clone()
+        };
+        if absolute_path_components(&path).is_none_or(|components| components.is_empty()) {
+            return Err("Plex: invalid mapped import path".into());
+        }
+        path_bytes = path_bytes.saturating_add(path.len());
+        if path_bytes > MAX_XML {
+            return Err("Plex: imported path data exceeds the memory limit".into());
+        }
+        expected.insert(path);
+    }
+    plex_available(config, request, |item| {
+        if let Some(media) = item.get("Media").and_then(Value::as_array) {
+            for media in media {
+                if let Some(parts) = media.get("Part").and_then(Value::as_array) {
+                    for part in parts {
+                        if let Some(path) = string(part, "file")
+                            .filter(|path| absolute_path_components(path).is_some())
+                        {
+                            expected.remove(path);
+                        }
+                    }
+                }
+            }
+        }
+        expected.is_empty()
+    })
+}
+
+fn absolute_path_components(path: &str) -> Option<Vec<&str>> {
+    if path.len() > 4096
+        || !path.starts_with('/')
+        || path.contains('\\')
+        || path.chars().any(char::is_control)
+    {
+        return None;
+    }
+    if path == "/" {
+        return Some(Vec::new());
+    }
+    let components: Vec<_> = path[1..].split('/').collect();
+    if components
+        .iter()
+        .any(|component| matches!(*component, "" | "." | ".."))
+    {
+        return None;
+    }
+    Some(components)
+}
+
+fn plex_available(
+    config: &Config,
+    request: &Request,
+    mut matches: impl FnMut(&Value) -> bool,
+) -> Result<bool> {
     let headers = plex_headers(config)?;
     let url = endpoint(
         &config.plex.url,
@@ -1125,7 +1318,7 @@ pub fn available(config: &Config, request: &Request) -> Result<bool> {
     let items = plex_items(&url, &headers)?;
     for item in items.iter().filter(|item| identity_matches(item, request)) {
         if !episode {
-            if playable(item) {
+            if matches(item) {
                 return Ok(true);
             }
             continue;
@@ -1138,12 +1331,13 @@ pub fn available(config: &Config, request: &Request) -> Result<bool> {
             &config.plex.url,
             &format!("library/metadata/{key}/allLeaves"),
         )?;
-        if plex_items(&leaves, &headers)?.iter().any(|episode| {
-            integer(episode, "parentIndex") == Some(u64::from(request.season))
-                && integer(episode, "index") == Some(u64::from(request.episode))
-                && playable(episode)
-        }) {
-            return Ok(true);
+        for episode in plex_items(&leaves, &headers)? {
+            if integer(&episode, "parentIndex") == Some(u64::from(request.season))
+                && integer(&episode, "index") == Some(u64::from(request.episode))
+                && matches(&episode)
+            {
+                return Ok(true);
+            }
         }
     }
     Ok(false)
@@ -1561,6 +1755,33 @@ mod tests {
             source_url: None,
             tmdb_id: None,
         }
+    }
+
+    #[test]
+    fn expired_search_budget_returns_before_contacting_a_configured_indexer() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let mut config = config::from_json(&config::default_json(), std::path::Path::new("."))
+            .unwrap();
+        config.sources.push(Source {
+            name: "private-indexer-label".into(),
+            kind: "json".into(),
+            url: format!("http://{}", listener.local_addr().unwrap()),
+            api_key_env: "MYNOU_EXPIRED_SEARCH_ABSENT_KEY_390815".into(),
+        });
+        let expired = Instant::now()
+            .checked_sub(SEARCH_BUDGET + Duration::from_secs(1))
+            .unwrap();
+        let error = match search_candidates_since(&config, &movie(), expired) {
+            Ok(_) => panic!("an expired search must not select a partial result"),
+            Err(error) => error,
+        };
+        assert_eq!(error, "Search: indexer search exceeded its time budget");
+        assert!(!error.contains("private-indexer-label"));
+        assert!(matches!(
+            listener.accept(),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock
+        ));
     }
 
     #[test]
