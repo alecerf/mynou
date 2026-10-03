@@ -6,7 +6,7 @@ use crate::{
     json::Value,
     media, organizer,
     store::{self, Job, RecordedRelease, Request, Store},
-    torrent::Client,
+    torrent::{Client, FilePriority, TransferPolicy},
 };
 use std::{
     path::Path,
@@ -64,7 +64,7 @@ impl Engine {
         read_only: bool,
     ) -> Result<Arc<Self>> {
         let downloads = if start_downloads && config.downloads_enabled {
-            let client = Client::open(config.downloads.clone())?;
+            let client = Client::open_with_policy(config.downloads.clone(), config.download_policy.clone())?;
             let jobs = store.list();
             let active: std::collections::BTreeSet<_> = jobs
                 .iter()
@@ -162,6 +162,58 @@ impl Engine {
             }
         }
         Ok(job)
+    }
+
+    fn native_client(&self) -> Result<&Client> {
+        self.downloads.as_ref().ok_or_else(|| "Native downloads are disabled".to_owned())
+    }
+
+    /// Native transfer controls affect every request sharing that torrent identity.
+    pub fn transfer(&self, id: &str) -> Result<Value> {
+        let mut value = self.native_client()?.transfer(id)?;
+        let requests = lock(&self.store)?.list().into_iter()
+            .filter(|job| job.download_id.as_deref() == Some(id))
+            .map(|job| Value::String(job.id)).collect();
+        value.insert("request_ids", Value::Array(requests));
+        Ok(value)
+    }
+
+    pub fn transfers(&self) -> Result<Value> {
+        let snapshots = self.native_client()?.transfers()?;
+        let jobs = lock(&self.store)?.list();
+        let mut snapshots = snapshots.as_array().ok_or("Invalid native transfer snapshot")?.to_vec();
+        for value in &mut snapshots {
+            let id = value.get("id").and_then(Value::as_str).ok_or("Missing native transfer identity")?;
+            let requests = jobs.iter().filter(|job| job.download_id.as_deref() == Some(id))
+                .map(|job| Value::String(job.id.clone())).collect();
+            value.insert("request_ids", Value::Array(requests));
+        }
+        Ok(Value::Array(snapshots))
+    }
+
+    pub fn pause_transfer(&self, id: &str) -> Result<Value> {
+        self.native_client()?.pause(id)?;
+        self.transfer(id)
+    }
+
+    pub fn resume_transfer(&self, id: &str) -> Result<Value> {
+        self.native_client()?.resume(id)?;
+        self.transfer(id)
+    }
+
+    pub fn set_transfer_priority(&self, id: &str, priority: i32) -> Result<Value> {
+        self.native_client()?.set_priority(id, priority)?;
+        self.transfer(id)
+    }
+
+    pub fn set_file_priority(&self, id: &str, index: usize, priority: FilePriority) -> Result<Value> {
+        self.native_client()?.set_file_priority(id, index, priority)?;
+        self.transfer(id)
+    }
+
+    pub fn set_transfer_policy(&self, id: &str, policy: Option<TransferPolicy>) -> Result<Value> {
+        self.native_client()?.set_policy(id, policy)?;
+        self.transfer(id)
     }
 
     pub fn status(&self) -> Result<Value> {
@@ -344,7 +396,7 @@ impl Engine {
             self.downloads
                 .as_ref()
                 .ok_or("Downloads are disabled")?
-                .resume(id)?;
+                .resume_if_allowed(id)?;
         }
         if self.config.plex.enabled
             && job.imports.is_empty()

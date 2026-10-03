@@ -234,6 +234,7 @@ fn connection(stream: &mut TcpStream, engine: &Arc<Engine>, token: &str) -> Resu
 fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<(u16, Value)> {
     match (method, path) {
         ("GET", "/api/status") => Ok((200, engine.status()?)),
+        ("GET", "/api/transfers") => Ok((200, engine.transfers()?)),
         ("GET", "/api/library") => Ok((200, engine.library()?)),
         ("POST", "/api/upgrades") => {
             let value = control_body(body, &["apply"], true)?;
@@ -277,6 +278,57 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
             Ok((200, v))
         }
         _ => {
+            if let Some(tail) = path.strip_prefix("/api/transfers/") {
+                let parts: Vec<_> = tail.split('/').collect();
+                let id = parts[0];
+                if ![40, 64].contains(&id.len()) || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                    return Ok((404, error("Unknown native transfer")));
+                }
+                let id = id.to_ascii_lowercase();
+                if parts.len() == 1 && method == "GET" {
+                    return Ok((200, engine.transfer(&id)?));
+                }
+                if parts.len() != 2 || method != "POST" {
+                    return Ok((404, error("Unknown transfer route")));
+                }
+                let snapshot = match parts[1] {
+                    "pause" | "resume" => {
+                        control_body(body, &[], true)?;
+                        if parts[1] == "pause" { engine.pause_transfer(&id)? }
+                        else { engine.resume_transfer(&id)? }
+                    }
+                    "priority" => {
+                        let value = control_body(body, &["priority"], false)?;
+                        let priority = value.get("priority").and_then(Value::as_i64)
+                            .and_then(|number| i32::try_from(number).ok())
+                            .ok_or("priority must be an integer between -1000 and 1000")?;
+                        engine.set_transfer_priority(&id, priority)?
+                    }
+                    "files" => {
+                        let value = control_body(body, &["index", "priority"], false)?;
+                        let index = value.get("index").and_then(Value::as_u64)
+                            .and_then(|number| usize::try_from(number).ok())
+                            .ok_or("index must be a nonnegative file index")?;
+                        let priority = match value.get("priority").and_then(Value::as_str) {
+                            Some("low") => crate::torrent::FilePriority::Low,
+                            Some("normal") => crate::torrent::FilePriority::Normal,
+                            Some("high") => crate::torrent::FilePriority::High,
+                            _ => return Err("File priority must be low, normal or high".into()),
+                        };
+                        engine.set_file_priority(&id, index, priority)?
+                    }
+                    "policy" => {
+                        let value = control_body(body, &["policy"], false)?;
+                        let policy = match value.get("policy").ok_or("policy is required")? {
+                            Value::Null => None,
+                            policy => Some(crate::torrent::TransferPolicy::from_json(policy)?),
+                        };
+                        engine.set_transfer_policy(&id, policy)?
+                    }
+                    _ => return Ok((404, error("Unknown transfer route"))),
+                };
+                return Ok((200, snapshot));
+            }
             if let Some(tail) = path.strip_prefix("/api/library/") {
                 let parts: Vec<_> = tail.split('/').collect();
                 if parts.len() != 2

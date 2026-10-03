@@ -1,7 +1,7 @@
 use crate::{
     Result,
     json::{self, Value},
-    torrent::DownloadConfig,
+    torrent::{DownloadConfig, TransferPolicy},
 };
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -62,6 +62,7 @@ pub struct Config {
     pub movies_root: PathBuf,
     pub series_root: PathBuf,
     pub downloads: DownloadConfig,
+    pub download_policy: TransferPolicy,
     pub downloads_enabled: bool,
     pub poll_interval_ms: u64,
     pub lease_duration_secs: u64,
@@ -122,6 +123,10 @@ pub fn default_json() -> Value {
                 ("dht", true.into()),
                 ("pex", true.into()),
                 ("max_active", n(2)),
+                ("download_limit_bps", n(0)),
+                ("upload_limit_bps", n(0)),
+                ("seed_ratio_milli", Value::Null),
+                ("seed_time_secs", Value::Null),
             ]),
         ),
         (
@@ -295,6 +300,22 @@ fn monitoring(value: &Value) -> Result<Monitoring> {
     })
 }
 
+fn download_policy(downloads: &Value) -> Result<TransferPolicy> {
+    let policy = Value::Object(
+        [
+            "download_limit_bps",
+            "upload_limit_bps",
+            "seed_ratio_milli",
+            "seed_time_secs",
+        ]
+        .into_iter()
+        .filter_map(|name| downloads.get(name).map(|value| (name.into(), value.clone())))
+        .collect(),
+    );
+    TransferPolicy::from_json(&policy)
+        .map_err(|error| format!("Configuration: downloads: {error}"))
+}
+
 pub fn load(file: &Path) -> Result<Config> {
     use std::io::Read;
     let mut data = String::new();
@@ -349,6 +370,10 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             "dht",
             "pex",
             "max_active",
+            "download_limit_bps",
+            "upload_limit_bps",
+            "seed_ratio_milli",
+            "seed_time_secs",
         ],
     )?;
     let p = section(v, "plex")?;
@@ -429,6 +454,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             pex: boolean(d, "pex", true)?,
             max_active,
         },
+        download_policy: download_policy(d)?,
         downloads_enabled: boolean(d, "enabled", true)?,
         poll_interval_ms,
         lease_duration_secs,
