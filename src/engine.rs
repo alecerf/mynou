@@ -181,12 +181,16 @@ impl Engine {
     pub fn transfers(&self) -> Result<Value> {
         let snapshots = self.native_client()?.transfers()?;
         let jobs = lock(&self.store)?.list();
+        let mut references: std::collections::BTreeMap<String, Vec<Value>> = std::collections::BTreeMap::new();
+        for job in jobs {
+            if let Some(id) = job.download_id {
+                references.entry(id).or_default().push(Value::String(job.id));
+            }
+        }
         let mut snapshots = snapshots.as_array().ok_or("Invalid native transfer snapshot")?.to_vec();
         for value in &mut snapshots {
             let id = value.get("id").and_then(Value::as_str).ok_or("Missing native transfer identity")?;
-            let requests = jobs.iter().filter(|job| job.download_id.as_deref() == Some(id))
-                .map(|job| Value::String(job.id.clone())).collect();
-            value.insert("request_ids", Value::Array(requests));
+            value.insert("request_ids", Value::Array(references.remove(id).unwrap_or_default()));
         }
         Ok(Value::Array(snapshots))
     }
