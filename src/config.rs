@@ -44,6 +44,7 @@ pub struct Config {
     pub workers: usize,
     pub max_attempts: u32,
     pub minimum_seeders: u64,
+    pub selection: crate::selection::SelectionConfig,
     pub plex: Plex,
     pub catalog: Catalog,
     pub sources: Vec<Source>,
@@ -66,6 +67,10 @@ pub fn default_json() -> Value {
         ("workers", n(2)),
         ("max_attempts", n(10)),
         ("minimum_seeders", n(1)),
+        (
+            "selection",
+            crate::selection::SelectionConfig::default().to_json(),
+        ),
         (
             "library",
             object(vec![
@@ -188,6 +193,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             "workers",
             "max_attempts",
             "minimum_seeders",
+            "selection",
             "library",
             "downloads",
             "plex",
@@ -273,6 +279,10 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
     ] {
         crate::net::parse_url(&url)?;
     }
+    let selection = match v.get("selection") {
+        Some(selection) => crate::selection::SelectionConfig::from_json(selection)?,
+        None => crate::selection::SelectionConfig::default(),
+    };
     Ok(Config {
         store_dir: path(base, text(v, "store_dir", "state/jobs")?),
         listen,
@@ -294,6 +304,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         workers,
         max_attempts: number(v, "max_attempts", 10, 1000)? as u32,
         minimum_seeders: number(v, "minimum_seeders", 1, 1000000)?,
+        selection,
         plex: Plex {
             enabled: boolean(p, "enabled", false)?,
             url: text(p, "url", "http://host.docker.internal:32400")?,

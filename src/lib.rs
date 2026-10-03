@@ -11,6 +11,7 @@ pub mod media;
 pub mod net;
 pub mod organizer;
 pub mod pki;
+pub mod selection;
 pub mod server;
 pub mod store;
 pub mod tls;

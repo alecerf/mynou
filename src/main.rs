@@ -19,7 +19,28 @@ use std::{
     time::Duration,
 };
 
-const HELP: &str = "Mynou — media automation using Rust std only\n\n  init [--config mynou.json]\n  analyze FILE [--json]\n  doctor [--config mynou.json]\n  serve [--config mynou.json]\n  submit --title TITLE [--kind movie|episode|series|file] [--year YEAR]\n         [--season N --episode N] [--path FILE | --url MAGNET_OR_TORRENT]\n         [--tmdb-id N] [--config mynou.json]\n  jobs | status | sync [--config mynou.json]\n  show | events | retry | cancel ID [--config mynou.json]\n  healthcheck [--config mynou.json]\n  setup-docker [--dir mynou-docker]\n  demo [--dir mynou-demo]\n  version\n\nManagement commands use the API while the service is running, otherwise the local journal.\nThe demo uses only synthetic media and local services.\n";
+const HELP: &str = "Mynou — media automation using Rust std only
+
+  init [--config mynou.json]
+  analyze FILE [--json]
+  doctor [--config mynou.json]
+  serve [--config mynou.json]
+  submit --title TITLE [--kind movie|episode|series|file] [--year YEAR]
+         [--season N --episode N] [--path FILE | --url MAGNET_OR_TORRENT]
+         [--tmdb-id N] [--config mynou.json]
+  search --title TITLE [--kind movie|episode] [--year YEAR]
+         [--season N --episode N] [--tmdb-id N] [--config mynou.json]
+  jobs | status | sync [--config mynou.json]
+  show | events | retry | cancel ID [--config mynou.json]
+  healthcheck [--config mynou.json]
+  setup-docker [--dir mynou-docker]
+  demo [--dir mynou-demo]
+  version
+
+Search previews profile decisions without submitting or downloading media.
+Management commands use the API while the service is running, otherwise the local journal.
+The demo uses only synthetic media and local services.
+";
 struct Args {
     command: String,
     positions: Vec<String>,
@@ -53,6 +74,9 @@ impl Args {
             "submit" => &[
                 "config", "title", "kind", "year", "season", "episode", "path", "url", "tmdb-id",
                 "help",
+            ],
+            "search" => &[
+                "config", "title", "kind", "year", "season", "episode", "tmdb-id", "help",
             ],
             "analyze" => &["json", "help"],
             "demo" | "setup-docker" => &["dir", "help"],
@@ -404,6 +428,8 @@ fn execute(args: Args) -> Result<()> {
         );
         v.insert("plex_enabled", config.plex.enabled);
         v.insert("indexers", config.sources.len() as u32);
+        v.insert("movie_profile", config.selection.movie_profile.clone());
+        v.insert("episode_profile", config.selection.episode_profile.clone());
         v.insert("downloads_enabled", config.downloads_enabled);
         v.insert(
             "native_media_formats",
@@ -426,6 +452,20 @@ fn execute(args: Args) -> Result<()> {
     }
     let online = running(&config);
     match args.command.as_str() {
+        "search" => {
+            let r = request(&args)?;
+            if online {
+                output(&call(
+                    &config,
+                    &path,
+                    "POST",
+                    "/api/search",
+                    Some(&r.to_json()),
+                )?);
+            } else {
+                output(&integrations::search_report(&config, &r)?);
+            }
+        }
         "submit" => {
             let r = request(&args)?;
             if online {

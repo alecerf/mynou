@@ -3,6 +3,7 @@ use crate::{
     Result,
     crypto::constant_time_eq,
     engine::{Engine, lock, public_job},
+    integrations,
     json::{self, Value},
     store::Request,
 };
@@ -237,6 +238,14 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
             200,
             Value::Array(lock(&engine.store)?.list().iter().map(public_job).collect()),
         )),
+        ("POST", "/api/search") => {
+            let value = json::parse(
+                std::str::from_utf8(body).map_err(|_| "Request body is not valid UTF-8")?,
+            )?;
+            let request = Request::from_json(&value)?;
+            Ok((200, integrations::search_report(&engine.config, &request)?))
+        }
+        ("GET", "/api/profiles") => Ok((200, engine.config.selection.to_json())),
         ("POST", "/api/jobs") => {
             let v = json::parse(
                 std::str::from_utf8(body).map_err(|_| "Request body is not valid UTF-8")?,
