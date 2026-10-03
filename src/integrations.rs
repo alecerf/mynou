@@ -12,7 +12,7 @@ use crate::crypto::Sha256;
 use crate::json::{self, Value};
 use crate::net::{self, HttpClient};
 use crate::selection::{Assessment, tokens};
-use crate::store::Request;
+use crate::store::{RecordedRelease, Request};
 
 const MAX_ITEMS: usize = 100_000;
 const MAX_PAGES: usize = 1_000;
@@ -985,6 +985,18 @@ fn search_candidates_before(
                     return Err("Search: too many candidates".into());
                 }
                 let mut assessment = profile.assess(&release.title, &request.title);
+                if (RecordedRelease {
+                    title: release.title.clone(),
+                    profile: profile_name.into(),
+                })
+                .validate()
+                .is_err()
+                {
+                    assessment.accepted = false;
+                    assessment.reasons.push(
+                        "Release title or profile is invalid for acquisition provenance".into(),
+                    );
+                }
                 if !release_matches(request, &release.title) {
                     assessment.accepted = false;
                     assessment

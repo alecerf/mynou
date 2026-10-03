@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use mynou::config::{self, Config, PathMapping, Source};
 use mynou::integrations;
 use mynou::json::{self, Value};
-use mynou::store::Request;
+use mynou::store::{RecordedRelease, Request};
 
 struct Fixture {
     url: String,
@@ -442,6 +442,64 @@ fn structured_selection_cannot_return_a_rejected_or_missing_candidate() {
         );
         assert_eq!(integrations::search(&config, &movie()).unwrap_err(), error);
     }
+}
+
+#[test]
+fn unrecordable_titles_do_not_win_acquisition_and_remain_explained_in_the_preview() {
+    let releases = Value::Array(vec![
+        object([
+            ("title", "Fixture.Movie.2024.1080p\0".into()),
+            ("seeders", Value::Number(900.0)),
+            ("url", "magnet:?xt=urn:btih:invalid-nul".into()),
+        ]),
+        object([
+            (
+                "title",
+                format!("Fixture.Movie.2024.1080p.{}", "x".repeat(2048)).into(),
+            ),
+            ("seeders", Value::Number(999.0)),
+            ("url", "magnet:?xt=urn:btih:too-long".into()),
+        ]),
+        object([
+            ("title", "Fixture.Movie.2024.720p".into()),
+            ("seeders", Value::Number(1.0)),
+            ("url", "magnet:?xt=urn:btih:valid".into()),
+        ]),
+    ]);
+    let body = json::stringify(&releases);
+    let fixture = Fixture::open(move |_, _| (200, body.clone()));
+    let mut config = config::from_json(&config::default_json(), Path::new(".")).unwrap();
+    config.sources.push(Source {
+        name: "fixture".into(),
+        kind: "json".into(),
+        url: fixture.url.clone(),
+        api_key_env: "MYNOU_UPGRADE_ABSENT_KEY_8754381".into(),
+    });
+    let selected = integrations::select_release(&config, &movie()).unwrap();
+    assert_eq!(selected.title, "Fixture.Movie.2024.720p");
+    assert_eq!(selected.url, "magnet:?xt=urn:btih:valid");
+    assert_eq!(
+        selected.url,
+        integrations::search(&config, &movie()).unwrap()
+    );
+    RecordedRelease {
+        title: selected.title,
+        profile: selected.profile,
+    }
+    .validate()
+    .unwrap();
+    let report = integrations::search_report(&config, &movie()).unwrap();
+    let rejected = report.get("rejected").unwrap().as_array().unwrap();
+    assert_eq!(rejected.len(), 1);
+    assert!(
+        json::stringify(rejected[0].get("assessment").unwrap())
+            .contains("invalid for acquisition provenance")
+    );
+    assert_eq!(
+        report.get("candidate_count").and_then(Value::as_u64),
+        Some(2)
+    );
+    assert!(!json::stringify(&report).contains("magnet:"));
 }
 
 #[test]

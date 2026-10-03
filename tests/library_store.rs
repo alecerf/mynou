@@ -52,10 +52,11 @@ fn ready(store: &mut Store, title: &str, url: Option<&str>) -> Job {
     job.state = "ready".into();
     job.progress = 1.0;
     job.imports = vec![format!("/library/{}.mkv", job.id)];
+    // Acquisitions record their selected release before promotion. Independent
+    // imports need not win root precedence to retain that provenance.
+    job.release = Some(release("Example.2026.720p.WEB-DL.ENG"));
     store.update(job.clone()).unwrap();
-    store
-        .set_baseline(&job.id, release("Example.2026.720p.WEB-DL.ENG"))
-        .unwrap()
+    store.get(&job.id).unwrap()
 }
 
 fn complete(store: &mut Store, mut job: Job) -> Job {
@@ -195,6 +196,30 @@ fn bounded_release_metadata_and_legacy_json_defaults() {
     }
     value.insert("monitored", "true");
     assert!(Job::from_json(&value).is_err());
+}
+
+#[test]
+fn missing_import_baseline_can_be_recorded_once_and_survives_restart() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let mut job = store.submit(request("Manual import", None)).unwrap();
+    let baseline = release("Manual.import.2026.720p.WEB-DL.ENG");
+    assert!(store.set_baseline(&job.id, baseline.clone()).is_err());
+    job.state = "ready".into();
+    job.imports = vec!["/library/manual.mkv".into()];
+    store.update(job.clone()).unwrap();
+    let recorded = store.set_baseline(&job.id, baseline.clone()).unwrap();
+    assert_eq!(recorded.release, Some(baseline));
+    assert!(
+        store
+            .set_baseline(&job.id, release("Manual.import.1080p"))
+            .is_err()
+    );
+    drop(store);
+    assert_eq!(
+        Store::open(&directory.0).unwrap().get(&job.id).unwrap(),
+        recorded
+    );
 }
 
 #[test]
