@@ -593,6 +593,7 @@ fn parse_attributes(
     let mut sources = BTreeSet::new();
     let mut codecs = BTreeSet::new();
     let mut languages = BTreeSet::new();
+    let subtitle_languages = subtitle_language_positions(&suffix);
     for (index, token) in suffix.iter().enumerate() {
         let next = suffix.get(index + 1).map(String::as_str).unwrap_or("");
         let issues_before = attributes.issues.len();
@@ -618,7 +619,7 @@ fn parse_attributes(
                 || next == "audio"
                 || token.starts_with("audio")
                 || token.ends_with("audio");
-            let subtitle_context = is_subtitle_marker(previous) || is_subtitle_marker(next);
+            let subtitle_context = subtitle_languages[index];
             if explicitly_audio || !subtitle_context {
                 languages.insert(language);
             }
@@ -742,6 +743,30 @@ fn is_subtitle_marker(token: &str) -> bool {
         "sub" | "subs" | "subtitle" | "subtitles" | "vost" | "sdh" | "cc"
     )
 }
+fn subtitle_language_positions(tokens: &[String]) -> Vec<bool> {
+    let mut positions = vec![false; tokens.len()];
+    for (index, token) in tokens.iter().enumerate() {
+        if !is_subtitle_marker(token) {
+            continue;
+        }
+        // Subtitle labels scope a contiguous language list in either direction.
+        // Audio and other release markers form boundaries.
+        for (next, token) in tokens.iter().enumerate().skip(index + 1) {
+            if language_marker(token).is_none() {
+                break;
+            }
+            positions[next] = true;
+        }
+        for (previous, token) in tokens[..index].iter().enumerate().rev() {
+            if language_marker(token).is_none() {
+                break;
+            }
+            positions[previous] = true;
+        }
+    }
+    positions
+}
+
 fn language_marker(token: &str) -> Option<&'static str> {
     // VOSTFR, SUBFR, MULTI and DUAL provide no evidence of an audio language.
     if token.starts_with("vost")
@@ -860,6 +885,9 @@ mod tests {
             "Subs French",
             "FrenchSDH",
             "SUBFR",
+            "SUBS.EN.FR",
+            "VOST.ENG.FRE",
+            "EN.FR.SUBS",
         ] {
             let assessment = french.assess(&format!("Example 1080p {marker}"), "Example");
             assert!(!assessment.accepted, "{marker}");
@@ -871,6 +899,11 @@ mod tests {
                 .accepted
         );
         assert!(french.assess("Example French Audio", "Example").accepted);
+        assert!(
+            french
+                .assess("Example SUBS ENG AUDIO FRE", "Example")
+                .accepted
+        );
         assert!(!french.assess("Example ENG VOSTFR", "Example").accepted);
     }
 
