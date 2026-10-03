@@ -4,7 +4,7 @@ use crate::{
     torrent::DownloadConfig,
 };
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Monitoring {
@@ -197,9 +197,34 @@ fn keys(v: &Value, allowed: &[&str]) -> Result<()> {
     }
     Ok(())
 }
-fn path(base: &Path, value: String) -> PathBuf {
+fn absolute_path(path: &Path) -> Result<PathBuf> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|error| format!("Configuration: cannot determine current directory: {error}"))?
+            .join(path)
+    };
+    let mut normalized = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                // Collapsing a parent after a symlink changes its filesystem meaning.
+                // Keep ordinary symlink components visible to storage/import checks.
+                crate::store::reject_symlinks(&normalized)
+                    .map_err(|error| format!("Configuration: {error}"))?;
+                normalized.pop();
+            }
+            _ => normalized.push(component.as_os_str()),
+        }
+    }
+    Ok(normalized)
+}
+
+fn path(base: &Path, value: String) -> Result<PathBuf> {
     let p = PathBuf::from(value);
-    if p.is_absolute() { p } else { base.join(p) }
+    absolute_path(&if p.is_absolute() { p } else { base.join(p) })
 }
 
 fn mapping_path(value: &Value, name: &str) -> Result<String> {
@@ -388,15 +413,16 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         Some(selection) => crate::selection::SelectionConfig::from_json(selection)?,
         None => crate::selection::SelectionConfig::default(),
     };
+    let base = absolute_path(base)?;
     Ok(Config {
-        store_dir: path(base, text(v, "store_dir", "state/jobs")?),
+        store_dir: path(&base, text(v, "store_dir", "state/jobs")?)?,
         listen,
         api_token_env: text(v, "api_token_env", "MYNOU_API_TOKEN")?,
-        movies_root: path(base, text(library, "movies_root", "library/movies")?),
-        series_root: path(base, text(library, "series_root", "library/series")?),
+        movies_root: path(&base, text(library, "movies_root", "library/movies")?)?,
+        series_root: path(&base, text(library, "series_root", "library/series")?)?,
         downloads: DownloadConfig {
-            data_dir: path(base, text(d, "data_dir", "downloads")?),
-            state_dir: path(base, text(d, "state_dir", "state/torrents")?),
+            data_dir: path(&base, text(d, "data_dir", "downloads")?)?,
+            state_dir: path(&base, text(d, "state_dir", "state/torrents")?)?,
             listen_port: number(d, "listen_port", 6881, 65535)? as u16,
             seed: boolean(d, "seed", true)?,
             dht: boolean(d, "dht", true)?,

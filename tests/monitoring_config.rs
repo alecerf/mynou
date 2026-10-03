@@ -2,7 +2,31 @@
 use mynou::config::{self, Monitoring};
 use mynou::json::{self, Value};
 use mynou::selection::Profile;
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT: AtomicU64 = AtomicU64::new(0);
+
+struct Directory(PathBuf);
+
+impl Directory {
+    fn new() -> Self {
+        let path = std::env::current_dir().unwrap().join(format!(
+            ".mynou-monitoring-config-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&path).unwrap();
+        Self(path)
+    }
+}
+
+impl Drop for Directory {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
 
 fn document(text: &str) -> Value {
     json::parse(text).unwrap()
@@ -28,6 +52,91 @@ fn mapping(mynou_prefix: &str, plex_prefix: &str) -> Value {
     value.insert("mynou_prefix", mynou_prefix);
     value.insert("plex_prefix", plex_prefix);
     value
+}
+
+#[test]
+fn loading_relative_config_resolves_every_filesystem_root_without_creating_it() {
+    let directory = Directory::new();
+    let file = directory.0.join("mynou.json");
+    fs::write(&file, json::stringify(&config::default_json())).unwrap();
+    let relative = Path::new(".")
+        .join(directory.0.file_name().unwrap())
+        .join("mynou.json");
+    let configuration = config::load(&relative).unwrap();
+    for (actual, suffix) in [
+        (&configuration.store_dir, "state/jobs"),
+        (&configuration.movies_root, "library/movies"),
+        (&configuration.series_root, "library/series"),
+        (&configuration.downloads.data_dir, "downloads"),
+        (&configuration.downloads.state_dir, "state/torrents"),
+    ] {
+        assert_eq!(actual, &directory.0.join(suffix));
+        assert!(actual.is_absolute());
+        assert!(!actual.exists(), "configuration parsing must not create roots");
+    }
+}
+
+#[test]
+fn config_base_and_root_dots_are_normalized_without_changing_existing_paths() {
+    let directory = Directory::new();
+    fs::create_dir(directory.0.join("nested")).unwrap();
+    let mut value = config::default_json();
+    value.insert("store_dir", "./state//jobs");
+    value
+        .get_mut("library")
+        .unwrap()
+        .insert("movies_root", "./library//movies");
+    value
+        .get_mut("library")
+        .unwrap()
+        .insert("series_root", directory.0.join("absolute-series").to_str().unwrap());
+    fs::write(directory.0.join("mynou.json"), json::stringify(&value)).unwrap();
+    let relative = Path::new(".")
+        .join(directory.0.file_name().unwrap())
+        .join("nested/../mynou.json");
+    let configuration = config::load(&relative).unwrap();
+    assert_eq!(configuration.store_dir, directory.0.join("state/jobs"));
+    assert_eq!(configuration.movies_root, directory.0.join("library/movies"));
+    assert_eq!(configuration.series_root, directory.0.join("absolute-series"));
+    assert!(!configuration.store_dir.exists());
+    assert!(!configuration.movies_root.exists());
+    assert!(!configuration.series_root.exists());
+}
+
+#[test]
+fn direct_relative_or_empty_config_base_also_resolves_absolute_roots() {
+    let current = std::env::current_dir().unwrap();
+    for base in [Path::new(""), Path::new("."), Path::new("./uncreated/sub") ] {
+        let configuration = config::from_json(&config::default_json(), base).unwrap();
+        let expected = if base == Path::new("./uncreated/sub") {
+            current.join("uncreated/sub")
+        } else {
+            current.clone()
+        };
+        assert_eq!(configuration.store_dir, expected.join("state/jobs"));
+        assert_eq!(configuration.movies_root, expected.join("library/movies"));
+        assert!(configuration.movies_root.is_absolute());
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn normalization_keeps_symlink_guards_and_rejects_parent_collapse_across_links() {
+    use std::os::unix::fs::symlink;
+    let directory = Directory::new();
+    let target = directory.0.join("target");
+    fs::create_dir(&target).unwrap();
+    symlink(&target, directory.0.join("link")).unwrap();
+    let value = config::default_json();
+    let configuration = config::from_json(&value, &directory.0.join("link")).unwrap();
+    assert_eq!(configuration.store_dir, directory.0.join("link/state/jobs"));
+    assert!(mynou::store::Store::open(&configuration.store_dir).is_err());
+    assert!(!target.join("state").exists());
+    assert!(config::from_json(&value, &directory.0.join("link/..")).is_err());
+    let mut value = value;
+    value.insert("store_dir", "link/../state/jobs");
+    assert!(config::from_json(&value, &directory.0).is_err());
+    assert!(!directory.0.join("state").exists());
 }
 
 #[test]
