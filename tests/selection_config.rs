@@ -98,7 +98,10 @@ fn named_profile_references_survive_json_serialization() {
     let parsed = json::parse(&document).unwrap();
     let configuration = config::from_json(&parsed, Path::new(".")).unwrap();
     assert_eq!(configuration.selection.to_json(), selection);
-    assert_eq!(configuration.selection.profile("movie").unwrap().0, "cinema");
+    assert_eq!(
+        configuration.selection.profile("movie").unwrap().0,
+        "cinema"
+    );
     assert_eq!(
         configuration.selection.profile("episode").unwrap().0,
         "television"
