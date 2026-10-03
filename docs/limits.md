@@ -87,11 +87,20 @@ languages or decode video before acquisition. `VOSTFR` does not identify French
 audio, and `MULTI` does not establish which audio languages are present. A
 restricted attribute rejects unknown markers by default unless its explicit
 `allow_unknown_*` flag is enabled. Empty attribute lists remain unrestricted.
+Conflicting recognized markers and explicitly malformed/unsupported resolution
+markers reject a candidate only when the corresponding attribute is restricted;
+an `allow_unknown_*` flag does not override those contradictions. Unrestricted
+attributes retain marker issues in the preview without changing acceptance.
+Score totals below `minimum_score` are rejected; its default of zero means a
+negative total needs an explicitly lower threshold to remain eligible.
 
 Profiles apply to automatic source search. A source explicitly provided through
 `--url` or `--path` is not a newly searched candidate. Search previews contact
 configured sources but do not submit jobs or start torrents, and their public
 reports omit acquisition URLs and credentials.
+Preview reports display at most 1,000 candidate rows with explicit count and
+truncation fields. Retained candidate data is limited to 16 MiB; exceeding this
+budget reports an error instead of choosing from an incomplete set.
 
 The release does not provide automatic upgrades, quality cutoffs, persistent
 library monitoring policies, or replacement of an existing imported file.

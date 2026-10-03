@@ -46,7 +46,11 @@ If `selection` is absent, both request kinds use the unrestricted `any` profile.
 An empty list places no restriction on that attribute. All `allow_unknown_*`
 flags default to `false`; they affect an attribute only when its allowlist is
 nonempty. Set a flag to `true` to permit missing or unrecognized markers for
-that attribute. An unknown attribute does not become a preferred known value.
+that attribute. The flag does not permit conflicting recognized markers or an
+explicitly malformed/unsupported resolution marker when that attribute is
+restricted. An unknown attribute does not become a preferred known value.
+For an unrestricted attribute, marker issues remain visible in
+`assessment.attributes.issues` without rejecting an otherwise matching release.
 
 Movie and episode profile names must refer to configured profiles. Use `any`
 for one request kind and a restrictive profile for the other if desired.
@@ -73,16 +77,21 @@ An explicit `VOSTFR` marker describes French subtitles, not French audio;
 `MULTI` leaves the actual audio languages unknown. These are release-name hints,
 not an inspection of the downloaded media's tracks.
 
-Terms match contiguous normalized token phrases. Matching is case insensitive
-and does not treat a substring within an unrelated word as a match. All
+Terms also apply to the matched release-title suffix. They match contiguous
+normalized token phrases. Matching is case insensitive and does not treat a
+substring within an unrelated word as a match. All
 `required_terms` must match. Any matching `blocked_terms` rejects a candidate.
 A score rule applies only when every phrase in its `terms` matches; matching
 rules add their signed scores together. `minimum_score` rejects candidates below
-the configured total. A negative rule score can discourage a release without
-rejecting it outright.
+the configured threshold. `minimum_score` defaults to zero, so a negative total
+is rejected by default. To use a negative rule for downranking rather than
+rejection, set a sufficiently low `minimum_score`, such as `-100` for a
+`-10` rule.
 
 Lists are limited to 32 entries and each term to 128 bytes. Scores are bounded
-to an absolute value of 100,000. Configuration is validated when loaded.
+to an absolute value of 100,000 per rule or minimum threshold. There may be
+between 1 and 64 profiles; profile names contain 1 to 64 ASCII letters, digits,
+hyphens or underscores. Configuration is validated when loaded.
 
 ## Ranking and acceptance
 
@@ -139,6 +148,19 @@ Acquisition URLs and credentials are not included. A preview contacts the
 configured sources but does not submit a job, write the request journal, or
 start a torrent. Movie and episode previews share the same selection policy
 used by automatic acquisition.
+
+Reports include `candidate_count`, `reported_count` and `truncated`. At most
+1,000 candidate rows are displayed, after sorting; a truncated report still
+identifies the winner from the full evaluated set. Retained candidate data has
+a 16 MiB budget, and exceeding it produces an explicit error. Indexer counts
+show configured, successful and failed responses; a partially failed search
+can still select from successful sources.
+
+An API request containing `source_url` or `source_path` returns
+`manual_override: true` with no candidate selection, without echoing the value
+or contacting indexers. It does not download or validate the contents of that
+explicit source. The CLI search command accepts identity fields only; use
+`submit` to choose an explicit source.
 
 Indexer credentials still belong in environment variables. Do not embed them
 in profile terms. Candidates with missing language or quality markers may be
