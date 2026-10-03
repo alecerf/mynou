@@ -73,8 +73,12 @@ impl Indexer {
                     }
                     Err(error) => panic!("Cannot accept indexer fixture request: {error}"),
                 };
-                stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
-                stream.set_write_timeout(Some(Duration::from_secs(2))).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                stream
+                    .set_write_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
                 let deadline = Instant::now() + Duration::from_secs(2);
                 let mut header = Vec::new();
                 while !header.ends_with(b"\r\n\r\n") {
@@ -95,7 +99,13 @@ impl Indexer {
                 ).unwrap();
             }
         });
-        Self { url, calls, response, stopped, thread: Some(thread) }
+        Self {
+            url,
+            calls,
+            response,
+            stopped,
+            thread: Some(thread),
+        }
     }
 
     pub fn replace(&self, releases: Value) {
@@ -138,7 +148,10 @@ pub fn configuration(indexer: Option<&Indexer>, profile: &str) -> Value {
         let mut source = Value::object();
         source.insert("name", "local fixture");
         source.insert("kind", "json");
-        source.insert("url", format!("{}/indexer?apikey={INDEXER_SECRET}", indexer.url));
+        source.insert(
+            "url",
+            format!("{}/indexer?apikey={INDEXER_SECRET}", indexer.url),
+        );
         source.insert("api_key_env", "MYNOU_LIBRARY_ABSENT_FIXTURE_KEY_592744");
         value.insert("indexers", Value::Array(vec![source]));
     }
@@ -159,8 +172,14 @@ pub fn release(title: &str, seeders: u32, source: &str) -> Value {
 
 pub fn movie(title: &str) -> Request {
     Request {
-        kind: "movie".into(), title: title.into(), year: 2024, season: 0, episode: 0,
-        source_path: None, source_url: None, tmdb_id: None,
+        kind: "movie".into(),
+        title: title.into(),
+        year: 2024,
+        season: 0,
+        episode: 0,
+        source_path: None,
+        source_url: None,
+        tmdb_id: None,
     }
 }
 
@@ -177,10 +196,14 @@ pub fn run_until(engine: &Arc<Engine>, id: &str, state: &str) -> Job {
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
         let job = lock(&engine.store).unwrap().get(id).unwrap();
-        if job.state == state { return job; }
+        if job.state == state {
+            return job;
+        }
         assert!(
             job.state != "failed" && Instant::now() < deadline,
-            "Job {id} did not reach {state}: {} {:?}", job.state, job.last_error
+            "Job {id} did not reach {state}: {} {:?}",
+            job.state,
+            job.last_error
         );
         engine.tick().unwrap();
         thread::sleep(Duration::from_millis(5));
@@ -188,15 +211,26 @@ pub fn run_until(engine: &Arc<Engine>, id: &str, state: &str) -> Job {
 }
 
 pub fn library_ids(engine: &Engine) -> Vec<String> {
-    lock(&engine.store).unwrap().library_jobs().into_iter().map(|job| job.id).collect()
+    lock(&engine.store)
+        .unwrap()
+        .library_jobs()
+        .into_iter()
+        .map(|job| job.id)
+        .collect()
 }
 
 pub fn files(directory: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     fn collect(root: &Path, directory: &Path, out: &mut BTreeMap<PathBuf, Vec<u8>>) {
         for entry in fs::read_dir(directory).unwrap() {
             let path = entry.unwrap().path();
-            if path.is_dir() { collect(root, &path, out); }
-            else { out.insert(path.strip_prefix(root).unwrap().to_path_buf(), fs::read(path).unwrap()); }
+            if path.is_dir() {
+                collect(root, &path, out);
+            } else {
+                out.insert(
+                    path.strip_prefix(root).unwrap().to_path_buf(),
+                    fs::read(path).unwrap(),
+                );
+            }
         }
     }
     let mut out = BTreeMap::new();
@@ -206,7 +240,19 @@ pub fn files(directory: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
 
 pub fn assert_redacted(value: &Value) {
     let text = json::stringify(value);
-    for forbidden in [INDEXER_SECRET, DOWNLOAD_SECRET, TOKEN, "http://", "https://", "magnet:", "apikey=", "token="] {
-        assert!(!text.contains(forbidden), "Library output contains {forbidden}");
+    for forbidden in [
+        INDEXER_SECRET,
+        DOWNLOAD_SECRET,
+        TOKEN,
+        "http://",
+        "https://",
+        "magnet:",
+        "apikey=",
+        "token=",
+    ] {
+        assert!(
+            !text.contains(forbidden),
+            "Library output contains {forbidden}"
+        );
     }
 }

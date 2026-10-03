@@ -72,7 +72,10 @@ fn loading_relative_config_resolves_every_filesystem_root_without_creating_it() 
     ] {
         assert_eq!(actual, &directory.0.join(suffix));
         assert!(actual.is_absolute());
-        assert!(!actual.exists(), "configuration parsing must not create roots");
+        assert!(
+            !actual.exists(),
+            "configuration parsing must not create roots"
+        );
     }
 }
 
@@ -86,18 +89,24 @@ fn config_base_and_root_dots_are_normalized_without_changing_existing_paths() {
         .get_mut("library")
         .unwrap()
         .insert("movies_root", "./library//movies");
-    value
-        .get_mut("library")
-        .unwrap()
-        .insert("series_root", directory.0.join("absolute-series").to_str().unwrap());
+    value.get_mut("library").unwrap().insert(
+        "series_root",
+        directory.0.join("absolute-series").to_str().unwrap(),
+    );
     fs::write(directory.0.join("mynou.json"), json::stringify(&value)).unwrap();
     let relative = Path::new(".")
         .join(directory.0.file_name().unwrap())
         .join("nested/../mynou.json");
     let configuration = config::load(&relative).unwrap();
     assert_eq!(configuration.store_dir, directory.0.join("state/jobs"));
-    assert_eq!(configuration.movies_root, directory.0.join("library/movies"));
-    assert_eq!(configuration.series_root, directory.0.join("absolute-series"));
+    assert_eq!(
+        configuration.movies_root,
+        directory.0.join("library/movies")
+    );
+    assert_eq!(
+        configuration.series_root,
+        directory.0.join("absolute-series")
+    );
     assert!(!configuration.store_dir.exists());
     assert!(!configuration.movies_root.exists());
     assert!(!configuration.series_root.exists());
@@ -106,7 +115,7 @@ fn config_base_and_root_dots_are_normalized_without_changing_existing_paths() {
 #[test]
 fn direct_relative_or_empty_config_base_also_resolves_absolute_roots() {
     let current = std::env::current_dir().unwrap();
-    for base in [Path::new(""), Path::new("."), Path::new("./uncreated/sub") ] {
+    for base in [Path::new(""), Path::new("."), Path::new("./uncreated/sub")] {
         let configuration = config::from_json(&config::default_json(), base).unwrap();
         let expected = if base == Path::new("./uncreated/sub") {
             current.join("uncreated/sub")
@@ -164,7 +173,9 @@ fn monitoring_defaults_are_explicit_and_legacy_configuration_is_disabled() {
 
     let empty = configured_monitoring(Value::object());
     assert_eq!(
-        config::from_json(&empty, Path::new(".")).unwrap().monitoring,
+        config::from_json(&empty, Path::new("."))
+            .unwrap()
+            .monitoring,
         Monitoring::default()
     );
 }
@@ -179,7 +190,10 @@ fn monitoring_bounds_include_both_endpoints() {
         let configuration =
             config::from_json(&configured_monitoring(monitoring), Path::new(".")).unwrap();
         assert!(configuration.monitoring.enabled);
-        assert_eq!(configuration.monitoring.interval_secs, u64::from(interval_secs));
+        assert_eq!(
+            configuration.monitoring.interval_secs,
+            u64::from(interval_secs)
+        );
         assert_eq!(configuration.monitoring.max_checks, max_checks as usize);
     }
 }
@@ -230,7 +244,10 @@ fn resolution_cutoff_requires_an_explicit_ordered_profile_member() {
     for profile in [r#"{}"#, r#"{"cutoff_resolution":null}"#] {
         let profile = Profile::from_json(&document(profile)).unwrap();
         assert_eq!(profile.cutoff_resolution, None);
-        assert_eq!(profile.to_json().get("cutoff_resolution"), Some(&Value::Null));
+        assert_eq!(
+            profile.to_json().get("cutoff_resolution"),
+            Some(&Value::Null)
+        );
         assert!(!profile.cutoff_reached(&profile.assess("Example 1080p", "Example")));
     }
 }
@@ -360,8 +377,7 @@ fn mapping_sizes_and_duplicate_prefixes_are_bounded() {
     let mut too_many = entries;
     too_many.push(mapping("/library/32", "/media"));
     assert!(
-        config::from_json(&configured_mappings(Value::Array(too_many)), Path::new("."))
-            .is_err()
+        config::from_json(&configured_mappings(Value::Array(too_many)), Path::new(".")).is_err()
     );
     let duplicate = Value::Array(vec![
         mapping("/library", "/media"),
@@ -383,8 +399,7 @@ fn malformed_mapping_fields_are_rejected() {
         r#"[{"mynou_prefix":"/library","plex_prefix":"/media","extra":true}]"#,
     ] {
         assert!(
-            config::from_json(&configured_mappings(document(entries)), Path::new("."))
-                .is_err(),
+            config::from_json(&configured_mappings(document(entries)), Path::new(".")).is_err(),
             "invalid mapping accepted: {entries}"
         );
     }

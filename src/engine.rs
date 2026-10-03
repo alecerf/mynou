@@ -57,7 +57,12 @@ impl Engine {
         Self::from_store(config, store, start_downloads, false)
     }
 
-    fn from_store(config: Config, store: Store, start_downloads: bool, read_only: bool) -> Result<Arc<Self>> {
+    fn from_store(
+        config: Config,
+        store: Store,
+        start_downloads: bool,
+        read_only: bool,
+    ) -> Result<Arc<Self>> {
         let downloads = if start_downloads && config.downloads_enabled {
             let client = Client::open(config.downloads.clone())?;
             let jobs = store.list();
@@ -315,7 +320,13 @@ impl Engine {
         active: &AtomicBool,
     ) -> Result<std::path::PathBuf> {
         if job.upgrade_parent.is_some() {
-            organizer::import_versioned_file_cancellable(source, root, &job.request, &job.id, active)
+            organizer::import_versioned_file_cancellable(
+                source,
+                root,
+                &job.request,
+                &job.id,
+                active,
+            )
         } else {
             organizer::import_file_cancellable(source, root, &job.request, active)
         }
@@ -389,7 +400,8 @@ impl Engine {
                     job.acquisition_url = Some(match &job.request.source_url {
                         Some(url) => url.clone(),
                         None => {
-                            let selected = integrations::select_release(&self.config, &job.request)?;
+                            let selected =
+                                integrations::select_release(&self.config, &job.request)?;
                             job.release = Some(RecordedRelease {
                                 title: selected.title,
                                 profile: selected.profile,

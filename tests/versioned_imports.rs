@@ -1,9 +1,7 @@
 //! Upgrade imports preserve earlier library files and the original downloads.
 #![cfg(unix)]
 
-use mynou::organizer::{
-    import_file, import_versioned_file, import_versioned_file_cancellable,
-};
+use mynou::organizer::{import_file, import_versioned_file, import_versioned_file_cancellable};
 use mynou::store::Request;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -106,8 +104,7 @@ fn retry_accepts_identical_bytes_and_rejects_different_bytes_without_overwriting
     let different = directory.source("different.mkv", b"different upgrade data");
     let library = directory.0.join("library");
     let request = movie();
-    let destination =
-        import_versioned_file(&first, &library, &request, FIRST_REVISION).unwrap();
+    let destination = import_versioned_file(&first, &library, &request, FIRST_REVISION).unwrap();
 
     assert_eq!(
         import_versioned_file(&first, &library, &request, FIRST_REVISION).unwrap(),
@@ -117,12 +114,14 @@ fn retry_accepts_identical_bytes_and_rejects_different_bytes_without_overwriting
         import_versioned_file(&identical, &library, &request, FIRST_REVISION).unwrap(),
         destination
     );
-    let error =
-        import_versioned_file(&different, &library, &request, FIRST_REVISION).unwrap_err();
+    let error = import_versioned_file(&different, &library, &request, FIRST_REVISION).unwrap_err();
     assert!(error.contains("different"), "{error}");
     assert_eq!(fs::read(&destination).unwrap(), b"verified upgrade bytes");
     assert_eq!(fs::read(&different).unwrap(), b"different upgrade data");
-    assert_eq!(fs::read_dir(destination.parent().unwrap()).unwrap().count(), 1);
+    assert_eq!(
+        fs::read_dir(destination.parent().unwrap()).unwrap().count(),
+        1
+    );
 }
 
 #[test]
@@ -138,14 +137,16 @@ fn movie_and_series_upgrade_paths_preserve_existing_library_layouts() {
     for kind in ["episode", "series"] {
         request.kind = kind.to_owned();
         let old_path = import_file(&original, &library, &request).unwrap();
-        let new_path =
-            import_versioned_file(&upgrade, &library, &request, FIRST_REVISION).unwrap();
+        let new_path = import_versioned_file(&upgrade, &library, &request, FIRST_REVISION).unwrap();
         assert_eq!(old_path.parent(), new_path.parent());
         assert_eq!(
             new_path,
-            library.join("Example Series").join("Season 02").join(format!(
-                "Example Series - S02E07 [mynou-{FIRST_REVISION}].mp4"
-            ))
+            library
+                .join("Example Series")
+                .join("Season 02")
+                .join(format!(
+                    "Example Series - S02E07 [mynou-{FIRST_REVISION}].mp4"
+                ))
         );
         assert_eq!(fs::read(&old_path).unwrap(), b"old episode");
         assert_eq!(fs::read(&new_path).unwrap(), b"new episode");
@@ -153,13 +154,12 @@ fn movie_and_series_upgrade_paths_preserve_existing_library_layouts() {
 
     let mut request = movie();
     request.year = 0;
-    let destination =
-        import_versioned_file(&upgrade, &library, &request, SECOND_REVISION).unwrap();
+    let destination = import_versioned_file(&upgrade, &library, &request, SECOND_REVISION).unwrap();
     assert_eq!(
         destination,
-        library.join("Example Movie").join(format!(
-            "Example Movie [mynou-{SECOND_REVISION}].mp4"
-        ))
+        library
+            .join("Example Movie")
+            .join(format!("Example Movie [mynou-{SECOND_REVISION}].mp4"))
     );
 }
 
@@ -192,14 +192,9 @@ fn cancellation_preserves_existing_media_and_does_not_create_a_revision() {
     let old_path = import_file(&original, &library, &movie()).unwrap();
     let cancelled = AtomicBool::new(false);
 
-    let error = import_versioned_file_cancellable(
-        &source,
-        &library,
-        &movie(),
-        FIRST_REVISION,
-        &cancelled,
-    )
-    .unwrap_err();
+    let error =
+        import_versioned_file_cancellable(&source, &library, &movie(), FIRST_REVISION, &cancelled)
+            .unwrap_err();
     assert!(error.contains("cancelled"), "{error}");
     assert_eq!(fs::read(&old_path).unwrap(), b"original movie");
     assert_eq!(fs::read(&source).unwrap(), b"cancelled upgrade");
@@ -207,14 +202,8 @@ fn cancellation_preserves_existing_media_and_does_not_create_a_revision() {
 
     let missing = directory.0.join("missing-library");
     assert!(
-        import_versioned_file_cancellable(
-            &source,
-            &missing,
-            &movie(),
-            FIRST_REVISION,
-            &cancelled,
-        )
-        .is_err()
+        import_versioned_file_cancellable(&source, &missing, &movie(), FIRST_REVISION, &cancelled,)
+            .is_err()
     );
     assert!(!missing.exists());
 }
@@ -245,9 +234,9 @@ fn traversal_and_symlinks_cannot_redirect_upgrade_imports() {
     assert!(fs::read_dir(&outside).unwrap().next().is_none());
     assert_eq!(fs::read(&source).unwrap(), b"download bytes");
 
-    let destination = library.join("Example Movie (2026)").join(format!(
-        "Example Movie (2026) [mynou-{FIRST_REVISION}].mkv"
-    ));
+    let destination = library
+        .join("Example Movie (2026)")
+        .join(format!("Example Movie (2026) [mynou-{FIRST_REVISION}].mkv"));
     fs::create_dir_all(destination.parent().unwrap()).unwrap();
     let outside_file = directory.source("outside.mkv", b"external media");
     symlink(&outside_file, &destination).unwrap();
@@ -274,8 +263,7 @@ fn versioned_import_copies_across_filesystems_and_retries_without_mutation() {
     let bytes: Vec<u8> = (0..=255).cycle().take(270_000).collect();
     let source = source_directory.source("upgrade.mkv", &bytes);
     let library = library_directory.0.join("library");
-    let destination =
-        import_versioned_file(&source, &library, &movie(), FIRST_REVISION).unwrap();
+    let destination = import_versioned_file(&source, &library, &movie(), FIRST_REVISION).unwrap();
 
     assert_eq!(fs::read(&source).unwrap(), bytes);
     assert_eq!(fs::read(&destination).unwrap(), bytes);
@@ -287,5 +275,8 @@ fn versioned_import_copies_across_filesystems_and_retries_without_mutation() {
         import_versioned_file(&source, &library, &movie(), FIRST_REVISION).unwrap(),
         destination
     );
-    assert_eq!(fs::read_dir(destination.parent().unwrap()).unwrap().count(), 1);
+    assert_eq!(
+        fs::read_dir(destination.parent().unwrap()).unwrap().count(),
+        1
+    );
 }

@@ -279,7 +279,9 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
         _ => {
             if let Some(tail) = path.strip_prefix("/api/library/") {
                 let parts: Vec<_> = tail.split('/').collect();
-                if parts.len() != 2 || method != "POST" || parts[0].len() != 32
+                if parts.len() != 2
+                    || method != "POST"
+                    || parts[0].len() != 32
                     || !parts[0].bytes().all(|byte| byte.is_ascii_hexdigit())
                 {
                     return Ok((404, error("Unknown library route")));
@@ -287,13 +289,17 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
                 let job = match parts[1] {
                     "monitor" => {
                         let value = control_body(body, &["enabled"], false)?;
-                        let enabled = value.get("enabled").and_then(Value::as_bool)
+                        let enabled = value
+                            .get("enabled")
+                            .and_then(Value::as_bool)
                             .ok_or("enabled must be a boolean")?;
                         engine.set_monitored(parts[0], enabled)?
                     }
                     "baseline" => {
                         let value = control_body(body, &["release_title"], false)?;
-                        let title = value.get("release_title").and_then(Value::as_str)
+                        let title = value
+                            .get("release_title")
+                            .and_then(Value::as_str)
                             .ok_or("release_title must be a string")?;
                         engine.set_baseline(parts[0], title)?
                     }
@@ -344,7 +350,9 @@ fn control_body(body: &[u8], allowed: &[&str], allow_empty: bool) -> Result<Valu
     } else {
         json::parse(std::str::from_utf8(body).map_err(|_| "Request body is not valid UTF-8")?)?
     };
-    let fields = value.as_object().ok_or("Request body must be a JSON object")?;
+    let fields = value
+        .as_object()
+        .ok_or("Request body must be a JSON object")?;
     if fields.keys().any(|key| !allowed.contains(&key.as_str())) {
         return Err("Unexpected request field".into());
     }

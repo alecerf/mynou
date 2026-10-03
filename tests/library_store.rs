@@ -12,7 +12,9 @@ struct Directory(PathBuf);
 impl Directory {
     fn new() -> Self {
         let path = std::env::temp_dir().join(format!(
-            "mynou-library-store-{}-{}-{}", std::process::id(), store::now(),
+            "mynou-library-store-{}-{}-{}",
+            std::process::id(),
+            store::now(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&path).unwrap();
@@ -20,18 +22,29 @@ impl Directory {
     }
 }
 impl Drop for Directory {
-    fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
 }
 
 fn request(title: &str, url: Option<&str>) -> Request {
     Request {
-        kind: "movie".into(), title: title.into(), year: 2026, season: 0, episode: 0,
-        source_path: None, source_url: url.map(str::to_owned), tmdb_id: None,
+        kind: "movie".into(),
+        title: title.into(),
+        year: 2026,
+        season: 0,
+        episode: 0,
+        source_path: None,
+        source_url: url.map(str::to_owned),
+        tmdb_id: None,
     }
 }
 
 fn release(title: &str) -> RecordedRelease {
-    RecordedRelease { title: title.into(), profile: "hd".into() }
+    RecordedRelease {
+        title: title.into(),
+        profile: "hd".into(),
+    }
 }
 
 fn ready(store: &mut Store, title: &str, url: Option<&str>) -> Job {
@@ -40,7 +53,9 @@ fn ready(store: &mut Store, title: &str, url: Option<&str>) -> Job {
     job.progress = 1.0;
     job.imports = vec![format!("/library/{}.mkv", job.id)];
     store.update(job.clone()).unwrap();
-    store.set_baseline(&job.id, release("Example.2026.720p.WEB-DL.ENG")).unwrap()
+    store
+        .set_baseline(&job.id, release("Example.2026.720p.WEB-DL.ENG"))
+        .unwrap()
 }
 
 fn complete(store: &mut Store, mut job: Job) -> Job {
@@ -53,7 +68,8 @@ fn complete(store: &mut Store, mut job: Job) -> Job {
 
 fn edit_snapshot(path: &Path, edit: impl FnOnce(&mut Value)) {
     let bytes = fs::read(path).unwrap();
-    let mut value = json::parse(std::str::from_utf8(&bytes[16..bytes.len() - 32]).unwrap()).unwrap();
+    let mut value =
+        json::parse(std::str::from_utf8(&bytes[16..bytes.len() - 32]).unwrap()).unwrap();
     edit(&mut value);
     let payload = json::stringify(&value);
     let mut replacement = b"MYNOUS01".to_vec();
@@ -66,7 +82,11 @@ fn edit_snapshot(path: &Path, edit: impl FnOnce(&mut Value)) {
 fn edit_first_journal(path: &Path, edit: impl FnOnce(&mut Value)) {
     let bytes = fs::read(path).unwrap();
     let length = u32::from_le_bytes(bytes[16..20].try_into().unwrap()) as usize;
-    assert_eq!(bytes.len(), length + 116, "fixture has exactly one transaction");
+    assert_eq!(
+        bytes.len(),
+        length + 116,
+        "fixture has exactly one transaction"
+    );
     let mut value = json::parse(std::str::from_utf8(&bytes[84..84 + length]).unwrap()).unwrap();
     edit(&mut value);
     let payload = json::stringify(&value);
@@ -82,11 +102,15 @@ fn edit_last_journal(path: &Path, edit: impl FnOnce(&mut Value)) {
     let bytes = fs::read(path).unwrap();
     let mut offset = 0;
     loop {
-        let length = u32::from_le_bytes(bytes[offset + 16..offset + 20].try_into().unwrap()) as usize;
-        if offset + length + 116 == bytes.len() { break; }
+        let length =
+            u32::from_le_bytes(bytes[offset + 16..offset + 20].try_into().unwrap()) as usize;
+        if offset + length + 116 == bytes.len() {
+            break;
+        }
         offset += length + 116;
     }
-    let mut value = json::parse(std::str::from_utf8(&bytes[offset + 84..bytes.len() - 32]).unwrap()).unwrap();
+    let mut value =
+        json::parse(std::str::from_utf8(&bytes[offset + 84..bytes.len() - 32]).unwrap()).unwrap();
     edit(&mut value);
     let payload = json::stringify(&value);
     let mut frame = bytes[offset..offset + 52].to_vec();
@@ -100,8 +124,15 @@ fn edit_last_journal(path: &Path, edit: impl FnOnce(&mut Value)) {
 }
 
 fn remove_library_fields(job: &mut Value) {
-    let Value::Object(map) = job else { panic!("job object"); };
-    for key in ["release", "upgrade_parent", "monitored", "monitor_checked_at"] {
+    let Value::Object(map) = job else {
+        panic!("job object");
+    };
+    for key in [
+        "release",
+        "upgrade_parent",
+        "monitored",
+        "monitor_checked_at",
+    ] {
         map.remove(key);
     }
 }
@@ -147,9 +178,18 @@ fn bounded_release_metadata_and_legacy_json_defaults() {
     let valid = release(&"a".repeat(2_048));
     assert_eq!(RecordedRelease::from_json(&valid.to_json()).unwrap(), valid);
     for invalid in [
-        release(""), release("   "), release(&"a".repeat(2_049)), release("title\0suffix"),
-        RecordedRelease { title: "Example".into(), profile: "x".repeat(65) },
-        RecordedRelease { title: "Example".into(), profile: "café".into() },
+        release(""),
+        release("   "),
+        release(&"a".repeat(2_049)),
+        release("title\0suffix"),
+        RecordedRelease {
+            title: "Example".into(),
+            profile: "x".repeat(65),
+        },
+        RecordedRelease {
+            title: "Example".into(),
+            profile: "café".into(),
+        },
     ] {
         assert!(RecordedRelease::from_json(&invalid.to_json()).is_err());
     }
@@ -163,11 +203,15 @@ fn legacy_journal_and_snapshot_load_without_library_fields() {
         let directory = Directory::new();
         let mut store = Store::open(&directory.0).unwrap();
         let original = store.submit(request("Legacy", None)).unwrap();
-        if snapshot { store.compact().unwrap(); }
+        if snapshot {
+            store.compact().unwrap();
+        }
         drop(store);
         if snapshot {
             edit_snapshot(&directory.0.join("snapshot.bin"), |value| {
-                let Value::Array(jobs) = value.get_mut("jobs").unwrap() else { panic!("jobs"); };
+                let Value::Array(jobs) = value.get_mut("jobs").unwrap() else {
+                    panic!("jobs");
+                };
                 remove_library_fields(&mut jobs[0]);
             });
         } else {
@@ -184,7 +228,9 @@ fn legacy_journal_and_snapshot_load_without_library_fields() {
 fn legacy_ready_cancellation_replays_without_weakening_current_cancellation_rules() {
     let directory = Directory::new();
     let mut store = Store::open(&directory.0).unwrap();
-    let mut job = store.submit(request("Legacy ready cancellation", None)).unwrap();
+    let mut job = store
+        .submit(request("Legacy ready cancellation", None))
+        .unwrap();
     job.state = "ready".into();
     job.imports = vec!["/library/legacy.mkv".into()];
     store.update(job.clone()).unwrap();
@@ -197,9 +243,12 @@ fn legacy_ready_cancellation_replays_without_weakening_current_cancellation_rule
     let mut chain = [0_u8; 32];
     let mut rewritten = Vec::new();
     while offset < original.len() {
-        let length = u32::from_le_bytes(original[offset + 16..offset + 20].try_into().unwrap()) as usize;
+        let length =
+            u32::from_le_bytes(original[offset + 16..offset + 20].try_into().unwrap()) as usize;
         let end = offset + length + 116;
-        let mut value = json::parse(std::str::from_utf8(&original[offset + 84..offset + 84 + length]).unwrap()).unwrap();
+        let mut value =
+            json::parse(std::str::from_utf8(&original[offset + 84..offset + 84 + length]).unwrap())
+                .unwrap();
         remove_library_fields(value.get_mut("job").unwrap());
         if end == original.len() {
             value.get_mut("job").unwrap().insert("state", "cancelled");
@@ -228,7 +277,13 @@ fn pending_upgrade_preserves_parent_and_ready_child_survives_compaction_and_rest
     let directory = Directory::new();
     let mut store = Store::open(&directory.0).unwrap();
     let parent = ready(&mut store, "Example", None);
-    let child = store.submit_upgrade(&parent.id, request("example", Some("https://example.invalid/1080.torrent")), release("Example.2026.1080p.WEB-DL.ENG")).unwrap();
+    let child = store
+        .submit_upgrade(
+            &parent.id,
+            request("example", Some("https://example.invalid/1080.torrent")),
+            release("Example.2026.1080p.WEB-DL.ENG"),
+        )
+        .unwrap();
     assert_eq!(child.upgrade_parent.as_deref(), Some(parent.id.as_str()));
     assert_eq!(store.library_jobs(), vec![parent.clone()]);
     drop(store);
@@ -256,14 +311,21 @@ fn upgrade_source_deduplication_never_requeues_failed_or_cancelled_children() {
     let parent = ready(&mut store, "Example", None);
     let request = request("Example", Some("https://example.invalid/upgraded.torrent"));
     let candidate = release("Example.2026.1080p.WEB-DL.ENG");
-    let mut child = store.submit_upgrade(&parent.id, request.clone(), candidate.clone()).unwrap();
+    let mut child = store
+        .submit_upgrade(&parent.id, request.clone(), candidate.clone())
+        .unwrap();
     child.acquisition_url = request.source_url.clone();
     child.download_id = Some("partial-upgrade".into());
     child.files = vec!["/downloads/partial.mkv".into()];
     child.progress = 0.5;
     store.update(child.clone()).unwrap();
     let cancelled = store.cancel(&child.id).unwrap();
-    assert_eq!(store.submit_upgrade(&parent.id, request.clone(), candidate.clone()).unwrap(), cancelled);
+    assert_eq!(
+        store
+            .submit_upgrade(&parent.id, request.clone(), candidate.clone())
+            .unwrap(),
+        cancelled
+    );
     let retried = store.retry(&child.id).unwrap();
     assert_eq!(retried.release, Some(candidate.clone()));
     assert_eq!(retried.request.source_url, request.source_url);
@@ -277,7 +339,12 @@ fn upgrade_source_deduplication_never_requeues_failed_or_cancelled_children() {
     failed.next_attempt_at = 0;
     store.update(failed).unwrap();
     let failed = store.get(&child.id).unwrap();
-    assert_eq!(store.submit_upgrade(&parent.id, request, candidate).unwrap(), failed);
+    assert_eq!(
+        store
+            .submit_upgrade(&parent.id, request, candidate)
+            .unwrap(),
+        failed
+    );
     assert_eq!(store.library_jobs(), vec![parent]);
 }
 
@@ -286,22 +353,47 @@ fn scheduled_failed_upgrade_blocks_competitors_and_retry_obeys_current_monitorin
     let directory = Directory::new();
     let mut store = Store::open(&directory.0).unwrap();
     let parent = ready(&mut store, "Example", None);
-    let mut child = store.submit_upgrade(&parent.id, request("Example", Some("https://example.invalid/first.torrent")), release("Example.2026.1080p")).unwrap();
+    let mut child = store
+        .submit_upgrade(
+            &parent.id,
+            request("Example", Some("https://example.invalid/first.torrent")),
+            release("Example.2026.1080p"),
+        )
+        .unwrap();
     child.state = "failed".into();
     child.next_attempt_at = store::now() + 60;
     store.update(child.clone()).unwrap();
-    assert!(store.submit_upgrade(&parent.id, request("Example", Some("https://example.invalid/second.torrent")), release("Example.2026.2160p")).unwrap_err().contains("pending"));
+    assert!(
+        store
+            .submit_upgrade(
+                &parent.id,
+                request("Example", Some("https://example.invalid/second.torrent")),
+                release("Example.2026.2160p")
+            )
+            .unwrap_err()
+            .contains("pending")
+    );
     store.set_monitored(&parent.id, false).unwrap();
     assert!(store.retry(&child.id).unwrap_err().contains("monitored"));
     assert!(store.claim(store::now() + 120, 600).unwrap().is_none());
     store.set_monitored(&parent.id, true).unwrap();
     store.cancel(&child.id).unwrap();
-    let replacement = store.submit_upgrade(&parent.id, request("Example", Some("https://example.invalid/second.torrent")), release("Example.2026.2160p")).unwrap();
+    let replacement = store
+        .submit_upgrade(
+            &parent.id,
+            request("Example", Some("https://example.invalid/second.torrent")),
+            release("Example.2026.2160p"),
+        )
+        .unwrap();
     assert!(store.retry(&child.id).unwrap_err().contains("pending"));
     let replacement = complete(&mut store, replacement);
     assert!(store.retry(&child.id).unwrap_err().contains("obsolete"));
     assert!(store.set_monitored(&parent.id, true).is_err());
-    assert!(store.set_baseline(&parent.id, release("Alternative")).is_err());
+    assert!(
+        store
+            .set_baseline(&parent.id, release("Alternative"))
+            .is_err()
+    );
     assert_eq!(store.library_jobs(), vec![replacement]);
 }
 
@@ -310,9 +402,13 @@ fn claimed_upgrade_inherits_monitoring_disabled_during_acquisition() {
     let directory = Directory::new();
     let mut store = Store::open(&directory.0).unwrap();
     let parent = ready(&mut store, "Example", None);
-    let child = store.submit_upgrade(&parent.id,
-        request("Example", Some("https://example.invalid/in-flight.torrent")), release("Example.1080p")
-    ).unwrap();
+    let child = store
+        .submit_upgrade(
+            &parent.id,
+            request("Example", Some("https://example.invalid/in-flight.torrent")),
+            release("Example.1080p"),
+        )
+        .unwrap();
     let mut claimed = store.claim(store::now(), 600).unwrap().unwrap();
     assert_eq!(claimed.id, child.id);
     assert!(claimed.monitored);
@@ -331,7 +427,10 @@ fn claimed_upgrade_inherits_monitoring_disabled_during_acquisition() {
     assert_eq!(reopened.library_jobs(), vec![promoted.clone()]);
     reopened.compact().unwrap();
     drop(reopened);
-    assert_eq!(Store::open(&directory.0).unwrap().library_jobs(), vec![promoted]);
+    assert_eq!(
+        Store::open(&directory.0).unwrap().library_jobs(),
+        vec![promoted]
+    );
 }
 
 #[test]
@@ -339,13 +438,27 @@ fn unrelated_root_cannot_obsolete_a_pending_upgrade() {
     let directory = Directory::new();
     let mut store = Store::open(&directory.0).unwrap();
     let parent = ready(&mut store, "Example", None);
-    let child = store.submit_upgrade(&parent.id,
-        request("Example", Some("https://example.invalid/pending.torrent")), release("Example.1080p")
-    ).unwrap();
-    let mut unrelated = store.submit(request("Example", Some("https://example.invalid/unrelated.torrent"))).unwrap();
+    let child = store
+        .submit_upgrade(
+            &parent.id,
+            request("Example", Some("https://example.invalid/pending.torrent")),
+            release("Example.1080p"),
+        )
+        .unwrap();
+    let mut unrelated = store
+        .submit(request(
+            "Example",
+            Some("https://example.invalid/unrelated.torrent"),
+        ))
+        .unwrap();
     unrelated.state = "ready".into();
     unrelated.imports = vec!["/library/unrelated.mkv".into()];
-    assert!(store.check_ready_promotion(&unrelated).unwrap_err().contains("cancel the pending upgrade"));
+    assert!(
+        store
+            .check_ready_promotion(&unrelated)
+            .unwrap_err()
+            .contains("cancel the pending upgrade")
+    );
     let error = store.update(unrelated.clone()).unwrap_err();
     assert!(error.contains("cancel the pending upgrade"));
     assert_eq!(store.library_jobs(), vec![parent.clone()]);
@@ -370,19 +483,36 @@ fn read_only_store_loads_verified_state_without_file_or_permission_changes() {
     drop(store);
     fs::set_permissions(&directory.0, fs::Permissions::from_mode(0o750)).unwrap();
     let filenames = [".lock", "journal.bin", "snapshot.bin"];
-    let before: Vec<_> = filenames.iter().map(|name| {
-        let path = directory.0.join(name);
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
-        (fs::read(&path).unwrap(), fs::metadata(&path).unwrap().modified().unwrap())
-    }).collect();
+    let before: Vec<_> = filenames
+        .iter()
+        .map(|name| {
+            let path = directory.0.join(name);
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
+            (
+                fs::read(&path).unwrap(),
+                fs::metadata(&path).unwrap().modified().unwrap(),
+            )
+        })
+        .collect();
     let mut read_only = Store::open_read_only(&directory.0).unwrap();
     assert_eq!(read_only.library_jobs(), vec![parent]);
     assert_eq!(read_only.get(&pending.id).unwrap(), pending);
-    assert!(Store::open_read_only(&directory.0).is_err(), "read-only loading still excludes concurrent writers");
-    assert!(read_only.submit(request("Forbidden write", None)).unwrap_err().contains("read-only"));
+    assert!(
+        Store::open_read_only(&directory.0).is_err(),
+        "read-only loading still excludes concurrent writers"
+    );
+    assert!(
+        read_only
+            .submit(request("Forbidden write", None))
+            .unwrap_err()
+            .contains("read-only")
+    );
     assert!(read_only.compact().unwrap_err().contains("read-only"));
     drop(read_only);
-    assert_eq!(fs::metadata(&directory.0).unwrap().permissions().mode() & 0o777, 0o750);
+    assert_eq!(
+        fs::metadata(&directory.0).unwrap().permissions().mode() & 0o777,
+        0o750
+    );
     for (index, name) in filenames.iter().enumerate() {
         let path = directory.0.join(name);
         let metadata = fs::metadata(&path).unwrap();
@@ -422,20 +552,76 @@ fn read_only_store_refuses_interrupted_tail_without_truncating_it() {
 fn upgrade_requests_reject_unrelated_url_collisions_and_unusable_parents() {
     let directory = Directory::new();
     let mut store = Store::open(&directory.0).unwrap();
-    let parent = ready(&mut store, "Example", Some("https://example.invalid/original.torrent"));
+    let parent = ready(
+        &mut store,
+        "Example",
+        Some("https://example.invalid/original.torrent"),
+    );
     let collision = "https://example.invalid/shared.torrent";
-    store.submit(request("Unrelated movie", Some(collision))).unwrap();
-    assert!(store.submit_upgrade(&parent.id, request("Example", Some(collision)), release("Example.1080p")).unwrap_err().contains("unrelated"));
-    assert!(store.submit_upgrade(&parent.id, request("Example", parent.request.source_url.as_deref()), release("Example.1080p")).unwrap_err().contains("different"));
-    assert!(store.submit_upgrade(&parent.id, request("Other", Some("https://example.invalid/new.torrent")), release("Other.1080p")).is_err());
-    assert!(store.submit_upgrade(&parent.id, request("Example", None), release("Example.1080p")).is_err());
+    store
+        .submit(request("Unrelated movie", Some(collision)))
+        .unwrap();
+    assert!(
+        store
+            .submit_upgrade(
+                &parent.id,
+                request("Example", Some(collision)),
+                release("Example.1080p")
+            )
+            .unwrap_err()
+            .contains("unrelated")
+    );
+    assert!(
+        store
+            .submit_upgrade(
+                &parent.id,
+                request("Example", parent.request.source_url.as_deref()),
+                release("Example.1080p")
+            )
+            .unwrap_err()
+            .contains("different")
+    );
+    assert!(
+        store
+            .submit_upgrade(
+                &parent.id,
+                request("Other", Some("https://example.invalid/new.torrent")),
+                release("Other.1080p")
+            )
+            .is_err()
+    );
+    assert!(
+        store
+            .submit_upgrade(
+                &parent.id,
+                request("Example", None),
+                release("Example.1080p")
+            )
+            .is_err()
+    );
     let mut local = request("Example", None);
     local.source_path = Some("/downloads/example.mkv".into());
-    assert!(store.submit_upgrade(&parent.id, local, release("Example.1080p")).is_err());
+    assert!(
+        store
+            .submit_upgrade(&parent.id, local, release("Example.1080p"))
+            .is_err()
+    );
     store.set_monitored(&parent.id, false).unwrap();
-    assert!(store.submit_upgrade(&parent.id, request("Example", Some("https://example.invalid/new.torrent")), release("Example.1080p")).is_err());
+    assert!(
+        store
+            .submit_upgrade(
+                &parent.id,
+                request("Example", Some("https://example.invalid/new.torrent")),
+                release("Example.1080p")
+            )
+            .is_err()
+    );
     let pending = store.submit(request("Pending", None)).unwrap();
-    assert!(store.set_baseline(&pending.id, release("Pending.720p")).is_err());
+    assert!(
+        store
+            .set_baseline(&pending.id, release("Pending.720p"))
+            .is_err()
+    );
     assert!(store.set_monitored(&pending.id, false).is_err());
     assert!(store.record_monitor_check(&pending.id, 100).is_err());
 }
@@ -450,12 +636,23 @@ fn upgrade_cannot_repeat_an_automatically_selected_parent_acquisition() {
     parent.state = "ready".into();
     parent.imports = vec!["/library/example.mkv".into()];
     store.update(parent.clone()).unwrap();
-    assert!(store.submit_upgrade(&parent.id,
-        request("Example", parent.acquisition_url.as_deref()), release("Example.1080p")
-    ).unwrap_err().contains("different"));
-    let mut child = store.submit_upgrade(&parent.id,
-        request("Example", Some("https://example.invalid/new.torrent")), release("Example.1080p")
-    ).unwrap();
+    assert!(
+        store
+            .submit_upgrade(
+                &parent.id,
+                request("Example", parent.acquisition_url.as_deref()),
+                release("Example.1080p")
+            )
+            .unwrap_err()
+            .contains("different")
+    );
+    let mut child = store
+        .submit_upgrade(
+            &parent.id,
+            request("Example", Some("https://example.invalid/new.torrent")),
+            release("Example.1080p"),
+        )
+        .unwrap();
     child.acquisition_url = parent.acquisition_url;
     assert!(store.update(child).unwrap_err().contains("recorded source"));
 }
@@ -465,7 +662,13 @@ fn worker_cannot_rewrite_lineage_baseline_or_ready_import_provenance() {
     let directory = Directory::new();
     let mut store = Store::open(&directory.0).unwrap();
     let parent = ready(&mut store, "Example", None);
-    let child = store.submit_upgrade(&parent.id, request("Example", Some("https://example.invalid/new.torrent")), release("Example.1080p")).unwrap();
+    let child = store
+        .submit_upgrade(
+            &parent.id,
+            request("Example", Some("https://example.invalid/new.torrent")),
+            release("Example.1080p"),
+        )
+        .unwrap();
     let mut changed = child.clone();
     changed.upgrade_parent = None;
     assert!(store.update(changed).is_err());
@@ -510,12 +713,22 @@ fn automatic_retry_atomically_forgets_failed_search_provenance() {
 fn unrelated_ready_roots_use_creation_order_even_after_monitor_timestamp_changes() {
     let directory = Directory::new();
     let mut store = Store::open(&directory.0).unwrap();
-    let first = ready(&mut store, "Example", Some("https://example.invalid/first.torrent"));
-    let second = ready(&mut store, "Example", Some("https://example.invalid/second.torrent"));
+    let first = ready(
+        &mut store,
+        "Example",
+        Some("https://example.invalid/first.torrent"),
+    );
+    let second = ready(
+        &mut store,
+        "Example",
+        Some("https://example.invalid/second.torrent"),
+    );
     store.compact().unwrap();
     drop(store);
     edit_snapshot(&directory.0.join("snapshot.bin"), |value| {
-        let Value::Array(jobs) = value.get_mut("jobs").unwrap() else { panic!("jobs"); };
+        let Value::Array(jobs) = value.get_mut("jobs").unwrap() else {
+            panic!("jobs");
+        };
         for job in jobs {
             if job.get("id").and_then(Value::as_str) == Some(first.id.as_str()) {
                 job.insert("created_at", "100");
@@ -538,13 +751,25 @@ fn unrelated_ready_roots_use_creation_order_even_after_monitor_timestamp_changes
 fn unrelated_root_precedence_does_not_change_when_its_ready_child_has_a_lower_id() {
     let directory = Directory::new();
     let mut store = Store::open(&directory.0).unwrap();
-    let first = ready(&mut store, "Example", Some("https://example.invalid/first.torrent"));
-    let second = ready(&mut store, "Example", Some("https://example.invalid/second.torrent"));
+    let first = ready(
+        &mut store,
+        "Example",
+        Some("https://example.invalid/first.torrent"),
+    );
+    let second = ready(
+        &mut store,
+        "Example",
+        Some("https://example.invalid/second.torrent"),
+    );
     let parent = store.library_jobs().remove(0);
     let other = if parent.id == first.id { second } else { first };
-    let child = store.submit_upgrade(&parent.id,
-        request("Example", Some("https://example.invalid/child.torrent")), release("Example.1080p")
-    ).unwrap();
+    let child = store
+        .submit_upgrade(
+            &parent.id,
+            request("Example", Some("https://example.invalid/child.torrent")),
+            release("Example.1080p"),
+        )
+        .unwrap();
     let child = complete(&mut store, child);
     store.compact().unwrap();
     drop(store);
@@ -552,13 +777,20 @@ fn unrelated_root_precedence_does_not_change_when_its_ready_child_has_a_lower_id
     let other_id = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
     let child_id = "00000000000000000000000000000001";
     let mapped_id = |id: &str| -> String {
-        if id == parent.id { parent_id.into() }
-        else if id == other.id { other_id.into() }
-        else if id == child.id { child_id.into() }
-        else { panic!("unexpected fixture identity"); }
+        if id == parent.id {
+            parent_id.into()
+        } else if id == other.id {
+            other_id.into()
+        } else if id == child.id {
+            child_id.into()
+        } else {
+            panic!("unexpected fixture identity");
+        }
     };
     edit_snapshot(&directory.0.join("snapshot.bin"), |value| {
-        let Value::Array(jobs) = value.get_mut("jobs").unwrap() else { panic!("jobs"); };
+        let Value::Array(jobs) = value.get_mut("jobs").unwrap() else {
+            panic!("jobs");
+        };
         for job in jobs {
             let id = job.get("id").and_then(Value::as_str).unwrap().to_owned();
             job.insert("id", mapped_id(&id));
@@ -568,23 +800,39 @@ fn unrelated_root_precedence_does_not_change_when_its_ready_child_has_a_lower_id
                 job.insert("upgrade_parent", parent);
             }
         }
-        let Value::Array(events) = value.get_mut("events").unwrap() else { panic!("events"); };
+        let Value::Array(events) = value.get_mut("events").unwrap() else {
+            panic!("events");
+        };
         for event in events {
-            let id = event.get("job_id").and_then(Value::as_str).unwrap().to_owned();
+            let id = event
+                .get("job_id")
+                .and_then(Value::as_str)
+                .unwrap()
+                .to_owned();
             event.insert("job_id", mapped_id(&id));
         }
     });
     let mut reopened = Store::open(&directory.0).unwrap();
     assert_eq!(reopened.library_jobs()[0].id, child_id);
     assert!(reopened.set_monitored(other_id, false).is_err());
-    let grandchild = reopened.submit_upgrade(child_id,
-        request("Example", Some("https://example.invalid/grandchild.torrent")), release("Example.2160p")
-    ).unwrap();
+    let grandchild = reopened
+        .submit_upgrade(
+            child_id,
+            request(
+                "Example",
+                Some("https://example.invalid/grandchild.torrent"),
+            ),
+            release("Example.2160p"),
+        )
+        .unwrap();
     let grandchild = complete(&mut reopened, grandchild);
     assert_eq!(reopened.library_jobs(), vec![grandchild.clone()]);
     reopened.compact().unwrap();
     drop(reopened);
-    assert_eq!(Store::open(&directory.0).unwrap().library_jobs(), vec![grandchild]);
+    assert_eq!(
+        Store::open(&directory.0).unwrap().library_jobs(),
+        vec![grandchild]
+    );
 }
 
 #[test]
@@ -592,25 +840,42 @@ fn verified_snapshot_rejects_missing_parent_cross_media_and_cycles() {
     for damage in ["missing", "media", "cycle"] {
         let directory = Directory::new();
         let mut store = Store::open(&directory.0).unwrap();
-        let parent = ready(&mut store, "Example", Some("https://example.invalid/parent.torrent"));
-        let child = store.submit_upgrade(&parent.id, request("Example", Some("https://example.invalid/child.torrent")), release("Example.1080p")).unwrap();
+        let parent = ready(
+            &mut store,
+            "Example",
+            Some("https://example.invalid/parent.torrent"),
+        );
+        let child = store
+            .submit_upgrade(
+                &parent.id,
+                request("Example", Some("https://example.invalid/child.torrent")),
+                release("Example.1080p"),
+            )
+            .unwrap();
         let child = complete(&mut store, child);
         store.compact().unwrap();
         drop(store);
         edit_snapshot(&directory.0.join("snapshot.bin"), |value| {
-            let Value::Array(jobs) = value.get_mut("jobs").unwrap() else { panic!("jobs"); };
+            let Value::Array(jobs) = value.get_mut("jobs").unwrap() else {
+                panic!("jobs");
+            };
             for job in jobs {
                 let id = job.get("id").and_then(Value::as_str).unwrap().to_owned();
                 if id == child.id && damage == "missing" {
                     job.insert("upgrade_parent", "00000000000000000000000000000000");
                 } else if id == child.id && damage == "media" {
-                    job.get_mut("request").unwrap().insert("title", "Unrelated media");
+                    job.get_mut("request")
+                        .unwrap()
+                        .insert("title", "Unrelated media");
                 } else if id == parent.id && damage == "cycle" {
                     job.insert("upgrade_parent", child.id.clone());
                 }
             }
         });
-        assert!(Store::open(&directory.0).is_err(), "verified {damage} snapshot must be rejected");
+        assert!(
+            Store::open(&directory.0).is_err(),
+            "verified {damage} snapshot must be rejected"
+        );
     }
 }
 
@@ -618,7 +883,12 @@ fn verified_snapshot_rejects_missing_parent_cross_media_and_cycles() {
 fn verified_journal_rejects_fabricated_upgrade_parent() {
     let directory = Directory::new();
     let mut store = Store::open(&directory.0).unwrap();
-    store.submit(request("Example", Some("https://example.invalid/child.torrent"))).unwrap();
+    store
+        .submit(request(
+            "Example",
+            Some("https://example.invalid/child.torrent"),
+        ))
+        .unwrap();
     drop(store);
     edit_first_journal(&directory.0.join("journal.bin"), |value| {
         let job = value.get_mut("job").unwrap();
@@ -633,11 +903,25 @@ fn verified_journal_rejects_rewriting_an_existing_upgrade_parent() {
     let directory = Directory::new();
     let mut store = Store::open(&directory.0).unwrap();
     let parent = ready(&mut store, "Example", None);
-    let child = store.submit_upgrade(&parent.id, request("Example", Some("https://example.invalid/child.torrent")), release("Example.1080p")).unwrap();
+    let child = store
+        .submit_upgrade(
+            &parent.id,
+            request("Example", Some("https://example.invalid/child.torrent")),
+            release("Example.1080p"),
+        )
+        .unwrap();
     store.cancel(&child.id).unwrap();
     drop(store);
     edit_last_journal(&directory.0.join("journal.bin"), |value| {
-        value.get_mut("job").unwrap().insert("upgrade_parent", Value::Null);
+        value
+            .get_mut("job")
+            .unwrap()
+            .insert("upgrade_parent", Value::Null);
     });
-    assert!(Store::open(&directory.0).err().unwrap().contains("parent changed"));
+    assert!(
+        Store::open(&directory.0)
+            .err()
+            .unwrap()
+            .contains("parent changed")
+    );
 }

@@ -280,12 +280,23 @@ impl Request {
     pub fn media_key(&self) -> String {
         let identity = self.tmdb_id.map_or_else(
             || {
-                let title = self.title.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+                let title = self
+                    .title
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .to_lowercase();
                 format!("title:{title}:{}", self.year)
             },
             |id| format!("tmdb:{id}"),
         );
-        hex(&sha256(format!("{}\0{identity}\0{}\0{}", self.kind, self.season, self.episode).as_bytes()))
+        hex(&sha256(
+            format!(
+                "{}\0{identity}\0{}\0{}",
+                self.kind, self.season, self.episode
+            )
+            .as_bytes(),
+        ))
     }
 
     pub fn to_json(&self) -> Value {
@@ -327,11 +338,16 @@ impl Request {
 impl RecordedRelease {
     pub fn validate(&self) -> Result<()> {
         if self.title.trim().is_empty() || self.title.len() > 2_048 || self.title.contains('\0') {
-            return Err("recorded release title must contain 1 to 2,048 bytes without NUL".to_owned());
+            return Err(
+                "recorded release title must contain 1 to 2,048 bytes without NUL".to_owned(),
+            );
         }
         if self.profile.is_empty()
             || self.profile.len() > 64
-            || !self.profile.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+            || !self
+                .profile
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
         {
             return Err("recorded release profile must contain 1 to 64 ASCII letters, digits, hyphens or underscores".to_owned());
         }
@@ -347,7 +363,10 @@ impl RecordedRelease {
 
     pub fn from_json(value: &Value) -> Result<Self> {
         let map = fields(value)?;
-        let release = Self { title: string(map, "title")?, profile: string(map, "profile")? };
+        let release = Self {
+            title: string(map, "title")?,
+            profile: string(map, "profile")?,
+        };
         release.validate()?;
         Ok(release)
     }
@@ -374,7 +393,12 @@ impl Job {
             ("download_id", optional_string(&self.download_id)),
             ("lease_id", optional_string(&self.lease_id)),
             ("lease_until", number(self.lease_until)),
-            ("release", self.release.as_ref().map_or(Value::Null, RecordedRelease::to_json)),
+            (
+                "release",
+                self.release
+                    .as_ref()
+                    .map_or(Value::Null, RecordedRelease::to_json),
+            ),
             ("upgrade_parent", optional_string(&self.upgrade_parent)),
             ("monitored", Value::Bool(self.monitored)),
             ("monitor_checked_at", number(self.monitor_checked_at)),
@@ -414,14 +438,18 @@ impl Job {
                 Some(Value::Bool(value)) => *value,
                 Some(_) => return Err("invalid monitoring flag".to_owned()),
             },
-            monitor_checked_at: map.get("monitor_checked_at").map_or(Ok(0), |_| integer(map, "monitor_checked_at"))?,
+            monitor_checked_at: map
+                .get("monitor_checked_at")
+                .map_or(Ok(0), |_| integer(map, "monitor_checked_at"))?,
         };
         if job.id.len() != 32
             || !job.id.bytes().all(|byte| byte.is_ascii_hexdigit())
             || job.key != job.request.canonical_key()
             || job.state.is_empty()
             || job.state.len() > 64
-            || job.upgrade_parent.as_ref().is_some_and(|parent| parent.len() != 32 || !parent.bytes().all(|byte| byte.is_ascii_hexdigit()))
+            || job.upgrade_parent.as_ref().is_some_and(|parent| {
+                parent.len() != 32 || !parent.bytes().all(|byte| byte.is_ascii_hexdigit())
+            })
         {
             return Err("invalid job identity or state".to_owned());
         }
@@ -523,11 +551,14 @@ fn secure_file(path: &Path) -> Result<File> {
 fn read_only_file(path: &Path) -> Result<File> {
     reject_symlinks(path)?;
     if !fs::symlink_metadata(path)
-        .map_err(|error| format!("cannot access existing storage: {error}"))?.is_file()
+        .map_err(|error| format!("cannot access existing storage: {error}"))?
+        .is_file()
     {
         return Err("storage must be a regular file".to_owned());
     }
-    let file = private_options().read(true).open(path)
+    let file = private_options()
+        .read(true)
+        .open(path)
         .map_err(|error| format!("cannot open existing storage for reading: {error}"))?;
     let metadata = file.metadata().map_err(|error| error.to_string())?;
     if !metadata.is_file() {
@@ -629,22 +660,37 @@ impl Store {
         #[cfg(unix)]
         {
             if directory.file_name().is_none()
-                || directory.components().any(|component| matches!(component, std::path::Component::ParentDir))
+                || directory
+                    .components()
+                    .any(|component| matches!(component, std::path::Component::ParentDir))
             {
                 return Err("storage requires a clean directory path without traversal".to_owned());
             }
             reject_symlinks(directory)?;
-            if !fs::metadata(directory).map_err(|error| format!("cannot access existing storage: {error}"))?.is_dir() {
+            if !fs::metadata(directory)
+                .map_err(|error| format!("cannot access existing storage: {error}"))?
+                .is_dir()
+            {
                 return Err("storage must be a directory".to_owned());
             }
             let lock = read_only_file(&directory.join(".lock"))?;
-            lock.try_lock().map_err(|error| format!("storage is already open or cannot be locked: {error}"))?;
+            lock.try_lock()
+                .map_err(|error| format!("storage is already open or cannot be locked: {error}"))?;
             let journal = read_only_file(&directory.join("journal.bin"))?;
             let mut store = Self {
-                directory: directory.to_owned(), _lock: lock, journal,
-                jobs: BTreeMap::new(), by_key: BTreeMap::new(), events: VecDeque::new(),
-                sequence: 0, chain: [0; 32], poisoned: false, journal_bytes: 0,
-                next_compaction_at: COMPACTION_BYTES, maintenance_error: None, read_only: true,
+                directory: directory.to_owned(),
+                _lock: lock,
+                journal,
+                jobs: BTreeMap::new(),
+                by_key: BTreeMap::new(),
+                events: VecDeque::new(),
+                sequence: 0,
+                chain: [0; 32],
+                poisoned: false,
+                journal_bytes: 0,
+                next_compaction_at: COMPACTION_BYTES,
+                maintenance_error: None,
+                read_only: true,
             };
             store.load_snapshot()?;
             store.replay()?;
@@ -672,7 +718,9 @@ impl Store {
     /// Lineage tips are resolved in O(n log n); monitoring timestamps do not
     /// affect which unrelated root represents the current library entry.
     pub fn library_jobs(&self) -> Vec<Job> {
-        let replaced: BTreeSet<&str> = self.jobs.values()
+        let replaced: BTreeSet<&str> = self
+            .jobs
+            .values()
             .filter(|job| job.state == "ready" && !job.imports.is_empty())
             .filter_map(|job| job.upgrade_parent.as_deref())
             .collect();
@@ -683,22 +731,35 @@ impl Store {
             let mut path = Vec::new();
             let mut cursor = job;
             let root = loop {
-                if let Some(root) = roots.get(cursor.id.as_str()) { break *root; }
+                if let Some(root) = roots.get(cursor.id.as_str()) {
+                    break *root;
+                }
                 path.push(cursor.id.as_str());
-                match cursor.upgrade_parent.as_deref().and_then(|parent| self.jobs.get(parent)) {
+                match cursor
+                    .upgrade_parent
+                    .as_deref()
+                    .and_then(|parent| self.jobs.get(parent))
+                {
                     Some(parent) => cursor = parent,
                     None => break cursor,
                 }
             };
-            for id in path { roots.insert(id, root); }
+            for id in path {
+                roots.insert(id, root);
+            }
         }
         let mut current: BTreeMap<String, (&Job, &Job)> = BTreeMap::new();
-        for job in self.jobs.values().filter(|job| job.state == "ready" && !job.imports.is_empty() && !replaced.contains(job.id.as_str())) {
+        for job in self.jobs.values().filter(|job| {
+            job.state == "ready" && !job.imports.is_empty() && !replaced.contains(job.id.as_str())
+        }) {
             let key = job.request.media_key();
             let root = roots.get(job.id.as_str()).copied().unwrap_or(job);
             match current.get(&key) {
-                Some((previous, _)) if (previous.created_at, &previous.id) >= (root.created_at, &root.id) => {}
-                _ => { current.insert(key, (root, job)); }
+                Some((previous, _))
+                    if (previous.created_at, &previous.id) >= (root.created_at, &root.id) => {}
+                _ => {
+                    current.insert(key, (root, job));
+                }
             }
         }
         let mut jobs: Vec<_> = current.into_values().map(|(_, job)| job.clone()).collect();
@@ -717,41 +778,75 @@ impl Store {
     }
 
     fn upgrade_eligible(&self, job: &Job) -> bool {
-        let Some(parent_id) = &job.upgrade_parent else { return true; };
+        let Some(parent_id) = &job.upgrade_parent else {
+            return true;
+        };
         self.jobs.get(parent_id).is_some_and(|parent| {
-            parent.state == "ready" && !parent.imports.is_empty()
-                && parent.release.is_some() && parent.monitored && self.is_library_tip(parent)
+            parent.state == "ready"
+                && !parent.imports.is_empty()
+                && parent.release.is_some()
+                && parent.monitored
+                && self.is_library_tip(parent)
         })
     }
 
-    pub fn submit_upgrade(&mut self, parent_id: &str, request: Request, release: RecordedRelease) -> Result<Job> {
+    pub fn submit_upgrade(
+        &mut self,
+        parent_id: &str,
+        request: Request,
+        release: RecordedRelease,
+    ) -> Result<Job> {
         request.validate()?;
         release.validate()?;
-        let parent = self.get(parent_id).ok_or_else(|| "unknown upgrade parent".to_owned())?;
+        let parent = self
+            .get(parent_id)
+            .ok_or_else(|| "unknown upgrade parent".to_owned())?;
         if request.source_path.is_some() || request.source_url.is_none() {
-            return Err("an upgrade requires an explicit source URL without a source path".to_owned());
+            return Err(
+                "an upgrade requires an explicit source URL without a source path".to_owned(),
+            );
         }
         if request.media_key() != parent.request.media_key() {
             return Err("upgrade media identity differs from its parent".to_owned());
         }
         let url = request.source_url.as_deref().unwrap_or_default();
-        if parent.request.source_url.as_deref() == Some(url) || parent.acquisition_url.as_deref() == Some(url) {
+        if parent.request.source_url.as_deref() == Some(url)
+            || parent.acquisition_url.as_deref() == Some(url)
+        {
             return Err("an upgrade must use a different acquisition URL".to_owned());
         }
         let key = request.canonical_key();
         if let Some(id) = self.by_key.get(&key) {
-            let existing = self.get(id).ok_or_else(|| "inconsistent job index".to_owned())?;
-            if existing.upgrade_parent.as_deref() != Some(parent_id) || existing.request.media_key() != request.media_key() {
-                return Err("upgrade source URL is already owned by an unrelated request".to_owned());
+            let existing = self
+                .get(id)
+                .ok_or_else(|| "inconsistent job index".to_owned())?;
+            if existing.upgrade_parent.as_deref() != Some(parent_id)
+                || existing.request.media_key() != request.media_key()
+            {
+                return Err(
+                    "upgrade source URL is already owned by an unrelated request".to_owned(),
+                );
             }
             // Idempotent submissions never reset cancellation or exhausted retries.
             return Ok(existing);
         }
-        if parent.state != "ready" || parent.imports.is_empty() || parent.release.is_none() || !parent.monitored || !self.is_library_tip(&parent) {
-            return Err("an upgrade requires a monitored current library import with a release baseline".to_owned());
+        if parent.state != "ready"
+            || parent.imports.is_empty()
+            || parent.release.is_none()
+            || !parent.monitored
+            || !self.is_library_tip(&parent)
+        {
+            return Err(
+                "an upgrade requires a monitored current library import with a release baseline"
+                    .to_owned(),
+            );
         }
         let media_key = request.media_key();
-        if self.jobs.values().any(|job| Self::pending_upgrade(job) && job.request.media_key() == media_key) {
+        if self
+            .jobs
+            .values()
+            .any(|job| Self::pending_upgrade(job) && job.request.media_key() == media_key)
+        {
             return Err("an upgrade for this media is already pending".to_owned());
         }
         if self.jobs.len() >= MAX_JOBS {
@@ -759,19 +854,35 @@ impl Store {
         }
         let at = now();
         let job = Job {
-            id: random_id()?, key, request, state: "queued".to_owned(), progress: 0.0,
-            files: Vec::new(), imports: Vec::new(), attempts: 0, last_error: None,
-            created_at: at, updated_at: at, next_attempt_at: 0, acquisition_url: None,
-            download_id: None, lease_id: None, lease_until: 0,
-            release: Some(release), upgrade_parent: Some(parent.id),
-            monitored: parent.monitored, monitor_checked_at: 0,
+            id: random_id()?,
+            key,
+            request,
+            state: "queued".to_owned(),
+            progress: 0.0,
+            files: Vec::new(),
+            imports: Vec::new(),
+            attempts: 0,
+            last_error: None,
+            created_at: at,
+            updated_at: at,
+            next_attempt_at: 0,
+            acquisition_url: None,
+            download_id: None,
+            lease_id: None,
+            lease_until: 0,
+            release: Some(release),
+            upgrade_parent: Some(parent.id),
+            monitored: parent.monitored,
+            monitor_checked_at: 0,
         };
         self.commit(job.clone(), "library upgrade recorded")?;
         Ok(job)
     }
 
     pub fn record_monitor_check(&mut self, id: &str, at: u64) -> Result<()> {
-        let mut job = self.get(id).ok_or_else(|| "unknown library entry".to_owned())?;
+        let mut job = self
+            .get(id)
+            .ok_or_else(|| "unknown library entry".to_owned())?;
         if !self.is_library_tip(&job) {
             return Err("monitor checks require a current library import".to_owned());
         }
@@ -781,7 +892,9 @@ impl Store {
     }
 
     pub fn set_monitored(&mut self, id: &str, monitored: bool) -> Result<Job> {
-        let mut job = self.get(id).ok_or_else(|| "unknown library entry".to_owned())?;
+        let mut job = self
+            .get(id)
+            .ok_or_else(|| "unknown library entry".to_owned())?;
         if !self.is_library_tip(&job) {
             return Err("monitoring changes require a current library import".to_owned());
         }
@@ -793,9 +906,14 @@ impl Store {
 
     pub fn set_baseline(&mut self, id: &str, release: RecordedRelease) -> Result<Job> {
         release.validate()?;
-        let mut job = self.get(id).ok_or_else(|| "unknown library entry".to_owned())?;
+        let mut job = self
+            .get(id)
+            .ok_or_else(|| "unknown library entry".to_owned())?;
         if !self.is_library_tip(&job) || job.release.is_some() {
-            return Err("a release baseline can only be added to a current import without a baseline".to_owned());
+            return Err(
+                "a release baseline can only be added to a current import without a baseline"
+                    .to_owned(),
+            );
         }
         job.release = Some(release);
         job.updated_at = now();
@@ -861,15 +979,19 @@ impl Store {
         {
             return Err("job identity is immutable".to_owned());
         }
-        let ready_upgrade = current.state != "ready" && job.state == "ready" && current.upgrade_parent.is_some();
+        let ready_upgrade =
+            current.state != "ready" && job.state == "ready" && current.upgrade_parent.is_some();
         if ready_upgrade {
-            let parent = self.jobs.get(current.upgrade_parent.as_deref().unwrap_or_default())
+            let parent = self
+                .jobs
+                .get(current.upgrade_parent.as_deref().unwrap_or_default())
                 .ok_or_else(|| "missing upgrade parent".to_owned())?;
             // A user can disable monitoring while a claimed acquisition is in
             // flight. Promotion inherits that current choice atomically.
             job.monitored = parent.monitored;
         }
-        if (!ready_upgrade && current.monitored != job.monitored) || current.monitor_checked_at != job.monitor_checked_at
+        if (!ready_upgrade && current.monitored != job.monitored)
+            || current.monitor_checked_at != job.monitor_checked_at
             || (current.release.is_some() && current.release != job.release)
             || (current.state == "ready" && current.release != job.release)
         {
@@ -913,9 +1035,12 @@ impl Store {
         let deadline = at
             .checked_add(ttl)
             .ok_or_else(|| "lease duration too large".to_owned())?;
-        let upgrade_parents: BTreeSet<String> = self.library_jobs().into_iter()
+        let upgrade_parents: BTreeSet<String> = self
+            .library_jobs()
+            .into_iter()
             .filter(|job| job.monitored && job.release.is_some())
-            .map(|job| job.id).collect();
+            .map(|job| job.id)
+            .collect();
         let candidate = self
             .jobs
             .values()
@@ -924,7 +1049,10 @@ impl Store {
                     && (job.state != "failed" || job.next_attempt_at > 0)
                     && job.next_attempt_at <= at
                     && (job.lease_id.is_none() || job.lease_until <= at)
-                    && job.upgrade_parent.as_ref().is_none_or(|parent| upgrade_parents.contains(parent))
+                    && job
+                        .upgrade_parent
+                        .as_ref()
+                        .is_none_or(|parent| upgrade_parents.contains(parent))
             })
             .min_by(|a, b| (a.created_at, &a.id).cmp(&(b.created_at, &b.id)))
             .cloned();
@@ -995,7 +1123,11 @@ impl Store {
                 return Err("the upgrade parent is obsolete or no longer monitored".to_owned());
             }
             let media_key = job.request.media_key();
-            if self.jobs.values().any(|other| other.id != job.id && Self::pending_upgrade(other) && other.request.media_key() == media_key) {
+            if self.jobs.values().any(|other| {
+                other.id != job.id
+                    && Self::pending_upgrade(other)
+                    && other.request.media_key() == media_key
+            }) {
                 return Err("another upgrade for this media is already pending".to_owned());
             }
         }
@@ -1005,7 +1137,10 @@ impl Store {
         job.last_error = None;
         job.next_attempt_at = 0;
         job.updated_at = now();
-        if job.imports.is_empty() && job.request.source_path.is_none() && job.request.source_url.is_none() {
+        if job.imports.is_empty()
+            && job.request.source_path.is_none()
+            && job.request.source_url.is_none()
+        {
             // A fresh automatic search must not inherit the previous release's
             // URL or baseline, even if the process stops immediately afterward.
             job.release = None;
@@ -1022,17 +1157,42 @@ impl Store {
     /// Callers can turn a rejected promotion into a durable processing failure
     /// before relinquishing their lease. Validation repeats this check at commit.
     pub fn check_ready_promotion(&self, job: &Job) -> Result<()> {
-        if job.state != "ready" || self.jobs.get(&job.id).is_some_and(|current| current.state == "ready") {
+        if job.state != "ready"
+            || self
+                .jobs
+                .get(&job.id)
+                .is_some_and(|current| current.state == "ready")
+        {
             return Ok(());
         }
         let media_key = job.request.media_key();
         if let Some(parent_id) = &job.upgrade_parent {
-            let parent = self.jobs.get(parent_id).ok_or_else(|| "missing upgrade parent".to_owned())?;
-            if !self.is_library_tip(parent) || self.jobs.values().any(|other| other.id != job.id && Self::pending_upgrade(other) && other.request.media_key() == media_key) {
-                return Err("an upgrade cannot replace an obsolete parent or a competing pending upgrade".to_owned());
+            let parent = self
+                .jobs
+                .get(parent_id)
+                .ok_or_else(|| "missing upgrade parent".to_owned())?;
+            if !self.is_library_tip(parent)
+                || self.jobs.values().any(|other| {
+                    other.id != job.id
+                        && Self::pending_upgrade(other)
+                        && other.request.media_key() == media_key
+                })
+            {
+                return Err(
+                    "an upgrade cannot replace an obsolete parent or a competing pending upgrade"
+                        .to_owned(),
+                );
             }
-        } else if !job.imports.is_empty() && self.jobs.values().any(|other| Self::pending_upgrade(other) && other.request.media_key() == media_key) {
-            return Err("cancel the pending upgrade before importing an unrelated root for the same media".to_owned());
+        } else if !job.imports.is_empty()
+            && self
+                .jobs
+                .values()
+                .any(|other| Self::pending_upgrade(other) && other.request.media_key() == media_key)
+        {
+            return Err(
+                "cancel the pending upgrade before importing an unrelated root for the same media"
+                    .to_owned(),
+            );
         }
         Ok(())
     }
@@ -1041,12 +1201,21 @@ impl Store {
         if let Some(release) = &job.release {
             release.validate()?;
         }
-        let Some(parent_id) = &job.upgrade_parent else { return Ok(()); };
-        let parent = self.jobs.get(parent_id).ok_or_else(|| "missing upgrade parent".to_owned())?;
+        let Some(parent_id) = &job.upgrade_parent else {
+            return Ok(());
+        };
+        let parent = self
+            .jobs
+            .get(parent_id)
+            .ok_or_else(|| "missing upgrade parent".to_owned())?;
         if parent_id == &job.id
             || parent.request.media_key() != job.request.media_key()
-            || parent.state != "ready" || parent.imports.is_empty() || parent.release.is_none()
-            || job.release.is_none() || job.request.source_path.is_some() || job.request.source_url.is_none()
+            || parent.state != "ready"
+            || parent.imports.is_empty()
+            || parent.release.is_none()
+            || job.release.is_none()
+            || job.request.source_path.is_some()
+            || job.request.source_url.is_none()
             || (job.state == "ready" && job.imports.is_empty())
         {
             return Err("invalid upgrade lineage or release baseline".to_owned());
@@ -1055,7 +1224,11 @@ impl Store {
         if url == parent.request.source_url.as_deref() || url == parent.acquisition_url.as_deref() {
             return Err("upgrade acquisition repeats its parent's source URL".to_owned());
         }
-        if job.acquisition_url.as_deref().is_some_and(|acquisition| Some(acquisition) != url) {
+        if job
+            .acquisition_url
+            .as_deref()
+            .is_some_and(|acquisition| Some(acquisition) != url)
+        {
             return Err("upgrade acquisition differs from its recorded source URL".to_owned());
         }
         Ok(())
@@ -1064,43 +1237,66 @@ impl Store {
     fn validate_transaction(&self, job: &Job, legacy_record: bool) -> Result<()> {
         self.validate_lineage(job)?;
         if let Some(current) = self.jobs.get(&job.id) {
-            if current.key != job.key || current.request != job.request
-                || current.created_at != job.created_at || current.upgrade_parent != job.upgrade_parent
+            if current.key != job.key
+                || current.request != job.request
+                || current.created_at != job.created_at
+                || current.upgrade_parent != job.upgrade_parent
             {
                 return Err("job identity or upgrade parent changed".to_owned());
             }
             let fresh_search = matches!(current.state.as_str(), "failed" | "cancelled")
-                && job.state == "queued" && job.imports.is_empty()
-                && job.request.source_path.is_none() && job.request.source_url.is_none()
-                && job.release.is_none() && job.acquisition_url.is_none()
-                && job.download_id.is_none() && job.files.is_empty() && job.progress == 0.0;
+                && job.state == "queued"
+                && job.imports.is_empty()
+                && job.request.source_path.is_none()
+                && job.request.source_url.is_none()
+                && job.release.is_none()
+                && job.acquisition_url.is_none()
+                && job.download_id.is_none()
+                && job.files.is_empty()
+                && job.progress == 0.0;
             if current.release.is_some() && current.release != job.release && !fresh_search {
                 return Err("recorded release is immutable".to_owned());
             }
             if job.monitor_checked_at < current.monitor_checked_at {
                 return Err("monitor check timestamp moved backwards".to_owned());
             }
-            let ready_upgrade = current.state != "ready" && job.state == "ready" && current.upgrade_parent.is_some();
+            let ready_upgrade = current.state != "ready"
+                && job.state == "ready"
+                && current.upgrade_parent.is_some();
             if ready_upgrade {
-                let parent = self.jobs.get(current.upgrade_parent.as_deref().unwrap_or_default())
+                let parent = self
+                    .jobs
+                    .get(current.upgrade_parent.as_deref().unwrap_or_default())
                     .ok_or_else(|| "missing upgrade parent".to_owned())?;
                 if job.monitored != parent.monitored {
-                    return Err("promoted upgrade monitoring differs from its current parent".to_owned());
+                    return Err(
+                        "promoted upgrade monitoring differs from its current parent".to_owned(),
+                    );
                 }
             } else if current.state != "ready" && current.monitored != job.monitored {
                 return Err("monitoring can only change on a ready library import".to_owned());
             }
-            let legacy_cancellation = legacy_record && job.state == "cancelled"
-                && current.release.is_none() && current.upgrade_parent.is_none()
-                && job.release.is_none() && job.upgrade_parent.is_none()
-                && current.monitor_checked_at == 0 && current.monitored
-                && !self.jobs.values().any(|other| other.upgrade_parent.as_deref() == Some(current.id.as_str()));
+            let legacy_cancellation = legacy_record
+                && job.state == "cancelled"
+                && current.release.is_none()
+                && current.upgrade_parent.is_none()
+                && job.release.is_none()
+                && job.upgrade_parent.is_none()
+                && current.monitor_checked_at == 0
+                && current.monitored
+                && !self
+                    .jobs
+                    .values()
+                    .any(|other| other.upgrade_parent.as_deref() == Some(current.id.as_str()));
             if current.state == "ready" && job.state != "ready" && !legacy_cancellation {
                 return Err("a ready import cannot change state".to_owned());
             }
-            if current.state == "ready" && (current.files != job.files || current.imports != job.imports
-                || current.acquisition_url != job.acquisition_url || current.download_id != job.download_id
-                || current.progress != job.progress)
+            if current.state == "ready"
+                && (current.files != job.files
+                    || current.imports != job.imports
+                    || current.acquisition_url != job.acquisition_url
+                    || current.download_id != job.download_id
+                    || current.progress != job.progress)
             {
                 return Err("ready import provenance is immutable".to_owned());
             }
@@ -1114,7 +1310,11 @@ impl Store {
         }
         if Self::pending_upgrade(job) {
             let media_key = job.request.media_key();
-            if self.jobs.values().any(|other| other.id != job.id && Self::pending_upgrade(other) && other.request.media_key() == media_key) {
+            if self.jobs.values().any(|other| {
+                other.id != job.id
+                    && Self::pending_upgrade(other)
+                    && other.request.media_key() == media_key
+            }) {
                 return Err("multiple pending upgrades for the same media".to_owned());
             }
             let was_pending = self.jobs.get(&job.id).is_some_and(Self::pending_upgrade);
@@ -1133,7 +1333,8 @@ impl Store {
             if Self::pending_upgrade(job) && !pending.insert(job.request.media_key()) {
                 return Err("multiple pending upgrades in snapshot".to_owned());
             }
-            if job.state == "ready" && let Some(parent) = &job.upgrade_parent
+            if job.state == "ready"
+                && let Some(parent) = &job.upgrade_parent
                 && !ready_parents.insert(parent)
             {
                 return Err("multiple ready children of the same upgrade parent".to_owned());
@@ -1148,7 +1349,10 @@ impl Store {
                 if !path.insert(cursor) {
                     return Err("cycle in upgrade lineage".to_owned());
                 }
-                let current = self.jobs.get(cursor).ok_or_else(|| "missing upgrade lineage reference".to_owned())?;
+                let current = self
+                    .jobs
+                    .get(cursor)
+                    .ok_or_else(|| "missing upgrade lineage reference".to_owned())?;
                 match current.upgrade_parent.as_deref() {
                     Some(parent) => cursor = parent,
                     None => break,
@@ -1158,7 +1362,11 @@ impl Store {
         }
         let tips: BTreeSet<String> = self.library_jobs().into_iter().map(|job| job.id).collect();
         for job in self.jobs.values().filter(|job| Self::pending_upgrade(job)) {
-            if job.upgrade_parent.as_ref().is_none_or(|parent| !tips.contains(parent)) {
+            if job
+                .upgrade_parent
+                .as_ref()
+                .is_none_or(|parent| !tips.contains(parent))
+            {
                 return Err("pending upgrade has an obsolete parent in snapshot".to_owned());
             }
         }
@@ -1479,8 +1687,14 @@ impl Store {
                 let map = fields(&value)?;
                 let job_value = field(map, "job")?;
                 let job_map = fields(job_value)?;
-                let legacy_record = ["release", "upgrade_parent", "monitored", "monitor_checked_at"]
-                    .iter().all(|key| !job_map.contains_key(*key));
+                let legacy_record = [
+                    "release",
+                    "upgrade_parent",
+                    "monitored",
+                    "monitor_checked_at",
+                ]
+                .iter()
+                .all(|key| !job_map.contains_key(*key));
                 let job = Job::from_json(job_value)?;
                 let event = Event::from_json(field(map, "event")?)?;
                 if event.id != sequence
@@ -1490,7 +1704,8 @@ impl Store {
                 {
                     return Err("inconsistent journal transaction".to_owned());
                 }
-                self.validate_transaction(&job, legacy_record).map_err(|error| format!("invalid journal job: {error}"))?;
+                self.validate_transaction(&job, legacy_record)
+                    .map_err(|error| format!("invalid journal job: {error}"))?;
                 self.by_key.insert(job.key.clone(), job.id.clone());
                 self.jobs.insert(job.id.clone(), job);
                 if self.jobs.len() > MAX_JOBS {

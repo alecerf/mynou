@@ -74,7 +74,9 @@ impl Args {
         }
         let allowed: &[&str] = match command.as_str() {
             "init" | "doctor" | "serve" | "jobs" | "status" | "sync" | "show" | "events"
-            | "retry" | "cancel" | "healthcheck" | "library" | "monitor" | "unmonitor" => &["config", "help"],
+            | "retry" | "cancel" | "healthcheck" | "library" | "monitor" | "unmonitor" => {
+                &["config", "help"]
+            }
             "upgrades" => &["config", "help", "apply"],
             "baseline" => &["config", "help", "release-title"],
             "submit" => &[
@@ -95,7 +97,17 @@ impl Args {
             }
         }
         let required = usize::from(
-            ["analyze", "show", "events", "retry", "cancel", "monitor", "unmonitor", "baseline"].contains(&command.as_str()),
+            [
+                "analyze",
+                "show",
+                "events",
+                "retry",
+                "cancel",
+                "monitor",
+                "unmonitor",
+                "baseline",
+            ]
+            .contains(&command.as_str()),
         );
         if !options.contains_key("help") && positions.len() != required {
             return Err(format!("{command} requires {required} argument(s)"));
@@ -474,7 +486,10 @@ fn execute(args: Args) -> Result<()> {
                 output(&call(&config, &path, "GET", "/api/library", None)?);
             } else if existing_store(&config)? {
                 let store = Store::open_read_only(&config.store_dir)?;
-                output(&mynou::library::describe(&store.library_jobs(), &store.list()));
+                output(&mynou::library::describe(
+                    &store.library_jobs(),
+                    &store.list(),
+                ));
             } else {
                 output(&Value::Array(Vec::new()));
             }
@@ -501,19 +516,30 @@ fn execute(args: Args) -> Result<()> {
             let baseline = args.command == "baseline";
             let mut body = Value::object();
             if baseline {
-                body.insert("release_title", args.options.get("release-title")
-                    .ok_or("--release-title is required")?.clone());
+                body.insert(
+                    "release_title",
+                    args.options
+                        .get("release-title")
+                        .ok_or("--release-title is required")?
+                        .clone(),
+                );
             } else {
                 body.insert("enabled", args.command == "monitor");
             }
             if online {
-                let route = format!("/api/library/{id}/{}", if baseline { "baseline" } else { "monitor" });
+                let route = format!(
+                    "/api/library/{id}/{}",
+                    if baseline { "baseline" } else { "monitor" }
+                );
                 output(&call(&config, &path, "POST", &route, Some(&body))?);
             } else {
                 let mut store = Store::open(&config.store_dir)?;
                 let job = if baseline {
                     let job = store.get(id).ok_or("Unknown library entry")?;
-                    let title = args.options.get("release-title").ok_or("--release-title is required")?;
+                    let title = args
+                        .options
+                        .get("release-title")
+                        .ok_or("--release-title is required")?;
                     let release = mynou::library::validate_baseline(&config, &job, title)?;
                     store.set_baseline(id, release)?
                 } else {

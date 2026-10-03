@@ -7,7 +7,12 @@ use crate::{
     media,
     store::{self, Job, RecordedRelease, reject_symlinks},
 };
-use std::{fs, path::Path, sync::atomic::Ordering, time::{Duration, Instant}};
+use std::{
+    fs,
+    path::Path,
+    sync::atomic::Ordering,
+    time::{Duration, Instant},
+};
 
 fn pending_for<'a>(jobs: &'a [Job], media_key: &str) -> Option<&'a Job> {
     jobs.iter().find(|job| {
@@ -19,11 +24,12 @@ fn pending_for<'a>(jobs: &'a [Job], media_key: &str) -> Option<&'a Job> {
 }
 
 fn import_exists(job: &Job) -> bool {
-    !job.imports.is_empty() && job.imports.iter().all(|file| {
-        let path = Path::new(file);
-        reject_symlinks(path).is_ok()
-            && fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file())
-    })
+    !job.imports.is_empty()
+        && job.imports.iter().all(|file| {
+            let path = Path::new(file);
+            reject_symlinks(path).is_ok()
+                && fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file())
+        })
 }
 
 fn entry(job: &Job, action: &str) -> Value {
@@ -35,15 +41,23 @@ fn entry(job: &Job, action: &str) -> Value {
 }
 
 pub fn describe(current: &[Job], all: &[Job]) -> Value {
-    Value::Array(current.iter().map(|job| {
-        let mut value = public_job(job);
-        value.insert("media_key", job.request.media_key());
-        value.insert("baseline_required", job.release.is_none());
-        value.insert("imports_present", import_exists(job));
-        value.insert("pending_upgrade_id", pending_for(all, &job.request.media_key())
-            .map_or(Value::Null, |child| child.id.clone().into()));
-        value
-    }).collect())
+    Value::Array(
+        current
+            .iter()
+            .map(|job| {
+                let mut value = public_job(job);
+                value.insert("media_key", job.request.media_key());
+                value.insert("baseline_required", job.release.is_none());
+                value.insert("imports_present", import_exists(job));
+                value.insert(
+                    "pending_upgrade_id",
+                    pending_for(all, &job.request.media_key())
+                        .map_or(Value::Null, |child| child.id.clone().into()),
+                );
+                value
+            })
+            .collect(),
+    )
 }
 
 fn report(apply: bool, entries: Vec<Value>, queued: u32, limited: bool, counts: [u32; 3]) -> Value {
@@ -66,7 +80,11 @@ pub fn empty_preview() -> Value {
     report(false, Vec::new(), 0, false, [0; 3])
 }
 
-pub fn validate_baseline(config: &crate::config::Config, job: &Job, title: &str) -> Result<RecordedRelease> {
+pub fn validate_baseline(
+    config: &crate::config::Config,
+    job: &Job,
+    title: &str,
+) -> Result<RecordedRelease> {
     if title.is_empty() || title.len() > 2_048 || title.chars().any(char::is_control) {
         return Err("Baseline: release title must contain 1 to 2048 bytes without controls".into());
     }
@@ -85,7 +103,10 @@ pub fn validate_baseline(config: &crate::config::Config, job: &Job, title: &str)
     }
     let (profile, _) = config.selection.profile(&job.request.kind)?;
     // A legacy baseline may describe a quality outside today's allowed profile.
-    Ok(RecordedRelease { title: title.into(), profile: profile.into() })
+    Ok(RecordedRelease {
+        title: title.into(),
+        profile: profile.into(),
+    })
 }
 
 impl Engine {
@@ -122,7 +143,9 @@ impl Engine {
         if apply && self.read_only {
             return Err("Read-only preview cannot apply upgrades".into());
         }
-        let _guard = self.upgrade_lock.try_lock()
+        let _guard = self
+            .upgrade_lock
+            .try_lock()
             .map_err(|_| "An upgrade check is already in progress")?;
         let at = store::now();
         let started = Instant::now();
@@ -141,23 +164,32 @@ impl Engine {
                 baseline_required += 1;
             } else if !matches!(job.request.kind.as_str(), "movie" | "episode") {
                 unsupported += 1;
-            } else if force || job.monitor_checked_at > at
+            } else if force
+                || job.monitor_checked_at > at
                 || at.saturating_sub(job.monitor_checked_at) >= self.config.monitoring.interval_secs
             {
                 eligible.push(job);
             }
         }
-        eligible.sort_by(|a, b| a.monitor_checked_at.cmp(&b.monitor_checked_at)
-            .then_with(|| a.id.cmp(&b.id)));
+        eligible.sort_by(|a, b| {
+            a.monitor_checked_at
+                .cmp(&b.monitor_checked_at)
+                .then_with(|| a.id.cmp(&b.id))
+        });
         let mut limited = eligible.len() > self.config.monitoring.max_checks;
         let mut entries = Vec::new();
         let mut queued = 0_u32;
         for job in eligible.into_iter().take(self.config.monitoring.max_checks) {
-            if self.stopped.load(Ordering::Acquire) || started.elapsed() >= Duration::from_secs(90) {
+            if self.stopped.load(Ordering::Acquire) || started.elapsed() >= Duration::from_secs(90)
+            {
                 limited = true;
                 break;
             }
-            if apply && lock(&self.store)?.record_monitor_check(&job.id, at).is_err() {
+            if apply
+                && lock(&self.store)?
+                    .record_monitor_check(&job.id, at)
+                    .is_err()
+            {
                 entries.push(entry(&job, "entry_changed"));
                 continue;
             }
@@ -183,7 +215,9 @@ impl Engine {
             request.source_path = None;
             request.source_url = None;
             let selected = match integrations::select_release_before(
-                &self.config, &request, started + Duration::from_secs(90)
+                &self.config,
+                &request,
+                started + Duration::from_secs(90),
             ) {
                 Ok(selected) => selected,
                 Err(_) => {
@@ -214,14 +248,24 @@ impl Engine {
                 continue;
             }
             request.source_url = Some(selected.url);
-            let release = RecordedRelease { title: selected.title, profile: selected.profile };
+            let release = RecordedRelease {
+                title: selected.title,
+                profile: selected.profile,
+            };
             let mut store = lock(&self.store)?;
             let before = store.list().len();
             match store.submit_upgrade(&job.id, request, release) {
                 Ok(child) => {
                     let created = store.list().len() > before;
                     queued += u32::from(created);
-                    item.insert("action", if created { "queued" } else { "candidate_already_recorded" });
+                    item.insert(
+                        "action",
+                        if created {
+                            "queued"
+                        } else {
+                            "candidate_already_recorded"
+                        },
+                    );
                     item.insert("upgrade_job_id", child.id);
                     item.insert("upgrade_state", child.state);
                 }
@@ -233,7 +277,12 @@ impl Engine {
             }
             entries.push(item);
         }
-        Ok(report(apply, entries, queued, limited,
-            [unmonitored, baseline_required, unsupported]))
+        Ok(report(
+            apply,
+            entries,
+            queued,
+            limited,
+            [unmonitored, baseline_required, unsupported],
+        ))
     }
 }

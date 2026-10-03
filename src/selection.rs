@@ -242,10 +242,11 @@ impl Profile {
         let cutoff = self
             .cutoff_resolution
             .and_then(|cutoff| self.resolutions.iter().position(|value| *value == cutoff));
-        let current = assessment
-            .attributes
-            .resolution
-            .and_then(|resolution| self.resolutions.iter().position(|value| *value == resolution));
+        let current = assessment.attributes.resolution.and_then(|resolution| {
+            self.resolutions
+                .iter()
+                .position(|value| *value == resolution)
+        });
         match (current, cutoff) {
             (Some(current), Some(cutoff)) => current <= cutoff,
             _ => false,

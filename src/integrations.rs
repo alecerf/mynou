@@ -1761,8 +1761,8 @@ mod tests {
     fn expired_search_budget_returns_before_contacting_a_configured_indexer() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
-        let mut config = config::from_json(&config::default_json(), std::path::Path::new("."))
-            .unwrap();
+        let mut config =
+            config::from_json(&config::default_json(), std::path::Path::new(".")).unwrap();
         config.sources.push(Source {
             name: "private-indexer-label".into(),
             kind: "json".into(),

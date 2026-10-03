@@ -245,10 +245,8 @@ fn episode_upgrade_requires_the_new_part_in_the_correct_season_and_episode() {
 
 #[test]
 fn longest_mapping_uses_components_and_does_not_match_a_similar_directory_name() {
-    let (fixture, items) = Fixture::mutable_library(vec![movie_entry(
-        &["/plex/all/movies/Fixture/new.mp4"],
-        42,
-    )]);
+    let (fixture, items) =
+        Fixture::mutable_library(vec![movie_entry(&["/plex/all/movies/Fixture/new.mp4"], 42)]);
     let mut config = fixture.plex_config();
     config.plex.path_mappings = vec![
         PathMapping {
@@ -366,7 +364,10 @@ fn structured_selection_agrees_with_search_and_the_redacted_public_preview() {
     });
     let selected = integrations::select_release(&config, &movie()).unwrap();
     let report = integrations::search_report(&config, &movie()).unwrap();
-    assert_eq!(selected.url, integrations::search(&config, &movie()).unwrap());
+    assert_eq!(
+        selected.url,
+        integrations::search(&config, &movie()).unwrap()
+    );
     assert_eq!(selected.title, "Fixture.Movie.2024.1080p");
     assert_eq!(selected.profile, "cinema");
     assert!(selected.assessment.accepted);
@@ -380,11 +381,12 @@ fn structured_selection_agrees_with_search_and_the_redacted_public_preview() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|candidate| {
-            candidate.get("id").and_then(Value::as_str) == Some(selected.id.as_str())
-        })
+        .find(|candidate| candidate.get("id").and_then(Value::as_str) == Some(selected.id.as_str()))
         .unwrap();
-    assert_eq!(chosen.get("assessment"), Some(&selected.assessment.to_json()));
+    assert_eq!(
+        chosen.get("assessment"),
+        Some(&selected.assessment.to_json())
+    );
     let rendered = json::stringify(&report);
     for secret in ["https://", "private.invalid", "must-stay-private", "apikey"] {
         assert!(!rendered.contains(secret));
@@ -396,7 +398,8 @@ fn structured_selection_agrees_with_search_and_the_redacted_public_preview() {
         if manual_file {
             manual.source_path = Some("/private/manual.mp4".into());
         } else {
-            manual.source_url = Some("https://private.invalid/manual?apikey=must-stay-private".into());
+            manual.source_url =
+                Some("https://private.invalid/manual?apikey=must-stay-private".into());
         }
         let error = match integrations::select_release(&config, &manual) {
             Ok(_) => panic!("manual sources must not acquire a release assessment"),
@@ -513,7 +516,10 @@ fn import_confirmation_keeps_pagination_and_rejects_an_ignored_offset() {
 fn invalid_plex_metadata_and_http_failures_do_not_expose_service_secrets() {
     let fixture = Fixture::open(|_, _| {
         let mut show = movie_entry(&[], 42);
-        show.insert("ratingKey", "https://private.invalid?token=must-stay-private");
+        show.insert(
+            "ratingKey",
+            "https://private.invalid?token=must-stay-private",
+        );
         (200, container(vec![show], None))
     });
     let config = fixture.plex_config();
