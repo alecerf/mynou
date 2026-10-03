@@ -1,0 +1,33 @@
+name: Rust std uniquement
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Installer Rust 1.99.0
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
+          rustup default 1.99.0
+      - name: Vérifier l’absence de dépendances
+        run: |
+          cargo metadata --offline --locked --format-version 1 > metadata.json
+          graph="$(cargo tree --all-features --target all --edges all --offline --locked --prefix none)"
+          test "${graph%% (*}" = "mynou v0.6.0"
+          test "$graph" = "${graph//$'\n'/}"
+      - name: Formatage
+        run: cargo fmt --all --check
+      - name: Analyse statique
+        run: cargo clippy --all-targets --offline --locked -- -D warnings
+      - name: Tests
+        run: cargo test --all-targets --offline --locked
+      - name: Construction
+        run: cargo build --release --offline --locked
+      - name: Démo autonome
+        run: cargo run --release --offline --locked -- demo --dir /tmp/mynou-demo
+      - name: Image statique
+        run: docker build --tag mynou:ci .

@@ -1,0 +1,9 @@
+**
+!Cargo.toml
+!Cargo.lock
+!Dockerfile
+!deploy-compose.yaml
+!examples
+!examples/demo.mp4
+!src
+!src/**

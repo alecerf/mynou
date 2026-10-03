@@ -1,0 +1,29 @@
+[package]
+name = "mynou"
+version = "0.6.0"
+edition = "2024"
+rust-version = "1.99"
+description = "Automatisation multimédia en Rust, bibliothèque standard seule"
+publish = false
+
+[lib]
+name = "mynou"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mynou"
+path = "src/main.rs"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"

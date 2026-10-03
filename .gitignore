@@ -1,0 +1,11 @@
+/target/
+/bin/
+/.env
+/mynou.json
+/mynou-docker/
+/mynou-demo/
+/data/
+/state/
+/downloads/
+/library/
+*.tmp

@@ -1,0 +1,1 @@
+Mynou public-key verification fixture, independent test data.

@@ -1,0 +1,559 @@
+//! Orchestration durable. Les verrous ne couvrent jamais les imports ni Plex.
+use crate::{
+    Result,
+    config::Config,
+    integrations,
+    json::Value,
+    media, organizer,
+    store::{self, Job, Request, Store},
+    torrent::Client,
+};
+use std::{
+    path::Path,
+    sync::{
+        Arc, Mutex, MutexGuard,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread::{self, JoinHandle},
+    time::Duration,
+};
+
+pub struct Engine {
+    pub config: Config,
+    pub store: Mutex<Store>,
+    downloads: Option<Client>,
+    sync_lock: Mutex<()>,
+    pub stopped: AtomicBool,
+    pub last_sync_error: Mutex<Option<String>>,
+}
+
+pub fn lock<T>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>> {
+    mutex
+        .lock()
+        .map_err(|_| "Verrou interne empoisonné".to_owned())
+}
+
+impl Engine {
+    pub fn open(config: Config) -> Result<Arc<Self>> {
+        let store = Store::open(&config.store_dir)?;
+        let downloads = if config.downloads_enabled {
+            let client = Client::open(config.downloads.clone())?;
+            let jobs = store.list();
+            let active: std::collections::BTreeSet<_> = jobs
+                .iter()
+                .filter(|job| job.state != "cancelled")
+                .filter_map(|job| job.download_id.as_deref())
+                .collect();
+            let known: std::collections::BTreeSet<_> = client
+                .statuses()?
+                .into_iter()
+                .map(|status| status.id)
+                .collect();
+            for id in jobs
+                .iter()
+                .filter(|job| job.state == "cancelled")
+                .filter_map(|job| job.download_id.as_deref())
+            {
+                if !active.contains(id) && known.contains(id) {
+                    client.cancel(id)?;
+                }
+            }
+            Some(client)
+        } else {
+            None
+        };
+        Ok(Arc::new(Self {
+            config,
+            store: Mutex::new(store),
+            downloads,
+            sync_lock: Mutex::new(()),
+            stopped: AtomicBool::new(false),
+            last_sync_error: Mutex::new(None),
+        }))
+    }
+
+    pub fn submit(&self, request: Request) -> Result<Vec<Job>> {
+        let requests = integrations::expand(&self.config, &request)?;
+        let mut store = lock(&self.store)?;
+        requests.into_iter().map(|r| store.submit(r)).collect()
+    }
+
+    pub fn sync(&self) -> Result<usize> {
+        let _guard = lock(&self.sync_lock)?;
+        let requests = integrations::watchlist(&self.config)?;
+        let mut store = lock(&self.store)?;
+        let before = store.list().len();
+        for request in requests {
+            store.submit(request)?;
+        }
+        Ok(store.list().len() - before)
+    }
+
+    pub fn cancel(&self, id: &str) -> Result<Job> {
+        let (job, shared) = {
+            let mut store = lock(&self.store)?;
+            let job = store.cancel(id)?;
+            let shared = store.list().iter().any(|other| {
+                other.id != id
+                    && other.download_id.is_some()
+                    && other.download_id == job.download_id
+                    && other.state != "cancelled"
+            });
+            (job, shared)
+        };
+        if !shared && let (Some(client), Some(id)) = (&self.downloads, &job.download_id) {
+            client.cancel(id)?;
+        }
+        Ok(job)
+    }
+
+    pub fn retry(&self, id: &str) -> Result<Job> {
+        let mut store = lock(&self.store)?;
+        let mut job = store.retry(id)?;
+        if job.imports.is_empty()
+            && job.request.source_path.is_none()
+            && job.request.source_url.is_none()
+        {
+            let old_id = job.download_id.take();
+            job.acquisition_url = None;
+            job.files.clear();
+            job.progress = 0.0;
+            store.update(job.clone())?;
+            let shared = old_id.as_ref().is_some_and(|id| {
+                store.list().iter().any(|other| {
+                    other.id != job.id
+                        && other.download_id.as_ref() == Some(id)
+                        && other.state != "cancelled"
+                })
+            });
+            drop(store);
+            if !shared
+                && let (Some(client), Some(old_id)) = (&self.downloads, old_id)
+                && client.statuses()?.iter().any(|status| status.id == old_id)
+            {
+                client.cancel(&old_id)?;
+            }
+        }
+        Ok(job)
+    }
+
+    pub fn status(&self) -> Result<Value> {
+        let (jobs, maintenance_error) = {
+            let store = lock(&self.store)?;
+            (store.list(), store.maintenance_error().map(str::to_owned))
+        };
+        let mut v = Value::object();
+        v.insert("version", env!("CARGO_PKG_VERSION"));
+        v.insert("jobs", Value::Number(jobs.len() as f64));
+        v.insert(
+            "active",
+            Value::Number(
+                jobs.iter()
+                    .filter(|j| !matches!(j.state.as_str(), "ready" | "failed" | "cancelled"))
+                    .count() as f64,
+            ),
+        );
+        v.insert(
+            "ready",
+            Value::Number(jobs.iter().filter(|j| j.state == "ready").count() as f64),
+        );
+        v.insert("stopped", self.stopped.load(Ordering::Acquire));
+        v.insert(
+            "maintenance_error",
+            maintenance_error.map_or(Value::Null, Value::String),
+        );
+        v.insert(
+            "last_sync_error",
+            lock(&self.last_sync_error)?
+                .clone()
+                .map_or(Value::Null, Value::String),
+        );
+        if let Some(client) = &self.downloads {
+            v.insert("peer_port", client.listen_port() as u32);
+            let statuses = client.statuses()?;
+            v.insert("torrents", Value::Number(statuses.len() as f64));
+            let mut downloaded = 0_u64;
+            let mut uploaded = 0_u64;
+            for status in statuses {
+                let (d, u) = client.transfer_stats(&status.id)?;
+                downloaded = downloaded.saturating_add(d);
+                uploaded = uploaded.saturating_add(u);
+            }
+            v.insert("downloaded_bytes", downloaded.to_string());
+            v.insert("uploaded_bytes", uploaded.to_string());
+        }
+        Ok(v)
+    }
+
+    pub fn start(self: &Arc<Self>) -> Workers {
+        let mut handles = Vec::new();
+        for _ in 0..self.config.workers {
+            let engine = self.clone();
+            handles.push(thread::spawn(move || {
+                while !engine.stopped.load(Ordering::Acquire) {
+                    match engine.tick() {
+                        Ok(true) => {}
+                        Ok(false) => engine.wait(engine.config.poll_interval_ms),
+                        Err(error) => {
+                            eprintln!("mynou : {error}");
+                            engine.wait(1000);
+                        }
+                    }
+                }
+            }));
+        }
+        if self.config.plex.enabled {
+            let engine = self.clone();
+            handles.push(thread::spawn(move || {
+                while !engine.stopped.load(Ordering::Acquire) {
+                    let error = engine.sync().err();
+                    if let Ok(mut current) = engine.last_sync_error.lock() {
+                        *current = error;
+                    }
+                    engine.wait(60_000);
+                }
+            }));
+        }
+        Workers {
+            engine: self.clone(),
+            handles,
+        }
+    }
+
+    fn wait(&self, millis: u64) {
+        for _ in 0..millis.div_ceil(100) {
+            if self.stopped.load(Ordering::Acquire) {
+                break;
+            }
+            thread::sleep(Duration::from_millis(millis.min(100)));
+        }
+    }
+
+    /// Exécute une étape et libère le bail avant toute attente du prochain tour.
+    pub fn tick(self: &Arc<Self>) -> Result<bool> {
+        let Some(mut job) =
+            lock(&self.store)?.claim(store::now(), self.config.lease_duration_secs)?
+        else {
+            return Ok(false);
+        };
+        let lease = job.lease_id.clone().ok_or("Bail absent")?;
+        let heartbeat = Heartbeat::start(self.clone(), job.id.clone(), lease.clone());
+        let result = self.advance(&mut job, &heartbeat.active);
+        heartbeat.finish();
+        // Une annulation ou un autre propriétaire du bail rend ce résultat caduc.
+        let mut store = lock(&self.store)?;
+        let Some(current) = store.get(&job.id) else {
+            return Ok(true);
+        };
+        if current.lease_id.as_deref() != Some(&lease) || current.lease_until <= store::now() {
+            return Ok(true);
+        }
+        if let Err(error) = result {
+            job.attempts = job.attempts.saturating_add(1);
+            job.last_error = Some(error);
+            job.state = "failed".into();
+            job.next_attempt_at = if job.attempts < self.config.max_attempts {
+                store::now().saturating_add((1_u64 << job.attempts.min(10)).min(900))
+            } else {
+                0
+            };
+        }
+        store.update(job.clone())?;
+        if !matches!(job.state.as_str(), "ready" | "failed" | "cancelled") {
+            store.release_lease(&job.id, &lease)?;
+        }
+        Ok(true)
+    }
+
+    fn advance(&self, job: &mut Job, active: &AtomicBool) -> Result<()> {
+        if !active.load(Ordering::Acquire) {
+            return Err("Traitement interrompu".into());
+        }
+        job.last_error = None;
+        if job.state == "processing"
+            && job.imports.is_empty()
+            && let Some(id) = &job.download_id
+        {
+            self.downloads
+                .as_ref()
+                .ok_or("Téléchargements désactivés")?
+                .resume(id)?;
+        }
+        if self.config.plex.enabled
+            && job.imports.is_empty()
+            && job.files.is_empty()
+            && job.acquisition_url.is_none()
+            && job.request.source_path.is_none()
+            && job.request.source_url.is_none()
+            && integrations::available(&self.config, &job.request)?
+        {
+            job.state = "ready".into();
+            job.progress = 1.0;
+            job.next_attempt_at = 0;
+            return Ok(());
+        }
+        // Un import confirmé est repris sans recopier après une interruption.
+        if !job.imports.is_empty() {
+            if self.config.plex.enabled {
+                if job.state != "scanning" {
+                    integrations::refresh(&self.config, &job.request)?;
+                }
+                job.state = "scanning".into();
+                if !integrations::available(&self.config, &job.request)? {
+                    job.next_attempt_at = store::now().saturating_add(5);
+                    return Ok(());
+                }
+            }
+            job.state = "ready".into();
+            job.progress = 1.0;
+            job.next_attempt_at = 0;
+            return Ok(());
+        }
+        if job.imports.is_empty() && !job.files.is_empty() && job.download_id.is_some() {
+            let client = self
+                .downloads
+                .as_ref()
+                .ok_or("Téléchargements désactivés")?;
+            let status =
+                client.check(job.download_id.as_deref().ok_or("Téléchargement absent")?)?;
+            if !status.ready {
+                job.state = "downloading".into();
+                job.progress = status.progress;
+                job.next_attempt_at = store::now().saturating_add(1);
+                return Ok(());
+            }
+        }
+        if job.files.is_empty() {
+            if let Some(path) = &job.request.source_path {
+                job.files.push(path.clone());
+            } else {
+                let client = self
+                    .downloads
+                    .as_ref()
+                    .ok_or("Téléchargements désactivés")?;
+                if job.acquisition_url.is_none() {
+                    job.acquisition_url = Some(match &job.request.source_url {
+                        Some(url) => url.clone(),
+                        None => integrations::search(&self.config, &job.request)?,
+                    });
+                    // Sauvegarder la sélection avant l'effet de bord réseau.
+                    lock(&self.store)?.update(job.clone())?;
+                }
+                let status = if let Some(id) = &job.download_id {
+                    client.check(id)?
+                } else {
+                    // La lecture des métadonnées précède le verrou interne du client.
+                    client.ensure(job.acquisition_url.as_deref().ok_or("Source absente")?)?
+                };
+                job.download_id = Some(status.id.clone());
+                job.progress = status.progress;
+                job.state = "downloading".into();
+                // ensure peut lire une URL avant de créer le transfert. Une
+                // annulation pendant cette lecture doit aussi suspendre l'ID
+                // apparu après elle, sans dépendre du délai du heartbeat.
+                {
+                    let mut store = lock(&self.store)?;
+                    let current = store.get(&job.id).ok_or("Tâche absente")?;
+                    if current.lease_id != job.lease_id || current.lease_until <= store::now() {
+                        if current.state == "cancelled"
+                            && current.acquisition_url == job.acquisition_url
+                            && current.download_id.is_none()
+                        {
+                            let mut cancelled = current;
+                            cancelled.download_id = Some(status.id.clone());
+                            store.update(cancelled)?;
+                        }
+                        let shared = store.list().iter().any(|other| {
+                            other.state != "cancelled"
+                                && (other.download_id.as_deref() == Some(&status.id)
+                                    || (other.acquisition_url.is_some()
+                                        && other.acquisition_url == job.acquisition_url))
+                        });
+                        if !shared {
+                            // Écriture locale seulement : aucun appel réseau
+                            // pendant la décision protégée par le verrou.
+                            client.cancel(&status.id)?;
+                        }
+                        return Err("Bail de traitement périmé".into());
+                    }
+                    // Publier l'identité avant de poursuivre : cancel voit
+                    // désormais toujours le transfert associé à cette tâche.
+                    store.update(job.clone())?;
+                }
+                if !status.ready {
+                    job.next_attempt_at = store::now().saturating_add(1);
+                    return Ok(());
+                }
+                job.files = status
+                    .files
+                    .iter()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect();
+            }
+        }
+        job.state = "importing".into();
+        lock(&self.store)?.update(job.clone())?;
+        let mut candidates = Vec::new();
+        for file in &job.files {
+            let p = Path::new(file);
+            if !active.load(Ordering::Acquire) {
+                return Err("Traitement interrompu".into());
+            }
+            // Ignorer les fichiers annexes des torrents, analyser chaque média retenu.
+            let ext = p
+                .extension()
+                .and_then(|v| v.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            if [
+                "mp4", "m4v", "mov", "mkv", "webm", "avi", "wav", "flac", "mp3",
+            ]
+            .contains(&ext.as_str())
+            {
+                let analysis = media::analyze(p)?;
+                if matches!(job.request.kind.as_str(), "movie" | "episode")
+                    && analysis.video_streams.is_empty()
+                {
+                    continue;
+                }
+                let score = (!analysis.video_streams.is_empty(), analysis.size_bytes);
+                candidates.push((score, p));
+            }
+        }
+        // Une demande concerne un film ou un épisode ; le plus grand média évite
+        // d'importer les samples et de mélanger plusieurs épisodes d'un pack.
+        candidates.sort_by_key(|c| c.0);
+        let source = candidates
+            .last()
+            .ok_or("Aucun média pris en charge dans cette demande")?
+            .1;
+        if job.request.kind == "episode" && job.files.len() > 1 {
+            let marker = format!("s{:02}e{:02}", job.request.season, job.request.episode);
+            let matching: Vec<_> = candidates
+                .iter()
+                .filter(|(_, p)| {
+                    p.file_name()
+                        .is_some_and(|n| n.to_string_lossy().to_lowercase().contains(&marker))
+                })
+                .collect();
+            if matching.len() != 1 {
+                return Err(
+                    "Pack ambigu : un seul fichier correspondant à l'épisode est requis".into(),
+                );
+            }
+            let path = matching[0].1;
+            let imported = organizer::import_file_cancellable(
+                path,
+                &self.config.series_root,
+                &job.request,
+                active,
+            )?;
+            job.imports.push(imported.to_string_lossy().into_owned());
+        } else {
+            let root = if job.request.kind == "episode" {
+                &self.config.series_root
+            } else {
+                &self.config.movies_root
+            };
+            let imported = organizer::import_file_cancellable(source, root, &job.request, active)?;
+            job.imports.push(imported.to_string_lossy().into_owned());
+        }
+        job.progress = 1.0;
+        job.state = "imported".into();
+        job.next_attempt_at = 0;
+        // L'import est durable avant de demander un scan, qui sera repris au tour suivant.
+        Ok(())
+    }
+}
+
+pub struct Workers {
+    engine: Arc<Engine>,
+    handles: Vec<JoinHandle<()>>,
+}
+impl Drop for Workers {
+    fn drop(&mut self) {
+        self.engine.stopped.store(true, Ordering::Release);
+        for h in self.handles.drain(..) {
+            let _ = h.join();
+        }
+    }
+}
+
+struct Heartbeat {
+    active: Arc<AtomicBool>,
+    done: Arc<AtomicBool>,
+    handle: Option<JoinHandle<()>>,
+}
+impl Heartbeat {
+    fn start(engine: Arc<Engine>, id: String, lease: String) -> Self {
+        let active = Arc::new(AtomicBool::new(true));
+        let done = Arc::new(AtomicBool::new(false));
+        let a = active.clone();
+        let d = done.clone();
+        let handle = thread::spawn(move || {
+            let period = Duration::from_secs((engine.config.lease_duration_secs / 3).max(1));
+            let mut last = std::time::Instant::now();
+            while !d.load(Ordering::Acquire) {
+                thread::sleep(Duration::from_millis(100));
+                if engine.stopped.load(Ordering::Acquire) {
+                    a.store(false, Ordering::Release);
+                    break;
+                }
+                let valid = lock(&engine.store).and_then(|mut s| {
+                    let j = s.get(&id).ok_or("Tâche absente")?;
+                    if j.lease_id.as_deref() != Some(&lease) || j.lease_until <= store::now() {
+                        return Err("Bail perdu".into());
+                    }
+                    if last.elapsed() >= period {
+                        s.renew(&id, &lease, store::now(), engine.config.lease_duration_secs)?;
+                        last = std::time::Instant::now();
+                    }
+                    Ok(())
+                });
+                if valid.is_err() {
+                    a.store(false, Ordering::Release);
+                    break;
+                }
+            }
+        });
+        Self {
+            active,
+            done,
+            handle: Some(handle),
+        }
+    }
+    fn finish(mut self) {
+        self.done.store(true, Ordering::Release);
+        if let Some(h) = self.handle.take() {
+            let _ = h.join();
+        }
+    }
+}
+impl Drop for Heartbeat {
+    fn drop(&mut self) {
+        self.done.store(true, Ordering::Release);
+        if let Some(h) = self.handle.take() {
+            let _ = h.join();
+        }
+    }
+}
+
+pub fn public_job(job: &Job) -> Value {
+    let mut value = job.to_json();
+    if let Value::Object(map) = &mut value {
+        map.remove("lease_id");
+        map.remove("lease_until");
+        map.remove("acquisition_url");
+        if let Some(Value::Object(request)) = map.get_mut("request")
+            && request
+                .get("source_url")
+                .is_some_and(|v| matches!(v, Value::String(_)))
+        {
+            request.insert(
+                "source_url".into(),
+                Value::String("[source configurée]".into()),
+            );
+        }
+    }
+    value
+}
