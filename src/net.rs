@@ -347,8 +347,9 @@ impl HttpClient {
             url.path.clone()
         };
         let mut head = format!(
-            "{method} {} HTTP/1.1\r\nHost: {host_header}\r\nConnection: close\r\nUser-Agent: Mynou/0.6\r\nContent-Length: {}\r\n",
+            "{method} {} HTTP/1.1\r\nHost: {host_header}\r\nConnection: close\r\nUser-Agent: Mynou/{}\r\nContent-Length: {}\r\n",
             target,
+            env!("CARGO_PKG_VERSION"),
             body.len()
         );
         if !headers
@@ -626,7 +627,9 @@ fn read_headers<R: BufRead>(
         if line.is_empty() {
             return Ok(headers);
         }
-        let (name, value) = line.split_once(':').ok_or("HTTP header is missing a separator")?;
+        let (name, value) = line
+            .split_once(':')
+            .ok_or("HTTP header is missing a separator")?;
         validate_header(name, value)?;
         let name = name.to_ascii_lowercase();
         let value = value.trim_matches([' ', '\t']);
@@ -742,7 +745,10 @@ fn read_chunks<R: BufRead>(reader: &mut R, max_body: usize) -> Result<Vec<u8>> {
             }
             return Ok(body);
         }
-        let new_len = body.len().checked_add(size).ok_or("HTTP body exceeds the limit")?;
+        let new_len = body
+            .len()
+            .checked_add(size)
+            .ok_or("HTTP body exceeds the limit")?;
         if new_len > max_body {
             return Err("HTTP response body exceeds the limit".into());
         }

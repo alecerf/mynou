@@ -1,33 +1,105 @@
-name: Rust std uniquement
+name: Mynou CI
 on:
   push:
+    branches: [trunk]
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: mynou-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
     steps:
       - uses: actions/checkout@v7.0.1
-      - name: Installer Rust 1.99.0
+      - name: Install Rust 1.99.0
         run: |
-          rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy --target x86_64-unknown-linux-musl
           rustup default 1.99.0
-      - name: Vérifier l’absence de dépendances
+      - name: Verify the dependency graph
+        id: metadata
         run: |
-          cargo metadata --offline --locked --format-version 1 > metadata.json
-          graph="$(cargo tree --all-features --target all --edges all --offline --locked --prefix none)"
-          test "${graph%% (*}" = "mynou v0.6.0"
-          test "$graph" = "${graph//$'\n'/}"
-      - name: Formatage
+          cargo metadata --offline --locked --format-version 1 > "$RUNNER_TEMP/metadata.json"
+          python3 - "$RUNNER_TEMP/metadata.json" >> "$GITHUB_OUTPUT" <<'GRAPH'
+          import json, sys
+          with open(sys.argv[1]) as stream:
+              packages = json.load(stream)["packages"]
+          assert len(packages) == 1 and packages[0]["name"] == "mynou"
+          assert packages[0]["dependencies"] == []
+          print("version=" + packages[0]["version"])
+          GRAPH
+          cargo tree --all-features --target all --edges all --offline --locked
+      - name: Check formatting
         run: cargo fmt --all --check
-      - name: Analyse statique
+      - name: Run Clippy
         run: cargo clippy --all-targets --offline --locked -- -D warnings
-      - name: Tests
+      - name: Run tests
         run: cargo test --all-targets --offline --locked
-      - name: Construction
-        run: cargo build --release --offline --locked
-      - name: Démo autonome
-        run: cargo run --release --offline --locked -- demo --dir /tmp/mynou-demo
-      - name: Image statique
-        run: docker build --tag mynou:ci .
+      - name: Build release binaries
+        run: |
+          cargo build --release --offline --locked
+          cargo build --release --offline --locked --target x86_64-unknown-linux-musl
+          if readelf -l target/x86_64-unknown-linux-musl/release/mynou | grep -q INTERP; then exit 1; fi
+          if readelf -d target/x86_64-unknown-linux-musl/release/mynou | grep -q NEEDED; then exit 1; fi
+      - name: Run the standalone demonstration
+        run: target/x86_64-unknown-linux-musl/release/mynou demo --dir "$RUNNER_TEMP/mynou-demo"
+      - name: Build and verify the container
+        env:
+          VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          docker build --tag "mynou:$VERSION" .
+          mkdir "$RUNNER_TEMP/mynou-container-demo"
+          chmod 777 "$RUNNER_TEMP/mynou-container-demo"
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true \
+            --mount "type=bind,src=$RUNNER_TEMP/mynou-container-demo,dst=/data" \
+            "mynou:$VERSION" demo --dir /data/demo
+          docker save "mynou:$VERSION" | gzip -n > "$RUNNER_TEMP/mynou-image.tar.gz"
+      - name: Package the validated release
+        env:
+          VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          cargo run --release --offline --locked --example package_release -- \
+            "$RUNNER_TEMP/mynou-release" "$VERSION" \
+            target/x86_64-unknown-linux-musl/release/mynou "$RUNNER_TEMP/mynou-image.tar.gz"
+          (cd "$RUNNER_TEMP/mynou-release" && sha256sum -c SHA256SUMS)
+          python3 - "$RUNNER_TEMP/mynou-release/mynou-v$VERSION-source.zip" <<'ARCHIVE'
+          import hashlib, sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as archive:
+              assert archive.testzip() is None
+              assert (archive.getinfo("mynou/bin/mynou").external_attr >> 16) & 0o777 == 0o755
+              for line in archive.read("mynou/SHA256SUMS").decode().splitlines():
+                  digest, name = line.split("  ", 1)
+                  assert hashlib.sha256(archive.read("mynou/" + name)).hexdigest() == digest
+          ARCHIVE
+      - name: Preserve validated release files
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: mynou-release-${{ github.sha }}
+          path: ${{ runner.temp }}/mynou-release/*
+          if-no-files-found: error
+          retention-days: 7
+  release:
+    needs: validate
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/trunk'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: mynou-release-${{ github.sha }}
+          path: ${{ runner.temp }}/mynou-release
+      - name: Publish the validated version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: bash .github/scripts/publish-release.sh "$RUNNER_TEMP/mynou-release" "$VERSION"

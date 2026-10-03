@@ -181,7 +181,10 @@ pub fn extended_handshake(meta: Option<&Meta>, port: u16, pex: bool) -> Vec<u8> 
     }
     let mut fields = BTreeMap::new();
     fields.insert(b"m".to_vec(), Value::Dict(extensions));
-    fields.insert(b"v".to_vec(), Value::Bytes(b"Mynou/0.6".to_vec()));
+    fields.insert(
+        b"v".to_vec(),
+        Value::Bytes(format!("Mynou/{}", env!("CARGO_PKG_VERSION")).into_bytes()),
+    );
     fields.insert(b"reqq".to_vec(), Value::Int(16));
     fields.insert(b"p".to_vec(), Value::Int(i64::from(port)));
     if let Some(meta) = meta {
@@ -450,11 +453,9 @@ impl Peer {
                 if payload.len() < 8 {
                     return Err("Truncated piece block".into());
                 }
-                let piece = u32::from_be_bytes(
-                    payload[..4]
-                        .try_into()
-                        .map_err(|_| "Invalid piece index")?,
-                ) as usize;
+                let piece =
+                    u32::from_be_bytes(payload[..4].try_into().map_err(|_| "Invalid piece index")?)
+                        as usize;
                 let offset = u32::from_be_bytes(
                     payload[4..8]
                         .try_into()
