@@ -1,37 +1,32 @@
-# Bibliothèque standard seule
+# Standard library only
 
-Le manifeste ne déclare aucune section de dépendances, de développement ou de
-construction. Le fichier `Cargo.lock` ne contient que `mynou`. Il n’existe ni
-vendoring, ni sous-module contenant une bibliothèque tierce, ni liaison FFI,
-ni génération qui appelle l’ancienne implémentation Go.
+The manifest declares no dependency, development-dependency, or build-dependency
+sections. `Cargo.lock` contains only `mynou`. There is no vendored library,
+third-party library submodule, FFI linkage, or generation step invoking the
+former Go implementation.
 
-| Ancienne brique | Remplacement Rust |
+| Former component | Rust replacement |
 | --- | --- |
-| Moteur BitTorrent Go | `src/torrent.rs` et `src/torrent/` |
-| SQLite | Journal transactionnel et snapshots `src/store.rs` |
-| ffprobe | Parseurs de conteneurs `src/media.rs` et `src/media/` |
-| Bibliothèques HTTP/TLS | `src/net.rs`, `src/tls.rs`, `src/pki/` |
-| JSON et bencode | Parseurs bornés `src/json.rs` et `src/bencode.rs` |
-| Bibliothèques de hachage | Algorithmes natifs `src/crypto/` |
+| Go BitTorrent engine | `src/torrent.rs` and `src/torrent/` |
+| SQLite | Transaction journal and snapshots in `src/store.rs` |
+| ffprobe | Container parsers in `src/media.rs` and `src/media/` |
+| HTTP/TLS libraries | `src/net.rs`, `src/tls.rs`, and `src/pki/` |
+| JSON and bencode | Bounded parsers in `src/json.rs` and `src/bencode.rs` |
+| Hashing libraries | Native algorithms in `src/crypto/` |
 
-Rust et Cargo sont des outils de construction. Docker et Compose servent au
-déploiement ; le binaire peut aussi fonctionner directement. Les appels de
-fichiers, réseau, temps et aléa passent par la bibliothèque standard et le système
-d’exploitation. L’aléa de sécurité est fourni par `/dev/urandom` sur Linux ;
-aucun générateur pseudo-aléatoire improvisé ne le remplace.
+Rust and Cargo are build tools. Docker and Compose support deployment; the binary
+can also run directly. File, network, time, and randomness operations use the
+standard library and operating system. Linux provides security randomness through
+`/dev/urandom`; no improvised pseudorandom generator replaces it.
 
-Le bundle PEM des autorités TLS est une donnée de confiance. L’image finale
-contient uniquement ce bundle et le binaire statique. Aucun OpenSSL, ffprobe,
-curl, shell, moteur SQL ou client torrent externe n’y est installé.
+The TLS CA PEM bundle is trust data. The final image contains that bundle and the
+static binary. It does not install OpenSSL, ffprobe, curl, a shell, a SQL engine,
+or an external torrent client.
 
-Pour contrôler le graphe local sans réseau :
+CI checks the graph offline using Cargo metadata and the dependency tree. The
+metadata must contain one package with `dependencies: []`, and the tree must show
+only `mynou` at its current version. Tests and lint must not run locally.
 
-```sh
-cargo metadata --offline --locked --format-version 1
-cargo tree --offline --locked
-```
-
-La première commande doit retourner un seul package avec `dependencies: []` ;
-la seconde doit afficher seulement `mynou v0.6.0`. Les entrées réseau Plex, TMDB
-et indexeurs sont des services que l’utilisateur configure, pas des dépendances
-de compilation ou des commandes exécutées par Mynou.
+Plex, TMDB, and indexers are user-configured network services, rather than build
+dependencies or commands executed by Mynou. GitHub Actions and its build tools
+are development infrastructure, not runtime dependencies.

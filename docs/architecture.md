@@ -1,55 +1,54 @@
-# Architecture Rust native
+# Native Rust architecture
 
 ```text
-CLI / API                 Watchlist Plex
-    │                          │
-    └──────── Demandes ────────┘
-                   │
-           Journal et snapshots
-                   │
-           Workers avec baux
-                   │
+CLI / API                 Plex watchlist
+    |                          |
+    +--------- Requests -------+
+                   |
+           Journal and snapshots
+                   |
+           Workers with leases
+                   |
        TMDB + RSS / JSON / Torznab
-                   │
-       BitTorrent natif et vérification
-                   │
-       Analyse des métadonnées média
-                   │
-          Import sans écrasement
-                   │
-       Scan et confirmation de Plex
+                   |
+       Native BitTorrent and verification
+                   |
+       Media metadata analysis
+                   |
+          Import without overwriting
+                   |
+       Plex scan and confirmation
 ```
 
-Les composants sont indépendants de tout framework. `config` valide les champs
-et résout les chemins relatifs au fichier de configuration. `integrations`
-transforme les réponses réseau en demandes et sources. `engine` orchestre les
-transitions sans garder le verrou du journal pendant un transfert ou un import.
+The components are independent of frameworks. `config` validates fields and
+resolves paths relative to the configuration file. `integrations` converts
+network responses into requests and sources. `engine` orchestrates transitions
+without holding the journal lock during a transfer or import.
 
-`store` synchronise chaque transaction avant de la confirmer. Les enregistrements
-sont chaînés et vérifiés par SHA-256 ; une fin incomplète après interruption est
-récupérable, tandis qu’une corruption complète est signalée. Un verrou de fichier
-empêche deux propriétaires du même journal. Les workers utilisent des baux et
-renouvellent leur possession pendant une opération longue.
+`store` synchronizes each transaction before confirming it. Records form a
+SHA-256-verified chain: an incomplete tail after interruption is recoverable,
+while corruption of a complete record is reported. A file lock prevents two
+owners of the same journal. Workers use leases and renew ownership during long
+operations.
 
-`torrent` conserve les identités et métadonnées vérifiées, relit les pièces après
-reprise, contrôle les noms et les limites des fichiers puis expose un état prêt.
-La présence des octets sur le disque ne suffit pas à déclarer un torrent prêt.
-Un torrent hybride doit satisfaire les empreintes v1 et les racines v2 avant
-publication définitive.
+`torrent` retains verified identities and metadata, rechecks pieces after
+restart, validates file names and size limits, and then exposes a ready state.
+Bytes merely existing on disk do not make a torrent ready. A hybrid torrent must
+satisfy both v1 hashes and v2 roots before final publication.
 
-`media` cherche les métadonnées avec un lecteur tamponné et des déplacements dans
-le fichier. Les blocs MP4 `mdat`, les clusters Matroska de taille connue et les
-données WAV ne sont pas chargés en mémoire. Les lectures individuelles sont
-limitées à 8 Mio, le volume total de métadonnées à 64 Mio et le nombre d’éléments à
-100 000 ; les compteurs, tailles et limites de parents sont vérifiés.
+`media` finds metadata using buffered reads and file seeking. MP4 `mdat` blocks,
+Matroska clusters of known size, and WAV payloads are not loaded into memory.
+Individual metadata reads are limited to 8 MiB, total metadata to 64 MiB, and
+element count to 100,000. Counters, sizes, and parent boundaries are checked.
 
-`organizer` publie le média sans écraser un fichier existant. Il privilégie un
-lien physique et passe par une copie synchronisée quand les systèmes de fichiers
-diffèrent. Les sources sont conservées et les liens symboliques sont rejetés
-sur les chemins d’import contrôlés.
+`organizer` publishes media without overwriting an existing file. It prefers a
+hard link and uses a synchronized copy when filesystems differ. Sources remain
+intact, and symbolic links on controlled import paths are rejected.
 
-`net`, `tls`, `pki` et `crypto` implémentent HTTP/1.1, le client TLS, la validation
-X.509 et les primitives nécessaires. Les erreurs de protocole sont explicites ;
-aucune négociation échouée ne supprime la validation des certificats. Le serveur
-API utilise HTTP sur l’interface locale, avec un jeton Bearer. Les détails des
-protocoles sont dans [les limites](limits.md).
+`net`, `tls`, `pki`, and `crypto` implement HTTP/1.1, the TLS client, X.509
+validation, and the required primitives. Protocol errors are explicit; a failed
+negotiation never disables certificate validation. The API server uses HTTP on
+the local interface with a Bearer token. See [protocol limits](limits.md).
+
+GitHub Actions validates changes and publishes releases. Build and release tools
+are separate from the runtime; the application never invokes them.

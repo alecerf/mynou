@@ -1,52 +1,53 @@
-# Mesurer les performances
+# Performance measurements
 
-Le projet fournit un benchmark std-only, sans framework de mesure :
+The project includes a standard-library-only benchmark without a measurement
+framework. CI can run it with the release example binary:
 
 ```sh
 cargo run --release --offline --locked --example benchmark
 cargo run --release --offline --locked --example benchmark -- examples/demo.mp4 10000
 ```
 
-Il renvoie un objet JSON contenant le nombre d’itérations, la durée, le temps moyen
-par analyse, les analyses par seconde et les débits SHA-1/SHA-256 en Mio/s.
-`std::hint::black_box` conserve le travail mesuré. Le média est analysé 32 fois
-avant la mesure : les résultats médias concernent donc un **cache chaud**.
-Les hachages utilisent un bloc déterministe de 1 Mio, répété 32 fois chacun.
+These commands describe the CI measurement procedure, not permission to run
+local tests or lint. Development validation belongs in GitHub Actions.
 
-Le profil release utilise LTO thin et une seule unité de génération. Les nombres
-observés dépendent du processeur, de la charge concurrente, du stockage et du
-compilateur. Ils ne décrivent pas le débit d’un torrent public, la latence Plex,
-un disque froid ou toutes les tailles de métadonnées possibles.
+The benchmark returns JSON with the iteration count, elapsed time, mean analysis
+time, analyses per second, and SHA-1/SHA-256 throughput in MiB/s.
+`std::hint::black_box` preserves measured work. Media is analyzed 32 times before
+timing, so media results concern a **warm cache**. Hashes use a deterministic
+1 MiB block, repeated 32 times each.
 
-L’analyse des conteneurs saute leurs blocs audio/vidéo avec `seek` plutôt que de
-copier le média en mémoire. Un test crée un MP4 creux avec un bloc `mdat` supérieur
-à 4 Gio et vérifie l’extraction des métadonnées finales. Ce test vérifie la
-stratégie de lecture ; il ne constitue pas un benchmark de décodage.
+The release profile uses thin LTO and one code-generation unit. Results depend on
+CPU, concurrent load, storage, and compiler. They do not describe public-torrent
+throughput, Plex latency, cold disks, or every possible metadata size.
 
-Les résultats de la validation de livraison sont consignés dans
-[le point de reprise](reprise.md). Relance le benchmark sur ta machine avant de
-dimensionner la concurrence. Aucune qualification de « parfait » ou de performance
-universelle n’est déduite d’un seul environnement de mesure.
+Container analysis skips audio/video blocks with `seek` instead of copying the
+media into memory. A test constructs a sparse MP4 with an `mdat` block larger than
+4 GiB and checks extraction of its final metadata. It verifies the read strategy,
+not decoding performance.
 
-## Mesure locale du 3 octobre 2026
+## Historical 0.6.0 measurement — October 3, 2026
 
-Sur le binaire exemple release de Mynou 0.6.0, compilé avec Rust 1.99.0,
-environnement Linux x86_64 partagé annonçant deux processeurs logiques :
+The following results were measured before the CI-only development policy was
+adopted. They concern Mynou **0.6.0**, not a new measurement of 0.6.1. The release
+example was built with Rust 1.99.0 in a shared Linux x86_64 environment reporting
+two logical processors.
 
-| Mesure | Résultat |
+| Measurement | Result |
 | --- | --- |
-| Fichier analysé | Démo MP4 incluse, 125 671 octets |
-| Analyses en cache chaud | 10 000 |
-| Durée des analyses | 0,08982 s |
-| Temps moyen par analyse | 8,98 µs |
-| Analyses par seconde | Environ 111 333 |
-| SHA-256, 32 × 1 Mio | 177,14 Mio/s |
-| SHA-1, 32 × 1 Mio | 250,74 Mio/s |
+| Analyzed file | Included demo MP4, 125,671 bytes |
+| Warm-cache analyses | 10,000 |
+| Analysis elapsed time | 0.08982 s |
+| Mean analysis time | 8.98 µs |
+| Analyses per second | Approximately 111,333 |
+| SHA-256, 32 × 1 MiB | 177.14 MiB/s |
+| SHA-1, 32 × 1 MiB | 250.74 MiB/s |
 
-Cette mesure porte sur la démo et les fonctions de hachage, pas sur la
-performance de bout en bout d’une bibliothèque réelle. Le petit intervalle mesuré
-rend aussi les variations de charge visibles ; il ne justifie pas de comparaison
-générale avec un autre logiciel.
+This measures the demo and hashing functions, rather than end-to-end performance
+of a real library. The short timing interval also exposes load variations; it
+does not justify a general comparison with other software. No claim of perfect
+code or universal performance follows from one environment.
 
-Le JSON exact de cette mesure est inclus dans
-[benchmark-results.json](benchmark-results.json).
+The exact historical JSON is preserved in
+[benchmark-results.json](benchmark-results.json). Current CI evidence is described
+in [validation.md](validation.md).

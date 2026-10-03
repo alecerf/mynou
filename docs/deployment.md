@@ -1,33 +1,46 @@
-# Installer Mynou avec Docker
+# Install Mynou with Docker
 
-L’image finale est `scratch` : un exécutable Rust statique et un bundle PEM
-d’autorités TLS. Le conteneur n’appelle aucun programme externe. Rust 1.99.0 et
-son environnement Alpine interviennent uniquement pendant la construction.
-La cible par défaut de l’image est `x86_64-unknown-linux-musl`.
+The final image is `scratch`: a static Rust executable and a TLS CA PEM bundle.
+The container invokes no external programs. Rust 1.99.0 and its Alpine environment
+are used only during builds. The default image target is
+`x86_64-unknown-linux-musl`.
 
-## Installation sans Rust sur l’hôte
+## Install without Rust on the host
 
-Depuis les sources décompressées, construis l’image puis utilise son binaire pour
-préparer une installation dans un dossier nouveau :
+Download the source ZIP and image archive from
+[GitHub Releases](https://github.com/alecerf/mynou/releases), verify their
+[checksums](validation.md#verify-release-assets), and extract the sources.
+Load the validated release image:
 
 ```sh
-docker build -t mynou:0.6.0 .
+docker load -i mynou-v0.6.1-linux-amd64-image.tar.gz
+```
+
+Alternatively, build the image from the extracted sources:
+
+```sh
+docker build -t mynou:0.6.1 .
+```
+
+Use the image binary to prepare an installation in a new directory:
+
+```sh
 docker run --rm --network none \
   --user "$(id -u):$(id -g)" \
   --mount "type=bind,src=$PWD,dst=/work" \
   --workdir /work \
-  mynou:0.6.0 setup-docker --dir mynou-docker
+  mynou:0.6.1 setup-docker --dir mynou-docker
 ```
 
-Si ton compte n’utilise pas UID/GID 1000, ajoute ses identifiants au `.env` généré :
+If your account does not use UID/GID 1000, add its IDs to the generated `.env`:
 
 ```sh
 printf '\nMYNOU_UID=%s\nMYNOU_GID=%s\n' "$(id -u)" "$(id -g)" >> mynou-docker/.env
 ```
 
-Utilise un compte normal pour cette procédure. Si les fichiers ont été créés par
-root, attribue le dossier de l’installation à l’utilisateur choisi pour le
-conteneur ; son `mynou.json` privé doit aussi être lisible par cet utilisateur.
+Use a regular account for this procedure. If root created the files, assign the
+installation directory to the chosen container user. That user must also be able
+to read the private `mynou.json` file.
 
 ```sh
 cd mynou-docker
@@ -37,7 +50,7 @@ docker compose logs -f mynou
 docker compose exec mynou /mynou doctor --config /config/mynou.json
 ```
 
-`setup-docker` refuse d’écraser un dossier existant. Il génère :
+`setup-docker` refuses to overwrite an existing directory. It generates:
 
 ```text
 mynou-docker/
@@ -50,30 +63,34 @@ mynou-docker/
     └── series/
 ```
 
-Le dossier `data` contient les demandes, les torrents et les téléchargements.
-La bibliothèque est montée séparément. Le système de fichiers de l’image reste
-en lecture seule, les capacités Linux sont retirées et le conteneur utilise
-un utilisateur sans privilèges par défaut.
+`data` contains requests, torrents, and downloads. The library is mounted
+separately. The image filesystem stays read-only, Linux capabilities are removed,
+and the container uses an unprivileged user by default.
 
-## Relier ton Plex existant
+The source ZIP also includes `bin/mynou`; you may use its `setup-docker` command
+instead of running that command inside Docker. The image archive is published as
+a GitHub release asset, so no container registry login is needed beyond access to
+the GitHub repository.
 
-Modifie `mynou.json` pour activer `plex.enabled`, définir `plex.url`, les identifiants
-de sections films/séries et, si nécessaire, `plex.watchlist_url`. L’adresse
-`http://host.docker.internal:32400` désigne l’hôte Docker ; si Plex est dans un
-autre conteneur, tu peux plutôt utiliser un réseau Docker commun et son nom DNS.
+## Connect your existing Plex server
 
-Renseigne `MYNOU_PLEX_TOKEN` dans `.env`. Pour TMDB, active `catalog.enabled` et
-fournis `MYNOU_TMDB_TOKEN` ou `MYNOU_TMDB_API_KEY`. Chaque entrée `indexers` décrit
-une source `rss`, `json` ou `torznab`, son URL et le nom d’une variable contenant
-sa clé API éventuelle. Mynou effectue les requêtes ; aucun gestionnaire de médias
-supplémentaire n’est lancé dans cette installation.
+Edit `mynou.json` to enable `plex.enabled`, set `plex.url`, provide movie/series
+section IDs, and, if needed, set `plex.watchlist_url`.
+`http://host.docker.internal:32400` addresses the Docker host. For Plex in another
+container, you can use a shared Docker network and its DNS name instead.
 
-Monte les mêmes dossiers dans Plex et Mynou. Un exemple simple : le dossier hôte
-`./library` devient `/library` dans chacun des deux conteneurs ; les films se
-trouvent alors dans `/library/movies` et les séries dans `/library/series`.
-Les chemins de la configuration Mynou sont des chemins vus depuis son conteneur.
+Set `MYNOU_PLEX_TOKEN` in `.env`. For TMDB, enable `catalog.enabled` and provide
+`MYNOU_TMDB_TOKEN` or `MYNOU_TMDB_API_KEY`. Each `indexers` entry describes an
+`rss`, `json`, or `torznab` source, its URL, and the variable name holding any API
+key. Mynou makes these requests itself; the installation starts no additional
+media manager.
 
-Après une modification des secrets ou de la configuration :
+Mount the same directories in Plex and Mynou. For example, mount the host
+`./library` directory at `/library` in both containers: movies are then in
+`/library/movies` and series in `/library/series`. Configuration paths are paths
+as seen inside the Mynou container.
+
+After changing secrets or configuration:
 
 ```sh
 docker compose up -d --force-recreate
@@ -81,21 +98,21 @@ docker compose exec mynou /mynou sync --config /config/mynou.json
 docker compose exec mynou /mynou jobs --config /config/mynou.json
 ```
 
-## Ports et contrôle
+## Ports and management
 
-L’API est publiée uniquement sur `127.0.0.1:8787`. Les endpoints `/healthz` et
-`/readyz` décrivent l’état du service ; les opérations de gestion exigent le jeton
-Bearer `MYNOU_API_TOKEN`. Le contrôle de santé utilise le binaire Mynou lui-même.
+The API is published only on `127.0.0.1:8787`. `/healthz` and `/readyz` describe
+service health; management operations require the `MYNOU_API_TOKEN` Bearer token.
+The healthcheck uses the Mynou binary itself.
 
-Le port 6881/TCP sert aux pairs BitTorrent. DHT et trackers UDP utilisent des
-requêtes sortantes depuis des sockets éphémères ; aucun port UDP entrant n’est
-publié. Le client DHT n’est pas un serveur DHT complet et le moteur n’implémente
-pas uTP. L’accès entrant TCP dépend de ton pare-feu et de ton routeur.
+Port 6881/TCP accepts BitTorrent peers. DHT and UDP trackers make outgoing
+requests using ephemeral sockets; no inbound UDP port is published. The DHT
+client is not a complete DHT server, and the engine does not implement uTP.
+Inbound TCP access depends on your firewall and router.
 
-Tu peux gérer les demandes avec la CLI du conteneur :
+Manage requests with the container CLI:
 
 ```sh
-docker compose exec mynou /mynou submit --title "Film" --year 2026 \
+docker compose exec mynou /mynou submit --title "Movie" --year 2026 \
   --url 'magnet:?xt=urn:btih:...' --config /config/mynou.json
 docker compose exec mynou /mynou status --config /config/mynou.json
 docker compose exec mynou /mynou events ID --config /config/mynou.json
@@ -103,33 +120,34 @@ docker compose exec mynou /mynou retry ID --config /config/mynou.json
 docker compose exec mynou /mynou cancel ID --config /config/mynou.json
 ```
 
-Pour une source locale, monte son dossier et utilise `--path` avec le chemin du
-conteneur. Une demande annulée ne supprime pas les fichiers ni les autres demandes
-qui pourraient partager le même torrent.
+For a local source, mount its directory and pass its container path with `--path`.
+Canceling a request does not delete files or cancel other requests that might
+share the torrent.
 
-## Sauvegarder et mettre à jour
+## Back up and update
 
-Conserve `mynou.json`, `.env`, `data` et les chemins de bibliothèque. Pour une
-sauvegarde cohérente, arrête le service avant de copier ses données. Le journal
-synchronise les transactions confirmées ; après une interruption brutale, une
-écriture finale incomplète est récupérée au prochain démarrage.
+Keep `mynou.json`, `.env`, `data`, and the library directories. For a consistent
+backup, stop the service before copying its data. The journal synchronizes
+confirmed transactions. After an abrupt interruption, an incomplete final write
+is recovered at the next start.
 
-L’arrêt de gestion `POST /api/shutdown`, authentifié, permet au service de terminer
-ses workers. La bibliothèque standard ne fournit pas de gestionnaire Unix SIGTERM
-portable dans ce projet ; un arrêt forcé du conteneur s’appuie donc sur la reprise
-durable, et n’est pas présenté comme un arrêt applicatif gracieux.
+Authenticated `POST /api/shutdown` lets the service finish its workers. The
+standard library does not provide the portable Unix SIGTERM handler this project
+would need. A forced container stop therefore relies on durable recovery rather
+than application-level graceful shutdown.
 
-Reconstruis `mynou:0.6.0` depuis les sources voulues puis recrée le conteneur.
-Garde les anciennes données Go/SQLite dans un autre dossier : elles ne constituent
-pas le format de persistance Rust et ne sont pas automatiquement importées.
+For an update, download and load the new CI-published image or rebuild from its
+sources, change the image version in your installation's `compose.yaml`, then
+recreate the container. Preserve configuration and data. Keep old Go/SQLite data
+in another directory: it is not the Rust persistence format and is not imported
+automatically.
 
-## Autorités TLS et proxy
+## TLS trust and proxies
 
-Les connexions HTTPS utilisent le client TLS natif. Le bundle de confiance de
-l’image peut être remplacé par un fichier PEM monté en lecture seule et la variable
-`MYNOU_CA_FILE`. Une autorité privée doit être ajoutée à ce bundle pour un service
-interne ; la vérification des certificats ne dispose pas d’un mode de désactivation.
+HTTPS connections use the native TLS client. You can replace the image's trust
+bundle with a read-only mounted PEM file and `MYNOU_CA_FILE`. Add a private CA to
+that bundle for an internal service. There is no certificate-validation bypass.
 
-Les variables `HTTP_PROXY`, `HTTPS_PROXY` et `NO_PROXY` peuvent être fournies au
-service lorsque ton réseau l’exige. Les commandes de contrôle local contournent
-le proxy. [Les limites des protocoles](limits.md) listent les variantes acceptées.
+Provide `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` to the service if your network
+requires them. Local management commands bypass the proxy. See
+[protocol limits](limits.md) for supported variants.

@@ -1,68 +1,99 @@
-# Validation de livraison
+# CI validation and release verification
 
-Les contrôles de source, de compilation et d’exécution ont réussi le 3 octobre
-2026, après la correction de concurrence entre annulation d’une demande et
-démarrage d’un torrent.
+The development policy requires **GitHub Actions validation only**. Do not run
+local tests or lint. Commit changes, push, inspect the run, and fix any failed
+check with a new commit. Proceed once required checks are green.
 
-| Contrôle | Résultat confirmé |
+The workflow is tracked in [`.github/workflows`](../.github/workflows), and run
+results are available in [GitHub Actions](https://github.com/alecerf/mynou/actions).
+A run is evidence for its exact commit. Historical results do not validate a later
+revision.
+
+## Automated checks and releases
+
+CI checks the offline Cargo graph, formatting, warning-free Clippy, tests, release
+builds, a local end-to-end demo, and Docker behavior. The Cargo graph must contain
+one package with no dependencies. Network tests use synthetic media and local
+peers or services; no public torrent acquisition is part of validation.
+
+Release automation depends on successful validation on `trunk`. It reads
+`Cargo.toml`, creates the version tag and GitHub release for the validated commit
+if that version is new, and publishes:
+
+| Asset | Contents |
 | --- | --- |
-| Graphe Cargo hors ligne | Un package `mynou`, zéro dépendance |
-| Formatage et Clippy sur toutes les cibles, `-D warnings` | Réussis |
-| Suite hors ligne | 131 tests réussis, aucun échec ni test ignoré |
-| Médias | Dix tests, dont vraie démo MP4, MP4 creux >4 Gio, formats synthétiques et mutations |
-| Constructions release GNU et musl | Réussies |
-| Liaison musl | Aucun interpréteur ELF ni bibliothèque dynamique requise |
-| Construction Docker finale | Réussie ; image `scratch`, utilisateur 1000:1000 |
-| Conteneur final sans réseau externe | Magnet local, import et confirmation Plex simulée : `ready` |
-| Nouvelle installation Compose | Générée depuis l’image sans Rust sur l’hôte ; santé, doctor et API vérifiés |
-| Import et redémarrage Compose | Octets importés identiques ; même identifiant et état `ready` après redémarrage |
+| `mynou-vVERSION-source.zip` | Full sources, tests, docs, Docker files, synthetic demo, `bin/mynou`, and internal `SHA256SUMS` |
+| `mynou-vVERSION-linux-x86_64` | Static Linux x86_64 binary |
+| `mynou-vVERSION-linux-amd64-image.tar.gz` | Saved Docker image tagged `mynou:VERSION` |
+| `SHA256SUMS` and `.sha256` files | SHA-256 integrity checks for release assets |
 
-Le binaire statique Linux x86_64 inclus pèse 1 717 088 octets. L’image finale
-pèse 1 898 812 octets et porte l’identifiant :
+CI excludes personal data, secrets, build caches, and old Go sources from the
+source archive. Release creation and artifact uploads are not manual development
+steps. No Docker Hub repository is needed.
 
-```text
-sha256:b71a5d2f06c0cf2dfcfc13dceb86a73626a103cf8129616b0b94374da2c05146
-```
+## Verify release assets
 
-L’inspection des couches confirme exactement deux fichiers réguliers embarqués :
-`/mynou` et `/etc/ssl/certs/ca-certificates.crt`. Aucun shell, programme auxiliaire
-ou bibliothèque partagée n’est présent. La démo finale a fonctionné en lecture
-seule, sans capacités Linux et avec `--network none`. Les conteneurs de validation
-ont été retirés après les contrôles.
-
-Les tests couvrent des transferts réels entre pairs locaux, les magnets v1/v2,
-les torrents hybrides, les preuves Merkle, la reprise, les erreurs de chemins,
-les cycles de trackers, les métadonnées média et l’orchestration sur services
-locaux. Ces contrôles ne constituent pas un déploiement sur le serveur personnel
-de l’utilisateur ni une mesure de débit sur des torrents publics.
-
-Pour reproduire les contrôles de source :
+Download the assets and checksum files from the same release. For example:
 
 ```sh
-cargo metadata --offline --locked --format-version 1
-cargo tree --all-features --target all --edges all --offline --locked
-cargo fmt --all --check
-cargo clippy --all-targets --offline --locked -- -D warnings
-cargo test --all-targets --offline --locked
-cargo build --release --offline --locked
-cargo run --release --offline --locked --example benchmark -- examples/demo.mp4 10000
+sha256sum -c mynou-v0.6.1-source.zip.sha256
+sha256sum -c mynou-v0.6.1-linux-amd64-image.tar.gz.sha256
 ```
 
-## Vérifier l’archive reçue
-
-La livraison fournit un fichier `.sha256` pour le ZIP et un manifeste
-`SHA256SUMS` pour son contenu. Vérifie le fichier de somme accompagnant le ZIP
-avec `sha256sum -c fichier.sha256`, puis, depuis le dossier racine décompressé :
+To verify all downloaded assets together, download `SHA256SUMS` and every listed
+asset, then run:
 
 ```sh
 sha256sum -c SHA256SUMS
 ```
 
-L’archive a été contrôlée pour son intégrité ZIP et son contenu comparé aux
-fichiers de livraison par SHA-256. Elle exclut les données personnelles, les
-secrets de configuration, les caches de compilation et les anciennes sources Go.
+After extracting the source ZIP, verify its internal manifest from the extracted
+project root:
 
-Les [mesures de performance](performance.md) et leurs
-[résultats bruts](benchmark-results.json) consignent le benchmark local confirmé.
-Le [point de reprise](reprise.md) décrit l’état de la livraison et les accès
-nécessaires pour la relier à une installation personnelle.
+```sh
+sha256sum -c SHA256SUMS
+```
+
+Checksum verification establishes integrity relative to the downloaded manifest.
+It does not replace reviewing the release's commit and successful Actions run.
+
+## Historical 0.6.0 validation
+
+The following checks succeeded on October 3, 2026, before the CI-only policy was
+adopted and after fixing the cancellation/startup race. They are recorded evidence
+for **0.6.0**, not a passing result for 0.6.1.
+
+| Check | Historical result |
+| --- | --- |
+| Offline Cargo graph | One `mynou` package, zero dependencies |
+| Formatting and Clippy across all targets with `-D warnings` | Passed |
+| Offline test suite | 131 passed, none failed or ignored |
+| Media | Ten tests, including demo MP4, sparse MP4 >4 GiB, synthetic formats, and mutations |
+| GNU and musl release builds | Passed |
+| musl linkage | No ELF interpreter or required dynamic library |
+| Final Docker build | Passed; `scratch`, user 1000:1000 |
+| Final container without external networking | Local magnet, import, and simulated Plex confirmation reached `ready` |
+| Fresh Compose installation | Generated from the image without Rust on the host; health, doctor, and API checked |
+| Compose import and restart | Identical imported bytes; same request ID and `ready` state after restart |
+
+The historical static binary was 1,717,088 bytes. Its final image was 1,898,812
+bytes with ID:
+
+```text
+sha256:b71a5d2f06c0cf2dfcfc13dceb86a73626a103cf8129616b0b94374da2c05146
+```
+
+Layer inspection found exactly two embedded regular files: `/mynou` and
+`/etc/ssl/certs/ca-certificates.crt`. No shell, helper program, or shared library
+was present. The final demo ran with a read-only root, removed Linux capabilities,
+and `--network none`; validation containers were removed afterward.
+
+Tests covered real local peer transfers, v1/v2 magnets, hybrid torrents, Merkle
+proofs, restart recovery, unsafe paths, tracker lifecycles, media metadata, and
+local-service orchestration. They do not establish deployment on a personal Plex
+server or public-torrent throughput.
+
+[Performance measurements](performance.md) and their
+[raw results](benchmark-results.json) preserve the historical benchmark. The
+[checkpoint](checkpoint.md) describes the implementation and remaining personal
+installation configuration.

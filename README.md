@@ -1,26 +1,28 @@
-# Mynou 0.6 — Rust, bibliothèque standard seule
+# Mynou 0.6.1 — Rust, standard library only
 
-Mynou automatise une bibliothèque multimédia : demande Plex ou soumission locale,
-recherche, téléchargement torrent, vérification, import puis rafraîchissement Plex.
-Cette version réécrit les composants en Rust sûr. Elle ne contient aucune dépendance
-Cargo, y compris pour les tests et la construction, aucun code tiers embarqué, aucun
-appel FFI, aucun bloc `unsafe` et aucun programme externe appelé à l’exécution.
+Mynou automates a media library: a Plex request or local submission becomes a
+search, verified torrent download, media import, and confirmed Plex update.
+Its components use safe Rust with **zero Cargo dependencies**, including build
+and development dependencies. There is no bundled third-party code, FFI,
+`unsafe`, or external program invocation at runtime.
 
-Le client BitTorrent, les parseurs de médias, HTTP/TLS, les formats JSON/bencode et
-le journal durable appartiennent au projet. SQLite, ffprobe, Go, qBittorrent,
-Radarr et Sonarr ne sont plus nécessaires. Plex, TMDB et les sources que tu choisis
-sont des intégrations réseau configurables.
+The BitTorrent client, media parsers, HTTP/TLS stack, JSON/bencode formats, and
+durable journal belong to the project. SQLite, ffprobe, Go, qBittorrent, Radarr,
+and Sonarr are not required. Plex, TMDB, and your chosen sources are configurable
+network integrations.
 
-## Essayer immédiatement
+## Try it
 
-L’archive inclut un binaire statique **Linux x86_64** :
+GitHub Actions publishes validated releases in
+[alecerf/mynou](https://github.com/alecerf/mynou/releases). The source archive
+includes a static **Linux x86_64** binary:
 
 ```sh
 ./bin/mynou analyze examples/demo.mp4 --json
 ./bin/mynou demo --dir /tmp/mynou-demo
 ```
 
-Pour compiler les sources avec Rust **1.99.0** :
+To build the sources with Rust **1.99.0**:
 
 ```sh
 cargo build --release --offline --locked
@@ -28,65 +30,65 @@ cargo build --release --offline --locked
 ./target/release/mynou demo --dir /tmp/mynou-demo
 ```
 
-La démo démarre un pair torrent et des réponses Plex/indexeur locaux, télécharge
-le média synthétique inclus, l’analyse, l’importe et confirme sa disponibilité.
-Elle n’utilise ni compte Plex, ni source publique, ni secret personnel. Le dossier
-de démo doit être nouveau.
+The demo starts a local torrent peer and simulated Plex/indexer responses,
+downloads the included synthetic media, analyzes it, imports it, and confirms
+availability. It needs no Plex account, public source, or personal secret. The
+demo directory must not already exist.
 
-## Installer avec Docker
+## Install with Docker
 
-L’image finale `scratch` contient le binaire statique et les données des autorités
-TLS. Elle s’exécute avec l’utilisateur 1000 ; elle n’embarque aucun shell ni
-bibliothèque partagée.
+The final `scratch` image contains the static binary and TLS trust data. It runs
+as user 1000 and contains no shell or shared library. Download the image archive
+from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, or
+build the image from the source archive:
 
 ```sh
-docker build -t mynou:0.6.0 .
+docker load -i mynou-v0.6.1-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.6.1 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d
 docker compose exec mynou /mynou doctor --config /config/mynou.json
 ```
 
-Les fichiers de configuration, le jeton API, le dossier de données et la
-bibliothèque sont générés. Sur une machine dont l’utilisateur ne porte pas
-l’identifiant 1000, adapte `MYNOU_UID` et `MYNOU_GID` dans `.env` avant de lancer
-Compose. [Le guide Docker](docs/deployment.md) détaille les droits, les chemins Plex
-et l’installation sans Rust sur l’hôte.
+Configuration, an API token, the data directory, and the library directories are
+generated. If your user ID is not 1000, set `MYNOU_UID` and `MYNOU_GID` in `.env`
+before starting Compose. The [Docker guide](docs/deployment.md) explains file
+ownership, shared Plex paths, and installation without Rust on the host.
 
-## Ce qui est implémenté
+## Implemented features
 
-- Analyse native MP4/MOV, Matroska/WebM, AVI, WAV/RF64, FLAC et MP3 : conteneur,
-  titre, date, taille, durée quand elle est décrite, pistes vidéo et audio.
-- Torrents v1, v2 et hybrides, magnets `btih`/`btmh`, métadonnées échangées avec les
-  pairs, vérification SHA-1/Merkle SHA-256, reprise et partage des fichiers vérifiés.
-- Découverte via trackers HTTP/HTTPS/UDP, DHT et PEX ; règles de confidentialité
-  pour les torrents privés. Le transport des données des pairs utilise TCP.
-- Demandes persistantes, déduplication, baux des workers, reprises après erreur,
-  annulation, import sans écrasement et conservation des fichiers sources.
-- Watchlist Plex, enrichissement TMDB, sources RSS/JSON/Torznab, rafraîchissement et
-  confirmation Plex, API HTTP locale authentifiée et CLI de gestion.
+- Native MP4/MOV, Matroska/WebM, AVI, WAV/RF64, FLAC, and MP3 analysis: container,
+  title, date, size, declared duration, and video/audio tracks.
+- v1, v2, and hybrid torrents; `btih`/`btmh` magnets; peer metadata exchange;
+  SHA-1/SHA-256 Merkle verification; restart recovery; and verified-file seeding.
+- HTTP/HTTPS/UDP trackers, DHT, and PEX discovery, with private-torrent rules.
+  Peer data uses TCP.
+- Persistent requests, deduplication, worker leases, retries, cancellation,
+  imports without overwriting existing files, and preservation of source files.
+- Plex watchlists, TMDB enrichment, RSS/JSON/Torznab sources, Plex refresh and
+  availability confirmation, an authenticated local HTTP API, and management CLI.
 
-Les formats et protocoles ont des limites explicites. L’analyse ne décode pas les
-images ou le son et ne remplace pas les fonctions de transcodage de Plex. Les
-anciens fichiers SQLite et états Go restent séparés : la nouvelle version ne les
-migre pas implicitement. [Les limites](docs/limits.md) précisent les variantes
-prises en charge et les conditions de reprise.
+Formats and protocols have explicit limits. Analysis does not decode pictures
+or sound and does not replace Plex transcoding. Older SQLite and Go state remain
+separate; this version does not migrate them implicitly. See the
+[supported formats and limits](docs/limits.md).
 
-## Configuration et commandes
+## Configuration and commands
 
 ```sh
 ./target/release/mynou init --config ./mynou.json
 ./target/release/mynou serve --config ./mynou.json
 ```
 
-`init` crée une configuration locale et un `.env` privé avec un jeton API aléatoire.
-Plex et TMDB sont désactivés au départ. Configure leurs adresses, active les
-intégrations voulues et fournis les secrets dans l’environnement du service.
-Le jeton API peut aussi être lu dans le `.env` voisin du fichier de configuration.
+`init` creates local configuration and a private `.env` with a random API token.
+Plex and TMDB start disabled. Configure their addresses, enable the integrations
+you need, and provide secrets in the service environment. The API token can also
+be read from the `.env` beside the configuration file.
 
 ```sh
-mynou submit --title "Film local" --path ./film.mp4 --config ./mynou.json
-mynou submit --title "Film" --year 2026 --url 'magnet:?xt=urn:btih:...' --config ./mynou.json
+mynou submit --title "Local movie" --path ./movie.mp4 --config ./mynou.json
+mynou submit --title "Movie" --year 2026 --url 'magnet:?xt=urn:btih:...' --config ./mynou.json
 mynou sync --config ./mynou.json
 mynou jobs --config ./mynou.json
 mynou show ID --config ./mynou.json
@@ -96,27 +98,37 @@ mynou cancel ID --config ./mynou.json
 mynou status --config ./mynou.json
 ```
 
-Les commandes de gestion passent par l’API si le service tourne ; sinon elles
-ouvrent son journal local. Elles ne démarrent pas un second service de téléchargement.
-Utilise un chemin accessible depuis le conteneur pour une demande locale en Docker.
+Management commands use the API when the service is running; otherwise they
+open its local journal. They do not start a second download service. For a local
+Docker submission, use a path visible inside the container.
 
-## Vérifier et mesurer
+## Development and releases
 
-```sh
-cargo metadata --offline --locked --format-version 1
-cargo fmt --all --check
-cargo clippy --all-targets --offline --locked -- -D warnings
-cargo test --all-targets --offline --locked
-cargo build --release --offline --locked
-cargo run --release --offline --locked --example benchmark
-```
+Validation runs **only in GitHub Actions**. Do not run tests or lint locally.
+Commit meaningful changes, push to the repository, and inspect the Actions run.
+Fix a failing run with another commit and push; proceed once required checks
+are green.
 
-Le graphe Cargo doit contenir exactement un package, `mynou`, et zéro dépendance.
-Les tests réseau utilisent des services locaux. Le benchmark mesure l’analyse
-en cache chaud et les condensats ; [sa méthode](docs/performance.md) permet de
-reproduire les valeurs sur ta machine. L’absence de dépendances et les résultats
-de tests ne constituent pas une preuve de perfection du code.
+CI checks the offline Cargo graph, formatting, Clippy, tests, release builds,
+and Docker behavior. The Cargo graph must contain exactly one package, `mynou`,
+with no dependencies. Network tests use local services.
 
-[Architecture](docs/architecture.md) · [Installation Docker](docs/deployment.md) ·
-[Dépendances](docs/dependencies.md) · [Formats et limites](docs/limits.md) ·
-[Performances](docs/performance.md) · [Validation](docs/validation.md)
+A successful run on `trunk` automatically publishes the version from
+`Cargo.toml` if it has not been released. CI creates the matching tag and release
+from that validated commit, and publishes:
+
+- `mynou-vVERSION-source.zip`, including the static binary and an internal
+  `SHA256SUMS` manifest;
+- `mynou-vVERSION-linux-x86_64`, the static binary;
+- `mynou-vVERSION-linux-amd64-image.tar.gz`, a saved Docker image;
+- `SHA256SUMS` and individual `.sha256` files for the release assets.
+
+No Docker Hub account or manual artifact upload is needed. The
+[validation guide](docs/validation.md) distinguishes historical 0.6.0 results
+from current Actions runs. The [benchmark method](docs/performance.md) explains
+the recorded measurements. Neither dependency absence nor passing tests prove
+code perfection.
+
+[Architecture](docs/architecture.md) · [Docker installation](docs/deployment.md) ·
+[Dependencies](docs/dependencies.md) · [Formats and limits](docs/limits.md) ·
+[Performance](docs/performance.md) · [Validation](docs/validation.md)

@@ -11,7 +11,7 @@ RUN cargo build --release --offline --locked --target "$RUST_TARGET" \
 
 FROM scratch
 COPY --from=build /mynou /mynou
-# Ce bundle contient des données de confiance, aucune bibliothèque ou commande.
+# This bundle contains trust data, not a library or executable.
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 USER 1000:1000
 WORKDIR /data

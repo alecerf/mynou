@@ -1,101 +1,92 @@
-# Formats et limites explicites
+# Supported formats and explicit limits
 
-## Analyse média
+## Media analysis
 
-L’analyse lit les métadonnées du conteneur. Elle ne décode pas les images, les
-échantillons audio ou les sous-titres et ne vérifie pas qu’un lecteur puisse
-effectivement décoder tout le fichier. Un format inconnu, des tailles incohérentes
-ou des métadonnées excessives produisent une erreur en français.
+Analysis reads container metadata. It does not decode pictures, audio samples,
+or subtitles, and does not prove that a player can decode the whole file.
+Unknown formats, inconsistent sizes, or excessive metadata produce an explicit
+English error.
 
-| Conteneur | Informations analysées | Limites |
+| Container | Analyzed information | Limits |
 | --- | --- | --- |
-| MP4/MOV | `moov`, pistes, descriptions codecs, dimensions, chronologie, langues, titre/date iTunes, configuration AAC | Une boîte `moov` est nécessaire ; pas d’analyse autonome d’un fragment `moof` sans initialisation ; pas de déchiffrement DRM |
-| Matroska/WebM | EBML, Info, Tracks, tags globaux, dimensions, fréquence/canaux audio, langues | Les tailles inconnues sont acceptées pour Segment et permettent l’arrêt sur un Cluster inconnu ; des métadonnées suivantes restent accessibles si SeekHead les référence ; pas de reconstruction d’une durée à partir de tous les paquets |
-| AVI | RIFF `hdrl`, `avih`, `strh`, `strf`, titres INFO | Chronologie décrite par l’en-tête principal ; pas d’indexation complète OpenDML/AVIX ni décodage des trames |
-| WAV/RF64 | `fmt`, `ds64`, `data`, titre/date INFO | Durée déduite du volume audio et du débit déclaré ; les variantes compressées peuvent fournir une durée indicative plutôt qu’un comptage des échantillons décodés |
-| FLAC | STREAMINFO, nombre d’échantillons, commentaires Vorbis TITLE/DATE | Pas de décodage des blocs audio ni de vérification MD5 des échantillons |
-| MP3/MPEG audio | Deux en-têtes de trame cohérents, ID3 v2.2–v2.4, Xing/Info/VBRI | Durée disponible lorsqu’un index la décrit ; sans index elle reste inconnue ; tags chiffrés/compressés/unsynchronisés non interprétés |
+| MP4/MOV | `moov`, tracks, codec descriptions, dimensions, timeline, languages, iTunes title/date, AAC configuration | Requires `moov`; no standalone `moof` fragment analysis without initialization; no DRM decryption |
+| Matroska/WebM | EBML, Info, Tracks, global tags, dimensions, audio rate/channels, languages | Unknown sizes are accepted for Segment and allow stopping at an unknown-sized Cluster; later metadata remains reachable through SeekHead references; no duration reconstruction from every packet |
+| AVI | RIFF `hdrl`, `avih`, `strh`, `strf`, INFO titles | Timeline from the main header; no complete OpenDML/AVIX indexing or frame decoding |
+| WAV/RF64 | `fmt`, `ds64`, `data`, INFO title/date | Duration from audio byte count and declared rate; compressed variants can give an indicative duration rather than decoded sample count |
+| FLAC | STREAMINFO, sample count, Vorbis TITLE/DATE comments | No audio block decoding or sample MD5 verification |
+| MP3/MPEG audio | Two consistent frame headers, ID3 v2.2–v2.4, Xing/Info/VBRI | Duration only when described by an index; otherwise unknown; encrypted, compressed, or unsynchronized tags are not interpreted |
 
-Les titres embarqués priment sur le nom de fichier. La date reste absente si
-aucune métadonnée interprétable ne la décrit. Un codec inconnu conserve son
-identifiant de conteneur ; une valeur absente reste `null` dans le JSON.
-L’analyse est bornée à 8 Mio par lecture de métadonnées, 64 Mio au total et
-100 000 éléments. Les données média volumineuses sont franchies avec `seek`.
+Embedded titles take precedence over filenames. Date stays absent unless usable
+metadata describes it. Unknown codecs retain their container identifier. Missing
+values remain `null` in JSON. Analysis is bounded to 8 MiB per metadata read,
+64 MiB total, and 100,000 elements. Large media payloads are skipped with `seek`.
 
 ## BitTorrent
 
-Le moteur implémente v1, v2 et hybride, le protocole pairs TCP, l’extension de
-métadonnées, les preuves de hachage v2, les trackers HTTP/HTTPS/UDP, le client DHT
-et la réception PEX. Il utilise une concurrence bornée par les paramètres de
-configuration. Ce moteur n’implémente pas uTP, WebRTC/WebTorrent, les webseeds,
-UPnP/NAT-PMP ou une table DHT persistante complète.
+The engine implements v1, v2, and hybrid torrents, the TCP peer protocol,
+metadata exchange, v2 hash proofs, HTTP/HTTPS/UDP trackers, a DHT client, and PEX
+reception. Concurrency is bounded by configuration. It does not implement uTP,
+WebRTC/WebTorrent, webseeds, UPnP/NAT-PMP, or a complete persistent DHT table.
 
-Chaque transfert utilise un pair actif et jusqu’à 16 blocs en vol ; le cache
-de découverte est limité à 1 024 pairs par torrent. Le partage annonce les
-événements `started`, `completed` et `stopped` et respecte les intervalles du
-tracker, bornés entre 30 secondes et 24 heures. Un arrêt forcé ne garantit pas
-l’envoi de `stopped`. Les compteurs de téléchargement et d’envoi décrivent les
-octets de contenu transférés pendant la session courante ; ils repartent de zéro
-au redémarrage et ne constituent pas un ratio historique.
+Each transfer uses one active peer and up to 16 blocks in flight. Discovery caches
+at most 1,024 peers per torrent. Seeding announces `started`, `completed`, and
+`stopped` events and respects tracker intervals, bounded between 30 seconds and
+24 hours. A forced stop does not guarantee a `stopped` announcement. Download and
+upload counters describe content bytes transferred in the current session;
+they reset on restart and are not a lifetime ratio.
 
-Un magnet ne révèle pas le drapeau privé avant l’obtention de ses métadonnées.
-Lorsqu’un tracker ou `x.pe` est fourni, la découverte publique attend la
-classification du torrent. Un magnet sans indication peut rechercher ses pairs
-par DHT, puis arrêter la découverte publique si les métadonnées le classent privé.
-Pour une acquisition privée dont la confidentialité doit être connue immédiatement,
-utilise le fichier `.torrent` ou un magnet avec son tracker privé.
+A magnet cannot reveal its private flag before metadata arrives. When a tracker
+or `x.pe` is provided, public discovery waits for torrent classification. A magnet
+without such a hint can discover peers through DHT, then stop public discovery if
+the metadata marks it private. For a private acquisition whose confidentiality
+must be known immediately, use its `.torrent` file or a magnet with its private
+tracker.
 
-La reprise recontrôle les données locales ; un fichier modifié ne devient pas
-prêt par simple présence. Les chemins dangereux et les métadonnées contradictoires
-sont rejetés. L’annulation d’une demande ne garantit pas l’arrêt d’un torrent
-qui pourrait être partagé par une autre demande.
+Recovery rechecks local data. A modified file does not become ready merely by
+existing. Unsafe paths and contradictory metadata are rejected. Canceling one
+request does not necessarily stop a torrent shared by another request.
 
-## HTTP, TLS et intégrations
+## HTTP, TLS, and integrations
 
-Le client implémente HTTP/1.1 avec limites de taille, délais, redirections et proxy
-HTTP/CONNECT. Il ne négocie pas HTTP/2 ou HTTP/3. L’API locale accepte des requêtes
-HTTP/1.1 avec longueur annoncée ; elle refuse le transfert segmenté des requêtes
-et les en-têtes ambigus.
+The client implements HTTP/1.1 with size limits, deadlines, redirects, and
+HTTP/CONNECT proxies. It does not negotiate HTTP/2 or HTTP/3. The local API accepts
+HTTP/1.1 requests with a declared content length and rejects chunked request
+bodies and ambiguous headers.
 
-Le client TLS utilise TLS 1.3, X25519 et ChaCha20-Poly1305/SHA-256 avec validation
-du certificat et du nom d’hôte. Les signatures de certificats acceptent
-RSA et ECDSA P-256/P-384 avec SHA-256/SHA-384. Les algorithmes ou extensions critiques absents
-de l’implémentation produisent une erreur ; il n’existe aucun repli vers une
-connexion non authentifiée. Les primitives sont vérifiées par vecteurs et tests
-de protocole locaux, sans prétendre à un audit cryptographique indépendant.
-L’extension X.509 NameConstraints n’est pas implémentée et provoque un rejet
-explicite ; le client ne consulte pas de listes CRL ni de serveur OCSP.
+The TLS client uses TLS 1.3, X25519, and ChaCha20-Poly1305/SHA-256 with certificate
+and hostname validation. Certificate signatures support RSA and ECDSA P-256/P-384
+with SHA-256/SHA-384. Unsupported algorithms or critical extensions produce an
+error; there is no unauthenticated fallback. Primitives are checked using vectors
+and local protocol tests, without claiming an independent cryptographic audit.
+X.509 NameConstraints is not implemented and causes explicit rejection. The
+client does not consult CRLs or OCSP servers.
 
-Plex, TMDB et les indexeurs nécessitent leurs adresses et accès valides. Les tests
-de réponses locales ne signifient pas que la version a été connectée à ton
-installation personnelle. La sélection de sources est bornée par les formats
-et critères implémentés ; elle n’effectue pas de recherche générale sur le Web.
+Plex, TMDB, and indexers need valid addresses and credentials. Local-response tests
+do not mean the release has connected to your personal installation. Source
+selection is bounded by implemented formats and matching criteria; it does not
+perform a general Web search.
 
-Les réponses TMDB sont mises en cache une heure, avec 256 entrées et 32 Mio au
-maximum. Les épisodes déjà présents dans une réponse sont filtrés par leur date
-au moment de la synchronisation ; de nouvelles métadonnées sont découvertes après
-expiration du cache et lors du prochain tour. La confirmation de disponibilité
-Plex utilise toujours une réponse réseau fraîche.
-La sélection automatique exige une correspondance stricte du titre et un fichier
-identifié pour l’épisode demandé. Les packs et variantes de titres ne sont pas
-résolus implicitement ; les épisodes spéciaux de saison zéro sont exclus de
-l’expansion automatique des séries.
+TMDB responses are cached for one hour, with at most 256 entries and 32 MiB.
+Episodes already in a response are filtered by their air date during
+synchronization. New metadata is discovered after cache expiry and on the next
+sync. Plex availability confirmation always uses a fresh network response.
+Automatic source selection requires a strict title match and an identified file
+for the requested episode. Packs and title variants are not resolved implicitly.
+Season-zero specials are excluded from automatic series expansion.
 
-## Persistance et plateforme
+## Persistence and platform
 
-Le journal Rust remplace SQLite et exige un seul propriétaire du même dossier.
-Les fichiers des versions Go sont conservés séparément ; aucune migration
-silencieuse de schéma ou de torrent n’est réalisée. Conserve aussi la bibliothèque
-et les téléchargements quand tu changes de version.
+The Rust journal replaces SQLite and requires a single owner of its directory.
+Go-release files stay separate; no silent schema or torrent migration occurs.
+Preserve the library and downloads when changing versions.
 
-L’historique conserve les 1 000 événements les plus récents de l’ensemble du
-journal, puis filtre ceux d’une demande pour `events`. Les demandes et leur état
-restent dans les snapshots ; l’historique d’événements n’est pas une archive
-illimitée. Une compaction automatique est tentée lorsque le journal atteint
-4 Mio. Les records et snapshots sont bornés à 16 Mio, et le journal à 64 Mio ;
-un dépassement produit une erreur plutôt qu’une croissance sans limite.
+History retains the most recent 1,000 events across the journal, then filters by
+request for `events`. Requests and their state remain in snapshots; event history
+is not an unlimited archive. Automatic compaction is attempted at 4 MiB of journal
+data. Records and snapshots are limited to 16 MiB, and the journal to 64 MiB;
+exceeding a limit produces an error rather than unbounded growth.
 
-La cible de livraison Docker est Linux x86_64 avec musl. Le projet n’installe aucun
-gestionnaire de signaux Unix via FFI : l’arrêt authentifié de l’API est gracieux,
-et la reprise du journal traite les interruptions forcées. Les fonctions de
-sécurité qui utilisent `/dev/urandom` exigent un système qui fournit cette source.
+The Docker delivery target is Linux x86_64 with musl. The project installs no Unix
+signal handler through FFI: authenticated API shutdown is graceful, while journal
+recovery handles forced interruptions. Security functions using `/dev/urandom`
+require a system providing that source.
