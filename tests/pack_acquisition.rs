@@ -125,6 +125,84 @@ fn two_absolute_named_episodes_share_one_verified_pack_and_survive_restart() {
 }
 
 #[test]
+fn mapped_episodes_import_from_a_partial_torrent_and_cancellation_retains_shared_interests() {
+    let directory = Directory::new();
+    let catalog = catalog(2);
+    let media = include_bytes!("../examples/demo.mp4").to_vec();
+    let torrent = Torrent::multiple(
+        &directory.0.join("metadata"),
+        "Pack",
+        vec![
+            ("001.mp4".into(), media.clone()),
+            ("002.mp4".into(), media),
+            (
+                "unmapped-sample.mp4".into(),
+                transfer_support::payload(transfer_support::BLOCK * 8, 43),
+            ),
+            (
+                "untouched.txt".into(),
+                transfer_support::payload(transfer_support::BLOCK, 59),
+            ),
+        ],
+    );
+    let seed = Seeder::open(&directory.0.join("seed"), &[&torrent]);
+    let proxy = RecordingProxy::open(seed.client.listen_port());
+    let cfg = native_config(&directory, &catalog);
+    let engine = Engine::open(cfg.clone()).unwrap();
+    let record = engine
+        .track_series_with_policy(&request(), false, false, false)
+        .unwrap();
+    let report = engine
+        .submit_pack(id(&record), &mapping(&torrent.magnet(proxy.port), 2))
+        .unwrap();
+    let ids = jobs(&report);
+    wait(|| {
+        engine.tick().unwrap();
+        lock(&engine.store)
+            .unwrap()
+            .list()
+            .iter()
+            .all(|job| job.download_id.is_some())
+    });
+    engine.cancel(&ids[0]).unwrap();
+    proxy.payloads_enabled.store(true, Ordering::Release);
+    let imported = run_until(&engine, &ids[1], "ready");
+    assert_eq!(
+        fs::read(&imported.imports[0]).unwrap(),
+        include_bytes!("../examples/demo.mp4")
+    );
+    assert_eq!(
+        lock(&engine.store).unwrap().get(&ids[0]).unwrap().state,
+        "cancelled"
+    );
+    let native = engine.transfer(&torrent.id).unwrap();
+    assert_eq!(native.get("ready"), Some(&Value::Bool(false)));
+    assert_eq!(native.get("selected_ready"), Some(&Value::Bool(true)));
+    assert_eq!(native.get("user_paused"), Some(&Value::Bool(false)));
+    let required = (2 * include_bytes!("../examples/demo.mp4").len())
+        .div_ceil(transfer_support::BLOCK)
+        * transfer_support::BLOCK;
+    assert_eq!(
+        native.get("downloaded_bytes"),
+        Some(&Value::String(required.to_string()))
+    );
+    assert!(
+        !cfg.downloads
+            .data_dir
+            .join(&torrent.id)
+            .join("Pack/untouched.txt")
+            .exists()
+    );
+    assert_eq!(engine.library().unwrap().as_array().unwrap().len(), 1);
+    drop(engine);
+    proxy.wait_idle();
+    let engine = Engine::open(cfg).unwrap();
+    let retained = lock(&engine.store).unwrap().get(&ids[1]).unwrap();
+    assert_eq!(retained, imported);
+    assert_eq!(engine.transfers().unwrap().as_array().unwrap().len(), 1);
+}
+
+#[test]
 fn absent_mapped_file_never_falls_back_to_another_video() {
     let directory = Directory::new();
     let catalog = catalog(1);

@@ -82,10 +82,28 @@ impl FileSelection {
         }
     }
 
+    pub(super) fn validate_metadata(&self, meta: &Meta) -> Result<()> {
+        let Self::Paths(paths) = self else {
+            return Ok(());
+        };
+        let mut missing = paths.clone();
+        for file in meta.files.iter().filter(|file| !file.padding) {
+            missing.remove(file.path.to_string_lossy().as_ref());
+        }
+        if missing.is_empty() {
+            Ok(())
+        } else {
+            Err("Mapped torrent file is absent or ambiguous in authenticated metadata".into())
+        }
+    }
+
     pub(super) fn merge(&self, added: &Self, meta: Option<&Meta>) -> Result<Self> {
         added.validate()?;
+        if matches!(added, Self::All) {
+            return Ok(Self::All);
+        }
         if let Some(meta) = meta {
-            SelectionPlan::new(meta, added)?;
+            added.validate_metadata(meta)?;
         }
         match (self, added) {
             (Self::All, _) | (_, Self::All) => Ok(Self::All),
@@ -93,17 +111,15 @@ impl FileSelection {
                 // Authenticated metadata can prove that an unresolved old path
                 // has no file and therefore no piece interest. Retain every real
                 // interest while permitting an explicit correction to proceed.
-                let valid: BTreeSet<_> = meta
-                    .into_iter()
-                    .flat_map(|meta| &meta.files)
-                    .filter(|file| !file.padding)
-                    .map(|file| file.path.to_string_lossy().into_owned())
-                    .collect();
-                let mut paths: BTreeSet<_> = known
-                    .iter()
-                    .filter(|path| meta.is_none() || valid.contains(*path))
-                    .cloned()
-                    .collect();
+                let mut paths = if let Some(meta) = meta {
+                    meta.files
+                        .iter()
+                        .filter(|file| !file.padding)
+                        .filter_map(|file| known.get(file.path.to_string_lossy().as_ref()).cloned())
+                        .collect()
+                } else {
+                    known.clone()
+                };
                 paths.extend(added.iter().cloned());
                 let merged = Self::Paths(paths);
                 merged.validate()?;
@@ -180,7 +196,7 @@ impl SelectionPlan {
                     && match selection {
                         FileSelection::All => true,
                         FileSelection::Paths(_) => {
-                            remaining.remove(&file.path.to_string_lossy().into_owned())
+                            remaining.remove(file.path.to_string_lossy().as_ref())
                         }
                     }
             })

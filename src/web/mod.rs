@@ -574,7 +574,7 @@ impl Web {
                 self.redirect(
                     session,
                     "/ui/transfers",
-                    vec!["File priority saved. All files still download".into()],
+                    vec!["File priority saved for required pieces".into()],
                 )
             }
             "/ui/transfers/policy" => {

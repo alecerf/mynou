@@ -1,3 +1,5 @@
+#[allow(dead_code)]
+mod transfer_support;
 use mynou::{
     bencode::{Value, encode},
     crypto::sha1,
@@ -43,8 +45,7 @@ fn wait(mut predicate: impl FnMut() -> bool) {
         thread::sleep(Duration::from_millis(10));
     }
 }
-#[test]
-fn tracker_events_counters_and_interval_follow_real_transfer_and_pause() {
+fn tracker_scenario(partial: bool) {
     let root = std::env::temp_dir().join(format!(
         "mynou-tracker-{}-{}",
         std::process::id(),
@@ -107,7 +108,7 @@ fn tracker_events_counters_and_interval_follow_real_transfer_and_pause() {
         })
     };
     let data: Vec<u8> = (0..32768 + 17).map(|n| (n % 251) as u8).collect();
-    let info = d(&[
+    let mut info = d(&[
         (b"name", Value::Bytes(b"data.bin".to_vec())),
         (b"piece length", Value::Int(16384)),
         (b"length", Value::Int(data.len() as i64)),
@@ -117,6 +118,32 @@ fn tracker_events_counters_and_interval_follow_real_transfer_and_pause() {
         ),
         (b"private", Value::Int(1)),
     ]);
+    if partial {
+        let Value::Dict(fields) = &mut info else {
+            panic!("info");
+        };
+        fields.remove(b"length".as_slice());
+        fields.insert(b"name".to_vec(), Value::Bytes(b"Tracked".to_vec()));
+        fields.insert(
+            b"files".to_vec(),
+            Value::List(vec![
+                d(&[
+                    (b"length", Value::Int(16384)),
+                    (
+                        b"path",
+                        Value::List(vec![Value::Bytes(b"chosen.bin".to_vec())]),
+                    ),
+                ]),
+                d(&[
+                    (b"length", Value::Int((data.len() - 16384) as i64)),
+                    (
+                        b"path",
+                        Value::List(vec![Value::Bytes(b"unneeded.bin".to_vec())]),
+                    ),
+                ]),
+            ]),
+        );
+    }
     let id = hex(&sha1(&encode(&info)));
     let source = root.join("source.torrent");
     fs::write(
@@ -133,20 +160,42 @@ fn tracker_events_counters_and_interval_follow_real_transfer_and_pause() {
     let seed_root = root.join("seed");
     let seed_file = seed_root.join("downloads").join(&id).join("data.bin");
     fs::create_dir_all(seed_file.parent().expect("parent")).expect("dir");
-    fs::write(&seed_file, &data).expect("data");
+    if partial {
+        let base = seed_file.parent().unwrap().join("Tracked");
+        fs::create_dir_all(&base).unwrap();
+        fs::write(base.join("chosen.bin"), &data[..16384]).unwrap();
+        fs::write(base.join("unneeded.bin"), &data[16384..]).unwrap();
+    } else {
+        fs::write(&seed_file, &data).expect("data");
+    }
     let seed = Client::open(config(&seed_root, true)).expect("seed");
     seed.ensure(source.to_str().expect("path")).expect("ensure");
     wait(|| seed.check(&id).expect("status").ready);
     let seed_port = seed.listen_port().to_string();
+    let proxy = transfer_support::RecordingProxy::open(seed.listen_port());
     let client = Client::open(config(&root.join("client"), false)).expect("client");
     let client_port = client.listen_port().to_string();
     let magnet = format!(
         "magnet:?xt=urn:btih:{id}&x.pe=127.0.0.1:{}&tr=http%3A%2F%2F127.0.0.1%3A{}%2Fannounce",
-        seed.listen_port(),
+        proxy.port,
         address.port()
     );
-    client.ensure(&magnet).expect("ensure");
-    wait(|| client.check(&id).expect("status").ready);
+    if partial {
+        client
+            .ensure_files(&magnet, &["Tracked/chosen.bin".into()])
+            .unwrap();
+    } else {
+        client.ensure(&magnet).expect("ensure");
+    }
+    wait(|| {
+        events.lock().unwrap().iter().any(|event| {
+            event.get("port") == Some(&client_port)
+                && event.get("event").map(String::as_str) == Some("started")
+        })
+    });
+    proxy.payloads_enabled.store(true, Ordering::Release);
+    wait(|| client.check(&id).expect("status").selected_ready);
+    assert_eq!(client.check(&id).unwrap().ready, !partial);
     wait(|| {
         events.lock().expect("events").iter().any(|e| {
             e.get("port") == Some(&client_port)
@@ -158,25 +207,33 @@ fn tracker_events_counters_and_interval_follow_real_transfer_and_pause() {
         .iter()
         .filter(|e| e.get("port") == Some(&client_port))
         .collect();
-    assert_eq!(client_events.len(), 3);
+    assert_eq!(client_events.len(), if partial { 2 } else { 3 });
     assert_eq!(
         client_events
             .iter()
             .filter_map(|e| e.get("event").map(String::as_str))
             .collect::<Vec<_>>(),
-        ["started", "completed", "stopped"]
+        if partial {
+            vec!["started", "stopped"]
+        } else {
+            vec!["started", "completed", "stopped"]
+        }
     );
-    let completed = client_events[1];
-    assert_eq!(completed.get("left").map(String::as_str), Some("0"));
-    assert_eq!(completed.get("downloaded"), Some(&data.len().to_string()));
-    assert_eq!(completed.get("uploaded").map(String::as_str), Some("0"));
+    let received = if partial { 16384 } else { data.len() };
+    let reported = client_events[1];
+    assert_eq!(
+        reported.get("left"),
+        Some(&(data.len() - received).to_string())
+    );
+    assert_eq!(reported.get("downloaded"), Some(&received.to_string()));
+    assert_eq!(reported.get("uploaded").map(String::as_str), Some("0"));
     assert_eq!(
         client.transfer_stats(&id).expect("stats"),
-        (data.len() as u64, 0)
+        (received as u64, 0)
     );
     assert_eq!(
         seed.transfer_stats(&id).expect("seedstats"),
-        (0, data.len() as u64)
+        (0, received as u64)
     );
     assert!(
         client_events
@@ -216,7 +273,7 @@ fn tracker_events_counters_and_interval_follow_real_transfer_and_pause() {
         })
         .cloned()
         .expect("stopped");
-    assert_eq!(stopped.get("uploaded"), Some(&data.len().to_string()));
+    assert_eq!(stopped.get("uploaded"), Some(&received.to_string()));
     seed.resume(&id).expect("resume");
     wait(|| {
         events
@@ -231,8 +288,20 @@ fn tracker_events_counters_and_interval_follow_real_transfer_and_pause() {
             == 2
     });
     drop(client);
+    proxy.wait_idle();
+    drop(proxy);
     drop(seed);
     stop.store(true, Ordering::Release);
     worker.join().expect("tracker");
     fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn tracker_events_counters_and_interval_follow_real_transfer_and_pause() {
+    tracker_scenario(false);
+}
+
+#[test]
+fn selective_completion_reports_remaining_bytes_and_stops_without_a_completed_announcement() {
+    tracker_scenario(true);
 }

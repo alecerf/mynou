@@ -1033,7 +1033,7 @@ impl Client {
     fn ensure_selection(&self, source: &str, selection: FileSelection) -> Result<DownloadStatus> {
         let mut source = Source::parse(source)?;
         if let Some(meta) = &source.meta {
-            selection::SelectionPlan::new(meta, &selection)?;
+            selection.validate_metadata(meta)?;
         }
         let id = source.id();
         let mut jobs = self
@@ -1198,6 +1198,18 @@ impl Client {
             .lock()
             .map_err(|_| "BitTorrent state lock is poisoned")?;
         let job = jobs.get_mut(id).ok_or("Unknown download")?;
+        if !job.failed
+            && match selection {
+                FileSelection::All => job.control.file_selection == FileSelection::All,
+                FileSelection::Paths(paths) => paths.iter().all(|path| {
+                    job.status
+                        .available_files
+                        .contains(&self.config.data_dir.join(id).join(path))
+                }),
+            }
+        {
+            return Ok(job.status.clone());
+        }
         expand_selection(&self.config, job, selection)?;
         if job.failed {
             return Err(job.status.message.clone());

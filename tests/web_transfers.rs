@@ -114,7 +114,7 @@ fn browser_transfer_controls_change_native_state_and_keep_sources() {
     assert_eq!(detail.status, 200);
     assert!(detail.body.contains("web-controls.bin"));
     assert!(detail.body.contains(&format!("/ui/jobs/{}", job.id)));
-    assert!(detail.body.contains("File priorities"));
+    assert!(detail.body.contains("Files and selection"));
     assert!(detail.body.contains("value=\"1500\""));
     detail.no_secrets();
     assert_eq!(

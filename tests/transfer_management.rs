@@ -1079,6 +1079,11 @@ fn transfer_api_authentication_and_strict_controls_preserve_existing_state_on_er
         );
     }
     let malformed = [
+        ("selection", r#"{"all":false}"#),
+        ("selection", r#"{"all":true,"indices":[0]}"#),
+        ("selection", r#"{"indices":[0,0]}"#),
+        ("selection", r#"{"indices":[999]}"#),
+        ("selection", r#"{"indices":[0],"unknown":true}"#),
         ("pause", r#"{"extra":true}"#),
         ("resume", "[]"),
         ("priority", r#"{"priority":"10"}"#),
@@ -1374,11 +1379,40 @@ fn online_cli_controls_the_existing_native_service_and_validates_file_priorities
             r#"{"upload_limit_bps":65536}"#,
         ],
     ));
+    let included = successful(command(
+        &engine_root,
+        &[
+            "torrent-select",
+            &torrent.id,
+            "--selection",
+            r#"{"indices":[0]}"#,
+        ],
+    ));
+    assert_eq!(included.get("user_paused"), Some(&Value::Bool(true)));
+    assert_eq!(included.get("file_selection"), Some(&Value::Null));
     let cleared = successful(command(
         &engine_root,
         &["torrent-policy", &torrent.id, "--policy", "null"],
     ));
     for args in [
+        vec![
+            "torrent-select",
+            torrent.id.as_str(),
+            "--selection",
+            r#"{"all":false}"#,
+        ],
+        vec![
+            "torrent-select",
+            torrent.id.as_str(),
+            "--selection",
+            r#"{"indices":[0,0]}"#,
+        ],
+        vec![
+            "torrent-select",
+            torrent.id.as_str(),
+            "--selection",
+            r#"{"indices":[999]}"#,
+        ],
         vec![
             "torrent-priority",
             torrent.id.as_str(),
@@ -1420,7 +1454,7 @@ fn online_cli_controls_the_existing_native_service_and_validates_file_priorities
     let resumed = successful(command(&engine_root, &["resume", &torrent.id]));
     assert_eq!(resumed.get("user_paused"), Some(&Value::Bool(false)));
     for snapshot in [
-        &transfers, &transfer, &paused, &priority, &files, &policy, &cleared, &resumed,
+        &transfers, &transfer, &paused, &priority, &files, &policy, &included, &cleared, &resumed,
     ] {
         redacted(snapshot);
     }
