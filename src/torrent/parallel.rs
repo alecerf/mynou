@@ -1,9 +1,8 @@
 //! A generation owns its peer workers, exclusive piece claims, and verified writes.
 
 use super::{
-    DownloadConfig, Jobs, Meta, PolicyRuntime, Source, TransferCounters, authenticate_v2,
-    discovery, mkdir_private, persist_meta, prepare_files, read_piece, update,
-    verified_piece_bytes, wire, write_piece,
+    DownloadConfig, Jobs, Meta, PolicyRuntime, Source, TransferCounters, discovery, mkdir_private,
+    persist_meta, read_piece, update, verified_piece_bytes, wire, write_piece,
 };
 use crate::Result;
 use std::{
@@ -548,9 +547,12 @@ pub(super) fn download(
         )?,
     };
     let base = config.data_dir.join(id);
+    let selected = with_generation(jobs, stop, id, |job| {
+        super::selection::SelectionPlan::new(&meta, &job.control.file_selection)
+    })?;
     with_generation(jobs, stop, id, |_| {
         mkdir_private(&base)?;
-        prepare_files(&meta, &base, stop)
+        super::prepare_selected_files(&meta, &base, stop, Some(&selected.storage))
     })?;
     let mut have: Vec<_> = (0..meta.count())
         .map(|index| {
@@ -589,7 +591,7 @@ pub(super) fn download(
         if stop.load(Ordering::Acquire) {
             return Err("Download interrupted".into());
         }
-        if have.iter().all(|have| *have) {
+        if selected.complete(&have) {
             break;
         }
         refresh_peers(jobs, stop, id, &mut addresses)?;
@@ -698,8 +700,9 @@ pub(super) fn download(
                     {
                         retire_peer(&mut group, event.slot, &mut quarantine, &mut retries, true);
                     } else {
-                        commit_piece(config, jobs, stop, id, &meta, &base, index, &data, &have)?;
-                        have[index] = true;
+                        commit_piece(
+                            jobs, stop, id, &meta, &base, index, &data, &mut have, &selected,
+                        )?;
                         if !meta.private && config.pex {
                             super::merge_peers(&mut addresses, peers);
                         }
@@ -747,7 +750,8 @@ pub(super) fn download(
                 continue;
             }
             let next = order.iter().copied().find(|index| {
-                !have[*index]
+                selected.pieces[*index]
+                    && !have[*index]
                     && !claimed.contains(index)
                     && availability.as_ref().is_none_or(|bits| {
                         *index / 8 < bits.len() && bits[*index / 8] & (0x80 >> (*index % 8)) != 0
@@ -760,19 +764,18 @@ pub(super) fn download(
                 } else {
                     retire_peer(&mut group, slot, &mut quarantine, &mut retries, false);
                 }
-            } else if worker.idle_since.elapsed() >= RETRY && !have.iter().all(|have| *have) {
+            } else if worker.idle_since.elapsed() >= RETRY && !selected.complete(&have) {
                 // Recycling an idle peer refreshes HAVE/PEX availability and
                 // allows later candidates to use this bounded connection slot.
                 retire_peer(&mut group, slot, &mut quarantine, &mut retries, false);
             }
         }
         if last_update.elapsed() >= Duration::from_secs(1) {
-            let done = have.iter().filter(|have| **have).count();
             update(
                 (jobs, stop),
                 id,
                 Some(&meta),
-                done as f64 / meta.count() as f64,
+                selected.progress(&have),
                 false,
                 if group
                     .workers
@@ -789,12 +792,25 @@ pub(super) fn download(
             last_update = Instant::now();
         }
     }
-    // No worker can retain a result or proof mutation when the complete torrent
-    // is authenticated and published, including when an error unwinds the loop.
+    // No worker may retain a payload or proof mutation during publication.
     drop(group);
-    authenticate_v2(&mut meta, &base, stop)?;
+    let full = have.iter().all(|have| *have);
+    if full {
+        with_generation(jobs, stop, id, |_| super::prepare_files(&meta, &base, stop))?;
+    }
+    super::authenticate_selected_v2(
+        &mut meta,
+        &base,
+        stop,
+        (!full).then_some(selected.files.as_slice()),
+    )?;
     with_generation(jobs, stop, id, |job| {
-        super::sync_files(&meta, &base, stop)?;
+        super::sync_selected_files(
+            &meta,
+            &base,
+            stop,
+            (!full).then_some(selected.storage.as_slice()),
+        )?;
         persist_meta(config, id, &meta)?;
         job.meta = Some(Arc::new(meta.clone()));
         job.source.v1 = meta.v1;
@@ -807,15 +823,27 @@ pub(super) fn download(
             .map(|file| base.join(&file.path))
             .collect();
         job.status.progress = 1.0;
-        job.status.ready = true;
-        job.status.message = "Download verified and available".into();
+        job.status.ready = full;
+        job.status.selected_ready = true;
+        job.status.available_files = meta
+            .files
+            .iter()
+            .zip(&selected.files)
+            .filter(|(file, wanted)| !file.padding && (full || **wanted))
+            .map(|(file, _)| base.join(&file.path))
+            .collect();
+        job.status.message = if full {
+            "Download verified and available"
+        } else {
+            "Selected files verified and available; torrent is incomplete"
+        }
+        .into();
         Ok(())
     })
 }
 
 #[allow(clippy::too_many_arguments)]
 fn commit_piece(
-    _config: &DownloadConfig,
     jobs: &Jobs,
     stop: &AtomicBool,
     id: &str,
@@ -823,16 +851,17 @@ fn commit_piece(
     base: &Path,
     index: usize,
     data: &[u8],
-    have: &[bool],
+    have: &mut [bool],
+    selected: &super::selection::SelectionPlan,
 ) -> Result<()> {
     with_generation(jobs, stop, id, |job| {
         if have[index] {
             return Err("Peer returned an already verified piece".into());
         }
         write_piece(meta, base, index, data)?;
+        have[index] = true;
         super::add_payload(&job.counters.verified, verified_piece_bytes(meta, index));
-        job.status.progress =
-            (have.iter().filter(|have| **have).count() + 1) as f64 / meta.count() as f64;
+        job.status.progress = selected.progress(have);
         job.status.message = "Download in progress".into();
         Ok(())
     })

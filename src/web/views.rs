@@ -27,6 +27,7 @@ const TRANSFER_STATES: &[&str] = &[
     "downloading",
     "paused",
     "ready",
+    "selected_ready",
     "failed",
     "seed_limited",
 ];
@@ -575,13 +576,34 @@ pub fn transfer(engine: &Arc<Engine>, session: &Session, query: &Form, id: &str)
     body.push_str("<div class=actions><button name=action value=save type=submit>Save override</button><button name=action value=reset type=submit class=secondary>Restore defaults</button></div></form><p class=muted>A saved override replaces the seeding defaults in full.</p></article></section>");
     let files = value.get("files").map(array).unwrap_or_default();
     let (page, offset) = page(files.len(), requested);
-    body.push_str("<section class=panel><h2>File priorities</h2><p>Priority changes download order. Every file is still downloaded.</p><div class=table-wrap><table><caption>Transfer files</caption><thead><tr><th scope=col>File</th><th scope=col>Bytes</th><th scope=col>Priority</th></tr></thead><tbody>");
+    body.push_str("<section class=panel><h2>Files and selection</h2><p>Selection retains all files requested by shared jobs. Include more files or download the entire torrent. Priority changes the order of required pieces. Only a complete verified torrent can seed.</p>");
+    body.push_str(&form("/ui/transfers/selection", session));
+    body.push_str(&hidden("id", id));
+    body.push_str("<button name=action value=all type=submit>Download all files</button></form><div class=table-wrap><table><caption>Transfer files</caption><thead><tr><th scope=col>File</th><th scope=col>Bytes</th><th scope=col>Selection / verification</th><th scope=col>Priority</th></tr></thead><tbody>");
     for file in files.iter().skip(offset).take(PAGE_SIZE) {
         body.push_str(&format!(
             "<tr><td><code>{}</code></td><td>{}</td><td>",
             display(text(file, "path")),
             scalar(file, "size_bytes")
         ));
+        let selected = file.get("selected").and_then(Value::as_bool) == Some(true);
+        let verified = file.get("verified").and_then(Value::as_bool) == Some(true);
+        body.push_str(if verified {
+            "Verified"
+        } else if selected {
+            "Required"
+        } else {
+            "Not selected"
+        });
+        if !selected {
+            body.push_str(&form("/ui/transfers/selection", session));
+            body.push_str(&hidden("id", id));
+            body.push_str(&hidden("index", &raw_scalar(file.get("index"))));
+            body.push_str(
+                "<button name=action value=include type=submit>Include file</button></form>",
+            );
+        }
+        body.push_str("</td><td>");
         body.push_str(&form("/ui/transfers/files", session));
         body.push_str(&hidden("id", id));
         body.push_str(&hidden("index", &raw_scalar(file.get("index"))));

@@ -6,7 +6,7 @@ use crate::{
     json::Value,
     media, organizer,
     store::{self, Job, RecordedRelease, Request, Store},
-    torrent::{Client, FilePriority, TransferPolicy},
+    torrent::{Client, FilePriority, SelectionUpdate, TransferPolicy},
 };
 use std::{
     path::Path,
@@ -277,6 +277,11 @@ impl Engine {
         self.transfer(id)
     }
 
+    pub fn select_transfer_files(&self, id: &str, update: &SelectionUpdate) -> Result<Value> {
+        self.native_client()?.select_files(id, update)?;
+        self.transfer(id)
+    }
+
     pub fn status(&self) -> Result<Value> {
         let (jobs, maintenance_error) = {
             let store = lock(&self.store)?;
@@ -522,8 +527,13 @@ impl Engine {
         }
         if job.imports.is_empty() && !job.files.is_empty() && job.download_id.is_some() {
             let client = self.downloads.as_ref().ok_or("Downloads are disabled")?;
-            let status = client.check(job.download_id.as_deref().ok_or("Missing download")?)?;
-            if !status.ready {
+            let id = job.download_id.as_deref().ok_or("Missing download")?;
+            let status = if let Some(path) = &job.pack_file {
+                client.require_files(id, std::slice::from_ref(path))?
+            } else {
+                client.require_all(id)?
+            };
+            if !self.source_files_available(job, &status) {
                 job.state = "downloading".into();
                 job.progress = status.progress;
                 job.next_attempt_at = store::now().saturating_add(1);
@@ -552,10 +562,19 @@ impl Engine {
                     lock(&self.store)?.update(job.clone())?;
                 }
                 let status = if let Some(id) = &job.download_id {
-                    client.check(id)?
+                    if let Some(path) = &job.pack_file {
+                        client.require_files(id, std::slice::from_ref(path))?
+                    } else {
+                        client.require_all(id)?
+                    }
                 } else {
                     // Fetch metadata before acquiring the client internal lock.
-                    client.ensure(job.acquisition_url.as_deref().ok_or("Missing source")?)?
+                    let source = job.acquisition_url.as_deref().ok_or("Missing source")?;
+                    if let Some(path) = &job.pack_file {
+                        client.ensure_files(source, std::slice::from_ref(path))?
+                    } else {
+                        client.ensure(source)?
+                    }
                 };
                 job.download_id = Some(status.id.clone());
                 job.progress = status.progress;
@@ -592,7 +611,7 @@ impl Engine {
                     // can always find the transfer associated with this job.
                     store.update(job.clone())?;
                 }
-                if !status.ready {
+                if !self.source_files_available(job, &status) {
                     job.next_attempt_at = store::now().saturating_add(1);
                     return Ok(());
                 }
@@ -601,7 +620,7 @@ impl Engine {
                     .as_ref()
                     .map(|path| self.config.downloads.data_dir.join(&status.id).join(path));
                 job.files = status
-                    .files
+                    .available_files
                     .iter()
                     .filter(|path| mapped.as_ref().is_none_or(|expected| *path == expected))
                     .map(|p| p.to_string_lossy().into_owned())
@@ -690,6 +709,13 @@ impl Engine {
         job.next_attempt_at = 0;
         // Persist the import before requesting a scan, which resumes on the next poll.
         Ok(())
+    }
+
+    fn source_files_available(&self, job: &Job, status: &crate::torrent::DownloadStatus) -> bool {
+        job.pack_file.as_ref().map_or(status.ready, |path| {
+            let expected = self.config.downloads.data_dir.join(&status.id).join(path);
+            status.available_files.contains(&expected)
+        })
     }
 }
 

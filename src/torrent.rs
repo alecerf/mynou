@@ -7,10 +7,13 @@ mod discovery;
 mod metainfo;
 #[path = "torrent/parallel.rs"]
 mod parallel;
+#[path = "torrent/selection.rs"]
+mod selection;
 #[path = "torrent/wire.rs"]
 mod wire;
 use control::RateGate;
 pub use control::{FilePriority, TorrentControl, TransferPolicy};
+pub use selection::{FileSelection, SelectionUpdate};
 
 use crate::{Result, bencode::Value};
 use metainfo::{BLOCK, MAX_META, Meta, confined};
@@ -44,7 +47,11 @@ pub struct DownloadStatus {
     pub id: String,
     pub progress: f64,
     pub ready: bool,
+    /// All retained file interests are verified, independently of whole-torrent readiness.
+    pub selected_ready: bool,
     pub files: Vec<PathBuf>,
+    /// Only paths published after piece verification, file-root checks and disk synchronization.
+    pub available_files: Vec<PathBuf>,
     pub message: String,
 }
 #[derive(Clone)]
@@ -605,6 +612,28 @@ fn restore_controls(config: &DownloadConfig, jobs: &mut BTreeMap<String, Job>) -
     }
     Ok(())
 }
+
+fn expand_selection(config: &DownloadConfig, job: &mut Job, added: &FileSelection) -> Result<()> {
+    let merged = job
+        .control
+        .file_selection
+        .merge(added, job.meta.as_deref())?;
+    if merged == job.control.file_selection {
+        return Ok(());
+    }
+    let mut control = snapshot_control(job);
+    control.file_selection = merged;
+    commit_control(config, job, control)?;
+    if !job.status.ready {
+        job.cancel.store(true, Ordering::Release);
+        job.cancel = Arc::new(AtomicBool::new(job.paused || job.control.user_paused));
+        job.failed = false;
+        job.status.selected_ready = false;
+        job.status.progress = 0.0;
+        job.status.message = "File selection expanded; verification queued".into();
+    }
+    Ok(())
+}
 fn seed_budget(job: &Job, defaults: &TransferPolicy) -> Option<u64> {
     let ratio = job
         .control
@@ -663,10 +692,12 @@ fn transfer_value(
     job: &Job,
     queue_position: usize,
     defaults: &TransferPolicy,
+    config: &DownloadConfig,
 ) -> crate::json::Value {
     use crate::json::Value as Json;
     let mut value = snapshot_control(job).to_json();
     value.insert("ready", job.status.ready);
+    value.insert("selected_ready", job.status.selected_ready);
     value.insert("running", job.running);
     value.insert("paused", job.paused || job.control.user_paused);
     value.insert(
@@ -679,6 +710,8 @@ fn transfer_value(
             "seed_limited"
         } else if job.status.ready {
             "ready"
+        } else if job.status.selected_ready {
+            "selected_ready"
         } else if job.running {
             "downloading"
         } else {
@@ -702,6 +735,7 @@ fn transfer_value(
         capped(defaults.download_limit_bps, effective.download_limit_bps);
     effective.upload_limit_bps = capped(defaults.upload_limit_bps, effective.upload_limit_bps);
     value.insert("effective_policy", effective.to_json());
+    let available: BTreeSet<_> = job.status.available_files.iter().collect();
     value.insert(
         "files",
         Json::Array(job.meta.as_ref().map_or_else(Vec::new, |meta| {
@@ -714,6 +748,21 @@ fn transfer_value(
                     value.insert("index", Json::Number(index as f64));
                     value.insert("path", file.path.to_string_lossy().into_owned());
                     value.insert("size_bytes", file.length.to_string());
+                    value.insert(
+                        "selected",
+                        match &job.control.file_selection {
+                            FileSelection::All => true,
+                            FileSelection::Paths(paths) => {
+                                paths.contains(&file.path.to_string_lossy().into_owned())
+                            }
+                        },
+                    );
+                    value.insert(
+                        "verified",
+                        job.status.ready
+                            || available
+                                .contains(&config.data_dir.join(&job.status.id).join(&file.path)),
+                    );
                     value.insert(
                         "priority",
                         job.control
@@ -831,6 +880,8 @@ impl Client {
                 id: id.to_owned(),
                 progress: 0.0,
                 ready: false,
+                selected_ready: false,
+                available_files: Vec::new(),
                 files: meta
                     .files
                     .iter()
@@ -907,6 +958,8 @@ impl Client {
                         id: id.to_owned(),
                         progress: 0.0,
                         ready: false,
+                        selected_ready: false,
+                        available_files: Vec::new(),
                         files: Vec::new(),
                         message: "Resuming metadata discovery".into(),
                     },
@@ -969,7 +1022,19 @@ impl Client {
         })
     }
     pub fn ensure(&self, source: &str) -> Result<DownloadStatus> {
+        self.ensure_selection(source, FileSelection::All)
+    }
+
+    /// Record exact paths before metadata discovery can schedule any payload.
+    pub fn ensure_files(&self, source: &str, paths: &[String]) -> Result<DownloadStatus> {
+        self.ensure_selection(source, FileSelection::paths(paths)?)
+    }
+
+    fn ensure_selection(&self, source: &str, selection: FileSelection) -> Result<DownloadStatus> {
         let mut source = Source::parse(source)?;
+        if let Some(meta) = &source.meta {
+            selection::SelectionPlan::new(meta, &selection)?;
+        }
         let id = source.id();
         let mut jobs = self
             .jobs
@@ -993,25 +1058,18 @@ impl Client {
             {
                 return Err("Incompatible torrent hash alias".into());
             }
+            expand_selection(&self.config, job, &selection)?;
             if !job.control.user_paused {
                 resume_job(&self.config, job)?;
             }
             return Ok(job.status.clone());
         }
-        atomic_write(
-            &self.config.state_dir.join(format!("{id}.source")),
-            source.original.as_bytes(),
-        )?;
-        if let Some(meta) = &source.meta {
-            atomic_write(
-                &self.config.state_dir.join(format!("{id}.torrent")),
-                &meta.encoded,
-            )?;
-        }
         let status = DownloadStatus {
             id: id.clone(),
             progress: 0.0,
             ready: false,
+            selected_ready: false,
+            available_files: Vec::new(),
             files: source
                 .meta
                 .as_ref()
@@ -1033,10 +1091,23 @@ impl Client {
             .unwrap_or(0)
             .checked_add(1)
             .ok_or("Transfer queue order is exhausted")?;
-        let control = TorrentControl::new(id.clone(), order)?;
+        let mut control = TorrentControl::new(id.clone(), order)?;
+        control.file_selection = selection;
+        // A queue-visible source/metadata file must never survive a crash
+        // without the selection that prevents unintended full acquisition.
         atomic_write(
             &self.config.state_dir.join(format!("{id}.control")),
             &control.encode()?,
+        )?;
+        if let Some(meta) = &metadata {
+            atomic_write(
+                &self.config.state_dir.join(format!("{id}.torrent")),
+                &meta.encoded,
+            )?;
+        }
+        atomic_write(
+            &self.config.state_dir.join(format!("{id}.source")),
+            source.original.as_bytes(),
         )?;
         jobs.insert(
             id.clone(),
@@ -1073,6 +1144,65 @@ impl Client {
             job.saved_control = job.control.encode()?;
         }
         Ok(status)
+    }
+
+    pub fn select_files(&self, id: &str, update: &SelectionUpdate) -> Result<DownloadStatus> {
+        let mut jobs = self
+            .jobs
+            .lock()
+            .map_err(|_| "BitTorrent state lock is poisoned")?;
+        let job = jobs.get_mut(id).ok_or("Unknown download")?;
+        let selection = match update {
+            SelectionUpdate::All => FileSelection::All,
+            SelectionUpdate::Indices(indices) => {
+                if indices.is_empty() || indices.len() > selection::MAX_SELECTED_FILES {
+                    return Err("Selection requires 1 to 1,024 distinct file indices".into());
+                }
+                let meta = job
+                    .meta
+                    .as_ref()
+                    .ok_or("File selection requires authenticated metadata")?;
+                let mut seen = BTreeSet::new();
+                let mut paths = Vec::with_capacity(indices.len());
+                for index in indices {
+                    let file = meta
+                        .files
+                        .get(*index)
+                        .filter(|file| !file.padding)
+                        .ok_or("Selected file index is absent or padding")?;
+                    if !seen.insert(*index) {
+                        return Err("Duplicate selected file index".into());
+                    }
+                    paths.push(file.path.to_string_lossy().into_owned());
+                }
+                FileSelection::paths(&paths)?
+            }
+        };
+        expand_selection(&self.config, job, &selection)?;
+        // Expansion never undoes a user pause. A later explicit resume or
+        // ordinary acquisition retry observes the retained policy.
+        Ok(job.status.clone())
+    }
+
+    pub fn require_files(&self, id: &str, paths: &[String]) -> Result<DownloadStatus> {
+        self.require_selection(id, &FileSelection::paths(paths)?)
+    }
+
+    pub fn require_all(&self, id: &str) -> Result<DownloadStatus> {
+        self.require_selection(id, &FileSelection::All)
+    }
+
+    fn require_selection(&self, id: &str, selection: &FileSelection) -> Result<DownloadStatus> {
+        let mut jobs = self
+            .jobs
+            .lock()
+            .map_err(|_| "BitTorrent state lock is poisoned")?;
+        let job = jobs.get_mut(id).ok_or("Unknown download")?;
+        expand_selection(&self.config, job, selection)?;
+        if job.failed {
+            return Err(job.status.message.clone());
+        }
+        Ok(job.status.clone())
     }
     /// Pause a native transfer without removing its verified files or metadata.
     pub fn cancel(&self, id: &str) -> Result<()> {
@@ -1284,6 +1414,7 @@ impl Client {
             ordered[position],
             position,
             &self.policy.policy,
+            &self.config,
         ))
     }
     pub fn transfers(&self) -> Result<crate::json::Value> {
@@ -1302,7 +1433,9 @@ impl Client {
             ordered
                 .into_iter()
                 .enumerate()
-                .map(|(position, job)| transfer_value(job, position, &self.policy.policy))
+                .map(|(position, job)| {
+                    transfer_value(job, position, &self.policy.policy, &self.config)
+                })
                 .collect(),
         ))
     }
@@ -1442,8 +1575,11 @@ fn select_announce(
             if state.in_flight || now < state.retry_after {
                 continue;
             }
-            let inactive =
-                job.paused || job.control.user_paused || job.control.seed_limited || job.failed;
+            let inactive = job.paused
+                || job.control.user_paused
+                || job.control.seed_limited
+                || job.failed
+                || (job.status.selected_ready && !job.status.ready);
             let event = if inactive {
                 if state.started && !state.stopped {
                     Some(discovery::TrackerEvent::Stopped)
@@ -1638,6 +1774,7 @@ fn manager_loop(
                             && !j.control.user_paused
                             && !j.failed
                             && !j.status.ready
+                            && !j.status.selected_ready
                     })
                     .min_by(|(aid, a), (bid, b)| {
                         b.control
@@ -1767,6 +1904,9 @@ fn update(
     }
     job.status.progress = progress;
     job.status.ready = ready;
+    if ready {
+        job.status.selected_ready = true;
+    }
     job.status.message = message.to_owned();
     if let Some(meta) = meta {
         if job.meta.is_none() || ready {
@@ -1781,6 +1921,9 @@ fn update(
         }
         job.source.v1 = meta.v1;
         job.source.v2 = meta.v2;
+    }
+    if ready {
+        job.status.available_files = job.status.files.clone();
     }
     Ok(())
 }
@@ -1803,7 +1946,15 @@ fn download(
     peer_id: &[u8; 20],
     policy: &PolicyRuntime,
 ) -> Result<()> {
-    if config.max_peers == 1 {
+    let full = jobs
+        .lock()
+        .map_err(|_| "BitTorrent state lock is poisoned")?
+        .get(id)
+        .ok_or("Download no longer exists")?
+        .control
+        .file_selection
+        == FileSelection::All;
+    if config.max_peers == 1 && full {
         download_sequential(config, jobs, stop, id, peer_id, policy)
     } else {
         parallel::download(config, jobs, stop, id, peer_id, policy)
@@ -2090,11 +2241,19 @@ fn download_sequential(
 }
 
 fn prepare_files(meta: &Meta, base: &Path, stop: &AtomicBool) -> Result<()> {
-    for f in &meta.files {
+    prepare_selected_files(meta, base, stop, None)
+}
+fn prepare_selected_files(
+    meta: &Meta,
+    base: &Path,
+    stop: &AtomicBool,
+    selected: Option<&[bool]>,
+) -> Result<()> {
+    for (index, f) in meta.files.iter().enumerate() {
         if stop.load(Ordering::Acquire) {
             return Err("Download interrupted".into());
         }
-        if f.padding {
+        if f.padding || selected.is_some_and(|files| !files[index]) {
             continue;
         }
         let path = confined(base, &f.path)?;
@@ -2197,11 +2356,19 @@ fn write_piece(meta: &Meta, base: &Path, index: usize, data: &[u8]) -> Result<()
     Ok(())
 }
 fn sync_files(meta: &Meta, base: &Path, stop: &AtomicBool) -> Result<()> {
-    for f in &meta.files {
+    sync_selected_files(meta, base, stop, None)
+}
+fn sync_selected_files(
+    meta: &Meta,
+    base: &Path,
+    stop: &AtomicBool,
+    selected: Option<&[bool]>,
+) -> Result<()> {
+    for (index, f) in meta.files.iter().enumerate() {
         if stop.load(Ordering::Acquire) {
             return Err("Download interrupted".into());
         }
-        if !f.padding {
+        if !f.padding && selected.is_none_or(|files| files[index]) {
             let path = confined(base, &f.path)?;
             inspect_media_file(&path)?;
             OpenOptions::new()
@@ -2217,10 +2384,21 @@ fn sync_files(meta: &Meta, base: &Path, stop: &AtomicBool) -> Result<()> {
     Ok(())
 }
 fn authenticate_v2(meta: &mut Meta, base: &Path, stop: &AtomicBool) -> Result<()> {
+    authenticate_selected_v2(meta, base, stop, None)
+}
+fn authenticate_selected_v2(
+    meta: &mut Meta,
+    base: &Path,
+    stop: &AtomicBool,
+    selected: Option<&[bool]>,
+) -> Result<()> {
     if meta.v2.is_none() {
         return Ok(());
     }
-    for f in &meta.files {
+    for (index, f) in meta.files.iter().enumerate() {
+        if selected.is_some_and(|files| !files[index]) {
+            continue;
+        }
         let Some(root) = f.root else { continue };
         let count = f.length.div_ceil(meta.piece_length as u64) as usize;
         let start = (f.offset / meta.piece_length as u64) as usize;
@@ -2756,6 +2934,8 @@ mod control_runtime_tests {
                 id: id.clone(),
                 progress: 0.0,
                 ready: false,
+                selected_ready: false,
+                available_files: Vec::new(),
                 files: Vec::new(),
                 message: String::new(),
             },

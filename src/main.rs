@@ -47,6 +47,7 @@ const HELP: &str = "Mynou — media automation using Rust std only
   pause | resume ID [--config mynou.json]
   torrent-priority ID --priority N [--config mynou.json]
   file-priority ID --file N --priority low|normal|high [--config mynou.json]
+  torrent-select ID --selection '{\"indices\":[0,2]}' [--config mynou.json]
   torrent-policy ID --policy JSON_OR_NULL [--config mynou.json]
   jobs | status | sync [--config mynou.json]
   show | events | retry | cancel ID [--config mynou.json]
@@ -104,6 +105,7 @@ impl Args {
             "torrent-priority" => &["config", "help", "priority"],
             "file-priority" => &["config", "help", "file", "priority"],
             "torrent-policy" => &["config", "help", "policy"],
+            "torrent-select" => &["config", "help", "selection"],
             "upgrades" => &["config", "help", "apply"],
             "baseline" => &["config", "help", "release-title"],
             "submit" => &[
@@ -166,6 +168,7 @@ impl Args {
                 "torrent-priority",
                 "file-priority",
                 "torrent-policy",
+                "torrent-select",
                 "series-monitor",
                 "series-unmonitor",
                 "series-refresh",
@@ -554,7 +557,7 @@ fn execute(args: Args) -> Result<()> {
             output(&call(&config, &path, "GET", "/api/transfers", None)?);
         }
         "torrent" | "pause" | "resume" | "torrent-priority" | "file-priority"
-        | "torrent-policy" => {
+        | "torrent-policy" | "torrent-select" => {
             let id = &args.positions[0];
             if ![40, 64].contains(&id.len()) || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
                 return Err("Invalid native transfer ID".into());
@@ -604,6 +607,16 @@ fn execute(args: Args) -> Result<()> {
                     }
                     body.insert("policy", policy);
                     "policy"
+                }
+                "torrent-select" => {
+                    let update = json::parse(
+                        args.options
+                            .get("selection")
+                            .ok_or("--selection is required")?,
+                    )?;
+                    mynou::torrent::SelectionUpdate::from_json(&update)?;
+                    body = update;
+                    "selection"
                 }
                 _ => unreachable!(),
             };

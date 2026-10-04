@@ -434,6 +434,11 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
                         };
                         engine.set_file_priority(&id, index, priority)?
                     }
+                    "selection" => {
+                        let value = control_body(body, &["all", "indices"], false)?;
+                        let update = crate::torrent::SelectionUpdate::from_json(&value)?;
+                        engine.select_transfer_files(&id, &update)?
+                    }
                     "policy" => {
                         let value = control_body(body, &["policy"], false)?;
                         let policy = match value.get("policy").ok_or("policy is required")? {

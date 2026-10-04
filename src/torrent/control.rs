@@ -211,6 +211,7 @@ pub struct TorrentControl {
     pub seed_elapsed_secs: u64,
     pub seed_limited: bool,
     pub file_priorities: BTreeMap<usize, FilePriority>,
+    pub file_selection: super::FileSelection,
     pub policy: Option<TransferPolicy>,
 }
 
@@ -226,6 +227,7 @@ impl TorrentControl {
             seed_elapsed_secs: 0,
             seed_limited: false,
             file_priorities: BTreeMap::new(),
+            file_selection: super::FileSelection::All,
             policy: None,
         };
         control.validate()?;
@@ -252,6 +254,7 @@ impl TorrentControl {
         if let Some(policy) = &self.policy {
             policy.validate()?;
         }
+        self.file_selection.validate()?;
         Ok(())
     }
 
@@ -283,6 +286,7 @@ impl TorrentControl {
                     .as_ref()
                     .map_or(Value::Null, TransferPolicy::to_json),
             ),
+            ("file_selection", self.file_selection.to_json()),
         ])
     }
 
@@ -299,6 +303,7 @@ impl TorrentControl {
                 "seed_elapsed_secs",
                 "seed_limited",
                 "file_priorities",
+                "file_selection",
                 "policy",
             ],
         )?;
@@ -337,6 +342,10 @@ impl TorrentControl {
             )?,
             seed_limited: boolean(fields, "seed_limited")?,
             file_priorities,
+            file_selection: fields.get("file_selection").map_or(
+                Ok(super::FileSelection::All),
+                super::FileSelection::from_json,
+            )?,
             policy: match required(fields, "policy")? {
                 Value::Null => None,
                 value => Some(TransferPolicy::from_json(value)?),

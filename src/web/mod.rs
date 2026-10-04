@@ -10,7 +10,7 @@ use crate::{
     engine::{Engine, lock},
     integrations,
     net::parse_url,
-    torrent::{FilePriority, TransferPolicy},
+    torrent::{FilePriority, SelectionUpdate, TransferPolicy},
 };
 use forms::{Form, decimal};
 use session::{Session, Sessions};
@@ -522,6 +522,38 @@ impl Web {
                     session,
                     "/ui/transfers",
                     vec!["Queue priority saved".into()],
+                )
+            }
+            "/ui/transfers/selection" => {
+                form.only(&["csrf", "id", "action", "index"])?;
+                let id = single_transfer(form)?;
+                let update = match form.value("action")? {
+                    "all" => {
+                        if !form.value("index")?.is_empty() {
+                            return Err("Select all does not accept a file index".into());
+                        }
+                        SelectionUpdate::All
+                    }
+                    "include" => {
+                        let index = form
+                            .value("index")?
+                            .parse::<usize>()
+                            .map_err(|_| "Invalid selected file index")?;
+                        if index >= 100_000 {
+                            return Err("Invalid selected file index".into());
+                        }
+                        SelectionUpdate::Indices(vec![index])
+                    }
+                    _ => return Err("Unknown file selection action".into()),
+                };
+                engine.select_transfer_files(&id, &update)?;
+                self.redirect(
+                    session,
+                    &format!("/ui/transfers/{id}"),
+                    vec![
+                        "File selection expanded. Existing pause and transfer policy still apply"
+                            .into(),
+                    ],
                 )
             }
             "/ui/transfers/files" => {
