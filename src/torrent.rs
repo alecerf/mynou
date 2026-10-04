@@ -109,7 +109,7 @@ struct PolicyRuntime {
     upload: Arc<RateGate>,
 }
 pub(crate) fn add_payload(counter: &AtomicU64, bytes: u64) {
-    let _ = counter.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+    let _ = counter.try_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
         Some(value.saturating_add(bytes))
     });
 }
