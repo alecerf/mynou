@@ -63,7 +63,7 @@ CI-only local-peer journeys exercise two mapped episodes sharing one verified
 torrent, canonical imports of absolute-named files, ignored malformed unmapped
 video, missing-file failure without fallback, shared cancellation, persistence
 through restart and read-only mutation rejection. Other scenarios check traversal
-paths, duplicates, unknown/future/undated episodes, immutable mappings, source-key
+paths, duplicates, unknown/future/undated episodes, worker mapping protection, guarded terminal-job correction, source-key
 conflicts across series, complete-input prevalidation, old unmapped jobs,
 Bearer/browser protection, escaped labels, credential-free responses and CLI
 mapping-file routing. New scopes can be recorded without automatic acquisition.

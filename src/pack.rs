@@ -128,6 +128,12 @@ impl PackSubmission {
 }
 
 impl Engine {
+    pub fn remap_pack(&self, id: &str, path: String) -> Result<Value> {
+        if self.read_only {
+            return Err("Pack mapping correction requires writable storage".into());
+        }
+        Ok(public_job(&lock(&self.store)?.remap_pack(id, path)?))
+    }
     pub fn submit_pack(&self, id: &str, pack: &PackSubmission) -> Result<Value> {
         if self.read_only {
             return Err("Pack submission requires writable storage".into());

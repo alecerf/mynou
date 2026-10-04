@@ -147,7 +147,7 @@ parallel peer bounds, bandwidth limits and seeding policies. Use
 `downloads.max_peers: 1` to retain a single-peer transfer baseline.
 
 Mynou remains an early integrated implementation. This release adds explicit
-pack acquisition and immutable file-to-episode mappings. Automatic pack search,
+pack acquisition and durable file-to-episode mappings. Automatic pack search,
 selective downloading, alternate/anime numbering rules, multi-user policies and full parity with
 Radarr, Sonarr, Pulsarr, qBittorrent, qui, autobrr or Prowlarr remain future work. The
 [release roadmap](docs/roadmap.md) separates the next stages.

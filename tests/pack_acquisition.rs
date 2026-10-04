@@ -142,6 +142,15 @@ fn absent_mapped_file_never_falls_back_to_another_video() {
     assert!(job.imports.is_empty());
     assert!(job.last_error.unwrap().contains("absent or ambiguous"));
     assert!(engine.library().unwrap().as_array().unwrap().is_empty());
+    engine.remap_pack(&job.id, "Pack/001.mp4".into()).unwrap();
+    let repaired = run_until(&engine, &job.id, "ready");
+    assert_eq!(repaired.download_id.as_deref(), Some(torrent.id.as_str()));
+    assert_eq!(
+        fs::read(&repaired.imports[0]).unwrap(),
+        include_bytes!("../examples/demo.mp4")
+    );
+    assert_eq!(engine.transfers().unwrap().as_array().unwrap().len(), 1);
+    assert!(engine.remap_pack(&job.id, "Pack/other.mp4".into()).is_err());
 }
 
 #[test]
@@ -174,6 +183,11 @@ fn cancelling_one_pack_episode_keeps_another_shared_episode_download_active() {
     let cancelled = lock(&engine.store).unwrap().get(&ids[0]).unwrap();
     assert_eq!(cancelled.state, "cancelled");
     assert!(cancelled.imports.is_empty());
+    assert!(engine.remap_pack(&ids[0], "Pack/002.mp4".into()).is_err());
+    assert_eq!(
+        lock(&engine.store).unwrap().get(&ids[0]).unwrap(),
+        cancelled
+    );
     assert_eq!(
         engine.transfer(&torrent.id).unwrap().get("user_paused"),
         Some(&Value::Bool(false))

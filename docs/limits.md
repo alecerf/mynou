@@ -176,8 +176,7 @@ terminal jobs or stop when a Plex watchlist entry disappears. Changed known
 episode identities require a mapping decision; an alternate-number mapping
 editor and selective torrent file skipping are not implemented. Explicit packs
 can map absolute/anime-style filenames to canonical episodes; general numbering
-rules and multi-episode videos remain future work. Mappings are immutable job
-fields, and earlier unmapped jobs retain ordinary behavior. Do not downgrade
+rules and multi-episode videos remain future work. Mapping fields cannot be changed by workers, and earlier unmapped jobs retain ordinary behavior. Do not downgrade
 storage containing mapped jobs to an earlier binary that ignores those fields.
 
 The browser interface uses a shared operator token, original server-rendered

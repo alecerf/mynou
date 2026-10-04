@@ -11,7 +11,7 @@ Explicit pack acquisition maps exact torrent video paths to already aired catalo
 episodes. Ordinary jobs share the native torrent identity, verify the full
 payload and import only their retained mapped files. New series scopes can be
 created without automatic acquisition before choosing a pack. Input, catalog,
-source-key and capacity checks precede recording; mappings remain immutable and
+source-key and capacity checks precede recording; workers cannot change mappings and
 existing episode jobs are reused. See [pack acquisition](packs.md) for operations
 and bounds. Its own completed CI/release are required before claiming validation.
 

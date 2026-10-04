@@ -428,4 +428,29 @@ fn cli_routes_series_creation_controls_and_calendar_to_the_running_service() {
         .success()
     );
     assert_eq!(lock(&server.engine.store).unwrap().list().len(), 1);
+    let job = lock(&server.engine.store).unwrap().list().remove(0);
+    let corrected = command(
+        &directory,
+        &["pack-remap", &job.id, "--file-path", "Pack/new.mp4"],
+    );
+    assert!(!corrected.status.success());
+    server.engine.cancel(&job.id).unwrap();
+    let corrected = command(
+        &directory,
+        &["pack-remap", &job.id, "--file-path", "Pack/corrected.mp4"],
+    );
+    assert!(
+        corrected.status.success(),
+        "{}",
+        String::from_utf8_lossy(&corrected.stderr)
+    );
+    assert_eq!(
+        lock(&server.engine.store)
+            .unwrap()
+            .get(&job.id)
+            .unwrap()
+            .pack_file
+            .as_deref(),
+        Some("Pack/corrected.mp4")
+    );
 }

@@ -69,7 +69,7 @@ per-episode exclusions and a paginated calendar. CLI/API/browser controls share
 revision checks, request-identity deduplication and a private verified snapshot.
 Unknown dates or missing episode identities remain unresolved. See [series.md](series.md).
 
-The 0.13.0 change adds explicit catalog-backed pack acquisition, immutable
+The 0.13.0 change adds explicit catalog-backed pack acquisition, durable
 file-to-episode mappings, one shared native torrent identity, exact verified
 imports and unmonitored initial series scopes. Full torrents still download.
 Existing jobs remain deduplicated, missing selections fail without fallback and

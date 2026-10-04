@@ -975,6 +975,37 @@ impl Store {
         Ok(())
     }
 
+    pub fn remap_pack(&mut self, id: &str, path: String) -> Result<Job> {
+        crate::pack::validate_file_path(&path)?;
+        let mut job = self.get(id).ok_or("Unknown pack episode request")?;
+        if job.pack_file.is_none()
+            || !matches!(job.state.as_str(), "failed" | "cancelled")
+            || job.lease_id.is_some()
+            || !job.imports.is_empty()
+        {
+            return Err("Mapping correction requires a failed or cancelled pack request without imports or an active lease".into());
+        }
+        if self.jobs.values().any(|other| {
+            other.id != job.id
+                && other.request.tmdb_id == job.request.tmdb_id
+                && (other.request.source_url == job.request.source_url
+                    || (job.download_id.is_some() && other.download_id == job.download_id))
+                && other.pack_file.as_deref() == Some(&path)
+        }) {
+            return Err("Mapped file already belongs to another episode in this pack".into());
+        }
+        job.pack_file = Some(path);
+        job.state = "queued".into();
+        job.files.clear();
+        job.progress = 0.0;
+        job.attempts = 0;
+        job.last_error = None;
+        job.next_attempt_at = 0;
+        job.updated_at = now();
+        self.commit(job.clone(), "pack mapping corrected; request requeued")?;
+        Ok(job)
+    }
+
     fn submit_with_mapping(&mut self, request: Request, pack_file: Option<String>) -> Result<Job> {
         request.validate()?;
         let key = request.canonical_key();

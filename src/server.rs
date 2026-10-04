@@ -502,6 +502,14 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
                                 ),
                             ));
                         }
+                        ("POST", "pack-mapping") => {
+                            let value = control_body(body, &["file_path"], false)?;
+                            let path = value
+                                .get("file_path")
+                                .and_then(Value::as_str)
+                                .ok_or("file_path must be a string")?;
+                            return Ok((200, engine.remap_pack(id, path.into())?));
+                        }
                         ("POST", "cancel") => return Ok((200, public_job(&engine.cancel(id)?))),
                         ("POST", "retry") => return Ok((200, public_job(&engine.retry(id)?))),
                         _ => {}

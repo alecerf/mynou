@@ -56,7 +56,20 @@ fn bearer_pack_api_checks_entire_scope_and_redacts_source_urls() {
     assert!(lock(&server.engine.store).unwrap().list().is_empty());
     let reply = server.call("POST", &route, &headers, &valid);
     assert_eq!(reply.status, 200, "{}", reply.body);
-    reply.no_secrets();
+    assert!(!reply.body.contains(TOKEN));
+    assert!(!reply.body.contains("library-download-fixture-secret"));
+    assert_eq!(
+        json::parse(&reply.body)
+            .unwrap()
+            .get("jobs")
+            .unwrap()
+            .as_array()
+            .unwrap()[0]
+            .get("request")
+            .unwrap()
+            .get("source_url"),
+        Some(&Value::String("[configured source]".into()))
+    );
     assert!(!reply.body.contains("provider.invalid"));
     assert_eq!(
         json::parse(&reply.body).unwrap().get("submitted"),
@@ -136,6 +149,38 @@ fn browser_unmonitored_tracking_pack_submission_and_immutable_mapping_details() 
     assert!(!page.body.contains("<img>"));
     page.no_secrets();
     assert!(!page.body.contains("provider.invalid"));
+    assert!(!page.body.contains("Correct mapping and retry"));
+    server.engine.cancel(&first.id).unwrap();
+    let cancelled = browser.get(&server, &format!("/ui/jobs/{}", first.id));
+    assert!(cancelled.body.contains("Correct mapping and retry"));
+    assert_eq!(
+        browser
+            .post(
+                &server,
+                "/ui/jobs/pack-mapping",
+                &[("id", &first.id), ("file_path", "Pack/002.mp4")]
+            )
+            .status,
+        400
+    );
+    assert_eq!(
+        browser
+            .post(
+                &server,
+                "/ui/jobs/pack-mapping",
+                &[("id", &first.id), ("file_path", "Pack/corrected.mp4")]
+            )
+            .status,
+        303
+    );
+    assert_eq!(
+        lock(&server.engine.store)
+            .unwrap()
+            .get(&first.id)
+            .unwrap()
+            .state,
+        "queued"
+    );
 }
 
 #[test]

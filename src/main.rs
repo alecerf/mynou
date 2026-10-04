@@ -33,6 +33,7 @@ const HELP: &str = "Mynou — media automation using Rust std only
   track-series --title TITLE [--year YEAR --tmdb-id N --season N]
                [--future-only] [--include-specials] [--unmonitored] [--config mynou.json]
   series-pack ID --url MAGNET_OR_TORRENT --mapping FILE [--config mynou.json]
+  pack-remap JOB_ID --file-path PATH [--config mynou.json]
   series [ID] [--config mynou.json]
   series-monitor | series-unmonitor | series-refresh ID [--config mynou.json]
   episode-monitor | episode-unmonitor ID --season N --episode N [--config mynou.json]
@@ -125,6 +126,7 @@ impl Args {
                 "unmonitored",
             ],
             "series-pack" => &["config", "help", "url", "mapping"],
+            "pack-remap" => &["config", "help", "file-path"],
             "series" | "series-monitor" | "series-unmonitor" | "series-refresh" => {
                 &["config", "help"]
             }
@@ -168,6 +170,7 @@ impl Args {
                 "series-unmonitor",
                 "series-refresh",
                 "series-pack",
+                "pack-remap",
                 "episode-monitor",
                 "episode-unmonitor",
             ]
@@ -646,6 +649,29 @@ fn execute(args: Args) -> Result<()> {
             } else {
                 output(&mynou::library::empty_preview());
             }
+        }
+        "pack-remap" => {
+            if !online {
+                return Err("Pack mapping correction requires a running Mynou service".into());
+            }
+            let id = args.positions[0].to_ascii_lowercase();
+            if id.len() != 32 || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                return Err("Invalid pack episode request ID".into());
+            }
+            let file_path = args
+                .options
+                .get("file-path")
+                .ok_or("Specify --file-path PATH")?;
+            mynou::pack::validate_file_path(file_path)?;
+            let mut body = Value::object();
+            body.insert("file_path", file_path.clone());
+            output(&call(
+                &config,
+                &path,
+                "POST",
+                &format!("/api/jobs/{id}/pack-mapping"),
+                Some(&body),
+            )?);
         }
         "monitor" | "unmonitor" | "baseline" => {
             let id = &args.positions[0];

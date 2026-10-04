@@ -373,6 +373,11 @@ pub fn job(engine: &Arc<Engine>, session: &Session, query: &Form, id: &str) -> R
             "<p>Mapped torrent file: <code>{}</code></p>",
             display(path)
         ));
+        if matches!(job.state.as_str(), "failed" | "cancelled") && job.imports.is_empty() {
+            body.push_str(&form("/ui/jobs/pack-mapping", session));
+            body.push_str(&hidden("id", id));
+            body.push_str("<label for=file_path>Correct mapped torrent path</label><input id=file_path name=file_path required maxlength=4096><button type=submit>Correct mapping and retry</button></form>");
+        }
     }
     if let Some(id) = &job.download_id {
         body.push_str(&format!(

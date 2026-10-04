@@ -296,6 +296,15 @@ impl Web {
         session: &Session,
     ) -> Result<Response> {
         match path {
+            "/ui/jobs/pack-mapping" => {
+                form.only(&["csrf", "id", "file_path"])?;
+                let ids = form.ids(false)?;
+                if ids.len() != 1 {
+                    return Err("Choose one pack episode request".into());
+                }
+                engine.remap_pack(&ids[0], form.value("file_path")?.into())?;
+                self.redirect(session, "/ui/jobs", vec!["Pack mapping corrected and request requeued. Existing native transfer controls still apply".into()])
+            }
             "/ui/logout" => {
                 form.only(&["csrf"])?;
                 lock(&self.sessions)?.remove(&session.id);

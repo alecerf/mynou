@@ -1,7 +1,7 @@
 # Explicit pack acquisition and file mappings
 
 Acquire several catalog episodes from one torrent by choosing an exact video
-path for each episode. Mynou records ordinary episode jobs with immutable file
+path for each episode. Mynou records ordinary episode jobs with durable file
 mappings. The native torrent client deduplicates their common content identity,
 verifies the whole torrent and imports each mapped file under its catalog
 season/episode name. Unmapped files download but are not analyzed or imported by
@@ -108,7 +108,7 @@ and remaining request capacity are checked before recording the first new job.
 No network I/O occurs while series/request locks protect that decision. New jobs
 are separate synchronized request commits. An I/O failure or interruption can
 leave a confirmed partial batch; a repeat submission reuses those jobs and can
-record the rest. Mapping and source identities are immutable after creation.
+record the rest. Workers cannot change mapping or source identities.
 Individual episode cancellation and retries use the existing shared-transfer
 rules; a durable native transfer pause affects every job using that torrent.
 
@@ -119,6 +119,22 @@ journal. Imports keep source bytes and never overwrite different existing media.
 With Plex enabled, the normal episode scan/confirmation pipeline applies.
 These explicit acquisitions have no inferred release baseline; existing library
 upgrade eligibility still requires a deliberate matching baseline.
+
+## Correct a failed mapping
+
+If a selected path is wrong, first let its request fail or cancel it before an
+import is recorded. Use `pack-remap JOB_ID --file-path Pack/corrected.mp4`,
+`POST /api/jobs/JOB_ID/pack-mapping` with `{ "file_path": "Pack/corrected.mp4" }`,
+or **Correct mapping and retry** in browser job details.
+
+The action requires a mapped request in `failed` or `cancelled` state, no active
+lease and no confirmed imports. It validates the new relative path and rejects
+a file already mapped to another episode of the same known pack/series. It then
+records the corrected mapping, clears the stale file list, resets attempts and
+requeues that existing request. The catalog identity and private source remain
+unchanged. Existing native pause/control policy still applies, and previously
+verified torrent bytes can be reused. Workers cannot perform this correction.
+Ready, importing, claimed and already imported requests cannot be remapped.
 
 ## Persistence and remaining scope
 

@@ -49,7 +49,7 @@ mandatory. See [transfer controls](transfers.md).
 Pack forms accept an exact file path for each catalog episode in a JSON array.
 Create an unmonitored series scope when choosing a pack before individual
 automatic acquisition. Existing requests are reused, and missing paths never
-fall back to another video. Job details show immutable mappings. The whole
+fall back to another video. Job details show mappings protected from worker changes. The whole
 torrent still downloads. See [pack operations](packs.md) for format, validation
 and storage-version limits.
 
