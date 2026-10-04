@@ -45,6 +45,11 @@ The original [scheduler](../.github/scripts/parallel_tests.py) discovers every
 test executable from that successful manifest, including library, binary,
 integration and example harnesses. It does not glob a build directory, skip
 fresh cached artifacts, filter test cases or maintain a manual target list.
+The manifest's complete source-target set must equal the current Cargo metadata
+graph. An exact compiled-input cache hit can reuse harness binaries; all tests
+still execute. Test builds omit debug symbols to reduce linking/storage overhead;
+debug assertions and overflow checks retain their test-profile behavior. Release
+build settings are unchanged.
 
 The default process bound is the lesser of four and the runner CPU count. Each
 harness uses up to two test threads, giving at most eight concurrent test cases
@@ -78,13 +83,18 @@ The workflow uses the official `actions/cache` 6.1.0 restore/save actions.
 Only successful push jobs on `trunk` save caches; PR runs can restore existing
 eligible caches. A cache miss always performs the normal build.
 
-- The debug cache is scoped by OS, architecture, Rust version and Cargo/toolchain
-  manifests, with a commit suffix and a matching-prefix restore. Cargo and Clippy
-  still check inputs and compile the current source; every test runs on every CI.
-  Successful timing history is retained with debug output.
+- The test cache is scoped by OS, architecture, repository, Rust version and an
+  exact fingerprint of manifests, Cargo configuration/build script, every
+  source/test/example file, deployment template and workflow. It retains compiled
+  executables, their Cargo manifest and timing history, excluding incremental
+  compilation state. There are no partial-key fallbacks. An exact hit avoids
+  relinking the same harnesses; the current Cargo target graph still checks
+  complete coverage and every test runs. Formatting, Clippy and scheduler checks
+  always execute.
 - Release caches contain only the target binary and, for musl, the packaging
   executable. Keys include OS/architecture, Rust version, target, manifests,
-  every source/example file, embedded deployment template and workflow. There
+  Cargo configuration/build script, every source/example file, embedded
+  deployment template and workflow. There
   are no partial-key fallbacks. Only an exact compiler-input match can reuse a
   binary; ELF checks and the standalone demo still run. Source/workflow changes
   invalidate the key. Source-build settings must remain part of this fingerprint
@@ -130,9 +140,12 @@ Whole-workflow time fell by approximately 58% in this comparison. Validation
 job time is not the whole optimized workflow: builds now run independently,
 and packaging/publication follow them. Cold and warm runs must be reported
 separately; cache downloads, scheduling and runner load affect elapsed time.
-The documentation follow-up will verify exact release-cache hits and rerun every
-test/check before a warm result is recorded. These measurements describe CI
-duration, not application throughput or general performance.
+The first warm follow-up passed every check and reused release binaries, but
+the initial general debug cache restored 274 MiB in 13 seconds and still rebuilt
+tests in 22.17 seconds. That full workflow took 145 seconds. The revised exact
+test cache and symbol-free test builds must pass their own cold/warm workflows
+before final timings are recorded. These measurements describe CI duration,
+not application throughput or general performance.
 
 [Validation](validation.md) · [Dependencies](dependencies.md) ·
 [Performance](performance.md) · [Next feature release](next-release.md)

@@ -95,7 +95,7 @@ jobs:
           path: |
             target/${{ matrix.target }}/release/mynou
             target/${{ matrix.target }}/release/examples/package_release
-          key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99-release-v1-${{ matrix.target }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'src/**', 'examples/**', 'deploy-compose.yaml', '.github/workflows/ci.yml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99-release-v1-${{ matrix.target }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'examples/**', 'deploy-compose.yaml', '.github/workflows/ci.yml') }}
       - name: Install Rust 1.99.0 and target
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
