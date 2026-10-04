@@ -251,20 +251,38 @@ impl Engine {
                 states.insert(key, job);
             }
         }
+        // Sort borrowed catalog rows, then construct public JSON only for the requested page.
         let mut entries = Vec::new();
         for record in &records {
             if query.series_id.as_ref().is_some_and(|id| id != &record.id) {
                 continue;
             }
             for episode in &record.plan.episodes {
-                let Some(date) = &episode.air_date else {
-                    continue;
-                };
-                if date < &query.from || date > &query.to {
-                    continue;
+                if episode
+                    .air_date
+                    .as_ref()
+                    .is_some_and(|date| date >= &query.from && date <= &query.to)
+                {
+                    entries.push((record, episode));
                 }
-                let request = record.episode_request(episode);
-                let job = states.get(&request.media_key());
+            }
+        }
+        entries.sort_by(|(a, x), (b, y)| {
+            (&x.air_date, &a.id, x.season, x.episode).cmp(&(
+                &y.air_date,
+                &b.id,
+                y.season,
+                y.episode,
+            ))
+        });
+        let total = entries.len();
+        let today = date::today();
+        let page = entries
+            .into_iter()
+            .skip(query.offset)
+            .take(query.limit)
+            .map(|(record, episode)| {
+                let job = states.get(&record.episode_request(episode).media_key());
                 let mut value = Value::object();
                 value.insert("series_id", record.id.clone());
                 value.insert(
@@ -277,68 +295,37 @@ impl Engine {
                 );
                 value.insert("season", episode.season);
                 value.insert("episode", episode.episode);
-                value.insert("air_date", date.clone());
+                value.insert(
+                    "air_date",
+                    episode.air_date.clone().map_or(Value::Null, Value::String),
+                );
                 value.insert("monitored", record.episode_monitored(episode));
                 value.insert(
                     "job_id",
                     job.map_or(Value::Null, |job| job.id.clone().into()),
                 );
-                value.insert(
-                    "state",
-                    job.map_or(
-                        if record.episode_monitored(episode) {
-                            "scheduled"
-                        } else {
-                            "unmonitored"
-                        },
-                        |job| job.state.as_str(),
-                    ),
-                );
-                entries.push(value);
-            }
-        }
-        entries.sort_by(|a, b| {
-            let key = |value: &Value| {
-                (
-                    value
-                        .get("air_date")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_owned(),
-                    value
-                        .get("series_id")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_owned(),
-                    value
-                        .get("season")
-                        .and_then(Value::as_u64)
-                        .unwrap_or_default(),
-                    value
-                        .get("episode")
-                        .and_then(Value::as_u64)
-                        .unwrap_or_default(),
-                )
-            };
-            key(a).cmp(&key(b))
-        });
-        let total = entries.len();
+                let state = if !record.episode_monitored(episode) {
+                    "unmonitored"
+                } else if episode
+                    .air_date
+                    .as_deref()
+                    .is_some_and(|date| date <= today.as_str())
+                {
+                    "missing"
+                } else {
+                    "scheduled"
+                };
+                value.insert("state", job.map_or(state, |job| job.state.as_str()));
+                value
+            })
+            .collect();
         let mut value = Value::object();
         value.insert("from", query.from.clone());
         value.insert("to", query.to.clone());
         value.insert("total", total as u32);
         value.insert("offset", query.offset as u32);
         value.insert("limit", query.limit as u32);
-        value.insert(
-            "episodes",
-            Value::Array(
-                entries
-                    .into_iter()
-                    .skip(query.offset)
-                    .take(query.limit)
-                    .collect(),
-            ),
-        );
+        value.insert("episodes", Value::Array(page));
         Ok(value)
     }
 }
