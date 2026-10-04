@@ -654,12 +654,7 @@ fn source_search_uses_only_the_approved_labels_under_the_existing_profile() {
     let catalog = Catalog::open(vec![episode(1, 1, Some("2200-01-01"), "Future")]);
     let indexer=Indexer::open(json::parse(r#"[{"title":"Fixture Series 013 1080p WEB-DL x264","download_url":"magnet:?xt=urn:btih:0123456789012345678901234567890123456789","seeders":20},{"title":"Fixture Series S01E01 1080p WEB-DL x264","download_url":"magnet:?xt=urn:btih:1123456789012345678901234567890123456789","seeders":30}]"#).unwrap());
     let mut cfg = catalog.config(&directory.0);
-    cfg.sources.push(mynou::config::Source {
-        name: "Local".into(),
-        kind: "json".into(),
-        url: indexer.url.clone(),
-        api_key_env: "MYNOU_NUMBERING_ABSENT_KEY_91".into(),
-    });
+    cfg.sources = library_support::config(&directory.0, Some(&indexer), "{}").sources;
     let engine = Engine::open_for_management(cfg).unwrap();
     let record = engine
         .track_series_with_policy(&request(), false, false, false)
@@ -686,6 +681,7 @@ fn source_search_uses_only_the_approved_labels_under_the_existing_profile() {
     assert_eq!(report.get("accepted").unwrap().as_array().unwrap().len(), 1);
     assert_eq!(report.get("rejected").unwrap().as_array().unwrap().len(), 1);
     assert!(!json::stringify(&report).contains("magnet:?"));
+    library_support::assert_redacted(&report);
 }
 
 #[test]
