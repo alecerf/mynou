@@ -433,12 +433,10 @@ fn metadata(context: MetadataContext<'_>, addresses: &mut BTreeSet<SocketAddr>) 
             .discovery
             .as_ref()
             .is_some_and(JoinHandle::is_finished)
+            && let Some(handle) = group.discovery.take()
+            && let Ok(peers) = handle.join()
         {
-            if let Some(handle) = group.discovery.take()
-                && let Ok(peers) = handle.join()
-            {
-                super::merge_peers(addresses, peers);
-            }
+            super::merge_peers(addresses, peers);
         }
         // Known addresses are attempted immediately; no DHT lookup occupies
         // this coordinator. Unknown privacy may query only without hints.

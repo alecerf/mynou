@@ -44,6 +44,7 @@ pub struct Peer {
     availability_known: bool,
 }
 
+#[cfg(test)]
 pub fn handshake(
     stream: &mut TcpStream,
     hash: &[u8; 20],
