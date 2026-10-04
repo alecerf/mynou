@@ -82,10 +82,6 @@ jobs:
         target: [x86_64-unknown-linux-gnu, x86_64-unknown-linux-musl]
     steps:
       - uses: actions/checkout@v7.0.1
-      - name: Install Rust 1.99.0 and target
-        run: |
-          rustup toolchain install 1.99.0 --profile minimal --target '${{ matrix.target }}'
-          rustup default 1.99.0
       - name: Restore exact release binaries
         id: cache
         uses: actions/cache/restore@v6.1.0
@@ -94,6 +90,11 @@ jobs:
             target/${{ matrix.target }}/release/mynou
             target/${{ matrix.target }}/release/examples/package_release
           key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99-release-v1-${{ matrix.target }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'src/**', 'examples/**', 'deploy-compose.yaml', '.github/workflows/ci.yml') }}
+      - name: Install Rust 1.99.0 and target
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --target '${{ matrix.target }}'
+          rustup default 1.99.0
       - name: Build release deliverables
         if: steps.cache.outputs.cache-hit != 'true'
         env:
