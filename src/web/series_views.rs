@@ -93,6 +93,10 @@ pub fn detail(engine: &Arc<Engine>, session: &Session, query: &Form, id: &str) -
     body.push_str(&hidden("id", id));
     body.push_str("<label for=source_value>Magnet, torrent URL or server torrent path</label><input id=source_value name=source_value required maxlength=8192 autocomplete=off><label for=episodes>Episode mappings (JSON array)</label><textarea id=episodes name=episodes required rows=6 maxlength=8192 placeholder='[{&quot;season&quot;:1,&quot;episode&quot;:1,&quot;file_path&quot;:&quot;Pack/001.mp4&quot;}]'></textarea><p class=muted>Mappings require a different file for each episode. Review the catalog and file contents before submitting. This explicit action can acquire episodes excluded from automatic monitoring.</p><button type=submit>Acquire mapped episodes</button></form></details>");
     let episodes = value.get("episodes").map(array).unwrap_or_default();
+    body.push_str("<details class=panel><summary>Episode numbering</summary><p>Keep each episode's library number while choosing the labels used by your sources. Review changed catalog labels before accepting them. Existing requests keep their saved choices.</p>");
+    body.push_str(&form("/ui/series/numbering", session));
+    body.push_str(&hidden("id", id));
+    body.push_str("<label for=numbering_changes>Numbering choices (JSON array)</label><textarea id=numbering_changes name=changes required rows=5 maxlength=8192>[]</textarea><p class=muted>Use catalog_id, catalog season/episode, and source season/episode or absolute. An empty array shows the current catalog comparison.</p><button type=submit name=action value=preview>Preview numbering</button></form></details>");
     let page = page.min(episodes.len().div_ceil(50).max(1));
     body.push_str("<div class=table-wrap><table><caption>Catalog episode plan</caption><thead><tr><th scope=col>Episode</th><th scope=col>Title</th><th scope=col>Air date (UTC day)</th><th scope=col>Monitoring</th><th scope=col>Episode choice</th></tr></thead><tbody>");
     for episode in episodes.iter().skip((page - 1) * 50).take(50) {
@@ -133,6 +137,63 @@ pub fn detail(engine: &Arc<Engine>, session: &Session, query: &Form, id: &str) -
         1,
     ));
     Ok(frame("Series details", "/ui/series", Some(session), &body))
+}
+
+pub fn numbering(session: &Session, id: &str, report: &crate::json::Value) -> String {
+    let mut body = format!(
+        "<p><a href=\"/ui/series/{}\">Back to series</a></p><p class=lead>Review episode numbering</p><p>Library numbers remain fixed. These choices apply to future requests; existing downloads and imported files retain their saved identity.</p>",
+        e(id)
+    );
+    for issue in array(report.get("issues").unwrap_or(&crate::json::Value::Null)) {
+        body.push_str(&format!(
+            "<p class=notice role=alert>{}</p>",
+            display(issue.as_str().unwrap_or("Unresolved numbering"))
+        ));
+    }
+    body.push_str("<div class=table-wrap><table><caption>Known episode numbering</caption><thead><tr><th scope=col>Catalog ID</th><th scope=col>Title</th><th scope=col>Library number</th><th scope=col>Current catalog number</th><th scope=col>Proposed source label</th></tr></thead><tbody>");
+    let episodes = array(report.get("episodes").unwrap_or(&crate::json::Value::Null));
+    for ep in episodes.iter().take(100) {
+        let number = |key| {
+            ep.get(key).map_or_else(String::new, |number| {
+                if number.get("absolute").is_some() {
+                    format!("Absolute {}", scalar(number, "absolute"))
+                } else {
+                    format!(
+                        "S{} E{}",
+                        scalar(number, "season"),
+                        scalar(number, "episode")
+                    )
+                }
+            })
+        };
+        body.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+            scalar(ep, "catalog_id"),
+            display(text(ep, "title")),
+            e(&number("canonical")),
+            e(&number("catalog")),
+            e(&number("source"))
+        ));
+    }
+    body.push_str("</tbody></table></div>");
+    if episodes.len() > 100 {
+        body.push_str("<p class=muted>The first 100 known episodes are shown. Use the CLI or API for the complete comparison.</p>");
+    }
+    let changes =
+        crate::json::stringify(report.get("changes").unwrap_or(&crate::json::Value::Null));
+    body.push_str(&form("/ui/series/numbering", session));
+    body.push_str(&hidden("id", id));
+    body.push_str(&format!("<label for=changes>Revise choices</label><textarea id=changes name=changes required rows=6 maxlength=8192>{}</textarea><button type=submit name=action value=preview>Preview revised choices</button></form>",e(&changes)));
+    if flag(report, "resolved") {
+        body.push_str(&form("/ui/series/numbering", session));
+        body.push_str(&hidden("id", id));
+        body.push_str(&hidden("changes", &changes));
+        body.push_str(&hidden("plan_id", text(report, "plan_id")));
+        body.push_str(
+            "<button type=submit name=action value=apply>Save reviewed numbering</button></form>",
+        );
+    }
+    frame("Episode numbering", "/ui/series", Some(session), &body)
 }
 
 pub fn pack_search(session: &Session, id: &str, report: &crate::json::Value) -> String {

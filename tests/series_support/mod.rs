@@ -182,6 +182,7 @@ pub fn request() -> Request {
         episode: 0,
         source_path: None,
         source_url: None,
+        source_numbering: None,
         tmdb_id: Some(42),
     }
 }

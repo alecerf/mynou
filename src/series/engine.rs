@@ -1,5 +1,5 @@
 //! Catalog I/O stays outside storage locks; policy revisions fence stale plans.
-use super::{Episode, Record};
+use super::Record;
 use crate::{
     Result, date,
     engine::{Engine, lock},
@@ -182,16 +182,14 @@ impl Engine {
         let previous = lock(&self.series_store)?
             .get(id)
             .ok_or("Unknown monitored series")?;
-        let fetched = integrations::series_plan_before(
-            &self.config,
-            &previous.plan.request,
-            previous.include_specials,
-            deadline,
-        )
-        .and_then(|plan| {
-            validate_identity_changes(&previous.plan.episodes, &plan.episodes)?;
-            Ok(plan)
-        });
+        let fetched = previous
+            .fetch_catalog(self, false, deadline)
+            .and_then(|plan| previous.normalize_catalog(plan))
+            .and_then(|plan| {
+                let mut checked = previous.clone();
+                checked.accept_catalog(plan)?;
+                Ok(checked.plan)
+            });
         {
             let mut series = lock(&self.series_store)?;
             let mut current = series.get(id).ok_or("Unknown monitored series")?;
@@ -200,7 +198,7 @@ impl Engine {
             }
             match fetched {
                 Ok(plan) => {
-                    current.plan = plan;
+                    current.accept_catalog(plan)?;
                     current.last_error = None;
                     current.checked_at = store::now();
                     current.next_check_at = current.checked_at;
@@ -442,36 +440,6 @@ impl Engine {
         value.insert("episodes", Value::Array(page));
         Ok(value)
     }
-}
-
-fn validate_identity_changes(old: &[Episode], new: &[Episode]) -> Result<()> {
-    let numbers: BTreeMap<_, _> = old
-        .iter()
-        .map(|episode| ((episode.season, episode.episode), episode.catalog_id))
-        .collect();
-    let identities: BTreeMap<_, _> = old
-        .iter()
-        .filter_map(|episode| {
-            episode
-                .catalog_id
-                .map(|id| (id, (episode.season, episode.episode)))
-        })
-        .collect();
-    for episode in new {
-        if numbers
-            .get(&(episode.season, episode.episode))
-            .copied()
-            .flatten()
-            .is_some_and(|id| Some(id) != episode.catalog_id)
-            || episode
-                .catalog_id
-                .and_then(|id| identities.get(&id))
-                .is_some_and(|number| *number != (episode.season, episode.episode))
-        {
-            return Err("Catalog episode identity or numbering changed; an explicit mapping decision is required".into());
-        }
-    }
-    Ok(())
 }
 
 #[derive(Clone, Debug)]

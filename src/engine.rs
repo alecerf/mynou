@@ -703,13 +703,15 @@ impl Engine {
             .ok_or("No supported media found for this request")?
             .1;
         if job.request.kind == "episode" && job.pack_file.is_none() && job.files.len() > 1 {
-            let marker = format!("s{:02}e{:02}", job.request.season, job.request.episode);
+            let numbering = job.request.source_numbering.unwrap_or(
+                crate::numbering::SourceNumber::SeasonEpisode(crate::numbering::EpisodeNumber {
+                    season: job.request.season,
+                    episode: job.request.episode,
+                }),
+            );
             let matching: Vec<_> = candidates
                 .iter()
-                .filter(|(_, p)| {
-                    p.file_name()
-                        .is_some_and(|n| n.to_string_lossy().to_lowercase().contains(&marker))
-                })
+                .filter(|(_, path)| numbering.matches_file(path, job.request.year))
                 .collect();
             if matching.len() != 1 {
                 return Err(

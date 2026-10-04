@@ -36,6 +36,7 @@ fn request(title: &str, url: Option<&str>) -> Request {
         episode: 0,
         source_path: None,
         source_url: url.map(str::to_owned),
+        source_numbering: None,
         tmdb_id: None,
     }
 }

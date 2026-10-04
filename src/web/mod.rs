@@ -414,6 +414,34 @@ impl Web {
                 engine.track_series_with_policy(&request, specials, future, !unmonitored)?;
                 self.redirect(session, "/ui/series", vec!["Series monitoring recorded. Existing settings are retained when a scope is already tracked".into()])
             }
+            "/ui/series/numbering" => {
+                form.only(&["csrf", "id", "changes", "action", "plan_id"])?;
+                let ids = form.ids(false)?;
+                if ids.len() != 1 {
+                    return Err("Choose one tracked series".into());
+                }
+                let mut body = crate::json::Value::object();
+                body.insert("changes", crate::json::parse(form.value("changes")?)?);
+                let apply = match form.value("action")? {
+                    "preview" => false,
+                    "apply" => true,
+                    _ => return Err("Unknown numbering action".into()),
+                };
+                body.insert("apply", apply);
+                if apply {
+                    body.insert("plan_id", form.value("plan_id")?.to_owned());
+                }
+                let query = crate::series::NumberingRequest::from_json(&body)?;
+                let report = engine.series_numbering(&ids[0], &query)?;
+                if apply {
+                    self.redirect(session,&format!("/ui/series/{}",ids[0]),vec!["Numbering choices saved. Existing requests and library paths retain their original identities".into()])
+                } else {
+                    Ok(Response::html(
+                        200,
+                        series_views::numbering(session, &ids[0], &report),
+                    ))
+                }
+            }
             "/ui/series/pack-search" => {
                 form.only(&["csrf", "id", "season", "action", "scope_id", "candidate_id"])?;
                 let ids = form.ids(false)?;

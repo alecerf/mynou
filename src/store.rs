@@ -33,6 +33,7 @@ pub struct Request {
     pub source_path: Option<String>,
     pub source_url: Option<String>,
     pub tmdb_id: Option<u64>,
+    pub source_numbering: Option<crate::numbering::SourceNumber>,
 }
 
 /// The release description used to compare future acquisitions with an import.
@@ -244,6 +245,12 @@ impl Request {
         if self.year > 9999 || self.season > 9999 || self.episode > 99999 {
             return Err("invalid year, season, or episode".to_owned());
         }
+        if let Some(number) = self.source_numbering {
+            if self.kind != "episode" || self.episode == 0 {
+                return Err("Source numbering requires a canonical episode request".into());
+            }
+            number.validate()?;
+        }
         for source in [&self.source_path, &self.source_url].into_iter().flatten() {
             if source.is_empty() || source.len() > 65_536 || source.contains('\0') {
                 return Err("source is empty or invalid".to_owned());
@@ -302,7 +309,7 @@ impl Request {
     }
 
     pub fn to_json(&self) -> Value {
-        object([
+        let mut value = object([
             ("kind", Value::String(self.kind.clone())),
             ("title", Value::String(self.title.clone())),
             ("year", Value::Number(self.year as f64)),
@@ -311,7 +318,11 @@ impl Request {
             ("source_path", optional_string(&self.source_path)),
             ("source_url", optional_string(&self.source_url)),
             ("tmdb_id", self.tmdb_id.map_or(Value::Null, number)),
-        ])
+        ]);
+        if let Some(number) = self.source_numbering {
+            value.insert("source_numbering", number.to_json());
+        }
+        value
     }
 
     pub fn from_json(value: &Value) -> Result<Self> {
@@ -330,6 +341,10 @@ impl Request {
                 .map_or(Ok(0), |_| small_integer(map, "episode"))?,
             source_path: optional(map, "source_path")?,
             source_url: optional(map, "source_url")?,
+            source_numbering: match map.get("source_numbering") {
+                None | Some(Value::Null) => None,
+                Some(value) => Some(crate::numbering::SourceNumber::from_json(value)?),
+            },
             tmdb_id: optional_u64(map, "tmdb_id")?,
         };
         request.validate()?;
@@ -1911,6 +1926,7 @@ mod tests {
             episode: 0,
             source_path: None,
             source_url: None,
+            source_numbering: None,
             tmdb_id: None,
         }
     }

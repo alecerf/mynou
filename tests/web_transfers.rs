@@ -16,6 +16,7 @@ fn request(path: &str) -> Request {
         episode: 0,
         source_path: None,
         source_url: Some(path.into()),
+        source_numbering: None,
         tmdb_id: None,
     }
 }

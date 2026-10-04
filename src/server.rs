@@ -337,6 +337,11 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
                     return Ok((404, error("Unknown series route")));
                 }
                 let result = match parts[1] {
+                    "numbering" => {
+                        let value = control_body(body, &["changes", "apply", "plan_id"], false)?;
+                        let query = crate::series::NumberingRequest::from_json(&value)?;
+                        engine.series_numbering(&id, &query)?
+                    }
                     "pack-search" => {
                         let value = control_body(
                             body,

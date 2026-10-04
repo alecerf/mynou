@@ -32,6 +32,7 @@ fn bearer_and_browser_expand_shared_interests_without_undoing_pause_or_modifying
         year: 2026,
         season: 1,
         episode: 1,
+        source_numbering: None,
         tmdb_id: Some(42),
         source_path: None,
         source_url: Some(torrent.path.to_str().unwrap().into()),

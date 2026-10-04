@@ -335,6 +335,7 @@ pub(crate) fn watchlist_identities(config: &Config) -> Result<Vec<Request>> {
                 .map_err(|_| "Plex: invalid episode")?,
             source_path: None,
             source_url: None,
+            source_numbering: None,
             tmdb_id: if kind == "episode" {
                 None
             } else {
@@ -758,6 +759,7 @@ pub fn expand(config: &Config, request: &Request) -> Result<Vec<Request>> {
                 episode,
                 source_path: None,
                 source_url: None,
+                source_numbering: None,
                 tmdb_id: Some(id),
             };
             expanded.validate()?;
@@ -829,9 +831,22 @@ fn release_matches(request: &Request, title: &str) -> bool {
                     !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit())
                 })
         });
+        let expected =
+            request
+                .source_numbering
+                .unwrap_or(crate::numbering::SourceNumber::SeasonEpisode(
+                    crate::numbering::EpisodeNumber {
+                        season: request.season,
+                        episode: request.episode,
+                    },
+                ));
         return !later_episode
-            && rest.get(at).and_then(|s| episode_marker(s))
-                == Some((request.season, request.episode));
+            && rest.get(at).is_some_and(|label| expected.matches(label))
+            && !rest.iter().skip(at + 1).any(|label| {
+                crate::numbering::conflicting_marker(expected, label, 0)
+                    || matches!(expected, crate::numbering::SourceNumber::Absolute(_))
+                        && crate::numbering::decimal_token(label).is_some()
+            });
     }
     if request.kind != "movie" {
         return false;
@@ -922,6 +937,22 @@ fn json_releases(value: &Value, base: &str) -> Result<Vec<Release>> {
 
 fn source_releases(source: &Source, request: &Request, deadline: Instant) -> Result<Vec<Release>> {
     let mut pairs = vec![("q", request.title.clone())];
+    let numbering =
+        request
+            .source_numbering
+            .unwrap_or(crate::numbering::SourceNumber::SeasonEpisode(
+                crate::numbering::EpisodeNumber {
+                    season: request.season,
+                    episode: request.episode,
+                },
+            ));
+    let (season, episode) = match numbering {
+        crate::numbering::SourceNumber::SeasonEpisode(number) => (number.season, number.episode),
+        crate::numbering::SourceNumber::Absolute(number) => {
+            pairs[0].1 = format!("{} {number:03}", request.title);
+            (0, 0)
+        }
+    };
     if source.kind == "torznab" {
         pairs.push((
             "t",
@@ -932,17 +963,22 @@ fn source_releases(source: &Source, request: &Request, deadline: Instant) -> Res
             }
             .into(),
         ));
-        if matches!(request.kind.as_str(), "episode" | "series") {
-            pairs.push(("season", request.season.to_string()));
+        if matches!(request.kind.as_str(), "episode" | "series")
+            && !matches!(numbering, crate::numbering::SourceNumber::Absolute(_))
+        {
+            pairs.push(("season", season.to_string()));
             if request.kind == "episode" {
-                pairs.push(("ep", request.episode.to_string()));
+                pairs.push(("ep", episode.to_string()));
             }
         }
     } else if source.kind == "json" {
         pairs.push(("kind", request.kind.clone()));
         pairs.push(("year", request.year.to_string()));
-        pairs.push(("season", request.season.to_string()));
-        pairs.push(("episode", request.episode.to_string()));
+        pairs.push(("season", season.to_string()));
+        pairs.push(("episode", episode.to_string()));
+        if let crate::numbering::SourceNumber::Absolute(number) = numbering {
+            pairs.push(("absolute", number.to_string()));
+        }
     }
     if let Some(key) = optional_secret(&source.api_key_env)? {
         pairs.push(("apikey", key));
@@ -2005,6 +2041,7 @@ mod tests {
             episode: 0,
             source_path: None,
             source_url: None,
+            source_numbering: None,
             tmdb_id: None,
         }
     }

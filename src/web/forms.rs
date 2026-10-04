@@ -129,6 +129,7 @@ impl Form {
             year: optional("year", 9999)? as u32,
             season: optional("season", 9999)? as u32,
             episode: optional("episode", 99999)? as u32,
+            source_numbering: None,
             tmdb_id: (tmdb != 0).then_some(tmdb),
             source_path,
             source_url,

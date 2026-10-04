@@ -958,6 +958,7 @@ fn request(source: &str, title: &str) -> Request {
         episode: 0,
         source_path: None,
         source_url: Some(source.into()),
+        source_numbering: None,
         tmdb_id: None,
     }
 }

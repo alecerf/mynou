@@ -186,6 +186,28 @@ pub(super) fn capture_scope(record: &Record, store: &Store, season: u32) -> Resu
     {
         return Err("Season is absent from the accepted catalog plan".into());
     }
+    if record
+        .plan
+        .episodes
+        .iter()
+        .filter(|ep| ep.season == season)
+        .any(|ep| {
+            record
+                .episode_request(ep)
+                .source_numbering
+                .is_some_and(|number| {
+                    number
+                        != crate::numbering::SourceNumber::SeasonEpisode(
+                            crate::numbering::EpisodeNumber {
+                                season: ep.season,
+                                episode: ep.episode,
+                            },
+                        )
+                })
+        })
+    {
+        return Err("Alternate source numbering requires explicit pack file mappings".into());
+    }
     let today = date::today();
     let existing = store.media_keys();
     // An explicit on-demand pack action does not enable background series monitoring.
@@ -621,6 +643,7 @@ mod tests {
             year: 2024,
             season: 0,
             episode: 0,
+            source_numbering: None,
             tmdb_id: Some(42),
             source_url: None,
             source_path: None,
@@ -639,6 +662,21 @@ mod tests {
             episodes: episodes[..2].to_vec(),
             record: Record {
                 id: "b".repeat(32),
+                anchors: episodes
+                    .iter()
+                    .filter_map(|ep| {
+                        ep.catalog_id.map(|id| {
+                            (
+                                id,
+                                crate::numbering::EpisodeNumber {
+                                    season: ep.season,
+                                    episode: ep.episode,
+                                },
+                            )
+                        })
+                    })
+                    .collect(),
+                numbering: BTreeMap::new(),
                 plan: Plan { request, episodes },
                 monitored: false,
                 include_specials: false,

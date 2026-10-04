@@ -27,9 +27,9 @@ const HELP: &str = "Mynou — media automation using Rust std only
   serve [--config mynou.json]
   submit --title TITLE [--kind movie|episode|series|file] [--year YEAR]
          [--season N --episode N] [--path FILE | --url MAGNET_OR_TORRENT]
-         [--tmdb-id N] [--config mynou.json]
+         [--tmdb-id N] [--source-numbering JSON] [--config mynou.json]
   search --title TITLE [--kind movie|episode] [--year YEAR]
-         [--season N --episode N] [--tmdb-id N] [--config mynou.json]
+         [--season N --episode N] [--tmdb-id N] [--source-numbering JSON] [--config mynou.json]
   track-series --title TITLE [--year YEAR --tmdb-id N --season N]
                [--future-only] [--include-specials] [--unmonitored] [--config mynou.json]
   series-pack ID --url MAGNET_OR_TORRENT --mapping FILE [--config mynou.json]
@@ -37,6 +37,7 @@ const HELP: &str = "Mynou — media automation using Rust std only
                      [--config mynou.json]
   pack-remap JOB_ID --file-path PATH [--config mynou.json]
   series [ID] [--config mynou.json]
+  series-numbering ID [--mapping FILE] [--apply --plan-id ID] [--config mynou.json]
   series-monitor | series-unmonitor | series-refresh ID [--config mynou.json]
   episode-monitor | episode-unmonitor ID --season N --episode N [--config mynou.json]
   calendar [--from YYYY-MM-DD --to YYYY-MM-DD --series-id ID]
@@ -111,11 +112,28 @@ impl Args {
             "upgrades" => &["config", "help", "apply"],
             "baseline" => &["config", "help", "release-title"],
             "submit" => &[
-                "config", "title", "kind", "year", "season", "episode", "path", "url", "tmdb-id",
+                "config",
+                "title",
+                "kind",
+                "year",
+                "season",
+                "episode",
+                "path",
+                "url",
+                "tmdb-id",
                 "help",
+                "source-numbering",
             ],
             "search" => &[
-                "config", "title", "kind", "year", "season", "episode", "tmdb-id", "help",
+                "config",
+                "title",
+                "kind",
+                "year",
+                "season",
+                "episode",
+                "tmdb-id",
+                "help",
+                "source-numbering",
             ],
             "track-series" => &[
                 "config",
@@ -130,6 +148,7 @@ impl Args {
                 "unmonitored",
             ],
             "series-pack" => &["config", "help", "url", "mapping"],
+            "series-numbering" => &["config", "help", "mapping", "apply", "plan-id"],
             "series-pack-search" => &[
                 "config",
                 "help",
@@ -184,6 +203,7 @@ impl Args {
                 "series-refresh",
                 "series-pack",
                 "series-pack-search",
+                "series-numbering",
                 "pack-remap",
                 "episode-monitor",
                 "episode-unmonitor",
@@ -368,6 +388,11 @@ fn request(args: &Args) -> Result<Request> {
         episode: args.number("episode")?,
         source_path,
         source_url: args.options.get("url").cloned(),
+        source_numbering: args
+            .options
+            .get("source-numbering")
+            .map(|text| mynou::numbering::SourceNumber::from_json(&json::parse(text)?))
+            .transpose()?,
         tmdb_id: args
             .options
             .get("tmdb-id")
@@ -749,6 +774,56 @@ fn execute(args: Args) -> Result<()> {
                 )?);
             } else {
                 output(&integrations::search_report(&config, &r)?);
+            }
+        }
+        "series-numbering" => {
+            let id = args.positions[0].to_ascii_lowercase();
+            if id.len() != 32 || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return Err("Invalid series ID".into());
+            }
+            let mut body = if let Some(file) = args.options.get("mapping") {
+                let mut bytes = Vec::new();
+                fs::File::open(file)
+                    .map_err(|error| format!("Numbering mapping file: {error}"))?
+                    .take(512 * 1024 + 1)
+                    .read_to_end(&mut bytes)
+                    .map_err(|error| error.to_string())?;
+                if bytes.len() > 512 * 1024 {
+                    return Err("Numbering mapping file exceeds 512 KiB".into());
+                }
+                let value = json::parse(
+                    std::str::from_utf8(&bytes).map_err(|_| "Numbering mapping is not UTF-8")?,
+                )?;
+                if value
+                    .as_object()
+                    .is_none_or(|fields| fields.keys().any(|key| key != "changes"))
+                {
+                    return Err("Numbering mapping files contain only the changes array".into());
+                }
+                value
+            } else {
+                let mut value = Value::object();
+                value.insert("changes", Value::Array(Vec::new()));
+                value
+            };
+            body.insert("apply", args.options.contains_key("apply"));
+            if let Some(plan) = args.options.get("plan-id") {
+                body.insert("plan_id", plan.clone());
+            }
+            let query = mynou::series::NumberingRequest::from_json(&body)?;
+            if online {
+                output(&call(
+                    &config,
+                    &path,
+                    "POST",
+                    &format!("/api/series/{id}/numbering"),
+                    Some(&body),
+                )?);
+            } else {
+                if query.apply {
+                    return Err("Numbering apply requires a running Mynou service".into());
+                }
+                output(&Engine::open_for_preview(config)?.series_numbering(&id, &query)?);
             }
         }
         "series-pack-search" => {

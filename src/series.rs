@@ -1,5 +1,6 @@
 //! Durable catalog plans and narrowly scoped monitoring controls.
 mod engine;
+mod numbering;
 use crate::{
     Result,
     crypto::{constant_time_eq, random_bytes, sha256},
@@ -9,6 +10,7 @@ use crate::{
     store::{Request, private_options, reject_symlinks, sync_directory},
 };
 pub use engine::CalendarQuery;
+pub use numbering::{NumberingChoice, NumberingRequest};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
@@ -142,6 +144,8 @@ pub struct Record {
     pub checked_at: u64,
     pub next_check_at: u64,
     pub last_error: Option<String>,
+    pub anchors: BTreeMap<u64, crate::numbering::EpisodeNumber>,
+    pub numbering: BTreeMap<u64, NumberingChoice>,
 }
 
 impl Record {
@@ -165,11 +169,15 @@ impl Record {
             episode: episode.episode,
             source_path: None,
             source_url: None,
+            source_numbering: episode
+                .catalog_id
+                .and_then(|id| self.numbering.get(&id).map(|choice| choice.source)),
             tmdb_id: self.plan.request.tmdb_id,
         }
     }
     fn validate(&self) -> Result<()> {
         self.plan.validate()?;
+        self.validate_numbering()?;
         if self.id.len() != 32
             || !self
                 .id
@@ -203,6 +211,28 @@ impl Record {
         value.insert(
             "episodes",
             Value::Array(self.plan.episodes.iter().map(Episode::to_json).collect()),
+        );
+        value.insert(
+            "anchors",
+            Value::Array(
+                self.anchors
+                    .iter()
+                    .map(|(id, number)| {
+                        let mut value = number.to_json();
+                        value.insert("catalog_id", Value::Number(*id as f64));
+                        value
+                    })
+                    .collect(),
+            ),
+        );
+        value.insert(
+            "numbering",
+            Value::Array(
+                self.numbering
+                    .values()
+                    .map(|choice| choice.to_json())
+                    .collect(),
+            ),
         );
         value.insert("monitored", self.monitored);
         value.insert("include_specials", self.include_specials);
@@ -314,6 +344,8 @@ impl Record {
                 "checked_at",
                 "next_check_at",
                 "last_error",
+                "anchors",
+                "numbering",
             ],
         )?;
         let episodes = value
@@ -355,17 +387,51 @@ impl Record {
                 _ => Err("Invalid optional series field".into()),
             }
         };
+        let plan = Plan {
+            request: Request::from_json(value.get("request").ok_or("Missing series identity")?)?,
+            episodes: episodes
+                .iter()
+                .map(Episode::from_json)
+                .collect::<Result<_>>()?,
+        };
+        let mut anchors = numbering::initial_anchors(&plan);
+        if let Some(entries) = value.get("anchors") {
+            let entries = entries.as_array().ok_or("Invalid numbering anchors")?;
+            if entries.len() > MAX_EPISODES {
+                return Err("Too many numbering anchors".into());
+            }
+            anchors.clear();
+            for entry in entries {
+                fields(entry, &["catalog_id", "season", "episode"])?;
+                let id = numbering::catalog_id(entry)?;
+                let number = crate::numbering::EpisodeNumber {
+                    season: small(entry, "season")?,
+                    episode: small(entry, "episode")?,
+                };
+                number.validate()?;
+                if anchors.insert(id, number).is_some() {
+                    return Err("Duplicate numbering anchor".into());
+                }
+            }
+        }
+        let mut numbering = BTreeMap::new();
+        if let Some(entries) = value.get("numbering") {
+            let entries = entries.as_array().ok_or("Invalid numbering choices")?;
+            if entries.len() > MAX_EPISODES {
+                return Err("Too many numbering choices".into());
+            }
+            for entry in entries {
+                let choice = NumberingChoice::from_json(entry)?;
+                if numbering.insert(choice.catalog_id, choice).is_some() {
+                    return Err("Duplicate numbering choice".into());
+                }
+            }
+        }
         let record = Self {
             id: text(value, "id")?.into(),
-            plan: Plan {
-                request: Request::from_json(
-                    value.get("request").ok_or("Missing series identity")?,
-                )?,
-                episodes: episodes
-                    .iter()
-                    .map(Episode::from_json)
-                    .collect::<Result<_>>()?,
-            },
+            plan,
+            anchors,
+            numbering,
             monitored: flag(value, "monitored")?,
             include_specials: flag(value, "include_specials")?,
             start_date: optional("start_date")?,
@@ -429,7 +495,8 @@ impl SeriesStore {
                     std::str::from_utf8(&bytes).map_err(|_| "Invalid series snapshot encoding")?,
                 )?;
                 fields(&envelope, &["schema_version", "records", "digest"])?;
-                if envelope.get("schema_version").and_then(Value::as_u64) != Some(1) {
+                let schema = envelope.get("schema_version").and_then(Value::as_u64);
+                if !matches!(schema, Some(1 | 2)) {
                     return Err("Unsupported series snapshot schema".into());
                 }
                 let payload = envelope
@@ -446,6 +513,11 @@ impl SeriesStore {
                     return Err("Too many monitored series".into());
                 }
                 for value in values {
+                    if schema == Some(2)
+                        && (value.get("anchors").is_none() || value.get("numbering").is_none())
+                    {
+                        return Err("Missing versioned numbering data".into());
+                    }
                     let record = Record::from_json(value)?;
                     if records.insert(record.id.clone(), record).is_some() {
                         return Err("Duplicate persistent series identifier".into());
@@ -495,6 +567,8 @@ impl SeriesStore {
         }
         let record = Record {
             id,
+            anchors: numbering::initial_anchors(&plan),
+            numbering: BTreeMap::new(),
             plan,
             monitored,
             include_specials,
@@ -580,7 +654,7 @@ impl SeriesStore {
         let payload = Value::Array(records.values().map(Record::to_json).collect());
         let digest = hex(&sha256(json::stringify(&payload).as_bytes()));
         let mut envelope = Value::object();
-        envelope.insert("schema_version", 1_u32);
+        envelope.insert("schema_version", 2_u32);
         envelope.insert("records", payload);
         envelope.insert("digest", digest);
         let bytes = json::stringify(&envelope).into_bytes();
@@ -639,17 +713,33 @@ fn validate_records(records: &BTreeMap<String, Record>) -> Result<()> {
     if records.len() > MAX_SERIES
         || records
             .values()
-            .map(|record| record.plan.episodes.len())
+            .map(|record| record.plan.episodes.len().max(record.anchors.len()))
             .sum::<usize>()
             > MAX_TOTAL_EPISODES
     {
         return Err("Series catalog capacity exceeded".into());
     }
     let mut keys = BTreeSet::new();
+    let mut identities = BTreeMap::new();
+    let mut owners = BTreeMap::new();
     for record in records.values() {
         record.validate()?;
         if !keys.insert(record.plan.request.canonical_key()) {
             return Err("Duplicate persistent series scope".into());
+        }
+        for (id, number) in &record.anchors {
+            let series = record.plan.request.tmdb_id;
+            if identities
+                .insert((series, *id), *number)
+                .is_some_and(|old| old != *number)
+                || owners
+                    .insert((series, *number), *id)
+                    .is_some_and(|old| old != *id)
+            {
+                return Err(
+                    "Overlapping series scopes disagree on retained episode identities".into(),
+                );
+            }
         }
     }
     Ok(())
