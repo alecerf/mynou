@@ -6,6 +6,7 @@ use crate::{
     integrations,
     json::{self, Value},
     store::Request,
+    web::Web,
 };
 use std::{
     collections::BTreeMap,
@@ -22,6 +23,7 @@ pub struct Api {
     listener: TcpListener,
     token: String,
     engine: Arc<Engine>,
+    web: Arc<Web>,
 }
 impl Api {
     pub fn bind(engine: Arc<Engine>, token: String) -> Result<Self> {
@@ -37,6 +39,7 @@ impl Api {
             listener,
             token,
             engine,
+            web: Arc::new(Web::new()),
         })
     }
     pub fn address(&self) -> Result<SocketAddr> {
@@ -58,8 +61,9 @@ impl Api {
                 Ok((mut stream, _)) if threads.len() < 32 => {
                     let engine = self.engine.clone();
                     let token = self.token.clone();
+                    let web = self.web.clone();
                     threads.push(thread::spawn(move || {
-                        let _ = connection(&mut stream, &engine, &token);
+                        let _ = connection(&mut stream, &engine, &token, &web);
                     }));
                 }
                 Ok((mut stream, _)) => {
@@ -176,7 +180,7 @@ fn read_request(stream: &mut TcpStream) -> Result<HttpRequest> {
         body,
     })
 }
-fn connection(stream: &mut TcpStream, engine: &Arc<Engine>, token: &str) -> Result<()> {
+fn connection(stream: &mut TcpStream, engine: &Arc<Engine>, token: &str, web: &Web) -> Result<()> {
     let HttpRequest {
         method,
         target: path,
@@ -186,6 +190,11 @@ fn connection(stream: &mut TcpStream, engine: &Arc<Engine>, token: &str) -> Resu
         Ok(v) => v,
         Err(e) => return respond(stream, 400, error(&e)),
     };
+    if path == "/" || path == "/ui" || path.starts_with("/ui/") {
+        return web
+            .handle(engine, token, &method, &path, &headers, &body)
+            .write(stream);
+    }
     if method == "GET" && (path == "/healthz" || path == "/readyz") {
         let mut v = Value::object();
         v.insert(

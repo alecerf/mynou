@@ -1,0 +1,872 @@
+//! Escaped semantic HTML. No scripts, third-party assets or client-side state.
+use super::{
+    forms::{Form, decimal, encode},
+    session::Session,
+};
+use crate::{
+    Result,
+    engine::{Engine, lock, public_job},
+    integrations::report_text,
+    json::Value,
+};
+use std::sync::Arc;
+
+const PAGE_SIZE: usize = 50;
+const JOB_STATES: &[&str] = &[
+    "queued",
+    "processing",
+    "downloading",
+    "scanning",
+    "ready",
+    "failed",
+    "cancelled",
+];
+const TRANSFER_STATES: &[&str] = &[
+    "queued",
+    "downloading",
+    "paused",
+    "ready",
+    "failed",
+    "seed_limited",
+];
+
+pub fn login(session: &Session, message: Option<&str>) -> String {
+    let mut body = String::from(
+        "<p class=lead>Your library, from request to ready.</p><section class=login><h2>Sign in</h2><p>Use the API token from your Mynou configuration.</p>",
+    );
+    if let Some(message) = message {
+        body.push_str(&format!(
+            "<p class=notice role=alert>{}</p>",
+            display(message)
+        ));
+    }
+    body.push_str(&form("/ui/login", session));
+    body.push_str("<label for=token>API token</label><input id=token name=token type=password required minlength=32 maxlength=4096 autocomplete=off autofocus><button type=submit>Sign in</button></form><p class=muted>This browser stays signed in for up to eight hours.</p><a href=/ui/login>Reload sign-in form</a></section>");
+    frame("Welcome to Mynou", "", None, &body)
+}
+
+pub fn error(session: Option<&Session>, message: &str) -> String {
+    let body = format!(
+        "<section class=panel><p role=alert>{}</p><p><a href=/ui>Return to overview</a> · <a href=/ui/login>Sign in</a></p></section>",
+        display(message)
+    );
+    frame("Unable to complete this request", "", session, &body)
+}
+
+pub fn dashboard(engine: &Arc<Engine>, session: &Session) -> Result<String> {
+    let status = engine.status()?;
+    let mut body = String::from(
+        "<p class=lead>A clear view of what is moving, what needs attention and what is ready to watch.</p><section class=metrics aria-label=\"Library overview\">",
+    );
+    for (name, key) in [
+        ("Requests", "jobs"),
+        ("Active", "active"),
+        ("Ready", "ready"),
+        ("Native transfers", "torrents"),
+    ] {
+        body.push_str(&format!(
+            "<article class=metric><span>{name}</span><strong>{}</strong></article>",
+            status.get(key).map(|value| display(&raw_scalar(Some(value)))).unwrap_or_else(|| "0".into())
+        ));
+    }
+    body.push_str("</section><section class=grid><article class=panel><h2>Find something to watch</h2><p>Preview matching releases and see why each one is accepted or rejected. Then record a request.</p><a class=button href=/ui/search>Search and request</a></article><article class=panel><h2>Keep your library current</h2><p>Review owned imports, monitoring and release baselines. Preview upgrades before applying them.</p><a class=button href=/ui/library>Open library</a></article></section><section class=panel><h2>Plex watchlist</h2>");
+    if engine.config.plex.enabled {
+        body.push_str("<p>Synchronize watchlist requests now.</p>");
+        body.push_str(&form("/ui/sync", session));
+        body.push_str("<button type=submit>Sync watchlist</button></form>");
+    } else {
+        body.push_str("<p>Plex is not connected. Configure the integration to enable watchlist synchronization.</p>");
+    }
+    body.push_str("</section>");
+    for key in ["last_sync_error", "last_upgrade_error"] {
+        if let Some(text) = status.get(key).and_then(Value::as_str) {
+            body.push_str(&format!("<p class=notice role=alert>{}</p>", display(text)));
+        }
+    }
+    Ok(frame("Overview", "/ui", Some(session), &body))
+}
+
+pub fn jobs(engine: &Arc<Engine>, session: &Session, query: &Form) -> Result<String> {
+    let browse = Browse::new(query, JOB_STATES)?;
+    let mut jobs = lock(&engine.store)?.list();
+    jobs.sort_by(|a, b| {
+        b.created_at
+            .cmp(&a.created_at)
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    jobs.retain(|job| browse.matches(&job.request.title, &job.id, &job.state));
+    let (page, offset) = page(jobs.len(), browse.page);
+    let mut body = String::from(
+        "<p class=lead>Follow each request through search, download and library import.</p><a class=button href=/ui/search>New request</a>",
+    );
+    body.push_str(&browse.filter("/ui/jobs", JOB_STATES));
+    body.push_str(&form("/ui/jobs/action", session));
+    body.push_str("<div class=table-wrap><table><caption>Requests</caption><thead><tr><th scope=col>Select</th><th scope=col>Title</th><th scope=col>State</th><th scope=col>Progress</th><th scope=col>Attempts</th></tr></thead><tbody>");
+    for job in jobs.iter().skip(offset).take(PAGE_SIZE) {
+        body.push_str(&format!("<tr><td>{}</td><td><a href=\"/ui/jobs/{}\">{}</a><small>{} · {}</small></td><td>{}</td><td>{}</td><td>{}</td></tr>",
+            checkbox(&job.id), e(&job.id), display(&job.request.title), display(&job.request.kind), job.request.year,
+            badge(&job.state), progress(job.progress), job.attempts));
+    }
+    body.push_str("</tbody></table></div>");
+    body.push_str(&bulk_controls(&[
+        ("cancel", "Cancel selected"),
+        ("retry", "Retry selected"),
+    ]));
+    body.push_str("</form>");
+    body.push_str(&browse.pager("/ui/jobs", jobs.len(), page));
+    Ok(frame("Jobs", "/ui/jobs", Some(session), &body))
+}
+
+pub fn library(engine: &Arc<Engine>, session: &Session, query: &Form) -> Result<String> {
+    let states = &["monitored", "unmonitored", "baseline_required"];
+    let browse = Browse::new(query, states)?;
+    let value = engine.library()?;
+    let entries: Vec<_> = array(&value)
+        .iter()
+        .filter(|entry| {
+            let title = request_title(entry);
+            let state = match browse.state.as_str() {
+                "baseline_required" if flag(entry, "baseline_required") => "baseline_required",
+                _ if flag(entry, "monitored") => "monitored",
+                _ => "unmonitored",
+            };
+            browse.matches(title, text(entry, "id"), state)
+        })
+        .collect();
+    let (page, offset) = page(entries.len(), browse.page);
+    let mut body = String::from(
+        "<p class=lead>Current owned imports stay available while an upgrade is prepared.</p><section class=panel><h2>Library upgrades</h2><p>A preview contacts your sources without changing jobs. Apply performs a fresh check and records eligible upgrades.</p>",
+    );
+    body.push_str(&upgrade_buttons(session));
+    body.push_str("</section>");
+    body.push_str(&browse.filter("/ui/library", states));
+    body.push_str(&form("/ui/library/action", session));
+    body.push_str("<div class=table-wrap><table><caption>Owned library</caption><thead><tr><th scope=col>Select</th><th scope=col>Title</th><th scope=col>Monitoring</th><th scope=col>Baseline</th><th scope=col>Files</th><th scope=col>Upgrade</th></tr></thead><tbody>");
+    for entry in entries.iter().skip(offset).take(PAGE_SIZE) {
+        let id = text(entry, "id");
+        body.push_str(&format!("<tr><td>{}</td><td><a href=\"/ui/jobs/{}\">{}</a></td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+            checkbox(id), e(id), display(request_title(entry)), if flag(entry, "monitored") { "On" } else { "Off" },
+            if flag(entry, "baseline_required") { "Needs baseline" } else { "Recorded" },
+            if flag(entry, "imports_present") { "Available" } else { "Missing" },
+            entry.get("pending_upgrade_id").and_then(Value::as_str).map_or_else(|| "—".into(), |id| format!("<a href=\"/ui/jobs/{}\">View pending upgrade</a>", e(id)))));
+    }
+    body.push_str("</tbody></table></div>");
+    body.push_str(&bulk_controls(&[
+        ("monitor", "Monitor selected"),
+        ("unmonitor", "Unmonitor selected"),
+    ]));
+    body.push_str("</form>");
+    body.push_str(&browse.pager("/ui/library", entries.len(), page));
+    Ok(frame("Library", "/ui/library", Some(session), &body))
+}
+
+pub fn search(session: &Session, report: Option<&Value>) -> Result<String> {
+    let mut body = String::from(
+        "<p class=lead>Find a release, understand the selection and start a request.</p><section class=panel><h2>What would you like to watch?</h2>",
+    );
+    body.push_str(&form("/ui/requests", session));
+    body.push_str("<div class=fields><div><label for=kind>Content type</label><select id=kind name=kind><option value=movie>Movie</option><option value=episode>Episode</option><option value=series>Series</option><option value=file>Local media file</option></select></div><div class=wide><label for=title>Title</label><input id=title name=title required maxlength=4096 autocomplete=off></div><div><label for=year>Year</label><input id=year name=year type=number min=0 max=9999></div><div><label for=season>Season</label><input id=season name=season type=number min=0 max=9999></div><div><label for=episode>Episode</label><input id=episode name=episode type=number min=0 max=99999></div><div><label for=tmdb_id>TMDB ID (optional)</label><input id=tmdb_id name=tmdb_id type=number min=1 max=9007199254740991></div></div><details><summary>Use a specific source</summary><label for=source_kind>Source type</label><select id=source_kind name=source_kind><option value=auto>Automatic search</option><option value=url>Torrent, magnet or HTTP URL</option><option value=file>File on the Mynou server</option></select><label for=source_value>URL or server file path</label><input id=source_value name=source_value maxlength=8192 autocomplete=off><p class=muted>Server paths refer to files Mynou can access. Submitted source URLs are kept private.</p></details><div class=actions><button type=submit formaction=/ui/search class=secondary>Preview search</button><button type=submit>Record request</button></div></form><p class=muted>Preview searches support movies and individual episodes. Series requests use the configured series expansion. Recording a request runs automatic selection again; a preview does not reserve a release.</p></section>");
+    if let Some(report) = report {
+        body.push_str("<section class=panel><h2>Search preview</h2>");
+        if flag(report, "manual_override") {
+            body.push_str(
+                "<p>A specific source was supplied. Automatic release selection is bypassed.</p>",
+            );
+        } else {
+            body.push_str(&format!(
+                "<p>Profile: <strong>{}</strong>. {} candidate(s); {} reported.</p>",
+                display(text(report, "profile")),
+                scalar(report, "candidate_count"),
+                scalar(report, "reported_count")
+            ));
+            if let Some(indexers) = report.get("indexers") {
+                body.push_str(&format!(
+                    "<p>{} source(s) responded; {} failed.</p>",
+                    scalar(indexers, "successful"),
+                    scalar(indexers, "failed")
+                ));
+            }
+            for (key, label) in [
+                ("accepted", "Accepted releases"),
+                ("rejected", "Rejected releases"),
+            ] {
+                body.push_str(&format!("<h3>{label}</h3><div class=table-wrap><table><caption>{label}</caption><thead><tr><th scope=col>Release</th><th scope=col>Source</th><th scope=col>Seeds</th><th scope=col>Score</th><th scope=col>Decision</th></tr></thead><tbody>"));
+                for candidate in report.get(key).map(array).unwrap_or_default() {
+                    let selected = report.get("selected_candidate_id").and_then(Value::as_str)
+                        == candidate.get("id").and_then(Value::as_str);
+                    let assessment = candidate.get("assessment").unwrap_or(&Value::Null);
+                    let reasons = assessment
+                        .get("reasons")
+                        .map(array)
+                        .unwrap_or_default()
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .take(32)
+                        .map(display)
+                        .collect::<Vec<_>>()
+                        .join("; ");
+                    body.push_str(&format!(
+                        "<tr><td>{}{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+                        display(text(candidate, "title")),
+                        if selected {
+                            "<small>Automatically selected</small>"
+                        } else {
+                            ""
+                        },
+                        display(text(candidate, "source")),
+                        scalar(candidate, "seeders"),
+                        scalar(assessment, "score"),
+                        if reasons.is_empty() {
+                            "Matches the configured profile".into()
+                        } else {
+                            reasons
+                        }
+                    ));
+                }
+                body.push_str("</tbody></table></div>");
+            }
+            if flag(report, "truncated") {
+                body.push_str(
+                    "<p class=notice>The report is limited. Additional candidates are omitted.</p>",
+                );
+            }
+        }
+        body.push_str("<p>Enter the request above to submit it. Source URLs are not included in this preview.</p></section>");
+    }
+    Ok(frame(
+        "Search and request",
+        "/ui/search",
+        Some(session),
+        &body,
+    ))
+}
+
+pub fn upgrades(session: &Session, report: &Value) -> Result<String> {
+    let mut body = format!(
+        "<p class=lead>{} entries checked; {} new upgrade(s) queued.</p><p>{}</p>",
+        scalar(report, "checked"),
+        scalar(report, "queued"),
+        if flag(report, "apply") {
+            "This check applied eligible upgrades."
+        } else {
+            "This was a preview. No upgrade jobs were recorded."
+        }
+    );
+    body.push_str(&upgrade_buttons(session));
+    body.push_str("<div class=table-wrap><table><caption>Upgrade decisions</caption><thead><tr><th scope=col>Library entry</th><th scope=col>Decision</th><th scope=col>Candidate</th><th scope=col>Upgrade job</th></tr></thead><tbody>");
+    for entry in report.get("entries").map(array).unwrap_or_default() {
+        body.push_str(&format!(
+            "<tr><td><a href=\"/ui/jobs/{}\">{}</a></td><td>{}</td><td>{}</td><td>{}</td></tr>",
+            e(text(entry, "job_id")),
+            display(text(entry, "job_id")),
+            display(text(entry, "action").replace('_', " ").as_str()),
+            display(text(entry, "candidate_title")),
+            entry
+                .get("upgrade_job_id")
+                .and_then(Value::as_str)
+                .map_or_else(
+                    || "—".into(),
+                    |id| format!("<a href=\"/ui/jobs/{}\">View upgrade</a>", e(id))
+                )
+        ));
+    }
+    body.push_str("</tbody></table></div>");
+    if let Some(skipped) = report.get("skipped") {
+        body.push_str(&format!(
+            "<p>Skipped: {} unmonitored, {} needing a baseline, {} unsupported content type.</p>",
+            scalar(skipped, "unmonitored"),
+            scalar(skipped, "baseline_required"),
+            scalar(skipped, "unsupported_kind")
+        ));
+    }
+    if flag(report, "limited") {
+        body.push_str("<p class=notice>The check reached its limit. Additional entries will need another check.</p>");
+    }
+    body.push_str("<a href=/ui/library>Return to library</a>");
+    Ok(frame(
+        "Library upgrades",
+        "/ui/library",
+        Some(session),
+        &body,
+    ))
+}
+
+pub fn job(engine: &Arc<Engine>, session: &Session, query: &Form, id: &str) -> Result<String> {
+    query.only(&["files_page", "events_page"])?;
+    let files_page = requested_page(query, "files_page")?;
+    let events_page = requested_page(query, "events_page")?;
+    let (job, events, owned) = {
+        let store = lock(&engine.store)?;
+        (
+            store.get(id).ok_or("Unknown job")?,
+            store.events(id),
+            store.library_jobs().iter().any(|entry| entry.id == id),
+        )
+    };
+    let value = public_job(&job);
+    let mut body = format!(
+        "<p class=lead>{}</p><section class=panel><h2>Request details</h2><dl><dt>State</dt><dd>{}</dd><dt>Progress</dt><dd>{}</dd><dt>Content type</dt><dd>{}</dd><dt>Year</dt><dd>{}</dd><dt>Season / episode</dt><dd>{} / {}</dd><dt>Attempts</dt><dd>{}</dd><dt>Source</dt><dd>{}</dd></dl>",
+        display(&job.request.title),
+        badge(&job.state),
+        progress(job.progress),
+        display(&job.request.kind),
+        job.request.year,
+        job.request.season,
+        job.request.episode,
+        job.attempts,
+        if job.request.source_path.is_some() {
+            "Server file"
+        } else if job.request.source_url.is_some() {
+            "Private configured source"
+        } else {
+            "Automatic search"
+        }
+    );
+    if let Some(message) = value.get("last_error").and_then(Value::as_str) {
+        body.push_str(&format!(
+            "<p class=notice role=alert>{}</p>",
+            display(message)
+        ));
+    }
+    if let Some(id) = &job.download_id {
+        body.push_str(&format!(
+            "<p><a href=\"/ui/transfers/{}\">Open native transfer</a></p>",
+            e(id)
+        ));
+    }
+    if let Some(id) = &job.upgrade_parent {
+        body.push_str(&format!(
+            "<p><a href=\"/ui/jobs/{}\">Open previous library entry</a></p>",
+            e(id)
+        ));
+    }
+    body.push_str(&form("/ui/jobs/action", session));
+    body.push_str(&hidden("id", id));
+    body.push_str(&bulk_controls(&[
+        ("cancel", "Cancel request"),
+        ("retry", "Retry request"),
+    ]));
+    body.push_str("</form></section>");
+    if owned {
+        body.push_str("<section class=panel><h2>Library monitoring</h2>");
+        body.push_str(&format!(
+            "<p>Monitoring is {}.</p>",
+            if job.monitored { "on" } else { "off" }
+        ));
+        body.push_str(&form("/ui/library/action", session));
+        body.push_str(&hidden("id", id));
+        body.push_str(&bulk_controls(&[
+            ("monitor", "Enable monitoring"),
+            ("unmonitor", "Disable monitoring"),
+        ]));
+        body.push_str("</form><h3>Release baseline</h3>");
+        if let Some(release) = &job.release {
+            body.push_str(&format!("<p>{}</p>", display(&release.title)));
+        }
+        body.push_str(&form("/ui/library/baseline", session));
+        body.push_str(&hidden("id", id));
+        body.push_str("<label for=release_title>Matching release title</label><input id=release_title name=release_title required maxlength=2048><button type=submit>Save baseline</button></form></section>");
+    }
+    let files: Vec<_> = job
+        .imports
+        .iter()
+        .map(|file| ("Library import", file))
+        .chain(job.files.iter().map(|file| ("Downloaded source", file)))
+        .collect();
+    let (file_page, offset) = page(files.len(), files_page);
+    body.push_str("<section class=panel><h2>Files</h2><ul class=file-list>");
+    for (label, file) in files.iter().skip(offset).take(PAGE_SIZE) {
+        body.push_str(&format!(
+            "<li><span>{label}</span><code>{}</code></li>",
+            display(file)
+        ));
+    }
+    body.push_str("</ul>");
+    body.push_str(&detail_pager(
+        &format!("/ui/jobs/{id}"),
+        "files_page",
+        files.len(),
+        file_page,
+        "events_page",
+        events_page,
+    ));
+    body.push_str("</section><section class=panel><h2>History</h2><div class=table-wrap><table><caption>Recent request events</caption><thead><tr><th scope=col>Time (UTC)</th><th scope=col>State</th><th scope=col>Message</th></tr></thead><tbody>");
+    let (event_page, offset) = page(events.len(), events_page);
+    for event in events.iter().rev().skip(offset).take(PAGE_SIZE) {
+        body.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{}</td></tr>",
+            timestamp(event.at),
+            badge(&event.state),
+            display(&event.message)
+        ));
+    }
+    body.push_str("</tbody></table></div>");
+    body.push_str(&detail_pager(
+        &format!("/ui/jobs/{id}"),
+        "events_page",
+        events.len(),
+        event_page,
+        "files_page",
+        file_page,
+    ));
+    body.push_str("</section>");
+    Ok(frame("Job details", "/ui/jobs", Some(session), &body))
+}
+
+pub fn transfers(engine: &Arc<Engine>, session: &Session, query: &Form) -> Result<String> {
+    let browse = Browse::new(query, TRANSFER_STATES)?;
+    let value = engine.transfers()?;
+    let entries: Vec<_> = array(&value)
+        .iter()
+        .filter(|entry| {
+            browse.matches(
+                &transfer_name(entry),
+                text(entry, "id"),
+                text(entry, "status"),
+            )
+        })
+        .collect();
+    let (page, offset) = page(entries.len(), browse.page);
+    let mut body = String::from(
+        "<p class=lead>Manage the native download queue. Pause, resume and prioritize transfers while retaining files.</p>",
+    );
+    body.push_str(&browse.filter("/ui/transfers", TRANSFER_STATES));
+    body.push_str(&form("/ui/transfers/action", session));
+    body.push_str("<div class=table-wrap><table><caption>Native transfers</caption><thead><tr><th scope=col>Select</th><th scope=col>Transfer</th><th scope=col>State</th><th scope=col>Progress</th><th scope=col>Priority</th><th scope=col>Downloaded / uploaded</th></tr></thead><tbody>");
+    for entry in entries.iter().skip(offset).take(PAGE_SIZE) {
+        let id = text(entry, "id");
+        body.push_str(&format!("<tr><td>{}</td><td><a href=\"/ui/transfers/{}\">{}</a><small><code>{}</code></small></td><td>{}</td><td>{}</td><td>{}</td><td>{} / {} bytes</td></tr>",
+            checkbox(id), e(id), display(&transfer_name(entry)), e(id), badge(text(entry, "status")), progress(entry.get("progress").and_then(Value::as_f64).unwrap_or(0.0)),
+            scalar(entry, "priority"), scalar(entry, "downloaded_bytes"), scalar(entry, "uploaded_bytes")));
+    }
+    body.push_str("</tbody></table></div>");
+    body.push_str(&bulk_controls(&[
+        ("pause", "Pause selected"),
+        ("resume", "Resume selected"),
+    ]));
+    body.push_str("</form>");
+    body.push_str(&browse.pager("/ui/transfers", entries.len(), page));
+    Ok(frame("Transfers", "/ui/transfers", Some(session), &body))
+}
+
+pub fn transfer(engine: &Arc<Engine>, session: &Session, query: &Form, id: &str) -> Result<String> {
+    query.only(&["page"])?;
+    let requested = requested_page(query, "page")?;
+    let value = engine.transfer(id)?;
+    let mut body = format!(
+        "<p class=lead>{}</p><section class=panel><h2>Transfer details</h2><dl><dt>Identifier</dt><dd><code>{}</code></dd><dt>State</dt><dd>{}</dd><dt>Progress</dt><dd>{}</dd><dt>Downloaded</dt><dd>{} bytes</dd><dt>Uploaded</dt><dd>{} bytes</dd><dt>Verified payload</dt><dd>{} bytes</dd><dt>Seeding availability</dt><dd>{} seconds</dd></dl><p>{}</p>",
+        display(&transfer_name(&value)),
+        e(id),
+        badge(text(&value, "status")),
+        progress(value.get("progress").and_then(Value::as_f64).unwrap_or(0.0)),
+        scalar(&value, "downloaded_bytes"),
+        scalar(&value, "uploaded_bytes"),
+        scalar(&value, "verified_bytes"),
+        scalar(&value, "seed_elapsed_secs"),
+        display(text(&value, "message"))
+    );
+    body.push_str(&form("/ui/transfers/action", session));
+    body.push_str(&hidden("id", id));
+    body.push_str(&bulk_controls(&[("pause", "Pause"), ("resume", "Resume")]));
+    body.push_str("</form><h3>Related requests</h3><ul>");
+    for request in value
+        .get("request_ids")
+        .map(array)
+        .unwrap_or_default()
+        .iter()
+        .take(32)
+        .filter_map(Value::as_str)
+    {
+        body.push_str(&format!(
+            "<li><a href=\"/ui/jobs/{}\">{}</a></li>",
+            e(request),
+            e(request)
+        ));
+    }
+    body.push_str("</ul></section><section class=grid><article class=panel><h2>Queue priority</h2><p>Higher values run first; ties keep submission order.</p>");
+    body.push_str(&form("/ui/transfers/priority", session));
+    body.push_str(&hidden("id", id));
+    body.push_str(&format!("<label for=priority>Priority</label><input id=priority name=priority type=number required min=-1000 max=1000 value=\"{}\"><button type=submit>Save priority</button></form></article><article class=panel><h2>Transfer policy</h2><p>Rates use bytes per second; zero is unlimited. Empty seeding limits are unlimited. Global bandwidth caps still apply.</p>", scalar(&value, "priority")));
+    body.push_str(&form("/ui/transfers/policy", session));
+    body.push_str(&hidden("id", id));
+    let policy = value
+        .get("policy")
+        .filter(|value| value.as_object().is_some())
+        .or_else(|| value.get("effective_policy"))
+        .unwrap_or(&Value::Null);
+    for (name, label, minimum, maximum) in [
+        ("download_limit_bps", "Download rate", 0, 1_073_741_824_u64),
+        ("upload_limit_bps", "Upload rate", 0, 1_073_741_824),
+        (
+            "seed_ratio_milli",
+            "Seed ratio in thousandths (1000 = 1:1)",
+            1,
+            1_000_000,
+        ),
+        ("seed_time_secs", "Seeding seconds", 1, 315_360_000),
+    ] {
+        let current = policy
+            .get(name)
+            .and_then(Value::as_u64)
+            .map_or_else(String::new, |number| number.to_string());
+        body.push_str(&format!("<label for={name}>{label}</label><input id={name} name={name} type=number min={minimum} max={maximum} value=\"{current}\">"));
+    }
+    body.push_str("<div class=actions><button name=action value=save type=submit>Save override</button><button name=action value=reset type=submit class=secondary>Restore defaults</button></div></form><p class=muted>A saved override replaces the seeding defaults in full.</p></article></section>");
+    let files = value.get("files").map(array).unwrap_or_default();
+    let (page, offset) = page(files.len(), requested);
+    body.push_str("<section class=panel><h2>File priorities</h2><p>Priority changes download order. Every file is still downloaded.</p><div class=table-wrap><table><caption>Transfer files</caption><thead><tr><th scope=col>File</th><th scope=col>Bytes</th><th scope=col>Priority</th></tr></thead><tbody>");
+    for file in files.iter().skip(offset).take(PAGE_SIZE) {
+        body.push_str(&format!(
+            "<tr><td><code>{}</code></td><td>{}</td><td>",
+            display(text(file, "path")),
+            scalar(file, "size_bytes")
+        ));
+        body.push_str(&form("/ui/transfers/files", session));
+        body.push_str(&hidden("id", id));
+        body.push_str(&hidden("index", &raw_scalar(file.get("index"))));
+        let index = raw_scalar(file.get("index"));
+        body.push_str(&format!("<label class=sr-only for=\"file-{index}\">Priority for file {index}</label><select id=\"file-{index}\" name=priority>"));
+        for priority in ["low", "normal", "high"] {
+            body.push_str(&format!(
+                "<option value={priority}{}>{priority}</option>",
+                if text(file, "priority") == priority {
+                    " selected"
+                } else {
+                    ""
+                }
+            ));
+        }
+        body.push_str("</select><button type=submit>Save</button></form></td></tr>");
+    }
+    body.push_str("</tbody></table></div>");
+    body.push_str(&detail_pager(
+        &format!("/ui/transfers/{id}"),
+        "page",
+        files.len(),
+        page,
+        "",
+        1,
+    ));
+    body.push_str("</section>");
+    Ok(frame(
+        "Transfer details",
+        "/ui/transfers",
+        Some(session),
+        &body,
+    ))
+}
+
+struct Browse {
+    q: String,
+    state: String,
+    page: usize,
+}
+
+impl Browse {
+    fn new(form: &Form, states: &[&str]) -> Result<Self> {
+        form.only(&["q", "state", "page"])?;
+        let q = form.value("q")?.trim().to_owned();
+        if q.len() > 128 || report_text(&q, 128) != q {
+            return Err("Filter using a title or identifier of at most 128 bytes".into());
+        }
+        let state = form.value("state")?.to_owned();
+        if !state.is_empty() && !states.contains(&state.as_str()) {
+            return Err("Choose an available state filter".into());
+        }
+        Ok(Self {
+            q,
+            state,
+            page: requested_page(form, "page")?,
+        })
+    }
+
+    fn matches(&self, title: &str, id: &str, state: &str) -> bool {
+        (self.state.is_empty() || self.state == state)
+            && (self.q.is_empty()
+                || title.to_lowercase().contains(&self.q.to_lowercase())
+                || id.contains(&self.q.to_ascii_lowercase()))
+    }
+
+    fn filter(&self, path: &str, states: &[&str]) -> String {
+        let mut html = format!(
+            "<form method=get action={path} class=filters><div><label for=q>Title or identifier</label><input id=q name=q maxlength=128 value=\"{}\"></div><div><label for=state>State</label><select id=state name=state><option value=\"\">All</option>",
+            e(&self.q)
+        );
+        for state in states {
+            html.push_str(&format!(
+                "<option value={state}{}>{}</option>",
+                if self.state == *state {
+                    " selected"
+                } else {
+                    ""
+                },
+                e(&state.replace('_', " "))
+            ));
+        }
+        html.push_str("</select></div><button type=submit>Filter</button></form>");
+        html
+    }
+
+    fn pager(&self, path: &str, count: usize, current: usize) -> String {
+        pager(count, current, |page| {
+            format!(
+                "{path}?q={}&amp;state={}&amp;page={page}",
+                encode(&self.q),
+                encode(&self.state)
+            )
+        })
+    }
+}
+
+fn detail_pager(
+    path: &str,
+    key: &str,
+    count: usize,
+    current: usize,
+    other: &str,
+    other_page: usize,
+) -> String {
+    pager(count, current, |page| {
+        if other.is_empty() {
+            format!("{path}?{key}={page}")
+        } else {
+            format!("{path}?{key}={page}&amp;{other}={other_page}")
+        }
+    })
+}
+
+fn pager(count: usize, current: usize, link: impl Fn(usize) -> String) -> String {
+    let pages = count.div_ceil(PAGE_SIZE).max(1);
+    let mut html = format!(
+        "<nav class=pager aria-label=Pagination><span>{count} entries · Page {current} of {pages}</span>"
+    );
+    if current > 1 {
+        html.push_str(&format!(
+            "<a href=\"{}\" rel=prev>Previous</a>",
+            link(current - 1)
+        ));
+    }
+    if current < pages {
+        html.push_str(&format!(
+            "<a href=\"{}\" rel=next>Next</a>",
+            link(current + 1)
+        ));
+    }
+    html.push_str("</nav>");
+    html
+}
+
+fn page(count: usize, requested: usize) -> (usize, usize) {
+    let page = requested.min(count.div_ceil(PAGE_SIZE).max(1));
+    (page, (page - 1) * PAGE_SIZE)
+}
+
+fn requested_page(form: &Form, key: &str) -> Result<usize> {
+    let value = form.value(key)?;
+    if value.is_empty() {
+        return Ok(1);
+    }
+    let page = decimal(value, 100_000, "Page")? as usize;
+    if page == 0 {
+        return Err("Page numbering starts at one".into());
+    }
+    Ok(page)
+}
+
+fn frame(title: &str, active: &str, session: Option<&Session>, body: &str) -> String {
+    let mut html = format!(
+        "<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content=\"width=device-width, initial-scale=1\"><title>{} · Mynou</title><link rel=stylesheet href=/ui/style.css></head><body><a class=skip href=#main>Skip to content</a><header><a class=brand href=/ui><span class=mark aria-hidden=true>m</span>Mynou</a>",
+        e(title)
+    );
+    if let Some(session) = session {
+        html.push_str("<nav aria-label=Main>");
+        for (path, label) in [
+            ("/ui", "Overview"),
+            ("/ui/jobs", "Jobs"),
+            ("/ui/library", "Library"),
+            ("/ui/search", "Search"),
+            ("/ui/transfers", "Transfers"),
+        ] {
+            html.push_str(&format!(
+                "<a href={path}{}>{label}</a>",
+                if active == path {
+                    " aria-current=page"
+                } else {
+                    ""
+                }
+            ));
+        }
+        html.push_str("</nav>");
+        html.push_str(&form("/ui/logout", session));
+        html.push_str("<button class=quiet type=submit>Sign out</button></form>");
+    }
+    html.push_str(&format!("</header><main id=main><h1>{}</h1>", e(title)));
+    if let Some(session) = session
+        && !session.messages.is_empty()
+    {
+        html.push_str("<section class=notice role=status aria-label=\"Action results\"><ul>");
+        for message in &session.messages {
+            html.push_str(&format!("<li>{}</li>", display(message)));
+        }
+        html.push_str("</ul></section>");
+    }
+    html.push_str(body);
+    html.push_str(&format!(
+        "</main><footer>Mynou {} · <a href=/ui>Refresh overview</a></footer></body></html>",
+        env!("CARGO_PKG_VERSION")
+    ));
+    html
+}
+
+fn form(action: &str, session: &Session) -> String {
+    format!(
+        "<form method=post action=\"{}\">{}",
+        e(action),
+        hidden("csrf", &session.csrf)
+    )
+}
+fn hidden(name: &str, value: &str) -> String {
+    format!(
+        "<input type=hidden name=\"{}\" value=\"{}\">",
+        e(name),
+        e(value)
+    )
+}
+fn checkbox(id: &str) -> String {
+    format!(
+        "<input type=checkbox name=id value=\"{}\" aria-label=\"Select entry {}\">",
+        e(id),
+        e(id)
+    )
+}
+fn bulk_controls(actions: &[(&str, &str)]) -> String {
+    let mut html = String::from("<div class=actions>");
+    for (value, label) in actions {
+        html.push_str(&format!(
+            "<button type=submit name=action value={value} class=secondary>{label}</button>"
+        ));
+    }
+    html.push_str("</div><p class=muted>Select up to 32 entries. Results are reported separately; changes retain library and download files.</p>");
+    html
+}
+fn upgrade_buttons(session: &Session) -> String {
+    format!(
+        "{}<div class=actions><button type=submit name=action value=preview class=secondary>Preview upgrades</button><button type=submit name=action value=apply>Apply available upgrades</button></div></form>",
+        form("/ui/upgrades", session)
+    )
+}
+fn progress(number: f64) -> String {
+    let number = if number.is_finite() {
+        number.clamp(0.0, 1.0) * 100.0
+    } else {
+        0.0
+    };
+    format!(
+        "<progress max=100 value={number:.1} aria-label=\"{number:.1}% complete\">{number:.1}%</progress><small>{number:.1}%</small>"
+    )
+}
+fn badge(state: &str) -> String {
+    format!(
+        "<span class=badge>{}</span>",
+        display(&state.replace('_', " "))
+    )
+}
+fn request_title(entry: &Value) -> &str {
+    entry
+        .get("request")
+        .map(|request| text(request, "title"))
+        .unwrap_or("")
+}
+fn transfer_name(value: &Value) -> String {
+    value
+        .get("files")
+        .map(array)
+        .and_then(|files| files.first())
+        .map(|file| text(file, "path").to_owned())
+        .unwrap_or_else(|| "Awaiting metadata".into())
+}
+fn array(value: &Value) -> &[Value] {
+    value.as_array().unwrap_or_default()
+}
+fn text<'a>(value: &'a Value, key: &str) -> &'a str {
+    value.get(key).and_then(Value::as_str).unwrap_or("")
+}
+fn flag(value: &Value, key: &str) -> bool {
+    value.get(key).and_then(Value::as_bool).unwrap_or(false)
+}
+fn scalar(value: &Value, key: &str) -> String {
+    display(&raw_scalar(value.get(key)))
+}
+fn raw_scalar(value: Option<&Value>) -> String {
+    match value {
+        Some(Value::String(text)) => text.clone(),
+        Some(Value::Number(number)) => number.to_string(),
+        Some(Value::Bool(flag)) => flag.to_string(),
+        _ => String::new(),
+    }
+}
+fn display(text: &str) -> String {
+    e(&report_text(text, 2048))
+}
+fn e(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    for character in text.chars() {
+        match character {
+            '&' => result.push_str("&amp;"),
+            '<' => result.push_str("&lt;"),
+            '>' => result.push_str("&gt;"),
+            '"' => result.push_str("&quot;"),
+            '\'' => result.push_str("&#39;"),
+            character => result.push(character),
+        }
+    }
+    result
+}
+
+fn timestamp(seconds: u64) -> String {
+    // Gregorian civil date from a bounded Unix timestamp; integer arithmetic only.
+    if seconds > 253_402_300_799 {
+        return seconds.to_string();
+    }
+    let days = seconds / 86_400;
+    let z = days as i64 + 719_468;
+    let era = z / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let mut year = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    year += i64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02} {:02}:{:02}:{:02}",
+        seconds / 3600 % 24,
+        seconds / 60 % 60,
+        seconds % 60
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn dynamic_html_is_escaped_and_credential_labels_are_redacted() {
+        assert_eq!(
+            e("<script a=\"x\">&'</script>"),
+            "&lt;script a=&quot;x&quot;&gt;&amp;&#39;&lt;/script&gt;"
+        );
+        assert_eq!(
+            display("failure https://example.invalid/file?token=secret"),
+            "[redacted]"
+        );
+        assert_eq!(display("safe <title>"), "safe &lt;title&gt;");
+    }
+    #[test]
+    fn civil_timestamps_cover_epoch_leap_day_and_upper_limit() {
+        assert_eq!(timestamp(0), "1970-01-01 00:00:00");
+        assert_eq!(timestamp(1_709_164_800), "2024-02-29 00:00:00");
+        assert_eq!(timestamp(253_402_300_799), "9999-12-31 23:59:59");
+        assert_eq!(timestamp(u64::MAX), u64::MAX.to_string());
+    }
+}

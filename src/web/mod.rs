@@ -1,0 +1,544 @@
+//! Browser management using original server-rendered HTML and native forms.
+mod forms;
+mod session;
+mod views;
+
+use crate::{
+    Result,
+    crypto::constant_time_eq,
+    engine::{Engine, lock},
+    integrations,
+    net::parse_url,
+    torrent::{FilePriority, TransferPolicy},
+};
+use forms::{Form, decimal};
+use session::{Session, Sessions};
+use std::{
+    collections::BTreeMap,
+    io::Write,
+    net::TcpStream,
+    sync::{Arc, Mutex},
+};
+
+pub(crate) struct Web {
+    sessions: Mutex<Sessions>,
+}
+
+pub(crate) struct Response {
+    status: u16,
+    body: String,
+    content_type: &'static str,
+    location: Option<&'static str>,
+    cookie: Option<String>,
+}
+
+impl Response {
+    fn html(status: u16, body: String) -> Self {
+        Self {
+            status,
+            body,
+            content_type: "text/html; charset=utf-8",
+            location: None,
+            cookie: None,
+        }
+    }
+
+    fn redirect(location: &'static str) -> Self {
+        Self {
+            location: Some(location),
+            ..Self::html(303, String::new())
+        }
+    }
+
+    pub(crate) fn write(self, stream: &mut TcpStream) -> Result<()> {
+        let reason = match self.status {
+            200 => "OK",
+            303 => "See Other",
+            400 => "Bad Request",
+            401 => "Unauthorized",
+            403 => "Forbidden",
+            404 => "Not Found",
+            405 => "Method Not Allowed",
+            415 => "Unsupported Media Type",
+            503 => "Service Unavailable",
+            _ => "Error",
+        };
+        let mut head = format!(
+            "HTTP/1.1 {} {reason}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'\r\nX-Frame-Options: DENY\r\n",
+            self.status,
+            self.content_type,
+            self.body.len()
+        );
+        if let Some(location) = self.location {
+            head.push_str(&format!("Location: {location}\r\n"));
+        }
+        if let Some(cookie) = self.cookie {
+            head.push_str(&format!("Set-Cookie: {cookie}\r\n"));
+        }
+        if self.status == 405 {
+            head.push_str("Allow: GET, POST\r\n");
+        }
+        head.push_str("\r\n");
+        stream
+            .write_all(head.as_bytes())
+            .and_then(|()| stream.write_all(self.body.as_bytes()))
+            .map_err(|error| format!("Cannot write the browser response: {error}"))
+    }
+}
+
+impl Web {
+    pub(crate) fn new() -> Self {
+        Self {
+            sessions: Mutex::new(Sessions::new()),
+        }
+    }
+
+    pub(crate) fn handle(
+        &self,
+        engine: &Arc<Engine>,
+        token: &str,
+        method: &str,
+        target: &str,
+        headers: &BTreeMap<String, String>,
+        body: &[u8],
+    ) -> Response {
+        match self.route(engine, token, method, target, headers, body) {
+            Ok(response) => response,
+            Err(error) => failure(400, &error, None),
+        }
+    }
+
+    fn route(
+        &self,
+        engine: &Arc<Engine>,
+        token: &str,
+        method: &str,
+        target: &str,
+        headers: &BTreeMap<String, String>,
+        body: &[u8],
+    ) -> Result<Response> {
+        let authority = authority(headers)?;
+        let (path, query) = target.split_once('?').unwrap_or((target, ""));
+        if !matches!(method, "GET" | "POST") {
+            return Ok(failure(405, "Use a browser link or form", None));
+        }
+        if method == "GET" && path == "/ui/style.css" && query.is_empty() {
+            return Ok(Response {
+                content_type: "text/css; charset=utf-8",
+                ..Response::html(200, include_str!("style.css").to_owned())
+            });
+        }
+        if method == "GET" && matches!(path, "/" | "/ui/") && query.is_empty() {
+            return Ok(Response::redirect("/ui"));
+        }
+        let id = cookie_id(headers)?;
+        let session = lock(&self.sessions)?.get(&id, &authority);
+        if method == "GET" && path == "/ui/login" && query.is_empty() {
+            if session
+                .as_ref()
+                .is_some_and(|session| session.origin.is_some())
+            {
+                return Ok(Response::redirect("/ui"));
+            }
+            let challenge = match session {
+                Some(session) => session,
+                None => match lock(&self.sessions)?.challenge(&authority) {
+                    Ok(session) => session,
+                    Err(error) => return Ok(failure(503, &error, None)),
+                },
+            };
+            return Ok(Response {
+                cookie: Some(session::cookie(&challenge)),
+                ..Response::html(200, views::login(&challenge, None))
+            });
+        }
+        if method == "POST" {
+            if !query.is_empty() {
+                return Err("Form actions do not accept query parameters".into());
+            }
+            if headers.get("content-type").is_none_or(|value| {
+                !value.split(';').next().is_some_and(|value| {
+                    value
+                        .trim()
+                        .eq_ignore_ascii_case("application/x-www-form-urlencoded")
+                })
+            }) {
+                return Ok(failure(
+                    415,
+                    "Submit the form using its buttons",
+                    session.as_ref(),
+                ));
+            }
+            let origin = match same_origin(headers, &authority) {
+                Ok(origin) => origin,
+                Err(error) => return Ok(failure(403, &error, session.as_ref())),
+            };
+            let form = Form::parse(body)?;
+            let Some(session) = session else {
+                return Ok(failure(403, "Your session expired. Sign in again", None));
+            };
+            if !constant_time_eq(form.value("csrf")?.as_bytes(), session.csrf.as_bytes()) {
+                return Ok(failure(
+                    403,
+                    "The form expired or is invalid. Reload the page",
+                    Some(&session),
+                ));
+            }
+            if path == "/ui/login" {
+                form.only(&["csrf", "token"])?;
+                let valid_token =
+                    constant_time_eq(form.value("token")?.as_bytes(), token.as_bytes());
+                return Ok(
+                    match lock(&self.sessions)?.login(
+                        &session.id,
+                        form.value("csrf")?,
+                        &origin,
+                        valid_token,
+                    )? {
+                        Some(session) => Response {
+                            cookie: Some(session::cookie(&session)),
+                            ..Response::redirect("/ui")
+                        },
+                        None => Response::html(
+                            401,
+                            views::login(
+                                &session,
+                                Some(
+                                    "The token was not accepted. After five attempts, reload the sign-in page",
+                                ),
+                            ),
+                        ),
+                    },
+                );
+            }
+            if session.origin.as_deref() != Some(&origin) {
+                return Ok(failure(
+                    403,
+                    "Sign in on this address before making changes",
+                    None,
+                ));
+            }
+            return self.action(engine, path, &form, &session);
+        }
+        let Some(mut session) = session.filter(|session| session.origin.is_some()) else {
+            return Ok(Response::redirect("/ui/login"));
+        };
+        let query = Form::parse(query.as_bytes())?;
+        session.messages = lock(&self.sessions)?.take_messages(&session.id);
+        let page = match path {
+            "/ui" => {
+                query.only(&[])?;
+                views::dashboard(engine, &session)?
+            }
+            "/ui/jobs" => views::jobs(engine, &session, &query)?,
+            "/ui/library" => views::library(engine, &session, &query)?,
+            "/ui/search" => {
+                query.only(&[])?;
+                views::search(&session, None)?
+            }
+            "/ui/transfers" => views::transfers(engine, &session, &query)?,
+            _ => {
+                if let Some(id) = path
+                    .strip_prefix("/ui/jobs/")
+                    .filter(|id| forms::valid_id(id, false))
+                {
+                    let id = id.to_ascii_lowercase();
+                    if lock(&engine.store)?.get(&id).is_none() {
+                        return Ok(failure(404, "This job no longer exists", Some(&session)));
+                    }
+                    views::job(engine, &session, &query, &id)?
+                } else if let Some(id) = path
+                    .strip_prefix("/ui/transfers/")
+                    .filter(|id| forms::valid_id(id, true))
+                {
+                    views::transfer(engine, &session, &query, &id.to_ascii_lowercase())?
+                } else {
+                    return Ok(failure(404, "This page does not exist", Some(&session)));
+                }
+            }
+        };
+        Ok(Response::html(200, page))
+    }
+
+    fn redirect(
+        &self,
+        session: &Session,
+        location: &'static str,
+        messages: Vec<String>,
+    ) -> Result<Response> {
+        lock(&self.sessions)?.message(&session.id, messages);
+        Ok(Response::redirect(location))
+    }
+
+    fn action(
+        &self,
+        engine: &Arc<Engine>,
+        path: &str,
+        form: &Form,
+        session: &Session,
+    ) -> Result<Response> {
+        match path {
+            "/ui/logout" => {
+                form.only(&["csrf"])?;
+                lock(&self.sessions)?.remove(&session.id);
+                Ok(Response {
+                    cookie: Some(session::clear_cookie(session.secure)),
+                    ..Response::redirect("/ui/login")
+                })
+            }
+            "/ui/search" => {
+                let request = form.request()?;
+                let report = integrations::search_report(&engine.config, &request)?;
+                Ok(Response::html(200, views::search(session, Some(&report))?))
+            }
+            "/ui/requests" => {
+                let jobs = engine.submit(form.request()?)?;
+                let mut messages = vec![format!(
+                    "{} request(s) recorded. Existing requests are reused",
+                    jobs.len()
+                )];
+                messages.extend(jobs.iter().take(32).map(|job| {
+                    format!(
+                        "{}: {}",
+                        job.id,
+                        integrations::report_text(&job.request.title, 256)
+                    )
+                }));
+                self.redirect(session, "/ui/jobs", messages)
+            }
+            "/ui/sync" => {
+                form.only(&["csrf"])?;
+                let count = engine.sync()?;
+                self.redirect(
+                    session,
+                    "/ui/jobs",
+                    vec![format!(
+                        "Watchlist synchronized: {count} request(s) recorded"
+                    )],
+                )
+            }
+            "/ui/jobs/action" | "/ui/library/action" | "/ui/transfers/action" => {
+                form.only(&["csrf", "id", "action"])?;
+                let action = form.value("action")?;
+                let (allowed, location, native) = match path {
+                    "/ui/jobs/action" => (&["cancel", "retry"][..], "/ui/jobs", false),
+                    "/ui/library/action" => (&["monitor", "unmonitor"][..], "/ui/library", false),
+                    _ => (&["pause", "resume"][..], "/ui/transfers", true),
+                };
+                if !allowed.contains(&action) {
+                    return Err("Choose one of the available actions".into());
+                }
+                // All identifiers and the operation are validated before any side effect.
+                let ids = form.ids(native)?;
+                let mut results = Vec::with_capacity(ids.len() + 1);
+                let mut succeeded = 0;
+                for id in ids {
+                    let result = match (path, action) {
+                        ("/ui/jobs/action", "cancel") => engine.cancel(&id).map(|_| ()),
+                        ("/ui/jobs/action", "retry") => engine.retry(&id).map(|_| ()),
+                        ("/ui/library/action", _) => {
+                            engine.set_monitored(&id, action == "monitor").map(|_| ())
+                        }
+                        (_, "pause") => engine.pause_transfer(&id).map(|_| ()),
+                        _ => engine.resume_transfer(&id).map(|_| ()),
+                    };
+                    match result {
+                        Ok(()) => {
+                            succeeded += 1;
+                            results.push(format!("{id}: {action} succeeded"));
+                        }
+                        Err(error) => results
+                            .push(format!("{id}: {}", integrations::report_text(&error, 256))),
+                    }
+                }
+                results.insert(0, format!("{succeeded} of {} action(s) succeeded. Each entry was handled independently", results.len()));
+                self.redirect(session, location, results)
+            }
+            "/ui/library/baseline" => {
+                form.only(&["csrf", "id", "release_title"])?;
+                let ids = form.ids(false)?;
+                if ids.len() != 1 {
+                    return Err("Choose one library entry".into());
+                }
+                engine.set_baseline(&ids[0], form.value("release_title")?)?;
+                self.redirect(
+                    session,
+                    "/ui/library",
+                    vec!["Release baseline saved".into()],
+                )
+            }
+            "/ui/upgrades" => {
+                form.only(&["csrf", "action"])?;
+                let apply = match form.value("action")? {
+                    "preview" => false,
+                    "apply" => true,
+                    _ => return Err("Choose preview or apply".into()),
+                };
+                let report = engine.check_upgrades(apply)?;
+                Ok(Response::html(200, views::upgrades(session, &report)?))
+            }
+            "/ui/transfers/priority" => {
+                form.only(&["csrf", "id", "priority"])?;
+                let id = single_transfer(form)?;
+                let priority = form
+                    .value("priority")?
+                    .parse::<i32>()
+                    .ok()
+                    .filter(|priority| (-1000..=1000).contains(priority))
+                    .ok_or("Priority must be between -1000 and 1000")?;
+                engine.set_transfer_priority(&id, priority)?;
+                self.redirect(
+                    session,
+                    "/ui/transfers",
+                    vec!["Queue priority saved".into()],
+                )
+            }
+            "/ui/transfers/files" => {
+                form.only(&["csrf", "id", "index", "priority"])?;
+                let id = single_transfer(form)?;
+                let index = form.value("index")?;
+                if index.is_empty() {
+                    return Err("Choose a file index".into());
+                }
+                let index = decimal(index, 100_000, "File index")? as usize;
+                let priority = match form.value("priority")? {
+                    "low" => FilePriority::Low,
+                    "normal" => FilePriority::Normal,
+                    "high" => FilePriority::High,
+                    _ => return Err("Choose low, normal or high file priority".into()),
+                };
+                engine.set_file_priority(&id, index, priority)?;
+                self.redirect(
+                    session,
+                    "/ui/transfers",
+                    vec!["File priority saved. All files still download".into()],
+                )
+            }
+            "/ui/transfers/policy" => {
+                form.only(&[
+                    "csrf",
+                    "id",
+                    "action",
+                    "download_limit_bps",
+                    "upload_limit_bps",
+                    "seed_ratio_milli",
+                    "seed_time_secs",
+                ])?;
+                let id = single_transfer(form)?;
+                let action = form.value("action")?;
+                let policy = TransferPolicy {
+                    download_limit_bps: decimal(
+                        form.value("download_limit_bps")?,
+                        1_073_741_824,
+                        "Download rate",
+                    )?,
+                    upload_limit_bps: decimal(
+                        form.value("upload_limit_bps")?,
+                        1_073_741_824,
+                        "Upload rate",
+                    )?,
+                    seed_ratio_milli: optional_limit(form, "seed_ratio_milli", 1_000_000)?
+                        .map(|ratio| ratio as u32),
+                    seed_time_secs: optional_limit(form, "seed_time_secs", 315_360_000)?,
+                };
+                policy.validate()?;
+                let policy = match action {
+                    "save" => Some(policy),
+                    "reset" => None,
+                    _ => return Err("Choose save or restore defaults".into()),
+                };
+                engine.set_transfer_policy(&id, policy)?;
+                self.redirect(
+                    session,
+                    "/ui/transfers",
+                    vec!["Transfer policy saved".into()],
+                )
+            }
+            _ => Ok(failure(404, "This action does not exist", Some(session))),
+        }
+    }
+}
+
+fn optional_limit(form: &Form, name: &str, maximum: u64) -> Result<Option<u64>> {
+    let text = form.value(name)?;
+    if text.is_empty() {
+        return Ok(None);
+    }
+    let number = decimal(text, maximum, name)?;
+    if number == 0 {
+        return Err(format!("{name} must be positive, or leave it empty"));
+    }
+    Ok(Some(number))
+}
+
+fn single_transfer(form: &Form) -> Result<String> {
+    let ids = form.ids(true)?;
+    if ids.len() != 1 {
+        return Err("Choose one transfer".into());
+    }
+    Ok(ids[0].clone())
+}
+
+fn failure(status: u16, message: &str, session: Option<&Session>) -> Response {
+    Response::html(status, views::error(session, message))
+}
+
+fn authority(headers: &BTreeMap<String, String>) -> Result<String> {
+    let host = headers
+        .get("host")
+        .ok_or("Missing browser address")?
+        .to_ascii_lowercase();
+    if host.contains(['/', '?', '#']) {
+        return Err("Invalid browser address".into());
+    }
+    parse_url(&format!("http://{host}"))?;
+    Ok(host)
+}
+
+fn same_origin(headers: &BTreeMap<String, String>, authority: &str) -> Result<String> {
+    if headers
+        .get("sec-fetch-site")
+        .is_some_and(|value| !matches!(value.as_str(), "same-origin" | "none"))
+    {
+        return Err("Open the form directly in Mynou before submitting it".into());
+    }
+    let origin = headers
+        .get("origin")
+        .ok_or("The browser origin is required for form actions")?;
+    let (_, suffix) = origin.split_once("://").ok_or("Invalid browser origin")?;
+    if suffix.contains(['/', '?', '#']) {
+        return Err("Invalid browser origin".into());
+    }
+    let origin = parse_url(origin)?;
+    let expected = parse_url(&format!("{}://{authority}", origin.scheme))?;
+    if origin.origin() != expected.origin() {
+        return Err("The form must be submitted from the same browser address".into());
+    }
+    Ok(origin.origin())
+}
+
+fn cookie_id(headers: &BTreeMap<String, String>) -> Result<String> {
+    let mut found = None;
+    if let Some(header) = headers.get("cookie") {
+        for pair in header.split(';') {
+            let (name, value) = pair
+                .trim()
+                .split_once('=')
+                .ok_or("Invalid browser cookie")?;
+            if name == "mynou_session" {
+                if found.is_some()
+                    || value.len() != 64
+                    || !value
+                        .bytes()
+                        .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+                {
+                    return Err(
+                        "Invalid browser session. Clear the cookie and sign in again".into(),
+                    );
+                }
+                found = Some(value.to_owned());
+            }
+        }
+    }
+    Ok(found.unwrap_or_default())
+}
