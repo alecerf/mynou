@@ -8,7 +8,7 @@ use crate::{
     store::{self, Job, Request},
 };
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     sync::{TryLockError, atomic::Ordering},
     time::{Duration, Instant},
 };
