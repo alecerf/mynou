@@ -1,4 +1,4 @@
-# Next-release checkpoint
+# Next-release checkpoint — 0.14 implementation awaiting CI
 
 ## Validated starting point
 
@@ -16,8 +16,12 @@ Normal workers cannot change mappings. Earlier unmapped jobs retain ordinary
 behavior. [Series](series.md), [packs](packs.md) and [limits](limits.md) document
 the implemented surface; the [roadmap](roadmap.md) tracks later stack features.
 
-No 0.14 implementation is recorded at this checkpoint. The following is a
-concrete engineering plan, not a feature claim or a validated result.
+0.14 selective acquisition and its CI scenarios are now implemented and committed.
+The version and documentation are prepared; its own completed validation and CI
+publication must be recorded before starting 0.15. No local validation has run.
+Historical 0.13 results above do not validate the new implementation.
+
+The remaining automatic-pack and numbering sections describe planned later work.
 
 ## Preserve the development policy
 
@@ -35,37 +39,32 @@ credentials and personal Plex/source settings are not part of the repository.
 No available account interface exposes the remaining ChatGPT quota. A saved
 checkpoint does not imply automatic monitoring or resumption after reset.
 
-## Native selective-file prerequisites
+## Implemented selective-file slice (0.14, CI pending)
 
-The next stage must preserve `DownloadStatus.ready` as whole-torrent readiness.
-Introduce a separate explicit result for selected-file verification; do not let
-a partial transfer become a fully ready torrent or advertise absent pieces.
+`src/torrent/selection.rs` retains full acquisition or a bounded path union in
+verified native controls, with absent older fields defaulting to full. Creation
+persists controls before queue-visible metadata/source files. File interests
+only expand; cancellation retains them. A correction can remove only interests
+proven absent by authenticated metadata, preserving real shared interests.
 
-Relevant code is `src/torrent.rs`, `src/torrent/control.rs`,
-`src/torrent/parallel.rs` and `src/torrent/metainfo.rs`. Current file priorities
-only reorder pieces and every payload file remains required. Current parallel
-completion and final verification require all pieces/roots. Selection must be
-durable and bounded, with the earlier missing field retaining full acquisition.
+The parallel coordinator handles selected transfers even at one peer. It
+prepares selected files and boundary neighbors, schedules overlapping pieces,
+verifies selected v2 roots and hybrid hashes, synchronizes affected files and
+publishes available paths separately from full `DownloadStatus.ready`. Expanding
+selection retires the old generation. Restart rehashes bytes. Partial torrents
+advertise an empty bitfield, do not seed and stop tracker activity without a
+completion event. Normal full requests and existing full controls remain full.
 
-For v1, selected files need all overlapping hash-verified pieces, including
-unselected boundary bytes. Decide explicitly how those boundary bytes are stored
-and recovered without treating skipped files as complete. For v2, selected files
-need valid file roots and authenticated proofs; hybrid selection must satisfy
-both v1 boundary hashes and selected v2 roots. Preserve padding handling,
-zero-length files, generation ownership and verified disk-write controls.
+`Engine` requests mapped path interests before payload scheduling and imports
+only published verified paths. CLI `torrent-select`, API selection updates and
+browser include/all forms expand interests with existing guards and pause policy.
+See [transfer selection](transfers.md#selective-acquisition-in-0140) for bounds,
+boundary storage and downgrade restrictions. Selection contraction and partial
+seeding remain unimplemented.
 
-Requests sharing a torrent need a bounded union of their file interests. One
-request's cancellation or selection change must not discard another request's
-required pieces. A deliberate full-torrent request still needs every file.
-Retain pause, priorities, aggregate bandwidth, counters and seeding controls.
-Prevent payload scheduling from assuming full acquisition while magnet metadata
-and path-to-index selection are still unresolved. A missing explicit mapped path
-must report a decision/error rather than silently selecting another file.
-
-Use meaningful local-peer CI scenarios for boundary pieces, padding, v1/v2/hybrid
-verification, late metadata, shared interests, cancellation, pause and policy
-changes, corrupt peers, selection expansion and restart. Assert partial readiness
-and full readiness independently, with no invalid bitfield or seeding claim.
+CI scenarios in `selective_transfers`, `selective_management`, mapped acquisition
+and tracker lifecycle cover the implemented behavior. The complete workflow
+must finish green before these become recorded passing evidence.
 
 ## Pack search and mapping decisions
 
@@ -106,8 +105,8 @@ remain intact; overwriting or automatic deletion is outside this stage.
 
 ## Release acceptance and handoff
 
-The roadmap's 0.14 scope may be split further if native verification and mapping
-decisions need separate releases. Keep the implemented support matrix precise.
+The roadmap splits selection into 0.14, automatic pack assessment/mapping into
+0.15, and numbering/multi-episode files into 0.16. Keep the implemented support matrix precise.
 Bump Cargo/lockfile, both Compose files, deployment examples and release notes
 only when the concrete scope is ready for its own CI run. Preserve the static
 musl build, native/Docker demonstrations and archive/checksum validation.

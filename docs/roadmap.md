@@ -5,7 +5,25 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current stage: 0.13.0
+## Current stage: 0.14.0
+
+Selective native acquisition retains the union of mapped pack file interests,
+verifies required boundary pieces and selected v2/hybrid roots, then permits
+mapped imports independently of full-torrent readiness. Selection expansion,
+restart verification and existing pause/rate/counter controls retain safe shared
+ownership. Partial torrents advertise no payload and never announce completion.
+The CLI, API and browser provide additive file selection and full acquisition.
+See [transfer selection](transfers.md#selective-acquisition-in-0140).
+
+The implementation and CI scenarios are prepared for this version. Its own
+complete green validation/publication run must be recorded before claiming a
+released result. Earlier release evidence below does not validate these changes.
+
+The provisional broader 0.14 scope was split: automatic pack choice, numbering
+rules and multi-episode physical files need following independently validated
+releases.
+
+## Previous stage: 0.13.0
 
 Explicit pack acquisition maps exact torrent video paths to already aired catalog
 episodes. Ordinary jobs share the native torrent identity, verify the full
@@ -23,10 +41,10 @@ none failed or ignored. GitHub Actions published
 [v0.13.0](https://github.com/alecerf/mynou/releases/tag/v0.13.0) with seven assets.
 
 This stage supplies explicit mappings for absolute/anime-style filenames.
-Automatic pack selection, selective downloading and general numbering rules
-need a following focused release.
-The [next-release checkpoint](next-release.md) records its native verification
-and mapping prerequisites. No 0.14 implementation is claimed there.
+Automatic pack selection and general numbering rules remain later work.
+Selective downloading is implemented in the following 0.14 stage.
+The [next-release checkpoint](next-release.md) records the remaining pack search
+and mapping prerequisites.
 
 ## Previous stage: 0.12.0
 
@@ -99,12 +117,13 @@ promised before implementation and measurement.
 
 | Planned release | Scope | Evidence required before continuing |
 | --- | --- | --- |
-| 0.14 | Automatic season-pack selection, selective files, multi-episode videos and general alternate/anime numbering | Explicit numbering decisions, boundary-piece verification, safe sharing and restart; unresolved identities remain blocked |
-| 0.15 | Plex users, approvals, quotas, routing and notification preferences | User ownership and limits remain enforced across polling, retries and restart |
-| 0.16 | IRC announcements, immediate grabs, filters, action routing and notifications | Bounded announcement parsing, reconnect/backoff, duplicate suppression and auditable rule decisions |
-| 0.17 | Native indexer adapters, login/session management, source health and configuration | Per-adapter protocol fixtures, credential redaction, rate limits and safe session renewal |
-| 0.18 | Usenet search/acquisition and management | Native protocol support, bounded message processing, integrity/recovery and explicit format limits without external helpers |
-| 0.19 | Cross-seeding and further bulk automation | Verified content identity and safe reuse of existing files; no accidental extra acquisition or library overwrite |
+| 0.15 | Automatic season-pack search, ranking and catalog-backed file mapping | Separate pack assessment, bounded metadata decisions, stale-plan protection and unresolved identity rejection |
+| 0.16 | Multi-episode videos and general alternate/anime numbering | Explicit stable catalog mappings, shared physical import ownership and safe existing-library identities |
+| 0.17 | Plex users, approvals, quotas, routing and notification preferences | User ownership and limits remain enforced across polling, retries and restart |
+| 0.18 | IRC announcements, immediate grabs, filters, action routing and notifications | Bounded announcement parsing, reconnect/backoff, duplicate suppression and auditable rule decisions |
+| 0.19 | Native indexer adapters, login/session management, source health and configuration | Per-adapter protocol fixtures, credential redaction, rate limits and safe session renewal |
+| 0.20 | Usenet search/acquisition and management | Native protocol support, bounded message processing, integrity/recovery and explicit format limits without external helpers |
+| 0.21 | Cross-seeding and further bulk automation | Verified content identity and safe reuse of existing files; no accidental extra acquisition or library overwrite |
 
 Each stage needs meaningful automated checks and an updated support matrix.
 Tests use synthetic content and local peers/services. Compatibility with a

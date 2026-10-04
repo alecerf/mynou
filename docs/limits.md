@@ -51,8 +51,13 @@ Durable user pauses affect all requests sharing a transfer and are not undone
 by automatic retries. Queue scheduling prefers higher priority, then FIFO, and
 is nonpreemptive. File listings keep original metadata indices after filtering
 padding, so indices can have gaps; file-priority controls reject padding indices.
-File priorities change piece order; all files are still required, with no `skip`
-or selective pack acquisition. Global bandwidth limits
+File priorities change the order of required pieces, with no `skip` priority.
+Mapped pack transfers can acquire an additive union of at most 1,024 exact paths
+with a 1 MiB aggregate path limit. v1 selection also needs boundary bytes from
+neighbor files; v2/hybrid selected roots remain mandatory. Partial availability
+does not imply whole-torrent readiness, seeding or a tracker completion event.
+Existing full acquisitions remain full; selections do not contract or remove
+previously requested bytes. Global bandwidth limits
 cover aggregate content payload; protocol/metadata overhead is outside those
 caps. Each aggregate rate bucket allows a bounded 16 KiB burst. Per-transfer
 rate caps cannot bypass the global cap. Local policy objects replace configured
@@ -174,7 +179,7 @@ prevent a late refresh from applying an earlier monitoring policy. Series
 monitoring retains existing requests and files; it does not silently retry
 terminal jobs or stop when a Plex watchlist entry disappears. Changed known
 episode identities require a mapping decision; an alternate-number mapping
-editor and selective torrent file skipping are not implemented. Explicit packs
+editor is not implemented. Explicit packs
 can map absolute/anime-style filenames to canonical episodes; general numbering
 rules and multi-episode videos remain future work. Mapping fields cannot be changed by workers, and earlier unmapped jobs retain ordinary behavior. Do not downgrade
 storage containing mapped jobs to an earlier binary that ignores those fields.

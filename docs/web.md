@@ -40,7 +40,9 @@ immutable preview snapshot. Upgrades retain earlier imports until a replacement
 is ready and retain old files afterward. See [library behavior](library.md).
 
 Transfer pauses affect every request sharing that torrent. File priorities
-change download order; every file still downloads. Rates use bytes per second,
+order required pieces. File details distinguish selected and verified paths;
+**Include file** and **Download all files** expand retained interests without
+clearing a user pause. A partial transfer cannot seed. Rates use bytes per second,
 and zero means unlimited. A ratio of `1000` means 1:1; blank ratio/time fields
 mean no local seeding cap. Saving a policy replaces seeding defaults in full.
 Restoring defaults removes the override. Global bandwidth caps always remain
@@ -49,8 +51,8 @@ mandatory. See [transfer controls](transfers.md).
 Pack forms accept an exact file path for each catalog episode in a JSON array.
 Create an unmonitored series scope when choosing a pack before individual
 automatic acquisition. Existing requests are reused, and missing paths never
-fall back to another video. Job details show mappings protected from worker changes. The whole
-torrent still downloads. See [pack operations](packs.md) for format, validation
+fall back to another video. Job details show mappings protected from worker changes. New native pack transfers need only their mapped files and necessary verified
+boundary pieces. Earlier full transfers keep their acquisition policy. See [pack operations](packs.md) for format, validation
 and storage-version limits.
 
 ## Bulk changes and bounds

@@ -3,9 +3,10 @@
 Acquire several catalog episodes from one torrent by choosing an exact video
 path for each episode. Mynou records ordinary episode jobs with durable file
 mappings. The native torrent client deduplicates their common content identity,
-verifies the whole torrent and imports each mapped file under its catalog
-season/episode name. Unmapped files download but are not analyzed or imported by
-these mapped jobs.
+verifies the required pieces and selected file roots, then imports each mapped file under its catalog
+season/episode name. New pack transfers retain the union of their mapped files, acquiring required
+boundary bytes without scheduling unrelated pieces. Unmapped files are not
+analyzed or imported by these mapped jobs.
 
 This is an explicit operator choice. Review the torrent's files and their
 contents before assigning them to episodes. Hash verification establishes the
@@ -98,7 +99,8 @@ automatic individual requests.
 Paths contain at most 4,096 bytes, 32 normal slash-separated components and 255
 bytes per component. Empty, absolute, dot, parent, backslash, colon and control
 components are rejected. Supported video extensions are MP4/M4V/MOV, MKV/WebM and
-AVI. The path must select exactly one file from the verified native payload.
+AVI. The path must select exactly one file from authenticated native metadata,
+then pass the required piece/file-root checks before import.
 An absent mapped file produces an error; another video is never chosen as a
 fallback. An audio-only or malformed mapped file also fails media analysis.
 Two episodes cannot map to the same physical file in this release.
@@ -112,8 +114,12 @@ record the rest. Workers cannot change mapping or source identities.
 Individual episode cancellation and retries use the existing shared-transfer
 rules; a durable native transfer pause affects every job using that torrent.
 
-The full torrent still downloads and verifies, including unmapped files and
-pieces crossing file boundaries. Only each job's selected verified path is
+New native pack transfers acquire their retained mapped paths and overlapping
+pieces. v1 boundary bytes can populate unselected neighbor files; v2/hybrid
+selected file roots remain mandatory. Only a whole verified torrent can seed.
+Existing full acquisitions retain their policy, including transfers created by
+0.13 or an ordinary full-torrent request. Cancellation retains file interests
+and never deletes source bytes. See [selective acquisition](transfers.md#selective-acquisition-in-0140). Only each job's selected verified path is
 retained in its file list, avoiding repeated whole-pack file lists in the request
 journal. Imports keep source bytes and never overwrite different existing media.
 With Plex enabled, the normal episode scan/confirmation pipeline applies.
@@ -151,7 +157,7 @@ The API retains its 1 MiB body limit. JSON fields and types are strict, and
 unknown fields are rejected. Public mapped-path labels are bounded, redacted and
 escaped in HTML; actual acquisition still uses the private retained path.
 
-Automatic season-pack search/ranking, selective torrent file skipping,
+Automatic season-pack search/ranking, selection contraction,
 multi-episode videos, alternate catalog-number mappings and general anime
 numbering rules remain a following stage. This release supplies explicit file
 mapping, not an inferred numbering system or complete Sonarr parity. It preserves

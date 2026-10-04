@@ -36,8 +36,8 @@ steps. No Docker Hub repository is needed.
 Download the assets and checksum files from the same release. For example:
 
 ```sh
-sha256sum -c mynou-v0.13.0-source.zip.sha256
-sha256sum -c mynou-v0.13.0-linux-amd64-image.tar.gz.sha256
+sha256sum -c mynou-v0.14.0-source.zip.sha256
+sha256sum -c mynou-v0.14.0-linux-amd64-image.tar.gz.sha256
 ```
 
 To verify all downloaded assets together, download `SHA256SUMS` and every listed
@@ -56,6 +56,22 @@ sha256sum -c SHA256SUMS
 
 Checksum verification establishes integrity relative to the downloaded manifest.
 It does not replace reviewing the release's commit and successful Actions run.
+
+## Selective changes in 0.14.0 (CI pending)
+
+New CI-only local-peer scenarios exercise v1 boundary pieces, untouched unrelated
+files, explicit selected/full readiness, empty seeding bitfields, padding/empty
+files, late magnet metadata, sparse v2 proofs and hybrid hashes. They also cover
+shared selection expansion, generation retirement, durable user pause, offline
+restart, corrupted selected bytes, missing-path repair, tracker bytes-left without
+completion, mapped imports from a partial torrent, shared cancellation and strict
+Bearer/browser/CLI controls. Genuine earlier controls retain full acquisition;
+new checksum records preserve selections. Existing full-transfer corrupt-peer,
+rate, seeding and restart checks remain in the complete workflow.
+
+These scenarios are committed, but their passing result is not yet recorded.
+Tests, lint, builds and demos have not been run locally. The successful Actions
+run and CI-created release must be recorded before claiming validation.
 
 ## Pack changes in 0.13.0
 

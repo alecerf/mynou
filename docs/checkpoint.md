@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.13.0
+# Project checkpoint — Mynou 0.14.0 (CI pending)
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -75,7 +75,16 @@ imports and unmonitored initial series scopes. Full torrents still download.
 Existing jobs remain deduplicated, missing selections fail without fallback and
 older unmapped jobs keep their ordinary behavior. See [packs.md](packs.md).
 
-Automatic pack selection, selective downloading, multi-episode videos, general
+The 0.14.0 change adds durable shared native file interests, selective boundary
+pieces, v2/hybrid file-root verification, synchronized per-file availability and
+additive CLI/API/browser controls. Partial torrents remain distinct from full
+readiness, advertise no payload and never announce completion. Existing full
+acquisitions retain their policy. CI-only scenarios cover boundaries, metadata,
+proofs, padding/empty files, shared cancellation, expansion, pause, corrupted disk
+recovery, offline restart, mapping repair and protected controls. Its own complete
+CI/publication result is pending and must precede the following release.
+
+Automatic pack selection, multi-episode videos, general
 alternate/anime numbering, multi-user Plex policies, IRC automation, native
 indexer adapters, Usenet and cross-seeding remain future stages. See the [release roadmap](roadmap.md). Series monitoring is a
 focused stage and does not establish full stack parity.

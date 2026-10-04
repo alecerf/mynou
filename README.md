@@ -1,4 +1,4 @@
-# Mynou 0.13.0 — Rust, standard library only
+# Mynou 0.14.0 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -43,8 +43,8 @@ from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, o
 build the image from the source archive:
 
 ```sh
-docker load -i mynou-v0.13.0-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.13.0 .
+docker load -i mynou-v0.14.0-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.14.0 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d
@@ -81,7 +81,8 @@ ownership, shared Plex paths, and installation without Rust on the host.
 - Native transfer management: durable pause/resume, priority/FIFO scheduling,
   per-file piece priorities, global payload bandwidth limits, persistent
   counters and ratio/time seeding policies. Controls retain library files and
-  downloads; per-file priorities still download every file.
+  downloads. Per-file priorities order required pieces; mapped packs can acquire a
+  durable union of selected files without downloading unrelated pieces.
 - Durable series monitoring with retained TMDB episode plans, newly aired
   episode acquisition, optional specials, earliest-air-date choices and
   per-episode exclusions; a paginated episode calendar shares CLI/API/browser
@@ -90,7 +91,9 @@ ownership, shared Plex paths, and installation without Rust on the host.
 - Explicit season-pack acquisitions map exact video paths to catalog episodes.
   Mapped jobs share one native verified torrent and import only their selected
   files. New series can be saved without automatic acquisition while choosing a
-  pack. The full torrent still downloads.
+  pack. New native pack transfers acquire only their retained file interests and
+  necessary boundary pieces; partial availability remains distinct from complete
+  torrent readiness and seeding.
 - Browser management at `/ui`: search/request forms, jobs/history, owned library
   monitoring and upgrades, transfer controls, filters, pagination and bounded
   bulk actions with individual results. Rust renders all pages without scripts
@@ -147,8 +150,8 @@ parallel peer bounds, bandwidth limits and seeding policies. Use
 `downloads.max_peers: 1` to retain a single-peer transfer baseline.
 
 Mynou remains an early integrated implementation. This release adds explicit
-pack acquisition and durable file-to-episode mappings. Automatic pack search,
-selective downloading, alternate/anime numbering rules, multi-user policies and full parity with
+selective pack acquisition and durable shared file interests. Automatic pack search,
+alternate/anime numbering rules, multi-user policies and full parity with
 Radarr, Sonarr, Pulsarr, qBittorrent, qui, autobrr or Prowlarr remain future work. The
 [release roadmap](docs/roadmap.md) separates the next stages.
 
@@ -175,7 +178,9 @@ Choose one torrent for several episodes with `series-pack ID --url … --mapping
 FILE`, or use **Acquire a mapped pack** in browser series details.
 `track-series --unmonitored` retains a catalog plan before choosing a source.
 See the [pack guide](docs/packs.md) for mapping format, shared-transfer behavior
-and persistence. Automatic pack selection and file skipping remain future work.
+and persistence. The [transfer guide](docs/transfers.md#selective-acquisition-in-0140)
+explains verified availability, boundary storage and selection expansion. Automatic
+pack selection remains future work.
 
 ## Open the browser interface
 

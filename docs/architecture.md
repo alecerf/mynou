@@ -51,8 +51,9 @@ reads sort bounded borrowed rows and serialize only the requested page. See
 `pack` prevalidates explicit catalog/file mappings and source-key conflicts
 before recording separate episode jobs. Each job retains its mapped
 path while the native client deduplicates their common torrent identity. Once
-all payload verification succeeds, import retains and analyzes only the exact
-selected file. An absent selection cannot fall back to another video. Existing
+the required pieces and selected file roots verify and synchronize, import
+retains and analyzes only the exact selected file. Whole-torrent readiness and
+seeding remain gated by complete payload verification. An absent selection cannot fall back to another video. Existing
 media identities are reused rather than automatically reopened. Source paths
 and mappings remain independent of series monitoring policy. See [packs](packs.md).
 
@@ -120,7 +121,14 @@ Transfer controls belong to the native engine and use native transfer IDs, which
 are distinct from request IDs. Durable user pause state is separate from
 retryable internal interruptions; request retries cannot clear a user pause.
 Queue selection uses priority then FIFO without preempting active transfers.
-Per-file priority changes piece order while all files remain required.
+Per-file priority orders the required pieces. Durable native file interests
+form an additive union across mapped requests; ordinary acquisitions require all
+files. Selection expansion retires the old generation under the same verified
+write mutex. Missing paths never select another file. The coordinator authenticates
+v1 boundary pieces and selected v2 roots before publishing synchronized file
+availability, independently of whole-torrent readiness. Boundary neighbors retain
+required bytes in normal confined files, and restart rehashes them. Partial
+transfers advertise an empty bitfield and do not seed or announce completion.
 
 Global payload bandwidth limits cover shared download/upload activity.
 Per-transfer rate caps add restrictions without bypassing the global cap. Rate

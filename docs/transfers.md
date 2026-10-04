@@ -60,7 +60,8 @@ before writing and publishing the piece; disconnects and invalid pieces return
 work for another peer. No duplicate endgame requests are issued. Final v1/v2 or
 hybrid verification still decides readiness. A file-priority change affects
 subsequent piece selection without taking a piece away from its active owner.
-All files remain required.
+Only the retained selection is required for selected-file availability;
+whole-torrent readiness still requires every piece and applicable file root.
 
 Discovery proceeds alongside usable known peers rather than postponing them
 until every lookup finishes. Discovery retains bounded peer results and
@@ -150,10 +151,96 @@ indices are rejected. The allowed priorities are `low`, `normal` and `high`.
 They influence piece ordering within a transfer. A v1 piece overlapping several
 files uses the highest priority of its intersecting non-padding files.
 
-**Every file is still downloaded and required for completion.** There is no
-`skip` priority, selective season-pack acquisition or extra library file
-selection in this release. Piece verification remains mandatory, including
-pieces crossing file boundaries.
+There is no `skip` priority. Priorities order the required pieces; they do not
+remove a file interest. Ordinary acquisitions still require all files. Since
+0.14.0, mapped pack acquisitions can retain a smaller selection, with independent
+verified availability. Piece verification remains mandatory, including pieces
+crossing file boundaries. See the selection rules below.
+
+## Selective acquisition in 0.14.0
+
+New mapped pack jobs record exact file interests before magnet metadata discovery
+can start payload work. Requests sharing a native torrent retain the union of
+their paths. An ordinary acquisition or **Download all files** expands that union
+to the whole torrent. Existing transfers with full acquisition, including those
+restored from 0.13, remain full. Selection never contracts and cancellation does
+not remove interests or delete bytes. A cancelled request can therefore retain
+work; it cannot discard another request's required pieces.
+
+Inspect `GET /api/transfers/ID` or `mynou torrent ID`. The report distinguishes:
+
+| Field | Meaning |
+| --- | --- |
+| `file_selection` | `null` requires all files; an array retains exact relative paths |
+| `selected_ready` | The entire retained selection has passed verification and synchronization |
+| `ready` | Every torrent piece and applicable file root has passed full verification |
+| `files[].selected` | This path belongs to the retained selection |
+| `files[].verified` | This path has been published as available after verification and synchronization |
+| `progress` | Fraction of required pieces verified, rather than a whole-torrent percentage for a partial selection |
+
+A completed partial selection has status `selected_ready`, `progress: 1` and
+`ready: false`. Mapped episode imports may then proceed. An expansion resets
+selection readiness and rechecks the expanded set; already published files can
+remain available during that work. Restart publishes no availability until it
+rehashes retained bytes. Persisted counters alone cannot establish verification.
+The Rust `DownloadStatus` also exposes `available_files` separately from its full
+metadata `files` list.
+
+Expand by the original non-padding metadata indices:
+
+```sh
+mynou torrent-select ID --selection '{"indices":[0,2]}' --config ./mynou.json
+mynou torrent-select ID --selection '{"all":true}' --config ./mynou.json
+```
+
+The authenticated API accepts the same JSON at
+`POST /api/transfers/ID/selection`. Choose exactly one of `indices` or `all`.
+An index update contains 1–1,024 distinct integers below 100,000 and requires
+authenticated metadata. Unknown and padding indices are rejected before changes.
+`all` must be `true`. Invalid types, duplicates, unknown fields and mixed updates
+are rejected. Browser transfer details provide **Include file** and
+**Download all files** with the existing session, origin and form-token guards.
+These actions preserve user pause, queue priority and transfer policy. Resume
+deliberately when a transfer is paused.
+
+Native path interests have a 1 MiB aggregate limit, at most 1,024 distinct paths,
+4,096 bytes per path, 65 normal components and 255 bytes per component. Pack
+input retains its stricter video-path and 64-episode limits. Exact paths must
+exist in authenticated torrent metadata and must not identify padding. A missing
+magnet path fails after metadata authentication before payload requests. A valid
+explicit correction can discard only old interests proven absent by metadata;
+all real shared interests remain. Ordinary request retry rules remain separate.
+
+For v1, the engine downloads complete hash-verified pieces overlapping selected
+files. It must also keep any bytes those pieces contribute to neighboring files.
+Those neighbors have metadata-sized confined files; untouched ranges are zero
+filled and may be sparse when the filesystem supports it. An unrelated file
+without required boundary bytes is not created. Apparent file size can therefore
+exceed downloaded or verified bytes. File existence and size are insufficient
+evidence of availability. Padding bytes are verified as zero and no padding file
+is created. A selected empty file needs no payload piece but still synchronizes.
+
+For v2, selected files require authenticated piece proofs or layers and matching
+complete file roots. Hybrid selection satisfies both the overlapping v1 hashes
+and selected v2 roots. Synchronized authenticated layers support offline recovery
+of a completed selection; a crash before their persistence can require additional
+proof requests or reacquisition. Selection expansion retires the old generation;
+its workers cannot commit later bytes or publish stale readiness. A one-peer
+selective transfer uses the same coordinator with one worker; the earlier
+sequential one-peer path remains available for full acquisitions.
+
+Partial torrents advertise an empty bitfield, serve no payload, do not accumulate
+seeding availability time and never announce a tracker `completed` event. They
+report whole-torrent bytes left and stop an already started tracker session when
+their selection completes. Full verified torrents retain normal seeding rules,
+including when earlier bytes on disk complete the rest of a selected torrent.
+Partial seeding, selection contraction, automatic pack choice and multi-episode
+physical files remain later work.
+
+Do not downgrade native storage written by 0.14 to 0.13 or earlier. Older strict
+control readers reject the new selection field; missing fields from genuine
+earlier records retain full acquisition. Keep request, series and native state
+together in backups.
 
 ## Configure global rates and default seeding policy
 
@@ -256,7 +343,7 @@ limit does not delete a downloaded file, remove an import or revoke Plex
 availability. This release adds no automatic cleanup.
 
 uTP/WebTorrent, webseeds, automatic NAT traversal and a complete persistent DHT
-table remain outside this release. There is no selective file skipping or
-automatic cleanup. Browser controls are described in [web management](web.md).
+table remain outside this release. Selection contraction, partial seeding and
+automatic cleanup remain unimplemented. Browser controls are described in [web management](web.md).
 See [limits](limits.md),
 [library monitoring](library.md) and the [roadmap](roadmap.md).
