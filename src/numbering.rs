@@ -149,3 +149,46 @@ fn number(value: &Value, key: &str) -> Result<u32> {
         .and_then(|n| u32::try_from(n).ok())
         .ok_or_else(|| format!("Invalid numbering integer: {key}"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn numbered_files_require_one_exact_label_and_reject_multi_episode_markers() {
+        let number = SourceNumber::SeasonEpisode(EpisodeNumber {
+            season: 2,
+            episode: 3,
+        });
+        for name in ["Show.S02E03.1080p.mp4", "2x03.mkv"] {
+            assert!(number.matches_file(Path::new(name), 2024), "{name}");
+        }
+        for name in [
+            "S02E030.mp4",
+            "S02E03E04.mp4",
+            "S02E03-E04.mkv",
+            "S02E03.S02E04.mp4",
+            "S02E03-S02E03.mp4",
+            "03.mp4",
+        ] {
+            assert!(!number.matches_file(Path::new(name), 2024), "{name}");
+        }
+    }
+
+    #[test]
+    fn explicit_absolute_files_reject_ranges_other_numbers_and_numbered_labels() {
+        let number = SourceNumber::Absolute(13);
+        for name in ["013.mp4", "Show.2024.013.1080p.mkv"] {
+            assert!(number.matches_file(Path::new(name), 2024), "{name}");
+        }
+        for name in [
+            "013-014.mp4",
+            "013-S01E13.mp4",
+            "013-E14.mp4",
+            "013.013.mp4",
+            "0013-2200.mp4",
+        ] {
+            assert!(!number.matches_file(Path::new(name), 2024), "{name}");
+        }
+    }
+}

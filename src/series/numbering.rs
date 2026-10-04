@@ -271,22 +271,30 @@ impl Engine {
             .get(id)
             .ok_or("Unknown monitored series")?;
         let fetched = previous.fetch_catalog(self, true, deadline)?;
+        let observed_numbers: BTreeMap<_, _> = fetched
+            .episodes
+            .iter()
+            .filter_map(|ep| {
+                ep.catalog_id.map(|id| {
+                    (
+                        id,
+                        EpisodeNumber {
+                            season: ep.season,
+                            episode: ep.episode,
+                        },
+                    )
+                })
+            })
+            .collect();
         let mut proposed = previous.clone();
         for choice in &query.changes {
             if !previous.anchors.contains_key(&choice.catalog_id) {
                 return Err("Numbering changes require an already known catalog identity".into());
             }
-            let observed = fetched
-                .episodes
-                .iter()
-                .find(|ep| ep.catalog_id == Some(choice.catalog_id))
+            let observed = observed_numbers
+                .get(&choice.catalog_id)
                 .ok_or("Numbering choice is absent from the current catalog")?;
-            if choice.catalog
-                != (EpisodeNumber {
-                    season: observed.season,
-                    episode: observed.episode,
-                })
-            {
+            if choice.catalog != *observed {
                 return Err("Numbering choice does not match the current catalog labels".into());
             }
             proposed.numbering.insert(choice.catalog_id, *choice);
