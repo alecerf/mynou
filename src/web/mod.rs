@@ -36,7 +36,7 @@ pub(crate) struct Response {
     status: u16,
     body: String,
     content_type: &'static str,
-    location: Option<&'static str>,
+    location: Option<String>,
     cookie: Option<String>,
 }
 
@@ -51,9 +51,9 @@ impl Response {
         }
     }
 
-    fn redirect(location: &'static str) -> Self {
+    fn redirect(location: &str) -> Self {
         Self {
-            location: Some(location),
+            location: Some(location.to_owned()),
             ..Self::html(303, String::new())
         }
     }
@@ -281,7 +281,7 @@ impl Web {
     fn redirect(
         &self,
         session: &Session,
-        location: &'static str,
+        location: &str,
         messages: Vec<String>,
     ) -> Result<Response> {
         lock(&self.sessions)?.message(&session.id, messages);
