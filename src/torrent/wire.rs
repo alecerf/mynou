@@ -590,12 +590,20 @@ impl Peer {
         if !meta.verify(index, &data) {
             return Err("Piece hash mismatch".into());
         }
-        write_message(
+        if stop.load(Ordering::Acquire) {
+            return Err("Download interrupted".into());
+        }
+        // A peer may close after sending its final permitted block. HAVE is an
+        // advisory announcement and cannot invalidate the verified payload.
+        let _ = write_message(
             &mut self.stream,
             4,
             &(index as u32).to_be_bytes(),
             Some(stop),
-        )?;
+        );
+        if stop.load(Ordering::Acquire) {
+            return Err("Download interrupted".into());
+        }
         Ok(data)
     }
     pub fn fetch_hashes(&mut self, meta: &mut Meta, piece: usize, stop: &AtomicBool) -> Result<()> {
@@ -766,6 +774,73 @@ pub fn hash_response(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn verified_final_piece_survives_a_failed_have_announcement() {
+        use std::net::{Shutdown, TcpListener};
+        let payload = b"verified final synthetic payload".to_vec();
+        let info = value_dict(&[
+            (b"name", Value::Bytes(b"final.bin".to_vec())),
+            (b"piece length", Value::Int(BLOCK as i64)),
+            (b"length", Value::Int(payload.len() as i64)),
+            (
+                b"pieces",
+                Value::Bytes(crate::crypto::sha1(&payload).to_vec()),
+            ),
+        ]);
+        let mut meta = Meta::parse(&crate::bencode::encode(&value_dict(&[(b"info", info)])))
+            .expect("synthetic metadata");
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+        let stream = TcpStream::connect(listener.local_addr().expect("address")).expect("client");
+        let (mut remote, _) = listener.accept().expect("peer");
+        let client_writer = stream.try_clone().expect("shared client socket");
+        let expected = payload.clone();
+        let server = std::thread::spawn(move || {
+            let (id, request) = read_message(&mut remote, None).expect("block request");
+            assert_eq!(id, 6);
+            assert_eq!(request.len(), 12);
+            assert_eq!(
+                u32::from_be_bytes(request[8..12].try_into().unwrap()) as usize,
+                payload.len()
+            );
+            // This disables the original client's writes deterministically
+            // while leaving its read half available for the final payload.
+            client_writer
+                .shutdown(Shutdown::Write)
+                .expect("disable announcements");
+            let mut block = request[..8].to_vec();
+            block.extend(payload);
+            write_message(&mut remote, 7, &block, None).expect("final block");
+        });
+        let counters = Arc::new(super::super::TransferCounters::default());
+        let mut peer = Peer {
+            stream,
+            metadata_id: None,
+            pex_id: None,
+            metadata_size: None,
+            bitfield: Vec::new(),
+            choked: false,
+            extensions: false,
+            discovered: Vec::new(),
+            pex_allowed: false,
+            v2_wire: false,
+            counters: counters.clone(),
+            download_gate: Arc::new(super::super::RateGate::default()),
+            local_download_gate: Arc::new(super::super::RateGate::default()),
+        };
+        let result = peer.fetch_piece(&mut meta, 0, &AtomicBool::new(false));
+        server.join().expect("server");
+        assert_eq!(result.expect("verified piece is retained"), expected);
+        assert_eq!(
+            counters.downloaded.load(Ordering::Relaxed),
+            expected.len() as u64
+        );
+        assert!(
+            write_message(&mut peer.stream, 4, &0u32.to_be_bytes(), None).is_err(),
+            "the write half must remain unavailable for HAVE"
+        );
+    }
+
     #[test]
     fn slow_drip_read_obeys_an_absolute_deadline_and_cancellation() {
         use std::net::TcpListener;
