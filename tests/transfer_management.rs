@@ -1184,16 +1184,20 @@ fn shared_requests_expose_one_transfer_and_apply_controls_to_both_requests() {
     let proxy = RecordingProxy::open(seed.client.listen_port());
     let server = Server::open(engine_config(&scratch.0.join("engine")));
     let mut expected = Vec::new();
-    for title in ["Shared First", "Shared Second"] {
+    for (index, title) in ["Shared First", "Shared Second"].into_iter().enumerate() {
+        // Different acquisition URLs keep the application requests distinct,
+        // while their identical info hash shares one native transfer.
+        let source = format!("{}&dn=request-{index}", torrent.magnet(proxy.port));
         expected.push(
             server
                 .engine
-                .submit(request(&torrent.magnet(proxy.port), title))
+                .submit(request(&source, title))
                 .unwrap()
                 .remove(0)
                 .id,
         );
     }
+    assert_ne!(expected[0], expected[1]);
     wait(|| {
         server.engine.tick().unwrap();
         let store = lock(&server.engine.store).unwrap();
