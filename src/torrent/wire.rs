@@ -22,6 +22,8 @@ pub struct PeerSettings<'a> {
     pub pex: bool,
     pub v2_wire: bool,
     pub counters: Arc<super::TransferCounters>,
+    pub download_gate: Arc<super::RateGate>,
+    pub local_download_gate: Arc<super::RateGate>,
 }
 pub struct Peer {
     pub stream: TcpStream,
@@ -35,6 +37,8 @@ pub struct Peer {
     pub pex_allowed: bool,
     pub v2_wire: bool,
     counters: Arc<super::TransferCounters>,
+    download_gate: Arc<super::RateGate>,
+    local_download_gate: Arc<super::RateGate>,
 }
 
 pub fn handshake(
@@ -158,6 +162,74 @@ pub fn write_message(
     write_all_deadline(stream, &[id], stop, deadline)?;
     write_all_deadline(stream, payload, stop, deadline)
 }
+/// Count payload bytes only after the socket accepts them, including a partial
+/// write before a later network failure. Protocol headers are never charged.
+pub fn write_payload_message(
+    stream: &mut TcpStream,
+    header: &[u8],
+    mut payload: &[u8],
+    stop: &AtomicBool,
+    uploaded: &std::sync::atomic::AtomicU64,
+) -> Result<()> {
+    let length = header
+        .len()
+        .checked_add(payload.len())
+        .and_then(|n| n.checked_add(1))
+        .and_then(|n| u32::try_from(n).ok())
+        .ok_or("Message is too large")?;
+    let deadline = Instant::now() + Duration::from_secs(15);
+    write_all_deadline(stream, &length.to_be_bytes(), Some(stop), deadline)?;
+    write_all_deadline(stream, &[7], Some(stop), deadline)?;
+    write_all_deadline(stream, header, Some(stop), deadline)?;
+    stream
+        .set_write_timeout(Some(Duration::from_millis(100)))
+        .map_err(|_| "Could not configure TCP writes")?;
+    while !payload.is_empty() {
+        if stop.load(Ordering::Acquire) {
+            return Err("Download interrupted".into());
+        }
+        if Instant::now() >= deadline {
+            return Err("Peer exceeded write deadline".into());
+        }
+        match stream.write(payload) {
+            Ok(0) => return Err("Peer connection closed".into()),
+            Ok(n) => {
+                super::add_payload(uploaded, n as u64);
+                payload = &payload[n..];
+            }
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock
+                        | std::io::ErrorKind::TimedOut
+                        | std::io::ErrorKind::Interrupted
+                ) => {}
+            Err(_) => return Err("Peer write interrupted".into()),
+        }
+    }
+    Ok(())
+}
+pub fn reserve_payload(
+    stream: &mut TcpStream,
+    aggregate: &super::RateGate,
+    local: &super::RateGate,
+    bytes: u64,
+    stop: &AtomicBool,
+) -> Result<()> {
+    let mut keepalive = Instant::now();
+    super::RateGate::reserve_pair_with(aggregate, local, bytes, stop, || {
+        if keepalive.elapsed() >= Duration::from_secs(5) {
+            write_all_deadline(
+                stream,
+                &[0; 4],
+                Some(stop),
+                Instant::now() + Duration::from_secs(5),
+            )?;
+            keepalive = Instant::now();
+        }
+        Ok(())
+    })
+}
 pub fn read_message(stream: &mut TcpStream, stop: Option<&AtomicBool>) -> Result<(u8, Vec<u8>)> {
     let deadline = Instant::now() + Duration::from_secs(15);
     let mut length = [0; 4];
@@ -211,6 +283,8 @@ impl Peer {
             pex,
             v2_wire,
             counters,
+            download_gate,
+            local_download_gate,
         } = settings;
         let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(2))
             .map_err(|_| "Could not connect to peer")?;
@@ -232,6 +306,8 @@ impl Peer {
             stream,
             v2_wire,
             counters,
+            download_gate,
+            local_download_gate,
             metadata_id: None,
             pex_id: None,
             metadata_size: None,
@@ -427,7 +503,7 @@ impl Peer {
         let mut received = vec![false; n.div_ceil(BLOCK)];
         let mut next = 0usize;
         let mut pending = 0usize;
-        let deadline = Instant::now() + Duration::from_secs(120);
+        let mut deadline = Instant::now() + Duration::from_secs(120);
         let mut messages = received.len() * 8 + 256;
         while received.iter().any(|v| !v) {
             if Instant::now() >= deadline || messages == 0 {
@@ -437,9 +513,30 @@ impl Peer {
             if stop.load(Ordering::Relaxed) {
                 return Err("Download interrupted".into());
             }
-            while next < received.len() && pending < 16 {
+            // Limited requests stay at one outstanding block. Waiting for the
+            // next reservation never leaves old responses unread in a pipeline.
+            let pipeline =
+                if self.download_gate.limit() == 0 && self.local_download_gate.limit() == 0 {
+                    16
+                } else {
+                    1
+                };
+            while next < received.len() && pending < pipeline {
                 let offset = next * BLOCK;
                 let length = (n - offset).min(BLOCK);
+                let waiting = Instant::now();
+                reserve_payload(
+                    &mut self.stream,
+                    &self.download_gate,
+                    &self.local_download_gate,
+                    length as u64,
+                    stop,
+                )?;
+                // Rate waits are outside both the piece's network deadline and
+                // the fresh per-message deadline established below.
+                deadline = deadline
+                    .checked_add(waiting.elapsed())
+                    .ok_or("Peer deadline overflow")?;
                 let mut request = Vec::with_capacity(12);
                 request.extend_from_slice(&(index as u32).to_be_bytes());
                 request.extend_from_slice(&(offset as u32).to_be_bytes());
@@ -448,7 +545,18 @@ impl Peer {
                 next += 1;
                 pending += 1;
             }
+            let reading = Instant::now();
             let (id, payload) = read_message(&mut self.stream, Some(stop))?;
+            if id == 255 && reading.elapsed() >= Duration::from_secs(1) {
+                // A deliberately paced peer keeps its connection alive while
+                // waiting for payload credit. Rapid keepalives still consume
+                // the bounded message budget, preventing a busy-message loop.
+                deadline = deadline
+                    .checked_add(reading.elapsed())
+                    .ok_or("Peer deadline overflow")?;
+                messages += 1;
+                continue;
+            }
             if id == 7 {
                 if payload.len() < 8 {
                     return Err("Truncated piece block".into());
@@ -469,9 +577,7 @@ impl Peer {
                 {
                     return Err("Unsolicited or inconsistent piece block".into());
                 }
-                self.counters
-                    .downloaded
-                    .fetch_add((payload.len() - 8) as u64, Ordering::Relaxed);
+                super::add_payload(&self.counters.downloaded, (payload.len() - 8) as u64);
                 if !received[offset / BLOCK] {
                     data[offset..offset + payload.len() - 8].copy_from_slice(&payload[8..]);
                     received[offset / BLOCK] = true;
@@ -635,6 +741,7 @@ pub fn hash_response(
         }
         let storage = storage.ok_or("Block proof requires file data")?;
         let path = super::metainfo::confined(storage, &file.path)?;
+        super::inspect_media_file(&path)?;
         let mut input = std::fs::File::open(path).map_err(|_| "Could not read v2 blocks")?;
         let length = (file.length - offset).min((width * BLOCK) as u64) as usize;
         let mut data = vec![0; length];
@@ -762,6 +869,8 @@ mod tests {
                     pex: true,
                     v2_wire: false,
                     counters: Arc::new(super::super::TransferCounters::default()),
+                    download_gate: Arc::new(super::super::RateGate::default()),
+                    local_download_gate: Arc::new(super::super::RateGate::default()),
                 },
             )
             .expect("peer");
