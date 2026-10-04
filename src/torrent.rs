@@ -2766,7 +2766,19 @@ mod control_runtime_tests {
             peers: Vec::new(),
             tracker_peers: BTreeSet::new(),
             counters: Arc::new(TransferCounters::default()),
-            announcements: BTreeMap::new(),
+            announcements: (0..trackers)
+                .map(|index| {
+                    let due = Instant::now() - Duration::from_secs(1);
+                    (
+                        format!("http://tracker.invalid/{index}"),
+                        AnnounceState {
+                            next: due,
+                            retry_after: due,
+                            ..AnnounceState::default()
+                        },
+                    )
+                })
+                .collect(),
             announce_hash: None,
             dht_next: Instant::now(),
             dht_in_flight: false,
