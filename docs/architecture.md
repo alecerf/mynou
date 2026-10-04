@@ -1,7 +1,7 @@
 # Native Rust architecture
 
 ```text
-CLI / API                 Plex watchlist
+CLI / API / Browser       Plex watchlist
     |                          |
     +--------- Requests -------+
                    |
@@ -135,6 +135,16 @@ Initial Plex skips do not create an owned import or invent a release baseline.
 validation, and the required primitives. Protocol errors are explicit; a failed
 negotiation never disables certificate validation. The API server uses HTTP on
 the local interface with a Bearer token. See [protocol limits](limits.md).
+
+`web` shares that listener and directly calls existing engine operations.
+Original Rust-rendered HTML and an embedded stylesheet provide native browser
+forms without JavaScript or third-party assets. Bounded in-memory sessions use
+random opaque cookies and independent form tokens, rotate after login and
+expire at an absolute deadline. Session locks never span engine/network work.
+Host/origin checks and strict form decoding precede mutations. Bulk identifiers
+are all prevalidated, then each engine operation reports its own outcome.
+Public labels are bounded/redacted and escaped before insertion into HTML;
+acquisition URLs and API tokens are not rendered. See [browser management](web.md).
 
 GitHub Actions validates changes and publishes releases. Build and release tools
 are separate from the runtime; the application never invokes them.

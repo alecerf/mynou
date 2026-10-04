@@ -13,13 +13,13 @@ Download the source ZIP and image archive from
 Load the validated release image:
 
 ```sh
-docker load -i mynou-v0.10.0-linux-amd64-image.tar.gz
+docker load -i mynou-v0.11.0-linux-amd64-image.tar.gz
 ```
 
 Alternatively, build the image from the extracted sources:
 
 ```sh
-docker build -t mynou:0.10.0 .
+docker build -t mynou:0.11.0 .
 ```
 
 Use the image binary to prepare an installation in a new directory:
@@ -29,7 +29,7 @@ docker run --rm --network none \
   --user "$(id -u):$(id -g)" \
   --mount "type=bind,src=$PWD,dst=/work" \
   --workdir /work \
-  mynou:0.10.0 setup-docker --dir mynou-docker
+  mynou:0.11.0 setup-docker --dir mynou-docker
 ```
 
 If your account does not use UID/GID 1000, add its IDs to the generated `.env`:
@@ -212,9 +212,13 @@ See [transfer controls](transfers.md) for bounds, durable counters, pause/resume
 
 ## Ports and management
 
-The API is published only on `127.0.0.1:8787`. `/healthz` and `/readyz` describe
-service health; management operations require the `MYNOU_API_TOKEN` Bearer token.
-The healthcheck uses the Mynou binary itself.
+Browser management and the API share `127.0.0.1:8787`. Open
+**http://127.0.0.1:8787/ui** and sign in with `MYNOU_API_TOKEN` from `.env`.
+The browser uses separate expiring session cookies and protected forms. For
+remote access, use a TLS proxy that preserves Host/Origin and keeps the plain
+listener private; see the [browser deployment guide](web.md#sign-in-and-deployment).
+`/healthz` and `/readyz` describe service health; `/api` operations require the
+`MYNOU_API_TOKEN` Bearer token. The healthcheck uses the Mynou binary itself.
 
 Port 6881/TCP accepts BitTorrent peers. DHT and UDP trackers make outgoing
 requests using ephemeral sockets; no inbound UDP port is published. The DHT

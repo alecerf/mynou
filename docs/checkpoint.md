@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.10.0
+# Project checkpoint — Mynou 0.11.0
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -57,7 +57,13 @@ worker and per-transfer resource bounds may reduce the effective count. The
 single-peer setting is retained for comparisons. See [transfers.md](transfers.md)
 for scheduling, discovery, verification and remaining transport limits.
 
-A web interface, series-pack/specials management, multi-user Plex
+The 0.11.0 change adds the browser interface on `/ui`: original Rust-rendered
+HTML/CSS, expiring in-memory sessions, same-origin/form-token checks, credential
+redaction, request/search/library/transfer pages, bounded pagination and bulk
+changes with per-entry outcomes. API Bearer authentication remains separate.
+See [web.md](web.md) for operations, exact bounds and deployment.
+
+Series-pack/specials management, multi-user Plex
 policies, IRC automation, native indexer adapters, Usenet and cross-seeding remain
 future stages. See the [release roadmap](roadmap.md). Transfer control is a
 focused stage, and parallel peers do not establish full parity.
@@ -68,6 +74,20 @@ has not already been released. The assets are a full source ZIP with the static
 Linux x86_64 binary, a separate static binary, a saved Docker image archive, and
 SHA-256 checksum files. There is no Docker Hub publication step.
 
+## Recorded 0.10.0 CI checkpoint
+
+Commit `5b0b202b78bc906db914ef4713c57ec14807169f` passed
+[Actions run 37203872630](https://github.com/alecerf/mynou/actions/runs/37203872630):
+321 tests passed with none ignored, together with the complete CI pipeline.
+GitHub Actions published
+[v0.10.0](https://github.com/alecerf/mynou/releases/tag/v0.10.0) with seven assets.
+Its debug delayed local peer fixture measured 6,574 ms with the retained
+single-peer path and 1,480 ms with four peers (4.441x). See
+[validation.md](validation.md) for workload and limits.
+
+This validates 0.10.0. The 0.11.0 browser changes require their own completed
+Actions run and CI-created release; no passing result is recorded until observed.
+
 ## Recorded 0.9.0 CI checkpoint
 
 Commit `c45e127e3b8587a4f4ace6a2bbc7eab86bf48a66` passed
@@ -75,9 +95,7 @@ Commit `c45e127e3b8587a4f4ace6a2bbc7eab86bf48a66` passed
 302 tests passed with none ignored, alongside the complete CI validation.
 GitHub Actions published
 [v0.9.0](https://github.com/alecerf/mynou/releases/tag/v0.9.0) with seven assets.
-This is historical evidence for 0.9.0. The 0.10.0 changes require their own
-successful Actions run and CI-created release; no current passing result is
-recorded here until it has been observed.
+This is historical evidence for 0.9.0 and does not validate later changes.
 
 ## Recorded 0.8.0 CI checkpoint
 

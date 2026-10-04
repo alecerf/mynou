@@ -162,11 +162,14 @@ inherits the parent's current monitoring flag. Original imports and downloads
 remain on disk; there is no automatic cleanup, rollback deletion or
 library-directory adoption. See [library.md](library.md).
 
-The CLI and authenticated API have no web management interface. Plex integration
+The browser interface uses a shared operator token, original server-rendered
+pages and native forms, with page refreshes rather than live streaming. It has
+bounded pagination and bulk job/library/transfer controls. It does not edit
+configuration or adopt a complete existing Plex library. Plex integration
 does not provide multi-user approvals, quotas, permission policies, notifications
 or per-user routing. Indexer integrations support RSS/JSON/Torznab endpoints,
 not a general tracker adapter catalog, interactive logins, Usenet, or IRC
-announcement rules. Cross-seeding and bulk automation are not implemented.
+announcement rules. Cross-seeding and broader bulk automation remain unimplemented.
 The [roadmap](roadmap.md) separates these capabilities into future releases.
 
 ## Persistence and platform

@@ -200,6 +200,7 @@ remain current until the child is ready and remain on disk afterward. See the
 confirmation.
 
 Selection and monitoring do not decode audio/video or prove release-name claims.
-Full series management, torrent controls and the web interface remain later
-stages in the [roadmap](roadmap.md). See [limits](limits.md) for remaining torrent,
+Search previews and submissions are also available in the [browser](web.md).
+Full series management remains a later stage in the [roadmap](roadmap.md).
+See [limits](limits.md) for remaining torrent,
 integration and series constraints.

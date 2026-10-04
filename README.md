@@ -1,4 +1,4 @@
-# Mynou 0.10.0 — Rust, standard library only
+# Mynou 0.11.0 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -43,8 +43,8 @@ from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, o
 build the image from the source archive:
 
 ```sh
-docker load -i mynou-v0.10.0-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.10.0 .
+docker load -i mynou-v0.11.0-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.11.0 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d
@@ -82,6 +82,10 @@ ownership, shared Plex paths, and installation without Rust on the host.
   per-file piece priorities, global payload bandwidth limits, persistent
   counters and ratio/time seeding policies. Controls retain library files and
   downloads; per-file priorities still download every file.
+- Browser management at `/ui`: search/request forms, jobs/history, owned library
+  monitoring and upgrades, transfer controls, filters, pagination and bounded
+  bulk actions with individual results. Rust renders all pages without scripts
+  or frontend dependencies.
 
 Formats and protocols have explicit limits. Analysis does not decode pictures
 or sound and does not replace Plex transcoding. Older SQLite and Go state remain
@@ -133,10 +137,20 @@ The [transfer guide](docs/transfers.md) explains native download controls,
 parallel peer bounds, bandwidth limits and seeding policies. Use
 `downloads.max_peers: 1` to retain a single-peer transfer baseline.
 
-Mynou remains an early integrated implementation. This release adds parallel
-peer transfers; a web interface and full parity with Radarr, Sonarr, Pulsarr,
-qBittorrent, qui, autobrr or Prowlarr remain future work. The
+Mynou remains an early integrated implementation. This release adds browser
+management. Broader series management, multi-user policies and full parity with
+Radarr, Sonarr, Pulsarr, qBittorrent, qui, autobrr or Prowlarr remain future work. The
 [release roadmap](docs/roadmap.md) separates the next stages.
+
+## Open the browser interface
+
+After starting the service, open **http://127.0.0.1:8787/ui** and sign in with
+`MYNOU_API_TOKEN` from your installation's `.env`. Sessions expire after eight
+hours and end at sign-out or service restart. Browser cookies do not authenticate
+the Bearer API. Pages use native forms; refresh to see new progress.
+
+The [browser guide](docs/web.md) describes request/search/library/transfer
+operations, safe bulk changes and TLS reverse-proxy deployment for remote access.
 
 ## Configuration and commands
 

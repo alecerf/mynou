@@ -36,8 +36,8 @@ steps. No Docker Hub repository is needed.
 Download the assets and checksum files from the same release. For example:
 
 ```sh
-sha256sum -c mynou-v0.10.0-source.zip.sha256
-sha256sum -c mynou-v0.10.0-linux-amd64-image.tar.gz.sha256
+sha256sum -c mynou-v0.11.0-source.zip.sha256
+sha256sum -c mynou-v0.11.0-linux-amd64-image.tar.gz.sha256
 ```
 
 To verify all downloaded assets together, download `SHA256SUMS` and every listed
@@ -56,6 +56,46 @@ sha256sum -c SHA256SUMS
 
 Checksum verification establishes integrity relative to the downloaded manifest.
 It does not replace reviewing the release's commit and successful Actions run.
+
+## Browser changes in 0.11.0
+
+The new browser scope is covered by CI-only unit and native HTTP/form journeys:
+
+- Sign-in challenge and session rotation, expiration/capacity, five-attempt
+  challenge removal, logout/restart, HTTPS Secure cookie and host/origin binding.
+- Bearer API isolation, same-origin/form-token requirements, cookie ambiguity,
+  strict form decoding, unknown/duplicate fields and numeric/size bounds.
+- Escaped hostile titles/paths, credential-free errors/history/search reports,
+  no script dependency and semantic navigation/labels/table structure.
+- Request submission/deduplication, cancel/retry, filters/pagination and mixed
+  bulk outcomes with prevalidation before side effects.
+- Search previews without journal writes, retained request identity, monitoring,
+  one-time baselines, upgrade preview/apply and retained earlier imports.
+- Native transfer pause/resume, priority, file choices and policy changes;
+  invalid controls preserve prior choices and downloaded metadata.
+
+These requirements are not a recorded passing run for the new commit. Inspect
+its completed Actions run and CI-created release. Form-protocol checks do not
+establish independent visual/browser accessibility review or personal Plex
+installation compatibility. Existing offline dependency, lint, build, demo,
+Docker and archive-integrity checks continue to run.
+
+## Recorded 0.10.0 CI evidence
+
+[Run 37203872630](https://github.com/alecerf/mynou/actions/runs/37203872630)
+completed successfully for commit
+`5b0b202b78bc906db914ef4713c57ec14807169f`: 321 tests passed with none ignored,
+alongside the complete dependency, lint, build, native/Docker demo and packaging
+checks. GitHub Actions published
+[v0.10.0](https://github.com/alecerf/mynou/releases/tag/v0.10.0) with seven assets.
+This evidence validates 0.10.0, not the browser changes.
+
+The debug test build's delayed local TCP fixture transferred 786,432 payload
+bytes with a 100 ms per-block delay: 6,574 ms using the retained sequential path
+(`max_peers: 1`) and 1,480 ms using four parallel peers, a 4.441x ratio for that
+observed fixture. The baseline is inside 0.10.0; it is not the separately
+released 0.9.0 executable. This is not a public-swarm or optimized-release
+benchmark, and it does not establish a general speedup.
 
 ## Parallel-peer changes in 0.10.0
 
@@ -80,10 +120,9 @@ TCP peers, without downloading public content. Validation must preserve the
   workload, timing and limitations of the comparison. This baseline is not a
   measurement of the separately released 0.9.0 binary.
 
-These are requirements for the new implementation, not a recorded passing run
-or a performance result. Use the completed Actions run for the exact 0.10.0
-commit before claiming validation. A local fixture comparison does not establish
-public-swarm throughput or performance on a personal installation.
+The completed run above records these checks for the released 0.10.0 commit.
+A local fixture comparison does not establish public-swarm throughput or
+performance on a personal installation.
 
 ## Transfer-control changes in 0.9.0
 

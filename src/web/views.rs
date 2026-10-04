@@ -252,7 +252,10 @@ pub fn search(
                         },
                         display(text(candidate, "source")),
                         scalar(candidate, "seeders"),
-                        scalar(assessment, "score"),
+                        assessment
+                            .get("rank")
+                            .map(|rank| scalar(rank, "custom_score"))
+                            .unwrap_or_else(|| "0".into()),
                         if reasons.is_empty() {
                             "Matches the configured profile".into()
                         } else {

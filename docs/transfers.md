@@ -256,6 +256,7 @@ limit does not delete a downloaded file, remove an import or revoke Plex
 availability. This release adds no automatic cleanup.
 
 uTP/WebTorrent, webseeds, automatic NAT traversal and a complete persistent DHT
-table remain outside this release. There is no selective file skipping, web
-management interface or automatic cleanup. See [limits](limits.md),
+table remain outside this release. There is no selective file skipping or
+automatic cleanup. Browser controls are described in [web management](web.md).
+See [limits](limits.md),
 [library monitoring](library.md) and the [roadmap](roadmap.md).
