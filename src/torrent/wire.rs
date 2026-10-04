@@ -39,6 +39,9 @@ pub struct Peer {
     counters: Arc<super::TransferCounters>,
     download_gate: Arc<super::RateGate>,
     local_download_gate: Arc<super::RateGate>,
+    piece_count: Option<usize>,
+    bitfield_received: bool,
+    availability_known: bool,
 }
 
 pub fn handshake(
@@ -46,6 +49,24 @@ pub fn handshake(
     hash: &[u8; 20],
     id: &[u8; 20],
     outgoing: bool,
+) -> Result<bool> {
+    handshake_deadline(
+        stream,
+        hash,
+        id,
+        outgoing,
+        None,
+        Instant::now() + Duration::from_secs(5),
+    )
+}
+
+fn handshake_deadline(
+    stream: &mut TcpStream,
+    hash: &[u8; 20],
+    id: &[u8; 20],
+    outgoing: bool,
+    stop: Option<&AtomicBool>,
+    deadline: Instant,
 ) -> Result<bool> {
     let mut packet = [0u8; 68];
     packet[0] = 19;
@@ -56,30 +77,15 @@ pub fn handshake(
     packet[48..].copy_from_slice(id);
     let mut response = [0; 68];
     if outgoing {
-        write_all_deadline(
-            stream,
-            &packet,
-            None,
-            Instant::now() + Duration::from_secs(5),
-        )?;
+        write_all_deadline(stream, &packet, stop, deadline)?;
     }
-    read_exact_deadline(
-        stream,
-        &mut response,
-        None,
-        Instant::now() + Duration::from_secs(5),
-    )?;
+    read_exact_deadline(stream, &mut response, stop, deadline)?;
     if response[0] != 19 || &response[1..20] != b"BitTorrent protocol" || response[28..48] != *hash
     {
         return Err("Invalid peer handshake".into());
     }
     if !outgoing {
-        write_all_deadline(
-            stream,
-            &packet,
-            None,
-            Instant::now() + Duration::from_secs(5),
-        )?;
+        write_all_deadline(stream, &packet, stop, deadline)?;
     }
     Ok(response[25] & 0x10 != 0)
 }
@@ -155,9 +161,24 @@ pub fn write_message(
     payload: &[u8],
     stop: Option<&AtomicBool>,
 ) -> Result<()> {
+    write_message_deadline(
+        stream,
+        id,
+        payload,
+        stop,
+        Instant::now() + Duration::from_secs(15),
+    )
+}
+
+fn write_message_deadline(
+    stream: &mut TcpStream,
+    id: u8,
+    payload: &[u8],
+    stop: Option<&AtomicBool>,
+    deadline: Instant,
+) -> Result<()> {
     let length = u32::try_from(payload.len().checked_add(1).ok_or("Message is too large")?)
         .map_err(|_| "Message is too large")?;
-    let deadline = Instant::now() + Duration::from_secs(15);
     write_all_deadline(stream, &length.to_be_bytes(), stop, deadline)?;
     write_all_deadline(stream, &[id], stop, deadline)?;
     write_all_deadline(stream, payload, stop, deadline)
@@ -231,7 +252,14 @@ pub fn reserve_payload(
     })
 }
 pub fn read_message(stream: &mut TcpStream, stop: Option<&AtomicBool>) -> Result<(u8, Vec<u8>)> {
-    let deadline = Instant::now() + Duration::from_secs(15);
+    read_message_deadline(stream, stop, Instant::now() + Duration::from_secs(15))
+}
+
+fn read_message_deadline(
+    stream: &mut TcpStream,
+    stop: Option<&AtomicBool>,
+    deadline: Instant,
+) -> Result<(u8, Vec<u8>)> {
     let mut length = [0; 4];
     read_exact_deadline(stream, &mut length, stop, deadline)?;
     let length = u32::from_be_bytes(length) as usize;
@@ -270,12 +298,51 @@ pub fn extended_handshake(meta: Option<&Meta>, port: u16, pex: bool) -> Vec<u8> 
     out
 }
 
+fn valid_spare_bits(bitfield: &[u8], count: usize) -> bool {
+    count.is_multiple_of(8)
+        || bitfield
+            .get(count / 8)
+            .is_none_or(|byte| byte & ((1u8 << (8 - count % 8)) - 1) == 0)
+}
+
+fn validate_bitfield(bitfield: &[u8], count: Option<usize>) -> Result<()> {
+    if bitfield.len() > 1024 * 1024 {
+        return Err("Bitfield exceeds limits".into());
+    }
+    if let Some(count) = count
+        && (bitfield.len() != count.div_ceil(8) || !valid_spare_bits(bitfield, count))
+    {
+        return Err("Bitfield does not match metadata piece count".into());
+    }
+    Ok(())
+}
+
 impl Peer {
     pub fn connect(
         address: SocketAddr,
         hash: &[u8; 20],
         id: &[u8; 20],
         settings: PeerSettings<'_>,
+    ) -> Result<Self> {
+        Self::connect_with_stop(address, hash, id, settings, None)
+    }
+
+    pub fn connect_cancellable(
+        address: SocketAddr,
+        hash: &[u8; 20],
+        id: &[u8; 20],
+        settings: PeerSettings<'_>,
+        stop: &AtomicBool,
+    ) -> Result<Self> {
+        Self::connect_with_stop(address, hash, id, settings, Some(stop))
+    }
+
+    fn connect_with_stop(
+        address: SocketAddr,
+        hash: &[u8; 20],
+        id: &[u8; 20],
+        settings: PeerSettings<'_>,
+        stop: Option<&AtomicBool>,
     ) -> Result<Self> {
         let PeerSettings {
             meta,
@@ -286,22 +353,37 @@ impl Peer {
             download_gate,
             local_download_gate,
         } = settings;
-        let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(2))
-            .map_err(|_| "Could not connect to peer")?;
+        // Standard-library connects cannot be cancelled in flight. One
+        // bounded attempt avoids resetting the handshake on slower networks;
+        // the parallel scheduler isolates this wait from established peers.
+        if stop.is_some_and(|flag| flag.load(Ordering::Acquire)) {
+            return Err("Download interrupted".into());
+        }
+        let connect_timeout = if stop.is_some() {
+            Duration::from_secs(1)
+        } else {
+            Duration::from_secs(2)
+        };
+        let connection = TcpStream::connect_timeout(&address, connect_timeout);
+        if stop.is_some_and(|flag| flag.load(Ordering::Acquire)) {
+            return Err("Download interrupted".into());
+        }
+        let mut stream = connection.map_err(|_| "Could not connect to peer")?;
         stream
             .set_nodelay(true)
             .map_err(|_| "Could not configure TCP")?;
-        stream
-            .set_read_timeout(Some(Duration::from_secs(3)))
-            .map_err(|_| "Could not configure TCP")?;
-        stream
-            .set_write_timeout(Some(Duration::from_secs(3)))
-            .map_err(|_| "Could not configure TCP")?;
-        let extensions = handshake(&mut stream, hash, id, true)?;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let extensions = handshake_deadline(&mut stream, hash, id, true, stop, deadline)?;
         if extensions {
-            write_message(&mut stream, 20, &extended_handshake(meta, port, pex), None)?;
+            write_message_deadline(
+                &mut stream,
+                20,
+                &extended_handshake(meta, port, pex),
+                stop,
+                deadline,
+            )?;
         }
-        write_message(&mut stream, 2, &[], None)?;
+        write_message_deadline(&mut stream, 2, &[], stop, deadline)?;
         Ok(Self {
             stream,
             v2_wire,
@@ -316,8 +398,60 @@ impl Peer {
             extensions,
             discovered: Vec::new(),
             pex_allowed: pex && meta.is_some_and(|m| !m.private),
+            piece_count: meta.map(Meta::count),
+            bitfield_received: false,
+            availability_known: false,
         })
     }
+
+    /// Read the initial availability and unchoke before assigning any payload
+    /// piece. Peers which omit a bitfield retain unknown availability; an
+    /// advertised all-zero bitfield is explicitly unavailable.
+    pub fn prepare_download(&mut self, meta: &Meta, stop: &AtomicBool) -> Result<()> {
+        self.bind_metadata(meta)?;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        for _ in 0..128 {
+            if stop.load(Ordering::Acquire) {
+                return Err("Download interrupted".into());
+            }
+            if !self.choked {
+                return Ok(());
+            }
+            let (id, payload) = read_message_deadline(&mut self.stream, Some(stop), deadline)?;
+            self.ancillary(id, &payload)?;
+        }
+        Err("Peer keeps the download choked".into())
+    }
+
+    pub fn availability(&self) -> Option<&[u8]> {
+        self.availability_known.then_some(self.bitfield.as_slice())
+    }
+
+    pub fn has_piece(&self, index: usize) -> bool {
+        self.piece_count.is_none_or(|count| index < count)
+            && (!self.availability_known
+                || self
+                    .bitfield
+                    .get(index / 8)
+                    .is_some_and(|byte| byte & (0x80 >> (index % 8)) != 0))
+    }
+
+    fn bind_metadata(&mut self, meta: &Meta) -> Result<()> {
+        let count = meta.count();
+        if self.piece_count.is_some_and(|old| old != count) {
+            return Err("Peer metadata piece count changed".into());
+        }
+        if self.bitfield_received {
+            validate_bitfield(&self.bitfield, Some(count))?;
+        } else if self.bitfield.len() > count.div_ceil(8)
+            || !valid_spare_bits(&self.bitfield, count)
+        {
+            return Err("Have index exceeds metadata piece count".into());
+        }
+        self.piece_count = Some(count);
+        Ok(())
+    }
+
     fn ancillary(&mut self, id: u8, payload: &[u8]) -> Result<()> {
         match id {
             0 => {
@@ -341,16 +475,23 @@ impl Peer {
                 if n >= 8 * 1024 * 1024 {
                     return Err("Have index exceeds limits".into());
                 }
+                if self.piece_count.is_some_and(|count| n >= count) {
+                    return Err("Have index exceeds metadata piece count".into());
+                }
                 if self.bitfield.len() <= n / 8 {
                     self.bitfield.resize(n / 8 + 1, 0);
                 }
                 self.bitfield[n / 8] |= 0x80 >> (n % 8);
+                self.availability_known = true;
             }
             5 => {
-                if payload.len() > 1024 * 1024 {
-                    return Err("Bitfield exceeds limits".into());
+                if self.bitfield_received {
+                    return Err("Peer sent a repeated bitfield".into());
                 }
+                validate_bitfield(payload, self.piece_count)?;
                 self.bitfield = payload.to_vec();
+                self.bitfield_received = true;
+                self.availability_known = true;
             }
             20 if payload.first() == Some(&0) => {
                 let v = crate::bencode::parse(&payload[1..])?;
@@ -471,7 +612,9 @@ impl Peer {
         let mut encoded = b"d4:info".to_vec();
         encoded.extend_from_slice(&info);
         encoded.push(b'e');
-        Meta::from_info(info, encoded)
+        let meta = Meta::from_info(info, encoded)?;
+        self.bind_metadata(&meta)?;
+        Ok(meta)
     }
     pub fn fetch_piece(
         &mut self,
@@ -482,21 +625,12 @@ impl Peer {
         if index >= meta.count() {
             return Err("Invalid piece index".into());
         }
+        self.prepare_download(meta, stop)?;
+        if !self.has_piece(index) {
+            return Err("Peer does not advertise the requested piece".into());
+        }
         if meta.v2.is_some() && meta.v2_pieces[index].is_none() && meta.pieces[index].is_none() {
             self.fetch_hashes(meta, index, stop)?;
-        }
-        for _ in 0..128 {
-            if stop.load(Ordering::Relaxed) {
-                return Err("Download interrupted".into());
-            }
-            if !self.choked {
-                break;
-            }
-            let (id, payload) = read_message(&mut self.stream, Some(stop))?;
-            self.ancillary(id, &payload)?;
-        }
-        if self.choked {
-            return Err("Peer keeps the download choked".into());
         }
         let n = meta.wire_piece_size(index, self.v2_wire);
         let mut data = vec![0; meta.piece_size(index)];
@@ -775,6 +909,190 @@ pub fn hash_response(
 mod tests {
     use super::*;
 
+    fn peer_pair(meta: Option<&Meta>) -> (Peer, TcpStream) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listener");
+        let stream = TcpStream::connect(listener.local_addr().expect("address")).expect("client");
+        let (remote, _) = listener.accept().expect("peer");
+        (
+            Peer {
+                stream,
+                metadata_id: None,
+                pex_id: None,
+                metadata_size: None,
+                bitfield: Vec::new(),
+                choked: true,
+                extensions: false,
+                discovered: Vec::new(),
+                pex_allowed: false,
+                v2_wire: false,
+                counters: Arc::new(super::super::TransferCounters::default()),
+                download_gate: Arc::new(super::super::RateGate::default()),
+                local_download_gate: Arc::new(super::super::RateGate::default()),
+                piece_count: meta.map(Meta::count),
+                bitfield_received: false,
+                availability_known: false,
+            },
+            remote,
+        )
+    }
+
+    fn three_piece_meta() -> Meta {
+        let info = value_dict(&[
+            (b"name", Value::Bytes(b"availability.bin".to_vec())),
+            (b"piece length", Value::Int(BLOCK as i64)),
+            (b"length", Value::Int((BLOCK * 3) as i64)),
+            (b"pieces", Value::Bytes(vec![1; 60])),
+        ]);
+        Meta::parse(&crate::bencode::encode(&value_dict(&[(b"info", info)])))
+            .expect("synthetic metadata")
+    }
+
+    #[test]
+    fn cancelled_startup_does_not_connect_or_wait_for_a_silent_handshake() {
+        use std::{net::TcpListener, sync::mpsc};
+        let settings = || PeerSettings {
+            meta: None,
+            port: 6881,
+            pex: false,
+            v2_wire: false,
+            counters: Arc::new(super::super::TransferCounters::default()),
+            download_gate: Arc::new(super::super::RateGate::default()),
+            local_download_gate: Arc::new(super::super::RateGate::default()),
+        };
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+        listener
+            .set_nonblocking(true)
+            .expect("nonblocking listener");
+        assert!(
+            Peer::connect_cancellable(
+                listener.local_addr().expect("address"),
+                &[1; 20],
+                &[2; 20],
+                settings(),
+                &AtomicBool::new(true),
+            )
+            .is_err()
+        );
+        assert_eq!(
+            listener
+                .accept()
+                .expect_err("no connection after cancellation")
+                .kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+
+        listener.set_nonblocking(false).expect("blocking listener");
+        let address = listener.local_addr().expect("address");
+        let flag = Arc::new(AtomicBool::new(false));
+        let cancel = flag.clone();
+        let (ready, received) = mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("peer");
+            read_exact_deadline(
+                &mut stream,
+                &mut [0; 68],
+                None,
+                Instant::now() + Duration::from_secs(2),
+            )
+            .expect("outgoing handshake");
+            ready.send(()).expect("announce pending handshake");
+            assert!(
+                read_exact_deadline(
+                    &mut stream,
+                    &mut [0; 1],
+                    None,
+                    Instant::now() + Duration::from_secs(2),
+                )
+                .is_err()
+            );
+        });
+        let canceller = std::thread::spawn(move || {
+            received
+                .recv_timeout(Duration::from_secs(2))
+                .expect("handshake started");
+            cancel.store(true, Ordering::Release);
+        });
+        let started = Instant::now();
+        let error = Peer::connect_cancellable(address, &[1; 20], &[2; 20], settings(), &flag)
+            .err()
+            .expect("silent handshake must be interrupted");
+        assert_eq!(error, "Download interrupted");
+        assert!(started.elapsed() < Duration::from_secs(2));
+        canceller.join().expect("canceller");
+        server.join().expect("server");
+    }
+
+    #[test]
+    fn sparse_availability_is_read_before_assigning_a_piece() {
+        let meta = three_piece_meta();
+        let (mut peer, mut remote) = peer_pair(Some(&meta));
+        let server = std::thread::spawn(move || {
+            write_message(&mut remote, 5, &[0x40], None).expect("sparse bitfield");
+            write_message(&mut remote, 1, &[], None).expect("unchoke");
+        });
+        peer.prepare_download(&meta, &AtomicBool::new(false))
+            .expect("initial availability");
+        server.join().expect("server");
+        assert_eq!(peer.availability(), Some([0x40].as_slice()));
+        assert!(!peer.has_piece(0));
+        assert!(peer.has_piece(1));
+        assert!(!peer.has_piece(2));
+        assert!(!peer.has_piece(3));
+
+        let (mut peer, _remote) = peer_pair(Some(&meta));
+        assert!(peer.has_piece(0), "omitted availability remains unknown");
+        assert_eq!(peer.availability(), None);
+        peer.ancillary(5, &[0])
+            .expect("explicit empty availability");
+        assert!(
+            !peer.has_piece(0),
+            "an all-zero bitfield is known unavailable"
+        );
+        assert_eq!(peer.availability(), Some([0].as_slice()));
+    }
+
+    #[test]
+    fn authenticated_metadata_rejects_malformed_or_out_of_range_availability() {
+        let meta = three_piece_meta();
+        for bitfield in [vec![], vec![0, 0], vec![0x21]] {
+            let (mut peer, _remote) = peer_pair(Some(&meta));
+            assert!(peer.ancillary(5, &bitfield).is_err());
+            assert_eq!(
+                peer.availability(),
+                None,
+                "invalid payload must not mutate availability"
+            );
+        }
+        let (mut peer, _remote) = peer_pair(Some(&meta));
+        assert!(peer.ancillary(4, &3u32.to_be_bytes()).is_err());
+        assert!(peer.ancillary(4, &[0; 3]).is_err());
+        assert_eq!(peer.availability(), None);
+        peer.ancillary(5, &[0x20]).expect("valid bitfield");
+        assert!(
+            peer.ancillary(5, &[0x40]).is_err(),
+            "repeated bitfield is invalid"
+        );
+        assert_eq!(peer.availability(), Some([0x20].as_slice()));
+        peer.ancillary(4, &1u32.to_be_bytes()).expect("valid have");
+        assert!(peer.has_piece(1));
+
+        for before_metadata in [false, true] {
+            let (mut peer, _remote) = peer_pair(None);
+            if before_metadata {
+                peer.ancillary(5, &[0x10])
+                    .expect("bounded unauthenticated bitfield");
+            } else {
+                peer.ancillary(4, &3u32.to_be_bytes())
+                    .expect("bounded unauthenticated have");
+            }
+            assert!(
+                peer.bind_metadata(&meta).is_err(),
+                "authentication must revalidate availability"
+            );
+        }
+        assert!(validate_bitfield(&vec![0; 1024 * 1024 + 1], None).is_err());
+    }
+
     #[test]
     fn verified_final_piece_survives_a_failed_have_announcement() {
         use std::net::{Shutdown, TcpListener};
@@ -840,6 +1158,9 @@ mod tests {
                 counters: counters.clone(),
                 download_gate: Arc::new(super::super::RateGate::default()),
                 local_download_gate: Arc::new(super::super::RateGate::default()),
+                piece_count: Some(meta.count()),
+                bitfield_received: false,
+                availability_known: false,
             };
             let result = peer.fetch_piece(&mut meta, 0, &AtomicBool::new(false));
             server.join().expect("server");
