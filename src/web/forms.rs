@@ -104,6 +104,7 @@ impl Form {
             "tmdb_id",
             "include_specials",
             "future_only",
+            "unmonitored",
         ])?;
         self.request_values()
     }

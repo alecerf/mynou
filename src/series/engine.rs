@@ -35,6 +35,16 @@ impl Engine {
         include_specials: bool,
         future_only: bool,
     ) -> Result<Value> {
+        self.track_series_with_policy(request, include_specials, future_only, true)
+    }
+
+    pub fn track_series_with_policy(
+        &self,
+        request: &Request,
+        include_specials: bool,
+        future_only: bool,
+        monitored: bool,
+    ) -> Result<Value> {
         if self.read_only {
             return Err("Series storage is read-only".into());
         }
@@ -74,6 +84,7 @@ impl Engine {
                     plan,
                     include_specials,
                     future_only,
+                    monitored,
                     store::now(),
                 )?,
                 true,

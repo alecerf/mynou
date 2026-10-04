@@ -596,11 +596,31 @@ impl Engine {
                     job.next_attempt_at = store::now().saturating_add(1);
                     return Ok(());
                 }
+                let mapped = job
+                    .pack_file
+                    .as_ref()
+                    .map(|path| self.config.downloads.data_dir.join(&status.id).join(path));
                 job.files = status
                     .files
                     .iter()
+                    .filter(|path| mapped.as_ref().is_none_or(|expected| *path == expected))
                     .map(|p| p.to_string_lossy().into_owned())
                     .collect();
+                if mapped.is_some() && job.files.len() != 1 {
+                    return Err(
+                        "Mapped torrent file is absent or ambiguous in the verified payload".into(),
+                    );
+                }
+            }
+        }
+        if let Some(path) = &job.pack_file {
+            let id = job
+                .download_id
+                .as_ref()
+                .ok_or("Pack mapping requires a native transfer")?;
+            let expected = self.config.downloads.data_dir.join(id).join(path);
+            if job.files.len() != 1 || Path::new(&job.files[0]) != expected {
+                return Err("Mapped torrent file differs from the retained verified path".into());
             }
         }
         job.state = "importing".into();
@@ -639,7 +659,7 @@ impl Engine {
             .last()
             .ok_or("No supported media found for this request")?
             .1;
-        if job.request.kind == "episode" && job.files.len() > 1 {
+        if job.request.kind == "episode" && job.pack_file.is_none() && job.files.len() > 1 {
             let marker = format!("s{:02}e{:02}", job.request.season, job.request.episode);
             let matching: Vec<_> = candidates
                 .iter()
@@ -751,6 +771,9 @@ pub fn public_job(job: &Job) -> Value {
         map.remove("lease_id");
         map.remove("lease_until");
         map.remove("acquisition_url");
+        if let Some(Value::String(path)) = map.get_mut("pack_file") {
+            *path = integrations::report_text(path, 4096);
+        }
         if let Some(Value::Object(release)) = map.get_mut("release")
             && let Some(Value::String(title)) = release.get_mut("title")
         {

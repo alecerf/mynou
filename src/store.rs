@@ -64,6 +64,7 @@ pub struct Job {
     pub upgrade_parent: Option<String>,
     pub monitored: bool,
     pub monitor_checked_at: u64,
+    pub pack_file: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -402,6 +403,7 @@ impl Job {
             ("upgrade_parent", optional_string(&self.upgrade_parent)),
             ("monitored", Value::Bool(self.monitored)),
             ("monitor_checked_at", number(self.monitor_checked_at)),
+            ("pack_file", optional_string(&self.pack_file)),
         ])
     }
 
@@ -441,7 +443,17 @@ impl Job {
             monitor_checked_at: map
                 .get("monitor_checked_at")
                 .map_or(Ok(0), |_| integer(map, "monitor_checked_at"))?,
+            pack_file: optional(map, "pack_file")?,
         };
+        if let Some(path) = &job.pack_file {
+            crate::pack::validate_file_path(path)?;
+            if job.request.kind != "episode"
+                || job.request.source_url.is_none()
+                || job.request.source_path.is_some()
+            {
+                return Err("Pack mapping requires an episode torrent request".into());
+            }
+        }
         if job.id.len() != 32
             || !job.id.bytes().all(|byte| byte.is_ascii_hexdigit())
             || job.key != job.request.canonical_key()
@@ -885,6 +897,7 @@ impl Store {
             upgrade_parent: Some(parent.id),
             monitored: parent.monitored,
             monitor_checked_at: 0,
+            pack_file: None,
         };
         self.commit(job.clone(), "library upgrade recorded")?;
         Ok(job)
@@ -941,12 +954,41 @@ impl Store {
     }
 
     pub fn submit(&mut self, request: Request) -> Result<Job> {
+        self.submit_with_mapping(request, None)
+    }
+
+    pub fn submit_pack(&mut self, request: Request, path: String) -> Result<Job> {
+        crate::pack::validate_file_path(&path)?;
+        if request.kind != "episode"
+            || request.source_url.is_none()
+            || request.source_path.is_some()
+        {
+            return Err("Pack mapping requires an episode torrent request".into());
+        }
+        self.submit_with_mapping(request, Some(path))
+    }
+
+    pub(crate) fn check_submission_capacity(&self, count: usize) -> Result<()> {
+        if self.jobs.len().saturating_add(count) > MAX_JOBS {
+            return Err("storage capacity reached: 10,000 requests".into());
+        }
+        Ok(())
+    }
+
+    fn submit_with_mapping(&mut self, request: Request, pack_file: Option<String>) -> Result<Job> {
         request.validate()?;
         let key = request.canonical_key();
         if let Some(id) = self.by_key.get(&key) {
-            return self
+            let existing = self
                 .get(id)
-                .ok_or_else(|| "inconsistent job index".to_owned());
+                .ok_or_else(|| "inconsistent job index".to_owned())?;
+            if pack_file.is_some()
+                && (existing.pack_file != pack_file
+                    || existing.request.media_key() != request.media_key())
+            {
+                return Err("Pack mapping conflicts with an existing request".into());
+            }
+            return Ok(existing);
         }
         if self.jobs.len() >= MAX_JOBS {
             return Err("storage capacity reached: 10,000 requests".to_owned());
@@ -973,6 +1015,7 @@ impl Store {
             upgrade_parent: None,
             monitored: true,
             monitor_checked_at: 0,
+            pack_file,
         };
         self.commit(job.clone(), "request recorded")?;
         Ok(job)
@@ -987,6 +1030,7 @@ impl Store {
             || current.request != job.request
             || current.created_at != job.created_at
             || current.upgrade_parent != job.upgrade_parent
+            || current.pack_file != job.pack_file
         {
             return Err("job identity is immutable".to_owned());
         }

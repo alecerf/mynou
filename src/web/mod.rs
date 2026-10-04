@@ -401,8 +401,36 @@ impl Web {
                 let request = form.series_request()?;
                 let specials = browser_bool(form.value("include_specials")?, false)?;
                 let future = browser_bool(form.value("future_only")?, false)?;
-                engine.track_series(&request, specials, future)?;
+                let unmonitored = browser_bool(form.value("unmonitored")?, false)?;
+                engine.track_series_with_policy(&request, specials, future, !unmonitored)?;
                 self.redirect(session, "/ui/series", vec!["Series monitoring recorded. Existing settings are retained when a scope is already tracked".into()])
+            }
+            "/ui/series/packs" => {
+                form.only(&["csrf", "id", "source_url", "episodes"])?;
+                let ids = form.ids(false)?;
+                if ids.len() != 1 {
+                    return Err("Choose one tracked series".into());
+                }
+                let mut body = crate::json::Value::object();
+                body.insert("source_url", form.value("source_url")?.to_owned());
+                body.insert("episodes", crate::json::parse(form.value("episodes")?)?);
+                let pack = crate::pack::PackSubmission::from_json(&body)?;
+                let result = engine.submit_pack(&ids[0], &pack)?;
+                self.redirect(
+                    session,
+                    "/ui/jobs",
+                    vec![format!(
+                        "Pack recorded: {} new episode request(s), {} existing request(s) reused",
+                        result
+                            .get("submitted")
+                            .and_then(crate::json::Value::as_u64)
+                            .unwrap_or(0),
+                        result
+                            .get("reused")
+                            .and_then(crate::json::Value::as_u64)
+                            .unwrap_or(0)
+                    )],
+                )
             }
             "/ui/series/settings" | "/ui/series/refresh" | "/ui/series/episodes" => {
                 let allowed = match path {

@@ -14,7 +14,7 @@ use mynou::{
 use std::{
     collections::BTreeMap,
     fs::{self, OpenOptions},
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -31,7 +31,8 @@ const HELP: &str = "Mynou — media automation using Rust std only
   search --title TITLE [--kind movie|episode] [--year YEAR]
          [--season N --episode N] [--tmdb-id N] [--config mynou.json]
   track-series --title TITLE [--year YEAR --tmdb-id N --season N]
-               [--future-only] [--include-specials] [--config mynou.json]
+               [--future-only] [--include-specials] [--unmonitored] [--config mynou.json]
+  series-pack ID --url MAGNET_OR_TORRENT --mapping FILE [--config mynou.json]
   series [ID] [--config mynou.json]
   series-monitor | series-unmonitor | series-refresh ID [--config mynou.json]
   episode-monitor | episode-unmonitor ID --season N --episode N [--config mynou.json]
@@ -70,8 +71,15 @@ impl Args {
         let mut options: BTreeMap<String, String> = BTreeMap::new();
         while let Some(arg) = args.next() {
             if let Some(key) = arg.strip_prefix("--") {
-                let value = if ["json", "help", "apply", "future-only", "include-specials"]
-                    .contains(&key)
+                let value = if [
+                    "json",
+                    "help",
+                    "apply",
+                    "future-only",
+                    "include-specials",
+                    "unmonitored",
+                ]
+                .contains(&key)
                 {
                     "true".into()
                 } else {
@@ -114,7 +122,9 @@ impl Args {
                 "tmdb-id",
                 "future-only",
                 "include-specials",
+                "unmonitored",
             ],
+            "series-pack" => &["config", "help", "url", "mapping"],
             "series" | "series-monitor" | "series-unmonitor" | "series-refresh" => {
                 &["config", "help"]
             }
@@ -157,6 +167,7 @@ impl Args {
                 "series-monitor",
                 "series-unmonitor",
                 "series-refresh",
+                "series-pack",
                 "episode-monitor",
                 "episode-unmonitor",
             ]
@@ -690,8 +701,8 @@ fn execute(args: Args) -> Result<()> {
                 output(&integrations::search_report(&config, &r)?);
             }
         }
-        "series" | "track-series" | "series-monitor" | "series-unmonitor" | "series-refresh"
-        | "episode-monitor" | "episode-unmonitor" | "calendar" => {
+        "series" | "track-series" | "series-pack" | "series-monitor" | "series-unmonitor"
+        | "series-refresh" | "episode-monitor" | "episode-unmonitor" | "calendar" => {
             if !online {
                 return Err("Series management requires a running Mynou service".into());
             }
@@ -706,6 +717,7 @@ fn execute(args: Args) -> Result<()> {
                     args.options.contains_key("include-specials"),
                 );
                 body.insert("future_only", args.options.contains_key("future-only"));
+                body.insert("enabled", !args.options.contains_key("unmonitored"));
                 output(&call(&config, &path, "POST", "/api/series", Some(&body))?);
             } else if args.command == "calendar" {
                 let mut checked = mynou::series::CalendarQuery::new(
@@ -751,6 +763,35 @@ fn execute(args: Args) -> Result<()> {
                 }
                 let mut body = Value::object();
                 let (method, route) = match args.command.as_str() {
+                    "series-pack" => {
+                        let path = args
+                            .options
+                            .get("mapping")
+                            .ok_or("Specify --mapping FILE")?;
+                        let source = args
+                            .options
+                            .get("url")
+                            .ok_or("Specify --url MAGNET_OR_TORRENT")?;
+                        let mut bytes = Vec::new();
+                        fs::File::open(path)
+                            .map_err(|_| "Cannot open pack mapping file")?
+                            .take(1_048_577)
+                            .read_to_end(&mut bytes)
+                            .map_err(|_| "Cannot read pack mapping file")?;
+                        if bytes.len() > 1_048_576 {
+                            return Err("Pack mapping file exceeds 1 MiB".into());
+                        }
+                        body.insert("source_url", source.clone());
+                        body.insert(
+                            "episodes",
+                            json::parse(
+                                std::str::from_utf8(&bytes)
+                                    .map_err(|_| "Pack mapping is not valid UTF-8")?,
+                            )?,
+                        );
+                        mynou::pack::PackSubmission::from_json(&body)?;
+                        ("POST", format!("/api/series/{id}/packs"))
+                    }
                     "series" => ("GET", format!("/api/series/{id}")),
                     "series-refresh" => ("POST", format!("/api/series/{id}/refresh")),
                     "series-monitor" | "series-unmonitor" => {

@@ -368,6 +368,12 @@ pub fn job(engine: &Arc<Engine>, session: &Session, query: &Form, id: &str) -> R
             display(message)
         ));
     }
+    if let Some(path) = value.get("pack_file").and_then(Value::as_str) {
+        body.push_str(&format!(
+            "<p>Mapped torrent file: <code>{}</code></p>",
+            display(path)
+        ));
+    }
     if let Some(id) = &job.download_id {
         body.push_str(&format!(
             "<p><a href=\"/ui/transfers/{}\">Open native transfer</a></p>",

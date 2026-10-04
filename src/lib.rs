@@ -12,6 +12,7 @@ pub mod library;
 pub mod media;
 pub mod net;
 pub mod organizer;
+pub mod pack;
 pub mod pki;
 pub mod selection;
 pub mod series;

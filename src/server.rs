@@ -257,13 +257,23 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
         ("GET", "/api/library") => Ok((200, engine.library()?)),
         ("GET", "/api/series") => Ok((200, engine.series()?)),
         ("POST", "/api/series") => {
-            let value = control_body(body, &["request", "include_specials", "future_only"], false)?;
+            let value = control_body(
+                body,
+                &["request", "include_specials", "future_only", "enabled"],
+                false,
+            )?;
             let request = Request::from_json(value.get("request").ok_or("request is required")?)?;
             let include_specials = optional_boolean(&value, "include_specials")?.unwrap_or(false);
             let future_only = optional_boolean(&value, "future_only")?.unwrap_or(false);
+            let enabled = optional_boolean(&value, "enabled")?.unwrap_or(true);
             Ok((
                 201,
-                engine.track_series(&request, include_specials, future_only)?,
+                engine.track_series_with_policy(
+                    &request,
+                    include_specials,
+                    future_only,
+                    enabled,
+                )?,
             ))
         }
         ("POST", "/api/upgrades") => {
@@ -327,6 +337,11 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
                     return Ok((404, error("Unknown series route")));
                 }
                 let result = match parts[1] {
+                    "packs" => {
+                        let value = control_body(body, &["source_url", "episodes"], false)?;
+                        let pack = crate::pack::PackSubmission::from_json(&value)?;
+                        engine.submit_pack(&id, &pack)?
+                    }
                     "refresh" => {
                         control_body(body, &[], true)?;
                         engine.refresh_series(&id)?

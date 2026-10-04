@@ -475,6 +475,7 @@ impl SeriesStore {
         plan: Plan,
         include_specials: bool,
         future_only: bool,
+        monitored: bool,
         now: u64,
     ) -> Result<Record> {
         plan.validate()?;
@@ -495,7 +496,7 @@ impl SeriesStore {
         let record = Record {
             id,
             plan,
-            monitored: true,
+            monitored,
             include_specials,
             start_date: future_only.then(date::today),
             excluded: BTreeSet::new(),
