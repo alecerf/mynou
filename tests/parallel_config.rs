@@ -21,7 +21,10 @@ fn old_configuration_uses_four_peer_slots_without_changing_transfer_policy() {
 fn peer_slots_accept_both_endpoints_and_remain_strict_when_disabled() {
     for limit in [1_u32, 4, 8] {
         let mut value = config::default_json();
-        value.get_mut("downloads").unwrap().insert("max_peers", limit);
+        value
+            .get_mut("downloads")
+            .unwrap()
+            .insert("max_peers", limit);
         let configuration = config::from_json(&value, Path::new(".")).unwrap();
         assert_eq!(configuration.downloads.max_peers, limit as usize);
     }
@@ -30,7 +33,10 @@ fn peer_slots_accept_both_endpoints_and_remain_strict_when_disabled() {
         let downloads = value.get_mut("downloads").unwrap();
         downloads.insert("enabled", false);
         downloads.insert("max_peers", json::parse(text).unwrap());
-        assert!(config::from_json(&value, Path::new(".")).is_err(), "accepted {text}");
+        assert!(
+            config::from_json(&value, Path::new(".")).is_err(),
+            "accepted {text}"
+        );
     }
 }
 

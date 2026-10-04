@@ -5,6 +5,8 @@ mod control;
 mod discovery;
 #[path = "torrent/metainfo.rs"]
 mod metainfo;
+#[path = "torrent/parallel.rs"]
+mod parallel;
 #[path = "torrent/wire.rs"]
 mod wire;
 use control::RateGate;
@@ -35,6 +37,7 @@ pub struct DownloadConfig {
     pub dht: bool,
     pub pex: bool,
     pub max_active: usize,
+    pub max_peers: usize,
 }
 #[derive(Clone, Debug)]
 pub struct DownloadStatus {
@@ -742,6 +745,9 @@ impl Client {
         if config.max_active == 0 || config.max_active > 128 {
             return Err("Invalid active download count".into());
         }
+        if !(1..=8).contains(&config.max_peers) {
+            return Err("Invalid peer connection count".into());
+        }
         mkdir_private(&config.state_dir)?;
         mkdir_private(&config.data_dir)?;
         let listener = TcpListener::bind(("0.0.0.0", config.listen_port))
@@ -1391,11 +1397,19 @@ struct AnnounceTask {
     downloaded: u64,
     uploaded: u64,
     event: discovery::TrackerEvent,
+    cancel: Arc<AtomicBool>,
 }
-fn select_announce(config: &DownloadConfig, jobs: &Jobs) -> Option<AnnounceTask> {
+fn select_announce(
+    config: &DownloadConfig,
+    jobs: &Jobs,
+    cursor: &mut Option<String>,
+) -> Option<AnnounceTask> {
     let mut jobs = jobs.lock().ok()?;
     let now = Instant::now();
-    for (id, job) in jobs.iter_mut() {
+    let ids: Vec<_> = jobs.keys().cloned().collect();
+    let split = ids.partition_point(|id| cursor.as_ref().is_some_and(|cursor| id <= cursor));
+    for id in ids[split..].iter().chain(&ids[..split]) {
+        let job = jobs.get_mut(id)?;
         let mut urls: BTreeSet<String> = job.source.trackers.iter().cloned().collect();
         if let Some(meta) = &job.meta {
             urls.extend(meta.trackers.iter().cloned());
@@ -1462,6 +1476,7 @@ fn select_announce(config: &DownloadConfig, jobs: &Jobs) -> Option<AnnounceTask>
             };
             if let Some(event) = event {
                 state.in_flight = true;
+                *cursor = Some(id.clone());
                 return Some(AnnounceTask {
                     id: id.clone(),
                     url: url.clone(),
@@ -1470,6 +1485,7 @@ fn select_announce(config: &DownloadConfig, jobs: &Jobs) -> Option<AnnounceTask>
                     downloaded,
                     uploaded,
                     event,
+                    cancel: job.cancel.clone(),
                 });
             }
         }
@@ -1508,7 +1524,14 @@ fn announce(task: AnnounceTask, port: u16, peer_id: [u8; 20], jobs: &Jobs) {
                     }
                     discovery::TrackerEvent::None => {}
                 }
-                if task.event != discovery::TrackerEvent::Stopped {
+                if task.event != discovery::TrackerEvent::Stopped
+                    && Arc::ptr_eq(&job.cancel, &task.cancel)
+                    && !task.cancel.load(Ordering::Acquire)
+                    && !job.paused
+                    && !job.control.user_paused
+                    && !job.control.seed_limited
+                    && !job.failed
+                {
                     merge_peers(&mut job.tracker_peers, response.peers);
                 }
             }
@@ -1525,13 +1548,20 @@ struct DhtTask {
     hash: [u8; 20],
     cancel: Arc<AtomicBool>,
 }
-fn select_seed_dht(config: &DownloadConfig, jobs: &Jobs) -> Option<DhtTask> {
+fn select_seed_dht(
+    config: &DownloadConfig,
+    jobs: &Jobs,
+    cursor: &mut Option<String>,
+) -> Option<DhtTask> {
     if !config.dht || !config.seed {
         return None;
     }
     let mut jobs = jobs.lock().ok()?;
     let now = Instant::now();
-    for (id, job) in jobs.iter_mut() {
+    let ids: Vec<_> = jobs.keys().cloned().collect();
+    let split = ids.partition_point(|id| cursor.as_ref().is_some_and(|cursor| id <= cursor));
+    for id in ids[split..].iter().chain(&ids[..split]) {
+        let job = jobs.get_mut(id)?;
         if !job.status.ready
             || job.paused
             || job.control.user_paused
@@ -1544,6 +1574,7 @@ fn select_seed_dht(config: &DownloadConfig, jobs: &Jobs) -> Option<DhtTask> {
             continue;
         }
         job.dht_in_flight = true;
+        *cursor = Some(id.clone());
         return Some(DhtTask {
             id: id.clone(),
             hash: job.announce_hash.unwrap_or_else(|| job.source.wire_hash()),
@@ -1558,7 +1589,11 @@ fn announce_seed_dht(task: DhtTask, port: u16, jobs: &Jobs) {
         && let Some(job) = jobs.get_mut(&task.id)
     {
         job.dht_in_flight = false;
-        job.dht_next = Instant::now() + Duration::from_secs(600);
+        job.dht_next = if Arc::ptr_eq(&job.cancel, &task.cancel) {
+            Instant::now() + Duration::from_secs(600)
+        } else {
+            Instant::now()
+        };
         if !job.paused
             && Arc::ptr_eq(&job.cancel, &task.cancel)
             && let Ok(peers) = result
@@ -1580,6 +1615,9 @@ fn manager_loop(
     let mut flushed = Instant::now();
     let mut workers: Vec<JoinHandle<()>> = Vec::new();
     let mut announcements: Vec<JoinHandle<()>> = Vec::new();
+    let mut tracker_cursor = None;
+    let mut dht_cursor = None;
+    let mut dht_turn = false;
     while !stop.load(Ordering::Acquire) {
         let mut n = 0;
         while n < workers.len() {
@@ -1649,19 +1687,33 @@ fn manager_loop(
                 index += 1;
             }
         }
-        if announcements.len() < config.max_active.min(4)
-            && let Some(task) = select_announce(&config, &jobs)
-        {
-            let jobs = jobs.clone();
-            let port = config.listen_port;
-            announcements.push(thread::spawn(move || announce(task, port, peer_id, &jobs)));
+        enum DiscoveryTask {
+            Tracker(AnnounceTask),
+            Dht(DhtTask),
         }
-        if announcements.len() < config.max_active.min(4)
-            && let Some(task) = select_seed_dht(&config, &jobs)
-        {
+        while announcements.len() < config.max_active.min(4) {
+            let task = if dht_turn {
+                select_seed_dht(&config, &jobs, &mut dht_cursor)
+                    .map(DiscoveryTask::Dht)
+                    .or_else(|| {
+                        select_announce(&config, &jobs, &mut tracker_cursor)
+                            .map(DiscoveryTask::Tracker)
+                    })
+            } else {
+                select_announce(&config, &jobs, &mut tracker_cursor)
+                    .map(DiscoveryTask::Tracker)
+                    .or_else(|| {
+                        select_seed_dht(&config, &jobs, &mut dht_cursor).map(DiscoveryTask::Dht)
+                    })
+            };
+            let Some(task) = task else { break };
+            dht_turn = !dht_turn;
             let jobs = jobs.clone();
             let port = config.listen_port;
-            announcements.push(thread::spawn(move || announce_seed_dht(task, port, &jobs)));
+            announcements.push(thread::spawn(move || match task {
+                DiscoveryTask::Tracker(task) => announce(task, port, peer_id, &jobs),
+                DiscoveryTask::Dht(task) => announce_seed_dht(task, port, &jobs),
+            }));
         }
         if let Ok(mut map) = jobs.lock() {
             for job in map.values_mut() {
@@ -1744,6 +1796,21 @@ fn merge_peers(addresses: &mut BTreeSet<SocketAddr>, peers: impl IntoIterator<It
     }
 }
 fn download(
+    config: &DownloadConfig,
+    jobs: &Jobs,
+    stop: &AtomicBool,
+    id: &str,
+    peer_id: &[u8; 20],
+    policy: &PolicyRuntime,
+) -> Result<()> {
+    if config.max_peers == 1 {
+        download_sequential(config, jobs, stop, id, peer_id, policy)
+    } else {
+        parallel::download(config, jobs, stop, id, peer_id, policy)
+    }
+}
+
+fn download_sequential(
     config: &DownloadConfig,
     jobs: &Jobs,
     stop: &AtomicBool,
@@ -2664,5 +2731,115 @@ mod control_runtime_tests {
         assert_eq!(counter.load(Ordering::Relaxed), u64::MAX - 1);
         add_payload(&counter, 16_384);
         assert_eq!(counter.load(Ordering::Relaxed), u64::MAX);
+    }
+
+    fn discovery_job(byte: u8, trackers: usize) -> Job {
+        let id: String = [byte; 20]
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        let mut meta = geometry(&[(BLOCK as u64, false)]);
+        meta.v1 = Some([byte; 20]);
+        Job {
+            source: Source {
+                original: format!("magnet:?xt=urn:btih:{id}"),
+                v1: meta.v1,
+                v2: None,
+                trackers: (0..trackers)
+                    .map(|index| format!("http://tracker.invalid/{index}"))
+                    .collect(),
+                peers: Vec::new(),
+                meta: None,
+            },
+            meta: Some(Arc::new(meta)),
+            status: DownloadStatus {
+                id: id.clone(),
+                progress: 0.0,
+                ready: false,
+                files: Vec::new(),
+                message: String::new(),
+            },
+            running: false,
+            paused: false,
+            failed: false,
+            cancel: Arc::new(AtomicBool::new(false)),
+            peers: Vec::new(),
+            tracker_peers: BTreeSet::new(),
+            counters: Arc::new(TransferCounters::default()),
+            announcements: BTreeMap::new(),
+            announce_hash: None,
+            dht_next: Instant::now(),
+            dht_in_flight: false,
+            control: TorrentControl::new(id, u64::from(byte) + 1).unwrap(),
+            piece_order: Arc::new(vec![0]),
+            download_gate: Arc::new(RateGate::default()),
+            upload_gate: Arc::new(RateGate::default()),
+            seed_clock: None,
+            seed_partial: Duration::ZERO,
+            upload_reserved: 0,
+            saved_control: Vec::new(),
+        }
+    }
+
+    fn discovery_configuration() -> DownloadConfig {
+        DownloadConfig {
+            data_dir: "data".into(),
+            state_dir: "state".into(),
+            listen_port: 0,
+            seed: true,
+            dht: true,
+            pex: false,
+            max_active: 1,
+            max_peers: 4,
+        }
+    }
+
+    #[test]
+    fn a_many_tracker_job_does_not_monopolize_discovery_selection() {
+        let first = discovery_job(1, 3);
+        let second = discovery_job(2, 1);
+        let ids = [first.status.id.clone(), second.status.id.clone()];
+        let jobs = Arc::new(Mutex::new(BTreeMap::from([
+            (ids[0].clone(), first),
+            (ids[1].clone(), second),
+        ])));
+        let mut cursor = None;
+        let config = discovery_configuration();
+        assert_eq!(
+            select_announce(&config, &jobs, &mut cursor).unwrap().id,
+            ids[0]
+        );
+        assert_eq!(
+            select_announce(&config, &jobs, &mut cursor).unwrap().id,
+            ids[1]
+        );
+        assert_eq!(
+            select_announce(&config, &jobs, &mut cursor).unwrap().id,
+            ids[0]
+        );
+    }
+
+    #[test]
+    fn ready_torrents_share_seed_discovery_even_when_the_first_is_due_again() {
+        let mut first = discovery_job(1, 0);
+        let mut second = discovery_job(2, 0);
+        first.status.ready = true;
+        second.status.ready = true;
+        let ids = [first.status.id.clone(), second.status.id.clone()];
+        let jobs = Arc::new(Mutex::new(BTreeMap::from([
+            (ids[0].clone(), first),
+            (ids[1].clone(), second),
+        ])));
+        let config = discovery_configuration();
+        let mut cursor = None;
+        assert_eq!(
+            select_seed_dht(&config, &jobs, &mut cursor).unwrap().id,
+            ids[0]
+        );
+        jobs.lock().unwrap().get_mut(&ids[0]).unwrap().dht_in_flight = false;
+        assert_eq!(
+            select_seed_dht(&config, &jobs, &mut cursor).unwrap().id,
+            ids[1]
+        );
     }
 }
