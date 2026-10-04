@@ -36,8 +36,8 @@ steps. No Docker Hub repository is needed.
 Download the assets and checksum files from the same release. For example:
 
 ```sh
-sha256sum -c mynou-v0.8.0-source.zip.sha256
-sha256sum -c mynou-v0.8.0-linux-amd64-image.tar.gz.sha256
+sha256sum -c mynou-v0.9.0-source.zip.sha256
+sha256sum -c mynou-v0.9.0-linux-amd64-image.tar.gz.sha256
 ```
 
 To verify all downloaded assets together, download `SHA256SUMS` and every listed
@@ -57,42 +57,48 @@ sha256sum -c SHA256SUMS
 Checksum verification establishes integrity relative to the downloaded manifest.
 It does not replace reviewing the release's commit and successful Actions run.
 
-## Monitoring changes in 0.8.0
+## Transfer-control changes in 0.9.0
 
-The new scope is owned-library current-entry resolution, durable monitoring and
-baselines, profile cutoffs, strict quality improvement, deduplicated upgrade
-children, unique imports and file-specific Plex confirmation. CI must cover:
+The new scope is durable native transfer controls, priority/FIFO scheduling,
+per-file piece order, global payload bandwidth limits, persistent counters and
+seeding elapsed time, and ratio/time policies. CI must cover:
 
-- Backward-compatible configuration and journal decoding; background checks
-  default to disabled and missing baselines remain ineligible.
-- Cutoffs following preference order and current-profile comparisons. Acceptance
-  precedes rank: policy changes can replace rejected baselines with accepted
-  candidates; accepted baselines require a strict rank improvement. Seed count
-  or deterministic tie breaking alone cannot trigger an upgrade.
-- Read-only offline listing and previews without directory/file creation,
-  permission changes, compaction or tail repair; fresh storage returns no entries
-  and incomplete tails require explicit writable recovery.
-- Preview passes without journal writes, applied timestamp persistence even on
-  search failure, manual passes ignoring polling intervals, background passes
-  honoring them, bounded oldest-check scheduling and duplicate-child suppression.
-- Explicit baseline setup requiring matching identity, safe present owned files
-  and declared video streams without demanding acceptance by today's profile.
-- Earlier ready entries remaining current through queued, failed or canceled
-  children, including restart and transaction recovery. Pending upgrades block
-  unrelated same-media promotion, and ready children inherit their parent's
-  current monitoring choice.
-- Upgrade filenames preserving earlier imports and downloads, plus new-file Plex
-  confirmation with exact paths and longest component-prefix mappings,
-  including absolute roots resolved from a relative configuration filename.
-- Shared 90-second indexer HTTP/socket and processing budgets with late-result
-  rejection; synchronous DNS remains an explicitly documented timing limit.
-- CLI/API library, monitor/unmonitor, baseline and preview/apply operations,
-  authenticated access, bounded inputs and credential-free reports.
+- Defaults and bounded numeric configuration, with older configurations retaining
+  unlimited rates and seeding unless limits are set.
+- Durable pause/resume and queue priority across restart, including shared
+  requests and cancellation without file deletion.
+- Per-file priorities using the listed original metadata indices, rejecting
+  padding entries and changing piece order while all files still download;
+  boundary pieces remain verified under v1/v2/hybrid constraints.
+- Aggregate download/upload payload limits across simultaneous local peers,
+  a bounded 16 KiB burst, global caps enforced alongside local rates, and
+  bounded scheduling. Local policy objects replace seed defaults in full;
+  clearing an override restores configured defaults.
+- Persistent payload counters and seeding elapsed time, clean shutdown flushes,
+  ratio/time stop decisions using verified non-padding payload size, concurrent
+  whole-block upload reservations, online availability elapsed time, and
+  retention of downloaded/library files. Earlier records begin missing historical
+  counters at zero rather than inventing activity. Abrupt
+  crashes may lose the latest unflushed increments; exact crash accounting is
+  not a supported guarantee.
+- CLI/API transfer controls, authenticated operations, bounded inputs and
+  credential-free reports.
 
 These are validation requirements, not a recorded passing result. Inspect the
-Actions run for the exact 0.8.0 source commit. Preserve the existing dependency,
-formatting, Clippy, native/Docker demo and release-packaging checks. Do not use a
-previous release's test count as evidence for changed monitoring code.
+Actions run for the exact 0.9.0 source commit. Preserve the existing dependency,
+formatting, Clippy, native/Docker demo, selection and upgrade safety checks, and
+release packaging. Earlier passing runs do not validate changed transfer code.
+
+## Recorded 0.8.0 CI evidence
+
+[Run 37151554961](https://github.com/alecerf/mynou/actions/runs/37151554961)
+completed successfully for monitoring commit
+`9ef6f1fc94f2437aa6797e18385c0e81273c5e44`. Its 251 tests passed with none
+ignored, together with dependency, formatting, Clippy, build, demo and release
+checks. GitHub Actions published
+[v0.8.0](https://github.com/alecerf/mynou/releases/tag/v0.8.0) with seven assets.
+This result validates that release, not the 0.9.0 changes or a personal Plex
+installation.
 
 ## Recorded 0.7.0 CI evidence
 

@@ -1,4 +1,4 @@
-# Mynou 0.8.0 — Rust, standard library only
+# Mynou 0.9.0 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -43,8 +43,8 @@ from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, o
 build the image from the source archive:
 
 ```sh
-docker load -i mynou-v0.8.0-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.8.0 .
+docker load -i mynou-v0.9.0-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.9.0 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d
@@ -75,6 +75,10 @@ ownership, shared Plex paths, and installation without Rust on the host.
 - Owned library records, per-entry monitoring, resolution cutoffs and controlled
   upgrades. Preview before applying; keep earlier imports current until the
   replacement is ready, with optional Plex path mappings for confirmation.
+- Native transfer management: durable pause/resume, priority/FIFO scheduling,
+  per-file piece priorities, global payload bandwidth limits, persistent
+  counters and ratio/time seeding policies. Controls retain library files and
+  downloads; per-file priorities still download every file.
 
 Formats and protocols have explicit limits. Analysis does not decode pictures
 or sound and does not replace Plex transcoding. Older SQLite and Go state remain
@@ -122,8 +126,12 @@ old files and downloads; there is no automatic cleanup. With Plex enabled, the
 new imported path must be confirmed before the replacement becomes current.
 See the [library guide](docs/library.md) for configuration and API operations.
 
-Mynou remains an early integrated implementation. This release adds monitored
-upgrades; a web interface and full parity with Radarr, Sonarr, Pulsarr,
+The [transfer guide](docs/transfers.md) explains native download controls,
+bandwidth limits and seeding policies. Each torrent still transfers from one
+active peer; parallel peers remain the next release stage.
+
+Mynou remains an early integrated implementation. This release adds durable
+transfer controls; a web interface and full parity with Radarr, Sonarr, Pulsarr,
 qBittorrent, qui, autobrr or Prowlarr remain future work. The
 [release roadmap](docs/roadmap.md) separates the next stages.
 
@@ -185,5 +193,5 @@ code perfection.
 [Architecture](docs/architecture.md) · [Docker installation](docs/deployment.md) ·
 [Dependencies](docs/dependencies.md) · [Formats and limits](docs/limits.md) ·
 [Release selection](docs/selection.md) · [Library upgrades](docs/library.md) ·
-[Roadmap](docs/roadmap.md) ·
+[Transfer controls](docs/transfers.md) · [Roadmap](docs/roadmap.md) ·
 [Performance](docs/performance.md) · [Validation](docs/validation.md)

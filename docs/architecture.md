@@ -13,6 +13,8 @@ CLI / API                 Plex watchlist
                    |
        Release selection profiles
                    |
+       Durable transfer queue and policy
+                   |
        Native BitTorrent and verification
                    |
        Media metadata analysis
@@ -54,8 +56,8 @@ An applied upgrade is a deduplicated child request. Its parent stays current
 until the child becomes ready; failed or canceled children cannot hide the
 parent. An unrelated same-media request cannot become ready while an upgrade is
 pending; cancel the pending upgrade before promoting the manual alternative.
-Promotion inherits the parent's current monitoring choice. Check timestamps and per-entry monitoring policy are durable. Bounded
-passes consider the oldest checks first. Background checks honor per-entry
+Promotion inherits the parent's current monitoring choice. Check timestamps and
+per-entry monitoring policy are durable. Bounded passes consider the oldest checks first. Background checks honor per-entry
 polling intervals; manual checks ignore them. Applied passes persist timestamps
 even after search failure for backoff. Preview passes contact indexers without
 journal writes or request submission. The 90-second search/pass budget covers
@@ -75,6 +77,24 @@ recovery. Reader access excludes a concurrent writer.
 restart, validates file names and size limits, and then exposes a ready state.
 Bytes merely existing on disk do not make a torrent ready. A hybrid torrent must
 satisfy both v1 hashes and v2 roots before final publication.
+
+Transfer controls belong to the native engine and use native transfer IDs, which
+are distinct from request IDs. Durable user pause state is separate from
+retryable internal interruptions; request retries cannot clear a user pause.
+Queue selection uses priority then FIFO without preempting active transfers.
+Per-file priority changes piece order while all files remain required.
+
+Global payload bandwidth limits cover shared download/upload activity.
+Per-transfer rate caps add restrictions without bypassing the global cap. Rate
+buckets allow a bounded 16 KiB burst. Local policy objects replace configured
+seeding defaults in full rather than patching omitted fields.
+Persisted payload counters and seeding elapsed time support ratio/time policies.
+The ratio budget uses verified non-padding payload size; whole-block reservations
+cannot exceed it. Elapsed time counts online seeding availability, including idle
+time, while ready, enabled, unpaused and not seed-limited. Accounting is coalesced
+on a one-second interval and flushed on clean shutdown;
+abrupt failure may lose unflushed increments. Policies retain all downloaded
+sources and imports. See [transfer controls](transfers.md).
 
 `media` finds metadata using buffered reads and file seeking. MP4 `mdat` blocks,
 Matroska clusters of known size, and WAV payloads are not loaded into memory.
@@ -102,4 +122,4 @@ GitHub Actions validates changes and publishes releases. Build and release tools
 are separate from the runtime; the application never invokes them.
 
 [Selection policies](selection.md) · [Library monitoring](library.md) ·
-[Release stages](roadmap.md)
+[Transfer controls](transfers.md) · [Release stages](roadmap.md)

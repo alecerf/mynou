@@ -13,13 +13,13 @@ Download the source ZIP and image archive from
 Load the validated release image:
 
 ```sh
-docker load -i mynou-v0.8.0-linux-amd64-image.tar.gz
+docker load -i mynou-v0.9.0-linux-amd64-image.tar.gz
 ```
 
 Alternatively, build the image from the extracted sources:
 
 ```sh
-docker build -t mynou:0.8.0 .
+docker build -t mynou:0.9.0 .
 ```
 
 Use the image binary to prepare an installation in a new directory:
@@ -29,7 +29,7 @@ docker run --rm --network none \
   --user "$(id -u):$(id -g)" \
   --mount "type=bind,src=$PWD,dst=/work" \
   --workdir /work \
-  mynou:0.8.0 setup-docker --dir mynou-docker
+  mynou:0.9.0 setup-docker --dir mynou-docker
 ```
 
 If your account does not use UID/GID 1000, add its IDs to the generated `.env`:
@@ -166,7 +166,8 @@ docker compose exec mynou /mynou upgrades --config /config/mynou.json
 Use `upgrades --apply` for an explicit apply pass even when background monitoring
 is disabled. Manual passes ignore the polling interval; background passes honor
 it, with timestamps persisted even on failed searches. Use `monitor ID` or
-`unmonitor ID` to control an individual current entry. Earlier or explicit imports without a recorded release baseline remain
+`unmonitor ID` to control an individual current entry. Earlier or explicit
+imports without a recorded release baseline remain
 ineligible until `baseline ID --release-title TITLE` supplies a matching release
 name for present, safe owned files with declared video streams. Plex files
 that Mynou skipped rather than imported are not adopted automatically.
@@ -179,6 +180,28 @@ Promotion preserves the parent's current monitoring choice. Plan disk space for
 retained versions; no automatic cleanup is included.
 The [library guide](library.md) covers baseline claims, preview/apply behavior,
 cutoffs and the authenticated API.
+
+## Configure transfer limits
+
+Optional policy fields live directly inside the existing `downloads` object:
+
+```json
+{
+  "download_limit_bps": 0,
+  "upload_limit_bps": 0,
+  "seed_ratio_milli": null,
+  "seed_time_secs": null
+}
+```
+
+The values above are the defaults, including for older configuration files.
+Download/upload limits count global content payload bytes per second; `0` means
+unlimited. A non-null ratio of `1000` represents 1.0, and the time limit is in
+seconds. Global rate limits remain mandatory for every transfer; ratio/time
+values are seeding defaults that a complete per-transfer policy can replace.
+Rate buckets allow a bounded 16 KiB burst. These policies keep imported library
+files and downloaded sources. Restart the service after changing configuration.
+See [transfer controls](transfers.md) for bounds, durable counters, pause/resume, queue priorities and policy behavior.
 
 ## Ports and management
 
@@ -213,8 +236,7 @@ backup, stop the service before copying its data. The journal synchronizes
 confirmed transactions. After an abrupt interruption, an incomplete final write
 is recovered at the next writable service start. Offline library listing and
 upgrade previews do not create files, change permissions or repair storage;
-fresh storage returns
-no entries and an interrupted tail asks for explicit writable recovery.
+fresh storage returns no entries and an interrupted tail asks for explicit writable recovery.
 
 Authenticated `POST /api/shutdown` lets the service finish its workers. The
 standard library does not provide the portable Unix SIGTERM handler this project

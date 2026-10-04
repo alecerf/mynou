@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.8.0
+# Project checkpoint — Mynou 0.9.0
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -33,24 +33,45 @@ Background checks default to disabled; missing older baselines are not inferred.
 Preview passes contact indexers without journal writes, while explicit apply
 passes persist check times and deduplicated children. Offline listing/previews
 open read-only storage without creating files, changing permissions or repairing
-journal data; interrupted
-tails require explicit writable recovery. Pending upgrades block unrelated
+journal data; interrupted tails require explicit writable recovery. Pending upgrades block unrelated
 same-media promotion, and child promotion inherits the parent's current monitored
 choice. Search/pass budgets cover HTTP/socket work and processing; synchronous
 DNS may exceed the deadline, with late results rejected. Configured import roots
 are absolute even with a relative configuration filename.
 See [library.md](library.md).
 
-Torrent controls and parallel peers, a web interface, series-pack/specials
-management, multi-user Plex policies, IRC automation, native indexer adapters,
-Usenet and cross-seeding remain future stages. See the
-[release roadmap](roadmap.md). Monitoring is a focused stage, not full parity.
+The 0.9.0 change adds native durable pause/resume, priority/FIFO scheduling,
+per-file piece priority, global payload bandwidth caps, persistent transfer
+counters and seeding elapsed time, and ratio/time seeding limits. Earlier
+configuration files keep unlimited rates and seeding. Global rate caps remain
+mandatory and permit bounded 16 KiB bursts; a local policy replaces configured
+seed defaults in full. Ratio budgets use verified non-padding payload size;
+elapsed counts online seeding availability, including idle time. Older records
+start missing historical counters at zero. Controls retain downloads and
+library imports. File priorities still download all files; skipping is not
+implemented. See [transfers.md](transfers.md).
+
+Parallel peers, a web interface, series-pack/specials management, multi-user Plex
+policies, IRC automation, native indexer adapters, Usenet and cross-seeding remain
+future stages. See the [release roadmap](roadmap.md). Transfer control is a
+focused stage, not full parity.
 
 Releases are hosted in [alecerf/mynou](https://github.com/alecerf/mynou/releases).
 A successful validation run on `trunk` publishes a new `Cargo.toml` version if it
 has not already been released. The assets are a full source ZIP with the static
 Linux x86_64 binary, a separate static binary, a saved Docker image archive, and
 SHA-256 checksum files. There is no Docker Hub publication step.
+
+## Recorded 0.8.0 CI checkpoint
+
+Commit `9ef6f1fc94f2437aa6797e18385c0e81273c5e44` passed
+[Actions run 37151554961](https://github.com/alecerf/mynou/actions/runs/37151554961):
+251 tests passed with none ignored, alongside the complete CI validation.
+GitHub Actions published
+[v0.8.0](https://github.com/alecerf/mynou/releases/tag/v0.8.0) with seven assets.
+This is historical evidence for 0.8.0. The 0.9.0 changes require their own
+successful Actions run and CI-created release; no current passing result is
+recorded here until it has been observed.
 
 ## Recorded 0.7.0 CI checkpoint
 
@@ -59,9 +80,7 @@ The preceding selection release at commit
 [Actions run 37137061361](https://github.com/alecerf/mynou/actions/runs/37137061361)
 and GitHub Actions published
 [v0.7.0](https://github.com/alecerf/mynou/releases/tag/v0.7.0).
-This is historical evidence for 0.7.0. The 0.8.0 changes require their own
-successful Actions run and CI-created release; no current passing result is
-recorded here until it has been observed.
+This is historical evidence for 0.7.0 and does not validate later changes.
 
 ## Recorded 0.6.1 CI checkpoint
 

@@ -32,8 +32,31 @@ Each transfer uses one active peer and up to 16 blocks in flight. Discovery cach
 at most 1,024 peers per torrent. Seeding announces `started`, `completed`, and
 `stopped` events and respects tracker intervals, bounded between 30 seconds and
 24 hours. A forced stop does not guarantee a `stopped` announcement. Download and
-upload counters describe content bytes transferred in the current session;
-they reset on restart and are not a lifetime ratio.
+upload counters describe content payload bytes, not all interface traffic.
+Since 0.9.0, counters and seeding elapsed time persist across clean restart.
+Updates are coalesced on a one-second interval and flushed on clean shutdown;
+an abrupt crash can lose the latest unflushed increments. This accounting does
+not claim exact crash durability or equivalence with a tracker's records.
+
+Durable user pauses affect all requests sharing a transfer and are not undone
+by automatic retries. Queue scheduling prefers higher priority, then FIFO, and
+is nonpreemptive. File listings keep original metadata indices after filtering
+padding, so indices can have gaps; file-priority controls reject padding indices.
+File priorities change piece order; all files are still required, with no `skip`
+or selective pack acquisition. Global bandwidth limits
+cover aggregate content payload; protocol/metadata overhead is outside those
+caps. Each aggregate rate bucket allows a bounded 16 KiB burst. Per-transfer
+rate caps cannot bypass the global cap. Local policy objects replace configured
+seeding defaults in full; omitted seed fields mean no local cap, while clearing
+the override restores configured defaults.
+
+The seed-ratio denominator is verified non-padding torrent payload size, not the
+download counter. Whole upload blocks cannot exceed the remaining ratio budget,
+so seeding may stop below the nominal ratio. Elapsed seeding time counts ready,
+unpaused online availability, including idle time; it excludes offline, paused
+or seed-limited time. Older records without accounting start at zero rather than
+inventing past activity. Policies retain downloads/imports. See
+[transfers.md](transfers.md).
 
 A magnet cannot reveal its private flag before metadata arrives. When a tracker
 or `x.pe` is provided, public discovery waits for torrent classification. A magnet
