@@ -572,14 +572,7 @@ impl SeriesStore {
         Ok(record)
     }
     pub(crate) fn save(&mut self, record: Record) -> Result<()> {
-        if self.read_only {
-            return Err("Series storage is read-only".into());
-        }
-        if self.poisoned {
-            return Err(
-                "Series storage durability is uncertain; restart before further changes".into(),
-            );
-        }
+        self.check_writable()?;
         record.validate()?;
         let mut records = self.records.clone();
         records.insert(record.id.clone(), record);
@@ -594,6 +587,22 @@ impl SeriesStore {
         if bytes.len() > MAX_SNAPSHOT {
             return Err("Series snapshot exceeds 8 MiB".into());
         }
+        self.persist(records, bytes)
+    }
+
+    pub(crate) fn check_writable(&self) -> Result<()> {
+        if self.read_only {
+            return Err("Series storage is read-only".into());
+        }
+        if self.poisoned {
+            return Err(
+                "Series storage durability is uncertain; restart before further changes".into(),
+            );
+        }
+        Ok(())
+    }
+
+    fn persist(&mut self, records: BTreeMap<String, Record>, bytes: Vec<u8>) -> Result<()> {
         reject_symlinks(&self.path)?;
         let temp = self
             .path

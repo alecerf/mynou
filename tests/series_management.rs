@@ -309,7 +309,10 @@ fn command(directory: &Directory, args: &[&str]) -> std::process::Output {
 #[test]
 fn cli_routes_series_creation_controls_and_calendar_to_the_running_service() {
     let directory = Directory::new();
-    let catalog = Catalog::open(vec![episode(1, 1, Some("2200-01-01"), "Future")]);
+    let catalog = Catalog::open(vec![
+        episode(1, 1, Some("2200-01-01"), "Future"),
+        episode(1, 2, Some("2024-01-01"), "Pack episode"),
+    ]);
     let server = Server::open(catalog.config(&directory.0));
     let mut value = mynou::config::default_json();
     value.insert("listen", server.authority.clone());
@@ -328,6 +331,7 @@ fn cli_routes_series_creation_controls_and_calendar_to_the_running_service() {
             "--tmdb-id",
             "42",
             "--future-only",
+            "--unmonitored",
         ],
     );
     assert!(
@@ -375,4 +379,53 @@ fn cli_routes_series_creation_controls_and_calendar_to_the_running_service() {
             .status
             .success()
     );
+    let mapping = directory.0.join("mapping.json");
+    fs::write(
+        &mapping,
+        r#"[{"season":1,"episode":2,"file_path":"Pack/002.mp4"}]"#,
+    )
+    .unwrap();
+    let pack = command(
+        &directory,
+        &[
+            "series-pack",
+            id,
+            "--url",
+            "https://provider.invalid/season.torrent?token=library-download-fixture-secret",
+            "--mapping",
+            mapping.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        pack.status.success(),
+        "{}",
+        String::from_utf8_lossy(&pack.stderr)
+    );
+    let text = std::str::from_utf8(&pack.stdout).unwrap();
+    assert!(!text.contains("library-download-fixture-secret"));
+    assert_eq!(
+        json::parse(text).unwrap().get("submitted"),
+        Some(&Value::Number(1.0))
+    );
+    fs::write(
+        &mapping,
+        r#"[{"season":1,"episode":2,"file_path":"../escape.mp4"}]"#,
+    )
+    .unwrap();
+    assert!(
+        !command(
+            &directory,
+            &[
+                "series-pack",
+                id,
+                "--url",
+                "fixture.torrent",
+                "--mapping",
+                mapping.to_str().unwrap()
+            ]
+        )
+        .status
+        .success()
+    );
+    assert_eq!(lock(&server.engine.store).unwrap().list().len(), 1);
 }

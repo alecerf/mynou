@@ -217,6 +217,7 @@ impl Engine {
     fn queue_series(&self, id: &str, revision: u64, schedule: bool) -> Result<(Record, Vec<Job>)> {
         // Lock order is series then requests. This bounded commit batch contains no network I/O.
         let mut series = lock(&self.series_store)?;
+        series.check_writable()?;
         let mut record = series.get(id).ok_or("Unknown monitored series")?;
         if record.revision != revision {
             return Err("Series settings changed; submission discarded".into());
