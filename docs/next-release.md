@@ -1,4 +1,12 @@
-# Next-release checkpoint — 0.15 automatic pack acquisition
+# Next-release checkpoint — 0.16 numbering and multi-episode ownership
+
+## Current implementation awaiting CI
+
+The 0.15 implementation adds automatic season-pack assessment, metadata-only
+mapping, guarded CLI/API/browser apply and opt-in monitored pack preference.
+Its complete validation/publication must pass before starting 0.16. The recorded
+0.14 result below validates the starting point only. Inspect the live branch and
+run before continuing; record the new exact source/run/tag/assets after CI.
 
 ## Validated starting point
 
@@ -23,7 +31,8 @@ at 17:53 UTC. [Validation evidence](validation.md#recorded-0140-ci-evidence)
 records the release assets and digests. No local validation has run. Later
 documentation commits need their own CI and do not change the released tag.
 
-The remaining automatic-pack and numbering sections describe planned later work.
+The automatic-pack section records the implemented 0.15 slice. The numbering
+and multi-episode section describes planned later work.
 
 ## Preserve the development policy
 
@@ -68,26 +77,33 @@ Passing CI scenarios in `selective_transfers`, `selective_management`, mapped
 acquisition and tracker lifecycle cover the implemented behavior in the recorded
 0.14 run. Continue from these protections when implementing 0.15.
 
-## Pack search and mapping decisions
+## Implemented automatic-pack slice (0.15)
 
-Automatic pack search must keep strict series/season identity and existing movie
-and episode profile rules. Add a distinct pack candidate assessment rather than
-loosening individual episode matching globally. Search previews must explain
-accepted/rejected candidates, respect existing budgets, expose no acquisition
-URLs and avoid recording jobs or starting payload downloads.
+`src/pack/automatic.rs` separates season matching from ordinary episode matching,
+uses the episode profile and captures a fingerprint of accepted catalog content,
+policy, UTC date and missing identities. Ranked metadata decisions are bounded
+to eight candidates. Unique explicit numbered files must cover the full scope;
+absolute/multi-episode or conflicting files remain unresolved. Public reports
+explain decisions without acquisition URLs, jobs or payload downloads.
 
-Before an automatic pack creates episode jobs, resolve its file metadata against
-the accepted catalog plan. Only unique known episode identities may be selected.
-Conflicting markers, missing files, duplicate episode assignments and unresolved
-alternate numbering need an explicit decision. Persist any accepted mapping and
-its captured series revision before payload/import work. Do not infer baseline
-quality from a pack's ambiguous title or silently retry terminal requests.
+`src/torrent/inspection.rs` authenticates local/HTTP torrents or bounded
+explicit-peer/tracker magnet metadata without a native transfer or disk writes.
+Tracker queries are metadata-only stopped events; no DHT/PEX fallback exists in
+inspection. Existing queue discovery is unchanged. Peer/tracker/source operations
+share deadlines, with late results rejected after synchronous DNS/filesystem work.
 
-`src/pack.rs` currently prevalidates explicit operator input, catalog scope,
-source-key collisions and remaining job capacity. `src/store.rs` records mappings
-with ordinary episode jobs. `src/engine.rs` selects exact native paths after
-verification and retains only those paths in each job. Reuse those protections
-when adding automatic pack selection.
+Guarded apply rechecks scope and binds candidate, authenticated hash and exact
+paths. `src/pack.rs` prevalidates scope/source/capacity under series-then-request
+locks; `src/store.rs` retains immutable `pack_origin` with mapped episode jobs.
+`src/engine.rs` requires the authenticated source identity before queue
+publication and cached file interests. Pack title provenance is not an episode
+upgrade baseline. Existing terminal requests remain deduplicated.
+
+Optional `series_packs.enabled` tries at most four seasons during monitored
+tracking/refresh, sharing the catalog deadline and combined 64-job allowance
+with ordinary fallback. It defaults to false. On-demand pack actions can use
+unmonitored scopes without enabling background acquisition. See
+[automatic packs](automatic-packs.md) for exact limits and commands.
 
 ## Alternate numbering and multi-episode files
 

@@ -36,8 +36,8 @@ steps. No Docker Hub repository is needed.
 Download the assets and checksum files from the same release. For example:
 
 ```sh
-sha256sum -c mynou-v0.14.0-source.zip.sha256
-sha256sum -c mynou-v0.14.0-linux-amd64-image.tar.gz.sha256
+sha256sum -c mynou-v0.15.0-source.zip.sha256
+sha256sum -c mynou-v0.15.0-linux-amd64-image.tar.gz.sha256
 ```
 
 To verify all downloaded assets together, download `SHA256SUMS` and every listed
@@ -56,6 +56,26 @@ sha256sum -c SHA256SUMS
 
 Checksum verification establishes integrity relative to the downloaded manifest.
 It does not replace reviewing the release's commit and successful Actions run.
+
+## Automatic pack changes in 0.15.0
+
+New original scenarios cover profile ranking and bounded candidate fallback,
+strict season identity, unique file mappings, unknown/future/excluded episodes,
+terminal-job deduplication and unchanged preview storage. Local HTTP/UDP tracker
+and TCP peer fixtures check metadata authentication for v1/v2/hybrid magnets and
+absence of payload requests. Other scenarios exercise shared selective imports,
+durable origin recovery, catalog/settings races, mutable HTTP torrents, stale
+preview guards, shared deadlines and read-only apply rejection.
+
+CLI, Bearer API and browser journeys check strict inputs, authentication, form
+guards, escaping/redaction, offline read-only previews and guarded live apply.
+Opt-in monitoring scenarios cover default individual behavior, newly aired pack
+preference, unresolved fallback, no duplicate retries and the combined 64-job
+allowance across seasons. Existing full validation remains required.
+
+These scenarios are written for GitHub Actions only. No local tests, lint,
+builds or demos ran. Passing results and publication are pending the new complete
+Actions run; the earlier release's green result does not validate these changes.
 
 ## Selective changes in 0.14.0
 

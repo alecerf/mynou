@@ -19,7 +19,7 @@ been independently reviewed.
 | Jobs | Title/identifier and state filters, progress, details, recent history, cancel and retry |
 | Library | Current owned imports, monitoring, missing files/baselines, pending upgrades |
 | Search | Preview movie/episode selection with reasons; record movie, episode, series or file requests |
-| Series | Track scopes with optional acquisition, monitoring/specials, earliest air date, episode choices, catalog refresh and explicit mapped packs |
+| Series | Track scopes with optional acquisition, monitoring/specials, earliest air date, episode choices, catalog refresh, explicit mapped packs and guarded automatic pack previews |
 | Calendar | Filter known episode dates by window and series, inspect monitoring and request states |
 | Transfers | Native queue, durable pause/resume, queue/file priorities, payload counters and seeding policies |
 
@@ -54,6 +54,14 @@ automatic acquisition. Existing requests are reused, and missing paths never
 fall back to another video. Job details show mappings protected from worker changes. New native pack transfers need only their mapped files and necessary verified
 boundary pieces. Earlier full transfers keep their acquisition policy. See [pack operations](packs.md) for format, validation
 and storage-version limits.
+
+Series details also provide **Preview season packs**. A resolved report displays
+catalog episodes, exact file mappings and bounded metadata decisions; its
+**Acquire resolved pack** form carries both scope and candidate guards. Apply
+searches again and rejects changed catalog/request scopes, source hashes or
+mappings. Preview records no jobs and requests no torrent payload. On-demand
+acquisition does not enable background monitoring. See
+[automatic packs](automatic-packs.md) for filename rules, bounds and persistence.
 
 ## Bulk changes and bounds
 

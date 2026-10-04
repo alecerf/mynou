@@ -57,6 +57,18 @@ seeding remain gated by complete payload verification. An absent selection canno
 media identities are reused rather than automatically reopened. Source paths
 and mappings remain independent of series monitoring policy. See [packs](packs.md).
 
+`pack::automatic` captures an eligible missing-episode scope, separately assesses
+season titles under the episode profile and resolves bounded authenticated
+metadata outside storage locks. Preview uses no native transfer queue or payload
+requests. Catalog content, policy, UTC date and missing identities form the scope
+fingerprint; a resolved decision also binds torrent hash and exact mapped paths.
+Apply rechecks the scope under series-then-request locks and persists immutable
+origin provenance with each mapped job before workers can proceed. Native queue
+publication requires the source's authenticated hash to match that provenance.
+Pack title provenance does not establish individual upgrade baselines. Optional
+monitored pack preference shares catalog/search deadlines and the 64-job batch
+with ordinary fallback. See [automatic packs](automatic-packs.md).
+
 `selection` evaluates matched source candidates using the configured movie or
 episode profile. It extracts bounded release-title attributes, filters candidates
 and ranks accepted releases deterministically. Automatic acquisition and search

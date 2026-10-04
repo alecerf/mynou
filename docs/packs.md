@@ -14,6 +14,10 @@ downloaded bytes' torrent identity, not the correctness of your content mapping.
 Absolute/anime-style filenames such as `Pack/001.mp4` can be mapped without
 guessing their relationship to catalog numbering.
 
+For release-title ranking, metadata-only discovery and guarded automatic
+numbered-file mappings, see [automatic season packs](automatic-packs.md), added
+in 0.15. This guide describes the explicit mapping operation.
+
 ## Choose the catalog and files
 
 Enable TMDB and track a series. To retain its plan before choosing an acquisition,
@@ -157,10 +161,11 @@ The API retains its 1 MiB body limit. JSON fields and types are strict, and
 unknown fields are rejected. Public mapped-path labels are bounded, redacted and
 escaped in HTML; actual acquisition still uses the private retained path.
 
-Automatic season-pack search/ranking, selection contraction,
-multi-episode videos, alternate catalog-number mappings and general anime
-numbering rules remain a following stage. This release supplies explicit file
-mapping, not an inferred numbering system or complete Sonarr parity. It preserves
+Automatic season-pack search/ranking and strict numbered-file mapping are
+available through the [automatic pack flow](automatic-packs.md). Selection
+contraction, multi-episode videos, alternate catalog-number mappings and general
+anime numbering remain a following stage. Explicit file mapping does not imply
+a general numbering system or complete Sonarr parity. Mynou preserves
 Rust std only, zero Cargo dependencies and CI-only validation.
 
 [Series monitoring](series.md) · [Transfer controls](transfers.md) ·

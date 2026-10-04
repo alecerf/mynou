@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.14.0
+# Project checkpoint — Mynou 0.15.0
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -82,10 +82,19 @@ readiness, advertise no payload and never announce completion. Existing full
 acquisitions retain their policy. CI-only scenarios cover boundaries, metadata,
 proofs, padding/empty files, shared cancellation, expansion, pause, corrupted disk
 recovery, offline restart, mapping repair and protected controls. Its complete
-CI/publication result is recorded below. Automatic pack assessment and mapping
-are the next focused release.
+CI/publication result is recorded below.
 
-Automatic pack selection, multi-episode videos, general
+The 0.15.0 change adds separate season-pack title assessment under episode
+profiles, bounded metadata-only discovery and unique catalog-backed numbered
+file mappings. CLI/API/browser previews and guarded apply bind scope, candidate,
+torrent identity and exact paths. Immutable job origin provenance is persisted
+before acquisition; mutable sources fail identity checks before native queue
+publication. Optional monitored pack preference shares deadlines and the 64-job
+allowance with individual fallback. Earlier configurations retain individual
+acquisition. Pack provenance does not establish episode upgrade baselines.
+See [automatic-packs.md](automatic-packs.md).
+
+Multi-episode videos, general
 alternate/anime numbering, multi-user Plex policies, IRC automation, native
 indexer adapters, Usenet and cross-seeding remain future stages. See the [release roadmap](roadmap.md). Series monitoring is a
 focused stage and does not establish full stack parity.
@@ -95,6 +104,15 @@ A successful validation run on `trunk` publishes a new `Cargo.toml` version if i
 has not already been released. The assets are a full source ZIP with the static
 Linux x86_64 binary, a separate static binary, a saved Docker image archive, and
 SHA-256 checksum files. There is no Docker Hub publication step.
+
+## 0.15.0 validation checkpoint
+
+The implementation, original CI scenarios, documentation and release version are
+prepared. No local tests, lint, builds, binaries or demonstrations were run.
+The complete GitHub Actions validation/publication run is required before this
+version can be recorded as green. The previous release's result remains evidence
+only for its exact commit. [Next-release notes](next-release.md) preserve the
+0.16 numbering and physical-import decisions.
 
 ## Recorded 0.14.0 CI checkpoint
 
@@ -109,7 +127,7 @@ all assets were uploaded by `github-actions[bot]` with recorded SHA-256 digests.
 
 Post-release documentation commits need their own CI and do not replace the
 published tag or assets. [Next-release notes](next-release.md) preserve the
-automatic-pack prerequisites for 0.15 and later numbering work. No local tests,
+later numbering and physical-import work. No local tests,
 lint, builds, binaries or demonstrations were run for this release.
 
 ## Recorded 0.13.0 CI checkpoint

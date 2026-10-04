@@ -1,4 +1,4 @@
-# Mynou 0.14.0 — Rust, standard library only
+# Mynou 0.15.0 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -43,8 +43,8 @@ from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, o
 build the image from the source archive:
 
 ```sh
-docker load -i mynou-v0.14.0-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.14.0 .
+docker load -i mynou-v0.15.0-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.15.0 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d
@@ -94,6 +94,11 @@ ownership, shared Plex paths, and installation without Rust on the host.
   pack. New native pack transfers acquire only their retained file interests and
   necessary boundary pieces; partial availability remains distinct from complete
   torrent readiness and seeding.
+- Automatic season-pack search ranks titles under the episode profile and
+  inspects authenticated metadata without payload downloads. Unique numbered
+  files must cover every eligible missing episode. CLI/API/browser previews and
+  guarded apply bind catalog scope, source hash and exact mappings. Optional
+  `series_packs.enabled` prefers packs during monitoring with individual fallback.
 - Browser management at `/ui`: search/request forms, jobs/history, owned library
   monitoring and upgrades, transfer controls, filters, pagination and bounded
   bulk actions with individual results. Rust renders all pages without scripts
@@ -149,9 +154,9 @@ The [transfer guide](docs/transfers.md) explains native download controls,
 parallel peer bounds, bandwidth limits and seeding policies. Use
 `downloads.max_peers: 1` to retain a single-peer transfer baseline.
 
-Mynou remains an early integrated implementation. This release adds explicit
-selective pack acquisition and durable shared file interests. Automatic pack search,
-alternate/anime numbering rules, multi-user policies and full parity with
+Mynou remains an early integrated implementation. This release adds automatic
+pack search, guarded mappings and opt-in monitored pack preference.
+Alternate/anime numbering rules, multi-episode videos, multi-user policies and full parity with
 Radarr, Sonarr, Pulsarr, qBittorrent, qui, autobrr or Prowlarr remain future work. The
 [release roadmap](docs/roadmap.md) separates the next stages.
 
@@ -179,8 +184,22 @@ FILE`, or use **Acquire a mapped pack** in browser series details.
 `track-series --unmonitored` retains a catalog plan before choosing a source.
 See the [pack guide](docs/packs.md) for mapping format, shared-transfer behavior
 and persistence. The [transfer guide](docs/transfers.md#selective-acquisition-in-0140)
-explains verified availability, boundary storage and selection expansion. Automatic
-pack selection remains future work.
+explains verified availability, boundary storage and selection expansion.
+
+Preview automatic mapping before choosing a source:
+
+```sh
+mynou series-pack-search ID --season 1 --config ./mynou.json
+mynou series-pack-search ID --season 1 --apply --scope-id SCOPE_ID \
+  --candidate-id CANDIDATE_ID --config ./mynou.json
+```
+
+Copy both guard values from a resolved preview. The browser offers the same
+preview/apply flow. Set `"series_packs": { "enabled": true }` to prefer mapped
+packs during monitored tracking and refresh; this defaults to false. See the
+[automatic pack guide](docs/automatic-packs.md) for eligibility, metadata-only
+discovery, bounds and stale-result checks. General numbering variants remain
+outside automatic mapping.
 
 ## Open the browser interface
 
@@ -218,8 +237,9 @@ mynou status --config ./mynou.json
 ```
 
 Management commands use the API when the service is running; otherwise they
-open its local journal. Dedicated series/calendar commands require a running
-service. Commands do not start a second download service. For a local
+open its local journal. Dedicated series/calendar commands and pack acquisition
+require a running service; `series-pack-search` previews have a read-only offline
+fallback. Commands do not start a second download service. For a local
 Docker submission, use a path visible inside the container.
 
 ## Development and releases
@@ -253,6 +273,6 @@ code perfection.
 [Dependencies](docs/dependencies.md) · [Formats and limits](docs/limits.md) ·
 [Release selection](docs/selection.md) · [Library upgrades](docs/library.md) ·
 [Transfer controls](docs/transfers.md) · [Series and calendar](docs/series.md) ·
-[Pack acquisition](docs/packs.md) ·
+[Pack acquisition](docs/packs.md) · [Automatic packs](docs/automatic-packs.md) ·
 [Browser management](docs/web.md) · [Roadmap](docs/roadmap.md) ·
 [Performance](docs/performance.md) · [Validation](docs/validation.md)

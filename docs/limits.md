@@ -112,8 +112,9 @@ and undated episodes. Newly aired acquisition requires a known episode identity
 and monitoring policy; optional season-zero specials require explicit opt-in.
 Plex availability confirmation always uses a fresh network response. Automatic
 source selection requires a strict title match and an identified file for the
-requested episode. Automatic pack search and title variants are not resolved
-implicitly. Explicit [pack mappings](packs.md) select exact verified torrent
+requested episode. [Automatic pack search](automatic-packs.md) uses a separate
+season-title assessment and authenticated metadata mapping; unresolved numbering
+or title variants are rejected. Explicit [pack mappings](packs.md) select exact verified torrent
 paths for known aired catalog episodes, with 1–64 distinct files per submission
 and no fallback to a different video. See
 [series monitoring](series.md) for refresh, numbering and scheduling limits.
@@ -183,6 +184,17 @@ editor is not implemented. Explicit packs
 can map absolute/anime-style filenames to canonical episodes; general numbering
 rules and multi-episode videos remain future work. Mapping fields cannot be changed by workers, and earlier unmapped jobs retain ordinary behavior. Do not downgrade
 storage containing mapped jobs to an earlier binary that ignores those fields.
+
+Automatic packs require one unique explicit numbered video for every eligible
+missing episode in one season. At most eight ranked candidates undergo metadata
+decisions; metadata listings are limited to 1,024 files and 1 MiB of path bytes.
+The 90-second search budget and ten-second metadata attempt budget also apply
+to opt-in monitored pack preference within its shared catalog deadline. Magnet
+inspection uses up to eight outbound peers and four trackers, no payload and no
+DHT/PEX fallback. Metadata-only tracker queries may be declined. Preview/apply
+guards bind scope, candidate, hash and paths; queued sources must retain the
+authenticated hash. Pack provenance does not establish episode upgrade quality.
+See [automatic packs](automatic-packs.md) for exact filename and discovery bounds.
 
 The browser interface uses a shared operator token, original server-rendered
 pages and native forms, with page refreshes rather than live streaming. It has

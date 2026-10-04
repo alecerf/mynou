@@ -5,7 +5,24 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current stage: 0.14.0
+## Current stage: 0.15.0
+
+Automatic season-pack search assesses titles under the episode profile, resolves
+bounded authenticated metadata and maps unique numbered video paths to every
+eligible missing aired catalog episode. CLI/API/browser previews request no
+payload and record no jobs. Guarded acquisition binds catalog/request scope,
+candidate, torrent hash and exact paths; immutable origin provenance reaches
+ordinary mapped jobs before workers begin. Optional `series_packs.enabled`
+prefers packs during monitored tracking and refresh with individual fallback
+inside the shared deadline and combined 64-job batch. Earlier configurations
+default to individual acquisition. See [automatic packs](automatic-packs.md).
+
+These changes are committed for CI-only validation. Publication and passing
+results require the new release's complete Actions run; the earlier 0.14 result
+does not validate this stage. The next stage is explicit alternate/anime
+numbering and shared physical multi-episode import ownership in 0.16.
+
+## Previous stage: 0.14.0
 
 Selective native acquisition retains the union of mapped pack file interests,
 verifies required boundary pieces and selected v2/hybrid roots, then permits
@@ -22,9 +39,8 @@ none failed or ignored across 31 targets and the complete validation pipeline.
 GitHub Actions published
 [v0.14.0](https://github.com/alecerf/mynou/releases/tag/v0.14.0) with seven assets.
 
-Automatic pack choice, numbering rules and multi-episode physical files need
-following independently validated releases. The next stage is automatic pack
-search, ranking and catalog-backed mapping in 0.15.
+This result validates the selective stage. Automatic pack choice follows in
+0.15; numbering rules and multi-episode physical files need their own releases.
 
 ## Previous stage: 0.13.0
 
@@ -46,8 +62,8 @@ none failed or ignored. GitHub Actions published
 This stage supplies explicit mappings for absolute/anime-style filenames.
 Automatic pack selection and general numbering rules remain later work.
 Selective downloading is implemented in the following 0.14 stage.
-The [next-release checkpoint](next-release.md) records the remaining pack search
-and mapping prerequisites.
+The [next-release checkpoint](next-release.md) records later numbering and
+physical-import prerequisites.
 
 ## Previous stage: 0.12.0
 
@@ -120,7 +136,6 @@ promised before implementation and measurement.
 
 | Planned release | Scope | Evidence required before continuing |
 | --- | --- | --- |
-| 0.15 | Automatic season-pack search, ranking and catalog-backed file mapping | Separate pack assessment, bounded metadata decisions, stale-plan protection and unresolved identity rejection |
 | 0.16 | Multi-episode videos and general alternate/anime numbering | Explicit stable catalog mappings, shared physical import ownership and safe existing-library identities |
 | 0.17 | Plex users, approvals, quotas, routing and notification preferences | User ownership and limits remain enforced across polling, retries and restart |
 | 0.18 | IRC announcements, immediate grabs, filters, action routing and notifications | Bounded announcement parsing, reconnect/backoff, duplicate suppression and auditable rule decisions |

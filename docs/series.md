@@ -91,6 +91,16 @@ controls upgrades of existing owned imports. Neither replaces the other.
 
 ## Refresh, failure and persistence
 
+Optional `"series_packs": { "enabled": true }` tries automatically mapped
+season packs before queuing individual episodes during monitored tracking and
+refresh. It defaults to false, including for older configurations. The combined
+batch remains bounded to 64 submissions; at most four seasons are considered
+within the existing shared catalog/search deadline. Packs exceeding the remaining
+allowance are skipped, and unresolved candidates fall back to individual jobs.
+Unmonitored scopes perform no background pack lookup. An on-demand
+`series-pack-search` preview/apply can use those scopes without enabling monitoring.
+See [automatic packs](automatic-packs.md) for strict identity rules and guards.
+
 With the catalog enabled, the service checks due monitored records every minute.
 A pass refreshes at most four records, oldest due time first, within a shared
 90-second HTTP/processing budget. A successful record is due again in one hour.
@@ -147,6 +157,7 @@ All API operations require the existing Bearer token:
 | `POST /api/series/ID/monitor` | Any of `enabled`, `include_specials` and `start_date`; date is `YYYY-MM-DD`, or `null` to clear it |
 | `POST /api/series/ID/episodes` | `{ "season": 1, "episode": 2, "enabled": false }`; episode must exist in the plan |
 | `POST /api/series/ID/packs` | Explicit torrent source and 1–64 file-to-episode mappings; see [pack acquisition](packs.md) |
+| `POST /api/series/ID/pack-search` | Season-pack preview or guarded apply; see [automatic packs](automatic-packs.md) |
 | `POST /api/series/ID/refresh` | Empty body or `{}`; fresh catalog check and bounded submission |
 | `GET /api/calendar` | Dated episodes with monitoring choices and matching job identifiers/states |
 
@@ -171,9 +182,10 @@ episodes across records and an 8 MiB serialized snapshot. Catalog planning accep
 at most 100 selected seasons and 1,000 episodes per season. Input/catalog limits
 can fail before storage limits. There is no automatic record eviction or deletion.
 
-Episode requests still search individual numbered episodes. Explicit
-[pack acquisition](packs.md) now imports selected mapped files from a shared full
-torrent download. Automatic pack search, selective file skipping, multi-episode
+Episode requests search individual numbered episodes by default. Explicit
+[pack acquisition](packs.md) and [automatic packs](automatic-packs.md) import
+selected verified files from a shared native transfer; new mapped transfers
+acquire only selected interests and required boundary pieces. Multi-episode
 videos, general alternate/anime numbering, calendar feeds, time-zone premiere scheduling, adoption of an existing Plex
 library and multi-user request policies remain future work. See the
 [roadmap](roadmap.md) for the following releases and [limits](limits.md) for the
