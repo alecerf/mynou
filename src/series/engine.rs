@@ -65,18 +65,21 @@ impl Engine {
         if matches.len() > 1 {
             return Err("Series identity is ambiguous; specify a TMDB ID".into());
         }
-        let record = if let Some(record) = matches.first() {
-            (*record).clone()
+        let (record, schedule) = if let Some(record) = matches.first() {
+            ((*record).clone(), false)
         } else {
             let plan = integrations::series_plan(&self.config, request, include_specials)?;
-            lock(&self.series_store)?.subscribe(
-                plan,
-                include_specials,
-                future_only,
-                store::now(),
-            )?
+            (
+                lock(&self.series_store)?.subscribe(
+                    plan,
+                    include_specials,
+                    future_only,
+                    store::now(),
+                )?,
+                true,
+            )
         };
-        let (record, submitted) = self.queue_series(&record.id, record.revision)?;
+        let (record, submitted) = self.queue_series(&record.id, record.revision, schedule)?;
         let mut value = record.public_json();
         value.insert("submitted", submitted.len() as u32);
         Ok(value)
@@ -194,13 +197,13 @@ impl Engine {
                 }
             }
         }
-        let (record, submitted) = self.queue_series(id, previous.revision)?;
+        let (record, submitted) = self.queue_series(id, previous.revision, true)?;
         let mut value = record.public_json();
         value.insert("submitted", submitted.len() as u32);
         Ok(value)
     }
 
-    fn queue_series(&self, id: &str, revision: u64) -> Result<(Record, Vec<Job>)> {
+    fn queue_series(&self, id: &str, revision: u64, schedule: bool) -> Result<(Record, Vec<Job>)> {
         // Lock order is series then requests. This bounded commit batch contains no network I/O.
         let mut series = lock(&self.series_store)?;
         let mut record = series.get(id).ok_or("Unknown monitored series")?;
@@ -240,7 +243,15 @@ impl Engine {
             submitted.push(jobs.submit(request)?);
         }
         drop(jobs);
-        record.next_check_at = store::now().saturating_add(if limited { 60 } else { INTERVAL });
+        if submitted.is_empty() && !schedule {
+            return Ok((record, submitted));
+        }
+        let next = store::now().saturating_add(if limited { 60 } else { INTERVAL });
+        if schedule {
+            record.next_check_at = next;
+        } else if limited {
+            record.next_check_at = record.next_check_at.min(next);
+        }
         record.updated_at = store::now();
         series.save(record.clone())?;
         Ok((record, submitted))

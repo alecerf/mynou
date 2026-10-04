@@ -156,12 +156,11 @@ impl Drop for Catalog {
     fn drop(&mut self) {
         self.blocked.store(false, Ordering::Release);
         self.stopped.store(true, Ordering::Release);
-        if let Some(thread) = self.thread.take() {
-            if let Err(error) = thread.join()
-                && !thread::panicking()
-            {
-                std::panic::resume_unwind(error);
-            }
+        if let Some(thread) = self.thread.take()
+            && let Err(error) = thread.join()
+            && !thread::panicking()
+        {
+            std::panic::resume_unwind(error);
         }
     }
 }

@@ -27,6 +27,8 @@ fn background_monitor_queues_an_episode_when_its_catalog_air_date_becomes_due() 
     engine
         .configure_series(id(&record), Some(true), None, None)
         .unwrap();
+    // Repeated Plex/API tracking must not postpone the now-due catalog refresh.
+    engine.track_series(&request(), false, false).unwrap();
     let workers = engine.start();
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
@@ -45,6 +47,31 @@ fn background_monitor_queues_an_episode_when_its_catalog_air_date_becomes_due() 
     }
     drop(workers);
     assert_eq!(lock(&engine.store).unwrap().list().len(), 1);
+}
+
+#[test]
+fn repeated_tracking_keeps_monitor_choices_due_time_and_snapshot_unchanged() {
+    let directory = Directory::new();
+    let catalog = Catalog::open(vec![episode(1, 1, Some("2200-01-01"), "Future")]);
+    let cfg = catalog.config(&directory.0);
+    let engine = Engine::open_for_management(cfg.clone()).unwrap();
+    let record = engine.track_series(&request(), false, false).unwrap();
+    for due_now in [false, true] {
+        if due_now {
+            engine
+                .configure_series(id(&record), Some(true), None, None)
+                .unwrap();
+        }
+        let expected = engine.series_record(id(&record)).unwrap();
+        let snapshot = fs::read(cfg.store_dir.join("series.json")).unwrap();
+        // Reusing an existing scope does not apply the new-scope flags.
+        engine.track_series(&request(), true, true).unwrap();
+        assert_eq!(engine.series_record(id(&record)).unwrap(), expected);
+        assert_eq!(
+            fs::read(cfg.store_dir.join("series.json")).unwrap(),
+            snapshot
+        );
+    }
 }
 
 #[test]
