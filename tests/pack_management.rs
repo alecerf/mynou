@@ -116,7 +116,7 @@ fn browser_unmonitored_tracking_pack_submission_and_immutable_mapping_details() 
             .post(
                 &server,
                 "/ui/series/packs",
-                &[("id", id), ("source_url", SOURCE), ("episodes", &bad)]
+                &[("id", id), ("source_value", SOURCE), ("episodes", &bad)]
             )
             .status,
         400
@@ -127,7 +127,7 @@ fn browser_unmonitored_tracking_pack_submission_and_immutable_mapping_details() 
             .raw_post(
                 &server,
                 "/ui/series/packs",
-                &format!("csrf=invalid&id={id}&source_url=fixture.torrent&episodes=%5B%5D")
+                &format!("csrf=invalid&id={id}&source_value=fixture.torrent&episodes=%5B%5D")
             )
             .status,
         403
@@ -136,7 +136,7 @@ fn browser_unmonitored_tracking_pack_submission_and_immutable_mapping_details() 
     let reply = browser.post(
         &server,
         "/ui/series/packs",
-        &[("id", id), ("source_url", SOURCE), ("episodes", &hostile)],
+        &[("id", id), ("source_value", SOURCE), ("episodes", &hostile)],
     );
     assert_eq!(reply.status, 303, "{}", reply.body);
     assert_eq!(reply.headers["location"], "/ui/jobs");

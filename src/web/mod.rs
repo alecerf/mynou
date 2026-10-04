@@ -415,13 +415,13 @@ impl Web {
                 self.redirect(session, "/ui/series", vec!["Series monitoring recorded. Existing settings are retained when a scope is already tracked".into()])
             }
             "/ui/series/packs" => {
-                form.only(&["csrf", "id", "source_url", "episodes"])?;
+                form.only(&["csrf", "id", "source_value", "episodes"])?;
                 let ids = form.ids(false)?;
                 if ids.len() != 1 {
                     return Err("Choose one tracked series".into());
                 }
                 let mut body = crate::json::Value::object();
-                body.insert("source_url", form.value("source_url")?.to_owned());
+                body.insert("source_url", form.value("source_value")?.to_owned());
                 body.insert("episodes", crate::json::parse(form.value("episodes")?)?);
                 let pack = crate::pack::PackSubmission::from_json(&body)?;
                 let result = engine.submit_pack(&ids[0], &pack)?;
