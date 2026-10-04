@@ -17,10 +17,15 @@ prefers packs during monitored tracking and refresh with individual fallback
 inside the shared deadline and combined 64-job batch. Earlier configurations
 default to individual acquisition. See [automatic packs](automatic-packs.md).
 
-These changes are committed for CI-only validation. Publication and passing
-results require the new release's complete Actions run; the earlier 0.14 result
-does not validate this stage. The next stage is explicit alternate/anime
-numbering and shared physical multi-episode import ownership in 0.16.
+The automatic stage passed
+[Actions run 37230875486](https://github.com/alecerf/mynou/actions/runs/37230875486)
+for commit `1fe40eed0b0ea170a03ffce8d30d2ab8cb3e7125`: 409 tests passed with
+none failed or ignored across 34 targets and the complete validation pipeline.
+GitHub Actions published
+[v0.15.0](https://github.com/alecerf/mynou/releases/tag/v0.15.0) with seven assets
+on October 4, 2026, at 20:12 UTC. The next stage is explicit alternate/anime
+numbering and shared physical multi-episode import ownership in 0.16. See
+[validation evidence](validation.md#recorded-0150-ci-evidence) for asset digests.
 
 ## Previous stage: 0.14.0
 

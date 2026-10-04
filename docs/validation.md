@@ -73,9 +73,34 @@ Opt-in monitoring scenarios cover default individual behavior, newly aired pack
 preference, unresolved fallback, no duplicate retries and the combined 64-job
 allowance across seasons. Existing full validation remains required.
 
-These scenarios are written for GitHub Actions only. No local tests, lint,
-builds or demos ran. Passing results and publication are pending the new complete
-Actions run; the earlier release's green result does not validate these changes.
+The recorded run below validates these scenarios through GitHub Actions only.
+No local tests, lint, builds or demos ran.
+
+## Recorded 0.15.0 CI evidence
+
+[Run 37230875486](https://github.com/alecerf/mynou/actions/runs/37230875486) passed
+for commit `1fe40eed0b0ea170a03ffce8d30d2ab8cb3e7125`: 409 tests passed with
+none failed or ignored across 34 targets, alongside all dependency, formatting,
+Clippy, native/musl build, native/Docker demonstration, packaging and checksum
+checks. GitHub Actions published
+[v0.15.0](https://github.com/alecerf/mynou/releases/tag/v0.15.0) with seven assets
+on October 4, 2026, at 20:12:26 UTC. The tag and release target match the validated
+commit; every asset was uploaded by `github-actions[bot]`.
+
+GitHub records these SHA-256 digests for the three payload assets:
+
+| Asset | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `mynou-v0.15.0-source.zip` | 4,997,709 | `21d3b8324305434436bbcbf34db70d93af250b25e9f874cc6594f765f75d2b07` |
+| `mynou-v0.15.0-linux-x86_64` | 2,868,064 | `eb05e073ed4aa77e766ae6a53a697dafa01e1ddfe7cc1efbd2e9dbc9b945c249` |
+| `mynou-v0.15.0-linux-amd64-image.tar.gz` | 1,487,728 | `b2f2ec477a8231b1852226331ca85ab9e3b88b92e05894ae3ef120d8589fe176` |
+
+The three individual checksum files and combined `SHA256SUMS` complete the seven
+published assets. CI verified package checksums, source ZIP integrity, the
+internal manifest and embedded binary permissions before publication. Later
+commits need their own completed run and do not alter this release's tag/assets.
+Synthetic local protocol fixtures do not establish personal-installation
+compatibility, public-swarm throughput or general performance improvements.
 
 ## Selective changes in 0.14.0
 

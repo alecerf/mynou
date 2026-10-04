@@ -1,14 +1,22 @@
 # Next-release checkpoint — 0.16 numbering and multi-episode ownership
 
-## Current implementation awaiting CI
-
-The 0.15 implementation adds automatic season-pack assessment, metadata-only
-mapping, guarded CLI/API/browser apply and opt-in monitored pack preference.
-Its complete validation/publication must pass before starting 0.16. The recorded
-0.14 result below validates the starting point only. Inspect the live branch and
-run before continuing; record the new exact source/run/tag/assets after CI.
-
 ## Validated starting point
+
+Mynou 0.15.0 was published by GitHub Actions from
+`1fe40eed0b0ea170a03ffce8d30d2ab8cb3e7125` after
+[run 37230875486](https://github.com/alecerf/mynou/actions/runs/37230875486)
+completed successfully. Its 409 tests passed with no failures or ignored tests
+across 34 targets, plus all dependency/lint/build/demo/Docker/archive checks.
+The tag targets that commit. Seven assets were uploaded by `github-actions[bot]`
+on October 4, 2026, at 20:12:26 UTC. See
+[validation evidence](validation.md#recorded-0150-ci-evidence) for payload digests.
+
+The implementation includes automatic season-pack assessment, metadata-only
+mapping, guarded CLI/API/browser apply and opt-in monitored pack preference.
+Later documentation commits need their own complete CI and keep published
+assets immutable. Inspect the live branch and latest run before continuing.
+
+## Earlier 0.14 starting point
 
 Mynou 0.14.0 was published by GitHub Actions from
 `a077af8d660a2b5ca12e47b579562e7a9292f6e2` after
@@ -120,6 +128,25 @@ several mappings to the same file. The current one-file-per-episode constraint
 must remain until that model is implemented. Metadata analysis is not a video
 decoder or a tool for cutting multi-episode videos. Sources and earlier imports
 remain intact; overwriting or automatic deletion is outside this stage.
+
+Begin 0.16 by defining durable numbering choices and physical ownership before
+loosening automatic filename matching:
+
+1. Separate source numbering from canonical catalog identities. Refreshes must
+   preserve existing jobs/library identity and reject unapproved number changes.
+   Define a compatible storage transition before applying those choices.
+2. Add bounded explicit mapping preview/apply through CLI/API/browser with stale
+   plan guards, clear ambiguity reports and read-only preview behavior. Persist
+   accepted choices before they affect acquisition or refresh.
+3. Model one verified physical file representing several logical episodes.
+   Define shared import paths, catalog naming, Plex confirmation, cancellation,
+   retry, upgrade and restart ownership without duplicate copies or overwrites.
+4. Extend pack metadata mapping only after the explicit model is accepted. Keep
+   catalog/source hash guards, 64-job limits and native selection guarantees.
+5. Write original CI scenarios for changed numbering, ambiguous absolute names,
+   shared files and old-data recovery; prepare the next version and publish only
+   after its complete Actions run is green. Split the stage if a smaller release
+   provides a concrete independently validated result.
 
 ## Release acceptance and handoff
 

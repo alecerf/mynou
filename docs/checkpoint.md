@@ -105,13 +105,21 @@ has not already been released. The assets are a full source ZIP with the static
 Linux x86_64 binary, a separate static binary, a saved Docker image archive, and
 SHA-256 checksum files. There is no Docker Hub publication step.
 
-## 0.15.0 validation checkpoint
+## Recorded 0.15.0 CI checkpoint
 
-The implementation, original CI scenarios, documentation and release version are
-prepared. No local tests, lint, builds, binaries or demonstrations were run.
-The complete GitHub Actions validation/publication run is required before this
-version can be recorded as green. The previous release's result remains evidence
-only for its exact commit. [Next-release notes](next-release.md) preserve the
+Commit `1fe40eed0b0ea170a03ffce8d30d2ab8cb3e7125` passed
+[Actions run 37230875486](https://github.com/alecerf/mynou/actions/runs/37230875486):
+409 tests passed with none failed or ignored across 34 targets, plus the complete
+dependency, formatting, Clippy, native/musl build, native/Docker demonstration,
+packaging and checksum pipeline. GitHub Actions published
+[v0.15.0](https://github.com/alecerf/mynou/releases/tag/v0.15.0) with seven assets
+on October 4, 2026, at 20:12 UTC. The release and tag point to that exact commit;
+all assets were uploaded by `github-actions[bot]` with recorded SHA-256 digests.
+See [validation evidence](validation.md#recorded-0150-ci-evidence).
+
+No local tests, lint, builds, binaries or demonstrations were run. Later
+documentation commits need their own complete CI and cannot replace the
+published tag or assets. [Next-release notes](next-release.md) preserve the
 0.16 numbering and physical-import decisions.
 
 ## Recorded 0.14.0 CI checkpoint
