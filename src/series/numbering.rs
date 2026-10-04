@@ -270,6 +270,13 @@ impl Engine {
         let previous = lock(&self.series_store)?
             .get(id)
             .ok_or("Unknown monitored series")?;
+        if query
+            .changes
+            .iter()
+            .any(|choice| !previous.anchors.contains_key(&choice.catalog_id))
+        {
+            return Err("Numbering changes require an already known catalog identity".into());
+        }
         let fetched = previous.fetch_catalog(self, true, deadline)?;
         let observed_numbers: BTreeMap<_, _> = fetched
             .episodes

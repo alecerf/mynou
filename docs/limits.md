@@ -178,11 +178,11 @@ records and a submission batch at most 64 missing aired episodes. Calendar pages
 accept at most 200 entries over an inclusive 367-day window. Settings revisions
 prevent a late refresh from applying an earlier monitoring policy. Series
 monitoring retains existing requests and files; it does not silently retry
-terminal jobs or stop when a Plex watchlist entry disappears. Changed known
-episode identities require a mapping decision; an alternate-number mapping
-editor is not implemented. Explicit packs
-can map absolute/anime-style filenames to canonical episodes; general numbering
-rules and multi-episode videos remain future work. Mapping fields cannot be changed by workers, and earlier unmapped jobs retain ordinary behavior. Do not downgrade
+terminal jobs or stop when a Plex watchlist entry disappears. Changed known catalog numbers require an explicit [numbering decision](numbering.md).
+Retained IDs cannot be replaced or reassigned. The CLI/API/browser accept explicit
+alternate/absolute source labels; automatic anime-order inference and
+multi-episode videos remain later work. Explicit packs can map exact source paths
+to canonical episodes. Mapping fields cannot be changed by workers, and earlier unmapped jobs retain ordinary behavior. Do not downgrade
 storage containing mapped jobs to an earlier binary that ignores those fields.
 
 Automatic packs require one unique explicit numbered video for every eligible
@@ -234,3 +234,7 @@ The Docker delivery target is Linux x86_64 with musl. The project installs no Un
 signal handler through FFI: authenticated API shutdown is graceful, while journal
 recovery handles forced interruptions. Security functions using `/dev/urandom`
 require a system providing that source.
+
+Explicit alternate/absolute [numbering](numbering.md) is implemented in 0.16.
+Retained canonical identities cannot be reassigned; new jobs capture approved
+source labels. Multi-episode physical ownership remains the next release stage.

@@ -48,8 +48,9 @@ due for the next background pass; `series-refresh` checks it immediately.
 monitoring records. The existing submit API still returns an episode-job array,
 which can be empty when nothing has aired. `track-series` returns the series
 record and a `submitted` count instead. Only `submit` retains its existing offline
-management fallback; the dedicated series/calendar commands require a running
-service.
+management fallback; the dedicated series/calendar mutation commands require a
+running service. `series-numbering` also supports read-only offline preview; its
+apply action requires the service. See [numbering](numbering.md).
 
 The browser has **Series** and **Calendar** pages. Track a series, inspect its
 catalog plan, change monitoring/specials/earliest-date settings, exclude or
@@ -159,6 +160,7 @@ All API operations require the existing Bearer token:
 | `POST /api/series/ID/packs` | Explicit torrent source and 1–64 file-to-episode mappings; see [pack acquisition](packs.md) |
 | `POST /api/series/ID/pack-search` | Season-pack preview or guarded apply; see [automatic packs](automatic-packs.md) |
 | `POST /api/series/ID/refresh` | Empty body or `{}`; fresh catalog check and bounded submission |
+| `POST /api/series/ID/numbering` | Read-only comparison or guarded explicit numbering apply; see [numbering](numbering.md) |
 | `GET /api/calendar` | Dated episodes with monitoring choices and matching job identifiers/states |
 
 Unknown fields, invalid types and invalid scopes are rejected before mutation.
@@ -185,8 +187,10 @@ can fail before storage limits. There is no automatic record eviction or deletio
 Episode requests search individual numbered episodes by default. Explicit
 [pack acquisition](packs.md) and [automatic packs](automatic-packs.md) import
 selected verified files from a shared native transfer; new mapped transfers
-acquire only selected interests and required boundary pieces. Multi-episode
-videos, general alternate/anime numbering, calendar feeds, time-zone premiere scheduling, adoption of an existing Plex
-library and multi-user request policies remain future work. See the
+acquire only selected interests and required boundary pieces. Explicit
+[numbering choices](numbering.md) retain catalog identities and capture source
+labels for future jobs. Multi-episode videos, automatic alternate/anime-order
+inference, calendar feeds, time-zone premiere scheduling, adoption of an existing
+Plex library and multi-user request policies remain future work. See the
 [roadmap](roadmap.md) for the following releases and [limits](limits.md) for the
 rest of the supported surface.

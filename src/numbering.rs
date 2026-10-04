@@ -72,15 +72,27 @@ impl SourceNumber {
             Self::Absolute(number) => decimal_token(token) == Some(number),
         }
     }
-    pub(crate) fn matches_file(self, path: &Path, year: u32) -> bool {
+    pub(crate) fn matches_file(self, path: &Path, year: u32, title: &str) -> bool {
         let Some(stem) = path.file_stem().and_then(|name| name.to_str()) else {
             return false;
         };
         let labels = tokens(stem);
+        let title = tokens(title);
+        let labels = if labels.starts_with(&title) {
+            &labels[title.len()..]
+        } else {
+            &labels[..]
+        };
+        let labels =
+            if year != 0 && labels.first().and_then(|label| decimal_token(label)) == Some(year) {
+                &labels[1..]
+            } else {
+                labels
+            };
         labels.iter().filter(|label| self.matches(label)).count() == 1
             && !labels
                 .iter()
-                .any(|label| conflicting_marker(self, label, year))
+                .any(|label| conflicting_marker(self, label, 0))
     }
 }
 
@@ -161,7 +173,7 @@ mod tests {
             episode: 3,
         });
         for name in ["Show.S02E03.1080p.mp4", "2x03.mkv"] {
-            assert!(number.matches_file(Path::new(name), 2024), "{name}");
+            assert!(number.matches_file(Path::new(name), 2024, "Show"), "{name}");
         }
         for name in [
             "S02E030.mp4",
@@ -171,15 +183,19 @@ mod tests {
             "S02E03-S02E03.mp4",
             "03.mp4",
         ] {
-            assert!(!number.matches_file(Path::new(name), 2024), "{name}");
+            assert!(
+                !number.matches_file(Path::new(name), 2024, "Show"),
+                "{name}"
+            );
         }
     }
 
     #[test]
     fn explicit_absolute_files_reject_ranges_other_numbers_and_numbered_labels() {
         let number = SourceNumber::Absolute(13);
+        assert!(number.matches_file(Path::new("The.100.013.1080p.mkv"), 2024, "The 100"));
         for name in ["013.mp4", "Show.2024.013.1080p.mkv"] {
-            assert!(number.matches_file(Path::new(name), 2024), "{name}");
+            assert!(number.matches_file(Path::new(name), 2024, "Show"), "{name}");
         }
         for name in [
             "013-014.mp4",
@@ -188,7 +204,10 @@ mod tests {
             "013.013.mp4",
             "0013-2200.mp4",
         ] {
-            assert!(!number.matches_file(Path::new(name), 2024), "{name}");
+            assert!(
+                !number.matches_file(Path::new(name), 2024, "Show"),
+                "{name}"
+            );
         }
     }
 }

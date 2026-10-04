@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.15.0
+# Project checkpoint — Mynou 0.16.0 (CI pending)
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -94,8 +94,15 @@ allowance with individual fallback. Earlier configurations retain individual
 acquisition. Pack provenance does not establish episode upgrade baselines.
 See [automatic-packs.md](automatic-packs.md).
 
-Multi-episode videos, general
-alternate/anime numbering, multi-user Plex policies, IRC automation, native
+The 0.16.0 implementation adds durable canonical episode anchors, explicit
+catalog/source numbering choices, read-only comparisons and guarded CLI/API/browser
+apply. New jobs capture source labels while existing keys/imports remain fixed.
+Older snapshots read without migration writes; successful saves use schema 2.
+This scope is prepared but has not yet passed its own complete CI/publication.
+See [numbering](numbering.md).
+
+Multi-episode videos, automatic
+anime-order inference, multi-user Plex policies, IRC automation, native
 indexer adapters, Usenet and cross-seeding remain future stages. See the [release roadmap](roadmap.md). Series monitoring is a
 focused stage and does not establish full stack parity.
 
@@ -128,7 +135,7 @@ See [validation evidence](validation.md#recorded-0150-ci-evidence).
 No local tests, lint, builds, binaries or demonstrations were run. Later
 documentation commits need their own complete CI and cannot replace the
 published tag or assets. [Next-release notes](next-release.md) preserve the
-0.16 numbering and physical-import decisions.
+next shared physical-import decisions after the numbering release.
 
 ## Recorded 0.14.0 CI checkpoint
 

@@ -711,7 +711,9 @@ impl Engine {
             );
             let matching: Vec<_> = candidates
                 .iter()
-                .filter(|(_, path)| numbering.matches_file(path, job.request.year))
+                .filter(|(_, path)| {
+                    numbering.matches_file(path, job.request.year, &job.request.title)
+                })
                 .collect();
             if matching.len() != 1 {
                 return Err(

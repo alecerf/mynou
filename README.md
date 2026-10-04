@@ -1,4 +1,4 @@
-# Mynou 0.15.0 — Rust, standard library only
+# Mynou 0.16.0 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -10,6 +10,11 @@ The BitTorrent client, media parsers, HTTP/TLS stack, JSON/bencode formats, and
 durable journal belong to the project. SQLite, ffprobe, Go, qBittorrent, Radarr,
 and Sonarr are not required. Plex, TMDB, and your chosen sources are configurable
 network integrations.
+
+Explicit [episode numbering](docs/numbering.md) separates source/catalog labels
+from retained library identities. Preview and apply choices through CLI/API/browser;
+existing jobs and imports keep their original numbers. Shared multi-episode files
+are the following release stage.
 
 ## Try it
 
@@ -43,8 +48,8 @@ from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, o
 build the image from the source archive:
 
 ```sh
-docker load -i mynou-v0.15.0-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.15.0 .
+docker load -i mynou-v0.16.0-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.16.0 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d

@@ -1,168 +1,91 @@
-# Next-release checkpoint — 0.16 numbering and multi-episode ownership
+# Next-release checkpoint — 0.17 shared multi-episode files
 
-## Validated starting point
+v0.16 implements explicit numbering: retained catalog IDs keep canonical library
+numbers while approved catalog/source labels may change. CLI/API/browser preview
+and guarded apply persist choices before future jobs capture source labels.
+Existing requests, exclusions and library paths stay fixed. See [numbering](numbering.md).
 
-Mynou 0.15.0 was published by GitHub Actions from
-`1fe40eed0b0ea170a03ffce8d30d2ab8cb3e7125` after
+This version is prepared for CI; its complete workflow and publication must be
+recorded before claiming release evidence. The last published release is 0.15.0
+from `1fe40eed0b0ea170a03ffce8d30d2ab8cb3e7125`, validated by
 [run 37230875486](https://github.com/alecerf/mynou/actions/runs/37230875486)
-completed successfully. Its 409 tests passed with no failures or ignored tests
-across 34 targets, plus all dependency/lint/build/demo/Docker/archive checks.
-The tag targets that commit. Seven assets were uploaded by `github-actions[bot]`
-on October 4, 2026, at 20:12:26 UTC. See
-[validation evidence](validation.md#recorded-0150-ci-evidence) for payload digests.
+with 409 Rust tests across 34 targets and seven CI-published assets. Those tags
+and assets stay immutable. [Validation](validation.md) retains historical digests.
 
-The implementation includes automatic season-pack assessment, metadata-only
-mapping, guarded CLI/API/browser apply and opt-in monitored pack preference.
-Later documentation commits need their own complete CI and keep published
-assets immutable. Inspect the live branch and latest run before continuing.
-
-## Earlier 0.14 starting point
-
-Mynou 0.14.0 was published by GitHub Actions from
-`a077af8d660a2b5ca12e47b579562e7a9292f6e2` after
-[run 37221887812](https://github.com/alecerf/mynou/actions/runs/37221887812)
-completed successfully. Its 385 tests passed with no failures or ignored tests
-across 31 targets. The source ZIP, static Linux x86_64 binary, Docker image archive
-and four checksum assets belong to that exact release commit.
-
-0.12.0 provides durable series monitoring/calendar; 0.13.0 provides explicit
-catalog-backed file mappings and shared whole-torrent acquisition. A guarded
-operator correction can requeue an unimported failed/cancelled pack request.
-Normal workers cannot change mappings. Earlier unmapped jobs retain ordinary
-behavior. [Series](series.md), [packs](packs.md) and [limits](limits.md) document
-the implemented surface; the [roadmap](roadmap.md) tracks later stack features.
-
-0.14 adds durable shared native file interests, selective v1/v2/hybrid acquisition,
-verified mapped imports from partial torrents and protected CLI/API/browser
-selection expansion. Its complete CI and publication passed on October 4, 2026,
-at 17:53 UTC. [Validation evidence](validation.md#recorded-0140-ci-evidence)
-records the release assets and digests. No local validation has run. Later
-documentation commits need their own CI and do not change the released tag.
-
-The automatic-pack section records the implemented 0.15 slice. The numbering
-and multi-episode section describes planned later work.
+The CI optimization's final commit `1583ca5768400fa2e9511d3444ec28b076d3b1f3`
+passed [run 37235568061](https://github.com/alecerf/mynou/actions/runs/37235568061)
+with all 409 Rust tests, four scheduler checks and all five jobs. Inspect the live
+branch and newest run before continuing; later commits need their own complete CI.
 
 ## Preserve the development policy
 
-Read `AGENTS.md` before changing code. Use Rust 1.99.0 and its standard library
-only, with zero Cargo dependencies of any kind. Keep all project text in English.
-Never run local tests, lint, builds, binaries, demos or browser previews.
-Formatting edits with `cargo fmt --all` are allowed. Commit meaningful chunks,
-push the completed release, inspect GitHub Actions, and fix red runs in new
-commits. Move to another release only after the complete validation/publication
-workflow is green. GitHub Actions alone creates tags, releases and assets.
+Read `AGENTS.md`. Use Rust 1.99.0 and std only, with zero Cargo dependencies of
+any kind. All source, diagnostics and docs must be English. Never run local
+tests, lint, builds, binaries, demos or previews. `cargo fmt --all` is an allowed
+edit. Commit meaningful chunks, push completed work and fix red Actions runs
+with new commits. Do not start the next release before the current whole workflow
+and publication are green. Actions alone creates validated tags/releases/assets.
 
-Read [CI execution](ci.md) before changing the workflow or starting another
-feature stage. All 34 Cargo harnesses run through the bounded scheduler, with
-four additional infrastructure checks. Exact input caches can reuse compiled
-binaries; the current target graph and every runtime test still run. Inspect
-validation, both native/static build jobs, packaging and publication together.
+Read [CI execution](ci.md). The scheduler checks the current Cargo target graph
+and runs every harness; exact caches reuse compilation, never test execution.
+Inspect validation, both native/static builds, packaging and publication together.
+Preserve the four scheduler checks and immutable earlier releases.
 
-Inspect the actual branch/run before assuming this historical checkpoint is the
-latest state. The repository is `alecerf/mynou`, branch `trunk`. Account-specific
-credentials and personal Plex/source settings are not part of the repository.
-No available account interface exposes the remaining ChatGPT quota. A saved
-checkpoint does not imply automatic monitoring or resumption after reset.
+The repository is `alecerf/mynou`, branch `trunk`. Personal Plex/source settings
+are outside the repository. No available interface exposes remaining ChatGPT
+quota. A saved checkpoint does not establish unattended resumption.
 
-## Implemented selective-file slice (0.14)
+## Retain the numbering model
 
-`src/torrent/selection.rs` retains full acquisition or a bounded path union in
-verified native controls, with absent older fields defaulting to full. Creation
-persists controls before queue-visible metadata/source files. File interests
-only expand; cancellation retains them. A correction can remove only interests
-proven absent by authenticated metadata, preserving real shared interests.
+`src/numbering.rs` defines bounded canonical and source labels.
+`src/series/numbering.rs` binds decisions to retained known catalog IDs and
+normalizes approved remote labels back to canonical numbers before queueing.
+Retired IDs remain reserved; a new ID cannot reuse their number. Overlapping
+scopes must agree on canonical identities. Absolute order is always explicit.
 
-The parallel coordinator handles selected transfers even at one peer. It
-prepares selected files and boundary neighbors, schedules overlapping pieces,
-verifies selected v2 roots and hybrid hashes, synchronizes affected files and
-publishes available paths separately from full `DownloadStatus.ready`. Expanding
-selection retires the old generation. Restart rehashes bytes. Partial torrents
-advertise an empty bitfield, do not seed and stop tracker activity without a
-completion event. Normal full requests and existing full controls remain full.
+Schema 1 infers anchors in memory without migration writes. Successful saves use
+schema 2 with verified anchors and choices. Older job requests omit the optional
+source label and retain historical keys. Existing retries/upgrades and terminal
+requests keep captured source choices when series policy changes.
 
-`Engine` requests mapped path interests before payload scheduling and imports
-only published verified paths. CLI `torrent-select`, API selection updates and
-browser include/all forms expand interests with existing guards and pause policy.
-See [transfer selection](transfers.md#selective-acquisition-in-0140) for bounds,
-boundary storage and downgrade restrictions. Selection contraction and partial
-seeding remain unimplemented.
+Preview/apply binds the previous complete record, fresh catalog and proposed
+choices. Apply fetches again and rejects stale/unresolved decisions. Choices
+persist before acquisition; apply itself queues no jobs. Source labels affect
+queries, title matching and file selection. Import/Plex checks stay canonical.
+Alternate source labels currently require explicit pack mappings.
 
-Passing CI scenarios in `selective_transfers`, `selective_management`, mapped
-acquisition and tracker lifecycle cover the implemented behavior in the recorded
-0.14 run. Continue from these protections when implementing 0.15.
+## Define shared physical ownership before accepting duplicate pack paths
 
-## Implemented automatic-pack slice (0.15)
+One verified video can represent several logical episodes. Keep the existing
+one-file-per-episode validator until durable shared import ownership is complete.
+Media metadata is not a decoder or a means to split videos. Retain sources and
+earlier imports; overwriting and automatic deletion remain outside this stage.
 
-`src/pack/automatic.rs` separates season matching from ordinary episode matching,
-uses the episode profile and captures a fingerprint of accepted catalog content,
-policy, UTC date and missing identities. Ranked metadata decisions are bounded
-to eight candidates. Unique explicit numbered files must cover the full scope;
-absolute/multi-episode or conflicting files remain unresolved. Public reports
-explain decisions without acquisition URLs, jobs or payload downloads.
-
-`src/torrent/inspection.rs` authenticates local/HTTP torrents or bounded
-explicit-peer/tracker magnet metadata without a native transfer or disk writes.
-Tracker queries are metadata-only stopped events; no DHT/PEX fallback exists in
-inspection. Existing queue discovery is unchanged. Peer/tracker/source operations
-share deadlines, with late results rejected after synchronous DNS/filesystem work.
-
-Guarded apply rechecks scope and binds candidate, authenticated hash and exact
-paths. `src/pack.rs` prevalidates scope/source/capacity under series-then-request
-locks; `src/store.rs` retains immutable `pack_origin` with mapped episode jobs.
-`src/engine.rs` requires the authenticated source identity before queue
-publication and cached file interests. Pack title provenance is not an episode
-upgrade baseline. Existing terminal requests remain deduplicated.
-
-Optional `series_packs.enabled` tries at most four seasons during monitored
-tracking/refresh, sharing the catalog deadline and combined 64-job allowance
-with ordinary fallback. It defaults to false. On-demand pack actions can use
-unmonitored scopes without enabling background acquisition. See
-[automatic packs](automatic-packs.md) for exact limits and commands.
-
-## Alternate numbering and multi-episode files
-
-Model explicit source-to-catalog numbering choices with stable catalog identities
-and bounded durable data. Current known-ID/number changes reject refreshes; they
-must remain blocked until an approved mapping resolves the ambiguity. Preserve
-earlier media identities and current library records when catalog numbers change.
-Do not guess anime absolute numbering from an isolated filename or silently
-reassign previously imported episodes.
-
-One physical video may cover several logical episodes. Decide its import naming,
-logical ownership, Plex path confirmation and upgrade behavior before allowing
-several mappings to the same file. The current one-file-per-episode constraint
-must remain until that model is implemented. Metadata analysis is not a video
-decoder or a tool for cutting multi-episode videos. Sources and earlier imports
-remain intact; overwriting or automatic deletion is outside this stage.
-
-Begin 0.16 by defining durable numbering choices and physical ownership before
-loosening automatic filename matching:
-
-1. Separate source numbering from canonical catalog identities. Refreshes must
-   preserve existing jobs/library identity and reject unapproved number changes.
-   Define a compatible storage transition before applying those choices.
-2. Add bounded explicit mapping preview/apply through CLI/API/browser with stale
-   plan guards, clear ambiguity reports and read-only preview behavior. Persist
-   accepted choices before they affect acquisition or refresh.
-3. Model one verified physical file representing several logical episodes.
-   Define shared import paths, catalog naming, Plex confirmation, cancellation,
-   retry, upgrade and restart ownership without duplicate copies or overwrites.
-4. Extend pack metadata mapping only after the explicit model is accepted. Keep
-   catalog/source hash guards, 64-job limits and native selection guarantees.
-5. Write original CI scenarios for changed numbering, ambiguous absolute names,
-   shared files and old-data recovery; prepare the next version and publish only
-   after its complete Actions run is green. Split the stage if a smaller release
-   provides a concrete independently validated result.
+1. Bind a bounded physical identity to authenticated torrent hash, exact path and
+   canonical logical owners. Define consecutive episode/season rules and a
+   deterministic Plex naming convention while preserving numbering anchors.
+2. Persist ownership before acquisition. Concurrent imports, retry and restart
+   must reuse one verified shared path without duplicate copies or overwrites.
+   Define how later requests for only some owners interact with prior ownership.
+3. Confirm the exact Plex path for every owner. Cancellation retains interests
+   and paths required by others; retries cannot reassign physical bytes.
+4. Define upgrades before allowing shared owners into individual upgrade logic.
+   Keep earlier versions current until all required replacements are ready.
+5. Add guarded explicit CLI/API/browser preview/apply before loosening duplicate
+   pack paths or automatic mapping. Preserve source/hash guards, selected-file
+   verification and the 64-job acquisition batch.
+6. Add original CI cases for concurrent shared import, cancellation, partial
+   ownership, restart, stale plans, Plex confirmation and upgrades. Split further
+   if a concrete smaller release can be independently validated.
 
 ## Release acceptance and handoff
 
-The roadmap splits selection into 0.14, automatic pack assessment/mapping into
-0.15, and numbering/multi-episode files into 0.16. Keep the implemented support matrix precise.
-Bump Cargo/lockfile, both Compose files, deployment examples and release notes
-only when the concrete scope is ready for its own CI run. Preserve the static
-musl build, native/Docker demonstrations and archive/checksum validation.
+Bump Cargo/lockfile, Compose/deployment examples and release notes once complete.
+Preserve offline graph, formatting, Clippy, all Rust tests, GNU/musl builds,
+isolated native/container demonstrations and archive/checksum checks. Record the
+exact source/run/tag/asset evidence after CI publication; later docs need CI too.
 
-Record exact successful source/run/tag/asset evidence after publication. Keep
-earlier published versions immutable. End quota-limited work at a committed,
-validated checkpoint with the next action stated; never claim access to account
-quota or an unattended continuation mechanism that is unavailable.
+Then continue Plex user policies, IRC automation, native indexer adapters, Usenet
+and cross-seeding on the [roadmap](roadmap.md). Do not claim full stack parity
+or unmeasured performance. End at a committed, validated checkpoint with the
+next action recorded.

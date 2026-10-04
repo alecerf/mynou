@@ -5,7 +5,20 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current stage: 0.15.0
+## Current stage: 0.16.0
+
+Explicit numbering choices retain canonical episode identities while approving
+changed catalog numbers or alternate/absolute source labels. CLI/API/browser
+preview and guarded apply persist accepted choices before future jobs capture
+them. Existing library paths and request keys remain fixed; identity history
+survives disappearance and restart. See [numbering](numbering.md).
+
+This stage is prepared for CI validation and publication. A completed Actions
+run and published tag/assets must be recorded before claiming release evidence.
+Numbering and shared physical ownership are split into independently validated
+releases; shared multi-episode imports are now the next stage, 0.17.
+
+## Previous stage: 0.15.0
 
 Automatic season-pack search assesses titles under the episode profile, resolves
 bounded authenticated metadata and maps unique numbered video paths to every
@@ -23,8 +36,8 @@ for commit `1fe40eed0b0ea170a03ffce8d30d2ab8cb3e7125`: 409 tests passed with
 none failed or ignored across 34 targets and the complete validation pipeline.
 GitHub Actions published
 [v0.15.0](https://github.com/alecerf/mynou/releases/tag/v0.15.0) with seven assets
-on October 4, 2026, at 20:12 UTC. The next stage is explicit alternate/anime
-numbering and shared physical multi-episode import ownership in 0.16. See
+on October 4, 2026, at 20:12 UTC. The next stage was split into explicit numbering in 0.16 and shared physical
+multi-episode import ownership in 0.17. See
 [validation evidence](validation.md#recorded-0150-ci-evidence) for asset digests.
 
 ## Previous stage: 0.14.0
@@ -141,12 +154,12 @@ promised before implementation and measurement.
 
 | Planned release | Scope | Evidence required before continuing |
 | --- | --- | --- |
-| 0.16 | Multi-episode videos and general alternate/anime numbering | Explicit stable catalog mappings, shared physical import ownership and safe existing-library identities |
-| 0.17 | Plex users, approvals, quotas, routing and notification preferences | User ownership and limits remain enforced across polling, retries and restart |
-| 0.18 | IRC announcements, immediate grabs, filters, action routing and notifications | Bounded announcement parsing, reconnect/backoff, duplicate suppression and auditable rule decisions |
-| 0.19 | Native indexer adapters, login/session management, source health and configuration | Per-adapter protocol fixtures, credential redaction, rate limits and safe session renewal |
-| 0.20 | Usenet search/acquisition and management | Native protocol support, bounded message processing, integrity/recovery and explicit format limits without external helpers |
-| 0.21 | Cross-seeding and further bulk automation | Verified content identity and safe reuse of existing files; no accidental extra acquisition or library overwrite |
+| 0.17 | Shared multi-episode physical files | Retained numbering choices, shared import ownership and safe existing-library identities |
+| 0.18 | Plex users, approvals, quotas, routing and notification preferences | User ownership and limits remain enforced across polling, retries and restart |
+| 0.19 | IRC announcements, immediate grabs, filters, action routing and notifications | Bounded announcement parsing, reconnect/backoff, duplicate suppression and auditable rule decisions |
+| 0.20 | Native indexer adapters, login/session management, source health and configuration | Per-adapter protocol fixtures, credential redaction, rate limits and safe session renewal |
+| 0.21 | Usenet search/acquisition and management | Native protocol support, bounded message processing, integrity/recovery and explicit format limits without external helpers |
+| 0.22 | Cross-seeding and further bulk automation | Verified content identity and safe reuse of existing files; no accidental extra acquisition or library overwrite |
 
 Each stage needs meaningful automated checks and an updated support matrix.
 Tests use synthetic content and local peers/services. Compatibility with a
