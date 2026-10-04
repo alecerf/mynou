@@ -28,7 +28,20 @@ class Target:
     executable: Path
 
 
-def discover(manifest, root):
+def expected_sources(metadata, root):
+    if metadata.stat().st_size > MAX_MANIFEST_BYTES:
+        raise ValueError("Cargo metadata exceeds 32 MiB")
+    packages = json.loads(metadata.read_text())["packages"]
+    if len(packages) != 1 or packages[0]["name"] != "mynou" or packages[0]["dependencies"]:
+        raise ValueError("Exactly one dependency-free Mynou package is required")
+    return {
+        Path(target["src_path"]).resolve(strict=True).relative_to(root).as_posix()
+        for target in packages[0]["targets"]
+        if set(target["kind"]) & {"lib", "bin", "test", "example", "bench"}
+    }
+
+
+def discover(manifest, root, expected=None):
     if manifest.stat().st_size > MAX_MANIFEST_BYTES:
         raise ValueError("Cargo test manifest exceeds 32 MiB")
     targets = {}
@@ -56,6 +69,8 @@ def discover(manifest, root):
         raise ValueError("A successful Cargo test build with 1–128 harnesses is required")
     if not {"src/lib.rs", "src/main.rs"}.issubset(targets):
         raise ValueError("Cargo test manifest is missing the library or binary harness")
+    if expected is not None and set(targets) != expected:
+        raise ValueError("Compiled test harnesses do not match the current Cargo target graph")
     return list(targets.values())
 
 
@@ -160,6 +175,7 @@ def schedule(targets, root, output, workers, threads, timeout, history):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("manifest", type=Path)
+    parser.add_argument("--metadata", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--workers", type=int, default=min(4, os.cpu_count() or 1))
     parser.add_argument("--threads", type=int, default=min(2, os.cpu_count() or 1))
@@ -172,7 +188,7 @@ def main():
     root = Path.cwd().resolve()
     cached = root / "target/debug/mynou-ci-test-timings.json"
     history = weights([root / ".github/scripts/test_durations.json", cached])
-    targets = discover(args.manifest, root)
+    targets = discover(args.manifest, root, expected_sources(args.metadata, root))
     print(f"Running all {len(targets)} Cargo test harnesses: {args.workers} processes, {args.threads} threads per harness", flush=True)
     report = schedule(targets, root, args.output, args.workers, args.threads, args.timeout, history)
     encoded = json.dumps(report, indent=2) + "\n"

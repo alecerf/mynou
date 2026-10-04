@@ -15,6 +15,9 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
     outputs:
       version: ${{ steps.metadata.outputs.version }}
     steps:
@@ -23,16 +26,16 @@ jobs:
         run: |
           rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
           rustup default 1.99.0
-      - name: Restore debug build cache
+      - name: Restore exact compiled test harnesses
         id: cache
         uses: actions/cache/restore@v6.1.0
         with:
           path: |
-            target/debug
-            target/.rustc_info.json
-          key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99-debug-v1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-rust-1.99-debug-v1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml') }}-
+            target/debug/deps
+            target/debug/mynou
+            target/debug/mynou-ci-test-build.jsonl
+            target/debug/mynou-ci-test-timings.json
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ github.repository }}-rust-1.99-tests-v2-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'tests/**', 'examples/**', 'deploy-compose.yaml', '.github/workflows/ci.yml') }}
       - name: Verify the dependency graph
         id: metadata
         run: |
@@ -53,9 +56,10 @@ jobs:
       - name: Check the CI test scheduler
         run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
       - name: Compile all test harnesses
-        run: cargo test --all-targets --no-run --offline --locked --message-format=json-render-diagnostics > "$RUNNER_TEMP/mynou-test-build.jsonl"
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cargo test --all-targets --no-run --offline --locked --message-format=json-render-diagnostics > target/debug/mynou-ci-test-build.jsonl
       - name: Run all Rust test harnesses in parallel
-        run: python3 .github/scripts/parallel_tests.py "$RUNNER_TEMP/mynou-test-build.jsonl" --output "$RUNNER_TEMP/mynou-test-results"
+        run: python3 .github/scripts/parallel_tests.py target/debug/mynou-ci-test-build.jsonl --metadata "$RUNNER_TEMP/metadata.json" --output "$RUNNER_TEMP/mynou-test-results"
       - name: Preserve test timings and logs
         if: always()
         uses: actions/upload-artifact@v7.0.1
@@ -64,13 +68,15 @@ jobs:
           path: ${{ runner.temp }}/mynou-test-results
           if-no-files-found: ignore
           retention-days: 7
-      - name: Save successful debug build cache
+      - name: Save successful compiled test harnesses
         if: success() && github.event_name == 'push' && github.ref == 'refs/heads/trunk' && steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6.1.0
         with:
           path: |
-            target/debug
-            target/.rustc_info.json
+            target/debug/deps
+            target/debug/mynou
+            target/debug/mynou-ci-test-build.jsonl
+            target/debug/mynou-ci-test-timings.json
           key: ${{ steps.cache.outputs.cache-primary-key }}
   build:
     name: Build ${{ matrix.target }}

@@ -42,6 +42,10 @@ class SchedulerTests(unittest.TestCase):
         normal = dict(self.messages[-1], profile={"test": False})
         self.messages.append(normal)
         self.assertEqual(runner.discover(self.manifest(), self.root), self.targets)
+        expected = {target.source for target in self.targets}
+        self.assertEqual(runner.discover(self.manifest(), self.root, expected), self.targets)
+        with self.assertRaises(ValueError):
+            runner.discover(self.manifest(), self.root, expected | {"src/new_target.rs"})
         with self.assertRaises(ValueError):
             runner.discover(self.manifest(False), self.root)
         self.messages.pop()
