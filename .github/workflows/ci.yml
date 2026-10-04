@@ -32,6 +32,7 @@ jobs:
         with:
           path: |
             target/debug/deps
+            target/debug/examples
             target/debug/mynou
             target/debug/mynou-ci-test-build.jsonl
             target/debug/mynou-ci-test-timings.json
@@ -74,6 +75,7 @@ jobs:
         with:
           path: |
             target/debug/deps
+            target/debug/examples
             target/debug/mynou
             target/debug/mynou-ci-test-build.jsonl
             target/debug/mynou-ci-test-timings.json
