@@ -551,6 +551,7 @@ impl RateGate {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn reserve(&self, bytes: u64, cancel: &AtomicBool) -> Result<()> {
         if bytes > BLOCK_BYTES {
             return Err("A payload reservation cannot exceed one 16 KiB block".into());
@@ -608,6 +609,7 @@ impl RateGate {
     /// either gate while waiting for the other. An unlimited gate keeps its FIFO
     /// ticket while the other gate waits, so enabling its limit applies to this
     /// reservation. Both-unlimited calls admit immediately without locking.
+    #[cfg(test)]
     pub fn reserve_pair(
         first: &Self,
         second: &Self,
