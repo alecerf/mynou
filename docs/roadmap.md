@@ -13,11 +13,20 @@ payload and import only their retained mapped files. New series scopes can be
 created without automatic acquisition before choosing a pack. Input, catalog,
 source-key and capacity checks precede recording; workers cannot change mappings and
 existing episode jobs are reused. See [pack acquisition](packs.md) for operations
-and bounds. Its own completed CI/release are required before claiming validation.
+and bounds. A guarded correction can requeue a failed/cancelled mapped request
+without imports or an active lease.
+
+The pack stage passed
+[Actions run 37213526435](https://github.com/alecerf/mynou/actions/runs/37213526435)
+for commit `cb6e89700a63c1a7f9aaaa644fce32bf8944386f`: 374 tests passed with
+none failed or ignored. GitHub Actions published
+[v0.13.0](https://github.com/alecerf/mynou/releases/tag/v0.13.0) with seven assets.
 
 This stage supplies explicit mappings for absolute/anime-style filenames.
 Automatic pack selection, selective downloading and general numbering rules
 need a following focused release.
+The [next-release checkpoint](next-release.md) records its native verification
+and mapping prerequisites. No 0.14 implementation is claimed there.
 
 ## Previous stage: 0.12.0
 

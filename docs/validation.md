@@ -68,9 +68,19 @@ conflicts across series, complete-input prevalidation, old unmapped jobs,
 Bearer/browser protection, escaped labels, credential-free responses and CLI
 mapping-file routing. New scopes can be recorded without automatic acquisition.
 
-These requirements need the new release's own completed Actions run. Earlier
-results do not validate this source revision. No tests, lint, builds or demos
-are run locally under the active development policy.
+The recorded run below validates the released pack implementation. No tests,
+lint, builds or demos are run locally under the active development policy.
+
+## Recorded 0.13.0 CI evidence
+
+[Run 37213526435](https://github.com/alecerf/mynou/actions/runs/37213526435) passed
+for commit `cb6e89700a63c1a7f9aaaa644fce32bf8944386f`: 374 tests passed with
+none failed or ignored across 29 targets, alongside all dependency, formatting,
+Clippy, native/musl build, native/Docker demonstration and packaging checks.
+GitHub Actions published
+[v0.13.0](https://github.com/alecerf/mynou/releases/tag/v0.13.0) with seven assets
+on October 4, 2026, at 15:39 UTC. Later documentation or code commits need their
+own completed CI run and do not alter this published source/tag.
 
 ## Recorded 0.12.0 CI evidence
 

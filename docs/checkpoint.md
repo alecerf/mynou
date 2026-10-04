@@ -86,6 +86,18 @@ has not already been released. The assets are a full source ZIP with the static
 Linux x86_64 binary, a separate static binary, a saved Docker image archive, and
 SHA-256 checksum files. There is no Docker Hub publication step.
 
+## Recorded 0.13.0 CI checkpoint
+
+Commit `cb6e89700a63c1a7f9aaaa644fce32bf8944386f` passed
+[Actions run 37213526435](https://github.com/alecerf/mynou/actions/runs/37213526435):
+374 tests passed with none failed or ignored across 29 targets and the complete
+CI pipeline. GitHub Actions published
+[v0.13.0](https://github.com/alecerf/mynou/releases/tag/v0.13.0) with seven assets
+on October 4, 2026, at 15:39 UTC. This validates the explicit pack release.
+Post-release documentation commits need their own CI, and do not replace the
+published tag or assets. [Next-release notes](next-release.md) preserve the
+concrete selective-file/automatic-pack/numbering work for the next session.
+
 ## Recorded 0.12.0 CI checkpoint
 
 Commit `fbdf61c19b31f941a08f91fd19e3bb843aec0541` passed
