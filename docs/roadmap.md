@@ -13,8 +13,12 @@ preview and guarded apply persist accepted choices before future jobs capture
 them. Existing library paths and request keys remain fixed; identity history
 survives disappearance and restart. See [numbering](numbering.md).
 
-This stage is prepared for CI validation and publication. A completed Actions
-run and published tag/assets must be recorded before claiming release evidence.
+This stage passed [run 37238156691](https://github.com/alecerf/mynou/actions/runs/37238156691)
+for commit `0821a4d3b499a5863fe5b50206c98bda25d6fb49`: 430 Rust tests across 36 targets,
+four scheduler checks and all five workflow jobs. CI published
+[v0.16.0](https://github.com/alecerf/mynou/releases/tag/v0.16.0) with seven assets
+on October 4, 2026, at 21:59 UTC. See
+[validation evidence](validation.md#recorded-0160-ci-evidence).
 Numbering and shared physical ownership are split into independently validated
 releases; shared multi-episode imports are now the next stage, 0.17.
 

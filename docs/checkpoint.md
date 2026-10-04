@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.16.0 (CI pending)
+# Project checkpoint — Mynou 0.16.0
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -98,7 +98,8 @@ The 0.16.0 implementation adds durable canonical episode anchors, explicit
 catalog/source numbering choices, read-only comparisons and guarded CLI/API/browser
 apply. New jobs capture source labels while existing keys/imports remain fixed.
 Older snapshots read without migration writes; successful saves use schema 2.
-This scope is prepared but has not yet passed its own complete CI/publication.
+The complete CI/publication passed with 430 Rust tests across 36 targets and four
+scheduler checks. The exact evidence is recorded below.
 See [numbering](numbering.md).
 
 Multi-episode videos, automatic
@@ -111,6 +112,23 @@ A successful validation run on `trunk` publishes a new `Cargo.toml` version if i
 has not already been released. The assets are a full source ZIP with the static
 Linux x86_64 binary, a separate static binary, a saved Docker image archive, and
 SHA-256 checksum files. There is no Docker Hub publication step.
+
+## Recorded 0.16.0 CI checkpoint
+
+Commit `0821a4d3b499a5863fe5b50206c98bda25d6fb49` passed
+[Actions run 37238156691](https://github.com/alecerf/mynou/actions/runs/37238156691):
+430 Rust tests passed with none failed or ignored across 36 targets, plus four
+scheduler checks and every dependency/format/Clippy/build/demo/package gate.
+CI published [v0.16.0](https://github.com/alecerf/mynou/releases/tag/v0.16.0)
+with seven assets on October 4, 2026, at 21:59:49 UTC. The tag targets the same
+source commit, and all assets belong to `github-actions[bot]`.
+See [validation evidence](validation.md#recorded-0160-ci-evidence) for SHA-256
+digests. Earlier published releases remain immutable. No local validation ran.
+Later documentation changes need their own complete CI.
+
+The next stage is 0.17 shared multi-episode physical ownership;
+[next-release notes](next-release.md) preserve the concrete naming, import, Plex,
+cancellation/retry and upgrade decisions still required.
 
 ## Recorded 0.15.0 CI checkpoint
 

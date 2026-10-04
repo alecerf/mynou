@@ -80,6 +80,40 @@ allowance across seasons. Existing full validation remains required.
 The recorded run below validates these scenarios through GitHub Actions only.
 No local tests, lint, builds or demos ran.
 
+## Recorded 0.16.0 CI evidence
+
+`0821a4d3b499a5863fe5b50206c98bda25d6fb49` passed
+[Actions run 37238156691](https://github.com/alecerf/mynou/actions/runs/37238156691):
+**430 Rust tests passed**, none failed or ignored, across **36 targets**.
+Four CI scheduler checks also passed. All five validation/build/package/release
+jobs completed successfully, including the offline single-package dependency
+graph, formatting, Clippy, GNU/musl builds, static/native and isolated Docker
+demonstrations, archive integrity, executable permissions and checksum checks.
+
+GitHub Actions published [v0.16.0](https://github.com/alecerf/mynou/releases/tag/v0.16.0)
+on October 4, 2026, at 21:59:49 UTC. The tag points to the validated source commit.
+All seven assets were uploaded by `github-actions[bot]`. Recorded payloads:
+
+| Asset | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `mynou-v0.16.0-linux-amd64-image.tar.gz` | 1524912 | `78619821d782a56178589829cec18d615a1974742618b0d50b8e83e63d7e97b8` |
+| `mynou-v0.16.0-linux-amd64-image.tar.gz.sha256` | 105 | `10fd48edf74fb8a4a44b7665e9f516a4a81d42badcc9c345539afa9701b1b820` |
+| `mynou-v0.16.0-linux-x86_64` | 2970464 | `4fb882372c8a75685281687078ac1b0f1ea30e9b40e1b2af20706024b8e2cbb2` |
+| `mynou-v0.16.0-linux-x86_64.sha256` | 93 | `cd519cd7240af83566b3998ff86099bc600219cf3bf76b28c4df897799befa99` |
+| `mynou-v0.16.0-source.zip` | 5225310 | `42d192bd3fbcf9e95138b72591311e4580a901b4c8b3388ac7c03e918139e7b5` |
+| `mynou-v0.16.0-source.zip.sha256` | 91 | `f04628c8f2e45ea4f6aedf60aed8b134f820a230b75cc171f16c0d3218a266ee` |
+| `SHA256SUMS` | 289 | `931bd2f8df8bba88dfdcf51b9cb757e7fbdbb5c489e3c24c58a4828f1f8e6385` |
+
+The recorded scenarios exercise renumbered and cross-season catalogs, explicit
+absolute/season source queries, exact single-file labels, collisions, stale plan
+guards, late results, legacy/versioned snapshots, corrupt semantic data, retained
+history, protected API/browser/CLI actions and unchanged existing library bytes.
+
+No local tests, lint, builds, binaries or demonstrations were executed. CI alone
+created the tag/release/assets. The existing v0.15.0 tag and all seven asset IDs,
+sizes and digests remain unchanged. Later documentation commits require their
+own complete CI and do not replace the v0.16.0 tag or assets.
+
 ## Recorded 0.15.0 CI evidence
 
 [Run 37230875486](https://github.com/alecerf/mynou/actions/runs/37230875486) passed

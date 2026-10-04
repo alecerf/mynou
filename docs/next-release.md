@@ -5,12 +5,17 @@ numbers while approved catalog/source labels may change. CLI/API/browser preview
 and guarded apply persist choices before future jobs capture source labels.
 Existing requests, exclusions and library paths stay fixed. See [numbering](numbering.md).
 
-This version is prepared for CI; its complete workflow and publication must be
-recorded before claiming release evidence. The last published release is 0.15.0
-from `1fe40eed0b0ea170a03ffce8d30d2ab8cb3e7125`, validated by
-[run 37230875486](https://github.com/alecerf/mynou/actions/runs/37230875486)
-with 409 Rust tests across 34 targets and seven CI-published assets. Those tags
-and assets stay immutable. [Validation](validation.md) retains historical digests.
+Mynou 0.16.0 was published by CI from
+`0821a4d3b499a5863fe5b50206c98bda25d6fb49` after
+[run 37238156691](https://github.com/alecerf/mynou/actions/runs/37238156691) passed:
+430 Rust tests across 36 targets, four scheduler checks and all five workflow
+jobs. Seven assets were uploaded by `github-actions[bot]` on October 4, 2026, at
+21:59:49 UTC. The tag targets that validated commit. See
+[validation evidence](validation.md#recorded-0160-ci-evidence) for asset digests.
+
+Earlier releases stay immutable; the 0.15 source, tag and seven asset digests
+remain recorded in [validation](validation.md). Later documentation changes
+require their own complete CI and never replace published artifacts.
 
 The CI optimization's final commit `1583ca5768400fa2e9511d3444ec28b076d3b1f3`
 passed [run 37235568061](https://github.com/alecerf/mynou/actions/runs/37235568061)
