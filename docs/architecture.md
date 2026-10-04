@@ -78,6 +78,24 @@ restart, validates file names and size limits, and then exposes a ready state.
 Bytes merely existing on disk do not make a torrent ready. A hybrid torrent must
 satisfy both v1 hashes and v2 roots before final publication.
 
+Parallel payload work uses one coordinator per active transfer and a bounded
+number of TCP peer workers. The coordinator owns piece claims, verified writes
+and completion. One peer owns an in-flight piece at a time; failed ownership
+returns the piece for another attempt. Only verified data can update readiness,
+and final torrent verification remains required. A file-priority change affects
+the next claim rather than canceling an already claimed piece.
+
+`downloads.max_peers` is a per-transfer ceiling with a default of four and a
+range of one through eight. Global worker and per-transfer resource bounds may
+reduce the effective count. Known usable peers can start while bounded discovery
+work proceeds. Private torrents retain their discovery restrictions; magnet
+metadata is authenticated before parallel payload acquisition. A retired
+coordinator joins all workers before exiting, and completion joins them before
+publishing readiness. Verified writes and metadata publication check generation
+ownership while holding the native control mutex; pause waits for an ongoing
+disk write. Result sends poll cancellation even when their bounded queue is full.
+Corrupt-peer classification remains available after a worker exits.
+
 Transfer controls belong to the native engine and use native transfer IDs, which
 are distinct from request IDs. Durable user pause state is separate from
 retryable internal interruptions; request retries cannot clear a user pause.

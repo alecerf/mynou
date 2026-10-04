@@ -1,4 +1,4 @@
-# Mynou 0.9.0 — Rust, standard library only
+# Mynou 0.10.0 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -43,8 +43,8 @@ from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, o
 build the image from the source archive:
 
 ```sh
-docker load -i mynou-v0.9.0-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.9.0 .
+docker load -i mynou-v0.10.0-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.10.0 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d
@@ -64,6 +64,9 @@ ownership, shared Plex paths, and installation without Rust on the host.
   SHA-1/SHA-256 Merkle verification; restart recovery; and verified-file seeding.
 - HTTP/HTTPS/UDP trackers, DHT, and PEX discovery, with private-torrent rules.
   Peer data uses TCP.
+- Bounded parallel TCP peers share verified piece work within each transfer.
+  Corrupt peer data is rejected; completed pieces still pass normal hash and
+  final torrent verification before becoming ready.
 - Persistent requests, deduplication, worker leases, retries, cancellation,
   imports without overwriting existing files, and preservation of source files.
 - Plex watchlists, TMDB enrichment, RSS/JSON/Torznab sources, Plex refresh and
@@ -127,11 +130,11 @@ new imported path must be confirmed before the replacement becomes current.
 See the [library guide](docs/library.md) for configuration and API operations.
 
 The [transfer guide](docs/transfers.md) explains native download controls,
-bandwidth limits and seeding policies. Each torrent still transfers from one
-active peer; parallel peers remain the next release stage.
+parallel peer bounds, bandwidth limits and seeding policies. Use
+`downloads.max_peers: 1` to retain a single-peer transfer baseline.
 
-Mynou remains an early integrated implementation. This release adds durable
-transfer controls; a web interface and full parity with Radarr, Sonarr, Pulsarr,
+Mynou remains an early integrated implementation. This release adds parallel
+peer transfers; a web interface and full parity with Radarr, Sonarr, Pulsarr,
 qBittorrent, qui, autobrr or Prowlarr remain future work. The
 [release roadmap](docs/roadmap.md) separates the next stages.
 

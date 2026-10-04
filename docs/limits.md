@@ -28,8 +28,17 @@ metadata exchange, v2 hash proofs, HTTP/HTTPS/UDP trackers, a DHT client, and PE
 reception. Concurrency is bounded by configuration. It does not implement uTP,
 WebRTC/WebTorrent, webseeds, UPnP/NAT-PMP, or a complete persistent DHT table.
 
-Each transfer uses one active peer and up to 16 blocks in flight. Discovery caches
-at most 1,024 peers per torrent. Seeding announces `started`, `completed`, and
+Each transfer uses a bounded number of parallel TCP peer workers, controlled by
+`downloads.max_peers`: default four, accepted range one through eight. Setting
+one retains a single-peer baseline. Global worker and per-transfer resource
+bounds may reduce concurrency. Each peer can pipeline up to 16 blocks when
+unlimited; payload rate gating reduces the request pipeline when a cap applies.
+The coordinator claims a piece exclusively and publishes verified data; failed
+pieces are reclaimed without duplicate endgame requests. A peer count is a
+ceiling, not a guarantee of connections or higher throughput.
+
+Discovery caches at most 1,024 peers per torrent. Known usable peers can start
+while background discovery proceeds. Seeding announces `started`, `completed`, and
 `stopped` events and respects tracker intervals, bounded between 30 seconds and
 24 hours. A forced stop does not guarantee a `stopped` announcement. Download and
 upload counters describe content payload bytes, not all interface traffic.

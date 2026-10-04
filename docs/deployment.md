@@ -13,13 +13,13 @@ Download the source ZIP and image archive from
 Load the validated release image:
 
 ```sh
-docker load -i mynou-v0.9.0-linux-amd64-image.tar.gz
+docker load -i mynou-v0.10.0-linux-amd64-image.tar.gz
 ```
 
 Alternatively, build the image from the extracted sources:
 
 ```sh
-docker build -t mynou:0.9.0 .
+docker build -t mynou:0.10.0 .
 ```
 
 Use the image binary to prepare an installation in a new directory:
@@ -29,7 +29,7 @@ docker run --rm --network none \
   --user "$(id -u):$(id -g)" \
   --mount "type=bind,src=$PWD,dst=/work" \
   --workdir /work \
-  mynou:0.9.0 setup-docker --dir mynou-docker
+  mynou:0.10.0 setup-docker --dir mynou-docker
 ```
 
 If your account does not use UID/GID 1000, add its IDs to the generated `.env`:
@@ -181,7 +181,14 @@ retained versions; no automatic cleanup is included.
 The [library guide](library.md) covers baseline claims, preview/apply behavior,
 cutoffs and the authenticated API.
 
-## Configure transfer limits
+## Configure peer concurrency and transfer limits
+
+Inside the existing `downloads` object, `max_active` bounds active transfers and
+`max_peers` bounds outgoing peer workers per transfer. `max_peers` defaults to
+`4`, including when omitted by an older configuration, and accepts integers
+`1` through `8`. Set it to `1` for a single-peer baseline. Global worker and
+per-transfer resource bounds can lower the effective peer count. Restart the
+service after changing it; see [parallel transfer bounds](transfers.md#parallel-peer-transfers).
 
 Optional policy fields live directly inside the existing `downloads` object:
 

@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.9.0
+# Project checkpoint — Mynou 0.10.0
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -51,16 +51,33 @@ start missing historical counters at zero. Controls retain downloads and
 library imports. File priorities still download all files; skipping is not
 implemented. See [transfers.md](transfers.md).
 
-Parallel peers, a web interface, series-pack/specials management, multi-user Plex
+The 0.10.0 change adds bounded parallel TCP peer transfers. The configured
+`downloads.max_peers` defaults to four and accepts one through eight; global
+worker and per-transfer resource bounds may reduce the effective count. The
+single-peer setting is retained for comparisons. See [transfers.md](transfers.md)
+for scheduling, discovery, verification and remaining transport limits.
+
+A web interface, series-pack/specials management, multi-user Plex
 policies, IRC automation, native indexer adapters, Usenet and cross-seeding remain
 future stages. See the [release roadmap](roadmap.md). Transfer control is a
-focused stage, not full parity.
+focused stage, and parallel peers do not establish full parity.
 
 Releases are hosted in [alecerf/mynou](https://github.com/alecerf/mynou/releases).
 A successful validation run on `trunk` publishes a new `Cargo.toml` version if it
 has not already been released. The assets are a full source ZIP with the static
 Linux x86_64 binary, a separate static binary, a saved Docker image archive, and
 SHA-256 checksum files. There is no Docker Hub publication step.
+
+## Recorded 0.9.0 CI checkpoint
+
+Commit `c45e127e3b8587a4f4ace6a2bbc7eab86bf48a66` passed
+[Actions run 37187100999](https://github.com/alecerf/mynou/actions/runs/37187100999):
+302 tests passed with none ignored, alongside the complete CI validation.
+GitHub Actions published
+[v0.9.0](https://github.com/alecerf/mynou/releases/tag/v0.9.0) with seven assets.
+This is historical evidence for 0.9.0. The 0.10.0 changes require their own
+successful Actions run and CI-created release; no current passing result is
+recorded here until it has been observed.
 
 ## Recorded 0.8.0 CI checkpoint
 
@@ -69,9 +86,7 @@ Commit `9ef6f1fc94f2437aa6797e18385c0e81273c5e44` passed
 251 tests passed with none ignored, alongside the complete CI validation.
 GitHub Actions published
 [v0.8.0](https://github.com/alecerf/mynou/releases/tag/v0.8.0) with seven assets.
-This is historical evidence for 0.8.0. The 0.9.0 changes require their own
-successful Actions run and CI-created release; no current passing result is
-recorded here until it has been observed.
+This is historical evidence for 0.8.0 and does not validate later changes.
 
 ## Recorded 0.7.0 CI checkpoint
 

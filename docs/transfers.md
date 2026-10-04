@@ -1,10 +1,72 @@
-# Native transfer controls
+# Native transfers and controls
 
 Mynou 0.9.0 adds controls for its native BitTorrent engine: durable user
 pause/resume, queue priority, per-file piece priority, payload bandwidth limits,
 and persistent accounting with ratio/time seeding policies. These operations
 retain downloads and library imports. They do not invoke another torrent
 client or add dependencies.
+
+Mynou 0.10.0 adds bounded parallel TCP peer transfers. The same controls,
+verification and shared-transfer behavior apply across the cooperating peers.
+
+## Parallel peer transfers
+
+Configure peer concurrency in the existing `downloads` object:
+
+```json
+{
+  "downloads": {
+    "max_active": 2,
+    "max_peers": 4
+  }
+}
+```
+
+Merge these fields with the rest of your configuration. `max_active` limits
+active transfers. `max_peers` defaults to `4`, including when absent from an
+older configuration, and accepts integers `1` through `8`. Values of zero,
+fractions, booleans and numeric strings are rejected. Restart after changes.
+Set `max_peers` to `1` for a single-peer baseline.
+
+The peer setting is a ceiling, not a promised connection count. A transfer
+needs known, reachable peers that advertise needed pieces. Global worker and
+per-transfer resource bounds can further reduce concurrency. It does not add
+new peer transports, guarantee faster public downloads or bypass bandwidth caps.
+
+The connection allocation is `min(max_peers, max(1, 64 / max_active))`, using
+integer division. With configuration's maximum of 64 active transfers, this
+bounds outgoing payload workers to 64 across all active transfers. Direct Rust
+library callers can select up to 128 active transfers; their minimum one-peer
+allocation permits up to 128 workers. Incoming seeding handlers have a separate
+32-connection bound.
+
+Concurrency is also reduced using a 128 MiB per-transfer estimate for worker
+metadata clones, one piece buffer per worker and a protocol buffer allowance.
+At least one worker remains possible for a large torrent. This estimate is not
+a hard process RAM limit: canonical metadata, parsers, allocator overhead,
+journal data and operating-system socket buffers also consume memory. A worker
+receives no new piece until the coordinator accepts its previous result.
+
+Known peers connect alongside discovery after metadata authentication. New
+parallel TCP connections have a one-second attempt timeout; standard-library
+connects can observe cancellation only after that attempt returns. Established
+socket operations poll cancellation every 100 ms. Idle peers rotate after two
+seconds, and corrupt peers are quarantined for the current download generation.
+Tracker jobs rotate fairly, and shared tracker/seeding-DHT capacity alternates
+between task kinds when both are eligible.
+
+The coordinator gives each in-flight piece one owner. It verifies returned data
+before writing and publishing the piece; disconnects and invalid pieces return
+work for another peer. No duplicate endgame requests are issued. Final v1/v2 or
+hybrid verification still decides readiness. A file-priority change affects
+subsequent piece selection without taking a piece away from its active owner.
+All files remain required.
+
+Discovery proceeds alongside usable known peers rather than postponing them
+until every lookup finishes. Discovery retains bounded peer results and
+private-torrent restrictions. A magnet still needs authenticated metadata before
+parallel payload work and before its private flag can be known. The privacy
+limits in [protocol support](limits.md#bittorrent) continue to apply.
 
 ## Inspect transfers
 
@@ -38,6 +100,12 @@ Restart, request retries and repeated acquisition checks do not undo it. Resume
 is an explicit user operation. Pausing the shared transfer affects all requests
 using it; canceling one request does not imply permission to delete its shared
 download or undo a user pause.
+
+Parallel verified writes share the control mutex with pause. A pause waits for
+the current disk write, then prevents the retired generation from committing
+more pieces. The coordinator cancels and joins its workers before exiting or
+publishing readiness. Blocking filesystem operations depend on the operating
+system and have no strict wall-clock interruption guarantee.
 
 Pause/resume retains downloaded pieces, source files and imports. Resuming still
 requires normal verification and does not make unverified bytes ready. Pausing
@@ -187,7 +255,7 @@ Ratio/time policies control seeding activity while retaining data. Reaching a
 limit does not delete a downloaded file, remove an import or revoke Plex
 availability. This release adds no automatic cleanup.
 
-Each torrent still downloads from one active peer. Parallel peer transfers,
 uTP/WebTorrent, webseeds, automatic NAT traversal and a complete persistent DHT
-table remain outside this release. See [limits](limits.md),
+table remain outside this release. There is no selective file skipping, web
+management interface or automatic cleanup. See [limits](limits.md),
 [library monitoring](library.md) and the [roadmap](roadmap.md).

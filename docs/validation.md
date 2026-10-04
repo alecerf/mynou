@@ -36,8 +36,8 @@ steps. No Docker Hub repository is needed.
 Download the assets and checksum files from the same release. For example:
 
 ```sh
-sha256sum -c mynou-v0.9.0-source.zip.sha256
-sha256sum -c mynou-v0.9.0-linux-amd64-image.tar.gz.sha256
+sha256sum -c mynou-v0.10.0-source.zip.sha256
+sha256sum -c mynou-v0.10.0-linux-amd64-image.tar.gz.sha256
 ```
 
 To verify all downloaded assets together, download `SHA256SUMS` and every listed
@@ -56,6 +56,34 @@ sha256sum -c SHA256SUMS
 
 Checksum verification establishes integrity relative to the downloaded manifest.
 It does not replace reviewing the release's commit and successful Actions run.
+
+## Parallel-peer changes in 0.10.0
+
+CI must exercise bounded parallel transfers with synthetic torrents and local
+TCP peers, without downloading public content. Validation must preserve the
+0.9.0 transfer controls and cover:
+
+- Missing `max_peers` defaults, accepted values one through eight, invalid
+  values, a single-peer baseline and effective global/resource worker bounds.
+- Exclusive in-flight piece ownership, verified publication, file-priority
+  changes for subsequent work, cancellation/restart and reclaiming work after
+  a peer disconnects or sends corrupt data.
+- Several usable peers contributing without duplicate endgame requests or
+  allowing one bad peer to corrupt a ready transfer. v1, v2 and hybrid
+  verification requirements remain in force.
+- Discovery alongside known peers, bounded results and private-torrent rules;
+  tracker/DHT latency must not hold back a usable direct peer unnecessarily.
+- Aggregate bandwidth caps and persistent accounting across parallel peers,
+  including pause, policy changes and seeding-limit retention.
+- A reproducible local throughput comparison between the retained sequential
+  path with `max_peers: 1` and parallel peers, recording the environment,
+  workload, timing and limitations of the comparison. This baseline is not a
+  measurement of the separately released 0.9.0 binary.
+
+These are requirements for the new implementation, not a recorded passing run
+or a performance result. Use the completed Actions run for the exact 0.10.0
+commit before claiming validation. A local fixture comparison does not establish
+public-swarm throughput or performance on a personal installation.
 
 ## Transfer-control changes in 0.9.0
 
@@ -84,10 +112,21 @@ seeding elapsed time, and ratio/time policies. CI must cover:
 - CLI/API transfer controls, authenticated operations, bounded inputs and
   credential-free reports.
 
-These are validation requirements, not a recorded passing result. Inspect the
-Actions run for the exact 0.9.0 source commit. Preserve the existing dependency,
-formatting, Clippy, native/Docker demo, selection and upgrade safety checks, and
-release packaging. Earlier passing runs do not validate changed transfer code.
+The completed run below records these checks for the released 0.9.0 commit.
+Preserve the existing dependency, formatting, Clippy, native/Docker demo,
+selection and upgrade safety checks, and release packaging when changing the
+transfer engine. Earlier passing runs do not validate changed transfer code.
+
+## Recorded 0.9.0 CI evidence
+
+[Run 37187100999](https://github.com/alecerf/mynou/actions/runs/37187100999)
+completed successfully for transfer-control commit
+`c45e127e3b8587a4f4ace6a2bbc7eab86bf48a66`. Its 302 tests passed with none
+ignored, together with dependency, formatting, Clippy, build, demo and release
+checks. GitHub Actions published
+[v0.9.0](https://github.com/alecerf/mynou/releases/tag/v0.9.0) with seven assets.
+This result validates that release, not the 0.10.0 changes or a personal Plex
+installation.
 
 ## Recorded 0.8.0 CI evidence
 
