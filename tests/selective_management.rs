@@ -92,7 +92,8 @@ fn bearer_and_browser_expand_shared_interests_without_undoing_pause_or_modifying
         "/ui/transfers/selection",
         &format!("csrf=wrong&id={}&action=all", torrent.id),
     );
-    assert_eq!(bad.status, 400);
+    assert_eq!(bad.status, 403);
+    bad.no_secrets();
     assert_eq!(
         server
             .engine
