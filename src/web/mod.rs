@@ -24,6 +24,13 @@ pub(crate) struct Web {
     sessions: Mutex<Sessions>,
 }
 
+pub(crate) struct BrowserRequest<'a> {
+    pub method: &'a str,
+    pub target: &'a str,
+    pub headers: &'a BTreeMap<String, String>,
+    pub body: &'a [u8],
+}
+
 pub(crate) struct Response {
     status: u16,
     body: String,
@@ -97,12 +104,9 @@ impl Web {
         &self,
         engine: &Arc<Engine>,
         token: &str,
-        method: &str,
-        target: &str,
-        headers: &BTreeMap<String, String>,
-        body: &[u8],
+        request: BrowserRequest<'_>,
     ) -> Response {
-        match self.route(engine, token, method, target, headers, body) {
+        match self.route(engine, token, request) {
             Ok(response) => response,
             Err(error) => failure(400, &error, None),
         }
@@ -112,13 +116,19 @@ impl Web {
         &self,
         engine: &Arc<Engine>,
         token: &str,
-        method: &str,
-        target: &str,
-        headers: &BTreeMap<String, String>,
-        body: &[u8],
+        request: BrowserRequest<'_>,
     ) -> Result<Response> {
+        let BrowserRequest {
+            method,
+            target,
+            headers,
+            body,
+        } = request;
         let authority = authority(headers)?;
         let (path, query) = target.split_once('?').unwrap_or((target, ""));
+        if matches!(path, "/ui/login" | "/" | "/ui/") && !query.is_empty() {
+            return Err("This page does not accept query parameters".into());
+        }
         if !matches!(method, "GET" | "POST") {
             return Ok(failure(405, "Use a browser link or form", None));
         }
@@ -234,7 +244,7 @@ impl Web {
             "/ui/library" => views::library(engine, &session, &query)?,
             "/ui/search" => {
                 query.only(&[])?;
-                views::search(&session, None)?
+                views::search(&session, None, None)?
             }
             "/ui/transfers" => views::transfers(engine, &session, &query)?,
             _ => {
@@ -289,7 +299,10 @@ impl Web {
             "/ui/search" => {
                 let request = form.request()?;
                 let report = integrations::search_report(&engine.config, &request)?;
-                Ok(Response::html(200, views::search(session, Some(&report))?))
+                Ok(Response::html(
+                    200,
+                    views::search(session, Some(&report), Some(&request))?,
+                ))
             }
             "/ui/requests" => {
                 let jobs = engine.submit(form.request()?)?;

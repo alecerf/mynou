@@ -6,7 +6,7 @@ use crate::{
     integrations,
     json::{self, Value},
     store::Request,
-    web::Web,
+    web::{BrowserRequest, Web},
 };
 use std::{
     collections::BTreeMap,
@@ -190,9 +190,19 @@ fn connection(stream: &mut TcpStream, engine: &Arc<Engine>, token: &str, web: &W
         Ok(v) => v,
         Err(e) => return respond(stream, 400, error(&e)),
     };
-    if path == "/" || path == "/ui" || path.starts_with("/ui/") {
+    let browser_path = path.split('?').next().unwrap_or(&path);
+    if browser_path == "/" || browser_path == "/ui" || browser_path.starts_with("/ui/") {
         return web
-            .handle(engine, token, &method, &path, &headers, &body)
+            .handle(
+                engine,
+                token,
+                BrowserRequest {
+                    method: &method,
+                    target: &path,
+                    headers: &headers,
+                    body: &body,
+                },
+            )
             .write(stream);
     }
     if method == "GET" && (path == "/healthz" || path == "/readyz") {

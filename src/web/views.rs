@@ -8,6 +8,7 @@ use crate::{
     engine::{Engine, lock, public_job},
     integrations::report_text,
     json::Value,
+    store::Request,
 };
 use std::sync::Arc;
 
@@ -66,7 +67,10 @@ pub fn dashboard(engine: &Arc<Engine>, session: &Session) -> Result<String> {
     ] {
         body.push_str(&format!(
             "<article class=metric><span>{name}</span><strong>{}</strong></article>",
-            status.get(key).map(|value| display(&raw_scalar(Some(value)))).unwrap_or_else(|| "0".into())
+            status
+                .get(key)
+                .map(|value| display(&raw_scalar(Some(value))))
+                .unwrap_or_else(|| "0".into())
         ));
     }
     body.push_str("</section><section class=grid><article class=panel><h2>Find something to watch</h2><p>Preview matching releases and see why each one is accepted or rejected. Then record a request.</p><a class=button href=/ui/search>Search and request</a></article><article class=panel><h2>Keep your library current</h2><p>Review owned imports, monitoring and release baselines. Preview upgrades before applying them.</p><a class=button href=/ui/library>Open library</a></article></section><section class=panel><h2>Plex watchlist</h2>");
@@ -160,12 +164,45 @@ pub fn library(engine: &Arc<Engine>, session: &Session, query: &Form) -> Result<
     Ok(frame("Library", "/ui/library", Some(session), &body))
 }
 
-pub fn search(session: &Session, report: Option<&Value>) -> Result<String> {
+pub fn search(
+    session: &Session,
+    report: Option<&Value>,
+    request: Option<&Request>,
+) -> Result<String> {
     let mut body = String::from(
         "<p class=lead>Find a release, understand the selection and start a request.</p><section class=panel><h2>What would you like to watch?</h2>",
     );
     body.push_str(&form("/ui/requests", session));
     body.push_str("<div class=fields><div><label for=kind>Content type</label><select id=kind name=kind><option value=movie>Movie</option><option value=episode>Episode</option><option value=series>Series</option><option value=file>Local media file</option></select></div><div class=wide><label for=title>Title</label><input id=title name=title required maxlength=4096 autocomplete=off></div><div><label for=year>Year</label><input id=year name=year type=number min=0 max=9999></div><div><label for=season>Season</label><input id=season name=season type=number min=0 max=9999></div><div><label for=episode>Episode</label><input id=episode name=episode type=number min=0 max=99999></div><div><label for=tmdb_id>TMDB ID (optional)</label><input id=tmdb_id name=tmdb_id type=number min=1 max=9007199254740991></div></div><details><summary>Use a specific source</summary><label for=source_kind>Source type</label><select id=source_kind name=source_kind><option value=auto>Automatic search</option><option value=url>Torrent, magnet or HTTP URL</option><option value=file>File on the Mynou server</option></select><label for=source_value>URL or server file path</label><input id=source_value name=source_value maxlength=8192 autocomplete=off><p class=muted>Server paths refer to files Mynou can access. Submitted source URLs are kept private.</p></details><div class=actions><button type=submit formaction=/ui/search class=secondary>Preview search</button><button type=submit>Record request</button></div></form><p class=muted>Preview searches support movies and individual episodes. Series requests use the configured series expansion. Recording a request runs automatic selection again; a preview does not reserve a release.</p></section>");
+    if let Some(request) = request {
+        body = body.replace(
+            "<input id=title name=title required",
+            &format!(
+                "<input id=title name=title value=\"{}\" required",
+                display(&request.title)
+            ),
+        );
+        body = body.replace(
+            &format!("<option value={}>", request.kind),
+            &format!("<option value={} selected>", request.kind),
+        );
+        for (name, number) in [
+            ("year", u64::from(request.year)),
+            ("season", u64::from(request.season)),
+            ("episode", u64::from(request.episode)),
+            ("tmdb_id", request.tmdb_id.unwrap_or(0)),
+        ] {
+            if number != 0 {
+                body = body.replace(
+                    &format!("<input id={name} name={name} type=number"),
+                    &format!("<input id={name} name={name} value={number} type=number"),
+                );
+            }
+        }
+        if request.source_url.is_some() || request.source_path.is_some() {
+            body.push_str("<p class=notice>The source field was cleared after preview. Enter it again before recording this request.</p>");
+        }
+    }
     if let Some(report) = report {
         body.push_str("<section class=panel><h2>Search preview</h2>");
         if flag(report, "manual_override") {
@@ -362,10 +399,12 @@ pub fn job(engine: &Arc<Engine>, session: &Session, query: &Form, id: &str) -> R
         body.push_str("</form><h3>Release baseline</h3>");
         if let Some(release) = &job.release {
             body.push_str(&format!("<p>{}</p>", display(&release.title)));
+        } else {
+            body.push_str(&form("/ui/library/baseline", session));
+            body.push_str(&hidden("id", id));
+            body.push_str("<label for=release_title>Matching release title</label><input id=release_title name=release_title required maxlength=2048><button type=submit>Save baseline</button></form>");
         }
-        body.push_str(&form("/ui/library/baseline", session));
-        body.push_str(&hidden("id", id));
-        body.push_str("<label for=release_title>Matching release title</label><input id=release_title name=release_title required maxlength=2048><button type=submit>Save baseline</button></form></section>");
+        body.push_str("</section>");
     }
     let files: Vec<_> = job
         .imports
@@ -415,6 +454,14 @@ pub fn job(engine: &Arc<Engine>, session: &Session, query: &Form, id: &str) -> R
 
 pub fn transfers(engine: &Arc<Engine>, session: &Session, query: &Form) -> Result<String> {
     let browse = Browse::new(query, TRANSFER_STATES)?;
+    if !engine.config.downloads_enabled {
+        return Ok(frame(
+            "Transfers",
+            "/ui/transfers",
+            Some(session),
+            "<section class=panel><p>Native downloads are disabled. Enable them in your configuration to manage transfers here.</p></section>",
+        ));
+    }
     let value = engine.transfers()?;
     let entries: Vec<_> = array(&value)
         .iter()
