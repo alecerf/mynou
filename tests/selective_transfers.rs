@@ -36,7 +36,9 @@ fn bits(client: &Client, id: &str) -> Vec<u8> {
     hello[1..20].copy_from_slice(b"BitTorrent protocol");
     let hash: Vec<_> = id
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
         .collect();
     hello[28..48].copy_from_slice(&hash[..20]);
@@ -437,7 +439,9 @@ fn merkle(hashes: &[[u8; 32]]) -> [u8; 32] {
     level.resize(level.len().next_power_of_two(), [0; 32]);
     while level.len() > 1 {
         level = level
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|pair| sha256(&pair.concat()))
             .collect();
     }
