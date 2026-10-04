@@ -3,6 +3,8 @@
 mod control;
 #[path = "torrent/discovery.rs"]
 mod discovery;
+#[path = "torrent/inspection.rs"]
+mod inspection;
 #[path = "torrent/metainfo.rs"]
 mod metainfo;
 #[path = "torrent/parallel.rs"]
@@ -13,6 +15,7 @@ mod selection;
 mod wire;
 use control::RateGate;
 pub use control::{FilePriority, TorrentControl, TransferPolicy};
+pub use inspection::{MetadataFile, TorrentMetadata, inspect_metadata};
 pub use selection::{FileSelection, SelectionUpdate};
 
 use crate::{Result, bencode::Value};
@@ -216,6 +219,12 @@ fn url_decode(s: &str) -> Result<String> {
 
 impl Source {
     fn parse(source: &str) -> Result<Self> {
+        Self::parse_with_deadline(source, None)
+    }
+    fn parse_with_deadline(source: &str, deadline: Option<Instant>) -> Result<Self> {
+        if deadline.is_some_and(|end| Instant::now() >= end) {
+            return Err("Torrent metadata deadline exceeded".into());
+        }
         if source.len() > 64 * 1024 {
             return Err("Torrent source is too long".into());
         }
@@ -283,9 +292,16 @@ impl Source {
             }
         } else {
             let encoded = if source.starts_with("http://") || source.starts_with("https://") {
-                let r = crate::net::HttpClient::new()
-                    .with_max_body(MAX_META)
-                    .get(source)?;
+                let mut client = crate::net::HttpClient::new().with_max_body(MAX_META);
+                if let Some(end) = deadline {
+                    client = client.with_timeout(
+                        end.checked_duration_since(Instant::now())
+                            .filter(|remaining| !remaining.is_zero())
+                            .ok_or("Torrent metadata deadline exceeded")?
+                            .min(Duration::from_secs(20)),
+                    );
+                }
+                let r = client.get(source)?;
                 if r.status != 200 {
                     return Err("Metadata download was rejected".into());
                 }
@@ -308,7 +324,18 @@ impl Source {
         {
             return Err("Zero torrent hash is not allowed".into());
         }
+        if deadline.is_some_and(|end| Instant::now() >= end) {
+            return Err("Torrent metadata deadline exceeded".into());
+        }
         Ok(result)
+    }
+    fn matches_identity(&self, expected: &str) -> bool {
+        self.v1.is_some_and(|hash| hex(&hash) == expected)
+            || self.v2.is_some_and(|hash| hex(&hash) == expected)
+            || self.meta.as_ref().is_some_and(|meta| {
+                meta.v1.is_some_and(|hash| hex(&hash) == expected)
+                    || meta.v2.is_some_and(|hash| hex(&hash) == expected)
+            })
     }
     fn id(&self) -> String {
         if let Some(hash) = self.v2 {
@@ -1022,16 +1049,53 @@ impl Client {
         })
     }
     pub fn ensure(&self, source: &str) -> Result<DownloadStatus> {
-        self.ensure_selection(source, FileSelection::All)
+        self.ensure_selection(source, FileSelection::All, None)
     }
 
     /// Record exact paths before metadata discovery can schedule any payload.
     pub fn ensure_files(&self, source: &str, paths: &[String]) -> Result<DownloadStatus> {
-        self.ensure_selection(source, FileSelection::paths(paths)?)
+        self.ensure_selection(source, FileSelection::paths(paths)?, None)
     }
 
-    fn ensure_selection(&self, source: &str, selection: FileSelection) -> Result<DownloadStatus> {
+    /// Reject a changed metadata URL before publishing a queue-visible transfer.
+    pub fn ensure_bound_files(
+        &self,
+        source: &str,
+        paths: &[String],
+        expected: &str,
+    ) -> Result<DownloadStatus> {
+        self.ensure_selection(source, FileSelection::paths(paths)?, Some(expected))
+    }
+
+    pub fn require_bound_files(
+        &self,
+        id: &str,
+        paths: &[String],
+        expected: &str,
+    ) -> Result<DownloadStatus> {
+        {
+            let jobs = self
+                .jobs
+                .lock()
+                .map_err(|_| "BitTorrent state lock is poisoned")?;
+            let job = jobs.get(id).ok_or("Unknown download")?;
+            if !job.source.matches_identity(expected) {
+                return Err("Torrent identity differs from the accepted pack metadata".into());
+            }
+        }
+        self.require_files(id, paths)
+    }
+
+    fn ensure_selection(
+        &self,
+        source: &str,
+        selection: FileSelection,
+        expected: Option<&str>,
+    ) -> Result<DownloadStatus> {
         let mut source = Source::parse(source)?;
+        if expected.is_some_and(|hash| !source.matches_identity(hash)) {
+            return Err("Torrent identity differs from the accepted pack metadata".into());
+        }
         if let Some(meta) = &source.meta {
             selection.validate_metadata(meta)?;
         }

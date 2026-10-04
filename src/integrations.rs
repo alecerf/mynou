@@ -925,16 +925,18 @@ fn source_releases(source: &Source, request: &Request, deadline: Instant) -> Res
     if source.kind == "torznab" {
         pairs.push((
             "t",
-            if request.kind == "episode" {
+            if matches!(request.kind.as_str(), "episode" | "series") {
                 "tvsearch"
             } else {
                 "movie"
             }
             .into(),
         ));
-        if request.kind == "episode" {
+        if matches!(request.kind.as_str(), "episode" | "series") {
             pairs.push(("season", request.season.to_string()));
-            pairs.push(("ep", request.episode.to_string()));
+            if request.kind == "episode" {
+                pairs.push(("ep", request.episode.to_string()));
+            }
         }
     } else if source.kind == "json" {
         pairs.push(("kind", request.kind.clone()));
@@ -1141,12 +1143,26 @@ fn search_candidates_before(
     request: &Request,
     deadline: Instant,
 ) -> Result<SearchResult> {
+    search_candidates_mode(config, request, deadline, false)
+}
+
+fn search_candidates_mode(
+    config: &Config,
+    request: &Request,
+    deadline: Instant,
+    pack: bool,
+) -> Result<SearchResult> {
     remaining_search_time(deadline)?;
     request.validate()?;
-    if !matches!(request.kind.as_str(), "movie" | "episode") {
-        return Err("Search: expected a movie or episode".into());
+    if (!pack && !matches!(request.kind.as_str(), "movie" | "episode"))
+        || (pack && request.kind != "series")
+    {
+        return Err("Search: unsupported search identity".into());
     }
-    let (profile_name, profile) = config.selection.profile(&request.kind)?;
+    let (profile_name, profile) =
+        config
+            .selection
+            .profile(if pack { "episode" } else { &request.kind })?;
     if config.sources.is_empty() {
         return Err("Search: no indexer configured".into());
     }
@@ -1192,11 +1208,16 @@ fn search_candidates_before(
                         "Release title or profile is invalid for acquisition provenance".into(),
                     );
                 }
-                if !release_matches(request, &release.title) {
+                if !(if pack {
+                    crate::pack::season_title_matches(request, &release.title)
+                } else {
+                    release_matches(request, &release.title)
+                }) {
                     assessment.accepted = false;
                     assessment
                         .reasons
-                        .push("Release does not match the requested title, year or episode".into());
+                        .push(if pack { "Release does not match the requested series, year or single season pack" }
+                            else { "Release does not match the requested title, year or episode" }.into());
                 }
                 if release.seeders < config.minimum_seeders {
                     assessment.accepted = false;
@@ -1312,6 +1333,30 @@ fn selected_release(result: SearchResult) -> Result<SelectedRelease> {
         assessment: candidate.assessment,
         id: candidate.id,
     })
+}
+
+/// Separate season-pack identity rules retain the episode profile and normal ranking.
+pub(crate) fn search_pack_candidates(
+    config: &Config,
+    request: &Request,
+    deadline: Instant,
+) -> Result<(Value, Vec<SelectedRelease>)> {
+    let result = search_candidates_mode(config, request, deadline, true)?;
+    let report = result.report();
+    let candidates = result
+        .candidates
+        .into_iter()
+        .filter(|candidate| candidate.assessment.accepted)
+        .take(8)
+        .map(|candidate| SelectedRelease {
+            url: candidate.release.url,
+            title: candidate.release.title,
+            profile: result.profile.clone(),
+            assessment: candidate.assessment,
+            id: candidate.id,
+        })
+        .collect();
+    Ok((report, candidates))
 }
 
 /// Selects the same accepted, ranked candidate as search and search_report,

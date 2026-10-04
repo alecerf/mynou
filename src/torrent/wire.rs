@@ -325,7 +325,7 @@ impl Peer {
         id: &[u8; 20],
         settings: PeerSettings<'_>,
     ) -> Result<Self> {
-        Self::connect_with_stop(address, hash, id, settings, None)
+        Self::connect_with_stop(address, hash, id, settings, None, None)
     }
 
     pub fn connect_cancellable(
@@ -335,7 +335,17 @@ impl Peer {
         settings: PeerSettings<'_>,
         stop: &AtomicBool,
     ) -> Result<Self> {
-        Self::connect_with_stop(address, hash, id, settings, Some(stop))
+        Self::connect_with_stop(address, hash, id, settings, Some(stop), None)
+    }
+
+    pub fn connect_before(
+        address: SocketAddr,
+        hash: &[u8; 20],
+        id: &[u8; 20],
+        settings: PeerSettings<'_>,
+        deadline: Instant,
+    ) -> Result<Self> {
+        Self::connect_with_stop(address, hash, id, settings, None, Some(deadline))
     }
 
     fn connect_with_stop(
@@ -344,6 +354,7 @@ impl Peer {
         id: &[u8; 20],
         settings: PeerSettings<'_>,
         stop: Option<&AtomicBool>,
+        end: Option<Instant>,
     ) -> Result<Self> {
         let PeerSettings {
             meta,
@@ -365,6 +376,15 @@ impl Peer {
         } else {
             Duration::from_secs(2)
         };
+        let connect_timeout = match end {
+            Some(deadline) => connect_timeout.min(
+                deadline
+                    .checked_duration_since(Instant::now())
+                    .filter(|remaining| !remaining.is_zero())
+                    .ok_or("Torrent metadata deadline exceeded")?,
+            ),
+            None => connect_timeout,
+        };
         let connection = TcpStream::connect_timeout(&address, connect_timeout);
         if stop.is_some_and(|flag| flag.load(Ordering::Acquire)) {
             return Err("Download interrupted".into());
@@ -373,7 +393,9 @@ impl Peer {
         stream
             .set_nodelay(true)
             .map_err(|_| "Could not configure TCP")?;
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = end
+            .unwrap_or(Instant::now() + Duration::from_secs(5))
+            .min(Instant::now() + Duration::from_secs(5));
         let extensions = handshake_deadline(&mut stream, hash, id, true, stop, deadline)?;
         if extensions {
             write_message_deadline(
@@ -529,6 +551,16 @@ impl Peer {
         expected_v2: Option<[u8; 32]>,
         stop: &AtomicBool,
     ) -> Result<Meta> {
+        self.metadata_before(expected_v1, expected_v2, stop, None)
+    }
+
+    pub fn metadata_before(
+        &mut self,
+        expected_v1: Option<[u8; 20]>,
+        expected_v2: Option<[u8; 32]>,
+        stop: &AtomicBool,
+        deadline: Option<Instant>,
+    ) -> Result<Meta> {
         if !self.extensions {
             return Err("Peer does not provide metadata".into());
         }
@@ -539,7 +571,11 @@ impl Peer {
             if self.metadata_id.is_some() && self.metadata_size.is_some() {
                 break;
             }
-            let (id, payload) = read_message(&mut self.stream, Some(stop))?;
+            let (id, payload) = read_message_deadline(
+                &mut self.stream,
+                Some(stop),
+                deadline.unwrap_or(Instant::now() + Duration::from_secs(5)),
+            )?;
             self.ancillary(id, &payload)?;
         }
         let ext = self.metadata_id.ok_or("Missing metadata extension")?;
@@ -555,13 +591,23 @@ impl Peer {
             ]);
             let mut request_bytes = vec![ext];
             request_bytes.extend(crate::bencode::encode(&request));
-            write_message(&mut self.stream, 20, &request_bytes, Some(stop))?;
+            write_message_deadline(
+                &mut self.stream,
+                20,
+                &request_bytes,
+                Some(stop),
+                deadline.unwrap_or(Instant::now() + Duration::from_secs(5)),
+            )?;
             let mut received = false;
             for _ in 0..128 {
                 if stop.load(Ordering::Relaxed) {
                     return Err("Download interrupted".into());
                 }
-                let (id, payload) = read_message(&mut self.stream, Some(stop))?;
+                let (id, payload) = read_message_deadline(
+                    &mut self.stream,
+                    Some(stop),
+                    deadline.unwrap_or(Instant::now() + Duration::from_secs(5)),
+                )?;
                 if id == 20 && payload.first() == Some(&EXT_METADATA) {
                     let (header, length) = crate::bencode::parse_prefix(&payload[1..])?;
                     let kind = match value_field(&header, b"msg_type") {

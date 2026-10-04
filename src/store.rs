@@ -65,6 +65,7 @@ pub struct Job {
     pub monitored: bool,
     pub monitor_checked_at: u64,
     pub pack_file: Option<String>,
+    pub pack_origin: Option<crate::pack::PackOrigin>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -404,6 +405,12 @@ impl Job {
             ("monitored", Value::Bool(self.monitored)),
             ("monitor_checked_at", number(self.monitor_checked_at)),
             ("pack_file", optional_string(&self.pack_file)),
+            (
+                "pack_origin",
+                self.pack_origin
+                    .as_ref()
+                    .map_or(Value::Null, crate::pack::PackOrigin::to_json),
+            ),
         ])
     }
 
@@ -444,6 +451,10 @@ impl Job {
                 .get("monitor_checked_at")
                 .map_or(Ok(0), |_| integer(map, "monitor_checked_at"))?,
             pack_file: optional(map, "pack_file")?,
+            pack_origin: match map.get("pack_origin") {
+                None | Some(Value::Null) => None,
+                Some(value) => Some(crate::pack::PackOrigin::from_json(value)?),
+            },
         };
         if let Some(path) = &job.pack_file {
             crate::pack::validate_file_path(path)?;
@@ -453,6 +464,9 @@ impl Job {
             {
                 return Err("Pack mapping requires an episode torrent request".into());
             }
+        }
+        if job.pack_origin.is_some() && job.pack_file.is_none() {
+            return Err("Automatic pack provenance requires a mapped episode".into());
         }
         if job.id.len() != 32
             || !job.id.bytes().all(|byte| byte.is_ascii_hexdigit())
@@ -898,6 +912,7 @@ impl Store {
             monitored: parent.monitored,
             monitor_checked_at: 0,
             pack_file: None,
+            pack_origin: None,
         };
         self.commit(job.clone(), "library upgrade recorded")?;
         Ok(job)
@@ -954,7 +969,7 @@ impl Store {
     }
 
     pub fn submit(&mut self, request: Request) -> Result<Job> {
-        self.submit_with_mapping(request, None)
+        self.submit_with_mapping(request, None, None)
     }
 
     pub fn submit_pack(&mut self, request: Request, path: String) -> Result<Job> {
@@ -965,7 +980,25 @@ impl Store {
         {
             return Err("Pack mapping requires an episode torrent request".into());
         }
-        self.submit_with_mapping(request, Some(path))
+        self.submit_with_mapping(request, Some(path), None)
+    }
+
+    pub(crate) fn submit_auto_pack(
+        &mut self,
+        request: Request,
+        path: String,
+        origin: crate::pack::PackOrigin,
+    ) -> Result<Job> {
+        origin.validate()?;
+        crate::pack::validate_file_path(&path)?;
+        if request.kind != "episode"
+            || request.source_url.is_none()
+            || request.source_path.is_some()
+            || request.season != origin.season
+        {
+            return Err("Automatic pack provenance requires its mapped catalog season".into());
+        }
+        self.submit_with_mapping(request, Some(path), Some(origin))
     }
 
     pub(crate) fn check_submission_capacity(&self, count: usize) -> Result<()> {
@@ -1006,7 +1039,12 @@ impl Store {
         Ok(job)
     }
 
-    fn submit_with_mapping(&mut self, request: Request, pack_file: Option<String>) -> Result<Job> {
+    fn submit_with_mapping(
+        &mut self,
+        request: Request,
+        pack_file: Option<String>,
+        pack_origin: Option<crate::pack::PackOrigin>,
+    ) -> Result<Job> {
         request.validate()?;
         let key = request.canonical_key();
         if let Some(id) = self.by_key.get(&key) {
@@ -1047,6 +1085,7 @@ impl Store {
             monitored: true,
             monitor_checked_at: 0,
             pack_file,
+            pack_origin,
         };
         self.commit(job.clone(), "request recorded")?;
         Ok(job)
@@ -1062,6 +1101,7 @@ impl Store {
             || current.created_at != job.created_at
             || current.upgrade_parent != job.upgrade_parent
             || current.pack_file != job.pack_file
+            || current.pack_origin != job.pack_origin
         {
             return Err("job identity is immutable".to_owned());
         }

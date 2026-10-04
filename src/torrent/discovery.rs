@@ -137,6 +137,14 @@ pub fn query_url(url: &str, request: &TrackerRequest<'_>) -> String {
 }
 
 pub fn tracker(url: &str, request: &TrackerRequest<'_>) -> Result<TrackerReply> {
+    tracker_before(url, request, Instant::now() + Duration::from_secs(8))
+}
+
+pub fn tracker_before(
+    url: &str,
+    request: &TrackerRequest<'_>,
+    deadline: Instant,
+) -> Result<TrackerReply> {
     if url.len() > 8192 || url.chars().any(char::is_control) {
         return Err("Tracker URL is too long or contains control characters".into());
     }
@@ -144,13 +152,19 @@ pub fn tracker(url: &str, request: &TrackerRequest<'_>) -> Result<TrackerReply> 
         return Err("Tracker announcement cannot use port zero".into());
     }
     if url.starts_with("udp://") {
-        return udp_tracker(url, request);
+        return udp_tracker(url, request, deadline);
     }
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err("Unsupported tracker protocol".into());
     }
     let response = crate::net::HttpClient::new()
-        .with_timeout(Duration::from_secs(5))
+        .with_timeout(
+            deadline
+                .checked_duration_since(Instant::now())
+                .filter(|remaining| !remaining.is_zero())
+                .ok_or("Tracker deadline exceeded")?
+                .min(Duration::from_secs(5)),
+        )
         .with_max_body(1024 * 1024)
         .get(&query_url(url, request))?;
     if response.status != 200 {
@@ -217,9 +231,25 @@ fn parse_tracker_reply(value: &Value) -> Result<TrackerReply> {
 fn nonce() -> Result<u32> {
     Ok(u32::from_be_bytes(crate::crypto::random_bytes::<4>()?))
 }
-fn udp_exchange(socket: &UdpSocket, packet: &[u8], action: u32, tx: u32) -> Result<Vec<u8>> {
+fn udp_exchange(
+    socket: &UdpSocket,
+    packet: &[u8],
+    action: u32,
+    tx: u32,
+    deadline: Instant,
+) -> Result<Vec<u8>> {
     let mut buf = [0; 65_507];
     for _ in 0..2 {
+        let remaining = deadline
+            .checked_duration_since(Instant::now())
+            .filter(|remaining| !remaining.is_zero())
+            .ok_or("Tracker deadline exceeded")?;
+        socket
+            .set_read_timeout(Some(remaining.min(Duration::from_secs(2))))
+            .map_err(|_| "Could not configure UDP timeout")?;
+        socket
+            .set_write_timeout(Some(remaining.min(Duration::from_secs(2))))
+            .map_err(|_| "Could not configure UDP timeout")?;
         socket
             .send(packet)
             .map_err(|_| "Could not send UDP tracker request")?;
@@ -240,7 +270,7 @@ fn udp_exchange(socket: &UdpSocket, packet: &[u8], action: u32, tx: u32) -> Resu
     }
     Err("UDP tracker did not respond".into())
 }
-fn udp_tracker(url: &str, request: &TrackerRequest<'_>) -> Result<TrackerReply> {
+fn udp_tracker(url: &str, request: &TrackerRequest<'_>, deadline: Instant) -> Result<TrackerReply> {
     let rest = url.strip_prefix("udp://").ok_or("Invalid UDP tracker")?;
     let authority = rest.split('/').next().ok_or("Invalid UDP tracker")?;
     if authority.contains('@') {
@@ -268,7 +298,7 @@ fn udp_tracker(url: &str, request: &TrackerRequest<'_>) -> Result<TrackerReply> 
     connect.extend_from_slice(&0x41727101980u64.to_be_bytes());
     connect.extend_from_slice(&0u32.to_be_bytes());
     connect.extend_from_slice(&tx.to_be_bytes());
-    let response = udp_exchange(&socket, &connect, 0, tx)?;
+    let response = udp_exchange(&socket, &connect, 0, tx, deadline)?;
     if response.len() != 16 {
         return Err("Invalid UDP connection response".into());
     }
@@ -287,7 +317,7 @@ fn udp_tracker(url: &str, request: &TrackerRequest<'_>) -> Result<TrackerReply> 
     announce.extend_from_slice(&session_key(request).to_be_bytes());
     announce.extend_from_slice(&100i32.to_be_bytes());
     announce.extend_from_slice(&request.port.to_be_bytes());
-    let response = udp_exchange(&socket, &announce, 1, tx)?;
+    let response = udp_exchange(&socket, &announce, 1, tx, deadline)?;
     if response.len() < 20 {
         return Err("Truncated UDP announcement response".into());
     }

@@ -8,6 +8,9 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
 };
+mod automatic;
+pub(crate) use automatic::season_title_matches;
+pub use automatic::{AutoPackRequest, PackOrigin};
 
 pub const MAX_PACK_EPISODES: usize = 64;
 
@@ -135,6 +138,14 @@ impl Engine {
         Ok(public_job(&lock(&self.store)?.remap_pack(id, path)?))
     }
     pub fn submit_pack(&self, id: &str, pack: &PackSubmission) -> Result<Value> {
+        self.submit_pack_with_origin(id, pack, None)
+    }
+    pub(super) fn submit_pack_with_origin(
+        &self,
+        id: &str,
+        pack: &PackSubmission,
+        origin: Option<&PackOrigin>,
+    ) -> Result<Value> {
         if self.read_only {
             return Err("Pack submission requires writable storage".into());
         }
@@ -172,6 +183,15 @@ impl Engine {
             requests.push((request, mapping.file_path.clone()));
         }
         let mut store = lock(&self.store)?;
+        if let Some(origin) = origin {
+            origin.validate()?;
+            if origin.series_id != id
+                || origin.series_revision != record.revision
+                || automatic::capture_scope(&record, &store, origin.season)?.id != origin.scope_id
+            {
+                return Err("Pack catalog or request scope changed; acquisition discarded".into());
+            }
+        }
         let existing = store.list();
         let mut by_media = BTreeMap::new();
         let mut by_key = BTreeMap::new();
@@ -209,7 +229,11 @@ impl Engine {
             let job = if let Some(job) = by_media.get(&request.media_key()) {
                 (*job).clone()
             } else {
-                let job = store.submit_pack(request, path)?;
+                let job = if let Some(origin) = origin {
+                    store.submit_auto_pack(request, path, origin.clone())?
+                } else {
+                    store.submit_pack(request, path)?
+                };
                 submitted += 1;
                 job
             };

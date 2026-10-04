@@ -529,7 +529,15 @@ impl Engine {
             let client = self.downloads.as_ref().ok_or("Downloads are disabled")?;
             let id = job.download_id.as_deref().ok_or("Missing download")?;
             let status = if let Some(path) = &job.pack_file {
-                client.require_files(id, std::slice::from_ref(path))?
+                if let Some(origin) = &job.pack_origin {
+                    client.require_bound_files(
+                        id,
+                        std::slice::from_ref(path),
+                        &origin.torrent_id,
+                    )?
+                } else {
+                    client.require_files(id, std::slice::from_ref(path))?
+                }
             } else {
                 client.require_all(id)?
             };
@@ -563,7 +571,15 @@ impl Engine {
                 }
                 let status = if let Some(id) = &job.download_id {
                     if let Some(path) = &job.pack_file {
-                        client.require_files(id, std::slice::from_ref(path))?
+                        if let Some(origin) = &job.pack_origin {
+                            client.require_bound_files(
+                                id,
+                                std::slice::from_ref(path),
+                                &origin.torrent_id,
+                            )?
+                        } else {
+                            client.require_files(id, std::slice::from_ref(path))?
+                        }
                     } else {
                         client.require_all(id)?
                     }
@@ -571,7 +587,15 @@ impl Engine {
                     // Fetch metadata before acquiring the client internal lock.
                     let source = job.acquisition_url.as_deref().ok_or("Missing source")?;
                     if let Some(path) = &job.pack_file {
-                        client.ensure_files(source, std::slice::from_ref(path))?
+                        if let Some(origin) = &job.pack_origin {
+                            client.ensure_bound_files(
+                                source,
+                                std::slice::from_ref(path),
+                                &origin.torrent_id,
+                            )?
+                        } else {
+                            client.ensure_files(source, std::slice::from_ref(path))?
+                        }
                     } else {
                         client.ensure(source)?
                     }
@@ -799,6 +823,12 @@ pub fn public_job(job: &Job) -> Value {
         map.remove("acquisition_url");
         if let Some(Value::String(path)) = map.get_mut("pack_file") {
             *path = integrations::report_text(path, 4096);
+        }
+        if let Some(Value::Object(origin)) = map.get_mut("pack_origin")
+            && let Some(Value::Object(release)) = origin.get_mut("release")
+            && let Some(Value::String(title)) = release.get_mut("title")
+        {
+            *title = integrations::report_text(title, 2_048);
         }
         if let Some(Value::Object(release)) = map.get_mut("release")
             && let Some(Value::String(title)) = release.get_mut("title")
