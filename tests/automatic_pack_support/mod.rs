@@ -20,11 +20,12 @@ use std::{
 };
 
 pub const SECRET: &str = "automatic-pack-fixture-secret";
+type Responses = BTreeMap<String, (u16, Vec<u8>)>;
 pub struct Provider {
     pub url: String,
     pub calls: Arc<Mutex<Vec<String>>>,
     pub blocked: Arc<AtomicBool>,
-    responses: Arc<Mutex<BTreeMap<String, (u16, Vec<u8>)>>>,
+    responses: Arc<Mutex<Responses>>,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
@@ -34,7 +35,7 @@ impl Provider {
         listener.set_nonblocking(true).unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let calls = Arc::new(Mutex::new(Vec::new()));
-        let responses = Arc::new(Mutex::new(BTreeMap::<String, (u16, Vec<u8>)>::new()));
+        let responses = Arc::new(Mutex::new(Responses::new()));
         let blocked = Arc::new(AtomicBool::new(false));
         let stop = Arc::new(AtomicBool::new(false));
         let (requests, records, gate, stopped) = (
