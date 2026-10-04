@@ -30,6 +30,7 @@ fn config(root: &std::path::Path, seed: bool) -> DownloadConfig {
         dht: false,
         pex: false,
         max_active: 2,
+        max_peers: 4,
     }
 }
 fn wait(mut predicate: impl FnMut() -> bool) {

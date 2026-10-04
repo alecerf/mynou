@@ -467,6 +467,7 @@ fn execute(args: Args) -> Result<()> {
         v.insert("downloads_enabled", config.downloads_enabled);
         v.insert("monitoring_enabled", config.monitoring.enabled);
         v.insert("transfer_policy", config.download_policy.to_json());
+        v.insert("max_peers", config.downloads.max_peers as u32);
         v.insert(
             "native_media_formats",
             "MP4/MOV, Matroska/WebM, AVI, WAV/RF64, FLAC, MP3",

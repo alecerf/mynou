@@ -53,6 +53,7 @@ pub fn run(directory: &Path) -> Result<Value> {
         dht: false,
         pex: false,
         max_active: 1,
+        max_peers: 4,
     })?;
     seeder.ensure(
         torrent_path

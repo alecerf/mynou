@@ -141,6 +141,7 @@ fn config(root: &Path, seed: bool) -> DownloadConfig {
         dht: false,
         pex: true,
         max_active: 2,
+        max_peers: 4,
     }
 }
 fn ready(client: &Client, id: &str) -> DownloadStatus {

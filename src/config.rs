@@ -123,6 +123,7 @@ pub fn default_json() -> Value {
                 ("dht", true.into()),
                 ("pex", true.into()),
                 ("max_active", n(2)),
+                ("max_peers", n(4)),
                 ("download_limit_bps", n(0)),
                 ("upload_limit_bps", n(0)),
                 ("seed_ratio_milli", Value::Null),
@@ -373,6 +374,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             "dht",
             "pex",
             "max_active",
+            "max_peers",
             "download_limit_bps",
             "upload_limit_bps",
             "seed_ratio_milli",
@@ -417,9 +419,15 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
     }
     let workers = number(v, "workers", 2, 32)? as usize;
     let max_active = number(d, "max_active", 2, 64)? as usize;
+    let max_peers = number(d, "max_peers", 4, 8)? as usize;
     let poll_interval_ms = number(v, "poll_interval_ms", 500, 3600000)?;
     let lease_duration_secs = number(v, "lease_duration_secs", 60, 86400)?;
-    if workers == 0 || max_active == 0 || poll_interval_ms < 10 || lease_duration_secs < 5 {
+    if workers == 0
+        || max_active == 0
+        || max_peers == 0
+        || poll_interval_ms < 10
+        || lease_duration_secs < 5
+    {
         return Err("Configuration: invalid concurrency or timing settings".into());
     }
     let listen = text(v, "listen", "127.0.0.1:8787")?;
@@ -456,6 +464,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             dht: boolean(d, "dht", true)?,
             pex: boolean(d, "pex", true)?,
             max_active,
+            max_peers,
         },
         download_policy: download_policy(d)?,
         downloads_enabled: boolean(d, "enabled", true)?,

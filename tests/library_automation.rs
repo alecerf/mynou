@@ -452,6 +452,7 @@ impl Seeder {
             dht: false,
             pex: false,
             max_active: 1,
+            max_peers: 4,
         })
         .unwrap();
         client.ensure(metadata.to_str().unwrap()).unwrap();
