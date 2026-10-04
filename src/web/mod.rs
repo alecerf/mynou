@@ -1,5 +1,6 @@
 //! Browser management using original server-rendered HTML and native forms.
 mod forms;
+mod series_views;
 mod session;
 mod views;
 
@@ -247,6 +248,8 @@ impl Web {
                 views::search(&session, None, None)?
             }
             "/ui/transfers" => views::transfers(engine, &session, &query)?,
+            "/ui/series" => series_views::list(engine, &session, &query)?,
+            "/ui/calendar" => series_views::calendar(engine, &session, &query)?,
             _ => {
                 if let Some(id) = path
                     .strip_prefix("/ui/jobs/")
@@ -262,6 +265,11 @@ impl Web {
                     .filter(|id| forms::valid_id(id, true))
                 {
                     views::transfer(engine, &session, &query, &id.to_ascii_lowercase())?
+                } else if let Some(id) = path
+                    .strip_prefix("/ui/series/")
+                    .filter(|id| forms::valid_id(id, false))
+                {
+                    series_views::detail(engine, &session, &query, &id.to_ascii_lowercase())?
                 } else {
                     return Ok(failure(404, "This page does not exist", Some(&session)));
                 }
@@ -305,7 +313,22 @@ impl Web {
                 ))
             }
             "/ui/requests" => {
-                let jobs = engine.submit(form.request()?)?;
+                let request = form.request()?;
+                if request.kind == "series" {
+                    let record = engine.track_series(&request, false, false)?;
+                    return self.redirect(
+                        session,
+                        "/ui/series",
+                        vec![format!(
+                            "Series monitoring recorded; {} aired request(s) submitted",
+                            record
+                                .get("submitted")
+                                .and_then(crate::json::Value::as_u64)
+                                .unwrap_or(0)
+                        )],
+                    );
+                }
+                let jobs = engine.submit(request)?;
                 let mut messages = vec![format!(
                     "{} request(s) recorded. Existing requests are reused",
                     jobs.len()
@@ -330,12 +353,16 @@ impl Web {
                     )],
                 )
             }
-            "/ui/jobs/action" | "/ui/library/action" | "/ui/transfers/action" => {
+            "/ui/jobs/action"
+            | "/ui/library/action"
+            | "/ui/transfers/action"
+            | "/ui/series/action" => {
                 form.only(&["csrf", "id", "action"])?;
                 let action = form.value("action")?;
                 let (allowed, location, native) = match path {
                     "/ui/jobs/action" => (&["cancel", "retry"][..], "/ui/jobs", false),
                     "/ui/library/action" => (&["monitor", "unmonitor"][..], "/ui/library", false),
+                    "/ui/series/action" => (&["monitor", "unmonitor"][..], "/ui/series", false),
                     _ => (&["pause", "resume"][..], "/ui/transfers", true),
                 };
                 if !allowed.contains(&action) {
@@ -352,6 +379,9 @@ impl Web {
                         ("/ui/library/action", _) => {
                             engine.set_monitored(&id, action == "monitor").map(|_| ())
                         }
+                        ("/ui/series/action", _) => engine
+                            .configure_series(&id, Some(action == "monitor"), None, None)
+                            .map(|_| ()),
                         (_, "pause") => engine.pause_transfer(&id).map(|_| ()),
                         _ => engine.resume_transfer(&id).map(|_| ()),
                     };
@@ -366,6 +396,57 @@ impl Web {
                 }
                 results.insert(0, format!("{succeeded} of {} action(s) succeeded. Each entry was handled independently", results.len()));
                 self.redirect(session, location, results)
+            }
+            "/ui/series/track" => {
+                let request = form.series_request()?;
+                let specials = browser_bool(form.value("include_specials")?, false)?;
+                let future = browser_bool(form.value("future_only")?, false)?;
+                engine.track_series(&request, specials, future)?;
+                self.redirect(session, "/ui/series", vec!["Series monitoring recorded. Existing settings are retained when a scope is already tracked".into()])
+            }
+            "/ui/series/settings" | "/ui/series/refresh" | "/ui/series/episodes" => {
+                let allowed = match path {
+                    "/ui/series/settings" => {
+                        &["csrf", "id", "enabled", "include_specials", "start_date"][..]
+                    }
+                    "/ui/series/refresh" => &["csrf", "id"][..],
+                    _ => &["csrf", "id", "season", "episode", "enabled"][..],
+                };
+                form.only(allowed)?;
+                let ids = form.ids(false)?;
+                if ids.len() != 1 {
+                    return Err("Choose one monitored series".into());
+                }
+                match path {
+                    "/ui/series/settings" => {
+                        let enabled = browser_bool(form.value("enabled")?, true)?;
+                        let specials = browser_bool(form.value("include_specials")?, true)?;
+                        let start = form.value("start_date")?;
+                        engine.configure_series(
+                            &ids[0],
+                            Some(enabled),
+                            Some(specials),
+                            Some((!start.is_empty()).then(|| start.to_owned())),
+                        )?;
+                    }
+                    "/ui/series/refresh" => {
+                        engine.refresh_series(&ids[0])?;
+                    }
+                    _ => {
+                        let season = decimal(form.value("season")?, 9999, "Season")? as u32;
+                        let episode = decimal(form.value("episode")?, 99999, "Episode")? as u32;
+                        let enabled = browser_bool(form.value("enabled")?, true)?;
+                        engine.monitor_series_episode(&ids[0], season, episode, enabled)?;
+                    }
+                }
+                self.redirect(
+                    session,
+                    "/ui/series",
+                    vec![
+                        "Series operation completed; existing episode jobs and files were retained"
+                            .into(),
+                    ],
+                )
             }
             "/ui/library/baseline" => {
                 form.only(&["csrf", "id", "release_title"])?;
@@ -469,6 +550,15 @@ impl Web {
             }
             _ => Ok(failure(404, "This action does not exist", Some(session))),
         }
+    }
+}
+
+fn browser_bool(text: &str, required: bool) -> Result<bool> {
+    match text {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        "" if !required => Ok(false),
+        _ => Err("Choose an available series setting".into()),
     }
 }
 

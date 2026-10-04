@@ -91,6 +91,23 @@ impl Form {
             "source_kind",
             "source_value",
         ])?;
+        self.request_values()
+    }
+    pub fn series_request(&self) -> Result<Request> {
+        self.only(&[
+            "csrf",
+            "kind",
+            "title",
+            "year",
+            "season",
+            "episode",
+            "tmdb_id",
+            "include_specials",
+            "future_only",
+        ])?;
+        self.request_values()
+    }
+    fn request_values(&self) -> Result<Request> {
         let optional =
             |name: &str, maximum: u64| -> Result<u64> { decimal(self.value(name)?, maximum, name) };
         let source = self.value("source_value")?.trim();

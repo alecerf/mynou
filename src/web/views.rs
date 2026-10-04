@@ -82,7 +82,7 @@ pub fn dashboard(engine: &Arc<Engine>, session: &Session) -> Result<String> {
         body.push_str("<p>Plex is not connected. Configure the integration to enable watchlist synchronization.</p>");
     }
     body.push_str("</section>");
-    for key in ["last_sync_error", "last_upgrade_error"] {
+    for key in ["last_sync_error", "last_upgrade_error", "last_series_error"] {
         if let Some(text) = status.get(key).and_then(Value::as_str) {
             body.push_str(&format!("<p class=notice role=alert>{}</p>", display(text)));
         }
@@ -173,7 +173,7 @@ pub fn search(
         "<p class=lead>Find a release, understand the selection and start a request.</p><section class=panel><h2>What would you like to watch?</h2>",
     );
     body.push_str(&form("/ui/requests", session));
-    body.push_str("<div class=fields><div><label for=kind>Content type</label><select id=kind name=kind><option value=movie>Movie</option><option value=episode>Episode</option><option value=series>Series</option><option value=file>Local media file</option></select></div><div class=wide><label for=title>Title</label><input id=title name=title required maxlength=4096 autocomplete=off></div><div><label for=year>Year</label><input id=year name=year type=number min=0 max=9999></div><div><label for=season>Season</label><input id=season name=season type=number min=0 max=9999></div><div><label for=episode>Episode</label><input id=episode name=episode type=number min=0 max=99999></div><div><label for=tmdb_id>TMDB ID (optional)</label><input id=tmdb_id name=tmdb_id type=number min=1 max=9007199254740991></div></div><details><summary>Use a specific source</summary><label for=source_kind>Source type</label><select id=source_kind name=source_kind><option value=auto>Automatic search</option><option value=url>Torrent, magnet or HTTP URL</option><option value=file>File on the Mynou server</option></select><label for=source_value>URL or server file path</label><input id=source_value name=source_value maxlength=8192 autocomplete=off><p class=muted>Server paths refer to files Mynou can access. Submitted source URLs are kept private.</p></details><div class=actions><button type=submit formaction=/ui/search class=secondary>Preview search</button><button type=submit>Record request</button></div></form><p class=muted>Preview searches support movies and individual episodes. Series requests use the configured series expansion. Recording a request runs automatic selection again; a preview does not reserve a release.</p></section>");
+    body.push_str("<div class=fields><div><label for=kind>Content type</label><select id=kind name=kind><option value=movie>Movie</option><option value=episode>Episode</option><option value=series>Series</option><option value=file>Local media file</option></select></div><div class=wide><label for=title>Title</label><input id=title name=title required maxlength=4096 autocomplete=off></div><div><label for=year>Year</label><input id=year name=year type=number min=0 max=9999></div><div><label for=season>Season</label><input id=season name=season type=number min=0 max=9999></div><div><label for=episode>Episode</label><input id=episode name=episode type=number min=0 max=99999></div><div><label for=tmdb_id>TMDB ID (optional)</label><input id=tmdb_id name=tmdb_id type=number min=1 max=9007199254740991></div></div><details><summary>Use a specific source</summary><label for=source_kind>Source type</label><select id=source_kind name=source_kind><option value=auto>Automatic search</option><option value=url>Torrent, magnet or HTTP URL</option><option value=file>File on the Mynou server</option></select><label for=source_value>URL or server file path</label><input id=source_value name=source_value maxlength=8192 autocomplete=off><p class=muted>Server paths refer to files Mynou can access. Submitted source URLs are kept private.</p></details><div class=actions><button type=submit formaction=/ui/search class=secondary>Preview search</button><button type=submit>Record request</button></div></form><p class=muted>Preview searches support movies and individual episodes. Series requests create durable monitoring and an episode calendar. Recording a request runs automatic selection again; a preview does not reserve a release.</p></section>");
     if let Some(request) = request {
         body = body.replace(
             "<input id=title name=title required",
@@ -668,7 +668,7 @@ impl Browse {
     }
 }
 
-fn detail_pager(
+pub(super) fn detail_pager(
     path: &str,
     key: &str,
     count: usize,
@@ -723,7 +723,7 @@ fn requested_page(form: &Form, key: &str) -> Result<usize> {
     Ok(page)
 }
 
-fn frame(title: &str, active: &str, session: Option<&Session>, body: &str) -> String {
+pub(super) fn frame(title: &str, active: &str, session: Option<&Session>, body: &str) -> String {
     let mut html = format!(
         "<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content=\"width=device-width, initial-scale=1\"><title>{} · Mynou</title><link rel=stylesheet href=/ui/style.css></head><body><a class=skip href=#main>Skip to content</a><header><a class=brand href=/ui><span class=mark aria-hidden=true>m</span>Mynou</a>",
         e(title)
@@ -734,6 +734,8 @@ fn frame(title: &str, active: &str, session: Option<&Session>, body: &str) -> St
             ("/ui", "Overview"),
             ("/ui/jobs", "Jobs"),
             ("/ui/library", "Library"),
+            ("/ui/series", "Series"),
+            ("/ui/calendar", "Calendar"),
             ("/ui/search", "Search"),
             ("/ui/transfers", "Transfers"),
         ] {
@@ -768,28 +770,28 @@ fn frame(title: &str, active: &str, session: Option<&Session>, body: &str) -> St
     html
 }
 
-fn form(action: &str, session: &Session) -> String {
+pub(super) fn form(action: &str, session: &Session) -> String {
     format!(
         "<form method=post action=\"{}\">{}",
         e(action),
         hidden("csrf", &session.csrf)
     )
 }
-fn hidden(name: &str, value: &str) -> String {
+pub(super) fn hidden(name: &str, value: &str) -> String {
     format!(
         "<input type=hidden name=\"{}\" value=\"{}\">",
         e(name),
         e(value)
     )
 }
-fn checkbox(id: &str) -> String {
+pub(super) fn checkbox(id: &str) -> String {
     format!(
         "<input type=checkbox name=id value=\"{}\" aria-label=\"Select entry {}\">",
         e(id),
         e(id)
     )
 }
-fn bulk_controls(actions: &[(&str, &str)]) -> String {
+pub(super) fn bulk_controls(actions: &[(&str, &str)]) -> String {
     let mut html = String::from("<div class=actions>");
     for (value, label) in actions {
         html.push_str(&format!(
@@ -815,7 +817,7 @@ fn progress(number: f64) -> String {
         "<progress max=100 value={number:.1} aria-label=\"{number:.1}% complete\">{number:.1}%</progress><small>{number:.1}%</small>"
     )
 }
-fn badge(state: &str) -> String {
+pub(super) fn badge(state: &str) -> String {
     format!(
         "<span class=badge>{}</span>",
         display(&state.replace('_', " "))
@@ -835,16 +837,16 @@ fn transfer_name(value: &Value) -> String {
         .map(|file| text(file, "path").to_owned())
         .unwrap_or_else(|| "Awaiting metadata".into())
 }
-fn array(value: &Value) -> &[Value] {
+pub(super) fn array(value: &Value) -> &[Value] {
     value.as_array().unwrap_or_default()
 }
-fn text<'a>(value: &'a Value, key: &str) -> &'a str {
+pub(super) fn text<'a>(value: &'a Value, key: &str) -> &'a str {
     value.get(key).and_then(Value::as_str).unwrap_or("")
 }
-fn flag(value: &Value, key: &str) -> bool {
+pub(super) fn flag(value: &Value, key: &str) -> bool {
     value.get(key).and_then(Value::as_bool).unwrap_or(false)
 }
-fn scalar(value: &Value, key: &str) -> String {
+pub(super) fn scalar(value: &Value, key: &str) -> String {
     display(&raw_scalar(value.get(key)))
 }
 fn raw_scalar(value: Option<&Value>) -> String {
@@ -855,10 +857,10 @@ fn raw_scalar(value: Option<&Value>) -> String {
         _ => String::new(),
     }
 }
-fn display(text: &str) -> String {
+pub(super) fn display(text: &str) -> String {
     e(&report_text(text, 2048))
 }
-fn e(text: &str) -> String {
+pub(super) fn e(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
     for character in text.chars() {
         match character {

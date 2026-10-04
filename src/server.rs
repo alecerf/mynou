@@ -255,6 +255,17 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
         ("GET", "/api/status") => Ok((200, engine.status()?)),
         ("GET", "/api/transfers") => Ok((200, engine.transfers()?)),
         ("GET", "/api/library") => Ok((200, engine.library()?)),
+        ("GET", "/api/series") => Ok((200, engine.series()?)),
+        ("POST", "/api/series") => {
+            let value = control_body(body, &["request", "include_specials", "future_only"], false)?;
+            let request = Request::from_json(value.get("request").ok_or("request is required")?)?;
+            let include_specials = optional_boolean(&value, "include_specials")?.unwrap_or(false);
+            let future_only = optional_boolean(&value, "future_only")?.unwrap_or(false);
+            Ok((
+                201,
+                engine.track_series(&request, include_specials, future_only)?,
+            ))
+        }
         ("POST", "/api/upgrades") => {
             let value = control_body(body, &["apply"], true)?;
             let apply = match value.get("apply") {
@@ -297,6 +308,70 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
             Ok((200, v))
         }
         _ => {
+            if method == "GET" && (path == "/api/calendar" || path.starts_with("/api/calendar?")) {
+                let query = crate::series::CalendarQuery::parse(
+                    path.split_once('?').map_or("", |(_, query)| query),
+                )?;
+                return Ok((200, engine.episode_calendar(&query)?));
+            }
+            if let Some(tail) = path.strip_prefix("/api/series/") {
+                let parts: Vec<_> = tail.split('/').collect();
+                if parts[0].len() != 32 || !parts[0].bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                    return Ok((404, error("Unknown monitored series")));
+                }
+                let id = parts[0].to_ascii_lowercase();
+                if parts.len() == 1 && method == "GET" {
+                    return Ok((200, engine.series_record(&id)?));
+                }
+                if parts.len() != 2 || method != "POST" {
+                    return Ok((404, error("Unknown series route")));
+                }
+                let result = match parts[1] {
+                    "refresh" => {
+                        control_body(body, &[], true)?;
+                        engine.refresh_series(&id)?
+                    }
+                    "monitor" => {
+                        let value = control_body(
+                            body,
+                            &["enabled", "include_specials", "start_date"],
+                            false,
+                        )?;
+                        if value.as_object().is_none_or(|fields| fields.is_empty()) {
+                            return Err("Specify at least one series setting".into());
+                        }
+                        let monitored = optional_boolean(&value, "enabled")?;
+                        let specials = optional_boolean(&value, "include_specials")?;
+                        let start = match value.get("start_date") {
+                            None => None,
+                            Some(Value::Null) => Some(None),
+                            Some(Value::String(text)) => Some(Some(text.clone())),
+                            _ => return Err("start_date must be a date or null".into()),
+                        };
+                        engine.configure_series(&id, monitored, specials, start)?
+                    }
+                    "episodes" => {
+                        let value = control_body(body, &["season", "episode", "enabled"], false)?;
+                        let number = |key| {
+                            value
+                                .get(key)
+                                .and_then(Value::as_u64)
+                                .and_then(|number| u32::try_from(number).ok())
+                                .ok_or_else(|| format!("{key} must be a nonnegative integer"))
+                        };
+                        let enabled =
+                            optional_boolean(&value, "enabled")?.ok_or("enabled is required")?;
+                        engine.monitor_series_episode(
+                            &id,
+                            number("season")?,
+                            number("episode")?,
+                            enabled,
+                        )?
+                    }
+                    _ => return Ok((404, error("Unknown series operation"))),
+                };
+                return Ok((200, result));
+            }
             if let Some(tail) = path.strip_prefix("/api/transfers/") {
                 let parts: Vec<_> = tail.split('/').collect();
                 let id = parts[0];
@@ -421,6 +496,17 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
             Ok((404, error("Unknown route")))
         }
     }
+}
+
+fn optional_boolean(value: &Value, key: &str) -> Result<Option<bool>> {
+    value
+        .get(key)
+        .map(|value| {
+            value
+                .as_bool()
+                .ok_or_else(|| format!("{key} must be a boolean"))
+        })
+        .transpose()
 }
 
 fn control_body(body: &[u8], allowed: &[&str], allow_empty: bool) -> Result<Value> {

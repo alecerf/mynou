@@ -245,12 +245,48 @@ impl Record {
             );
         }
         if let Some(Value::Array(episodes)) = value.get_mut("episodes") {
-            for episode in episodes {
+            for (episode, known) in episodes.iter_mut().zip(&self.plan.episodes) {
+                episode.insert("monitored", self.episode_monitored(known));
+                episode.insert(
+                    "excluded",
+                    self.excluded.contains(&(known.season, known.episode)),
+                );
                 if let Some(Value::String(title)) = episode.get_mut("title") {
                     *title = report_text(title, 2048);
                 }
             }
         }
+        value
+    }
+    pub fn summary_json(&self) -> Value {
+        let mut value = Value::object();
+        value.insert("id", self.id.clone());
+        let mut request = self.plan.request.to_json();
+        request.insert("title", report_text(&self.plan.request.title, 4096));
+        value.insert("request", request);
+        value.insert("monitored", self.monitored);
+        value.insert("include_specials", self.include_specials);
+        value.insert(
+            "start_date",
+            self.start_date.clone().map_or(Value::Null, Value::String),
+        );
+        value.insert("episode_count", self.plan.episodes.len() as u32);
+        value.insert(
+            "undated_count",
+            self.plan
+                .episodes
+                .iter()
+                .filter(|episode| episode.air_date.is_none())
+                .count() as u32,
+        );
+        value.insert("checked_at", self.checked_at.to_string());
+        value.insert("next_check_at", self.next_check_at.to_string());
+        value.insert(
+            "last_error",
+            self.last_error
+                .as_ref()
+                .map_or(Value::Null, |text| report_text(text, 2048).into()),
+        );
         value
     }
     fn from_json(value: &Value) -> Result<Self> {
@@ -419,6 +455,9 @@ impl SeriesStore {
     }
     pub fn list(&self) -> Vec<Record> {
         self.records.values().cloned().collect()
+    }
+    pub(crate) fn summaries(&self) -> Value {
+        Value::Array(self.records.values().map(Record::summary_json).collect())
     }
     pub fn get(&self, id: &str) -> Option<Record> {
         self.records.get(id).cloned()

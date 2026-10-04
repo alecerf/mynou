@@ -20,13 +20,7 @@ const MAX_SUBMISSIONS: usize = 64;
 
 impl Engine {
     pub fn series(&self) -> Result<Value> {
-        Ok(Value::Array(
-            lock(&self.series_store)?
-                .list()
-                .iter()
-                .map(Record::public_json)
-                .collect(),
-        ))
+        Ok(lock(&self.series_store)?.summaries())
     }
     pub fn series_record(&self, id: &str) -> Result<Value> {
         Ok(lock(&self.series_store)?
@@ -389,6 +383,37 @@ pub struct CalendarQuery {
 }
 
 impl CalendarQuery {
+    pub fn parse(text: &str) -> Result<Self> {
+        if text.len() > 1024 {
+            return Err("Calendar query is too large".into());
+        }
+        let mut fields = BTreeMap::new();
+        if !text.is_empty() {
+            for pair in text.split('&') {
+                let (name, value) = pair.split_once('=').ok_or("Invalid calendar query")?;
+                if !["from", "to", "series_id", "offset", "limit"].contains(&name)
+                    || fields.insert(name, value).is_some()
+                {
+                    return Err("Unknown or duplicate calendar field".into());
+                }
+            }
+        }
+        let mut query = Self::new(fields.get("from").copied(), fields.get("to").copied())?;
+        query.series_id = fields
+            .get("series_id")
+            .filter(|text| !text.is_empty())
+            .map(|text| (*text).to_owned());
+        for (key, target) in [("offset", &mut query.offset), ("limit", &mut query.limit)] {
+            if let Some(text) = fields.get(key) {
+                if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+                    return Err("Invalid calendar pagination".into());
+                }
+                *target = text.parse().map_err(|_| "Invalid calendar pagination")?;
+            }
+        }
+        query.validate()?;
+        Ok(query)
+    }
     pub fn new(from: Option<&str>, to: Option<&str>) -> Result<Self> {
         let from = from
             .filter(|text| !text.is_empty())

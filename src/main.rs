@@ -30,6 +30,13 @@ const HELP: &str = "Mynou — media automation using Rust std only
          [--tmdb-id N] [--config mynou.json]
   search --title TITLE [--kind movie|episode] [--year YEAR]
          [--season N --episode N] [--tmdb-id N] [--config mynou.json]
+  track-series --title TITLE [--year YEAR --tmdb-id N --season N]
+               [--future-only] [--include-specials] [--config mynou.json]
+  series [ID] [--config mynou.json]
+  series-monitor | series-unmonitor | series-refresh ID [--config mynou.json]
+  episode-monitor | episode-unmonitor ID --season N --episode N [--config mynou.json]
+  calendar [--from YYYY-MM-DD --to YYYY-MM-DD --series-id ID]
+           [--offset N --limit N] [--config mynou.json]
   library [--config mynou.json]
   upgrades [--apply] [--config mynou.json]
   monitor | unmonitor ID [--config mynou.json]
@@ -63,7 +70,9 @@ impl Args {
         let mut options: BTreeMap<String, String> = BTreeMap::new();
         while let Some(arg) = args.next() {
             if let Some(key) = arg.strip_prefix("--") {
-                let value = if ["json", "help", "apply"].contains(&key) {
+                let value = if ["json", "help", "apply", "future-only", "include-specials"]
+                    .contains(&key)
+                {
                     "true".into()
                 } else {
                     args.next()
@@ -95,6 +104,30 @@ impl Args {
             "search" => &[
                 "config", "title", "kind", "year", "season", "episode", "tmdb-id", "help",
             ],
+            "track-series" => &[
+                "config",
+                "help",
+                "title",
+                "year",
+                "season",
+                "episode",
+                "tmdb-id",
+                "future-only",
+                "include-specials",
+            ],
+            "series" | "series-monitor" | "series-unmonitor" | "series-refresh" => {
+                &["config", "help"]
+            }
+            "episode-monitor" | "episode-unmonitor" => &["config", "help", "season", "episode"],
+            "calendar" => &[
+                "config",
+                "help",
+                "from",
+                "to",
+                "series-id",
+                "offset",
+                "limit",
+            ],
             "analyze" => &["json", "help"],
             "demo" | "setup-docker" => &["dir", "help"],
             "help" | "--help" | "version" | "--version" => &[],
@@ -121,10 +154,21 @@ impl Args {
                 "torrent-priority",
                 "file-priority",
                 "torrent-policy",
+                "series-monitor",
+                "series-unmonitor",
+                "series-refresh",
+                "episode-monitor",
+                "episode-unmonitor",
             ]
             .contains(&command.as_str()),
         );
-        if !options.contains_key("help") && positions.len() != required {
+        if !options.contains_key("help")
+            && (if command == "series" {
+                positions.len() > 1
+            } else {
+                positions.len() != required
+            })
+        {
             return Err(format!("{command} requires {required} argument(s)"));
         }
         Ok(Self {
@@ -646,6 +690,77 @@ fn execute(args: Args) -> Result<()> {
                 output(&integrations::search_report(&config, &r)?);
             }
         }
+        "series" | "track-series" | "series-monitor" | "series-unmonitor" | "series-refresh"
+        | "episode-monitor" | "episode-unmonitor" | "calendar" => {
+            if !online {
+                return Err("Series management requires a running Mynou service".into());
+            }
+            if args.command == "track-series" {
+                let mut request = request(&args)?;
+                request.kind = "series".into();
+                request.validate()?;
+                let mut body = Value::object();
+                body.insert("request", request.to_json());
+                body.insert(
+                    "include_specials",
+                    args.options.contains_key("include-specials"),
+                );
+                body.insert("future_only", args.options.contains_key("future-only"));
+                output(&call(&config, &path, "POST", "/api/series", Some(&body))?);
+            } else if args.command == "calendar" {
+                let fields: Vec<_> = ["from", "to", "series-id", "offset", "limit"]
+                    .iter()
+                    .filter_map(|name| {
+                        args.options
+                            .get(*name)
+                            .map(|value| format!("{}={value}", name.replace('-', "_")))
+                    })
+                    .collect();
+                let query = fields.join("&");
+                mynou::series::CalendarQuery::parse(&query)?;
+                output(&call(
+                    &config,
+                    &path,
+                    "GET",
+                    &format!("/api/calendar?{query}"),
+                    None,
+                )?);
+            } else if args.command == "series" && args.positions.is_empty() {
+                output(&call(&config, &path, "GET", "/api/series", None)?);
+            } else {
+                let id = args.positions[0].to_ascii_lowercase();
+                if id.len() != 32 || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                    return Err("Invalid series ID".into());
+                }
+                let mut body = Value::object();
+                let (method, route) = match args.command.as_str() {
+                    "series" => ("GET", format!("/api/series/{id}")),
+                    "series-refresh" => ("POST", format!("/api/series/{id}/refresh")),
+                    "series-monitor" | "series-unmonitor" => {
+                        body.insert("enabled", args.command == "series-monitor");
+                        ("POST", format!("/api/series/{id}/monitor"))
+                    }
+                    _ => {
+                        if !args.options.contains_key("season")
+                            || !args.options.contains_key("episode")
+                        {
+                            return Err("Specify both --season and --episode".into());
+                        }
+                        body.insert("season", args.number("season")?);
+                        body.insert("episode", args.number("episode")?);
+                        body.insert("enabled", args.command == "episode-monitor");
+                        ("POST", format!("/api/series/{id}/episodes"))
+                    }
+                };
+                output(&call(
+                    &config,
+                    &path,
+                    method,
+                    &route,
+                    (method == "POST").then_some(&body),
+                )?);
+            }
+        }
         "submit" => {
             let r = request(&args)?;
             if online {
@@ -657,6 +772,13 @@ fn execute(args: Args) -> Result<()> {
                     Some(&r.to_json()),
                 )?);
             } else {
+                if r.kind == "series" {
+                    let engine = Engine::open_for_management(config.clone())?;
+                    output(&Value::Array(
+                        engine.submit(r)?.iter().map(public_job).collect(),
+                    ));
+                    return Ok(());
+                }
                 let requests = integrations::expand(&config, &r)?;
                 let mut store = Store::open(&config.store_dir)?;
                 let jobs: Vec<_> = requests
