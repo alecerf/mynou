@@ -22,10 +22,14 @@ pub struct Scratch(pub PathBuf);
 
 impl Scratch {
     pub fn new() -> Self {
-        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let path = std::env::temp_dir().join(format!(
             "mynou-transfer-management-{}-{timestamp}-{}",
-            std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&path).unwrap();
         Self(path)
@@ -33,7 +37,9 @@ impl Scratch {
 }
 
 impl Drop for Scratch {
-    fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
 }
 
 pub fn configuration() -> Value {
@@ -41,7 +47,9 @@ pub fn configuration() -> Value {
     value.insert("listen", "127.0.0.1:0");
     value.insert("workers", 1_u32);
     value.insert("max_attempts", 1_u32);
-    let Value::Object(downloads) = value.get_mut("downloads").unwrap() else { panic!("downloads section") };
+    let Value::Object(downloads) = value.get_mut("downloads").unwrap() else {
+        panic!("downloads section")
+    };
     downloads.insert("enabled".into(), true.into());
     downloads.insert("listen_port".into(), 0_u32.into());
     downloads.insert("seed".into(), false.into());
@@ -57,13 +65,17 @@ pub fn engine_config(root: &Path) -> Config {
 
 pub fn client_config(root: &Path, seed: bool) -> DownloadConfig {
     let mut value = configuration();
-    let Value::Object(downloads) = value.get_mut("downloads").unwrap() else { panic!("downloads section") };
+    let Value::Object(downloads) = value.get_mut("downloads").unwrap() else {
+        panic!("downloads section")
+    };
     downloads.insert("seed".into(), seed.into());
     config::from_json(&value, root).unwrap().downloads
 }
 
 pub fn payload(length: usize, salt: u8) -> Vec<u8> {
-    (0..length).map(|index| ((index * 137 + usize::from(salt)) % 251) as u8).collect()
+    (0..length)
+        .map(|index| ((index * 137 + usize::from(salt)) % 251) as u8)
+        .collect()
 }
 
 pub struct Torrent {
@@ -79,46 +91,107 @@ impl Torrent {
     }
 
     pub fn multiple(root: &Path, name: &str, files: Vec<(PathBuf, Vec<u8>)>) -> Self {
-        Self::create(root, name, files.into_iter().map(|(path, bytes)| (path, bytes, false)).collect(), true)
+        Self::create(
+            root,
+            name,
+            files
+                .into_iter()
+                .map(|(path, bytes)| (path, bytes, false))
+                .collect(),
+            true,
+        )
     }
 
-    pub fn multiple_with_padding(root: &Path, name: &str, files: Vec<(PathBuf, Vec<u8>, bool)>) -> Self {
+    pub fn multiple_with_padding(
+        root: &Path,
+        name: &str,
+        files: Vec<(PathBuf, Vec<u8>, bool)>,
+    ) -> Self {
         Self::create(root, name, files, true)
     }
 
-    fn create(root: &Path, name: &str, files: Vec<(PathBuf, Vec<u8>, bool)>, multiple: bool) -> Self {
+    fn create(
+        root: &Path,
+        name: &str,
+        files: Vec<(PathBuf, Vec<u8>, bool)>,
+        multiple: bool,
+    ) -> Self {
         fs::create_dir_all(root).unwrap();
-        let all: Vec<u8> = files.iter().flat_map(|(_, bytes, _)| bytes.iter().copied()).collect();
-        let total = files.iter().filter(|(_, _, padding)| !padding).map(|(_, bytes, _)| bytes.len()).sum();
+        let all: Vec<u8> = files
+            .iter()
+            .flat_map(|(_, bytes, _)| bytes.iter().copied())
+            .collect();
+        let total = files
+            .iter()
+            .filter(|(_, _, padding)| !padding)
+            .map(|(_, bytes, _)| bytes.len())
+            .sum();
         let mut info = BTreeMap::from([
             (b"name".to_vec(), Bencode::Bytes(name.as_bytes().to_vec())),
             (b"piece length".to_vec(), Bencode::Int(BLOCK as i64)),
-            (b"pieces".to_vec(), Bencode::Bytes(all.chunks(BLOCK).flat_map(sha1).collect())),
+            (
+                b"pieces".to_vec(),
+                Bencode::Bytes(all.chunks(BLOCK).flat_map(sha1).collect()),
+            ),
             (b"private".to_vec(), Bencode::Int(1)),
         ]);
         let files = if multiple {
-            let encoded_files = files.iter().map(|(path, bytes, padding)| {
-                let mut fields = BTreeMap::from([
-                    (b"length".to_vec(), Bencode::Int(bytes.len() as i64)),
-                    (b"path".to_vec(), Bencode::List(path.components().map(|component| {
-                        Bencode::Bytes(component.as_os_str().to_str().unwrap().as_bytes().to_vec())
-                    }).collect())),
-                ]);
-                if *padding { fields.insert(b"attr".to_vec(), Bencode::Bytes(b"p".to_vec())); }
-                Bencode::Dict(fields)
-            }).collect();
+            let encoded_files = files
+                .iter()
+                .map(|(path, bytes, padding)| {
+                    let mut fields = BTreeMap::from([
+                        (b"length".to_vec(), Bencode::Int(bytes.len() as i64)),
+                        (
+                            b"path".to_vec(),
+                            Bencode::List(
+                                path.components()
+                                    .map(|component| {
+                                        Bencode::Bytes(
+                                            component
+                                                .as_os_str()
+                                                .to_str()
+                                                .unwrap()
+                                                .as_bytes()
+                                                .to_vec(),
+                                        )
+                                    })
+                                    .collect(),
+                            ),
+                        ),
+                    ]);
+                    if *padding {
+                        fields.insert(b"attr".to_vec(), Bencode::Bytes(b"p".to_vec()));
+                    }
+                    Bencode::Dict(fields)
+                })
+                .collect();
             info.insert(b"files".to_vec(), Bencode::List(encoded_files));
-            files.into_iter().filter(|(_, _, padding)| !padding).map(|(path, bytes, _)| (Path::new(name).join(path), bytes)).collect()
+            files
+                .into_iter()
+                .filter(|(_, _, padding)| !padding)
+                .map(|(path, bytes, _)| (Path::new(name).join(path), bytes))
+                .collect()
         } else {
             info.insert(b"length".to_vec(), Bencode::Int(all.len() as i64));
-            files.into_iter().map(|(path, bytes, _)| (path, bytes)).collect()
+            files
+                .into_iter()
+                .map(|(path, bytes, _)| (path, bytes))
+                .collect()
         };
         let info = Bencode::Dict(info);
-        let id = sha1(&bencode::encode(&info)).iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+        let id = sha1(&bencode::encode(&info))
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
         let torrent = bencode::encode(&Bencode::Dict(BTreeMap::from([(b"info".to_vec(), info)])));
         let path = root.join(format!("{name}.torrent"));
         fs::write(&path, torrent).unwrap();
-        Self { id, path, files, total }
+        Self {
+            id,
+            path,
+            files,
+            total,
+        }
     }
 
     pub fn magnet(&self, peer_port: u16) -> String {
@@ -159,14 +232,20 @@ impl Seeder {
             client.ensure(torrent.path.to_str().unwrap()).unwrap();
             ready(&client, &torrent.id);
         }
-        Self { client, root: root.to_owned() }
+        Self {
+            client,
+            root: root.to_owned(),
+        }
     }
 }
 
 pub fn wait(mut predicate: impl FnMut() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(15);
     while !predicate() {
-        assert!(Instant::now() < deadline, "Synthetic transfer exceeded its deadline");
+        assert!(
+            Instant::now() < deadline,
+            "Synthetic transfer exceeded its deadline"
+        );
         thread::sleep(Duration::from_millis(5));
     }
 }
@@ -191,7 +270,9 @@ pub struct RecordingProxy {
 struct ActiveRelay(Arc<AtomicU64>);
 
 impl Drop for ActiveRelay {
-    fn drop(&mut self) { self.0.fetch_sub(1, Ordering::AcqRel); }
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 impl RecordingProxy {
@@ -222,7 +303,11 @@ impl RecordingProxy {
                         active.fetch_add(1, Ordering::AcqRel);
                         workers.push(thread::spawn(move || {
                             let _active = ActiveRelay(active);
-                            let seed = TcpStream::connect_timeout(&SocketAddr::from(([127, 0, 0, 1], seed_port)), Duration::from_secs(2)).unwrap();
+                            let seed = TcpStream::connect_timeout(
+                                &SocketAddr::from(([127, 0, 0, 1], seed_port)),
+                                Duration::from_secs(2),
+                            )
+                            .unwrap();
                             relay(client, seed, requests, keep_alives, enabled, stopped);
                         }));
                     }
@@ -232,12 +317,24 @@ impl RecordingProxy {
                     Err(error) => panic!("Cannot accept recording proxy connection: {error}"),
                 }
             }
-            for worker in workers { worker.join().unwrap(); }
+            for worker in workers {
+                worker.join().unwrap();
+            }
         });
-        Self { port, requests, keep_alives, payloads_enabled, active, stopped, thread: Some(thread) }
+        Self {
+            port,
+            requests,
+            keep_alives,
+            payloads_enabled,
+            active,
+            stopped,
+            thread: Some(thread),
+        }
     }
 
-    pub fn wait_idle(&self) { wait(|| self.active.load(Ordering::Acquire) == 0); }
+    pub fn wait_idle(&self) {
+        wait(|| self.active.load(Ordering::Acquire) == 0);
+    }
 }
 
 impl Drop for RecordingProxy {
@@ -252,23 +349,48 @@ impl Drop for RecordingProxy {
     }
 }
 
-fn read_exact(stream: &mut TcpStream, mut bytes: &mut [u8], stopped: &AtomicBool) -> std::io::Result<()> {
+fn read_exact(
+    stream: &mut TcpStream,
+    mut bytes: &mut [u8],
+    stopped: &AtomicBool,
+) -> std::io::Result<()> {
     let deadline = Instant::now() + Duration::from_secs(15);
     while !bytes.is_empty() && !stopped.load(Ordering::Acquire) && Instant::now() < deadline {
         match stream.read(bytes) {
             Ok(0) => return Err(std::io::ErrorKind::UnexpectedEof.into()),
             Ok(length) => bytes = &mut bytes[length..],
-            Err(error) if matches!(error.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut | std::io::ErrorKind::Interrupted) => {}
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock
+                        | std::io::ErrorKind::TimedOut
+                        | std::io::ErrorKind::Interrupted
+                ) => {}
             Err(error) => return Err(error),
         }
     }
-    if bytes.is_empty() { Ok(()) } else { Err(std::io::ErrorKind::TimedOut.into()) }
+    if bytes.is_empty() {
+        Ok(())
+    } else {
+        Err(std::io::ErrorKind::TimedOut.into())
+    }
 }
 
-fn relay(mut client: TcpStream, mut seed: TcpStream, requests: Arc<Mutex<Vec<u32>>>, keep_alives: Arc<AtomicU64>, enabled: Arc<AtomicBool>, stopped: Arc<AtomicBool>) {
+fn relay(
+    mut client: TcpStream,
+    mut seed: TcpStream,
+    requests: Arc<Mutex<Vec<u32>>>,
+    keep_alives: Arc<AtomicU64>,
+    enabled: Arc<AtomicBool>,
+    stopped: Arc<AtomicBool>,
+) {
     for stream in [&client, &seed] {
-        stream.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
-        stream.set_write_timeout(Some(Duration::from_secs(2))).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_millis(100)))
+            .unwrap();
+        stream
+            .set_write_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
         stream.set_nodelay(true).unwrap();
     }
     let mut incoming = client.try_clone().unwrap();
@@ -280,9 +402,13 @@ fn relay(mut client: TcpStream, mut seed: TcpStream, requests: Arc<Mutex<Vec<u32
         let result = forward_messages(&mut outgoing, &mut incoming, &back_stop, |message| {
             if message.first() == Some(&7) {
                 let deadline = Instant::now() + Duration::from_secs(15);
-                while !enabled.load(Ordering::Acquire) && !back_stop.load(Ordering::Acquire)
-                    && !back_disconnected.load(Ordering::Acquire) {
-                    if Instant::now() >= deadline { return false; }
+                while !enabled.load(Ordering::Acquire)
+                    && !back_stop.load(Ordering::Acquire)
+                    && !back_disconnected.load(Ordering::Acquire)
+                {
+                    if Instant::now() >= deadline {
+                        return false;
+                    }
                     thread::sleep(Duration::from_millis(5));
                 }
             }
@@ -293,9 +419,14 @@ fn relay(mut client: TcpStream, mut seed: TcpStream, requests: Arc<Mutex<Vec<u32
         result
     });
     let _ = forward_messages(&mut client, &mut seed, &stopped, |message| {
-        if message.is_empty() { keep_alives.fetch_add(1, Ordering::Relaxed); }
+        if message.is_empty() {
+            keep_alives.fetch_add(1, Ordering::Relaxed);
+        }
         if message.first() == Some(&6) && message.len() == 13 {
-            requests.lock().unwrap().push(u32::from_be_bytes(message[1..5].try_into().unwrap()));
+            requests
+                .lock()
+                .unwrap()
+                .push(u32::from_be_bytes(message[1..5].try_into().unwrap()));
         }
         true
     });
@@ -305,7 +436,12 @@ fn relay(mut client: TcpStream, mut seed: TcpStream, requests: Arc<Mutex<Vec<u32
     let _ = back.join().unwrap();
 }
 
-fn forward_messages(from: &mut TcpStream, to: &mut TcpStream, stopped: &AtomicBool, mut inspect: impl FnMut(&[u8]) -> bool) -> std::io::Result<()> {
+fn forward_messages(
+    from: &mut TcpStream,
+    to: &mut TcpStream,
+    stopped: &AtomicBool,
+    mut inspect: impl FnMut(&[u8]) -> bool,
+) -> std::io::Result<()> {
     let mut handshake = [0; 68];
     read_exact(from, &mut handshake, stopped)?;
     to.write_all(&handshake)?;
@@ -313,10 +449,14 @@ fn forward_messages(from: &mut TcpStream, to: &mut TcpStream, stopped: &AtomicBo
         let mut header = [0; 4];
         read_exact(from, &mut header, stopped)?;
         let length = u32::from_be_bytes(header) as usize;
-        if length > 4 * 1024 * 1024 { return Err(std::io::ErrorKind::InvalidData.into()); }
+        if length > 4 * 1024 * 1024 {
+            return Err(std::io::ErrorKind::InvalidData.into());
+        }
         let mut message = vec![0; length];
         read_exact(from, &mut message, stopped)?;
-        if !inspect(&message) { return Ok(()); }
+        if !inspect(&message) {
+            return Ok(());
+        }
         to.write_all(&header)?;
         to.write_all(&message)?;
     }

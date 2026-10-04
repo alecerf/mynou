@@ -115,7 +115,12 @@ impl Args {
                 "monitor",
                 "unmonitor",
                 "baseline",
-                "torrent", "pause", "resume", "torrent-priority", "file-priority", "torrent-policy",
+                "torrent",
+                "pause",
+                "resume",
+                "torrent-priority",
+                "file-priority",
+                "torrent-policy",
             ]
             .contains(&command.as_str()),
         );
@@ -489,7 +494,8 @@ fn execute(args: Args) -> Result<()> {
             }
             output(&call(&config, &path, "GET", "/api/transfers", None)?);
         }
-        "torrent" | "pause" | "resume" | "torrent-priority" | "file-priority" | "torrent-policy" => {
+        "torrent" | "pause" | "resume" | "torrent-priority" | "file-priority"
+        | "torrent-policy" => {
             let id = &args.positions[0];
             if ![40, 64].contains(&id.len()) || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
                 return Err("Invalid native transfer ID".into());
@@ -501,8 +507,12 @@ fn execute(args: Args) -> Result<()> {
                 "pause" => "pause",
                 "resume" => "resume",
                 "torrent-priority" => {
-                    let priority = args.options.get("priority").ok_or("--priority is required")?
-                        .parse::<i32>().map_err(|_| "Priority must be an integer between -1000 and 1000")?;
+                    let priority = args
+                        .options
+                        .get("priority")
+                        .ok_or("--priority is required")?
+                        .parse::<i32>()
+                        .map_err(|_| "Priority must be an integer between -1000 and 1000")?;
                     if !(-1000..=1000).contains(&priority) {
                         return Err("Priority must be an integer between -1000 and 1000".into());
                     }
@@ -510,9 +520,16 @@ fn execute(args: Args) -> Result<()> {
                     "priority"
                 }
                 "file-priority" => {
-                    let index = args.options.get("file").ok_or("--file is required")?
-                        .parse::<u32>().map_err(|_| "File index must be a nonnegative integer")?;
-                    let priority = args.options.get("priority").ok_or("--priority is required")?;
+                    let index = args
+                        .options
+                        .get("file")
+                        .ok_or("--file is required")?
+                        .parse::<u32>()
+                        .map_err(|_| "File index must be a nonnegative integer")?;
+                    let priority = args
+                        .options
+                        .get("priority")
+                        .ok_or("--priority is required")?;
                     if !["low", "normal", "high"].contains(&priority.as_str()) {
                         return Err("File priority must be low, normal or high".into());
                     }
@@ -521,7 +538,8 @@ fn execute(args: Args) -> Result<()> {
                     "files"
                 }
                 "torrent-policy" => {
-                    let policy = json::parse(args.options.get("policy").ok_or("--policy is required")?)?;
+                    let policy =
+                        json::parse(args.options.get("policy").ok_or("--policy is required")?)?;
                     if policy != Value::Null {
                         mynou::torrent::TransferPolicy::from_json(&policy)?;
                     }
@@ -533,10 +551,18 @@ fn execute(args: Args) -> Result<()> {
             if !online {
                 return Err("Native transfer management requires the running Mynou service".into());
             }
-            let route = if action.is_empty() { format!("/api/transfers/{id}") }
-                else { format!("/api/transfers/{id}/{action}") };
-            output(&call(&config, &path, if action.is_empty() { "GET" } else { "POST" },
-                &route, if action.is_empty() { None } else { Some(&body) })?);
+            let route = if action.is_empty() {
+                format!("/api/transfers/{id}")
+            } else {
+                format!("/api/transfers/{id}/{action}")
+            };
+            output(&call(
+                &config,
+                &path,
+                if action.is_empty() { "GET" } else { "POST" },
+                &route,
+                if action.is_empty() { None } else { Some(&body) },
+            )?);
         }
         "library" => {
             if online {

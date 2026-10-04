@@ -281,7 +281,8 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
             if let Some(tail) = path.strip_prefix("/api/transfers/") {
                 let parts: Vec<_> = tail.split('/').collect();
                 let id = parts[0];
-                if ![40, 64].contains(&id.len()) || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                if ![40, 64].contains(&id.len()) || !id.bytes().all(|byte| byte.is_ascii_hexdigit())
+                {
                     return Ok((404, error("Unknown native transfer")));
                 }
                 let id = id.to_ascii_lowercase();
@@ -294,19 +295,26 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
                 let snapshot = match parts[1] {
                     "pause" | "resume" => {
                         control_body(body, &[], true)?;
-                        if parts[1] == "pause" { engine.pause_transfer(&id)? }
-                        else { engine.resume_transfer(&id)? }
+                        if parts[1] == "pause" {
+                            engine.pause_transfer(&id)?
+                        } else {
+                            engine.resume_transfer(&id)?
+                        }
                     }
                     "priority" => {
                         let value = control_body(body, &["priority"], false)?;
-                        let priority = value.get("priority").and_then(Value::as_i64)
+                        let priority = value
+                            .get("priority")
+                            .and_then(Value::as_i64)
                             .and_then(|number| i32::try_from(number).ok())
                             .ok_or("priority must be an integer between -1000 and 1000")?;
                         engine.set_transfer_priority(&id, priority)?
                     }
                     "files" => {
                         let value = control_body(body, &["index", "priority"], false)?;
-                        let index = value.get("index").and_then(Value::as_u64)
+                        let index = value
+                            .get("index")
+                            .and_then(Value::as_u64)
                             .and_then(|number| usize::try_from(number).ok())
                             .ok_or("index must be a nonnegative file index")?;
                         let priority = match value.get("priority").and_then(Value::as_str) {

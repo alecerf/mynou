@@ -309,11 +309,14 @@ fn download_policy(downloads: &Value) -> Result<TransferPolicy> {
             "seed_time_secs",
         ]
         .into_iter()
-        .filter_map(|name| downloads.get(name).map(|value| (name.into(), value.clone())))
+        .filter_map(|name| {
+            downloads
+                .get(name)
+                .map(|value| (name.into(), value.clone()))
+        })
         .collect(),
     );
-    TransferPolicy::from_json(&policy)
-        .map_err(|error| format!("Configuration: downloads: {error}"))
+    TransferPolicy::from_json(&policy).map_err(|error| format!("Configuration: downloads: {error}"))
 }
 
 pub fn load(file: &Path) -> Result<Config> {

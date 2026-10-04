@@ -101,7 +101,10 @@ fn bandwidth_limits_reject_non_integer_types_and_values_over_bound() {
 
 #[test]
 fn nullable_seeding_goals_accept_supported_bounds() {
-    for (name, maximum) in [("seed_ratio_milli", 1_000_000_u32), ("seed_time_secs", 315_360_000)] {
+    for (name, maximum) in [
+        ("seed_ratio_milli", 1_000_000_u32),
+        ("seed_time_secs", 315_360_000),
+    ] {
         for limit in [1_u32, maximum] {
             let policy = policy(&configured(name, limit.into()));
             let actual = if name == "seed_ratio_milli" {
@@ -123,8 +126,20 @@ fn nullable_seeding_goals_accept_supported_bounds() {
 
 #[test]
 fn seeding_goals_reject_zero_non_integer_types_and_values_over_bound() {
-    for (name, over_bound) in [("seed_ratio_milli", "1000001"), ("seed_time_secs", "315360001")] {
-        for setting in ["0", "-1", "1.5", "true", "[]", "{}", r#""1000""#, over_bound] {
+    for (name, over_bound) in [
+        ("seed_ratio_milli", "1000001"),
+        ("seed_time_secs", "315360001"),
+    ] {
+        for setting in [
+            "0",
+            "-1",
+            "1.5",
+            "true",
+            "[]",
+            "{}",
+            r#""1000""#,
+            over_bound,
+        ] {
             assert!(
                 config::from_json(&configured(name, document(setting)), Path::new(".")).is_err(),
                 "invalid {name} accepted: {setting}"
@@ -170,7 +185,12 @@ fn policy_settings_remain_strict_even_when_downloads_are_disabled() {
 
 #[test]
 fn unknown_transfer_fields_and_top_level_policies_are_rejected() {
-    for name in ["download_limit", "upload_limits_bps", "seed_ratio", "transfer_policy"] {
+    for name in [
+        "download_limit",
+        "upload_limits_bps",
+        "seed_ratio",
+        "transfer_policy",
+    ] {
         assert!(config::from_json(&configured(name, 1_u32.into()), Path::new(".")).is_err());
     }
     let mut value = config::default_json();
