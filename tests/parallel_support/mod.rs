@@ -13,6 +13,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub const BLOCK: usize = 16 * 1024;
+const PEER_ID: &[u8; 20] = b"-SYN010-abcdefghijkl";
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub struct Scratch(pub PathBuf);
@@ -486,7 +487,7 @@ fn serve(mut stream: TcpStream, context: &Connection) -> io::Result<()> {
         }
     }
     handshake[20..28].fill(0);
-    handshake[48..].copy_from_slice(b"-SYN010-abcdefghijklm");
+    handshake[48..].copy_from_slice(PEER_ID);
     stream.write_all(&handshake)?;
     let mut bitfield = vec![0; context.torrent.pieces().div_ceil(8)];
     for &piece in &context.pieces {
