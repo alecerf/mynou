@@ -3,6 +3,7 @@
 pub mod bencode;
 pub mod config;
 pub mod crypto;
+pub mod date;
 pub mod demo;
 pub mod engine;
 pub mod integrations;
@@ -13,6 +14,7 @@ pub mod net;
 pub mod organizer;
 pub mod pki;
 pub mod selection;
+pub mod series;
 pub mod server;
 pub mod store;
 pub mod tls;

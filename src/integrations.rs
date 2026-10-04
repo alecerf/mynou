@@ -278,6 +278,22 @@ fn tmdb_guid(item: &Value) -> Option<u64> {
 
 /// Reads the watchlist and expands series into episodes that have already aired.
 pub fn watchlist(config: &Config) -> Result<Vec<Request>> {
+    let mut out = Vec::new();
+    let mut seen = BTreeSet::new();
+    for request in watchlist_identities(config)? {
+        for expanded in expand(config, &request)? {
+            if out.len() >= MAX_ITEMS {
+                return Err("Watchlist: too many episodes".into());
+            }
+            if seen.insert(expanded.canonical_key()) {
+                out.push(expanded);
+            }
+        }
+    }
+    Ok(out)
+}
+
+pub(crate) fn watchlist_identities(config: &Config) -> Result<Vec<Request>> {
     if !config.plex.enabled {
         return Ok(Vec::new());
     }
@@ -326,13 +342,11 @@ pub fn watchlist(config: &Config) -> Result<Vec<Request>> {
             },
         };
         request.validate()?;
-        for expanded in expand(config, &request)? {
-            if out.len() >= MAX_ITEMS {
-                return Err("Watchlist: too many episodes".into());
-            }
-            if seen.insert(expanded.canonical_key()) {
-                out.push(expanded);
-            }
+        if out.len() >= MAX_ITEMS {
+            return Err("Watchlist: too many requests".into());
+        }
+        if seen.insert(request.canonical_key()) {
+            out.push(request);
         }
     }
     Ok(out)
@@ -361,7 +375,7 @@ fn catalog_json(config: &Config, path: &str, pairs: &[(&str, String)]) -> Result
         // Copy the JSON tree outside the shared lock.
         return Ok(value.as_ref().clone());
     }
-    let (value, payload_bytes) = fetch_json_sized(&url, &headers, "Catalogue TMDB")?;
+    let (value, payload_bytes) = fetch_json_sized(&url, &headers, "TMDB catalog")?;
     let cached = Arc::new(value.clone());
     catalog_cache()
         .lock()
@@ -387,6 +401,11 @@ fn resolve_catalog(config: &Config, request: &Request) -> Result<u64> {
         if tv { "search/tv" } else { "search/movie" },
         &pairs,
     )?;
+    catalog_identity(request, &value)
+}
+
+fn catalog_identity(request: &Request, value: &Value) -> Result<u64> {
+    let tv = matches!(request.kind.as_str(), "series" | "episode");
     let items = value
         .get("results")
         .and_then(Value::as_array)
@@ -423,6 +442,182 @@ fn resolve_catalog(config: &Config, request: &Request) -> Result<u64> {
     Ok(*found
         .first()
         .ok_or("TMDB catalog: missing identification")?)
+}
+
+/// A bounded fresh plan includes known future/undated episodes without queuing them.
+pub fn series_plan(
+    config: &Config,
+    request: &Request,
+    include_specials: bool,
+) -> Result<crate::series::Plan> {
+    series_plan_before(
+        config,
+        request,
+        include_specials,
+        Instant::now() + SEARCH_BUDGET,
+    )
+}
+
+pub(crate) fn series_plan_before(
+    config: &Config,
+    request: &Request,
+    include_specials: bool,
+    deadline: Instant,
+) -> Result<crate::series::Plan> {
+    request.validate()?;
+    if request.kind != "series" || request.source_path.is_some() || request.source_url.is_some() {
+        return Err(
+            "Series monitoring requires a series identity without an explicit source".into(),
+        );
+    }
+    if request
+        .tmdb_id
+        .is_some_and(|id| id == 0 || id > 9_007_199_254_740_991)
+    {
+        return Err("Invalid series TMDB identity".into());
+    }
+    let deadline = deadline.min(Instant::now() + SEARCH_BUDGET);
+    remaining_search_time(deadline)?;
+    let id = match request.tmdb_id {
+        Some(id) => id,
+        None => {
+            let mut pairs = vec![("query", request.title.clone())];
+            if request.year != 0 {
+                pairs.push(("first_air_date_year", request.year.to_string()));
+            }
+            catalog_identity(
+                request,
+                &fresh_catalog(config, "search/tv", &pairs, deadline)?,
+            )?
+        }
+    };
+    let details = fresh_catalog(config, &format!("tv/{id}"), &[], deadline)?;
+    if integer(&details, "id").is_some_and(|actual| actual != id) {
+        return Err("TMDB catalog: series identity mismatch".into());
+    }
+    let seasons = details
+        .get("seasons")
+        .and_then(Value::as_array)
+        .ok_or("TMDB catalog: missing seasons")?;
+    if seasons.len() > 1000 {
+        return Err("TMDB catalog: too many seasons".into());
+    }
+    let mut identity = request.clone();
+    identity.tmdb_id = Some(id);
+    if identity.year == 0 {
+        identity.year = string(&details, "first_air_date")
+            .filter(|text| crate::date::day(text).is_ok())
+            .and_then(|text| text[..4].parse().ok())
+            .unwrap_or(0);
+    }
+    let mut chosen = BTreeSet::new();
+    for season in seasons {
+        let number = integer(season, "season_number")
+            .and_then(|number| u32::try_from(number).ok())
+            .filter(|number| *number <= 9999)
+            .ok_or("TMDB catalog: invalid season number")?;
+        if (number == 0 && !include_specials) || (request.season != 0 && request.season != number) {
+            continue;
+        }
+        if !chosen.insert(number) {
+            return Err("TMDB catalog: ambiguous duplicate season".into());
+        }
+        if chosen.len() > 100 {
+            return Err("TMDB catalog: a series plan is limited to 100 seasons".into());
+        }
+    }
+    let mut episodes = Vec::new();
+    for season in chosen {
+        remaining_search_time(deadline)?;
+        let value = fresh_catalog(config, &format!("tv/{id}/season/{season}"), &[], deadline)?;
+        if integer(&value, "season_number").is_some_and(|actual| actual != u64::from(season)) {
+            return Err("TMDB catalog: season identity mismatch".into());
+        }
+        let items = value
+            .get("episodes")
+            .and_then(Value::as_array)
+            .ok_or("TMDB catalog: missing episodes")?;
+        if items.len() > 1000 {
+            return Err("TMDB catalog: too many episodes in a season".into());
+        }
+        for item in items {
+            if integer(item, "season_number").is_some_and(|actual| actual != u64::from(season)) {
+                return Err("TMDB catalog: episode season mismatch".into());
+            }
+            let number = integer(item, "episode_number")
+                .and_then(|number| u32::try_from(number).ok())
+                .filter(|number| (1..=99999).contains(number))
+                .ok_or("TMDB catalog: invalid episode number")?;
+            if request.episode != 0 && request.episode != number {
+                continue;
+            }
+            let episode = crate::series::Episode {
+                catalog_id: match item.get("id") {
+                    None | Some(Value::Null) => None,
+                    Some(value) => Some(
+                        value
+                            .as_u64()
+                            .filter(|id| *id > 0 && *id <= 9_007_199_254_740_991)
+                            .ok_or("TMDB catalog: invalid episode identity")?,
+                    ),
+                },
+                season,
+                episode: number,
+                title: string(item, "name")
+                    .map_or_else(|| format!("Episode {number}"), str::to_owned),
+                air_date: string(item, "air_date")
+                    .filter(|text| crate::date::day(text).is_ok())
+                    .map(str::to_owned),
+            };
+            episode.validate()?;
+            episodes.push(episode);
+            if episodes.len() > crate::series::MAX_EPISODES {
+                return Err("TMDB catalog: a plan is limited to 2000 episodes".into());
+            }
+        }
+    }
+    episodes.sort_by_key(|episode| (episode.season, episode.episode));
+    let plan = crate::series::Plan {
+        request: identity,
+        episodes,
+    };
+    plan.validate()?;
+    remaining_search_time(deadline)?;
+    Ok(plan)
+}
+
+fn fresh_catalog(
+    config: &Config,
+    path: &str,
+    pairs: &[(&str, String)],
+    deadline: Instant,
+) -> Result<Value> {
+    if !config.catalog.enabled {
+        return Err("TMDB catalog is disabled".into());
+    }
+    let mut headers = vec![("Accept".into(), "application/json".into())];
+    let mut pairs = pairs.to_vec();
+    if let Some(token) = optional_secret(&config.catalog.token_env)? {
+        headers.push(("Authorization".into(), format!("Bearer {token}")));
+    } else if let Some(key) = optional_secret(&config.catalog.api_key_env)? {
+        pairs.push(("api_key", key));
+    } else {
+        return Err("TMDB catalog: missing token or API key".into());
+    }
+    let url = query(&endpoint(&config.catalog.url, path)?, &pairs)?;
+    let response = client()
+        .with_timeout(remaining_search_time(deadline)?.min(Duration::from_secs(20)))
+        .request("GET", &url, &headers, &[])
+        .map_err(|_| "TMDB catalog: request failed")?;
+    if !(200..300).contains(&response.status) {
+        return Err(format!("TMDB catalog: HTTP response {}", response.status));
+    }
+    let value = json::parse(
+        std::str::from_utf8(&response.body).map_err(|_| "TMDB catalog: invalid UTF-8")?,
+    )
+    .map_err(|_| "TMDB catalog: invalid JSON")?;
+    remaining_search_time(deadline)?;
+    Ok(value)
 }
 
 // Current UTC date, converted from Unix days to the Gregorian calendar.

@@ -21,6 +21,8 @@ use std::{
 pub struct Engine {
     pub config: Config,
     pub store: Mutex<Store>,
+    pub(crate) series_store: Mutex<crate::series::SeriesStore>,
+    pub(crate) series_refresh_lock: Mutex<()>,
     downloads: Option<Client>,
     sync_lock: Mutex<()>,
     pub(crate) upgrade_lock: Mutex<()>,
@@ -28,6 +30,7 @@ pub struct Engine {
     pub stopped: AtomicBool,
     pub last_sync_error: Mutex<Option<String>>,
     pub last_upgrade_error: Mutex<Option<String>>,
+    pub last_series_error: Mutex<Option<String>>,
 }
 
 pub fn lock<T>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>> {
@@ -63,6 +66,7 @@ impl Engine {
         start_downloads: bool,
         read_only: bool,
     ) -> Result<Arc<Self>> {
+        let series_store = crate::series::SeriesStore::open(&config.store_dir, read_only)?;
         let downloads = if start_downloads && config.downloads_enabled {
             let client =
                 Client::open_with_policy(config.downloads.clone(), config.download_policy.clone())?;
@@ -93,6 +97,8 @@ impl Engine {
         Ok(Arc::new(Self {
             config,
             store: Mutex::new(store),
+            series_store: Mutex::new(series_store),
+            series_refresh_lock: Mutex::new(()),
             downloads,
             sync_lock: Mutex::new(()),
             upgrade_lock: Mutex::new(()),
@@ -100,10 +106,33 @@ impl Engine {
             stopped: AtomicBool::new(false),
             last_sync_error: Mutex::new(None),
             last_upgrade_error: Mutex::new(None),
+            last_series_error: Mutex::new(None),
         }))
     }
 
     pub fn submit(&self, request: Request) -> Result<Vec<Job>> {
+        if request.kind == "series" {
+            let record = self.track_series(&request, false, false)?;
+            let id = record
+                .get("id")
+                .and_then(Value::as_str)
+                .ok_or("Missing series identity")?;
+            let series = lock(&self.series_store)?
+                .get(id)
+                .ok_or("Missing series record")?;
+            let keys: std::collections::BTreeSet<_> = series
+                .plan
+                .episodes
+                .iter()
+                .map(|episode| series.episode_request(episode).media_key())
+                .collect();
+            return Ok(lock(&self.store)?
+                .list()
+                .into_iter()
+                .filter(|job| keys.contains(&job.request.media_key()))
+                .take(64)
+                .collect());
+        }
         let requests = integrations::expand(&self.config, &request)?;
         let mut store = lock(&self.store)?;
         requests.into_iter().map(|r| store.submit(r)).collect()
@@ -111,13 +140,16 @@ impl Engine {
 
     pub fn sync(&self) -> Result<usize> {
         let _guard = lock(&self.sync_lock)?;
-        let requests = integrations::watchlist(&self.config)?;
-        let mut store = lock(&self.store)?;
-        let before = store.list().len();
+        let requests = integrations::watchlist_identities(&self.config)?;
+        let before = lock(&self.store)?.list().len();
         for request in requests {
-            store.submit(request)?;
+            if request.kind == "series" {
+                self.track_series(&request, false, false)?;
+            } else {
+                self.submit(request)?;
+            }
         }
-        Ok(store.list().len() - before)
+        Ok(lock(&self.store)?.list().len().saturating_sub(before))
     }
 
     pub fn cancel(&self, id: &str) -> Result<Job> {
@@ -278,6 +310,20 @@ impl Engine {
         );
         v.insert("monitoring_enabled", self.config.monitoring.enabled);
         v.insert(
+            "monitored_series",
+            lock(&self.series_store)?
+                .list()
+                .iter()
+                .filter(|record| record.monitored)
+                .count() as u32,
+        );
+        v.insert(
+            "last_series_error",
+            lock(&self.last_series_error)?
+                .clone()
+                .map_or(Value::Null, Value::String),
+        );
+        v.insert(
             "last_upgrade_error",
             lock(&self.last_upgrade_error)?
                 .clone()
@@ -302,6 +348,18 @@ impl Engine {
 
     pub fn start(self: &Arc<Self>) -> Workers {
         let mut handles = Vec::new();
+        if self.config.catalog.enabled {
+            let engine = self.clone();
+            handles.push(thread::spawn(move || {
+                while !engine.stopped.load(Ordering::Acquire) {
+                    let error = engine.refresh_series_due().err();
+                    if let Ok(mut current) = engine.last_series_error.lock() {
+                        *current = error;
+                    }
+                    engine.wait(60_000);
+                }
+            }));
+        }
         for _ in 0..self.config.workers {
             let engine = self.clone();
             handles.push(thread::spawn(move || {
