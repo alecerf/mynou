@@ -414,6 +414,46 @@ impl Web {
                 engine.track_series_with_policy(&request, specials, future, !unmonitored)?;
                 self.redirect(session, "/ui/series", vec!["Series monitoring recorded. Existing settings are retained when a scope is already tracked".into()])
             }
+            "/ui/series/pack-search" => {
+                form.only(&["csrf", "id", "season", "action", "scope_id", "candidate_id"])?;
+                let ids = form.ids(false)?;
+                if ids.len() != 1 {
+                    return Err("Choose one tracked series".into());
+                }
+                let mut value = crate::json::Value::object();
+                value.insert(
+                    "season",
+                    decimal(form.value("season")?, 9999, "pack season")? as u32,
+                );
+                value.insert(
+                    "apply",
+                    match form.value("action")? {
+                        "preview" => false,
+                        "apply" => true,
+                        _ => return Err("Unknown pack search action".into()),
+                    },
+                );
+                for key in ["scope_id", "candidate_id"] {
+                    if !form.value(key)?.is_empty() {
+                        value.insert(key, form.value(key)?.to_owned());
+                    }
+                }
+                let query = crate::pack::AutoPackRequest::from_json(&value)?;
+                if query.apply && query.candidate_id.is_none() {
+                    return Err(
+                        "Preview the pack decision before using its acquisition button".into(),
+                    );
+                }
+                let report = engine.search_packs(&ids[0], &query)?;
+                if query.apply {
+                    self.redirect(session, "/ui/jobs", vec!["Automatic pack decision recorded. Existing requests and terminal states are retained".into()])
+                } else {
+                    Ok(Response::html(
+                        200,
+                        series_views::pack_search(session, &ids[0], &report),
+                    ))
+                }
+            }
             "/ui/series/packs" => {
                 form.only(&["csrf", "id", "source_value", "episodes"])?;
                 let ids = form.ids(false)?;

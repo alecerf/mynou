@@ -33,6 +33,8 @@ const HELP: &str = "Mynou — media automation using Rust std only
   track-series --title TITLE [--year YEAR --tmdb-id N --season N]
                [--future-only] [--include-specials] [--unmonitored] [--config mynou.json]
   series-pack ID --url MAGNET_OR_TORRENT --mapping FILE [--config mynou.json]
+  series-pack-search ID --season N [--apply] [--candidate-id ID --scope-id ID]
+                     [--config mynou.json]
   pack-remap JOB_ID --file-path PATH [--config mynou.json]
   series [ID] [--config mynou.json]
   series-monitor | series-unmonitor | series-refresh ID [--config mynou.json]
@@ -128,6 +130,14 @@ impl Args {
                 "unmonitored",
             ],
             "series-pack" => &["config", "help", "url", "mapping"],
+            "series-pack-search" => &[
+                "config",
+                "help",
+                "season",
+                "apply",
+                "candidate-id",
+                "scope-id",
+            ],
             "pack-remap" => &["config", "help", "file-path"],
             "series" | "series-monitor" | "series-unmonitor" | "series-refresh" => {
                 &["config", "help"]
@@ -173,6 +183,7 @@ impl Args {
                 "series-unmonitor",
                 "series-refresh",
                 "series-pack",
+                "series-pack-search",
                 "pack-remap",
                 "episode-monitor",
                 "episode-unmonitor",
@@ -738,6 +749,38 @@ fn execute(args: Args) -> Result<()> {
                 )?);
             } else {
                 output(&integrations::search_report(&config, &r)?);
+            }
+        }
+        "series-pack-search" => {
+            let id = args.positions[0].to_ascii_lowercase();
+            if id.len() != 32 || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return Err("Invalid series ID".into());
+            }
+            if !args.options.contains_key("season") {
+                return Err("Specify --season N".into());
+            }
+            let mut body = Value::object();
+            body.insert("season", args.number("season")?);
+            body.insert("apply", args.options.contains_key("apply"));
+            for (option, key) in [("scope-id", "scope_id"), ("candidate-id", "candidate_id")] {
+                if let Some(value) = args.options.get(option) {
+                    body.insert(key, value.clone());
+                }
+            }
+            let query = mynou::pack::AutoPackRequest::from_json(&body)?;
+            if online {
+                output(&call(
+                    &config,
+                    &path,
+                    "POST",
+                    &format!("/api/series/{id}/pack-search"),
+                    Some(&body),
+                )?);
+            } else {
+                if query.apply {
+                    return Err("Pack acquisition requires a running Mynou service".into());
+                }
+                output(&Engine::open_for_preview(config)?.search_packs(&id, &query)?);
             }
         }
         "series" | "track-series" | "series-pack" | "series-monitor" | "series-unmonitor"

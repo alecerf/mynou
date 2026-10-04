@@ -84,7 +84,11 @@ pub fn detail(engine: &Arc<Engine>, session: &Session, query: &Form, id: &str) -
         "<p><a href=\"/ui/calendar?series_id={}\">Open episode calendar</a></p></section>",
         e(id)
     ));
-    body.push_str("<details class=panel><summary>Acquire a mapped pack</summary><p>Choose one torrent source and map its exact video paths to already aired catalog episodes. Include the torrent's top-level directory in each path. The full torrent downloads once; only mapped files are imported. Existing episode requests are reused.</p>");
+    body.push_str("<section class=panel><h2>Automatic season-pack search</h2><p>Search and rank packs, then inspect their metadata without downloading video. Exact episode markers must cover every missing aired episode allowed by your specials, date and exclusion choices. This on-demand action also works while background monitoring is off.</p>");
+    body.push_str(&form("/ui/series/pack-search", session));
+    body.push_str(&hidden("id", id));
+    body.push_str("<label for=pack_season>Catalog season (0 for allowed specials)</label><input id=pack_season name=season type=number min=0 max=9999 required value=1><button type=submit name=action value=preview>Preview season packs</button></form></section>");
+    body.push_str("<details class=panel><summary>Acquire a mapped pack</summary><p>Choose one torrent source and map its exact video paths to already aired catalog episodes. Include the torrent's top-level directory in each path. New transfers select mapped files and their boundary pieces; existing full transfers keep their policy. Existing episode requests are reused.</p>");
     body.push_str(&form("/ui/series/packs", session));
     body.push_str(&hidden("id", id));
     body.push_str("<label for=source_value>Magnet, torrent URL or server torrent path</label><input id=source_value name=source_value required maxlength=8192 autocomplete=off><label for=episodes>Episode mappings (JSON array)</label><textarea id=episodes name=episodes required rows=6 maxlength=8192 placeholder='[{&quot;season&quot;:1,&quot;episode&quot;:1,&quot;file_path&quot;:&quot;Pack/001.mp4&quot;}]'></textarea><p class=muted>Mappings require a different file for each episode. Review the catalog and file contents before submitting. This explicit action can acquire episodes excluded from automatic monitoring.</p><button type=submit>Acquire mapped episodes</button></form></details>");
@@ -129,6 +133,93 @@ pub fn detail(engine: &Arc<Engine>, session: &Session, query: &Form, id: &str) -
         1,
     ));
     Ok(frame("Series details", "/ui/series", Some(session), &body))
+}
+
+pub fn pack_search(session: &Session, id: &str, report: &crate::json::Value) -> String {
+    let mut body = format!(
+        "<p><a href=\"/ui/series/{}\">Back to series</a></p><p class=lead>Season {} pack decisions</p><p>Preview inspects metadata without recording requests or downloading media. Acquisition searches again and checks this scope, candidate, torrent hash and file mapping.</p>",
+        e(id),
+        scalar(report, "season")
+    );
+    if flag(report, "scope_empty") {
+        body.push_str("<p class=notice>No missing aired episodes are eligible. Existing requests, including failed or cancelled requests, remain retained.</p>");
+    }
+    if let Some(candidate) = report
+        .get("selected_candidate_id")
+        .and_then(crate::json::Value::as_str)
+    {
+        body.push_str("<section class=panel><h2>Resolved episode files</h2><div class=table-wrap><table><caption>Verified metadata mapping</caption><thead><tr><th scope=col>Episode</th><th scope=col>Catalog title</th><th scope=col>Torrent file</th></tr></thead><tbody>");
+        for row in report.get("mapping").map(array).unwrap_or_default() {
+            body.push_str(&format!(
+                "<tr><td>S{}E{}</td><td>{}</td><td>{}</td></tr>",
+                scalar(row, "season"),
+                scalar(row, "episode"),
+                display(text(row, "title")),
+                display(text(row, "file_path"))
+            ));
+        }
+        body.push_str("</tbody></table></div>");
+        body.push_str(&form("/ui/series/pack-search", session));
+        for (key, value) in [
+            ("id", id),
+            ("season", &scalar(report, "season")),
+            ("scope_id", text(report, "scope_id")),
+            ("candidate_id", candidate),
+        ] {
+            body.push_str(&hidden(key, value));
+        }
+        body.push_str("<button type=submit name=action value=apply>Acquire resolved pack</button></form></section>");
+    } else if !flag(report, "scope_empty") {
+        body.push_str("<p class=notice>No candidate resolved every requested episode within the inspection limits. Review the decisions or use an explicit mapping.</p>");
+    }
+    body.push_str("<section class=panel><h2>Metadata decisions</h2><ul>");
+    for decision in report
+        .get("metadata_decisions")
+        .map(array)
+        .unwrap_or_default()
+    {
+        body.push_str(&format!(
+            "<li>{}: {} {}</li>",
+            display(text(decision, "candidate_id")),
+            display(text(decision, "status")),
+            display(text(decision, "reason"))
+        ));
+    }
+    body.push_str("</ul></section><section class=panel><h2>Ranked title assessments</h2><p>Title acceptance precedes metadata decisions. At most eight candidates are inspected; this page shows up to 50 title assessments in each group.</p>");
+    for key in ["accepted", "rejected"] {
+        body.push_str(&format!(
+            "<h3>{}</h3><ul>",
+            if key == "accepted" {
+                "Accepted titles"
+            } else {
+                "Rejected titles"
+            }
+        ));
+        for candidate in report
+            .get(key)
+            .map(array)
+            .unwrap_or_default()
+            .iter()
+            .take(50)
+        {
+            body.push_str(&format!(
+                "<li>{} <small>{}</small>",
+                display(text(candidate, "title")),
+                display(text(candidate, "source"))
+            ));
+            if let Some(assessment) = candidate.get("assessment") {
+                for reason in assessment.get("reasons").map(array).unwrap_or_default() {
+                    if let Some(reason) = reason.as_str() {
+                        body.push_str(&format!("<small>{}</small>", display(reason)));
+                    }
+                }
+            }
+            body.push_str("</li>");
+        }
+        body.push_str("</ul>");
+    }
+    body.push_str("</section>");
+    frame("Season-pack search", "/ui/series", Some(session), &body)
 }
 
 pub fn calendar(engine: &Arc<Engine>, session: &Session, fields: &Form) -> Result<String> {

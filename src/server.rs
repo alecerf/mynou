@@ -337,6 +337,15 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
                     return Ok((404, error("Unknown series route")));
                 }
                 let result = match parts[1] {
+                    "pack-search" => {
+                        let value = control_body(
+                            body,
+                            &["season", "apply", "scope_id", "candidate_id"],
+                            false,
+                        )?;
+                        let query = crate::pack::AutoPackRequest::from_json(&value)?;
+                        engine.search_packs(&id, &query)?
+                    }
                     "packs" => {
                         let value = control_body(body, &["source_url", "episodes"], false)?;
                         let pack = crate::pack::PackSubmission::from_json(&value)?;
