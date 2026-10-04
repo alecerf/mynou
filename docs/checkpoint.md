@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.14.0 (CI pending)
+# Project checkpoint — Mynou 0.14.0
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -81,8 +81,9 @@ additive CLI/API/browser controls. Partial torrents remain distinct from full
 readiness, advertise no payload and never announce completion. Existing full
 acquisitions retain their policy. CI-only scenarios cover boundaries, metadata,
 proofs, padding/empty files, shared cancellation, expansion, pause, corrupted disk
-recovery, offline restart, mapping repair and protected controls. Its own complete
-CI/publication result is pending and must precede the following release.
+recovery, offline restart, mapping repair and protected controls. Its complete
+CI/publication result is recorded below. Automatic pack assessment and mapping
+are the next focused release.
 
 Automatic pack selection, multi-episode videos, general
 alternate/anime numbering, multi-user Plex policies, IRC automation, native
@@ -94,6 +95,22 @@ A successful validation run on `trunk` publishes a new `Cargo.toml` version if i
 has not already been released. The assets are a full source ZIP with the static
 Linux x86_64 binary, a separate static binary, a saved Docker image archive, and
 SHA-256 checksum files. There is no Docker Hub publication step.
+
+## Recorded 0.14.0 CI checkpoint
+
+Commit `a077af8d660a2b5ca12e47b579562e7a9292f6e2` passed
+[Actions run 37221887812](https://github.com/alecerf/mynou/actions/runs/37221887812):
+385 tests passed with none failed or ignored across 31 targets and the complete
+dependency, formatting, Clippy, native/musl build, native/Docker demonstration,
+packaging and checksum pipeline. GitHub Actions published
+[v0.14.0](https://github.com/alecerf/mynou/releases/tag/v0.14.0) with seven assets
+on October 4, 2026, at 17:53 UTC. The release and tag point to that exact commit;
+all assets were uploaded by `github-actions[bot]` with recorded SHA-256 digests.
+
+Post-release documentation commits need their own CI and do not replace the
+published tag or assets. [Next-release notes](next-release.md) preserve the
+automatic-pack prerequisites for 0.15 and later numbering work. No local tests,
+lint, builds, binaries or demonstrations were run for this release.
 
 ## Recorded 0.13.0 CI checkpoint
 

@@ -15,13 +15,16 @@ ownership. Partial torrents advertise no payload and never announce completion.
 The CLI, API and browser provide additive file selection and full acquisition.
 See [transfer selection](transfers.md#selective-acquisition-in-0140).
 
-The implementation and CI scenarios are prepared for this version. Its own
-complete green validation/publication run must be recorded before claiming a
-released result. Earlier release evidence below does not validate these changes.
+The selective stage passed
+[Actions run 37221887812](https://github.com/alecerf/mynou/actions/runs/37221887812)
+for commit `a077af8d660a2b5ca12e47b579562e7a9292f6e2`: 385 tests passed with
+none failed or ignored across 31 targets and the complete validation pipeline.
+GitHub Actions published
+[v0.14.0](https://github.com/alecerf/mynou/releases/tag/v0.14.0) with seven assets.
 
-The provisional broader 0.14 scope was split: automatic pack choice, numbering
-rules and multi-episode physical files need following independently validated
-releases.
+Automatic pack choice, numbering rules and multi-episode physical files need
+following independently validated releases. The next stage is automatic pack
+search, ranking and catalog-backed mapping in 0.15.
 
 ## Previous stage: 0.13.0
 

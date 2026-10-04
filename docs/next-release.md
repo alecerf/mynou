@@ -1,12 +1,12 @@
-# Next-release checkpoint — 0.14 implementation awaiting CI
+# Next-release checkpoint — 0.15 automatic pack acquisition
 
 ## Validated starting point
 
-Mynou 0.13.0 was published by GitHub Actions from
-`cb6e89700a63c1a7f9aaaa644fce32bf8944386f` after
-[run 37213526435](https://github.com/alecerf/mynou/actions/runs/37213526435)
-completed successfully. Its 374 tests passed with no failures or ignored tests
-across 29 targets. The source ZIP, static Linux x86_64 binary, Docker image archive
+Mynou 0.14.0 was published by GitHub Actions from
+`a077af8d660a2b5ca12e47b579562e7a9292f6e2` after
+[run 37221887812](https://github.com/alecerf/mynou/actions/runs/37221887812)
+completed successfully. Its 385 tests passed with no failures or ignored tests
+across 31 targets. The source ZIP, static Linux x86_64 binary, Docker image archive
 and four checksum assets belong to that exact release commit.
 
 0.12.0 provides durable series monitoring/calendar; 0.13.0 provides explicit
@@ -16,10 +16,12 @@ Normal workers cannot change mappings. Earlier unmapped jobs retain ordinary
 behavior. [Series](series.md), [packs](packs.md) and [limits](limits.md) document
 the implemented surface; the [roadmap](roadmap.md) tracks later stack features.
 
-0.14 selective acquisition and its CI scenarios are now implemented and committed.
-The version and documentation are prepared; its own completed validation and CI
-publication must be recorded before starting 0.15. No local validation has run.
-Historical 0.13 results above do not validate the new implementation.
+0.14 adds durable shared native file interests, selective v1/v2/hybrid acquisition,
+verified mapped imports from partial torrents and protected CLI/API/browser
+selection expansion. Its complete CI and publication passed on October 4, 2026,
+at 17:53 UTC. [Validation evidence](validation.md#recorded-0140-ci-evidence)
+records the release assets and digests. No local validation has run. Later
+documentation commits need their own CI and do not change the released tag.
 
 The remaining automatic-pack and numbering sections describe planned later work.
 
@@ -39,7 +41,7 @@ credentials and personal Plex/source settings are not part of the repository.
 No available account interface exposes the remaining ChatGPT quota. A saved
 checkpoint does not imply automatic monitoring or resumption after reset.
 
-## Implemented selective-file slice (0.14, CI pending)
+## Implemented selective-file slice (0.14)
 
 `src/torrent/selection.rs` retains full acquisition or a bounded path union in
 verified native controls, with absent older fields defaulting to full. Creation
@@ -62,9 +64,9 @@ See [transfer selection](transfers.md#selective-acquisition-in-0140) for bounds,
 boundary storage and downgrade restrictions. Selection contraction and partial
 seeding remain unimplemented.
 
-CI scenarios in `selective_transfers`, `selective_management`, mapped acquisition
-and tracker lifecycle cover the implemented behavior. The complete workflow
-must finish green before these become recorded passing evidence.
+Passing CI scenarios in `selective_transfers`, `selective_management`, mapped
+acquisition and tracker lifecycle cover the implemented behavior in the recorded
+0.14 run. Continue from these protections when implementing 0.15.
 
 ## Pack search and mapping decisions
 
@@ -85,7 +87,7 @@ quality from a pack's ambiguous title or silently retry terminal requests.
 source-key collisions and remaining job capacity. `src/store.rs` records mappings
 with ordinary episode jobs. `src/engine.rs` selects exact native paths after
 verification and retains only those paths in each job. Reuse those protections
-when adding automatic selection and per-file readiness.
+when adding automatic pack selection.
 
 ## Alternate numbering and multi-episode files
 

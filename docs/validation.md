@@ -57,7 +57,7 @@ sha256sum -c SHA256SUMS
 Checksum verification establishes integrity relative to the downloaded manifest.
 It does not replace reviewing the release's commit and successful Actions run.
 
-## Selective changes in 0.14.0 (CI pending)
+## Selective changes in 0.14.0
 
 New CI-only local-peer scenarios exercise v1 boundary pieces, untouched unrelated
 files, explicit selected/full readiness, empty seeding bitfields, padding/empty
@@ -69,9 +69,34 @@ Bearer/browser/CLI controls. Genuine earlier controls retain full acquisition;
 new checksum records preserve selections. Existing full-transfer corrupt-peer,
 rate, seeding and restart checks remain in the complete workflow.
 
-These scenarios are committed, but their passing result is not yet recorded.
-Tests, lint, builds and demos have not been run locally. The successful Actions
-run and CI-created release must be recorded before claiming validation.
+The recorded run below validates these scenarios. Tests, lint, builds and demos
+have not been run locally under the active development policy.
+
+## Recorded 0.14.0 CI evidence
+
+[Run 37221887812](https://github.com/alecerf/mynou/actions/runs/37221887812) passed
+for commit `a077af8d660a2b5ca12e47b579562e7a9292f6e2`: 385 tests passed with
+none failed or ignored across 31 targets, alongside all dependency, formatting,
+Clippy, native/musl build, native/Docker demonstration, packaging and checksum
+checks. GitHub Actions published
+[v0.14.0](https://github.com/alecerf/mynou/releases/tag/v0.14.0) with seven assets
+on October 4, 2026, at 17:53 UTC. The tag and release target match the validated
+commit; every asset was uploaded by `github-actions[bot]`.
+
+GitHub records these SHA-256 digests for the three payload assets:
+
+| Asset | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `mynou-v0.14.0-source.zip` | 4,723,506 | `e1c7f609e49ad147279a6b88ab3c1b96a0688f86ef4f50fa7498e2379957066f` |
+| `mynou-v0.14.0-linux-x86_64` | 2,732,896 | `3a291cf3af8e7d1a39e7d6f9e20d11109eee11d41970495bf37bfc6c53816781` |
+| `mynou-v0.14.0-linux-amd64-image.tar.gz` | 1,428,142 | `b30cae2c8e0614d47ef74ca15367ba4df27427bd7d630fed84d35553ddb45efb` |
+
+The three individual checksum files and combined `SHA256SUMS` complete the seven
+published assets. CI checked the package checksums, source ZIP integrity,
+internal manifest and embedded binary permissions before publication. Later
+documentation or code commits need their own completed run and do not alter the
+published tag or assets. Local protocol fixtures do not establish personal
+installation compatibility or public-swarm throughput.
 
 ## Pack changes in 0.13.0
 
