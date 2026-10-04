@@ -465,7 +465,11 @@ impl Job {
                 return Err("Pack mapping requires an episode torrent request".into());
             }
         }
-        if job.pack_origin.is_some() && job.pack_file.is_none() {
+        if job
+            .pack_origin
+            .as_ref()
+            .is_some_and(|origin| job.pack_file.is_none() || origin.season != job.request.season)
+        {
             return Err("Automatic pack provenance requires a mapped episode".into());
         }
         if job.id.len() != 32
@@ -743,6 +747,13 @@ impl Store {
     /// Writes with uncertain outcomes block further storage operations.
     pub fn maintenance_error(&self) -> Option<&str> {
         self.maintenance_error.as_deref()
+    }
+
+    pub(crate) fn media_keys(&self) -> std::collections::BTreeSet<String> {
+        self.jobs
+            .values()
+            .map(|job| job.request.media_key())
+            .collect()
     }
 
     pub fn list(&self) -> Vec<Job> {

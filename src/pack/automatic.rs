@@ -164,6 +164,12 @@ impl AutoPackRequest {
     }
 }
 
+fn public_episode(episode: &Episode) -> Value {
+    let mut value = episode.to_json();
+    value.insert("title", integrations::report_text(&episode.title, 2048));
+    value
+}
+
 pub(super) struct Scope {
     pub id: String,
     record: Record,
@@ -181,11 +187,7 @@ pub(super) fn capture_scope(record: &Record, store: &Store, season: u32) -> Resu
         return Err("Season is absent from the accepted catalog plan".into());
     }
     let today = date::today();
-    let existing: BTreeSet<_> = store
-        .list()
-        .into_iter()
-        .map(|job| job.request.media_key())
-        .collect();
+    let existing = store.media_keys();
     // An explicit on-demand pack action does not enable background series monitoring.
     let mut episodes: Vec<_> = record
         .plan
@@ -464,21 +466,28 @@ impl Engine {
         report.insert("scope_empty", scope.episodes.is_empty());
         report.insert(
             "requested_episodes",
-            Value::Array(scope.episodes.iter().map(Episode::to_json).collect()),
+            Value::Array(scope.episodes.iter().map(public_episode).collect()),
         );
         report.insert("selected_candidate_id", Value::Null);
         let mut decisions = Vec::new();
         let mut selected = None;
+        let mut metadata_cache = BTreeMap::<String, Result<TorrentMetadata>>::new();
         report.insert("metadata_candidate_limit", 8_u32);
         for mut candidate in candidates {
             if self.stopped.load(Ordering::Acquire) || Instant::now() >= deadline {
                 return Err("Pack search stopped or exceeded its deadline".into());
             }
-            let result = inspect_metadata(
-                &candidate.url,
-                deadline.min(Instant::now() + Duration::from_secs(10)),
-            )
-            .and_then(|metadata| {
+            let metadata = if let Some(cached) = metadata_cache.get(&candidate.url) {
+                cached.clone()
+            } else {
+                let fetched = inspect_metadata(
+                    &candidate.url,
+                    deadline.min(Instant::now() + Duration::from_secs(10)),
+                );
+                metadata_cache.insert(candidate.url.clone(), fetched.clone());
+                fetched
+            };
+            let result = metadata.and_then(|metadata| {
                 map_metadata(&scope, &metadata, query.season).map(|mapping| (metadata, mapping))
             });
             let mut decision = Value::object();
@@ -526,7 +535,7 @@ impl Engine {
                                         .iter()
                                         .find(|e| e.episode == mapping.episode)
                                         .ok_or("Mapped target is absent from the captured scope")?;
-                                    let mut row = episode.to_json();
+                                    let mut row = public_episode(episode);
                                     row.insert(
                                         "file_path",
                                         integrations::report_text(&mapping.file_path, 4096),
@@ -596,5 +605,193 @@ impl Engine {
             report.insert("submission", submission);
         }
         Ok(report)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::series::Plan;
+    use crate::torrent::MetadataFile;
+
+    fn scope() -> Scope {
+        let request = Request {
+            kind: "series".into(),
+            title: "Fixture Series".into(),
+            year: 2024,
+            season: 0,
+            episode: 0,
+            tmdb_id: Some(42),
+            source_url: None,
+            source_path: None,
+        };
+        let episodes: Vec<_> = (1..=3)
+            .map(|number| Episode {
+                catalog_id: Some(u64::from(number)),
+                season: 1,
+                episode: number,
+                title: "Catalog title".into(),
+                air_date: Some("2024-01-01".into()),
+            })
+            .collect();
+        Scope {
+            id: "a".repeat(64),
+            episodes: episodes[..2].to_vec(),
+            record: Record {
+                id: "b".repeat(32),
+                plan: Plan { request, episodes },
+                monitored: false,
+                include_specials: false,
+                start_date: None,
+                excluded: BTreeSet::new(),
+                revision: 1,
+                created_at: 1,
+                updated_at: 1,
+                checked_at: 1,
+                next_check_at: 1,
+                last_error: None,
+            },
+        }
+    }
+    fn metadata(names: &[&str]) -> TorrentMetadata {
+        TorrentMetadata {
+            id: "a".repeat(40),
+            files: names
+                .iter()
+                .map(|path| MetadataFile {
+                    path: (*path).into(),
+                    length: 1,
+                    padding: false,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn season_pack_identity_does_not_loosen_movie_or_episode_identity() {
+        let mut request = scope().record.plan.request;
+        request.season = 1;
+        for title in [
+            "Fixture.Series.S01.1080p",
+            "Fixture.Series.2024.S01.Complete",
+            "Fixture Series Season 1 WEB-DL",
+            "Fixture.Series.S1",
+        ] {
+            assert!(season_title_matches(&request, title), "Rejected {title}");
+        }
+        for title in [
+            "Fixture.Series.Sequel.S01",
+            "Other.Series.S01",
+            "Fixture.Series.2023.S01",
+            "Fixture.Series.S02",
+            "Fixture.Series.S01.S02",
+            "Fixture.Series.S01-S03",
+            "Fixture.Series.S01E01",
+            "Fixture.Series.S01.E01",
+            "Fixture.Series.S01.1x02",
+            "Fixture.Series.Season.1.Season.2",
+            "Fixture.Series.1080p",
+            "Fixture.Series.S10000",
+        ] {
+            assert!(!season_title_matches(&request, title), "Accepted {title}");
+        }
+    }
+
+    #[test]
+    fn automatic_mapping_requires_unique_explicit_episode_numbers_and_complete_coverage() {
+        let scope = scope();
+        let result = map_metadata(
+            &scope,
+            &metadata(&[
+                "Pack/S01E01.mp4",
+                "Pack/Fixture.Series.1x02.mkv",
+                "Pack/S01E03.mp4",
+                "Pack/sample.mp4",
+                "Pack/extras/trailer.mp4",
+                "Pack/info.txt",
+            ]),
+            1,
+        )
+        .unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[1].episode, 2);
+        for bad in [
+            "Pack/001.mp4",
+            "Pack/S01E01E02.mp4",
+            "Pack/S01E01-E02.mp4",
+            "Pack/S01E01.S01E01.mp4",
+            "Pack/Other.Series.S01E01.mp4",
+            "Pack/S02E01.mp4",
+            "Pack/S01E99.mp4",
+            "Pack/S01E100000.mp4",
+            "Pack/S10000E01.mp4",
+            "Pack/S01E00.mp4",
+            "Pack/S02/S01E01.mp4",
+            "Pack/../S01E01.mp4",
+            "Pack/S01E01.mp4/token",
+        ] {
+            assert!(
+                map_metadata(&scope, &metadata(&[bad, "Pack/S01E02.mp4"]), 1).is_err(),
+                "Accepted {bad}"
+            );
+        }
+        assert!(map_metadata(&scope, &metadata(&["Pack/S01E01.mp4"]), 1).is_err());
+        assert!(
+            map_metadata(
+                &scope,
+                &metadata(&["Pack/S01E01.mp4", "Pack/S01E02.mp4", "Pack/S01E01.mkv"]),
+                1
+            )
+            .is_err()
+        );
+        let mut empty = metadata(&["Pack/S01E01.mp4", "Pack/S01E02.mp4"]);
+        empty.files[0].length = 0;
+        assert!(map_metadata(&scope, &empty, 1).is_err());
+    }
+
+    #[test]
+    fn strict_pack_queries_and_provenance_reject_ambiguous_types_and_partial_guards() {
+        for text in [
+            r#"{}"#,
+            r#"{"season":1.5}"#,
+            r#"{"season":-1}"#,
+            r#"{"season":10000}"#,
+            r#"{"season":"1"}"#,
+            r#"{"season":1,"apply":"true"}"#,
+            r#"{"season":1,"scope_id":"abc"}"#,
+            r#"{"season":1,"unexpected":true}"#,
+        ] {
+            assert!(
+                AutoPackRequest::from_json(&json::parse(text).unwrap()).is_err(),
+                "Accepted {text}"
+            );
+        }
+        let mut query = AutoPackRequest {
+            season: 1,
+            apply: true,
+            scope_id: Some("a".repeat(64)),
+            candidate_id: None,
+        };
+        assert!(query.validate().is_err());
+        query.candidate_id = Some("b".repeat(64));
+        assert!(query.validate().is_ok());
+        query.apply = false;
+        assert!(query.validate().is_err());
+        let origin = PackOrigin {
+            series_id: "a".repeat(32),
+            series_revision: u64::MAX,
+            season: 1,
+            scope_id: "b".repeat(64),
+            candidate_id: "c".repeat(64),
+            torrent_id: "d".repeat(40),
+            release: RecordedRelease {
+                title: "Fixture.Series.S01".into(),
+                profile: "any".into(),
+            },
+        };
+        assert_eq!(PackOrigin::from_json(&origin.to_json()).unwrap(), origin);
+        let mut bad = origin.to_json();
+        bad.insert("extra", true);
+        assert!(PackOrigin::from_json(&bad).is_err());
     }
 }

@@ -421,10 +421,11 @@ impl Web {
                     return Err("Choose one tracked series".into());
                 }
                 let mut value = crate::json::Value::object();
-                value.insert(
-                    "season",
-                    decimal(form.value("season")?, 9999, "pack season")? as u32,
-                );
+                let season = form.value("season")?;
+                if season.is_empty() {
+                    return Err("Choose a catalog season".into());
+                }
+                value.insert("season", decimal(season, 9999, "pack season")? as u32);
                 value.insert(
                     "apply",
                     match form.value("action")? {

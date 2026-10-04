@@ -238,6 +238,9 @@ impl Source {
         };
         if let Some(query) = source.strip_prefix("magnet:?") {
             for part in query.split('&') {
+                if deadline.is_some_and(|end| Instant::now() >= end) {
+                    return Err("Torrent metadata deadline exceeded".into());
+                }
                 let Some((key, value)) = part.split_once('=') else {
                     continue;
                 };
