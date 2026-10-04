@@ -269,16 +269,41 @@ impl TokenBucket {
         self.at_nanos = self.at_nanos.max(now_nanos);
     }
 
-    fn take(&mut self, bytes: u64, now_nanos: u128) -> Option<Duration> {
+    fn wait_for(&mut self, bytes: u64, now_nanos: u128) -> Option<Duration> {
         self.advance(now_nanos);
         if self.rate == 0 { return None; }
         let required = u128::from(bytes) * NANOS_PER_SECOND;
         if self.credit >= required {
-            self.credit -= required;
             None
         } else {
             let wait = (required - self.credit).div_ceil(u128::from(self.rate));
             Some(Duration::from_nanos(wait as u64))
+        }
+    }
+
+    fn consume(&mut self, bytes: u64) {
+        if self.rate != 0 { self.credit -= u128::from(bytes) * NANOS_PER_SECOND; }
+    }
+
+    fn take(&mut self, bytes: u64, now_nanos: u128) -> Option<Duration> {
+        let wait = self.wait_for(bytes, now_nanos);
+        if wait.is_none() { self.consume(bytes); }
+        wait
+    }
+
+    fn take_pair(
+        first: &mut Self, second: &mut Self, bytes: u64, first_nanos: u128, second_nanos: u128,
+    ) -> Option<Duration> {
+        let first_wait = first.wait_for(bytes, first_nanos);
+        let second_wait = second.wait_for(bytes, second_nanos);
+        match (first_wait, second_wait) {
+            (None, None) => {
+                first.consume(bytes);
+                second.consume(bytes);
+                None
+            }
+            (Some(wait), None) | (None, Some(wait)) => Some(wait),
+            (Some(first), Some(second)) => Some(first.max(second)),
         }
     }
 }
@@ -298,6 +323,32 @@ pub struct RateGate {
     epoch: Instant,
     state: Mutex<GateState>,
     changed: Condvar,
+}
+
+struct GateWaiter<'a> {
+    gate: &'a RateGate,
+    ticket: u64,
+    active: bool,
+}
+
+impl GateWaiter<'_> {
+    fn finish(&mut self, state: &mut GateState) {
+        state.waiters.retain(|waiting| *waiting != self.ticket);
+        self.active = false;
+    }
+}
+
+impl Drop for GateWaiter<'_> {
+    fn drop(&mut self) {
+        if !self.active { return; }
+        // Recover a poisoned mutex only to remove this reservation's ticket.
+        // Each cleanup holds one mutex, so either gate can fail independently.
+        let gate = self.gate;
+        let mut state = gate.state.lock().unwrap_or_else(|error| error.into_inner());
+        self.finish(&mut state);
+        drop(state);
+        gate.changed.notify_all();
+    }
 }
 
 impl Default for RateGate {
@@ -357,6 +408,123 @@ impl RateGate {
             } else { CANCELLATION_INTERVAL };
             state = self.changed.wait_timeout(state, wait)
                 .map_err(|_| "Payload rate gate is unavailable after a panic")?.0;
+        }
+    }
+
+    /// Reserve one payload block against both gates without banking credits in
+    /// either gate while waiting for the other. An unlimited gate keeps its FIFO
+    /// ticket while the other gate waits, so enabling its limit applies to this
+    /// reservation. Both-unlimited calls admit immediately without locking.
+    pub fn reserve_pair(first: &Self, second: &Self, bytes: u64, cancel: &AtomicBool) -> Result<()> {
+        Self::reserve_pair_with(first, second, bytes, cancel, || Ok(()))
+    }
+
+    /// Run bounded caller work after each wait, with both gate mutexes released.
+    /// Callback errors and cancellation remove both FIFO tickets before return.
+    pub fn reserve_pair_with(
+        first: &Self, second: &Self, bytes: u64, cancel: &AtomicBool,
+        mut while_waiting: impl FnMut() -> Result<()>,
+    ) -> Result<()> {
+        if bytes > BLOCK_BYTES { return Err("A payload reservation cannot exceed one 16 KiB block".into()); }
+        if cancel.load(Ordering::Acquire) { return Err("Payload reservation cancelled".into()); }
+        if bytes == 0 || (first.limit() == 0 && second.limit() == 0) { return Ok(()); }
+        if std::ptr::eq(first, second) { return first.reserve_with(bytes, cancel, while_waiting); }
+        // Every pair acquires locks in address order, including reversed calls.
+        let (first, second) = if std::ptr::from_ref(first) < std::ptr::from_ref(second) {
+            (first, second)
+        } else { (second, first) };
+        let (mut first_waiter, mut second_waiter) = {
+            let mut first_state = first.state.lock().map_err(|_| "Payload rate gate is unavailable after a panic")?;
+            let mut second_state = second.state.lock().map_err(|_| "Payload rate gate is unavailable after a panic")?;
+            if first_state.waiters.len() >= MAX_WAITERS || second_state.waiters.len() >= MAX_WAITERS {
+                return Err("Payload rate gate waiter capacity reached".into());
+            }
+            let first_ticket = first_state.next_ticket;
+            let second_ticket = second_state.next_ticket;
+            let first_next = first_ticket.checked_add(1).ok_or("Payload rate gate ticket capacity reached")?;
+            let second_next = second_ticket.checked_add(1).ok_or("Payload rate gate ticket capacity reached")?;
+            // Preflight both queues before changing either. Atomic registration
+            // gives overlapping pairs the same order in their shared queues.
+            first_state.next_ticket = first_next;
+            second_state.next_ticket = second_next;
+            first_state.waiters.push_back(first_ticket);
+            second_state.waiters.push_back(second_ticket);
+            (
+                GateWaiter { gate: first, ticket: first_ticket, active: true },
+                GateWaiter { gate: second, ticket: second_ticket, active: true },
+            )
+        };
+        loop {
+            if cancel.load(Ordering::Acquire) { return Err("Payload reservation cancelled".into()); }
+            let mut first_state = first.state.lock().map_err(|_| "Payload rate gate is unavailable after a panic")?;
+            let mut second_state = second.state.lock().map_err(|_| "Payload rate gate is unavailable after a panic")?;
+            if cancel.load(Ordering::Acquire) { return Err("Payload reservation cancelled".into()); }
+            let first_ready = first_state.bucket.rate == 0 || first_state.waiters.front() == Some(&first_waiter.ticket);
+            let second_ready = second_state.bucket.rate == 0 || second_state.waiters.front() == Some(&second_waiter.ticket);
+            let wait = if first_ready && second_ready {
+                match TokenBucket::take_pair(
+                    &mut first_state.bucket, &mut second_state.bucket, bytes,
+                    first.epoch.elapsed().as_nanos(), second.epoch.elapsed().as_nanos(),
+                ) {
+                    None => {
+                        first_waiter.finish(&mut first_state);
+                        second_waiter.finish(&mut second_state);
+                        drop(second_state);
+                        drop(first_state);
+                        first.changed.notify_all();
+                        second.changed.notify_all();
+                        return Ok(());
+                    }
+                    Some(wait) => wait.min(CANCELLATION_INTERVAL),
+                }
+            } else { CANCELLATION_INTERVAL };
+            // The condvar releases the first mutex while sleeping. The second
+            // is dropped first; updates on its condvar are seen within 100 ms.
+            drop(second_state);
+            let (first_state, _) = first.changed.wait_timeout(first_state, wait)
+                .map_err(|_| "Payload rate gate is unavailable after a panic")?;
+            drop(first_state);
+            if cancel.load(Ordering::Acquire) { return Err("Payload reservation cancelled".into()); }
+            while_waiting()?;
+        }
+    }
+
+    fn reserve_with(
+        &self, bytes: u64, cancel: &AtomicBool, mut while_waiting: impl FnMut() -> Result<()>,
+    ) -> Result<()> {
+        let mut waiter = {
+            let mut state = self.state.lock().map_err(|_| "Payload rate gate is unavailable after a panic")?;
+            if state.waiters.len() >= MAX_WAITERS { return Err("Payload rate gate waiter capacity reached".into()); }
+            let ticket = state.next_ticket;
+            state.next_ticket = ticket.checked_add(1).ok_or("Payload rate gate ticket capacity reached")?;
+            state.waiters.push_back(ticket);
+            GateWaiter { gate: self, ticket, active: true }
+        };
+        loop {
+            let mut state = self.state.lock().map_err(|_| "Payload rate gate is unavailable after a panic")?;
+            if cancel.load(Ordering::Acquire) { return Err("Payload reservation cancelled".into()); }
+            if state.bucket.rate == 0 {
+                waiter.finish(&mut state);
+                drop(state);
+                self.changed.notify_all();
+                return Ok(());
+            }
+            let wait = if state.waiters.front() == Some(&waiter.ticket) {
+                match state.bucket.take(bytes, self.epoch.elapsed().as_nanos()) {
+                    None => {
+                        waiter.finish(&mut state);
+                        drop(state);
+                        self.changed.notify_all();
+                        return Ok(());
+                    }
+                    Some(wait) => wait.min(CANCELLATION_INTERVAL),
+                }
+            } else { CANCELLATION_INTERVAL };
+            let (state, _) = self.changed.wait_timeout(state, wait)
+                .map_err(|_| "Payload rate gate is unavailable after a panic")?;
+            drop(state);
+            if cancel.load(Ordering::Acquire) { return Err("Payload reservation cancelled".into()); }
+            while_waiting()?;
         }
     }
 }
@@ -511,6 +679,166 @@ mod tests {
     }
 
     #[test]
+    fn fake_time_pair_wait_does_not_spend_the_other_bucket() {
+        let mut first = TokenBucket::new(1_024);
+        let mut second = TokenBucket::new(1_024);
+        assert_eq!(second.take(BLOCK_BYTES, 0), None);
+        let burst = u128::from(BLOCK_BYTES) * NANOS_PER_SECOND;
+        assert_eq!(TokenBucket::take_pair(&mut first, &mut second, 1_024, 0, 0), Some(Duration::from_secs(1)));
+        assert_eq!(first.credit, burst);
+        assert_eq!(second.credit, 0);
+        assert_eq!(TokenBucket::take_pair(&mut second, &mut first, 1_024, 0, 0), Some(Duration::from_secs(1)));
+        assert_eq!(first.credit, burst, "neither parameter order may spend the ready bucket");
+        assert_eq!(TokenBucket::take_pair(&mut first, &mut second, 1_024, NANOS_PER_SECOND, NANOS_PER_SECOND), None);
+        assert_eq!(first.credit, u128::from(BLOCK_BYTES - 1_024) * NANOS_PER_SECOND);
+        assert_eq!(second.credit, 0);
+    }
+
+    #[test]
+    fn fake_time_pair_backlog_cannot_bank_local_credits_for_a_rapid_release() {
+        let mut aggregate = TokenBucket::new(BLOCK_BYTES);
+        let mut local = TokenBucket::new(1_024);
+        let burst = u128::from(BLOCK_BYTES) * NANOS_PER_SECOND;
+        assert_eq!(aggregate.take(BLOCK_BYTES, 0), None);
+        // Other torrents keep the aggregate bucket empty while 32 local upload
+        // callers are queued. Every failed joint probe must preserve local credit.
+        for second in 1_u128..=32 {
+            let now = second * NANOS_PER_SECOND;
+            assert_eq!(aggregate.take(BLOCK_BYTES, now), None);
+            for _ in 0..32 {
+                assert_eq!(TokenBucket::take_pair(&mut aggregate, &mut local, BLOCK_BYTES, now, now), Some(Duration::from_secs(1)));
+                assert_eq!(local.credit, burst);
+            }
+        }
+        let release = 33 * NANOS_PER_SECOND;
+        assert_eq!(TokenBucket::take_pair(&mut aggregate, &mut local, BLOCK_BYTES, release, release), None);
+        assert_eq!(local.credit, 0);
+        aggregate.rate = MAX_RATE;
+        // The aggregate queue clears and credits refill quickly, but only one
+        // shared local burst was admitted. The queued callers still need refill.
+        for millisecond in 1_u128..=32 {
+            let now = release + millisecond * 1_000_000;
+            assert!(TokenBucket::take_pair(&mut aggregate, &mut local, BLOCK_BYTES, now, now).is_some());
+            assert_eq!(local.credit, u128::from(1_024_u64) * millisecond * 1_000_000);
+        }
+        let local_refilled = release + 16 * NANOS_PER_SECOND;
+        assert_eq!(TokenBucket::take_pair(&mut aggregate, &mut local, BLOCK_BYTES, local_refilled, local_refilled), None);
+        assert_eq!(local.credit, 0);
+    }
+
+    #[test]
+    fn paired_reservations_validate_and_charge_an_identical_gate_once() {
+        let gate = RateGate::new(1).unwrap();
+        let cancel = AtomicBool::new(false);
+        RateGate::reserve_pair(&gate, &gate, BLOCK_BYTES, &cancel).unwrap();
+        let state = gate.state.lock().unwrap();
+        assert_eq!(state.bucket.credit, 0);
+        assert!(state.waiters.is_empty());
+        drop(state);
+        assert!(RateGate::reserve_pair(&gate, &gate, BLOCK_BYTES + 1, &cancel).is_err());
+        assert!(RateGate::reserve_pair(&gate, &gate, 1, &AtomicBool::new(true)).unwrap_err().contains("cancelled"));
+    }
+
+    #[test]
+    fn paired_queue_capacity_and_ticket_overflow_leave_both_queues_unchanged() {
+        let first = RateGate::new(1).unwrap();
+        let second = RateGate::new(1).unwrap();
+        {
+            let mut state = second.state.lock().unwrap();
+            state.waiters.extend(0..MAX_WAITERS as u64);
+            state.next_ticket = MAX_WAITERS as u64;
+        }
+        assert!(RateGate::reserve_pair(&first, &second, 1, &AtomicBool::new(false)).unwrap_err().contains("waiter capacity"));
+        assert!(first.state.lock().unwrap().waiters.is_empty());
+        {
+            let mut state = second.state.lock().unwrap();
+            assert_eq!(state.waiters.len(), MAX_WAITERS);
+            state.waiters.clear();
+            state.next_ticket = u64::MAX;
+        }
+        assert!(RateGate::reserve_pair(&second, &first, 1, &AtomicBool::new(false)).unwrap_err().contains("ticket capacity"));
+        let state = first.state.lock().unwrap();
+        assert!(state.waiters.is_empty());
+        assert_eq!(state.next_ticket, 0);
+        assert!(second.state.lock().unwrap().waiters.is_empty());
+    }
+
+    #[test]
+    fn paired_callback_runs_without_locks_and_errors_clean_both_queues() {
+        let first = RateGate::new(1).unwrap();
+        let second = RateGate::new(1).unwrap();
+        first.reserve(BLOCK_BYTES, &AtomicBool::new(false)).unwrap();
+        let error = RateGate::reserve_pair_with(&first, &second, BLOCK_BYTES, &AtomicBool::new(false), || {
+            assert!(first.state.try_lock().is_ok());
+            assert!(second.state.try_lock().is_ok());
+            Err("Caller keepalive failed".into())
+        }).unwrap_err();
+        assert_eq!(error, "Caller keepalive failed");
+        assert!(first.state.lock().unwrap().waiters.is_empty());
+        let state = second.state.lock().unwrap();
+        assert!(state.waiters.is_empty());
+        assert_eq!(state.bucket.credit, u128::from(BLOCK_BYTES) * NANOS_PER_SECOND);
+    }
+
+    #[test]
+    fn paired_wait_applies_a_new_limit_to_an_initially_unlimited_gate() {
+        let aggregate = RateGate::new(1).unwrap();
+        let local = RateGate::default();
+        aggregate.reserve(BLOCK_BYTES, &AtomicBool::new(false)).unwrap();
+        let cancel = AtomicBool::new(false);
+        let mut callbacks = 0;
+        let error = RateGate::reserve_pair_with(&aggregate, &local, BLOCK_BYTES, &cancel, || {
+            callbacks += 1;
+            if callbacks == 1 {
+                assert_eq!(local.state.lock().unwrap().waiters.len(), 1);
+                local.set_limit(1).unwrap();
+                // Simulate an empty local burst so the newly enabled gate must
+                // keep this pair waiting after the aggregate cap is removed.
+                local.state.lock().unwrap().bucket.credit = 0;
+                aggregate.set_limit(0).unwrap();
+            } else {
+                cancel.store(true, Ordering::Release);
+            }
+            Ok(())
+        }).unwrap_err();
+        assert!(error.contains("cancelled"));
+        assert_eq!(callbacks, 2, "the new local cap must keep this reservation waiting");
+        assert!(aggregate.state.lock().unwrap().waiters.is_empty());
+        assert!(local.state.lock().unwrap().waiters.is_empty());
+    }
+
+    #[test]
+    fn paired_wait_cancellation_removes_both_fifo_tickets() {
+        let first = Arc::new(RateGate::new(1).unwrap());
+        let second = Arc::new(RateGate::new(1).unwrap());
+        let cancel = Arc::new(AtomicBool::new(false));
+        first.reserve(BLOCK_BYTES, &cancel).unwrap();
+        second.reserve(BLOCK_BYTES, &cancel).unwrap();
+        let (waiting_tx, waiting_rx) = std::sync::mpsc::channel();
+        let (result_tx, result_rx) = std::sync::mpsc::channel();
+        let worker_first = first.clone();
+        let worker_second = second.clone();
+        let worker_cancel = cancel.clone();
+        let worker = std::thread::spawn(move || {
+            let mut waiting_tx = Some(waiting_tx);
+            let result = RateGate::reserve_pair_with(&worker_second, &worker_first, BLOCK_BYTES, &worker_cancel, || {
+                if let Some(sender) = waiting_tx.take() { let _ = sender.send(()); }
+                Ok(())
+            });
+            let _ = result_tx.send(result);
+        });
+        let entered = waiting_rx.recv_timeout(Duration::from_secs(2));
+        cancel.store(true, Ordering::Release);
+        let result = result_rx.recv_timeout(Duration::from_secs(2))
+            .expect("paired cancellation must finish within the bounded wait");
+        worker.join().unwrap();
+        entered.expect("paired worker must begin a bounded wait");
+        assert!(result.unwrap_err().contains("cancelled"));
+        assert!(first.state.lock().unwrap().waiters.is_empty());
+        assert!(second.state.lock().unwrap().waiters.is_empty());
+    }
+
+    #[test]
     fn cancelled_and_oversized_payload_reservations_never_wait() {
         let gate = RateGate::new(1).unwrap();
         assert!(gate.reserve(BLOCK_BYTES, &AtomicBool::new(true)).unwrap_err().contains("cancelled"));
@@ -532,5 +860,22 @@ mod tests {
         }).join().is_err());
         gate.reserve(BLOCK_BYTES, &AtomicBool::new(false)).unwrap();
         assert!(gate.set_limit(1).is_err(), "a poisoned limited gate must fail explicitly");
+    }
+
+    #[test]
+    fn unlimited_pair_hot_path_does_not_acquire_either_mutex() {
+        let first = Arc::new(RateGate::default());
+        let second = Arc::new(RateGate::default());
+        for gate in [&first, &second] {
+            let gate = gate.clone();
+            assert!(std::thread::spawn(move || {
+                let _guard = gate.state.lock().unwrap();
+                panic!("intentional mutex poisoning for the unlimited pair regression");
+            }).join().is_err());
+        }
+        RateGate::reserve_pair(&first, &second, BLOCK_BYTES, &AtomicBool::new(false)).unwrap();
+        RateGate::reserve_pair_with(&first, &second, BLOCK_BYTES, &AtomicBool::new(false), || {
+            panic!("unlimited reservations never wait")
+        }).unwrap();
     }
 }
