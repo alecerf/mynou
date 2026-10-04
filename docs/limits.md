@@ -107,7 +107,10 @@ and undated episodes. Newly aired acquisition requires a known episode identity
 and monitoring policy; optional season-zero specials require explicit opt-in.
 Plex availability confirmation always uses a fresh network response. Automatic
 source selection requires a strict title match and an identified file for the
-requested episode. Packs and title variants are not resolved implicitly. See
+requested episode. Automatic pack search and title variants are not resolved
+implicitly. Explicit [pack mappings](packs.md) select exact verified torrent
+paths for known aired catalog episodes, with 1–64 distinct files per submission
+and no fallback to a different video. See
 [series monitoring](series.md) for refresh, numbering and scheduling limits.
 
 ## Selection and library management
@@ -171,7 +174,11 @@ prevent a late refresh from applying an earlier monitoring policy. Series
 monitoring retains existing requests and files; it does not silently retry
 terminal jobs or stop when a Plex watchlist entry disappears. Changed known
 episode identities require a mapping decision; an alternate-number mapping
-editor and selective season-pack acquisition are not implemented.
+editor and selective torrent file skipping are not implemented. Explicit packs
+can map absolute/anime-style filenames to canonical episodes; general numbering
+rules and multi-episode videos remain future work. Mappings are immutable job
+fields, and earlier unmapped jobs retain ordinary behavior. Do not downgrade
+storage containing mapped jobs to an earlier binary that ignores those fields.
 
 The browser interface uses a shared operator token, original server-rendered
 pages and native forms, with page refreshes rather than live streaming. It has

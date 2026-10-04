@@ -34,7 +34,10 @@ resolve unambiguously; supply it when the catalog has several matches.
 `--season N` restricts a record to that regular season. An omitted or zero season
 means all seasons. `--episode N` can narrow the selected scope further.
 
-New records monitor all known dated regular episodes. `--future-only` sets the
+New records monitor all known dated regular episodes by default.
+`--unmonitored` (API `enabled: false`) retains a new plan without queuing aired
+episodes; the browser offers the same choice before explicit pack acquisition.
+`--future-only` sets the
 earliest monitored air date to today's UTC date, including episodes dated today.
 `--include-specials` opts into catalog season zero. Tracking the same resolved
 series and scope reuses the existing record and preserves its settings rather
@@ -143,6 +146,7 @@ All API operations require the existing Bearer token:
 | `GET /api/series/ID` | Record, accepted episode plan and effective monitoring choices |
 | `POST /api/series/ID/monitor` | Any of `enabled`, `include_specials` and `start_date`; date is `YYYY-MM-DD`, or `null` to clear it |
 | `POST /api/series/ID/episodes` | `{ "season": 1, "episode": 2, "enabled": false }`; episode must exist in the plan |
+| `POST /api/series/ID/packs` | Explicit torrent source and 1–64 file-to-episode mappings; see [pack acquisition](packs.md) |
 | `POST /api/series/ID/refresh` | Empty body or `{}`; fresh catalog check and bounded submission |
 | `GET /api/calendar` | Dated episodes with monitoring choices and matching job identifiers/states |
 
@@ -167,9 +171,10 @@ episodes across records and an 8 MiB serialized snapshot. Catalog planning accep
 at most 100 selected seasons and 1,000 episodes per season. Input/catalog limits
 can fail before storage limits. There is no automatic record eviction or deletion.
 
-Episode requests still search and import individual numbered episodes. Selective
-season-pack download/import, multi-episode mapping, alternate/anime numbering,
-calendar feeds, time-zone premiere scheduling, adoption of an existing Plex
-library and multi-user request policies are outside 0.12.0. See the
+Episode requests still search individual numbered episodes. Explicit
+[pack acquisition](packs.md) now imports selected mapped files from a shared full
+torrent download. Automatic pack search, selective file skipping, multi-episode
+videos, general alternate/anime numbering, calendar feeds, time-zone premiere scheduling, adoption of an existing Plex
+library and multi-user request policies remain future work. See the
 [roadmap](roadmap.md) for the following releases and [limits](limits.md) for the
 rest of the supported surface.

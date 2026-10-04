@@ -13,13 +13,13 @@ Download the source ZIP and image archive from
 Load the validated release image:
 
 ```sh
-docker load -i mynou-v0.12.0-linux-amd64-image.tar.gz
+docker load -i mynou-v0.13.0-linux-amd64-image.tar.gz
 ```
 
 Alternatively, build the image from the extracted sources:
 
 ```sh
-docker build -t mynou:0.12.0 .
+docker build -t mynou:0.13.0 .
 ```
 
 Use the image binary to prepare an installation in a new directory:
@@ -29,7 +29,7 @@ docker run --rm --network none \
   --user "$(id -u):$(id -g)" \
   --mount "type=bind,src=$PWD,dst=/work" \
   --workdir /work \
-  mynou:0.12.0 setup-docker --dir mynou-docker
+  mynou:0.13.0 setup-docker --dir mynou-docker
 ```
 
 If your account does not use UID/GID 1000, add its IDs to the generated `.env`:
@@ -156,6 +156,19 @@ removal; disable it explicitly in Series settings. Keep the complete data mount
 in backups, including the request journal and private `series.json`. See the
 [series guide](series.md) for unknown dates/identities, specials, refresh limits
 and the following season-pack stage.
+
+## Choose an explicit season pack
+
+Use `track-series --unmonitored` to save a new catalog scope before automatic
+individual acquisition, then use **Acquire a mapped pack** in browser series
+details. The CLI also supports `series-pack ID --url … --mapping FILE`. Mapping
+paths name files inside the torrent, including its top-level directory; they do
+not name the download mount or torrent hash prefix. The entire torrent downloads
+through one native transfer, while mapped jobs import only their selected video
+files. See the [pack guide](packs.md) for the JSON format and CLI/API operations.
+
+Pack jobs add a persistent file-mapping field. Retain all data mounts and avoid
+downgrading installations containing mapped jobs to older binaries.
 
 ## Configure library monitoring
 

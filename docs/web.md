@@ -19,7 +19,7 @@ been independently reviewed.
 | Jobs | Title/identifier and state filters, progress, details, recent history, cancel and retry |
 | Library | Current owned imports, monitoring, missing files/baselines, pending upgrades |
 | Search | Preview movie/episode selection with reasons; record movie, episode, series or file requests |
-| Series | Track scopes, enable monitoring/specials, set an earliest air date, choose episodes and refresh the catalog |
+| Series | Track scopes with optional acquisition, monitoring/specials, earliest air date, episode choices, catalog refresh and explicit mapped packs |
 | Calendar | Filter known episode dates by window and series, inspect monitoring and request states |
 | Transfers | Native queue, durable pause/resume, queue/file priorities, payload counters and seeding policies |
 
@@ -45,6 +45,13 @@ and zero means unlimited. A ratio of `1000` means 1:1; blank ratio/time fields
 mean no local seeding cap. Saving a policy replaces seeding defaults in full.
 Restoring defaults removes the override. Global bandwidth caps always remain
 mandatory. See [transfer controls](transfers.md).
+
+Pack forms accept an exact file path for each catalog episode in a JSON array.
+Create an unmonitored series scope when choosing a pack before individual
+automatic acquisition. Existing requests are reused, and missing paths never
+fall back to another video. Job details show immutable mappings. The whole
+torrent still downloads. See [pack operations](packs.md) for format, validation
+and storage-version limits.
 
 ## Bulk changes and bounds
 

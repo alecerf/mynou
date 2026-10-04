@@ -48,6 +48,14 @@ automatically acquire. A background worker refreshes due records; calendar
 reads sort bounded borrowed rows and serialize only the requested page. See
 [series monitoring](series.md) for exact budgets and supported mappings.
 
+`pack` prevalidates explicit catalog/file mappings and source-key conflicts
+before recording separate episode jobs. Each job retains its immutable mapped
+path while the native client deduplicates their common torrent identity. Once
+all payload verification succeeds, import retains and analyzes only the exact
+selected file. An absent selection cannot fall back to another video. Existing
+media identities are reused rather than automatically reopened. Source paths
+and mappings remain independent of series monitoring policy. See [packs](packs.md).
+
 `selection` evaluates matched source candidates using the configured movie or
 episode profile. It extracts bounded release-title attributes, filters candidates
 and ranks accepted releases deterministically. Automatic acquisition and search

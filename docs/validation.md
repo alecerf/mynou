@@ -36,8 +36,8 @@ steps. No Docker Hub repository is needed.
 Download the assets and checksum files from the same release. For example:
 
 ```sh
-sha256sum -c mynou-v0.12.0-source.zip.sha256
-sha256sum -c mynou-v0.12.0-linux-amd64-image.tar.gz.sha256
+sha256sum -c mynou-v0.13.0-source.zip.sha256
+sha256sum -c mynou-v0.13.0-linux-amd64-image.tar.gz.sha256
 ```
 
 To verify all downloaded assets together, download `SHA256SUMS` and every listed
@@ -57,6 +57,31 @@ sha256sum -c SHA256SUMS
 Checksum verification establishes integrity relative to the downloaded manifest.
 It does not replace reviewing the release's commit and successful Actions run.
 
+## Pack changes in 0.13.0
+
+CI-only local-peer journeys exercise two mapped episodes sharing one verified
+torrent, canonical imports of absolute-named files, ignored malformed unmapped
+video, missing-file failure without fallback, shared cancellation, persistence
+through restart and read-only mutation rejection. Other scenarios check traversal
+paths, duplicates, unknown/future/undated episodes, immutable mappings, source-key
+conflicts across series, complete-input prevalidation, old unmapped jobs,
+Bearer/browser protection, escaped labels, credential-free responses and CLI
+mapping-file routing. New scopes can be recorded without automatic acquisition.
+
+These requirements need the new release's own completed Actions run. Earlier
+results do not validate this source revision. No tests, lint, builds or demos
+are run locally under the active development policy.
+
+## Recorded 0.12.0 CI evidence
+
+[Run 37210722790](https://github.com/alecerf/mynou/actions/runs/37210722790) passed
+for commit `fbdf61c19b31f941a08f91fd19e3bb843aec0541`: 364 tests passed with
+none failed or ignored across 27 targets, alongside the complete dependency,
+formatting, Clippy, build, native/Docker demonstration and packaging checks.
+GitHub Actions published [v0.12.0](https://github.com/alecerf/mynou/releases/tag/v0.12.0)
+with seven assets on October 4, 2026, at 14:55 UTC. That result validates durable
+series monitoring and calendar, not the following pack changes.
+
 ## Series changes in 0.12.0
 
 New CI-only local-service scenarios cover future/undated/unmapped episodes,
@@ -68,9 +93,7 @@ duplicate or changed known identities; a gated HTTP response verifies settings
 revision protection. Calendar date/range/pagination rules, Bearer API controls,
 browser forms/escaping/bulk prevalidation and CLI routing have dedicated journeys.
 
-These are implemented requirements, not an observed passing result for 0.12.0.
-Inspect its exact completed Actions run and CI-created release before claiming
-validation. Fixtures use synthetic metadata and local services; they do not
+The completed 0.12.0 run above records these checks. Fixtures use synthetic metadata and local services; they do not
 establish personal-installation compatibility.
 
 ## Recorded 0.11.0 CI evidence
