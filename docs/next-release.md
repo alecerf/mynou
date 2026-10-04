@@ -52,6 +52,12 @@ push the completed release, inspect GitHub Actions, and fix red runs in new
 commits. Move to another release only after the complete validation/publication
 workflow is green. GitHub Actions alone creates tags, releases and assets.
 
+Read [CI execution](ci.md) before changing the workflow or starting another
+feature stage. All 34 Cargo harnesses run through the bounded scheduler, with
+four additional infrastructure checks. Exact input caches can reuse compiled
+binaries; the current target graph and every runtime test still run. Inspect
+validation, both native/static build jobs, packaging and publication together.
+
 Inspect the actual branch/run before assuming this historical checkpoint is the
 latest state. The repository is `alecerf/mynou`, branch `trunk`. Account-specific
 credentials and personal Plex/source settings are not part of the repository.

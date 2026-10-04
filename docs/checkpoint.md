@@ -107,6 +107,14 @@ SHA-256 checksum files. There is no Docker Hub publication step.
 
 ## Recorded 0.15.0 CI checkpoint
 
+Subsequent CI optimization adds bounded parallel harness execution, complete
+Cargo-target checks, concurrent native/static builds, exact compiled-output
+caches and Docker assembly from the checked binary. Successful cold/exact-cache
+runs retain all 409 Rust tests and add four scheduler checks. The observed full
+workflow changed from 313 seconds to 142 cold / 117 with exact caches. See
+[CI execution and evidence](ci.md). This changes development infrastructure;
+the published 0.15 tag/assets remain immutable and later commits require CI.
+
 Commit `1fe40eed0b0ea170a03ffce8d30d2ab8cb3e7125` passed
 [Actions run 37230875486](https://github.com/alecerf/mynou/actions/runs/37230875486):
 409 tests passed with none failed or ignored across 34 targets, plus the complete

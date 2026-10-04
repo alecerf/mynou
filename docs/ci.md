@@ -120,32 +120,43 @@ tests across 34 harnesses. Its serial validation job took 299 seconds:
 | Docker build/demo/save | 91 |
 | Duplicate Rust compilation inside Docker | 74.24 |
 
-The optimized cold-cache [run 37233284333](https://github.com/alecerf/mynou/actions/runs/37233284333)
-passed for commit `8b29506158f43c6346d1d5a9d68496c5d6bfb332`. All 409 Rust tests
-passed across the same 34 harnesses, with none failed or ignored. Four scheduler
-checks also passed. This runner used two harness processes with two threads each.
-The test compilation took 19.88 seconds and harness execution took 39.392 seconds;
-the complete validation job took 88 seconds. Native and static build jobs took
-55 and 61 seconds concurrently. Docker assembly/demo/packaging passed, including
-byte-for-byte comparison with the checked static binary. Publication remained
-gated and left the existing 0.15 release immutable.
+The final workflow passed a cold-cache
+[run 37234750068](https://github.com/alecerf/mynou/actions/runs/37234750068) and an
+exact-cache [run 37235046947](https://github.com/alecerf/mynou/actions/runs/37235046947)
+for the same commit, `adb1b27e9827675fd50a54ccef7c4d0c08e681fd`. Both ran all
+409 Rust tests across the same 34 harnesses, with no failures, ignored or filtered
+tests. Four scheduler checks passed in each run. These runners used two harness
+processes with two threads each. Every dependency, format, Clippy, native/static,
+standalone/container demo, archive and checksum check passed. Publication remained
+gated and retained the existing 0.15 release.
 
-| Observed duration | Previous workflow | Optimized, cold cache |
-| --- | ---: | ---: |
-| Rust harness execution | 74.98 s | 39.392 s |
-| Validation job | 299 s | 88 s |
-| Entire workflow, creation through completion | 313 s | 130 s |
+| Observed duration | Previous workflow | Optimized, cold cache | Optimized, exact cache |
+| --- | ---: | ---: | ---: |
+| Test compilation | 25.65 s | 17.21 s | Reused |
+| Rust harness execution | 74.98 s | 37.160 s | 36.045 s |
+| Validation job | 299 s | 85 s | 64 s |
+| Docker build/demo/save | 91 s | 15 s | 16 s |
+| Entire workflow, creation through completion | 313 s | 142 s | 117 s |
 
-Whole-workflow time fell by approximately 58% in this comparison. Validation
-job time is not the whole optimized workflow: builds now run independently,
-and packaging/publication follow them. Cold and warm runs must be reported
-separately; cache downloads, scheduling and runner load affect elapsed time.
-The first warm follow-up passed every check and reused release binaries, but
-the initial general debug cache restored 274 MiB in 13 seconds and still rebuilt
-tests in 22.17 seconds. That full workflow took 145 seconds. The revised exact
-test cache and symbol-free test builds must pass their own cold/warm workflows
-before final timings are recorded. These measurements describe CI duration,
-not application throughput or general performance.
+Whole-workflow time fell by approximately 55% cold and 63% with exact caches in
+this comparison. Harness execution fell by approximately 52% in the exact-cache
+run. The warm native/static jobs took six/seven seconds, including repeated ELF
+and static-demo checks; compiler installation and builds were reused. The 61 MiB
+test cache restored in three seconds and skipped test compilation while executing
+every harness and checking its coverage against the current target graph.
+
+Validation job time is not the whole optimized workflow: builds now run
+independently and packaging/publication follow them. General debug-directory
+caching was measured before the exact-cache refinement: it restored 274 MiB in
+13 seconds but still rebuilt the tests. Exact input keys and symbol-free test
+builds avoid that work. Missing cached example harnesses were caught by manifest
+validation, fixed and verified by the successful cold/exact-cache runs above.
+
+Cache downloads, runner load and scheduling affect elapsed time; these are
+observed runs, not fixed-duration guarantees. They describe CI duration rather
+than application throughput or general performance. Later commits need their
+own completed workflow, including documentation-only changes, and cannot rewrite
+previously published tags or assets.
 
 [Validation](validation.md) · [Dependencies](dependencies.md) ·
 [Performance](performance.md) · [Next feature release](next-release.md)
