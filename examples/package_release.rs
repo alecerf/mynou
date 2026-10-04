@@ -67,7 +67,10 @@ fn gather(root: &Path, relative: &Path, paths: &mut Vec<PathBuf>) -> io::Result<
         for child in fs::read_dir(path)? {
             let child = child?;
             let name = child.file_name();
-            if matches!(name.to_str(), Some("target" | ".git" | "bin")) {
+            if matches!(
+                name.to_str(),
+                Some("target" | ".git" | "bin" | "__pycache__")
+            ) {
                 continue;
             }
             gather(root, &relative.join(name), paths)?;
@@ -245,9 +248,9 @@ fn zip(path: &Path, entries: &[Entry]) -> io::Result<()> {
 
 fn run() -> io::Result<()> {
     let arguments: Vec<_> = std::env::args_os().skip(1).collect();
-    if arguments.len() != 4 {
+    if !(4..=5).contains(&arguments.len()) {
         return Err(fail(
-            "Usage: package_release OUTPUT_DIR VERSION STATIC_BINARY DOCKER_IMAGE_TAR_GZ",
+            "Usage: package_release OUTPUT_DIR VERSION STATIC_BINARY DOCKER_IMAGE_TAR_GZ [SOURCE_ROOT]",
         ));
     }
     let version = arguments[1]
@@ -268,7 +271,11 @@ fn run() -> io::Result<()> {
     let image = Path::new(&arguments[3]);
     let binary_data = bounded_read(binary)?;
     regular(image)?;
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root = arguments
+        .get(4)
+        .map_or(Path::new(env!("CARGO_MANIFEST_DIR")), |root| {
+            Path::new(root)
+        });
     let mut paths = Vec::new();
     for name in [
         "Cargo.toml",

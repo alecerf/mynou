@@ -9,3 +9,5 @@
 /downloads/
 /library/
 *.tmp
+/.ci-image/
+**/__pycache__/

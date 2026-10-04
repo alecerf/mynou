@@ -9,18 +9,30 @@ permissions:
 concurrency:
   group: mynou-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     outputs:
       version: ${{ steps.metadata.outputs.version }}
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Install Rust 1.99.0
         run: |
-          rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy --target x86_64-unknown-linux-musl
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
           rustup default 1.99.0
+      - name: Restore debug build cache
+        id: cache
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: |
+            target/debug
+            target/.rustc_info.json
+          key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99-debug-v1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-rust-1.99-debug-v1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml') }}-
       - name: Verify the dependency graph
         id: metadata
         run: |
@@ -38,21 +50,124 @@ jobs:
         run: cargo fmt --all --check
       - name: Run Clippy
         run: cargo clippy --all-targets --offline --locked -- -D warnings
-      - name: Run tests
-        run: cargo test --all-targets --offline --locked -- --show-output
-      - name: Build release binaries
+      - name: Check the CI test scheduler
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
+      - name: Compile all test harnesses
+        run: cargo test --all-targets --no-run --offline --locked --message-format=json-render-diagnostics > "$RUNNER_TEMP/mynou-test-build.jsonl"
+      - name: Run all Rust test harnesses in parallel
+        run: python3 .github/scripts/parallel_tests.py "$RUNNER_TEMP/mynou-test-build.jsonl" --output "$RUNNER_TEMP/mynou-test-results"
+      - name: Preserve test timings and logs
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: mynou-tests-${{ github.sha }}
+          path: ${{ runner.temp }}/mynou-test-results
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Save successful debug build cache
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/trunk' && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: |
+            target/debug
+            target/.rustc_info.json
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64-unknown-linux-gnu, x86_64-unknown-linux-musl]
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Install Rust 1.99.0 and target
         run: |
-          cargo build --release --offline --locked
-          cargo build --release --offline --locked --target x86_64-unknown-linux-musl
-          if readelf -l target/x86_64-unknown-linux-musl/release/mynou | grep -q INTERP; then exit 1; fi
-          if readelf -d target/x86_64-unknown-linux-musl/release/mynou | grep -q NEEDED; then exit 1; fi
-      - name: Run the standalone demonstration
-        run: target/x86_64-unknown-linux-musl/release/mynou demo --dir "$RUNNER_TEMP/mynou-demo"
-      - name: Build and verify the container
+          rustup toolchain install 1.99.0 --profile minimal --target '${{ matrix.target }}'
+          rustup default 1.99.0
+      - name: Restore exact release binaries
+        id: cache
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: |
+            target/${{ matrix.target }}/release/mynou
+            target/${{ matrix.target }}/release/examples/package_release
+          key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99-release-v1-${{ matrix.target }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'src/**', 'examples/**', 'deploy-compose.yaml', '.github/workflows/ci.yml') }}
+      - name: Build release deliverables
+        if: steps.cache.outputs.cache-hit != 'true'
         env:
-          VERSION: ${{ steps.metadata.outputs.version }}
+          TARGET: ${{ matrix.target }}
         run: |
-          docker build --tag "mynou:$VERSION" .
+          if [[ "$TARGET" == x86_64-unknown-linux-musl ]]; then
+            cargo build --release --offline --locked --target "$TARGET" --bin mynou --example package_release
+          else
+            cargo build --release --offline --locked --target "$TARGET" --bin mynou
+          fi
+      - name: Verify the release binary
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          binary="target/$TARGET/release/mynou"
+          test -x "$binary"
+          readelf -h "$binary" > "$RUNNER_TEMP/mynou-elf-header.txt"
+          readelf -l "$binary" > "$RUNNER_TEMP/mynou-elf-programs.txt"
+          readelf -d "$binary" > "$RUNNER_TEMP/mynou-elf-dynamic.txt"
+          if [[ "$TARGET" == x86_64-unknown-linux-musl ]]; then
+            if grep -q INTERP "$RUNNER_TEMP/mynou-elf-programs.txt" || grep -q NEEDED "$RUNNER_TEMP/mynou-elf-dynamic.txt"; then exit 1; fi
+            test -x "target/$TARGET/release/examples/package_release"
+          fi
+          sha256sum "$binary"
+      - name: Run the standalone demonstration
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: target/x86_64-unknown-linux-musl/release/mynou demo --dir "$RUNNER_TEMP/mynou-demo"
+      - name: Preserve static deliverables for packaging
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: mynou-static-${{ github.sha }}
+          path: |
+            target/x86_64-unknown-linux-musl/release/mynou
+            target/x86_64-unknown-linux-musl/release/examples/package_release
+          if-no-files-found: error
+          retention-days: 1
+      - name: Save exact release binaries
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/trunk' && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: |
+            target/${{ matrix.target }}/release/mynou
+            target/${{ matrix.target }}/release/examples/package_release
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+  package:
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ needs.validate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: mynou-static-${{ github.sha }}
+          path: ${{ runner.temp }}/mynou-static
+      - name: Prepare checked static deliverables
+        run: |
+          chmod 755 "$RUNNER_TEMP/mynou-static/mynou" "$RUNNER_TEMP/mynou-static/examples/package_release"
+          mkdir .ci-image
+          cp "$RUNNER_TEMP/mynou-static/mynou" .ci-image/mynou
+      - name: Build and verify the container without recompiling
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          docker build --check .
+          docker build --build-arg BINARY_STAGE=prebuilt --tag "mynou:$VERSION" .
+          container=$(docker create "mynou:$VERSION")
+          docker cp "$container:/mynou" "$RUNNER_TEMP/mynou-image-binary"
+          docker rm "$container"
+          cmp "$RUNNER_TEMP/mynou-static/mynou" "$RUNNER_TEMP/mynou-image-binary"
           mkdir "$RUNNER_TEMP/mynou-container-demo"
           chmod 777 "$RUNNER_TEMP/mynou-container-demo"
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true \
@@ -61,11 +176,11 @@ jobs:
           docker save "mynou:$VERSION" | gzip -n > "$RUNNER_TEMP/mynou-image.tar.gz"
       - name: Package the validated release
         env:
-          VERSION: ${{ steps.metadata.outputs.version }}
+          VERSION: ${{ needs.validate.outputs.version }}
         run: |
-          cargo run --release --offline --locked --example package_release -- \
+          "$RUNNER_TEMP/mynou-static/examples/package_release" \
             "$RUNNER_TEMP/mynou-release" "$VERSION" \
-            target/x86_64-unknown-linux-musl/release/mynou "$RUNNER_TEMP/mynou-image.tar.gz"
+            "$RUNNER_TEMP/mynou-static/mynou" "$RUNNER_TEMP/mynou-image.tar.gz" "$GITHUB_WORKSPACE"
           (cd "$RUNNER_TEMP/mynou-release" && sha256sum -c SHA256SUMS)
           python3 - "$RUNNER_TEMP/mynou-release/mynou-v$VERSION-source.zip" <<'ARCHIVE'
           import hashlib, sys, zipfile
@@ -84,7 +199,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   release:
-    needs: validate
+    needs: package
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/trunk'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -101,5 +216,5 @@ jobs:
       - name: Publish the validated version
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.validate.outputs.version }}
+          VERSION: ${{ needs.package.outputs.version }}
         run: bash .github/scripts/publish-release.sh "$RUNNER_TEMP/mynou-release" "$VERSION"

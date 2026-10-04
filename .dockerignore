@@ -7,3 +7,5 @@
 !examples/demo.mp4
 !src
 !src/**
+!.ci-image
+!.ci-image/mynou
