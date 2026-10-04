@@ -129,6 +129,7 @@ impl Engine {
         records.sort_by_key(|record| (record.next_check_at, record.id.clone()));
         let deadline = Instant::now() + Duration::from_secs(90);
         let mut reports = Vec::new();
+        let mut first_error = None;
         for record in records.into_iter().take(MAX_CHECKS) {
             if self.stopped.load(Ordering::Acquire) || Instant::now() >= deadline {
                 break;
@@ -137,9 +138,16 @@ impl Engine {
             report.insert("id", record.id.clone());
             match self.refresh_series_before(&record.id, deadline) {
                 Ok(value) => report.insert("result", value),
-                Err(error) => report.insert("error", integrations::report_text(&error, 2048)),
+                Err(error) => {
+                    let error = integrations::report_text(&error, 2048);
+                    first_error.get_or_insert_with(|| error.clone());
+                    report.insert("error", error);
+                }
             }
             reports.push(report);
+        }
+        if let Some(error) = first_error {
+            return Err(error);
         }
         let mut value = Value::object();
         value.insert("reports", Value::Array(reports));
@@ -212,6 +220,7 @@ impl Engine {
             .iter()
             .filter(|episode| {
                 record.episode_monitored(episode)
+                    && episode.catalog_id.is_some()
                     && episode
                         .air_date
                         .as_deref()
@@ -304,7 +313,9 @@ impl Engine {
                     "job_id",
                     job.map_or(Value::Null, |job| job.id.clone().into()),
                 );
-                let state = if !record.episode_monitored(episode) {
+                let state = if episode.catalog_id.is_none() {
+                    "mapping_required"
+                } else if !record.episode_monitored(episode) {
                     "unmonitored"
                 } else if episode
                     .air_date

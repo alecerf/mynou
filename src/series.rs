@@ -279,6 +279,14 @@ impl Record {
                 .filter(|episode| episode.air_date.is_none())
                 .count() as u32,
         );
+        value.insert(
+            "unmapped_count",
+            self.plan
+                .episodes
+                .iter()
+                .filter(|episode| episode.catalog_id.is_none())
+                .count() as u32,
+        );
         value.insert("checked_at", self.checked_at.to_string());
         value.insert("next_check_at", self.next_check_at.to_string());
         value.insert(
@@ -494,7 +502,7 @@ impl SeriesStore {
             revision: 1,
             created_at: now,
             updated_at: now,
-            checked_at: 0,
+            checked_at: now,
             next_check_at: 0,
             last_error: None,
         };

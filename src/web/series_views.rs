@@ -103,6 +103,12 @@ pub fn detail(engine: &Arc<Engine>, session: &Session, query: &Form, id: &str) -
                 "Off"
             }
         ));
+        if episode
+            .get("catalog_id")
+            .is_none_or(|value| matches!(value, crate::json::Value::Null))
+        {
+            body.push_str("<small>Catalog identity required for automatic acquisition</small>");
+        }
         body.push_str(&form("/ui/series/episodes", session));
         body.push_str(&hidden("id", id));
         body.push_str(&hidden("season", &scalar(episode, "season")));

@@ -9,7 +9,80 @@ use mynou::{
     series::CalendarQuery,
 };
 use series_support::*;
-use std::{fs, sync::atomic::Ordering, thread};
+use std::{
+    fs,
+    sync::atomic::Ordering,
+    thread,
+    time::{Duration, Instant},
+};
+
+#[test]
+fn background_monitor_queues_an_episode_when_its_catalog_air_date_becomes_due() {
+    let directory = Directory::new();
+    let catalog = Catalog::open(vec![episode(1, 1, Some("2200-01-01"), "Future")]);
+    let engine = Engine::open_for_management(catalog.config(&directory.0)).unwrap();
+    let record = engine.track_series(&request(), false, false).unwrap();
+    assert!(lock(&engine.store).unwrap().list().is_empty());
+    catalog.episodes(1, vec![episode(1, 1, Some("2024-01-01"), "Now aired")]);
+    engine
+        .configure_series(id(&record), Some(true), None, None)
+        .unwrap();
+    let workers = engine.start();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let jobs = lock(&engine.store).unwrap().list();
+        if !jobs.is_empty() {
+            assert_eq!(jobs.len(), 1);
+            assert_eq!(jobs[0].request.season, 1);
+            assert_eq!(jobs[0].request.episode, 1);
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Background series monitor did not queue the aired episode"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    drop(workers);
+    assert_eq!(lock(&engine.store).unwrap().list().len(), 1);
+}
+
+#[test]
+fn background_catalog_failure_is_visible_in_series_and_service_status() {
+    let directory = Directory::new();
+    let catalog = Catalog::open(vec![episode(1, 1, Some("2200-01-01"), "Future")]);
+    let engine = Engine::open_for_management(catalog.config(&directory.0)).unwrap();
+    let record = engine.track_series(&request(), false, false).unwrap();
+    catalog.response("/3/tv/42", 503, Value::object());
+    engine
+        .configure_series(id(&record), Some(true), None, None)
+        .unwrap();
+    let workers = engine.start();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let status = engine.status().unwrap();
+        if let Some(error) = status.get("last_series_error").and_then(Value::as_str) {
+            assert!(error.contains("HTTP response 503"));
+            assert!(!error.contains(&catalog.url));
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Background catalog error did not reach service status"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    drop(workers);
+    let saved = engine.series_record(id(&record)).unwrap();
+    assert!(
+        saved
+            .get("last_error")
+            .and_then(Value::as_str)
+            .unwrap()
+            .contains("HTTP response 503")
+    );
+    assert!(lock(&engine.store).unwrap().list().is_empty());
+}
 
 #[test]
 fn aired_future_and_undated_episodes_keep_distinct_acquisition_states() {
@@ -216,6 +289,16 @@ fn ambiguous_numbering_and_known_episode_identity_changes_never_queue_new_conten
             .unwrap()
             .contains("mapping decision")
     );
+    let mut moved = episode(1, 2, Some("2024-01-01"), "Renumbered");
+    moved.insert("id", 11001_u32);
+    catalog.episodes(1, vec![moved]);
+    assert!(
+        engine
+            .refresh_series(id)
+            .unwrap_err()
+            .contains("explicit mapping decision")
+    );
+    assert!(lock(&engine.store).unwrap().list().is_empty());
     catalog.episodes(
         1,
         vec![
@@ -228,6 +311,26 @@ fn ambiguous_numbering_and_known_episode_identity_changes_never_queue_new_conten
     catalog.episodes(1, vec![episode(1, 1, Some("2024-01-01"), "Known")]);
     engine.refresh_series(id).unwrap();
     assert_eq!(lock(&engine.store).unwrap().list().len(), 1);
+}
+
+#[test]
+fn missing_catalog_episode_identity_requires_mapping_before_automatic_acquisition() {
+    let directory = Directory::new();
+    let mut unmapped = episode(1, 1, Some("2024-01-01"), "Unmapped");
+    if let Value::Object(fields) = &mut unmapped {
+        fields.remove("id");
+    }
+    let catalog = Catalog::open(vec![unmapped]);
+    let engine = Engine::open_for_management(catalog.config(&directory.0)).unwrap();
+    engine.track_series(&request(), false, false).unwrap();
+    assert!(lock(&engine.store).unwrap().list().is_empty());
+    let calendar = engine
+        .episode_calendar(&CalendarQuery::new(Some("2024-01-01"), Some("2024-01-02")).unwrap())
+        .unwrap();
+    assert_eq!(
+        episodes(&calendar)[0].get("state"),
+        Some(&Value::String("mapping_required".into()))
+    );
 }
 
 #[test]

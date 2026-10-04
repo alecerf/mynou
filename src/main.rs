@@ -708,6 +708,23 @@ fn execute(args: Args) -> Result<()> {
                 body.insert("future_only", args.options.contains_key("future-only"));
                 output(&call(&config, &path, "POST", "/api/series", Some(&body))?);
             } else if args.command == "calendar" {
+                let mut checked = mynou::series::CalendarQuery::new(
+                    args.options.get("from").map(String::as_str),
+                    args.options.get("to").map(String::as_str),
+                )?;
+                checked.series_id = args.options.get("series-id").cloned();
+                for (name, target) in [
+                    ("offset", &mut checked.offset),
+                    ("limit", &mut checked.limit),
+                ] {
+                    if let Some(value) = args.options.get(name) {
+                        if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+                            return Err("Invalid calendar pagination".into());
+                        }
+                        *target = value.parse().map_err(|_| "Invalid calendar pagination")?;
+                    }
+                }
+                checked.validate()?;
                 let fields: Vec<_> = ["from", "to", "series-id", "offset", "limit"]
                     .iter()
                     .filter_map(|name| {
