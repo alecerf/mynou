@@ -539,3 +539,200 @@ fn torznab_pack_search_queries_a_season_without_an_episode_parameter() {
     assert!(!query.contains("&ep="));
     no_sources(&report);
 }
+
+#[test]
+fn opt_in_series_monitoring_prefers_a_resolved_pack_and_defaults_keep_individual_requests() {
+    let directory = Directory::new();
+    let catalog = catalog();
+    let provider = Provider::open();
+    let torrent = torrent(&directory, "media", &[1, 2]);
+    let url = provider.metadata_url("monitoring", fs::read(&torrent.path).unwrap());
+    provider.releases(vec![release("Fixture.Series.S01.1080p", &url, 1)]);
+    let normal = Engine::open_for_management(configure(
+        catalog.config(&directory.0.join("normal")),
+        &provider,
+        "{}",
+    ))
+    .unwrap();
+    let record = normal.track_series(&request(), false, false).unwrap();
+    assert_eq!(record.get("submitted"), Some(&Value::Number(2.0)));
+    assert!(
+        lock(&normal.store)
+            .unwrap()
+            .list()
+            .iter()
+            .all(|job| job.pack_origin.is_none() && job.request.source_url.is_none())
+    );
+    assert!(provider.calls.lock().unwrap().is_empty());
+    let mut cfg = configure(catalog.config(&directory.0.join("packs")), &provider, "{}");
+    cfg.series_packs_enabled = true;
+    let engine = Engine::open_for_management(cfg).unwrap();
+    let record = engine.track_series(&request(), false, false).unwrap();
+    assert_eq!(record.get("submitted"), Some(&Value::Number(2.0)));
+    assert!(
+        lock(&engine.store)
+            .unwrap()
+            .list()
+            .iter()
+            .all(|job| job.pack_origin.is_some()
+                && job.request.source_url.as_deref() == Some(url.as_str()))
+    );
+}
+
+#[test]
+fn monitored_pack_preference_acquires_newly_aired_episodes_once_and_falls_back_for_unresolved_packs()
+ {
+    let directory = Directory::new();
+    let provider = Provider::open();
+    let catalog = Catalog::open(vec![
+        episode(1, 1, Some("2100-01-01"), "Future first"),
+        episode(1, 2, Some("2100-01-02"), "Future second"),
+    ]);
+    let torrent = torrent(&directory, "media", &[1, 2]);
+    let url = provider.metadata_url("newly-aired", fs::read(&torrent.path).unwrap());
+    provider.releases(vec![release("Fixture.Series.S01.1080p", &url, 1)]);
+    let mut cfg = configure(catalog.config(&directory.0.join("engine")), &provider, "{}");
+    cfg.series_packs_enabled = true;
+    let engine = Engine::open_for_management(cfg.clone()).unwrap();
+    let record = engine.track_series(&request(), false, false).unwrap();
+    let series = id(&record).to_owned();
+    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(provider.calls.lock().unwrap().is_empty());
+    catalog.episodes(
+        1,
+        vec![
+            episode(1, 1, Some("2024-01-01"), "Aired first"),
+            episode(1, 2, Some("2100-01-02"), "Future second"),
+        ],
+    );
+    let refreshed = engine.refresh_series(&series).unwrap();
+    assert_eq!(refreshed.get("submitted"), Some(&Value::Number(1.0)));
+    let job = lock(&engine.store).unwrap().list().remove(0);
+    assert_eq!(job.request.episode, 1);
+    assert!(job.pack_origin.is_some());
+    let calls = provider.calls.lock().unwrap().len();
+    assert_eq!(
+        engine.refresh_series(&series).unwrap().get("submitted"),
+        Some(&Value::Number(0.0))
+    );
+    assert_eq!(provider.calls.lock().unwrap().len(), calls);
+    let absolute = Torrent::multiple(
+        &directory.0.join("absolute"),
+        "Pack",
+        vec![("001.mp4".into(), vec![1]), ("002.mp4".into(), vec![1])],
+    );
+    let bad = provider.metadata_url("absolute", fs::read(&absolute.path).unwrap());
+    provider.releases(vec![release("Fixture.Series.S01.1080p", &bad, 1)]);
+    cfg.store_dir = directory.0.join("fallback");
+    let fallback = Engine::open_for_management(cfg).unwrap();
+    fallback.track_series(&request(), false, false).unwrap();
+    assert!(
+        lock(&fallback.store)
+            .unwrap()
+            .list()
+            .iter()
+            .all(|job| job.pack_origin.is_none() && job.request.source_url.is_none())
+    );
+    assert_eq!(lock(&fallback.store).unwrap().list().len(), 1);
+}
+
+#[test]
+fn monitoring_bounds_combined_pack_and_episode_submissions_to_sixty_four_per_pass() {
+    let directory = Directory::new();
+    let provider = Provider::open();
+    let catalog = Catalog::open(
+        (1..=40)
+            .map(|n| episode(1, n, Some("2024-01-01"), "First season"))
+            .collect(),
+    );
+    catalog.response("/3/tv/42",200,mynou::json::parse(r#"{"id":42,"name":"Fixture Series","first_air_date":"2024-01-01","seasons":[{"season_number":1},{"season_number":2}]}"#).unwrap());
+    catalog.episodes(
+        2,
+        (1..=40)
+            .map(|n| episode(2, n, Some("2024-01-01"), "Second season"))
+            .collect(),
+    );
+    let first = Torrent::multiple(
+        &directory.0.join("season1"),
+        "Fixture.Series.S01",
+        (1..=40)
+            .map(|n| (format!("S01E{n:02}.mp4").into(), vec![1]))
+            .collect(),
+    );
+    let second = Torrent::multiple(
+        &directory.0.join("season2"),
+        "Fixture.Series.S02",
+        (1..=40)
+            .map(|n| (format!("S02E{n:02}.mp4").into(), vec![1]))
+            .collect(),
+    );
+    let first_url = provider.metadata_url("season1", fs::read(&first.path).unwrap());
+    let second_url = provider.metadata_url("season2", fs::read(&second.path).unwrap());
+    provider.releases(vec![
+        release("Fixture.Series.S01.1080p", &first_url, 1),
+        release("Fixture.Series.S02.1080p", &second_url, 1),
+    ]);
+    let mut cfg = configure(catalog.config(&directory.0.join("engine")), &provider, "{}");
+    cfg.series_packs_enabled = true;
+    let engine = Engine::open_for_management(cfg).unwrap();
+    let record = engine.track_series(&request(), false, false).unwrap();
+    assert_eq!(record.get("submitted"), Some(&Value::Number(64.0)));
+    let jobs = lock(&engine.store).unwrap().list();
+    assert_eq!(jobs.len(), 64);
+    assert_eq!(
+        jobs.iter().filter(|job| job.pack_origin.is_some()).count(),
+        40
+    );
+    assert!(
+        !provider
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|call| call.contains("metadata-season2"))
+    );
+    let refreshed = engine.refresh_series(id(&record)).unwrap();
+    assert_eq!(refreshed.get("submitted"), Some(&Value::Number(16.0)));
+    let jobs = lock(&engine.store).unwrap().list();
+    assert_eq!(jobs.len(), 80);
+    assert_eq!(
+        jobs.iter().filter(|job| job.pack_origin.is_some()).count(),
+        56
+    );
+}
+
+#[test]
+fn series_pack_preference_is_strictly_optional_and_disabled_for_legacy_configuration() {
+    let mut value = mynou::config::default_json();
+    assert!(
+        !mynou::config::from_json(&value, std::path::Path::new("."))
+            .unwrap()
+            .series_packs_enabled
+    );
+    if let Value::Object(fields) = &mut value {
+        fields.remove("series_packs");
+    }
+    assert!(
+        !mynou::config::from_json(&value, std::path::Path::new("."))
+            .unwrap()
+            .series_packs_enabled
+    );
+    value.insert(
+        "series_packs",
+        mynou::json::parse(r#"{"enabled":true}"#).unwrap(),
+    );
+    assert!(
+        mynou::config::from_json(&value, std::path::Path::new("."))
+            .unwrap()
+            .series_packs_enabled
+    );
+    for text in [
+        r#"{"enabled":"true"}"#,
+        r#"{"enabled":true,"unknown":1}"#,
+        r#"[]"#,
+        r#"null"#,
+    ] {
+        value.insert("series_packs", mynou::json::parse(text).unwrap());
+        assert!(mynou::config::from_json(&value, std::path::Path::new(".")).is_err());
+    }
+}

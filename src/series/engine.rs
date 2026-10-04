@@ -48,6 +48,7 @@ impl Engine {
         if self.read_only {
             return Err("Series storage is read-only".into());
         }
+        let deadline = Instant::now() + Duration::from_secs(90);
         request.validate()?;
         if request.kind != "series" || request.source_path.is_some() || request.source_url.is_some()
         {
@@ -78,7 +79,12 @@ impl Engine {
         let (record, schedule) = if let Some(record) = matches.first() {
             ((*record).clone(), false)
         } else {
-            let plan = integrations::series_plan(&self.config, request, include_specials)?;
+            let plan = integrations::series_plan_before(
+                &self.config,
+                request,
+                include_specials,
+                deadline,
+            )?;
             (
                 lock(&self.series_store)?.subscribe(
                     plan,
@@ -90,7 +96,8 @@ impl Engine {
                 true,
             )
         };
-        let (record, submitted) = self.queue_series(&record.id, record.revision, schedule)?;
+        let (record, submitted) =
+            self.queue_series(&record.id, record.revision, schedule, deadline)?;
         let mut value = record.public_json();
         value.insert("submitted", submitted.len() as u32);
         Ok(value)
@@ -208,13 +215,84 @@ impl Engine {
                 }
             }
         }
-        let (record, submitted) = self.queue_series(id, previous.revision, true)?;
+        let (record, submitted) = self.queue_series(id, previous.revision, true, deadline)?;
         let mut value = record.public_json();
         value.insert("submitted", submitted.len() as u32);
         Ok(value)
     }
 
-    fn queue_series(&self, id: &str, revision: u64, schedule: bool) -> Result<(Record, Vec<Job>)> {
+    fn queue_series(
+        &self,
+        id: &str,
+        revision: u64,
+        schedule: bool,
+        deadline: Instant,
+    ) -> Result<(Record, Vec<Job>)> {
+        let mut submitted = Vec::new();
+        let pack_plan = if self.config.series_packs_enabled {
+            let series = lock(&self.series_store)?;
+            let record = series.get(id).ok_or("Unknown monitored series")?;
+            if record.revision != revision {
+                return Err("Series settings changed; submission discarded".into());
+            }
+            Some(record)
+        } else {
+            None
+        };
+        if let Some(record) = &pack_plan
+            && record.monitored
+        {
+            let existing = lock(&self.store)?.media_keys();
+            let today = date::today();
+            let mut seasons = BTreeMap::<u32, usize>::new();
+            for episode in &record.plan.episodes {
+                if record.episode_monitored(episode)
+                    && episode.catalog_id.is_some()
+                    && episode
+                        .air_date
+                        .as_deref()
+                        .is_some_and(|day| day <= today.as_str())
+                    && !existing.contains(&record.episode_request(episode).media_key())
+                {
+                    *seasons.entry(episode.season).or_default() += 1;
+                }
+            }
+            for (season, count) in seasons.into_iter().take(4) {
+                if self.stopped.load(Ordering::Acquire) || Instant::now() >= deadline {
+                    break;
+                }
+                if count > MAX_SUBMISSIONS.saturating_sub(submitted.len()) {
+                    continue;
+                }
+                let query = crate::pack::AutoPackRequest {
+                    season,
+                    apply: true,
+                    scope_id: None,
+                    candidate_id: None,
+                };
+                if let Ok(report) = self.search_packs_before(id, &query, deadline) {
+                    let jobs = lock(&self.store)?;
+                    if let Some(rows) = report
+                        .get("submission")
+                        .and_then(|submission| submission.get("jobs"))
+                        .and_then(Value::as_array)
+                    {
+                        for row in rows {
+                            if let Some(job) = row
+                                .get("id")
+                                .and_then(Value::as_str)
+                                .and_then(|id| jobs.get(id))
+                            {
+                                submitted.push(job);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if Instant::now() >= deadline {
+            return Err("Series acquisition exceeded its shared deadline".into());
+        }
         // Lock order is series then requests. This bounded commit batch contains no network I/O.
         let mut series = lock(&self.series_store)?;
         series.check_writable()?;
@@ -222,13 +300,15 @@ impl Engine {
         if record.revision != revision {
             return Err("Series settings changed; submission discarded".into());
         }
+        if pack_plan
+            .as_ref()
+            .is_some_and(|previous| previous.plan != record.plan)
+        {
+            return Err("Series catalog changed; submission discarded".into());
+        }
         let today = date::today();
         let mut jobs = lock(&self.store)?;
-        let existing: BTreeSet<_> = jobs
-            .list()
-            .iter()
-            .map(|job| job.request.media_key())
-            .collect();
+        let existing = jobs.media_keys();
         let mut candidates: Vec<_> = record
             .plan
             .episodes
@@ -246,9 +326,9 @@ impl Engine {
             .collect();
         candidates
             .sort_by(|a, b| (&a.0, a.1.season, a.1.episode).cmp(&(&b.0, b.1.season, b.1.episode)));
-        let limited = candidates.len() > MAX_SUBMISSIONS;
-        let mut submitted = Vec::new();
-        for (_, request) in candidates.into_iter().take(MAX_SUBMISSIONS) {
+        let remaining = MAX_SUBMISSIONS.saturating_sub(submitted.len());
+        let limited = candidates.len() > remaining;
+        for (_, request) in candidates.into_iter().take(remaining) {
             if self.stopped.load(Ordering::Acquire) {
                 break;
             }

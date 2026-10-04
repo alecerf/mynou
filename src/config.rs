@@ -71,6 +71,7 @@ pub struct Config {
     pub minimum_seeders: u64,
     pub selection: crate::selection::SelectionConfig,
     pub monitoring: Monitoring,
+    pub series_packs_enabled: bool,
     pub plex: Plex,
     pub catalog: Catalog,
     pub sources: Vec<Source>,
@@ -154,6 +155,7 @@ pub fn default_json() -> Value {
                 ("api_key_env", "MYNOU_TMDB_API_KEY".into()),
             ]),
         ),
+        ("series_packs", object(vec![("enabled", false.into())])),
         ("indexers", Value::Array(Vec::new())),
     ])
 }
@@ -348,6 +350,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             "minimum_seeders",
             "selection",
             "monitoring",
+            "series_packs",
             "library",
             "downloads",
             "plex",
@@ -449,6 +452,13 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         Some(selection) => crate::selection::SelectionConfig::from_json(selection)?,
         None => crate::selection::SelectionConfig::default(),
     };
+    let series_packs_enabled = match v.get("series_packs") {
+        None => false,
+        Some(section) => {
+            keys(section, &["enabled"])?;
+            boolean(section, "enabled", false)?
+        }
+    };
     let base = absolute_path(base)?;
     Ok(Config {
         store_dir: path(&base, text(v, "store_dir", "state/jobs")?)?,
@@ -475,6 +485,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         minimum_seeders: number(v, "minimum_seeders", 1, 1000000)?,
         selection,
         monitoring: monitoring(v)?,
+        series_packs_enabled,
         plex: Plex {
             enabled: boolean(p, "enabled", false)?,
             url: text(p, "url", "http://host.docker.internal:32400")?,
