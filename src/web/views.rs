@@ -42,7 +42,7 @@ pub fn login(session: &Session, message: Option<&str>) -> String {
         ));
     }
     body.push_str(&form("/ui/login", session));
-    body.push_str("<label for=token>API token</label><input id=token name=token type=password required minlength=32 maxlength=4096 autocomplete=off autofocus><button type=submit>Sign in</button></form><p class=muted>This browser stays signed in for up to eight hours.</p><a href=/ui/login>Reload sign-in form</a></section>");
+    body.push_str("<label for=token>API token</label><input id=token name=token type=password required maxlength=4096 autocomplete=off autofocus><button type=submit>Sign in</button></form><p class=muted>This browser stays signed in for up to eight hours.</p><a href=/ui/login>Reload sign-in form</a></section>");
     frame("Welcome to Mynou", "", None, &body)
 }
 

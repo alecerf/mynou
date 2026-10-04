@@ -63,6 +63,40 @@ fn browser_sign_in_sign_out_and_api_authentication_are_separate() {
 }
 
 #[test]
+fn browser_sign_in_accepts_the_apis_byte_based_unicode_token_policy() {
+    let directory = Directory::new();
+    let token = "é".repeat(16);
+    assert_eq!(token.len(), 32);
+    let server = Server::open_with_token(
+        config::from_json(&configuration(None, "{}"), &directory.0).unwrap(),
+        &token,
+    );
+    let challenge = Browser::challenge(&server);
+    let login_page = server.call("GET", "/ui/login", &[("Cookie", &challenge.cookie)], "");
+    assert!(!login_page.body.contains("minlength=32"));
+    let response = challenge.raw_post(
+        &server,
+        "/ui/login",
+        &fields(&[("csrf", &challenge.csrf), ("token", &token)]),
+    );
+    assert_eq!(response.status, 303, "{}", response.body);
+    assert!(!response.body.contains(&token));
+    assert!(
+        !response
+            .headers
+            .values()
+            .any(|value| value.contains(&token))
+    );
+    let cookie = response.headers["set-cookie"].split(';').next().unwrap();
+    assert_eq!(
+        server
+            .call("GET", "/ui/jobs", &[("Cookie", cookie)], "")
+            .status,
+        200
+    );
+}
+
+#[test]
 fn login_rejects_wrong_token_missing_origin_and_login_csrf() {
     let directory = Directory::new();
     let server = server(&directory);

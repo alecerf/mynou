@@ -20,8 +20,12 @@ pub struct Server {
 
 impl Server {
     pub fn open(cfg: Config) -> Self {
+        Self::open_with_token(cfg, TOKEN)
+    }
+
+    pub fn open_with_token(cfg: Config, token: &str) -> Self {
         let engine = Engine::open(cfg).unwrap();
-        let api = Api::bind(engine.clone(), TOKEN.into()).unwrap();
+        let api = Api::bind(engine.clone(), token.to_owned()).unwrap();
         Self {
             authority: api.address().unwrap().to_string(),
             engine,
