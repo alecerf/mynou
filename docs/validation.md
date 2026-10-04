@@ -16,6 +16,10 @@ builds, a local end-to-end demo, and Docker behavior. The Cargo graph must conta
 one package with no dependencies. Network tests use synthetic media and local
 peers or services; no public torrent acquisition is part of validation.
 
+The [CI execution guide](ci.md) describes bounded parallel execution of every
+Cargo harness, retained timings/logs, independent native/static builds and exact
+build reuse. Packaging and publication remain gated by every required job.
+
 Release automation depends on successful validation on `trunk`. It reads
 `Cargo.toml`, creates the version tag and GitHub release for the validated commit
 if that version is new, and publishes:

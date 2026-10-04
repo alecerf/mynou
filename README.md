@@ -253,6 +253,11 @@ CI checks the offline Cargo graph, formatting, Clippy, tests, release builds,
 and Docker behavior. The Cargo graph must contain exactly one package, `mynou`,
 with no dependencies. Network tests use local services.
 
+All Cargo test harnesses run with bounded process/thread parallelism and retained
+per-target timings/logs. Native and static builds run concurrently; Docker and
+packaging reuse the checked static artifacts. Every required job still gates
+publication. See [CI execution and caches](docs/ci.md) for exact behavior.
+
 A successful run on `trunk` automatically publishes the version from
 `Cargo.toml` if it has not been released. CI creates the matching tag and release
 from that validated commit, and publishes:
