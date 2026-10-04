@@ -778,67 +778,81 @@ mod tests {
     #[test]
     fn verified_final_piece_survives_a_failed_have_announcement() {
         use std::net::{Shutdown, TcpListener};
-        let payload = b"verified final synthetic payload".to_vec();
-        let info = value_dict(&[
-            (b"name", Value::Bytes(b"final.bin".to_vec())),
-            (b"piece length", Value::Int(BLOCK as i64)),
-            (b"length", Value::Int(payload.len() as i64)),
-            (
-                b"pieces",
-                Value::Bytes(crate::crypto::sha1(&payload).to_vec()),
-            ),
-        ]);
-        let mut meta = Meta::parse(&crate::bencode::encode(&value_dict(&[(b"info", info)])))
-            .expect("synthetic metadata");
-        let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
-        let stream = TcpStream::connect(listener.local_addr().expect("address")).expect("client");
-        let (mut remote, _) = listener.accept().expect("peer");
-        let client_writer = stream.try_clone().expect("shared client socket");
-        let expected = payload.clone();
-        let server = std::thread::spawn(move || {
-            let (id, request) = read_message(&mut remote, None).expect("block request");
-            assert_eq!(id, 6);
-            assert_eq!(request.len(), 12);
+        for length in [32, BLOCK * 3 + 5] {
+            let payload: Vec<u8> = (0..length).map(|index| (index % 251) as u8).collect();
+            let info = value_dict(&[
+                (b"name", Value::Bytes(b"final.bin".to_vec())),
+                (b"piece length", Value::Int((BLOCK * 4) as i64)),
+                (b"length", Value::Int(payload.len() as i64)),
+                (
+                    b"pieces",
+                    Value::Bytes(crate::crypto::sha1(&payload).to_vec()),
+                ),
+            ]);
+            let mut meta = Meta::parse(&crate::bencode::encode(&value_dict(&[(b"info", info)])))
+                .expect("synthetic metadata");
+            let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
+            let stream =
+                TcpStream::connect(listener.local_addr().expect("address")).expect("client");
+            let (mut remote, _) = listener.accept().expect("peer");
+            let client_writer = stream.try_clone().expect("shared client socket");
+            let expected = payload.clone();
+            let server = std::thread::spawn(move || {
+                let mut requests = Vec::new();
+                for block in 0..payload.len().div_ceil(BLOCK) {
+                    let (id, request) = read_message(&mut remote, None).expect("block request");
+                    assert_eq!(id, 6);
+                    assert_eq!(request.len(), 12);
+                    assert_eq!(u32::from_be_bytes(request[..4].try_into().unwrap()), 0);
+                    assert_eq!(
+                        u32::from_be_bytes(request[4..8].try_into().unwrap()) as usize,
+                        block * BLOCK
+                    );
+                    assert_eq!(
+                        u32::from_be_bytes(request[8..12].try_into().unwrap()) as usize,
+                        (payload.len() - block * BLOCK).min(BLOCK)
+                    );
+                    requests.push(request);
+                }
+                // Disable announcements only after all pipelined requests are
+                // received. Reads remain available for every final block.
+                client_writer
+                    .shutdown(Shutdown::Write)
+                    .expect("disable announcements");
+                for (request, payload) in requests.iter().zip(payload.chunks(BLOCK)) {
+                    let mut block = request[..8].to_vec();
+                    block.extend_from_slice(payload);
+                    write_message(&mut remote, 7, &block, None).expect("final block");
+                }
+            });
+            let counters = Arc::new(super::super::TransferCounters::default());
+            let mut peer = Peer {
+                stream,
+                metadata_id: None,
+                pex_id: None,
+                metadata_size: None,
+                bitfield: Vec::new(),
+                choked: false,
+                extensions: false,
+                discovered: Vec::new(),
+                pex_allowed: false,
+                v2_wire: false,
+                counters: counters.clone(),
+                download_gate: Arc::new(super::super::RateGate::default()),
+                local_download_gate: Arc::new(super::super::RateGate::default()),
+            };
+            let result = peer.fetch_piece(&mut meta, 0, &AtomicBool::new(false));
+            server.join().expect("server");
+            assert_eq!(result.expect("verified piece is retained"), expected);
             assert_eq!(
-                u32::from_be_bytes(request[8..12].try_into().unwrap()) as usize,
-                payload.len()
+                counters.downloaded.load(Ordering::Relaxed),
+                expected.len() as u64
             );
-            // This disables the original client's writes deterministically
-            // while leaving its read half available for the final payload.
-            client_writer
-                .shutdown(Shutdown::Write)
-                .expect("disable announcements");
-            let mut block = request[..8].to_vec();
-            block.extend(payload);
-            write_message(&mut remote, 7, &block, None).expect("final block");
-        });
-        let counters = Arc::new(super::super::TransferCounters::default());
-        let mut peer = Peer {
-            stream,
-            metadata_id: None,
-            pex_id: None,
-            metadata_size: None,
-            bitfield: Vec::new(),
-            choked: false,
-            extensions: false,
-            discovered: Vec::new(),
-            pex_allowed: false,
-            v2_wire: false,
-            counters: counters.clone(),
-            download_gate: Arc::new(super::super::RateGate::default()),
-            local_download_gate: Arc::new(super::super::RateGate::default()),
-        };
-        let result = peer.fetch_piece(&mut meta, 0, &AtomicBool::new(false));
-        server.join().expect("server");
-        assert_eq!(result.expect("verified piece is retained"), expected);
-        assert_eq!(
-            counters.downloaded.load(Ordering::Relaxed),
-            expected.len() as u64
-        );
-        assert!(
-            write_message(&mut peer.stream, 4, &0u32.to_be_bytes(), None).is_err(),
-            "the write half must remain unavailable for HAVE"
-        );
+            assert!(
+                write_message(&mut peer.stream, 4, &0u32.to_be_bytes(), None).is_err(),
+                "the write half must remain unavailable for HAVE"
+            );
+        }
     }
 
     #[test]
