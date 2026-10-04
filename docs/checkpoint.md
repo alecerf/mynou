@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.11.0
+# Project checkpoint — Mynou 0.12.0
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -63,16 +63,31 @@ redaction, request/search/library/transfer pages, bounded pagination and bulk
 changes with per-entry outcomes. API Bearer authentication remains separate.
 See [web.md](web.md) for operations, exact bounds and deployment.
 
-Series-pack/specials management, multi-user Plex
-policies, IRC automation, native indexer adapters, Usenet and cross-seeding remain
-future stages. See the [release roadmap](roadmap.md). Transfer control is a
-focused stage, and parallel peers do not establish full parity.
+The 0.12.0 change adds durable series scopes, retained catalog plans, background
+newly aired episode acquisition, optional specials, earliest monitored dates,
+per-episode exclusions and a paginated calendar. CLI/API/browser controls share
+revision checks, request-identity deduplication and a private verified snapshot.
+Unknown dates or missing episode identities remain unresolved. See [series.md](series.md).
+
+Season packs and alternate/anime numbering, multi-user Plex policies, IRC
+automation, native indexer adapters, Usenet and cross-seeding remain future stages. See the [release roadmap](roadmap.md). Series monitoring is a
+focused stage and does not establish full stack parity.
 
 Releases are hosted in [alecerf/mynou](https://github.com/alecerf/mynou/releases).
 A successful validation run on `trunk` publishes a new `Cargo.toml` version if it
 has not already been released. The assets are a full source ZIP with the static
 Linux x86_64 binary, a separate static binary, a saved Docker image archive, and
 SHA-256 checksum files. There is no Docker Hub publication step.
+
+## Recorded 0.11.0 CI checkpoint
+
+Commit `d7cb8eb20d364c217ed89ab183ebf754512d7dfe` passed
+[Actions run 37206645776](https://github.com/alecerf/mynou/actions/runs/37206645776):
+343 tests passed with none failed or ignored, alongside the complete dependency,
+formatting, Clippy, build, demo, Docker and packaging checks. GitHub Actions
+published [v0.11.0](https://github.com/alecerf/mynou/releases/tag/v0.11.0)
+with seven assets on October 4, 2026, at 13:48 UTC. This validates the browser
+release, not the new 0.12.0 changes. Their own completed CI/release are required.
 
 ## Recorded 0.10.0 CI checkpoint
 
@@ -85,8 +100,7 @@ Its debug delayed local peer fixture measured 6,574 ms with the retained
 single-peer path and 1,480 ms with four peers (4.441x). See
 [validation.md](validation.md) for workload and limits.
 
-This validates 0.10.0. The 0.11.0 browser changes require their own completed
-Actions run and CI-created release; no passing result is recorded until observed.
+This validates 0.10.0; later changes require their own completed run and release.
 
 ## Recorded 0.9.0 CI checkpoint
 

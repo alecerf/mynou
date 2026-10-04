@@ -19,13 +19,16 @@ been independently reviewed.
 | Jobs | Title/identifier and state filters, progress, details, recent history, cancel and retry |
 | Library | Current owned imports, monitoring, missing files/baselines, pending upgrades |
 | Search | Preview movie/episode selection with reasons; record movie, episode, series or file requests |
+| Series | Track scopes, enable monitoring/specials, set an earliest air date, choose episodes and refresh the catalog |
+| Calendar | Filter known episode dates by window and series, inspect monitoring and request states |
 | Transfers | Native queue, durable pause/resume, queue/file priorities, payload counters and seeding policies |
 
 Search previews contact configured sources without recording jobs. They retain
 the entered title and numeric identity in the form. Recording the request runs
 automatic selection later; the displayed candidate is not reserved. Series
-requests use the existing configured catalog expansion. Automatic previews
-support movies and individual episodes. An explicit URL or server path bypasses
+requests now retain a catalog plan and monitoring record, even when no episode
+has aired. See [series monitoring](series.md) for acquisition rules and limits.
+Automatic previews support movies and individual episodes. An explicit URL or server path bypasses
 automatic source selection, and that source input is cleared after preview.
 Source paths refer to files visible to the service, including container mounts;
 this page does not upload a file from the browser.
@@ -46,15 +49,17 @@ mandatory. See [transfer controls](transfers.md).
 ## Bulk changes and bounds
 
 Select at most 32 entries on one page. Jobs support cancel/retry, library entries
-support monitor/unmonitor, and transfers support pause/resume. All identifiers,
-duplicates and the requested operation are checked before changes start. Each
+and series records support monitor/unmonitor, and transfers support pause/resume.
+All identifiers, duplicates and the requested operation are checked before changes start. Each
 valid identifier is then handled independently. An unknown or ineligible entry
 does not prevent other entries from succeeding. The following page reports each
 result and the count of successful actions. A bulk change is not an atomic
 transaction. Cancellation retains downloaded sources and library imports.
 
 Lists contain at most 50 rows per page. Detail file and event lists are also
-paginated. Filters remain attached to pagination links. Search/upgrade reports
+paginated, including series episode plans. Calendar windows contain at most
+367 days and use catalog dates against UTC, with no invented dates for undated
+episodes. Filters remain attached to pagination links. Search/upgrade reports
 keep the existing source/report bounds. Browser forms accept at most 64 fields,
 65,536 encoded bytes and 8,192 decoded bytes per field; source input is therefore
 smaller than the API's maximum. Malformed escapes, invalid UTF-8, unexpected

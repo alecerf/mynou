@@ -96,18 +96,19 @@ client does not consult CRLs or OCSP servers.
 Plex, TMDB, and indexers need valid addresses and credentials. Local-response tests
 do not mean the release has connected to your personal installation. Source
 selection is bounded by implemented formats and matching criteria; it does not
-perform a general Web search. Search and upgrade passes have a 90-second budget
+perform a general Web search. Search, upgrade and series-refresh passes have a 90-second budget
 for HTTP/socket operations and processing checks. Synchronous standard-library
 DNS resolution can block beyond it, so this is not a strict wall-clock deadline;
 late results are rejected.
 
-TMDB responses are cached for one hour, with at most 256 entries and 32 MiB.
-Episodes already in a response are filtered by their air date during
-synchronization. New metadata is discovered after cache expiry and on the next
-sync. Plex availability confirmation always uses a fresh network response.
-Automatic source selection requires a strict title match and an identified file
-for the requested episode. Packs and title variants are not resolved implicitly.
-Season-zero specials are excluded from automatic series expansion.
+Legacy TMDB enrichment responses are cached for one hour, with at most 256
+entries and 32 MiB. Durable series planning bypasses that cache and retains future
+and undated episodes. Newly aired acquisition requires a known episode identity
+and monitoring policy; optional season-zero specials require explicit opt-in.
+Plex availability confirmation always uses a fresh network response. Automatic
+source selection requires a strict title match and an identified file for the
+requested episode. Packs and title variants are not resolved implicitly. See
+[series monitoring](series.md) for refresh, numbering and scheduling limits.
 
 ## Selection and library management
 
@@ -162,9 +163,19 @@ inherits the parent's current monitoring flag. Original imports and downloads
 remain on disk; there is no automatic cleanup, rollback deletion or
 library-directory adoption. See [library.md](library.md).
 
+Series storage supports 128 tracked scopes, 2,000 episodes per plan, 20,000
+episodes total and an 8 MiB verified snapshot. A due pass checks at most four
+records and a submission batch at most 64 missing aired episodes. Calendar pages
+accept at most 200 entries over an inclusive 367-day window. Settings revisions
+prevent a late refresh from applying an earlier monitoring policy. Series
+monitoring retains existing requests and files; it does not silently retry
+terminal jobs or stop when a Plex watchlist entry disappears. Changed known
+episode identities require a mapping decision; an alternate-number mapping
+editor and selective season-pack acquisition are not implemented.
+
 The browser interface uses a shared operator token, original server-rendered
 pages and native forms, with page refreshes rather than live streaming. It has
-bounded pagination and bulk job/library/transfer controls. It does not edit
+bounded pagination and bulk job/library/transfer/series controls. It does not edit
 configuration or adopt a complete existing Plex library. Plex integration
 does not provide multi-user approvals, quotas, permission policies, notifications
 or per-user routing. Indexer integrations support RSS/JSON/Torznab endpoints,
@@ -182,6 +193,13 @@ Offline library listing and upgrade previews use read-only storage. They do not
 create directories/files, change permissions, compact or repair the journal.
 Fresh storage returns an empty view; an interrupted tail reports explicit
 writable recovery is needed rather than changing data during a preview.
+
+Series metadata uses a separate private `series.json` snapshot under the same
+directory owner, with file/rename/directory synchronization. Request and series
+writes are separate commits; a partial confirmed acquisition batch is retained
+and deduplicated after restart. An absent series snapshot means no tracked
+series; earlier episode jobs are not adopted as monitoring records. Read-only
+views do not create or mutate it. See [series persistence](series.md).
 
 History retains the most recent 1,000 events across the journal, then filters by
 request for `events`. Requests and their state remain in snapshots; event history

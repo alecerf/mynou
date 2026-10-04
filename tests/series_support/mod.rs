@@ -18,11 +18,13 @@ use std::{
     time::{Duration, Instant},
 };
 
+type Responses = BTreeMap<String, (u16, Value)>;
+
 pub struct Catalog {
     pub url: String,
     pub calls: Arc<AtomicUsize>,
     pub blocked: Arc<AtomicBool>,
-    responses: Arc<Mutex<BTreeMap<String, (u16, Value)>>>,
+    responses: Arc<Mutex<Responses>>,
     stopped: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }

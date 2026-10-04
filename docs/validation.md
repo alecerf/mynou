@@ -36,8 +36,8 @@ steps. No Docker Hub repository is needed.
 Download the assets and checksum files from the same release. For example:
 
 ```sh
-sha256sum -c mynou-v0.11.0-source.zip.sha256
-sha256sum -c mynou-v0.11.0-linux-amd64-image.tar.gz.sha256
+sha256sum -c mynou-v0.12.0-source.zip.sha256
+sha256sum -c mynou-v0.12.0-linux-amd64-image.tar.gz.sha256
 ```
 
 To verify all downloaded assets together, download `SHA256SUMS` and every listed
@@ -57,6 +57,32 @@ sha256sum -c SHA256SUMS
 Checksum verification establishes integrity relative to the downloaded manifest.
 It does not replace reviewing the release's commit and successful Actions run.
 
+## Series changes in 0.12.0
+
+New CI-only local-service scenarios cover future/undated/unmapped episodes,
+optional specials, earliest-air-date choices, per-episode exclusions, background
+newly aired acquisition and visible catalog failures. Persistence checks cover
+restart/read-only views, checksum corruption, linked snapshots and bounded
+partial batches with overlapping-scope deduplication. Numbering checks reject
+duplicate or changed known identities; a gated HTTP response verifies settings
+revision protection. Calendar date/range/pagination rules, Bearer API controls,
+browser forms/escaping/bulk prevalidation and CLI routing have dedicated journeys.
+
+These are implemented requirements, not an observed passing result for 0.12.0.
+Inspect its exact completed Actions run and CI-created release before claiming
+validation. Fixtures use synthetic metadata and local services; they do not
+establish personal-installation compatibility.
+
+## Recorded 0.11.0 CI evidence
+
+[Run 37206645776](https://github.com/alecerf/mynou/actions/runs/37206645776)
+completed successfully for commit
+`d7cb8eb20d364c217ed89ab183ebf754512d7dfe`: 343 tests passed with none failed
+or ignored, alongside the full validation and release pipeline. GitHub Actions
+published [v0.11.0](https://github.com/alecerf/mynou/releases/tag/v0.11.0)
+with seven assets on October 4, 2026, at 13:48 UTC. That result validates the
+browser release and does not validate the following series changes.
+
 ## Browser changes in 0.11.0
 
 The new browser scope is covered by CI-only unit and native HTTP/form journeys:
@@ -74,8 +100,7 @@ The new browser scope is covered by CI-only unit and native HTTP/form journeys:
 - Native transfer pause/resume, priority, file choices and policy changes;
   invalid controls preserve prior choices and downloaded metadata.
 
-These requirements are not a recorded passing run for the new commit. Inspect
-its completed Actions run and CI-created release. Form-protocol checks do not
+The completed 0.11.0 run above records these checks. Form-protocol checks do not
 establish independent visual/browser accessibility review or personal Plex
 installation compatibility. Existing offline dependency, lint, build, demo,
 Docker and archive-integrity checks continue to run.
@@ -88,7 +113,7 @@ completed successfully for commit
 alongside the complete dependency, lint, build, native/Docker demo and packaging
 checks. GitHub Actions published
 [v0.10.0](https://github.com/alecerf/mynou/releases/tag/v0.10.0) with seven assets.
-This evidence validates 0.10.0, not the browser changes.
+This evidence validates 0.10.0, not later source changes.
 
 The debug test build's delayed local TCP fixture transferred 786,432 payload
 bytes with a 100 ms per-block delay: 6,574 ms using the retained sequential path

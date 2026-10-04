@@ -1,4 +1,4 @@
-# Mynou 0.11.0 — Rust, standard library only
+# Mynou 0.12.0 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -43,8 +43,8 @@ from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, o
 build the image from the source archive:
 
 ```sh
-docker load -i mynou-v0.11.0-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.11.0 .
+docker load -i mynou-v0.12.0-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.12.0 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d
@@ -82,6 +82,11 @@ ownership, shared Plex paths, and installation without Rust on the host.
   per-file piece priorities, global payload bandwidth limits, persistent
   counters and ratio/time seeding policies. Controls retain library files and
   downloads; per-file priorities still download every file.
+- Durable series monitoring with retained TMDB episode plans, newly aired
+  episode acquisition, optional specials, earliest-air-date choices and
+  per-episode exclusions; a paginated episode calendar shares CLI/API/browser
+  controls. Unknown air dates or missing episode identities do not acquire
+  automatically.
 - Browser management at `/ui`: search/request forms, jobs/history, owned library
   monitoring and upgrades, transfer controls, filters, pagination and bounded
   bulk actions with individual results. Rust renders all pages without scripts
@@ -137,10 +142,30 @@ The [transfer guide](docs/transfers.md) explains native download controls,
 parallel peer bounds, bandwidth limits and seeding policies. Use
 `downloads.max_peers: 1` to retain a single-peer transfer baseline.
 
-Mynou remains an early integrated implementation. This release adds browser
-management. Broader series management, multi-user policies and full parity with
+Mynou remains an early integrated implementation. This release adds durable
+series monitoring and an episode calendar. Season packs, alternate/anime
+numbering, multi-user policies and full parity with
 Radarr, Sonarr, Pulsarr, qBittorrent, qui, autobrr or Prowlarr remain future work. The
 [release roadmap](docs/roadmap.md) separates the next stages.
+
+## Follow a series
+
+With TMDB and sources configured, track a series and inspect its episode calendar:
+
+```sh
+mynou track-series --title "Example Series" --year 2026 --tmdb-id 123 \
+  --future-only --config ./mynou.json
+mynou series --config ./mynou.json
+mynou calendar --from 2026-10-01 --to 2026-10-31 --config ./mynou.json
+```
+
+The running service checks retained monitored plans for newly aired episodes.
+Plex show requests also create these records. The browser provides Series
+settings and Calendar pages. Existing requests prevent automatic duplicates,
+including failed and cancelled jobs; use job controls for deliberate retries.
+Removing a Plex watchlist entry does not disable its retained series monitoring.
+See the [series guide](docs/series.md) for acquisition rules, persistence, bounds
+and the independent owned-library upgrade policy.
 
 ## Open the browser interface
 
@@ -150,7 +175,8 @@ hours and end at sign-out or service restart. Browser cookies do not authenticat
 the Bearer API. Pages use native forms; refresh to see new progress.
 
 The [browser guide](docs/web.md) describes request/search/library/transfer
-operations, safe bulk changes and TLS reverse-proxy deployment for remote access.
+and series/calendar operations, safe bulk changes and TLS reverse-proxy
+deployment for remote access.
 
 ## Configuration and commands
 
@@ -177,7 +203,8 @@ mynou status --config ./mynou.json
 ```
 
 Management commands use the API when the service is running; otherwise they
-open its local journal. They do not start a second download service. For a local
+open its local journal. Dedicated series/calendar commands require a running
+service. Commands do not start a second download service. For a local
 Docker submission, use a path visible inside the container.
 
 ## Development and releases
@@ -210,5 +237,6 @@ code perfection.
 [Architecture](docs/architecture.md) · [Docker installation](docs/deployment.md) ·
 [Dependencies](docs/dependencies.md) · [Formats and limits](docs/limits.md) ·
 [Release selection](docs/selection.md) · [Library upgrades](docs/library.md) ·
-[Transfer controls](docs/transfers.md) · [Roadmap](docs/roadmap.md) ·
+[Transfer controls](docs/transfers.md) · [Series and calendar](docs/series.md) ·
+[Browser management](docs/web.md) · [Roadmap](docs/roadmap.md) ·
 [Performance](docs/performance.md) · [Validation](docs/validation.md)

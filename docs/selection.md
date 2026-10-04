@@ -201,6 +201,7 @@ confirmation.
 
 Selection and monitoring do not decode audio/video or prove release-name claims.
 Search previews and submissions are also available in the [browser](web.md).
-Full series management remains a later stage in the [roadmap](roadmap.md).
+Durable [series monitoring and calendars](series.md) use these episode profiles.
+Season packs and alternate/anime numbering remain the next [stage](roadmap.md).
 See [limits](limits.md) for remaining torrent,
 integration and series constraints.

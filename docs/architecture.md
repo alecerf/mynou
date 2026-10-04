@@ -33,8 +33,20 @@ CLI / API / Browser       Plex watchlist
 The components are independent of frameworks. `config` validates fields and
 resolves paths relative to the configuration file into absolute roots, including
 when the configuration filename is relative. `integrations` converts
-network responses into requests and sources. `engine` orchestrates transitions
+network responses into requests, catalog plans and sources. `engine` orchestrates transitions
 without holding the journal lock during a transfer or import.
+
+`series` retains bounded catalog episode plans and monitoring revisions in a
+private verified snapshot under the request-store directory owner. A catalog
+refresh captures policy, fetches outside storage locks, verifies numbering and
+known episode identities, then rejects a result if its revision has changed.
+A bounded submission batch takes locks in series-then-request order and uses
+existing media identities to prevent duplicate episode jobs. Series and request
+persistence are separate commits, so confirmed partial batches remain recoverable
+through deduplication. Unknown dates and missing episode identities do not
+automatically acquire. A background worker refreshes due records; calendar
+reads sort bounded borrowed rows and serialize only the requested page. See
+[series monitoring](series.md) for exact budgets and supported mappings.
 
 `selection` evaluates matched source candidates using the configured movie or
 episode profile. It extracts bounded release-title attributes, filters candidates
@@ -150,4 +162,5 @@ GitHub Actions validates changes and publishes releases. Build and release tools
 are separate from the runtime; the application never invokes them.
 
 [Selection policies](selection.md) · [Library monitoring](library.md) ·
-[Transfer controls](transfers.md) · [Release stages](roadmap.md)
+[Transfer controls](transfers.md) · [Series monitoring](series.md) ·
+[Release stages](roadmap.md)

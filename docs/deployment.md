@@ -13,13 +13,13 @@ Download the source ZIP and image archive from
 Load the validated release image:
 
 ```sh
-docker load -i mynou-v0.11.0-linux-amd64-image.tar.gz
+docker load -i mynou-v0.12.0-linux-amd64-image.tar.gz
 ```
 
 Alternatively, build the image from the extracted sources:
 
 ```sh
-docker build -t mynou:0.11.0 .
+docker build -t mynou:0.12.0 .
 ```
 
 Use the image binary to prepare an installation in a new directory:
@@ -29,7 +29,7 @@ docker run --rm --network none \
   --user "$(id -u):$(id -g)" \
   --mount "type=bind,src=$PWD,dst=/work" \
   --workdir /work \
-  mynou:0.11.0 setup-docker --dir mynou-docker
+  mynou:0.12.0 setup-docker --dir mynou-docker
 ```
 
 If your account does not use UID/GID 1000, add its IDs to the generated `.env`:
@@ -136,6 +136,26 @@ The report shows accepted/rejected candidates and the proposed winner. It omits
 acquisition URLs and credentials, and creates no download or journal request.
 The preview still contacts your configured sources. Release-title markers do
 not verify actual tracks.
+
+## Configure series monitoring
+
+With TMDB and sources enabled, open **Series** in the browser or use the running
+container to create a durable series plan:
+
+```sh
+docker compose exec mynou /mynou track-series --title "Example Series" \
+  --year 2026 --tmdb-id 123 --future-only --config /config/mynou.json
+docker compose exec mynou /mynou series --config /config/mynou.json
+docker compose exec mynou /mynou calendar --config /config/mynou.json
+```
+
+A monitored record checks for newly aired missing episodes while the service
+runs. This is independent from owned-library upgrade monitoring below. Plex show
+watchlist entries also create series records. Their monitoring survives watchlist
+removal; disable it explicitly in Series settings. Keep the complete data mount
+in backups, including the request journal and private `series.json`. See the
+[series guide](series.md) for unknown dates/identities, specials, refresh limits
+and the following season-pack stage.
 
 ## Configure library monitoring
 
