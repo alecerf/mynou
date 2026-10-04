@@ -110,10 +110,29 @@ tests across 34 harnesses. Its serial validation job took 299 seconds:
 | Docker build/demo/save | 91 |
 | Duplicate Rust compilation inside Docker | 74.24 |
 
-The optimized workflow must complete before its timings can be recorded as
-successful evidence. Cold and warm runs should be compared separately; runner
-load, cache downloads and scheduling affect elapsed time. These measurements
-describe CI duration, not application throughput or general performance.
+The optimized cold-cache [run 37233284333](https://github.com/alecerf/mynou/actions/runs/37233284333)
+passed for commit `8b29506158f43c6346d1d5a9d68496c5d6bfb332`. All 409 Rust tests
+passed across the same 34 harnesses, with none failed or ignored. Four scheduler
+checks also passed. This runner used two harness processes with two threads each.
+The test compilation took 19.88 seconds and harness execution took 39.392 seconds;
+the complete validation job took 88 seconds. Native and static build jobs took
+55 and 61 seconds concurrently. Docker assembly/demo/packaging passed, including
+byte-for-byte comparison with the checked static binary. Publication remained
+gated and left the existing 0.15 release immutable.
+
+| Observed duration | Previous workflow | Optimized, cold cache |
+| --- | ---: | ---: |
+| Rust harness execution | 74.98 s | 39.392 s |
+| Validation job | 299 s | 88 s |
+| Entire workflow, creation through completion | 313 s | 130 s |
+
+Whole-workflow time fell by approximately 58% in this comparison. Validation
+job time is not the whole optimized workflow: builds now run independently,
+and packaging/publication follow them. Cold and warm runs must be reported
+separately; cache downloads, scheduling and runner load affect elapsed time.
+The documentation follow-up will verify exact release-cache hits and rerun every
+test/check before a warm result is recorded. These measurements describe CI
+duration, not application throughput or general performance.
 
 [Validation](validation.md) · [Dependencies](dependencies.md) ·
 [Performance](performance.md) · [Next feature release](next-release.md)
