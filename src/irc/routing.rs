@@ -84,6 +84,12 @@ pub(crate) fn validate_magnet(s: &str, expected: &str) -> Result<()> {
         match key {
             "xt" if !identity && value == xt(expected) => identity = true,
             "tr" => {
+                if !["https://", "http://", "udp://"]
+                    .iter()
+                    .any(|p| value.starts_with(p))
+                {
+                    return Err("IRC: invalid configured tracker scheme".into());
+                }
                 let parsed = if let Some(rest) = value.strip_prefix("udp://") {
                     crate::net::parse_url(&format!("https://{rest}"))
                 } else {
@@ -437,7 +443,7 @@ fn video(path: &str) -> bool {
         .extension()
         .and_then(|s| s.to_str())
         .is_some_and(|s| {
-            ["mp4", "m4v", "mov", "mkv", "webm", "avi", "ts", "m2ts"]
+            ["mp4", "m4v", "mov", "mkv", "webm", "avi"]
                 .iter()
                 .any(|ext| s.eq_ignore_ascii_case(ext))
         })

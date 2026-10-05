@@ -17,7 +17,7 @@ pub(super) fn list(engine: &Arc<Engine>, session: &Session, query: &Form) -> Res
     let sources = engine.irc_sources()?;
     let report = engine.irc_announcements(offset, limit)?;
     let mut body = String::from(
-        "<section class=panel><h1>IRC announcements</h1><p>Receive configured release announcements, inspect filter outcomes, and record a review. Release identities are claims until verified. These reviews do not start downloads.</p><h2>Sources</h2><table><thead><tr><th>Source</th><th>Channel</th><th>Connection</th><th>Received</th><th>Duplicates</th></tr></thead><tbody>",
+        "<section class=panel><h1>IRC announcements</h1><p>Receive configured announcements, inspect filters and record audit reviews. Explicit grab rules route verified candidates to existing approved requests. Reviews do not authorize downloads.</p><h2>Sources</h2><table><thead><tr><th>Source</th><th>Channel</th><th>Connection</th><th>Received</th><th>Duplicates</th></tr></thead><tbody>",
     );
     for s in array(sources.get("sources").unwrap_or(&Value::Null)) {
         let h = s.get("health").unwrap_or(&Value::Null);
@@ -31,26 +31,28 @@ pub(super) fn list(engine: &Arc<Engine>, session: &Session, query: &Form) -> Res
             scalar(h, "duplicates")
         ));
     }
-    body.push_str("</tbody></table><h2>Configured review rules</h2><p>Edit source and rule settings in your configuration, then restart the service.</p><table><thead><tr><th>Rule</th><th>Source</th><th>Kind</th><th>Profile</th><th>Enabled</th></tr></thead><tbody>");
+    body.push_str("</tbody></table><h2>Configured rules</h2><p>Edit source and rule settings in your configuration, then restart the service.</p><table><thead><tr><th>Rule</th><th>Source</th><th>Kind</th><th>Profile</th><th>Action</th><th>Enabled</th></tr></thead><tbody>");
     for r in array(sources.get("rules").unwrap_or(&Value::Null)) {
         body.push_str(&format!(
-            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
             e(text(r, "id")),
             e(text(r, "source")),
             e(text(r, "kind")),
             e(text(r, "profile")),
+            e(text(r, "action")),
             scalar(r, "enabled")
         ));
     }
-    body.push_str("</tbody></table></section><section class=panel><h2>Announcement history</h2><table><thead><tr><th>Release</th><th>Source</th><th>Filters</th><th>Review</th></tr></thead><tbody>");
+    body.push_str("</tbody></table></section><section class=panel><h2>Announcement history</h2><table><thead><tr><th>Release</th><th>Source</th><th>Filters</th><th>Routing</th><th>Review</th></tr></thead><tbody>");
     for r in array(report.get("announcements").unwrap_or(&Value::Null)) {
         let a = r.get("announcement").unwrap_or(&Value::Null);
         body.push_str(&format!(
-            "<tr><td><a href=\"/ui/irc/{}\">{}</a></td><td>{}</td><td>{}</td><td>{}</td></tr>",
+            "<tr><td><a href=\"/ui/irc/{}\">{}</a></td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
             e(text(r, "id")),
             display(text(a, "title")),
             e(text(r, "source_id")),
             e(text(r, "outcome")),
+            e(text(r, "routing_outcome")),
             e(text(r, "decision"))
         ));
     }
@@ -92,7 +94,7 @@ pub(super) fn detail(engine: &Arc<Engine>, session: &Session, id: &str) -> Resul
 fn describe(r: &Value) -> String {
     let a = r.get("announcement").unwrap_or(&Value::Null);
     let mut body = format!(
-        "<p><a href=/ui/irc>All announcements</a></p><section class=panel><h1>{}</h1><p>Source: {}. Filter result: {}. Decision: {}.</p><p>Claimed media: {} ({}) S{}E{}. TMDB ID: {}.</p><p>Claimed torrent hash: {}.</p><p>This identity has not been authenticated against torrent metadata or the catalog. Acknowledgement records that you reviewed the announcement; it does not authorize a download.</p><table><thead><tr><th>Rule</th><th>Profile</th><th>Outcome</th></tr></thead><tbody>",
+        "<p><a href=/ui/irc>All announcements</a></p><section class=panel><h1>{}</h1><p>Source: {}. Filter result: {}. Decision: {}.</p><p>Claimed media: {} ({}) S{}E{}. TMDB ID: {}.</p><p>Claimed torrent hash: {}.</p><p>Catalog identity remains a source claim. Automatic routing verifies torrent metadata against an existing approved request. Acknowledgement and dismissal are audit decisions; use the linked job to cancel acquisition.</p><table><thead><tr><th>Rule</th><th>Profile</th><th>Outcome</th></tr></thead><tbody>",
         display(text(a, "title")),
         e(text(r, "source_id")),
         e(text(r, "outcome")),
@@ -113,6 +115,17 @@ fn describe(r: &Value) -> String {
         ));
     }
     body.push_str("</tbody></table>");
+    body.push_str(&format!(
+        "<h2>Acquisition routing</h2><p>Outcome: {}.</p>",
+        e(text(r, "routing_outcome"))
+    ));
+    if let Some(route) = r.get("route") {
+        let origin = route.get("origin").unwrap_or(&Value::Null);
+        if !text(origin, "job_id").is_empty() {
+            body.push_str(&format!("<p><a href=\"/ui/jobs/{}\">View associated job</a></p><p>Verified file: {}. Size: {} bytes.</p>",
+                e(text(origin, "job_id")), display(text(origin, "file")), scalar(origin, "file_length")));
+        }
+    }
     body
 }
 pub(super) fn review(session: &Session, id: &str, report: &Value) -> String {
