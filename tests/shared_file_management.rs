@@ -243,7 +243,10 @@ fn config_value(cfg: &Config) -> Value {
     let mut value = mynou::config::default_json();
     value.insert("listen", cfg.listen.clone());
     value.insert("store_dir", cfg.store_dir.to_str().unwrap());
-    value.insert("series_root", cfg.series_root.to_str().unwrap());
+    value
+        .get_mut("library")
+        .unwrap()
+        .insert("series_root", cfg.series_root.to_str().unwrap());
     value.get_mut("downloads").unwrap().insert("enabled", false);
     let catalog = value.get_mut("catalog").unwrap();
     catalog.insert("enabled", true);

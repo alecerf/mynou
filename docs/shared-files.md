@@ -105,8 +105,11 @@ transfer must retain the same identity used by the review; an already queued
 hybrid under another alias is rejected rather than silently rebinding ownership.
 
 Each import uses one recorded destination. Existing bytes must compare equal;
-different files and symlinks are rejected. The organizer uses its existing
-atomic hard-link/copy publication and never overwrites or deletes media. Recovery
+different files and symlinks are rejected. The organizer copies a shared source
+once into a private temporary file, then publishes the library name atomically
+without overwriting. The native payload retains an independent inode and its
+existing hard-link protection. Later owners compare and reuse that same copy;
+no media is deleted. Recovery
 after publication but before the import journal write reuses the verified file.
 Changing the configured library root does not reassign an unimported group's
 destination; plan a separate explicit migration. Confirmed paths remain fixed.

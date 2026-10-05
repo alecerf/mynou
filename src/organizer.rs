@@ -185,7 +185,9 @@ pub(crate) fn import_shared_file_cancellable(
             "Shared library root changed; the recorded destination cannot be reassigned".into(),
         );
     }
-    import_destination(source, library, destination, active)
+    // Keep the native payload inode private. Only the temporary import and
+    // final library name share a link during atomic publication.
+    import_destination(source, library, destination, active, true)
 }
 
 fn same_bytes(source: &mut File, destination: &Path, active: &AtomicBool) -> Result<bool> {
@@ -286,7 +288,7 @@ fn import_to_target(
         validate_revision(revision)?;
     }
     let destination = target(source, library, request, revision)?;
-    import_destination(source, library, destination, active)
+    import_destination(source, library, destination, active, false)
 }
 
 fn import_destination(
@@ -294,6 +296,7 @@ fn import_destination(
     library: &Path,
     destination: PathBuf,
     active: &AtomicBool,
+    copy_source: bool,
 ) -> Result<PathBuf> {
     #[cfg(not(unix))]
     return Err("atomic import currently requires a Unix system".to_owned());
@@ -362,7 +365,7 @@ fn import_destination(
         ));
         let mut owns_temporary = false;
         let result = (|| {
-            if fs::hard_link(source, &temporary).is_ok() {
+            if !copy_source && fs::hard_link(source, &temporary).is_ok() {
                 owns_temporary = true;
                 if !same_bytes(&mut input, &temporary, active)? {
                     return Err("source changed during import".to_owned());
@@ -471,6 +474,51 @@ mod tests {
             source_numbering: None,
             tmdb_id: None,
         }
+    }
+
+    #[test]
+    fn shared_import_keeps_payload_private_and_refuses_to_overwrite_a_different_copy() {
+        use std::os::unix::fs::MetadataExt;
+        let directory = Directory::new();
+        let source = directory.0.join("source.mp4");
+        fs::write(&source, b"original bytes").unwrap();
+        let library = directory.0.join("library");
+        let mut file = crate::pack::SharedFile {
+            torrent_id: "a".repeat(40),
+            file_path: "Pack/shared.mp4".into(),
+            tmdb_id: 42,
+            title: "Fixture Series".into(),
+            year: 2024,
+            season: 1,
+            first_episode: 1,
+            last_episode: 2,
+            import_path: String::new(),
+        };
+        file.import_path = shared_target(&library, &file)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .into();
+        let active = AtomicBool::new(true);
+        let destination =
+            import_shared_file_cancellable(&source, &library, &file, &active).unwrap();
+        assert_eq!(fs::metadata(&source).unwrap().nlink(), 1);
+        assert_eq!(fs::metadata(&destination).unwrap().nlink(), 1);
+        assert_ne!(
+            fs::metadata(&source).unwrap().ino(),
+            fs::metadata(&destination).unwrap().ino()
+        );
+        assert_eq!(
+            import_shared_file_cancellable(&source, &library, &file, &active).unwrap(),
+            destination
+        );
+        fs::write(&source, b"modified bytes").unwrap();
+        assert!(
+            import_shared_file_cancellable(&source, &library, &file, &active)
+                .unwrap_err()
+                .contains("different file")
+        );
+        assert_eq!(fs::read(&destination).unwrap(), b"original bytes");
     }
 
     #[test]

@@ -37,6 +37,7 @@ fn torrent(directory: &Directory, tag: &str) -> Torrent {
                 "shared.mp4".into(),
                 include_bytes!("../examples/demo.mp4").to_vec(),
             ),
+            ("boundary.bin".into(), payload(BLOCK * 2, 29)),
             ("untouched.txt".into(), payload(BLOCK * 8, 43)),
         ],
     )
@@ -332,6 +333,14 @@ fn simultaneous_workers_import_one_range_path_and_block_individual_upgrades() {
     let saved = lock(&engine.store).unwrap().list();
     assert_eq!(saved[0].imports, saved[1].imports);
     assert_eq!(saved[0].imports.len(), 1);
+    {
+        use std::os::unix::fs::MetadataExt;
+        let source = fs::metadata(&saved[0].files[0]).unwrap();
+        let imported = fs::metadata(&saved[0].imports[0]).unwrap();
+        assert_ne!(source.ino(), imported.ino());
+        assert_eq!(source.nlink(), 1);
+        assert_eq!(imported.nlink(), 1);
+    }
     assert!(saved[0].imports[0].contains("S01E01-E02"));
     assert_eq!(
         fs::read(&saved[0].imports[0]).unwrap(),
@@ -414,12 +423,20 @@ fn cancelling_the_first_claim_preserves_an_unclaimed_owner_across_restart_and_re
     assert!(other.download_id.is_none());
     engine.cancel(&active.id).unwrap();
     assert_eq!(
+        engine.transfer(&torrent.id).unwrap().get("paused"),
+        Some(&Value::Bool(false))
+    );
+    assert_eq!(
         engine.transfer(&torrent.id).unwrap().get("user_paused"),
         Some(&Value::Bool(false))
     );
     drop(engine);
     proxy.wait_idle();
     let engine = Engine::open(cfg.clone()).unwrap();
+    assert_eq!(
+        engine.transfer(&torrent.id).unwrap().get("paused"),
+        Some(&Value::Bool(false))
+    );
     assert_eq!(
         engine.transfer(&torrent.id).unwrap().get("user_paused"),
         Some(&Value::Bool(false))
@@ -675,7 +692,7 @@ fn restart_reuses_a_verified_shared_file_published_before_its_import_was_journal
         .data_dir
         .join(&torrent.id)
         .join("Pack/shared.mp4");
-    fs::hard_link(&source, destination).unwrap();
+    fs::copy(&source, destination).unwrap();
     let imported = fs::read(destination).unwrap();
     drop(engine);
     proxy.wait_idle();
