@@ -23,12 +23,13 @@ build matrix retains native GNU and static musl coverage. Packaging waits for
 all three jobs to succeed for the same workflow commit; publication waits for
 successful packaging. PR runs validate/build/package but cannot publish.
 
-Trunk runs use a noncancelling workflow concurrency group. A subsequent completed
-scope can wait behind an in-progress validated publication without cancelling
-its release job. Keep at most one following scope queued and inspect its entire
-workflow before advancing further. PR runs continue to cancel superseded runs.
-This protection was added after GitHub reported a runner-assignment incident;
-it changes queue ordering, not the graph/test/build/package/publication gates.
+Runs use a noncancelling workflow concurrency group. Complete publication for a
+release before pushing its successor; this also preserves runs created from the
+earlier workflow definition. Prepare at most one following scope after successful
+validation/build/package, and inspect all five jobs before pushing it. PR runs
+also retain their current execution. This policy was added after a queued
+publication was cancelled during GitHub's runner-assignment incident. It changes
+queue ordering, not the graph/test/build/package/publication gates.
 
 The static build also compiles the Rust standard-library-only packaging example.
 The next job receives that tool and the checked binary as a workflow artifact,

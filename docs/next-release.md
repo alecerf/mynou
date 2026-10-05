@@ -5,11 +5,13 @@ is the transition into the following scope. Do not stop at a release checkpoint.
 Read AGENTS.md and retain English, Rust std only, zero Cargo dependencies, no
 unsafe/FFI/copied code/external runtime helpers and CI-only validation. Formatting
 is an edit. Commit meaningful chunks, push completed scope, inspect all five
-Actions jobs, and fix every red run with commits before continuing. A following scope may be
-prepared after successful validation/build/package while publication waits for
-a runner. Noncancelling trunk concurrency keeps that publication intact and
-serializes one following completed scope. Never queue multiple unvalidated
-scopes. Every scope still needs all five jobs and exact publication evidence. GitHub
+Actions jobs, and fix every red run with commits before continuing. Prepare at
+most one following scope after successful validation/build/package while
+publication waits for a runner. Complete all five jobs and exact publication
+evidence before pushing that successor, including runs using the earlier
+workflow definition. Workflow concurrency now uses literal false for in-progress
+cancellation. The early 0.20.5 run was held after the queued NickServ publication
+was cancelled; retry NickServ publication in CI for its original source first. GitHub
 Actions alone creates tags/releases/assets; published versions stay immutable.
 
 The completed v0.20.3 text-format release passed run 37360688158 for
@@ -33,9 +35,12 @@ during metadata I/O. This source has not yet passed its own workflow.
 
 The preceding NickServ source 35dec95705bb067dbcd2f149dfd8b050f0f550c1 passed
 validation, GNU/musl builds and packaging in run 37362054311 with 560 Rust tests
-across 50 harnesses and four scheduler checks. Release job 111939907953 is queued
-during the documented GitHub runner-assignment incident, without pending
-deployment approvals. Record its exact tag/seven assets once CI publishes.
+across 50 harnesses and four scheduler checks. Its original queued release job
+111939907953 was cancelled. Attempt 2 retains the exact source and passed preceding
+jobs; release job 111946521736 is queued during the documented GitHub
+runner-assignment incident, without pending deployment approvals. The following
+0.20.5 run 37364436393 was deliberately held. Record NickServ's exact tag/seven
+assets once CI publishes, then push this corrected 0.20.5 scope and inspect it.
 
 src/irc/nickserv.rs owns strict settings, bounded transient IDENTIFY credentials
 and required exact trusted NOTICE confirmation. protocol.rs gates channel
