@@ -1,5 +1,6 @@
 //! Browser management using original server-rendered HTML and native forms.
 mod forms;
+mod irc_views;
 mod requester_views;
 mod series_views;
 mod session;
@@ -246,6 +247,7 @@ impl Web {
                 query.only(&[])?;
                 requester_views::list(engine, &session)?
             }
+            "/ui/irc" => irc_views::list(engine, &session, &query)?,
             "/ui/jobs" => views::jobs(engine, &session, &query)?,
             "/ui/library" => views::library(engine, &session, &query)?,
             "/ui/search" => {
@@ -257,6 +259,12 @@ impl Web {
             "/ui/calendar" => series_views::calendar(engine, &session, &query)?,
             _ => {
                 if let Some(id) = path
+                    .strip_prefix("/ui/irc/")
+                    .filter(|id| crate::irc::valid_announcement_id(id))
+                {
+                    query.only(&[])?;
+                    irc_views::detail(engine, &session, id)?
+                } else if let Some(id) = path
                     .strip_prefix("/ui/requesters/")
                     .filter(|id| crate::requesters::valid_id(id))
                 {
@@ -306,6 +314,40 @@ impl Web {
         session: &Session,
     ) -> Result<Response> {
         match path {
+            "/ui/irc/control" => {
+                let id = form.value("id")?;
+                if !crate::irc::valid_announcement_id(id) {
+                    return Err("IRC: invalid announcement ID".into());
+                }
+                if form.value("apply")? == "yes" {
+                    form.only(&["csrf", "id", "action", "apply", "plan_id"])?;
+                    let query = lock(&self.sessions)?.irc_preview(
+                        &session.id,
+                        id,
+                        form.value("action")?,
+                        form.value("plan_id")?,
+                    )?;
+                    engine.irc_control(id, &query)?;
+                    lock(&self.sessions)?.clear_irc_preview(&session.id);
+                    return self.redirect(
+                        session,
+                        &format!("/ui/irc/{id}"),
+                        vec!["Announcement review recorded".into()],
+                    );
+                }
+                form.only(&["csrf", "id", "action"])?;
+                let mut value = crate::json::Value::object();
+                value.insert("action", form.value("action")?);
+                let mut query = crate::irc::ControlRequest::from_json(&value)?;
+                let report = engine.irc_control(id, &query)?;
+                query.apply = true;
+                query.plan_id = report
+                    .get("plan_id")
+                    .and_then(crate::json::Value::as_str)
+                    .map(str::to_owned);
+                lock(&self.sessions)?.save_irc_preview(&session.id, id, query)?;
+                Ok(Response::html(200, irc_views::review(session, id, &report)))
+            }
             "/ui/requesters/sync" => {
                 form.only(&["csrf"])?;
                 engine.sync_requesters()?;

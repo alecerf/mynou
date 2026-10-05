@@ -257,6 +257,7 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
         ("GET", "/api/library") => Ok((200, engine.library()?)),
         ("GET", "/api/series") => Ok((200, engine.series()?)),
         ("GET", "/api/requesters") => Ok((200, engine.requesters()?)),
+        ("GET", "/api/irc") => Ok((200, engine.irc_sources()?)),
         ("POST", "/api/requesters/sync") => {
             control_body(body, &[], true)?;
             Ok((200, engine.sync_requesters()?))
@@ -323,6 +324,55 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
             Ok((200, v))
         }
         _ => {
+            if let Some(tail) = path.strip_prefix("/api/irc/") {
+                let (tail, query) = tail.split_once('?').unwrap_or((tail, ""));
+                if method == "GET" && tail == "announcements" {
+                    let (offset, limit) = crate::irc::page(query)?;
+                    return Ok((200, engine.irc_announcements(offset, limit)?));
+                }
+                if method == "POST" && tail == "preview" && query.is_empty() {
+                    if body.len() > 8192 {
+                        return Err("IRC: preview body exceeds 8 KiB".into());
+                    }
+                    let value = control_body(body, &["source_id", "announcement"], false)?;
+                    return Ok((
+                        200,
+                        engine.irc_preview(
+                            value
+                                .get("source_id")
+                                .and_then(Value::as_str)
+                                .ok_or("IRC: source ID is required")?,
+                            value
+                                .get("announcement")
+                                .ok_or("IRC: announcement is required")?,
+                        )?,
+                    ));
+                }
+                if let Some(tail) = tail.strip_prefix("announcements/") {
+                    let parts: Vec<_> = tail.split('/').collect();
+                    if !crate::irc::valid_announcement_id(parts[0]) {
+                        return Ok((404, error("Unknown IRC announcement")));
+                    }
+                    if method == "GET" && parts.len() == 1 && query.is_empty() {
+                        return Ok((200, engine.irc_announcement(parts[0])?));
+                    }
+                    if method == "POST"
+                        && parts.len() == 2
+                        && parts[1] == "control"
+                        && query.is_empty()
+                    {
+                        let value = control_body(body, &["action", "apply", "plan_id"], false)?;
+                        return Ok((
+                            200,
+                            engine.irc_control(
+                                parts[0],
+                                &crate::irc::ControlRequest::from_json(&value)?,
+                            )?,
+                        ));
+                    }
+                }
+                return Ok((404, error("Unknown IRC route")));
+            }
             if let Some(tail) = path.strip_prefix("/api/requesters/") {
                 let (tail, query) = tail.split_once('?').unwrap_or((tail, ""));
                 let parts: Vec<_> = tail.split('/').collect();

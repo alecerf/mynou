@@ -59,6 +59,11 @@ const HELP: &str = "Mynou — media automation using Rust std only
   requester ACCOUNT_ID [--offset N --limit N] [--config mynou.json]
   requester-control ACCOUNT_ID --mapping FILE [--apply --plan-id ID] [--config mynou.json]
   requester-sync [--config mynou.json]
+  irc [--config mynou.json]
+  announcements [--offset N --limit N] [--config mynou.json]
+  announcement ANNOUNCEMENT_ID [--config mynou.json]
+  irc-preview SOURCE_ID --announcement FILE [--config mynou.json]
+  irc-control ANNOUNCEMENT_ID --action acknowledge|dismiss [--apply --plan-id ID] [--config mynou.json]
   jobs | status | sync [--config mynou.json]
   show | events | retry | cancel ID [--config mynou.json]
   healthcheck [--config mynou.json]
@@ -112,6 +117,10 @@ impl Args {
                 &["config", "help"]
             }
             "requesters" | "requester-sync" => &["config", "help"],
+            "irc" | "announcement" => &["config", "help"],
+            "announcements" => &["config", "help", "offset", "limit"],
+            "irc-preview" => &["config", "help", "announcement"],
+            "irc-control" => &["config", "help", "action", "apply", "plan-id"],
             "requester" => &["config", "help", "offset", "limit"],
             "requester-control" => &["config", "help", "mapping", "apply", "plan-id"],
             "torrents" | "torrent" | "pause" | "resume" => &["config", "help"],
@@ -197,6 +206,9 @@ impl Args {
             [
                 "requester",
                 "requester-control",
+                "announcement",
+                "irc-preview",
+                "irc-control",
                 "analyze",
                 "show",
                 "events",
@@ -743,6 +755,105 @@ fn execute(args: Args) -> Result<()> {
                 output(&call(&config, &path, "GET", "/api/requesters", None)?);
             } else {
                 output(&Engine::open_for_preview(config)?.requesters()?);
+            }
+        }
+        "irc" => {
+            if online {
+                output(&call(&config, &path, "GET", "/api/irc", None)?);
+            } else {
+                output(&Engine::open_for_preview(config)?.irc_sources()?);
+            }
+        }
+        "announcements" => {
+            let query = format!(
+                "offset={}&limit={}",
+                args.value("offset", "0"),
+                args.value("limit", "100")
+            );
+            let (offset, limit) = mynou::irc::page(&query)?;
+            if online {
+                output(&call(
+                    &config,
+                    &path,
+                    "GET",
+                    &format!("/api/irc/announcements?{query}"),
+                    None,
+                )?);
+            } else {
+                output(&Engine::open_for_preview(config)?.irc_announcements(offset, limit)?);
+            }
+        }
+        "announcement" => {
+            let id = &args.positions[0];
+            if !mynou::irc::valid_announcement_id(id) {
+                return Err("IRC: invalid announcement ID".into());
+            }
+            if online {
+                output(&call(
+                    &config,
+                    &path,
+                    "GET",
+                    &format!("/api/irc/announcements/{id}"),
+                    None,
+                )?);
+            } else {
+                output(&Engine::open_for_preview(config)?.irc_announcement(id)?);
+            }
+        }
+        "irc-preview" => {
+            let source = &args.positions[0];
+            if !mynou::irc::valid_id(source) {
+                return Err("IRC: invalid source ID".into());
+            }
+            let file = args
+                .options
+                .get("announcement")
+                .ok_or("Specify --announcement FILE")?;
+            let mut bytes = Vec::new();
+            std::fs::File::open(file)
+                .map_err(|_| "IRC: cannot open announcement file")?
+                .take(8193)
+                .read_to_end(&mut bytes)
+                .map_err(|_| "IRC: cannot read announcement file")?;
+            if bytes.len() > 8192 {
+                return Err("IRC: announcement file exceeds 8 KiB".into());
+            }
+            let value = json::parse(
+                std::str::from_utf8(&bytes).map_err(|_| "IRC: announcement file is not UTF-8")?,
+            )?;
+            // This operation stays pure even when the service is running.
+            output(&mynou::irc::preview(&config, source, &value)?);
+        }
+        "irc-control" => {
+            let id = &args.positions[0];
+            if !mynou::irc::valid_announcement_id(id) {
+                return Err("IRC: invalid announcement ID".into());
+            }
+            let mut value = Value::object();
+            value.insert(
+                "action",
+                args.options
+                    .get("action")
+                    .ok_or("Specify --action acknowledge or dismiss")?
+                    .clone(),
+            );
+            value.insert("apply", args.options.contains_key("apply"));
+            if let Some(plan) = args.options.get("plan-id") {
+                value.insert("plan_id", plan.clone());
+            }
+            let query = mynou::irc::ControlRequest::from_json(&value)?;
+            if online {
+                output(&call(
+                    &config,
+                    &path,
+                    "POST",
+                    &format!("/api/irc/announcements/{id}/control"),
+                    Some(&query.to_json()),
+                )?);
+            } else if query.apply {
+                return Err("IRC: application requires a running Mynou service".into());
+            } else {
+                output(&Engine::open_for_preview(config)?.irc_control(id, &query)?);
             }
         }
         "requester" => {

@@ -76,24 +76,7 @@ impl Engine {
             .ok_or("IRC: unknown announcement".into())
     }
     pub fn irc_preview(&self, source_id: &str, value: &Value) -> Result<Value> {
-        let source = self.config.irc.source(source_id)?;
-        let a = Announcement::from_json(value)?;
-        let mut v = Value::object();
-        v.insert("source_id", source.id.clone());
-        v.insert("announcement", a.to_json());
-        v.insert(
-            "evaluations",
-            Value::Array(
-                evaluate(&self.config.irc, &self.config.selection, source_id, &a)?
-                    .iter()
-                    .map(super::Evaluation::to_json)
-                    .collect(),
-            ),
-        );
-        v.insert("identity_verified", false);
-        v.insert("acquisition_started", false);
-        v.insert("persisted", false);
-        Ok(v)
+        super::preview(&self.config, source_id, value)
     }
     /// A library caller must supply the configured sender/channel, like the live client.
     pub fn irc_receive(

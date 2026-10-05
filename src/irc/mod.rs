@@ -21,6 +21,31 @@ fn hash(s: &str) -> bool {
         && s.bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
+pub fn valid_announcement_id(s: &str) -> bool {
+    hash(s)
+}
+
+/// Evaluate an explicit claim without storage, IRC traffic or media acquisition.
+pub fn preview(config: &crate::config::Config, source_id: &str, value: &Value) -> Result<Value> {
+    let source = config.irc.source(source_id)?;
+    let a = Announcement::from_json(value)?;
+    let mut v = Value::object();
+    v.insert("source_id", source.id.clone());
+    v.insert("announcement", a.to_json());
+    v.insert(
+        "evaluations",
+        Value::Array(
+            evaluate(&config.irc, &config.selection, source_id, &a)?
+                .iter()
+                .map(Evaluation::to_json)
+                .collect(),
+        ),
+    );
+    v.insert("identity_verified", false);
+    v.insert("acquisition_started", false);
+    v.insert("persisted", false);
+    Ok(v)
+}
 fn only(v: &Value, fields: &[&str]) -> Result<()> {
     if v.as_object()
         .is_none_or(|m| m.keys().any(|k| !fields.contains(&k.as_str())))
