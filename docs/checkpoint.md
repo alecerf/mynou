@@ -15,8 +15,9 @@ alone creates release tags and publishes artifacts from validated commits.
 The 0.20.0 implementation adds opt-in IRC reception, verified TLS, bounded
 protocol handling, explicit filters, checked durable duplicate suppression and
 guarded CLI/API/browser announcement reviews. No review creates download work.
-Its complete CI and CI publication are pending; the next IRC increment will bind
-automatic acquisition to verified metadata and existing admission/ownership.
+Its complete CI and CI publication passed with 512 Rust tests across 46 harnesses,
+four scheduler checks and all five jobs. The next IRC increment binds automatic
+candidate routing to verified metadata and existing admission/ownership.
 See [IRC behavior](irc.md) and [next-release notes](next-release.md).
 
 Media parsers, the torrent engine, persistence, orchestration, integrations,
@@ -149,6 +150,18 @@ A successful validation run on `trunk` publishes a new `Cargo.toml` version if i
 has not already been released. The assets are a full source ZIP with the static
 Linux x86_64 binary, a separate static binary, a saved Docker image archive, and
 SHA-256 checksum files. There is no Docker Hub publication step.
+
+## Recorded 0.20.0 CI checkpoint
+
+Commit `4da379a4ef48763d8a1035fb6b3cd4acc4a721bc` passed
+[Actions run 37335746159](https://github.com/alecerf/mynou/actions/runs/37335746159):
+512 Rust tests passed with none failed or ignored across 46 targets, plus four
+scheduler checks and all five jobs. CI published
+[v0.20.0](https://github.com/alecerf/mynou/releases/tag/v0.20.0) with seven assets
+on October 5, 2026, at 15:50:41 UTC. The tag targets this exact tested source.
+The preceding v0.19.1 tag and all asset IDs, sizes and digests remain unchanged.
+See [validation evidence](validation.md#recorded-0200-ci-evidence).
+Later commits need their own completed workflow and do not replace published assets.
 
 ## Recorded 0.19.1 CI checkpoint
 

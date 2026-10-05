@@ -33,8 +33,10 @@ scheduler checks. See the [release evidence](docs/validation.md#recorded-0191-ci
 [IRC announcement reviews](docs/irc.md) add opt-in verified TLS receivers,
 sender/channel restrictions, deterministic filters, durable duplicate suppression,
 source health and guarded CLI/API/browser reviews. Reviews record decisions;
-automatic grabs follow in the next IRC increment. This implementation requires
-its own completed GitHub Actions validation and CI publication.
+automatic grabs follow in the next IRC increment. CI published
+[v0.20.0](https://github.com/alecerf/mynou/releases/tag/v0.20.0) after all five jobs
+passed with **512 Rust tests** and four scheduler checks. See the
+[recorded evidence](docs/validation.md#recorded-0200-ci-evidence).
 
 ## Try it
 

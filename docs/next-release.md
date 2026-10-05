@@ -1,10 +1,17 @@
-# Next-release checkpoint — Complete 0.20.0 CI, then IRC acquisition
+# Next-release checkpoint — 0.20.1 approved IRC candidate routing
 
 The 0.20.0 implementation adds opt-in live IRC reception, explicit source trust,
 strict bounded framing, original verified TLS, title/profile filters, durable
 original claim identities and guarded CLI/API/browser reviews. It records no
-acquisition jobs. Its complete validation and CI publication are pending. Finish
-every job of the exact current workflow and fix any red check before advancing.
+acquisition jobs. Run 37335746159 passed for
+4da379a4ef48763d8a1035fb6b3cd4acc4a721bc with 512 Rust tests across 46 harnesses,
+four scheduler checks and all five jobs. CI published v0.20.0 on October 5, 2026,
+at 15:50:41 UTC. Its seven assets and the prior v0.19.1 release remain immutable.
+
+The active increment uses explicitly configured hash-pinned magnets and metadata
+verification to route candidates to already admitted jobs. Preserve requester
+approval/quotas, captured profiles, source numbering and exclusive physical
+ownership. No unsolicited demand or shared/upgrade rebind belongs in this increment.
 
 The prior v0.19.1 requester release passed run 37305082540 for
 83e6d1a40ac2d5abac0baf355a0011c58e49429a, with 490 Rust tests across 43 harnesses,

@@ -247,7 +247,7 @@ not rewrite history; full history rejects new identities without pruning.
 Reviews create no acquisition work. SASL/NickServ, tracker text adapters,
 automatic IRC grabs, cross-seeding and broader bulk automation remain later work.
 See [IRC behavior](irc.md) for protocol, deadlines and recovery. Complete
-validation/publication for this implementation are pending.
+validation/publication passed for v0.20.0; later changes require their own CI.
 The [roadmap](roadmap.md) separates these capabilities into future releases.
 
 ## Persistence and platform

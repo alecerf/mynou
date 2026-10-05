@@ -117,6 +117,35 @@ allowance across seasons. Existing full validation remains required.
 The recorded run below validates these scenarios through GitHub Actions only.
 No local tests, lint, builds or demos ran.
 
+## Recorded 0.20.0 CI evidence
+
+`4da379a4ef48763d8a1035fb6b3cd4acc4a721bc` passed
+[Actions run 37335746159](https://github.com/alecerf/mynou/actions/runs/37335746159):
+**512 Rust tests passed**, none failed or ignored, across **46 targets**.
+Four scheduler checks and all five validation/build/package/release jobs passed.
+CI checked the offline one-package/zero-dependency graph, formatting, Clippy,
+GNU/musl builds, standalone and isolated container demonstrations, executable
+permissions, archive integrity and all checksum manifests. Every Cargo harness
+ran with two processes and two threads per harness; execution took 47.037 seconds.
+
+GitHub Actions published [v0.20.0](https://github.com/alecerf/mynou/releases/tag/v0.20.0)
+on October 5, 2026, at 15:50:41 UTC. The tag targets the exact tested commit.
+All seven assets were uploaded by `github-actions[bot]`. Recorded payloads:
+
+| Asset | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `mynou-v0.20.0-linux-amd64-image.tar.gz` | 1860004 | `107b26ac986b725a9a0fa797f5dd91d2da8ae4ef83afb3f9559c034bac6c5ba0` |
+| `mynou-v0.20.0-linux-amd64-image.tar.gz.sha256` | 105 | `4eaee8de6c132bed4968ef0e7fd5230d9726d93aa68f06526fa3730aa6756a56` |
+| `mynou-v0.20.0-linux-x86_64` | 3740512 | `56feebba22d1329c2c7c361eee0627cb6c49a08e5ed13cd1a2e0876c1cffc4b4` |
+| `mynou-v0.20.0-linux-x86_64.sha256` | 93 | `7fd7ccfe1c2c27213d6292a72600070079406e31b6e3e69cdbc3a5c9f5ef7c50` |
+| `mynou-v0.20.0-source.zip` | 6585693 | `758386d397c42e57dd10118cb35e2177f7fe524a6122706b2a520643d29aa702` |
+| `mynou-v0.20.0-source.zip.sha256` | 91 | `5bdb20f8e3157ca1e5ae3dd2becd7d5bd4d28a718452bc5fc5d17efd17e73066` |
+| `SHA256SUMS` | 289 | `25911c7323bc1e1999815c16c7734f208838c8e532fbeb6f04c4204484167b9c` |
+
+The preceding v0.19.1 tag, asset IDs, sizes and digests remain unchanged.
+No local tests, lint, builds, binaries or demos ran. Later documentation and
+implementation commits require their own complete workflow.
+
 ## Recorded 0.19.1 CI evidence
 
 `83e6d1a40ac2d5abac0baf355a0011c58e49429a` passed
