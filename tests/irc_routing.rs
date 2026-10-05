@@ -176,7 +176,11 @@ fn unrequested_claims_never_create_demand_and_review_rules_never_hold_jobs() {
 
 #[test]
 fn first_claim_cannot_be_rewritten_into_a_grab_and_wrong_titles_or_years_stop_before_metadata() {
-    for changed in ["title", "year", "media_title"] {
+    for (changed, expected_evaluation, expected_outcome) in [
+        ("title", "profile_rejected", "idle"),
+        ("year", "matched", "claim_mismatch"),
+        ("media_title", "profile_rejected", "idle"),
+    ] {
         let dir = Directory::new();
         let cfg = configuration(&dir.0, 1);
         let engine = Engine::open(cfg.clone()).unwrap();
@@ -190,10 +194,25 @@ fn first_claim_cannot_be_rewritten_into_a_grab_and_wrong_titles_or_years_stop_be
         let row = engine
             .irc_receive("local", irc_support::SENDER, "#announces", &claim)
             .unwrap();
+        assert_eq!(
+            row.get("evaluations").unwrap().as_array().unwrap()[0]
+                .get("outcome")
+                .unwrap()
+                .as_str(),
+            Some(expected_evaluation)
+        );
+        assert_eq!(
+            row.get("outcome").unwrap().as_str(),
+            Some(if changed == "year" {
+                "matched"
+            } else {
+                "unmatched"
+            })
+        );
         let before = irc_support::bytes(&cfg.store_dir);
         assert_eq!(
             outcome(&engine.irc_route_pending().unwrap()),
-            "claim_mismatch"
+            expected_outcome
         );
         let duplicate = engine
             .irc_receive(
