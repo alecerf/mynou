@@ -52,8 +52,9 @@ Endpoints require an explicit port and no path or embedded credentials.
 Plaintext IRC is limited to explicit loopback IP addresses for local fixtures.
 Connections are outbound; no IRC port needs publishing from Docker. The existing
 Compose env_file supplies configured credential variables from a private .env.
-Server PASS, channel keys and required SASL PLAIN are supported. NickServ,
-interactive authentication and tracker-specific text adapters remain later work.
+Server PASS, channel keys, required SASL PLAIN and fixed-delimiter text formats
+are supported. NickServ, interactive authentication and a broad provider adapter
+catalog remain later work.
 
 Nicknames contain 1–24 ASCII characters starting with a letter; subsequent
 characters are letters, digits, hyphens or underscores. Channels contain # and
@@ -136,6 +137,56 @@ assessment. Title markers remain hints rather than verified media tracks.
 Each rule records disabled, kind_mismatch, blocked, required_missing,
 profile_rejected or matched. One matching rule yields matched, none unmatched
 and multiple matches conflict. Recorded claims start pending.
+
+## Configurable text announcements in 0.20.3
+
+An optional announcement_format on a source describes one strict text grammar:
+
+    "announcement_format": {
+      "type": "delimited",
+      "prefix": "NEW | ",
+      "separator": " | ",
+      "suffix": " END",
+      "fields": ["title", "kind", "media_title", "year", "tmdb_id", "info_hash"]
+    }
+
+The matching body has exactly the configured number of fields:
+
+    NEW | Example.Movie.2024.1080p | movie | Example Movie | 2024 | 123456 | 0123456789abcdef0123456789abcdef01234567 END
+
+The six identity fields above are mandatory. Episode formats add both season
+and episode, in any configured order. A movie uses zero season/episode when
+those fields exist. Values are nonempty without leading/trailing whitespace;
+numbers are canonical decimal strings, and catalog/hash validation is identical
+to JSON claims. No title-only identity, range or download URL is inferred.
+Missing/extra/ambiguous fields and URL/passkey/token markers are rejected before
+history or acquisition. This configurable adapter does not claim support for
+providers whose announcements lack these identities.
+
+Prefix/suffix use at most 128 ASCII bytes each; prefix is nonempty. Separators
+use 1–16 ASCII bytes and contain punctuation. Fields are unique and limited to
+the eight documented names. Unknown configuration fields, pattern engines and
+URL fields are rejected. The existing 8,192-byte wire bound still applies.
+Recognized IRC bold, colour/reset, monospace, reverse, italic, strike and
+underline controls are removed from text bodies, including bounded decimal/hex
+colour arguments. Formatting is permitted only in NOTICE/PRIVMSG body parameters;
+headers, tags, targets and PING tokens retain strict control rejection.
+
+Omission, null or {"type":"json"} retains the original MYNOU JSON format,
+source binding and pending-claim fingerprint. Text format configuration enters
+the source binding; changes require a new stable source ID. Public reports show
+only json/delimited, with no private grammar or raw server text. Valid text uses
+the original first-claim identity, filters, review guards, reservations and
+admitted-job routing. Duplicates never rewrite their original claim.
+
+Pure previews accept exactly one input form:
+
+    mynou irc-preview SOURCE_ID --text announcement.txt --config mynou.json
+
+The file contains the body without CRLF framing. POST /api/irc/preview accepts
+{"source_id":"SOURCE_ID","text":"BODY"} under Bearer authentication; its
+existing announcement object remains supported. Passing both forms is rejected.
+Neither preview opens storage, contacts IRC or acquires media.
 
 ## Management and guarded decisions
 
@@ -280,5 +331,5 @@ ownership, concurrent passes, corruption and both sides of an interrupted commit
 SASL fixtures exercise strict configuration, capability/challenge boundaries,
 credential redaction, fragmented replies, the native CLI's exact 400-byte
 terminator, repeated handshakes, shutdown and nonrenewable registration deadlines.
-Tracker text adapters, NickServ, new-demand actions, packs/upgrades, notification
+Broader provider adapters, NickServ, new-demand actions, packs/upgrades, notification
 delivery and cross-seeding remain future increments.

@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.20.2
+# Project checkpoint — Mynou 0.20.3
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -11,6 +11,13 @@ GitHub Actions, and fix failures until the required checks pass. GitHub Actions
 alone creates release tags and publishes artifacts from validated commits.
 
 ## Implemented scope
+
+The active 0.20.3 increment adds one configurable fixed-delimiter text grammar,
+bounded IRC display formatting and pure CLI/API text previews. Complete explicit
+catalog/hash claims enter the existing verified routing path. Old JSON bindings
+and fingerprints remain stable. Original local CI fixtures cover controls,
+ambiguity, redaction, duplicates, restart and a native verified import journey.
+Complete validation/publication remain pending for this exact source.
 
 The published 0.20.2 increment adds opt-in required SASL PLAIN, bounded capability
 negotiation, credential encoding and authentication before channel membership.

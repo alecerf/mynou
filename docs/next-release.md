@@ -1,4 +1,10 @@
-# Next-release checkpoint — 0.20.3 bounded tracker text adapters
+# Active-release checkpoint — 0.20.3 bounded tracker text adapters
+
+The active implementation is committed as meaningful parser and fixture chunks.
+It requires its own complete CI and CI publication before the next increment.
+Do not stop after a green release: record its exact evidence and continue the
+remaining IRC stages, then 0.21 indexers, 0.22 Usenet and 0.23 cross-seeding.
+Inspect every workflow job for each completed scope and fix red runs by commits.
 
 The published 0.20.2 increment adds required SASL PLAIN, bounded capabilities,
 transient credential responses and authentication before channel membership.
@@ -66,7 +72,9 @@ The v0.20.1 publication is complete. Its evidence and CI-weight checkpoint passe
 all five jobs in run 37346335547 for c400178f7c8a2e2dd8e9b4fb7c5c204f3a863c22:
 533 Rust tests across 47 harnesses and four scheduler checks. CI retained the
 published release. v0.20.2 is also fully published; its later evidence/CI-weight
-commit requires a separate complete workflow. Inspect every job for the current
+commit passed all five jobs in run 37349837598 for
+937d78f64784bb8dbf889764900896f2a3e7cbd9, with 543 tests across 48 harnesses
+and four scheduler checks. Inspect every job for the current
 branch before the next increment. Fix failures with new commits and verify
 that CI retains the published tag/assets. Never replace them. Each future
 implementation needs its own full validation and CI publication.

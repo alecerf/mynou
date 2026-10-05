@@ -249,7 +249,9 @@ and hash-pinned metadata verification for existing approved requests, immutable
 origins and exact file imports. Catalog claims must agree with admitted labels;
 this does not prove semantic media identity. Queued compatible jobs wait for
 IRC, with no unsolicited demand or implicit search fallback while the rule is
-enabled. The 0.20.2 increment adds required SASL PLAIN with bounded capabilities
+enabled. The 0.20.3 increment adds configurable fixed-delimiter text formats
+requiring complete explicit catalog/hash claims. It does not resolve title-only
+provider messages. The 0.20.2 increment adds required SASL PLAIN with bounded capabilities
 and credentials; remote use requires verified TLS, and failure has no
 unauthenticated fallback. Only PLAIN is supported; credentials retain their
 UTF-8 bytes without SASLprep or Unicode normalization. New-demand actions,

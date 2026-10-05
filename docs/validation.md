@@ -11,6 +11,13 @@ revision.
 
 ## Automated checks and releases
 
+The 0.20.3 text scenarios exercise bounded complete grammar configuration,
+canonical numeric/hash fields, link redaction, fragmented formatting controls,
+header/target rejection, old JSON bindings, duplicate first claims and restart.
+Protected API and offline CLI previews preserve storage. Original loopback IRC
+and native peer journeys retain membership/admission before exact verified
+imports. This increment requires its own full workflow and CI publication.
+
 The 0.20.2 SASL scenarios add strict opt-in configuration, stable legacy/source
 bindings, fragmented and bounded capability lists, server identity/recipient
 checks, ordered success, authentication failures and permanently invalidated

@@ -5,7 +5,17 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current published stage: 0.20.2
+## Current implementation: 0.20.3, awaiting CI
+
+Configurable fixed-delimiter text formats require complete catalog/hash claims,
+bound IRC display formatting and share the original review/routing path. Pure
+CLI/API previews preserve storage. Old JSON identities/fingerprints remain
+stable; grammar changes require a new source ID. Original local scenarios cover
+format boundaries, protected previews, live delivery and native exact imports.
+Complete validation/publication remain pending. NickServ and broader IRC action
+policies follow as separate increments before native indexer stages.
+
+## Previous published stage: 0.20.2
 
 Required SASL PLAIN negotiates bounded capabilities and credentials before IRC
 channel membership. Missing/rejected authentication closes the connection;
