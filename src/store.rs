@@ -516,12 +516,11 @@ impl Job {
                 Some(value) => Some(SharedUpgrade::from_json(value)?),
             },
         };
-        if let Some(p) = &job.requester {
-            if !matches!(job.request.kind.as_str(), "movie" | "episode")
-                || p.demand_id != crate::requesters::Demand::identity(&p.account_id, &job.request)
-            {
-                return Err("Invalid requester media identity or captured provenance".into());
-            }
+        if let Some(p) = &job.requester
+            && (!matches!(job.request.kind.as_str(), "movie" | "episode")
+                || p.demand_id != crate::requesters::Demand::identity(&p.account_id, &job.request))
+        {
+            return Err("Invalid requester media identity or captured provenance".into());
         }
         if job.shared_upgrade.is_some()
             && (job.shared_file.is_none() || job.upgrade_parent.is_none() || job.release.is_none())
@@ -2392,8 +2391,8 @@ impl Store {
                     );
                     self.validate_group_operation(&jobs, action)?;
                 } else if let Some(owners) = map.get("shared_owners") {
-                    if (&header[..8] != SHARED_JOURNAL_MAGIC
-                        && &header[..8] != REQUESTER_JOURNAL_MAGIC)
+                    if &header[..8] != SHARED_JOURNAL_MAGIC
+                        && &header[..8] != REQUESTER_JOURNAL_MAGIC
                     {
                         return Err("Shared ownership requires journal format 2".into());
                     }

@@ -16,6 +16,11 @@ use std::{
     time::{Duration, Instant},
 };
 
+struct Watchlist {
+    origins: BTreeSet<String>,
+    requests: Vec<(String, Request)>,
+}
+
 fn current_job(store: &Store, request: &Request) -> Option<Job> {
     let key = request.media_key();
     store
@@ -693,7 +698,7 @@ impl Engine {
                     result
                 };
             match result {
-                Ok((origins, requests)) => {
+                Ok(Watchlist { origins, requests }) => {
                     let policy = &previous.policy;
                     for (origin, request) in requests {
                         let id = Demand::identity(&account.id, &request);
@@ -810,11 +815,7 @@ impl Engine {
         v.insert("accounts", Value::Array(reports));
         Ok(v)
     }
-    fn expand_requester_items(
-        &self,
-        items: &[Request],
-        deadline: Instant,
-    ) -> Result<(BTreeSet<String>, Vec<(String, Request)>)> {
+    fn expand_requester_items(&self, items: &[Request], deadline: Instant) -> Result<Watchlist> {
         let mut origins = BTreeSet::new();
         let mut requests = Vec::new();
         for item in items {
@@ -889,7 +890,7 @@ impl Engine {
                 return Err("Requester: expanded account scope exceeds 512 requests".into());
             }
         }
-        Ok((origins, requests))
+        Ok(Watchlist { origins, requests })
     }
 }
 

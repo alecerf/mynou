@@ -160,10 +160,6 @@ fn endpoint(base: &str, path: &str) -> Result<String> {
     Ok(parsed.as_string())
 }
 
-fn fetch_json(url: &str, headers: &[(String, String)], service: &str) -> Result<Value> {
-    fetch_json_sized(url, headers, service).map(|(value, _)| value)
-}
-
 fn fetch_json_sized(
     url: &str,
     headers: &[(String, String)],
