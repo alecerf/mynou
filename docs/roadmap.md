@@ -5,7 +5,7 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current stage: 0.17.0 implementation
+## Current stage: 0.17.0
 
 Explicit shared-file preview/apply binds one authenticated video to 2–64
 consecutive canonical owners in one season. All owners commit in one synchronized
@@ -15,9 +15,14 @@ the full binding. Individual remaps, baselines and upgrades are blocked for shar
 owners until coordinated group replacement is available. See
 [shared files](shared-files.md).
 
-The implementation is committed; complete GitHub Actions validation and CI
-publication must pass before the next release begins. Existing v0.16 evidence
-below does not validate these changes. No local validation is permitted.
+This stage passed [run 37271644993](https://github.com/alecerf/mynou/actions/runs/37271644993)
+for commit `89e5aefa66026da084a6770fb76d51e7396602ec`: 450 Rust tests across 38 targets,
+four scheduler checks and all five workflow jobs. CI published
+[v0.17.0](https://github.com/alecerf/mynou/releases/tag/v0.17.0) with seven assets
+on October 5, 2026, at 06:19:26 UTC. See
+[validation evidence](validation.md#recorded-0170-ci-evidence). No local validation
+ran. The next stage is coordinated shared-group replacement in 0.18; later
+commits require their own complete CI.
 
 ## Previous stage: 0.16.0
 
@@ -33,8 +38,8 @@ four scheduler checks and all five workflow jobs. CI published
 [v0.16.0](https://github.com/alecerf/mynou/releases/tag/v0.16.0) with seven assets
 on October 4, 2026, at 21:59 UTC. See
 [validation evidence](validation.md#recorded-0160-ci-evidence).
-Numbering and shared physical ownership are split into independently validated
-releases; shared multi-episode imports are now the next stage, 0.17.
+Numbering and shared physical ownership were split into independently validated
+releases; shared multi-episode imports followed in 0.17.
 
 ## Previous stage: 0.15.0
 

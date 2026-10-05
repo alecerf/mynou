@@ -1,21 +1,26 @@
 # Next-release checkpoint — 0.18 coordinated shared-group replacements
 
-v0.16 implements explicit numbering: retained catalog IDs keep canonical library
-numbers while approved catalog/source labels may change. CLI/API/browser preview
-and guarded apply persist choices before future jobs capture source labels.
-Existing requests, exclusions and library paths stay fixed. See [numbering](numbering.md).
+v0.17 implements explicit shared files: one authenticated video belongs to a
+complete consecutive canonical episode range and imports to one deterministic
+Plex path. All owners commit together before acquisition; cancellation, retries,
+restart and subset reuse preserve the captured binding. See
+[shared files](shared-files.md).
 
-Mynou 0.16.0 was published by CI from
-`0821a4d3b499a5863fe5b50206c98bda25d6fb49` after
-[run 37238156691](https://github.com/alecerf/mynou/actions/runs/37238156691) passed:
-430 Rust tests across 36 targets, four scheduler checks and all five workflow
-jobs. Seven assets were uploaded by `github-actions[bot]` on October 4, 2026, at
-21:59:49 UTC. The tag targets that validated commit. See
-[validation evidence](validation.md#recorded-0160-ci-evidence) for asset digests.
+Mynou 0.17.0 was published by CI from
+`89e5aefa66026da084a6770fb76d51e7396602ec` after
+[run 37271644993](https://github.com/alecerf/mynou/actions/runs/37271644993) passed:
+450 Rust tests across 38 targets, four scheduler checks and all five workflow
+jobs. Seven assets were uploaded by `github-actions[bot]` on October 5, 2026, at
+06:19:26 UTC. The tag targets that validated commit. See
+[validation evidence](validation.md#recorded-0170-ci-evidence) for asset digests.
 
-Earlier releases stay immutable; the 0.15 source, tag and seven asset digests
-remain recorded in [validation](validation.md). Later documentation changes
-require their own complete CI and never replace published artifacts.
+The previous 0.16 numbering release passed
+[run 37238156691](https://github.com/alecerf/mynou/actions/runs/37238156691)
+for `0821a4d3b499a5863fe5b50206c98bda25d6fb49` with 430 Rust tests, four scheduler
+checks and all five jobs. Its tag and seven asset IDs, sizes and digests remain
+unchanged. Earlier releases stay immutable and retain their evidence in
+[validation](validation.md). Later documentation changes require their own
+complete CI and never replace published artifacts.
 
 The CI optimization's final commit `1583ca5768400fa2e9511d3444ec28b076d3b1f3`
 passed [run 37235568061](https://github.com/alecerf/mynou/actions/runs/37235568061)
@@ -59,7 +64,7 @@ persist before acquisition; apply itself queues no jobs. Source labels affect
 queries, title matching and file selection. Import/Plex checks stay canonical.
 Alternate source labels currently require explicit pack mappings.
 
-## Shared ownership implemented in 0.17; validate before continuing
+## Shared ownership completed in 0.17
 
 The 0.17 implementation now records a bounded authenticated torrent/path,
 canonical owner range and one deterministic Plex destination. All new owners
@@ -68,8 +73,9 @@ verification, no-overwrite imports, individual exact Plex checks, queued-owner
 cancellation interests, retry/restart and subset reuse retain the binding.
 Format 2 rejects silent downgrade. CLI/API/browser apply guards repeat metadata
 inspection; browser source credentials remain server-side for ten minutes.
-See [shared files](shared-files.md). Its complete Actions run and CI publication
-remain required before beginning 0.18; earlier green runs do not validate it.
+See [shared files](shared-files.md). The exact complete Actions run and CI
+publication are recorded above. Inspect the live branch and all five newest
+jobs before beginning 0.18; later commits require their own completed workflow.
 
 Individual shared remaps, baselines and upgrades remain blocked. Automatic packs
 and ordinary mapped packs still require unique single-episode files. This gives

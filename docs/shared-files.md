@@ -109,8 +109,8 @@ different files and symlinks are rejected. The organizer copies a shared source
 once into a private temporary file, then publishes the library name atomically
 without overwriting. The native payload retains an independent inode and its
 existing hard-link protection. Later owners compare and reuse that same copy;
-no media is deleted. Recovery
-after publication but before the import journal write reuses the verified file.
+no media is deleted. Recovery after publication but before the import journal
+write reuses the verified file.
 Changing the configured library root does not reassign an unimported group's
 destination; plan a separate explicit migration. Confirmed paths remain fixed.
 

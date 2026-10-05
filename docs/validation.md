@@ -88,6 +88,44 @@ allowance across seasons. Existing full validation remains required.
 The recorded run below validates these scenarios through GitHub Actions only.
 No local tests, lint, builds or demos ran.
 
+## Recorded 0.17.0 CI evidence
+
+`89e5aefa66026da084a6770fb76d51e7396602ec` passed
+[Actions run 37271644993](https://github.com/alecerf/mynou/actions/runs/37271644993):
+**450 Rust tests passed**, none failed or ignored, across **38 targets**.
+Four CI scheduler checks also passed. All five validation/build/package/release
+jobs completed successfully, including the offline single-package dependency
+graph, formatting, Clippy, GNU/musl builds, static/native and isolated Docker
+demonstrations, archive integrity, executable permissions and checksum checks.
+The bounded scheduler ran every Cargo harness with two processes and two threads
+per harness; the recorded all-target execution took 40.600 seconds.
+
+GitHub Actions published [v0.17.0](https://github.com/alecerf/mynou/releases/tag/v0.17.0)
+on October 5, 2026, at 06:19:26 UTC. The tag points to the validated source commit.
+All seven assets were uploaded by `github-actions[bot]`. Recorded payloads:
+
+| Asset | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `mynou-v0.17.0-linux-amd64-image.tar.gz` | 1576503 | `e5d18d88147129c7513dfd7f928222f6f31606863439970721d93825f0d325f7` |
+| `mynou-v0.17.0-linux-amd64-image.tar.gz.sha256` | 105 | `79947b4fe4dfb3a5e868a06c101e80a331f0f9cb12d28f618eda335a71ed2ee9` |
+| `mynou-v0.17.0-linux-x86_64` | 3089248 | `f4fdb0eff17cadd60c0a6afc2e086121592d882dffd0432dee89e77146d49f1b` |
+| `mynou-v0.17.0-linux-x86_64.sha256` | 93 | `e6743e7c4c26784cb5b11af156144a662a5cb022113f9e0a1b8146814bac4961` |
+| `mynou-v0.17.0-source.zip` | 5460855 | `932954f391948acd6d43a2fd95220d381bd8f58c2717b2dd26a56e8c15092c07` |
+| `mynou-v0.17.0-source.zip.sha256` | 91 | `cb217b1d854adc730f9a558f738d3714d01520b04ad8299c8c1bd0f7ec99e923` |
+| `SHA256SUMS` | 289 | `d948fc85db5780e915b146342049f00480eab34a885d213ba1918ca391ec35c0` |
+
+The recorded scenarios cover 64-owner atomic journal frames, incomplete or
+semantically invalid state, guarded source/catalog decisions, exact shared
+imports, independent payload/library inodes, per-owner Plex confirmation, worker
+concurrency, queued-owner interests, cancellation/retry/restart, pre-journal copy
+recovery and protected API/browser/CLI controls. Individual shared upgrades remain
+blocked until whole-group replacement is available in a later release.
+
+No local tests, lint, builds, binaries or demonstrations were executed. CI alone
+created the tag/release/assets. The existing v0.16.0 tag and all seven asset IDs,
+sizes and digests remain unchanged. Later documentation commits require their
+own complete CI and do not replace the v0.17.0 tag or assets.
+
 ## Recorded 0.16.0 CI evidence
 
 `0821a4d3b499a5863fe5b50206c98bda25d6fb49` passed
