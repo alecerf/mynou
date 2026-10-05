@@ -409,6 +409,7 @@ impl Store {
                 pack_origin: None,
                 shared_file: Some(file.clone()),
                 shared_upgrade: Some(lineage.clone()),
+                requester: parent.requester.clone(),
             });
         }
         self.commit_group(
@@ -607,6 +608,8 @@ impl Store {
             Job::from_json(&job.to_json())?;
             if job.shared_file.as_ref() != Some(binding)
                 || job.shared_upgrade != first.shared_upgrade
+                || job.requester.as_ref().map(|p| &p.capture)
+                    != first.requester.as_ref().map(|p| &p.capture)
                 || job.release != first.release
                 || job.request.source_url != first.request.source_url
                 || job.updated_at != first.updated_at

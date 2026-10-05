@@ -229,6 +229,19 @@ fn metadata_page(value: &Value) -> Result<(&[Value], Option<u64>)> {
 }
 
 fn plex_items(url: &str, headers: &[(String, String)]) -> Result<Vec<Value>> {
+    plex_items_before(
+        url,
+        headers,
+        Instant::now() + Duration::from_secs(90),
+        MAX_ITEMS,
+    )
+}
+fn plex_items_before(
+    url: &str,
+    headers: &[(String, String)],
+    deadline: Instant,
+    limit: usize,
+) -> Result<Vec<Value>> {
     let mut out = Vec::new();
     for page in 0..MAX_PAGES {
         let url = query(
@@ -239,9 +252,9 @@ fn plex_items(url: &str, headers: &[(String, String)]) -> Result<Vec<Value>> {
                 ("includeGuids", "1".into()),
             ],
         )?;
-        let value = fetch_json(&url, headers, "Plex")?;
+        let value = fetch_json_before(&url, headers, deadline)?;
         let (items, total) = metadata_page(&value)?;
-        if out.len() + items.len() > MAX_ITEMS || total.is_some_and(|n| n > MAX_ITEMS as u64) {
+        if out.len() + items.len() > limit || total.is_some_and(|n| n > limit as u64) {
             return Err("Plex: too many items".into());
         }
         if items.is_empty() {
@@ -294,11 +307,18 @@ pub fn watchlist(config: &Config) -> Result<Vec<Request>> {
 }
 
 pub(crate) fn watchlist_identities(config: &Config) -> Result<Vec<Request>> {
+    watchlist_identities_before(config, Instant::now() + Duration::from_secs(90), MAX_ITEMS)
+}
+fn watchlist_identities_before(
+    config: &Config,
+    deadline: Instant,
+    limit: usize,
+) -> Result<Vec<Request>> {
     if !config.plex.enabled {
         return Ok(Vec::new());
     }
     let headers = plex_headers(config)?;
-    let items = plex_items(&config.plex.watchlist_url, &headers)?;
+    let items = plex_items_before(&config.plex.watchlist_url, &headers, deadline, limit)?;
     let mut out = Vec::new();
     let mut seen = BTreeSet::new();
     for item in items {
@@ -351,6 +371,60 @@ pub(crate) fn watchlist_identities(config: &Config) -> Result<Vec<Request>> {
         }
     }
     Ok(out)
+}
+
+fn fetch_json_before(url: &str, headers: &[(String, String)], deadline: Instant) -> Result<Value> {
+    let timeout = deadline
+        .checked_duration_since(Instant::now())
+        .filter(|d| !d.is_zero())
+        .ok_or("Plex: account poll deadline reached")?;
+    let response = client()
+        .with_timeout(timeout.min(Duration::from_secs(10)))
+        .request("GET", url, headers, &[])
+        .map_err(|_| "Plex: account request failed")?;
+    if !(200..300).contains(&response.status) {
+        return Err("Plex: account request failed".into());
+    }
+    json::parse(std::str::from_utf8(&response.body).map_err(|_| "Plex: invalid account response")?)
+        .map_err(|_| "Plex: invalid account response".into())
+}
+pub(crate) fn requester_watchlist(
+    config: &Config,
+    account: &crate::requesters::Account,
+    deadline: Instant,
+) -> Result<Vec<Request>> {
+    let token =
+        config::secret(&account.token_env).map_err(|_| "Plex: account token unavailable")?;
+    let mut cfg = config.clone();
+    cfg.plex.token_override = Some(token);
+    cfg.plex.enabled = true;
+    cfg.plex.watchlist_url = account.watchlist_url.clone();
+    let headers = plex_headers(&cfg)?;
+    let identity = fetch_json_before(&account.identity_url, &headers, deadline)?;
+    if integer(&identity, "id").map(|n| n.to_string()).as_deref() != Some(&account.expected_user_id)
+    {
+        return Err("Plex account identity changed".into());
+    }
+    watchlist_identities_before(&cfg, deadline, crate::requesters::MAX_POLL_ITEMS)
+}
+pub(crate) fn requester_movie_before(
+    config: &Config,
+    request: &Request,
+    deadline: Instant,
+) -> Result<Request> {
+    let mut request = request.clone();
+    if request.tmdb_id.is_none() {
+        let mut pairs = vec![("query", request.title.clone())];
+        if request.year != 0 {
+            pairs.push(("year", request.year.to_string()));
+        }
+        request.tmdb_id = Some(catalog_identity(
+            &request,
+            &fresh_catalog(config, "search/movie", &pairs, deadline)?,
+        )?);
+    }
+    request.validate()?;
+    Ok(request)
 }
 
 fn catalog_json(config: &Config, path: &str, pairs: &[(&str, String)]) -> Result<Value> {

@@ -179,7 +179,7 @@ impl Record {
         Ok(())
     }
 
-    pub(super) fn normalize_catalog(&self, mut plan: Plan) -> Result<Plan> {
+    pub(crate) fn normalize_catalog(&self, mut plan: Plan) -> Result<Plan> {
         plan.validate()?;
         if plan.request.tmdb_id != self.plan.request.tmdb_id {
             return Err("Catalog series identity changed".into());
@@ -220,7 +220,7 @@ impl Record {
         Ok(plan)
     }
 
-    pub(super) fn accept_catalog(&mut self, plan: Plan) -> Result<()> {
+    pub(crate) fn accept_catalog(&mut self, plan: Plan) -> Result<()> {
         for (id, number) in initial_anchors(&plan) {
             if self.anchors.get(&id).is_some_and(|old| *old != number) {
                 return Err("Canonical numbering cannot change".into());

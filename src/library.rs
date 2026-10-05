@@ -141,7 +141,7 @@ impl Engine {
     /// Establishes an explicit release-name baseline for a legacy owned import.
     pub fn set_baseline(&self, id: &str, title: &str) -> Result<Job> {
         let job = lock(&self.store)?.get(id).ok_or("Unknown library entry")?;
-        let release = validate_baseline(&self.config, &job, title)?;
+        let release = validate_baseline(&self.configuration_for(&job), &job, title)?;
         lock(&self.store)?.set_baseline(id, release)
     }
 
@@ -222,7 +222,8 @@ impl Engine {
                 entries.push(entry(&job, "imports_missing"));
                 continue;
             }
-            let (_, profile) = self.config.selection.profile(&job.request.kind)?;
+            let config = self.configuration_for(&job);
+            let (_, profile) = config.selection.profile(&job.request.kind)?;
             let recorded = job.release.as_ref().ok_or("Missing release baseline")?;
             let baseline = profile.assess(&recorded.title, &job.request.title);
             if profile.cutoff_reached(&baseline) {
@@ -233,7 +234,7 @@ impl Engine {
             request.source_path = None;
             request.source_url = None;
             let selected = match integrations::select_release_before(
-                &self.config,
+                &config,
                 &request,
                 started + Duration::from_secs(90),
             ) {

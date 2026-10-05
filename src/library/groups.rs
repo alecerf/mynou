@@ -281,7 +281,14 @@ impl Engine {
             );
         }
         let import_stamp = verify_import(&initial)?;
-        let (profile_name, profile) = self.config.selection.profile("episode")?;
+        let config = self.configuration_for(&initial[0]);
+        if initial.iter().any(|j| {
+            j.requester.as_ref().map(|p| &p.capture)
+                != initial[0].requester.as_ref().map(|p| &p.capture)
+        }) {
+            return Err("Shared-group requester policies must agree".into());
+        }
+        let (profile_name, profile) = config.selection.profile("episode")?;
         let release = RecordedRelease {
             title: query.release_title.clone(),
             profile: profile_name.into(),
@@ -344,7 +351,7 @@ impl Engine {
                 last_episode: old.last_episode,
                 import_path: String::new(),
             };
-            file.import_path = organizer::shared_target(&self.config.series_root, &file)?
+            file.import_path = organizer::shared_target(&config.series_root, &file)?
                 .to_str()
                 .ok_or("Shared destination is not UTF-8")?
                 .into();

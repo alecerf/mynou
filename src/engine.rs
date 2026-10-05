@@ -24,7 +24,8 @@ pub struct Engine {
     pub(crate) series_store: Mutex<crate::series::SeriesStore>,
     pub(crate) series_refresh_lock: Mutex<()>,
     downloads: Option<Client>,
-    sync_lock: Mutex<()>,
+    pub(crate) sync_lock: Mutex<()>,
+    pub(crate) requester_store: Mutex<crate::requesters::RequesterStore>,
     pub(crate) upgrade_lock: Mutex<()>,
     pub(crate) read_only: bool,
     pub stopped: AtomicBool,
@@ -62,11 +63,21 @@ impl Engine {
 
     fn from_store(
         config: Config,
-        store: Store,
+        mut store: Store,
         start_downloads: bool,
         read_only: bool,
     ) -> Result<Arc<Self>> {
         let series_store = crate::series::SeriesStore::open(&config.store_dir, read_only)?;
+        let requester_store =
+            crate::requesters::RequesterStore::open(&config.store_dir, &config, read_only)?;
+        crate::requesters::engine::validate_storage(&requester_store.state, &store)?;
+        if !read_only {
+            crate::requesters::engine::cancel_unwanted(
+                &requester_store.state,
+                &mut store,
+                &config,
+            )?;
+        }
         let downloads = if start_downloads && config.downloads_enabled {
             let client =
                 Client::open_with_policy(config.downloads.clone(), config.download_policy.clone())?;
@@ -107,6 +118,7 @@ impl Engine {
             series_refresh_lock: Mutex::new(()),
             downloads,
             sync_lock: Mutex::new(()),
+            requester_store: Mutex::new(requester_store),
             upgrade_lock: Mutex::new(()),
             read_only,
             stopped: AtomicBool::new(false),
@@ -140,11 +152,23 @@ impl Engine {
                 .collect());
         }
         let requests = integrations::expand(&self.config, &request)?;
-        let mut store = lock(&self.store)?;
-        requests.into_iter().map(|r| store.submit(r)).collect()
+        let jobs = {
+            let mut store = lock(&self.store)?;
+            requests
+                .into_iter()
+                .map(|r| store.submit(r))
+                .collect::<Result<Vec<_>>>()?
+        };
+        self.requester_operator_interest(&jobs)?;
+        Ok(jobs)
     }
 
     pub fn sync(&self) -> Result<usize> {
+        if !self.config.requesters.accounts.is_empty() {
+            let before = lock(&self.store)?.list().len();
+            self.sync_requesters()?;
+            return Ok(lock(&self.store)?.list().len().saturating_sub(before));
+        }
         let _guard = lock(&self.sync_lock)?;
         let requests = integrations::watchlist_identities(&self.config)?;
         let before = lock(&self.store)?.list().len();
@@ -190,6 +214,7 @@ impl Engine {
     }
 
     pub fn retry(&self, id: &str) -> Result<Job> {
+        self.requester_retry_allowed(id)?;
         let mut store = lock(&self.store)?;
         let previous = store.get(id).ok_or("Unknown job")?;
         let job = store.retry(id)?;
@@ -417,7 +442,7 @@ impl Engine {
                 }
             }));
         }
-        if self.config.plex.enabled {
+        if self.config.plex.enabled || !self.config.requesters.accounts.is_empty() {
             let engine = self.clone();
             handles.push(thread::spawn(move || {
                 while !engine.stopped.load(Ordering::Acquire) {
@@ -458,9 +483,7 @@ impl Engine {
 
     /// Run one step and release the lease before waiting for the next poll.
     pub fn tick(self: &Arc<Self>) -> Result<bool> {
-        let Some(mut job) =
-            lock(&self.store)?.claim(store::now(), self.config.lease_duration_secs)?
-        else {
+        let Some(mut job) = self.claim_requester_job()? else {
             return Ok(false);
         };
         let lease = job.lease_id.clone().ok_or("Missing lease")?;
@@ -490,7 +513,41 @@ impl Engine {
         if !matches!(job.state.as_str(), "ready" | "failed" | "cancelled") {
             store.release_lease(&job.id, &lease)?;
         }
+        drop(store);
+        self.requester_reconcile()?;
         Ok(true)
+    }
+
+    pub(crate) fn pause_unwanted_transfers(&self, store: &Store) -> Result<()> {
+        let Some(client) = &self.downloads else {
+            return Ok(());
+        };
+        let jobs = store.list();
+        let active: std::collections::BTreeSet<_> = jobs
+            .iter()
+            .filter(|j| j.state != "cancelled")
+            .filter_map(|j| {
+                j.download_id
+                    .as_deref()
+                    .or_else(|| j.shared_file.as_ref().map(|f| f.torrent_id.as_str()))
+            })
+            .collect();
+        let known: std::collections::BTreeSet<_> =
+            client.statuses()?.into_iter().map(|s| s.id).collect();
+        for id in jobs
+            .iter()
+            .filter(|j| j.state == "cancelled")
+            .filter_map(|j| {
+                j.download_id
+                    .as_deref()
+                    .or_else(|| j.shared_file.as_ref().map(|f| f.torrent_id.as_str()))
+            })
+        {
+            if !active.contains(id) && known.contains(id) {
+                client.cancel(id)?;
+            }
+        }
+        Ok(())
     }
 
     fn import_version(
@@ -516,6 +573,7 @@ impl Engine {
     }
 
     fn advance(&self, job: &mut Job, active: &AtomicBool) -> Result<()> {
+        let config = self.configuration_for(job);
         if !active.load(Ordering::Acquire) {
             return Err("Processing interrupted".into());
         }
@@ -529,13 +587,14 @@ impl Engine {
                 .ok_or("Downloads are disabled")?
                 .resume_if_allowed(id)?;
         }
-        if self.config.plex.enabled
+        if config.plex.enabled
+            && job.requester.is_none()
             && job.imports.is_empty()
             && job.files.is_empty()
             && job.acquisition_url.is_none()
             && job.request.source_path.is_none()
             && job.request.source_url.is_none()
-            && integrations::available(&self.config, &job.request)?
+            && integrations::available(&config, &job.request)?
         {
             job.state = "ready".into();
             job.progress = 1.0;
@@ -554,15 +613,18 @@ impl Engine {
                     }
                 }
             }
-            if self.config.plex.enabled {
+            if config.plex.enabled {
                 if job.state != "scanning" {
-                    integrations::refresh(&self.config, &job.request)?;
+                    integrations::refresh(&config, &job.request)?;
                 }
                 job.state = "scanning".into();
-                let available = if job.upgrade_parent.is_some() || job.shared_file.is_some() {
-                    integrations::available_import(&self.config, &job.request, &job.imports)?
+                let available = if job.upgrade_parent.is_some()
+                    || job.shared_file.is_some()
+                    || job.requester.is_some()
+                {
+                    integrations::available_import(&config, &job.request, &job.imports)?
                 } else {
-                    integrations::available(&self.config, &job.request)?
+                    integrations::available(&config, &job.request)?
                 };
                 if !available {
                     job.next_attempt_at = store::now().saturating_add(5);
@@ -608,8 +670,7 @@ impl Engine {
                     job.acquisition_url = Some(match &job.request.source_url {
                         Some(url) => url.clone(),
                         None => {
-                            let selected =
-                                integrations::select_release(&self.config, &job.request)?;
+                            let selected = integrations::select_release(&config, &job.request)?;
                             job.release = Some(RecordedRelease {
                                 title: selected.title,
                                 profile: selected.profile,
@@ -716,7 +777,7 @@ impl Engine {
                 let mapped = job
                     .pack_file
                     .as_ref()
-                    .map(|path| self.config.downloads.data_dir.join(&status.id).join(path));
+                    .map(|path| config.downloads.data_dir.join(&status.id).join(path));
                 job.files = status
                     .available_files
                     .iter()
@@ -735,7 +796,7 @@ impl Engine {
                 .download_id
                 .as_ref()
                 .ok_or("Pack mapping requires a native transfer")?;
-            let expected = self.config.downloads.data_dir.join(id).join(path);
+            let expected = config.downloads.data_dir.join(id).join(path);
             if job.files.len() != 1 || Path::new(&job.files[0]) != expected {
                 return Err("Mapped torrent file differs from the retained verified path".into());
             }
@@ -797,13 +858,13 @@ impl Engine {
                 );
             }
             let path = matching[0].1;
-            let imported = self.import_version(path, &self.config.series_root, job, active)?;
+            let imported = self.import_version(path, &config.series_root, job, active)?;
             job.imports.push(imported.to_string_lossy().into_owned());
         } else {
             let root = if job.request.kind == "episode" {
-                &self.config.series_root
+                &config.series_root
             } else {
-                &self.config.movies_root
+                &config.movies_root
             };
             let imported = self.import_version(source, root, job, active)?;
             job.imports.push(imported.to_string_lossy().into_owned());

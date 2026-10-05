@@ -75,6 +75,7 @@ pub struct Config {
     pub plex: Plex,
     pub catalog: Catalog,
     pub sources: Vec<Source>,
+    pub requesters: crate::requesters::Settings,
 }
 
 fn object(items: Vec<(&str, Value)>) -> Value {
@@ -230,7 +231,7 @@ fn absolute_path(path: &Path) -> Result<PathBuf> {
     Ok(normalized)
 }
 
-fn path(base: &Path, value: String) -> Result<PathBuf> {
+pub(crate) fn path(base: &Path, value: String) -> Result<PathBuf> {
     let p = PathBuf::from(value);
     absolute_path(&if p.is_absolute() { p } else { base.join(p) })
 }
@@ -356,6 +357,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             "plex",
             "catalog",
             "indexers",
+            "requesters",
         ],
     )?;
     if number(v, "schema_version", 0, 1)? != 1 {
@@ -507,6 +509,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             api_key_env: text(c, "api_key_env", "MYNOU_TMDB_API_KEY")?,
         },
         sources,
+        requesters: crate::requesters::Settings::from_json(v.get("requesters"), &base)?,
     })
 }
 pub fn secret(name: &str) -> Result<String> {
