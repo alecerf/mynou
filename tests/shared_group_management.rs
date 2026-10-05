@@ -435,6 +435,7 @@ fn group_browser_apply_does_not_reuse_a_preview_after_logout() {
     );
     assert_eq!(review.status, 200, "{}", review.body);
     assert_eq!(browser.post(&server, "/ui/logout", &[]).status, 303);
+    let before = snapshot(&fixture.cfg.store_dir);
     let reply = browser.post(
         &server,
         "/ui/library/group",
@@ -444,7 +445,10 @@ fn group_browser_apply_does_not_reuse_a_preview_after_logout() {
             ("plan_id", plan(&review.body)),
         ],
     );
-    assert!(matches!(reply.status, 303 | 401));
+    assert_eq!(reply.status, 403, "{}", reply.body);
+    assert!(reply.body.contains("Your session expired. Sign in again"));
+    reply.no_secrets();
+    assert_eq!(snapshot(&fixture.cfg.store_dir), before);
     assert!(
         lock(&server.engine.store)
             .unwrap()
