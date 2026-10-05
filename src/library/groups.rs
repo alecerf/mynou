@@ -421,7 +421,12 @@ impl Engine {
         report.insert("plan_id", plan_id);
         report.insert("parent_group_id", old.id());
         report.insert("owners", initial.len() as u32);
-        report.insert("release", release.to_json());
+        let mut public_release = release.to_json();
+        public_release.insert(
+            "title",
+            crate::integrations::report_text(&release.title, 2048),
+        );
+        report.insert("release", public_release);
         report.insert("candidate_assessment", candidate.to_json());
         report.insert(
             "current_assessment",

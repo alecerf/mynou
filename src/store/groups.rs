@@ -93,6 +93,14 @@ pub(super) fn group_format(job: &Job) -> bool {
     job.shared_upgrade.is_some() || (job.shared_file.is_some() && job.release.is_some())
 }
 
+pub(super) struct GroupState<'a> {
+    pub file: &'a SharedFile,
+    pub owners: BTreeSet<u32>,
+    pub first: &'a Job,
+    pub ready: usize,
+    pub cancelled: usize,
+}
+
 impl Store {
     pub fn shared_group(&self, id: &str) -> Result<Vec<Job>> {
         let owner = self.jobs.get(id).ok_or("Unknown shared-group owner")?;
@@ -439,6 +447,7 @@ impl Store {
         job.state = "staged".into();
         job.lease_id = None;
         job.lease_until = 0;
+        Job::from_json(&job.to_json())?;
         let mut jobs = self.shared_group(&job.id)?;
         for owner in &mut jobs {
             if owner.id == job.id {
@@ -569,6 +578,13 @@ impl Store {
         } else {
             self.shared_group(&first.id)?
         };
+        if action == GroupAction::Retry
+            && !existing
+                .iter()
+                .any(|job| matches!(job.state.as_str(), "failed" | "cancelled"))
+        {
+            return Err("Whole-group retry requires a failed or cancelled owner".into());
+        }
         if !existing.is_empty()
             && existing
                 .iter()

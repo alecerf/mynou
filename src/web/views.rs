@@ -18,6 +18,7 @@ const JOB_STATES: &[&str] = &[
     "processing",
     "downloading",
     "scanning",
+    "staged",
     "ready",
     "failed",
     "cancelled",
@@ -131,7 +132,12 @@ pub fn library(engine: &Arc<Engine>, session: &Session, query: &Form) -> Result<
         .filter(|entry| {
             let title = request_title(entry);
             let state = match browse.state.as_str() {
-                "baseline_required" if flag(entry, "baseline_required") => "baseline_required",
+                "baseline_required"
+                    if flag(entry, "baseline_required")
+                        || flag(entry, "group_baseline_required") =>
+                {
+                    "baseline_required"
+                }
                 _ if flag(entry, "monitored") => "monitored",
                 _ => "unmonitored",
             };
@@ -151,9 +157,9 @@ pub fn library(engine: &Arc<Engine>, session: &Session, query: &Form) -> Result<
         let id = text(entry, "id");
         body.push_str(&format!("<tr><td>{}</td><td><a href=\"/ui/jobs/{}\">{}</a></td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
             checkbox(id), e(id), display(request_title(entry)), if flag(entry, "monitored") { "On" } else { "Off" },
-            if entry.get("shared_file").is_some_and(|v|v.as_object().is_some()) { "Shared ownership" } else if flag(entry, "baseline_required") { "Needs baseline" } else { "Recorded" },
+            if flag(entry, "group_baseline_required") { "Needs group baseline" } else if entry.get("shared_file").is_some_and(|v|v.as_object().is_some()) { "Group baseline recorded" } else if flag(entry, "baseline_required") { "Needs baseline" } else { "Recorded" },
             if flag(entry, "imports_present") { "Available" } else { "Missing" },
-            if entry.get("shared_file").is_some_and(|v|v.as_object().is_some()) {"Group replacement required".into()} else {entry.get("pending_upgrade_id").and_then(Value::as_str).map_or_else(|| "—".into(), |id| format!("<a href=\"/ui/jobs/{}\">View pending upgrade</a>", e(id)))}));
+            entry.get("pending_upgrade_id").and_then(Value::as_str).map_or_else(|| if entry.get("shared_file").is_some_and(|v|v.as_object().is_some()) {"Open an owner for group actions".into()} else {"—".into()}, |id| format!("<a href=\"/ui/jobs/{}\">View pending upgrade</a>", e(id)))));
     }
     body.push_str("</tbody></table></div>");
     body.push_str(&bulk_controls(&[

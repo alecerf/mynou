@@ -22,7 +22,7 @@ const GROUP_JOURNAL_MAGIC: &[u8; 8] = b"MYNOUJ03";
 const GROUP_SNAPSHOT_MAGIC: &[u8; 8] = b"MYNOUS03";
 mod groups;
 pub use groups::SharedUpgrade;
-use groups::{GroupAction, group_format};
+use groups::{GroupAction, GroupState, group_format};
 const MAX_RECORD: usize = 16 * 1024 * 1024;
 const MAX_SNAPSHOT: usize = 16 * 1024 * 1024;
 const MAX_EVENTS: usize = 1_000;
@@ -1261,28 +1261,29 @@ impl Store {
     }
 
     fn validate_shared_groups(&self) -> Result<()> {
-        let mut groups: BTreeMap<
-            String,
-            (&crate::pack::SharedFile, BTreeSet<u32>, &Job, usize, usize),
-        > = BTreeMap::new();
+        let mut groups: BTreeMap<String, GroupState<'_>> = BTreeMap::new();
         let mut physical = BTreeMap::new();
         let mut logical = BTreeMap::new();
         let roots = self.lineage_roots()?;
         for job in self.jobs.values() {
             if let Some(file) = &job.shared_file {
                 file.validate_job(job)?;
-                let group = groups
-                    .entry(file.id())
-                    .or_insert_with(|| (file, BTreeSet::new(), job, 0, 0));
+                let group = groups.entry(file.id()).or_insert_with(|| GroupState {
+                    file,
+                    owners: BTreeSet::new(),
+                    first: job,
+                    ready: 0,
+                    cancelled: 0,
+                });
                 let root = roots
                     .get(job.id.as_str())
                     .ok_or("Missing shared lineage root")?;
                 let previous = logical.insert(job.request.media_key(), root.id.as_str());
-                if group.0 != file
-                    || !group.1.insert(job.request.episode)
-                    || group.2.release != job.release
-                    || group.2.shared_upgrade != job.shared_upgrade
-                    || group.2.request.source_url != job.request.source_url
+                if group.file != file
+                    || !group.owners.insert(job.request.episode)
+                    || group.first.release != job.release
+                    || group.first.shared_upgrade != job.shared_upgrade
+                    || group.first.request.source_url != job.request.source_url
                     || previous.is_some_and(|id| id != root.id)
                 {
                     return Err(
@@ -1292,8 +1293,8 @@ impl Store {
                 if job.shared_upgrade.is_some() {
                     self.validate_group_lineage(job)?;
                 }
-                group.3 += usize::from(job.state == "ready");
-                group.4 += usize::from(job.state == "cancelled");
+                group.ready += usize::from(job.state == "ready");
+                group.cancelled += usize::from(job.state == "cancelled");
                 let key = (&file.torrent_id, &file.file_path);
                 if physical
                     .insert(key, file)
@@ -1303,16 +1304,17 @@ impl Store {
                 }
             }
         }
-        for (_, (file, numbers, first, ready, cancelled)) in groups {
-            if first.shared_upgrade.is_some()
-                && ((ready > 0 && ready != numbers.len())
-                    || (cancelled > 0 && cancelled != numbers.len()))
+        for (_, group) in groups {
+            if group.first.shared_upgrade.is_some()
+                && ((group.ready > 0 && group.ready != group.owners.len())
+                    || (group.cancelled > 0 && group.cancelled != group.owners.len()))
             {
                 return Err("Partially promoted or cancelled shared replacement in storage".into());
             }
-            if numbers
+            if group
+                .owners
                 .into_iter()
-                .ne(file.first_episode..=file.last_episode)
+                .ne(group.file.first_episode..=group.file.last_episode)
             {
                 return Err("Incomplete shared ownership in persistent storage".into());
             }
@@ -2290,6 +2292,9 @@ impl Store {
                     return Err("inconsistent journal transaction".to_owned());
                 }
                 let mut jobs = vec![job];
+                if map.contains_key("group_jobs") && !map.contains_key("group_action") {
+                    return Err("Group owners require a journal action".into());
+                }
                 if let Some(action) = map.get("group_action") {
                     if &header[..8] != GROUP_JOURNAL_MAGIC || map.contains_key("shared_owners") {
                         return Err("Group action requires journal format 3".into());

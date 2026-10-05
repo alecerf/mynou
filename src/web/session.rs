@@ -397,4 +397,68 @@ mod tests {
         }
         assert!(sessions.challenge("localhost").is_err());
     }
+
+    #[test]
+    fn group_review_expires_and_never_transfers_to_another_owner_or_session() {
+        let mut sessions = Sessions::new();
+        let challenge = sessions.challenge("localhost:8080").unwrap();
+        let session = sessions
+            .login(
+                &challenge.id,
+                &challenge.csrf,
+                "http://localhost:8080",
+                true,
+            )
+            .unwrap()
+            .unwrap();
+        let query = crate::library::GroupRequest {
+            action: "replace".into(),
+            release_title: "Fixture.Series.S01.1080p.WEB-DL".into(),
+            source_url: Some("magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into()),
+            file_path: Some("Pack/shared.mp4".into()),
+            apply: true,
+            plan_id: Some("a".repeat(64)),
+        };
+        sessions
+            .save_group_preview(&session.id, "owner", query.clone())
+            .unwrap();
+        assert_eq!(
+            sessions
+                .group_preview(&session.id, "owner", &"a".repeat(64))
+                .unwrap(),
+            query
+        );
+        assert!(
+            sessions
+                .group_preview(&session.id, "other-owner", &"a".repeat(64))
+                .is_err()
+        );
+        assert!(
+            sessions
+                .group_preview("other-session", "owner", &"a".repeat(64))
+                .is_err()
+        );
+        sessions
+            .0
+            .get_mut(&session.id)
+            .unwrap()
+            .group_preview
+            .as_mut()
+            .unwrap()
+            .expires = Instant::now();
+        assert!(
+            sessions
+                .group_preview(&session.id, "owner", &"a".repeat(64))
+                .is_err()
+        );
+        sessions
+            .save_group_preview(&session.id, "owner", query)
+            .unwrap();
+        sessions.clear_group_preview(&session.id);
+        assert!(
+            sessions
+                .group_preview(&session.id, "owner", &"a".repeat(64))
+                .is_err()
+        );
+    }
 }

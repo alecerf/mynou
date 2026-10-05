@@ -34,8 +34,8 @@ const HELP: &str = "Mynou — media automation using Rust std only
                [--future-only] [--include-specials] [--unmonitored] [--config mynou.json]
   series-pack ID --url MAGNET_OR_TORRENT --mapping FILE [--config mynou.json]
   series-shared-file ID --url MAGNET_OR_TORRENT --mapping FILE
-  library-group ID --mapping FILE [--apply --plan-id ID]
       [--apply --plan-id ID] [--config mynou.json]
+  library-group ID --mapping FILE [--apply --plan-id ID] [--config mynou.json]
   series-pack-search ID --season N [--apply] [--candidate-id ID --scope-id ID]
                      [--config mynou.json]
   pack-remap JOB_ID --file-path PATH [--config mynou.json]
