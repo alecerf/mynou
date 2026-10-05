@@ -36,10 +36,12 @@ during metadata I/O. This source has not yet passed its own workflow.
 The preceding NickServ source 35dec95705bb067dbcd2f149dfd8b050f0f550c1 passed
 validation, GNU/musl builds and packaging in run 37362054311 with 560 Rust tests
 across 50 harnesses and four scheduler checks. Its original queued release job
-111939907953 was cancelled. Attempt 2 retains the exact source and passed preceding
-jobs; release job 111946521736 is queued during the documented GitHub
-runner-assignment incident, without pending deployment approvals. The following
-0.20.5 run 37364436393 was deliberately held. Record NickServ's exact tag/seven
+111939907953 was cancelled. Attempt 2's release job 111946521736 also ended
+without a runner; GitHub's annotation reports "The job was not acquired by Runner
+of type hosted even after multiple attempts". Attempt 3 retries publication for
+the exact validated source during the documented GitHub runner-assignment
+incident, without pending deployment approvals. The following 0.20.5 run
+37364436393 was deliberately held. Record NickServ's exact tag/seven
 assets once CI publishes, then push this corrected 0.20.5 scope and inspect it.
 
 src/irc/nickserv.rs owns strict settings, bounded transient IDENTIFY credentials
