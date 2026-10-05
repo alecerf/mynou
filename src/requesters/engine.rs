@@ -832,13 +832,34 @@ impl Engine {
                 let mut identity = item.clone();
                 identity.kind = "series".into();
                 identity.validate()?;
-                let previous = lock(&self.series_store)?.list().into_iter().find(|r| {
-                    r.plan.request.media_key() == identity.media_key()
-                        && r.plan.request.season == identity.season
-                        && r.plan.request.episode == identity.episode
-                });
-                let plan =
-                    integrations::series_plan_before(&self.config, &identity, false, deadline)?;
+                let records = lock(&self.series_store)?.list();
+                let matches: Vec<_> = records
+                    .into_iter()
+                    .filter(|r| {
+                        let known = &r.plan.request;
+                        known.season == identity.season
+                            && known.episode == identity.episode
+                            && match identity.tmdb_id {
+                                Some(id) => known.tmdb_id == Some(id),
+                                None => {
+                                    crate::selection::tokens(&known.title)
+                                        == crate::selection::tokens(&identity.title)
+                                        && (identity.year == 0 || known.year == identity.year)
+                                }
+                            }
+                    })
+                    .collect();
+                if matches.len() > 1 {
+                    return Err("Requester: ambiguous retained catalog identity".into());
+                }
+                let previous = matches.into_iter().next();
+                let fetched_identity = previous.as_ref().map_or(&identity, |r| &r.plan.request);
+                let plan = integrations::series_plan_before(
+                    &self.config,
+                    fetched_identity,
+                    false,
+                    deadline,
+                )?;
                 let record = if let Some(previous) = previous {
                     let normalized = previous.normalize_catalog(plan)?;
                     let mut checked = previous.clone();

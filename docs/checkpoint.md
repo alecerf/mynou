@@ -121,7 +121,16 @@ Rust tests across 40 targets, four scheduler checks and all five workflow jobs.
 The next stage is Plex requester policies in 0.19. Later commits need their own
 complete CI. See [group upgrades](group-upgrades.md) and the exact evidence below.
 
-Automatic anime/range inference, multi-user Plex policies, IRC automation, native
+The 0.19 implementation adds [requester policies](requesters.md): stable verified
+account bindings, versioned opt-in profiles and routing, durable approvals/quotas,
+independent full-watchlist cursors and compatible canonical demand. Removal keeps
+other interests and imported bytes. Guarded CLI/API/browser controls and original
+local-protocol CI scenarios cover recovery, races and credential redaction.
+Its complete CI and publication are pending; the recorded 0.18 run below validates
+only that earlier release. Do not start 0.20 before every 0.19 job and publication
+is green. The following stage is IRC automation.
+
+Automatic anime/range inference, IRC automation, native
 indexer adapters, Usenet and cross-seeding remain future stages. See the [release roadmap](roadmap.md). Series monitoring is a
 focused stage and does not establish full stack parity.
 

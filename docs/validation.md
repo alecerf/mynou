@@ -11,6 +11,16 @@ revision.
 
 ## Automated checks and releases
 
+The 0.19 requester scenarios exercise explicit opt-in and approvals, compatible
+and conflicting accounts, quota/approval races, retries and UTC-day rollover,
+partial polls and identity mismatch, stale policy/session reviews, redaction,
+removals, notification deduplication and restart. Original local torrent/Plex
+fixtures check acquisition ordering, captured profile/destination behavior and
+exact path confirmation; existing routed Plex media requires no native download.
+Canonical demand retains captured source numbering. Missing or corrupt provenance
+fails before native startup. Their passing result requires a complete Actions
+run for the exact implementation; earlier release evidence does not validate it.
+
 The 0.18 scenarios cover 64-owner baselines/creation/promotion, torn transactions,
 signed incomplete lineage, partial-ready snapshots, cancellation of staged owners,
 retry/obsolete-parent/competitor fences, monitoring changes, source/quality guards,

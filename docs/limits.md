@@ -172,6 +172,22 @@ inherits the parent's current monitoring flag. Original imports and downloads
 remain on disk; there is no automatic cleanup, rollback deletion or
 library-directory adoption. See [library.md](library.md).
 
+[Requester policies](requesters.md) support up to 32 retained account identities
+and 32 configured destinations, 10,000 retained canonical demands, 512 watchlist
+and expanded items per account, a 64-admission pass and a 16 MiB checked snapshot.
+Each account shares a ten-second identity/watchlist/catalog budget within a
+90-second poll pass. Unattempted accounts keep their older attempt timestamp for
+subsequent priority. A poll advances only its own successful full snapshot; failed
+accounts retain interests and cursors. New accounts require explicit opt-in.
+Quotas count unique canonical requests per account and UTC-day admissions, with
+ready/cancelled initial acquisitions releasing active capacity. Library maintenance
+and explicit operator submissions remain separate from new requester admission.
+Notification preferences select bounded recorded outcomes, without external
+transport. Requester polling acquires aired episodes individually; optional
+operator season-pack automation retains its earlier rules. Removed/rejected
+requester demand remains a tombstone and is not silently revived. Ready imports
+stay present. This implementation's complete CI/publication are pending.
+
 Series storage supports 128 tracked scopes, 2,000 episodes per plan, 20,000
 episodes total and an 8 MiB verified snapshot. A due pass checks at most four
 records and a submission batch at most 64 missing aired episodes. Calendar pages

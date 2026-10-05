@@ -5,7 +5,21 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current stage: 0.18.0
+## Current implementation: 0.19.0, awaiting CI
+
+[Plex requester policies](requesters.md) retain per-account identity bindings,
+versioned opt-in profiles, approvals and bounded quotas before acquisition.
+Compatible canonical demand shares work; captured destination/profile behavior
+survives edits and restart. Independent polling reports partial failures without
+removing another account's demand. Guarded operator controls expose status,
+limits, decisions and recorded notification outcomes. Original synthetic CI
+scenarios cover multiple accounts, native acquisition and persistence recovery.
+
+Complete Actions validation and CI publication are pending for this implementation.
+Prior release evidence does not validate these changes. Only after all five jobs
+and publication pass can the next stage, IRC automation, begin.
+
+## Previous stage: 0.18.0
 
 Complete shared-group baselines and replacements are reviewed through
 CLI/API/browser. Every child retains immutable parent lineage and one new
