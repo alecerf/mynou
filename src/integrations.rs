@@ -377,12 +377,12 @@ fn fetch_json_before(url: &str, headers: &[(String, String)], deadline: Instant)
     let response = client()
         .with_timeout(timeout.min(Duration::from_secs(10)))
         .request("GET", url, headers, &[])
-        .map_err(|_| "Plex: account request failed")?;
+        .map_err(|_| "Plex: network request failed")?;
     if !(200..300).contains(&response.status) {
-        return Err("Plex: account request failed".into());
+        return Err(format!("Plex: HTTP response {}", response.status));
     }
-    json::parse(std::str::from_utf8(&response.body).map_err(|_| "Plex: invalid account response")?)
-        .map_err(|_| "Plex: invalid account response".into())
+    json::parse(std::str::from_utf8(&response.body).map_err(|_| "Plex: invalid UTF-8")?)
+        .map_err(|_| "Plex: invalid JSON response".into())
 }
 pub(crate) fn requester_watchlist(
     config: &Config,
