@@ -187,6 +187,158 @@ fn conflicting_profiles_and_destinations_do_not_merge_or_charge_unadmitted_deman
     assert_eq!(job(&engine, "alice").id, job(&engine, "bob").id);
 }
 #[test]
+fn uncaptured_operator_jobs_require_verified_ready_imports_and_compatible_quality() {
+    for case in [
+        "pending",
+        "foreign",
+        "missing",
+        "directory",
+        "parent",
+        "symlink_file",
+        "symlink_parent",
+        "valid",
+        "restricted_without_baseline",
+        "blocked_baseline",
+        "accepted_baseline",
+        "profile_mismatch",
+    ] {
+        let dir = Directory::new();
+        let accounts = Accounts::open();
+        accounts.watchlist("alice", vec![movie(7, "Fixture Movie")]);
+        let mut cfg = accounts.config(&dir.0);
+        if matches!(
+            case,
+            "restricted_without_baseline" | "blocked_baseline" | "accepted_baseline"
+        ) {
+            cfg.selection.profiles.insert(
+                "any".into(),
+                Profile {
+                    blocked_terms: vec!["blocked".into()],
+                    ..Profile::default()
+                },
+            );
+        }
+        let engine = Engine::open_for_management(cfg.clone()).unwrap();
+        let mut operator = lock(&engine.store)
+            .unwrap()
+            .submit(request(7, "Fixture Movie"))
+            .unwrap();
+        let root = &cfg.movies_root;
+        fs::create_dir_all(root).unwrap();
+        if case != "pending" {
+            let path = match case {
+                "foreign" => root.with_file_name("movies-sibling").join("fixture.mp4"),
+                "parent" => root.join("../outside/fixture.mp4"),
+                "symlink_parent" => root.join("link/fixture.mp4"),
+                _ => root.join("fixture.mp4"),
+            };
+            match case {
+                "missing" => {}
+                "directory" => fs::create_dir_all(&path).unwrap(),
+                "symlink_file" | "symlink_parent" => {
+                    #[cfg(unix)]
+                    {
+                        let outside = dir.0.join("outside");
+                        fs::create_dir_all(&outside).unwrap();
+                        let source = outside.join("fixture.mp4");
+                        fs::write(&source, include_bytes!("../examples/demo.mp4")).unwrap();
+                        if case == "symlink_file" {
+                            std::os::unix::fs::symlink(source, &path).unwrap();
+                        } else {
+                            std::os::unix::fs::symlink(outside, root.join("link")).unwrap();
+                        }
+                    }
+                    #[cfg(not(unix))]
+                    continue;
+                }
+                _ => {
+                    fs::create_dir_all(path.parent().unwrap()).unwrap();
+                    fs::write(&path, include_bytes!("../examples/demo.mp4")).unwrap();
+                }
+            }
+            operator.state = "ready".into();
+            operator.progress = 1.0;
+            operator.imports = vec![path.to_str().unwrap().into()];
+            if matches!(
+                case,
+                "blocked_baseline" | "accepted_baseline" | "profile_mismatch"
+            ) {
+                operator.release = Some(mynou::store::RecordedRelease {
+                    title: format!(
+                        "Fixture.Movie.2024.1080p.BluRay.x264{}",
+                        if case == "blocked_baseline" {
+                            ".blocked"
+                        } else {
+                            ""
+                        }
+                    ),
+                    profile: if case == "profile_mismatch" {
+                        "other"
+                    } else {
+                        "any"
+                    }
+                    .into(),
+                });
+            }
+            lock(&engine.store)
+                .unwrap()
+                .update(operator.clone())
+                .unwrap();
+        }
+        let journal = fs::read(cfg.store_dir.join("journal.bin")).unwrap();
+        enable(&engine, "alice", false);
+        engine.sync_requesters().unwrap();
+        let admitted = matches!(case, "valid" | "accepted_baseline");
+        let row = demand(&engine, "alice");
+        assert_eq!(
+            row.get("state").unwrap().as_str(),
+            Some(if admitted { "ready" } else { "conflict" }),
+            "{case}"
+        );
+        assert_eq!(
+            row.get("charged_at") != Some(&Value::Null),
+            admitted,
+            "{case}"
+        );
+        assert_eq!(
+            engine
+                .requester("alice", 0, 100)
+                .unwrap()
+                .get("daily")
+                .unwrap()
+                .as_u64(),
+            Some(u64::from(admitted)),
+            "{case}"
+        );
+        if admitted {
+            assert_eq!(
+                row.get("job_id").unwrap().as_str(),
+                Some(operator.id.as_str())
+            );
+        } else {
+            assert_eq!(row.get("job_id"), Some(&Value::Null));
+        }
+        assert_eq!(
+            lock(&engine.store).unwrap().list(),
+            vec![operator.clone()],
+            "{case}"
+        );
+        assert_eq!(
+            fs::read(cfg.store_dir.join("journal.bin")).unwrap(),
+            journal,
+            "{case}"
+        );
+        drop(engine);
+        let reopened = Engine::open_for_management(cfg).unwrap();
+        assert_eq!(demand(&reopened, "alice"), row, "{case}");
+        assert_eq!(
+            lock(&reopened.store).unwrap().list(),
+            vec![operator],
+            "{case}"
+        );
+    }
+}
+#[test]
 fn quota_guards_fence_parallel_approvals_and_retries_without_double_charging() {
     let dir = Directory::new();
     let accounts = Accounts::open();

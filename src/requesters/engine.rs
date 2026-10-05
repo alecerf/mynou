@@ -12,6 +12,8 @@ use crate::{
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
+    fs,
+    path::{Component, Path},
     sync::atomic::Ordering,
     time::{Duration, Instant},
 };
@@ -39,6 +41,10 @@ fn compatible(config: &crate::config::Config, demand: &Demand, job: &Job) -> Res
     if let Some(p) = &job.requester {
         return Ok(p.capture == demand.capture);
     }
+    // Uncaptured work cannot promise a frozen profile or destination after restart.
+    if job.state != "ready" || job.imports.is_empty() {
+        return Ok(false);
+    }
     let capture = Capture::new(
         config,
         &Policy {
@@ -48,12 +54,30 @@ fn compatible(config: &crate::config::Config, demand: &Demand, job: &Job) -> Res
         },
         &job.request.kind,
     )?;
-    Ok(!(job.state == "ready" && job.imports.is_empty())
-        && capture == demand.capture
-        && job
-            .release
-            .as_ref()
-            .is_none_or(|r| r.profile == capture.profile_name))
+    let root = Path::new(if job.request.kind == "movie" {
+        &capture.movies_root
+    } else {
+        &capture.series_root
+    });
+    Ok(capture == demand.capture
+        && job.imports.iter().all(|file| {
+            let path = Path::new(file);
+            path.is_absolute()
+                && path.starts_with(root)
+                && !path.components().any(|c| c == Component::ParentDir)
+                && store::reject_symlinks(path).is_ok()
+                && fs::symlink_metadata(path).is_ok_and(|m| m.is_file())
+        })
+        && job.release.as_ref().map_or_else(
+            || capture.profile == crate::selection::Profile::default(),
+            |r| {
+                r.profile == capture.profile_name
+                    && capture
+                        .profile
+                        .assess(&r.title, &job.request.title)
+                        .accepted
+            },
+        ))
 }
 fn interest(state: &State, job: &Job, config: &crate::config::Config) -> bool {
     if job.requester.is_none() || state.operator_jobs.contains(&job.id) {
