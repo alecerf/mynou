@@ -331,6 +331,9 @@ impl Engine {
         }
         // Metadata-only I/O precedes both storage locks. No transfer or payload is scheduled.
         let metadata = inspect_metadata(&query.source_url, deadline)?;
+        if Instant::now() >= deadline {
+            return Err("Shared-file metadata deadline exceeded".into());
+        }
         if metadata
             .files
             .iter()
@@ -457,6 +460,9 @@ impl Engine {
         } else {
             0
         };
+        if Instant::now() >= deadline {
+            return Err("Shared-file action deadline exceeded; preview again".into());
+        }
         let jobs = if query.apply {
             store.submit_shared_file(file.clone(), requests)?
         } else {

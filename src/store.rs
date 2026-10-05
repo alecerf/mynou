@@ -88,6 +88,8 @@ pub struct Store {
     journal: File,
     jobs: BTreeMap<String, Job>,
     by_key: BTreeMap<String, String>,
+    shared_by_media: BTreeMap<String, String>,
+    shared_by_physical: BTreeMap<(String, String), crate::pack::SharedFile>,
     events: VecDeque<Event>,
     sequence: u64,
     chain: [u8; 32],
@@ -709,6 +711,8 @@ impl Store {
                 journal,
                 jobs: BTreeMap::new(),
                 by_key: BTreeMap::new(),
+                shared_by_media: BTreeMap::new(),
+                shared_by_physical: BTreeMap::new(),
                 events: VecDeque::new(),
                 sequence: 0,
                 chain: [0; 32],
@@ -756,6 +760,8 @@ impl Store {
                 journal,
                 jobs: BTreeMap::new(),
                 by_key: BTreeMap::new(),
+                shared_by_media: BTreeMap::new(),
+                shared_by_physical: BTreeMap::new(),
                 events: VecDeque::new(),
                 sequence: 0,
                 chain: [0; 32],
@@ -786,6 +792,16 @@ impl Store {
             .values()
             .map(|job| job.request.media_key())
             .collect()
+    }
+
+    fn index_shared(&mut self, job: &Job) {
+        if let Some(file) = &job.shared_file {
+            self.shared_by_media
+                .insert(job.request.media_key(), job.id.clone());
+            self.shared_by_physical
+                .entry((file.torrent_id.clone(), file.file_path.clone()))
+                .or_insert_with(|| file.clone());
+        }
     }
 
     pub fn list(&self) -> Vec<Job> {
@@ -1072,6 +1088,11 @@ impl Store {
             .cloned()
             .collect();
         let mut reused = Vec::new();
+        let media_keys = if known.is_empty() {
+            self.media_keys()
+        } else {
+            BTreeSet::new()
+        };
         for request in requests {
             request.validate()?;
             if request.kind != "episode"
@@ -1089,11 +1110,7 @@ impl Store {
                 .find(|job| job.request.episode == request.episode)
             {
                 reused.push(job.clone());
-            } else if self
-                .jobs
-                .values()
-                .any(|job| job.request.media_key() == request.media_key())
-            {
+            } else if media_keys.contains(&request.media_key()) {
                 return Err("Shared-file owner already has an unrelated episode request".into());
             }
             if self.jobs.values().any(|job| {
@@ -1106,14 +1123,9 @@ impl Store {
             }
         }
         if self
-            .jobs
-            .values()
-            .filter_map(|job| job.shared_file.as_ref())
-            .any(|other| {
-                other.torrent_id == file.torrent_id
-                    && other.file_path == file.file_path
-                    && other != file
-            })
+            .shared_by_physical
+            .get(&(file.torrent_id.clone(), file.file_path.clone()))
+            .is_some_and(|known| known != file)
         {
             return Err("Physical video already has different shared ownership".into());
         }
@@ -1327,10 +1339,8 @@ impl Store {
             }
             return Ok(existing);
         }
-        if self
-            .jobs
-            .values()
-            .any(|job| job.shared_file.is_some() && job.request.media_key() == request.media_key())
+        if !self.shared_by_media.is_empty()
+            && self.shared_by_media.contains_key(&request.media_key())
         {
             return Err("Episode already belongs to immutable shared-file ownership".into());
         }
@@ -1654,20 +1664,20 @@ impl Store {
         self.validate_lineage(job)?;
         if let Some(file) = &job.shared_file {
             file.validate_job(job)?;
-            if self.jobs.values().any(|other| {
-                other.id != job.id
-                    && (other.shared_file.as_ref().is_some_and(|known| {
-                        known.torrent_id == file.torrent_id
-                            && known.file_path == file.file_path
-                            && known != file
-                    }) || (other.request.media_key() == job.request.media_key()
-                        && other.shared_file.as_ref() != Some(file)))
-            }) {
+            if self
+                .shared_by_physical
+                .get(&(file.torrent_id.clone(), file.file_path.clone()))
+                .is_some_and(|known| known != file)
+                || self
+                    .shared_by_media
+                    .get(&job.request.media_key())
+                    .is_some_and(|owner| owner != &job.id)
+            {
                 return Err("Shared-file physical identity or logical ownership conflicts".into());
             }
-        } else if self.jobs.values().any(|other| {
-            other.shared_file.is_some() && other.request.media_key() == job.request.media_key()
-        }) {
+        } else if !self.shared_by_media.is_empty()
+            && self.shared_by_media.contains_key(&job.request.media_key())
+        {
             return Err("An unrelated request cannot replace shared-file ownership".into());
         }
         if let Some(current) = self.jobs.get(&job.id) {
@@ -1889,6 +1899,7 @@ impl Store {
         self.chain = digest;
         self.journal_bytes = journal_bytes;
         for job in jobs {
+            self.index_shared(&job);
             self.by_key.insert(job.key.clone(), job.id.clone());
             self.jobs.insert(job.id.clone(), job);
         }
@@ -2042,6 +2053,7 @@ impl Store {
             if job.shared_file.is_some() && &bytes[..8] != SHARED_SNAPSHOT_MAGIC {
                 return Err("Shared ownership requires snapshot format 2".into());
             }
+            self.index_shared(&job);
             self.by_key.insert(job.key.clone(), job.id.clone());
             if keys.insert(job.key.clone(), job.id.clone()).is_some()
                 || self.jobs.insert(job.id.clone(), job).is_some()
@@ -2200,6 +2212,7 @@ impl Store {
                         .map_err(|error| format!("invalid journal job: {error}"))?;
                 }
                 for job in jobs {
+                    self.index_shared(&job);
                     self.by_key.insert(job.key.clone(), job.id.clone());
                     self.jobs.insert(job.id.clone(), job);
                 }

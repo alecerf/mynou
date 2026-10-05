@@ -449,6 +449,39 @@ fn cancelling_the_first_claim_preserves_an_unclaimed_owner_across_restart_and_re
 }
 
 #[test]
+fn cancelling_the_last_unclaimed_owner_pauses_the_known_transfer_without_deleting_bytes() {
+    let directory = Directory::new();
+    let catalog = catalog(2);
+    let torrent = torrent(&directory, "metadata");
+    let seed = Seeder::open(&directory.0.join("seed"), &[&torrent]);
+    let proxy = RecordingProxy::open(seed.client.listen_port());
+    let cfg = native_config(&directory, &catalog);
+    let engine = Engine::open(cfg).unwrap();
+    let series = tracked(&engine);
+    apply(&engine, &series, &query(&torrent.magnet(proxy.port)));
+    engine.tick().unwrap();
+    let all = lock(&engine.store).unwrap().list();
+    let active = all.iter().find(|j| j.download_id.is_some()).unwrap();
+    let unclaimed = all.iter().find(|j| j.id != active.id).unwrap();
+    engine.cancel(&active.id).unwrap();
+    engine.cancel(&unclaimed.id).unwrap();
+    assert!(
+        lock(&engine.store)
+            .unwrap()
+            .list()
+            .iter()
+            .all(|j| j.state == "cancelled")
+    );
+    let status = engine.transfer(&torrent.id).unwrap();
+    assert_eq!(status.get("paused"), Some(&Value::Bool(true)));
+    assert_eq!(engine.transfers().unwrap().as_array().unwrap().len(), 1);
+    engine.retry(&unclaimed.id).unwrap();
+    proxy.payloads_enabled.store(true, Ordering::Release);
+    let ready = run_until(&engine, &unclaimed.id, "ready");
+    assert_eq!(ready.shared_file, active.shared_file);
+}
+
+#[test]
 fn changed_source_after_acquisition_commit_never_creates_a_transfer_or_import() {
     let directory = Directory::new();
     let provider = Provider::open();
