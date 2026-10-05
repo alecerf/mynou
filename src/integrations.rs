@@ -224,14 +224,6 @@ fn metadata_page(value: &Value) -> Result<(&[Value], Option<u64>)> {
     Ok((items, integer(container, "totalSize")))
 }
 
-fn plex_items(url: &str, headers: &[(String, String)]) -> Result<Vec<Value>> {
-    plex_items_before(
-        url,
-        headers,
-        Instant::now() + Duration::from_secs(90),
-        MAX_ITEMS,
-    )
-}
 fn plex_items_before(
     url: &str,
     headers: &[(String, String)],

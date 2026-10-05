@@ -575,6 +575,7 @@ fn interrupted_reservations_recover_without_replaying_an_uncommitted_grab() {
 fn forged_origin_changes_and_silent_format_downgrades_fail_before_downloads_start() {
     for corruption in [
         "hash",
+        "revision",
         "missing_route",
         "mismatched_job",
         "downgrade_job",
@@ -596,6 +597,7 @@ fn forged_origin_changes_and_silent_format_downgrades_fail_before_downloads_star
         let p = cfg.store_dir.join("announcements.bin");
         let mut history = read_checked(&p);
         match corruption {
+            "revision" => row_mut(&mut history, row_id(&row)).insert("revision", "1"),
             "hash" => row_mut(&mut history, row_id(&row))
                 .get_mut("route")
                 .unwrap()
@@ -881,4 +883,37 @@ fn negative_plex_checks_wait_without_selecting_a_source_and_routing_wakes_the_jo
     assert!(routing(&engine.irc_route_pending().unwrap()));
     assert_eq!(job(&engine, &admitted.id).next_attempt_at, 0);
     assert!(engine.transfers().unwrap().as_array().unwrap().is_empty());
+}
+
+#[test]
+fn an_origin_cannot_create_its_own_admission_in_journal_replay() {
+    let dir = Directory::new();
+    let torrent = movie(&dir, "Fixture.Movie.2024.1080p.mp4");
+    let seed = Seeder::open(&dir.0.join("seed"), &[&torrent]);
+    let cfg = configuration(&dir.0.join("engine"), seed.client.listen_port());
+    let engine = Engine::open(cfg.clone()).unwrap();
+    engine.submit(request(7)).unwrap();
+    receive(&engine, &torrent.id, 7);
+    assert!(routing(&engine.irc_route_pending().unwrap()));
+    drop(engine);
+    let path = cfg.store_dir.join("journal.bin");
+    let bytes = fs::read(&path).unwrap();
+    let second = 116 + u32::from_le_bytes(bytes[16..20].try_into().unwrap()) as usize;
+    assert_eq!(&bytes[second..second + 8], b"MYNOUJ05");
+    let length = u32::from_le_bytes(bytes[second + 16..second + 20].try_into().unwrap()) as usize;
+    let mut value =
+        mynou::json::parse(std::str::from_utf8(&bytes[second + 84..second + 84 + length]).unwrap())
+            .unwrap();
+    value.get_mut("event").unwrap().insert("id", "1");
+    let payload = mynou::json::stringify(&value).into_bytes();
+    let mut frame = b"MYNOUJ05".to_vec();
+    frame.extend_from_slice(&1_u64.to_le_bytes());
+    frame.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    frame.extend_from_slice(&[0; 32]);
+    frame.extend_from_slice(&mynou::crypto::sha256(&frame));
+    frame.extend_from_slice(&payload);
+    frame.extend_from_slice(&mynou::crypto::sha256(&frame));
+    fs::write(path, frame).unwrap();
+    assert!(Engine::open(cfg.clone()).is_err());
+    assert!(!cfg.downloads.data_dir.join(&torrent.id).exists());
 }

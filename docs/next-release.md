@@ -12,7 +12,7 @@ The active 0.20.1 increment implements configured hash-pinned magnets and
 metadata-only verification before candidate routing to existing admitted jobs.
 Plex availability, requester approval/quotas, captured profiles/destinations,
 source numbering and exclusive physical ownership remain mandatory. Checked
-reservations precede immutable job origins. Twenty original CI scenarios cover
+reservations precede immutable job origins. Twenty-one original CI scenarios cover
 the full path, metadata gates, races, quotas, imports and recovery. Complete
 validation and CI publication remain pending for the active source.
 

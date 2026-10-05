@@ -747,8 +747,11 @@ impl Record {
         }
         if let Some(route) = &r.route {
             route.origin.validate_record(&r)?;
-            if route.reserved_at < r.first_seen {
-                return Err("IRC: acquisition reservation predates its claim".into());
+            if route.reserved_at < r.first_seen
+                || r.revision < 2
+                || (r.decision != "pending" && r.revision < 3)
+            {
+                return Err("IRC: inconsistent reservation revision or timestamp".into());
             }
         }
         Ok(r)

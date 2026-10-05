@@ -1912,6 +1912,9 @@ impl Store {
                 return Err("ready import provenance is immutable".to_owned());
             }
         } else {
+            if job.irc_origin.is_some() {
+                return Err("IRC provenance requires a previously admitted job".into());
+            }
             if self.by_key.contains_key(&job.key) {
                 return Err("duplicate request identity".to_owned());
             }
