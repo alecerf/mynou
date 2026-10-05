@@ -490,6 +490,22 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
                 {
                     return Ok((404, error("Unknown library route")));
                 }
+                if parts[1] == "group" {
+                    let value = control_body(
+                        body,
+                        &[
+                            "action",
+                            "release_title",
+                            "source_url",
+                            "file_path",
+                            "apply",
+                            "plan_id",
+                        ],
+                        false,
+                    )?;
+                    let query = crate::library::GroupRequest::from_json(&value)?;
+                    return Ok((200, engine.library_group(parts[0], &query)?));
+                }
                 let job = match parts[1] {
                     "monitor" => {
                         let value = control_body(body, &["enabled"], false)?;

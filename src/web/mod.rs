@@ -483,6 +483,59 @@ impl Web {
                     ))
                 }
             }
+            "/ui/library/group" => {
+                let ids = form.ids(false)?;
+                if ids.len() != 1 {
+                    return Err("Choose one current shared library owner".into());
+                }
+                if form.value("action")? == "apply" {
+                    form.only(&["csrf", "id", "action", "plan_id"])?;
+                    let query = lock(&self.sessions)?.group_preview(
+                        &session.id,
+                        &ids[0],
+                        form.value("plan_id")?,
+                    )?;
+                    engine.library_group(&ids[0], &query)?;
+                    lock(&self.sessions)?.clear_group_preview(&session.id);
+                    return self.redirect(session, "/ui/library", vec!["Whole-group decision recorded. Replacements promote only after every owner is confirmed".into()]);
+                }
+                form.only(&[
+                    "csrf",
+                    "id",
+                    "action",
+                    "operation",
+                    "release_title",
+                    "source_value",
+                    "file_path",
+                ])?;
+                if form.value("action")? != "preview" {
+                    return Err("Unknown shared-group browser action".into());
+                }
+                let mut body = crate::json::Value::object();
+                body.insert("action", form.value("operation")?.to_owned());
+                body.insert("release_title", form.value("release_title")?.to_owned());
+                if form.value("operation")? == "replace" {
+                    body.insert("source_url", form.value("source_value")?.to_owned());
+                    body.insert("file_path", form.value("file_path")?.to_owned());
+                } else {
+                    form.only(&["csrf", "id", "action", "operation", "release_title"])?;
+                }
+                let mut query = crate::library::GroupRequest::from_json(&body)?;
+                let report = engine.library_group(&ids[0], &query)?;
+                query.apply = true;
+                query.plan_id = Some(
+                    report
+                        .get("plan_id")
+                        .and_then(crate::json::Value::as_str)
+                        .ok_or("Missing group review guard")?
+                        .into(),
+                );
+                lock(&self.sessions)?.save_group_preview(&session.id, &ids[0], query)?;
+                Ok(Response::html(
+                    200,
+                    views::library_group(session, &ids[0], &report),
+                ))
+            }
             "/ui/series/shared-file" => {
                 let ids = form.ids(false)?;
                 if ids.len() != 1 {

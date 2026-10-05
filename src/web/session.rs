@@ -18,6 +18,12 @@ struct SharedPreview {
     query: crate::pack::SharedFileRequest,
     expires: Instant,
 }
+#[derive(Clone)]
+struct GroupPreview {
+    owner_id: String,
+    query: crate::library::GroupRequest,
+    expires: Instant,
+}
 
 #[derive(Clone)]
 pub struct Session {
@@ -30,6 +36,7 @@ pub struct Session {
     expires: Instant,
     attempts: u8,
     shared_preview: Option<SharedPreview>,
+    group_preview: Option<GroupPreview>,
 }
 
 pub struct Sessions(BTreeMap<String, Session>);
@@ -77,6 +84,7 @@ impl Sessions {
             expires: Instant::now() + Duration::from_secs(CHALLENGE_SECS),
             attempts: 0,
             shared_preview: None,
+            group_preview: None,
         };
         self.0.insert(session.id.clone(), session.clone());
         Ok(session)
@@ -161,6 +169,7 @@ impl Sessions {
             query,
             expires: Instant::now() + Duration::from_secs(CHALLENGE_SECS),
         });
+        session.group_preview = None;
         Ok(())
     }
     pub fn shared_preview(
@@ -184,6 +193,54 @@ impl Sessions {
     pub fn clear_shared_preview(&mut self, id: &str) {
         if let Some(session) = self.0.get_mut(id) {
             session.shared_preview = None;
+        }
+    }
+
+    pub fn save_group_preview(
+        &mut self,
+        id: &str,
+        owner_id: &str,
+        query: crate::library::GroupRequest,
+    ) -> Result<()> {
+        query.validate()?;
+        if !query.apply {
+            return Err("A group browser review requires its apply guard".into());
+        }
+        self.purge();
+        let session = self
+            .0
+            .get_mut(id)
+            .filter(|session| session.origin.is_some())
+            .ok_or("Browser session expired")?;
+        session.group_preview = Some(GroupPreview {
+            owner_id: owner_id.into(),
+            query,
+            expires: Instant::now() + Duration::from_secs(CHALLENGE_SECS),
+        });
+        session.shared_preview = None;
+        Ok(())
+    }
+    pub fn group_preview(
+        &mut self,
+        id: &str,
+        owner_id: &str,
+        plan_id: &str,
+    ) -> Result<crate::library::GroupRequest> {
+        self.purge();
+        self.0
+            .get(id)
+            .and_then(|session| session.group_preview.as_ref())
+            .filter(|preview| {
+                preview.expires > Instant::now()
+                    && preview.owner_id == owner_id
+                    && preview.query.plan_id.as_deref() == Some(plan_id)
+            })
+            .map(|preview| preview.query.clone())
+            .ok_or("Group browser preview expired or changed; preview again".into())
+    }
+    pub fn clear_group_preview(&mut self, id: &str) {
+        if let Some(session) = self.0.get_mut(id) {
+            session.group_preview = None;
         }
     }
 }

@@ -126,7 +126,7 @@ impl SharedFile {
             || job.request.source_path.is_some()
             || job.pack_file.as_deref() != Some(self.file_path.as_str())
             || job.pack_origin.is_some()
-            || job.upgrade_parent.is_some()
+            || (job.upgrade_parent.is_some() != job.shared_upgrade.is_some())
             || job
                 .download_id
                 .as_ref()
@@ -140,7 +140,7 @@ impl SharedFile {
                 .imports
                 .first()
                 .is_some_and(|path| path != &self.import_path)
-            || (job.state == "ready" && job.imports.is_empty())
+            || (matches!(job.state.as_str(), "ready" | "staged") && job.imports.is_empty())
         {
             return Err("Shared-file owner or import provenance differs from its binding".into());
         }

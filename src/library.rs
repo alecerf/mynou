@@ -1,4 +1,5 @@
 //! Owned library versions and controlled upgrades. Network I/O never holds the journal lock.
+mod groups;
 use crate::{
     Result,
     engine::{Engine, lock, public_job},
@@ -7,6 +8,7 @@ use crate::{
     media,
     store::{self, Job, RecordedRelease, reject_symlinks},
 };
+pub use groups::GroupRequest;
 use std::{
     fs,
     path::Path,
@@ -19,7 +21,7 @@ fn pending_for<'a>(jobs: &'a [Job], media_key: &str) -> Option<&'a Job> {
         job.upgrade_parent.is_some()
             && job.request.media_key() == media_key
             && !matches!(job.state.as_str(), "ready" | "cancelled")
-            && (job.state != "failed" || job.next_attempt_at != 0)
+            && (job.shared_upgrade.is_some() || job.state != "failed" || job.next_attempt_at != 0)
     })
 }
 
@@ -52,6 +54,10 @@ pub fn describe(current: &[Job], all: &[Job]) -> Value {
                     job.release.is_none() && job.shared_file.is_none(),
                 );
                 value.insert("group_upgrade_required", job.shared_file.is_some());
+                value.insert(
+                    "group_baseline_required",
+                    job.shared_file.is_some() && job.release.is_none(),
+                );
                 value.insert("imports_present", import_exists(job));
                 value.insert(
                     "pending_upgrade_id",

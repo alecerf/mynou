@@ -34,6 +34,7 @@ const HELP: &str = "Mynou — media automation using Rust std only
                [--future-only] [--include-specials] [--unmonitored] [--config mynou.json]
   series-pack ID --url MAGNET_OR_TORRENT --mapping FILE [--config mynou.json]
   series-shared-file ID --url MAGNET_OR_TORRENT --mapping FILE
+  library-group ID --mapping FILE [--apply --plan-id ID]
       [--apply --plan-id ID] [--config mynou.json]
   series-pack-search ID --season N [--apply] [--candidate-id ID --scope-id ID]
                      [--config mynou.json]
@@ -151,6 +152,7 @@ impl Args {
             ],
             "series-pack" => &["config", "help", "url", "mapping"],
             "series-shared-file" => &["config", "help", "url", "mapping", "apply", "plan-id"],
+            "library-group" => &["config", "help", "mapping", "apply", "plan-id"],
             "series-numbering" => &["config", "help", "mapping", "apply", "plan-id"],
             "series-pack-search" => &[
                 "config",
@@ -206,6 +208,7 @@ impl Args {
                 "series-refresh",
                 "series-pack",
                 "series-shared-file",
+                "library-group",
                 "series-pack-search",
                 "series-numbering",
                 "pack-remap",
@@ -725,6 +728,53 @@ fn execute(args: Args) -> Result<()> {
                 &format!("/api/jobs/{id}/pack-mapping"),
                 Some(&body),
             )?);
+        }
+        "library-group" => {
+            let id = args.positions[0].to_ascii_lowercase();
+            if id.len() != 32 || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                return Err("Invalid shared library owner ID".into());
+            }
+            let mapping = args
+                .options
+                .get("mapping")
+                .ok_or("Specify --mapping FILE")?;
+            let mut bytes = Vec::new();
+            std::fs::File::open(mapping)
+                .map_err(|_| "Cannot open group mapping")?
+                .take(512 * 1024 + 1)
+                .read_to_end(&mut bytes)
+                .map_err(|_| "Cannot read group mapping")?;
+            if bytes.len() > 512 * 1024 {
+                return Err("Group mapping exceeds 512 KiB".into());
+            }
+            let mut value = json::parse(
+                std::str::from_utf8(&bytes).map_err(|_| "Group mapping is not UTF-8")?,
+            )?;
+            if value.as_object().is_none_or(|fields| {
+                fields.keys().any(|key| {
+                    !["action", "release_title", "source_url", "file_path"].contains(&key.as_str())
+                })
+            }) {
+                return Err("Group mapping contains an unknown field".into());
+            }
+            value.insert("apply", args.options.contains_key("apply"));
+            if let Some(plan) = args.options.get("plan-id") {
+                value.insert("plan_id", plan.clone());
+            }
+            let query = mynou::library::GroupRequest::from_json(&value)?;
+            if online {
+                output(&call(
+                    &config,
+                    &path,
+                    "POST",
+                    &format!("/api/library/{id}/group"),
+                    Some(&query.to_json()),
+                )?);
+            } else if query.apply {
+                return Err("Group application requires a running Mynou service".into());
+            } else {
+                output(&Engine::open_for_preview(config)?.library_group(&id, &query)?);
+            }
         }
         "monitor" | "unmonitor" | "baseline" => {
             let id = &args.positions[0];

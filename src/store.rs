@@ -18,6 +18,11 @@ const SNAPSHOT_MAGIC: &[u8; 8] = b"MYNOUS01";
 // Old readers must reject shared ownership instead of silently ignoring its owners.
 const SHARED_JOURNAL_MAGIC: &[u8; 8] = b"MYNOUJ02";
 const SHARED_SNAPSHOT_MAGIC: &[u8; 8] = b"MYNOUS02";
+const GROUP_JOURNAL_MAGIC: &[u8; 8] = b"MYNOUJ03";
+const GROUP_SNAPSHOT_MAGIC: &[u8; 8] = b"MYNOUS03";
+mod groups;
+pub use groups::SharedUpgrade;
+use groups::{GroupAction, group_format};
 const MAX_RECORD: usize = 16 * 1024 * 1024;
 const MAX_SNAPSHOT: usize = 16 * 1024 * 1024;
 const MAX_EVENTS: usize = 1_000;
@@ -71,6 +76,7 @@ pub struct Job {
     pub pack_file: Option<String>,
     pub pack_origin: Option<crate::pack::PackOrigin>,
     pub shared_file: Option<crate::pack::SharedFile>,
+    pub shared_upgrade: Option<SharedUpgrade>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -438,6 +444,12 @@ impl Job {
                     .as_ref()
                     .map_or(Value::Null, crate::pack::SharedFile::to_json),
             ),
+            (
+                "shared_upgrade",
+                self.shared_upgrade
+                    .as_ref()
+                    .map_or(Value::Null, SharedUpgrade::to_json),
+            ),
         ])
     }
 
@@ -486,7 +498,27 @@ impl Job {
                 None | Some(Value::Null) => None,
                 Some(value) => Some(crate::pack::SharedFile::from_json(value)?),
             },
+            shared_upgrade: match map.get("shared_upgrade") {
+                None | Some(Value::Null) => None,
+                Some(value) => Some(SharedUpgrade::from_json(value)?),
+            },
         };
+        if job.shared_upgrade.is_some()
+            && (job.shared_file.is_none() || job.upgrade_parent.is_none() || job.release.is_none())
+        {
+            return Err("Shared replacement requires file, lineage and release provenance".into());
+        }
+        if job.state == "staged"
+            && (job.shared_upgrade.is_none()
+                || job.imports.is_empty()
+                || job.progress != 1.0
+                || job.lease_id.is_some()
+                || job.lease_until != 0
+                || job.next_attempt_at != 0
+                || job.last_error.is_some())
+        {
+            return Err("Invalid staged shared-owner confirmation".into());
+        }
         if let Some(file) = &job.shared_file {
             file.validate_job(&job)?;
         }
@@ -796,8 +828,10 @@ impl Store {
 
     fn index_shared(&mut self, job: &Job) {
         if let Some(file) = &job.shared_file {
-            self.shared_by_media
-                .insert(job.request.media_key(), job.id.clone());
+            if job.shared_upgrade.is_none() {
+                self.shared_by_media
+                    .insert(job.request.media_key(), job.id.clone());
+            }
             self.shared_by_physical
                 .entry((file.torrent_id.clone(), file.file_path.clone()))
                 .or_insert_with(|| file.clone());
@@ -820,30 +854,9 @@ impl Store {
             .filter(|job| job.state == "ready" && !job.imports.is_empty())
             .filter_map(|job| job.upgrade_parent.as_deref())
             .collect();
-        // Cache every job's lineage root. Child IDs and creation timestamps
-        // must never change precedence between independent imports.
-        let mut roots: BTreeMap<&str, &Job> = BTreeMap::new();
-        for job in self.jobs.values() {
-            let mut path = Vec::new();
-            let mut cursor = job;
-            let root = loop {
-                if let Some(root) = roots.get(cursor.id.as_str()) {
-                    break *root;
-                }
-                path.push(cursor.id.as_str());
-                match cursor
-                    .upgrade_parent
-                    .as_deref()
-                    .and_then(|parent| self.jobs.get(parent))
-                {
-                    Some(parent) => cursor = parent,
-                    None => break cursor,
-                }
-            };
-            for id in path {
-                roots.insert(id, root);
-            }
-        }
+        let Ok(roots) = self.lineage_roots() else {
+            return Vec::new();
+        };
         let mut current: BTreeMap<String, (&Job, &Job)> = BTreeMap::new();
         for job in self.jobs.values().filter(|job| {
             job.state == "ready" && !job.imports.is_empty() && !replaced.contains(job.id.as_str())
@@ -870,10 +883,13 @@ impl Store {
     fn pending_upgrade(job: &Job) -> bool {
         job.upgrade_parent.is_some()
             && !matches!(job.state.as_str(), "ready" | "cancelled")
-            && (job.state != "failed" || job.next_attempt_at > 0)
+            && (job.shared_upgrade.is_some() || job.state != "failed" || job.next_attempt_at > 0)
     }
 
     fn upgrade_eligible(&self, job: &Job) -> bool {
+        if job.shared_upgrade.is_some() {
+            return self.group_eligible(job).is_ok();
+        }
         let Some(parent_id) = &job.upgrade_parent else {
             return true;
         };
@@ -976,6 +992,7 @@ impl Store {
             pack_file: None,
             pack_origin: None,
             shared_file: None,
+            shared_upgrade: None,
         };
         self.commit(job.clone(), "library upgrade recorded")?;
         Ok(job)
@@ -1185,6 +1202,7 @@ impl Store {
                 pack_file: Some(file.file_path.clone()),
                 pack_origin: None,
                 shared_file: Some(file.clone()),
+                shared_upgrade: None,
             });
         }
         self.validate_shared_batch(&jobs)?;
@@ -1217,6 +1235,7 @@ impl Store {
                 || job.download_id.is_some()
                 || job.acquisition_url.is_some()
                 || job.release.is_some()
+                || job.shared_upgrade.is_some()
                 || job.last_error.is_some()
                 || job.next_attempt_at != 0
                 || !job.monitored
@@ -1242,24 +1261,39 @@ impl Store {
     }
 
     fn validate_shared_groups(&self) -> Result<()> {
-        let mut groups: BTreeMap<String, (&crate::pack::SharedFile, BTreeSet<u32>)> =
-            BTreeMap::new();
+        let mut groups: BTreeMap<
+            String,
+            (&crate::pack::SharedFile, BTreeSet<u32>, &Job, usize, usize),
+        > = BTreeMap::new();
         let mut physical = BTreeMap::new();
-        let mut logical = BTreeSet::new();
+        let mut logical = BTreeMap::new();
+        let roots = self.lineage_roots()?;
         for job in self.jobs.values() {
             if let Some(file) = &job.shared_file {
                 file.validate_job(job)?;
                 let group = groups
                     .entry(file.id())
-                    .or_insert_with(|| (file, BTreeSet::new()));
+                    .or_insert_with(|| (file, BTreeSet::new(), job, 0, 0));
+                let root = roots
+                    .get(job.id.as_str())
+                    .ok_or("Missing shared lineage root")?;
+                let previous = logical.insert(job.request.media_key(), root.id.as_str());
                 if group.0 != file
                     || !group.1.insert(job.request.episode)
-                    || !logical.insert(job.request.media_key())
+                    || group.2.release != job.release
+                    || group.2.shared_upgrade != job.shared_upgrade
+                    || group.2.request.source_url != job.request.source_url
+                    || previous.is_some_and(|id| id != root.id)
                 {
                     return Err(
                         "Duplicate or conflicting shared owner in persistent storage".into(),
                     );
                 }
+                if job.shared_upgrade.is_some() {
+                    self.validate_group_lineage(job)?;
+                }
+                group.3 += usize::from(job.state == "ready");
+                group.4 += usize::from(job.state == "cancelled");
                 let key = (&file.torrent_id, &file.file_path);
                 if physical
                     .insert(key, file)
@@ -1269,7 +1303,13 @@ impl Store {
                 }
             }
         }
-        for (_, (file, numbers)) in groups {
+        for (_, (file, numbers, first, ready, cancelled)) in groups {
+            if first.shared_upgrade.is_some()
+                && ((ready > 0 && ready != numbers.len())
+                    || (cancelled > 0 && cancelled != numbers.len()))
+            {
+                return Err("Partially promoted or cancelled shared replacement in storage".into());
+            }
             if numbers
                 .into_iter()
                 .ne(file.first_episode..=file.last_episode)
@@ -1280,7 +1320,7 @@ impl Store {
         if self
             .jobs
             .values()
-            .any(|job| job.shared_file.is_none() && logical.contains(&job.request.media_key()))
+            .any(|job| job.shared_file.is_none() && logical.contains_key(&job.request.media_key()))
         {
             return Err("Unrelated request collides with shared ownership in storage".into());
         }
@@ -1372,6 +1412,7 @@ impl Store {
             pack_file,
             pack_origin,
             shared_file: None,
+            shared_upgrade: None,
         };
         self.commit(job.clone(), "request recorded")?;
         Ok(job)
@@ -1389,6 +1430,7 @@ impl Store {
             || current.pack_file != job.pack_file
             || current.pack_origin != job.pack_origin
             || current.shared_file != job.shared_file
+            || current.shared_upgrade != job.shared_upgrade
         {
             return Err("job identity is immutable".to_owned());
         }
@@ -1438,6 +1480,9 @@ impl Store {
             .last_error
             .clone()
             .unwrap_or_else(|| "state updated".to_owned());
+        if job.shared_upgrade.is_some() && job.state == "ready" && current.state != "ready" {
+            return self.finish_group_owner(job);
+        }
         self.commit(job, &message)
     }
 
@@ -1464,7 +1509,7 @@ impl Store {
             .jobs
             .values()
             .filter(|job| {
-                !matches!(job.state.as_str(), "ready" | "cancelled")
+                !matches!(job.state.as_str(), "ready" | "cancelled" | "staged")
                     && (job.state != "failed" || job.next_attempt_at > 0)
                     && job.next_attempt_at <= at
                     && (job.lease_id.is_none() || job.lease_until <= at)
@@ -1476,6 +1521,12 @@ impl Store {
                         .upgrade_parent
                         .as_ref()
                         .is_none_or(|parent| upgrade_parents.contains(parent))
+                    && job.shared_upgrade.as_ref().is_none_or(|lineage| {
+                        lineage
+                            .parent_jobs
+                            .iter()
+                            .all(|parent| upgrade_parents.contains(parent))
+                    })
             })
             .min_by(|a, b| (a.created_at, &a.id).cmp(&(b.created_at, &b.id)))
             .cloned();
@@ -1525,6 +1576,9 @@ impl Store {
 
     pub fn cancel(&mut self, id: &str) -> Result<Job> {
         let mut job = self.get(id).ok_or_else(|| "unknown job".to_owned())?;
+        if job.shared_upgrade.is_some() {
+            return self.cancel_group(id);
+        }
         if job.state == "ready" {
             return Err("a completed job cannot be cancelled".to_owned());
         }
@@ -1538,6 +1592,9 @@ impl Store {
 
     pub fn retry(&mut self, id: &str) -> Result<Job> {
         let mut job = self.get(id).ok_or_else(|| "unknown job".to_owned())?;
+        if job.shared_upgrade.is_some() {
+            return self.retry_group(id);
+        }
         if !matches!(job.state.as_str(), "failed" | "cancelled") {
             return Err("only a failed or cancelled job can be retried".to_owned());
         }
@@ -1588,6 +1645,9 @@ impl Store {
         {
             return Ok(());
         }
+        if job.shared_upgrade.is_some() {
+            return self.group_eligible(job);
+        }
         let media_key = job.request.media_key();
         if let Some(parent_id) = &job.upgrade_parent {
             let parent = self
@@ -1627,6 +1687,9 @@ impl Store {
         let Some(parent_id) = &job.upgrade_parent else {
             return Ok(());
         };
+        if job.shared_upgrade.is_some() {
+            return self.validate_group_lineage(job);
+        }
         let parent = self
             .jobs
             .get(parent_id)
@@ -1671,7 +1734,7 @@ impl Store {
                 || self
                     .shared_by_media
                     .get(&job.request.media_key())
-                    .is_some_and(|owner| owner != &job.id)
+                    .is_some_and(|owner| owner != &job.id && job.shared_upgrade.is_none())
             {
                 return Err("Shared-file physical identity or logical ownership conflicts".into());
             }
@@ -1686,6 +1749,7 @@ impl Store {
                 || current.created_at != job.created_at
                 || current.upgrade_parent != job.upgrade_parent
                 || current.shared_file != job.shared_file
+                || current.shared_upgrade != job.shared_upgrade
                 || (current.shared_file.is_some() && current.pack_file != job.pack_file)
             {
                 return Err("job identity or upgrade parent changed".to_owned());
@@ -1756,7 +1820,10 @@ impl Store {
             if self.by_key.contains_key(&job.key) {
                 return Err("duplicate request identity".to_owned());
             }
-            if job.upgrade_parent.is_some() && !self.upgrade_eligible(job) {
+            if job.upgrade_parent.is_some()
+                && job.shared_upgrade.is_none()
+                && !self.upgrade_eligible(job)
+            {
                 return Err("an upgrade requires a monitored current library parent".to_owned());
             }
         }
@@ -1770,7 +1837,7 @@ impl Store {
                 return Err("multiple pending upgrades for the same media".to_owned());
             }
             let was_pending = self.jobs.get(&job.id).is_some_and(Self::pending_upgrade);
-            if !was_pending && !self.upgrade_eligible(job) {
+            if !was_pending && job.shared_upgrade.is_none() && !self.upgrade_eligible(job) {
                 return Err("the upgrade parent is obsolete or no longer monitored".to_owned());
             }
         }
@@ -1831,6 +1898,20 @@ impl Store {
     }
 
     fn commit_jobs(&mut self, jobs: Vec<Job>, message: &str) -> Result<()> {
+        if jobs.len() > 1 {
+            self.validate_shared_batch(&jobs)?;
+        } else if let Some(job) = jobs.first() {
+            self.validate_group_single(job)?;
+        }
+        self.commit_operation(jobs, message, None)
+    }
+
+    fn commit_operation(
+        &mut self,
+        jobs: Vec<Job>,
+        message: &str,
+        action: Option<GroupAction>,
+    ) -> Result<()> {
         if self.read_only {
             return Err("storage is read-only".to_owned());
         }
@@ -1853,9 +1934,16 @@ impl Store {
             at: job.updated_at,
         };
         let mut value = object([("job", job.to_json()), ("event", event.to_json())]);
+        if let Some(action) = action {
+            value.insert("group_action", action.name());
+        }
         if jobs.len() > 1 {
             value.insert(
-                "shared_owners",
+                if action.is_some() {
+                    "group_jobs"
+                } else {
+                    "shared_owners"
+                },
                 Value::Array(jobs.iter().skip(1).map(Job::to_json).collect()),
             );
         }
@@ -1864,7 +1952,9 @@ impl Store {
             return Err("transaction too large".to_owned());
         }
         let mut frame = Vec::with_capacity(116 + payload.len());
-        frame.extend_from_slice(if job.shared_file.is_some() {
+        frame.extend_from_slice(if action.is_some() || group_format(job) {
+            GROUP_JOURNAL_MAGIC
+        } else if job.shared_file.is_some() {
             SHARED_JOURNAL_MAGIC
         } else {
             JOURNAL_MAGIC
@@ -1948,7 +2038,9 @@ impl Store {
             return Err("snapshot too large".to_owned());
         }
         let mut bytes = Vec::with_capacity(payload.len() + 48);
-        bytes.extend_from_slice(if self.jobs.values().any(|job| job.shared_file.is_some()) {
+        bytes.extend_from_slice(if self.jobs.values().any(group_format) {
+            GROUP_SNAPSHOT_MAGIC
+        } else if self.jobs.values().any(|job| job.shared_file.is_some()) {
             SHARED_SNAPSHOT_MAGIC
         } else {
             SNAPSHOT_MAGIC
@@ -2021,7 +2113,10 @@ impl Store {
         let mut bytes = Vec::with_capacity(length as usize);
         file.read_to_end(&mut bytes)
             .map_err(|error| error.to_string())?;
-        if &bytes[..8] != SNAPSHOT_MAGIC && &bytes[..8] != SHARED_SNAPSHOT_MAGIC {
+        if &bytes[..8] != SNAPSHOT_MAGIC
+            && &bytes[..8] != SHARED_SNAPSHOT_MAGIC
+            && &bytes[..8] != GROUP_SNAPSHOT_MAGIC
+        {
             return Err("invalid snapshot format".to_owned());
         }
         let encoded_length =
@@ -2050,7 +2145,10 @@ impl Store {
         let mut keys = BTreeMap::new();
         for value in job_values {
             let job = Job::from_json(value)?;
-            if job.shared_file.is_some() && &bytes[..8] != SHARED_SNAPSHOT_MAGIC {
+            if group_format(&job) && &bytes[..8] != GROUP_SNAPSHOT_MAGIC {
+                return Err("Shared-group upgrades require snapshot format 3".into());
+            }
+            if job.shared_file.is_some() && &bytes[..8] == SNAPSHOT_MAGIC {
                 return Err("Shared ownership requires snapshot format 2".into());
             }
             self.index_shared(&job);
@@ -2111,7 +2209,10 @@ impl Store {
             self.journal
                 .read_exact(&mut header)
                 .map_err(|error| error.to_string())?;
-            if &header[..8] != JOURNAL_MAGIC && &header[..8] != SHARED_JOURNAL_MAGIC {
+            if &header[..8] != JOURNAL_MAGIC
+                && &header[..8] != SHARED_JOURNAL_MAGIC
+                && &header[..8] != GROUP_JOURNAL_MAGIC
+            {
                 return Err(format!("corrupt journal at byte {offset}"));
             }
             if sha256(&header[..52]).as_slice() != &header[52..84] {
@@ -2174,7 +2275,10 @@ impl Store {
                 .iter()
                 .all(|key| !job_map.contains_key(*key));
                 let job = Job::from_json(job_value)?;
-                if job.shared_file.is_some() && &header[..8] != SHARED_JOURNAL_MAGIC {
+                if group_format(&job) && &header[..8] != GROUP_JOURNAL_MAGIC {
+                    return Err("Shared-group upgrades require journal format 3".into());
+                }
+                if job.shared_file.is_some() && &header[..8] == JOURNAL_MAGIC {
                     return Err("Shared ownership requires journal format 2".into());
                 }
                 let event = Event::from_json(field(map, "event")?)?;
@@ -2186,7 +2290,27 @@ impl Store {
                     return Err("inconsistent journal transaction".to_owned());
                 }
                 let mut jobs = vec![job];
-                if let Some(owners) = map.get("shared_owners") {
+                if let Some(action) = map.get("group_action") {
+                    if &header[..8] != GROUP_JOURNAL_MAGIC || map.contains_key("shared_owners") {
+                        return Err("Group action requires journal format 3".into());
+                    }
+                    let action =
+                        GroupAction::parse(action.as_str().ok_or("Invalid group action")?)?;
+                    let owners = map
+                        .get("group_jobs")
+                        .and_then(Value::as_array)
+                        .ok_or("Missing group transaction owners")?;
+                    if owners.is_empty() || owners.len() >= crate::pack::MAX_PACK_EPISODES {
+                        return Err("Invalid shared-group journal size".into());
+                    }
+                    jobs.extend(
+                        owners
+                            .iter()
+                            .map(Job::from_json)
+                            .collect::<Result<Vec<_>>>()?,
+                    );
+                    self.validate_group_operation(&jobs, action)?;
+                } else if let Some(owners) = map.get("shared_owners") {
                     if &header[..8] != SHARED_JOURNAL_MAGIC {
                         return Err("Shared ownership requires journal format 2".into());
                     }
@@ -2204,12 +2328,16 @@ impl Store {
                     );
                     self.validate_shared_batch(&jobs)?;
                 } else {
+                    if map.contains_key("group_jobs") {
+                        return Err("Group owners require a journal action".into());
+                    }
                     let job = &jobs[0];
                     if job.shared_file.is_some() && !self.jobs.contains_key(&job.id) {
                         return Err("Shared owners must be created in one transaction".into());
                     }
                     self.validate_transaction(job, legacy_record)
                         .map_err(|error| format!("invalid journal job: {error}"))?;
+                    self.validate_group_single(job)?;
                 }
                 for job in jobs {
                     self.index_shared(&job);

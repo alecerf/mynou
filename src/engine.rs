@@ -193,6 +193,24 @@ impl Engine {
         let mut store = lock(&self.store)?;
         let previous = store.get(id).ok_or("Unknown job")?;
         let job = store.retry(id)?;
+        if job.shared_upgrade.is_some() {
+            let transfer_id = job
+                .shared_file
+                .as_ref()
+                .ok_or("Missing shared replacement binding")?
+                .torrent_id
+                .clone();
+            drop(store);
+            if let Some(client) = &self.downloads
+                && client
+                    .statuses()?
+                    .iter()
+                    .any(|status| status.id == transfer_id)
+            {
+                client.resume_if_allowed(&transfer_id)?;
+            }
+            return Ok(job);
+        }
         if job.imports.is_empty()
             && job.request.source_path.is_none()
             && job.request.source_url.is_none()

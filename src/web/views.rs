@@ -386,6 +386,9 @@ pub fn job(engine: &Arc<Engine>, session: &Session, query: &Form, id: &str) -> R
     if let Some(file) = &job.shared_file {
         body.push_str(&format!("<p>Shared ownership: S{:02} E{:02} through E{:02}. All owners retain one library file. Individual remapping and upgrades are blocked.</p>",file.season,file.first_episode,file.last_episode));
     }
+    if job.shared_upgrade.is_some() {
+        body.push_str("<p>This replacement belongs to a complete shared group. Cancel or retry affects every replacement owner. Staged owners await the remaining Plex confirmations; the previous library group stays current.</p>");
+    }
     if let Some(id) = &job.download_id {
         body.push_str(&format!(
             "<p><a href=\"/ui/transfers/{}\">Open native transfer</a></p>",
@@ -419,7 +422,30 @@ pub fn job(engine: &Arc<Engine>, session: &Session, query: &Form, id: &str) -> R
         ]));
         body.push_str("</form><h3>Release baseline</h3>");
         if job.shared_file.is_some() {
-            body.push_str("<p>Shared ownership requires a coordinated group replacement. Individual release baselines cannot enable an upgrade.</p>");
+            body.push_str("<p>Shared ownership uses one baseline and a coordinated replacement for the complete group.</p>");
+            body.push_str(&form("/ui/library/group", session));
+            body.push_str(&hidden("id", id));
+            body.push_str(&hidden("action", "preview"));
+            body.push_str(&hidden(
+                "operation",
+                if job.release.is_some() {
+                    "replace"
+                } else {
+                    "baseline"
+                },
+            ));
+            if let Some(release) = &job.release {
+                body.push_str(&format!(
+                    "<p>Current baseline: {}</p>",
+                    display(&release.title)
+                ));
+            }
+            body.push_str("<label for=group_title>Release title for the complete range or season</label><input id=group_title name=release_title required maxlength=2048>");
+            if job.release.is_some() {
+                body.push_str("<label for=group_source>Replacement magnet, torrent URL or server torrent path</label><input id=group_source name=source_value required maxlength=8192 autocomplete=off><label for=group_path>Exact replacement video path</label><input id=group_path name=file_path required maxlength=4096><button type=submit>Preview whole-group replacement</button></form>");
+            } else {
+                body.push_str("<button type=submit>Preview whole-group baseline</button></form>");
+            }
         } else if let Some(release) = &job.release {
             body.push_str(&format!("<p>{}</p>", display(&release.title)));
         } else {
@@ -473,6 +499,31 @@ pub fn job(engine: &Arc<Engine>, session: &Session, query: &Form, id: &str) -> R
     ));
     body.push_str("</section>");
     Ok(frame("Job details", "/ui/jobs", Some(session), &body))
+}
+
+pub fn library_group(session: &Session, id: &str, report: &Value) -> String {
+    let mut body = format!(
+        "<p><a href=\"/ui/jobs/{}\">Back to shared library owner</a></p><section class=panel><h2>Review the complete shared group</h2><p>Operation: {}. Owners: {}.</p><p>Release: {}</p><p>Every owner is included. The previous group remains current until all replacement owners confirm the new exact path in Plex. Existing files remain in place.</p>",
+        e(id),
+        display(text(report, "action")),
+        scalar(report, "owners"),
+        display(
+            report
+                .get("release")
+                .map_or("", |release| text(release, "title"))
+        )
+    );
+    if let Some(binding) = report.get("binding") {
+        body.push_str(&format!("<p>Canonical range: S{} E{} through E{}.</p><p>Torrent: {}</p><p>Exact source path: {}</p><p>Library destination: {}</p>", scalar(binding,"season"), scalar(binding,"first_episode"), scalar(binding,"last_episode"), display(text(binding,"torrent_id")), display(text(binding,"file_path")), display(text(binding,"import_path"))));
+    }
+    body.push_str(&form("/ui/library/group", session));
+    body.push_str(&hidden("id", id));
+    body.push_str(&hidden("action", "apply"));
+    body.push_str(&hidden("plan_id", text(report, "plan_id")));
+    body.push_str(
+        "<button type=submit>Record reviewed whole-group decision</button></form></section>",
+    );
+    frame("Shared-group review", "/ui/library", Some(session), &body)
 }
 
 pub fn transfers(engine: &Arc<Engine>, session: &Session, query: &Form) -> Result<String> {
