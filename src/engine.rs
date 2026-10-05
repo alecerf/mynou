@@ -644,6 +644,13 @@ impl Engine {
                         client.ensure(source)?
                     }
                 };
+                if job
+                    .shared_file
+                    .as_ref()
+                    .is_some_and(|file| file.torrent_id != status.id)
+                {
+                    return Err("Shared transfer uses another authenticated alias; ownership cannot be rebound".into());
+                }
                 job.download_id = Some(status.id.clone());
                 job.progress = status.progress;
                 job.state = "downloading".into();
