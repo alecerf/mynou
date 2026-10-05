@@ -1,5 +1,11 @@
 # Native Rust architecture
 
+The original IRC receivers add a separate review inbox. Strict configuration,
+bounded protocol framing and verified TLS gate accepted sender/channel claims;
+the private checked snapshot records identities before reviews. Source I/O holds
+no storage lock. Pure filters and guarded decisions create no acquisition jobs.
+See [IRC behavior](irc.md).
+
 ```text
 CLI / API / Browser       Plex watchlist
     |                          |

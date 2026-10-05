@@ -1,4 +1,4 @@
-# Mynou 0.19.1 — Rust, standard library only
+# Mynou 0.20.0 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -29,6 +29,12 @@ behavior. [v0.19.1](https://github.com/alecerf/mynou/releases/tag/v0.19.1) verif
 destination and quality before new requester reuse of completed operator imports.
 CI published it after all five jobs passed with **490 Rust tests** and four
 scheduler checks. See the [release evidence](docs/validation.md#recorded-0191-ci-evidence).
+
+[IRC announcement reviews](docs/irc.md) add opt-in verified TLS receivers,
+sender/channel restrictions, deterministic filters, durable duplicate suppression,
+source health and guarded CLI/API/browser reviews. Reviews record decisions;
+automatic grabs follow in the next IRC increment. This implementation requires
+its own completed GitHub Actions validation and CI publication.
 
 ## Try it
 
@@ -62,8 +68,8 @@ from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, o
 build the image from the source archive:
 
 ```sh
-docker load -i mynou-v0.19.1-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.19.1 .
+docker load -i mynou-v0.20.0-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.20.0 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d

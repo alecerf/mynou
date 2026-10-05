@@ -490,8 +490,23 @@ fn conflicting_matching_rules_and_disabled_filters_are_explicit_without_acquisit
     let mut extra = cfg.irc.rules[0].clone();
     extra.id = "second".into();
     cfg.irc.rules.push(extra);
+    let mut disabled = cfg.irc.rules[0].clone();
+    disabled.id = "disabled".into();
+    disabled.enabled = false;
+    cfg.irc.rules.push(disabled);
     let engine = Engine::open_for_management(cfg).unwrap();
     let row = receive(&engine, 7);
+    assert!(
+        row.get("evaluations")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(
+                |e| e.get("rule_id").and_then(Value::as_str) == Some("disabled")
+                    && e.get("outcome").and_then(Value::as_str) == Some("disabled")
+            )
+    );
     assert_eq!(row.get("outcome").unwrap().as_str(), Some("conflict"));
     let query = reviewed(&engine, record_id(&row), "acknowledge");
     let report = engine.irc_control(record_id(&row), &query).unwrap();

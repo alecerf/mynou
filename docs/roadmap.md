@@ -5,7 +5,19 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current release: 0.19.1
+## Current implementation: 0.20.0, awaiting CI
+
+[IRC reception and reviews](irc.md) provide opt-in verified TLS sources,
+sender/channel restrictions, strict release envelopes, title/profile filters,
+durable duplicate suppression and guarded CLI/API/browser decisions. Original
+local fixtures cover bounds, trust, corruption, capacity, review races, reconnect
+and shutdown. Reviews do not acquire media. Automatic grabs follow as a separate
+increment, after the complete current workflow and publication pass.
+
+The implementation needs its own completed Actions validation and CI publication;
+the earlier requester evidence validates those earlier sources only.
+
+## Previous stage: 0.19.1
 
 [Plex requester policies](requesters.md) retain per-account identity bindings,
 versioned opt-in profiles, approvals and bounded quotas before acquisition.

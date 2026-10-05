@@ -236,11 +236,18 @@ files and range inference remain later work. See
 The browser interface uses a shared operator token, original server-rendered
 pages and native forms, with page refreshes rather than live streaming. It has
 bounded pagination and bulk job/library/transfer/series controls. It does not edit
-configuration or adopt a complete existing Plex library. Plex integration
-does not provide multi-user approvals, quotas, permission policies, notifications
-or per-user routing. Indexer integrations support RSS/JSON/Torznab endpoints,
-not a general tracker adapter catalog, interactive logins, Usenet, or IRC
-announcement rules. Cross-seeding and broader bulk automation remain unimplemented.
+configuration or adopt a complete existing Plex library. Plex requester policies
+provide reviewed approvals, quotas and routing with recorded notification outcomes;
+requester self-service and external notification transports remain later work.
+Indexer integrations support RSS/JSON/Torznab endpoints; a general tracker adapter
+catalog, interactive logins and Usenet remain later work. Opt-in IRC reception
+supports an explicit strict JSON envelope and review rules, with eight sources,
+64 rules, 1,000 retained identities and an 8 MiB checked snapshot. Duplicates do
+not rewrite history; full history rejects new identities without pruning.
+Reviews create no acquisition work. SASL/NickServ, tracker text adapters,
+automatic IRC grabs, cross-seeding and broader bulk automation remain later work.
+See [IRC behavior](irc.md) for protocol, deadlines and recovery. Complete
+validation/publication for this implementation are pending.
 The [roadmap](roadmap.md) separates these capabilities into future releases.
 
 ## Persistence and platform

@@ -11,6 +11,15 @@ revision.
 
 ## Automated checks and releases
 
+The 0.20 IRC scenarios exercise strict opt-in sources/rules, verified remote
+transport requirements, fragmented protocol parsing, allowed membership/senders,
+title/profile filtering, durable original claims and duplicate suppression,
+full/corrupt history, concurrent/stale/session reviews, pure/offline CLI and
+protected API/browser controls. Original loopback services check registration,
+PING/PONG, reconnect, process restart, generic diagnostics and socket shutdown.
+Reviews preserve jobs, imports and quotas. Their result requires a completed
+workflow for this exact source; earlier releases do not validate these changes.
+
 The 0.19 requester scenarios exercise explicit opt-in and approvals, compatible
 and conflicting accounts, quota/approval races, retries and UTC-day rollover,
 partial polls and identity mismatch, stale policy/session reviews, redaction,

@@ -1,127 +1,67 @@
-# Next-release checkpoint — 0.20 IRC announcement automation
+# Next-release checkpoint — Complete 0.20.0 CI, then IRC acquisition
 
-The requester implementation passed [run 37303359973](https://github.com/alecerf/mynou/actions/runs/37303359973)
-for `2388836a24ac02225a4171aa3d6bbbc32323b6c7` with 489 Rust tests across 43
-harnesses, four scheduler checks and all five jobs. CI published
-[v0.19.0](https://github.com/alecerf/mynou/releases/tag/v0.19.0) on October 5, 2026,
-at 11:32:55 UTC.
+The 0.20.0 implementation adds opt-in live IRC reception, explicit source trust,
+strict bounded framing, original verified TLS, title/profile filters, durable
+original claim identities and guarded CLI/API/browser reviews. It records no
+acquisition jobs. Its complete validation and CI publication are pending. Finish
+every job of the exact current workflow and fix any red check before advancing.
 
-The compatibility patch passed [run 37305082540](https://github.com/alecerf/mynou/actions/runs/37305082540)
-for `83e6d1a40ac2d5abac0baf355a0011c58e49429a` with **490 Rust tests**, none
-failed or ignored, across **43 harnesses**, four scheduler checks and all five
-jobs. CI published [v0.19.1](https://github.com/alecerf/mynou/releases/tag/v0.19.1)
-with seven `github-actions[bot]` assets on October 5, 2026, at 11:48:49 UTC. Its
-tag targets the exact tested source. See [validation evidence](validation.md#recorded-0191-ci-evidence)
-for asset digests. The prior v0.19.0 and v0.18.0 tags and asset IDs, sizes and
-digests remain unchanged. Later documentation changes need their own complete
-workflow. Inspect live `trunk` and all five newest jobs before beginning 0.20.
+The prior v0.19.1 requester release passed run 37305082540 for
+83e6d1a40ac2d5abac0baf355a0011c58e49429a, with 490 Rust tests across 43 harnesses,
+four scheduler checks and all five jobs. CI published it on October 5, 2026, at
+11:48:49 UTC. Its tag and assets remain immutable. See
+[validation evidence](validation.md#recorded-0191-ci-evidence).
 
-The requester release adds stable verified account bindings, opt-in policy
-revisions, durable approval/quota reservations and immutable profile/destination
-captures. Independent account polls retain demand on partial failure. Compatible
-canonical requests share acquisition; removals keep other interests, operator
-work and imported bytes. CLI/API/browser management uses reviewed scope guards.
-The 0.19.1 patch checks completed regular-file imports and recorded quality before
-new requester reuse of uncaptured operator jobs; pending work stays uncharged.
+Read AGENTS.md, [IRC contracts](irc.md), [requester policies](requesters.md),
+[numbering](numbering.md), [shared files](shared-files.md), [group upgrades](group-upgrades.md)
+and [CI execution](ci.md). Keep Rust std only, zero Cargo dependencies, English
+text and no local tests/lint/builds/binaries/demos/previews. Formatting is an edit.
+Commit meaningful chunks, push completed scope and inspect every Actions job.
+CI alone creates tags/releases/assets. The pinned Rust/Actions versions were
+checked against official latest releases at the start of this stage. All
+synthetic test services/peers remain local. No account quota interface is available;
+do not claim automatic quota monitoring or unattended resumption.
 
-Read [requester policies](requesters.md), [numbering](numbering.md),
-[shared files](shared-files.md) and [group upgrades](group-upgrades.md) before
-changing admission or acquisition. These are individually validated stages;
-full Radarr/Sonarr/Pulsarr/qBittorrent/qui/autobrr/Prowlarr parity remains future
-work. Existing release tags and assets must remain immutable.
+## Retain the reception/review contracts
 
-## Preserve the development policy
+IRC settings and identities belong to src/irc/mod.rs; source bindings do not
+store credentials. protocol.rs retains incremental bounded framing, registration
+and membership before exact sender/channel delivery. client.rs owns at most
+eight opt-in receivers and one shutdown monitor. Credential values stay only in
+connection commands; errors expose generic outcomes. TLS retains certificate and
+hostname authentication, with deadlines renewed only between complete operations.
 
-Read `AGENTS.md` and [CI execution](ci.md). Use Rust std only, with zero Cargo
-dependencies of any kind. All source, diagnostics and docs must be English.
-Never run local tests, lint, builds, binaries, demonstrations or previews.
-`cargo fmt --all` is an allowed edit. Commit meaningful chunks, push completed
-work and fix red Actions runs with new commits. Do not begin another release
-until the current complete workflow and publication are green. Actions alone
-create tags, releases and assets.
+persistence.rs uses a private checked atomic MYNOUI01 snapshot. Identity binds
+source, canonical media claim and torrent hash. Original claim/evaluations and
+terminal decisions survive repeats and restart. Duplicate receipts never write
+the snapshot. Full history rejects new identities while retaining existing ones.
+engine.rs provides pure previews and row-scoped decisions. Shared browser review
+slots bind session, action, record and guard and expire in ten minutes.
 
-Rust 1.99.0 and the pinned Actions were checked against their official latest
-releases during the requester stage. Recheck their official release metadata
-when the next stage begins; keep caches bound to every compiler input and run
-every Cargo harness. Current CI retains parallel test execution, independent
-GNU/musl builds, exact compiled-artifact reuse and all publication gates.
+## Continue with an independently validated acquisition increment
 
-Personal Plex/TMDB/source credentials and mount mappings remain deployment
-configuration. Synthetic local-service validation does not configure the user's
-installation. No available tool exposes the ChatGPT five-hour quota. Finish at
-a clean committed checkpoint; do not claim quota monitoring or unattended
-resumption after a reset.
+1. Define explicit opt-in automatic action/routing settings and a configured
+   way to resolve announcement hashes to acquisition metadata without persisting
+   private URLs or credentials. Metadata-only inspection must authenticate the
+   announced torrent hash before any payload transfer.
+2. Resolve and verify canonical movie/episode identities using existing catalog
+   and retained series/source numbering. Ambiguous, unmatched, conflicting,
+   stale or changed metadata produces an auditable outcome without acquisition.
+3. Bind source/rule revision, verified metadata/hash, canonical request and
+   destination/profile/ownership in a durable action reservation before workers
+   begin. Recover interruptions without duplicate jobs or charges.
+4. Route requester actions through existing opt-in approvals, quotas and
+   immutable captures. Distinguish explicit operator interests. Retain another
+   requester's demand, ready bytes, source numbering and complete shared-group
+   scope. An IRC event cannot silently approve or rebind acquisition.
+5. Expose preview, reviewed apply, automatic action outcomes and notification
+   routing through CLI/API/browser. Define idempotent retries and external
+   delivery before enabling a transport.
+6. Add original local IRC/HTTP/native-peer fixtures covering metadata changes,
+   immediate grabs, conflicts, duplicate/restart recovery, approval/quota races,
+   routing, protected controls and retained earlier imports.
 
-## Retain requester admission and ownership
-
-`src/requesters/mod.rs` owns strict bounded identities, policies, captures,
-canonical demands and controls. `persistence.rs` writes the checked private
-atomic ledger; `engine.rs` verifies startup provenance, performs account I/O
-outside storage locks, reserves quotas before job creation and reconciles
-interests. Retain the ledger-before-jobs lock order and interruption recovery
-without duplicate charges or acquisition. Operator interests and ready files
-survive requester removal. Configurations without accounts keep earlier behavior.
-
-`src/store.rs` reads formats 1–4 and keeps requester provenance immutable.
-Workers use captured profile definitions and absolute roots after policy edits
-and restart. Source numbering and shared/group ownership keep their original
-identities and complete-scope promotion. Requester polls currently admit aired
-episodes individually. Notification preferences currently record local outcomes;
-external transports and requester self-service remain later work.
-
-Requester CLI/API/browser reviews bind identity, policy, complete job/demand
-scope, selected profiles/destinations and UTC day. Preserve read-only previews,
-strict inputs, redaction, session/CSRF ownership, review expiry and stale-plan
-rejection. An announcement must not bypass requester approval or quota gates.
-
-## Implement IRC announcement automation in 0.20
-
-1. Define explicit opt-in IRC sources, environment-bound credentials and bounded
-   connection/rule settings. Reuse the original standard-library TLS client with
-   certificate/hostname verification. Keep server credentials out of persisted
-   records, reports and review forms. No shell scripts or external IRC clients.
-2. Build a bounded incremental IRC parser and connection state machine for
-   registration, channel membership, PING/PONG and announcements. Authenticate
-   the configured source/channel before rule evaluation. Reject malformed or
-   oversized messages, bound buffers and worker counts, and use interruptible
-   reconnect/backoff and shutdown. Document supported authentication/features.
-3. Define original explicit announcement templates and deterministic filters:
-   title identity, media kind, release markers, required/blocked terms, source
-   and selected profile. Do not infer a canonical episode or shared range from
-   ambiguous text. Unsupported or unresolved announcements produce an auditable
-   outcome without acquisition.
-4. Persist bounded announcement identities and rule outcomes before action.
-   Suppress duplicates across reconnects and restart. Bind resolved canonical
-   request, source, authenticated metadata/hash and the chosen action; route
-   accepted immediate grabs through existing acquisition/admission and ownership
-   rules. Define operator versus requester interests explicitly. No duplicate
-   torrent, silent approval, extra quota charge or uncaptured destination.
-5. Expose source health, rule configuration, bounded history, preview decisions
-   and reviewed actions through CLI/API/browser. Record acceptance, rejection,
-   duplicate, quota and source-failure outcomes with credential redaction.
-   Define notification routing and retry/idempotency before external delivery.
-6. Add original local IRC/HTTP/native-peer CI fixtures for fragmented lines,
-   registration and PING/PONG, oversized/malformed input, untrusted channels,
-   rule conflicts, metadata changes, immediate acquisition, reconnect/backoff,
-   duplicate restart recovery, requester approval/quotas, source numbering,
-   retained imports and protected management controls. Keep every existing
-   harness and publication check.
-
-Split the stage into independently useful releases if bounded ingestion and
-review need to ship before immediate grabs or external notification delivery.
-Do not expose partial automatic actions before identity, persistence and
-ownership rules are complete.
-
-## Release acceptance and handoff
-
-Bump Cargo/lockfile, Compose/deployment examples and release notes once scope is
-complete. Preserve the offline graph, formatting, Clippy, all Rust tests,
-GNU/musl builds, isolated native/container demonstrations and archive/checksum
-checks. After CI publication, record the exact source/run/tag/asset evidence.
-Later documentation commits need their own complete workflow and must retain
-existing published artifacts. End at a clean validated checkpoint with the next
-action recorded.
-
-The following stages target native indexer adapters, Usenet and cross-seeding
-on the [roadmap](roadmap.md). Claim only implemented behavior and measured
-performance.
+Publish only after complete green CI and record exact source/run/tag/asset
+evidence. Later docs need their own complete workflow. The broader roadmap keeps
+native indexer adapters, Usenet and cross-seeding as later stages; do not claim
+full-stack parity or unmeasured performance.

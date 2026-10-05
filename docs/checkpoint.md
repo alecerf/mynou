@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.19.1
+# Project checkpoint — Mynou 0.20.0
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -11,6 +11,13 @@ GitHub Actions, and fix failures until the required checks pass. GitHub Actions
 alone creates release tags and publishes artifacts from validated commits.
 
 ## Implemented scope
+
+The 0.20.0 implementation adds opt-in IRC reception, verified TLS, bounded
+protocol handling, explicit filters, checked durable duplicate suppression and
+guarded CLI/API/browser announcement reviews. No review creates download work.
+Its complete CI and CI publication are pending; the next IRC increment will bind
+automatic acquisition to verified metadata and existing admission/ownership.
+See [IRC behavior](irc.md) and [next-release notes](next-release.md).
 
 Media parsers, the torrent engine, persistence, orchestration, integrations,
 CLI/API, and Docker deployment are implemented. Rust 1.99.0 is the pinned
