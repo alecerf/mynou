@@ -38,6 +38,7 @@ impl Store {
         job.acquisition_url = Some(origin.magnet.clone());
         job.release = Some(origin.release.clone());
         job.irc_origin = Some(origin);
+        job.next_attempt_at = 0;
         job.updated_at = now();
         self.commit(job.clone(), "verified IRC candidate routed")?;
         Ok(job)

@@ -378,11 +378,8 @@ impl Route {
     }
 }
 
-pub(crate) fn eligible(job: &Job) -> bool {
-    job.state == "queued"
-        && job.lease_id.is_none()
-        && job.lease_until == 0
-        && matches!(job.request.kind.as_str(), "movie" | "episode")
+fn unselected(job: &Job) -> bool {
+    matches!(job.request.kind.as_str(), "movie" | "episode")
         && job.request.tmdb_id.is_some()
         && job.request.source_path.is_none()
         && job.request.source_url.is_none()
@@ -398,9 +395,16 @@ pub(crate) fn eligible(job: &Job) -> bool {
         && job.shared_upgrade.is_none()
         && job.irc_origin.is_none()
 }
+pub(crate) fn eligible(job: &Job) -> bool {
+    job.state == "queued" && job.lease_id.is_none() && job.lease_until == 0 && unselected(job)
+}
 
 pub(crate) fn waits_for_candidate(config: &Config, job: &Job) -> bool {
-    if !eligible(job)
+    // Plex jobs retain their ordinary availability check before waiting.
+    !config.plex.enabled && eligible(job) && selection_from_irc(config, job)
+}
+pub(crate) fn selection_from_irc(config: &Config, job: &Job) -> bool {
+    if !unselected(job)
         || !config.downloads_enabled
         || !config
             .irc
@@ -641,6 +645,13 @@ fn candidate(
 ) -> Result<Job> {
     let matches = jobs.irc_jobs(&r.announcement.request);
     let eligible: Vec<_> = matches.iter().filter(|j| eligible(j)).collect();
+    if eligible.is_empty()
+        && matches.iter().any(|j| {
+            j.state == "ready" && j.request.source_url.is_none() && j.request.source_path.is_none()
+        })
+    {
+        return Err("IRC: admitted media is already available".into());
+    }
     if eligible.len() != 1
         || matches.iter().any(|j| {
             j.state == "ready"
@@ -707,37 +718,40 @@ impl Engine {
         let result = self.route_announcement(&record, &fingerprint);
         let mut runtime = lock(&self.irc_route_runtime)?;
         runtime.cursor = Some(record.id.clone());
-        let outcome = match result.as_ref().err().map(String::as_str) {
-            None => "routed",
-            Some("IRC: waiting for one eligible admitted job without existing ownership") => {
-                "waiting_for_admitted_job"
-            }
-            Some("IRC: acquisition has no approved demand") => "approval_required",
-            Some("IRC: claim differs from the admitted canonical title or source labels") => {
-                "claim_mismatch"
-            }
-            Some("IRC: candidate differs from the admitted profile") => "profile_mismatch",
-            Some("IRC: metadata unavailable or unauthenticated") => "metadata_unavailable",
-            Some("IRC: metadata file rejected") => "metadata_rejected",
-            Some(
+        let outcome = match result.as_ref().map(|(_, routed)| *routed) {
+            Ok(true) => "routed",
+            Ok(false) => "already_available",
+            Err(e) => match e.as_str() {
+                "IRC: admitted media is already available" => "already_available",
+                "IRC: waiting for one eligible admitted job without existing ownership" => {
+                    "waiting_for_admitted_job"
+                }
+                "IRC: acquisition has no approved demand" => "approval_required",
+                "IRC: claim differs from the admitted canonical title or source labels" => {
+                    "claim_mismatch"
+                }
+                "IRC: candidate differs from the admitted profile" => "profile_mismatch",
+                "IRC: metadata unavailable or unauthenticated" => "metadata_unavailable",
+                "IRC: metadata file rejected" => "metadata_rejected",
+                "IRC: availability could not be verified" => "availability_unavailable",
                 "IRC: admission changed or stopped"
-                | "IRC: admitted job changed during metadata inspection",
-            ) => "admission_changed",
-            _ => "admission_or_storage_rejected",
+                | "IRC: admitted job changed during metadata inspection" => "admission_changed",
+                _ => "admission_or_storage_rejected",
+            },
         };
         runtime.outcomes.insert(record.id.clone(), outcome.into());
         runtime
             .retry
             .insert(record.id, Instant::now() + Duration::from_secs(30));
         report.insert("outcome", outcome);
-        if let Ok(job) = result {
-            report.insert("routed", true);
+        if let Ok((job, routed)) = result {
+            report.insert("routed", routed);
             report.insert("job_id", job.id);
         }
         // Protocol and discovery errors may contain credentials; reports use fixed outcomes.
         Ok(report)
     }
-    fn route_announcement(&self, record: &Record, fingerprint: &str) -> Result<Job> {
+    fn route_announcement(&self, record: &Record, fingerprint: &str) -> Result<(Job, bool)> {
         let rule = matched_rule(&self.config, record, fingerprint)?;
         let job = {
             let requesters = lock(&self.requester_store)?;
@@ -745,6 +759,42 @@ impl Engine {
             candidate(&self.config, record, rule, &jobs, &requesters.state)?
         };
         let source = self.config.irc.source(&record.source_id)?;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let cfg = self.configuration_for(&job);
+        let already_available = cfg.plex.enabled
+            && crate::integrations::available_before(
+                &cfg,
+                &job.request,
+                job.requester.is_some(),
+                deadline,
+            )
+            .map_err(|_| "IRC: availability could not be verified")?;
+        if already_available {
+            let ledger = lock(&self.irc_store)?;
+            let current = ledger
+                .state
+                .records
+                .get(&record.id)
+                .ok_or("IRC: missing availability claim")?;
+            if current != record || self.stopped.load(Ordering::Acquire) {
+                return Err("IRC: admission changed or stopped".into());
+            }
+            let requesters = lock(&self.requester_store)?;
+            let mut jobs = lock(&self.store)?;
+            if candidate(&self.config, current, rule, &jobs, &requesters.state)? != job {
+                return Err("IRC: admitted job changed during metadata inspection".into());
+            }
+            let mut fulfilled = job;
+            fulfilled.state = "ready".into();
+            fulfilled.progress = 1.0;
+            fulfilled.next_attempt_at = 0;
+            jobs.update(fulfilled.clone())?;
+            drop(jobs);
+            drop(requesters);
+            drop(ledger);
+            self.requester_reconcile()?;
+            return Ok((fulfilled, false));
+        }
         let magnet = render_template(
             source
                 .magnet_template
@@ -753,11 +803,8 @@ impl Engine {
             &record.announcement.info_hash,
         )?;
         // Metadata I/O happens before admission and outside every persistent-store lock.
-        let metadata = crate::torrent::inspection::inspect_metadata(
-            &magnet,
-            Instant::now() + Duration::from_secs(10),
-        )
-        .map_err(|_| "IRC: metadata unavailable or unauthenticated")?;
+        let metadata = crate::torrent::inspection::inspect_metadata(&magnet, deadline)
+            .map_err(|_| "IRC: metadata unavailable or unauthenticated")?;
         if metadata.id != record.announcement.info_hash {
             return Err("IRC: metadata identity differs".into());
         }
@@ -831,7 +878,7 @@ impl Engine {
             .ok_or("IRC: missing committed reservation")?
             .phase = "routed".into();
         ledger.save(next)?;
-        Ok(job)
+        Ok((job, true))
     }
     pub(crate) fn irc_routing_json(&self) -> Result<Value> {
         let runtime = lock(&self.irc_route_runtime)?;

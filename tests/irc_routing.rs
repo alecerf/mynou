@@ -797,3 +797,88 @@ fn unverified_metadata_and_mutated_acquisition_fields_cannot_publish_work() {
     assert_eq!(before, irc_support::bytes(&cfg.store_dir));
     assert!(proxy.requests.lock().unwrap().is_empty());
 }
+
+#[test]
+fn existing_plex_media_fulfills_waiting_jobs_before_or_during_irc_selection() {
+    for check_first in [true, false] {
+        let dir = Directory::new();
+        let accounts = requester_support::Accounts::open();
+        let mut cfg = accounts.config(&dir.0);
+        cfg.irc = configuration(&dir.0, 1).irc;
+        cfg.downloads_enabled = true;
+        cfg.plex.enabled = true;
+        cfg.plex.url = accounts.url.clone();
+        cfg.plex.token_env = "PATH".into();
+        cfg.plex.path_mappings = vec![mynou::config::PathMapping {
+            mynou_prefix: cfg.requesters.destinations[0]
+                .movies_root
+                .to_string_lossy()
+                .into_owned(),
+            plex_prefix: "/plex/family".into(),
+        }];
+        accounts.watchlist("alice", vec![requester_support::movie(7, "Fixture Movie")]);
+        let mut present = requester_support::movie(7, "Fixture Movie");
+        let mut media = Value::object();
+        let mut part = Value::object();
+        part.insert("file", "/plex/family/Fixture Movie/Feature.mp4");
+        media.insert("Part", Value::Array(vec![part]));
+        present.insert("Media", Value::Array(vec![media]));
+        accounts.response(
+            "/library/sections/1/all",
+            200,
+            requester_support::container(vec![present]),
+        );
+        let engine = Engine::open(cfg).unwrap();
+        let mut policy = requester_support::policy(&engine, "alice");
+        policy.enabled = true;
+        policy.approval_required = false;
+        policy.destination = "family".into();
+        requester_support::apply(&engine, "alice", requester_support::policy_query(policy));
+        engine.sync_requesters().unwrap();
+        let admitted = requester_support::job(&engine, "alice");
+        if check_first {
+            assert!(engine.tick().unwrap());
+        }
+        receive(&engine, &"1".repeat(40), 7);
+        let pass = engine.irc_route_pending().unwrap();
+        assert_eq!(outcome(&pass), "already_available");
+        assert!(!routing(&pass));
+        assert_eq!(job(&engine, &admitted.id).state, "ready");
+        no_candidate_work(&engine, &admitted.id);
+        assert_eq!(
+            requester_support::demand(&engine, "alice")
+                .get("state")
+                .and_then(Value::as_str),
+            Some("ready")
+        );
+    }
+}
+
+#[test]
+fn negative_plex_checks_wait_without_selecting_a_source_and_routing_wakes_the_job() {
+    let dir = Directory::new();
+    let torrent = movie(&dir, "Fixture.Movie.2024.1080p.mp4");
+    let seed = Seeder::open(&dir.0.join("seed"), &[&torrent]);
+    let accounts = requester_support::Accounts::open();
+    let mut cfg = configuration(&dir.0.join("engine"), seed.client.listen_port());
+    cfg.plex.enabled = true;
+    cfg.plex.url = accounts.url.clone();
+    cfg.plex.token_env = "PATH".into();
+    accounts.response(
+        "/library/sections/1/all",
+        200,
+        requester_support::container(Vec::new()),
+    );
+    let engine = Engine::open(cfg.clone()).unwrap();
+    let admitted = engine.submit(request(7)).unwrap().remove(0);
+    assert!(engine.tick().unwrap());
+    let waiting = job(&engine, &admitted.id);
+    assert_eq!(waiting.state, "queued");
+    assert!(waiting.lease_id.is_none());
+    assert!(waiting.next_attempt_at > mynou::store::now());
+    no_candidate_work(&engine, &admitted.id);
+    receive(&engine, &torrent.id, 7);
+    assert!(routing(&engine.irc_route_pending().unwrap()));
+    assert_eq!(job(&engine, &admitted.id).next_attempt_at, 0);
+    assert!(engine.transfers().unwrap().as_array().unwrap().is_empty());
+}

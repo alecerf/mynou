@@ -1563,6 +1563,13 @@ pub fn available(config: &Config, request: &Request) -> Result<bool> {
 
 /// Existing Plex media can fulfill routed demand only below its captured root.
 pub(crate) fn available_destination(config: &Config, request: &Request) -> Result<bool> {
+    available_destination_before(config, request, Instant::now() + SEARCH_BUDGET)
+}
+fn available_destination_before(
+    config: &Config,
+    request: &Request,
+    deadline: Instant,
+) -> Result<bool> {
     let root = if request.kind == "episode" {
         &config.series_root
     } else {
@@ -1589,25 +1596,45 @@ pub(crate) fn available_destination(config: &Config, request: &Request) -> Resul
                 result
             },
         );
-    plex_available(config, request, |item| {
-        item.get("Media")
-            .and_then(Value::as_array)
-            .is_some_and(|media| {
-                media.iter().any(|m| {
-                    m.get("Part")
-                        .and_then(Value::as_array)
-                        .is_some_and(|parts| {
-                            parts.iter().any(|p| {
-                                string(p, "file")
-                                    .and_then(absolute_path_components)
-                                    .is_some_and(|path| {
-                                        path.len() > expected.len() && path.starts_with(&expected)
-                                    })
+    plex_available_before(
+        config,
+        request,
+        |item| {
+            item.get("Media")
+                .and_then(Value::as_array)
+                .is_some_and(|media| {
+                    media.iter().any(|m| {
+                        m.get("Part")
+                            .and_then(Value::as_array)
+                            .is_some_and(|parts| {
+                                parts.iter().any(|p| {
+                                    string(p, "file")
+                                        .and_then(absolute_path_components)
+                                        .is_some_and(|path| {
+                                            path.len() > expected.len()
+                                                && path.starts_with(&expected)
+                                        })
+                                })
                             })
-                        })
+                    })
                 })
-            })
-    })
+        },
+        deadline,
+    )
+}
+
+/// IRC preflight shares one deadline with metadata inspection and uses captured routing.
+pub(crate) fn available_before(
+    config: &Config,
+    request: &Request,
+    routed: bool,
+    deadline: Instant,
+) -> Result<bool> {
+    if routed {
+        available_destination_before(config, request, deadline)
+    } else {
+        plex_available_before(config, request, playable, deadline)
+    }
 }
 
 /// Checks Plex for every newly imported path, rather than accepting an older
@@ -1707,8 +1734,17 @@ fn absolute_path_components(path: &str) -> Option<Vec<&str>> {
 fn plex_available(
     config: &Config,
     request: &Request,
-    mut matches: impl FnMut(&Value) -> bool,
+    matches: impl FnMut(&Value) -> bool,
 ) -> Result<bool> {
+    plex_available_before(config, request, matches, Instant::now() + SEARCH_BUDGET)
+}
+fn plex_available_before(
+    config: &Config,
+    request: &Request,
+    mut matches: impl FnMut(&Value) -> bool,
+    deadline: Instant,
+) -> Result<bool> {
+    remaining_search_time(deadline)?;
     let headers = plex_headers(config)?;
     let url = endpoint(
         &config.plex.url,
@@ -1722,8 +1758,9 @@ fn plex_available(
             ("title", request.title.clone()),
         ],
     )?;
-    let items = plex_items(&url, &headers)?;
+    let items = plex_items_before(&url, &headers, deadline, MAX_ITEMS)?;
     for item in items.iter().filter(|item| identity_matches(item, request)) {
+        remaining_search_time(deadline)?;
         if !episode {
             if matches(item) {
                 return Ok(true);
@@ -1738,7 +1775,8 @@ fn plex_available(
             &config.plex.url,
             &format!("library/metadata/{key}/allLeaves"),
         )?;
-        for episode in plex_items(&leaves, &headers)? {
+        for episode in plex_items_before(&leaves, &headers, deadline, MAX_ITEMS)? {
+            remaining_search_time(deadline)?;
             if integer(&episode, "parentIndex") == Some(u64::from(request.season))
                 && integer(&episode, "index") == Some(u64::from(request.episode))
                 && matches(&episode)

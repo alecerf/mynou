@@ -635,6 +635,11 @@ impl Engine {
             job.next_attempt_at = 0;
             return Ok(());
         }
+        if crate::irc::routing::selection_from_irc(&self.config, job) {
+            job.state = "queued".into();
+            job.next_attempt_at = store::now().saturating_add(60);
+            return Ok(());
+        }
         // Resume a confirmed import after interruption without copying it again.
         if !job.imports.is_empty() {
             if job.shared_file.is_some() {
