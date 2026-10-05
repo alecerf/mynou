@@ -52,12 +52,15 @@ the snapshot. Full history rejects new identities while retaining existing ones.
 engine.rs provides pure previews and row-scoped audit decisions. Shared browser review
 slots bind session, action, record and guard and expire in ten minutes.
 
-## Inspect live validation before the next increment
+## Validate the active authentication increment
 
-The v0.20.1 publication is complete; later evidence and CI-weight commits require
-their own full workflow. Inspect all five Actions jobs for the exact current
-branch before implementing the next increment. Fix failures with new commits,
-push and inspect the new complete run. Existing tags/assets must remain unchanged.
+The v0.20.1 publication is complete. Its evidence and CI-weight checkpoint passed
+all five jobs in run 37346335547 for c400178f7c8a2e2dd8e9b4fb7c5c204f3a863c22:
+533 Rust tests across 47 harnesses and four scheduler checks. CI retained the
+published release. The active v0.20.2 implementation now needs its own complete
+run and CI publication. Inspect all five jobs, fix failures in new commits and
+confirm the new tag targets the validated source. Earlier tags/assets must stay
+unchanged; later evidence commits require their own complete workflow.
 
 src/irc/routing.rs owns restricted template parsing, metadata selection,
 immutable Origin/Route, the serialized bounded automatic pass and startup
@@ -77,21 +80,23 @@ after 60 seconds. Routing uses a shared ten-second availability/metadata budget
 and sets a selected job's next attempt to zero. Do not bypass captured roots or
 turn ready data into a new acquisition.
 
-## Next increment: required SASL PLAIN
+## Active increment: required SASL PLAIN
 
-Add an opt-in SASL configuration using environment variable names for credentials.
-Negotiate capabilities before registration completes, require advertised PLAIN,
-bound fragmented capability lists and encode bounded 400-byte authentication
-chunks. Success must precede joining and accepting announcements. Missing
-capabilities, rejected/aborted authentication, premature welcome and deadlines
-must close the connection without unauthenticated fallback. Remote connections
-retain verified TLS; plaintext remains restricted to explicit loopback fixtures.
+src/irc/sasl.rs implements opt-in configuration with environment variable names,
+bounded original Base64 encoding, capability negotiation and failed-state
+invalidation. protocol.rs gates registration/membership on successful SASL.
+client.rs sends transient credential chunks once per connection, reloads on
+reconnect and exposes only a boolean authenticated state. Public source reports
+and the browser show the configured mode without variable names or values.
 
-Keep credential values out of protocol diagnostics, public reports, source
-bindings and persistent history. Auth policy changes must invalidate pending
-source bindings while old configurations keep their current binding. Original
-local fixtures must exercise success, fragmentation, chunk boundaries, failure,
-reconnect and shutdown before CI publication of a new version.
+Credential values stay out of diagnostics, public reports, source bindings and
+history. Auth policy changes require a new source ID; old bindings stay stable.
+tests/irc_authentication.rs covers strict configuration, fragmented/bounded
+capabilities, ordered success, rejection, redaction, reconnect/restart, missing
+credentials, a native CLI exact-boundary response and registration deadlines.
+An original unit fixture checks published PLAIN vectors and maximum response
+bounds. All fixtures run in CI only. Only PLAIN is implemented, without SASLprep
+or Unicode normalization. NickServ and tracker text adapters remain later work.
 
 ## Following IRC stages after green publication
 

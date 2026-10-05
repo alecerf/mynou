@@ -11,6 +11,15 @@ revision.
 
 ## Automated checks and releases
 
+The 0.20.2 SASL scenarios add strict opt-in configuration, stable legacy/source
+bindings, fragmented and bounded capability lists, server identity/recipient
+checks, ordered success, authentication failures and permanently invalidated
+failed states. Original loopback peers exercise redaction, reconnect/restart,
+missing credentials, interruptible challenges and the nonrenewable registration
+deadline. A native CLI child with synthetic credentials exercises the exact
+400-byte response and mandatory terminator. This increment requires its own
+completed workflow and CI publication; earlier evidence does not validate it.
+
 The 0.20.1 scenarios add pure bounded templates, explicit job deferral,
 metadata-only verification before native queue publication, exact selective
 imports, source numbering, shared physical ownership, approval/quotas and

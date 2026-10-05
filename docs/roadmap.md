@@ -5,7 +5,17 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current published stage: 0.20.1
+## Current implementation: 0.20.2, awaiting CI
+
+Required SASL PLAIN negotiates bounded capabilities and credentials before IRC
+channel membership. Missing/rejected authentication closes the connection;
+every reconnect authenticates again. Public reports redact credentials and
+display required/authenticated state. Old unauthenticated bindings remain stable;
+authentication policy changes require a new source ID. Original local fixtures
+cover success, bounds, fragmentation, failures, chunk boundaries and deadlines.
+Complete validation and CI publication remain pending.
+
+## Previous published stage: 0.20.1
 
 Explicit grab rules route configured hash-pinned magnets to existing approved
 jobs after metadata-only verification. Canonical title/year/source labels and
@@ -19,8 +29,7 @@ CI published seven v0.20.1 assets on October 5, 2026, at 17:05:20 UTC.
 Previous v0.20.0 and v0.19.1 assets remain unchanged. See
 [validation evidence](validation.md#recorded-0201-ci-evidence).
 
-The next focused increment is required SASL PLAIN authentication with bounded
-capability negotiation, credential redaction and no unauthenticated fallback.
+The following increment implements required SASL PLAIN, described above.
 Tracker text adapters, NickServ and broader actions follow independently.
 
 ## Previous published stage: 0.20.0

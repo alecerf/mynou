@@ -4,6 +4,10 @@ The original IRC receivers add a separate review inbox. Strict configuration,
 bounded protocol framing and verified TLS gate accepted sender/channel claims;
 the private checked snapshot records identities before reviews. Source I/O holds
 no storage lock. Pure filters and guarded audit decisions create no acquisition jobs.
+Required SASL PLAIN negotiates bounded capabilities under the same registration
+deadline and succeeds before channel membership. Credentials are transient;
+only credential variable names contribute to the source binding. Rejection
+invalidates the protocol state until a fresh connection.
 Explicit grab rules hold eligible admitted jobs for IRC selection. Metadata-only
 inspection authenticates the pinned torrent before a durable reservation and
 one journal transaction attach immutable origin, exact file and release/profile.

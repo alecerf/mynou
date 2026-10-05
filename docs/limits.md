@@ -249,10 +249,14 @@ and hash-pinned metadata verification for existing approved requests, immutable
 origins and exact file imports. Catalog claims must agree with admitted labels;
 this does not prove semantic media identity. Queued compatible jobs wait for
 IRC, with no unsolicited demand or implicit search fallback while the rule is
-enabled. New-demand actions, packs/upgrades, SASL/NickServ, tracker text adapters,
+enabled. The 0.20.2 increment adds required SASL PLAIN with bounded capabilities
+and credentials; remote use requires verified TLS, and failure has no
+unauthenticated fallback. Only PLAIN is supported; credentials retain their
+UTF-8 bytes without SASLprep or Unicode normalization. New-demand actions,
+packs/upgrades, NickServ, tracker text adapters,
 notification delivery, cross-seeding and broader bulk automation remain later work.
 See [IRC behavior](irc.md) for protocol, deadlines and recovery. Complete
-validation/publication passed for v0.20.0; routing requires its own complete CI.
+validation/publication passed for v0.20.1; authentication requires its own complete CI.
 The [roadmap](roadmap.md) separates these capabilities into future releases.
 
 ## Persistence and platform

@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.20.1
+# Project checkpoint — Mynou 0.20.2
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -12,7 +12,14 @@ alone creates release tags and publishes artifacts from validated commits.
 
 ## Implemented scope
 
-The active 0.20.1 increment adds explicit grab rules, hash-pinned configured
+The active 0.20.2 increment adds opt-in required SASL PLAIN, bounded capability
+negotiation, credential encoding and authentication before channel membership.
+Failure cannot fall back to an unauthenticated connection; retries authenticate
+again. Public source health exposes the mode and transient authentication state.
+Original local fixtures cover bounds, failures, fragmented messages, exact chunk
+boundaries, restart and deadlines. Complete CI/publication remain pending.
+
+The published 0.20.1 increment adds explicit grab rules, hash-pinned configured
 magnets, metadata-only verification and candidate routing to existing admitted
 canonical jobs. Approval/quotas, frozen requester profiles/destinations, source
 labels and physical file ownership remain mandatory. Durable reservations and

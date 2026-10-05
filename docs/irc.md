@@ -3,8 +3,9 @@
 Mynou 0.20.0 adds opt-in receivers, deterministic filters, durable duplicate
 suppression and guarded audit reviews. The 0.20.1 increment adds explicit grab
 rules: verified candidates attach only to existing admitted canonical jobs.
-Reviews change no download work. The earlier release passed complete CI;
-the new routing increment requires its own completed validation/publication.
+Reviews change no download work. Reception and routing passed complete CI.
+The 0.20.2 increment adds required SASL PLAIN authentication; its exact source
+requires its own completed validation/publication.
 
 ## Configure a source and review rules
 
@@ -49,14 +50,61 @@ Endpoints require an explicit port and no path or embedded credentials.
 Plaintext IRC is limited to explicit loopback IP addresses for local fixtures.
 Connections are outbound; no IRC port needs publishing from Docker. The existing
 Compose env_file supplies configured credential variables from a private .env.
-Server PASS and channel keys are supported; SASL, NickServ workflows, interactive
-authentication and tracker-specific text adapters remain later work.
+Server PASS, channel keys and required SASL PLAIN are supported. NickServ,
+interactive authentication and tracker-specific text adapters remain later work.
 
 Nicknames contain 1–24 ASCII characters starting with a letter; subsequent
 characters are letters, digits, hyphens or underscores. Channels contain # and
 1–63 letters, digits, hyphens or underscores. Sender prefixes require the exact
 configured nick!user@host form. Channel/nickname comparisons use ASCII case
 folding; sender matching is exact.
+
+## Required SASL PLAIN authentication
+
+Add an optional sasl object to an IRC source. Omitting it or setting it to null
+retains the earlier registration behavior and source binding.
+
+    "sasl": {
+      "mechanism": "PLAIN",
+      "username_env": "MYNOU_IRC_SASL_USERNAME",
+      "password_env": "MYNOU_IRC_SASL_PASSWORD",
+      "authorization_env": "MYNOU_IRC_SASL_AUTHORIZATION"
+    }
+
+Username and password variables are mandatory; authorization_env is optional.
+Omit authorization_env to request the authentication identity's usual account.
+Variable names follow the existing uppercase credential-name rules. Values are
+loaded before connecting, must contain 1–256 UTF-8 bytes without control
+characters, and are sent without Unicode normalization. Optional authorization
+is empty only when no variable is configured. Unknown fields and mechanisms are
+rejected. Supply credentials through Docker's private .env; do not put their
+values in mynou.json. Server password_env remains an independent IRC PASS secret.
+
+The client sends CAP LS 302 before NICK/USER, collects up to 16 capability lines,
+64 unique capabilities and 4,096 aggregate list bytes, then requests sasl.
+A bare sasl advertisement supports the earlier SASL protocol; a mechanism list
+must explicitly include PLAIN. Duplicate/ambiguous capabilities are rejected.
+ACK precedes AUTHENTICATE PLAIN. Only an empty server challenge triggers the
+bounded Base64 response: authorization, NUL, username, NUL, password. Encoded
+chunks contain at most 400 bytes; an exact 400-byte final chunk requires a
+separate AUTHENTICATE + terminator. The 1,028-byte maximum response uses at most
+three payload chunks. Only a correctly addressed success numeric after the
+response permits CAP END, welcome and channel membership.
+
+PING replies remain available during negotiation. Capability removal, logout,
+rejection, abort, unsupported commands, repeated challenges and premature
+welcome/success invalidate the connection. There is no unauthenticated fallback.
+The existing ten-second connect/registration deadline covers the entire exchange;
+incoming traffic cannot renew it. Every reconnect loads credentials and performs
+the complete authentication again. Remote PLAIN credentials require the existing
+verified TLS transport; plaintext remains limited to explicit loopback IPs.
+
+Credential values and encoded responses stay out of errors, reports, bindings
+and persistent history. Public source reports show authentication sasl_plain or
+none and health.sasl_authenticated, which resets on disconnect/shutdown. The
+browser shows required/authenticated state. Authentication variable names and
+policy contribute to the source binding; policy edits require a new stable
+source ID. Rotating a value in the same variable retains that binding.
 
 ## Explicit release claims
 
@@ -227,5 +275,8 @@ PING/PONG, reconnect and shutdown. No public IRC or torrents are contacted.
 Routing scenarios use original local metadata/payload peers and gates to cover
 exact imports, approval/quotas, frozen routes, source numbering, races, ambiguity,
 ownership, concurrent passes, corruption and both sides of an interrupted commit.
-Tracker text adapters, SASL, new-demand actions, packs/upgrades, notification
+SASL fixtures exercise strict configuration, capability/challenge boundaries,
+credential redaction, fragmented replies, the native CLI's exact 400-byte
+terminator, repeated handshakes, shutdown and nonrenewable registration deadlines.
+Tracker text adapters, NickServ, new-demand actions, packs/upgrades, notification
 delivery and cross-seeding remain future increments.

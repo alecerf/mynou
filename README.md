@@ -1,4 +1,4 @@
-# Mynou 0.20.1 — Rust, standard library only
+# Mynou 0.20.2 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -40,6 +40,11 @@ retry/restart. CI published
 passed with **533 Rust tests** and four scheduler checks. See the
 [recorded evidence](docs/validation.md#recorded-0201-ci-evidence).
 
+Optional required SASL PLAIN authenticates IRC connections before channel
+membership. Bounded capability negotiation and credential chunks reject failed
+authentication without fallback. The 0.20.2 increment requires its own complete
+CI and publication. See [IRC authentication](docs/irc.md#required-sasl-plain-authentication).
+
 ## Try it
 
 GitHub Actions publishes validated releases in
@@ -72,8 +77,8 @@ from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, o
 build the image from the source archive:
 
 ```sh
-docker load -i mynou-v0.20.1-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.20.1 .
+docker load -i mynou-v0.20.2-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.20.2 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d
