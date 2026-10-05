@@ -1,156 +1,82 @@
-# Active-release checkpoint — 0.20.3 bounded tracker text adapters
+# Active release — 0.20.4 required NickServ identification
 
-The active implementation is committed as meaningful parser and fixture chunks.
-It requires its own complete CI and CI publication before the next increment.
-Do not stop after a green release: record its exact evidence and continue the
-remaining IRC stages, then 0.21 indexers, 0.22 Usenet and 0.23 cross-seeding.
-Inspect every workflow job for each completed scope and fix red runs by commits.
+Continue all roadmap stages autonomously, release by release. A green publication
+is the transition into the following scope. Do not stop at a release checkpoint.
+Read AGENTS.md and retain English, Rust std only, zero Cargo dependencies, no
+unsafe/FFI/copied code/external runtime helpers and CI-only validation. Formatting
+is an edit. Commit meaningful chunks, push completed scope, inspect all five
+Actions jobs, and fix every red run with commits before continuing. GitHub
+Actions alone creates tags/releases/assets; published versions stay immutable.
 
-The published 0.20.2 increment adds required SASL PLAIN, bounded capabilities,
-transient credential responses and authentication before channel membership.
-Run 37348828003 passed for bb5aebd3727a34b02ab10c07909549529807fa4a with
-543 Rust tests across 48 harnesses, four scheduler checks and all five jobs.
-CI published v0.20.2 on October 5, 2026, at 17:32:22 UTC. Its seven assets and
-the prior v0.20.1/v0.20.0 tags and assets remain immutable. See
-[validation evidence](validation.md#recorded-0202-ci-evidence).
+The completed v0.20.3 text-format release passed run 37360688158 for
+a2a3c9f1ec9a0cd6af09031b24c246be8614d2c8: 551 Rust tests across 49 harnesses,
+none failed or ignored, four scheduler checks and all five jobs. CI published
+seven assets at 19:07:13 UTC on October 5, 2026. The preceding v0.20.2 tag and
+assets stayed unchanged. Exact [validation evidence](validation.md#recorded-0203-ci-evidence)
+and prior release evidence are recorded. This source needs its own workflow.
 
-The 0.20.0 implementation adds opt-in live IRC reception, explicit source trust,
-strict bounded framing, original verified TLS, title/profile filters, durable
-original claim identities and guarded CLI/API/browser reviews. It records no
-acquisition jobs. Run 37335746159 passed for
-4da379a4ef48763d8a1035fb6b3cd4acc4a721bc with 512 Rust tests across 46 harnesses,
-four scheduler checks and all five jobs. CI published v0.20.0 on October 5, 2026,
-at 15:50:41 UTC. Its seven assets and the prior v0.19.1 release remain immutable.
+## Active contract and validation
 
-The published 0.20.1 increment implements configured hash-pinned magnets and
-metadata-only verification before candidate routing to existing admitted jobs.
-Plex availability, requester approval/quotas, captured profiles/destinations,
-source numbering and exclusive physical ownership remain mandatory. Checked
-reservations precede immutable job origins. Twenty-one original CI scenarios cover
-the full path, metadata gates, races, quotas, imports and recovery.
-Run 37345455739 passed for cf838f3750aaf129f1ac939a675a6eee4f635594 with
-533 Rust tests across 47 harnesses, four scheduler checks and all five jobs.
-CI published v0.20.1 on October 5, 2026, at 17:05:20 UTC. Its seven assets and
-the prior v0.20.0/v0.19.1 tags and assets remain immutable. See
-[validation evidence](validation.md#recorded-0201-ci-evidence).
+src/irc/nickserv.rs owns strict settings, bounded transient IDENTIFY credentials
+and required exact trusted NOTICE confirmation. protocol.rs gates channel
+membership on identification and permanently invalidates failed connections.
+client.rs reloads credentials on reconnect, sends identification once, resets
+public health on disconnect/shutdown and retains the fixed registration deadline.
+SASL and NickServ are mutually exclusive. Configuration without NickServ retains
+old source bindings and pending fingerprints. Authentication policy edits require
+a new source ID. Credential values never enter bindings, storage or diagnostics.
 
-The prior v0.19.1 requester release passed run 37305082540 for
-83e6d1a40ac2d5abac0baf355a0011c58e49429a, with 490 Rust tests across 43 harnesses,
-four scheduler checks and all five jobs. CI published it on October 5, 2026, at
-11:48:49 UTC. Its tag and assets remain immutable. See
-[validation evidence](validation.md#recorded-0191-ci-evidence).
+Original CI-only local fixtures cover strict identity settings, early/forged
+confirmation, failures before/after membership, redaction, reconnect/restart,
+missing credentials, maximum native CLI commands, shutdown and the nonrenewable
+deadline. Inspect every job and publication source before starting the next stage.
+See [IRC contracts](irc.md), [requester policies](requesters.md), [numbering](numbering.md),
+[shared files](shared-files.md), [group upgrades](group-upgrades.md) and [CI execution](ci.md).
 
-Read AGENTS.md, [IRC contracts](irc.md), [requester policies](requesters.md),
-[numbering](numbering.md), [shared files](shared-files.md), [group upgrades](group-upgrades.md)
-and [CI execution](ci.md). Keep Rust std only, zero Cargo dependencies, English
-text and no local tests/lint/builds/binaries/demos/previews. Formatting is an edit.
-Commit meaningful chunks, push completed scope and inspect every Actions job.
-CI alone creates tags/releases/assets. The pinned Rust/Actions versions were
-checked against official latest releases at the start of this stage. All
-synthetic test services/peers remain local. No account quota interface is available;
-do not claim automatic quota monitoring or unattended resumption.
+## Retain the earlier data and acquisition gates
 
-## Retain the reception/review contracts
+The strict JSON envelope stays the default. Configurable fixed-delimiter grammar
+requires complete explicit catalog/hash fields; unknown, missing, ambiguous or
+credential-bearing claims cannot acquire. Source binding includes only configured
+grammar/authentication policy and hashes it. Unchanged JSON sources retain their
+bindings and fingerprints. Pure CLI/API previews preserve all storage.
 
-IRC settings and identities belong to src/irc/mod.rs; source bindings do not
-store credentials. protocol.rs retains incremental bounded framing, registration
-and membership before exact sender/channel delivery. client.rs owns at most
-eight opt-in receivers and one shutdown monitor. Credential values stay only in
-connection commands; errors expose generic outcomes. TLS retains certificate and
-hostname authentication, with deadlines renewed only between complete operations.
+Receivers remain opt-in, bounded to eight sources and exact sender/channel trust
+after registration/membership. Remote connections use original verified TLS.
+Private atomic checked IRC snapshots retain the original first claim and terminal
+review across duplicates and restart; duplicate receipts never write the snapshot.
+Public reports omit raw server messages, source endpoints, credentials and magnets.
 
-persistence.rs reads private checked atomic MYNOUI01/MYNOUI02 snapshots. Identity binds
-source, canonical media claim and torrent hash. Original claim/evaluations and
-terminal decisions survive repeats and restart. Duplicate receipts never write
-the snapshot. Full history rejects new identities while retaining existing ones.
-engine.rs provides pure previews and row-scoped audit decisions. Shared browser review
-slots bind session, action, record and guard and expire in ten minutes.
+src/irc/routing.rs performs metadata/availability I/O outside persistent locks,
+under a shared ten-second deadline. Immutable origins/reservations commit before
+native transfer publication; source labels, captured profiles/destinations,
+approval/quotas and exclusive physical ownership remain mandatory. Lock order is
+IRC, requester ledger, job store. Startup verifies cross-storage provenance before
+native transfer startup. Committed reservations recover; uncommitted intents abort.
+Retry retains original hash, aliases, file and release. Ready imports are preserved.
 
-## Inspect live validation before the next increment
+## Continue immediately after this green publication
 
-The v0.20.1 publication is complete. Its evidence and CI-weight checkpoint passed
-all five jobs in run 37346335547 for c400178f7c8a2e2dd8e9b4fb7c5c204f3a863c22:
-533 Rust tests across 47 harnesses and four scheduler checks. CI retained the
-published release. v0.20.2 is also fully published; its later evidence/CI-weight
-commit passed all five jobs in run 37349837598 for
-937d78f64784bb8dbf889764900896f2a3e7cbd9, with 543 tests across 48 harnesses
-and four scheduler checks. Inspect every job for the current
-branch before the next increment. Fix failures with new commits and verify
-that CI retains the published tag/assets. Never replace them. Each future
-implementation needs its own full validation and CI publication.
+Implement explicit requester/action selectors and reviewed new-demand admission.
+Existing admitted-job routing remains the default. New actions must call the same
+canonical admission, approval, quota and capture machinery rather than silently
+creating operator jobs. Ambiguous catalog identity, source numbers, stale reviews
+and physical ownership stay unresolved without acquisition. Add original local
+fixtures across CLI/API/browser, metadata gates, races and restart.
 
-src/irc/routing.rs owns restricted template parsing, metadata selection,
-immutable Origin/Route, the serialized bounded automatic pass and startup
-recovery. No metadata I/O holds persistent-store locks. Admission takes
-IRC/requester/job locks, rechecks approval/profile/job state and saves the
-reservation before the origin transaction. Private magnets persist only in
-checked private storage; public reports remove them, fingerprints and bindings.
+Then implement durable outcome/notification routing with bounded retries,
+credential redaction and idempotent event identities before external delivery.
+Preserve complete pack/shared-group ownership and frozen policy/routes. Update
+the support matrix and record exact source/run/tag/seven-asset evidence for each
+scope. Refresh CI test weights only from a passing run's measured harness times.
 
-src/store/irc.rs protects canonical and physical ownership. Origins require
-job format 5; reservations require IRC format 2. Retry retains original hash,
-aliases, file and release. A committed origin completes on recovery; an
-uncommitted reservation aborts without replay. Missing or inconsistent
-cross-storage provenance fails before native transfer startup.
+Continue native indexer adapters, authentication/session renewal, configuration
+and source health in 0.21. Continue bounded native Usenet processing, integrity
+and recovery in 0.22, with explicit supported formats and no external helpers.
+Continue verified cross-seeding and safe bulk automation in 0.23. Inspect existing
+implementations before extending them, use synthetic media/local services and
+never claim broad stack parity or unmeasured performance.
 
-Plex jobs keep availability checks before waiting, with negative checks due
-after 60 seconds. Routing uses a shared ten-second availability/metadata budget
-and sets a selected job's next attempt to zero. Do not bypass captured roots or
-turn ready data into a new acquisition.
-
-## Retain required SASL PLAIN
-
-src/irc/sasl.rs implements opt-in configuration with environment variable names,
-bounded original Base64 encoding, capability negotiation and failed-state
-invalidation. protocol.rs gates registration/membership on successful SASL.
-client.rs sends transient credential chunks once per connection, reloads on
-reconnect and exposes only a boolean authenticated state. Public source reports
-and the browser show the configured mode without variable names or values.
-
-Credential values stay out of diagnostics, public reports, source bindings and
-history. Auth policy changes require a new source ID; old bindings stay stable.
-tests/irc_authentication.rs covers strict configuration, fragmented/bounded
-capabilities, ordered success, rejection, redaction, reconnect/restart, missing
-credentials, a native CLI exact-boundary response and registration deadlines.
-An original unit fixture checks published PLAIN vectors and maximum response
-bounds. All fixtures run in CI only. Only PLAIN is implemented, without SASLprep
-or Unicode normalization. NickServ and tracker text adapters remain later work.
-
-## Next increment: one bounded tracker text adapter
-
-Add one opt-in source format at a time while retaining the strict JSON envelope
-as the default. Describe its exact grammar, delimiters, supported fields and
-limits. Use original standard-library parsing, with no regex dependency or
-copied provider code. Fragmented IRC framing, exact sender/channel membership,
-verified remote TLS and required authentication remain prerequisites.
-
-Transform accepted text into the existing claim/evaluation path. Title-only,
-missing catalog identities, ambiguous source numbers and missing hashes must
-stay unresolved rather than inventing canonical requests. Do not start metadata
-or payload for an unresolved identity. Existing admitted-job routing remains
-the only acquisition action; new-demand admission is a separate stage.
-
-Include parser format/configuration in the source binding, preserve old bindings
-for unchanged JSON sources and require a new ID for policy changes. Reject
-credential-bearing source links from public output and keep raw server text out
-of diagnostics. Original local fixtures need valid/invalid provider messages,
-fragmentation, bounds, duplicates, restart and no side effects for ambiguity.
-Only publish after the entire current workflow is green.
-
-## Following IRC stages after green publication
-
-Add one independently usable stage at a time: bounded tracker text adapters,
-NickServ authentication, explicit requester/action selectors and reviewed
-new-demand actions. Existing admitted-job routing must remain the default.
-Ambiguous catalog identities, source ranges, existing ownership and stale
-configuration remain unresolved without side effects.
-
-Add durable outcome/notification routing with bounded retries, credential
-redaction and idempotent event identities before any external transport.
-Later pack/upgrade actions must retain complete canonical/shared ownership,
-frozen profiles/destinations and approved interests. Extend original local
-IRC/Plex/metadata/payload fixtures for each new contract.
-
-Publish only after complete green CI and record exact source/run/tag/asset
-evidence. Later docs need their own complete workflow. The broader roadmap keeps
-native indexer adapters, Usenet and cross-seeding as later stages; do not claim
-full-stack parity or unmeasured performance.
+No account quota interface is available. Do not claim automatic quota monitoring
+or unattended resumption. Save concrete progress and live CI/publication evidence
+as work proceeds; continue naturally across context compaction.

@@ -11,12 +11,20 @@ revision.
 
 ## Automated checks and releases
 
+The 0.20.4 NickServ scenarios cover strict exclusive authentication settings,
+exact service/account notices, early or forged membership, permanently failed
+connections, redaction, repeated handshakes, credential/command bounds, missing
+credentials, shutdown and the fixed registration deadline. An original native
+CLI fixture exercises a maximum password without secret persistence/logging.
+This source requires its own complete workflow and CI publication.
+
 The 0.20.3 text scenarios exercise bounded complete grammar configuration,
 canonical numeric/hash fields, link redaction, fragmented formatting controls,
 header/target rejection, old JSON bindings, duplicate first claims and restart.
 Protected API and offline CLI previews preserve storage. Original loopback IRC
 and native peer journeys retain membership/admission before exact verified
-imports. This increment requires its own full workflow and CI publication.
+imports. Run 37360688158 completed these scenarios and all earlier checks; exact
+publication evidence is recorded below. Later changes need their own workflow.
 
 The 0.20.2 SASL scenarios add strict opt-in configuration, stable legacy/source
 bindings, fragmented and bounded capability lists, server identity/recipient
@@ -144,6 +152,34 @@ allowance across seasons. Existing full validation remains required.
 
 The recorded run below validates these scenarios through GitHub Actions only.
 No local tests, lint, builds or demos ran.
+
+## Recorded 0.20.3 CI evidence
+
+[Run 37360688158](https://github.com/alecerf/mynou/actions/runs/37360688158)
+passed all five jobs for `a2a3c9f1ec9a0cd6af09031b24c246be8614d2c8`.
+**551 Rust tests** passed across **49 harnesses**, with none failed or ignored,
+plus four scheduler checks. Test execution took 56.024 seconds with two processes
+and two threads per harness; this is one observed CI run, not a speed guarantee.
+The graph, formatting, Clippy, GNU/musl builds, native/container demos, packaging
+and CI publication passed. No local validation ran.
+
+CI published [v0.20.3](https://github.com/alecerf/mynou/releases/tag/v0.20.3)
+on October 5, 2026, at 19:07:13 UTC, from that exact commit. Release ID
+404035562 and all seven assets belong to github-actions[bot].
+The previous v0.20.2 tag and asset IDs/sizes/digests remain unchanged.
+
+| Asset | ID | Bytes | SHA-256 |
+| --- | --- | --- | --- |
+| mynou-v0.20.3-linux-amd64-image.tar.gz | 613433104 | 1915678 | `090d4a8d33493100204a173ac829e3c74e2dd5a1081bc90dea7a3e2a5db8bebe` |
+| mynou-v0.20.3-linux-amd64-image.tar.gz.sha256 | 613433107 | 105 | `96c994e333da1c5643e1c8a580e532525ee558511a9d4051ed11023cf0df9f5d` |
+| mynou-v0.20.3-linux-x86_64 | 613433109 | 3879776 | `ebd0bcd5971910b4f9dfacd1dd55022601395c48015ce0439c833178a64cced1` |
+| mynou-v0.20.3-linux-x86_64.sha256 | 613433105 | 93 | `9a8cd95c0d6739454d5df52f18bef87e89efaced5faf9cfb52a52b0ca327394a` |
+| mynou-v0.20.3-source.zip | 613433130 | 6925752 | `ce4536d3b0973d22bd92141a1a879e8e059ea9fcb09cec9358f52b1ccbd2c5a9` |
+| mynou-v0.20.3-source.zip.sha256 | 613433126 | 91 | `6b36ac582f9c8b994f7a38be66dd5c336d365668c21671c2e38bb2af0376e8be` |
+| SHA256SUMS | 613433108 | 289 | `3faaf67c12c7e91c9bf39a936baf4f69867201ca69e905ad1144a9f9c67fdf2b` |
+
+This evidence validates the text-format release. The following NickServ changes
+require their own complete Actions run and CI publication before continuing.
 
 ## Recorded 0.20.2 CI evidence
 

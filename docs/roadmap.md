@@ -5,15 +5,27 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current implementation: 0.20.3, awaiting CI
+## Current implementation: 0.20.4, awaiting CI
+
+Required NickServ identification binds exact service/account confirmation before
+channel membership. Failure closes the connection, reconnect repeats the exchange
+and public health redacts credentials. Original local fixtures cover trust,
+maximum commands, missing credentials, restart, shutdown and fixed deadlines.
+Complete validation/publication are pending; reviewed requester/action policies
+and durable notification routing follow immediately, then 0.21–0.23.
+
+## Previous published stage: 0.20.3
 
 Configurable fixed-delimiter text formats require complete catalog/hash claims,
 bound IRC display formatting and share the original review/routing path. Pure
 CLI/API previews preserve storage. Old JSON identities/fingerprints remain
 stable; grammar changes require a new source ID. Original local scenarios cover
 format boundaries, protected previews, live delivery and native exact imports.
-Complete validation/publication remain pending. NickServ and broader IRC action
-policies follow as separate increments before native indexer stages.
+Run 37360688158 passed for a2a3c9f1ec9a0cd6af09031b24c246be8614d2c8 with
+551 Rust tests across 49 harnesses, four scheduler checks and all five jobs.
+CI published seven v0.20.3 assets at 19:07:13 UTC on October 5, 2026, preserving
+v0.20.2. See [validation evidence](validation.md#recorded-0203-ci-evidence).
+NickServ follows in the active increment before broader IRC action policies.
 
 ## Previous published stage: 0.20.2
 

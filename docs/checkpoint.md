@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.20.3
+# Project checkpoint — Mynou 0.20.4
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -12,12 +12,22 @@ alone creates release tags and publishes artifacts from validated commits.
 
 ## Implemented scope
 
-The active 0.20.3 increment adds one configurable fixed-delimiter text grammar,
+The active 0.20.4 increment adds required NickServ identification. Exact trusted
+account confirmation precedes JOIN; forged membership, failures and expired
+registration cannot bypass it. Original local fixtures cover credentials, trust,
+reconnect/restart, redaction, the native CLI and shutdown. Complete validation
+and publication remain pending for this source. Continue directly to the
+remaining IRC action/notification stages after green publication, then 0.21–0.23.
+
+The published 0.20.3 increment adds one configurable fixed-delimiter text grammar,
 bounded IRC display formatting and pure CLI/API text previews. Complete explicit
 catalog/hash claims enter the existing verified routing path. Old JSON bindings
 and fingerprints remain stable. Original local CI fixtures cover controls,
 ambiguity, redaction, duplicates, restart and a native verified import journey.
-Complete validation/publication remain pending for this exact source.
+Run 37360688158 passed all five jobs with 551 Rust tests across 49 harnesses
+and four scheduler checks. CI published v0.20.3 from
+a2a3c9f1ec9a0cd6af09031b24c246be8614d2c8 at 19:07:13 UTC on October 5, 2026.
+The preceding v0.20.2 tag and assets remain unchanged.
 
 The published 0.20.2 increment adds opt-in required SASL PLAIN, bounded capability
 negotiation, credential encoding and authentication before channel membership.

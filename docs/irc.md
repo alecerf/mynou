@@ -53,8 +53,8 @@ Plaintext IRC is limited to explicit loopback IP addresses for local fixtures.
 Connections are outbound; no IRC port needs publishing from Docker. The existing
 Compose env_file supplies configured credential variables from a private .env.
 Server PASS, channel keys, required SASL PLAIN and fixed-delimiter text formats
-are supported. NickServ, interactive authentication and a broad provider adapter
-catalog remain later work.
+are supported. The 0.20.4 increment adds required NickServ identification.
+Interactive authentication and a broad provider adapter catalog remain later work.
 
 Nicknames contain 1–24 ASCII characters starting with a letter; subsequent
 characters are letters, digits, hyphens or underscores. Channels contain # and
@@ -108,6 +108,49 @@ none and health.sasl_authenticated, which resets on disconnect/shutdown. The
 browser shows required/authenticated state. Authentication variable names and
 policy contribute to the source binding; policy edits require a new stable
 source ID. Rotating a value in the same variable retains that binding.
+
+## Required NickServ identification in 0.20.4
+
+Configure either SASL or NickServ for a source. Their omission or null value
+retains the original binding; selecting both is rejected. NickServ settings are
+explicit because service identities and replies vary between networks:
+
+```json
+{
+  "nickserv": {
+    "account": "myAccount",
+    "password_env": "MYNOU_IRC_SERVICE_PASSWORD",
+    "service": "NickServ",
+    "sender": "NickServ!service@services.example.test",
+    "success_notice": "You are now identified as {account}",
+    "failure_notices": ["Invalid password", "Account unavailable"]
+  }
+}
+```
+
+Use the network's exact full success and failure notices. Success contains
+exactly one {account}, expanded to the configured account; substring matches and
+wrong accounts never grant access. The sender must match the exact configured
+service prefix and service nickname, and the command must be NOTICE addressed
+to Mynou. Bounded display formatting is removed before comparison. Unrecognized
+notices cannot renew the overall ten-second registration deadline.
+
+After the server welcome, Mynou sends one PRIVMSG service :IDENTIFY account
+password. It sends JOIN only after confirmation, and ignores premature own JOIN
+or numeric channel membership. A configured failure notice invalidates the
+connection even after successful identification. Reconnect reloads credentials
+and repeats the exchange; there is no unauthenticated fallback. Verified TLS is
+mandatory for remote connections. Missing credentials fail before opening a socket.
+
+Account names contain 1–64 ASCII letters, digits, hyphens or underscores.
+The service follows nickname bounds; the complete sender is at most 128 bytes.
+Success and 1–8 unique failure notices are at most 256 bytes without controls.
+Password values contain 1–256 printable nonspace ASCII bytes and are transient.
+Public reports expose authentication nickserv and health.nickserv_authenticated;
+the latter resets on disconnect and shutdown. Account/notice settings and variable
+names appear only in private configuration and its hashed source binding. They
+and credential values never appear in public source reports or diagnostics.
+Authentication policy changes require a new source ID.
 
 ## Explicit release claims
 
@@ -331,5 +374,8 @@ ownership, concurrent passes, corruption and both sides of an interrupted commit
 SASL fixtures exercise strict configuration, capability/challenge boundaries,
 credential redaction, fragmented replies, the native CLI's exact 400-byte
 terminator, repeated handshakes, shutdown and nonrenewable registration deadlines.
-Broader provider adapters, NickServ, new-demand actions, packs/upgrades, notification
+NickServ fixtures exercise exact trusted account confirmation, premature/forged
+membership, failure invalidation, redaction, repeated handshakes, maximum command
+bounds, missing credentials, shutdown and the nonrenewable deadline.
+Broader provider adapters, new-demand actions, packs/upgrades, notification
 delivery and cross-seeding remain future increments.

@@ -255,10 +255,14 @@ provider messages. The 0.20.2 increment adds required SASL PLAIN with bounded ca
 and credentials; remote use requires verified TLS, and failure has no
 unauthenticated fallback. Only PLAIN is supported; credentials retain their
 UTF-8 bytes without SASLprep or Unicode normalization. New-demand actions,
-packs/upgrades, NickServ, tracker text adapters,
+packs/upgrades and broader tracker text adapters,
 notification delivery, cross-seeding and broader bulk automation remain later work.
 See [IRC behavior](irc.md) for protocol, deadlines and recovery. Complete
-validation/publication passed for v0.20.2; later commits require their own complete CI.
+validation/publication passed for v0.20.3; later commits require their own complete CI.
+The 0.20.4 NickServ increment requires exact configured sender/account notices
+before membership. It supports the explicit IDENTIFY account/password command,
+with bounded ASCII credentials and no interactive fallback; complete validation
+and publication remain pending for that source.
 The [roadmap](roadmap.md) separates these capabilities into future releases.
 
 ## Persistence and platform
