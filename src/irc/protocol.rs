@@ -9,12 +9,15 @@ pub struct Message {
 }
 impl Message {
     pub fn parse(line: &str) -> Result<Self> {
-        if line.is_empty() || line.len() > MAX_LINE - 2 || line.chars().any(char::is_control) {
+        if line.is_empty() || line.len() > MAX_LINE - 2 || line.contains(['\r', '\n', '\0']) {
             return Err("IRC: invalid protocol line".into());
         }
         let mut rest = line;
         if let Some(tags) = rest.strip_prefix('@') {
             let (tags, tail) = tags.split_once(' ').ok_or("IRC: invalid message tags")?;
+            if tags.chars().any(char::is_control) {
+                return Err("IRC: invalid message tag controls".into());
+            }
             let mut keys = std::collections::BTreeSet::new();
             for tag in tags.split(';') {
                 let key = tag.split('=').next().unwrap_or("");
@@ -33,7 +36,7 @@ impl Message {
         }
         let prefix = if let Some(p) = rest.strip_prefix(':') {
             let (p, tail) = p.split_once(' ').ok_or("IRC: invalid sender prefix")?;
-            if p.is_empty() || p.len() > 128 || !p.is_ascii() {
+            if p.is_empty() || p.len() > 128 || !p.is_ascii() || p.chars().any(char::is_control) {
                 return Err("IRC: invalid sender prefix".into());
             }
             rest = tail.trim_start_matches(' ');
@@ -62,6 +65,17 @@ impl Message {
             let (p, tail) = rest.split_once(' ').unwrap_or((rest, ""));
             params.push(p.into());
             rest = tail.trim_start_matches(' ');
+        }
+        if params.iter().enumerate().any(|(i, p)| {
+            p.chars().any(|c| {
+                c.is_control()
+                    && !(i == 1
+                        && params.len() == 2
+                        && matches!(command, "NOTICE" | "PRIVMSG")
+                        && super::format::style(c))
+            })
+        }) {
+            return Err("IRC: invalid command controls".into());
         }
         Ok(Self {
             prefix,
@@ -198,9 +212,10 @@ impl Protocol {
                     && m.params[0].eq_ignore_ascii_case(&self.source.channel)
                     && m.prefix.as_deref() == Some(self.source.sender.as_str()) =>
             {
-                Ok(m.params[1]
-                    .strip_prefix("MYNOU ")
-                    .map_or(Event::Ignore, |s| Event::Announcement(s.into())))
+                Ok(self
+                    .source
+                    .wire_payload(&m.params[1])?
+                    .map_or(Event::Ignore, Event::Announcement))
             }
             _ => Ok(Event::Ignore),
         }

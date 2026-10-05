@@ -62,7 +62,7 @@ const HELP: &str = "Mynou — media automation using Rust std only
   irc [--config mynou.json]
   announcements [--offset N --limit N] [--config mynou.json]
   announcement ANNOUNCEMENT_ID [--config mynou.json]
-  irc-preview SOURCE_ID --announcement FILE [--config mynou.json]
+  irc-preview SOURCE_ID --announcement FILE | --text FILE [--config mynou.json]
   irc-control ANNOUNCEMENT_ID --action acknowledge|dismiss [--apply --plan-id ID] [--config mynou.json]
   jobs | status | sync [--config mynou.json]
   show | events | retry | cancel ID [--config mynou.json]
@@ -119,7 +119,7 @@ impl Args {
             "requesters" | "requester-sync" => &["config", "help"],
             "irc" | "announcement" => &["config", "help"],
             "announcements" => &["config", "help", "offset", "limit"],
-            "irc-preview" => &["config", "help", "announcement"],
+            "irc-preview" => &["config", "help", "announcement", "text"],
             "irc-control" => &["config", "help", "action", "apply", "plan-id"],
             "requester" => &["config", "help", "offset", "limit"],
             "requester-control" => &["config", "help", "mapping", "apply", "plan-id"],
@@ -805,10 +805,11 @@ fn execute(args: Args) -> Result<()> {
             if !mynou::irc::valid_id(source) {
                 return Err("IRC: invalid source ID".into());
             }
-            let file = args
-                .options
-                .get("announcement")
-                .ok_or("Specify --announcement FILE")?;
+            let (file, text) = match (args.options.get("announcement"), args.options.get("text")) {
+                (Some(file), None) => (file, false),
+                (None, Some(file)) => (file, true),
+                _ => return Err("Specify exactly one of --announcement FILE or --text FILE".into()),
+            };
             let mut bytes = Vec::new();
             std::fs::File::open(file)
                 .map_err(|_| "IRC: cannot open announcement file")?
@@ -818,11 +819,14 @@ fn execute(args: Args) -> Result<()> {
             if bytes.len() > 8192 {
                 return Err("IRC: announcement file exceeds 8 KiB".into());
             }
-            let value = json::parse(
-                std::str::from_utf8(&bytes).map_err(|_| "IRC: announcement file is not UTF-8")?,
-            )?;
+            let body =
+                std::str::from_utf8(&bytes).map_err(|_| "IRC: announcement file is not UTF-8")?;
             // This operation stays pure even when the service is running.
-            output(&mynou::irc::preview(&config, source, &value)?);
+            output(&if text {
+                mynou::irc::preview_text(&config, source, body)?
+            } else {
+                mynou::irc::preview(&config, source, &json::parse(body)?)?
+            });
         }
         "irc-control" => {
             let id = &args.positions[0];

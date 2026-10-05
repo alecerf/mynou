@@ -334,19 +334,20 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
                     if body.len() > 8192 {
                         return Err("IRC: preview body exceeds 8 KiB".into());
                     }
-                    let value = control_body(body, &["source_id", "announcement"], false)?;
-                    return Ok((
-                        200,
-                        engine.irc_preview(
-                            value
-                                .get("source_id")
-                                .and_then(Value::as_str)
-                                .ok_or("IRC: source ID is required")?,
-                            value
-                                .get("announcement")
-                                .ok_or("IRC: announcement is required")?,
+                    let value = control_body(body, &["source_id", "announcement", "text"], false)?;
+                    let source = value
+                        .get("source_id")
+                        .and_then(Value::as_str)
+                        .ok_or("IRC: source ID is required")?;
+                    let report = match (value.get("announcement"), value.get("text")) {
+                        (Some(a), None) => engine.irc_preview(source, a)?,
+                        (None, Some(t)) => engine.irc_preview_text(
+                            source,
+                            t.as_str().ok_or("IRC: text must be a string")?,
                         )?,
-                    ));
+                        _ => return Err("IRC: specify exactly one announcement or text".into()),
+                    };
+                    return Ok((200, report));
                 }
                 if let Some(tail) = tail.strip_prefix("announcements/") {
                     let parts: Vec<_> = tail.split('/').collect();

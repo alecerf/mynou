@@ -6,7 +6,7 @@ use super::{
 use crate::{
     Result,
     engine::{Engine, lock},
-    json::{self, Value},
+    json::Value,
     net::DeadlineStream,
 };
 use std::{
@@ -369,7 +369,7 @@ fn connected(engine: &Engine, source: &Source) -> Result<()> {
                     health(engine, &source.id, "connected", None, 0);
                 }
                 Event::Announcement(body) => {
-                    let value = json::parse(&body).map_err(|_| "IRC: malformed announcement")?;
+                    let value = source.decode_payload(&body)?.to_json();
                     let report =
                         engine.irc_receive(&source.id, &source.sender, &source.channel, &value)?;
                     let mut runtime = lock(&engine.irc_runtime)?;

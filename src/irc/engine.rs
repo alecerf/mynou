@@ -84,6 +84,35 @@ impl Engine {
     pub fn irc_preview(&self, source_id: &str, value: &Value) -> Result<Value> {
         super::preview(&self.config, source_id, value)
     }
+    pub fn irc_preview_text(&self, source_id: &str, text: &str) -> Result<Value> {
+        super::preview_text(&self.config, source_id, text)
+    }
+    pub fn irc_receive_text(
+        &self,
+        source_id: &str,
+        sender: &str,
+        channel: &str,
+        text: &str,
+    ) -> Result<Option<Value>> {
+        let source = self.config.irc.source(source_id)?;
+        if self.read_only
+            || !source.enabled
+            || source.sender != sender
+            || !source.channel.eq_ignore_ascii_case(channel)
+        {
+            return Err("IRC: announcement source or storage is not writable".into());
+        }
+        let Some(body) = source.wire_payload(text)? else {
+            return Ok(None);
+        };
+        self.irc_receive(
+            source_id,
+            sender,
+            channel,
+            &source.decode_payload(&body)?.to_json(),
+        )
+        .map(Some)
+    }
     /// A library caller must supply the configured sender/channel, like the live client.
     pub fn irc_receive(
         &self,

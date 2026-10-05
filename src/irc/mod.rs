@@ -1,11 +1,13 @@
 //! Opt-in IRC claims, audit reviews, and routing to existing approved work.
 pub(crate) mod client;
 mod engine;
+pub(crate) mod format;
 mod persistence;
 pub mod protocol;
 pub(crate) mod routing;
 pub(crate) mod sasl;
 use crate::{Result, crypto::sha256, json::Value, selection::SelectionConfig, store::Request};
+pub use format::Delimited;
 pub(crate) use persistence::AnnouncementStore;
 pub use routing::Origin;
 pub use sasl::Settings as Sasl;
@@ -57,6 +59,14 @@ fn only(v: &Value, fields: &[&str]) -> Result<()> {
         return Err("IRC: unknown field or invalid object".into());
     }
     Ok(())
+}
+/// Parse the configured wire format and evaluate it without storage or network I/O.
+pub fn preview_text(config: &crate::config::Config, source_id: &str, text: &str) -> Result<Value> {
+    let source = config.irc.source(source_id)?;
+    let body = source
+        .wire_payload(text)?
+        .ok_or("IRC: text does not match the configured format")?;
+    preview(config, source_id, &source.decode_payload(&body)?.to_json())
 }
 fn text(v: &Value, key: &str) -> Result<String> {
     v.get(key)
@@ -167,6 +177,7 @@ pub struct Source {
     pub password_env: Option<String>,
     pub join_key_env: Option<String>,
     pub sasl: Option<Sasl>,
+    pub announcement_format: Option<Delimited>,
     pub magnet_template: Option<String>,
     pub idle_timeout_secs: u64,
     pub reconnect_min_secs: u64,
@@ -212,6 +223,7 @@ impl Source {
                 "password_env",
                 "join_key_env",
                 "sasl",
+                "announcement_format",
                 "magnet_template",
                 "idle_timeout_secs",
                 "reconnect_min_secs",
@@ -232,6 +244,10 @@ impl Source {
             sasl: match v.get("sasl") {
                 None | Some(Value::Null) => None,
                 Some(v) => Some(Sasl::from_json(v)?),
+            },
+            announcement_format: match v.get("announcement_format") {
+                None | Some(Value::Null) => None,
+                Some(v) => Delimited::from_json(v)?,
             },
             magnet_template: match v.get("magnet_template") {
                 None | Some(Value::Null) => None,
@@ -294,6 +310,9 @@ impl Source {
         if let Some(sasl) = &self.sasl {
             v.insert("sasl", sasl.configuration());
         }
+        if let Some(format) = &self.announcement_format {
+            v.insert("announcement_format", format.configuration());
+        }
         digest(crate::json::stringify(&v).as_bytes())
     }
     pub fn public_json(&self) -> Value {
@@ -304,6 +323,14 @@ impl Source {
         v.insert("tls_required", self.url.starts_with("ircs://"));
         v.insert("magnet_configured", self.magnet_template.is_some());
         v.insert(
+            "announcement_format",
+            if self.announcement_format.is_some() {
+                "delimited"
+            } else {
+                "json"
+            },
+        );
+        v.insert(
             "authentication",
             if self.sasl.is_some() {
                 "sasl_plain"
@@ -312,6 +339,23 @@ impl Source {
             },
         );
         v
+    }
+    pub(crate) fn wire_payload(&self, line: &str) -> Result<Option<String>> {
+        if line.len() > protocol::MAX_LINE - 2 {
+            return Err("IRC: announcement exceeds wire bounds".into());
+        }
+        match &self.announcement_format {
+            Some(format) => format.payload(line),
+            None => Ok(line.strip_prefix("MYNOU ").map(str::to_owned)),
+        }
+    }
+    pub(crate) fn decode_payload(&self, payload: &str) -> Result<Announcement> {
+        match &self.announcement_format {
+            Some(format) => format.decode(payload),
+            None => Announcement::from_json(
+                &crate::json::parse(payload).map_err(|_| "IRC: malformed announcement")?,
+            ),
+        }
     }
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -440,6 +484,9 @@ impl Settings {
                     .iter()
                     .map(|s| {
                         let mut v = s.public_json();
+                        if let Value::Object(fields) = &mut v {
+                            fields.remove("announcement_format");
+                        }
                         v.insert("binding", s.binding());
                         v.insert(
                             "magnet_template_digest",
