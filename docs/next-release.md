@@ -1,11 +1,15 @@
-# Active release — 0.20.4 required NickServ identification
+# Active release — 0.20.5 requester-selective IRC grabs
 
 Continue all roadmap stages autonomously, release by release. A green publication
 is the transition into the following scope. Do not stop at a release checkpoint.
 Read AGENTS.md and retain English, Rust std only, zero Cargo dependencies, no
 unsafe/FFI/copied code/external runtime helpers and CI-only validation. Formatting
 is an edit. Commit meaningful chunks, push completed scope, inspect all five
-Actions jobs, and fix every red run with commits before continuing. GitHub
+Actions jobs, and fix every red run with commits before continuing. A following scope may be
+prepared after successful validation/build/package while publication waits for
+a runner. Noncancelling trunk concurrency keeps that publication intact and
+serializes one following completed scope. Never queue multiple unvalidated
+scopes. Every scope still needs all five jobs and exact publication evidence. GitHub
 Actions alone creates tags/releases/assets; published versions stay immutable.
 
 The completed v0.20.3 text-format release passed run 37360688158 for
@@ -16,6 +20,22 @@ assets stayed unchanged. Exact [validation evidence](validation.md#recorded-0203
 and prior release evidence are recorded. This source needs its own workflow.
 
 ## Active contract and validation
+
+The 0.20.5 implementation adds optional configured requester aliases to rules.
+Absent/null fields are omitted from serialization, preserving legacy fingerprints.
+Routing and waiting share one approved compatible captured-interest predicate.
+A compatible co-owner can authorize a job originally created by another account;
+operator jobs, pending approvals and conflicts cannot substitute for that account.
+Routing rechecks selection after metadata work and before durable reservation.
+Original local CI fixtures cover strict settings, legacy reviews, shared native
+imports, restart, stale selectors, protected reports and selected-account removal
+during metadata I/O. This source has not yet passed its own workflow.
+
+The preceding NickServ source 35dec95705bb067dbcd2f149dfd8b050f0f550c1 passed
+validation, GNU/musl builds and packaging in run 37362054311 with 560 Rust tests
+across 50 harnesses and four scheduler checks. Release job 111939907953 is queued
+during the documented GitHub runner-assignment incident, without pending
+deployment approvals. Record its exact tag/seven assets once CI publishes.
 
 src/irc/nickserv.rs owns strict settings, bounded transient IDENTIFY credentials
 and required exact trusted NOTICE confirmation. protocol.rs gates channel
@@ -57,7 +77,8 @@ Retry retains original hash, aliases, file and release. Ready imports are preser
 
 ## Continue immediately after this green publication
 
-Implement explicit requester/action selectors and reviewed new-demand admission.
+Continue reviewed new-demand admission in 0.20.6; requester selectors are now
+implemented in the active 0.20.5 scope.
 Existing admitted-job routing remains the default. New actions must call the same
 canonical admission, approval, quota and capture machinery rather than silently
 creating operator jobs. Ambiguous catalog identity, source numbers, stale reviews

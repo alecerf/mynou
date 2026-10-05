@@ -1,4 +1,4 @@
-# Mynou 0.20.4 — Rust, standard library only
+# Mynou 0.20.5 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -58,7 +58,14 @@ See the [recorded evidence](docs/validation.md#recorded-0203-ci-evidence).
 Required [NickServ identification](docs/irc.md#required-nickserv-identification-in-0204)
 now gates channel entry on exact trusted account confirmation. Failures close
 the connection; retries identify again and public health redacts credentials.
-The 0.20.4 source requires its own complete CI publication.
+The NickServ source passed validation, GNU/musl builds and packaging in run
+37362054311: 560 Rust tests across 50 harnesses and four scheduler checks. Its
+publication is queued during GitHub's runner-assignment incident.
+
+Optional [requester selectors](docs/irc.md#requester-selectors-in-0205) now bind
+IRC grabs to one account's compatible approved demand, including shared work.
+Waiting and metadata admission recheck the same captured interest.
+The 0.20.5 source requires its own complete CI and CI publication.
 
 ## Try it
 
@@ -92,8 +99,8 @@ from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, o
 build the image from the source archive:
 
 ```sh
-docker load -i mynou-v0.20.4-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.20.4 .
+docker load -i mynou-v0.20.5-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.20.5 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d

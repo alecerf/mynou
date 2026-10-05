@@ -11,12 +11,21 @@ revision.
 
 ## Automated checks and releases
 
+The 0.20.5 requester-selector scenarios cover bounded configured aliases,
+unchanged null/default fingerprints, operator/missing/pending/conflicting
+interest rejection, compatible shared native imports, restart, stale selectors,
+protected reports and selected-interest removal during metadata inspection.
+They require their own complete Actions run and CI publication.
+
 The 0.20.4 NickServ scenarios cover strict exclusive authentication settings,
 exact service/account notices, early or forged membership, permanently failed
 connections, redaction, repeated handshakes, credential/command bounds, missing
 credentials, shutdown and the fixed registration deadline. An original native
 CLI fixture exercises a maximum password without secret persistence/logging.
-This source requires its own complete workflow and CI publication.
+The exact NickServ source passed its validation job with 560 Rust tests across
+50 harnesses and four scheduler checks. GNU/musl builds and packaging also passed;
+publication is still queued during GitHub's runner-assignment incident. This
+does not establish a published release. Later scopes need their own workflow.
 
 The 0.20.3 text scenarios exercise bounded complete grammar configuration,
 canonical numeric/hash fields, link redaction, fragmented formatting controls,

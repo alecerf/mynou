@@ -152,6 +152,31 @@ names appear only in private configuration and its hashed source binding. They
 and credential values never appear in public source reports or diagnostics.
 Authentication policy changes require a new source ID.
 
+## Requester selectors in 0.20.5
+
+An optional rule requester names one configured requester account. Omitting it
+or setting it to null preserves the original rule serialization and pending
+fingerprints. Unknown or invalid aliases are rejected during configuration.
+Example addition to a grab rule:
+
+```json
+{"requester":"alice"}
+```
+
+The selected account must retain approved demand for that canonical identity
+with the job's same captured profile and destination. Compatible demand can
+share a job originally created by another account. An operator job, an unrelated
+account, pending approval, quota-blocked demand or a conflicting route cannot
+stand in for that selection. Changing a selector makes pending claims/reviews
+stale without reinterpreting their original evaluations.
+
+Waiting and final routing use the same selection predicate. Routing rechecks
+the selected interest after metadata I/O and immediately before reservation;
+removing a selected co-owner cannot borrow another account's approval. The other
+account's job and ready media remain intact. Public source/API/browser reports
+show only the stable requester alias. Selection does not create new demand;
+reviewed new-demand actions follow in the next increment.
+
 ## Explicit release claims
 
 After registration and channel membership, the allowed sender delivers PRIVMSG

@@ -5,14 +5,26 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current implementation: 0.20.4, awaiting CI
+## Current implementation: 0.20.5, awaiting CI
+
+Explicit requester selectors require compatible approved retained demand for
+one configured account, including shared co-ownership. Metadata admission
+rechecks that interest before reservation. Original local fixtures cover strict
+configuration, missing/pending/conflicting interests, native import, restart,
+stale reviews, protected reports and removal during inspection. Complete CI
+and publication are pending. Reviewed new-demand actions follow in 0.20.6.
+
+## Preceding implementation: 0.20.4, publication queued
 
 Required NickServ identification binds exact service/account confirmation before
 channel membership. Failure closes the connection, reconnect repeats the exchange
 and public health redacts credentials. Original local fixtures cover trust,
 maximum commands, missing credentials, restart, shutdown and fixed deadlines.
-Complete validation/publication are pending; reviewed requester/action policies
-and durable notification routing follow immediately, then 0.21–0.23.
+Validation, both builds and packaging passed in run 37362054311 with 560 Rust
+tests across 50 harnesses and four scheduler checks. Publication is queued
+during GitHub's runner-assignment incident. Trunk queue protection keeps the
+publication intact before the following complete workflow. Reviewed demand and
+durable notification routing follow immediately, then 0.21–0.23.
 
 ## Previous published stage: 0.20.3
 

@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.20.4
+# Project checkpoint — Mynou 0.20.5
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -12,12 +12,21 @@ alone creates release tags and publishes artifacts from validated commits.
 
 ## Implemented scope
 
-The active 0.20.4 increment adds required NickServ identification. Exact trusted
+The active 0.20.5 increment adds explicit requester selectors to IRC rules.
+Compatible approved co-owners can route shared work; operator jobs, pending
+approvals and conflicting destinations cannot substitute for the selected
+interest. Waiting and final reservation share the same predicate. Original
+local fixtures cover strict settings, immutable legacy guards, native imports,
+restart and removal during metadata I/O. This scope still requires its complete
+CI and publication. Trunk queue protection preserves the preceding publication.
+
+The preceding 0.20.4 increment adds required NickServ identification. Exact trusted
 account confirmation precedes JOIN; forged membership, failures and expired
 registration cannot bypass it. Original local fixtures cover credentials, trust,
 reconnect/restart, redaction, the native CLI and shutdown. Complete validation
-and publication remain pending for this source. Continue directly to the
-remaining IRC action/notification stages after green publication, then 0.21–0.23.
+and both builds/packaging passed in run 37362054311 with 560 Rust tests across
+50 harnesses and four scheduler checks. CI publication is queued during GitHub's
+runner-assignment incident; this does not establish a published release.
 
 The published 0.20.3 increment adds one configurable fixed-delimiter text grammar,
 bounded IRC display formatting and pure CLI/API text previews. Complete explicit

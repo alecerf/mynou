@@ -23,6 +23,13 @@ build matrix retains native GNU and static musl coverage. Packaging waits for
 all three jobs to succeed for the same workflow commit; publication waits for
 successful packaging. PR runs validate/build/package but cannot publish.
 
+Trunk runs use a noncancelling workflow concurrency group. A subsequent completed
+scope can wait behind an in-progress validated publication without cancelling
+its release job. Keep at most one following scope queued and inspect its entire
+workflow before advancing further. PR runs continue to cancel superseded runs.
+This protection was added after GitHub reported a runner-assignment incident;
+it changes queue ordering, not the graph/test/build/package/publication gates.
+
 The static build also compiles the Rust standard-library-only packaging example.
 The next job receives that tool and the checked binary as a workflow artifact,
 so neither is recompiled for packaging. It explicitly passes the current source
@@ -63,10 +70,10 @@ provide newer weights. Timing history affects ordering only. A malformed history
 cannot suppress tests. Concurrency and timeout options can be tuned in CI, with
 explicit bounds; this is not permission to execute the scheduler locally.
 
-The checked-in weights now cover all 48 harnesses measured in
-[run 37348828003](https://github.com/alecerf/mynou/actions/runs/37348828003), including
-the newer numbering, shared-file, requester and IRC targets. That run executed
-543 tests in 59.179 seconds with two processes and two threads per harness.
+The checked-in weights now cover all 50 harnesses measured by the successful
+validation job in [run 37362054311](https://github.com/alecerf/mynou/actions/runs/37362054311),
+including the newer text-format and NickServ targets. That job executed 560
+tests in 67.422 seconds with two processes and two threads per harness.
 Refreshing weights starts the newly measured long harnesses earlier on a cache
 miss. The recorded duration precedes this refresh and is not an improvement claim.
 

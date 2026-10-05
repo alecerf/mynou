@@ -262,7 +262,10 @@ validation/publication passed for v0.20.3; later commits require their own compl
 The 0.20.4 NickServ increment requires exact configured sender/account notices
 before membership. It supports the explicit IDENTIFY account/password command,
 with bounded ASCII credentials and no interactive fallback; complete validation
-and publication remain pending for that source.
+passed for that source with 560 Rust tests in the validation job; CI publication
+is queued during GitHub's runner-assignment incident. The 0.20.5 selector increment
+binds grabs to one compatible approved requester interest and rechecks it after
+metadata work. It creates no demand and requires its own complete workflow.
 The [roadmap](roadmap.md) separates these capabilities into future releases.
 
 ## Persistence and platform
