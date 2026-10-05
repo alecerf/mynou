@@ -115,6 +115,7 @@ enum Phase {
     Challenge,
     Result,
     Complete,
+    Failed,
 }
 pub(crate) struct Negotiation {
     phase: Phase,
@@ -138,6 +139,16 @@ impl Negotiation {
         }
     }
     pub(crate) fn receive(&mut self, m: &Message, nickname: &str) -> Result<Option<Event>> {
+        if self.phase == Phase::Failed {
+            return Err("IRC: SASL requires a new connection".into());
+        }
+        let result = self.advance(m, nickname);
+        if result.is_err() {
+            self.phase = Phase::Failed;
+        }
+        result
+    }
+    fn advance(&mut self, m: &Message, nickname: &str) -> Result<Option<Event>> {
         if self.phase == Phase::Disabled {
             return Ok(None);
         }
@@ -164,6 +175,10 @@ impl Negotiation {
             .params
             .first()
             .is_some_and(|p| p == "*" || p.eq_ignore_ascii_case(nickname));
+        let targeted = m
+            .params
+            .first()
+            .is_some_and(|p| p.eq_ignore_ascii_case(nickname));
         let event = match m.command.as_str() {
             "CAP" if addressed => match m.params.get(1).map(String::as_str) {
                 Some("LS") if self.phase == Phase::Listing => {
@@ -254,21 +269,21 @@ impl Negotiation {
                 self.phase = Phase::Result;
                 Event::Authenticate
             }
-            "903" if addressed => {
+            "903" if targeted => {
                 if self.phase != Phase::Result {
                     return Err("IRC: unexpected SASL success".into());
                 }
                 self.phase = Phase::Complete;
                 Event::Reply("CAP END".into())
             }
-            "001" if addressed && self.phase != Phase::Complete => {
+            "001" if targeted && self.phase != Phase::Complete => {
                 return Err("IRC: required SASL did not complete".into());
             }
-            "901" | "902" | "904" | "905" | "906" | "907" if addressed => {
+            "901" | "902" | "904" | "905" | "906" | "907" if targeted => {
                 return Err("IRC: required SASL authentication failed".into());
             }
             "421"
-                if addressed
+                if targeted
                     && m.params
                         .get(1)
                         .is_some_and(|p| p == "CAP" || p == "AUTHENTICATE") =>
