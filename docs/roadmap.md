@@ -5,14 +5,28 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current stage: 0.17.0
+## Current stage: 0.18.0 implementation
+
+Complete shared-group baselines and replacements are reviewed through
+CLI/API/browser. Every child retains immutable parent lineage and one new
+authenticated video/destination. Exact Plex confirmation stages an owner; the
+last required confirmation promotes the complete group in one synchronized frame.
+Old imports remain current throughout partial work, failures and cancellation.
+Whole-group retry, monitoring fences, stale guards and format 3 recovery retain
+captured ownership and earlier bytes. See [group upgrades](group-upgrades.md).
+
+Complete Actions validation and CI publication must pass before beginning 0.19.
+The prior release evidence below does not validate this implementation. No local
+validation is permitted.
+
+## Previous stage: 0.17.0
 
 Explicit shared-file preview/apply binds one authenticated video to 2–64
 consecutive canonical owners in one season. All owners commit in one synchronized
 journal frame before acquisition and import one deterministic Plex range file.
 Each owner confirms that exact path; cancellation, retry and later subsets retain
 the full binding. Individual remaps, baselines and upgrades are blocked for shared
-owners until coordinated group replacement is available. See
+owners; coordinated group replacement follows in 0.18. See
 [shared files](shared-files.md).
 
 This stage passed [run 37271644993](https://github.com/alecerf/mynou/actions/runs/37271644993)
@@ -21,8 +35,7 @@ four scheduler checks and all five workflow jobs. CI published
 [v0.17.0](https://github.com/alecerf/mynou/releases/tag/v0.17.0) with seven assets
 on October 5, 2026, at 06:19:26 UTC. See
 [validation evidence](validation.md#recorded-0170-ci-evidence). No local validation
-ran. The next stage is coordinated shared-group replacement in 0.18; later
-commits require their own complete CI.
+ran. Later commits require their own complete CI.
 
 ## Previous stage: 0.16.0
 

@@ -112,8 +112,14 @@ next stage is coordinated group replacement in 0.18; later commits need their
 own complete CI. The exact release evidence is recorded below.
 See [shared files](shared-files.md).
 
-Coordinated shared upgrades, automatic
-anime/range inference, multi-user Plex policies, IRC automation, native
+The 0.18.0 implementation adds reviewed complete shared-group baselines and
+authenticated one-file replacements, immutable full parent lineage, staged exact
+Plex confirmations and atomic promotion. Whole-group cancellation/retry and
+monitoring fences preserve prior imports. Format 3 rejects partial or conflicting
+group state and silent downgrade. Complete Actions validation and CI publication
+remain required before beginning 0.19. See [group upgrades](group-upgrades.md).
+
+Automatic anime/range inference, multi-user Plex policies, IRC automation, native
 indexer adapters, Usenet and cross-seeding remain future stages. See the [release roadmap](roadmap.md). Series monitoring is a
 focused stage and does not establish full stack parity.
 

@@ -82,8 +82,18 @@ journal frame, with one immutable library destination. Group claims are
 serialized; native hash/path verification and atomic import reuse preserve that
 destination across restart and cancellation. Each owner confirms the exact Plex
 path separately. Media/physical ownership indexes are rebuilt from verified jobs.
-Shared owners remain outside individual baseline/upgrade logic until coordinated
-group replacement is available. See [shared files](shared-files.md).
+Shared owners remain outside individual baseline/upgrade logic. See
+[shared files](shared-files.md).
+
+`library::groups` reviews complete baselines and authenticated one-file
+replacements under the current episode profile. `store::groups` persists their
+immutable full parent set and per-owner lineage in format 3 transactions. Each
+replacement confirms its exact path and becomes staged; the final confirmation
+promotes the complete group in one synchronized frame. Staged jobs cannot hide
+old library tips or be claimed as ordinary work. Group cancellation/retry covers
+every child and monitoring choices fence claims/promotion. Memoized iterative
+root traversal keeps projection bounded across histories. See
+[group upgrades](group-upgrades.md).
 
 Ready imports form the owned-library view. Monitoring checks the current ready
 entry's recorded release title against source candidates under the current

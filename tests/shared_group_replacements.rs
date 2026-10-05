@@ -20,7 +20,6 @@ use shared_group_support::{
 };
 use std::{
     fs,
-    path::Path,
     sync::atomic::Ordering,
     thread,
     time::{Duration, Instant},

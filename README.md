@@ -1,4 +1,4 @@
-# Mynou 0.17.0 — Rust, standard library only
+# Mynou 0.18.0 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -16,6 +16,9 @@ from retained library identities. Preview and apply choices through CLI/API/brow
 existing jobs and imports keep their original numbers. Explicit
 [shared video ownership](docs/shared-files.md) now binds consecutive episodes to
 one authenticated torrent path and one Plex range file, with guarded preview/apply.
+Reviewed [group upgrades](docs/group-upgrades.md) record complete baselines and
+replacement lineage. Confirmed owners stage until one atomic promotion makes the
+whole replacement current; prior library files remain in place.
 
 ## Try it
 
@@ -49,8 +52,8 @@ from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, o
 build the image from the source archive:
 
 ```sh
-docker load -i mynou-v0.17.0-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.17.0 .
+docker load -i mynou-v0.18.0-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.18.0 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d
@@ -109,6 +112,10 @@ ownership, shared Plex paths, and installation without Rust on the host.
   authenticated torrent path and one Plex range import. Guarded CLI/API/browser
   preview/apply records all owners atomically; cancellation, retry and subset
   requests preserve that ownership. Shared owners require group upgrades.
+- Whole-group baselines and shared-video replacements through CLI/API/browser.
+  Immutable lineage, staged exact Plex confirmations and atomic promotion retain
+  old library versions. Replacement cancellation/retry covers every owner;
+  monitoring changes fence claims and promotion.
 - Browser management at `/ui`: search/request forms, jobs/history, owned library
   monitoring and upgrades, transfer controls, filters, pagination and bounded
   bulk actions with individual results. Rust renders all pages without scripts

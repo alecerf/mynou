@@ -203,8 +203,14 @@ transaction records all new owners, and group claims serialize import work.
 Preview uses the metadata-only discovery bounds above with a 60-second action
 deadline. The CLI mapping is capped at 512 KiB; API bodies at 1 MiB; browser fields
 at 8 KiB. Shared formats reject older readers. Individual remaps, baselines and
-upgrades are blocked; coordinated replacement is the next stage. See
-[shared-file ownership](shared-files.md).
+upgrades remain blocked for individual shared owners. Coordinated replacement
+uses the complete captured owner range, one new shared video, group baselines and
+staged confirmations before atomic promotion. It requires all parents to remain
+current and monitored, an accepted quality improvement and a new URL/torrent hash.
+Whole-group cancellation/retry retains bytes and rejects obsolete parents. Format
+3 prevents silent downgrade. Automatic group search, splitting into individual
+files and range inference remain later work. See
+[shared-file ownership](shared-files.md) and [group upgrades](group-upgrades.md).
 
 The browser interface uses a shared operator token, original server-rendered
 pages and native forms, with page refreshes rather than live streaming. It has

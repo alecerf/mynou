@@ -135,3 +135,11 @@ credentials stay server-side in one ten-minute review per session. Group import
 and exact Plex path confirmation are shared; each episode retains its own job
 state. Individual remapping and upgrades are blocked for shared owners. See
 [shared files](shared-files.md) for reuse, cancellation and persistence rules.
+
+Current shared-owner job pages expose **Preview whole-group baseline** and
+**Preview whole-group replacement**. Review the complete scope, release and exact
+authenticated path before **Record reviewed whole-group decision**. One private
+ten-minute review is retained per session across shared-file and group actions.
+The apply form contains only owner/guard/CSRF fields. Staged replacement owners
+wait for the remaining confirmations; cancel/retry affects their entire group.
+See [group upgrades](group-upgrades.md).

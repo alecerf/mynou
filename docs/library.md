@@ -1,9 +1,11 @@
 # Library monitoring and controlled upgrades
 
 Shared multi-episode imports use [group ownership](shared-files.md). Individual
-baselines and upgrades are blocked for those owners in 0.17; preview/apply reports
-`shared_group_upgrade_required`. Earlier imports remain current until coordinated
-group replacement is implemented. The individual upgrade rules below apply to
+baselines and upgrades remain blocked for individual shared owners. Use the
+[coordinated group operation](group-upgrades.md) in 0.18 to review a complete
+baseline or replacement. General upgrade scans report `shared_group_upgrade_required`
+and do not search shared groups automatically. Earlier imports remain current
+until every replacement owner is confirmed. The individual rules below apply to
 ordinary single-episode and movie imports.
 
 Mynou 0.8.0 adds a view of its own ready imports, per-entry monitoring, quality

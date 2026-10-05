@@ -1,4 +1,10 @@
-# Next-release checkpoint — 0.18 coordinated shared-group replacements
+# Next-release checkpoint — 0.19 Plex requester policies
+
+The 0.18 implementation adds [coordinated shared-group upgrades](group-upgrades.md):
+complete baselines and immutable replacement lineage, authenticated new video
+paths, staged exact Plex confirmation, atomic promotion and whole-group controls.
+Its complete Actions validation and CI publication remain required before 0.19.
+The earlier green release below does not validate these changes.
 
 v0.17 implements explicit shared files: one authenticated video belongs to a
 complete consecutive canonical episode range and imports to one deterministic
@@ -81,25 +87,51 @@ Individual shared remaps, baselines and upgrades remain blocked. Automatic packs
 and ordinary mapped packs still require unique single-episode files. This gives
 0.17 an independently usable scope without partially replacing shared owners.
 
-## Implement coordinated group replacements in 0.18
+## Retain coordinated group replacement in 0.18
 
-1. Define immutable old-group to replacement-group lineage, whole-group release
-   baselines and quality decisions. Capture the complete canonical owner set;
-   a partial request cannot implicitly discard other owners.
-2. Persist every replacement and its full lineage before acquisition in one
-   bounded transaction. Keep old entries current until all required replacements
-   complete native verification, import and exact Plex confirmation.
-3. Make group promotion atomic, recoverable and idempotent across worker races,
-   retry, cancellation, monitoring changes and restart. Retain all earlier bytes;
-   no overwrite or automatic deletion. Define shared-to-individual replacements
-   before exposing them.
-4. Add guarded CLI/API/browser preview/apply for the coordinated operation.
-   Automatic range-file recognition can follow only when it obeys that ownership
-   and complete-scope model. Alternate source numbering remains explicit.
-5. Add original synthetic CI cases for incomplete groups, stale policy/source
-   guards, partial Plex confirmation, failed/cancelled replacements, retries,
-   restart and terminal promotion. Keep the 64-job action bound and complete
-   Cargo harness execution.
+`src/library/groups.rs` validates complete current owners and their existing
+regular-file import, release/range identity and current episode policy. Metadata
+inspection stays outside the journal lock. The guard captures parents, source,
+profile, exact new hash/path and existing candidate state before a writable apply.
+Browser credentials stay in one bounded session review, without hidden source
+fields. Offline preview is read-only and apply requires the service.
+
+`src/store/groups.rs` captures ordered parent IDs for every child and owns format
+3 baseline/create/promote/cancel/retry transactions. Confirmations become staged;
+the final owner promotes the whole group in one frame. Group claims serialize
+imports and require every current parent to remain monitored. Exhausted failures
+reserve their scope until cancelled. Retry retains bindings and bytes, repeats
+required confirmations and rejects obsolete parents or competing replacements.
+
+Journal/snapshot readers accept formats 1–3; old readers reject the new group
+formats. Complete-scope and semantic validation reject partial baselines,
+promotion/cancellation, fabricated individual frames and mutated lineage.
+Memoized iterative root traversal retains lineage precedence without recursion.
+Synthetic CI cases include 64-owner transactions, corruption/torn writes,
+monitoring/control races, source/policy guards and native partial Plex confirmation
+across restart. The current whole run and publication must pass before continuing.
+
+This stage replaces one shared video with one shared video. Automatic range-file
+inference/search and shared-to-individual replacement remain later work; expose
+them only after complete ownership, source labels and promotion are defined.
+
+## Implement Plex requester policies in 0.19
+
+1. Define bounded stable requester identities and per-account Plex token bindings
+   without changing the operator's existing API/browser authentication. Keep
+   credentials outside persisted public reports and review forms.
+2. Add independent watchlist cursors/poll results and explicit opt-in movie/episode
+   profile policies. Preserve the current single-account configuration and define
+   policy compatibility before combining demand for one canonical media identity.
+3. Persist requester provenance before acquisition. Removing one user's demand
+   must not cancel another user's interest or delete ready media. Retain ownership,
+   source numbering and complete shared-group replacement scope across restarts.
+4. Expose requester status, policy decisions and guarded management through
+   CLI/API/browser. Report partial account failures separately and retain bounded
+   poll deadlines; stale identity/policy decisions require new review.
+5. Add original local-service CI cases for multiple accounts, duplicate media,
+   conflicting policies, partial failures, credential redaction, removals and
+   restart. Keep complete Cargo harness execution and all publication gates.
 
 ## Release acceptance and handoff
 

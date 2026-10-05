@@ -11,6 +11,14 @@ revision.
 
 ## Automated checks and releases
 
+The 0.18 scenarios cover 64-owner baselines/creation/promotion, torn transactions,
+signed incomplete lineage, partial-ready snapshots, cancellation of staged owners,
+retry/obsolete-parent/competitor fences, monitoring changes, source/quality guards,
+private browser reviews and offline/online CLI behavior. An original local native
+peer/Plex journey keeps the old group current during partial path confirmation
+and resumes staging after restart. Their result must come from a complete Actions
+run for the exact source; prior release evidence does not validate them.
+
 The 0.17 shared-file scenarios cover metadata-only guards, 64-owner atomic
 creation, interrupted and semantically invalid persistence, subset reuse,
 concurrent workers, source changes, queued-owner cancellation and restart,

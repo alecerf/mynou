@@ -147,11 +147,14 @@ Keep complete request/series state, downloads and library in backups, and use
 Mynou 0.17 or later after creating shared ownership. Existing ordinary jobs retain
 their single-file import behavior and keys.
 
-Individual upgrade and baseline actions are blocked for shared owners. Upgrade
+Individual upgrade and baseline actions remain blocked for shared owners. Upgrade
 reports show `shared_group_upgrade_required`; a separately submitted acquisition
-cannot replace a shared owner. Earlier imports remain current. Coordinated group
-replacement, including readiness of every required replacement, is the next
-release prerequisite before automatic multi-episode mapping can be enabled.
+cannot replace a shared owner. Mynou 0.18 adds [coordinated group upgrades](group-upgrades.md)
+with complete baselines, immutable replacement lineage, staged confirmation and
+atomic whole-group promotion. Group controls use journal/snapshot format 3 and
+require Mynou 0.18 or later. Cancellation/retry of replacement children covers
+their complete group; original shared acquisition owners retain the individual
+interest behavior described above.
 
 Automatic packs and the ordinary explicit pack validator retain one file per
 episode. This release adds the dedicated shared action; it does not infer range
