@@ -284,6 +284,7 @@ fn uncaptured_operator_jobs_require_verified_ready_imports_and_compatible_qualit
                 .unwrap()
                 .update(operator.clone())
                 .unwrap();
+            operator = lock(&engine.store).unwrap().get(&operator.id).unwrap();
         }
         let journal = fs::read(cfg.store_dir.join("journal.bin")).unwrap();
         enable(&engine, "alice", false);
