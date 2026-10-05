@@ -42,8 +42,11 @@ passed with **533 Rust tests** and four scheduler checks. See the
 
 Optional required SASL PLAIN authenticates IRC connections before channel
 membership. Bounded capability negotiation and credential chunks reject failed
-authentication without fallback. The 0.20.2 increment requires its own complete
-CI and publication. See [IRC authentication](docs/irc.md#required-sasl-plain-authentication).
+authentication without fallback. CI published
+[v0.20.2](https://github.com/alecerf/mynou/releases/tag/v0.20.2) after all five jobs
+passed with **543 Rust tests** and four scheduler checks. See
+[IRC authentication](docs/irc.md#required-sasl-plain-authentication) and the
+[release evidence](docs/validation.md#recorded-0202-ci-evidence).
 
 ## Try it
 

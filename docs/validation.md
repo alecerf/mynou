@@ -17,8 +17,9 @@ checks, ordered success, authentication failures and permanently invalidated
 failed states. Original loopback peers exercise redaction, reconnect/restart,
 missing credentials, interruptible challenges and the nonrenewable registration
 deadline. A native CLI child with synthetic credentials exercises the exact
-400-byte response and mandatory terminator. This increment requires its own
-completed workflow and CI publication; earlier evidence does not validate it.
+400-byte response and mandatory terminator. Run 37348828003 completed these and
+all earlier checks for the exact v0.20.2 source; its publication evidence is
+recorded below. Later commits require their own completed workflow.
 
 The 0.20.1 scenarios add pure bounded templates, explicit job deferral,
 metadata-only verification before native queue publication, exact selective
@@ -136,6 +137,37 @@ allowance across seasons. Existing full validation remains required.
 
 The recorded run below validates these scenarios through GitHub Actions only.
 No local tests, lint, builds or demos ran.
+
+## Recorded 0.20.2 CI evidence
+
+`bb5aebd3727a34b02ab10c07909549529807fa4a` passed
+[Actions run 37348828003](https://github.com/alecerf/mynou/actions/runs/37348828003):
+**543 Rust tests passed**, none failed or ignored, across **48 targets**.
+Four scheduler checks and all five validation/build/package/release jobs passed.
+CI checked the offline one-package/zero-dependency graph, formatting, Clippy,
+GNU/musl builds, standalone and isolated container demonstrations, executable
+permissions, archive integrity and all checksum manifests. Every Cargo harness
+ran with two processes and two threads per harness; execution took 59.179 seconds.
+The authentication harness took 10.238 seconds, including its deliberate
+ten-second registration deadline fixture.
+
+GitHub Actions published [v0.20.2](https://github.com/alecerf/mynou/releases/tag/v0.20.2)
+on October 5, 2026, at 17:32:22 UTC. The tag targets the exact tested commit.
+All seven assets were uploaded by `github-actions[bot]`. Recorded payloads:
+
+| Asset | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `mynou-v0.20.2-linux-amd64-image.tar.gz` | 1910453 | `41e3f92418f9c9e12456ccd55746867d8b6bc4466229b3c564691c399a71b61b` |
+| `mynou-v0.20.2-linux-amd64-image.tar.gz.sha256` | 105 | `aa7dfde49edf840fa9ef4883fd2b092e6a943ae903ced544880c14329e0815f1` |
+| `mynou-v0.20.2-linux-x86_64` | 3859296 | `a72a18f2a83dee571148bba637b44b4015335485a1da110d7b28c1ba60cb98b8` |
+| `mynou-v0.20.2-linux-x86_64.sha256` | 93 | `0f7a729e671b3a2417ecbd38af8eecd35818afc40101ec603e9b28379c8ee659` |
+| `mynou-v0.20.2-source.zip` | 6865189 | `1376c34b79cdf35dc6a27a4220d1adf872a8aa0f8ce4ea99dcafdea729c811f3` |
+| `mynou-v0.20.2-source.zip.sha256` | 91 | `c5d22519a9580c30e2eddfbfdf21cfa33e3ab657edfad6a0cdca757f27b76faf` |
+| `SHA256SUMS` | 289 | `57cb4c71a4521531951951698801de43fc9ddf0356097e7802edc7b785c1d664` |
+
+The preceding v0.20.1 and v0.20.0 tags, asset IDs, sizes and digests remain unchanged.
+No local tests, lint, builds, binaries or demos ran. Later documentation and
+implementation commits require their own complete workflow.
 
 ## Recorded 0.20.1 CI evidence
 

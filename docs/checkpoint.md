@@ -12,12 +12,13 @@ alone creates release tags and publishes artifacts from validated commits.
 
 ## Implemented scope
 
-The active 0.20.2 increment adds opt-in required SASL PLAIN, bounded capability
+The published 0.20.2 increment adds opt-in required SASL PLAIN, bounded capability
 negotiation, credential encoding and authentication before channel membership.
 Failure cannot fall back to an unauthenticated connection; retries authenticate
 again. Public source health exposes the mode and transient authentication state.
 Original local fixtures cover bounds, failures, fragmented messages, exact chunk
-boundaries, restart and deadlines. Complete CI/publication remain pending.
+boundaries, restart and deadlines. Complete CI/publication passed with 543 Rust
+tests across 48 harnesses, four scheduler checks and all five jobs.
 
 The published 0.20.1 increment adds explicit grab rules, hash-pinned configured
 magnets, metadata-only verification and candidate routing to existing admitted
@@ -165,6 +166,18 @@ A successful validation run on `trunk` publishes a new `Cargo.toml` version if i
 has not already been released. The assets are a full source ZIP with the static
 Linux x86_64 binary, a separate static binary, a saved Docker image archive, and
 SHA-256 checksum files. There is no Docker Hub publication step.
+
+## Recorded 0.20.2 CI checkpoint
+
+Commit `bb5aebd3727a34b02ab10c07909549529807fa4a` passed
+[Actions run 37348828003](https://github.com/alecerf/mynou/actions/runs/37348828003):
+543 Rust tests passed with none failed or ignored across 48 targets, plus four
+scheduler checks and all five jobs. CI published
+[v0.20.2](https://github.com/alecerf/mynou/releases/tag/v0.20.2) with seven assets
+on October 5, 2026, at 17:32:22 UTC. The tag targets this exact tested source.
+The v0.20.1 and v0.20.0 tags and all asset IDs, sizes and digests remain unchanged.
+See [validation evidence](validation.md#recorded-0202-ci-evidence).
+Later commits need their own completed workflow and do not replace published assets.
 
 ## Recorded 0.20.1 CI checkpoint
 

@@ -4,8 +4,10 @@ Mynou 0.20.0 adds opt-in receivers, deterministic filters, durable duplicate
 suppression and guarded audit reviews. The 0.20.1 increment adds explicit grab
 rules: verified candidates attach only to existing admitted canonical jobs.
 Reviews change no download work. Reception and routing passed complete CI.
-The 0.20.2 increment adds required SASL PLAIN authentication; its exact source
-requires its own completed validation/publication.
+The 0.20.2 increment adds required SASL PLAIN authentication and passed complete
+CI/publication with 543 Rust tests. Exact source/run/asset evidence is recorded in
+[validation](validation.md#recorded-0202-ci-evidence). Later commits require their
+own completed workflow.
 
 ## Configure a source and review rules
 

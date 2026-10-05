@@ -256,7 +256,7 @@ UTF-8 bytes without SASLprep or Unicode normalization. New-demand actions,
 packs/upgrades, NickServ, tracker text adapters,
 notification delivery, cross-seeding and broader bulk automation remain later work.
 See [IRC behavior](irc.md) for protocol, deadlines and recovery. Complete
-validation/publication passed for v0.20.1; authentication requires its own complete CI.
+validation/publication passed for v0.20.2; later commits require their own complete CI.
 The [roadmap](roadmap.md) separates these capabilities into future releases.
 
 ## Persistence and platform

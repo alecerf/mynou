@@ -1,4 +1,12 @@
-# Next-release checkpoint — 0.20.2 required IRC authentication
+# Next-release checkpoint — 0.20.3 bounded tracker text adapters
+
+The published 0.20.2 increment adds required SASL PLAIN, bounded capabilities,
+transient credential responses and authentication before channel membership.
+Run 37348828003 passed for bb5aebd3727a34b02ab10c07909549529807fa4a with
+543 Rust tests across 48 harnesses, four scheduler checks and all five jobs.
+CI published v0.20.2 on October 5, 2026, at 17:32:22 UTC. Its seven assets and
+the prior v0.20.1/v0.20.0 tags and assets remain immutable. See
+[validation evidence](validation.md#recorded-0202-ci-evidence).
 
 The 0.20.0 implementation adds opt-in live IRC reception, explicit source trust,
 strict bounded framing, original verified TLS, title/profile filters, durable
@@ -52,15 +60,16 @@ the snapshot. Full history rejects new identities while retaining existing ones.
 engine.rs provides pure previews and row-scoped audit decisions. Shared browser review
 slots bind session, action, record and guard and expire in ten minutes.
 
-## Validate the active authentication increment
+## Inspect live validation before the next increment
 
 The v0.20.1 publication is complete. Its evidence and CI-weight checkpoint passed
 all five jobs in run 37346335547 for c400178f7c8a2e2dd8e9b4fb7c5c204f3a863c22:
 533 Rust tests across 47 harnesses and four scheduler checks. CI retained the
-published release. The active v0.20.2 implementation now needs its own complete
-run and CI publication. Inspect all five jobs, fix failures in new commits and
-confirm the new tag targets the validated source. Earlier tags/assets must stay
-unchanged; later evidence commits require their own complete workflow.
+published release. v0.20.2 is also fully published; its later evidence/CI-weight
+commit requires a separate complete workflow. Inspect every job for the current
+branch before the next increment. Fix failures with new commits and verify
+that CI retains the published tag/assets. Never replace them. Each future
+implementation needs its own full validation and CI publication.
 
 src/irc/routing.rs owns restricted template parsing, metadata selection,
 immutable Origin/Route, the serialized bounded automatic pass and startup
@@ -80,7 +89,7 @@ after 60 seconds. Routing uses a shared ten-second availability/metadata budget
 and sets a selected job's next attempt to zero. Do not bypass captured roots or
 turn ready data into a new acquisition.
 
-## Active increment: required SASL PLAIN
+## Retain required SASL PLAIN
 
 src/irc/sasl.rs implements opt-in configuration with environment variable names,
 bounded original Base64 encoding, capability negotiation and failed-state
@@ -97,6 +106,27 @@ credentials, a native CLI exact-boundary response and registration deadlines.
 An original unit fixture checks published PLAIN vectors and maximum response
 bounds. All fixtures run in CI only. Only PLAIN is implemented, without SASLprep
 or Unicode normalization. NickServ and tracker text adapters remain later work.
+
+## Next increment: one bounded tracker text adapter
+
+Add one opt-in source format at a time while retaining the strict JSON envelope
+as the default. Describe its exact grammar, delimiters, supported fields and
+limits. Use original standard-library parsing, with no regex dependency or
+copied provider code. Fragmented IRC framing, exact sender/channel membership,
+verified remote TLS and required authentication remain prerequisites.
+
+Transform accepted text into the existing claim/evaluation path. Title-only,
+missing catalog identities, ambiguous source numbers and missing hashes must
+stay unresolved rather than inventing canonical requests. Do not start metadata
+or payload for an unresolved identity. Existing admitted-job routing remains
+the only acquisition action; new-demand admission is a separate stage.
+
+Include parser format/configuration in the source binding, preserve old bindings
+for unchanged JSON sources and require a new ID for policy changes. Reject
+credential-bearing source links from public output and keep raw server text out
+of diagnostics. Original local fixtures need valid/invalid provider messages,
+fragmentation, bounds, duplicates, restart and no side effects for ambiguity.
+Only publish after the entire current workflow is green.
 
 ## Following IRC stages after green publication
 
