@@ -52,7 +52,7 @@ impl Message {
         {
             return Err("IRC: invalid command".into());
         }
-        let mut params = Vec::new();
+        let mut params: Vec<String> = Vec::new();
         rest = tail.trim_start_matches(' ');
         while !rest.is_empty() {
             if params.len() == 15 {
