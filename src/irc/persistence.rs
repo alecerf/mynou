@@ -12,6 +12,7 @@ use std::{
     path::{Path, PathBuf},
 };
 const MAGIC: &[u8; 8] = b"MYNOUI01";
+const ROUTE_MAGIC: &[u8; 8] = b"MYNOUI02";
 const MAX_BYTES: usize = 8 * 1024 * 1024;
 pub(crate) struct AnnouncementStore {
     pub state: State,
@@ -49,7 +50,7 @@ impl AnnouncementStore {
                     .read_to_end(&mut bytes)
                     .map_err(|_| "IRC: cannot read history")?;
                 if bytes.len() < 48
-                    || &bytes[..8] != MAGIC
+                    || (&bytes[..8] != MAGIC && &bytes[..8] != ROUTE_MAGIC)
                     || u64::from_le_bytes(
                         bytes[8..16]
                             .try_into()
@@ -59,10 +60,14 @@ impl AnnouncementStore {
                 {
                     return Err("IRC: corrupt or unsupported history".into());
                 }
-                State::from_json(&json::parse(
+                let state = State::from_json(&json::parse(
                     std::str::from_utf8(&bytes[16..bytes.len() - 32])
                         .map_err(|_| "IRC: history is not UTF-8")?,
-                )?)?
+                )?)?;
+                if state.records.values().any(|r| r.route.is_some()) && &bytes[..8] != ROUTE_MAGIC {
+                    return Err("IRC: acquisition reservations require history format 2".into());
+                }
+                state
             }
         };
         let mut next = state.clone();
@@ -114,7 +119,11 @@ impl AnnouncementStore {
             return Err("IRC: history exceeds 8 MiB".into());
         }
         let mut bytes = Vec::with_capacity(payload.len() + 48);
-        bytes.extend_from_slice(MAGIC);
+        bytes.extend_from_slice(if next.records.values().any(|r| r.route.is_some()) {
+            ROUTE_MAGIC
+        } else {
+            MAGIC
+        });
         bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
         bytes.extend_from_slice(&payload);
         bytes.extend_from_slice(&sha256(&bytes));

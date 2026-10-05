@@ -79,7 +79,7 @@ fn compatible(config: &crate::config::Config, demand: &Demand, job: &Job) -> Res
             },
         ))
 }
-fn interest(state: &State, job: &Job, config: &crate::config::Config) -> bool {
+pub(crate) fn interest(state: &State, job: &Job, config: &crate::config::Config) -> bool {
     if job.requester.is_none() || state.operator_jobs.contains(&job.id) {
         return true;
     }
@@ -639,6 +639,7 @@ impl Engine {
         let ledger = lock(&self.requester_store)?;
         lock(&self.store)?.claim_filtered(store::now(), self.config.lease_duration_secs, |job| {
             interest(&ledger.state, job, &self.config)
+                && !crate::irc::routing::waits_for_candidate(&self.config, job)
         })
     }
     pub(crate) fn requester_operator_interest(&self, jobs: &[Job]) -> Result<()> {

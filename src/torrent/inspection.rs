@@ -21,6 +21,8 @@ pub struct MetadataFile {
 pub struct TorrentMetadata {
     /// The source's authenticated hash, retained even when a hybrid has another alias.
     pub id: String,
+    /// All authenticated v1/v2 aliases, for exclusive physical-file ownership.
+    pub aliases: Vec<String>,
     pub files: Vec<MetadataFile>,
 }
 
@@ -37,6 +39,12 @@ fn report(meta: Meta, id: String, deadline: Instant) -> Result<TorrentMetadata> 
         return Err("Pack metadata exceeds 1024 files".into());
     }
     let mut bytes = 0_usize;
+    let aliases = meta
+        .v1
+        .iter()
+        .map(|h| super::hex(h))
+        .chain(meta.v2.iter().map(|h| super::hex(h)))
+        .collect();
     let mut files = Vec::with_capacity(meta.files.len());
     for file in meta.files {
         let path = file
@@ -54,7 +62,7 @@ fn report(meta: Meta, id: String, deadline: Instant) -> Result<TorrentMetadata> 
         });
     }
     remaining(deadline)?;
-    Ok(TorrentMetadata { id, files })
+    Ok(TorrentMetadata { id, aliases, files })
 }
 
 /// Inspect a local/HTTP torrent or authenticate magnet metadata from bounded peers.

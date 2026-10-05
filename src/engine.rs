@@ -28,6 +28,8 @@ pub struct Engine {
     pub(crate) requester_store: Mutex<crate::requesters::RequesterStore>,
     pub(crate) irc_store: Mutex<crate::irc::AnnouncementStore>,
     pub(crate) irc_runtime: Mutex<crate::irc::client::Runtime>,
+    pub(crate) irc_route_runtime: Mutex<crate::irc::routing::Runtime>,
+    pub(crate) irc_route_lock: Mutex<()>,
     pub(crate) upgrade_lock: Mutex<()>,
     pub(crate) read_only: bool,
     pub stopped: AtomicBool,
@@ -75,8 +77,13 @@ impl Engine {
         let mut irc_store =
             crate::irc::AnnouncementStore::open(&config.store_dir, &config.irc, read_only)?;
         crate::requesters::engine::validate_storage(&requester_store.state, &store)?;
+        let irc_recovered = crate::irc::routing::recovered_state(&irc_store.state, &store)?;
+        let irc_recovery_changed = irc_recovered != irc_store.state;
         requester_store.initialize()?;
         irc_store.initialize()?;
+        if !read_only && irc_recovery_changed {
+            irc_store.save(irc_recovered)?;
+        }
         if !read_only {
             crate::requesters::engine::cancel_unwanted(
                 &requester_store.state,
@@ -128,6 +135,8 @@ impl Engine {
             requester_store: Mutex::new(requester_store),
             irc_store: Mutex::new(irc_store),
             irc_runtime: Mutex::new(irc_runtime),
+            irc_route_runtime: Mutex::new(crate::irc::routing::Runtime::default()),
+            irc_route_lock: Mutex::new(()),
             upgrade_lock: Mutex::new(()),
             read_only,
             stopped: AtomicBool::new(false),
@@ -229,6 +238,15 @@ impl Engine {
         let mut store = lock(&self.store)?;
         let previous = store.get(id).ok_or("Unknown job")?;
         let job = store.retry(id)?;
+        if job.irc_origin.is_some() {
+            drop(store);
+            if let (Some(client), Some(id)) = (&self.downloads, &job.download_id)
+                && client.statuses()?.iter().any(|s| &s.id == id)
+            {
+                client.resume_if_allowed(id)?;
+            }
+            return Ok(job);
+        }
         if job.shared_upgrade.is_some() {
             let transfer_id = job
                 .shared_file
@@ -427,6 +445,7 @@ impl Engine {
     pub fn start(self: &Arc<Self>) -> Workers {
         let mut handles = Vec::new();
         crate::irc::client::start(self, &mut handles);
+        crate::irc::routing::start(self, &mut handles);
         if self.config.catalog.enabled {
             let engine = self.clone();
             handles.push(thread::spawn(move || {
@@ -654,7 +673,13 @@ impl Engine {
         if job.imports.is_empty() && !job.files.is_empty() && job.download_id.is_some() {
             let client = self.downloads.as_ref().ok_or("Downloads are disabled")?;
             let id = job.download_id.as_deref().ok_or("Missing download")?;
-            let status = if let Some(path) = &job.pack_file {
+            let status = if let Some(origin) = &job.irc_origin {
+                client.require_bound_files(
+                    id,
+                    std::slice::from_ref(&origin.file),
+                    &origin.torrent_id,
+                )?
+            } else if let Some(path) = &job.pack_file {
                 if let Some(file) = &job.shared_file {
                     client.require_bound_files(id, std::slice::from_ref(path), &file.torrent_id)?
                 } else if let Some(origin) = &job.pack_origin {
@@ -697,7 +722,13 @@ impl Engine {
                     lock(&self.store)?.update(job.clone())?;
                 }
                 let status = if let Some(id) = &job.download_id {
-                    if let Some(path) = &job.pack_file {
+                    if let Some(origin) = &job.irc_origin {
+                        client.require_bound_files(
+                            id,
+                            std::slice::from_ref(&origin.file),
+                            &origin.torrent_id,
+                        )?
+                    } else if let Some(path) = &job.pack_file {
                         if let Some(file) = &job.shared_file {
                             client.require_bound_files(
                                 id,
@@ -719,7 +750,13 @@ impl Engine {
                 } else {
                     // Fetch metadata before acquiring the client internal lock.
                     let source = job.acquisition_url.as_deref().ok_or("Missing source")?;
-                    if let Some(path) = &job.pack_file {
+                    if let Some(origin) = &job.irc_origin {
+                        client.ensure_bound_files(
+                            source,
+                            std::slice::from_ref(&origin.file),
+                            &origin.torrent_id,
+                        )?
+                    } else if let Some(path) = &job.pack_file {
                         if let Some(file) = &job.shared_file {
                             client.ensure_bound_files(
                                 source,
@@ -747,6 +784,11 @@ impl Engine {
                     return Err("Shared transfer uses another authenticated alias; ownership cannot be rebound".into());
                 }
                 job.download_id = Some(status.id.clone());
+                if let Some(origin) = &job.irc_origin
+                    && !origin.torrent_aliases.contains(&status.id)
+                {
+                    return Err("IRC: native transfer has another authenticated identity".into());
+                }
                 job.progress = status.progress;
                 job.state = "downloading".into();
                 // ensure may fetch a URL before creating the transfer. Cancellation
@@ -792,6 +834,7 @@ impl Engine {
                 let mapped = job
                     .pack_file
                     .as_ref()
+                    .or_else(|| job.irc_origin.as_ref().map(|o| &o.file))
                     .map(|path| config.downloads.data_dir.join(&status.id).join(path));
                 job.files = status
                     .available_files
@@ -806,11 +849,15 @@ impl Engine {
                 }
             }
         }
-        if let Some(path) = &job.pack_file {
+        if let Some(path) = job
+            .pack_file
+            .as_ref()
+            .or_else(|| job.irc_origin.as_ref().map(|o| &o.file))
+        {
             let id = job
                 .download_id
                 .as_ref()
-                .ok_or("Pack mapping requires a native transfer")?;
+                .ok_or("Verified file mapping requires a native transfer")?;
             let expected = config.downloads.data_dir.join(id).join(path);
             if job.files.len() != 1 || Path::new(&job.files[0]) != expected {
                 return Err("Mapped torrent file differs from the retained verified path".into());
@@ -892,10 +939,13 @@ impl Engine {
     }
 
     fn source_files_available(&self, job: &Job, status: &crate::torrent::DownloadStatus) -> bool {
-        job.pack_file.as_ref().map_or(status.ready, |path| {
-            let expected = self.config.downloads.data_dir.join(&status.id).join(path);
-            status.available_files.contains(&expected)
-        })
+        job.pack_file
+            .as_ref()
+            .or_else(|| job.irc_origin.as_ref().map(|o| &o.file))
+            .map_or(status.ready, |path| {
+                let expected = self.config.downloads.data_dir.join(&status.id).join(path);
+                status.available_files.contains(&expected)
+            })
     }
 }
 
@@ -977,6 +1027,9 @@ pub fn public_job(job: &Job) -> Value {
         map.remove("lease_id");
         map.remove("lease_until");
         map.remove("acquisition_url");
+        if let Some(origin) = &job.irc_origin {
+            map.insert("irc_origin".into(), origin.public_json());
+        }
         if let Some(Value::String(path)) = map.get_mut("pack_file") {
             *path = integrations::report_text(path, 4096);
         }

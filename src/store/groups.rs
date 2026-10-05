@@ -388,6 +388,7 @@ impl Store {
         let mut jobs = Vec::with_capacity(requests.len());
         for (parent, request) in parents.iter().zip(requests) {
             jobs.push(Job {
+                irc_origin: None,
                 id: random_id()?,
                 key: request.canonical_key(),
                 request,

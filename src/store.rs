@@ -22,7 +22,10 @@ const GROUP_JOURNAL_MAGIC: &[u8; 8] = b"MYNOUJ03";
 const GROUP_SNAPSHOT_MAGIC: &[u8; 8] = b"MYNOUS03";
 const REQUESTER_JOURNAL_MAGIC: &[u8; 8] = b"MYNOUJ04";
 const REQUESTER_SNAPSHOT_MAGIC: &[u8; 8] = b"MYNOUS04";
+const IRC_JOURNAL_MAGIC: &[u8; 8] = b"MYNOUJ05";
+const IRC_SNAPSHOT_MAGIC: &[u8; 8] = b"MYNOUS05";
 mod groups;
+mod irc;
 pub use groups::SharedUpgrade;
 use groups::{GroupAction, GroupState, group_format};
 const MAX_RECORD: usize = 16 * 1024 * 1024;
@@ -80,6 +83,7 @@ pub struct Job {
     pub shared_file: Option<crate::pack::SharedFile>,
     pub shared_upgrade: Option<SharedUpgrade>,
     pub requester: Option<crate::requesters::Provenance>,
+    pub irc_origin: Option<crate::irc::Origin>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -410,6 +414,12 @@ impl Job {
             |values: &[String]| Value::Array(values.iter().cloned().map(Value::String).collect());
         object([
             (
+                "irc_origin",
+                self.irc_origin
+                    .as_ref()
+                    .map_or(Value::Null, crate::irc::Origin::to_json),
+            ),
+            (
                 "requester",
                 self.requester
                     .as_ref()
@@ -469,6 +479,10 @@ impl Job {
             _ => return Err("invalid job progress".to_owned()),
         };
         let job = Self {
+            irc_origin: match map.get("irc_origin") {
+                None | Some(Value::Null) => None,
+                Some(v) => Some(crate::irc::Origin::from_json(v)?),
+            },
             requester: match map.get("requester") {
                 None | Some(Value::Null) => None,
                 Some(v) => Some(crate::requesters::Provenance::from_json(v)?),
@@ -521,6 +535,9 @@ impl Job {
                 || p.demand_id != crate::requesters::Demand::identity(&p.account_id, &job.request))
         {
             return Err("Invalid requester media identity or captured provenance".into());
+        }
+        if let Some(origin) = &job.irc_origin {
+            origin.validate_job(&job)?;
         }
         if job.shared_upgrade.is_some()
             && (job.shared_file.is_none() || job.upgrade_parent.is_none() || job.release.is_none())
@@ -1013,6 +1030,7 @@ impl Store {
             shared_file: None,
             shared_upgrade: None,
             requester: parent.requester.clone(),
+            irc_origin: None,
         };
         self.commit(job.clone(), "library upgrade recorded")?;
         Ok(job)
@@ -1233,6 +1251,7 @@ impl Store {
                 shared_file: Some(file.clone()),
                 shared_upgrade: None,
                 requester: None,
+                irc_origin: None,
             });
         }
         self.validate_shared_batch(&jobs)?;
@@ -1455,6 +1474,7 @@ impl Store {
             shared_file: None,
             shared_upgrade: None,
             requester,
+            irc_origin: None,
         };
         self.commit(job.clone(), "request recorded")?;
         Ok(job)
@@ -1474,6 +1494,7 @@ impl Store {
             || current.shared_file != job.shared_file
             || current.shared_upgrade != job.shared_upgrade
             || current.requester != job.requester
+            || current.irc_origin != job.irc_origin
         {
             return Err("job identity is immutable".to_owned());
         }
@@ -1673,6 +1694,7 @@ impl Store {
         if job.imports.is_empty()
             && job.request.source_path.is_none()
             && job.request.source_url.is_none()
+            && job.irc_origin.is_none()
         {
             // A fresh automatic search must not inherit the previous release's
             // URL or baseline, even if the process stops immediately afterward.
@@ -1734,6 +1756,10 @@ impl Store {
     }
 
     fn validate_lineage(&self, job: &Job) -> Result<()> {
+        self.check_irc_ownership(job)?;
+        if let Some(origin) = &job.irc_origin {
+            origin.validate_job(job)?;
+        }
         if let Some(release) = &job.release {
             release.validate()?;
         }
@@ -1800,6 +1826,18 @@ impl Store {
             return Err("An unrelated request cannot replace shared-file ownership".into());
         }
         if let Some(current) = self.jobs.get(&job.id) {
+            if current.irc_origin != job.irc_origin
+                && !(current.irc_origin.is_none()
+                    && job.irc_origin.is_some()
+                    && crate::irc::routing::eligible(current)
+                    && job.state == "queued"
+                    && job.lease_id.is_none()
+                    && job.files.is_empty()
+                    && job.imports.is_empty()
+                    && job.download_id.is_none())
+            {
+                return Err("IRC acquisition provenance is immutable".into());
+            }
             if current.key != job.key
                 || current.request != job.request
                 || current.created_at != job.created_at
@@ -2009,7 +2047,9 @@ impl Store {
             return Err("transaction too large".to_owned());
         }
         let mut frame = Vec::with_capacity(116 + payload.len());
-        frame.extend_from_slice(if jobs.iter().any(|j| j.requester.is_some()) {
+        frame.extend_from_slice(if jobs.iter().any(|j| j.irc_origin.is_some()) {
+            IRC_JOURNAL_MAGIC
+        } else if jobs.iter().any(|j| j.requester.is_some()) {
             REQUESTER_JOURNAL_MAGIC
         } else if action.is_some() || group_format(job) {
             GROUP_JOURNAL_MAGIC
@@ -2097,7 +2137,9 @@ impl Store {
             return Err("snapshot too large".to_owned());
         }
         let mut bytes = Vec::with_capacity(payload.len() + 48);
-        bytes.extend_from_slice(if self.jobs.values().any(|j| j.requester.is_some()) {
+        bytes.extend_from_slice(if self.jobs.values().any(|j| j.irc_origin.is_some()) {
+            IRC_SNAPSHOT_MAGIC
+        } else if self.jobs.values().any(|j| j.requester.is_some()) {
             REQUESTER_SNAPSHOT_MAGIC
         } else if self.jobs.values().any(group_format) {
             GROUP_SNAPSHOT_MAGIC
@@ -2178,6 +2220,7 @@ impl Store {
             && &bytes[..8] != SHARED_SNAPSHOT_MAGIC
             && &bytes[..8] != GROUP_SNAPSHOT_MAGIC
             && &bytes[..8] != REQUESTER_SNAPSHOT_MAGIC
+            && &bytes[..8] != IRC_SNAPSHOT_MAGIC
         {
             return Err("invalid snapshot format".to_owned());
         }
@@ -2207,11 +2250,19 @@ impl Store {
         let mut keys = BTreeMap::new();
         for value in job_values {
             let job = Job::from_json(value)?;
-            if job.requester.is_some() && &bytes[..8] != REQUESTER_SNAPSHOT_MAGIC {
+            if job.irc_origin.is_some() && &bytes[..8] != IRC_SNAPSHOT_MAGIC {
+                return Err("IRC provenance requires snapshot format 5".into());
+            }
+            if job.requester.is_some()
+                && &bytes[..8] != REQUESTER_SNAPSHOT_MAGIC
+                && &bytes[..8] != IRC_SNAPSHOT_MAGIC
+            {
                 return Err("Requester provenance requires snapshot format 4".into());
             }
             if group_format(&job)
-                && (&bytes[..8] != GROUP_SNAPSHOT_MAGIC && &bytes[..8] != REQUESTER_SNAPSHOT_MAGIC)
+                && (&bytes[..8] != GROUP_SNAPSHOT_MAGIC
+                    && &bytes[..8] != REQUESTER_SNAPSHOT_MAGIC
+                    && &bytes[..8] != IRC_SNAPSHOT_MAGIC)
             {
                 return Err("Shared-group upgrades require snapshot format 3".into());
             }
@@ -2280,6 +2331,7 @@ impl Store {
                 && &header[..8] != SHARED_JOURNAL_MAGIC
                 && &header[..8] != GROUP_JOURNAL_MAGIC
                 && &header[..8] != REQUESTER_JOURNAL_MAGIC
+                && &header[..8] != IRC_JOURNAL_MAGIC
             {
                 return Err(format!("corrupt journal at byte {offset}"));
             }
@@ -2343,12 +2395,19 @@ impl Store {
                 .iter()
                 .all(|key| !job_map.contains_key(*key));
                 let job = Job::from_json(job_value)?;
-                if job.requester.is_some() && &header[..8] != REQUESTER_JOURNAL_MAGIC {
+                if job.irc_origin.is_some() && &header[..8] != IRC_JOURNAL_MAGIC {
+                    return Err("IRC provenance requires journal format 5".into());
+                }
+                if job.requester.is_some()
+                    && &header[..8] != REQUESTER_JOURNAL_MAGIC
+                    && &header[..8] != IRC_JOURNAL_MAGIC
+                {
                     return Err("Requester provenance requires journal format 4".into());
                 }
                 if group_format(&job)
                     && (&header[..8] != GROUP_JOURNAL_MAGIC
                         && &header[..8] != REQUESTER_JOURNAL_MAGIC)
+                    && &header[..8] != IRC_JOURNAL_MAGIC
                 {
                     return Err("Shared-group upgrades require journal format 3".into());
                 }
@@ -2369,7 +2428,8 @@ impl Store {
                 }
                 if let Some(action) = map.get("group_action") {
                     if (&header[..8] != GROUP_JOURNAL_MAGIC
-                        && &header[..8] != REQUESTER_JOURNAL_MAGIC)
+                        && &header[..8] != REQUESTER_JOURNAL_MAGIC
+                        && &header[..8] != IRC_JOURNAL_MAGIC)
                         || map.contains_key("shared_owners")
                     {
                         return Err("Group action requires journal format 3".into());
@@ -2393,6 +2453,7 @@ impl Store {
                 } else if let Some(owners) = map.get("shared_owners") {
                     if &header[..8] != SHARED_JOURNAL_MAGIC
                         && &header[..8] != REQUESTER_JOURNAL_MAGIC
+                        && &header[..8] != IRC_JOURNAL_MAGIC
                     {
                         return Err("Shared ownership requires journal format 2".into());
                     }
@@ -2423,6 +2484,7 @@ impl Store {
                 }
                 if jobs.iter().any(|j| j.requester.is_some())
                     && &header[..8] != REQUESTER_JOURNAL_MAGIC
+                    && &header[..8] != IRC_JOURNAL_MAGIC
                 {
                     return Err("Requester provenance requires journal format 4".into());
                 }

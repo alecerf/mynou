@@ -693,6 +693,7 @@ mod tests {
     }
     fn metadata(names: &[&str]) -> TorrentMetadata {
         TorrentMetadata {
+            aliases: vec!["1".repeat(40)],
             id: "a".repeat(40),
             files: names
                 .iter()

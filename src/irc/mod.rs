@@ -1,10 +1,12 @@
-//! Opt-in IRC announcement reviews. Release claims are never acquisition authority.
+//! Opt-in IRC claims, audit reviews, and routing to existing approved work.
 pub(crate) mod client;
 mod engine;
 mod persistence;
 pub mod protocol;
+pub(crate) mod routing;
 use crate::{Result, crypto::sha256, json::Value, selection::SelectionConfig, store::Request};
 pub(crate) use persistence::AnnouncementStore;
+pub use routing::Origin;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub const MAX_RECORDS: usize = 1000;
@@ -162,6 +164,7 @@ pub struct Source {
     pub sender: String,
     pub password_env: Option<String>,
     pub join_key_env: Option<String>,
+    pub magnet_template: Option<String>,
     pub idle_timeout_secs: u64,
     pub reconnect_min_secs: u64,
     pub reconnect_max_secs: u64,
@@ -205,6 +208,7 @@ impl Source {
                 "sender",
                 "password_env",
                 "join_key_env",
+                "magnet_template",
                 "idle_timeout_secs",
                 "reconnect_min_secs",
                 "reconnect_max_secs",
@@ -221,6 +225,14 @@ impl Source {
             sender: text(v, "sender")?,
             password_env: variable(v, "password_env")?,
             join_key_env: variable(v, "join_key_env")?,
+            magnet_template: match v.get("magnet_template") {
+                None | Some(Value::Null) => None,
+                Some(v) => Some(
+                    v.as_str()
+                        .ok_or("IRC: magnet_template must be a string")?
+                        .to_owned(),
+                ),
+            },
             idle_timeout_secs: count(v, "idle_timeout_secs", 180, 30, 600)?,
             reconnect_min_secs: count(v, "reconnect_min_secs", 1, 1, 30)?,
             reconnect_max_secs: count(v, "reconnect_max_secs", 60, 1, 300)?,
@@ -247,6 +259,9 @@ impl Source {
             return Err("IRC: invalid source identity or connection bounds".into());
         }
         s.endpoint()?;
+        if let Some(template) = &s.magnet_template {
+            routing::validate_template(template)?;
+        }
         Ok(s)
     }
     pub fn binding(&self) -> String {
@@ -275,7 +290,8 @@ impl Source {
         v.insert("id", self.id.clone());
         v.insert("enabled", self.enabled);
         v.insert("channel", self.channel.clone());
-        v.insert("verified_tls", self.url.starts_with("ircs://"));
+        v.insert("tls_required", self.url.starts_with("ircs://"));
+        v.insert("magnet_configured", self.magnet_template.is_some());
         v
     }
 }
@@ -286,6 +302,7 @@ pub struct Rule {
     pub enabled: bool,
     pub kind: String,
     pub profile: String,
+    pub action: String,
     pub required_terms: Vec<String>,
     pub blocked_terms: Vec<String>,
 }
@@ -304,17 +321,15 @@ impl Rule {
                 "action",
             ],
         )?;
-        if v.get("action")
-            .is_some_and(|v| v.as_str() != Some("review"))
-        {
-            return Err("IRC: this release supports the review action only".into());
-        }
         let r = Self {
             id: text(v, "id")?,
             source: text(v, "source")?,
             enabled: boolean(v, "enabled", false)?,
             kind: text(v, "kind")?,
             profile: text(v, "profile")?,
+            action: v
+                .get("action")
+                .map_or(Ok("review".into()), |_| text(v, "action"))?,
             required_terms: strings(v, "required_terms")?,
             blocked_terms: strings(v, "blocked_terms")?,
         };
@@ -322,6 +337,7 @@ impl Rule {
             || !valid_id(&r.source)
             || !matches!(r.kind.as_str(), "movie" | "episode")
             || !profile_name(&r.profile)
+            || !matches!(r.action.as_str(), "review" | "grab")
         {
             return Err("IRC: invalid rule identity or profile".into());
         }
@@ -338,7 +354,7 @@ impl Rule {
             v.insert(k, s.clone());
         }
         v.insert("enabled", self.enabled);
-        v.insert("action", "review");
+        v.insert("action", self.action.clone());
         for (k, list) in [
             ("required_terms", &self.required_terms),
             ("blocked_terms", &self.blocked_terms),
@@ -386,6 +402,9 @@ impl Settings {
                 {
                     return Err("IRC: duplicate rule or unknown source/profile".into());
                 }
+                if r.action == "grab" && settings.source(&r.source)?.magnet_template.is_none() {
+                    return Err("IRC: grab rules require a configured magnet template".into());
+                }
                 settings.rules.push(r);
             }
         }
@@ -403,6 +422,12 @@ impl Settings {
                     .map(|s| {
                         let mut v = s.public_json();
                         v.insert("binding", s.binding());
+                        v.insert(
+                            "magnet_template_digest",
+                            s.magnet_template
+                                .as_ref()
+                                .map_or(Value::Null, |t| Value::from(digest(t.as_bytes()))),
+                        );
                         v.insert("idle_timeout_secs", s.idle_timeout_secs.to_string());
                         v.insert("reconnect_min_secs", s.reconnect_min_secs.to_string());
                         v.insert("reconnect_max_secs", s.reconnect_max_secs.to_string());
@@ -603,6 +628,7 @@ pub(crate) struct Record {
     pub revision: u64,
     pub first_seen: u64,
     pub decided_at: Option<u64>,
+    pub route: Option<routing::Route>,
 }
 impl Record {
     pub(crate) fn public_json(&self) -> Value {
@@ -611,9 +637,18 @@ impl Record {
             m.remove("binding");
             m.remove("fingerprint");
         }
+        v.insert(
+            "route",
+            self.route
+                .as_ref()
+                .map_or(Value::Null, routing::Route::public_json),
+        );
         v.insert("outcome", outcome(&self.evaluations));
         v.insert("identity_verified", false);
-        v.insert("acquisition_started", false);
+        v.insert(
+            "candidate_routed",
+            self.route.as_ref().is_some_and(|r| r.phase == "routed"),
+        );
         v
     }
     fn to_json(&self) -> Value {
@@ -628,6 +663,12 @@ impl Record {
             v.insert(k, s.clone());
         }
         v.insert("announcement", self.announcement.to_json());
+        v.insert(
+            "route",
+            self.route
+                .as_ref()
+                .map_or(Value::Null, routing::Route::to_json),
+        );
         v.insert(
             "evaluations",
             Value::Array(self.evaluations.iter().map(Evaluation::to_json).collect()),
@@ -656,6 +697,7 @@ impl Record {
                 "revision",
                 "first_seen",
                 "decided_at",
+                "route",
             ],
         )?;
         let r = Self {
@@ -682,6 +724,10 @@ impl Record {
                 Some(_) => Some(integer(v, "decided_at")?),
                 None => return Err("IRC: missing decision timestamp".into()),
             },
+            route: match v.get("route") {
+                None | Some(Value::Null) => None,
+                Some(v) => Some(routing::Route::from_json(v)?),
+            },
         };
         let unique: BTreeSet<_> = r.evaluations.iter().map(|e| &e.rule_id).collect();
         if !hash(&r.binding)
@@ -698,6 +744,12 @@ impl Record {
             || r.decided_at.is_some_and(|t| t < r.first_seen)
         {
             return Err("IRC: inconsistent announcement provenance".into());
+        }
+        if let Some(route) = &r.route {
+            route.origin.validate_record(&r)?;
+            if route.reserved_at < r.first_seen {
+                return Err("IRC: acquisition reservation predates its claim".into());
+            }
         }
         Ok(r)
     }

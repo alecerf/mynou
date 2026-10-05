@@ -188,7 +188,7 @@ fn decode_base32(input: &str) -> Result<[u8; 20]> {
     }
     Ok(out)
 }
-fn url_decode(s: &str) -> Result<String> {
+pub(crate) fn url_decode(s: &str) -> Result<String> {
     let mut out = Vec::with_capacity(s.len());
     let b = s.as_bytes();
     let mut i = 0;

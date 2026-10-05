@@ -1,4 +1,4 @@
-//! Pure previews and row-scoped reviews never submit acquisition jobs.
+//! Pure previews and row-scoped audit reviews remain separate from routing.
 use super::{Announcement, ControlRequest, MAX_RECORDS, Record, digest, evaluate, hash, valid_id};
 use crate::{
     Result,
@@ -38,7 +38,17 @@ impl Engine {
                     .collect(),
             ),
         );
-        v.insert("automatic_acquisition", false);
+        v.insert(
+            "automatic_acquisition",
+            self.config.downloads_enabled
+                && self
+                    .config
+                    .irc
+                    .rules
+                    .iter()
+                    .any(|r| r.enabled && r.action == "grab"),
+        );
+        v.insert("routing", self.irc_routing_json()?);
         Ok(v)
     }
     pub fn irc_announcements(&self, offset: usize, limit: usize) -> Result<Value> {
@@ -46,6 +56,7 @@ impl Engine {
             return Err("IRC: invalid page bounds".into());
         }
         let ledger = lock(&self.irc_store)?;
+        let runtime = lock(&self.irc_route_runtime)?;
         let mut rows: Vec<_> = ledger.state.records.values().collect();
         rows.sort_by(|a, b| (&b.first_seen, &b.id).cmp(&(&a.first_seen, &a.id)));
         let mut v = Value::object();
@@ -58,7 +69,7 @@ impl Engine {
                 rows.into_iter()
                     .skip(offset)
                     .take(limit)
-                    .map(Record::public_json)
+                    .map(|r| runtime.annotate(r))
                     .collect(),
             ),
         );
@@ -68,12 +79,13 @@ impl Engine {
         if !hash(id) {
             return Err("IRC: invalid announcement ID".into());
         }
-        lock(&self.irc_store)?
+        let ledger = lock(&self.irc_store)?;
+        let record = ledger
             .state
             .records
             .get(id)
-            .map(Record::public_json)
-            .ok_or("IRC: unknown announcement".into())
+            .ok_or("IRC: unknown announcement")?;
+        Ok(lock(&self.irc_route_runtime)?.annotate(record))
     }
     pub fn irc_preview(&self, source_id: &str, value: &Value) -> Result<Value> {
         super::preview(&self.config, source_id, value)
@@ -122,6 +134,7 @@ impl Engine {
             revision: 1,
             first_seen: now,
             decided_at: None,
+            route: None,
         };
         let mut next = ledger.state.clone();
         next.records.insert(id, record.clone());
