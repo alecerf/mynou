@@ -518,6 +518,16 @@ impl Engine {
         }
         // Resume a confirmed import after interruption without copying it again.
         if !job.imports.is_empty() {
+            if job.shared_file.is_some() {
+                for path in &job.imports {
+                    store::reject_symlinks(Path::new(path))?;
+                    if !std::fs::symlink_metadata(path).is_ok_and(|m| m.is_file()) {
+                        return Err(
+                            "Recorded shared import is missing or is not a regular file".into()
+                        );
+                    }
+                }
+            }
             if self.config.plex.enabled {
                 if job.state != "scanning" {
                     integrations::refresh(&self.config, &job.request)?;

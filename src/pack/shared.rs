@@ -307,6 +307,28 @@ impl Engine {
         if query.apply && self.read_only {
             return Err("Shared-file acquisition requires writable storage".into());
         }
+        let initial = lock(&self.series_store)?
+            .get(id)
+            .ok_or("Unknown tracked series")?;
+        let today = date::today();
+        for number in &query.episodes {
+            let episode = initial
+                .plan
+                .episodes
+                .iter()
+                .find(|e| e.season == query.season && e.episode == *number)
+                .ok_or("Shared owner is absent from the accepted catalog plan")?;
+            if episode.catalog_id.is_none()
+                || episode
+                    .air_date
+                    .as_deref()
+                    .is_none_or(|day| day > today.as_str())
+            {
+                return Err(
+                    "Shared owners require known catalog identities and already aired dates".into(),
+                );
+            }
+        }
         // Metadata-only I/O precedes both storage locks. No transfer or payload is scheduled.
         let metadata = inspect_metadata(&query.source_url, deadline)?;
         if metadata
@@ -325,6 +347,11 @@ impl Engine {
             series.check_writable()?;
         }
         let record = series.get(id).ok_or("Unknown tracked series")?;
+        if record != initial {
+            return Err(
+                "Shared-file catalog changed during metadata inspection; preview again".into(),
+            );
+        }
         let mut store = lock(&self.store)?;
         let all = store.list();
         let mut episodes = query.episodes.clone();
@@ -373,7 +400,6 @@ impl Engine {
             file
         };
         let mut requests = Vec::new();
-        let today = date::today();
         for number in &episodes {
             let episode = record
                 .plan

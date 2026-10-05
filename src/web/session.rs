@@ -254,6 +254,70 @@ mod tests {
     }
 
     #[test]
+    fn shared_reviews_expire_and_cannot_cross_sessions_series_or_plans() {
+        let mut sessions = Sessions::new();
+        let challenge = sessions.challenge("localhost").unwrap();
+        let session = sessions
+            .login(&challenge.id, &challenge.csrf, "http://localhost", true)
+            .unwrap()
+            .unwrap();
+        let query = crate::pack::SharedFileRequest {
+            source_url: "magnet:?private=fixture".into(),
+            file_path: "Pack/shared.mp4".into(),
+            season: 1,
+            episodes: vec![1, 2],
+            apply: true,
+            plan_id: Some("a".repeat(64)),
+        };
+        sessions
+            .save_shared_preview(&session.id, "series", query.clone())
+            .unwrap();
+        assert_eq!(
+            sessions
+                .shared_preview(&session.id, "series", &"a".repeat(64))
+                .unwrap(),
+            query
+        );
+        assert!(
+            sessions
+                .shared_preview("other-session", "series", &"a".repeat(64))
+                .is_err()
+        );
+        assert!(
+            sessions
+                .shared_preview(&session.id, "other-series", &"a".repeat(64))
+                .is_err()
+        );
+        assert!(
+            sessions
+                .shared_preview(&session.id, "series", &"b".repeat(64))
+                .is_err()
+        );
+        sessions
+            .0
+            .get_mut(&session.id)
+            .unwrap()
+            .shared_preview
+            .as_mut()
+            .unwrap()
+            .expires = Instant::now();
+        assert!(
+            sessions
+                .shared_preview(&session.id, "series", &"a".repeat(64))
+                .is_err()
+        );
+        sessions
+            .save_shared_preview(&session.id, "series", query)
+            .unwrap();
+        sessions.clear_shared_preview(&session.id);
+        assert!(
+            sessions
+                .shared_preview(&session.id, "series", &"a".repeat(64))
+                .is_err()
+        );
+    }
+
+    #[test]
     fn session_capacity_and_failed_login_attempts_are_bounded() {
         let mut sessions = Sessions::new();
         for _ in 0..MAX_SESSIONS + 1 {
