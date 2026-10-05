@@ -8,7 +8,7 @@ use crate::{
     numbering::{EpisodeNumber, SourceNumber},
     selection::tokens,
     store::{self, Job, RecordedRelease, Store},
-    torrent::inspection::TorrentMetadata,
+    torrent::TorrentMetadata,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -395,6 +395,18 @@ fn unselected(job: &Job) -> bool {
         && job.shared_upgrade.is_none()
         && job.irc_origin.is_none()
 }
+pub(crate) fn enabled(config: &Config) -> bool {
+    config.downloads_enabled
+        && config.irc.rules.iter().any(|r| {
+            r.enabled
+                && r.action == "grab"
+                && config
+                    .irc
+                    .sources
+                    .iter()
+                    .any(|s| s.id == r.source && s.enabled && s.magnet_template.is_some())
+        })
+}
 pub(crate) fn eligible(job: &Job) -> bool {
     job.state == "queued" && job.lease_id.is_none() && job.lease_until == 0 && unselected(job)
 }
@@ -404,14 +416,7 @@ pub(crate) fn waits_for_candidate(config: &Config, job: &Job) -> bool {
     !config.plex.enabled && eligible(job) && selection_from_irc(config, job)
 }
 pub(crate) fn selection_from_irc(config: &Config, job: &Job) -> bool {
-    if !unselected(job)
-        || !config.downloads_enabled
-        || !config
-            .irc
-            .rules
-            .iter()
-            .any(|r| r.enabled && r.action == "grab")
-    {
+    if !unselected(job) || !enabled(config) {
         return false;
     }
     let Ok((name, profile)) = admitted_profile(config, job) else {
@@ -803,7 +808,7 @@ impl Engine {
             &record.announcement.info_hash,
         )?;
         // Metadata I/O happens before admission and outside every persistent-store lock.
-        let metadata = crate::torrent::inspection::inspect_metadata(&magnet, deadline)
+        let metadata = crate::torrent::inspect_metadata(&magnet, deadline)
             .map_err(|_| "IRC: metadata unavailable or unauthenticated")?;
         if metadata.id != record.announcement.info_hash {
             return Err("IRC: metadata identity differs".into());
@@ -899,14 +904,7 @@ impl Engine {
 }
 
 pub(crate) fn start(engine: &Arc<Engine>, handles: &mut Vec<JoinHandle<()>>) {
-    if !engine.config.downloads_enabled
-        || !engine
-            .config
-            .irc
-            .rules
-            .iter()
-            .any(|r| r.enabled && r.action == "grab")
-    {
+    if !enabled(&engine.config) {
         return;
     }
     let engine = engine.clone();

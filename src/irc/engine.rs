@@ -40,13 +40,7 @@ impl Engine {
         );
         v.insert(
             "automatic_acquisition",
-            self.config.downloads_enabled
-                && self
-                    .config
-                    .irc
-                    .rules
-                    .iter()
-                    .any(|r| r.enabled && r.action == "grab"),
+            super::routing::enabled(&self.config),
         );
         v.insert("routing", self.irc_routing_json()?);
         Ok(v)
