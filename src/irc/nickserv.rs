@@ -110,6 +110,9 @@ impl Settings {
     pub(crate) fn command(&self) -> Result<String> {
         let password = std::env::var(&self.password_env)
             .map_err(|_| "IRC: NickServ credential is unavailable")?;
+        self.command_for(&password)
+    }
+    fn command_for(&self, password: &str) -> Result<String> {
         if password.is_empty()
             || password.len() > 256
             || !password.bytes().all(|b| (33..=126).contains(&b))
@@ -120,6 +123,35 @@ impl Settings {
             "PRIVMSG {} :IDENTIFY {} {}",
             self.service, self.account, password
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn identify_credentials_cannot_inject_commands_and_maximum_values_fit_one_line() {
+        let v = crate::json::parse(r#"{"account":"fixture","password_env":"MYNOU_TEST_PASSWORD","service":"NickServ","sender":"NickServ!service@fixture","success_notice":"Identified as {account}","failure_notices":["Invalid password"]}"#).unwrap();
+        let s = Settings::from_json(&v).unwrap();
+        assert_eq!(
+            s.command_for("p").unwrap(),
+            "PRIVMSG NickServ :IDENTIFY fixture p"
+        );
+        assert!(s.command_for(&"p".repeat(256)).unwrap().len() <= 510);
+        for bad in [
+            String::new(),
+            "p".repeat(257),
+            "private token".into(),
+            "p\r\nJOIN #other".into(),
+            "p\0".into(),
+            "p\u{7f}".into(),
+            "p\u{85}".into(),
+        ] {
+            assert_eq!(
+                s.command_for(&bad).unwrap_err(),
+                "IRC: NickServ credential is invalid"
+            );
+        }
     }
 }
 
