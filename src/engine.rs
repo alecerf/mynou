@@ -635,7 +635,11 @@ impl Engine {
             job.next_attempt_at = 0;
             return Ok(());
         }
-        if crate::irc::routing::selection_from_irc(&self.config, job) {
+        if crate::irc::routing::selection_from_irc(
+            &self.config,
+            job,
+            &lock(&self.requester_store)?.state,
+        ) {
             job.state = "queued".into();
             job.next_attempt_at = store::now().saturating_add(60);
             return Ok(());

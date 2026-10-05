@@ -380,6 +380,7 @@ pub struct Rule {
     pub kind: String,
     pub profile: String,
     pub action: String,
+    pub requester: Option<String>,
     pub required_terms: Vec<String>,
     pub blocked_terms: Vec<String>,
 }
@@ -396,6 +397,7 @@ impl Rule {
                 "required_terms",
                 "blocked_terms",
                 "action",
+                "requester",
             ],
         )?;
         let r = Self {
@@ -407,6 +409,10 @@ impl Rule {
             action: v
                 .get("action")
                 .map_or(Ok("review".into()), |_| text(v, "action"))?,
+            requester: match v.get("requester") {
+                None | Some(Value::Null) => None,
+                Some(_) => Some(text(v, "requester")?),
+            },
             required_terms: strings(v, "required_terms")?,
             blocked_terms: strings(v, "blocked_terms")?,
         };
@@ -415,6 +421,7 @@ impl Rule {
             || !matches!(r.kind.as_str(), "movie" | "episode")
             || !profile_name(&r.profile)
             || !matches!(r.action.as_str(), "review" | "grab")
+            || r.requester.as_ref().is_some_and(|s| !valid_id(s))
         {
             return Err("IRC: invalid rule identity or profile".into());
         }
@@ -432,6 +439,9 @@ impl Rule {
         }
         v.insert("enabled", self.enabled);
         v.insert("action", self.action.clone());
+        if let Some(requester) = &self.requester {
+            v.insert("requester", requester.clone());
+        }
         for (k, list) in [
             ("required_terms", &self.required_terms),
             ("blocked_terms", &self.blocked_terms),

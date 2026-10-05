@@ -464,10 +464,18 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         }
     };
     let base = absolute_path(base)?;
+    let requesters = crate::requesters::Settings::from_json(v.get("requesters"), &base)?;
     let irc = match v.get("irc") {
         Some(v) => crate::irc::Settings::from_json(v, &selection)?,
         None => crate::irc::Settings::default(),
     };
+    if irc.rules.iter().any(|r| {
+        r.requester
+            .as_ref()
+            .is_some_and(|id| !requesters.accounts.iter().any(|a| &a.id == id))
+    }) {
+        return Err("IRC: rule requester is not configured".into());
+    }
     Ok(Config {
         store_dir: path(&base, text(v, "store_dir", "state/jobs")?)?,
         listen,
@@ -515,7 +523,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             api_key_env: text(c, "api_key_env", "MYNOU_TMDB_API_KEY")?,
         },
         sources,
-        requesters: crate::requesters::Settings::from_json(v.get("requesters"), &base)?,
+        requesters,
         irc,
     })
 }

@@ -411,11 +411,19 @@ pub(crate) fn eligible(job: &Job) -> bool {
     job.state == "queued" && job.lease_id.is_none() && job.lease_until == 0 && unselected(job)
 }
 
-pub(crate) fn waits_for_candidate(config: &Config, job: &Job) -> bool {
+pub(crate) fn waits_for_candidate(
+    config: &Config,
+    job: &Job,
+    requesters: &crate::requesters::State,
+) -> bool {
     // Plex jobs retain their ordinary availability check before waiting.
-    !config.plex.enabled && eligible(job) && selection_from_irc(config, job)
+    !config.plex.enabled && eligible(job) && selection_from_irc(config, job, requesters)
 }
-pub(crate) fn selection_from_irc(config: &Config, job: &Job) -> bool {
+pub(crate) fn selection_from_irc(
+    config: &Config,
+    job: &Job,
+    requesters: &crate::requesters::State,
+) -> bool {
     if !unselected(job) || !enabled(config) {
         return false;
     }
@@ -427,12 +435,45 @@ pub(crate) fn selection_from_irc(config: &Config, job: &Job) -> bool {
             && r.action == "grab"
             && r.kind == job.request.kind
             && r.profile == name
+            && selected_interest(config, r, job, requesters)
             && config.selection.profiles.get(name) == Some(profile)
             && config
                 .irc
                 .sources
                 .iter()
                 .any(|s| s.id == r.source && s.enabled && s.magnet_template.is_some())
+    })
+}
+
+fn selected_interest(
+    config: &Config,
+    rule: &super::Rule,
+    job: &Job,
+    state: &crate::requesters::State,
+) -> bool {
+    let Some(id) = &rule.requester else {
+        return true;
+    };
+    let Some(record) = state.accounts.get(id) else {
+        return false;
+    };
+    if !config
+        .requesters
+        .accounts
+        .iter()
+        .any(|a| &a.id == id && a.binding() == record.binding)
+    {
+        return false;
+    }
+    let Some(provenance) = &job.requester else {
+        return false;
+    };
+    state.demands.values().any(|d| {
+        &d.account_id == id
+            && d.approved
+            && matches!(d.state.as_str(), "reserved" | "active" | "ready")
+            && d.request.media_key() == job.request.media_key()
+            && d.capture == provenance.capture
     })
 }
 
@@ -671,6 +712,9 @@ fn candidate(
     if !crate::requesters::engine::interest(requesters, &job, config) {
         return Err("IRC: acquisition has no approved demand".into());
     }
+    if !selected_interest(config, rule, &job, requesters) {
+        return Err("IRC: selected requester has no compatible approved demand".into());
+    }
     if tokens(&job.request.title) != tokens(&r.announcement.request.title)
         || job.request.year != r.announcement.request.year
         || !title_matches(&job.request, &r.announcement.title)
@@ -732,6 +776,7 @@ impl Engine {
                     "waiting_for_admitted_job"
                 }
                 "IRC: acquisition has no approved demand" => "approval_required",
+                "IRC: selected requester has no compatible approved demand" => "requester_mismatch",
                 "IRC: claim differs from the admitted canonical title or source labels" => {
                     "claim_mismatch"
                 }

@@ -639,7 +639,7 @@ impl Engine {
         let ledger = lock(&self.requester_store)?;
         lock(&self.store)?.claim_filtered(store::now(), self.config.lease_duration_secs, |job| {
             interest(&ledger.state, job, &self.config)
-                && !crate::irc::routing::waits_for_candidate(&self.config, job)
+                && !crate::irc::routing::waits_for_candidate(&self.config, job, &ledger.state)
         })
     }
     pub(crate) fn requester_operator_interest(&self, jobs: &[Job]) -> Result<()> {

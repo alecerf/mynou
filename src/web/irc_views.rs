@@ -51,15 +51,16 @@ pub(super) fn list(engine: &Arc<Engine>, session: &Session, query: &Form) -> Res
             scalar(h, "duplicates")
         ));
     }
-    body.push_str("</tbody></table><h2>Configured rules</h2><p>Edit source and rule settings in your configuration, then restart the service.</p><table><thead><tr><th>Rule</th><th>Source</th><th>Kind</th><th>Profile</th><th>Action</th><th>Enabled</th></tr></thead><tbody>");
+    body.push_str("</tbody></table><h2>Configured rules</h2><p>Edit source and rule settings in your configuration, then restart the service.</p><table><thead><tr><th>Rule</th><th>Source</th><th>Kind</th><th>Profile</th><th>Action</th><th>Requester</th><th>Enabled</th></tr></thead><tbody>");
     for r in array(sources.get("rules").unwrap_or(&Value::Null)) {
         body.push_str(&format!(
-            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
             e(text(r, "id")),
             e(text(r, "source")),
             e(text(r, "kind")),
             e(text(r, "profile")),
             e(text(r, "action")),
+            display(text(r, "requester")),
             scalar(r, "enabled")
         ));
     }
