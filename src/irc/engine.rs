@@ -110,12 +110,13 @@ impl Engine {
             return Err("IRC: announcement history is full; no identity was discarded".into());
         }
         let now = store::now();
+        let evaluations = evaluate(&self.config.irc, &self.config.selection, source_id, &a)?;
         let record = Record {
             id: id.clone(),
             source_id: source_id.into(),
             binding,
             announcement: a,
-            evaluations: evaluate(&self.config.irc, &self.config.selection, source_id, &a)?,
+            evaluations,
             fingerprint: self.config.irc.fingerprint(&self.config.selection),
             decision: "pending".into(),
             revision: 1,
