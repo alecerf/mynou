@@ -4,9 +4,10 @@ Mynou 0.19 introduces requester demand alongside the existing operator queue.
 An account's stable identity, policy and quota reservation persist before a new
 job can acquire anything. A successful full watchlist poll updates that account
 alone. Compatible accounts share one canonical acquisition; incompatible profiles
-or destinations remain visible as conflicts without a quota charge. This
-implementation requires its own complete CI and CI publication before its checks
-can be reported as passing.
+or destinations remain visible as conflicts without a quota charge. The initial
+stage and compatibility patch passed complete CI and were published by Actions;
+see [v0.19.1 evidence](validation.md#recorded-0191-ci-evidence). Later changes
+require their own completed workflow.
 
 ## Bind accounts without exposing credentials
 

@@ -25,9 +25,10 @@ opt-in profiles, durable approvals and quotas, captured destinations and recorde
 notification outcomes. Compatible accounts share acquisition; removals retain
 other demand and ready media. CLI, API and browser controls require reviewed
 scope guards. Configurations without requester accounts retain single-account
-behavior. CI published [v0.19.0](https://github.com/alecerf/mynou/releases/tag/v0.19.0)
-after all five jobs passed with 489 Rust tests and four scheduler checks.
-The 0.19.1 compatibility patch for older operator imports awaits its own CI.
+behavior. [v0.19.1](https://github.com/alecerf/mynou/releases/tag/v0.19.1) verifies
+destination and quality before new requester reuse of completed operator imports.
+CI published it after all five jobs passed with **490 Rust tests** and four
+scheduler checks. See the [release evidence](docs/validation.md#recorded-0191-ci-evidence).
 
 ## Try it
 

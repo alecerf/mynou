@@ -129,9 +129,9 @@ local-protocol CI scenarios cover recovery, races and credential redaction.
 Its complete CI and publication passed with 489 Rust tests across 43 targets,
 four scheduler checks and all five jobs. The 0.19.1 patch requires verified ready
 imports and compatible quality before new requester reuse of operator jobs;
-the patch's own complete validation and publication are pending. Do not start
-0.20 before every patch job and publication is green. The following stage is
-IRC automation.
+its own complete validation and publication passed with 490 Rust tests across
+43 targets, four scheduler checks and all five jobs. The following stage is IRC
+automation in 0.20; inspect live branch CI before beginning it.
 
 Automatic anime/range inference, IRC automation, native
 indexer adapters, Usenet and cross-seeding remain future stages. See the [release roadmap](roadmap.md). Series monitoring is a
@@ -142,6 +142,19 @@ A successful validation run on `trunk` publishes a new `Cargo.toml` version if i
 has not already been released. The assets are a full source ZIP with the static
 Linux x86_64 binary, a separate static binary, a saved Docker image archive, and
 SHA-256 checksum files. There is no Docker Hub publication step.
+
+## Recorded 0.19.1 CI checkpoint
+
+Commit `83e6d1a40ac2d5abac0baf355a0011c58e49429a` passed
+[Actions run 37305082540](https://github.com/alecerf/mynou/actions/runs/37305082540):
+490 Rust tests passed with none failed or ignored across 43 targets, plus four
+scheduler checks and all five workflow jobs. CI published
+[v0.19.1](https://github.com/alecerf/mynou/releases/tag/v0.19.1) with seven assets
+on October 5, 2026, at 11:48:49 UTC. The tag targets that exact tested source.
+The preceding v0.19.0 and v0.18.0 tags and assets remain unchanged. See
+[validation evidence](validation.md#recorded-0191-ci-evidence) for asset digests.
+Later documentation commits need their own complete CI and retain published
+artifacts. [Next-release notes](next-release.md) preserve concrete 0.20 work.
 
 ## Recorded 0.19.0 CI checkpoint
 

@@ -5,7 +5,7 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current implementation: 0.19.1, patch awaiting CI
+## Current release: 0.19.1
 
 [Plex requester policies](requesters.md) retain per-account identity bindings,
 versioned opt-in profiles, approvals and bounded quotas before acquisition.
@@ -20,9 +20,14 @@ for `2388836a24ac02225a4171aa3d6bbbc32323b6c7`: 489 Rust tests across 43 targets
 four scheduler checks and all five jobs. CI published
 [v0.19.0](https://github.com/alecerf/mynou/releases/tag/v0.19.0) with seven assets
 on October 5, 2026, at 11:32:55 UTC. The 0.19.1 patch restricts reuse of uncaptured
-operator jobs to verified ready imports with compatible destinations and quality;
-its own complete CI and publication are pending. Only after all five patch jobs
-and publication pass can IRC automation begin.
+operator jobs to verified ready imports with compatible destinations and quality.
+It passed [run 37305082540](https://github.com/alecerf/mynou/actions/runs/37305082540)
+for `83e6d1a40ac2d5abac0baf355a0011c58e49429a`: 490 Rust tests across 43 targets,
+four scheduler checks and all five jobs. CI published
+[v0.19.1](https://github.com/alecerf/mynou/releases/tag/v0.19.1) with seven assets
+on October 5, 2026, at 11:48:49 UTC. The earlier tags and assets remain unchanged.
+See [validation evidence](validation.md#recorded-0191-ci-evidence). The next stage
+is IRC automation; inspect live branch CI before beginning it.
 
 ## Previous stage: 0.18.0
 
@@ -214,7 +219,6 @@ promised before implementation and measurement.
 
 | Planned release | Scope | Evidence required before continuing |
 | --- | --- | --- |
-| 0.19 | Plex users, approvals, quotas, routing and notification preferences | User ownership and limits remain enforced across polling, retries and restart |
 | 0.20 | IRC announcements, immediate grabs, filters, action routing and notifications | Bounded announcement parsing, reconnect/backoff, duplicate suppression and auditable rule decisions |
 | 0.21 | Native indexer adapters, login/session management, source health and configuration | Per-adapter protocol fixtures, credential redaction, rate limits and safe session renewal |
 | 0.22 | Usenet search/acquisition and management | Native protocol support, bounded message processing, integrity/recovery and explicit format limits without external helpers |

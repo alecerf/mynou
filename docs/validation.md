@@ -18,8 +18,10 @@ removals, notification deduplication and restart. Original local torrent/Plex
 fixtures check acquisition ordering, captured profile/destination behavior and
 exact path confirmation; existing routed Plex media requires no native download.
 Canonical demand retains captured source numbering. Missing or corrupt provenance
-fails before native startup. Their passing result requires a complete Actions
-run for the exact implementation; earlier release evidence does not validate it.
+fails before native startup. The 0.19.1 regression checks verified legacy imports
+and title/profile compatibility before new reuse, with unchanged operator journals
+and restart. Their exact completed runs and CI publications are recorded below;
+later changes require their own complete workflow.
 
 The 0.18 scenarios cover 64-owner baselines/creation/promotion, torn transactions,
 signed incomplete lineage, partial-ready snapshots, cancellation of staged owners,
@@ -105,6 +107,43 @@ allowance across seasons. Existing full validation remains required.
 
 The recorded run below validates these scenarios through GitHub Actions only.
 No local tests, lint, builds or demos ran.
+
+## Recorded 0.19.1 CI evidence
+
+`83e6d1a40ac2d5abac0baf355a0011c58e49429a` passed
+[Actions run 37305082540](https://github.com/alecerf/mynou/actions/runs/37305082540):
+**490 Rust tests passed**, none failed or ignored, across **43 targets**.
+Four scheduler checks and all five validation/build/package/release jobs passed.
+CI checked the offline one-package/zero-dependency graph, formatting, Clippy,
+GNU/musl builds, standalone and isolated container demonstrations, executable
+permissions, archive integrity and all checksum manifests. Every Cargo harness
+ran with two processes and two threads per harness; execution took 45.505 seconds.
+
+GitHub Actions published [v0.19.1](https://github.com/alecerf/mynou/releases/tag/v0.19.1)
+on October 5, 2026, at 11:48:49 UTC. The tag targets this exact tested commit.
+All seven assets were uploaded by `github-actions[bot]`. Recorded payloads:
+
+| Asset | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `mynou-v0.19.1-linux-amd64-image.tar.gz` | 1767437 | `4df973257f942f1f9fa701422d777458401f46467cc5fd6f62964f832a67bcfa` |
+| `mynou-v0.19.1-linux-amd64-image.tar.gz.sha256` | 105 | `75d74f3357170a15f1fa6184a775d1b32b7e57e266c6f9474d3ec2331a8fcfb1` |
+| `mynou-v0.19.1-linux-x86_64` | 3519328 | `475072aa8015f04df90f4b52bc621744cde2a9f6bfede92ebaa663c45f3f1a03` |
+| `mynou-v0.19.1-linux-x86_64.sha256` | 93 | `0ae977e821acf036904175c0025c267e5498d516629478f77e911c36ccd926aa` |
+| `mynou-v0.19.1-source.zip` | 6228245 | `cf7ef1bfe9391db5d5e242f9712636f3b468089c33f88d6cfc87714342724666` |
+| `mynou-v0.19.1-source.zip.sha256` | 91 | `d682bf5b0270e9b7f53e9c1068ca31680ec4fb74613b9a8fe1dc07325f932332` |
+| `SHA256SUMS` | 289 | `ea504c7234ff423ad4b7f4be7fdcc79a9aa0c2f9861cf211a283a2caef40b846` |
+
+The original regression loops through independent local fixtures for pending
+operator work, foreign and similarly prefixed routes, missing/nonregular files,
+parent traversal and file/ancestor symlinks, unrestricted ready reuse, missing
+restricted baselines, rejected/accepted title assessment and profile mismatch.
+Only compatible ready jobs join requester demand; conflicts keep null job/charge
+fields. Every case retains the operator journal and ownership across restart.
+The existing requester/native acquisition scenarios and all earlier harnesses
+also pass. The v0.19.0 and v0.18.0 tags and every asset ID, size and digest remain
+unchanged. No local tests/lint/builds/binaries/demonstrations or manual publication
+ran. Later documentation changes require their own completed workflow without
+replacing published tags or assets.
 
 ## Recorded 0.19.0 CI evidence
 

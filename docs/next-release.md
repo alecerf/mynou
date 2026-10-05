@@ -1,164 +1,127 @@
-# Next-release checkpoint — 0.19 Plex requester policies
+# Next-release checkpoint — 0.20 IRC announcement automation
 
-The 0.18 release adds [coordinated shared-group upgrades](group-upgrades.md):
-complete baselines and immutable replacement lineage, authenticated new video
-paths, staged exact Plex confirmation, atomic promotion and whole-group controls.
-Its complete validation and CI publication passed for
-`f1a9733a5908c3fa8bc5e93b5d18800334fad5d1` in
-[run 37293887224](https://github.com/alecerf/mynou/actions/runs/37293887224):
-467 Rust tests across 40 targets, four scheduler checks and all five workflow
-jobs. CI published [v0.18.0](https://github.com/alecerf/mynou/releases/tag/v0.18.0)
-with seven `github-actions[bot]` assets on October 5, 2026, at 10:04:19 UTC.
-The tag targets that exact tested source. See
-[validation evidence](validation.md#recorded-0180-ci-evidence) for asset digests.
-The prior 0.17 tag and all seven asset IDs, sizes and digests remain unchanged.
-Later documentation changes require their own complete CI and never replace
-published artifacts. Inspect the live branch and all five newest jobs before
-beginning 0.19.
+The requester implementation passed [run 37303359973](https://github.com/alecerf/mynou/actions/runs/37303359973)
+for `2388836a24ac02225a4171aa3d6bbbc32323b6c7` with 489 Rust tests across 43
+harnesses, four scheduler checks and all five jobs. CI published
+[v0.19.0](https://github.com/alecerf/mynou/releases/tag/v0.19.0) on October 5, 2026,
+at 11:32:55 UTC.
 
-v0.17 implements explicit shared files: one authenticated video belongs to a
-complete consecutive canonical episode range and imports to one deterministic
-Plex path. All owners commit together before acquisition; cancellation, retries,
-restart and subset reuse preserve the captured binding. See
-[shared files](shared-files.md).
+The compatibility patch passed [run 37305082540](https://github.com/alecerf/mynou/actions/runs/37305082540)
+for `83e6d1a40ac2d5abac0baf355a0011c58e49429a` with **490 Rust tests**, none
+failed or ignored, across **43 harnesses**, four scheduler checks and all five
+jobs. CI published [v0.19.1](https://github.com/alecerf/mynou/releases/tag/v0.19.1)
+with seven `github-actions[bot]` assets on October 5, 2026, at 11:48:49 UTC. Its
+tag targets the exact tested source. See [validation evidence](validation.md#recorded-0191-ci-evidence)
+for asset digests. The prior v0.19.0 and v0.18.0 tags and asset IDs, sizes and
+digests remain unchanged. Later documentation changes need their own complete
+workflow. Inspect live `trunk` and all five newest jobs before beginning 0.20.
 
-Mynou 0.17.0 was published by CI from
-`89e5aefa66026da084a6770fb76d51e7396602ec` after
-[run 37271644993](https://github.com/alecerf/mynou/actions/runs/37271644993) passed:
-450 Rust tests across 38 targets, four scheduler checks and all five workflow
-jobs. Seven assets were uploaded by `github-actions[bot]` on October 5, 2026, at
-06:19:26 UTC. The tag targets that validated commit. See
-[validation evidence](validation.md#recorded-0170-ci-evidence) for asset digests.
+The requester release adds stable verified account bindings, opt-in policy
+revisions, durable approval/quota reservations and immutable profile/destination
+captures. Independent account polls retain demand on partial failure. Compatible
+canonical requests share acquisition; removals keep other interests, operator
+work and imported bytes. CLI/API/browser management uses reviewed scope guards.
+The 0.19.1 patch checks completed regular-file imports and recorded quality before
+new requester reuse of uncaptured operator jobs; pending work stays uncharged.
 
-The previous 0.16 numbering release passed
-[run 37238156691](https://github.com/alecerf/mynou/actions/runs/37238156691)
-for `0821a4d3b499a5863fe5b50206c98bda25d6fb49` with 430 Rust tests, four scheduler
-checks and all five jobs. Its tag and seven asset IDs, sizes and digests remain
-unchanged. Earlier releases stay immutable and retain their evidence in
-[validation](validation.md). Later documentation changes require their own
-complete CI and never replace published artifacts.
-
-The CI optimization's final commit `1583ca5768400fa2e9511d3444ec28b076d3b1f3`
-passed [run 37235568061](https://github.com/alecerf/mynou/actions/runs/37235568061)
-with all 409 Rust tests, four scheduler checks and all five jobs. Inspect the live
-branch and newest run before continuing; later commits need their own complete CI.
+Read [requester policies](requesters.md), [numbering](numbering.md),
+[shared files](shared-files.md) and [group upgrades](group-upgrades.md) before
+changing admission or acquisition. These are individually validated stages;
+full Radarr/Sonarr/Pulsarr/qBittorrent/qui/autobrr/Prowlarr parity remains future
+work. Existing release tags and assets must remain immutable.
 
 ## Preserve the development policy
 
-Read `AGENTS.md`. Use Rust 1.99.0 and std only, with zero Cargo dependencies of
-any kind. All source, diagnostics and docs must be English. Never run local
-tests, lint, builds, binaries, demos or previews. `cargo fmt --all` is an allowed
-edit. Commit meaningful chunks, push completed work and fix red Actions runs
-with new commits. Do not start the next release before the current whole workflow
-and publication are green. Actions alone creates validated tags/releases/assets.
+Read `AGENTS.md` and [CI execution](ci.md). Use Rust std only, with zero Cargo
+dependencies of any kind. All source, diagnostics and docs must be English.
+Never run local tests, lint, builds, binaries, demonstrations or previews.
+`cargo fmt --all` is an allowed edit. Commit meaningful chunks, push completed
+work and fix red Actions runs with new commits. Do not begin another release
+until the current complete workflow and publication are green. Actions alone
+create tags, releases and assets.
 
-Read [CI execution](ci.md). The scheduler checks the current Cargo target graph
-and runs every harness; exact caches reuse compilation, never test execution.
-Inspect validation, both native/static builds, packaging and publication together.
-Preserve the four scheduler checks and immutable earlier releases.
+Rust 1.99.0 and the pinned Actions were checked against their official latest
+releases during the requester stage. Recheck their official release metadata
+when the next stage begins; keep caches bound to every compiler input and run
+every Cargo harness. Current CI retains parallel test execution, independent
+GNU/musl builds, exact compiled-artifact reuse and all publication gates.
 
-The repository is `alecerf/mynou`, branch `trunk`. Personal Plex/source settings
-are outside the repository. No available interface exposes remaining ChatGPT
-quota. A saved checkpoint does not establish unattended resumption.
+Personal Plex/TMDB/source credentials and mount mappings remain deployment
+configuration. Synthetic local-service validation does not configure the user's
+installation. No available tool exposes the ChatGPT five-hour quota. Finish at
+a clean committed checkpoint; do not claim quota monitoring or unattended
+resumption after a reset.
 
-## Retain the numbering model
+## Retain requester admission and ownership
 
-`src/numbering.rs` defines bounded canonical and source labels.
-`src/series/numbering.rs` binds decisions to retained known catalog IDs and
-normalizes approved remote labels back to canonical numbers before queueing.
-Retired IDs remain reserved; a new ID cannot reuse their number. Overlapping
-scopes must agree on canonical identities. Absolute order is always explicit.
+`src/requesters/mod.rs` owns strict bounded identities, policies, captures,
+canonical demands and controls. `persistence.rs` writes the checked private
+atomic ledger; `engine.rs` verifies startup provenance, performs account I/O
+outside storage locks, reserves quotas before job creation and reconciles
+interests. Retain the ledger-before-jobs lock order and interruption recovery
+without duplicate charges or acquisition. Operator interests and ready files
+survive requester removal. Configurations without accounts keep earlier behavior.
 
-Schema 1 infers anchors in memory without migration writes. Successful saves use
-schema 2 with verified anchors and choices. Older job requests omit the optional
-source label and retain historical keys. Existing retries/upgrades and terminal
-requests keep captured source choices when series policy changes.
+`src/store.rs` reads formats 1–4 and keeps requester provenance immutable.
+Workers use captured profile definitions and absolute roots after policy edits
+and restart. Source numbering and shared/group ownership keep their original
+identities and complete-scope promotion. Requester polls currently admit aired
+episodes individually. Notification preferences currently record local outcomes;
+external transports and requester self-service remain later work.
 
-Preview/apply binds the previous complete record, fresh catalog and proposed
-choices. Apply fetches again and rejects stale/unresolved decisions. Choices
-persist before acquisition; apply itself queues no jobs. Source labels affect
-queries, title matching and file selection. Import/Plex checks stay canonical.
-Alternate source labels currently require explicit pack mappings.
+Requester CLI/API/browser reviews bind identity, policy, complete job/demand
+scope, selected profiles/destinations and UTC day. Preserve read-only previews,
+strict inputs, redaction, session/CSRF ownership, review expiry and stale-plan
+rejection. An announcement must not bypass requester approval or quota gates.
 
-## Shared ownership completed in 0.17
+## Implement IRC announcement automation in 0.20
 
-The 0.17 implementation now records a bounded authenticated torrent/path,
-canonical owner range and one deterministic Plex destination. All new owners
-commit atomically; runtime claims are serialized per group. Selected-file
-verification, no-overwrite imports, individual exact Plex checks, queued-owner
-cancellation interests, retry/restart and subset reuse retain the binding.
-Format 2 rejects silent downgrade. CLI/API/browser apply guards repeat metadata
-inspection; browser source credentials remain server-side for ten minutes.
-See [shared files](shared-files.md). The exact complete Actions run and CI
-publication are recorded above. Inspect the live branch and all five newest
-jobs before beginning 0.18; later commits require their own completed workflow.
+1. Define explicit opt-in IRC sources, environment-bound credentials and bounded
+   connection/rule settings. Reuse the original standard-library TLS client with
+   certificate/hostname verification. Keep server credentials out of persisted
+   records, reports and review forms. No shell scripts or external IRC clients.
+2. Build a bounded incremental IRC parser and connection state machine for
+   registration, channel membership, PING/PONG and announcements. Authenticate
+   the configured source/channel before rule evaluation. Reject malformed or
+   oversized messages, bound buffers and worker counts, and use interruptible
+   reconnect/backoff and shutdown. Document supported authentication/features.
+3. Define original explicit announcement templates and deterministic filters:
+   title identity, media kind, release markers, required/blocked terms, source
+   and selected profile. Do not infer a canonical episode or shared range from
+   ambiguous text. Unsupported or unresolved announcements produce an auditable
+   outcome without acquisition.
+4. Persist bounded announcement identities and rule outcomes before action.
+   Suppress duplicates across reconnects and restart. Bind resolved canonical
+   request, source, authenticated metadata/hash and the chosen action; route
+   accepted immediate grabs through existing acquisition/admission and ownership
+   rules. Define operator versus requester interests explicitly. No duplicate
+   torrent, silent approval, extra quota charge or uncaptured destination.
+5. Expose source health, rule configuration, bounded history, preview decisions
+   and reviewed actions through CLI/API/browser. Record acceptance, rejection,
+   duplicate, quota and source-failure outcomes with credential redaction.
+   Define notification routing and retry/idempotency before external delivery.
+6. Add original local IRC/HTTP/native-peer CI fixtures for fragmented lines,
+   registration and PING/PONG, oversized/malformed input, untrusted channels,
+   rule conflicts, metadata changes, immediate acquisition, reconnect/backoff,
+   duplicate restart recovery, requester approval/quotas, source numbering,
+   retained imports and protected management controls. Keep every existing
+   harness and publication check.
 
-Individual shared remaps, baselines and upgrades remain blocked. Automatic packs
-and ordinary mapped packs still require unique single-episode files. This gives
-0.17 an independently usable scope without partially replacing shared owners.
-
-## Retain coordinated group replacement in 0.18
-
-`src/library/groups.rs` validates complete current owners and their existing
-regular-file import, release/range identity and current episode policy. Metadata
-inspection stays outside the journal lock. The guard captures parents, source,
-profile, exact new hash/path and existing candidate state before a writable apply.
-Browser credentials stay in one bounded session review, without hidden source
-fields. Offline preview is read-only and apply requires the service.
-
-`src/store/groups.rs` captures ordered parent IDs for every child and owns format
-3 baseline/create/promote/cancel/retry transactions. Confirmations become staged;
-the final owner promotes the whole group in one frame. Group claims serialize
-imports and require every current parent to remain monitored. Exhausted failures
-reserve their scope until cancelled. Retry retains bindings and bytes, repeats
-required confirmations and rejects obsolete parents or competing replacements.
-
-Journal/snapshot readers accept formats 1–3; old readers reject the new group
-formats. Complete-scope and semantic validation reject partial baselines,
-promotion/cancellation, fabricated individual frames and mutated lineage.
-Memoized iterative root traversal retains lineage precedence without recursion.
-Synthetic CI cases include 64-owner transactions, corruption/torn writes,
-monitoring/control races, source/policy guards and native partial Plex confirmation
-across restart. Its whole run and publication passed as recorded above; later
-commits require their own complete workflow.
-
-This stage replaces one shared video with one shared video. Automatic range-file
-inference/search and shared-to-individual replacement remain later work; expose
-them only after complete ownership, source labels and promotion are defined.
-
-## Implement Plex requester policies in 0.19
-
-1. Define bounded stable requester identities and per-account Plex token bindings
-   without changing the operator's existing API/browser authentication. Keep
-   credentials outside persisted public reports and review forms. Capture explicit
-   approval, quota, destination-routing and notification preferences in the
-   requester's versioned policy.
-2. Add independent watchlist cursors/poll results and explicit opt-in movie/episode
-   profile policies. Persist pending approvals and enforce quotas before any
-   acquisition. Preserve the current single-account configuration and define
-   policy compatibility before combining demand for one canonical media identity.
-3. Persist requester provenance before acquisition. Removing one user's demand
-   must not cancel another user's interest or delete ready media. Retain ownership,
-   source numbering and complete shared-group replacement scope across restarts.
-4. Expose requester status, approvals, limits, routing/notification preferences
-   and guarded management through CLI/API/browser. Report partial account failures
-   separately and retain bounded poll deadlines; stale identity/policy decisions
-   require new review. Define notification outcomes without leaking credentials
-   or changing another requester's demand.
-5. Add original local-service CI cases for multiple accounts, duplicate media,
-   conflicting policies, approval races, quota exhaustion/retry, destination
-   routing, notification preferences, partial failures, credential redaction,
-   removals and restart. Keep complete Cargo harness execution and all publication
-   gates.
+Split the stage into independently useful releases if bounded ingestion and
+review need to ship before immediate grabs or external notification delivery.
+Do not expose partial automatic actions before identity, persistence and
+ownership rules are complete.
 
 ## Release acceptance and handoff
 
-Bump Cargo/lockfile, Compose/deployment examples and release notes once complete.
-Preserve offline graph, formatting, Clippy, all Rust tests, GNU/musl builds,
-isolated native/container demonstrations and archive/checksum checks. Record the
-exact source/run/tag/asset evidence after CI publication; later docs need CI too.
+Bump Cargo/lockfile, Compose/deployment examples and release notes once scope is
+complete. Preserve the offline graph, formatting, Clippy, all Rust tests,
+GNU/musl builds, isolated native/container demonstrations and archive/checksum
+checks. After CI publication, record the exact source/run/tag/asset evidence.
+Later documentation commits need their own complete workflow and must retain
+existing published artifacts. End at a clean validated checkpoint with the next
+action recorded.
 
-Then continue Plex user policies, IRC automation, native indexer adapters, Usenet
-and cross-seeding on the [roadmap](roadmap.md). Do not claim full stack parity
-or unmeasured performance. End at a committed, validated checkpoint with the
-next action recorded.
+The following stages target native indexer adapters, Usenet and cross-seeding
+on the [roadmap](roadmap.md). Claim only implemented behavior and measured
+performance.

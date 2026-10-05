@@ -186,7 +186,12 @@ Notification preferences select bounded recorded outcomes, without external
 transport. Requester polling acquires aired episodes individually; optional
 operator season-pack automation retains its earlier rules. Removed/rejected
 requester demand remains a tombstone and is not silently revived. Ready imports
-stay present. This implementation's complete CI/publication are pending.
+stay present. New reuse of uncaptured operator work requires ready regular-file
+imports beneath the selected destination and a compatible recorded quality
+baseline, or the unrestricted default profile when no baseline exists. Pending
+operator work stays an uncharged conflict. Complete CI and publication passed
+for [v0.19.1](validation.md#recorded-0191-ci-evidence); later changes need their
+own completed run.
 
 Series storage supports 128 tracked scopes, 2,000 episodes per plan, 20,000
 episodes total and an 8 MiB verified snapshot. A due pass checks at most four
