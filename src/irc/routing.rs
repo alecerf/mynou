@@ -468,11 +468,12 @@ fn selected_interest(
     let Some(provenance) = &job.requester else {
         return false;
     };
-    state.demands.values().any(|d| {
+    let demand_id = crate::requesters::Demand::identity(id, &job.request);
+    state.demands.get(&demand_id).is_some_and(|d| {
         &d.account_id == id
             && d.approved
             && matches!(d.state.as_str(), "reserved" | "active" | "ready")
-            && d.request.media_key() == job.request.media_key()
+            && d.job_id.as_deref() == Some(job.id.as_str())
             && d.capture == provenance.capture
     })
 }
