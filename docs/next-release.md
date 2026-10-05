@@ -8,10 +8,13 @@ acquisition jobs. Run 37335746159 passed for
 four scheduler checks and all five jobs. CI published v0.20.0 on October 5, 2026,
 at 15:50:41 UTC. Its seven assets and the prior v0.19.1 release remain immutable.
 
-The active increment uses explicitly configured hash-pinned magnets and metadata
-verification to route candidates to already admitted jobs. Preserve requester
-approval/quotas, captured profiles, source numbering and exclusive physical
-ownership. No unsolicited demand or shared/upgrade rebind belongs in this increment.
+The active 0.20.1 increment implements configured hash-pinned magnets and
+metadata-only verification before candidate routing to existing admitted jobs.
+Plex availability, requester approval/quotas, captured profiles/destinations,
+source numbering and exclusive physical ownership remain mandatory. Checked
+reservations precede immutable job origins. Twenty original CI scenarios cover
+the full path, metadata gates, races, quotas, imports and recovery. Complete
+validation and CI publication remain pending for the active source.
 
 The prior v0.19.1 requester release passed run 37305082540 for
 83e6d1a40ac2d5abac0baf355a0011c58e49429a, with 490 Rust tests across 43 harnesses,
@@ -38,35 +41,53 @@ eight opt-in receivers and one shutdown monitor. Credential values stay only in
 connection commands; errors expose generic outcomes. TLS retains certificate and
 hostname authentication, with deadlines renewed only between complete operations.
 
-persistence.rs uses a private checked atomic MYNOUI01 snapshot. Identity binds
+persistence.rs reads private checked atomic MYNOUI01/MYNOUI02 snapshots. Identity binds
 source, canonical media claim and torrent hash. Original claim/evaluations and
 terminal decisions survive repeats and restart. Duplicate receipts never write
 the snapshot. Full history rejects new identities while retaining existing ones.
-engine.rs provides pure previews and row-scoped decisions. Shared browser review
+engine.rs provides pure previews and row-scoped audit decisions. Shared browser review
 slots bind session, action, record and guard and expire in ten minutes.
 
-## Continue with an independently validated acquisition increment
+## Validate the current increment first
 
-1. Define explicit opt-in automatic action/routing settings and a configured
-   way to resolve announcement hashes to acquisition metadata without persisting
-   private URLs or credentials. Metadata-only inspection must authenticate the
-   announced torrent hash before any payload transfer.
-2. Resolve and verify canonical movie/episode identities using existing catalog
-   and retained series/source numbering. Ambiguous, unmatched, conflicting,
-   stale or changed metadata produces an auditable outcome without acquisition.
-3. Bind source/rule revision, verified metadata/hash, canonical request and
-   destination/profile/ownership in a durable action reservation before workers
-   begin. Recover interruptions without duplicate jobs or charges.
-4. Route requester actions through existing opt-in approvals, quotas and
-   immutable captures. Distinguish explicit operator interests. Retain another
-   requester's demand, ready bytes, source numbering and complete shared-group
-   scope. An IRC event cannot silently approve or rebind acquisition.
-5. Expose preview, reviewed apply, automatic action outcomes and notification
-   routing through CLI/API/browser. Define idempotent retries and external
-   delivery before enabling a transport.
-6. Add original local IRC/HTTP/native-peer fixtures covering metadata changes,
-   immediate grabs, conflicts, duplicate/restart recovery, approval/quota races,
-   routing, protected controls and retained earlier imports.
+Finish all five Actions jobs for the exact current branch. Fix failures with
+new commits, push and inspect the new complete run. Confirm that CI alone
+publishes v0.20.1, its tag targets the validated source, and all seven assets
+have bot uploaders and recorded digests. Compare v0.20.0 metadata before/after.
+Never replace a published tag or asset. Record live validation/checkpoint docs;
+their later commit requires its own complete CI.
+
+src/irc/routing.rs owns restricted template parsing, metadata selection,
+immutable Origin/Route, the serialized bounded automatic pass and startup
+recovery. No metadata I/O holds persistent-store locks. Admission takes
+IRC/requester/job locks, rechecks approval/profile/job state and saves the
+reservation before the origin transaction. Private magnets persist only in
+checked private storage; public reports remove them, fingerprints and bindings.
+
+src/store/irc.rs protects canonical and physical ownership. Origins require
+job format 5; reservations require IRC format 2. Retry retains original hash,
+aliases, file and release. A committed origin completes on recovery; an
+uncommitted reservation aborts without replay. Missing or inconsistent
+cross-storage provenance fails before native transfer startup.
+
+Plex jobs keep availability checks before waiting, with negative checks due
+after 60 seconds. Routing uses a shared ten-second availability/metadata budget
+and sets a selected job's next attempt to zero. Do not bypass captured roots or
+turn ready data into a new acquisition.
+
+## Following IRC stages after green publication
+
+Add one independently usable stage at a time: bounded tracker text adapters,
+SASL/NickServ authentication, explicit requester/action selectors and reviewed
+new-demand actions. Existing admitted-job routing must remain the default.
+Ambiguous catalog identities, source ranges, existing ownership and stale
+configuration remain unresolved without side effects.
+
+Add durable outcome/notification routing with bounded retries, credential
+redaction and idempotent event identities before any external transport.
+Later pack/upgrade actions must retain complete canonical/shared ownership,
+frozen profiles/destinations and approved interests. Extend original local
+IRC/Plex/metadata/payload fixtures for each new contract.
 
 Publish only after complete green CI and record exact source/run/tag/asset
 evidence. Later docs need their own complete workflow. The broader roadmap keeps

@@ -11,6 +11,16 @@ revision.
 
 ## Automated checks and releases
 
+The 0.20.1 scenarios add pure bounded templates, explicit job deferral,
+metadata-only verification before native queue publication, exact selective
+imports, source numbering, shared physical ownership, approval/quotas and
+captured requester routes. Original local peers and IRC receivers exercise the
+background path, concurrent passes and cancellation/removal/review/stop during
+metadata work. Checked crash fixtures cover committed/uncommitted reservations,
+read-only recovery, corruption, immutable origins and silent format downgrade.
+This increment requires its own completed workflow; the 0.20.0 evidence below
+validates the earlier reception/review release.
+
 The 0.20 IRC scenarios exercise strict opt-in sources/rules, verified remote
 transport requirements, fragmented protocol parsing, allowed membership/senders,
 title/profile filtering, durable original claims and duplicate suppression,

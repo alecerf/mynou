@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.20.0
+# Project checkpoint — Mynou 0.20.1
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -12,12 +12,18 @@ alone creates release tags and publishes artifacts from validated commits.
 
 ## Implemented scope
 
-The 0.20.0 implementation adds opt-in IRC reception, verified TLS, bounded
+The active 0.20.1 increment adds explicit grab rules, hash-pinned configured
+magnets, metadata-only verification and candidate routing to existing admitted
+canonical jobs. Approval/quotas, frozen requester profiles/destinations, source
+labels and physical file ownership remain mandatory. Durable reservations and
+immutable job origins survive cancellation/retry and checked restart recovery.
+Its complete validation and CI publication are pending.
+
+The published 0.20.0 implementation adds opt-in IRC reception, verified TLS, bounded
 protocol handling, explicit filters, checked durable duplicate suppression and
 guarded CLI/API/browser announcement reviews. No review creates download work.
 Its complete CI and CI publication passed with 512 Rust tests across 46 harnesses,
-four scheduler checks and all five jobs. The next IRC increment binds automatic
-candidate routing to verified metadata and existing admission/ownership.
+four scheduler checks and all five jobs.
 See [IRC behavior](irc.md) and [next-release notes](next-release.md).
 
 Media parsers, the torrent engine, persistence, orchestration, integrations,
@@ -141,7 +147,7 @@ its own complete validation and publication passed with 490 Rust tests across
 43 targets, four scheduler checks and all five jobs. The following stage is IRC
 automation in 0.20; inspect live branch CI before beginning it.
 
-Automatic anime/range inference, IRC automation, native
+Automatic anime/range inference, broader IRC adapters/actions, native
 indexer adapters, Usenet and cross-seeding remain future stages. See the [release roadmap](roadmap.md). Series monitoring is a
 focused stage and does not establish full stack parity.
 

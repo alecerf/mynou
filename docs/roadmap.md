@@ -5,7 +5,17 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current published stage: 0.20.0
+## Current implementation: 0.20.1, awaiting CI
+
+Explicit grab rules route configured hash-pinned magnets to existing approved
+jobs after metadata-only verification. Canonical title/year/source labels and
+captured profiles must agree. Reservations precede immutable journal origins;
+restart completes committed origins and aborts uncommitted intents. Native
+selection/import uses the retained exact file and authenticated hash aliases.
+Original local CI covers imports, gates, races, corruption and recovery.
+Complete validation and CI publication are pending for this increment.
+
+## Previous published stage: 0.20.0
 
 [IRC reception and reviews](irc.md) provide opt-in verified TLS sources,
 sender/channel restrictions, strict release envelopes, title/profile filters,
@@ -17,7 +27,7 @@ increment, after this reception/review release.
 Run 37335746159 passed for `4da379a4ef48763d8a1035fb6b3cd4acc4a721bc` with
 512 Rust tests across 46 harnesses, four scheduler checks and all five jobs.
 CI published seven v0.20.0 assets on October 5, 2026, at 15:50:41 UTC.
-The next increment routes verified hash-pinned magnets to existing approved jobs.
+The next increment implements candidate routing, described above.
 See [validation evidence](validation.md#recorded-0200-ci-evidence).
 
 ## Previous stage: 0.19.1

@@ -244,10 +244,15 @@ catalog, interactive logins and Usenet remain later work. Opt-in IRC reception
 supports an explicit strict JSON envelope and review rules, with eight sources,
 64 rules, 1,000 retained identities and an 8 MiB checked snapshot. Duplicates do
 not rewrite history; full history rejects new identities without pruning.
-Reviews create no acquisition work. SASL/NickServ, tracker text adapters,
-automatic IRC grabs, cross-seeding and broader bulk automation remain later work.
+Reviews create no acquisition work. The 0.20.1 increment adds explicit grab rules
+and hash-pinned metadata verification for existing approved requests, immutable
+origins and exact file imports. Catalog claims must agree with admitted labels;
+this does not prove semantic media identity. Queued compatible jobs wait for
+IRC, with no unsolicited demand or implicit search fallback while the rule is
+enabled. New-demand actions, packs/upgrades, SASL/NickServ, tracker text adapters,
+notification delivery, cross-seeding and broader bulk automation remain later work.
 See [IRC behavior](irc.md) for protocol, deadlines and recovery. Complete
-validation/publication passed for v0.20.0; later changes require their own CI.
+validation/publication passed for v0.20.0; routing requires its own complete CI.
 The [roadmap](roadmap.md) separates these capabilities into future releases.
 
 ## Persistence and platform

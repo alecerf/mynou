@@ -1,10 +1,10 @@
-# IRC reception and announcement reviews
+# IRC reception, audit reviews and approved candidate routing
 
-Mynou 0.20.0 adds opt-in IRC receivers, deterministic filters, durable duplicate
-suppression and guarded reviews. A review acknowledges or dismisses a release
-claim without submitting a download job. Automatic acquisition follows after
-metadata, canonical identity, requester approval and ownership are bound together.
-This implementation requires its own completed CI and publication.
+Mynou 0.20.0 adds opt-in receivers, deterministic filters, durable duplicate
+suppression and guarded audit reviews. The 0.20.1 increment adds explicit grab
+rules: verified candidates attach only to existing admitted canonical jobs.
+Reviews change no download work. The earlier release passed complete CI;
+the new routing increment requires its own completed validation/publication.
 
 ## Configure a source and review rules
 
@@ -131,11 +131,83 @@ identity returns duplicate/claim_changed while preserving the original decision.
 Duplicate receipts do not rewrite storage. Receipt/duplicate counters and source
 health are in-memory observations that reset at process restart.
 
-Readers verify MYNOUI01, length, SHA-256 and semantic provenance. Writes use
+## Explicit grab rules
+
+To enable automatic candidate routing, add magnet_template to the source and
+change the selected rule's action to grab. Both source and rule must be enabled,
+native downloads must be enabled, and the rule profile must match the job's
+admitted profile including its frozen definition.
+
+    "magnet_template": "magnet:?xt={xt}&tr=https%3A%2F%2Ftracker.example.test%2Fannounce"
+
+The {xt} placeholder occurs exactly once and expands to urn:btih: followed by
+the 40-character hash or urn:btmh:1220 followed by the 64-character v2 hash.
+Unknown parameters and duplicate identities are rejected. Discovery permits
+four unique trackers and eight unique literal-IP x.pe peers. HTTPS and UDP
+trackers are supported; plaintext HTTP trackers require literal loopback.
+Embedded URL credentials, hostnames in x.pe, zero ports, unspecified/multicast
+peers and malformed escapes are rejected without network I/O during parsing.
+Private tracker paths/query credentials stay in the configuration and private
+origin records; public reports expose no template or magnet.
+
+An enabled grab rule holds otherwise untouched queued movie/episode jobs whose
+admitted profile agrees. Explicit local/URL requests, existing acquisitions,
+upgrades, packs/shared owners and jobs without catalog IDs retain their ordinary
+scheduling. Disabling the rule/source restores scheduling at the next due attempt. Review rules hold
+no jobs. No unsolicited announcement creates demand or consumes a new quota.
+
+Plex availability remains active for held jobs, with negative checks deferred
+for 60 seconds. Routing also checks availability before choosing a torrent;
+existing playable media under the captured destination fulfills demand without
+acquisition. A routed candidate resets the waiting job's next attempt to zero.
+
+One background pass attempts one candidate, sharing a ten-second availability
+and metadata budget.
+Rules must have one unreviewed match and the original configuration fingerprint.
+Canonical media identity, normalized title, year and exact source numbering must
+match one admitted job. A required approval or exhausted quota cannot be bypassed:
+IRC uses existing durable admission and never creates or charges requester work.
+Claimed catalog IDs remain claims; agreement with admitted labels does not prove
+semantic catalog identity from torrent bytes.
+
+Metadata-only discovery authenticates the pinned hash without payload or a
+native transfer queue. Exactly one nonempty supported video must have matching
+title/year and source labels. Multiple videos, episode ranges, packs, mismatched
+labels and ambiguous paths are rejected. Metadata supplies v1/v2 aliases for
+hybrid ownership checks. Admission rechecks the claim, job, approved interests,
+captured profile and retained physical ownership after I/O and under the
+IRC/requester/job lock order.
+
+A private reservation is synchronized before one journal transaction attaches
+the immutable magnet, aliases, exact path/length and release/profile. Native
+acquisition authenticates the same identity again and selects only that file's
+pieces, including boundaries. Imports retain canonical episode numbering and
+captured destinations. Retry retains the selected origin; it never starts a new
+search. Source/template/profile changes do not rebind existing origins.
+
+Public history exposes routing_outcome, candidate_routed and the associated job.
+Outcomes include routed, already_available, availability_unavailable,
+waiting_for_admitted_job, approval_required,
+claim_mismatch, profile_mismatch, metadata_unavailable, metadata_rejected,
+admission_changed and admission_or_storage_rejected. Attempt outcomes are
+bounded in-memory observations; durable reservation phases are reserved, routed
+and aborted. A failed candidate has a 30-second cooldown; the cursor lets other
+claims proceed. The worker checks once per second. Restart resets attempts.
+Acknowledgement/dismissal prevent routing an untouched claim; after routing they
+are audit decisions. Cancel the associated job to stop acquisition.
+
+## Checked routing recovery
+
+Readers verify MYNOUI01 or MYNOUI02, length, SHA-256 and semantic provenance. Writes use
 private exclusive temporary files, file sync, atomic rename and directory sync.
 Uncertain final sync blocks writes until restart. Corruption, symlinks,
 nonregular or multiply linked files fail before receivers/transfers start.
-Existing job formats and imports keep their earlier behavior.
+Reservations require history format 2. Origins require job journal/snapshot
+format 5, so older readers reject silent downgrade. Formats 1–4 remain readable
+for jobs without IRC origins. Startup validates both directions before native
+workers resume: a committed origin completes its reservation, an uncommitted
+intent becomes aborted, and missing/disagreeing provenance fails closed.
+Read-only opening never repairs these phases. Aborted intents are not replayed.
 
 Each source has one receiver; one shared monitor interrupts sockets on shutdown.
 Connect/registration has a ten-second overall deadline. Idle timeout accepts
@@ -146,7 +218,14 @@ membership loss closes the connection. Backoff doubles inside configured bounds,
 resetting after a connection lasting 30 seconds. Server error text is not echoed.
 Standard-library DNS is synchronous; late results are rejected, but resolution
 cannot itself be interrupted.
+The routing worker waits at most its metadata budget before noticing shutdown;
+tracker DNS retains this same standard-library limitation.
 
 Original CI uses synthetic loopback IRC services to exercise boundaries, trust,
 filtering, history limits/corruption, concurrent and stale reviews, restart,
 PING/PONG, reconnect and shutdown. No public IRC or torrents are contacted.
+Routing scenarios use original local metadata/payload peers and gates to cover
+exact imports, approval/quotas, frozen routes, source numbering, races, ambiguity,
+ownership, concurrent passes, corruption and both sides of an interrupted commit.
+Tracker text adapters, SASL, new-demand actions, packs/upgrades, notification
+delivery and cross-seeding remain future increments.

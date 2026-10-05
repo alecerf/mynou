@@ -3,7 +3,14 @@
 The original IRC receivers add a separate review inbox. Strict configuration,
 bounded protocol framing and verified TLS gate accepted sender/channel claims;
 the private checked snapshot records identities before reviews. Source I/O holds
-no storage lock. Pure filters and guarded decisions create no acquisition jobs.
+no storage lock. Pure filters and guarded audit decisions create no acquisition jobs.
+Explicit grab rules hold eligible admitted jobs for IRC selection. Metadata-only
+inspection authenticates the pinned torrent before a durable reservation and
+one journal transaction attach immutable origin, exact file and release/profile.
+Admission takes locks in IRC/requester/job order and rechecks demand after I/O.
+Checked recovery completes already committed origins and aborts uncommitted
+reservations; it never replays an intent into a new grab. Native imports require
+the retained hash and exact file, including authenticated hybrid aliases.
 See [IRC behavior](irc.md).
 
 ```text
