@@ -113,6 +113,11 @@ impl RecordKeys {
 }
 
 impl TlsStream {
+    /// Renew a complete operation between records on a persistent connection.
+    pub(crate) fn set_deadline(&mut self, deadline: Instant) {
+        self.stream.set_deadline(deadline);
+    }
+
     pub fn connect(stream: TcpStream, hostname: &str) -> Result<Self> {
         let timeout = stream
             .read_timeout()

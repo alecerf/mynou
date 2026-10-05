@@ -26,6 +26,8 @@ pub struct Engine {
     downloads: Option<Client>,
     pub(crate) sync_lock: Mutex<()>,
     pub(crate) requester_store: Mutex<crate::requesters::RequesterStore>,
+    pub(crate) irc_store: Mutex<crate::irc::AnnouncementStore>,
+    pub(crate) irc_runtime: Mutex<crate::irc::client::Runtime>,
     pub(crate) upgrade_lock: Mutex<()>,
     pub(crate) read_only: bool,
     pub stopped: AtomicBool,
@@ -70,8 +72,11 @@ impl Engine {
         let series_store = crate::series::SeriesStore::open(&config.store_dir, read_only)?;
         let mut requester_store =
             crate::requesters::RequesterStore::open(&config.store_dir, &config, read_only)?;
+        let mut irc_store =
+            crate::irc::AnnouncementStore::open(&config.store_dir, &config.irc, read_only)?;
         crate::requesters::engine::validate_storage(&requester_store.state, &store)?;
         requester_store.initialize()?;
+        irc_store.initialize()?;
         if !read_only {
             crate::requesters::engine::cancel_unwanted(
                 &requester_store.state,
@@ -112,6 +117,7 @@ impl Engine {
         } else {
             None
         };
+        let irc_runtime = crate::irc::client::Runtime::new(&config.irc.sources);
         Ok(Arc::new(Self {
             config,
             store: Mutex::new(store),
@@ -120,6 +126,8 @@ impl Engine {
             downloads,
             sync_lock: Mutex::new(()),
             requester_store: Mutex::new(requester_store),
+            irc_store: Mutex::new(irc_store),
+            irc_runtime: Mutex::new(irc_runtime),
             upgrade_lock: Mutex::new(()),
             read_only,
             stopped: AtomicBool::new(false),
@@ -418,6 +426,7 @@ impl Engine {
 
     pub fn start(self: &Arc<Self>) -> Workers {
         let mut handles = Vec::new();
+        crate::irc::client::start(self, &mut handles);
         if self.config.catalog.enabled {
             let engine = self.clone();
             handles.push(thread::spawn(move || {
@@ -475,7 +484,7 @@ impl Engine {
         }
     }
 
-    fn wait(&self, millis: u64) {
+    pub(crate) fn wait(&self, millis: u64) {
         for _ in 0..millis.div_ceil(100) {
             if self.stopped.load(Ordering::Acquire) {
                 break;

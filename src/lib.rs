@@ -7,6 +7,7 @@ pub mod date;
 pub mod demo;
 pub mod engine;
 pub mod integrations;
+pub mod irc;
 pub mod json;
 pub mod library;
 pub mod media;

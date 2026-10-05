@@ -531,6 +531,10 @@ impl DeadlineStream {
         Self { stream, deadline }
     }
 
+    pub(crate) fn set_deadline(&mut self, deadline: Instant) {
+        self.deadline = deadline;
+    }
+
     fn remaining(&self) -> std::io::Result<Duration> {
         self.deadline
             .checked_duration_since(Instant::now())

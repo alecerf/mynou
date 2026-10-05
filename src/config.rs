@@ -76,6 +76,7 @@ pub struct Config {
     pub catalog: Catalog,
     pub sources: Vec<Source>,
     pub requesters: crate::requesters::Settings,
+    pub irc: crate::irc::Settings,
 }
 
 fn object(items: Vec<(&str, Value)>) -> Value {
@@ -358,6 +359,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             "catalog",
             "indexers",
             "requesters",
+            "irc",
         ],
     )?;
     if number(v, "schema_version", 0, 1)? != 1 {
@@ -462,6 +464,10 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         }
     };
     let base = absolute_path(base)?;
+    let irc = match v.get("irc") {
+        Some(v) => crate::irc::Settings::from_json(v, &selection)?,
+        None => crate::irc::Settings::default(),
+    };
     Ok(Config {
         store_dir: path(&base, text(v, "store_dir", "state/jobs")?)?,
         listen,
@@ -510,6 +516,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         },
         sources,
         requesters: crate::requesters::Settings::from_json(v.get("requesters"), &base)?,
+        irc,
     })
 }
 pub fn secret(name: &str) -> Result<String> {
