@@ -217,6 +217,9 @@ impl Store {
         }
         for (offset, id) in lineage.parent_jobs.iter().enumerate() {
             let parent = self.jobs.get(id).ok_or("Missing shared-group parent")?;
+            if job.upgrade_parent.as_deref() == Some(id) && job.requester != parent.requester {
+                return Err("Shared replacement requester provenance is immutable".into());
+            }
             if parent.shared_file.as_ref() != Some(old)
                 || parent.request.episode != old.first_episode + offset as u32
                 || parent.state != "ready"

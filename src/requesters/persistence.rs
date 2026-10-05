@@ -20,6 +20,7 @@ pub(crate) struct RequesterStore {
     path: PathBuf,
     read_only: bool,
     poisoned: bool,
+    dirty: bool,
 }
 impl RequesterStore {
     pub(crate) fn open(directory: &Path, config: &Config, read_only: bool) -> Result<Self> {
@@ -69,6 +70,7 @@ impl RequesterStore {
             path,
             read_only,
             poisoned: false,
+            dirty: false,
         };
         let mut next = store.state.clone();
         for account in &config.requesters.accounts {
@@ -94,13 +96,16 @@ impl RequesterStore {
         }
         State::from_json(&next.to_json())?;
         if next != store.state {
-            if read_only {
-                store.state = next
-            } else {
-                store.save(next)?
-            }
+            store.state = next;
+            store.dirty = true;
         }
         Ok(store)
+    }
+    pub(crate) fn initialize(&mut self) -> Result<()> {
+        if self.dirty && !self.read_only {
+            self.save(self.state.clone())?;
+        }
+        Ok(())
     }
     pub(crate) fn save(&mut self, mut state: State) -> Result<()> {
         if self.read_only {
@@ -156,6 +161,7 @@ impl RequesterStore {
         }
         written?;
         self.state = state;
+        self.dirty = false;
         Ok(())
     }
 }

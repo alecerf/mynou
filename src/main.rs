@@ -55,6 +55,10 @@ const HELP: &str = "Mynou — media automation using Rust std only
   file-priority ID --file N --priority low|normal|high [--config mynou.json]
   torrent-select ID --selection '{\"indices\":[0,2]}' [--config mynou.json]
   torrent-policy ID --policy JSON_OR_NULL [--config mynou.json]
+  requesters [--config mynou.json]
+  requester ACCOUNT_ID [--offset N --limit N] [--config mynou.json]
+  requester-control ACCOUNT_ID --mapping FILE [--apply --plan-id ID] [--config mynou.json]
+  requester-sync [--config mynou.json]
   jobs | status | sync [--config mynou.json]
   show | events | retry | cancel ID [--config mynou.json]
   healthcheck [--config mynou.json]
@@ -107,6 +111,9 @@ impl Args {
             | "retry" | "cancel" | "healthcheck" | "library" | "monitor" | "unmonitor" => {
                 &["config", "help"]
             }
+            "requesters" | "requester-sync" => &["config", "help"],
+            "requester" => &["config", "help", "offset", "limit"],
+            "requester-control" => &["config", "help", "mapping", "apply", "plan-id"],
             "torrents" | "torrent" | "pause" | "resume" => &["config", "help"],
             "torrent-priority" => &["config", "help", "priority"],
             "file-priority" => &["config", "help", "file", "priority"],
@@ -188,6 +195,8 @@ impl Args {
         }
         let required = usize::from(
             [
+                "requester",
+                "requester-control",
                 "analyze",
                 "show",
                 "events",
@@ -727,6 +736,94 @@ fn execute(args: Args) -> Result<()> {
                 "POST",
                 &format!("/api/jobs/{id}/pack-mapping"),
                 Some(&body),
+            )?);
+        }
+        "requesters" => {
+            if online {
+                output(&call(&config, &path, "GET", "/api/requesters", None)?);
+            } else {
+                output(&Engine::open_for_preview(config)?.requesters()?);
+            }
+        }
+        "requester" => {
+            let id = &args.positions[0];
+            if !mynou::requesters::valid_id(id) {
+                return Err("Invalid requester account ID".into());
+            }
+            let query = format!(
+                "offset={}&limit={}",
+                args.value("offset", "0"),
+                args.value("limit", "100")
+            );
+            let (offset, limit) = mynou::requesters::page(&query)?;
+            if online {
+                output(&call(
+                    &config,
+                    &path,
+                    "GET",
+                    &format!("/api/requesters/{id}?{query}"),
+                    None,
+                )?);
+            } else {
+                output(&Engine::open_for_preview(config)?.requester(id, offset, limit)?);
+            }
+        }
+        "requester-control" => {
+            let id = &args.positions[0];
+            if !mynou::requesters::valid_id(id) {
+                return Err("Invalid requester account ID".into());
+            }
+            let file = args
+                .options
+                .get("mapping")
+                .ok_or("Specify --mapping FILE")?;
+            let mut bytes = Vec::new();
+            std::fs::File::open(file)
+                .map_err(|_| "Cannot open requester mapping")?
+                .take(65537)
+                .read_to_end(&mut bytes)
+                .map_err(|_| "Cannot read requester mapping")?;
+            if bytes.len() > 65536 {
+                return Err("Requester mapping exceeds 64 KiB".into());
+            }
+            let mut value = json::parse(
+                std::str::from_utf8(&bytes).map_err(|_| "Requester mapping is not UTF-8")?,
+            )?;
+            if value.as_object().is_none_or(|m| {
+                m.keys()
+                    .any(|k| !["action", "policy", "demand_id"].contains(&k.as_str()))
+            }) {
+                return Err("Requester mapping contains an unknown field".into());
+            }
+            value.insert("apply", args.options.contains_key("apply"));
+            if let Some(plan) = args.options.get("plan-id") {
+                value.insert("plan_id", plan.clone());
+            }
+            let query = mynou::requesters::ControlRequest::from_json(&value)?;
+            if online {
+                output(&call(
+                    &config,
+                    &path,
+                    "POST",
+                    &format!("/api/requesters/{id}/control"),
+                    Some(&query.to_json()),
+                )?);
+            } else if query.apply {
+                return Err("Requester application requires a running Mynou service".into());
+            } else {
+                output(&Engine::open_for_preview(config)?.requester_control(id, &query)?);
+            }
+        }
+        "requester-sync" => {
+            if !online {
+                return Err("Requester polling requires a running Mynou service".into());
+            }
+            output(&call(
+                &config,
+                &path,
+                "POST",
+                "/api/requesters/sync",
+                Some(&Value::object()),
             )?);
         }
         "library-group" => {

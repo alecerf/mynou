@@ -1,5 +1,6 @@
 //! Browser management using original server-rendered HTML and native forms.
 mod forms;
+mod requester_views;
 mod series_views;
 mod session;
 mod views;
@@ -241,6 +242,10 @@ impl Web {
                 query.only(&[])?;
                 views::dashboard(engine, &session)?
             }
+            "/ui/requesters" => {
+                query.only(&[])?;
+                requester_views::list(engine, &session)?
+            }
             "/ui/jobs" => views::jobs(engine, &session, &query)?,
             "/ui/library" => views::library(engine, &session, &query)?,
             "/ui/search" => {
@@ -252,6 +257,11 @@ impl Web {
             "/ui/calendar" => series_views::calendar(engine, &session, &query)?,
             _ => {
                 if let Some(id) = path
+                    .strip_prefix("/ui/requesters/")
+                    .filter(|id| crate::requesters::valid_id(id))
+                {
+                    requester_views::detail(engine, &session, &query, id)?
+                } else if let Some(id) = path
                     .strip_prefix("/ui/jobs/")
                     .filter(|id| forms::valid_id(id, false))
                 {
@@ -296,6 +306,48 @@ impl Web {
         session: &Session,
     ) -> Result<Response> {
         match path {
+            "/ui/requesters/sync" => {
+                form.only(&["csrf"])?;
+                engine.sync_requesters()?;
+                self.redirect(
+                    session,
+                    "/ui/requesters",
+                    vec![
+                        "Plex accounts polled. Each account retains its own result and cursor"
+                            .into(),
+                    ],
+                )
+            }
+            "/ui/requesters/control" => {
+                let id = form.value("account_id")?;
+                if !crate::requesters::valid_id(id) {
+                    return Err("Invalid requester account".into());
+                }
+                if form.value("apply")? == "yes" {
+                    form.only(&["csrf", "account_id", "action", "plan_id", "apply"])?;
+                    let query = lock(&self.sessions)?.requester_preview(
+                        &session.id,
+                        id,
+                        form.value("action")?,
+                        form.value("plan_id")?,
+                    )?;
+                    engine.requester_control(id, &query)?;
+                    lock(&self.sessions)?.clear_requester_preview(&session.id);
+                    return self.redirect(session,&format!("/ui/requesters/{id}"),vec!["Reviewed requester decision recorded. Compatible demand and imported files are retained".into()]);
+                }
+                let mut query = requester_views::query(form)?;
+                let report = engine.requester_control(id, &query)?;
+                query.apply = true;
+                query.plan_id = report
+                    .get("plan_id")
+                    .and_then(crate::json::Value::as_str)
+                    .map(str::to_owned);
+                lock(&self.sessions)?.save_requester_preview(&session.id, id, query)?;
+                Ok(Response::html(
+                    200,
+                    requester_views::review(session, id, &report),
+                ))
+            }
             "/ui/jobs/pack-mapping" => {
                 form.only(&["csrf", "id", "file_path"])?;
                 let ids = form.ids(false)?;

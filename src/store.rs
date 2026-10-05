@@ -516,8 +516,10 @@ impl Job {
                 Some(value) => Some(SharedUpgrade::from_json(value)?),
             },
         };
-        if let Some(p)=&job.requester {
-            if !matches!(job.request.kind.as_str(), "movie" | "episode") || p.demand_id != crate::requesters::Demand::identity(&p.account_id, &job.request) {
+        if let Some(p) = &job.requester {
+            if !matches!(job.request.kind.as_str(), "movie" | "episode")
+                || p.demand_id != crate::requesters::Demand::identity(&p.account_id, &job.request)
+            {
                 return Err("Invalid requester media identity or captured provenance".into());
             }
         }
@@ -931,9 +933,6 @@ impl Store {
         let parent = self
             .get(parent_id)
             .ok_or_else(|| "unknown upgrade parent".to_owned())?;
-        if parent.requester != job.requester {
-            return Err("Upgrade requester provenance is immutable".into());
-        }
         if parent.shared_file.is_some() {
             return Err("Shared-file owners require a coordinated group upgrade; individual upgrades are blocked".into());
         }
@@ -1412,7 +1411,12 @@ impl Store {
             {
                 return Err("Pack mapping conflicts with an existing request".into());
             }
-            if let Some(p)=&requester && existing.requester.as_ref().is_none_or(|old|old.capture!=p.capture) {
+            if let Some(p) = &requester
+                && existing
+                    .requester
+                    .as_ref()
+                    .is_none_or(|old| old.capture != p.capture)
+            {
                 return Err("Requester admission cannot rebind existing job policy".into());
             }
             return Ok(existing);
@@ -1744,6 +1748,9 @@ impl Store {
             .jobs
             .get(parent_id)
             .ok_or_else(|| "missing upgrade parent".to_owned())?;
+        if parent.requester != job.requester {
+            return Err("Upgrade requester provenance is immutable".into());
+        }
         if parent.shared_file.is_some() {
             return Err("Individual upgrades cannot replace shared-file owners".into());
         }
@@ -2414,6 +2421,11 @@ impl Store {
                     self.validate_transaction(job, legacy_record)
                         .map_err(|error| format!("invalid journal job: {error}"))?;
                     self.validate_group_single(job)?;
+                }
+                if jobs.iter().any(|j| j.requester.is_some())
+                    && &header[..8] != REQUESTER_JOURNAL_MAGIC
+                {
+                    return Err("Requester provenance requires journal format 4".into());
                 }
                 for job in jobs {
                     self.index_shared(&job);

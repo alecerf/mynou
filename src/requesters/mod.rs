@@ -21,6 +21,38 @@ pub const MAX_DEMANDS: usize = 10_000;
 pub const MAX_POLL_ITEMS: usize = 512;
 pub const MAX_NOTIFICATIONS: usize = 1_000;
 
+pub fn page(query: &str) -> Result<(usize, usize)> {
+    let mut offset = 0;
+    let mut limit = 100;
+    let mut seen = BTreeSet::new();
+    if !query.is_empty() {
+        for pair in query.split('&') {
+            let (key, value) = pair
+                .split_once('=')
+                .ok_or("Requester: invalid page query")?;
+            if !["offset", "limit"].contains(&key)
+                || !seen.insert(key)
+                || value.is_empty()
+                || !value.bytes().all(|b| b.is_ascii_digit())
+            {
+                return Err("Requester: unknown or duplicate page field".into());
+            }
+            let value = value
+                .parse::<usize>()
+                .map_err(|_| "Requester: invalid page bound")?;
+            if key == "offset" {
+                offset = value
+            } else {
+                limit = value
+            }
+        }
+    }
+    if offset > MAX_DEMANDS || limit == 0 || limit > 200 {
+        return Err("Requester: page bounds exceeded".into());
+    }
+    Ok((offset, limit))
+}
+
 pub(crate) fn digest(bytes: &[u8]) -> String {
     sha256(bytes).iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -162,6 +194,11 @@ impl Settings {
             if accounts.len() >= MAX_ACCOUNTS
                 || !valid_id(&account.id)
                 || !ids.insert(account.id.clone())
+                || account
+                    .expected_user_id
+                    .parse::<u64>()
+                    .ok()
+                    .is_none_or(|n| n == 0 || n.to_string() != account.expected_user_id)
                 || account.expected_user_id.is_empty()
                 || account.expected_user_id.len() > 32
                 || !account.expected_user_id.bytes().all(|b| b.is_ascii_digit())

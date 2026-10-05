@@ -68,9 +68,10 @@ impl Engine {
         read_only: bool,
     ) -> Result<Arc<Self>> {
         let series_store = crate::series::SeriesStore::open(&config.store_dir, read_only)?;
-        let requester_store =
+        let mut requester_store =
             crate::requesters::RequesterStore::open(&config.store_dir, &config, read_only)?;
         crate::requesters::engine::validate_storage(&requester_store.state, &store)?;
+        requester_store.initialize()?;
         if !read_only {
             crate::requesters::engine::cancel_unwanted(
                 &requester_store.state,
@@ -144,12 +145,14 @@ impl Engine {
                 .iter()
                 .map(|episode| series.episode_request(episode).media_key())
                 .collect();
-            return Ok(lock(&self.store)?
+            let jobs = lock(&self.store)?
                 .list()
                 .into_iter()
                 .filter(|job| keys.contains(&job.request.media_key()))
                 .take(64)
-                .collect());
+                .collect::<Vec<_>>();
+            self.requester_operator_interest(&jobs)?;
+            return Ok(jobs);
         }
         let requests = integrations::expand(&self.config, &request)?;
         let jobs = {
@@ -588,13 +591,16 @@ impl Engine {
                 .resume_if_allowed(id)?;
         }
         if config.plex.enabled
-            && job.requester.is_none()
             && job.imports.is_empty()
             && job.files.is_empty()
             && job.acquisition_url.is_none()
             && job.request.source_path.is_none()
             && job.request.source_url.is_none()
-            && integrations::available(&config, &job.request)?
+            && if job.requester.is_some() {
+                integrations::available_destination(&config, &job.request)?
+            } else {
+                integrations::available(&config, &job.request)?
+            }
         {
             job.state = "ready".into();
             job.progress = 1.0;

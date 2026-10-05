@@ -256,6 +256,11 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
         ("GET", "/api/transfers") => Ok((200, engine.transfers()?)),
         ("GET", "/api/library") => Ok((200, engine.library()?)),
         ("GET", "/api/series") => Ok((200, engine.series()?)),
+        ("GET", "/api/requesters") => Ok((200, engine.requesters()?)),
+        ("POST", "/api/requesters/sync") => {
+            control_body(body, &[], true)?;
+            Ok((200, engine.sync_requesters()?))
+        }
         ("POST", "/api/series") => {
             let value = control_body(
                 body,
@@ -318,6 +323,33 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
             Ok((200, v))
         }
         _ => {
+            if let Some(tail) = path.strip_prefix("/api/requesters/") {
+                let (tail, query) = tail.split_once('?').unwrap_or((tail, ""));
+                let parts: Vec<_> = tail.split('/').collect();
+                if !crate::requesters::valid_id(parts[0]) {
+                    return Ok((404, error("Unknown requester account")));
+                }
+                if method == "GET" && parts.len() == 1 {
+                    let (offset, limit) = crate::requesters::page(query)?;
+                    return Ok((200, engine.requester(parts[0], offset, limit)?));
+                }
+                if method == "POST" && parts.len() == 2 && parts[1] == "control" && query.is_empty()
+                {
+                    let v = control_body(
+                        body,
+                        &["action", "policy", "demand_id", "apply", "plan_id"],
+                        false,
+                    )?;
+                    return Ok((
+                        200,
+                        engine.requester_control(
+                            parts[0],
+                            &crate::requesters::ControlRequest::from_json(&v)?,
+                        )?,
+                    ));
+                }
+                return Ok((404, error("Unknown requester route")));
+            }
             if method == "GET" && (path == "/api/calendar" || path.starts_with("/api/calendar?")) {
                 let query = crate::series::CalendarQuery::parse(
                     path.split_once('?').map_or("", |(_, query)| query),

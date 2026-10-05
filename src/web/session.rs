@@ -26,6 +26,13 @@ struct GroupPreview {
 }
 
 #[derive(Clone)]
+struct RequesterPreview {
+    account_id: String,
+    query: crate::requesters::ControlRequest,
+    expires: Instant,
+}
+
+#[derive(Clone)]
 pub struct Session {
     pub id: String,
     pub csrf: String,
@@ -37,6 +44,7 @@ pub struct Session {
     attempts: u8,
     shared_preview: Option<SharedPreview>,
     group_preview: Option<GroupPreview>,
+    requester_preview: Option<RequesterPreview>,
 }
 
 pub struct Sessions(BTreeMap<String, Session>);
@@ -85,6 +93,7 @@ impl Sessions {
             attempts: 0,
             shared_preview: None,
             group_preview: None,
+            requester_preview: None,
         };
         self.0.insert(session.id.clone(), session.clone());
         Ok(session)
@@ -148,6 +157,57 @@ impl Sessions {
     }
 
     /// Keep source credentials server-side, with one bounded review per session.
+    pub fn save_requester_preview(
+        &mut self,
+        id: &str,
+        account_id: &str,
+        query: crate::requesters::ControlRequest,
+    ) -> Result<()> {
+        query.validate()?;
+        if !query.apply {
+            return Err("Requester review requires its apply guard".into());
+        }
+        self.purge();
+        let session = self
+            .0
+            .get_mut(id)
+            .filter(|s| s.origin.is_some())
+            .ok_or("Browser session expired")?;
+        session.requester_preview = Some(RequesterPreview {
+            account_id: account_id.into(),
+            query,
+            expires: Instant::now() + Duration::from_secs(CHALLENGE_SECS),
+        });
+        session.shared_preview = None;
+        session.group_preview = None;
+        Ok(())
+    }
+    pub fn requester_preview(
+        &mut self,
+        id: &str,
+        account_id: &str,
+        action: &str,
+        plan_id: &str,
+    ) -> Result<crate::requesters::ControlRequest> {
+        self.purge();
+        self.0
+            .get(id)
+            .and_then(|s| s.requester_preview.as_ref())
+            .filter(|p| {
+                p.expires > Instant::now()
+                    && p.account_id == account_id
+                    && p.query.action == action
+                    && p.query.plan_id.as_deref() == Some(plan_id)
+            })
+            .map(|p| p.query.clone())
+            .ok_or("Requester browser review expired or changed; preview again".into())
+    }
+    pub fn clear_requester_preview(&mut self, id: &str) {
+        if let Some(s) = self.0.get_mut(id) {
+            s.requester_preview = None;
+        }
+    }
+
     pub fn save_shared_preview(
         &mut self,
         id: &str,
@@ -170,6 +230,7 @@ impl Sessions {
             expires: Instant::now() + Duration::from_secs(CHALLENGE_SECS),
         });
         session.group_preview = None;
+        session.requester_preview = None;
         Ok(())
     }
     pub fn shared_preview(
@@ -218,6 +279,7 @@ impl Sessions {
             expires: Instant::now() + Duration::from_secs(CHALLENGE_SECS),
         });
         session.shared_preview = None;
+        session.requester_preview = None;
         Ok(())
     }
     pub fn group_preview(
@@ -278,6 +340,60 @@ fn nonce() -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn requester_reviews_expire_and_are_bound_to_account_action_and_session() {
+        let mut sessions = Sessions::new();
+        let challenge = sessions.challenge("localhost").unwrap();
+        let session = sessions
+            .login(&challenge.id, &challenge.csrf, "http://localhost", true)
+            .unwrap()
+            .unwrap();
+        let query = crate::requesters::ControlRequest {
+            action: "remove".into(),
+            policy: None,
+            demand_id: Some("a".repeat(64)),
+            apply: true,
+            plan_id: Some("b".repeat(64)),
+        };
+        sessions
+            .save_requester_preview(&session.id, "alice", query.clone())
+            .unwrap();
+        assert!(
+            sessions
+                .requester_preview(&session.id, "bob", "remove", &"b".repeat(64))
+                .is_err()
+        );
+        assert!(
+            sessions
+                .requester_preview(&session.id, "alice", "approve", &"b".repeat(64))
+                .is_err()
+        );
+        assert!(
+            sessions
+                .requester_preview("other", "alice", "remove", &"b".repeat(64))
+                .is_err()
+        );
+        assert_eq!(
+            sessions
+                .requester_preview(&session.id, "alice", "remove", &"b".repeat(64))
+                .unwrap(),
+            query
+        );
+        sessions
+            .0
+            .get_mut(&session.id)
+            .unwrap()
+            .requester_preview
+            .as_mut()
+            .unwrap()
+            .expires = Instant::now();
+        assert!(
+            sessions
+                .requester_preview(&session.id, "alice", "remove", &"b".repeat(64))
+                .is_err()
+        );
+    }
 
     #[test]
     fn login_rotates_identifiers_and_expiration_cannot_be_refreshed_by_reads() {

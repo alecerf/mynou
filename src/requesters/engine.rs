@@ -293,7 +293,9 @@ impl Engine {
                         || d.job_id.is_none()
                         || matches!(d.state.as_str(), "removed" | "rejected")
                     {
-                        return Err("Requester: retry requires retained approved acquisition".into());
+                        return Err(
+                            "Requester: retry requires retained approved acquisition".into()
+                        );
                     }
                     let job = jobs
                         .get(d.job_id.as_deref().ok_or("Requester: missing job")?)
@@ -592,7 +594,11 @@ impl Engine {
         Ok(())
     }
     pub(crate) fn requester_reconcile(&self) -> Result<()> {
-        if self.config.requesters.accounts.is_empty() && lock(&self.requester_store)?.state.accounts.is_empty() { return Ok(()) }
+        if self.config.requesters.accounts.is_empty()
+            && lock(&self.requester_store)?.state.accounts.is_empty()
+        {
+            return Ok(());
+        }
         if self.read_only {
             return Ok(());
         }
@@ -651,7 +657,10 @@ impl Engine {
         let _sync = lock(&self.sync_lock)?;
         let deadline = Instant::now() + Duration::from_secs(90);
         let mut reports = Vec::new();
-        for account in &self.config.requesters.accounts {
+        let attempted = lock(&self.requester_store)?.state.accounts.clone();
+        let mut accounts: Vec<_> = self.config.requesters.accounts.iter().collect();
+        accounts.sort_by_key(|a| (attempted[&a.id].polled_at, a.id.clone()));
+        for account in accounts {
             let previous = lock(&self.requester_store)?
                 .state
                 .accounts
@@ -664,6 +673,10 @@ impl Engine {
             } else {
                 integrations::requester_watchlist(&self.config, account, account_deadline)
                     .and_then(|items| self.expand_requester_items(&items, account_deadline))
+                    .and_then(|items| {
+                        previous.policy.validate_config(&self.config)?;
+                        Ok(items)
+                    })
             };
             let mut report = Value::object();
             report.insert("account_id", account.id.clone());
@@ -780,7 +793,9 @@ impl Engine {
                         .accounts
                         .get_mut(&account.id)
                         .ok_or("Requester: missing account")?;
-                    current.polled_at = store::now();
+                    if error != "Plex account poll deadline reached" {
+                        current.polled_at = store::now();
+                    }
                     current.last_error = Some(error.clone());
                     report.insert("error", error);
                     report.insert("success", false);
@@ -858,6 +873,21 @@ impl Engine {
 }
 
 pub(crate) fn validate_storage(state: &State, jobs: &Store) -> Result<()> {
+    for d in state.demands.values() {
+        if let Some(id) = &d.job_id {
+            let job = jobs
+                .get(id)
+                .ok_or("Requester: recorded acquisition is missing")?;
+            if job.request.media_key() != d.request.media_key()
+                || job
+                    .requester
+                    .as_ref()
+                    .is_some_and(|p| p.capture != d.capture)
+            {
+                return Err("Requester: acquisition differs from retained demand".into());
+            }
+        }
+    }
     for job in jobs.list() {
         if let Some(p) = &job.requester {
             let d = state

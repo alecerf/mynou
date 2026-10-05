@@ -1565,6 +1565,55 @@ pub fn available(config: &Config, request: &Request) -> Result<bool> {
     plex_available(config, request, playable)
 }
 
+/// Existing Plex media can fulfill routed demand only below its captured root.
+pub(crate) fn available_destination(config: &Config, request: &Request) -> Result<bool> {
+    let root = if request.kind == "episode" {
+        &config.series_root
+    } else {
+        &config.movies_root
+    };
+    let text = root.to_str().ok_or("Plex: invalid routed library root")?;
+    let root = absolute_path_components(text).ok_or("Plex: invalid routed library root")?;
+    let mut routes = Vec::new();
+    for mapping in &config.plex.path_mappings {
+        routes.push((
+            absolute_path_components(&mapping.mynou_prefix).ok_or("Plex: invalid path mapping")?,
+            absolute_path_components(&mapping.plex_prefix).ok_or("Plex: invalid path mapping")?,
+        ));
+    }
+    routes.sort_by_key(|(from, _)| std::cmp::Reverse(from.len()));
+    let expected = routes
+        .iter()
+        .find(|(from, _)| root.starts_with(from))
+        .map_or_else(
+            || root.clone(),
+            |(from, to)| {
+                let mut result = to.clone();
+                result.extend_from_slice(&root[from.len()..]);
+                result
+            },
+        );
+    plex_available(config, request, |item| {
+        item.get("Media")
+            .and_then(Value::as_array)
+            .is_some_and(|media| {
+                media.iter().any(|m| {
+                    m.get("Part")
+                        .and_then(Value::as_array)
+                        .is_some_and(|parts| {
+                            parts.iter().any(|p| {
+                                string(p, "file")
+                                    .and_then(absolute_path_components)
+                                    .is_some_and(|path| {
+                                        path.len() > expected.len() && path.starts_with(&expected)
+                                    })
+                            })
+                        })
+                })
+            })
+    })
+}
+
 /// Checks Plex for every newly imported path, rather than accepting an older
 /// playable copy of the same movie or episode. Paths use absolute POSIX
 /// components; they are never compared by basename or suffix.
