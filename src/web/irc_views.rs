@@ -17,14 +17,27 @@ pub(super) fn list(engine: &Arc<Engine>, session: &Session, query: &Form) -> Res
     let sources = engine.irc_sources()?;
     let report = engine.irc_announcements(offset, limit)?;
     let mut body = String::from(
-        "<section class=panel><h1>IRC announcements</h1><p>Receive configured announcements, inspect filters and record audit reviews. Explicit grab rules route verified candidates to existing approved requests. Reviews do not authorize downloads.</p><h2>Sources</h2><table><thead><tr><th>Source</th><th>Channel</th><th>Connection</th><th>Received</th><th>Duplicates</th></tr></thead><tbody>",
+        "<section class=panel><h1>IRC announcements</h1><p>Receive configured announcements, inspect filters and record audit reviews. Explicit grab rules route verified candidates to existing approved requests. Reviews do not authorize downloads.</p><h2>Sources</h2><table><thead><tr><th>Source</th><th>Channel</th><th>Authentication</th><th>Connection</th><th>Received</th><th>Duplicates</th></tr></thead><tbody>",
     );
     for s in array(sources.get("sources").unwrap_or(&Value::Null)) {
         let h = s.get("health").unwrap_or(&Value::Null);
         body.push_str(&format!(
-            "<tr><td>{}</td><td>{}</td><td>{} {}</td><td>{}</td><td>{}</td></tr>",
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{} {}</td><td>{}</td><td>{}</td></tr>",
             e(text(s, "id")),
             e(text(s, "channel")),
+            if text(s, "authentication") == "sasl_plain" {
+                if s.get("health")
+                    .and_then(|h| h.get("sasl_authenticated"))
+                    .and_then(Value::as_bool)
+                    == Some(true)
+                {
+                    "SASL authenticated"
+                } else {
+                    "SASL required"
+                }
+            } else {
+                "No SASL"
+            },
             display(text(h, "phase")),
             display(text(h, "last_error")),
             scalar(h, "received"),

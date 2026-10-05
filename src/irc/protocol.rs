@@ -116,6 +116,7 @@ impl Decoder {
 pub enum Event {
     Ignore,
     Reply(String),
+    Authenticate,
     Join,
     Joined,
     Announcement(String),
@@ -124,16 +125,22 @@ pub struct Protocol {
     source: super::Source,
     registered: bool,
     joined: bool,
+    authentication: super::sasl::Negotiation,
 }
 impl Protocol {
     pub fn new(source: super::Source) -> Self {
+        let authentication = super::sasl::Negotiation::new(source.sasl.is_some());
         Self {
             source,
             registered: false,
             joined: false,
+            authentication,
         }
     }
     pub fn receive(&mut self, m: &Message) -> Result<Event> {
+        if let Some(event) = self.authentication.receive(m, &self.source.nickname)? {
+            return Ok(event);
+        }
         match m.command.as_str() {
             "PING" if (1..=2).contains(&m.params.len()) => Ok(Event::Reply(format!(
                 "PONG :{}",

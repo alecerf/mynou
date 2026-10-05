@@ -26,11 +26,13 @@ pub(crate) struct Health {
     last_received: u64,
     last_error: Option<String>,
     retry_in_secs: u64,
+    sasl_authenticated: bool,
 }
 impl Health {
     pub(crate) fn to_json(&self) -> Value {
         let mut v = Value::object();
         v.insert("phase", self.phase.clone());
+        v.insert("sasl_authenticated", self.sasl_authenticated);
         for (k, n) in [
             ("attempts", self.attempts),
             ("received", self.received),
@@ -74,6 +76,7 @@ impl Runtime {
                             last_received: 0,
                             last_error: None,
                             retry_in_secs: 0,
+                            sasl_authenticated: false,
                         },
                     )
                 })
@@ -91,6 +94,9 @@ fn health(engine: &Engine, id: &str, phase: &str, error: Option<&str>, delay: u6
         h.phase = phase.into();
         h.last_error = error.map(str::to_owned);
         h.retry_in_secs = delay;
+        if matches!(phase, "connecting" | "backoff" | "stopped") {
+            h.sasl_authenticated = false;
+        }
     }
 }
 pub(crate) fn start(engine: &Arc<Engine>, handles: &mut Vec<JoinHandle<()>>) {
@@ -227,6 +233,11 @@ fn send(stream: &mut Stream, line: &str) -> Result<()> {
 fn connected(engine: &Engine, source: &Source) -> Result<()> {
     let password = credential(&source.password_env)?;
     let key = credential(&source.join_key_env)?;
+    let mut authentication = source
+        .sasl
+        .as_ref()
+        .map(super::sasl::Settings::commands)
+        .transpose()?;
     let (url, tls) = source.endpoint()?;
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut socket = None;
@@ -271,6 +282,9 @@ fn connected(engine: &Engine, source: &Source) -> Result<()> {
     health(engine, &source.id, "registering", None, 0);
     if let Some(password) = password {
         send(&mut stream, &format!("PASS {password}"))?;
+    }
+    if source.sasl.is_some() {
+        send(&mut stream, "CAP LS 302")?;
     }
     send(&mut stream, &format!("NICK {}", source.nickname))?;
     send(&mut stream, &format!("USER {} 0 * :Mynou", source.nickname))?;
@@ -320,7 +334,25 @@ fn connected(engine: &Engine, source: &Source) -> Result<()> {
             }
             match protocol.receive(&message)? {
                 Event::Ignore => {}
-                Event::Reply(reply) => send(&mut stream, &reply)?,
+                Event::Reply(reply) => {
+                    send(&mut stream, &reply)?;
+                    if reply == "AUTHENTICATE PLAIN" {
+                        health(engine, &source.id, "authenticating", None, 0);
+                    } else if reply == "CAP END" {
+                        if let Some(h) = lock(&engine.irc_runtime)?.health.get_mut(&source.id) {
+                            h.sasl_authenticated = true;
+                        }
+                        health(engine, &source.id, "registering", None, 0);
+                    }
+                }
+                Event::Authenticate => {
+                    for command in authentication
+                        .take()
+                        .ok_or("IRC: SASL response already sent")?
+                    {
+                        send(&mut stream, &command)?;
+                    }
+                }
                 Event::Join => {
                     health(engine, &source.id, "joining", None, 0);
                     send(

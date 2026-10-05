@@ -4,9 +4,11 @@ mod engine;
 mod persistence;
 pub mod protocol;
 pub(crate) mod routing;
+pub(crate) mod sasl;
 use crate::{Result, crypto::sha256, json::Value, selection::SelectionConfig, store::Request};
 pub(crate) use persistence::AnnouncementStore;
 pub use routing::Origin;
+pub use sasl::Settings as Sasl;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub const MAX_RECORDS: usize = 1000;
@@ -164,6 +166,7 @@ pub struct Source {
     pub sender: String,
     pub password_env: Option<String>,
     pub join_key_env: Option<String>,
+    pub sasl: Option<Sasl>,
     pub magnet_template: Option<String>,
     pub idle_timeout_secs: u64,
     pub reconnect_min_secs: u64,
@@ -208,6 +211,7 @@ impl Source {
                 "sender",
                 "password_env",
                 "join_key_env",
+                "sasl",
                 "magnet_template",
                 "idle_timeout_secs",
                 "reconnect_min_secs",
@@ -225,6 +229,10 @@ impl Source {
             sender: text(v, "sender")?,
             password_env: variable(v, "password_env")?,
             join_key_env: variable(v, "join_key_env")?,
+            sasl: match v.get("sasl") {
+                None | Some(Value::Null) => None,
+                Some(v) => Some(Sasl::from_json(v)?),
+            },
             magnet_template: match v.get("magnet_template") {
                 None | Some(Value::Null) => None,
                 Some(v) => Some(
@@ -283,6 +291,9 @@ impl Source {
             "join_key_env",
             self.join_key_env.clone().map_or(Value::Null, Value::from),
         );
+        if let Some(sasl) = &self.sasl {
+            v.insert("sasl", sasl.configuration());
+        }
         digest(crate::json::stringify(&v).as_bytes())
     }
     pub fn public_json(&self) -> Value {
@@ -292,6 +303,14 @@ impl Source {
         v.insert("channel", self.channel.clone());
         v.insert("tls_required", self.url.starts_with("ircs://"));
         v.insert("magnet_configured", self.magnet_template.is_some());
+        v.insert(
+            "authentication",
+            if self.sasl.is_some() {
+                "sasl_plain"
+            } else {
+                "none"
+            },
+        );
         v
     }
 }
