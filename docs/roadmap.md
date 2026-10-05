@@ -5,7 +5,21 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current stage: 0.16.0
+## Current stage: 0.17.0 implementation
+
+Explicit shared-file preview/apply binds one authenticated video to 2–64
+consecutive canonical owners in one season. All owners commit in one synchronized
+journal frame before acquisition and import one deterministic Plex range file.
+Each owner confirms that exact path; cancellation, retry and later subsets retain
+the full binding. Individual remaps, baselines and upgrades are blocked for shared
+owners until coordinated group replacement is available. See
+[shared files](shared-files.md).
+
+The implementation is committed; complete GitHub Actions validation and CI
+publication must pass before the next release begins. Existing v0.16 evidence
+below does not validate these changes. No local validation is permitted.
+
+## Previous stage: 0.16.0
 
 Explicit numbering choices retain canonical episode identities while approving
 changed catalog numbers or alternate/absolute source labels. CLI/API/browser
@@ -158,12 +172,12 @@ promised before implementation and measurement.
 
 | Planned release | Scope | Evidence required before continuing |
 | --- | --- | --- |
-| 0.17 | Shared multi-episode physical files | Retained numbering choices, shared import ownership and safe existing-library identities |
-| 0.18 | Plex users, approvals, quotas, routing and notification preferences | User ownership and limits remain enforced across polling, retries and restart |
-| 0.19 | IRC announcements, immediate grabs, filters, action routing and notifications | Bounded announcement parsing, reconnect/backoff, duplicate suppression and auditable rule decisions |
-| 0.20 | Native indexer adapters, login/session management, source health and configuration | Per-adapter protocol fixtures, credential redaction, rate limits and safe session renewal |
-| 0.21 | Usenet search/acquisition and management | Native protocol support, bounded message processing, integrity/recovery and explicit format limits without external helpers |
-| 0.22 | Cross-seeding and further bulk automation | Verified content identity and safe reuse of existing files; no accidental extra acquisition or library overwrite |
+| 0.18 | Coordinated shared-group replacements and guarded range mapping | Prior imports stay current until every required replacement is verified and confirmed; no partial promotion or ownership reassignment |
+| 0.19 | Plex users, approvals, quotas, routing and notification preferences | User ownership and limits remain enforced across polling, retries and restart |
+| 0.20 | IRC announcements, immediate grabs, filters, action routing and notifications | Bounded announcement parsing, reconnect/backoff, duplicate suppression and auditable rule decisions |
+| 0.21 | Native indexer adapters, login/session management, source health and configuration | Per-adapter protocol fixtures, credential redaction, rate limits and safe session renewal |
+| 0.22 | Usenet search/acquisition and management | Native protocol support, bounded message processing, integrity/recovery and explicit format limits without external helpers |
+| 0.23 | Cross-seeding and further bulk automation | Verified content identity and safe reuse of existing files; no accidental extra acquisition or library overwrite |
 
 Each stage needs meaningful automated checks and an updated support matrix.
 Tests use synthetic content and local peers/services. Compatibility with a

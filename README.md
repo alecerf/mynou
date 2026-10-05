@@ -1,4 +1,4 @@
-# Mynou 0.16.0 — Rust, standard library only
+# Mynou 0.17.0 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -13,8 +13,9 @@ network integrations.
 
 Explicit [episode numbering](docs/numbering.md) separates source/catalog labels
 from retained library identities. Preview and apply choices through CLI/API/browser;
-existing jobs and imports keep their original numbers. Shared multi-episode files
-are the following release stage.
+existing jobs and imports keep their original numbers. Explicit
+[shared video ownership](docs/shared-files.md) now binds consecutive episodes to
+one authenticated torrent path and one Plex range file, with guarded preview/apply.
 
 ## Try it
 
@@ -48,8 +49,8 @@ from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, o
 build the image from the source archive:
 
 ```sh
-docker load -i mynou-v0.16.0-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.16.0 .
+docker load -i mynou-v0.17.0-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.17.0 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d
@@ -104,6 +105,10 @@ ownership, shared Plex paths, and installation without Rust on the host.
   files must cover every eligible missing episode. CLI/API/browser previews and
   guarded apply bind catalog scope, source hash and exact mappings. Optional
   `series_packs.enabled` prefers packs during monitoring with individual fallback.
+- Explicit shared videos bind 2–64 consecutive canonical episodes to one
+  authenticated torrent path and one Plex range import. Guarded CLI/API/browser
+  preview/apply records all owners atomically; cancellation, retry and subset
+  requests preserve that ownership. Shared owners require group upgrades.
 - Browser management at `/ui`: search/request forms, jobs/history, owned library
   monitoring and upgrades, transfer controls, filters, pagination and bounded
   bulk actions with individual results. Rust renders all pages without scripts

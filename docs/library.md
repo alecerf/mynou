@@ -1,5 +1,11 @@
 # Library monitoring and controlled upgrades
 
+Shared multi-episode imports use [group ownership](shared-files.md). Individual
+baselines and upgrades are blocked for those owners in 0.17; preview/apply reports
+`shared_group_upgrade_required`. Earlier imports remain current until coordinated
+group replacement is implemented. The individual upgrade rules below apply to
+ordinary single-episode and movie imports.
+
 Mynou 0.8.0 adds a view of its own ready imports, per-entry monitoring, quality
 cutoffs, and upgrade requests. A replacement becomes current only after its
 download, import and required Plex confirmation complete. The earlier ready

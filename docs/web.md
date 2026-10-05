@@ -19,7 +19,7 @@ been independently reviewed.
 | Jobs | Title/identifier and state filters, progress, details, recent history, cancel and retry |
 | Library | Current owned imports, monitoring, missing files/baselines, pending upgrades |
 | Search | Preview movie/episode selection with reasons; record movie, episode, series or file requests |
-| Series | Track scopes with optional acquisition, monitoring/specials, earliest air date, episode choices, catalog refresh, explicit mapped packs, guarded automatic pack previews and reviewed numbering choices |
+| Series | Track scopes with optional acquisition, monitoring/specials, earliest air date, episode choices, catalog refresh, explicit mapped packs, guarded automatic pack previews, reviewed numbering choices and shared video ownership |
 | Calendar | Filter known episode dates by window and series, inspect monitoring and request states |
 | Transfers | Native queue, durable pause/resume, queue/file priorities, payload counters and seeding policies |
 
@@ -128,3 +128,10 @@ outside this release.
 Episode numbering in series details previews catalog/source choices before the
 guarded **Save reviewed numbering** action. See [numbering](numbering.md) for
 identity preservation, larger CLI/API decisions and exact bounds.
+
+**One video for multiple episodes** previews authenticated metadata and the full
+canonical owner range before **Record reviewed shared ownership**. Source
+credentials stay server-side in one ten-minute review per session. Group import
+and exact Plex path confirmation are shared; each episode retains its own job
+state. Individual remapping and upgrades are blocked for shared owners. See
+[shared files](shared-files.md) for reuse, cancellation and persistence rules.

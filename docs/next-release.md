@@ -1,4 +1,4 @@
-# Next-release checkpoint — 0.17 shared multi-episode files
+# Next-release checkpoint — 0.18 coordinated shared-group replacements
 
 v0.16 implements explicit numbering: retained catalog IDs keep canonical library
 numbers while approved catalog/source labels may change. CLI/API/browser preview
@@ -59,29 +59,41 @@ persist before acquisition; apply itself queues no jobs. Source labels affect
 queries, title matching and file selection. Import/Plex checks stay canonical.
 Alternate source labels currently require explicit pack mappings.
 
-## Define shared physical ownership before accepting duplicate pack paths
+## Shared ownership implemented in 0.17; validate before continuing
 
-One verified video can represent several logical episodes. Keep the existing
-one-file-per-episode validator until durable shared import ownership is complete.
-Media metadata is not a decoder or a means to split videos. Retain sources and
-earlier imports; overwriting and automatic deletion remain outside this stage.
+The 0.17 implementation now records a bounded authenticated torrent/path,
+canonical owner range and one deterministic Plex destination. All new owners
+commit atomically; runtime claims are serialized per group. Selected-file
+verification, no-overwrite imports, individual exact Plex checks, queued-owner
+cancellation interests, retry/restart and subset reuse retain the binding.
+Format 2 rejects silent downgrade. CLI/API/browser apply guards repeat metadata
+inspection; browser source credentials remain server-side for ten minutes.
+See [shared files](shared-files.md). Its complete Actions run and CI publication
+remain required before beginning 0.18; earlier green runs do not validate it.
 
-1. Bind a bounded physical identity to authenticated torrent hash, exact path and
-   canonical logical owners. Define consecutive episode/season rules and a
-   deterministic Plex naming convention while preserving numbering anchors.
-2. Persist ownership before acquisition. Concurrent imports, retry and restart
-   must reuse one verified shared path without duplicate copies or overwrites.
-   Define how later requests for only some owners interact with prior ownership.
-3. Confirm the exact Plex path for every owner. Cancellation retains interests
-   and paths required by others; retries cannot reassign physical bytes.
-4. Define upgrades before allowing shared owners into individual upgrade logic.
-   Keep earlier versions current until all required replacements are ready.
-5. Add guarded explicit CLI/API/browser preview/apply before loosening duplicate
-   pack paths or automatic mapping. Preserve source/hash guards, selected-file
-   verification and the 64-job acquisition batch.
-6. Add original CI cases for concurrent shared import, cancellation, partial
-   ownership, restart, stale plans, Plex confirmation and upgrades. Split further
-   if a concrete smaller release can be independently validated.
+Individual shared remaps, baselines and upgrades remain blocked. Automatic packs
+and ordinary mapped packs still require unique single-episode files. This gives
+0.17 an independently usable scope without partially replacing shared owners.
+
+## Implement coordinated group replacements in 0.18
+
+1. Define immutable old-group to replacement-group lineage, whole-group release
+   baselines and quality decisions. Capture the complete canonical owner set;
+   a partial request cannot implicitly discard other owners.
+2. Persist every replacement and its full lineage before acquisition in one
+   bounded transaction. Keep old entries current until all required replacements
+   complete native verification, import and exact Plex confirmation.
+3. Make group promotion atomic, recoverable and idempotent across worker races,
+   retry, cancellation, monitoring changes and restart. Retain all earlier bytes;
+   no overwrite or automatic deletion. Define shared-to-individual replacements
+   before exposing them.
+4. Add guarded CLI/API/browser preview/apply for the coordinated operation.
+   Automatic range-file recognition can follow only when it obeys that ownership
+   and complete-scope model. Alternate source numbering remains explicit.
+5. Add original synthetic CI cases for incomplete groups, stale policy/source
+   guards, partial Plex confirmation, failed/cancelled replacements, retries,
+   restart and terminal promotion. Keep the 64-job action bound and complete
+   Cargo harness execution.
 
 ## Release acceptance and handoff
 

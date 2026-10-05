@@ -163,9 +163,10 @@ escaped in HTML; actual acquisition still uses the private retained path.
 
 Automatic season-pack search/ranking and strict numbered-file mapping are
 available through the [automatic pack flow](automatic-packs.md). Selection
-contraction, multi-episode videos, alternate catalog-number mappings and general
-anime numbering remain a following stage. Explicit file mapping does not imply
-a general numbering system or complete Sonarr parity. Mynou preserves
+contraction and automatic anime/range inference remain later work. Explicit
+[numbering choices](numbering.md) and dedicated [shared-file ownership](shared-files.md)
+are available; this ordinary pack action still requires different files per
+episode. These focused features do not establish complete Sonarr parity. Mynou preserves
 Rust std only, zero Cargo dependencies and CI-only validation.
 
 [Series monitoring](series.md) · [Transfer controls](transfers.md) ·

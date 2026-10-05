@@ -102,8 +102,16 @@ The complete CI/publication passed with 430 Rust tests across 36 targets and fou
 scheduler checks. The exact evidence is recorded below.
 See [numbering](numbering.md).
 
-Multi-episode videos, automatic
-anime-order inference, multi-user Plex policies, IRC automation, native
+The 0.17.0 implementation adds explicitly reviewed shared videos, immutable
+physical ownership and one canonical Plex range import. All owners record
+atomically, restart/retry/subset reuse retains the full binding, and cancellation
+preserves queued interests. Exact Plex confirmation remains per owner. The new
+format rejects silent downgrade. CI validation/publication is still required
+before the 0.18 coordinated group replacement stage can begin.
+See [shared files](shared-files.md).
+
+Coordinated shared upgrades, automatic
+anime/range inference, multi-user Plex policies, IRC automation, native
 indexer adapters, Usenet and cross-seeding remain future stages. See the [release roadmap](roadmap.md). Series monitoring is a
 focused stage and does not establish full stack parity.
 

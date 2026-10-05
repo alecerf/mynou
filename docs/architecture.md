@@ -76,6 +76,15 @@ previews share this decision path. Preview serialization exposes opaque IDs and
 assessments without acquisition URLs; a preview does not acquire the journal
 owner lock or create a job.
 
+`pack::shared` authenticates one explicitly selected video and binds its full
+consecutive canonical owner range. Guarded apply commits every new owner in one
+journal frame, with one immutable library destination. Group claims are
+serialized; native hash/path verification and atomic import reuse preserve that
+destination across restart and cancellation. Each owner confirms the exact Plex
+path separately. Media/physical ownership indexes are rebuilt from verified jobs.
+Shared owners remain outside individual baseline/upgrade logic until coordinated
+group replacement is available. See [shared files](shared-files.md).
+
 Ready imports form the owned-library view. Monitoring checks the current ready
 entry's recorded release title against source candidates under the current
 movie/episode profile. Profile acceptance is compared before rank: a baseline

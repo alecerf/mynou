@@ -11,6 +11,14 @@ revision.
 
 ## Automated checks and releases
 
+The 0.17 shared-file scenarios cover metadata-only guards, 64-owner atomic
+creation, interrupted and semantically invalid persistence, subset reuse,
+concurrent workers, source changes, queued-owner cancellation and restart,
+pre-journal import recovery, per-owner exact Plex confirmation, individual upgrade
+blocks, protected API/browser controls and offline/online CLI behavior. They use
+original synthetic fixtures only. Their passing result must come from a complete
+Actions run for the exact source; earlier release evidence does not validate them.
+
 CI checks the offline Cargo graph, formatting, warning-free Clippy, tests, release
 builds, a local end-to-end demo, and Docker behavior. The Cargo graph must contain
 one package with no dependencies. Network tests use synthetic media and local

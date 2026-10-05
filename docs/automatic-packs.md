@@ -108,8 +108,10 @@ authenticates torrent bytes; filename markers still cannot prove the depicted
 episode or its audio/video quality.
 
 Use [explicit pack mappings](packs.md) when numbered files cannot resolve under
-these rules. Multi-episode physical files and general alternate/anime numbering
-remain a later stage.
+these rules. Explicit [numbering choices](numbering.md) retain source labels and
+canonical identities. Use the dedicated [shared-file action](shared-files.md)
+for one video containing consecutive episodes; automatic range inference remains
+blocked until coordinated group replacement is available.
 
 ## Prefer packs during monitoring
 

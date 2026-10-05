@@ -181,7 +181,7 @@ monitoring retains existing requests and files; it does not silently retry
 terminal jobs or stop when a Plex watchlist entry disappears. Changed known catalog numbers require an explicit [numbering decision](numbering.md).
 Retained IDs cannot be replaced or reassigned. The CLI/API/browser accept explicit
 alternate/absolute source labels; automatic anime-order inference and
-multi-episode videos remain later work. Explicit packs can map exact source paths
+automatic range inference remain later work. Explicit packs can map exact source paths
 to canonical episodes. Mapping fields cannot be changed by workers, and earlier unmapped jobs retain ordinary behavior. Do not downgrade
 storage containing mapped jobs to an earlier binary that ignores those fields.
 
@@ -195,6 +195,16 @@ DHT/PEX fallback. Metadata-only tracker queries may be declined. Preview/apply
 guards bind scope, candidate, hash and paths; queued sources must retain the
 authenticated hash. Pack provenance does not establish episode upgrade quality.
 See [automatic packs](automatic-packs.md) for exact filename and discovery bounds.
+
+Shared files explicitly bind one authenticated video to 2–64 consecutive owners
+in one canonical season. A later request can reuse any nonempty owner subset;
+the full physical binding cannot be extended or reassigned. One synchronized
+transaction records all new owners, and group claims serialize import work.
+Preview uses the metadata-only discovery bounds above with a 60-second action
+deadline. The CLI mapping is capped at 512 KiB; API bodies at 1 MiB; browser fields
+at 8 KiB. Shared formats reject older readers. Individual remaps, baselines and
+upgrades are blocked; coordinated replacement is the next stage. See
+[shared-file ownership](shared-files.md).
 
 The browser interface uses a shared operator token, original server-rendered
 pages and native forms, with page refreshes rather than live streaming. It has
