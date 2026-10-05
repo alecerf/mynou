@@ -1,4 +1,4 @@
-# Next-release checkpoint — 0.20.1 approved IRC candidate routing
+# Next-release checkpoint — 0.20.2 required IRC authentication
 
 The 0.20.0 implementation adds opt-in live IRC reception, explicit source trust,
 strict bounded framing, original verified TLS, title/profile filters, durable
@@ -8,13 +8,17 @@ acquisition jobs. Run 37335746159 passed for
 four scheduler checks and all five jobs. CI published v0.20.0 on October 5, 2026,
 at 15:50:41 UTC. Its seven assets and the prior v0.19.1 release remain immutable.
 
-The active 0.20.1 increment implements configured hash-pinned magnets and
+The published 0.20.1 increment implements configured hash-pinned magnets and
 metadata-only verification before candidate routing to existing admitted jobs.
 Plex availability, requester approval/quotas, captured profiles/destinations,
 source numbering and exclusive physical ownership remain mandatory. Checked
 reservations precede immutable job origins. Twenty-one original CI scenarios cover
-the full path, metadata gates, races, quotas, imports and recovery. Complete
-validation and CI publication remain pending for the active source.
+the full path, metadata gates, races, quotas, imports and recovery.
+Run 37345455739 passed for cf838f3750aaf129f1ac939a675a6eee4f635594 with
+533 Rust tests across 47 harnesses, four scheduler checks and all five jobs.
+CI published v0.20.1 on October 5, 2026, at 17:05:20 UTC. Its seven assets and
+the prior v0.20.0/v0.19.1 tags and assets remain immutable. See
+[validation evidence](validation.md#recorded-0201-ci-evidence).
 
 The prior v0.19.1 requester release passed run 37305082540 for
 83e6d1a40ac2d5abac0baf355a0011c58e49429a, with 490 Rust tests across 43 harnesses,
@@ -48,14 +52,12 @@ the snapshot. Full history rejects new identities while retaining existing ones.
 engine.rs provides pure previews and row-scoped audit decisions. Shared browser review
 slots bind session, action, record and guard and expire in ten minutes.
 
-## Validate the current increment first
+## Inspect live validation before the next increment
 
-Finish all five Actions jobs for the exact current branch. Fix failures with
-new commits, push and inspect the new complete run. Confirm that CI alone
-publishes v0.20.1, its tag targets the validated source, and all seven assets
-have bot uploaders and recorded digests. Compare v0.20.0 metadata before/after.
-Never replace a published tag or asset. Record live validation/checkpoint docs;
-their later commit requires its own complete CI.
+The v0.20.1 publication is complete; later evidence and CI-weight commits require
+their own full workflow. Inspect all five Actions jobs for the exact current
+branch before implementing the next increment. Fix failures with new commits,
+push and inspect the new complete run. Existing tags/assets must remain unchanged.
 
 src/irc/routing.rs owns restricted template parsing, metadata selection,
 immutable Origin/Route, the serialized bounded automatic pass and startup
@@ -75,10 +77,26 @@ after 60 seconds. Routing uses a shared ten-second availability/metadata budget
 and sets a selected job's next attempt to zero. Do not bypass captured roots or
 turn ready data into a new acquisition.
 
+## Next increment: required SASL PLAIN
+
+Add an opt-in SASL configuration using environment variable names for credentials.
+Negotiate capabilities before registration completes, require advertised PLAIN,
+bound fragmented capability lists and encode bounded 400-byte authentication
+chunks. Success must precede joining and accepting announcements. Missing
+capabilities, rejected/aborted authentication, premature welcome and deadlines
+must close the connection without unauthenticated fallback. Remote connections
+retain verified TLS; plaintext remains restricted to explicit loopback fixtures.
+
+Keep credential values out of protocol diagnostics, public reports, source
+bindings and persistent history. Auth policy changes must invalidate pending
+source bindings while old configurations keep their current binding. Original
+local fixtures must exercise success, fragmentation, chunk boundaries, failure,
+reconnect and shutdown before CI publication of a new version.
+
 ## Following IRC stages after green publication
 
 Add one independently usable stage at a time: bounded tracker text adapters,
-SASL/NickServ authentication, explicit requester/action selectors and reviewed
+NickServ authentication, explicit requester/action selectors and reviewed
 new-demand actions. Existing admitted-job routing must remain the default.
 Ambiguous catalog identities, source ranges, existing ownership and stale
 configuration remain unresolved without side effects.

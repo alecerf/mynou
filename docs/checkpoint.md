@@ -17,7 +17,9 @@ magnets, metadata-only verification and candidate routing to existing admitted
 canonical jobs. Approval/quotas, frozen requester profiles/destinations, source
 labels and physical file ownership remain mandatory. Durable reservations and
 immutable job origins survive cancellation/retry and checked restart recovery.
-Its complete validation and CI publication are pending.
+Its complete CI and CI publication passed with 533 Rust tests across 47 harnesses,
+four scheduler checks and all five jobs. Plex availability remains active before
+waiting or routing, using the captured destination and a bounded deadline.
 
 The published 0.20.0 implementation adds opt-in IRC reception, verified TLS, bounded
 protocol handling, explicit filters, checked durable duplicate suppression and
@@ -156,6 +158,18 @@ A successful validation run on `trunk` publishes a new `Cargo.toml` version if i
 has not already been released. The assets are a full source ZIP with the static
 Linux x86_64 binary, a separate static binary, a saved Docker image archive, and
 SHA-256 checksum files. There is no Docker Hub publication step.
+
+## Recorded 0.20.1 CI checkpoint
+
+Commit `cf838f3750aaf129f1ac939a675a6eee4f635594` passed
+[Actions run 37345455739](https://github.com/alecerf/mynou/actions/runs/37345455739):
+533 Rust tests passed with none failed or ignored across 47 targets, plus four
+scheduler checks and all five jobs. CI published
+[v0.20.1](https://github.com/alecerf/mynou/releases/tag/v0.20.1) with seven assets
+on October 5, 2026, at 17:05:20 UTC. The tag targets this exact tested source.
+The v0.20.0 and v0.19.1 tags and all asset IDs, sizes and digests remain unchanged.
+See [validation evidence](validation.md#recorded-0201-ci-evidence).
+Later commits need their own completed workflow and do not replace published assets.
 
 ## Recorded 0.20.0 CI checkpoint
 

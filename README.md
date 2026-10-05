@@ -35,10 +35,10 @@ sender/channel restrictions, deterministic filters, durable duplicate suppressio
 source health and guarded CLI/API/browser reviews. Explicit grab rules now route
 hash-pinned magnets to existing approved requests after metadata verification.
 Immutable origins retain exact files, profiles and physical ownership through
-retry/restart. This 0.20.1 increment requires its own complete CI. CI published
-[v0.20.0](https://github.com/alecerf/mynou/releases/tag/v0.20.0) after all five jobs
-passed with **512 Rust tests** and four scheduler checks. See the
-[recorded evidence](docs/validation.md#recorded-0200-ci-evidence).
+retry/restart. CI published
+[v0.20.1](https://github.com/alecerf/mynou/releases/tag/v0.20.1) after all five jobs
+passed with **533 Rust tests** and four scheduler checks. See the
+[recorded evidence](docs/validation.md#recorded-0201-ci-evidence).
 
 ## Try it
 

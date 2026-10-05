@@ -5,7 +5,7 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current implementation: 0.20.1, awaiting CI
+## Current published stage: 0.20.1
 
 Explicit grab rules route configured hash-pinned magnets to existing approved
 jobs after metadata-only verification. Canonical title/year/source labels and
@@ -13,7 +13,15 @@ captured profiles must agree. Reservations precede immutable journal origins;
 restart completes committed origins and aborts uncommitted intents. Native
 selection/import uses the retained exact file and authenticated hash aliases.
 Original local CI covers imports, gates, races, corruption and recovery.
-Complete validation and CI publication are pending for this increment.
+Run 37345455739 passed for `cf838f3750aaf129f1ac939a675a6eee4f635594` with
+533 Rust tests across 47 harnesses, four scheduler checks and all five jobs.
+CI published seven v0.20.1 assets on October 5, 2026, at 17:05:20 UTC.
+Previous v0.20.0 and v0.19.1 assets remain unchanged. See
+[validation evidence](validation.md#recorded-0201-ci-evidence).
+
+The next focused increment is required SASL PLAIN authentication with bounded
+capability negotiation, credential redaction and no unauthenticated fallback.
+Tracker text adapters, NickServ and broader actions follow independently.
 
 ## Previous published stage: 0.20.0
 

@@ -18,8 +18,9 @@ captured requester routes. Original local peers and IRC receivers exercise the
 background path, concurrent passes and cancellation/removal/review/stop during
 metadata work. Checked crash fixtures cover committed/uncommitted reservations,
 read-only recovery, corruption, immutable origins and silent format downgrade.
-This increment requires its own completed workflow; the 0.20.0 evidence below
-validates the earlier reception/review release.
+Run 37345455739 completed these scenarios and all earlier checks for the exact
+v0.20.1 source. Its release evidence is recorded below. Later commits require
+their own completed workflow.
 
 The 0.20 IRC scenarios exercise strict opt-in sources/rules, verified remote
 transport requirements, fragmented protocol parsing, allowed membership/senders,
@@ -27,8 +28,8 @@ title/profile filtering, durable original claims and duplicate suppression,
 full/corrupt history, concurrent/stale/session reviews, pure/offline CLI and
 protected API/browser controls. Original loopback services check registration,
 PING/PONG, reconnect, process restart, generic diagnostics and socket shutdown.
-Reviews preserve jobs, imports and quotas. Their result requires a completed
-workflow for this exact source; earlier releases do not validate these changes.
+Reviews preserve jobs, imports and quotas. The exact completed reception/review
+and candidate-routing runs are recorded below.
 
 The 0.19 requester scenarios exercise explicit opt-in and approvals, compatible
 and conflicting accounts, quota/approval races, retries and UTC-day rollover,
@@ -126,6 +127,35 @@ allowance across seasons. Existing full validation remains required.
 
 The recorded run below validates these scenarios through GitHub Actions only.
 No local tests, lint, builds or demos ran.
+
+## Recorded 0.20.1 CI evidence
+
+`cf838f3750aaf129f1ac939a675a6eee4f635594` passed
+[Actions run 37345455739](https://github.com/alecerf/mynou/actions/runs/37345455739):
+**533 Rust tests passed**, none failed or ignored, across **47 targets**.
+Four scheduler checks and all five validation/build/package/release jobs passed.
+CI checked the offline one-package/zero-dependency graph, formatting, Clippy,
+GNU/musl builds, standalone and isolated container demonstrations, executable
+permissions, archive integrity and all checksum manifests. Every Cargo harness
+ran with two processes and two threads per harness; execution took 49.839 seconds.
+
+GitHub Actions published [v0.20.1](https://github.com/alecerf/mynou/releases/tag/v0.20.1)
+on October 5, 2026, at 17:05:20 UTC. The tag targets the exact tested commit.
+All seven assets were uploaded by `github-actions[bot]`. Recorded payloads:
+
+| Asset | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `mynou-v0.20.1-linux-amd64-image.tar.gz` | 1899520 | `b9a69303fc66353ed39e7fb0a85d3b262c415f43ec4608ac8338fb261c9f604b` |
+| `mynou-v0.20.1-linux-amd64-image.tar.gz.sha256` | 105 | `adea4c20681b305ef8074e406fb3f9e2022c116ef6aa5300c169de93b63a2adc` |
+| `mynou-v0.20.1-linux-x86_64` | 3842912 | `895efc9a3432715f8dddafd9b483a5698fddf1e9dd4c8c8abd2081842aa430af` |
+| `mynou-v0.20.1-linux-x86_64.sha256` | 93 | `ff14d696fc9ee0e2fd5ac02c268335dd7e8b83181b42f86c97c73ad97fc287ae` |
+| `mynou-v0.20.1-source.zip` | 6798118 | `07d036e8bcc7285d8a880a468d4e4155ffe615e8e7dedeecac98629fc41f72b0` |
+| `mynou-v0.20.1-source.zip.sha256` | 91 | `1474f39b75a881715bf8fd3f2ee56bd55f5aa300ae4e4a796d321099d8977efc` |
+| `SHA256SUMS` | 289 | `e689ade29a266a11a4256f52e8c57c29b3c3956f4771c64e1e36e23cd48334cd` |
+
+The preceding v0.20.0 and v0.19.1 tags, asset IDs, sizes and digests remain unchanged.
+No local tests, lint, builds, binaries or demos ran. Later documentation and
+implementation commits require their own complete workflow.
 
 ## Recorded 0.20.0 CI evidence
 

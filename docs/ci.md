@@ -63,6 +63,13 @@ provide newer weights. Timing history affects ordering only. A malformed history
 cannot suppress tests. Concurrency and timeout options can be tuned in CI, with
 explicit bounds; this is not permission to execute the scheduler locally.
 
+The checked-in weights now cover all 47 harnesses measured in
+[run 37345455739](https://github.com/alecerf/mynou/actions/runs/37345455739), including
+the newer numbering, shared-file, requester and IRC targets. That run executed
+533 tests in 49.839 seconds with two processes and two threads per harness.
+Refreshing weights starts the newly measured long harnesses earlier on a cache
+miss. The recorded duration precedes this refresh and is not an improvement claim.
+
 Each target has a 180-second process deadline by default. A timeout kills its
 process group, including CLI fixture children. Remaining harnesses still run
 after a failure so CI collects their outcomes. Every target needs a successful
