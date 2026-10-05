@@ -27,12 +27,14 @@ pub(crate) struct Health {
     last_error: Option<String>,
     retry_in_secs: u64,
     sasl_authenticated: bool,
+    nickserv_authenticated: bool,
 }
 impl Health {
     pub(crate) fn to_json(&self) -> Value {
         let mut v = Value::object();
         v.insert("phase", self.phase.clone());
         v.insert("sasl_authenticated", self.sasl_authenticated);
+        v.insert("nickserv_authenticated", self.nickserv_authenticated);
         for (k, n) in [
             ("attempts", self.attempts),
             ("received", self.received),
@@ -77,6 +79,7 @@ impl Runtime {
                             last_error: None,
                             retry_in_secs: 0,
                             sasl_authenticated: false,
+                            nickserv_authenticated: false,
                         },
                     )
                 })
@@ -96,6 +99,7 @@ fn health(engine: &Engine, id: &str, phase: &str, error: Option<&str>, delay: u6
         h.retry_in_secs = delay;
         if matches!(phase, "connecting" | "backoff" | "stopped") {
             h.sasl_authenticated = false;
+            h.nickserv_authenticated = false;
         }
     }
 }
@@ -238,6 +242,11 @@ fn connected(engine: &Engine, source: &Source) -> Result<()> {
         .as_ref()
         .map(super::sasl::Settings::commands)
         .transpose()?;
+    let mut identification = source
+        .nickserv
+        .as_ref()
+        .map(super::NickServ::command)
+        .transpose()?;
     let (url, tls) = source.endpoint()?;
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut socket = None;
@@ -353,7 +362,21 @@ fn connected(engine: &Engine, source: &Source) -> Result<()> {
                         send(&mut stream, &command)?;
                     }
                 }
+                Event::Identify => {
+                    health(engine, &source.id, "identifying", None, 0);
+                    send(
+                        &mut stream,
+                        &identification
+                            .take()
+                            .ok_or("IRC: NickServ identification already sent")?,
+                    )?;
+                }
                 Event::Join => {
+                    if source.nickserv.is_some()
+                        && let Some(h) = lock(&engine.irc_runtime)?.health.get_mut(&source.id)
+                    {
+                        h.nickserv_authenticated = true;
+                    }
                     health(engine, &source.id, "joining", None, 0);
                     send(
                         &mut stream,

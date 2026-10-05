@@ -156,7 +156,7 @@ pub(crate) fn style(c: char) -> bool {
             | '\u{1f}'
     )
 }
-fn formatting(line: &str) -> Result<String> {
+pub(crate) fn formatting(line: &str) -> Result<String> {
     if line.len() > super::protocol::MAX_LINE - 2
         || line.chars().any(|c| c.is_control() && !style(c))
     {

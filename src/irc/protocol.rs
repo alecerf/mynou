@@ -131,6 +131,7 @@ pub enum Event {
     Ignore,
     Reply(String),
     Authenticate,
+    Identify,
     Join,
     Joined,
     Announcement(String),
@@ -140,18 +141,31 @@ pub struct Protocol {
     registered: bool,
     joined: bool,
     authentication: super::sasl::Negotiation,
+    identification: super::nickserv::Negotiation,
 }
 impl Protocol {
     pub fn new(source: super::Source) -> Self {
         let authentication = super::sasl::Negotiation::new(source.sasl.is_some());
+        let identification = super::nickserv::Negotiation::new(source.nickserv.clone());
         Self {
             source,
             registered: false,
             joined: false,
             authentication,
+            identification,
         }
     }
     pub fn receive(&mut self, m: &Message) -> Result<Event> {
+        let result = self.receive_inner(m);
+        if result.is_err() {
+            self.identification.fail();
+        }
+        result
+    }
+    fn receive_inner(&mut self, m: &Message) -> Result<Event> {
+        if let Some(event) = self.identification.receive(m, &self.source.nickname)? {
+            return Ok(event);
+        }
         if let Some(event) = self.authentication.receive(m, &self.source.nickname)? {
             return Ok(event);
         }
@@ -162,15 +176,18 @@ impl Protocol {
             ))),
             "001"
                 if !self.registered
+                    && m.prefix.as_ref().is_some_and(|p| !p.contains(['!', '@']))
                     && m.params
                         .first()
                         .is_some_and(|p| p.eq_ignore_ascii_case(&self.source.nickname)) =>
             {
                 self.registered = true;
-                Ok(Event::Join)
+                self.identification.begin()
             }
             "366"
                 if self.registered
+                    && self.identification.ready()
+                    && m.prefix.as_ref().is_some_and(|p| !p.contains(['!', '@']))
                     && m.params.len() >= 2
                     && m.params[0].eq_ignore_ascii_case(&self.source.nickname)
                     && m.params[1].eq_ignore_ascii_case(&self.source.channel) =>
@@ -180,6 +197,7 @@ impl Protocol {
             }
             "JOIN"
                 if self.registered
+                    && self.identification.ready()
                     && m.params
                         .first()
                         .is_some_and(|p| p.eq_ignore_ascii_case(&self.source.channel))

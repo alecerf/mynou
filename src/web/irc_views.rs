@@ -36,8 +36,14 @@ pub(super) fn list(engine: &Arc<Engine>, session: &Session, query: &Form) -> Res
                 } else {
                     "SASL required"
                 }
+            } else if text(s, "authentication") == "nickserv" {
+                if h.get("nickserv_authenticated").and_then(Value::as_bool) == Some(true) {
+                    "NickServ identified"
+                } else {
+                    "NickServ required"
+                }
             } else {
-                "No SASL"
+                "No authentication"
             },
             display(text(h, "phase")),
             display(text(h, "last_error")),

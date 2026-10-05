@@ -2,12 +2,14 @@
 pub(crate) mod client;
 mod engine;
 pub(crate) mod format;
+mod nickserv;
 mod persistence;
 pub mod protocol;
 pub(crate) mod routing;
 pub(crate) mod sasl;
 use crate::{Result, crypto::sha256, json::Value, selection::SelectionConfig, store::Request};
 pub use format::Delimited;
+pub use nickserv::Settings as NickServ;
 pub(crate) use persistence::AnnouncementStore;
 pub use routing::Origin;
 pub use sasl::Settings as Sasl;
@@ -177,6 +179,7 @@ pub struct Source {
     pub password_env: Option<String>,
     pub join_key_env: Option<String>,
     pub sasl: Option<Sasl>,
+    pub nickserv: Option<NickServ>,
     pub announcement_format: Option<Delimited>,
     pub magnet_template: Option<String>,
     pub idle_timeout_secs: u64,
@@ -223,6 +226,7 @@ impl Source {
                 "password_env",
                 "join_key_env",
                 "sasl",
+                "nickserv",
                 "announcement_format",
                 "magnet_template",
                 "idle_timeout_secs",
@@ -244,6 +248,10 @@ impl Source {
             sasl: match v.get("sasl") {
                 None | Some(Value::Null) => None,
                 Some(v) => Some(Sasl::from_json(v)?),
+            },
+            nickserv: match v.get("nickserv") {
+                None | Some(Value::Null) => None,
+                Some(v) => Some(NickServ::from_json(v)?),
             },
             announcement_format: match v.get("announcement_format") {
                 None | Some(Value::Null) => None,
@@ -279,6 +287,7 @@ impl Source {
                         .all(|b| b.is_ascii_alphanumeric() || b"._-~:/".contains(&b))
             })
             || s.reconnect_max_secs < s.reconnect_min_secs
+            || s.sasl.is_some() && s.nickserv.is_some()
         {
             return Err("IRC: invalid source identity or connection bounds".into());
         }
@@ -310,6 +319,9 @@ impl Source {
         if let Some(sasl) = &self.sasl {
             v.insert("sasl", sasl.configuration());
         }
+        if let Some(nickserv) = &self.nickserv {
+            v.insert("nickserv", nickserv.configuration());
+        }
         if let Some(format) = &self.announcement_format {
             v.insert("announcement_format", format.configuration());
         }
@@ -334,6 +346,8 @@ impl Source {
             "authentication",
             if self.sasl.is_some() {
                 "sasl_plain"
+            } else if self.nickserv.is_some() {
+                "nickserv"
             } else {
                 "none"
             },
