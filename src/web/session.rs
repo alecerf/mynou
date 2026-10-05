@@ -406,6 +406,70 @@ mod tests {
     use super::*;
 
     #[test]
+    fn irc_reviews_expire_and_bind_record_action_session_and_guard() {
+        let mut sessions = Sessions::new();
+        let challenge = sessions.challenge("localhost").unwrap();
+        let session = sessions
+            .login(&challenge.id, &challenge.csrf, "http://localhost", true)
+            .unwrap()
+            .unwrap();
+        let query = crate::irc::ControlRequest {
+            action: "dismiss".into(),
+            apply: true,
+            plan_id: Some("b".repeat(64)),
+        };
+        sessions
+            .save_irc_preview(&session.id, &"a".repeat(64), query.clone())
+            .unwrap();
+        for (owner, record, action, guard) in [
+            (
+                session.id.as_str(),
+                "c".repeat(64),
+                "dismiss",
+                "b".repeat(64),
+            ),
+            (
+                session.id.as_str(),
+                "a".repeat(64),
+                "acknowledge",
+                "b".repeat(64),
+            ),
+            ("other", "a".repeat(64), "dismiss", "b".repeat(64)),
+            (
+                session.id.as_str(),
+                "a".repeat(64),
+                "dismiss",
+                "c".repeat(64),
+            ),
+        ] {
+            assert!(
+                sessions
+                    .irc_preview(owner, &record, action, &guard)
+                    .is_err()
+            );
+        }
+        assert_eq!(
+            sessions
+                .irc_preview(&session.id, &"a".repeat(64), "dismiss", &"b".repeat(64))
+                .unwrap(),
+            query
+        );
+        sessions
+            .0
+            .get_mut(&session.id)
+            .unwrap()
+            .irc_preview
+            .as_mut()
+            .unwrap()
+            .expires = Instant::now() - Duration::from_secs(1);
+        assert!(
+            sessions
+                .irc_preview(&session.id, &"a".repeat(64), "dismiss", &"b".repeat(64))
+                .is_err()
+        );
+    }
+
+    #[test]
     fn requester_reviews_expire_and_are_bound_to_account_action_and_session() {
         let mut sessions = Sessions::new();
         let challenge = sessions.challenge("localhost").unwrap();

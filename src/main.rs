@@ -612,7 +612,7 @@ fn execute(args: Args) -> Result<()> {
         let _workers = engine.start();
         return api.run();
     }
-    let online = running(&config);
+    let online = args.command != "irc-preview" && running(&config);
     match args.command.as_str() {
         "torrents" => {
             if !online {
