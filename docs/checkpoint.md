@@ -116,8 +116,10 @@ The 0.18.0 implementation adds reviewed complete shared-group baselines and
 authenticated one-file replacements, immutable full parent lineage, staged exact
 Plex confirmations and atomic promotion. Whole-group cancellation/retry and
 monitoring fences preserve prior imports. Format 3 rejects partial or conflicting
-group state and silent downgrade. Complete Actions validation and CI publication
-remain required before beginning 0.19. See [group upgrades](group-upgrades.md).
+group state and silent downgrade. Complete CI and publication passed with 467
+Rust tests across 40 targets, four scheduler checks and all five workflow jobs.
+The next stage is Plex requester policies in 0.19. Later commits need their own
+complete CI. See [group upgrades](group-upgrades.md) and the exact evidence below.
 
 Automatic anime/range inference, multi-user Plex policies, IRC automation, native
 indexer adapters, Usenet and cross-seeding remain future stages. See the [release roadmap](roadmap.md). Series monitoring is a
@@ -128,6 +130,24 @@ A successful validation run on `trunk` publishes a new `Cargo.toml` version if i
 has not already been released. The assets are a full source ZIP with the static
 Linux x86_64 binary, a separate static binary, a saved Docker image archive, and
 SHA-256 checksum files. There is no Docker Hub publication step.
+
+## Recorded 0.18.0 CI checkpoint
+
+Commit `f1a9733a5908c3fa8bc5e93b5d18800334fad5d1` passed
+[Actions run 37293887224](https://github.com/alecerf/mynou/actions/runs/37293887224):
+467 Rust tests passed with none failed or ignored across 40 targets, plus four
+scheduler checks and every dependency/format/Clippy/build/demo/package gate.
+CI published [v0.18.0](https://github.com/alecerf/mynou/releases/tag/v0.18.0)
+with seven assets on October 5, 2026, at 10:04:19 UTC. The tag targets the same
+source commit, and all assets belong to `github-actions[bot]`.
+See [validation evidence](validation.md#recorded-0180-ci-evidence) for SHA-256
+digests. The v0.17.0 tag and all seven asset IDs, sizes and digests remain
+unchanged. No local validation ran. Later documentation changes need their own
+complete CI and do not replace the published source or assets.
+
+The next stage is 0.19 Plex requester policies;
+[next-release notes](next-release.md) preserve the bounded identities, per-account
+token/poll/profile decisions, shared demand and recovery scenarios still required.
 
 ## Recorded 0.17.0 CI checkpoint
 
@@ -143,9 +163,7 @@ digests. The v0.16.0 tag and all seven asset IDs, sizes and digests remain
 unchanged. No local validation ran. Later documentation changes need their own
 complete CI and do not replace the published source or assets.
 
-The next stage is 0.18 coordinated shared-group replacement;
-[next-release notes](next-release.md) preserve the concrete lineage, quality,
-atomic promotion, recovery and guarded management decisions still required.
+The next stage was 0.18 coordinated shared-group replacement, recorded above.
 
 ## Recorded 0.16.0 CI checkpoint
 

@@ -5,7 +5,7 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current stage: 0.18.0 implementation
+## Current stage: 0.18.0
 
 Complete shared-group baselines and replacements are reviewed through
 CLI/API/browser. Every child retains immutable parent lineage and one new
@@ -15,9 +15,14 @@ Old imports remain current throughout partial work, failures and cancellation.
 Whole-group retry, monitoring fences, stale guards and format 3 recovery retain
 captured ownership and earlier bytes. See [group upgrades](group-upgrades.md).
 
-Complete Actions validation and CI publication must pass before beginning 0.19.
-The prior release evidence below does not validate this implementation. No local
-validation is permitted.
+This stage passed [run 37293887224](https://github.com/alecerf/mynou/actions/runs/37293887224)
+for commit `f1a9733a5908c3fa8bc5e93b5d18800334fad5d1`: 467 Rust tests across 40 targets,
+four scheduler checks and all five workflow jobs. CI published
+[v0.18.0](https://github.com/alecerf/mynou/releases/tag/v0.18.0) with seven assets
+on October 5, 2026, at 10:04:19 UTC. See
+[validation evidence](validation.md#recorded-0180-ci-evidence). No local validation
+ran. The next stage is Plex requester policies in 0.19; later commits need their
+own complete CI.
 
 ## Previous stage: 0.17.0
 
@@ -190,7 +195,6 @@ promised before implementation and measurement.
 
 | Planned release | Scope | Evidence required before continuing |
 | --- | --- | --- |
-| 0.18 | Coordinated shared-group replacements and guarded range mapping | Prior imports stay current until every required replacement is verified and confirmed; no partial promotion or ownership reassignment |
 | 0.19 | Plex users, approvals, quotas, routing and notification preferences | User ownership and limits remain enforced across polling, retries and restart |
 | 0.20 | IRC announcements, immediate grabs, filters, action routing and notifications | Bounded announcement parsing, reconnect/backoff, duplicate suppression and auditable rule decisions |
 | 0.21 | Native indexer adapters, login/session management, source health and configuration | Per-adapter protocol fixtures, credential redaction, rate limits and safe session renewal |

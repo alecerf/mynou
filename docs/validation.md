@@ -96,6 +96,46 @@ allowance across seasons. Existing full validation remains required.
 The recorded run below validates these scenarios through GitHub Actions only.
 No local tests, lint, builds or demos ran.
 
+## Recorded 0.18.0 CI evidence
+
+`f1a9733a5908c3fa8bc5e93b5d18800334fad5d1` passed
+[Actions run 37293887224](https://github.com/alecerf/mynou/actions/runs/37293887224):
+**467 Rust tests passed**, none failed or ignored, across **40 targets**.
+Four CI scheduler checks also passed. All five validation/build/package/release
+jobs completed successfully, including the offline single-package dependency
+graph, formatting, Clippy, GNU/musl builds, native/static and isolated Docker
+demonstrations, archive integrity, executable permissions and checksum checks.
+The bounded scheduler ran every Cargo harness with two processes and two threads
+per harness; the recorded all-target execution took 41.531 seconds.
+
+GitHub Actions published [v0.18.0](https://github.com/alecerf/mynou/releases/tag/v0.18.0)
+on October 5, 2026, at 10:04:19 UTC. The tag points to the validated source commit.
+All seven assets were uploaded by `github-actions[bot]`. Recorded payloads:
+
+| Asset | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `mynou-v0.18.0-linux-amd64-image.tar.gz` | 1631326 | `7584dc37ce5fd12dff54209433e709fe7b5541c9d68adabc375473427a768d93` |
+| `mynou-v0.18.0-linux-amd64-image.tar.gz.sha256` | 105 | `6fcfd4bd7a86b696d1965329a601af7a7c4ded1f6cab0c84374aae2166b0d290` |
+| `mynou-v0.18.0-linux-x86_64` | 3208032 | `20154ac99a90f68fbaf6a10cee3d6bb0fafb26dc42842d88509cca99a381b1f1` |
+| `mynou-v0.18.0-linux-x86_64.sha256` | 93 | `f1789ec6d8bd54214beedd7921b248e9b3a84bf7a57dde030f007a62d622bd07` |
+| `mynou-v0.18.0-source.zip` | 5716251 | `f880b85498f9ef7a6f308676c7dcc6bd2ff2cb4a4e4828ec9536c91ea5170497` |
+| `mynou-v0.18.0-source.zip.sha256` | 91 | `605726928e4106dacf2c2482148a06dfe9d34cd326f7bf8880d2f3f59baab217` |
+| `SHA256SUMS` | 289 | `12961318fc8c1a74200d7546ab3fdd02b65cc3570600a42a2233d769cedbf341` |
+
+The original scenarios cover 64-owner baseline/creation/promotion transactions,
+torn writes and complete corruption, signed incomplete group records, partial
+ready snapshots, immutable lineage, staged cancellation, retry/competitor/obsolete
+parent fences, monitoring changes, source and quality guards, protected JSON/form
+controls and read-only offline CLI preview with guarded service apply. A local
+native peer/Plex journey retains the entire old group during partial exact-path
+confirmation and resumes staging across restart with independent payload/import
+inodes. Browser logout rejects the stale apply with HTTP 403 and unchanged state.
+
+No local tests, lint, builds, binaries or demonstrations were executed. CI alone
+created the tag/release/assets. The existing v0.17.0 tag and all seven asset IDs,
+sizes and digests remain unchanged. Later documentation commits require their
+own complete CI and do not replace the v0.18.0 tag or assets.
+
 ## Recorded 0.17.0 CI evidence
 
 `89e5aefa66026da084a6770fb76d51e7396602ec` passed

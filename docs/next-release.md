@@ -1,10 +1,20 @@
 # Next-release checkpoint — 0.19 Plex requester policies
 
-The 0.18 implementation adds [coordinated shared-group upgrades](group-upgrades.md):
+The 0.18 release adds [coordinated shared-group upgrades](group-upgrades.md):
 complete baselines and immutable replacement lineage, authenticated new video
 paths, staged exact Plex confirmation, atomic promotion and whole-group controls.
-Its complete Actions validation and CI publication remain required before 0.19.
-The earlier green release below does not validate these changes.
+Its complete validation and CI publication passed for
+`f1a9733a5908c3fa8bc5e93b5d18800334fad5d1` in
+[run 37293887224](https://github.com/alecerf/mynou/actions/runs/37293887224):
+467 Rust tests across 40 targets, four scheduler checks and all five workflow
+jobs. CI published [v0.18.0](https://github.com/alecerf/mynou/releases/tag/v0.18.0)
+with seven `github-actions[bot]` assets on October 5, 2026, at 10:04:19 UTC.
+The tag targets that exact tested source. See
+[validation evidence](validation.md#recorded-0180-ci-evidence) for asset digests.
+The prior 0.17 tag and all seven asset IDs, sizes and digests remain unchanged.
+Later documentation changes require their own complete CI and never replace
+published artifacts. Inspect the live branch and all five newest jobs before
+beginning 0.19.
 
 v0.17 implements explicit shared files: one authenticated video belongs to a
 complete consecutive canonical episode range and imports to one deterministic
@@ -109,7 +119,8 @@ promotion/cancellation, fabricated individual frames and mutated lineage.
 Memoized iterative root traversal retains lineage precedence without recursion.
 Synthetic CI cases include 64-owner transactions, corruption/torn writes,
 monitoring/control races, source/policy guards and native partial Plex confirmation
-across restart. The current whole run and publication must pass before continuing.
+across restart. Its whole run and publication passed as recorded above; later
+commits require their own complete workflow.
 
 This stage replaces one shared video with one shared video. Automatic range-file
 inference/search and shared-to-individual replacement remain later work; expose
@@ -119,19 +130,26 @@ them only after complete ownership, source labels and promotion are defined.
 
 1. Define bounded stable requester identities and per-account Plex token bindings
    without changing the operator's existing API/browser authentication. Keep
-   credentials outside persisted public reports and review forms.
+   credentials outside persisted public reports and review forms. Capture explicit
+   approval, quota, destination-routing and notification preferences in the
+   requester's versioned policy.
 2. Add independent watchlist cursors/poll results and explicit opt-in movie/episode
-   profile policies. Preserve the current single-account configuration and define
+   profile policies. Persist pending approvals and enforce quotas before any
+   acquisition. Preserve the current single-account configuration and define
    policy compatibility before combining demand for one canonical media identity.
 3. Persist requester provenance before acquisition. Removing one user's demand
    must not cancel another user's interest or delete ready media. Retain ownership,
    source numbering and complete shared-group replacement scope across restarts.
-4. Expose requester status, policy decisions and guarded management through
-   CLI/API/browser. Report partial account failures separately and retain bounded
-   poll deadlines; stale identity/policy decisions require new review.
+4. Expose requester status, approvals, limits, routing/notification preferences
+   and guarded management through CLI/API/browser. Report partial account failures
+   separately and retain bounded poll deadlines; stale identity/policy decisions
+   require new review. Define notification outcomes without leaking credentials
+   or changing another requester's demand.
 5. Add original local-service CI cases for multiple accounts, duplicate media,
-   conflicting policies, partial failures, credential redaction, removals and
-   restart. Keep complete Cargo harness execution and all publication gates.
+   conflicting policies, approval races, quota exhaustion/retry, destination
+   routing, notification preferences, partial failures, credential redaction,
+   removals and restart. Keep complete Cargo harness execution and all publication
+   gates.
 
 ## Release acceptance and handoff
 
