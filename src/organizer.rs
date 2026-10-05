@@ -148,6 +148,46 @@ fn active_import(active: &AtomicBool) -> Result<()> {
     }
 }
 
+/// Plex's consecutive-episode range names one physical file for every owner.
+pub(crate) fn shared_target(library: &Path, file: &crate::pack::SharedFile) -> Result<PathBuf> {
+    let title = filename_part(&file.title)?;
+    let extension = Path::new(&file.file_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .ok_or("Shared media extension is missing")?;
+    let suffix = format!(
+        " - S{:02}E{:02}-E{:02} [mynou-{}].{extension}",
+        file.season,
+        file.first_episode,
+        file.last_episode,
+        file.id()
+    );
+    let mut name = title.clone();
+    while name.len() + suffix.len() > 255 {
+        name.pop();
+    }
+    Ok(library
+        .join(title)
+        .join(format!("Season {:02}", file.season))
+        .join(format!("{name}{suffix}")))
+}
+
+pub(crate) fn import_shared_file_cancellable(
+    source: &Path,
+    library: &Path,
+    file: &crate::pack::SharedFile,
+    active: &AtomicBool,
+) -> Result<PathBuf> {
+    file.validate()?;
+    let destination = shared_target(library, file)?;
+    if destination != Path::new(&file.import_path) {
+        return Err(
+            "Shared library root changed; the recorded destination cannot be reassigned".into(),
+        );
+    }
+    import_destination(source, library, destination, active)
+}
+
 fn same_bytes(source: &mut File, destination: &Path, active: &AtomicBool) -> Result<bool> {
     active_import(active)?;
     validate_path(destination)?;
@@ -245,6 +285,16 @@ fn import_to_target(
     if let Some(revision) = revision {
         validate_revision(revision)?;
     }
+    let destination = target(source, library, request, revision)?;
+    import_destination(source, library, destination, active)
+}
+
+fn import_destination(
+    source: &Path,
+    library: &Path,
+    destination: PathBuf,
+    active: &AtomicBool,
+) -> Result<PathBuf> {
     #[cfg(not(unix))]
     return Err("atomic import currently requires a Unix system".to_owned());
 
@@ -253,7 +303,6 @@ fn import_to_target(
         active_import(active)?;
         validate_path(source)?;
         validate_path(library)?;
-        let destination = target(source, library, request, revision)?;
         if !fs::symlink_metadata(source)
             .map_err(|error| error.to_string())?
             .is_file()

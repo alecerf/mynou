@@ -356,6 +356,22 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
                         let pack = crate::pack::PackSubmission::from_json(&value)?;
                         engine.submit_pack(&id, &pack)?
                     }
+                    "shared-file" => {
+                        let value = control_body(
+                            body,
+                            &[
+                                "source_url",
+                                "file_path",
+                                "season",
+                                "episodes",
+                                "apply",
+                                "plan_id",
+                            ],
+                            false,
+                        )?;
+                        let query = crate::pack::SharedFileRequest::from_json(&value)?;
+                        engine.shared_file(&id, &query)?
+                    }
                     "refresh" => {
                         control_body(body, &[], true)?;
                         engine.refresh_series(&id)?

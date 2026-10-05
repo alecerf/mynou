@@ -13,6 +13,13 @@ const CHALLENGE_SECS: u64 = 600;
 const MAX_SESSIONS: usize = 128;
 
 #[derive(Clone)]
+struct SharedPreview {
+    series_id: String,
+    query: crate::pack::SharedFileRequest,
+    expires: Instant,
+}
+
+#[derive(Clone)]
 pub struct Session {
     pub id: String,
     pub csrf: String,
@@ -22,6 +29,7 @@ pub struct Session {
     pub messages: Vec<String>,
     expires: Instant,
     attempts: u8,
+    shared_preview: Option<SharedPreview>,
 }
 
 pub struct Sessions(BTreeMap<String, Session>);
@@ -68,6 +76,7 @@ impl Sessions {
             messages: Vec::new(),
             expires: Instant::now() + Duration::from_secs(CHALLENGE_SECS),
             attempts: 0,
+            shared_preview: None,
         };
         self.0.insert(session.id.clone(), session.clone());
         Ok(session)
@@ -128,6 +137,54 @@ impl Sessions {
             .get_mut(id)
             .map(|session| std::mem::take(&mut session.messages))
             .unwrap_or_default()
+    }
+
+    /// Keep source credentials server-side, with one bounded review per session.
+    pub fn save_shared_preview(
+        &mut self,
+        id: &str,
+        series_id: &str,
+        query: crate::pack::SharedFileRequest,
+    ) -> Result<()> {
+        query.validate()?;
+        if !query.apply {
+            return Err("A shared browser review requires its apply guard".into());
+        }
+        self.purge();
+        let session = self
+            .0
+            .get_mut(id)
+            .filter(|s| s.origin.is_some())
+            .ok_or("Browser session expired")?;
+        session.shared_preview = Some(SharedPreview {
+            series_id: series_id.into(),
+            query,
+            expires: Instant::now() + Duration::from_secs(CHALLENGE_SECS),
+        });
+        Ok(())
+    }
+    pub fn shared_preview(
+        &mut self,
+        id: &str,
+        series_id: &str,
+        plan_id: &str,
+    ) -> Result<crate::pack::SharedFileRequest> {
+        self.purge();
+        self.0
+            .get(id)
+            .and_then(|s| s.shared_preview.as_ref())
+            .filter(|p| {
+                p.expires > Instant::now()
+                    && p.series_id == series_id
+                    && p.query.plan_id.as_deref() == Some(plan_id)
+            })
+            .map(|p| p.query.clone())
+            .ok_or_else(|| "Shared browser preview expired or changed; preview again".into())
+    }
+    pub fn clear_shared_preview(&mut self, id: &str) {
+        if let Some(session) = self.0.get_mut(id) {
+            session.shared_preview = None;
+        }
     }
 }
 

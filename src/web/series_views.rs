@@ -92,6 +92,10 @@ pub fn detail(engine: &Arc<Engine>, session: &Session, query: &Form, id: &str) -
     body.push_str(&form("/ui/series/packs", session));
     body.push_str(&hidden("id", id));
     body.push_str("<label for=source_value>Magnet, torrent URL or server torrent path</label><input id=source_value name=source_value required maxlength=8192 autocomplete=off><label for=episodes>Episode mappings (JSON array)</label><textarea id=episodes name=episodes required rows=6 maxlength=8192 placeholder='[{&quot;season&quot;:1,&quot;episode&quot;:1,&quot;file_path&quot;:&quot;Pack/001.mp4&quot;}]'></textarea><p class=muted>Mappings require a different file for each episode. Review the catalog and file contents before submitting. This explicit action can acquire episodes excluded from automatic monitoring.</p><button type=submit>Acquire mapped episodes</button></form></details>");
+    body.push_str("<details class=panel><summary>One video for multiple episodes</summary><p>Explicitly map one video to consecutive catalog episodes in one season. Preview authenticates metadata before recording all owners together. One library file is retained for the whole group. Individual upgrades are blocked until coordinated group replacement is available.</p>");
+    body.push_str(&form("/ui/series/shared-file", session));
+    body.push_str(&hidden("id", id));
+    body.push_str("<label for=shared_source>Magnet, torrent URL or server torrent path</label><input id=shared_source name=source_value required maxlength=8192 autocomplete=off><label for=shared_path>Exact video path including the top-level directory</label><input id=shared_path name=file_path required maxlength=4096><label for=shared_season>Canonical season</label><input id=shared_season name=season type=number min=0 max=9999 required value=1><label for=shared_episodes>Canonical episode numbers (JSON array)</label><textarea id=shared_episodes name=episodes required maxlength=8192 rows=2 placeholder='[1,2]'></textarea><button type=submit name=action value=preview>Preview shared file</button></form></details>");
     let episodes = value.get("episodes").map(array).unwrap_or_default();
     body.push_str("<details class=panel><summary>Episode numbering</summary><p>Keep each episode's library number while choosing the labels used by your sources. Review changed catalog labels before accepting them. Existing requests keep their saved choices.</p>");
     body.push_str(&form("/ui/series/numbering", session));
@@ -137,6 +141,28 @@ pub fn detail(engine: &Arc<Engine>, session: &Session, query: &Form, id: &str) -
         1,
     ));
     Ok(frame("Series details", "/ui/series", Some(session), &body))
+}
+
+pub fn shared_file(session: &Session, id: &str, report: &crate::json::Value) -> String {
+    let binding = report.get("binding").unwrap_or(&crate::json::Value::Null);
+    let mut body = format!(
+        "<p><a href=\"/ui/series/{}\">Back to series</a></p><p class=lead>Review shared video ownership</p><section class=panel><h2>One physical file</h2><p>Torrent: {}</p><p>Exact source path: {}</p><p>Canonical owners: S{} E{} through E{}</p><p>Single library destination: {}</p><p>{} new owner(s). Each requested episode confirms this exact path in Plex. Cancellation retains the full ownership range and any imported file. Individual upgrades are blocked.</p></section>",
+        e(id),
+        display(text(binding, "torrent_id")),
+        display(text(binding, "file_path")),
+        scalar(binding, "season"),
+        scalar(binding, "first_episode"),
+        scalar(binding, "last_episode"),
+        display(text(binding, "import_path")),
+        scalar(report, "new_owners")
+    );
+    body.push_str(&form("/ui/series/shared-file", session));
+    for (name, value) in [("id", id), ("plan_id", text(report, "plan_id"))] {
+        body.push_str(&hidden(name, value));
+    }
+    body.push_str("<p class=muted>This review expires in ten minutes and is tied to this browser session. Preview again after changing the source or owners.</p>");
+    body.push_str("<button type=submit name=action value=apply>Record reviewed shared ownership</button></form>");
+    frame("Shared video preview", "/ui/series", Some(session), &body)
 }
 
 pub fn numbering(session: &Session, id: &str, report: &crate::json::Value) -> String {

@@ -483,6 +483,58 @@ impl Web {
                     ))
                 }
             }
+            "/ui/series/shared-file" => {
+                let ids = form.ids(false)?;
+                if ids.len() != 1 {
+                    return Err("Choose one tracked series".into());
+                }
+                if form.value("action")? == "apply" {
+                    form.only(&["csrf", "id", "action", "plan_id"])?;
+                    let query = lock(&self.sessions)?.shared_preview(
+                        &session.id,
+                        &ids[0],
+                        form.value("plan_id")?,
+                    )?;
+                    engine.shared_file(&ids[0], &query)?;
+                    lock(&self.sessions)?.clear_shared_preview(&session.id);
+                    return self.redirect(session,"/ui/jobs",vec!["Shared-file ownership recorded. Each episode will confirm the same imported path in Plex".into()]);
+                }
+                form.only(&[
+                    "csrf",
+                    "id",
+                    "source_value",
+                    "file_path",
+                    "season",
+                    "episodes",
+                    "action",
+                ])?;
+                if form.value("action")? != "preview" {
+                    return Err("Unknown shared-file action".into());
+                }
+                let mut body = crate::json::Value::object();
+                body.insert("source_url", form.value("source_value")?.to_owned());
+                body.insert("file_path", form.value("file_path")?.to_owned());
+                body.insert(
+                    "season",
+                    decimal(form.value("season")?, 9999, "shared season")? as u32,
+                );
+                body.insert("episodes", crate::json::parse(form.value("episodes")?)?);
+                let mut query = crate::pack::SharedFileRequest::from_json(&body)?;
+                let report = engine.shared_file(&ids[0], &query)?;
+                query.apply = true;
+                query.plan_id = Some(
+                    report
+                        .get("plan_id")
+                        .and_then(crate::json::Value::as_str)
+                        .ok_or("Missing shared preview guard")?
+                        .into(),
+                );
+                lock(&self.sessions)?.save_shared_preview(&session.id, &ids[0], query)?;
+                Ok(Response::html(
+                    200,
+                    series_views::shared_file(session, &ids[0], &report),
+                ))
+            }
             "/ui/series/packs" => {
                 form.only(&["csrf", "id", "source_value", "episodes"])?;
                 let ids = form.ids(false)?;

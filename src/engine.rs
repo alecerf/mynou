@@ -74,7 +74,13 @@ impl Engine {
             let active: std::collections::BTreeSet<_> = jobs
                 .iter()
                 .filter(|job| job.state != "cancelled")
-                .filter_map(|job| job.download_id.as_deref())
+                .filter_map(|job| {
+                    job.download_id.as_deref().or_else(|| {
+                        job.shared_file
+                            .as_ref()
+                            .map(|file| file.torrent_id.as_str())
+                    })
+                })
                 .collect();
             let known: std::collections::BTreeSet<_> = client
                 .statuses()?
@@ -158,9 +164,14 @@ impl Engine {
             let job = store.cancel(id)?;
             let shared = store.list().iter().any(|other| {
                 other.id != id
-                    && other.download_id.is_some()
-                    && other.download_id == job.download_id
                     && other.state != "cancelled"
+                    && ((other.download_id.is_some() && other.download_id == job.download_id)
+                        || job.shared_file.as_ref().is_some_and(|file| {
+                            other
+                                .shared_file
+                                .as_ref()
+                                .is_some_and(|known| known.torrent_id == file.torrent_id)
+                        }))
             });
             (job, shared)
         };
@@ -463,7 +474,9 @@ impl Engine {
         job: &Job,
         active: &AtomicBool,
     ) -> Result<std::path::PathBuf> {
-        if job.upgrade_parent.is_some() {
+        if let Some(file) = &job.shared_file {
+            organizer::import_shared_file_cancellable(source, root, file, active)
+        } else if job.upgrade_parent.is_some() {
             organizer::import_versioned_file_cancellable(
                 source,
                 root,
@@ -510,7 +523,7 @@ impl Engine {
                     integrations::refresh(&self.config, &job.request)?;
                 }
                 job.state = "scanning".into();
-                let available = if job.upgrade_parent.is_some() {
+                let available = if job.upgrade_parent.is_some() || job.shared_file.is_some() {
                     integrations::available_import(&self.config, &job.request, &job.imports)?
                 } else {
                     integrations::available(&self.config, &job.request)?
@@ -529,7 +542,9 @@ impl Engine {
             let client = self.downloads.as_ref().ok_or("Downloads are disabled")?;
             let id = job.download_id.as_deref().ok_or("Missing download")?;
             let status = if let Some(path) = &job.pack_file {
-                if let Some(origin) = &job.pack_origin {
+                if let Some(file) = &job.shared_file {
+                    client.require_bound_files(id, std::slice::from_ref(path), &file.torrent_id)?
+                } else if let Some(origin) = &job.pack_origin {
                     client.require_bound_files(
                         id,
                         std::slice::from_ref(path),
@@ -571,7 +586,13 @@ impl Engine {
                 }
                 let status = if let Some(id) = &job.download_id {
                     if let Some(path) = &job.pack_file {
-                        if let Some(origin) = &job.pack_origin {
+                        if let Some(file) = &job.shared_file {
+                            client.require_bound_files(
+                                id,
+                                std::slice::from_ref(path),
+                                &file.torrent_id,
+                            )?
+                        } else if let Some(origin) = &job.pack_origin {
                             client.require_bound_files(
                                 id,
                                 std::slice::from_ref(path),
@@ -587,7 +608,13 @@ impl Engine {
                     // Fetch metadata before acquiring the client internal lock.
                     let source = job.acquisition_url.as_deref().ok_or("Missing source")?;
                     if let Some(path) = &job.pack_file {
-                        if let Some(origin) = &job.pack_origin {
+                        if let Some(file) = &job.shared_file {
+                            client.ensure_bound_files(
+                                source,
+                                std::slice::from_ref(path),
+                                &file.torrent_id,
+                            )?
+                        } else if let Some(origin) = &job.pack_origin {
                             client.ensure_bound_files(
                                 source,
                                 std::slice::from_ref(path),
@@ -621,6 +648,10 @@ impl Engine {
                         let shared = store.list().iter().any(|other| {
                             other.state != "cancelled"
                                 && (other.download_id.as_deref() == Some(&status.id)
+                                    || other
+                                        .shared_file
+                                        .as_ref()
+                                        .is_some_and(|file| file.torrent_id == status.id)
                                     || (other.acquisition_url.is_some()
                                         && other.acquisition_url == job.acquisition_url))
                         });
@@ -666,6 +697,8 @@ impl Engine {
                 return Err("Mapped torrent file differs from the retained verified path".into());
             }
         }
+        // Group ownership serializes claims. Organizer compares existing bytes and
+        // publishes one destination, including recovery after a pre-journal crash.
         job.state = "importing".into();
         lock(&self.store)?.update(job.clone())?;
         let mut candidates = Vec::new();

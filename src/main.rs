@@ -33,6 +33,8 @@ const HELP: &str = "Mynou — media automation using Rust std only
   track-series --title TITLE [--year YEAR --tmdb-id N --season N]
                [--future-only] [--include-specials] [--unmonitored] [--config mynou.json]
   series-pack ID --url MAGNET_OR_TORRENT --mapping FILE [--config mynou.json]
+  series-shared-file ID --url MAGNET_OR_TORRENT --mapping FILE
+      [--apply --plan-id ID] [--config mynou.json]
   series-pack-search ID --season N [--apply] [--candidate-id ID --scope-id ID]
                      [--config mynou.json]
   pack-remap JOB_ID --file-path PATH [--config mynou.json]
@@ -148,6 +150,7 @@ impl Args {
                 "unmonitored",
             ],
             "series-pack" => &["config", "help", "url", "mapping"],
+            "series-shared-file" => &["config", "help", "url", "mapping", "apply", "plan-id"],
             "series-numbering" => &["config", "help", "mapping", "apply", "plan-id"],
             "series-pack-search" => &[
                 "config",
@@ -202,6 +205,7 @@ impl Args {
                 "series-unmonitor",
                 "series-refresh",
                 "series-pack",
+                "series-shared-file",
                 "series-pack-search",
                 "series-numbering",
                 "pack-remap",
@@ -824,6 +828,61 @@ fn execute(args: Args) -> Result<()> {
                     return Err("Numbering apply requires a running Mynou service".into());
                 }
                 output(&Engine::open_for_preview(config)?.series_numbering(&id, &query)?);
+            }
+        }
+        "series-shared-file" => {
+            let id = args.positions[0].to_ascii_lowercase();
+            if id.len() != 32 || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return Err("Invalid series ID".into());
+            }
+            let file = args
+                .options
+                .get("mapping")
+                .ok_or("Specify --mapping FILE")?;
+            let source = args
+                .options
+                .get("url")
+                .ok_or("Specify --url MAGNET_OR_TORRENT")?;
+            let mut bytes = Vec::new();
+            fs::File::open(file)
+                .map_err(|_| "Cannot open shared-file mapping")?
+                .take(512 * 1024 + 1)
+                .read_to_end(&mut bytes)
+                .map_err(|_| "Cannot read shared-file mapping")?;
+            if bytes.len() > 512 * 1024 {
+                return Err("Shared-file mapping exceeds 512 KiB".into());
+            }
+            let mut body = json::parse(
+                std::str::from_utf8(&bytes).map_err(|_| "Shared-file mapping is not UTF-8")?,
+            )?;
+            if body.as_object().is_none_or(|fields| {
+                fields
+                    .keys()
+                    .any(|key| !["file_path", "season", "episodes"].contains(&key.as_str()))
+            }) {
+                return Err(
+                    "Shared-file mapping contains only file_path, season and episodes".into(),
+                );
+            }
+            body.insert("source_url", source.clone());
+            body.insert("apply", args.options.contains_key("apply"));
+            if let Some(id) = args.options.get("plan-id") {
+                body.insert("plan_id", id.clone());
+            }
+            let query = mynou::pack::SharedFileRequest::from_json(&body)?;
+            if online {
+                output(&call(
+                    &config,
+                    &path,
+                    "POST",
+                    &format!("/api/series/{id}/shared-file"),
+                    Some(&body),
+                )?);
+            } else {
+                if query.apply {
+                    return Err("Shared-file acquisition requires a running Mynou service".into());
+                }
+                output(&Engine::open_for_preview(config)?.shared_file(&id, &query)?);
             }
         }
         "series-pack-search" => {

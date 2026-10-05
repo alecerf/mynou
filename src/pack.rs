@@ -9,8 +9,10 @@ use std::{
     path::Path,
 };
 mod automatic;
+mod shared;
 pub(crate) use automatic::season_title_matches;
 pub use automatic::{AutoPackRequest, PackOrigin};
+pub use shared::{SharedFile, SharedFileRequest};
 
 pub const MAX_PACK_EPISODES: usize = 64;
 

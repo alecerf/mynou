@@ -151,9 +151,9 @@ pub fn library(engine: &Arc<Engine>, session: &Session, query: &Form) -> Result<
         let id = text(entry, "id");
         body.push_str(&format!("<tr><td>{}</td><td><a href=\"/ui/jobs/{}\">{}</a></td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
             checkbox(id), e(id), display(request_title(entry)), if flag(entry, "monitored") { "On" } else { "Off" },
-            if flag(entry, "baseline_required") { "Needs baseline" } else { "Recorded" },
+            if entry.get("shared_file").is_some_and(|v|v.as_object().is_some()) { "Shared ownership" } else if flag(entry, "baseline_required") { "Needs baseline" } else { "Recorded" },
             if flag(entry, "imports_present") { "Available" } else { "Missing" },
-            entry.get("pending_upgrade_id").and_then(Value::as_str).map_or_else(|| "—".into(), |id| format!("<a href=\"/ui/jobs/{}\">View pending upgrade</a>", e(id)))));
+            if entry.get("shared_file").is_some_and(|v|v.as_object().is_some()) {"Group replacement required".into()} else {entry.get("pending_upgrade_id").and_then(Value::as_str).map_or_else(|| "—".into(), |id| format!("<a href=\"/ui/jobs/{}\">View pending upgrade</a>", e(id)))}));
     }
     body.push_str("</tbody></table></div>");
     body.push_str(&bulk_controls(&[
@@ -374,11 +374,17 @@ pub fn job(engine: &Arc<Engine>, session: &Session, query: &Form, id: &str) -> R
             "<p>Mapped torrent file: <code>{}</code></p>",
             display(path)
         ));
-        if matches!(job.state.as_str(), "failed" | "cancelled") && job.imports.is_empty() {
+        if job.shared_file.is_none()
+            && matches!(job.state.as_str(), "failed" | "cancelled")
+            && job.imports.is_empty()
+        {
             body.push_str(&form("/ui/jobs/pack-mapping", session));
             body.push_str(&hidden("id", id));
             body.push_str("<label for=file_path>Correct mapped torrent path</label><input id=file_path name=file_path required maxlength=4096><button type=submit>Correct mapping and retry</button></form>");
         }
+    }
+    if let Some(file) = &job.shared_file {
+        body.push_str(&format!("<p>Shared ownership: S{:02} E{:02} through E{:02}. All owners retain one library file. Individual remapping and upgrades are blocked.</p>",file.season,file.first_episode,file.last_episode));
     }
     if let Some(id) = &job.download_id {
         body.push_str(&format!(
@@ -412,7 +418,9 @@ pub fn job(engine: &Arc<Engine>, session: &Session, query: &Form, id: &str) -> R
             ("unmonitor", "Disable monitoring"),
         ]));
         body.push_str("</form><h3>Release baseline</h3>");
-        if let Some(release) = &job.release {
+        if job.shared_file.is_some() {
+            body.push_str("<p>Shared ownership requires a coordinated group replacement. Individual release baselines cannot enable an upgrade.</p>");
+        } else if let Some(release) = &job.release {
             body.push_str(&format!("<p>{}</p>", display(&release.title)));
         } else {
             body.push_str(&form("/ui/library/baseline", session));
