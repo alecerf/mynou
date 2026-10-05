@@ -109,8 +109,13 @@ reservations, jobs and retry decisions retain their original profile definition
 and absolute destinations. Disabling acquisition prevents new admissions; use a
 reviewed removal to revoke existing demand. Shared work requires identical
 captured profile names/definitions and routes. Historical operator jobs must also
-have compatible behavior; a ready job without a known import cannot establish
-route compatibility by itself.
+be ready before a new requester can reuse them: every import must be an existing
+regular file beneath the captured destination, with no symlinks or parent-path
+traversal. A recorded release must match the selected profile and pass its current
+title assessment; without a baseline only the unrestricted default profile is
+compatible. Uncaptured pending work cannot promise frozen routing or quality and
+remains a visible conflict without a quota charge. These checks do not rewrite
+operator jobs or move their files.
 
 ## CLI, API and browser
 

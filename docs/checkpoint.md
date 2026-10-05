@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.16.0
+# Project checkpoint — Mynou 0.19.1
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -126,9 +126,12 @@ account bindings, versioned opt-in profiles and routing, durable approvals/quota
 independent full-watchlist cursors and compatible canonical demand. Removal keeps
 other interests and imported bytes. Guarded CLI/API/browser controls and original
 local-protocol CI scenarios cover recovery, races and credential redaction.
-Its complete CI and publication are pending; the recorded 0.18 run below validates
-only that earlier release. Do not start 0.20 before every 0.19 job and publication
-is green. The following stage is IRC automation.
+Its complete CI and publication passed with 489 Rust tests across 43 targets,
+four scheduler checks and all five jobs. The 0.19.1 patch requires verified ready
+imports and compatible quality before new requester reuse of operator jobs;
+the patch's own complete validation and publication are pending. Do not start
+0.20 before every patch job and publication is green. The following stage is
+IRC automation.
 
 Automatic anime/range inference, IRC automation, native
 indexer adapters, Usenet and cross-seeding remain future stages. See the [release roadmap](roadmap.md). Series monitoring is a
@@ -139,6 +142,17 @@ A successful validation run on `trunk` publishes a new `Cargo.toml` version if i
 has not already been released. The assets are a full source ZIP with the static
 Linux x86_64 binary, a separate static binary, a saved Docker image archive, and
 SHA-256 checksum files. There is no Docker Hub publication step.
+
+## Recorded 0.19.0 CI checkpoint
+
+Commit `2388836a24ac02225a4171aa3d6bbbc32323b6c7` passed
+[Actions run 37303359973](https://github.com/alecerf/mynou/actions/runs/37303359973):
+489 Rust tests passed with none failed or ignored across 43 targets, plus four
+scheduler checks and all five workflow jobs. CI published
+[v0.19.0](https://github.com/alecerf/mynou/releases/tag/v0.19.0) with seven assets
+on October 5, 2026, at 11:32:55 UTC. The tag targets that exact tested source.
+The preceding v0.18.0 tag and assets remain unchanged. This evidence applies to
+the initial requester release; the later patch needs its own completed run.
 
 ## Recorded 0.18.0 CI checkpoint
 

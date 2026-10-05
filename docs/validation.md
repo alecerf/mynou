@@ -106,6 +106,41 @@ allowance across seasons. Existing full validation remains required.
 The recorded run below validates these scenarios through GitHub Actions only.
 No local tests, lint, builds or demos ran.
 
+## Recorded 0.19.0 CI evidence
+
+`2388836a24ac02225a4171aa3d6bbbc32323b6c7` passed
+[Actions run 37303359973](https://github.com/alecerf/mynou/actions/runs/37303359973):
+**489 Rust tests passed**, none failed or ignored, across **43 targets**.
+Four CI scheduler checks passed. All five validation/build/package/release jobs
+completed successfully: the offline single-package dependency graph, formatting,
+Clippy, GNU/musl builds, native/static and isolated container demonstrations,
+archive integrity, executable permissions and checksum checks. Every Cargo
+harness ran with two processes and two threads per harness; recorded execution
+took 45.628 seconds.
+
+GitHub Actions published [v0.19.0](https://github.com/alecerf/mynou/releases/tag/v0.19.0)
+on October 5, 2026, at 11:32:55 UTC. The tag targets the validated source.
+All seven assets were uploaded by `github-actions[bot]`. Recorded payloads:
+
+| Asset | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `mynou-v0.19.0-linux-amd64-image.tar.gz` | 1765442 | `163a6a14c5d8991a7e0f7128e9e026ad7eca93ab6dab48b951236a79496fc09e` |
+| `mynou-v0.19.0-linux-amd64-image.tar.gz.sha256` | 105 | `ac6007daffbcf526d7d784fcce08de4239a103c5ba655fa32a9697f77003b0e4` |
+| `mynou-v0.19.0-linux-x86_64` | 3515232 | `908e64f4e39d84112d545e57a8714dec6449a26e9954a169c7f3842c7acc3dcd` |
+| `mynou-v0.19.0-linux-x86_64.sha256` | 93 | `a70901ac6b3940138270f0e2a1e1a3cc6618c2316fff486f5d64ab038242a9b5` |
+| `mynou-v0.19.0-source.zip` | 6211659 | `bbc67aaaf51fb4ecf589f3213ec73ffb4d011a67aeed2209ced6259f1e772961` |
+| `mynou-v0.19.0-source.zip.sha256` | 91 | `f37992eb21de6aa72f0b7519adf0fa7f87687b3d0dc52e524007afb5e182f637` |
+| `SHA256SUMS` | 289 | `75c8ab74b928e83b17abc8b73598d65faa88c1ed6681076566d00286c73e176b` |
+
+Original scenarios cover account opt-in, approval and quota fencing, compatible
+canonical sharing, immutable profile/destination captures, source numbering,
+independent identity-checked polling, removals, notification outcomes, guarded
+CLI/API/browser controls and crash recovery. Local native-peer/Plex journeys
+verify acquisition ordering and routed exact-path confirmation without public
+content. The preceding v0.18.0 tag and all asset IDs, sizes and digests remain
+unchanged. No local validation or manual tag/release/upload ran. Later patch and
+documentation commits need their own complete CI; published artifacts stay fixed.
+
 ## Recorded 0.18.0 CI evidence
 
 `f1a9733a5908c3fa8bc5e93b5d18800334fad5d1` passed
