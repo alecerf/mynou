@@ -64,7 +64,7 @@ impl SharedFile {
         let mut value = Value::object();
         value.insert("torrent_id", self.torrent_id.clone());
         value.insert("file_path", self.file_path.clone());
-        value.insert("tmdb_id", self.tmdb_id);
+        value.insert("tmdb_id", Value::Number(self.tmdb_id as f64));
         value.insert("season", self.season);
         value.insert("first_episode", self.first_episode);
         value.insert("last_episode", self.last_episode);
@@ -156,7 +156,7 @@ impl SharedFile {
         ] {
             value.insert(key, text.clone());
         }
-        value.insert("tmdb_id", self.tmdb_id);
+        value.insert("tmdb_id", Value::Number(self.tmdb_id as f64));
         value.insert("year", self.year);
         value.insert("season", self.season);
         value.insert("first_episode", self.first_episode);

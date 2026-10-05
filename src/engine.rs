@@ -180,10 +180,11 @@ impl Engine {
                 .as_ref()
                 .map(|file| file.torrent_id.as_str())
         });
-        if !shared && let (Some(client), Some(id)) = (&self.downloads, transfer_id) {
-            if client.statuses()?.iter().any(|transfer| transfer.id == id) {
-                client.cancel(id)?;
-            }
+        if !shared
+            && let (Some(client), Some(id)) = (&self.downloads, transfer_id)
+            && client.statuses()?.iter().any(|transfer| transfer.id == id)
+        {
+            client.cancel(id)?;
         }
         Ok(job)
     }
