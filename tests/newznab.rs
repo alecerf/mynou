@@ -721,12 +721,25 @@ fn authenticated_api_cli_and_browser_preview_typed_releases_without_jobs_or_down
     fs::write(d.0.join("mynou.json"), json::stringify(&v)).unwrap();
     let before = files(&d.0);
     let body = json::stringify(&movie().to_json());
-    assert_eq!(server.call("POST", "/api/search", &[], &body).status, 401);
+    assert_eq!(
+        server
+            .call(
+                "POST",
+                "/api/search",
+                &[("Content-Type", "application/json")],
+                &body
+            )
+            .status,
+        401
+    );
     assert_eq!(h.count(), 0);
     let report = server.call(
         "POST",
         "/api/search",
-        &[("Authorization", &format!("Bearer {TOKEN}"))],
+        &[
+            ("Authorization", &format!("Bearer {TOKEN}")),
+            ("Content-Type", "application/json"),
+        ],
         &body,
     );
     assert_eq!(report.status, 200, "{}", report.body);
