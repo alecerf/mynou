@@ -163,15 +163,33 @@ impl SourceStore {
                         );
                     }
                 }
-                let mut bytes = Vec::new();
-                private_options()
+                let file = private_options()
                     .read(true)
                     .open(&path)
-                    .map_err(|_| "Indexer policy: cannot read snapshot")?
-                    .take(MAX_BYTES as u64 + 49)
+                    .map_err(|_| "Indexer policy: cannot read snapshot")?;
+                let opened = file
+                    .metadata()
+                    .map_err(|_| "Indexer policy: cannot inspect snapshot")?;
+                if !opened.is_file() || opened.len() != m.len() {
+                    return Err("Indexer policy: snapshot changed during opening".into());
+                }
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::MetadataExt;
+                    if opened.nlink() != 1
+                        || opened.mode() & 0o077 != 0
+                        || opened.dev() != m.dev()
+                        || opened.ino() != m.ino()
+                    {
+                        return Err("Indexer policy: snapshot changed during opening".into());
+                    }
+                }
+                let mut bytes = Vec::new();
+                file.take(MAX_BYTES as u64 + 49)
                     .read_to_end(&mut bytes)
                     .map_err(|_| "Indexer policy: cannot read snapshot")?;
                 if bytes.len() < 48
+                    || bytes.len() > MAX_BYTES + 48
                     || &bytes[..8] != MAGIC
                     || u64::from_le_bytes(
                         bytes[8..16]

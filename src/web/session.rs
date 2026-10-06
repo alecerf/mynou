@@ -314,7 +314,6 @@ impl Sessions {
             query,
             expires: Instant::now() + Duration::from_secs(CHALLENGE_SECS),
         });
-        session.indexer_preview = None;
         session.shared_preview = None;
         session.group_preview = None;
         session.requester_preview = None;
@@ -371,7 +370,6 @@ impl Sessions {
         session.shared_preview = None;
         session.group_preview = None;
         session.irc_preview = None;
-        session.indexer_preview = None;
         session.notification_preview = None;
         Ok(())
     }
@@ -425,7 +423,6 @@ impl Sessions {
         session.group_preview = None;
         session.requester_preview = None;
         session.irc_preview = None;
-        session.indexer_preview = None;
         session.notification_preview = None;
         Ok(())
     }
@@ -479,7 +476,6 @@ impl Sessions {
         session.shared_preview = None;
         session.requester_preview = None;
         session.irc_preview = None;
-        session.indexer_preview = None;
         session.notification_preview = None;
         Ok(())
     }
@@ -541,6 +537,63 @@ fn nonce() -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn indexer_reviews_bind_source_action_session_guard_and_expiry() {
+        let mut sessions = Sessions::new();
+        let challenge = sessions.challenge("localhost").unwrap();
+        let session = sessions
+            .login(&challenge.id, &challenge.csrf, "http://localhost", true)
+            .unwrap()
+            .unwrap();
+        let query = crate::indexers::ControlRequest {
+            action: "pause".into(),
+            apply: true,
+            plan_id: Some("b".repeat(64)),
+        };
+        sessions
+            .save_indexer_preview(&session.id, "primary", query.clone())
+            .unwrap();
+        assert!(
+            sessions
+                .indexer_preview(&session.id, "primary", "pause", &"b".repeat(64))
+                .is_ok()
+        );
+        for (id, source, action, guard) in [
+            ("other", "primary", "pause", "b".repeat(64)),
+            (session.id.as_str(), "other", "pause", "b".repeat(64)),
+            (session.id.as_str(), "primary", "probe", "b".repeat(64)),
+            (session.id.as_str(), "primary", "pause", "a".repeat(64)),
+        ] {
+            assert!(
+                sessions
+                    .indexer_preview(id, source, action, &guard)
+                    .is_err()
+            );
+        }
+        sessions
+            .0
+            .get_mut(&session.id)
+            .unwrap()
+            .indexer_preview
+            .as_mut()
+            .unwrap()
+            .expires = Instant::now();
+        assert!(
+            sessions
+                .indexer_preview(&session.id, "primary", "pause", &"b".repeat(64))
+                .is_err()
+        );
+        sessions
+            .save_indexer_preview(&session.id, "primary", query)
+            .unwrap();
+        sessions.clear_indexer_preview(&session.id);
+        assert!(
+            sessions
+                .indexer_preview(&session.id, "primary", "pause", &"b".repeat(64))
+                .is_err()
+        );
+    }
 
     #[test]
     fn irc_reviews_expire_and_bind_record_action_session_and_guard() {

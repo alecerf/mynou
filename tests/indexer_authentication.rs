@@ -570,3 +570,437 @@ fn protected_source_health_api_browser_and_cli_expose_only_safe_aliases() {
     redacted(&json::parse(std::str::from_utf8(&out.stdout).unwrap()).unwrap());
     assert_eq!(p.logins.load(Ordering::Acquire), 1);
 }
+
+fn policy_id(engine: &mynou::engine::Engine) -> String {
+    engine
+        .indexers()
+        .unwrap()
+        .get("sources")
+        .unwrap()
+        .as_array()
+        .unwrap()[0]
+        .get("id")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+fn control(action: &str) -> mynou::indexers::ControlRequest {
+    mynou::indexers::ControlRequest {
+        action: action.into(),
+        apply: false,
+        plan_id: None,
+    }
+}
+fn reviewed(
+    engine: &mynou::engine::Engine,
+    id: &str,
+    action: &str,
+) -> mynou::indexers::ControlRequest {
+    let mut q = control(action);
+    q.plan_id = Some(
+        engine
+            .indexer_control(id, &q)
+            .unwrap()
+            .get("plan_id")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .into(),
+    );
+    q.apply = true;
+    q
+}
+#[test]
+fn guarded_pause_enable_persists_and_previews_do_not_search_or_write() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let c = cfg(&d, &p, "none");
+    let engine = mynou::engine::Engine::open_for_management(c.clone()).unwrap();
+    let id = policy_id(&engine);
+    let path = c.store_dir.join("indexers.bin");
+    let before = fs::read(&path).unwrap();
+    let pause = reviewed(&engine, &id, "pause");
+    assert_eq!(fs::read(&path).unwrap(), before);
+    assert_eq!(p.searches.load(Ordering::Acquire), 0);
+    engine.indexer_control(&id, &pause).unwrap();
+    assert!(integrations::search(&c, &movie()).is_err());
+    assert_eq!(p.searches.load(Ordering::Acquire), 0);
+    drop(engine);
+    let fresh = cfg(&d, &p, "none");
+    let engine = mynou::engine::Engine::open_for_management(fresh.clone()).unwrap();
+    assert_eq!(
+        engine
+            .indexers()
+            .unwrap()
+            .get("sources")
+            .unwrap()
+            .as_array()
+            .unwrap()[0]
+            .get("enabled"),
+        Some(&Value::Bool(false))
+    );
+    assert!(integrations::search(&fresh, &movie()).is_err());
+    let enable = reviewed(&engine, &id, "enable");
+    engine.indexer_control(&id, &enable).unwrap();
+    assert!(integrations::search(&fresh, &movie()).is_ok());
+    assert_eq!(p.searches.load(Ordering::Acquire), 1);
+}
+#[test]
+fn guards_cover_other_source_changes_and_cannot_be_replayed() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let mut v = value(&d, &p, "none");
+    source_mut(&mut v).insert("id", "primary");
+    let mut second = source_mut(&mut v).clone();
+    second.insert("id", "secondary");
+    second.insert("name", "other");
+    let Value::Array(a) = v.get_mut("indexers").unwrap() else {
+        panic!()
+    };
+    a.push(second);
+    let engine =
+        mynou::engine::Engine::open_for_management(config::from_json(&v, &d.0).unwrap()).unwrap();
+    let old = reviewed(&engine, "primary", "pause");
+    let reset = reviewed(&engine, "secondary", "reset_session");
+    engine.indexer_control("secondary", &reset).unwrap();
+    assert!(
+        engine
+            .indexer_control("primary", &old)
+            .unwrap_err()
+            .contains("stale")
+    );
+    let reset = reviewed(&engine, "primary", "reset_session");
+    engine.indexer_control("primary", &reset).unwrap();
+    assert!(
+        engine
+            .indexer_control("primary", &reset)
+            .unwrap_err()
+            .contains("stale")
+    );
+    assert_eq!(p.searches.load(Ordering::Acquire), 0);
+}
+#[test]
+fn reset_discards_ephemeral_sessions_and_keeps_snapshot_secret_free() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let c = cfg(&d, &p, "form");
+    let engine = mynou::engine::Engine::open_for_management(c.clone()).unwrap();
+    let id = policy_id(&engine);
+    integrations::search(&c, &movie()).unwrap();
+    assert_eq!(health(&c).get("session_active"), Some(&Value::Bool(true)));
+    let q = reviewed(&engine, &id, "reset_session");
+    engine.indexer_control(&id, &q).unwrap();
+    assert_eq!(health(&c).get("session_active"), Some(&Value::Bool(false)));
+    integrations::search(&c, &movie()).unwrap();
+    assert_eq!(p.logins.load(Ordering::Acquire), 2);
+    let bytes = fs::read(c.store_dir.join("indexers.bin")).unwrap();
+    let payload = std::str::from_utf8(&bytes[16..bytes.len() - 32]).unwrap();
+    redacted(&json::parse(payload).unwrap());
+    assert!(!payload.contains("PWD") && !payload.contains("PATH"));
+}
+#[test]
+fn policy_changes_fence_inflight_responses_without_waiting_for_provider() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let c = cfg(&d, &p, "none");
+    let engine = mynou::engine::Engine::open_for_management(c.clone()).unwrap();
+    let id = policy_id(&engine);
+    let q = reviewed(&engine, &id, "pause");
+    p.blocked.store(true, Ordering::Release);
+    let worker = thread::spawn(move || integrations::search(&c, &movie()));
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while p.searches.load(Ordering::Acquire) == 0 {
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(2));
+    }
+    let start = Instant::now();
+    engine.indexer_control(&id, &q).unwrap();
+    assert!(start.elapsed() < Duration::from_secs(1));
+    p.blocked.store(false, Ordering::Release);
+    assert!(worker.join().unwrap().is_err());
+    let row = engine
+        .indexers()
+        .unwrap()
+        .get("sources")
+        .unwrap()
+        .as_array()
+        .unwrap()[0]
+        .clone();
+    assert_eq!(
+        row.get("last_error").unwrap().as_str(),
+        Some("policy_changed")
+    );
+}
+#[test]
+fn probes_require_review_make_one_source_search_and_never_queue_media() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let c = cfg(&d, &p, "none");
+    let engine = mynou::engine::Engine::open_for_management(c).unwrap();
+    let id = policy_id(&engine);
+    let q = reviewed(&engine, &id, "probe");
+    assert_eq!(p.searches.load(Ordering::Acquire), 0);
+    let r = engine.indexer_control(&id, &q).unwrap();
+    redacted(&r);
+    assert_eq!(r.get("probe_success"), Some(&Value::Bool(true)));
+    assert_eq!(p.searches.load(Ordering::Acquire), 1);
+    assert!(engine.indexer_control(&id, &q).is_err());
+    assert!(engine.store.lock().unwrap().list().is_empty());
+    p.feed.lock().unwrap().body = "invalid-json".into();
+    let q = reviewed(&engine, &id, "probe");
+    assert_eq!(
+        engine
+            .indexer_control(&id, &q)
+            .unwrap()
+            .get("probe_success"),
+        Some(&Value::Bool(false))
+    );
+    let q = reviewed(&engine, &id, "pause");
+    engine.indexer_control(&id, &q).unwrap();
+    assert!(engine.indexer_control(&id, &control("probe")).is_err());
+    assert_eq!(p.searches.load(Ordering::Acquire), 2);
+}
+#[test]
+fn stable_source_bindings_cannot_change_and_removed_sources_keep_policy() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let mut v = value(&d, &p, "none");
+    source_mut(&mut v).insert("id", "primary");
+    let c = config::from_json(&v, &d.0).unwrap();
+    let engine = mynou::engine::Engine::open_for_management(c.clone()).unwrap();
+    let pause = reviewed(&engine, "primary", "pause");
+    engine.indexer_control("primary", &pause).unwrap();
+    drop(engine);
+    let original = fs::read(c.store_dir.join("indexers.bin")).unwrap();
+    let mut bad = v.clone();
+    source_mut(&mut bad).insert("min_interval_ms", 100_u32);
+    assert!(
+        mynou::engine::Engine::open_for_management(config::from_json(&bad, &d.0).unwrap()).is_err()
+    );
+    assert_eq!(
+        fs::read(c.store_dir.join("indexers.bin")).unwrap(),
+        original
+    );
+    let mut removed = v.clone();
+    removed.insert("indexers", Value::Array(Vec::new()));
+    let engine =
+        mynou::engine::Engine::open_for_management(config::from_json(&removed, &d.0).unwrap())
+            .unwrap();
+    assert!(
+        engine
+            .indexer_control("primary", &control("enable"))
+            .is_err()
+    );
+    drop(engine);
+    let engine =
+        mynou::engine::Engine::open_for_management(config::from_json(&v, &d.0).unwrap()).unwrap();
+    assert_eq!(
+        engine
+            .indexers()
+            .unwrap()
+            .get("sources")
+            .unwrap()
+            .as_array()
+            .unwrap()[0]
+            .get("enabled"),
+        Some(&Value::Bool(false))
+    );
+}
+#[test]
+fn duplicate_ids_and_corrupt_source_snapshots_fail_closed_before_mutation() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let mut v = value(&d, &p, "none");
+    source_mut(&mut v).insert("id", "primary");
+    let c = config::from_json(&v, &d.0).unwrap();
+    let engine = mynou::engine::Engine::open_for_management(c.clone()).unwrap();
+    drop(engine);
+    let path = c.store_dir.join("indexers.bin");
+    let original = fs::read(&path).unwrap();
+    let row = source_mut(&mut v).clone();
+    let Value::Array(a) = v.get_mut("indexers").unwrap() else {
+        panic!()
+    };
+    a.push(row);
+    assert!(
+        mynou::engine::Engine::open_for_management(config::from_json(&v, &d.0).unwrap()).is_err()
+    );
+    assert_eq!(fs::read(&path).unwrap(), original);
+    for index in [0, 8, 25, original.len() - 1] {
+        let mut bad = original.clone();
+        bad[index] ^= 1;
+        fs::write(&path, &bad).unwrap();
+        assert!(mynou::engine::Engine::open_for_preview(c.clone()).is_err());
+        assert_eq!(fs::read(&path).unwrap(), bad);
+    }
+}
+#[cfg(unix)]
+#[test]
+fn source_snapshot_symlinks_hardlinks_and_public_permissions_are_rejected() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    let d = Directory::new();
+    let p = Provider::open();
+    let c = cfg(&d, &p, "none");
+    drop(mynou::engine::Engine::open_for_management(c.clone()).unwrap());
+    let path = c.store_dir.join("indexers.bin");
+    let original = fs::read(&path).unwrap();
+    assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o077, 0);
+    let target = d.0.join("outside");
+    fs::rename(&path, &target).unwrap();
+    symlink(&target, &path).unwrap();
+    assert!(mynou::engine::Engine::open_for_preview(c.clone()).is_err());
+    assert_eq!(fs::read(&target).unwrap(), original);
+    fs::remove_file(&path).unwrap();
+    fs::rename(&target, &path).unwrap();
+    fs::hard_link(&path, &target).unwrap();
+    assert!(mynou::engine::Engine::open_for_preview(c.clone()).is_err());
+    fs::remove_file(&target).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(mynou::engine::Engine::open_for_preview(c).is_err());
+    assert_eq!(fs::read(&path).unwrap(), original);
+}
+#[test]
+fn offline_source_previews_never_create_missing_snapshot_or_apply_control() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let c = cfg(&d, &p, "none");
+    drop(mynou::engine::Engine::open_for_management(c.clone()).unwrap());
+    let path = c.store_dir.join("indexers.bin");
+    fs::remove_file(&path).unwrap();
+    let preview = mynou::engine::Engine::open_for_preview(c).unwrap();
+    let id = policy_id(&preview);
+    let q = reviewed(&preview, &id, "pause");
+    assert!(preview.indexer_control(&id, &q).is_err());
+    assert!(!path.exists());
+    assert_eq!(p.searches.load(Ordering::Acquire), 0);
+}
+#[test]
+fn protected_source_controls_bind_browser_sessions_csrf_and_one_use_reviews() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let server = Server::open(cfg(&d, &p, "none"));
+    let id = policy_id(&server.engine);
+    let route = format!("/api/indexers/{id}/control");
+    assert_eq!(
+        server
+            .call(
+                "POST",
+                &route,
+                &[("Content-Type", "application/json")],
+                r#"{"action":"pause"}"#
+            )
+            .status,
+        401
+    );
+    let api = server.call(
+        "POST",
+        &route,
+        &[
+            ("Content-Type", "application/json"),
+            ("Authorization", &format!("Bearer {TOKEN}")),
+        ],
+        r#"{"action":"pause","extra":true}"#,
+    );
+    assert_eq!(api.status, 400);
+    let browser = Browser::login(&server);
+    let other = Browser::login(&server);
+    let review = browser.post(
+        &server,
+        "/ui/indexers/control",
+        &[("id", &id), ("action", "pause")],
+    );
+    assert_eq!(review.status, 200, "{}", review.body);
+    review.no_secrets();
+    let plan = review
+        .body
+        .split("name=\"plan_id\" value=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap();
+    let fields = [
+        ("id", id.as_str()),
+        ("action", "pause"),
+        ("apply", "yes"),
+        ("plan_id", plan),
+    ];
+    assert_eq!(
+        other.post(&server, "/ui/indexers/control", &fields).status,
+        400
+    );
+    assert_eq!(
+        browser
+            .raw_post(
+                &server,
+                "/ui/indexers/control",
+                &web_support::fields(&fields)
+            )
+            .status,
+        403
+    );
+    assert_eq!(
+        browser
+            .post(&server, "/ui/indexers/control", &fields)
+            .status,
+        303
+    );
+    assert_eq!(
+        browser
+            .post(&server, "/ui/indexers/control", &fields)
+            .status,
+        400
+    );
+    assert!(integrations::search(&server.engine.config, &movie()).is_err());
+    assert_eq!(p.searches.load(Ordering::Acquire), 0);
+}
+#[test]
+fn cli_source_control_uses_online_guard_and_offline_persisted_policy() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let server = Server::open(cfg(&d, &p, "none"));
+    let id = policy_id(&server.engine);
+    let mut v = value(&d, &p, "none");
+    v.insert("listen", server.authority.clone());
+    let path = d.0.join("mynou.json");
+    fs::write(&path, json::stringify(&v)).unwrap();
+    let run = |extra: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_mynou"))
+            .env("MYNOU_API_TOKEN", TOKEN)
+            .args(["indexer-control", &id, "--action", "pause", "--config"])
+            .arg(&path)
+            .args(extra)
+            .output()
+            .unwrap()
+    };
+    let out = run(&[]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report = json::parse(std::str::from_utf8(&out.stdout).unwrap()).unwrap();
+    redacted(&report);
+    let guard = report.get("plan_id").unwrap().as_str().unwrap();
+    assert!(run(&["--apply", "--plan-id", guard]).status.success());
+    assert!(!run(&["--apply", "--plan-id", guard]).status.success());
+    drop(server);
+    let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
+        .env_remove("MYNOU_API_TOKEN")
+        .args(["indexers", "--config"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report = json::parse(std::str::from_utf8(&out.stdout).unwrap()).unwrap();
+    assert_eq!(
+        report.get("sources").unwrap().as_array().unwrap()[0].get("enabled"),
+        Some(&Value::Bool(false))
+    );
+    assert_eq!(p.searches.load(Ordering::Acquire), 0);
+}
