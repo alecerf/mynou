@@ -402,7 +402,7 @@ pub fn report(sources: &[Source]) -> Value {
                         v.insert("failures", s.failures.to_string());
                         v.insert(
                             "last_status",
-                            s.last_status.map_or(Value::Null, Value::from),
+                            s.last_status.map_or(Value::Null, |n| u32::from(n).into()),
                         );
                         v.insert("last_error", s.last_error.map_or(Value::Null, Value::from));
                         v.insert("last_parse", s.last_parse.map_or(Value::Null, Value::from));

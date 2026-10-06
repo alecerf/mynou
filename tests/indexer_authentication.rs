@@ -335,11 +335,7 @@ fn configured_form_session_is_shared_by_clones_and_renews_once_after_401() {
     assert_eq!(p.logins.load(Ordering::Acquire), 2);
     assert_eq!(p.searches.load(Ordering::Acquire), 4);
     redacted(&health(&c));
-    assert!(
-        format!("{:?}", c.sources[0].options)
-            .find("private-session-fixture")
-            .is_none()
-    );
+    assert!(!format!("{:?}", c.sources[0].options).contains("private-session-fixture"));
 }
 #[test]
 fn repeated_unauthorized_session_response_stops_without_unauthenticated_fallback() {
