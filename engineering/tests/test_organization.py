@@ -383,6 +383,63 @@ class TransitionScenarios(unittest.TestCase):
         self.assertEqual(native.deleted, ["git/refs/heads/work/old"])
 
 
+class CleanupRecoveryScenarios(unittest.TestCase):
+    class Dependencies(Native):
+        def __init__(self, parent_done=False):
+            super().__init__()
+            self.issues = [issue(status="done" if parent_done else "review"), issue(2, status="blocked")]
+            if parent_done: self.issues[0]["state"] = "closed"
+            self.current_state = state()
+            self.control_head = BASE
+            self.writes = []
+        def rest(self, method, path, value=None):
+            if path.startswith("issues/") and path.count("/") == 1:
+                original = next(i for i in self.issues if i["number"] == int(path.split("/")[1]))
+                if method == "PATCH":
+                    self.writes.append((path, deepcopy(self.current_state["lease"])))
+                    if "labels" in value: original["labels"] = [{"name": n} for n in value["labels"]]
+                    if "state" in value: original["state"] = value["state"]
+                return deepcopy(original)
+            return super().rest(method, path, value)
+        def pages(self, path, key=None):
+            if path == "issues?state=open&labels=agent-work,status:blocked":
+                return [deepcopy(i) for i in self.issues if i["state"] == "open" and "status:blocked" in control.labels(i)]
+            if path == "issues/2/dependencies/blocked_by": return [deepcopy(self.issues[0])]
+            return super().pages(path, key)
+        def read(self, api): return self.control_head, deepcopy(self.current_state)
+        def save(self, api, expected, value, message):
+            if expected != self.control_head: raise AssertionError("Fixture CAS conflict")
+            self.current_state = deepcopy(value)
+            self.control_head = format(int(self.control_head, 16) + 1, "040x")
+            return self.control_head
+
+    def test_branch_cleanup_failure_after_closure_does_not_leave_dependents_blocked(self):
+        native = self.Dependencies()
+        native.current_state = held("triage")
+        merged = dict(pr(), state="closed", merged_at=lease.stamp(AT))
+        with patch.object(delivery, "read_state", side_effect=native.read), patch.object(lease, "now", return_value=AT), patch.object(delivery, "cleanup_branch", side_effect=APIError(503)):
+            with self.assertRaises(APIError): delivery.cleanup_pr(native, merged)
+        self.assertEqual(native.issues[0]["state"], "closed")
+        self.assertIn("status:done", control.labels(native.issues[0]))
+        self.assertIn("status:ready", control.labels(native.issues[1]))
+
+    def test_restart_repairs_blocked_dependent_even_when_parent_already_done(self):
+        native = self.Dependencies(parent_done=True)
+        with patch.object(delivery, "read_state", side_effect=native.read), patch.object(delivery, "save", side_effect=native.save), patch.object(lease, "now", return_value=AT):
+            result = delivery.run(native)
+        self.assertEqual(result, {"action": "dependency-recovery", "issues": [2]})
+        self.assertIsNone(native.current_state["lease"])
+        self.assertEqual(native.current_state["checkpoint"]["issue"], 2)
+        self.assertIn("status:ready", control.labels(native.issues[1]))
+        self.assertTrue(all(owner is not None and owner["role"] == "quality" for _, owner in native.writes))
+
+    def test_open_native_blocker_prevents_readiness_without_state_writes(self):
+        native = self.Dependencies()
+        self.assertIsNone(delivery.recover_dependencies(native, BASE, state()))
+        self.assertFalse(native.writes)
+        self.assertIn("status:blocked", control.labels(native.issues[1]))
+
+
 class AtomicCAS(unittest.TestCase):
     def test_competing_writer_cannot_overwrite_a_new_lease_without_force(self):
         class Race(GitHub):

@@ -75,15 +75,54 @@ def cleanup_pr(api, pr):
             raise ValueError("Cleanup requires a managed linked Issue")
         api.rest("PATCH", f"issues/{number}", {"state": "closed", "state_reason": "completed"})
         label_update(api, number, "status", "done")
-    # Native closing keywords and native branch deletion may already have run.
-    cleanup = cleanup_branch(api, pr["head"]["ref"], pr["head"]["sha"], read_state(api)[1]["lease"])
-    for issue in api.pages("issues?state=open&labels=agent-work"):
-        if "status:blocked" not in labels(issue):
+    # Repair dependencies before optional branch work can fail. Later wakes also
+    # reconcile independently of whether this parent's status is already Done.
+    held = read_state(api)[1]["lease"]
+    reconcile_dependencies(api, held)
+    return cleanup_branch(api, pr["head"]["ref"], pr["head"]["sha"], held)
+
+
+def reconcile_dependencies(api, held, candidates=None):
+    if held is None or held["role"] not in ("quality", "triage"):
+        raise ValueError("Dependency repair requires owned delivery/Quality execution")
+    changed = []
+    issues = candidates if candidates is not None else api.pages("issues?state=open&labels=agent-work,status:blocked")
+    for issue in issues[:20]:
+        if "pull_request" in issue or issue["state"] != "open" or "status:blocked" not in labels(issue):
             continue
         blockers = api.pages(f"issues/{issue['number']}/dependencies/blocked_by")
         if blockers and all(i["state"] == "closed" for i in blockers):
+            lease.owned(read_state(api)[1], held["id"], lease.now())
             label_update(api, issue["number"], "status", "ready")
-    return cleanup
+            changed.append(issue["number"])
+    return changed
+
+
+def recover_dependencies(api, head, state):
+    for issue in api.pages("issues?state=open&labels=agent-work,status:blocked")[:20]:
+        if "pull_request" in issue:
+            continue
+        blockers = api.pages(f"issues/{issue['number']}/dependencies/blocked_by")
+        if not blockers or any(i["state"] != "closed" for i in blockers):
+            continue
+        identity = str(uuid.uuid4())
+        commit = api.ref(api.cfg["default_branch"])
+        owned = lease.acquire(state, lease.now(), identity, "github-actions-dependency-recovery", "quality",
+            issue["number"], api.cfg["default_branch"], commit)
+        save(api, head, owned, "Recover interrupted native dependency metadata")
+        try:
+            changed = reconcile_dependencies(api, owned["lease"], [issue])
+            h, s = read_state(api)
+            s = lease.checkpoint(s, lease.now(), identity,
+                f"Inspected closed native blockers and repaired readiness for Issues {changed}; parent Done status does not hide interrupted cleanup.",
+                "Finish any remaining merged-PR cleanup, then execute the highest-priority ready work.")
+            save(api, h, s, "Checkpoint native dependency recovery")
+            return {"action": "dependency-recovery", "issues": changed}
+        finally:
+            h, s = read_state(api)
+            if lease.valid(s, lease.now()) and s["lease"]["id"] == identity:
+                save(api, h, lease.release(s, lease.now(), identity), "Release dependency recovery")
+    return None
 
 
 def run(api, sweep=False):
@@ -100,6 +139,9 @@ def run(api, sweep=False):
         recovered = recover_native(api, state, at)
         head = save(api, head, recovered, "Recover interrupted delivery lease")
         state = recovered
+    repaired = recover_dependencies(api, head, state)
+    if repaired is not None:
+        return repaired
     prs = api.pages("pulls?state=all")
     candidates = [p for p in prs if p["state"] == "open" and not p["draft"] and qa.linked_issues(p.get("body"))]
     result = []

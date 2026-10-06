@@ -170,7 +170,10 @@ apply. The script is an automatic merger, not native GitHub auto-merge.
 
 After merge, native closing keywords and existing `delete_branch_on_merge` help.
 Cleanup sets Issue status Done, unblocks completed native dependencies and audits
-branches. A live lease protects its execution branch until release. Quality checks
+branches. Every delivery wake also repairs interrupted blocked-dependency metadata
+under its own lease, even when a parent Issue is already Done. Dependency repair
+precedes optional branch cleanup so a transient deletion failure cannot block the
+next work item. A live lease protects its execution branch until release. Quality checks
 merged history, exact heads, open PRs, Issue bodies/comments and live leases before
 deletion. Default/control/protected/ambiguous/unique work is preserved. Branch age
 alone never authorizes deletion. REST lacks conditional expected-SHA deletion;
