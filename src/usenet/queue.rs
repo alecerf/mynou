@@ -31,6 +31,9 @@ struct Source {
     bytes: Arc<Vec<u8>>,
     nzb: Nzb,
 }
+pub fn valid_transfer_id(id: &str) -> bool {
+    valid_digest(id)
+}
 struct Inner {
     settings: Downloads,
     servers: BTreeMap<String, Server>,
@@ -343,6 +346,15 @@ impl Client {
     }
     pub fn max_active(&self) -> Result<usize> {
         Ok(self.lock()?.settings.max_active)
+    }
+    pub(crate) fn worker_count(&self) -> usize {
+        self.lock().map_or(0, |inner| {
+            if inner.writable().is_ok() {
+                inner.settings.max_active
+            } else {
+                0
+            }
+        })
     }
     pub fn report(&self) -> Result<Value> {
         let inner = self.lock()?;

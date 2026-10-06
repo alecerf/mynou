@@ -44,7 +44,92 @@ impl ProbeRequest {
         v
     }
 }
+#[derive(Clone, Debug)]
+pub struct QueueControl {
+    pub action: String,
+    pub apply: bool,
+    pub plan_id: Option<String>,
+}
+impl QueueControl {
+    pub fn from_json(v: &Value) -> Result<Self> {
+        crate::numbering::only(v, &["action", "apply", "plan_id"])?;
+        let action = v
+            .get("action")
+            .and_then(Value::as_str)
+            .ok_or("Usenet queue: action is required")?
+            .to_owned();
+        let mut review = Value::object();
+        for k in ["apply", "plan_id"] {
+            if let Some(v) = v.get(k) {
+                review.insert(k, v.clone());
+            }
+        }
+        let q = ProbeRequest::from_json(&review)?;
+        let result = Self {
+            action,
+            apply: q.apply,
+            plan_id: q.plan_id,
+        };
+        result.validate()?;
+        Ok(result)
+    }
+    pub fn validate(&self) -> Result<()> {
+        if !matches!(
+            self.action.as_str(),
+            "pause" | "resume" | "cancel" | "retry"
+        ) {
+            return Err("Usenet queue: invalid action".into());
+        }
+        self.review().validate()
+    }
+    pub fn review(&self) -> ProbeRequest {
+        ProbeRequest {
+            apply: self.apply,
+            plan_id: self.plan_id.clone(),
+        }
+    }
+    pub fn to_json(&self) -> Value {
+        let mut v = self.review().to_json();
+        v.insert("action", self.action.clone());
+        v
+    }
+}
 impl Engine {
+    pub fn usenet_queue(&self) -> Result<Value> {
+        if let Some(client) = &self.usenet_queue {
+            return client.report();
+        }
+        let mut v = Value::object();
+        v.insert("enabled", false);
+        v.insert("records", Value::Array(Vec::new()));
+        Ok(v)
+    }
+    pub fn usenet_enqueue(
+        &self,
+        nzb: &[u8],
+        server: &str,
+        index: usize,
+        q: &ProbeRequest,
+    ) -> Result<Value> {
+        q.validate()?;
+        if q.apply && (self.read_only || self.stopped.load(Ordering::Acquire)) {
+            return Err("Usenet queue: application requires the running service".into());
+        }
+        self.usenet_queue
+            .as_ref()
+            .ok_or("Usenet queue: downloads are not configured")?
+            .enqueue(nzb, server, index, q)
+    }
+    pub fn usenet_queue_control(&self, id: &str, q: &QueueControl) -> Result<Value> {
+        q.validate()?;
+        if q.apply && (self.read_only || self.stopped.load(Ordering::Acquire)) {
+            return Err("Usenet queue: application requires the running service".into());
+        }
+        self.usenet_queue
+            .as_ref()
+            .ok_or("Usenet queue: downloads are not configured")?
+            .control(id, &q.action, &q.review())
+    }
     pub fn usenet_servers(&self) -> Value {
         self.config.usenet.report()
     }

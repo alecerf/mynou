@@ -24,6 +24,7 @@ pub struct Engine {
     pub(crate) series_store: Mutex<crate::series::SeriesStore>,
     pub(crate) series_refresh_lock: Mutex<()>,
     downloads: Option<Client>,
+    pub(crate) usenet_queue: Option<crate::usenet::queue::Client>,
     pub(crate) sync_lock: Mutex<()>,
     pub(crate) requester_store: Mutex<crate::requesters::RequesterStore>,
     pub(crate) irc_store: Mutex<crate::irc::AnnouncementStore>,
@@ -89,6 +90,17 @@ impl Engine {
             crate::irc::admission::recovered_state(&irc_store.state, &requester_store.state)?;
         let irc_recovered = crate::irc::routing::recovered_state(&irc_admitted, &store)?;
         let irc_recovery_changed = irc_recovered != irc_store.state;
+        let usenet_queue = config
+            .usenet
+            .downloads
+            .as_ref()
+            .map(|d| {
+                crate::usenet::queue::Client::prepare(
+                    &config.usenet,
+                    read_only || !start_downloads || !d.enabled,
+                )
+            })
+            .transpose()?;
         indexer_store.initialize(&config)?;
         requester_store.initialize()?;
         irc_store.initialize()?;
@@ -101,6 +113,9 @@ impl Engine {
                 &mut store,
                 &config,
             )?;
+        }
+        if let Some(client) = &usenet_queue {
+            client.initialize()?;
         }
         let downloads = if start_downloads && config.downloads_enabled {
             let client =
@@ -142,6 +157,7 @@ impl Engine {
             series_store: Mutex::new(series_store),
             series_refresh_lock: Mutex::new(()),
             downloads,
+            usenet_queue,
             sync_lock: Mutex::new(()),
             requester_store: Mutex::new(requester_store),
             irc_store: Mutex::new(irc_store),
@@ -460,6 +476,24 @@ impl Engine {
         crate::irc::client::start(self, &mut handles);
         crate::irc::routing::start(self, &mut handles);
         crate::notifications::delivery::start(self, &mut handles);
+        if let Some(client) = &self.usenet_queue {
+            for _ in 0..client.worker_count() {
+                let engine = self.clone();
+                let client = client.clone();
+                handles.push(thread::spawn(move || {
+                    while !engine.stopped.load(Ordering::Acquire) {
+                        match client.tick() {
+                            Ok(true) => {}
+                            Ok(false) => engine.wait(200),
+                            Err(error) => {
+                                eprintln!("mynou: {error}");
+                                engine.wait(1000);
+                            }
+                        }
+                    }
+                }));
+            }
+        }
         if self.config.catalog.enabled {
             let engine = self.clone();
             handles.push(thread::spawn(move || {
@@ -979,6 +1013,9 @@ pub struct Workers {
 impl Drop for Workers {
     fn drop(&mut self) {
         self.engine.stopped.store(true, Ordering::Release);
+        if let Some(client) = &self.engine.usenet_queue {
+            client.stop();
+        }
         for h in self.handles.drain(..) {
             let _ = h.join();
         }

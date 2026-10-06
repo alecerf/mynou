@@ -1,6 +1,6 @@
 //! Native bounded Usenet formats. Metadata inspection never contacts providers.
 mod management;
-pub use management::ProbeRequest;
+pub use management::{ProbeRequest, QueueControl};
 pub mod nntp;
 pub mod nzb;
 pub mod queue;

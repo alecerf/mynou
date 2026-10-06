@@ -26,6 +26,11 @@ const HELP: &str = "Mynou — media automation using Rust std only
   nzb-inspect FILE
   usenet [--config mynou.json]
   usenet-probe SERVER_ID [--apply --plan-id ID] [--config mynou.json]
+  usenet-queue [--config mynou.json]
+  usenet-enqueue NZB_FILE --server ID [--file-index N] [--apply --plan-id ID]
+                 [--config mynou.json]
+  usenet-control TRANSFER_ID --action pause|resume|cancel|retry
+                 [--apply --plan-id ID] [--config mynou.json]
   doctor [--config mynou.json]
   serve [--config mynou.json]
   submit --title TITLE [--kind movie|episode|series|file] [--year YEAR]
@@ -125,8 +130,10 @@ impl Args {
                 &["config", "help"]
             }
             "requesters" | "requester-sync" => &["config", "help"],
-            "indexers" | "usenet" => &["config", "help"],
+            "indexers" | "usenet" | "usenet-queue" => &["config", "help"],
             "usenet-probe" => &["config", "help", "apply", "plan-id"],
+            "usenet-enqueue" => &["config", "help", "server", "file-index", "apply", "plan-id"],
+            "usenet-control" => &["config", "help", "action", "apply", "plan-id"],
             "indexer-control" => &["config", "help", "action", "apply", "plan-id"],
             "notifications" => &["config", "help", "offset", "limit"],
             "notifications-dispatch" => &["config", "help"],
@@ -227,6 +234,8 @@ impl Args {
                 "notification-control",
                 "indexer-control",
                 "usenet-probe",
+                "usenet-enqueue",
+                "usenet-control",
                 "analyze",
                 "nzb-inspect",
                 "show",
@@ -793,6 +802,84 @@ fn execute(args: Args) -> Result<()> {
                 output(&call(&config, &path, "GET", "/api/usenet", None)?);
             } else {
                 output(&config.usenet.report());
+            }
+        }
+        "usenet-queue" => {
+            if online {
+                output(&call(&config, &path, "GET", "/api/usenet/queue", None)?);
+            } else {
+                output(&Engine::open_for_preview(config)?.usenet_queue()?);
+            }
+        }
+        "usenet-enqueue" => {
+            let mut v = Value::object();
+            v.insert("apply", args.options.contains_key("apply"));
+            v.insert(
+                "plan_id",
+                args.options
+                    .get("plan-id")
+                    .cloned()
+                    .map_or(Value::Null, Value::from),
+            );
+            let q = mynou::usenet::ProbeRequest::from_json(&v)?;
+            let bytes = mynou::usenet::nzb::Nzb::read_bytes(Path::new(&args.positions[0]))?;
+            let server = args.value("server", "");
+            if !mynou::requesters::valid_id(server) {
+                return Err("Usenet queue: --server requires a configured server ID".into());
+            }
+            let index = args.number("file-index")? as usize;
+            if online {
+                v.insert(
+                    "nzb",
+                    std::str::from_utf8(&bytes).map_err(|_| "NZB: document must be UTF-8")?,
+                );
+                v.insert("server_id", server);
+                v.insert("file_index", index as u32);
+                output(&call(
+                    &config,
+                    &path,
+                    "POST",
+                    "/api/usenet/queue",
+                    Some(&v),
+                )?);
+            } else {
+                if q.apply {
+                    return Err("Usenet queue: application requires the running service".into());
+                }
+                output(
+                    &Engine::open_for_preview(config)?.usenet_enqueue(&bytes, server, index, &q)?,
+                );
+            }
+        }
+        "usenet-control" => {
+            let mut v = Value::object();
+            v.insert("action", args.value("action", ""));
+            v.insert("apply", args.options.contains_key("apply"));
+            v.insert(
+                "plan_id",
+                args.options
+                    .get("plan-id")
+                    .cloned()
+                    .map_or(Value::Null, Value::from),
+            );
+            let q = mynou::usenet::QueueControl::from_json(&v)?;
+            let id = &args.positions[0];
+            if !mynou::usenet::queue::valid_transfer_id(id) {
+                return Err("Usenet queue: invalid transfer ID".into());
+            }
+            if online {
+                output(&call(
+                    &config,
+                    &path,
+                    "POST",
+                    &format!("/api/usenet/queue/{id}/control"),
+                    Some(&q.to_json()),
+                )?);
+            } else {
+                if q.apply {
+                    return Err("Usenet queue: application requires the running service".into());
+                }
+                output(&Engine::open_for_preview(config)?.usenet_queue_control(id, &q)?);
             }
         }
         "usenet-probe" => {

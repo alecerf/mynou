@@ -253,7 +253,7 @@ impl Web {
             "/ui/irc" => irc_views::list(engine, &session, &query)?,
             "/ui/usenet" => {
                 query.only(&[])?;
-                usenet_views::list(engine, &session)
+                usenet_views::list(engine, &session)?
             }
             "/ui/indexers" => {
                 query.only(&[])?;
@@ -326,6 +326,43 @@ impl Web {
         session: &Session,
     ) -> Result<Response> {
         match path {
+            "/ui/usenet/control" => {
+                form.only(&["csrf", "id", "action", "apply", "plan_id"])?;
+                let id = form.value("id")?;
+                let action = form.value("action")?;
+                if form.value("apply")? == "yes" {
+                    let q = lock(&self.sessions)?.usenet_queue_preview(
+                        &session.id,
+                        id,
+                        action,
+                        form.value("plan_id")?,
+                    )?;
+                    engine.usenet_queue_control(id, &q)?;
+                    lock(&self.sessions)?.clear_usenet_preview(&session.id);
+                    return self.redirect(
+                        session,
+                        "/ui/usenet",
+                        vec!["Reviewed Usenet control applied".into()],
+                    );
+                }
+                form.only(&["csrf", "id", "action"])?;
+                let mut q = crate::usenet::QueueControl {
+                    action: action.into(),
+                    apply: false,
+                    plan_id: None,
+                };
+                let report = engine.usenet_queue_control(id, &q)?;
+                q.apply = true;
+                q.plan_id = report
+                    .get("plan_id")
+                    .and_then(crate::json::Value::as_str)
+                    .map(str::to_owned);
+                lock(&self.sessions)?.save_usenet_queue_preview(&session.id, id, q)?;
+                Ok(Response::html(
+                    200,
+                    usenet_views::queue_review(session, &report),
+                ))
+            }
             "/ui/usenet/probe" => {
                 form.only(&["csrf", "id", "apply", "plan_id"])?;
                 let id = form.value("id")?;

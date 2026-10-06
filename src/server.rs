@@ -255,6 +255,43 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
         ("GET", "/api/status") => Ok((200, engine.status()?)),
         ("GET", "/api/indexers") => Ok((200, engine.indexers()?)),
         ("GET", "/api/usenet") => Ok((200, engine.usenet_servers())),
+        ("GET", "/api/usenet/queue") => Ok((200, engine.usenet_queue()?)),
+        ("POST", "/api/usenet/queue") => {
+            let v = control_body(
+                body,
+                &["nzb", "server_id", "file_index", "apply", "plan_id"],
+                false,
+            )?;
+            let bytes = v
+                .get("nzb")
+                .and_then(Value::as_str)
+                .ok_or("Usenet queue: NZB text is required")?
+                .as_bytes();
+            let server = v
+                .get("server_id")
+                .and_then(Value::as_str)
+                .ok_or("Usenet queue: server ID is required")?;
+            let index = v
+                .get("file_index")
+                .and_then(Value::as_u64)
+                .and_then(|n| usize::try_from(n).ok())
+                .ok_or("Usenet queue: file index is required")?;
+            let mut review = Value::object();
+            for k in ["apply", "plan_id"] {
+                if let Some(v) = v.get(k) {
+                    review.insert(k, v.clone());
+                }
+            }
+            Ok((
+                200,
+                engine.usenet_enqueue(
+                    bytes,
+                    server,
+                    index,
+                    &crate::usenet::ProbeRequest::from_json(&review)?,
+                )?,
+            ))
+        }
         ("GET", "/api/transfers") => Ok((200, engine.transfers()?)),
         ("GET", "/api/library") => Ok((200, engine.library()?)),
         ("GET", "/api/series") => Ok((200, engine.series()?)),
@@ -401,6 +438,21 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
                 return Ok((404, error("Unknown IRC route")));
             }
             if let Some(tail) = path.strip_prefix("/api/usenet/") {
+                if let Some(id) = tail
+                    .strip_prefix("queue/")
+                    .and_then(|s| s.strip_suffix("/control"))
+                    && crate::requesters::valid_digest(id)
+                    && method == "POST"
+                {
+                    let v = control_body(body, &["action", "apply", "plan_id"], false)?;
+                    return Ok((
+                        200,
+                        engine.usenet_queue_control(
+                            id,
+                            &crate::usenet::QueueControl::from_json(&v)?,
+                        )?,
+                    ));
+                }
                 if let Some(id) = tail.strip_suffix("/probe")
                     && crate::requesters::valid_id(id)
                     && method == "POST"

@@ -55,6 +55,7 @@ struct IndexerPreview {
 #[derive(Clone)]
 struct UsenetPreview {
     server_id: String,
+    action: Option<String>,
     query: crate::usenet::ProbeRequest,
     expires: Instant,
 }
@@ -215,6 +216,7 @@ impl Sessions {
         session.indexer_preview = None;
         session.usenet_preview = Some(UsenetPreview {
             server_id: server_id.into(),
+            action: None,
             query,
             expires: Instant::now() + Duration::from_secs(CHALLENGE_SECS),
         });
@@ -233,6 +235,7 @@ impl Sessions {
             .filter(|p| {
                 p.expires > Instant::now()
                     && p.server_id == server_id
+                    && p.action.is_none()
                     && p.query.plan_id.as_deref() == Some(plan_id)
             })
             .map(|p| p.query.clone())
@@ -242,6 +245,50 @@ impl Sessions {
         if let Some(s) = self.0.get_mut(id) {
             s.usenet_preview = None;
         }
+    }
+    pub fn save_usenet_queue_preview(
+        &mut self,
+        id: &str,
+        transfer_id: &str,
+        q: crate::usenet::QueueControl,
+    ) -> Result<()> {
+        q.validate()?;
+        if !crate::requesters::valid_digest(transfer_id) {
+            return Err("Usenet queue: invalid browser transfer identity".into());
+        }
+        self.save_usenet_preview(id, transfer_id, q.review())?;
+        let preview = self
+            .0
+            .get_mut(id)
+            .and_then(|s| s.usenet_preview.as_mut())
+            .ok_or("Usenet queue: browser review expired")?;
+        preview.action = Some(q.action);
+        Ok(())
+    }
+    pub fn usenet_queue_preview(
+        &mut self,
+        id: &str,
+        transfer_id: &str,
+        action: &str,
+        guard: &str,
+    ) -> Result<crate::usenet::QueueControl> {
+        self.purge();
+        let p = self
+            .0
+            .get(id)
+            .and_then(|s| s.usenet_preview.as_ref())
+            .filter(|p| {
+                p.expires > Instant::now()
+                    && p.server_id == transfer_id
+                    && p.action.as_deref() == Some(action)
+                    && p.query.plan_id.as_deref() == Some(guard)
+            })
+            .ok_or("Usenet queue: browser review expired or changed; preview again")?;
+        Ok(crate::usenet::QueueControl {
+            action: action.into(),
+            apply: p.query.apply,
+            plan_id: p.query.plan_id.clone(),
+        })
     }
 
     pub fn save_indexer_preview(
