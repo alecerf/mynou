@@ -1,7 +1,7 @@
 # Native indexers and authentication
 
 Mynou 0.21.0 keeps its original JSON, RSS and Torznab adapters and release
-selection. The authentication/session/health source awaits its own complete CI.
+selection. Native authentication/session/health passed complete v0.21.0 CI.
 Configure an endpoint that directly serves that adapter; fetches reject redirects.
 Existing sources default to enabled, without authentication or interval limits.
 Existing API-key query configuration remains supported.
@@ -10,6 +10,7 @@ Existing API-key query configuration remains supported.
 {
   "indexers": [
     {
+      "id": "movies-source",
       "name": "movies",
       "kind": "torznab",
       "url": "https://indexer.example.test/api",
@@ -63,6 +64,46 @@ browser **Indexers** page report safe source aliases, adapter, enabled/auth mode
 request/success/failure counters, fixed last diagnostic, HTTP status, parse result
 and session presence. URLs, environment names/values, raw response bodies,
 authentication headers and cookie values are omitted. Busy views are explicit.
-Offline inspection reads configuration alone; it does not restore live sessions
-or imply a successful network check. Persistent reviewed source controls follow
-in the next focused increment.
+Offline inspection verifies existing policy storage without writing; it does not
+restore live sessions or imply a successful network check.
+
+## Checked policy and guarded controls in 0.21.1
+
+The active increment requires its own complete CI. An optional stable `id` is
+1–64 lowercase letters, digits, underscores or hyphens. Without it, identity is a
+SHA-256 digest of the private binding, preserving legacy configuration. Duplicate
+IDs fail. A stable ID binds name, kind, endpoint, API-key environment name, request
+interval and authentication configuration. Changing that binding requires a new
+ID. Credential values and cookies are never stored. Enabled policy starts from
+configuration once, then persists independently of subsequent `enabled` settings.
+
+The private `indexers.bin` snapshot uses MYNOUS01, a length and SHA-256 check,
+atomic replacement and directory synchronization. It retains up to 1,000 sources
+within 2 MiB, including removed sources; removal does not erase operator policy.
+Corruption, unsupported formats, links and public file permissions fail closed
+before workers. Uncertain durability requires restart. Read-only inspection of a
+missing snapshot uses initial configuration in memory without creating it.
+
+```sh
+mynou indexers --config mynou.json
+mynou indexer-control movies-source --action pause --config mynou.json
+# Copy the returned plan_id into the explicit application.
+mynou indexer-control movies-source --action pause --apply --plan-id REVIEWED_ID --config mynou.json
+```
+
+Actions are `enable`, `pause`, `reset_session` and `probe`. Protected
+`POST /api/indexers/SOURCE_ID/control` takes action, optional apply and plan_id.
+Every application requires a fresh whole-policy guard and the running service.
+Any applied source change invalidates outstanding policy guards and active HTTP
+responses for that source. Reset discards the in-memory cookie before the next
+fetch; health marks it inactive immediately. Paused sources cannot be probed.
+
+A probe preview performs no network request. Applying the review records its
+revision before searching the configured source with a fixed synthetic query
+and a five-second budget. It reports success only when transport and adapter
+parsing succeed. It creates no download or library job. Source intervals, 429
+cooldowns and busy rejection still apply; an unavailable probe does not reset
+these limits. A crash after recording a probe may leave an unknown transport
+outcome; no automatic replay occurs. Browser reviews bind source, action, guard
+and session, expire after ten minutes and require CSRF/origin checks.
+

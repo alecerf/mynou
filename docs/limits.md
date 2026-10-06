@@ -242,7 +242,8 @@ requester self-service remains later work. Explicit native HTTP notification rou
 passed complete 0.20.7 CI/publication; see notifications.md.
 Indexer integrations support RSS/JSON/Torznab endpoints. Native Basic, Bearer and
 explicit single-cookie form authentication, bounded renewal, request intervals
-and redacted health are implemented in 0.21.0 and await their own exact CI. Login
+and redacted health passed complete v0.21.0 CI. Checked persistent source policy
+and guarded controls in 0.21.1 await their own exact CI. Login
 redirects, CSRF/CAPTCHA/interactive flows, arbitrary cookie jars and a general
 tracker adapter catalog remain unsupported; Usenet follows later. Opt-in IRC reception
 supports an explicit strict JSON envelope and review rules, with eight sources,
