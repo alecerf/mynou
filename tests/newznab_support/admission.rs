@@ -510,6 +510,12 @@ fn requester_removal_revokes_native_article_permission_before_returning() {
     engine.sync_requesters().unwrap();
     let job = accounts::job(&engine, "alice");
     engine.tick().unwrap();
+    // Keep the already authorized queue worker live, while preventing unrelated
+    // job polls and watchlist reconciliation from invalidating this review.
+    let mut waiting = retained(&engine, &job.id);
+    waiting.next_attempt_at = mynou::store::now().saturating_add(60);
+    lock(&engine.store).unwrap().update(waiting).unwrap();
+    a.blocked.store(true, Ordering::Release);
     p.gate.store(true, Ordering::Release);
     let workers = engine.start();
     p.wait_requests(1);
@@ -524,6 +530,7 @@ fn requester_removal_revokes_native_article_permission_before_returning() {
         progress(&engine).get("owner_authorized"),
         Some(&Value::Bool(false))
     );
+    a.blocked.store(false, Ordering::Release);
     p.gate.store(false, Ordering::Release);
     usenet_support::wait(|| {
         engine
