@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 25,
+  "generation": 26,
   "lease": {
     "id": "a9a0285e-e7fb-4304-84ac-2cdcfce1d8a8",
     "worker": "codex-primary-bootstrap",
     "role": "qa",
     "issue": 1,
     "acquired_at": "2026-10-06T19:32:26Z",
-    "heartbeat_at": "2026-10-06T19:32:26Z",
-    "expires_at": "2026-10-06T20:17:26Z",
+    "heartbeat_at": "2026-10-06T19:33:48Z",
+    "expires_at": "2026-10-06T20:18:48Z",
     "branch": "work/autonomous-organization",
     "commit": "ddcec24b92e4c971431b1543a87e55de864fee5b",
     "pr": 3
   },
   "checkpoint": {
-    "at": "2026-10-06T19:31:41Z",
+    "at": "2026-10-06T19:33:48Z",
     "issue": 1,
-    "role": "security",
+    "role": "qa",
     "branch": "work/autonomous-organization",
     "commit": "ddcec24b92e4c971431b1543a87e55de864fee5b",
     "pr": 3,
-    "summary": "Security approves the exact current source after complete 40-path diff review and inspection of the two-path correction. All three original findings are addressed. Native organization job 112459927503 in run 37519216864 passed policy and all 28 scenarios, including interrupted squash merge, fresh deletion fences and supported handoff trigger. Current core validate/GNU/musl jobs are green; package remains running. No product source change, protection weakening, secrets exposure or paid worker.",
-    "next_action": "Post current-head Security COMMENT record, release, then independent QA inspects full acceptance/diff/current CI. QA must wait for the required package job and review gate before delivery."
+    "summary": "Independent QA rejects current source after acceptance/diff review, despite green required core jobs and 28 scenarios. branch-sweep reaches merge/cleanup before its sweep guard, so a documented read-only command can mutate delivery. Expiry recovery and the no-progress breaker inherit the prior checkpoint without binding the interrupted lease when death/attempts occur before its first checkpoint. Both violate explicit bootstrap recovery and mechanical-operation expectations; no merge.",
+    "next_action": "Quality must make sweeps strictly read-only and bind recovery/circuit-breaker handoffs to the affected lease, preserving previous useful context without misidentifying the work. Add CI-only regressions; then Security and QA inspect the exact correction. Update stale Issue/PR metadata when verified."
   },
   "attempts": {}
 }
