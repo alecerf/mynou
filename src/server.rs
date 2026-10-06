@@ -253,7 +253,7 @@ fn connection(stream: &mut TcpStream, engine: &Arc<Engine>, token: &str, web: &W
 fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<(u16, Value)> {
     match (method, path) {
         ("GET", "/api/status") => Ok((200, engine.status()?)),
-        ("GET", "/api/indexers") => Ok((200, crate::indexers::report(&engine.config.sources))),
+        ("GET", "/api/indexers") => Ok((200, engine.indexers()?)),
         ("GET", "/api/transfers") => Ok((200, engine.transfers()?)),
         ("GET", "/api/library") => Ok((200, engine.library()?)),
         ("GET", "/api/series") => Ok((200, engine.series()?)),
@@ -398,6 +398,22 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
                     }
                 }
                 return Ok((404, error("Unknown IRC route")));
+            }
+            if let Some(tail) = path.strip_prefix("/api/indexers/") {
+                if let Some(id) = tail.strip_suffix("/control")
+                    && crate::requesters::valid_id(id)
+                    && method == "POST"
+                {
+                    let v = control_body(body, &["action", "apply", "plan_id"], false)?;
+                    return Ok((
+                        200,
+                        engine.indexer_control(
+                            id,
+                            &crate::indexers::ControlRequest::from_json(&v)?,
+                        )?,
+                    ));
+                }
+                return Ok((404, error("Unknown indexer route")));
             }
             if let Some(tail) = path.strip_prefix("/api/requesters/") {
                 let (tail, query) = tail.split_once('?').unwrap_or((tail, ""));

@@ -60,6 +60,7 @@ const HELP: &str = "Mynou — media automation using Rust std only
   requester-control ACCOUNT_ID --mapping FILE [--apply --plan-id ID] [--config mynou.json]
   requester-sync [--config mynou.json]
   indexers [--config mynou.json]
+  indexer-control SOURCE_ID --action enable|pause|reset_session|probe [--apply --plan-id ID] [--config mynou.json]
   notifications [--offset N --limit N] [--config mynou.json]
   notifications-dispatch [--config mynou.json]
   notification-control EVENT_ID --kind requester|irc --action retry|discard [--apply --plan-id ID] [--config mynou.json]
@@ -122,6 +123,7 @@ impl Args {
             }
             "requesters" | "requester-sync" => &["config", "help"],
             "indexers" => &["config", "help"],
+            "indexer-control" => &["config", "help", "action", "apply", "plan-id"],
             "notifications" => &["config", "help", "offset", "limit"],
             "notifications-dispatch" => &["config", "help"],
             "notification-control" => &["config", "help", "kind", "action", "apply", "plan-id"],
@@ -218,6 +220,7 @@ impl Args {
                 "irc-preview",
                 "irc-control",
                 "notification-control",
+                "indexer-control",
                 "analyze",
                 "show",
                 "events",
@@ -770,7 +773,38 @@ fn execute(args: Args) -> Result<()> {
             if online {
                 output(&call(&config, &path, "GET", "/api/indexers", None)?);
             } else {
-                output(&mynou::indexers::report(&config.sources));
+                output(&Engine::open_for_preview(config)?.indexers()?);
+            }
+        }
+        "indexer-control" => {
+            let mut v = Value::object();
+            v.insert("action", args.value("action", ""));
+            v.insert("apply", args.options.contains_key("apply"));
+            v.insert(
+                "plan_id",
+                args.options
+                    .get("plan-id")
+                    .cloned()
+                    .map_or(Value::Null, Value::from),
+            );
+            let q = mynou::indexers::ControlRequest::from_json(&v)?;
+            let id = &args.positions[0];
+            if !mynou::requesters::valid_id(id) {
+                return Err("Indexer policy: invalid source ID".into());
+            }
+            if online {
+                output(&call(
+                    &config,
+                    &path,
+                    "POST",
+                    &format!("/api/indexers/{id}/control"),
+                    Some(&q.to_json()),
+                )?);
+            } else {
+                if q.apply {
+                    return Err("Indexer policy: application requires the running service".into());
+                }
+                output(&Engine::open_for_preview(config)?.indexer_control(id, &q)?);
             }
         }
         "notifications" => {

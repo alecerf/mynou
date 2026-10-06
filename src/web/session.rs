@@ -46,6 +46,13 @@ struct NotificationPreview {
 }
 
 #[derive(Clone)]
+struct IndexerPreview {
+    source_id: String,
+    query: crate::indexers::ControlRequest,
+    expires: Instant,
+}
+
+#[derive(Clone)]
 pub struct Session {
     pub id: String,
     pub csrf: String,
@@ -60,6 +67,7 @@ pub struct Session {
     requester_preview: Option<RequesterPreview>,
     irc_preview: Option<IrcPreview>,
     notification_preview: Option<NotificationPreview>,
+    indexer_preview: Option<IndexerPreview>,
 }
 
 pub struct Sessions(BTreeMap<String, Session>);
@@ -111,6 +119,7 @@ impl Sessions {
             requester_preview: None,
             irc_preview: None,
             notification_preview: None,
+            indexer_preview: None,
         };
         self.0.insert(session.id.clone(), session.clone());
         Ok(session)
@@ -173,6 +182,60 @@ impl Sessions {
             .unwrap_or_default()
     }
 
+    pub fn save_indexer_preview(
+        &mut self,
+        id: &str,
+        source_id: &str,
+        query: crate::indexers::ControlRequest,
+    ) -> Result<()> {
+        query.validate()?;
+        if !query.apply || !crate::requesters::valid_id(source_id) {
+            return Err("Indexer policy: browser review requires its apply guard".into());
+        }
+        self.purge();
+        let session = self
+            .0
+            .get_mut(id)
+            .filter(|s| s.origin.is_some())
+            .ok_or("Browser session expired")?;
+        session.shared_preview = None;
+        session.group_preview = None;
+        session.requester_preview = None;
+        session.irc_preview = None;
+        session.notification_preview = None;
+        session.indexer_preview = Some(IndexerPreview {
+            source_id: source_id.into(),
+            query,
+            expires: Instant::now() + Duration::from_secs(CHALLENGE_SECS),
+        });
+        Ok(())
+    }
+    pub fn indexer_preview(
+        &mut self,
+        id: &str,
+        source_id: &str,
+        action: &str,
+        plan_id: &str,
+    ) -> Result<crate::indexers::ControlRequest> {
+        self.purge();
+        self.0
+            .get(id)
+            .and_then(|s| s.indexer_preview.as_ref())
+            .filter(|p| {
+                p.expires > Instant::now()
+                    && p.source_id == source_id
+                    && p.query.action == action
+                    && p.query.plan_id.as_deref() == Some(plan_id)
+            })
+            .map(|p| p.query.clone())
+            .ok_or("Indexer policy: browser review expired or changed; preview again".into())
+    }
+    pub fn clear_indexer_preview(&mut self, id: &str) {
+        if let Some(s) = self.0.get_mut(id) {
+            s.indexer_preview = None;
+        }
+    }
+
     pub fn save_notification_preview(
         &mut self,
         id: &str,
@@ -188,6 +251,7 @@ impl Sessions {
             .get_mut(id)
             .filter(|s| s.origin.is_some())
             .ok_or("Browser session expired")?;
+        session.indexer_preview = None;
         session.shared_preview = None;
         session.group_preview = None;
         session.requester_preview = None;
@@ -243,12 +307,14 @@ impl Sessions {
             .get_mut(id)
             .filter(|s| s.origin.is_some())
             .ok_or("Browser session expired")?;
+        session.indexer_preview = None;
         session.notification_preview = None;
         session.irc_preview = Some(IrcPreview {
             announcement_id: announcement_id.into(),
             query,
             expires: Instant::now() + Duration::from_secs(CHALLENGE_SECS),
         });
+        session.indexer_preview = None;
         session.shared_preview = None;
         session.group_preview = None;
         session.requester_preview = None;
@@ -301,9 +367,11 @@ impl Sessions {
             query,
             expires: Instant::now() + Duration::from_secs(CHALLENGE_SECS),
         });
+        session.indexer_preview = None;
         session.shared_preview = None;
         session.group_preview = None;
         session.irc_preview = None;
+        session.indexer_preview = None;
         session.notification_preview = None;
         Ok(())
     }
@@ -357,6 +425,7 @@ impl Sessions {
         session.group_preview = None;
         session.requester_preview = None;
         session.irc_preview = None;
+        session.indexer_preview = None;
         session.notification_preview = None;
         Ok(())
     }
@@ -380,6 +449,7 @@ impl Sessions {
     }
     pub fn clear_shared_preview(&mut self, id: &str) {
         if let Some(session) = self.0.get_mut(id) {
+            session.indexer_preview = None;
             session.shared_preview = None;
         }
     }
@@ -405,9 +475,11 @@ impl Sessions {
             query,
             expires: Instant::now() + Duration::from_secs(CHALLENGE_SECS),
         });
+        session.indexer_preview = None;
         session.shared_preview = None;
         session.requester_preview = None;
         session.irc_preview = None;
+        session.indexer_preview = None;
         session.notification_preview = None;
         Ok(())
     }

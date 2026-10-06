@@ -321,6 +321,37 @@ impl Web {
         session: &Session,
     ) -> Result<Response> {
         match path {
+            "/ui/indexers/control" => {
+                form.only(&["csrf", "id", "action", "apply", "plan_id"])?;
+                let id = form.value("id")?;
+                if form.value("apply")? == "yes" {
+                    let q = lock(&self.sessions)?.indexer_preview(
+                        &session.id,
+                        id,
+                        form.value("action")?,
+                        form.value("plan_id")?,
+                    )?;
+                    engine.indexer_control(id, &q)?;
+                    lock(&self.sessions)?.clear_indexer_preview(&session.id);
+                    return self.redirect(
+                        session,
+                        "/ui/indexers",
+                        vec!["Reviewed source control recorded".into()],
+                    );
+                }
+                form.only(&["csrf", "id", "action"])?;
+                let mut v = crate::json::Value::object();
+                v.insert("action", form.value("action")?);
+                let mut q = crate::indexers::ControlRequest::from_json(&v)?;
+                let report = engine.indexer_control(id, &q)?;
+                q.apply = true;
+                q.plan_id = report
+                    .get("plan_id")
+                    .and_then(crate::json::Value::as_str)
+                    .map(str::to_owned);
+                lock(&self.sessions)?.save_indexer_preview(&session.id, id, q)?;
+                Ok(Response::html(200, indexer_views::review(session, &report)))
+            }
             "/ui/notifications/dispatch" => {
                 form.only(&["csrf"])?;
                 engine.dispatch_notifications()?;
