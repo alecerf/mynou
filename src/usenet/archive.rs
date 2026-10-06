@@ -1,8 +1,8 @@
-//! Captured ZIP provenance and private resumable extraction. No library imports.
+//! Captured archive provenance and private resumable extraction. No library imports.
 use super::{queue::Owner, workspace::disk};
 use crate::{
     Result,
-    archive::{Limits, Zip, deflate},
+    archive::{Limits, Method, Rar5, VerifiedEntry, Zip, deflate},
     crypto::Sha256,
     json::Value,
     requesters::valid_digest,
@@ -17,7 +17,129 @@ use std::{
     sync::atomic::AtomicBool,
 };
 const MAGIC: &[u8; 8] = b"MYNOUA01";
+const RAR_MAGIC: &[u8; 8] = b"MYNOUA02";
 const CHUNK: usize = 65_536;
+
+/// An explicit format identity; legacy ZIP plans omit it in their serialization.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Format {
+    Zip,
+    Rar5,
+}
+impl Format {
+    pub(crate) fn from_path(path: &Path) -> Result<Self> {
+        match path
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(str::to_ascii_lowercase)
+            .as_deref()
+        {
+            Some("zip") => Ok(Self::Zip),
+            Some("rar") => Ok(Self::Rar5),
+            _ => Err("Usenet archive: unsupported source extension".into()),
+        }
+    }
+    fn magic(self) -> &'static [u8; 8] {
+        match self {
+            Self::Zip => MAGIC,
+            Self::Rar5 => RAR_MAGIC,
+        }
+    }
+}
+
+pub(crate) enum Parsed {
+    Zip(Zip),
+    Rar5(Rar5),
+}
+pub(crate) struct Entry<'a> {
+    pub name: &'a str,
+    pub directory: bool,
+    pub bytes: u64,
+    pub compressed: u64,
+    pub crc: u32,
+    pub method: Method,
+}
+impl Parsed {
+    pub(crate) fn read<R: Read + Seek>(
+        input: &mut R,
+        format: Format,
+        limits: Limits,
+        flag: &AtomicBool,
+    ) -> Result<Self> {
+        match format {
+            Format::Zip => Zip::read_cancellable(input, limits, flag).map(Self::Zip),
+            Format::Rar5 => Rar5::read_cancellable(input, limits, flag).map(Self::Rar5),
+        }
+    }
+    fn format(&self) -> Format {
+        match self {
+            Self::Zip(_) => Format::Zip,
+            Self::Rar5(_) => Format::Rar5,
+        }
+    }
+    pub(crate) fn len(&self) -> usize {
+        match self {
+            Self::Zip(a) => a.entries().len(),
+            Self::Rar5(a) => a.entries().len(),
+        }
+    }
+    pub(crate) fn entry(&self, index: usize) -> Result<Entry<'_>> {
+        match self {
+            Self::Zip(a) => {
+                let e = a
+                    .entries()
+                    .get(index)
+                    .ok_or("Usenet archive: selected ZIP entry is absent")?;
+                Ok(Entry {
+                    name: e.name(),
+                    directory: e.is_directory(),
+                    bytes: e.bytes(),
+                    compressed: e.compressed_bytes(),
+                    crc: e.crc32(),
+                    method: e.method(),
+                })
+            }
+            Self::Rar5(a) => {
+                let e = a
+                    .entries()
+                    .get(index)
+                    .ok_or("Usenet archive: selected RAR5 entry is absent")?;
+                Ok(Entry {
+                    name: e.name(),
+                    directory: e.is_directory(),
+                    bytes: e.bytes(),
+                    compressed: e.compressed_bytes(),
+                    crc: e.crc32(),
+                    method: e.method(),
+                })
+            }
+        }
+    }
+    fn limits(&self) -> Limits {
+        match self {
+            Self::Zip(a) => a.limits(),
+            Self::Rar5(a) => a.limits(),
+        }
+    }
+    fn source_bytes(&self) -> u64 {
+        match self {
+            Self::Zip(a) => a.source_bytes(),
+            Self::Rar5(a) => a.source_bytes(),
+        }
+    }
+    fn extract<R: Read + Seek, W: Write>(
+        &self,
+        input: &mut R,
+        index: usize,
+        output: &mut W,
+        flag: &AtomicBool,
+    ) -> Result<VerifiedEntry> {
+        match self {
+            Self::Zip(a) => a.extract(input, index, output, flag),
+            Self::Rar5(a) => a.extract(input, index, output, flag),
+        }
+    }
+}
 
 fn text(v: &Value, key: &str) -> Result<String> {
     v.get(key)
@@ -96,6 +218,7 @@ fn names(path: &Path, allowed: &[&str]) -> Result<BTreeSet<String>> {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Plan {
+    pub format: Format,
     pub owner: Owner,
     pub transfer_id: String,
     pub source_name: String,
@@ -112,6 +235,9 @@ pub struct Plan {
 impl Plan {
     pub fn to_json(&self) -> Value {
         let mut v = Value::object();
+        if self.format == Format::Rar5 {
+            v.insert("format", "rar5-stored");
+        }
         v.insert("owner", self.owner.to_json());
         v.insert("transfer_id", self.transfer_id.clone());
         v.insert("source_name", self.source_name.clone());
@@ -133,6 +259,7 @@ impl Plan {
         crate::numbering::only(
             v,
             &[
+                "format",
                 "owner",
                 "transfer_id",
                 "source_name",
@@ -148,6 +275,11 @@ impl Plan {
             ],
         )?;
         let plan = Self {
+            format: match v.get("format") {
+                None => Format::Zip,
+                Some(Value::String(s)) if s == "rar5-stored" => Format::Rar5,
+                _ => return Err("Usenet archive: invalid captured format".into()),
+            },
             owner: Owner::from_json(v.get("owner").ok_or("Usenet archive: missing owner")?)?,
             transfer_id: text(v, "transfer_id")?,
             source_name: text(v, "source_name")?,
@@ -170,11 +302,15 @@ impl Plan {
             || !valid_digest(&plan.source_sha256)
             || !super::yenc::valid_name(&plan.source_name)
             || plan.source_name.len() > 255
-            || !Path::new(&plan.source_name)
-                .extension()
-                .and_then(|n| n.to_str())
-                .is_some_and(|e| e.eq_ignore_ascii_case("zip"))
-            || !(22..u64::from(u32::MAX)).contains(&plan.source_bytes)
+            || Format::from_path(Path::new(&plan.source_name))? != plan.format
+            || match plan.format {
+                Format::Zip => !(22..u64::from(u32::MAX)).contains(&plan.source_bytes),
+                Format::Rar5 => {
+                    plan.source_bytes < 24
+                        || plan.source_bytes
+                            > plan.limits.max_total_bytes.saturating_add(2 * 1024 * 1024)
+                }
+            }
             || plan.entry_index >= plan.limits.max_entries
             || crate::archive::checked_entry_path(&plan.entry_name)?
             || plan.entry_bytes == 0
@@ -185,6 +321,7 @@ impl Plan {
                     .entry_compressed_bytes
                     .saturating_mul(u64::from(plan.limits.max_ratio))
             || !matches!(plan.entry_method.as_str(), "stored" | "deflate")
+            || plan.format == Format::Rar5 && plan.entry_method != "stored"
             || plan.entry_method == "stored" && plan.entry_bytes != plan.entry_compressed_bytes
             || plan.to_json() != *v
         {
@@ -201,14 +338,12 @@ impl Plan {
         source: &Path,
         bytes: u64,
         sha: &str,
-        zip: &Zip,
+        archive: &Parsed,
         index: usize,
     ) -> Result<Self> {
-        let entry = zip
-            .entries()
-            .get(index)
-            .ok_or("Usenet archive: selected entry is absent")?;
+        let entry = archive.entry(index)?;
         let plan = Self {
+            format: archive.format(),
             owner,
             transfer_id,
             source_name: leaf(
@@ -219,28 +354,26 @@ impl Plan {
             source_bytes: bytes,
             source_sha256: sha.into(),
             entry_index: index as u32,
-            entry_name: entry.name().into(),
-            entry_bytes: entry.bytes(),
-            entry_crc32: entry.crc32(),
-            entry_compressed_bytes: entry.compressed_bytes(),
-            entry_method: entry.method().name().into(),
-            limits: zip.limits(),
+            entry_name: entry.name.into(),
+            entry_bytes: entry.bytes,
+            entry_crc32: entry.crc,
+            entry_compressed_bytes: entry.compressed,
+            entry_method: entry.method.name().into(),
+            limits: archive.limits(),
         };
         Self::from_json(&plan.to_json())
     }
-    fn check_entry(&self, zip: &Zip) -> Result<()> {
-        let entry = zip
-            .entries()
-            .get(self.entry_index as usize)
-            .ok_or("Usenet archive: selected entry is absent")?;
-        if zip.source_bytes() != self.source_bytes
-            || zip.limits() != self.limits
-            || entry.name() != self.entry_name
-            || entry.is_directory()
-            || entry.bytes() != self.entry_bytes
-            || entry.crc32() != self.entry_crc32
-            || entry.compressed_bytes() != self.entry_compressed_bytes
-            || entry.method().name() != self.entry_method
+    fn check_entry(&self, archive: &Parsed) -> Result<()> {
+        let entry = archive.entry(self.entry_index as usize)?;
+        if archive.format() != self.format
+            || archive.source_bytes() != self.source_bytes
+            || archive.limits() != self.limits
+            || entry.name != self.entry_name
+            || entry.directory
+            || entry.bytes != self.entry_bytes
+            || entry.crc != self.entry_crc32
+            || entry.compressed != self.entry_compressed_bytes
+            || entry.method.name() != self.entry_method
         {
             return Err("Usenet archive: source directory differs from captured selection".into());
         }
@@ -424,7 +557,11 @@ impl Workspace {
                 "Usenet archive: descriptor lacks its private owner or output directory".into(),
             );
         }
-        let (v, bytes) = disk::read_frame(&root.join("archive.bin"), MAGIC, 0)?;
+        let (v, bytes) = disk::read_frame(
+            &root.join("archive.bin"),
+            preparation.plan.format.magic(),
+            0,
+        )?;
         crate::numbering::only(&v, &["plan", "phase", "output"])?;
         if !bytes.is_empty() || v.get("plan") != Some(&preparation.plan.to_json()) {
             return Err("Usenet archive: foreign extraction descriptor".into());
@@ -526,15 +663,20 @@ impl Workspace {
             "output",
             self.output.as_ref().map_or(Value::Null, Proof::to_json),
         );
-        disk::write_frame(&self.root.join("archive.bin"), MAGIC, &v, &[])
+        disk::write_frame(
+            &self.root.join("archive.bin"),
+            self.plan.format.magic(),
+            &v,
+            &[],
+        )
     }
     pub(crate) fn path(&self) -> Result<PathBuf> {
         Ok(self.root.join("output").join(self.plan.output_name()?))
     }
     pub(crate) fn extract(&mut self, source: &Path, flag: &AtomicBool) -> Result<Proof> {
         let mut input = checked_source(source, &self.plan, flag)?;
-        let zip = Zip::read_cancellable(&mut input, self.plan.limits, flag)?;
-        self.plan.check_entry(&zip)?;
+        let archive = Parsed::read(&mut input, self.plan.format, self.plan.limits, flag)?;
+        self.plan.check_entry(&archive)?;
         let path = self.path()?;
         if let Some(proof) = &self.output {
             checked_output(&path, &self.plan, proof, flag)?;
@@ -579,7 +721,8 @@ impl Workspace {
                 .open(&path)
                 .map_err(|_| "Usenet archive: exclusive output creation failed")?
         };
-        let decoded = zip.extract(&mut input, self.plan.entry_index as usize, &mut file, flag)?;
+        let decoded =
+            archive.extract(&mut input, self.plan.entry_index as usize, &mut file, flag)?;
         deflate::active(flag)?;
         file.flush()
             .and_then(|()| file.sync_all())
@@ -695,7 +838,7 @@ mod tests {
                 &source,
                 bytes.len() as u64,
                 &digest(&bytes),
-                &zip,
+                &Parsed::Zip(zip),
                 0,
             )
             .unwrap();

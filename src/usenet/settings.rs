@@ -198,6 +198,7 @@ pub struct Downloads {
     pub max_file_bytes: u64,
     /// Explicit opt-in. Limits are captured in canonical selection provenance.
     pub zip: Option<crate::archive::Limits>,
+    pub rar: Option<crate::archive::Limits>,
 }
 impl Downloads {
     fn parse(v: &Value, base: &Path) -> Result<Self> {
@@ -210,6 +211,7 @@ impl Downloads {
                 "max_attempts",
                 "max_file_bytes",
                 "zip",
+                "rar",
             ],
         )?;
         let enabled = match v.get("enabled") {
@@ -229,6 +231,10 @@ impl Downloads {
             max_attempts: number(v, "max_attempts", 3, 1, 10)? as u8,
             max_file_bytes: number(v, "max_file_bytes", 64 << 30, 1, 1 << 40)?,
             zip: match v.get("zip") {
+                None | Some(Value::Null) => None,
+                Some(v) => Some(crate::archive::Limits::from_json(v)?),
+            },
+            rar: match v.get("rar") {
                 None | Some(Value::Null) => None,
                 Some(v) => Some(crate::archive::Limits::from_json(v)?),
             },

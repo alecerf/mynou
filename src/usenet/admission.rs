@@ -58,6 +58,7 @@ pub struct Origin {
     pub document: Option<Document>,
     pub transfer_id: Option<String>,
     pub archive_limits: Option<crate::archive::Limits>,
+    pub rar_limits: Option<crate::archive::Limits>,
     pub archive: Option<super::archive::Preparation>,
 }
 fn text(v: &Value, k: &str) -> Result<String> {
@@ -76,6 +77,7 @@ impl Origin {
         v.insert("advertised_bytes", self.target.advertised_bytes.to_string());
         v.insert("document_captured", self.document.is_some());
         v.insert("zip_enabled", self.archive_limits.is_some());
+        v.insert("rar_enabled", self.rar_limits.is_some());
         v.insert("archive_prepared", self.archive.is_some());
         v.insert(
             "archive_verified",
@@ -106,6 +108,9 @@ impl Origin {
         if let Some(limits) = self.archive_limits {
             v.insert("archive_limits", limits.to_json());
         }
+        if let Some(limits) = self.rar_limits {
+            v.insert("rar_limits", limits.to_json());
+        }
         if let Some(archive) = &self.archive {
             v.insert("archive", archive.to_json());
         }
@@ -122,6 +127,7 @@ impl Origin {
                 "document",
                 "transfer_id",
                 "archive_limits",
+                "rar_limits",
                 "archive",
             ],
         )?;
@@ -147,6 +153,10 @@ impl Origin {
                 .get("archive_limits")
                 .map(crate::archive::Limits::from_json)
                 .transpose()?,
+            rar_limits: v
+                .get("rar_limits")
+                .map(crate::archive::Limits::from_json)
+                .transpose()?,
             archive: v
                 .get("archive")
                 .map(super::archive::Preparation::from_json)
@@ -156,11 +166,15 @@ impl Origin {
             || !valid_digest(&origin.binding)
             || origin.target.password_protected
             || origin.transfer_id.is_some() && origin.document.is_none()
-            || origin.archive.is_some()
-                && (origin.archive_limits.is_none() || origin.transfer_id.is_none())
+            || origin.archive.as_ref().is_some_and(|p| {
+                origin.limits(p.plan.format).is_none() || origin.transfer_id.is_none()
+            })
             || origin
                 .archive_limits
                 .is_some_and(|p| v.get("archive_limits") != Some(&p.to_json()))
+            || origin
+                .rar_limits
+                .is_some_and(|p| v.get("rar_limits") != Some(&p.to_json()))
         {
             return Err("Usenet admission: invalid selection provenance".into());
         }
@@ -172,6 +186,7 @@ impl Origin {
         target: Target,
         profile: Profile,
         archive_limits: Option<crate::archive::Limits>,
+        rar_limits: Option<crate::archive::Limits>,
     ) -> Result<Self> {
         let mut origin = Self {
             candidate_id,
@@ -181,6 +196,7 @@ impl Origin {
             document: None,
             transfer_id: None,
             archive_limits,
+            rar_limits,
             archive: None,
         };
         origin.binding = origin.identity(job)?;
@@ -212,6 +228,11 @@ impl Origin {
         ];
         if let Some(limits) = self.archive_limits {
             fields.push(limits.to_json());
+        }
+        if let Some(limits) = self.rar_limits {
+            let mut capability = Value::object();
+            capability.insert("rar5-stored", limits.to_json());
+            fields.push(capability);
         }
         Ok(digest(json::stringify(&Value::Array(fields)).as_bytes()))
     }
@@ -259,7 +280,7 @@ impl Origin {
             let plan = &preparation.plan;
             if plan.owner != self.owner(job)
                 || self.transfer_id.as_deref() != Some(plan.transfer_id.as_str())
-                || self.archive_limits != Some(plan.limits)
+                || self.limits(plan.format) != Some(plan.limits)
                 || self
                     .document
                     .as_ref()
@@ -270,7 +291,11 @@ impl Origin {
                     "Usenet admission: archive differs from its captured owner or policy".into(),
                 );
             }
-            self.validate_zip_source(job, Path::new(&plan.source_name))?;
+            if self.validate_archive_source(job, Path::new(&plan.source_name))? != plan.format {
+                return Err(
+                    "Usenet admission: archive format differs from its captured source".into(),
+                );
+            }
             self.validate_file(job, Path::new(&plan.entry_name))?;
         }
         if let Some(path) = job.files.first() {
@@ -324,19 +349,26 @@ impl Origin {
         }
         Ok(())
     }
-    pub(crate) fn validate_zip_source(&self, job: &Job, path: &Path) -> Result<()> {
+    pub(crate) fn limits(&self, format: super::archive::Format) -> Option<crate::archive::Limits> {
+        match format {
+            super::archive::Format::Zip => self.archive_limits,
+            super::archive::Format::Rar5 => self.rar_limits,
+        }
+    }
+    pub(crate) fn validate_archive_source(
+        &self,
+        job: &Job,
+        path: &Path,
+    ) -> Result<super::archive::Format> {
         let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-        if self.archive_limits.is_none()
-            || !path
-                .extension()
-                .and_then(|s| s.to_str())
-                .is_some_and(|e| e.eq_ignore_ascii_case("zip"))
+        let format = super::archive::Format::from_path(path)?;
+        if self.limits(format).is_none()
             || !integrations::release_identity_matches(&job.request, stem)
             || !self.profile.assess(stem, &job.request.title).accepted
         {
-            return Err("Usenet admission: ZIP source does not satisfy captured identity/profile or opt-in policy".into());
+            return Err("Usenet admission: archive source does not satisfy captured identity/profile or opt-in policy".into());
         }
-        Ok(())
+        Ok(format)
     }
     pub(crate) fn check_transfer(&self, job: &Job, transfer: &OwnedTransfer) -> Result<()> {
         self.validate_job(job)?;
@@ -389,6 +421,7 @@ pub(crate) fn validate_transition(current: &Job, next: &Job) -> Result<()> {
                 && old.profile == origin.profile
                 && old.binding == origin.binding
                 && old.archive_limits == origin.archive_limits
+                && old.rar_limits == origin.rar_limits
                 && old.archive.as_ref().is_none_or(|p| {
                     origin.archive.as_ref().is_some_and(|next| {
                         p.plan == next.plan

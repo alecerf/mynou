@@ -70,6 +70,7 @@ impl Engine {
                 target,
                 profile.clone(),
                 config.usenet.downloads.as_ref().and_then(|d| d.zip),
+                config.usenet.downloads.as_ref().and_then(|d| d.rar),
             )?);
             self.persist_usenet_job(job)?;
         } else {
@@ -119,6 +120,15 @@ impl Engine {
                 .is_none_or(|d| d.zip.is_none())
         {
             return Err("Usenet admission: captured ZIP capability is disabled".into());
+        }
+        if origin.rar_limits.is_some()
+            && config
+                .usenet
+                .downloads
+                .as_ref()
+                .is_none_or(|d| d.rar.is_none())
+        {
+            return Err("Usenet admission: captured RAR capability is disabled".into());
         }
         let ledger = lock(&self.requester_store)?;
         let store = lock(&self.store)?;
@@ -322,18 +332,14 @@ impl Engine {
         let mut archive_proof = None;
         let path =
             match client.verified_owned_operation(id, &origin.owner(job), |path, bytes, sha| {
-                if path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .is_some_and(|e| e.eq_ignore_ascii_case("zip"))
-                {
+                if super::archive::Format::from_path(path).is_ok() {
                     let (path, proof) =
                         self.advance_usenet_archive(job, path, bytes, sha, active)?;
                     archive_proof = Some(proof);
                     Ok(path)
                 } else {
                     if origin.archive.is_some() {
-                        return Err("Usenet admission: captured ZIP source changed".into());
+                        return Err("Usenet admission: captured archive source changed".into());
                     }
                     Ok(path.to_owned())
                 }
@@ -390,10 +396,10 @@ impl Engine {
             .usenet_origin
             .clone()
             .ok_or("Usenet admission: missing origin")?;
-        origin.validate_zip_source(job, source)?;
+        let format = origin.validate_archive_source(job, source)?;
         let limits = origin
-            .archive_limits
-            .ok_or("Usenet admission: ZIP acquisition is disabled")?;
+            .limits(format)
+            .ok_or("Usenet admission: archive acquisition is disabled")?;
         let config = self.configuration_for(job);
         let options = origin
             .target
@@ -404,7 +410,7 @@ impl Engine {
             .ok_or("Newznab: missing source settings")?;
         if bytes < options.minimum_bytes || bytes > options.maximum_bytes {
             return Err(
-                "Usenet admission: verified ZIP size is outside captured source policy".into(),
+                "Usenet admission: verified archive size is outside captured source policy".into(),
             );
         }
         let id = origin
@@ -413,14 +419,15 @@ impl Engine {
             .ok_or("Usenet admission: missing archive transfer")?;
         if origin.archive.is_none() {
             let mut input = super::workspace::disk::private_file(source, bytes)?;
-            let zip = crate::archive::Zip::read_cancellable(&mut input, limits, active)?;
-            let media: Vec<_> = zip
-                .entries()
-                .iter()
-                .enumerate()
+            let archive = super::archive::Parsed::read(&mut input, format, limits, active)?;
+            let entries = (0..archive.len())
+                .map(|i| archive.entry(i).map(|e| (i, e)))
+                .collect::<Result<Vec<_>>>()?;
+            let media: Vec<_> = entries
+                .into_iter()
                 .filter(|(_, entry)| {
-                    !entry.is_directory()
-                        && std::path::Path::new(entry.name())
+                    !entry.directory
+                        && std::path::Path::new(entry.name)
                             .extension()
                             .and_then(|s| s.to_str())
                             .is_some_and(|ext| {
@@ -431,15 +438,15 @@ impl Engine {
                 .collect();
             if media.len() != 1 {
                 return Err(
-                    "Usenet admission: ZIP must contain exactly one supported media entry".into(),
+                    "Usenet admission: archive must contain exactly one supported media entry"
+                        .into(),
                 );
             }
-            origin.validate_file(job, std::path::Path::new(media[0].1.name()))?;
-            if media[0].1.bytes() < options.minimum_bytes
-                || media[0].1.bytes() > options.maximum_bytes
+            origin.validate_file(job, std::path::Path::new(media[0].1.name))?;
+            if media[0].1.bytes < options.minimum_bytes || media[0].1.bytes > options.maximum_bytes
             {
                 return Err(
-                    "Usenet admission: decoded ZIP media is outside captured source size policy"
+                    "Usenet admission: decoded archive media is outside captured source size policy"
                         .into(),
                 );
             }
@@ -449,7 +456,7 @@ impl Engine {
                 source,
                 bytes,
                 sha,
-                &zip,
+                &archive,
                 media[0].0,
             )?;
             origin.archive = Some(super::archive::Preparation { plan, output: None });
@@ -462,7 +469,7 @@ impl Engine {
             .ok_or("Usenet admission: missing archive intent")?;
         if preparation.plan.source_bytes != bytes || preparation.plan.source_sha256 != sha {
             return Err(
-                "Usenet admission: ZIP differs from its original verified queue output".into(),
+                "Usenet admission: archive differs from its original verified queue output".into(),
             );
         }
         self.require_usenet_lease(job)?;

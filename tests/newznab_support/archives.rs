@@ -380,7 +380,7 @@ fn decoded_media_size_must_satisfy_the_bound_source_policy() {
             .last_error
             .as_ref()
             .unwrap()
-            .contains("decoded ZIP media")
+            .contains("decoded archive media")
     );
     assert!(failed.usenet_origin.as_ref().unwrap().archive.is_none());
     assert!(!root.exists());

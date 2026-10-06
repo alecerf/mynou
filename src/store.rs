@@ -28,10 +28,18 @@ const USENET_JOURNAL_MAGIC: &[u8; 8] = b"MYNOUJ06";
 const USENET_SNAPSHOT_MAGIC: &[u8; 8] = b"MYNOUS06";
 const ARCHIVE_JOURNAL_MAGIC: &[u8; 8] = b"MYNOUJ07";
 const ARCHIVE_SNAPSHOT_MAGIC: &[u8; 8] = b"MYNOUS07";
+const RAR_JOURNAL_MAGIC: &[u8; 8] = b"MYNOUJ08";
+const RAR_SNAPSHOT_MAGIC: &[u8; 8] = b"MYNOUS08";
 fn archive_format(job: &Job) -> bool {
     job.usenet_origin
         .as_ref()
         .is_some_and(|origin| origin.archive_limits.is_some())
+}
+
+fn rar_format(job: &Job) -> bool {
+    job.usenet_origin
+        .as_ref()
+        .is_some_and(|o| o.rar_limits.is_some())
 }
 
 mod groups;
@@ -2132,7 +2140,9 @@ impl Store {
             return Err("transaction too large".to_owned());
         }
         let mut frame = Vec::with_capacity(116 + payload.len());
-        frame.extend_from_slice(if jobs.iter().any(archive_format) {
+        frame.extend_from_slice(if jobs.iter().any(rar_format) {
+            RAR_JOURNAL_MAGIC
+        } else if jobs.iter().any(archive_format) {
             ARCHIVE_JOURNAL_MAGIC
         } else if jobs.iter().any(|j| j.usenet_origin.is_some()) {
             USENET_JOURNAL_MAGIC
@@ -2226,7 +2236,9 @@ impl Store {
             return Err("snapshot too large".to_owned());
         }
         let mut bytes = Vec::with_capacity(payload.len() + 48);
-        bytes.extend_from_slice(if self.jobs.values().any(archive_format) {
+        bytes.extend_from_slice(if self.jobs.values().any(rar_format) {
+            RAR_SNAPSHOT_MAGIC
+        } else if self.jobs.values().any(archive_format) {
             ARCHIVE_SNAPSHOT_MAGIC
         } else if self.jobs.values().any(|j| j.usenet_origin.is_some()) {
             USENET_SNAPSHOT_MAGIC
@@ -2316,6 +2328,7 @@ impl Store {
             && &bytes[..8] != IRC_SNAPSHOT_MAGIC
             && &bytes[..8] != USENET_SNAPSHOT_MAGIC
             && &bytes[..8] != ARCHIVE_SNAPSHOT_MAGIC
+            && &bytes[..8] != RAR_SNAPSHOT_MAGIC
         {
             return Err("invalid snapshot format".to_owned());
         }
@@ -2345,12 +2358,19 @@ impl Store {
         let mut keys = BTreeMap::new();
         for value in job_values {
             let job = Job::from_json(value)?;
-            if archive_format(&job) && &bytes[..8] != ARCHIVE_SNAPSHOT_MAGIC {
+            if rar_format(&job) && &bytes[..8] != RAR_SNAPSHOT_MAGIC {
+                return Err("RAR provenance requires snapshot format 8".into());
+            }
+            if archive_format(&job)
+                && &bytes[..8] != ARCHIVE_SNAPSHOT_MAGIC
+                && &bytes[..8] != RAR_SNAPSHOT_MAGIC
+            {
                 return Err("Archive provenance requires snapshot format 7".into());
             }
             if job.usenet_origin.is_some()
                 && &bytes[..8] != USENET_SNAPSHOT_MAGIC
                 && &bytes[..8] != ARCHIVE_SNAPSHOT_MAGIC
+                && &bytes[..8] != RAR_SNAPSHOT_MAGIC
             {
                 return Err("Usenet provenance requires snapshot format 6".into());
             }
@@ -2358,6 +2378,7 @@ impl Store {
                 && &bytes[..8] != IRC_SNAPSHOT_MAGIC
                 && &bytes[..8] != USENET_SNAPSHOT_MAGIC
                 && &bytes[..8] != ARCHIVE_SNAPSHOT_MAGIC
+                && &bytes[..8] != RAR_SNAPSHOT_MAGIC
             {
                 return Err("IRC provenance requires snapshot format 5".into());
             }
@@ -2366,6 +2387,7 @@ impl Store {
                 && &bytes[..8] != IRC_SNAPSHOT_MAGIC
                 && &bytes[..8] != USENET_SNAPSHOT_MAGIC
                 && &bytes[..8] != ARCHIVE_SNAPSHOT_MAGIC
+                && &bytes[..8] != RAR_SNAPSHOT_MAGIC
             {
                 return Err("Requester provenance requires snapshot format 4".into());
             }
@@ -2374,7 +2396,8 @@ impl Store {
                     && &bytes[..8] != REQUESTER_SNAPSHOT_MAGIC
                     && &bytes[..8] != IRC_SNAPSHOT_MAGIC
                     && &bytes[..8] != USENET_SNAPSHOT_MAGIC
-                    && &bytes[..8] != ARCHIVE_SNAPSHOT_MAGIC)
+                    && &bytes[..8] != ARCHIVE_SNAPSHOT_MAGIC
+                    && &bytes[..8] != RAR_SNAPSHOT_MAGIC)
             {
                 return Err("Shared-group upgrades require snapshot format 3".into());
             }
@@ -2446,6 +2469,7 @@ impl Store {
                 && &header[..8] != IRC_JOURNAL_MAGIC
                 && &header[..8] != USENET_JOURNAL_MAGIC
                 && &header[..8] != ARCHIVE_JOURNAL_MAGIC
+                && &header[..8] != RAR_JOURNAL_MAGIC
             {
                 return Err(format!("corrupt journal at byte {offset}"));
             }
@@ -2509,12 +2533,19 @@ impl Store {
                 .iter()
                 .all(|key| !job_map.contains_key(*key));
                 let job = Job::from_json(job_value)?;
-                if archive_format(&job) && &header[..8] != ARCHIVE_JOURNAL_MAGIC {
+                if rar_format(&job) && &header[..8] != RAR_JOURNAL_MAGIC {
+                    return Err("RAR provenance requires journal format 8".into());
+                }
+                if archive_format(&job)
+                    && &header[..8] != ARCHIVE_JOURNAL_MAGIC
+                    && &header[..8] != RAR_JOURNAL_MAGIC
+                {
                     return Err("Archive provenance requires journal format 7".into());
                 }
                 if job.usenet_origin.is_some()
                     && &header[..8] != USENET_JOURNAL_MAGIC
                     && &header[..8] != ARCHIVE_JOURNAL_MAGIC
+                    && &header[..8] != RAR_JOURNAL_MAGIC
                 {
                     return Err("Usenet provenance requires journal format 6".into());
                 }
@@ -2522,6 +2553,7 @@ impl Store {
                     && &header[..8] != IRC_JOURNAL_MAGIC
                     && &header[..8] != USENET_JOURNAL_MAGIC
                     && &header[..8] != ARCHIVE_JOURNAL_MAGIC
+                    && &header[..8] != RAR_JOURNAL_MAGIC
                 {
                     return Err("IRC provenance requires journal format 5".into());
                 }
@@ -2530,6 +2562,7 @@ impl Store {
                     && &header[..8] != IRC_JOURNAL_MAGIC
                     && &header[..8] != USENET_JOURNAL_MAGIC
                     && &header[..8] != ARCHIVE_JOURNAL_MAGIC
+                    && &header[..8] != RAR_JOURNAL_MAGIC
                 {
                     return Err("Requester provenance requires journal format 4".into());
                 }
@@ -2539,6 +2572,7 @@ impl Store {
                     && &header[..8] != IRC_JOURNAL_MAGIC
                     && &header[..8] != USENET_JOURNAL_MAGIC
                     && &header[..8] != ARCHIVE_JOURNAL_MAGIC
+                    && &header[..8] != RAR_JOURNAL_MAGIC
                 {
                     return Err("Shared-group upgrades require journal format 3".into());
                 }
@@ -2562,7 +2596,8 @@ impl Store {
                         && &header[..8] != REQUESTER_JOURNAL_MAGIC
                         && &header[..8] != IRC_JOURNAL_MAGIC
                         && &header[..8] != USENET_JOURNAL_MAGIC
-                        && &header[..8] != ARCHIVE_JOURNAL_MAGIC)
+                        && &header[..8] != ARCHIVE_JOURNAL_MAGIC
+                        && &header[..8] != RAR_JOURNAL_MAGIC)
                         || map.contains_key("shared_owners")
                     {
                         return Err("Group action requires journal format 3".into());
@@ -2589,6 +2624,7 @@ impl Store {
                         && &header[..8] != IRC_JOURNAL_MAGIC
                         && &header[..8] != USENET_JOURNAL_MAGIC
                         && &header[..8] != ARCHIVE_JOURNAL_MAGIC
+                        && &header[..8] != RAR_JOURNAL_MAGIC
                     {
                         return Err("Shared ownership requires journal format 2".into());
                     }
@@ -2617,12 +2653,19 @@ impl Store {
                         .map_err(|error| format!("invalid journal job: {error}"))?;
                     self.validate_group_single(job)?;
                 }
-                if jobs.iter().any(archive_format) && &header[..8] != ARCHIVE_JOURNAL_MAGIC {
+                if jobs.iter().any(rar_format) && &header[..8] != RAR_JOURNAL_MAGIC {
+                    return Err("RAR provenance requires journal format 8".into());
+                }
+                if jobs.iter().any(archive_format)
+                    && &header[..8] != ARCHIVE_JOURNAL_MAGIC
+                    && &header[..8] != RAR_JOURNAL_MAGIC
+                {
                     return Err("Archive provenance requires journal format 7".into());
                 }
                 if jobs.iter().any(|j| j.usenet_origin.is_some())
                     && &header[..8] != USENET_JOURNAL_MAGIC
                     && &header[..8] != ARCHIVE_JOURNAL_MAGIC
+                    && &header[..8] != RAR_JOURNAL_MAGIC
                 {
                     return Err("Usenet provenance requires journal format 6".into());
                 }
@@ -2631,6 +2674,7 @@ impl Store {
                     && &header[..8] != IRC_JOURNAL_MAGIC
                     && &header[..8] != USENET_JOURNAL_MAGIC
                     && &header[..8] != ARCHIVE_JOURNAL_MAGIC
+                    && &header[..8] != RAR_JOURNAL_MAGIC
                 {
                     return Err("Requester provenance requires journal format 4".into());
                 }
