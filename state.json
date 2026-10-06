@@ -1,27 +1,16 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 1,
-  "lease": {
-    "id": "3eff9c0f-bf40-4502-868a-f1efcba9a21a",
-    "worker": "codex-primary-bootstrap",
-    "role": "master",
-    "issue": 1,
-    "acquired_at": "2026-10-06T18:46:05Z",
-    "heartbeat_at": "2026-10-06T18:46:05Z",
-    "expires_at": "2026-10-06T19:31:05Z",
-    "branch": "work/autonomous-organization",
-    "commit": "f5c59506d0a8d431d09e9f351e2de2ef71b124f9",
-    "pr": null
-  },
+  "generation": 2,
+  "lease": null,
   "checkpoint": {
-    "at": "2026-10-06T18:46:05Z",
+    "at": "2026-10-06T18:49:51Z",
     "issue": 1,
-    "role": "master",
+    "role": "security",
     "branch": "work/autonomous-organization",
     "commit": "f5c59506d0a8d431d09e9f351e2de2ef71b124f9",
     "pr": null,
-    "summary": "Bootstrap inspected real GitHub and Codex capabilities. Unfinished PAR2 preserved remotely at 837daac0deefa01b9e0ea651c9dfb17cac813532 on work/par2-foundation; unvalidated. Published v0.22.10 has all five jobs green and 804 Rust tests.",
+    "summary": "Master inspection completed. Security design: atomic non-force lease CAS; untrusted issue content is data; QA records bind exact PR head/base and historical QA lease; trusted-base workflow never executes PR code with a write token; merge and deletion require fresh native evidence. Projects/auto-merge/protection writes are denied. Use Issue labels, native dependencies, least-privilege Actions and documented best-effort scheduling.",
     "next_action": "Implement durable organization and CI scenario checks; follow issue #1 acceptance."
   },
   "attempts": {}
