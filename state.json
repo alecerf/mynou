@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 16,
+  "generation": 17,
   "lease": {
     "id": "bdd93293-409c-48ef-a9af-4b9d4c855e94",
     "worker": "codex-primary-bootstrap",
     "role": "quality",
     "issue": 1,
     "acquired_at": "2026-10-06T19:27:46Z",
-    "heartbeat_at": "2026-10-06T19:27:46Z",
-    "expires_at": "2026-10-06T20:12:46Z",
+    "heartbeat_at": "2026-10-06T19:28:47Z",
+    "expires_at": "2026-10-06T20:13:47Z",
     "branch": "work/autonomous-organization",
-    "commit": "4c3e865a68825db2b81444fb16b313c2d4853ef9",
+    "commit": "ddcec24b92e4c971431b1543a87e55de864fee5b",
     "pr": 3
   },
   "checkpoint": {
-    "at": "2026-10-06T19:27:22Z",
+    "at": "2026-10-06T19:28:47Z",
     "issue": 1,
-    "role": "security",
+    "role": "quality",
     "branch": "work/autonomous-organization",
-    "commit": "4c3e865a68825db2b81444fb16b313c2d4853ef9",
+    "commit": "ddcec24b92e4c971431b1543a87e55de864fee5b",
     "pr": 3,
-    "summary": "Separate Security review inspected the complete 40-path bootstrap diff. The handoff trigger, current-role release check, deletion audit/fresh lease fence and merged-PR preservation address the recorded findings. Current-head validate job 112458717241 in run 37518861040 failed: the new offline merged-recovery fixture omits native workflow status/conclusion fields, causing KeyError status. No success review or merge is allowed while that regression is red.",
-    "next_action": "Quality must add the native run status/conclusion to the explicitly fake fixture, commit/push and inspect CI. Security then reviews the exact correction and QA reviews acceptance independently."
+    "summary": "Corrected the observed CI error by adding native workflow status/conclusion fields to the explicitly fake offline fixture; production recovery policy unchanged. Clarified roadmap evidence placement. Local ea545d81e4f1477daff97deabd2f2bb90f6e4106 maps to remote ddcec24b92e4c971431b1543a87e55de864fee5b, tree a524af0d476cf0b07dba5ff4948bf2c1640e7d01. Prior-head red CI is recorded; current-head checks pending. No local validation.",
+    "next_action": "Inspect current-head Actions; fix real failures. Once core checks and organization scenarios pass, release for Security correction review, then independent QA of PR #3."
   },
   "attempts": {}
 }
