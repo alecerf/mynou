@@ -35,17 +35,16 @@ pub fn source(files: usize, parts: usize) -> Vec<u8> {
     format!("<nzb>{}</nzb>",(0..files).map(|f|format!("<file subject=\"Private original queue fixture\"><groups><group>alt.binaries.fixture</group></groups><segments>{}</segments></file>",(1..=parts).map(|p|format!("<segment number=\"{p}\" bytes=\"1024\">file{f}-part{p}@fixture.test</segment>")).collect::<String>())).collect::<String>()).into_bytes()
 }
 pub fn article(bytes: &[u8], n: usize, count: usize) -> Vec<u8> {
+    article_named(bytes, n, count, "original queue fixture.bin")
+}
+pub fn article_named(bytes: &[u8], n: usize, count: usize, name: &str) -> Vec<u8> {
     let begin = (n - 1) * bytes.len() / count;
     let end = n * bytes.len() / count;
     let part = &bytes[begin..end];
     let mut out = if count == 1 {
-        format!(
-            "=ybegin line=128 size={} name=original queue fixture.bin\r\n",
-            bytes.len()
-        )
-        .into_bytes()
+        format!("=ybegin line=128 size={} name={name}\r\n", bytes.len()).into_bytes()
     } else {
-        format!("=ybegin part={n} total={count} line=128 size={} name=original queue fixture.bin\r\n=ypart begin={} end={end}\r\n",bytes.len(),begin+1).into_bytes()
+        format!("=ybegin part={n} total={count} line=128 size={} name={name}\r\n=ypart begin={} end={end}\r\n",bytes.len(),begin+1).into_bytes()
     };
     let mut width = 0;
     for b in part {

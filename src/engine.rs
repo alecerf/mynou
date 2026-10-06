@@ -1164,6 +1164,9 @@ pub fn public_job(job: &Job) -> Value {
         map.remove("lease_id");
         map.remove("lease_until");
         map.remove("acquisition_url");
+        if let Some(origin) = &job.usenet_origin {
+            map.insert("usenet_origin".into(), origin.public_json());
+        }
         if let Some(origin) = &job.irc_origin {
             map.insert("irc_origin".into(), origin.public_json());
         }

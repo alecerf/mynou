@@ -1,5 +1,8 @@
 //! Original loopback Newznab/NZB fixtures. No external indexers or article acquisition.
+#[path = "newznab_support/admission.rs"]
+mod admission;
 mod library_support;
+mod requester_support;
 mod usenet_support;
 mod web_support;
 
@@ -42,6 +45,7 @@ struct Http {
     document: Arc<Mutex<(u16, Vec<u8>)>>,
     calls: Arc<Mutex<RequestLog>>,
     blocked: Arc<AtomicBool>,
+    document_blocked: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
@@ -57,12 +61,14 @@ impl Http {
         let document = Arc::new(Mutex::new((200, usenet_support::source(1, 1))));
         let calls = Arc::new(Mutex::new(Vec::new()));
         let blocked = Arc::new(AtomicBool::new(false));
+        let document_blocked = Arc::new(AtomicBool::new(false));
         let stop = Arc::new(AtomicBool::new(false));
-        let (f, d, c, b, s) = (
+        let (f, d, c, b, db, s) = (
             feed.clone(),
             document.clone(),
             calls.clone(),
             blocked.clone(),
+            document_blocked.clone(),
             stop.clone(),
         );
         let worker = thread::spawn(move || {
@@ -119,7 +125,10 @@ impl Http {
                     d.lock().unwrap().clone()
                 };
                 let start = Instant::now();
-                while b.load(Ordering::Acquire) && !s.load(Ordering::Acquire) {
+                while (b.load(Ordering::Acquire)
+                    || path.starts_with("/get?") && db.load(Ordering::Acquire))
+                    && !s.load(Ordering::Acquire)
+                {
                     assert!(start.elapsed() < Duration::from_secs(3));
                     thread::sleep(Duration::from_millis(2));
                 }
@@ -138,6 +147,7 @@ impl Http {
             document,
             calls,
             blocked,
+            document_blocked,
             stop,
             thread: Some(worker),
         }
@@ -152,6 +162,7 @@ impl Http {
 impl Drop for Http {
     fn drop(&mut self) {
         self.blocked.store(false, Ordering::Release);
+        self.document_blocked.store(false, Ordering::Release);
         self.stop.store(true, Ordering::Release);
         if let Some(h) = self.thread.take()
             && let Err(e) = h.join()

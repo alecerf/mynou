@@ -135,6 +135,9 @@ impl Engine {
         )
     }
     pub(crate) fn hold_usenet_job(&self, job: &Job) -> Result<()> {
+        if !self.native_usenet_enabled() {
+            return Ok(());
+        }
         if let (Some(origin), Some(client)) = (&job.usenet_origin, &self.usenet_queue) {
             // A crash/cancellation may occur between held preparation and journal linking.
             for transfer in client
@@ -149,6 +152,9 @@ impl Engine {
         Ok(())
     }
     pub(crate) fn retry_usenet_job(&self, job: &Job) -> Result<()> {
+        if !job.imports.is_empty() {
+            return Ok(());
+        }
         let origin = job
             .usenet_origin
             .as_ref()

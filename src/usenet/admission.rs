@@ -65,6 +65,20 @@ fn text(v: &Value, k: &str) -> Result<String> {
         .ok_or_else(|| format!("Usenet admission: invalid {k}"))
 }
 impl Origin {
+    pub fn public_json(&self) -> Value {
+        let mut v = Value::object();
+        v.insert("transport", "usenet");
+        v.insert("candidate_id", self.candidate_id.clone());
+        v.insert("indexer_id", self.target.indexer_id.clone());
+        v.insert("server_id", self.target.server_id.clone());
+        v.insert("advertised_bytes", self.target.advertised_bytes.to_string());
+        v.insert("document_captured", self.document.is_some());
+        v.insert(
+            "transfer_id",
+            self.transfer_id.clone().map_or(Value::Null, Value::from),
+        );
+        v
+    }
     pub fn to_json(&self) -> Value {
         let mut v = Value::object();
         v.insert("candidate_id", self.candidate_id.clone());
