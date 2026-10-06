@@ -10,6 +10,10 @@ const MEDIA: &[u8] = include_bytes!("../../examples/demo.mp4");
 
 fn configured(d: &Directory, p: &Provider, h: &Http) -> Config {
     let mut v = value(p, h);
+    source(&mut v)
+        .get_mut("usenet")
+        .unwrap()
+        .insert("maximum_bytes", 1_048_576_u32);
     v.get_mut("usenet")
         .unwrap()
         .get_mut("downloads")
@@ -46,6 +50,11 @@ fn wait_state(engine: &Arc<Engine>, id: &str, state: &str) -> Job {
         if job.state == state {
             return job;
         }
+        assert!(
+            job.state != "failed",
+            "Original job failed before {state}: {:?}",
+            job.last_error
+        );
         assert!(
             Instant::now() < deadline,
             "Original job did not reach {state}: {} {:?}",
@@ -419,6 +428,10 @@ fn verified_actual_size_must_satisfy_the_captured_newznab_policy() {
     let h = Http::open();
     articles(&p, &format!("{TITLE}.mp4"), 1);
     let mut v = value(&p, &h);
+    source(&mut v)
+        .get_mut("usenet")
+        .unwrap()
+        .insert("maximum_bytes", 1_048_576_u32);
     v.get_mut("usenet")
         .unwrap()
         .get_mut("downloads")
@@ -428,7 +441,7 @@ fn verified_actual_size_must_satisfy_the_captured_newznab_policy() {
         .get_mut("usenet")
         .unwrap()
         .insert("minimum_bytes", (MEDIA.len() + 1) as u32);
-    h.replace(&rss(&item(TITLE, "4096", "")));
+    h.replace(&rss(&item(TITLE, &(MEDIA.len() + 1024).to_string(), "")));
     let engine = Engine::open(config::from_json(&v, &d.0).unwrap()).unwrap();
     let id = engine.submit(movie()).unwrap().remove(0).id;
     let workers = engine.start();
@@ -604,6 +617,10 @@ fn queued_library_polling_retains_one_reservation_during_a_delayed_article_respo
     let h = Http::open();
     articles(&p, &format!("{TITLE}.mp4"), 1);
     let mut v = value(&p, &h);
+    source(&mut v)
+        .get_mut("usenet")
+        .unwrap()
+        .insert("maximum_bytes", 1_048_576_u32);
     v.get_mut("usenet")
         .unwrap()
         .get_mut("downloads")
@@ -734,4 +751,72 @@ fn requester_approval_captured_route_and_exact_plex_confirmation_gate_native_use
     assert_eq!(p.requests.lock().unwrap().len(), 1);
     assert_eq!(h.count(), 2);
     drop(workers);
+}
+
+#[test]
+fn protected_api_and_browser_keep_raw_controls_away_from_an_admitted_owner() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let h = Http::open();
+    articles(&p, &format!("{TITLE}.mp4"), 1);
+    p.gate.store(true, Ordering::Release);
+    let c = configured(&d, &p, &h);
+    let queue_path = c
+        .usenet
+        .downloads
+        .as_ref()
+        .unwrap()
+        .state_dir
+        .join("queue.bin");
+    let server = Server::open(c);
+    let id = server.engine.submit(movie()).unwrap().remove(0).id;
+    p.wait_requests(1);
+    let job = retained(&server.engine, &id);
+    let transfer_id = job
+        .usenet_origin
+        .as_ref()
+        .unwrap()
+        .transfer_id
+        .as_ref()
+        .unwrap();
+    let before = fs::read(&queue_path).unwrap();
+    let route = format!("/api/usenet/queue/{transfer_id}/control");
+    let reply = server.call(
+        "POST",
+        &route,
+        &[
+            ("Authorization", &format!("Bearer {TOKEN}")),
+            ("Content-Type", "application/json"),
+        ],
+        r#"{"action":"resume"}"#,
+    );
+    assert_eq!(reply.status, 400, "{}", reply.body);
+    assert!(reply.body.contains("owning library job"));
+    let browser = Browser::login(&server);
+    let page = browser.get(&server, "/ui/usenet");
+    assert_eq!(page.status, 200);
+    assert!(
+        page.body
+            .contains("The library job controls this transfer.")
+    );
+    assert!(!page.body.contains("/ui/usenet/control"));
+    page.no_secrets();
+    let page = browser.get(&server, &format!("/ui/jobs/{id}"));
+    assert_eq!(page.status, 200);
+    assert!(page.body.contains("Open native Usenet transfers"));
+    assert!(!page.body.contains(PRIVATE_KEY));
+    page.no_secrets();
+    let public = server.call(
+        "GET",
+        &format!("/api/jobs/{id}"),
+        &[("Authorization", &format!("Bearer {TOKEN}"))],
+        "",
+    );
+    assert_eq!(public.status, 200);
+    assert!(!public.body.contains("binding"));
+    assert!(!public.body.contains(PRIVATE_KEY));
+    assert_eq!(fs::read(queue_path).unwrap(), before);
+    assert_eq!(p.requests.lock().unwrap().len(), 1);
+    assert!(retained(&server.engine, &id).imports.is_empty());
+    p.gate.store(false, Ordering::Release);
 }

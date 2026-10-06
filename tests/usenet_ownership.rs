@@ -7,14 +7,14 @@ use library_support::{Directory, files};
 use mynou::{
     config,
     crypto::sha256,
-    engine::lock,
+    engine::Engine,
     json::{self, Value},
     store,
     usenet::queue::{Client, OwnedTransfer, Owner},
 };
 use std::{fs, path::Path, sync::atomic::Ordering, thread};
 use usenet_support::*;
-use web_support::{Browser, Server, TOKEN};
+use web_support::TOKEN;
 
 fn owner(id: &str) -> Owner {
     Owner {
@@ -581,7 +581,7 @@ fn provider_changes_read_only_clients_and_stop_cannot_grant_owner_permissions() 
 }
 
 #[test]
-fn authenticated_api_and_browser_cannot_apply_raw_controls_to_owned_preparations() {
+fn a_service_rejects_an_unadmitted_owned_preparation_before_views_can_resume_it() {
     let d = Directory::new();
     let p = Provider::open();
     let mut v = config::default_json();
@@ -590,32 +590,10 @@ fn authenticated_api_and_browser_cannot_apply_raw_controls_to_owned_preparations
     v.insert("usenet", usenet(&p));
     let cfg = config::from_json(&v, &d.0).unwrap();
     let c = Client::open(&cfg.usenet, false).unwrap();
-    let owned = stage(&c, &cfg.usenet, &source(1, 1), 0, &owner("original-job"));
+    stage(&c, &cfg.usenet, &source(1, 1), 0, &owner("original-job"));
     drop(c);
-    let server = Server::open(cfg);
     let before = files(&d.0);
-    let route = format!("/api/usenet/queue/{}/control", owned.id);
-    let reply = server.call(
-        "POST",
-        &route,
-        &[
-            ("Authorization", &format!("Bearer {TOKEN}")),
-            ("Content-Type", "application/json"),
-        ],
-        r#"{"action":"resume"}"#,
-    );
-    assert_eq!(reply.status, 400, "{}", reply.body);
-    assert!(reply.body.contains("owning library job"));
-    let browser = Browser::login(&server);
-    let page = browser.get(&server, "/ui/usenet");
-    assert_eq!(page.status, 200);
-    assert!(
-        page.body
-            .contains("The library job controls this transfer.")
-    );
-    assert!(!page.body.contains("/ui/usenet/control"));
-    page.no_secrets();
-    assert!(lock(&server.engine.store).unwrap().list().is_empty());
+    assert!(Engine::open(cfg).is_err());
     assert_eq!(files(&d.0), before);
     assert!(p.requests.lock().unwrap().is_empty());
 }
