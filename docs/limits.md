@@ -321,10 +321,16 @@ source labels. Multi-episode physical ownership remains the next release stage.
 
 ## Native Usenet format stage
 
-The active v0.22.0 original NZB/yEnc implementation awaits exact complete CI.
+The original v0.22.0 NZB/yEnc implementation passed complete CI.
 NZB input is bounded UTF-8 XML without DTD expansion, at most 1,024 files and
 32,768 articles. Native yEnc requires part CRCs, exact ranges and a final complete
 CRC; decoded parts are at most 16 MiB and initial in-memory assembly at most
 64 MiB. CRC is accidental-corruption detection, not media identity. NNTP,
 Newznab, persistent acquisition/recovery, archives and PAR2 repair remain later
 increments. See [native Usenet stages](usenet.md) for the explicit contract.
+
+The active v0.22.1 original NNTP/TLS stage awaits exact complete CI. It uses
+verified implicit TLS, strict AUTHINFO/BODY identities, bounded CRLF/dot bodies,
+absolute budgets and one active operation per provider. Protected guarded probes
+never request articles or admit work. Health/attempt counters are ephemeral;
+durable acquisition, Newznab, archives and repair remain subsequent increments.

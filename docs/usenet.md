@@ -1,7 +1,9 @@
 # Native Usenet stages
 
-The active v0.22.0 increment provides original bounded NZB and yEnc format
-primitives. Its source awaits its own complete CI. All code uses Rust std only.
+v0.22.0 provides original bounded NZB and yEnc format primitives. It passed all
+five CI jobs in run 37434792979 with 639 Rust tests and seven published assets.
+The active v0.22.1 native NNTP increment needs its own complete CI. All code uses
+Rust std only.
 These primitives establish format and accidental-corruption checks; full Usenet
 search, NNTP acquisition, durable transfer management and recovery follow in
 separate releases. No external decoder, downloader, archive tool or repair helper
@@ -62,7 +64,81 @@ is limited to 64 MiB. Larger disk-backed assembly, verified restart recovery and
 controlled import remain subsequent stages.
 
 UUEncode, Base64/MIME article decoding, RAR/ZIP extraction and PAR2 repair are
-outside this release's explicit format contract. NNTP and Newznab acquisition
-are not yet connected. Original synthetic format fixtures cover corruption,
+outside this release's explicit format contract. Durable acquisition and Newznab
+search are not yet connected. Original synthetic format fixtures cover corruption,
 structure limits, escaped bytes, multipart ordering/coverage, CRC differences,
 unsafe paths and the read-only CLI. Validation runs only in GitHub Actions.
+
+## Native NNTP transport and guarded probes in 0.22.1
+
+Configure up to eight explicit providers, with unique bounded lowercase IDs:
+
+```json
+{
+  "usenet": {
+    "servers": [
+      {
+        "id": "primary",
+        "host": "nntp.example.test",
+        "port": 563,
+        "tls": true,
+        "username_env": "MYNOU_NNTP_USERNAME",
+        "password_env": "MYNOU_NNTP_PASSWORD",
+        "timeout_ms": 10000,
+        "max_article_bytes": 16777216
+      }
+    ]
+  }
+}
+```
+
+Providers default to verified implicit TLS on port 563. Cleartext is accepted
+only on literal loopback addresses for original fixtures, with port 119 by
+default. There is no STARTTLS mode, plaintext fallback or posting. Hostnames and
+settings are strictly bounded. Username/password environment names must be set
+together or both omitted; missing/empty/invalid actual credentials fail before a
+connection. Values retain bytes without trimming, are ASCII within 4096 bytes,
+and reject controls; usernames additionally reject spaces.
+
+One operation has an absolute 100–30000 ms budget, covering connect, verified
+TLS, greeting, AUTHINFO and body reading. Synchronous DNS can exceed that budget;
+late resolution is rejected before connecting. Greeting must be 200 or 201;
+AUTHINFO USER accepts 281 directly or 381 followed by PASS and 281. Any failure
+closes without authentication fallback. Status lines are bounded ASCII within
+512 bytes; raw provider messages never become errors or reports.
+
+`usenet::nntp::body` reads one explicitly addressed bare message ID using BODY.
+It requires 222 with that exact echoed identity and a numeric article number.
+Article lines are limited to 65536 bytes, CRLF endings are required, leading
+dots are unstuffed and the terminal dot is mandatory. Truncation, invalid dots,
+NUL bytes, wrong identities and oversized bodies fail. Body transport alone does
+not verify yEnc CRC or create library work; the caller must still run integrity
+and admission gates. A provider allows one active native operation; another
+fails busy without duplicate connections. Health is shared through configuration
+clones and records bounded transport counters/fixed errors in memory alone.
+
+Default body limit is 16 MiB, configurable up to the yEnc worst-case bounded
+encoded article limit (four times its 16 MiB decoded-part cap, plus headers and
+preamble). The yEnc encoded-input bound now includes CRLF/escaping overhead even
+with the smallest valid line width; decoded and assembly limits stay unchanged.
+
+```sh
+mynou usenet --config mynou.json
+mynou usenet-probe primary --config mynou.json
+mynou usenet-probe primary --apply --plan-id REVIEWED_ID --config mynou.json
+```
+
+Protected routes are `GET /api/usenet` and
+`POST /api/usenet/SERVER_ID/probe` with optional apply and plan_id. The browser
+**Usenet** page reviews the same probe. Preview does not connect or write.
+Application requires the running service and a guard binding immutable provider
+settings, a fresh service identity and its attempt count. Attempts invalidate
+older reviews, including failed probes; restart creates a new identity and stale
+guards fail. Guards contain no endpoint, credential name/value or raw status.
+Browser reviews also bind session/provider/guard, expire after ten minutes and
+require origin/CSRF checks.
+
+A probe checks greeting/authentication and QUIT (205), never BODY or another
+article command. It cannot create a download or library job. Probe health is
+explicitly ephemeral; durable transfer management/recovery follows in 0.22.2.
+There is no exposed article-download API or automatic NNTP polling in this stage.

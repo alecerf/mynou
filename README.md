@@ -1,4 +1,4 @@
-# Mynou 0.22.0 — Rust, standard library only
+# Mynou 0.22.1 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -100,7 +100,10 @@ Checked source policy and guarded controls retain pauses through restart.
 [Native Usenet formats](docs/usenet.md) begin in 0.22.0 with read-only NZB
 inspection, original yEnc decoding and mandatory part/whole-file CRC checks.
 Multipart assembly rejects missing, overlapping or conflicting ranges. This
-source awaits complete CI; NNTP transport and durable acquisition follow.
+format scope passed all five jobs with 639 Rust tests and seven published assets.
+The active 0.22.1 scope adds original bounded NNTP/TLS authentication, exact article
+body transport and reviewed non-acquiring probes through CLI/API/browser paths.
+Its source awaits complete CI; durable disk-backed acquisition/recovery follows.
 
 ## Try it
 
@@ -134,8 +137,8 @@ from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, o
 build the image from the source archive:
 
 ```sh
-docker load -i mynou-v0.22.0-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.22.0 .
+docker load -i mynou-v0.22.1-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.22.1 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d

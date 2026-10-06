@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.22.0
+# Project checkpoint — Mynou 0.22.1
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -12,12 +12,21 @@ alone creates release tags and publishes artifacts from validated commits.
 
 ## Implemented scope
 
-The active 0.22.0 increment adds original bounded NZB identities/inspection,
-yEnc decoding and exact multipart integrity. The original XML parser now serves
-RSS/Torznab and NZB without external entity expansion. Article checks and complete
-coverage/CRC checks precede verified file output. The initial in-memory assembler
-has a 64 MiB limit; disk-backed acquisition/recovery and NNTP follow separately.
-Original format fixtures await this source's exact complete CI.
+The active 0.22.1 increment adds original NNTP/TLS authentication and exact
+bounded article body transport. Opt-in immutable provider settings refer to
+credential environment names. Guarded non-acquiring connection probes have
+protected CLI/API/browser paths, service-bound attempt guards and expiring browser
+reviews. Private endpoints/credentials/raw statuses are excluded from reports.
+Original local protocol and verified TLS fixtures await this source's exact CI.
+Disk-backed acquisition/recovery and Newznab remain subsequent increments.
+
+CI published v0.22.0 from `9644114e5f1e8c2ed679d57a3a2b18c479ee4ac2` in
+[run 37434792979](https://github.com/alecerf/mynou/actions/runs/37434792979).
+All five jobs passed: 639 Rust tests across 55 harnesses, none failed or ignored,
+and four scheduler checks. Test execution took 64.375 seconds with two harness
+processes and two threads each. Seven bot-owned assets were published at
+08:17:36 UTC on October 6, 2026. The tag matched the validated source and the
+prior v0.21.1 tag and asset IDs, sizes and digests remained unchanged.
 
 CI published v0.21.1 from `88c52d761eed0ea1fb88ba3d52571047ee862dd7` in
 [run 37433196413](https://github.com/alecerf/mynou/actions/runs/37433196413).
