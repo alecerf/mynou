@@ -29,7 +29,7 @@ pub(super) fn list(engine: &Arc<Engine>, session: &Session) -> crate::Result<Str
     }
     body.push_str("</table></section>");
     let queue = engine.usenet_queue()?;
-    body.push_str("<section class=panel><h2>Downloads</h2><p>Stage a selected NZB file through the CLI or API. Completed files remain in private staging until library admission.</p><table><tr><th>Transfer</th><th>State</th><th>Verified parts</th><th>Attempts</th><th>Health</th><th>Controls</th></tr>");
+    body.push_str("<section class=panel><h2>Downloads</h2><p>Library jobs acquire supported direct-media NZBs through configured Newznab sources. Raw CLI and API downloads remain in private staging. Control library transfers through their jobs.</p><table><tr><th>Transfer</th><th>State</th><th>Verified parts</th><th>Attempts</th><th>Health</th><th>Controls</th></tr>");
     for r in array(queue.get("records").unwrap_or(&Value::Null)) {
         body.push_str(&format!(
             "<tr><td>{}</td><td>{}</td><td>{}/{}</td><td>{}</td><td>{}</td><td>",

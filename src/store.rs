@@ -2583,6 +2583,11 @@ impl Store {
                         .map_err(|error| format!("invalid journal job: {error}"))?;
                     self.validate_group_single(job)?;
                 }
+                if jobs.iter().any(|j| j.usenet_origin.is_some())
+                    && &header[..8] != USENET_JOURNAL_MAGIC
+                {
+                    return Err("Usenet provenance requires journal format 6".into());
+                }
                 if jobs.iter().any(|j| j.requester.is_some())
                     && &header[..8] != REQUESTER_JOURNAL_MAGIC
                     && &header[..8] != IRC_JOURNAL_MAGIC

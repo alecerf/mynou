@@ -401,7 +401,12 @@ pub fn job(engine: &Arc<Engine>, session: &Session, query: &Form, id: &str) -> R
     if job.shared_upgrade.is_some() {
         body.push_str("<p>This replacement belongs to a complete shared group. Cancel or retry affects every replacement owner. Staged owners await the remaining Plex confirmations; the previous library group stays current.</p>");
     }
-    if let Some(id) = &job.download_id {
+    if let Some(origin) = &job.usenet_origin {
+        body.push_str("<p><a href=\"/ui/usenet\">Open native Usenet transfers</a>. Cancel and retry through this library job.</p>");
+        if let Some(id) = &origin.transfer_id {
+            body.push_str(&format!("<p>Usenet transfer: {}</p>", e(id)));
+        }
+    } else if let Some(id) = &job.download_id {
         body.push_str(&format!(
             "<p><a href=\"/ui/transfers/{}\">Open native transfer</a></p>",
             e(id)

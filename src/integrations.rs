@@ -1235,6 +1235,7 @@ struct Candidate {
     source: String,
     id: String,
     assessment: Assessment,
+    library_admission_supported: bool,
 }
 
 impl Candidate {
@@ -1256,7 +1257,10 @@ impl Candidate {
             value.insert("password_protected", target.password_protected);
             value.insert("download_advertised", true);
             value.insert("content_verified", false);
-            value.insert("library_admission_supported", false);
+            value.insert(
+                "library_admission_supported",
+                self.library_admission_supported,
+            );
         }
         // An indexer may report integers outside JSON's exact range.
         value.insert(
@@ -1538,6 +1542,8 @@ fn search_candidates_mode(
                     return Err("Search: candidate data exceeds the memory limit".into());
                 }
                 candidates.push(Candidate {
+                    library_admission_supported: release.usenet.is_some()
+                        && config.usenet.downloads.as_ref().is_some_and(|d| d.enabled),
                     id: candidate_id(profile_name, &source_identity, &release),
                     source: source_label.clone(),
                     release,

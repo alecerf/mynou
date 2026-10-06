@@ -269,6 +269,7 @@ impl Engine {
             });
             (job, shared)
         };
+        self.hold_usenet_job(&job)?;
         let transfer_id = job.download_id.as_deref().or_else(|| {
             job.shared_file
                 .as_ref()
@@ -287,6 +288,13 @@ impl Engine {
         self.requester_retry_allowed(id)?;
         let mut store = lock(&self.store)?;
         let previous = store.get(id).ok_or("Unknown job")?;
+        if previous.usenet_origin.is_some() {
+            if !matches!(previous.state.as_str(), "failed" | "cancelled") {
+                return Err("Only a failed or cancelled job can be retried".into());
+            }
+            self.retry_usenet_job(&previous)?;
+            return store.retry(id);
+        }
         let job = store.retry(id)?;
         if job.irc_origin.is_some() {
             drop(store);
@@ -603,13 +611,20 @@ impl Engine {
             job.attempts = job.attempts.saturating_add(1);
             job.last_error = Some(error);
             job.state = "failed".into();
-            job.next_attempt_at = if job.attempts < self.config.max_attempts {
-                store::now().saturating_add((1_u64 << job.attempts.min(10)).min(900))
-            } else {
-                0
-            };
+            job.next_attempt_at =
+                if job.usenet_origin.is_none() && job.attempts < self.config.max_attempts {
+                    store::now().saturating_add((1_u64 << job.attempts.min(10)).min(900))
+                } else {
+                    0
+                };
         }
         store.update(job.clone())?;
+        if !matches!(
+            job.state.as_str(),
+            "processing" | "downloading" | "importing"
+        ) {
+            self.hold_usenet_job(&job)?;
+        }
         if !matches!(job.state.as_str(), "ready" | "failed" | "cancelled") {
             store.release_lease(&job.id, &lease)?;
         }
@@ -619,10 +634,13 @@ impl Engine {
     }
 
     pub(crate) fn pause_unwanted_transfers(&self, store: &Store) -> Result<()> {
+        let jobs = store.list();
+        for job in jobs.iter().filter(|j| j.state == "cancelled") {
+            self.hold_usenet_job(job)?;
+        }
         let Some(client) = &self.downloads else {
             return Ok(());
         };
-        let jobs = store.list();
         let active: std::collections::BTreeSet<_> = jobs
             .iter()
             .filter(|j| j.state != "cancelled")
@@ -713,6 +731,21 @@ impl Engine {
             job.next_attempt_at = store::now().saturating_add(60);
             return Ok(());
         }
+        if job.files.is_empty()
+            && job.imports.is_empty()
+            && job.acquisition_url.is_none()
+            && job.request.source_path.is_none()
+            && job.request.source_url.is_none()
+            && job.irc_origin.is_none()
+        {
+            self.select_native_acquisition(job)?;
+        }
+        if job.usenet_origin.is_some()
+            && job.imports.is_empty()
+            && !self.advance_usenet(job, active)?
+        {
+            return Ok(());
+        }
         // Resume a confirmed import after interruption without copying it again.
         if !job.imports.is_empty() {
             if job.shared_file.is_some() {
@@ -733,6 +766,7 @@ impl Engine {
                 let available = if job.upgrade_parent.is_some()
                     || job.shared_file.is_some()
                     || job.requester.is_some()
+                    || job.usenet_origin.is_some()
                 {
                     integrations::available_import(&config, &job.request, &job.imports)?
                 } else {
@@ -941,6 +975,9 @@ impl Engine {
                 return Err("Mapped torrent file differs from the retained verified path".into());
             }
         }
+        if job.usenet_origin.is_some() {
+            self.require_usenet_lease(job)?;
+        }
         // Group ownership serializes claims. Organizer compares existing bytes and
         // publishes one destination, including recovery after a pre-journal crash.
         job.state = "importing".into();
@@ -1057,23 +1094,42 @@ impl Heartbeat {
         let handle = thread::spawn(move || {
             let period = Duration::from_secs((engine.config.lease_duration_secs / 3).max(1));
             let mut last = std::time::Instant::now();
+            let owner_period = period.min(Duration::from_secs(5));
+            let mut owner_last = std::time::Instant::now();
             while !d.load(Ordering::Acquire) {
                 thread::sleep(Duration::from_millis(100));
                 if engine.stopped.load(Ordering::Acquire) {
                     a.store(false, Ordering::Release);
                     break;
                 }
-                let valid = lock(&engine.store).and_then(|mut s| {
-                    let j = s.get(&id).ok_or("Missing job")?;
-                    if j.lease_id.as_deref() != Some(&lease) || j.lease_until <= store::now() {
-                        return Err("Lease lost".into());
+                let valid = (|| -> Result<()> {
+                    let ledger = lock(&engine.requester_store)?;
+                    let mut s = lock(&engine.store)?;
+                    let mut j = s.get(&id).ok_or("Missing job")?;
+                    if j.lease_id.as_deref() != Some(&lease)
+                        || j.lease_until <= store::now()
+                        || !crate::requesters::engine::interest(&ledger.state, &j, &engine.config)
+                    {
+                        return Err("Lease or approved demand lost".into());
                     }
                     if last.elapsed() >= period {
-                        s.renew(&id, &lease, store::now(), engine.config.lease_duration_secs)?;
+                        j =
+                            s.renew(&id, &lease, store::now(), engine.config.lease_duration_secs)?;
                         last = std::time::Instant::now();
                     }
+                    drop(s);
+                    drop(ledger);
+                    if j.usenet_origin
+                        .as_ref()
+                        .is_some_and(|o| o.transfer_id.is_some())
+                        && j.imports.is_empty()
+                        && owner_last.elapsed() >= owner_period
+                    {
+                        engine.authorize_usenet_job(&j)?;
+                        owner_last = std::time::Instant::now();
+                    }
                     Ok(())
-                });
+                })();
                 if valid.is_err() {
                     a.store(false, Ordering::Release);
                     break;

@@ -350,6 +350,47 @@ impl Client {
     pub fn retry_owned(&self, id: &str, owner: &Owner, until: u64) -> Result<()> {
         self.set_owned_permit(id, owner, until, true)
     }
+    /// Reopen an explicit library retry without granting any worker permission.
+    pub(crate) fn prepare_owned_retry(&self, id: &str, owner: &Owner) -> Result<()> {
+        owner.validate()?;
+        let mut inner = self.lock()?;
+        inner.writable()?;
+        let r = inner
+            .data
+            .records
+            .get(id)
+            .ok_or("Usenet queue: transfer is absent")?
+            .clone();
+        if self.stopped.load(Ordering::Acquire) || r.owner.as_ref() != Some(owner) {
+            return Err("Usenet queue: captured retry owner is unavailable".into());
+        }
+        inner.permits.remove(id);
+        if !matches!(r.phase, Phase::Failed | Phase::Cancelled) {
+            return Ok(());
+        }
+        let workspace = inner
+            .workspaces
+            .get(id)
+            .ok_or("Usenet queue: retry workspace is unavailable")?;
+        if workspace
+            .first_missing()
+            .is_some_and(|n| r.attempts[n as usize - 1] >= r.limit)
+        {
+            return Err("Usenet queue: retained attempt budget is exhausted".into());
+        }
+        let mut next = inner.data.clone();
+        let revision = next.next()?;
+        let r = next
+            .records
+            .get_mut(id)
+            .ok_or("Usenet queue: retry record is absent")?;
+        r.phase = Phase::Paused;
+        r.revision = revision;
+        r.reservation = None;
+        r.next_attempt = 0;
+        r.error = Some("owner_inactive".into());
+        inner.persist(next)
+    }
     fn set_owned_permit(&self, id: &str, owner: &Owner, until: u64, retry: bool) -> Result<()> {
         owner.validate()?;
         let now = store::now();
