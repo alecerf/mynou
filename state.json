@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 31,
+  "generation": 32,
   "lease": {
     "id": "6beb0240-accc-4e7d-9b25-93e83615e174",
     "worker": "codex-primary-bootstrap",
     "role": "security",
     "issue": 1,
     "acquired_at": "2026-10-06T19:38:22Z",
-    "heartbeat_at": "2026-10-06T19:38:22Z",
-    "expires_at": "2026-10-06T20:23:22Z",
+    "heartbeat_at": "2026-10-06T19:39:11Z",
+    "expires_at": "2026-10-06T20:24:11Z",
     "branch": "work/autonomous-organization",
     "commit": "78db76a3c12e706228f3ca643d839ae8f8c5f2ae",
     "pr": 3
   },
   "checkpoint": {
-    "at": "2026-10-06T19:37:29Z",
+    "at": "2026-10-06T19:39:11Z",
     "issue": 1,
-    "role": "quality",
+    "role": "security",
     "branch": "work/autonomous-organization",
     "commit": "78db76a3c12e706228f3ca643d839ae8f8c5f2ae",
     "pr": 3,
-    "summary": "Addressed both actual QA findings. Branch sweep now returns read-only audit or recovery-needed before any mutation; recovery/circuit handoffs bind the affected current lease even before its first checkpoint and preserve earlier context separately. Added four CI-only regressions. Local e1e828c03a4aa1426a28a93f91203e3b5b15ec87 maps to remote 78db76a3c12e706228f3ca643d839ae8f8c5f2ae, tree ddc41e355973a1097cf86414e74640e4b03df8b2. Updated stale native Issue/PR metadata. Current CI pending; no local validation.",
-    "next_action": "Inspect the 32 current organization scenarios and core jobs. Release implementation for Security correction verification and independent QA. Delivery remains blocked until fresh reviews and agent-qa-review are green."
+    "summary": "Security inspected the complete prior 40-path diff plus the exact current three-path correction. Read-only sweeps cannot mutate; stale/circuit handoffs bind current work before first checkpoint and retain bounded prior context. No new security concerns; original ownership/trigger/merged-head fixes remain intact. Current organization job 112463881830 in run 37520231024 is green; core validation is still executing. No local validation.",
+    "next_action": "Post fresh Security pass record at this exact head, release, then QA verifies its prior findings, complete acceptance/diff and actual core CI before its own pass record. No merge until the QA job is genuinely green."
   },
   "attempts": {}
 }
