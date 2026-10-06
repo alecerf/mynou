@@ -1165,6 +1165,14 @@ fn source_releases(
             }
             .into(),
         ));
+        if source.kind == "newznab" && request.kind == "movie" {
+            if let Some(id) = request.tmdb_id {
+                pairs.push(("tmdbid", id.to_string()));
+            }
+            if request.year != 0 {
+                pairs.push(("year", request.year.to_string()));
+            }
+        }
         if matches!(request.kind.as_str(), "episode" | "series")
             && !matches!(numbering, crate::numbering::SourceNumber::Absolute(_))
         {
