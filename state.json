@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 28,
+  "generation": 29,
   "lease": {
     "id": "b3e9d3f9-5da7-4196-8e53-7a3ba3039266",
     "worker": "codex-primary-bootstrap",
     "role": "quality",
     "issue": 1,
     "acquired_at": "2026-10-06T19:34:17Z",
-    "heartbeat_at": "2026-10-06T19:34:17Z",
-    "expires_at": "2026-10-06T20:19:17Z",
+    "heartbeat_at": "2026-10-06T19:37:29Z",
+    "expires_at": "2026-10-06T20:22:29Z",
     "branch": "work/autonomous-organization",
-    "commit": "ddcec24b92e4c971431b1543a87e55de864fee5b",
+    "commit": "78db76a3c12e706228f3ca643d839ae8f8c5f2ae",
     "pr": 3
   },
   "checkpoint": {
-    "at": "2026-10-06T19:33:48Z",
+    "at": "2026-10-06T19:37:29Z",
     "issue": 1,
-    "role": "qa",
+    "role": "quality",
     "branch": "work/autonomous-organization",
-    "commit": "ddcec24b92e4c971431b1543a87e55de864fee5b",
+    "commit": "78db76a3c12e706228f3ca643d839ae8f8c5f2ae",
     "pr": 3,
-    "summary": "Independent QA rejects current source after acceptance/diff review, despite green required core jobs and 28 scenarios. branch-sweep reaches merge/cleanup before its sweep guard, so a documented read-only command can mutate delivery. Expiry recovery and the no-progress breaker inherit the prior checkpoint without binding the interrupted lease when death/attempts occur before its first checkpoint. Both violate explicit bootstrap recovery and mechanical-operation expectations; no merge.",
-    "next_action": "Quality must make sweeps strictly read-only and bind recovery/circuit-breaker handoffs to the affected lease, preserving previous useful context without misidentifying the work. Add CI-only regressions; then Security and QA inspect the exact correction. Update stale Issue/PR metadata when verified."
+    "summary": "Addressed both actual QA findings. Branch sweep now returns read-only audit or recovery-needed before any mutation; recovery/circuit handoffs bind the affected current lease even before its first checkpoint and preserve earlier context separately. Added four CI-only regressions. Local e1e828c03a4aa1426a28a93f91203e3b5b15ec87 maps to remote 78db76a3c12e706228f3ca643d839ae8f8c5f2ae, tree ddc41e355973a1097cf86414e74640e4b03df8b2. Updated stale native Issue/PR metadata. Current CI pending; no local validation.",
+    "next_action": "Inspect the 32 current organization scenarios and core jobs. Release implementation for Security correction verification and independent QA. Delivery remains blocked until fresh reviews and agent-qa-review are green."
   },
   "attempts": {}
 }
