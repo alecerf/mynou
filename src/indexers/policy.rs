@@ -463,12 +463,11 @@ impl Engine {
                 source_path: None,
                 source_url: None,
             };
-            let ok = crate::integrations::source_releases(
+            let ok = crate::integrations::probe_source(
                 source,
                 &request,
                 Instant::now() + Duration::from_secs(5),
-            )
-            .is_ok();
+            );
             report.insert("probe_success", ok);
         }
         Ok(report)
