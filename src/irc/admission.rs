@@ -245,6 +245,15 @@ fn public_demand(d: &Demand) -> Value {
     v
 }
 
+fn public_request(request: &Request) -> Value {
+    let mut v = request.to_json();
+    if let Value::Object(fields) = &mut v {
+        fields.remove("source_url");
+        fields.remove("source_path");
+    }
+    v
+}
+
 impl Engine {
     pub(crate) fn irc_request_available(&self, id: &str) -> Result<bool> {
         let ledger = lock(&self.irc_store)?;
@@ -396,7 +405,7 @@ impl Engine {
         report.insert("applied", false);
         report.insert("plan_id", plan_id.clone());
         report.insert("announcement", record.public_json());
-        report.insert("canonical_request", canonical.to_json());
+        report.insert("canonical_request", public_request(&canonical));
         report.insert("account_id", account_id);
         report.insert("demand_id", demand_id.clone());
         report.insert("profile", capture.profile_name.clone());
