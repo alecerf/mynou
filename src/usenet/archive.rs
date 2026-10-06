@@ -635,3 +635,269 @@ pub(crate) fn prepare_namespace(root: &Path, flag: &AtomicBool) -> Result<()> {
 pub(crate) fn namespace_present(root: &Path) -> Result<bool> {
     exists(root)
 }
+
+#[cfg(test)]
+#[path = "../../tests/archive_support/mod.rs"]
+mod fixtures;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::requesters::digest;
+    use std::{
+        io::Cursor,
+        sync::atomic::{AtomicU64, Ordering},
+        time::{SystemTime, UNIX_EPOCH},
+    };
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    const MEDIA: &[u8] = include_bytes!("../../examples/demo.mp4");
+    struct Fixture {
+        parent: PathBuf,
+        root: PathBuf,
+        source: PathBuf,
+        preparation: Preparation,
+    }
+    impl Fixture {
+        fn new() -> Self {
+            let stamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let parent = std::env::temp_dir().join(format!(
+                "mynou-archive-proof-{}-{stamp}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            let mut builder = fs::DirBuilder::new();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                builder.mode(0o700);
+            }
+            builder.create(&parent).unwrap();
+            let source = parent.join("Original.Movie.2026.1080p.zip");
+            let bytes = fixtures::stored_zip("Original/Original.Movie.2026.1080p.mp4", MEDIA);
+            let mut file = private_options()
+                .create_new(true)
+                .write(true)
+                .open(&source)
+                .unwrap();
+            file.write_all(&bytes).unwrap();
+            file.sync_all().unwrap();
+            let zip = Zip::read(&mut Cursor::new(&bytes), Limits::default()).unwrap();
+            let owner = Owner {
+                job_id: "original-job".into(),
+                binding: digest(b"original-owner"),
+            };
+            let plan = Plan::capture(
+                owner,
+                digest(b"original-transfer"),
+                &source,
+                bytes.len() as u64,
+                &digest(&bytes),
+                &zip,
+                0,
+            )
+            .unwrap();
+            Self {
+                root: parent.join(&plan.transfer_id),
+                parent,
+                source,
+                preparation: Preparation { plan, output: None },
+            }
+        }
+        fn open(&self) -> Workspace {
+            Workspace::open(
+                &self.root,
+                &self.source,
+                &self.preparation,
+                &AtomicBool::new(true),
+            )
+            .unwrap()
+        }
+        fn complete(&self) -> Proof {
+            let mut workspace = self.open();
+            workspace
+                .extract(&self.source, &AtomicBool::new(true))
+                .unwrap()
+        }
+        fn output(&self) -> PathBuf {
+            self.root
+                .join("output")
+                .join(self.preparation.plan.output_name().unwrap())
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.parent);
+        }
+    }
+
+    #[test]
+    fn writing_intent_restarts_known_partial_bytes_without_adopting_them() {
+        let f = Fixture::new();
+        let workspace = f.open();
+        let path = workspace.path().unwrap();
+        let mut partial = private_options()
+            .create_new(true)
+            .write(true)
+            .open(&path)
+            .unwrap();
+        partial.write_all(&MEDIA[..19]).unwrap();
+        partial.sync_all().unwrap();
+        drop(partial);
+        drop(workspace);
+        let descriptor = fs::read(f.root.join("archive.bin")).unwrap();
+        Workspace::preflight(&f.root, &f.source, &f.preparation).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), MEDIA[..19]);
+        assert_eq!(fs::read(f.root.join("archive.bin")).unwrap(), descriptor);
+        let proof = f.complete();
+        assert_eq!(proof.bytes, MEDIA.len() as u64);
+        assert_eq!(proof.sha256, digest(MEDIA));
+        assert_eq!(fs::read(path).unwrap(), MEDIA);
+    }
+    #[test]
+    fn completed_descriptor_can_join_the_preceding_journal_intent_without_rewriting() {
+        let f = Fixture::new();
+        let proof = f.complete();
+        let descriptor = fs::read(f.root.join("archive.bin")).unwrap();
+        let before = fs::metadata(f.output()).unwrap().modified().unwrap();
+        Workspace::preflight(&f.root, &f.source, &f.preparation).unwrap();
+        assert_eq!(f.complete(), proof);
+        assert_eq!(fs::read(f.root.join("archive.bin")).unwrap(), descriptor);
+        assert_eq!(
+            fs::metadata(f.output()).unwrap().modified().unwrap(),
+            before
+        );
+        let mut linked = f.preparation.clone();
+        linked.output = Some(proof);
+        Workspace::preflight(&f.root, &f.source, &linked).unwrap();
+    }
+    #[test]
+    fn corrupt_descriptor_and_changed_original_source_are_preserved_without_repair() {
+        let f = Fixture::new();
+        f.complete();
+        let path = f.root.join("archive.bin");
+        let mut bytes = fs::read(&path).unwrap();
+        bytes[25] ^= 1;
+        fs::write(&path, &bytes).unwrap();
+        assert!(Workspace::preflight(&f.root, &f.source, &f.preparation).is_err());
+        assert_eq!(fs::read(path).unwrap(), bytes);
+        assert_eq!(fs::read(f.output()).unwrap(), MEDIA);
+        let f = Fixture::new();
+        f.complete();
+        let descriptor = fs::read(f.root.join("archive.bin")).unwrap();
+        let mut bytes = fs::read(&f.source).unwrap();
+        bytes[40] ^= 1;
+        fs::write(&f.source, &bytes).unwrap();
+        assert!(
+            Workspace::preflight(&f.root, &f.source, &f.preparation)
+                .unwrap_err()
+                .contains("source digest")
+        );
+        assert_eq!(fs::read(&f.source).unwrap(), bytes);
+        assert_eq!(fs::read(f.root.join("archive.bin")).unwrap(), descriptor);
+    }
+    #[test]
+    fn foreign_owner_entry_limits_and_output_proofs_cannot_be_rebound() {
+        let f = Fixture::new();
+        let proof = f.complete();
+        for field in ["owner", "entry", "limits", "output"] {
+            let mut altered = f.preparation.clone();
+            match field {
+                "owner" => altered.plan.owner.binding = digest(b"another-owner"),
+                "entry" => altered.plan.entry_name = "Other/Original.Movie.2026.1080p.mp4".into(),
+                "limits" => altered.plan.limits.max_blocks += 1,
+                "output" => {
+                    let mut changed = proof.clone();
+                    changed.sha256 = digest(b"another-output");
+                    altered.output = Some(changed);
+                }
+                _ => unreachable!(),
+            }
+            assert!(
+                Workspace::preflight(&f.root, &f.source, &altered).is_err(),
+                "{field}"
+            );
+        }
+        assert_eq!(fs::read(f.output()).unwrap(), MEDIA);
+    }
+    #[test]
+    fn unknown_files_unproven_output_and_orphan_namespaces_are_not_adopted() {
+        let f = Fixture::new();
+        mkdir(&f.root).unwrap();
+        mkdir(&f.root.join("output")).unwrap();
+        let mut file = private_options()
+            .create_new(true)
+            .write(true)
+            .open(f.output())
+            .unwrap();
+        file.write_all(MEDIA).unwrap();
+        drop(file);
+        assert!(
+            Workspace::preflight(&f.root, &f.source, &f.preparation)
+                .unwrap_err()
+                .contains("writing intent")
+        );
+        assert!(
+            Workspace::open(&f.root, &f.source, &f.preparation, &AtomicBool::new(true)).is_err()
+        );
+        assert_eq!(fs::read(f.output()).unwrap(), MEDIA);
+        let f = Fixture::new();
+        f.complete();
+        let path = f.root.join("foreign.bin");
+        fs::write(&path, b"original unknown file").unwrap();
+        assert!(
+            Workspace::preflight(&f.root, &f.source, &f.preparation)
+                .unwrap_err()
+                .contains("unknown")
+        );
+        assert_eq!(fs::read(path).unwrap(), b"original unknown file");
+        assert!(validate_namespace(&f.parent, &BTreeSet::new()).is_err());
+    }
+    #[test]
+    fn known_empty_scaffolding_resumes_but_cancelled_open_creates_nothing() {
+        let f = Fixture::new();
+        mkdir(&f.root).unwrap();
+        Workspace::preflight(&f.root, &f.source, &f.preparation).unwrap();
+        f.complete();
+        assert_eq!(fs::read(f.output()).unwrap(), MEDIA);
+        let f = Fixture::new();
+        assert!(
+            Workspace::open(&f.root, &f.source, &f.preparation, &AtomicBool::new(false)).is_err()
+        );
+        assert!(!f.root.exists());
+    }
+    #[test]
+    fn corrupt_outputs_and_private_inode_aliases_fail_read_only_preflight() {
+        let f = Fixture::new();
+        f.complete();
+        let mut bytes = fs::read(f.output()).unwrap();
+        let middle = bytes.len() / 2;
+        bytes[middle] ^= 1;
+        fs::write(f.output(), &bytes).unwrap();
+        assert!(
+            Workspace::preflight(&f.root, &f.source, &f.preparation)
+                .unwrap_err()
+                .contains("corrupt private output")
+        );
+        assert_eq!(fs::read(f.output()).unwrap(), bytes);
+        #[cfg(unix)]
+        {
+            let f = Fixture::new();
+            f.complete();
+            let alias = f.parent.join("alias.mp4");
+            fs::hard_link(f.output(), &alias).unwrap();
+            assert!(Workspace::preflight(&f.root, &f.source, &f.preparation).is_err());
+            assert_eq!(fs::read(&alias).unwrap(), MEDIA);
+            let f = Fixture::new();
+            f.complete();
+            let output = f.output();
+            let original = f.parent.join("original.mp4");
+            fs::rename(&output, &original).unwrap();
+            std::os::unix::fs::symlink(&original, &output).unwrap();
+            assert!(Workspace::preflight(&f.root, &f.source, &f.preparation).is_err());
+            assert_eq!(fs::read(original).unwrap(), MEDIA);
+        }
+    }
+}

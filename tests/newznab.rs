@@ -1,6 +1,9 @@
 //! Original loopback Newznab/NZB fixtures. No external indexers or article acquisition.
 #[path = "newznab_support/admission.rs"]
 mod admission;
+mod archive_support;
+#[path = "newznab_support/archives.rs"]
+mod archives;
 mod library_support;
 mod requester_support;
 mod usenet_support;

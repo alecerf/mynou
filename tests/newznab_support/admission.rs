@@ -8,7 +8,7 @@ use mynou::{
 use std::{os::unix::fs::PermissionsExt, path::Path};
 const MEDIA: &[u8] = include_bytes!("../../examples/demo.mp4");
 
-fn configured(d: &Directory, p: &Provider, h: &Http) -> Config {
+pub(super) fn configured(d: &Directory, p: &Provider, h: &Http) -> Config {
     let mut v = value(p, h);
     source(&mut v)
         .get_mut("usenet")
@@ -30,10 +30,10 @@ fn articles(p: &Provider, name: &str, count: usize) {
         );
     }
 }
-fn retained(engine: &Engine, id: &str) -> Job {
+pub(super) fn retained(engine: &Engine, id: &str) -> Job {
     lock(&engine.store).unwrap().get(id).unwrap()
 }
-fn progress(engine: &Engine) -> Value {
+pub(super) fn progress(engine: &Engine) -> Value {
     engine
         .usenet_queue()
         .unwrap()
@@ -43,7 +43,7 @@ fn progress(engine: &Engine) -> Value {
         .unwrap()[0]
         .clone()
 }
-fn wait_state(engine: &Arc<Engine>, id: &str, state: &str) -> Job {
+pub(super) fn wait_state(engine: &Arc<Engine>, id: &str, state: &str) -> Job {
     let deadline = Instant::now() + Duration::from_secs(12);
     loop {
         let job = retained(engine, id);
@@ -64,7 +64,7 @@ fn wait_state(engine: &Arc<Engine>, id: &str, state: &str) -> Job {
         thread::sleep(Duration::from_millis(5));
     }
 }
-fn write_snapshot(path: &Path, value: &Value, magic: &[u8; 8]) {
+pub(super) fn write_snapshot(path: &Path, value: &Value, magic: &[u8; 8]) {
     let payload = json::stringify(value).into_bytes();
     let mut bytes = magic.to_vec();
     bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
@@ -72,7 +72,7 @@ fn write_snapshot(path: &Path, value: &Value, magic: &[u8; 8]) {
     bytes.extend_from_slice(&sha256(&bytes));
     fs::write(path, bytes).unwrap();
 }
-fn read_snapshot(path: &Path) -> Value {
+pub(super) fn read_snapshot(path: &Path) -> Value {
     let bytes = fs::read(path).unwrap();
     json::parse(std::str::from_utf8(&bytes[16..bytes.len() - 32]).unwrap()).unwrap()
 }

@@ -764,6 +764,100 @@ mod tests {
     fn revocation_and_regrant_fence_a_preceding_disk_verification() {
         verification_gate(true);
     }
+    fn operation_gate(revoke: bool) {
+        let (_root, client, transfer) = completed();
+        client
+            .authorize_owned(&transfer.id, &transfer.owner, store::now() + 60)
+            .unwrap();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let worker_client = client.clone();
+        let worker_transfer = transfer.clone();
+        let worker = thread::spawn(move || {
+            worker_client.verified_owned_operation(
+                &worker_transfer.id,
+                &worker_transfer.owner,
+                |path, bytes, sha| {
+                    assert_eq!(fs::read(path).unwrap(), b"proof");
+                    assert_eq!(bytes, 5);
+                    assert_eq!(sha, digest(b"proof"));
+                    started_tx
+                        .send(())
+                        .map_err(|_| "Original operation gate closed")?;
+                    release_rx
+                        .recv_timeout(Duration::from_secs(4))
+                        .map_err(|_| "Original operation gate timed out")?;
+                    Ok("original provisional result")
+                },
+            )
+        });
+        started_rx.recv_timeout(Duration::from_secs(4)).unwrap();
+        assert_eq!(
+            client
+                .report()
+                .unwrap()
+                .get("active")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        if revoke {
+            client.hold_owned(&transfer.id, &transfer.owner).unwrap();
+        }
+        client
+            .authorize_owned(&transfer.id, &transfer.owner, store::now() + 60)
+            .unwrap();
+        release_tx.send(()).unwrap();
+        let result = worker.join().unwrap();
+        assert_eq!(result.is_err(), revoke);
+        assert_eq!(
+            client
+                .report()
+                .unwrap()
+                .get("active")
+                .and_then(Value::as_u64),
+            Some(0)
+        );
+        assert_eq!(
+            fs::read(
+                client
+                    .verified_owned_file(&transfer.id, &transfer.owner)
+                    .unwrap()
+            )
+            .unwrap(),
+            b"proof"
+        );
+        assert_eq!(client.retained_owned().unwrap()[0].attempts, 1);
+    }
+    #[test]
+    fn private_operations_allow_permission_renewal_outside_the_queue_mutex() {
+        operation_gate(false);
+    }
+    #[test]
+    fn private_operation_results_are_fenced_after_revocation_and_regrant() {
+        operation_gate(true);
+    }
+    #[test]
+    fn a_format_rejection_does_not_poison_valid_article_proofs() {
+        let (_root, client, transfer) = completed();
+        client
+            .authorize_owned(&transfer.id, &transfer.owner, store::now() + 60)
+            .unwrap();
+        let result: Result<()> =
+            client.verified_owned_operation(&transfer.id, &transfer.owner, |_, _, _| {
+                Err("Original unsupported format".into())
+            });
+        assert_eq!(result.unwrap_err(), "Original unsupported format");
+        assert_eq!(
+            fs::read(
+                client
+                    .verified_owned_file(&transfer.id, &transfer.owner)
+                    .unwrap()
+            )
+            .unwrap(),
+            b"proof"
+        );
+        assert_eq!(client.retained_owned().unwrap()[0].attempts, 1);
+    }
     #[test]
     fn a_future_wall_deadline_cannot_extend_an_elapsed_monotonic_permission() {
         let permit = Permit {
