@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.22.7
+# Project checkpoint — Mynou 0.22.8
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -12,17 +12,27 @@ alone creates release tags and publishes artifacts from validated commits.
 
 ## Implemented scope
 
-The active 0.22.7 source adds original bounded classic ZIP parsing and streaming
-raw DEFLATE decoding. Stored, fixed-Huffman and dynamic-Huffman payloads use a
-32 KiB window, bounded lookup tables and 64 KiB writes; decoded size and CRC must
-match the checked directory before a payload proof is returned. Headers,
-descriptors, names, attributes, offsets, overlap and resource limits are checked.
-The read-only `zip-inspect` CLI reports metadata with `content_verified: false`
-and creates no output, jobs or network requests. Generic extraction writes only
-to a caller-owned provisional sink and rechecks metadata before decoding.
+The active 0.22.8 source adds opt-in, ownership-bound ZIP extraction to native
+Usenet movie and episode admission. Selection captures decoder limits. A checked
+private intent binds the original queue source SHA-256, owner, chosen media entry
+and bounds before output creation; exact size, CRC and SHA precede completion.
+Extraction holds a bounded queue slot outside its mutex. Revocation fences results
+before journal attachment, and current approved leases gate durable transitions.
+Known writing intents restart partial output; completed private proofs can join
+the preceding journal intent without rewriting. Unknown or corrupt state is
+rejected before recovery writes. ZIP-aware jobs require journal format 7.
+Outer and inner filename/numbering/profile, source and decoded size, native media,
+independent-inode atomic import and exact Plex checks all remain required.
 This source requires its own complete Actions validation and publication.
-Ownership-bound archive admission follows in 0.22.8; ZIP64, RAR, PAR2, multi-file
-packs and Usenet upgrades remain separate bounded increments.
+ZIP64, RAR, PAR2, multi-file packs and Usenet upgrades remain separate increments.
+
+CI published v0.22.7 from `0c85954628c0e8e32a5e89429446f132b4394aaf` in
+[run 37501969608](https://github.com/alecerf/mynou/actions/runs/37501969608).
+All five jobs passed: 750 Rust tests across 61 harnesses, none failed or ignored,
+and four scheduler checks. Test execution took 89.003 seconds with two harness
+processes and two threads each. Seven bot-owned assets were published at
+17:17:59 UTC on October 6, 2026. The tag matched the validated source and the
+prior v0.22.6 tag and asset IDs, sizes and digests remained unchanged.
 
 CI published v0.22.6 from `c933f289860ab73615de7c61c4f58edbc2b88bc8` in
 [run 37476040909](https://github.com/alecerf/mynou/actions/runs/37476040909).

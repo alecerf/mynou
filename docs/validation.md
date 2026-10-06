@@ -1135,3 +1135,31 @@ was performed.
 | mynou-v0.22.6-linux-amd64-image.tar.gz | 615709926 | 2238925 | ede9b62734e4e18c6a0f34f7f55599092b081c1de1675e2e566897eac55827d6 |
 | mynou-v0.22.6-source.zip | 615709944 | 8473685 | 4d27c277ca5bc482f8284c950b3835d6d392a3ebdf9bec6f8f799e23f33dabf5 |
 | mynou-v0.22.6-source.zip.sha256 | 615709948 | 91 | 744b3218176dce9605f406ff032f464e1e701da985d9e97fcc19492a06ccb352 |
+
+
+## Recorded 0.22.7 CI evidence
+
+CI published v0.22.7 from `0c85954628c0e8e32a5e89429446f132b4394aaf` in
+[run 37501969608](https://github.com/alecerf/mynou/actions/runs/37501969608).
+All five jobs passed: 750 Rust tests across 61 harnesses, none failed or ignored,
+and four scheduler checks. Test execution took 89.003 seconds with two harness
+processes and two threads each. Seven bot-owned assets were published at
+17:17:59 UTC on October 6, 2026. The tag matched the validated source and the
+prior v0.22.6 tag and asset IDs, sizes and digests remained unchanged.
+
+Successful jobs: validate 112400977011, Build x86_64-unknown-linux-musl 112400977365, Build x86_64-unknown-linux-gnu 112400977501, package 112402261541, release 112402534791.
+Release 404972068 and all seven assets belong to github-actions[bot].
+CI caught a current Rust divisibility lint and a stale requester-review fixture;
+the fixture now holds unrelated polling while the original BODY is blocked.
+Every production admission and review gate remained enabled. No local validation
+or manual publication was performed.
+
+| Asset | ID | Bytes | SHA-256 |
+| --- | --- | ---: | --- |
+| mynou-v0.22.7-linux-x86_64 | 616154268 | 4666208 | 35f6ccf0dc1da70a88176813461a9785113d8f1439510cf17a66aedc07f28506 |
+| SHA256SUMS | 616154271 | 289 | 20067a8d4eb4c32da0b444017d26674ce49b50f50a226061dda0571fce2380b5 |
+| mynou-v0.22.7-linux-amd64-image.tar.gz | 616154272 | 2255174 | d738650c5d1b7216a54c670582e76e457a1add005d7ea63437ef20fc58a17cb7 |
+| mynou-v0.22.7-linux-x86_64.sha256 | 616154273 | 93 | 50e744b95e3d7c8ea06215703359aa46a4b847ac7efb9d6739e7f28bb15aaf87 |
+| mynou-v0.22.7-linux-amd64-image.tar.gz.sha256 | 616154276 | 105 | 0bfc60917f3bcecccdc00904a8cd7b6485759b5d1c32d7ba445e19aadb2569b6 |
+| mynou-v0.22.7-source.zip | 616154313 | 8594999 | b7a4e7d2925c1ba6a10fdcdfdbf4314c14448a336cc5d4caf794887c6169c5d7 |
+| mynou-v0.22.7-source.zip.sha256 | 616154314 | 91 | 293e46021e65eff38ea1fa25ee3bc9e66241db51c76c40ae7198f93c16e77582 |

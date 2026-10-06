@@ -1,4 +1,4 @@
-# Mynou 0.22.7 — Rust, standard library only
+# Mynou 0.22.8 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -121,9 +121,12 @@ packs and Usenet upgrades remain later stages. See [Newznab configuration](docs/
 [held ownership](docs/usenet.md#held-library-ownership-in-0225) and
 [library admission](docs/usenet.md#native-library-admission-in-0226).
 
-The active 0.22.7 increment adds [bounded ZIP and streaming DEFLATE](docs/archives.md),
-including read-only `zip-inspect`. Its complete CI is pending; automatic archive
-library admission follows in a separate increment.
+v0.22.7 passed all five jobs with 750 Rust tests and seven bot-published assets,
+providing [bounded ZIP and streaming DEFLATE](docs/archives.md) and read-only
+`zip-inspect`. The active v0.22.8 increment adds opt-in ownership-bound ZIP library
+admission for one supported media entry, with durable private extraction proofs
+and the existing requester, identity, import and Plex gates. Its own CI is pending.
+RAR, PAR2, multi-file packs and Usenet upgrades remain later increments.
 
 ## Try it
 
@@ -157,8 +160,8 @@ from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, o
 build the image from the source archive:
 
 ```sh
-docker load -i mynou-v0.22.7-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.22.7 .
+docker load -i mynou-v0.22.8-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.22.8 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d

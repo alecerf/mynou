@@ -348,8 +348,12 @@ ownership validation, while valid held preparations can be linked after restart.
 Metadata acceptance never proves downloaded content. Owner digests supplied to
 the library interface do not independently establish admission or approval.
 
-The active 0.22.7 ZIP/DEFLATE [format scope](archives.md) requires its own CI.
+The v0.22.7 ZIP/DEFLATE [format scope](archives.md) passed complete CI.
 It supports classic single-disk stored/DEFLATE entries within captured limits;
 inspection never verifies content and decoding never chooses output paths.
-Automatic archive admission, ZIP64, RAR, PAR2 and multi-file imports remain
-separate increments. No archive decoder or repair helper is invoked.
+The active v0.22.8 opt-in library path supports one supported media entry in one
+ZIP/NZB file, captured source/entry/bounds, private restartable extraction and
+verified output proofs. It requires current permission, native media checks,
+independent-inode import and exact Plex confirmation, and awaits its own CI.
+ZIP64, RAR, PAR2, multi-file packs and Usenet upgrades remain later increments.
+No external archive decoder or repair helper is invoked.

@@ -1,9 +1,8 @@
 # Native archive formats
 
-The active 0.22.7 format implementation uses original Rust std-only ZIP and raw
-DEFLATE code. Its own complete CI is pending. It is the format foundation for
-subsequent ownership-bound native Usenet extraction; automatic archive import
-is not enabled by this release. No external archive program or crate is used.
+The original ZIP and raw DEFLATE formats passed complete v0.22.7 CI. The active
+v0.22.8 increment adds opt-in native Usenet library admission and requires its own
+complete Actions validation. No external archive program or crate is used.
 
 ## Read-only inspection
 
@@ -75,10 +74,70 @@ bytes in the provisional sink; callers must not publish them. Raw DEFLATE has
 no embedded expected checksum, so its `Decoded` result contains calculated
 checksums without a claim of an externally verified identity.
 
-The next increment binds the verified source archive, selected entry, captured
-limits and private output proof to canonical admission and current permission,
-then runs the existing filename/profile/size/media/import/Plex gates. ZIP metadata
-alone, raw queue ownership or a caller-supplied digest cannot bypass those gates.
+## Native ZIP library admission in 0.22.8
+
+Enable native Usenet and a bound Newznab source, then opt in explicitly:
+
+```json
+{
+  "usenet": {
+    "downloads": {
+      "enabled": true,
+      "zip": {
+        "max_entries": 1024,
+        "max_entry_bytes": "1073741824",
+        "max_total_bytes": "4294967296",
+        "max_ratio": 1000,
+        "max_blocks": 16384
+      }
+    }
+  }
+}
+```
+
+This is an excerpt to merge into configured provider settings. `zip: {}` uses
+all defaults. Absent or null `zip` preserves direct-media behavior. Unknown keys,
+zero limits and values above the format's hard bounds are rejected. Selection
+freezes every limit; raising settings later cannot change an existing job.
+Disabling ZIP withholds new authorization for a ZIP-aware job.
+
+One NZB file containing one `.zip` is supported. The checked outer filename
+must match the requested title/year, episode source numbering and captured
+profile. Exactly one supported video entry (`mp4`, `m4v`, `mov`, `mkv`, `webm`,
+`avi`) must be present, and its filename must satisfy the same gates. A second
+video, including a sample, is rejected. Auxiliary entries are structurally checked
+and counted against declared limits but never extracted. Both verified archive
+size and decoded media size must satisfy the captured Newznab source policy.
+
+The private journal records a typed intent before directories or payload writes:
+owner and transfer, verified original source name/size/SHA, entry index/path/method/
+size/CRC, and complete decoder limits. A private format-1 extraction frame has
+writing or complete state. Fresh approved leases and bounded owner permission
+gate extraction; hashing/decoding runs in one queue slot outside its mutex.
+Permission renewal can proceed, while revocation and regrant invalidate the old
+operation's result. Journal output attachment follows the final permission check.
+
+Output stays in `archives/TRANSFER/output/LEAF` under the native queue state
+root. Known writing intents may restart bounded partial bytes under fresh
+permission; unverified bytes are never adopted. A complete exact frame/file proof
+can join the preceding durable journal intent after interruption without
+rewriting. Startup validates the namespace, source and retained output before
+initializer writes, journal-tail repair or permission changes. Unknown, orphaned,
+corrupt, rebound, symlinked or multiply linked data is preserved and rejected.
+This is bounded crash recovery, not automatic cleanup or a global disk quota.
+
+Exact decoded length and CRC, calculated SHA, source rehash and output rehash
+precede a durable complete descriptor. ZIP-aware jobs require journal/snapshot
+format 7; older direct-media records retain their existing identities and format
+compatibility. Public origins expose enablement/prepared/verified booleans and
+omit private extraction plans and proofs.
+
+Native media analysis and cancellable independent-inode atomic library import
+still follow extraction. Canonical movie/episode identity, approved requester,
+captured destination and quality, and exact Plex imported-path confirmation stay
+required. Format metadata and queue ownership cannot establish those approvals.
+RAR, PAR2, ZIP64, multi-file/pack admission and Usenet upgrades remain separate
+bounded increments.
 
 ## Original CI fixtures
 
@@ -89,3 +148,8 @@ The Rust fixture writer independently constructs stored ZIP headers/descriptors
 and bit-level DEFLATE edge cases. GitHub Actions alone executes the tests and
 validates exact bytes, CRC, SHA, wraparound, malformed inputs, captured bounds,
 cancellation, sink errors, metadata changes and read-only CLI behavior.
+
+The admission fixtures also cover private writing/completed interruption windows,
+foreign or corrupt state, changed sources, links, format downgrade, stored/deflated
+movie imports, canonical absolute-numbered episodes, captured limits across
+restart, requester approval/destinations and exact Plex confirmation.

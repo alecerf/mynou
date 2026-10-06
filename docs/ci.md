@@ -211,3 +211,9 @@ The v0.22.6 run completed all 60 harnesses with 729 passing Rust tests in
 the expanded native Newznab/library target. The new archive target uses the
 scheduler default until its first passing observation. Parallelism remains two
 harness processes with two test threads each; every current target is required.
+
+The v0.22.7 run completed all 61 harnesses with 750 passing Rust tests in
+89.003 seconds. The archive format target took 0.566 seconds and native
+Newznab/library target 11.903 seconds. The timing manifest records these actual
+measurements; expanded v0.22.8 targets retain preceding weights until their own
+completed run provides observations. All targets and gates remain required.
