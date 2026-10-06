@@ -5,13 +5,24 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current implementation: 0.21.1, awaiting CI
+## Current implementation: 0.22.0, awaiting CI
 
-Checked private source policy retains immutable stable bindings and operator
-pause/enable state through restart. Guarded reset/probe controls share protected
-CLI/API/browser paths. Previews do not search or write; probes never queue media.
-Original fixtures await the exact complete CI and publication. Native Usenet and
-verified cross-seeding continue in 0.22–0.23.
+Original bounded NZB/yEnc formats begin native Usenet support. Metadata-only CLI
+inspection never searches or downloads. Verified immutable parts and complete
+assembly require CRC checks and exact coverage. The original XML parser is shared
+with existing RSS/Torznab. This source awaits complete CI/publication; native NNTP,
+disk-backed acquisition/recovery and Newznab follow in focused 0.22 increments.
+Verified cross-seeding and bulk controls continue in 0.23.
+
+## Preceding published stage: 0.21.1
+
+CI published v0.21.1 from `88c52d761eed0ea1fb88ba3d52571047ee862dd7` in
+[run 37433196413](https://github.com/alecerf/mynou/actions/runs/37433196413).
+All five jobs passed: 628 Rust tests across 54 harnesses, none failed or ignored,
+and four scheduler checks. Test execution took 60.185 seconds with two harness
+processes and two threads each. Seven bot-owned assets were published at
+08:02:35 UTC on October 6, 2026. The tag matched the validated source and the
+prior v0.21.0 tag and asset IDs, sizes and digests remained unchanged.
 
 ## Preceding published stage: 0.21.0
 

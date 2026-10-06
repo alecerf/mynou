@@ -125,10 +125,9 @@ impl Nzb {
                     attributes(m, &["type"])?;
                     if m.name != "meta"
                         || leaf(m)?.len() > 4096
-                        || !m
-                            .attrs
+                        || m.attrs
                             .get("type")
-                            .is_some_and(|s| !s.is_empty() && s.len() <= 128)
+                            .is_none_or(|s| s.is_empty() || s.len() > 128)
                     {
                         return Err("NZB: invalid metadata".into());
                     }

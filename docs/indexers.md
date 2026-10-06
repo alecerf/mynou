@@ -69,7 +69,7 @@ restore live sessions or imply a successful network check.
 
 ## Checked policy and guarded controls in 0.21.1
 
-The active increment requires its own complete CI. An optional stable `id` is
+This increment passed complete v0.21.1 CI. An optional stable `id` is
 1–64 lowercase letters, digits, underscores or hyphens. Without it, identity is a
 SHA-256 digest of the private binding, preserving legacy configuration. Duplicate
 IDs fail. A stable ID binds name, kind, endpoint, API-key environment name, request

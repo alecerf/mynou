@@ -11,11 +11,16 @@ revision.
 
 ## Automated checks and releases
 
-The active 0.21.1 fixtures cover guarded source pause/enable persistence,
-read-only previews, stale/replayed whole-policy guards, session reset, in-flight
-response invalidation, non-acquiring probes, immutable stable bindings, duplicate
-IDs, corrupt/private/link-rejected snapshots and protected API/browser/CLI
-controls. These require their own complete Actions run and publication.
+The active 0.22.0 fixtures cover bounded NZB identities/structure/capacities,
+private read-only CLI reports, original CRC vectors and an independent bitwise
+reference, yEnc binary escapes/headers/corruption, ordered multipart coverage,
+whole-file checks, overlaps/gaps/missing parts and unsafe names. The shared
+original XML parser retains its existing RSS/Torznab regression fixtures. This
+source requires its own complete Actions validation and publication.
+
+The preceding 0.21.1 policy/control scenarios passed the complete run recorded
+below. CI found a private return type exposed by the probe interface; a narrow
+boolean outcome retained internal release privacy without weakening checks.
 
 The preceding native source authentication/session fixtures passed complete
 0.21.0 CI as recorded below. CI found the unsupported u16-to-JSON conversion and
@@ -920,3 +925,26 @@ the tag, release and assets. No local validation ran.
 | mynou-v0.21.0-source.zip | 614857346 | 7450779 | 380c64700fde91d87bf779f28057c3d2d321e827d2efead9cc44d2efa167e81d |
 | mynou-v0.21.0-source.zip.sha256 | 614857359 | 91 | bbcb9f7b255f27320392c1fb4fc40232819e6e3bce38f6d5421c53e5e45b1eed |
 | SHA256SUMS | 614857326 | 289 | d42645f8ce77e04ba6941cbb3753f4815b356d659c14157aa3a1226c9d83134e |
+
+## Recorded 0.21.1 CI evidence
+
+CI published v0.21.1 from `88c52d761eed0ea1fb88ba3d52571047ee862dd7` in
+[run 37433196413](https://github.com/alecerf/mynou/actions/runs/37433196413).
+All five jobs passed: 628 Rust tests across 54 harnesses, none failed or ignored,
+and four scheduler checks. Test execution took 60.185 seconds with two harness
+processes and two threads each. Seven bot-owned assets were published at
+08:02:35 UTC on October 6, 2026. The tag matched the validated source and the
+prior v0.21.0 tag and asset IDs, sizes and digests remained unchanged.
+
+Proof: `/workspace/scratch/mynou-21.1-release-proof.json`. Actions alone created
+the tag, release and assets. No local validation ran.
+
+| Asset | ID | Bytes | SHA-256 |
+| --- | ---: | ---: | --- |
+| mynou-v0.21.1-linux-x86_64 | 614892970 | 4191072 | d747851447ae1801e7523ea597e68ad3e1ef10a897c44ee962abe8cf8d8eadf9 |
+| SHA256SUMS | 614892971 | 289 | 8c57b4cc0ae54fb0b69b657e6a3a868d89581fc537ab9ef165f4b3442516bbf9 |
+| mynou-v0.21.1-linux-x86_64.sha256 | 614892972 | 93 | b1609f2e6a2c44412e50732eb0886d8f55201cc223f28c5b624c190446d9ec21 |
+| mynou-v0.21.1-linux-amd64-image.tar.gz.sha256 | 614892973 | 105 | db9bc05d9320e88ee373c5d6faac3914e2156fbb01d3278b2d37cb75893ebdfe |
+| mynou-v0.21.1-linux-amd64-image.tar.gz | 614892974 | 2047575 | 7b28f19edff106159e2264799aafbe85ed68284632ec2d126ba8b9f58600b3a2 |
+| mynou-v0.21.1-source.zip | 614892982 | 7559096 | 490ae689c4d4892f8b987fbe4762f5da9478e45831e3def2c763c8e353159786 |
+| mynou-v0.21.1-source.zip.sha256 | 614892986 | 91 | cc48fef3a3cd20dc7af4cf3e0c7f5cc54cc5e622511457592cc697c76ec76722 |

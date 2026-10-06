@@ -243,7 +243,7 @@ passed complete 0.20.7 CI/publication; see notifications.md.
 Indexer integrations support RSS/JSON/Torznab endpoints. Native Basic, Bearer and
 explicit single-cookie form authentication, bounded renewal, request intervals
 and redacted health passed complete v0.21.0 CI. Checked persistent source policy
-and guarded controls in 0.21.1 await their own exact CI. Login
+and guarded controls passed complete v0.21.1 CI. Login
 redirects, CSRF/CAPTCHA/interactive flows, arbitrary cookie jars and a general
 tracker adapter catalog remain unsupported; Usenet follows later. Opt-in IRC reception
 supports an explicit strict JSON envelope and review rules, with eight sources,
@@ -318,3 +318,13 @@ require a system providing that source.
 Explicit alternate/absolute [numbering](numbering.md) is implemented in 0.16.
 Retained canonical identities cannot be reassigned; new jobs capture approved
 source labels. Multi-episode physical ownership remains the next release stage.
+
+## Native Usenet format stage
+
+The active v0.22.0 original NZB/yEnc implementation awaits exact complete CI.
+NZB input is bounded UTF-8 XML without DTD expansion, at most 1,024 files and
+32,768 articles. Native yEnc requires part CRCs, exact ranges and a final complete
+CRC; decoded parts are at most 16 MiB and initial in-memory assembly at most
+64 MiB. CRC is accidental-corruption detection, not media identity. NNTP,
+Newznab, persistent acquisition/recovery, archives and PAR2 repair remain later
+increments. See [native Usenet stages](usenet.md) for the explicit contract.
