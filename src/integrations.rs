@@ -1121,7 +1121,11 @@ fn json_releases(value: &Value, base: &str) -> Result<Vec<Release>> {
     Ok(out)
 }
 
-fn source_releases(source: &Source, request: &Request, deadline: Instant) -> Result<Vec<Release>> {
+pub(crate) fn source_releases(
+    source: &Source,
+    request: &Request,
+    deadline: Instant,
+) -> Result<Vec<Release>> {
     let mut pairs = vec![("q", request.title.clone())];
     let numbering =
         request

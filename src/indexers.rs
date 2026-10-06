@@ -1,4 +1,5 @@
 //! Native bounded source authentication. Sessions are ephemeral and origin-bound.
+pub(crate) mod policy;
 mod session;
 use crate::{
     Result,
@@ -6,8 +7,12 @@ use crate::{
     json::Value,
     net::{self, HttpClient, Response},
 };
+pub use policy::ControlRequest;
 use std::{
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
     time::{Duration, Instant},
 };
 #[derive(Clone, Debug, Default)]
@@ -45,6 +50,11 @@ impl Authentication {
 }
 #[derive(Clone)]
 pub struct Options {
+    pub id: Option<String>,
+    policy_initialized: Arc<AtomicBool>,
+    policy_enabled: Arc<AtomicBool>,
+    generation: Arc<AtomicU64>,
+    reset_pending: Arc<AtomicBool>,
     pub enabled: bool,
     pub min_interval_ms: u64,
     pub authentication: Authentication,
@@ -62,6 +72,11 @@ impl std::fmt::Debug for Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
+            id: None,
+            policy_initialized: Arc::new(AtomicBool::new(false)),
+            policy_enabled: Arc::new(AtomicBool::new(true)),
+            generation: Arc::new(AtomicU64::new(0)),
+            reset_pending: Arc::new(AtomicBool::new(false)),
             enabled: true,
             min_interval_ms: 0,
             authentication: Authentication::None,
@@ -116,7 +131,13 @@ impl Options {
             Some(Value::Bool(b)) => *b,
             _ => return Err("Indexer: invalid enabled flag".into()),
         };
+        let id = match v.get("id") {
+            None => None,
+            Some(Value::String(s)) if crate::requesters::valid_id(s) => Some(s.clone()),
+            _ => return Err("Indexer: invalid stable source ID".into()),
+        };
         let mut options = Self {
+            id,
             enabled,
             min_interval_ms: integer(v, "min_interval_ms", 0, 60_000)?,
             ..Self::default()
@@ -240,7 +261,8 @@ pub(crate) fn fetch(
 ) -> Result<Response> {
     let runtime = &source.options.runtime;
     let mut state = runtime.try_lock().map_err(|_| "Indexer: source is busy")?;
-    if !source.options.enabled {
+    let generation = source.options.generation.load(Ordering::Acquire);
+    if !source.options.effective_enabled() {
         state.last_error = Some("disabled");
         return Err("Indexer: source is disabled".into());
     }
@@ -255,7 +277,19 @@ pub(crate) fn fetch(
     }
     state.last_start = Some(now);
     state.requests = state.requests.saturating_add(1);
-    let result = fetch_before(source, url, accept, deadline, &mut state);
+    if source.options.reset_pending.swap(false, Ordering::AcqRel) {
+        state.session = None;
+    }
+    let mut result = if generation == source.options.generation.load(Ordering::Acquire) {
+        fetch_before(source, url, accept, deadline, &mut state)
+    } else {
+        Err("Indexer: source policy changed during the request".into())
+    };
+    if generation != source.options.generation.load(Ordering::Acquire) {
+        state.session = None;
+        state.last_error = Some("policy_changed");
+        result = Err("Indexer: source policy changed during the request".into());
+    }
     match &result {
         Ok(_) => {
             state.successes = state.successes.saturating_add(1);
@@ -392,7 +426,8 @@ pub fn report(sources: &[Source]) -> Value {
                     let mut v = Value::object();
                     v.insert("name", crate::integrations::report_text(&source.name, 128));
                     v.insert("kind", source.kind.clone());
-                    v.insert("enabled", source.options.enabled);
+                    v.insert("enabled", source.options.effective_enabled());
+                    v.insert("id", source.options.identity(source));
                     v.insert("authentication", source.options.authentication.mode());
                     v.insert("min_interval_ms", source.options.min_interval_ms as u32);
                     if let Ok(s) = source.options.runtime.try_lock() {
@@ -408,9 +443,10 @@ pub fn report(sources: &[Source]) -> Value {
                         v.insert("last_parse", s.last_parse.map_or(Value::Null, Value::from));
                         v.insert(
                             "session_active",
-                            s.session
-                                .as_ref()
-                                .is_some_and(|s| s.expires > Instant::now()),
+                            !source.options.reset_pending.load(Ordering::Acquire)
+                                && s.session
+                                    .as_ref()
+                                    .is_some_and(|s| s.expires > Instant::now()),
                         );
                     } else {
                         v.insert("busy", true);

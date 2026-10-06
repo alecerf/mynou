@@ -422,6 +422,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
                     "enabled",
                     "min_interval_ms",
                     "authentication",
+                    "id",
                 ],
             )?;
             let kind = text(source, "kind", "json")?;

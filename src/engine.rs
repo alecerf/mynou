@@ -31,6 +31,7 @@ pub struct Engine {
     pub(crate) irc_route_runtime: Mutex<crate::irc::routing::Runtime>,
     pub(crate) irc_route_lock: Mutex<()>,
     pub(crate) notification_lock: Mutex<()>,
+    pub(crate) indexer_store: Mutex<crate::indexers::policy::SourceStore>,
     pub(crate) upgrade_lock: Mutex<()>,
     pub(crate) read_only: bool,
     pub stopped: AtomicBool,
@@ -72,6 +73,8 @@ impl Engine {
         start_downloads: bool,
         read_only: bool,
     ) -> Result<Arc<Self>> {
+        let mut indexer_store =
+            crate::indexers::policy::SourceStore::open(&config.store_dir, &config, read_only)?;
         let series_store = crate::series::SeriesStore::open(&config.store_dir, read_only)?;
         let mut requester_store =
             crate::requesters::RequesterStore::open(&config.store_dir, &config, read_only)?;
@@ -86,6 +89,7 @@ impl Engine {
             crate::irc::admission::recovered_state(&irc_store.state, &requester_store.state)?;
         let irc_recovered = crate::irc::routing::recovered_state(&irc_admitted, &store)?;
         let irc_recovery_changed = irc_recovered != irc_store.state;
+        indexer_store.initialize(&config)?;
         requester_store.initialize()?;
         irc_store.initialize()?;
         if !read_only && irc_recovery_changed {
@@ -145,6 +149,7 @@ impl Engine {
             irc_route_runtime: Mutex::new(crate::irc::routing::Runtime::default()),
             irc_route_lock: Mutex::new(()),
             notification_lock: Mutex::new(()),
+            indexer_store: Mutex::new(indexer_store),
             upgrade_lock: Mutex::new(()),
             read_only,
             stopped: AtomicBool::new(false),
