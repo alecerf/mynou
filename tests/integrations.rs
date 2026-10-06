@@ -102,6 +102,7 @@ fn json_search_ignores_wrong_identity_and_chooses_viable_seeders() {
     });
     let mut config = config();
     config.sources.push(Source {
+        options: Default::default(),
         name: "fixture".into(),
         kind: "json".into(),
         url: fixture.url.clone(),
@@ -188,6 +189,7 @@ fn malformed_indexer_and_plex_responses_do_not_report_ready() {
     let fixture = Fixture::open(|_, _| (200, "<!DOCTYPE rss><rss/>".into()));
     let mut config = config();
     config.sources.push(Source {
+        options: Default::default(),
         name: "fixture".into(),
         kind: "rss".into(),
         url: fixture.url.clone(),
@@ -285,6 +287,7 @@ fn torznab_network_feed_selects_enclosure_without_including_details_page() {
     });
     let mut config = config();
     config.sources.push(Source {
+        options: Default::default(),
         name: "fixture".into(),
         kind: "torznab".into(),
         url: fixture.url.clone(),

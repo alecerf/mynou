@@ -1,5 +1,6 @@
 //! Browser management using original server-rendered HTML and native forms.
 mod forms;
+mod indexer_views;
 mod irc_views;
 mod notification_views;
 mod requester_views;
@@ -249,6 +250,10 @@ impl Web {
                 requester_views::list(engine, &session)?
             }
             "/ui/irc" => irc_views::list(engine, &session, &query)?,
+            "/ui/indexers" => {
+                query.only(&[])?;
+                indexer_views::list(engine, &session)
+            }?,
             "/ui/notifications" => notification_views::list(engine, &session, &query)?,
             "/ui/jobs" => views::jobs(engine, &session, &query)?,
             "/ui/library" => views::library(engine, &session, &query)?,

@@ -358,6 +358,7 @@ fn structured_selection_agrees_with_search_and_the_redacted_public_preview() {
     );
     let mut config = config::from_json(&value, Path::new(".")).unwrap();
     config.sources.push(Source {
+        options: Default::default(),
         name: "fixture".into(),
         kind: "json".into(),
         url: fixture.url.clone(),
@@ -428,6 +429,7 @@ fn structured_selection_cannot_return_a_rejected_or_missing_candidate() {
         let fixture = Fixture::open(move |_, _| (200, body.clone()));
         let mut config = config::from_json(&config::default_json(), Path::new(".")).unwrap();
         config.sources.push(Source {
+            options: Default::default(),
             name: "fixture".into(),
             kind: "json".into(),
             url: fixture.url.clone(),
@@ -471,6 +473,7 @@ fn unrecordable_titles_do_not_win_acquisition_and_remain_explained_in_the_previe
     let fixture = Fixture::open(move |_, _| (200, body.clone()));
     let mut config = config::from_json(&config::default_json(), Path::new(".")).unwrap();
     config.sources.push(Source {
+        options: Default::default(),
         name: "fixture".into(),
         kind: "json".into(),
         url: fixture.url.clone(),
@@ -526,6 +529,7 @@ fn a_shared_deadline_discards_earlier_candidates_when_a_later_indexer_is_slow() 
     let mut config = config::from_json(&config::default_json(), Path::new(".")).unwrap();
     for fixture in [&fast, &slow] {
         config.sources.push(Source {
+            options: Default::default(),
             name: "fixture".into(),
             kind: "json".into(),
             url: fixture.url.clone(),

@@ -72,6 +72,7 @@ impl Indexer {
 
     fn source(&self, name: &str) -> Source {
         Source {
+            options: Default::default(),
             name: name.into(),
             kind: "json".into(),
             url: self.url.clone(),

@@ -253,6 +253,7 @@ fn connection(stream: &mut TcpStream, engine: &Arc<Engine>, token: &str, web: &W
 fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<(u16, Value)> {
     match (method, path) {
         ("GET", "/api/status") => Ok((200, engine.status()?)),
+        ("GET", "/api/indexers") => Ok((200, crate::indexers::report(&engine.config.sources))),
         ("GET", "/api/transfers") => Ok((200, engine.transfers()?)),
         ("GET", "/api/library") => Ok((200, engine.library()?)),
         ("GET", "/api/series") => Ok((200, engine.series()?)),

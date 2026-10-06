@@ -6,6 +6,7 @@ pub mod crypto;
 pub mod date;
 pub mod demo;
 pub mod engine;
+pub mod indexers;
 pub mod integrations;
 pub mod irc;
 pub mod json;

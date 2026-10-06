@@ -59,6 +59,7 @@ const HELP: &str = "Mynou — media automation using Rust std only
   requester ACCOUNT_ID [--offset N --limit N] [--config mynou.json]
   requester-control ACCOUNT_ID --mapping FILE [--apply --plan-id ID] [--config mynou.json]
   requester-sync [--config mynou.json]
+  indexers [--config mynou.json]
   notifications [--offset N --limit N] [--config mynou.json]
   notifications-dispatch [--config mynou.json]
   notification-control EVENT_ID --kind requester|irc --action retry|discard [--apply --plan-id ID] [--config mynou.json]
@@ -120,6 +121,7 @@ impl Args {
                 &["config", "help"]
             }
             "requesters" | "requester-sync" => &["config", "help"],
+            "indexers" => &["config", "help"],
             "notifications" => &["config", "help", "offset", "limit"],
             "notifications-dispatch" => &["config", "help"],
             "notification-control" => &["config", "help", "kind", "action", "apply", "plan-id"],
@@ -762,6 +764,13 @@ fn execute(args: Args) -> Result<()> {
                 output(&call(&config, &path, "GET", "/api/requesters", None)?);
             } else {
                 output(&Engine::open_for_preview(config)?.requesters()?);
+            }
+        }
+        "indexers" => {
+            if online {
+                output(&call(&config, &path, "GET", "/api/indexers", None)?);
+            } else {
+                output(&mynou::indexers::report(&config.sources));
             }
         }
         "notifications" => {

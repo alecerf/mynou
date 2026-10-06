@@ -833,6 +833,7 @@ fn original_source_queries_use_explicit_season_labels_or_absolute_search_terms()
     let directory = Directory::new();
     let mut cfg = library_support::config(&directory.0, None, "{}");
     cfg.sources.push(mynou::config::Source {
+        options: Default::default(),
         name: "Local".into(),
         kind: "json".into(),
         url,

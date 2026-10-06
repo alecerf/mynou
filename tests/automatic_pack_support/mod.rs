@@ -130,6 +130,7 @@ impl Provider {
     }
     pub fn source(&self, kind: &str) -> Source {
         Source {
+            options: Default::default(),
             name: "Pack fixture".into(),
             kind: kind.into(),
             url: format!("{}/indexer?apikey={SECRET}", self.url),

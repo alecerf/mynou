@@ -49,6 +49,7 @@ pub struct Catalog {
 }
 #[derive(Clone, Debug)]
 pub struct Source {
+    pub options: crate::indexers::Options,
     pub name: String,
     pub kind: String,
     pub url: String,
@@ -411,7 +412,18 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             .as_array()
             .ok_or("Configuration: indexers must be an array")?
         {
-            keys(source, &["name", "kind", "url", "api_key_env"])?;
+            keys(
+                source,
+                &[
+                    "name",
+                    "kind",
+                    "url",
+                    "api_key_env",
+                    "enabled",
+                    "min_interval_ms",
+                    "authentication",
+                ],
+            )?;
             let kind = text(source, "kind", "json")?;
             if !["rss", "json", "torznab"].contains(&kind.as_str()) {
                 return Err("Configuration: expected an rss, json or torznab source".into());
@@ -419,6 +431,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             let url = text(source, "url", "")?;
             crate::net::parse_url(&url)?;
             sources.push(Source {
+                options: crate::indexers::Options::from_json(source, &url)?,
                 name: text(source, "name", "source")?,
                 kind,
                 url,

@@ -1170,33 +1170,27 @@ fn source_releases(source: &Source, request: &Request, deadline: Instant) -> Res
         pairs.push(("apikey", key));
     }
     let url = query(&source.url, &pairs)?;
-    let response = client()
-        .with_timeout(remaining_search_time(deadline)?.min(Duration::from_secs(20)))
-        .request(
-            "GET",
-            &url,
-            &[(
-                "Accept".into(),
-                if source.kind == "json" {
-                    "application/json"
-                } else {
-                    "application/rss+xml, application/xml"
-                }
-                .into(),
-            )],
-            &[],
-        )
-        .map_err(|_| "Indexer: network request failed")?;
+    let response = crate::indexers::fetch(
+        source,
+        &url,
+        if source.kind == "json" {
+            "application/json"
+        } else {
+            "application/rss+xml, application/xml"
+        },
+        deadline,
+    )?;
     remaining_search_time(deadline)?;
-    if !(200..300).contains(&response.status) {
-        return Err(format!("Indexer: HTTP response {}", response.status));
-    }
-    let text = std::str::from_utf8(&response.body).map_err(|_| "Indexer: invalid UTF-8")?;
-    let releases = if source.kind == "json" {
-        json_releases(&json::parse(text)?, &source.url)
-    } else {
-        rss_releases(text, &source.url)
-    }?;
+    let releases = (|| {
+        let text = std::str::from_utf8(&response.body).map_err(|_| "Indexer: invalid UTF-8")?;
+        if source.kind == "json" {
+            json_releases(&json::parse(text)?, &source.url)
+        } else {
+            rss_releases(text, &source.url)
+        }
+    })();
+    crate::indexers::parsed(source, releases.is_ok());
+    let releases = releases?;
     remaining_search_time(deadline)?;
     Ok(releases)
 }
@@ -2326,6 +2320,7 @@ mod tests {
         let mut config =
             config::from_json(&config::default_json(), std::path::Path::new(".")).unwrap();
         config.sources.push(Source {
+            options: Default::default(),
             name: "private-indexer-label".into(),
             kind: "json".into(),
             url: format!("http://{}", listener.local_addr().unwrap()),
