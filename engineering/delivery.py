@@ -91,6 +91,11 @@ def run(api, sweep=False):
     at = lease.now()
     if lease.valid(state, at):
         return {"action": "busy", "instruction": "Mechanical delivery waits for the current engineering role to release."}
+    if sweep:
+        if state["lease"] is not None:
+            return {"action": "recovery-needed", "issue": state["lease"]["issue"],
+                "instruction": "Read-only sweep preserves expired state; recover through a delivery/worker wake."}
+        return branch_audit(api)
     if state["lease"] is not None:
         recovered = recover_native(api, state, at)
         head = save(api, head, recovered, "Recover interrupted delivery lease")
@@ -149,19 +154,22 @@ def run(api, sweep=False):
             finally:
                 h, s = read_state(api)
                 save(api, h, lease.release(s, lease.now(), identity), "Release recovered cleanup")
-    if sweep:
-        branches = api.pages("branches")
-        open_issues = [i for i in api.pages("issues?state=open") if "pull_request" not in i]
-        default = api.ref(api.cfg["default_branch"])
-        audit = []
-        for b in branches[:20]:
-            if b["name"] == api.cfg["default_branch"] or b["name"].startswith("control/"):
-                continue
-            comparison = api.rest("GET", f"compare/{b['commit']['sha']}...{default}")
-            safe, reason = branch_decision(b["name"], b["commit"]["sha"], api.cfg, comparison["status"],
-                [p for p in prs if p["state"] == "open"], open_issues, None, prs, b["protected"])
-            audit.append({"branch": b["name"], "head": b["commit"]["sha"], "safe": safe, "reason": reason})
-        # Discovery is mechanical. Actual deletion needs an owned Quality lease
-        # and an Issue checkpoint, never an age-based bulk loop.
-        return {"action": "quality-audit", "branches": audit, "instruction": "Quality may act on safe evidence under its own bounded Issue/lease."}
     return {"action": "idle-or-blocked", "results": result}
+
+
+def branch_audit(api):
+    """Incremental discovery only; never recover, merge, close or delete."""
+    prs = api.pages("pulls?state=all")
+    branches = api.pages("branches")
+    open_issues = [i for i in api.pages("issues?state=open") if "pull_request" not in i]
+    default = api.ref(api.cfg["default_branch"])
+    audit = []
+    for b in branches[:20]:
+        if b["name"] == api.cfg["default_branch"] or b["name"].startswith("control/"):
+            continue
+        comparison = api.rest("GET", f"compare/{b['commit']['sha']}...{default}")
+        candidate, reason = branch_decision(b["name"], b["commit"]["sha"], api.cfg, comparison["status"],
+            [p for p in prs if p["state"] == "open"], open_issues, None, prs, b["protected"])
+        audit.append({"branch": b["name"], "head": b["commit"]["sha"], "candidate": candidate, "reason": reason})
+    return {"action": "quality-audit", "branches": audit,
+        "instruction": "Candidates require a complete fresh PR/Issue/comment/head audit and an owned Quality/Triage lease before cleanup."}

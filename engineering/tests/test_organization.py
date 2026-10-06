@@ -164,6 +164,28 @@ class LeaseScenarios(unittest.TestCase):
         self.assertEqual(lease.validate(saved)["checkpoint"]["next_action"], "Review CI")
         self.assertEqual(control.select(saved, [], AT)["lease"]["commit"], HEAD)
 
+    def test_recovery_before_first_checkpoint_identifies_current_not_preceding_work(self):
+        previous = lease.checkpoint(held(), AT, "original-owner", "Previous useful result", "Next original work")
+        previous = lease.release(previous, AT, "original-owner")
+        current = lease.acquire(previous, AT + timedelta(minutes=1), "next-owner", "one-worker", "rust", 2, "work/next", BASE, 4)
+        evidence = {"issue": True, "branch": True, "pr": True, "ci": True, "commit_preserved": True}
+        recovered = lease.recover(current, AT + timedelta(hours=1), evidence)
+        self.assertIsNone(recovered["lease"])
+        for key in ["issue", "role", "branch", "commit", "pr"]:
+            self.assertEqual(recovered["checkpoint"][key], current["lease"][key])
+        self.assertEqual(recovered["checkpoint"]["previous_checkpoint"]["summary"], "Previous useful result")
+        fresh = lease.recover(held(), AT + timedelta(hours=1), evidence)
+        self.assertEqual(fresh["checkpoint"]["issue"], 1)
+        self.assertEqual(fresh["checkpoint"]["commit"], HEAD)
+
+    def test_circuit_breaker_before_first_checkpoint_preserves_affected_work(self):
+        current = held()
+        for _ in range(3): current = lease.attempt(current, AT, "original-owner", "same original strategy", HEAD)
+        self.assertIsNone(current["lease"])
+        self.assertEqual(current["checkpoint"]["issue"], 1)
+        self.assertEqual(current["checkpoint"]["branch"], "work/original")
+        self.assertEqual(current["checkpoint"]["circuit_breaker"]["unchanged"], 3)
+
     def test_malformed_state_and_foreign_owner_fail_closed(self):
         for s in [dict(state(), max_active_agents=2), dict(state(), permanent_lock=True), dict(state(), generation=True)]:
             with self.assertRaises(ValueError): lease.validate(s)
@@ -258,6 +280,28 @@ class HygieneScenarios(unittest.TestCase):
 
 
 class TransitionScenarios(unittest.TestCase):
+    def test_branch_sweep_is_read_only_even_with_a_mergeable_candidate(self):
+        class Audit(Native):
+            def rest(self, method, path, value=None):
+                if method != "GET": raise AssertionError("Read-only audit attempted a mutation")
+                return super().rest(method, path, value)
+            def pages(self, path, key=None):
+                if path == "pulls?state=all": return [pr()]
+                return super().pages(path, key)
+        native = Audit()
+        with patch.object(delivery, "read_state", return_value=(BASE, state())), patch.object(lease, "now", return_value=AT), patch.object(qa, "evaluate", side_effect=AssertionError("Sweep must not enter delivery gates")):
+            result = delivery.run(native, sweep=True)
+        self.assertEqual(result["action"], "quality-audit")
+        self.assertFalse(native.deleted)
+
+    def test_branch_sweep_leaves_expired_lease_for_explicit_recovery(self):
+        class NoDomain:
+            def pages(self, *args): raise AssertionError("Expired sweep must stop before domain audit")
+        with patch.object(delivery, "read_state", return_value=(BASE, held())), patch.object(lease, "now", return_value=AT + timedelta(hours=1)), patch.object(delivery, "save", side_effect=AssertionError("Sweep must not mutate control")):
+            result = delivery.run(NoDomain(), sweep=True)
+        self.assertEqual(result["action"], "recovery-needed")
+        self.assertEqual(result["issue"], 1)
+
     def test_native_handoff_contains_exact_durable_checkpoint_not_commands(self):
         class Comments:
             def __init__(self): self.posts = []

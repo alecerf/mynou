@@ -104,6 +104,20 @@ def release(state, at, identity):
     return validate(result)
 
 
+def interruption(state, held, at, next_action):
+    """Bind an interrupted phase even if it died before its first checkpoint."""
+    old = state["checkpoint"]
+    keys = ["issue", "role", "branch", "commit", "pr"]
+    same = all(old.get(key) == held[key] for key in keys) and old.get("at") is not None and time(old["at"]) >= time(held["acquired_at"])
+    result = dict(old) if same else dict((key, held[key]) for key in keys)
+    if not same:
+        result["summary"] = "Interrupted before a phase checkpoint; inspect the preserved lease source, Issue, PR and native history."
+        if old:
+            result["previous_checkpoint"] = {key: old[key] for key in ["at", *keys, "summary", "next_action"] if key in old}
+    result.update(at=stamp(at), next_action=next_action)
+    return result
+
+
 def recover(state, at, evidence):
     validate(state)
     if state["lease"] is None or valid(state, at):
@@ -112,9 +126,9 @@ def recover(state, at, evidence):
         raise ValueError("Stale recovery requires native Issue, branch, PR, CI and preservation evidence")
     result = deepcopy(state)
     result["generation"] += 1
-    result["checkpoint"] = dict(state["checkpoint"], at=stamp(at),
-        next_action="Recovered expired capacity lease; inspect preserved work before selecting new work.",
-        recovery=evidence)
+    result["checkpoint"] = interruption(state, state["lease"], at,
+        "Recovered expired capacity lease; inspect preserved work before selecting new work.")
+    result["checkpoint"]["recovery"] = evidence
     result["lease"] = None
     return validate(result)
 
@@ -131,5 +145,7 @@ def attempt(state, at, identity, approach, fingerprint):
     result["generation"] += 1
     if repeats >= 3:
         result["lease"] = None
-        result["checkpoint"]["next_action"] = "Circuit breaker: return to Triage, inspect evidence and choose a changed approach. Do not retry unchanged work."
+        result["checkpoint"] = interruption(state, held, at,
+            "Circuit breaker: return to Triage, inspect evidence and choose a changed approach. Do not retry unchanged work.")
+        result["checkpoint"]["circuit_breaker"] = result["attempts"][key]
     return validate(result)
