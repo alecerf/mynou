@@ -180,7 +180,7 @@ impl Provider {
                         assert!(Instant::now() < deadline);
                         thread::sleep(Duration::from_millis(2));
                     }
-                    if r.fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
+                    if r.try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
                         .is_ok()
                     {
                         Reply {
