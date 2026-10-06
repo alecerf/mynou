@@ -770,6 +770,8 @@ fn protected_api_and_browser_keep_raw_controls_away_from_an_admitted_owner() {
         .join("queue.bin");
     let server = Server::open(c);
     let id = server.engine.submit(movie()).unwrap().remove(0).id;
+    server.engine.tick().unwrap();
+    let workers = server.engine.start();
     p.wait_requests(1);
     let job = retained(&server.engine, &id);
     let transfer_id = job
@@ -819,4 +821,5 @@ fn protected_api_and_browser_keep_raw_controls_away_from_an_admitted_owner() {
     assert_eq!(p.requests.lock().unwrap().len(), 1);
     assert!(retained(&server.engine, &id).imports.is_empty());
     p.gate.store(false, Ordering::Release);
+    drop(workers);
 }
