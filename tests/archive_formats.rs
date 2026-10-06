@@ -61,7 +61,7 @@ struct Bits {
 impl Bits {
     fn field(&mut self, value: u32, width: u8) {
         for bit in 0..width {
-            if self.count % 8 == 0 {
+            if self.count.is_multiple_of(8) {
                 self.bytes.push(0);
             }
             let last = self.bytes.len() - 1;
