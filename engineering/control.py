@@ -1,11 +1,10 @@
 """Operational GitHub control commands. Tests and policy checks remain CI-only."""
 import argparse
 import json
-from pathlib import Path
 import sys
 import uuid
 
-from github import APIError, GitHub, ROOT, config
+from github import APIError, GitHub, ROOT
 import lease
 
 
@@ -28,6 +27,17 @@ def read_state(api):
 def save(api, expected, value, message):
     lease.validate(value)
     return api.cas_file(api.cfg["control_branch"], expected, api.cfg["state_path"], value, message)
+
+
+def handoff(api, previous, checkpoint, control_sha):
+    """Native Issue event wakes trusted-default delivery after durable release."""
+    if any(checkpoint.get(key) != previous[key] for key in ["issue", "role", "branch", "commit"]) or lease.time(checkpoint.get("at")) < lease.time(previous["acquired_at"]):
+        raise ValueError("Checkpoint the current work before releasing its lease")
+    body = ("<!-- mynou-transition:v1 -->\n"
+        f"{previous['role']} released execution for #{previous['issue']}. "
+        f"Control checkpoint: `{control_sha}`; source: `{previous['commit']}`.\n\n"
+        + checkpoint["summary"] + "\n\nNext: " + checkpoint["next_action"])
+    api.rest("POST", f"issues/{previous['issue']}/comments", {"body": body})
 
 
 def select(state, issues, at):
@@ -69,14 +79,18 @@ def recover_native(api, state, at):
         if error.status != 404:
             raise
         head = api.ref(api.cfg["default_branch"])
-    ancestry = api.rest("GET", f"compare/{held['commit']}...{head}")
-    if ancestry["status"] not in ("ahead", "identical"):
-        raise ValueError("Interrupted commit is not preserved on the branch or default; preserve useful work first")
     prs = api.pages("pulls?state=all")
     relevant = [p for p in prs if p["number"] == held["pr"] or p["head"]["ref"] == held["branch"]]
+    ancestry = api.rest("GET", f"compare/{held['commit']}...{head}")
+    merged = [p for p in relevant if p.get("merged_at") and p["head"]["sha"] == held["commit"]
+        and p["head"]["ref"] == held["branch"] and p["base"]["ref"] == api.cfg["default_branch"]]
+    if ancestry["status"] not in ("ahead", "identical") and not merged:
+        raise ValueError("Interrupted commit is not preserved on the branch/default or an exact merged PR; preserve useful work first")
     runs = api.pages("actions/runs?head_sha=" + head, "workflow_runs")
     evidence = {"issue": True, "branch": True, "pr": True, "ci": True, "commit_preserved": preserved["sha"] == held["commit"],
-        "issue_state": issue["state"], "branch_head": head, "prs": [{"number": p["number"], "state": p["state"], "merged_at": p.get("merged_at")} for p in relevant],
+        "issue_state": issue["state"], "branch_head": head,
+        "preservation": "exact native merged PR head" if merged else "branch/default ancestry",
+        "prs": [{"number": p["number"], "state": p["state"], "head": p["head"]["sha"], "merged_at": p.get("merged_at")} for p in relevant],
         "runs": [{"id": r["id"], "status": r["status"], "conclusion": r["conclusion"]} for r in runs[:10]]}
     return lease.recover(state, at, evidence)
 
@@ -152,6 +166,9 @@ def main():
             api.rest("GET", "git/commits/" + args.commit)
         value = lease.checkpoint(state, at, identity, args.summary, args.next, args.commit, args.pr)
     elif args.command == "release":
+        previous = lease.owned(state, identity, at)
+        if any(state["checkpoint"].get(key) != previous[key] for key in ["issue", "role", "branch", "commit"]) or lease.time(state["checkpoint"].get("at")) < lease.time(previous["acquired_at"]):
+            raise ValueError("Checkpoint this work before releasing its lease")
         value = lease.release(state, at, identity)
     elif args.command == "recover":
         value = recover_native(api, state, at)
@@ -165,8 +182,10 @@ def main():
             label_update(api, args.issue, "status", "review" if args.role == "qa" else "in-progress")
         elif args.command == "attempt" and value["lease"] is None:
             label_update(api, state["lease"]["issue"], "status", "blocked")
+        if args.command == "release":
+            handoff(api, state["lease"], value["checkpoint"], sha)
     except (APIError, RuntimeError, ValueError):
-        print("Native label update incomplete; lease/checkpoint is durable and needs metadata recovery.", file=sys.stderr)
+        print("Native metadata/handoff update incomplete; lease/checkpoint is durable. Recover metadata on the next CI, scheduled or worker wake.", file=sys.stderr)
     print(json.dumps({"control_sha": sha, "lease_id": identity, "state": value}, indent=2))
 
 

@@ -3,7 +3,6 @@ import json
 import re
 import time as waiting
 
-from github import config
 import lease
 
 RECORD = re.compile(r"```json\s*\n(.*?)\n```", re.S)

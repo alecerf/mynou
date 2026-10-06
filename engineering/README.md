@@ -156,7 +156,12 @@ commits and new review. During initial installation only, the new review-trigger
 workflow is not on default yet: rerun the QA job after posting the records.
 
 The trusted-default `Serialized engineering delivery` Action wakes on completed
-CI, control-branch updates, manual dispatch and a six-hour fallback. It checks the
+CI, trusted native Issue handoff comments, manual dispatch and a six-hour fallback.
+`release` posts the handoff only after the control commit is durable. The orphan
+control branch contains no workflow; its push cannot invoke a workflow on trunk.
+GitHub-token comments do not recursively trigger Actions, so mechanical delivery
+does not rely on its own comments. Failed handoff publication is explicit and the
+CI/scheduled fallback still reads durable state. The Action checks the
 lease, recovers stale delivery first, acquires a single mechanical delivery lease,
 refreshes all gates and merges by exact head SHA. It does not run an AI worker,
 execute PR code with write tokens or use paid model infrastructure. Authors may
@@ -170,7 +175,8 @@ merged history, exact heads, open PRs, Issue bodies/comments and live leases bef
 deletion. Default/control/protected/ambiguous/unique work is preserved. Branch age
 alone never authorizes deletion. REST lacks conditional expected-SHA deletion;
 native merge deletion is preferred, and manual cleanup requires freshly repeated
-evidence under the global lease. Outside actors do not share the lease.
+evidence, an audit comment and a fresh ownership fence under the global lease.
+Outside actors do not share the lease.
 
 ## Scheduling, capacity and real limitations
 

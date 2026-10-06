@@ -46,11 +46,22 @@ def cleanup_branch(api, name, expected, held):
         [p for p in prs if p.get("merged_at")], source["protected"])
     if not allowed:
         return {"branch": name, "result": "preserved: " + reason}
-    if api.ref(name) != expected:
-        return {"branch": name, "result": "preserved: head changed before cleanup"}
     # No live API offers an expected-SHA conditional ref deletion. Preserve a
     # freshly audited record in the owning Issue, and use this only under the
     # serialized delivery lease. Native delete_branch_on_merge is preferred.
+    if held is None or held["role"] not in ("quality", "triage"):
+        raise ValueError("Branch deletion requires an owned Quality/Triage lease")
+    lease.owned(read_state(api)[1], held["id"], lease.now())
+    api.rest("POST", f"issues/{held['issue']}/comments", {"body":
+        f"<!-- mynou-branch-audit:v1 -->\nBranch `{name}` at `{expected}` is eligible for cleanup: {reason}. "
+        f"Default `{default}`, native PRs, open Issue bodies/comments and execution ownership were inspected. "
+        "Deletion still requires a fresh head and lease fence."})
+    current = read_state(api)[1]
+    if api.ref(name) != expected:
+        return {"branch": name, "result": "preserved: head changed before cleanup"}
+    owner = lease.owned(current, held["id"], lease.now())
+    if owner["role"] not in ("quality", "triage") or owner["branch"] == name:
+        raise ValueError("Current execution ownership protects this branch")
     api.rest("DELETE", "git/refs/heads/" + name)
     return {"branch": name, "head": expected, "result": "deleted", "reason": reason}
 

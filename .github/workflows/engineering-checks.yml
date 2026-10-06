@@ -14,7 +14,7 @@ permissions:
   actions: read
 concurrency:
   group: engineering-checks-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 env:
   PYTHONDONTWRITEBYTECODE: '1'
 jobs:

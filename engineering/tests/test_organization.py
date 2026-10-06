@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import control
@@ -254,6 +255,88 @@ class HygieneScenarios(unittest.TestCase):
     def test_redirect_never_forwards_a_credential_to_another_host(self):
         with self.assertRaises(APIError):
             NoRedirect().redirect_request(None, None, 302, "redirect", {}, "https://hostile.invalid/")
+
+
+class TransitionScenarios(unittest.TestCase):
+    def test_native_handoff_contains_exact_durable_checkpoint_not_commands(self):
+        class Comments:
+            def __init__(self): self.posts = []
+            def rest(self, method, path, body): self.posts.append((method, path, body))
+        native = Comments()
+        checkpoint = lease.checkpoint(held(), AT, "original-owner", "Original source preserved", "Independent QA next")["checkpoint"]
+        control.handoff(native, held()["lease"], checkpoint, BASE)
+        method, path, body = native.posts[0]
+        self.assertEqual((method, path), ("POST", "issues/1/comments"))
+        self.assertIn("<!-- mynou-transition:v1 -->", body["body"])
+        self.assertIn(BASE, body["body"])
+        self.assertIn(HEAD, body["body"])
+        checkpoint["role"] = "rust"
+        with self.assertRaises(ValueError): control.handoff(native, held()["lease"], checkpoint, BASE)
+        self.assertEqual(len(native.posts), 1)
+
+    def test_state_only_branch_has_native_default_branch_wake_and_trusted_code(self):
+        workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/engineering-delivery.yml").read_text()
+        self.assertIn("issue_comment:\n    types: [created]", workflow)
+        self.assertNotIn("branches: [control/engineering]", workflow)
+        self.assertIn("<!-- mynou-transition:v1 -->", workflow)
+        self.assertIn("github.event.comment.author_association", workflow)
+        self.assertIn("ref: trunk", workflow)
+        self.assertNotIn("pull_request_target", workflow)
+
+    def test_deleted_squash_merged_branch_recovers_exact_preserved_native_head(self):
+        class Merged(Native):
+            def __init__(self):
+                super().__init__()
+                self.ancestry = "diverged"
+                self.merged_pr = dict(pr(), state="closed", merged_at=lease.stamp(AT))
+            def ref(self, name):
+                if name == "work/original": raise APIError(404)
+                return BASE
+            def rest(self, method, path, value=None):
+                if path == "git/commits/" + HEAD: return {"sha": HEAD}
+                return super().rest(method, path, value)
+            def pages(self, path, key=None):
+                if path == "pulls?state=all": return [self.merged_pr]
+                return super().pages(path, key)
+        native = Merged()
+        s = lease.checkpoint(held(), AT, "original-owner", "Source preserved", "Await merge", HEAD, 3)
+        recovered = control.recover_native(native, s, AT + timedelta(hours=1))
+        self.assertIsNone(recovered["lease"])
+        self.assertEqual(recovered["checkpoint"]["commit"], HEAD)
+        self.assertEqual(recovered["checkpoint"]["recovery"]["preservation"], "exact native merged PR head")
+        native.merged_pr["head"]["sha"] = BASE
+        with self.assertRaises(ValueError): control.recover_native(native, s, AT + timedelta(hours=1))
+        native.merged_pr = dict(pr(), state="closed", merged_at=lease.stamp(AT))
+        native.merged_pr["base"]["ref"] = "unrelated"
+        with self.assertRaises(ValueError): control.recover_native(native, s, AT + timedelta(hours=1))
+
+    def test_deletion_stops_if_ownership_changes_or_expires_after_audit(self):
+        class Cleanup(Native):
+            def rest(self, method, path, value=None):
+                if method == "POST" and path == "issues/1/comments":
+                    self.comments.append(value)
+                    return {}
+                return super().rest(method, path, value)
+        for current, clock in [(held(identity="other-owner"), AT), (held(), AT + timedelta(hours=1))]:
+            native = Cleanup()
+            with patch.object(delivery, "read_state", side_effect=[(BASE, held()), (BASE, current)]), patch.object(lease, "now", side_effect=[AT, clock]):
+                with self.assertRaises(ValueError): delivery.cleanup_branch(native, "work/old", HEAD, held()["lease"])
+            self.assertFalse(native.deleted)
+            self.assertEqual(len(native.comments), 1)
+
+    def test_fresh_owned_cleanup_preserves_audit_and_deletes_only_exact_head(self):
+        class Cleanup(Native):
+            def rest(self, method, path, value=None):
+                if method == "POST" and path == "issues/1/comments":
+                    self.comments.append(value)
+                    return {}
+                return super().rest(method, path, value)
+        native = Cleanup()
+        with patch.object(delivery, "read_state", return_value=(BASE, held())), patch.object(lease, "now", return_value=AT):
+            result = delivery.cleanup_branch(native, "work/old", HEAD, held()["lease"])
+        self.assertEqual(result["result"], "deleted")
+        self.assertIn(HEAD, native.comments[0]["body"])
+        self.assertEqual(native.deleted, ["git/refs/heads/work/old"])
 
 
 class AtomicCAS(unittest.TestCase):

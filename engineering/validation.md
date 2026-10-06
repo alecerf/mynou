@@ -1,8 +1,8 @@
 # Bootstrap verification
 
 Source, Skills, operational tools and offline scenarios are implemented. Their
-own Actions results and real bootstrap PR review are pending until recorded in
-the owning [Issue #1](https://github.com/alecerf/mynou/issues/1). No local tests,
+actual Actions results and independent bootstrap reviews are recorded in
+the owning [Issue #1](https://github.com/alecerf/mynou/issues/1) and linked PR. No local tests,
 lint, builds, policy checks or product binaries were run. Do not infer success
 from this document; the live PR reviews/jobs are authoritative.
 
