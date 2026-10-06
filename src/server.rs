@@ -258,6 +258,23 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
         ("GET", "/api/series") => Ok((200, engine.series()?)),
         ("GET", "/api/requesters") => Ok((200, engine.requesters()?)),
         ("GET", "/api/irc") => Ok((200, engine.irc_sources()?)),
+        ("GET", "/api/notifications") => Ok((200, engine.notifications(0, 100)?)),
+        ("POST", "/api/notifications/dispatch") => {
+            control_body(body, &[], true)?;
+            Ok((200, engine.dispatch_notifications()?))
+        }
+        ("POST", "/api/notifications/control") => {
+            let v = control_body(
+                body,
+                &["kind", "event_id", "action", "apply", "plan_id"],
+                false,
+            )?;
+            Ok((
+                200,
+                engine
+                    .notification_control(&crate::notifications::ControlRequest::from_json(&v)?)?,
+            ))
+        }
         ("POST", "/api/requesters/sync") => {
             control_body(body, &[], true)?;
             Ok((200, engine.sync_requesters()?))
@@ -324,6 +341,13 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
             Ok((200, v))
         }
         _ => {
+            if let Some(query) = path.strip_prefix("/api/notifications?") {
+                if method != "GET" {
+                    return Err("Notifications: unsupported request".into());
+                }
+                let (offset, limit) = crate::requesters::page(query)?;
+                return Ok((200, engine.notifications(offset, limit)?));
+            }
             if let Some(tail) = path.strip_prefix("/api/irc/") {
                 let (tail, query) = tail.split_once('?').unwrap_or((tail, ""));
                 if method == "GET" && tail == "announcements" {

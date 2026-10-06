@@ -40,6 +40,12 @@ struct IrcPreview {
 }
 
 #[derive(Clone)]
+struct NotificationPreview {
+    query: crate::notifications::ControlRequest,
+    expires: Instant,
+}
+
+#[derive(Clone)]
 pub struct Session {
     pub id: String,
     pub csrf: String,
@@ -53,6 +59,7 @@ pub struct Session {
     group_preview: Option<GroupPreview>,
     requester_preview: Option<RequesterPreview>,
     irc_preview: Option<IrcPreview>,
+    notification_preview: Option<NotificationPreview>,
 }
 
 pub struct Sessions(BTreeMap<String, Session>);
@@ -103,6 +110,7 @@ impl Sessions {
             group_preview: None,
             requester_preview: None,
             irc_preview: None,
+            notification_preview: None,
         };
         self.0.insert(session.id.clone(), session.clone());
         Ok(session)
@@ -165,6 +173,59 @@ impl Sessions {
             .unwrap_or_default()
     }
 
+    pub fn save_notification_preview(
+        &mut self,
+        id: &str,
+        query: crate::notifications::ControlRequest,
+    ) -> Result<()> {
+        query.validate()?;
+        if !query.apply {
+            return Err("Notifications: browser review requires its apply guard".into());
+        }
+        self.purge();
+        let session = self
+            .0
+            .get_mut(id)
+            .filter(|s| s.origin.is_some())
+            .ok_or("Browser session expired")?;
+        session.shared_preview = None;
+        session.group_preview = None;
+        session.requester_preview = None;
+        session.irc_preview = None;
+        session.notification_preview = Some(NotificationPreview {
+            query,
+            expires: Instant::now() + Duration::from_secs(CHALLENGE_SECS),
+        });
+        Ok(())
+    }
+    pub fn notification_preview(
+        &mut self,
+        id: &str,
+        kind: &str,
+        event_id: &str,
+        action: &str,
+        plan_id: &str,
+    ) -> Result<crate::notifications::ControlRequest> {
+        self.purge();
+        self.0
+            .get(id)
+            .and_then(|s| s.notification_preview.as_ref())
+            .filter(|p| {
+                p.expires > Instant::now()
+                    && p.query.kind == kind
+                    && p.query.event_id == event_id
+                    && p.query.action == action
+                    && p.query.plan_id.as_deref() == Some(plan_id)
+            })
+            .map(|p| p.query.clone())
+            .ok_or("Notifications: browser review expired or changed; preview again".into())
+    }
+    pub fn clear_notification_preview(&mut self, id: &str) {
+        if let Some(s) = self.0.get_mut(id) {
+            s.notification_preview = None;
+        }
+    }
+
     /// Keep source credentials server-side, with one bounded review per session.
     pub fn save_irc_preview(
         &mut self,
@@ -182,6 +243,7 @@ impl Sessions {
             .get_mut(id)
             .filter(|s| s.origin.is_some())
             .ok_or("Browser session expired")?;
+        session.notification_preview = None;
         session.irc_preview = Some(IrcPreview {
             announcement_id: announcement_id.into(),
             query,
@@ -242,6 +304,7 @@ impl Sessions {
         session.shared_preview = None;
         session.group_preview = None;
         session.irc_preview = None;
+        session.notification_preview = None;
         Ok(())
     }
     pub fn requester_preview(
@@ -294,6 +357,7 @@ impl Sessions {
         session.group_preview = None;
         session.requester_preview = None;
         session.irc_preview = None;
+        session.notification_preview = None;
         Ok(())
     }
     pub fn shared_preview(
@@ -344,6 +408,7 @@ impl Sessions {
         session.shared_preview = None;
         session.requester_preview = None;
         session.irc_preview = None;
+        session.notification_preview = None;
         Ok(())
     }
     pub fn group_preview(

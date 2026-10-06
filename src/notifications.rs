@@ -490,3 +490,83 @@ impl DeliveryState {
         Ok(state)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn state() -> DeliveryState {
+        let mut s = DeliveryState::default();
+        let r = Route {
+            id: "local".into(),
+            enabled: true,
+            kind: "irc".into(),
+            scope: "announce".into(),
+            url: "http://127.0.0.1:1/notify".into(),
+            token_env: None,
+            max_attempts: 2,
+        };
+        s.configure(&Settings { routes: vec![r] }, "irc").unwrap();
+        s
+    }
+    fn signal(emission: u64) -> Signal {
+        Signal {
+            kind: "irc".into(),
+            scope: "announce".into(),
+            subject: "a".repeat(64),
+            emission,
+            outcome: "pending".into(),
+            at: 1,
+        }
+    }
+    #[test]
+    fn events_deduplicate_exact_emissions_and_validate_checked_roundtrips() {
+        let mut s = state();
+        s.enqueue(signal(1)).unwrap();
+        let original = s.clone();
+        s.enqueue(signal(1)).unwrap();
+        assert_eq!(s, original);
+        s.enqueue(signal(2)).unwrap();
+        assert_eq!(s.events.len(), 2);
+        assert_eq!(DeliveryState::from_json(Some(&s.to_json())).unwrap(), s);
+    }
+    #[test]
+    fn live_capacity_is_never_evicted_and_only_oldest_terminal_event_is_pruned() {
+        let mut s = state();
+        for n in 1..=MAX_EVENTS as u64 {
+            s.enqueue(signal(n)).unwrap();
+        }
+        let before = s.clone();
+        assert!(s.enqueue(signal(2000)).is_err());
+        assert_eq!(s, before);
+        let first = s.events.values_mut().find(|e| e.sequence == 1).unwrap();
+        let id = first.id.clone();
+        first.phase = "delivered".into();
+        first.attempts = 1;
+        s.enqueue(signal(2000)).unwrap();
+        assert_eq!(s.events.len(), MAX_EVENTS);
+        assert!(!s.events.contains_key(&id));
+        assert_eq!(DeliveryState::from_json(Some(&s.to_json())).unwrap(), s);
+    }
+    #[test]
+    fn route_rebinding_and_forged_outcome_payloads_fail_closed() {
+        let mut s = state();
+        s.enqueue(signal(1)).unwrap();
+        let mut v = s.to_json();
+        let Value::Array(es) = v.get_mut("events").unwrap() else {
+            panic!()
+        };
+        es[0].get_mut("signal").unwrap().insert("outcome", "routed");
+        assert!(DeliveryState::from_json(Some(&v)).is_err());
+        let mut r = Route {
+            id: "local".into(),
+            enabled: true,
+            kind: "irc".into(),
+            scope: "announce".into(),
+            url: "http://127.0.0.1:1/notify".into(),
+            token_env: None,
+            max_attempts: 2,
+        };
+        r.url.push_str("/new");
+        assert!(s.configure(&Settings { routes: vec![r] }, "irc").is_err());
+    }
+}

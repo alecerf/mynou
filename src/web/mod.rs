@@ -1,6 +1,7 @@
 //! Browser management using original server-rendered HTML and native forms.
 mod forms;
 mod irc_views;
+mod notification_views;
 mod requester_views;
 mod series_views;
 mod session;
@@ -248,6 +249,7 @@ impl Web {
                 requester_views::list(engine, &session)?
             }
             "/ui/irc" => irc_views::list(engine, &session, &query)?,
+            "/ui/notifications" => notification_views::list(engine, &session, &query)?,
             "/ui/jobs" => views::jobs(engine, &session, &query)?,
             "/ui/library" => views::library(engine, &session, &query)?,
             "/ui/search" => {
@@ -314,6 +316,51 @@ impl Web {
         session: &Session,
     ) -> Result<Response> {
         match path {
+            "/ui/notifications/dispatch" => {
+                form.only(&["csrf"])?;
+                engine.dispatch_notifications()?;
+                self.redirect(
+                    session,
+                    "/ui/notifications",
+                    vec!["Due notifications processed".into()],
+                )
+            }
+            "/ui/notifications/control" => {
+                form.only(&["csrf", "kind", "event_id", "action", "apply", "plan_id"])?;
+                if form.value("apply")? == "yes" {
+                    let q = lock(&self.sessions)?.notification_preview(
+                        &session.id,
+                        form.value("kind")?,
+                        form.value("event_id")?,
+                        form.value("action")?,
+                        form.value("plan_id")?,
+                    )?;
+                    engine.notification_control(&q)?;
+                    lock(&self.sessions)?.clear_notification_preview(&session.id);
+                    return self.redirect(
+                        session,
+                        "/ui/notifications",
+                        vec!["Reviewed notification decision recorded".into()],
+                    );
+                }
+                form.only(&["csrf", "kind", "event_id", "action"])?;
+                let mut v = crate::json::Value::object();
+                for k in ["kind", "event_id", "action"] {
+                    v.insert(k, form.value(k)?);
+                }
+                let mut q = crate::notifications::ControlRequest::from_json(&v)?;
+                let report = engine.notification_control(&q)?;
+                q.apply = true;
+                q.plan_id = report
+                    .get("plan_id")
+                    .and_then(crate::json::Value::as_str)
+                    .map(str::to_owned);
+                lock(&self.sessions)?.save_notification_preview(&session.id, q)?;
+                Ok(Response::html(
+                    200,
+                    notification_views::review(session, &report),
+                ))
+            }
             "/ui/irc/control" => {
                 let id = form.value("id")?;
                 if !crate::irc::valid_announcement_id(id) {
