@@ -81,7 +81,7 @@ explicit bounds; this is not permission to execute the scheduler locally.
 
 The checked-in weights cover all 52 harnesses measured by the successful
 validation job in [run 37427693256](https://github.com/alecerf/mynou/actions/runs/37427693256),
-including requester selection. That job executed 568 tests in 64.921 seconds
+including requester admission. That job executed 585 tests in 64.921 seconds
 with two processes and two threads per harness. These measurements set scheduling
 order for the following scope. New harnesses receive a weight only after a
 successful observed run; these durations describe the preceding source.

@@ -319,12 +319,12 @@ impl DeliveryState {
                 enabled: r.enabled,
                 max_attempts: r.max_attempts,
             };
-            if let Some(old) = self.routes.get(&r.id) {
-                if old.digest != binding.digest {
-                    return Err(
-                        "Notifications: retained route binding changed; use a new stable ID".into(),
-                    );
-                }
+            if let Some(old) = self.routes.get(&r.id)
+                && old.digest != binding.digest
+            {
+                return Err(
+                    "Notifications: retained route binding changed; use a new stable ID".into(),
+                );
             }
             self.routes.insert(r.id.clone(), binding);
         }
