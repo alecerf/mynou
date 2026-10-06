@@ -183,3 +183,8 @@ previously published tags or assets.
 
 [Validation](validation.md) · [Dependencies](dependencies.md) ·
 [Performance](performance.md) · [Next feature release](next-release.md)
+
+The v0.22.2 run completed all 57 harnesses with 663 passing Rust tests in
+79.506 seconds. Its workspace harness took 18.445 seconds, including the original
+65 MiB fixture. Weights now contain these actual measurements; the new queue
+harness uses the scheduler default until its first completed passing run.

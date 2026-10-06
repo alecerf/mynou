@@ -5,15 +5,26 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current implementation: 0.22.2, awaiting CI
+## Current implementation: 0.22.3, awaiting CI
 
-Original checked disk receipts bind verified parts to exact NZB/file/provider
-identities. Single-file workspaces require private storage and exclusive process
-ownership. Streamed assembly lifts the in-memory file cap while retaining bounded
-parts and complete integrity gates. Checked prepared/ready proofs recover output
-publication without acquisition; offline recovery never writes. Original fixtures
-await this source's complete CI/publication. Native queue/Engine/Newznab continue
-in further 0.22 increments, followed by verified cross-seeding and bulk controls.
+The active 0.22.3 source adds an opt-in native Usenet staging queue. Checked
+source blobs and queue records capture immutable file/provider/limit identities.
+Persisted reservations precede NNTP; retained receipts skip repeat acquisition.
+Two bounded workers use per-provider transport ownership and fence paused,
+cancelled or stopped results. Restart recovery, complete output revalidation,
+private storage and guarded CLI/API/browser controls retain admission boundaries.
+This source requires its own complete Actions validation and publication.
+Ordinary Engine/Newznab acquisition follows before verified cross-seeding/bulk.
+
+## Preceding published stage: 0.22.2
+
+CI published v0.22.2 from `1a4949026a615443fe40767015f97dc90437430d` in
+[run 37439687975](https://github.com/alecerf/mynou/actions/runs/37439687975).
+All five jobs passed: 663 Rust tests across 57 harnesses, none failed or ignored,
+and four scheduler checks. Test execution took 79.506 seconds with two harness
+processes and two threads each. Seven bot-owned assets were published at
+09:01:20 UTC on October 6, 2026. The tag matched the validated source and the
+prior v0.22.1 tag and asset IDs, sizes and digests remained unchanged.
 
 ## Preceding published stage: 0.22.1
 

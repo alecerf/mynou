@@ -196,4 +196,77 @@ expose an article-download API, implement a transfer queue or admit library work
 Native queue/management, ordinary Engine acquisition and Newznab follow separately.
 Original fixtures include restart, conflict preservation, private/link rejection,
 CRC/frame corruption, prepared publication windows and a 65 MiB streamed file;
-this source requires its own complete Actions validation.
+v0.22.2 passed complete CI with 663 Rust tests across 57 harnesses.
+
+## Durable private staging in 0.22.3
+
+Configure native downloads explicitly; omitting this section starts no queue:
+
+```json
+{
+  "usenet": {
+    "servers": [{"id": "primary", "host": "nntp.example.test", "tls": true,
+      "username_env": "MYNOU_NNTP_USER", "password_env": "MYNOU_NNTP_PASSWORD"}],
+    "downloads": {"enabled": true, "state_dir": "state/usenet", "max_active": 2,
+      "max_attempts": 3, "max_file_bytes": 68719476736}
+  }
+}
+```
+
+Resolve state_dir relative to the configuration file. It must be separate from
+job/torrent state, download data and library roots. Private directories, checked
+MYNOUU01 queue snapshots, immutable MYNOUN01 source blobs and an exclusive process
+owner protect storage. The queue retains at most 256 file transfers, 64 distinct
+NZB sources, 64 MiB of source bytes and 32768 selected article references. Original
+NZB bytes are captured once per source and reparsed/rehashed on restart. Selected
+file indices, provider bindings, size limits and attempt budgets are immutable.
+Changed provider settings require a new server ID; removed providers pause active
+work without fallback. Disabled downloads perform no acquisition or storage
+initialization.
+
+```sh
+mynou usenet-enqueue original.nzb --server primary --file-index 0 --config mynou.json
+mynou usenet-enqueue original.nzb --server primary --file-index 0 \
+  --apply --plan-id REVIEWED_ID --config mynou.json
+mynou usenet-queue --config mynou.json
+mynou usenet-control TRANSFER_ID --action pause --config mynou.json
+mynou usenet-control TRANSFER_ID --action pause --apply --plan-id REVIEWED_ID \
+  --config mynou.json
+```
+
+The protected API provides GET/POST /api/usenet/queue and
+POST /api/usenet/queue/TRANSFER_ID/control. Enqueue JSON supplies UTF-8 `nzb` text,
+`server_id`, a zero-based `file_index`, and optional `apply`/`plan_id`; controls
+supply `action` (pause, resume, cancel or retry), apply and plan_id. Existing
+one-MiB HTTP request-body bounds also apply to NZB JSON. The library/parser accepts
+up to eight MiB of NZB bytes; this does not enlarge the HTTP transport bound.
+Offline CLI reviews never create or repair storage; application requires the
+running writable service. Guards bind exact source/action, the complete queue
+snapshot and a fresh service identity. Browser control reviews additionally bind
+session/transfer/action/guard, expire after ten minutes and require origin/CSRF.
+The Usenet page exposes progress and controls; enqueue uses CLI/API in this stage.
+
+Each selected part consumes a persisted reservation before NNTP BODY. Missing or
+invalid articles use bounded backoff and at most the captured 1–10 attempts per
+part; retry/resume never reset the budget. Verified receipts are reused after
+restart, including publication preceding a queue update. Paused/cancelled/stopped
+results cannot publish queue completion. Live slots remain occupied until their
+workers return, including after cancellation. At most two operations share the
+queue; NNTP retains one operation per provider and its absolute timeout. Shutdown
+joins workers; synchronous standard-library DNS still cannot be interrupted.
+
+Complete file coverage, CRC and checked output proofs precede the durable complete
+state. Private file access rechecks receipts and output immediately. Public
+reports contain IDs, states, counts and fixed errors, without raw NZB subjects,
+article IDs, decoded names, paths or provider credentials. Cancel preserves private
+bytes and cannot implicitly revive a transfer. Corruption/unsupported storage and
+uncertain durability fail closed. Incomplete workspace construction is preserved
+and rejected; there is no implicit cleanup of unknown data. File-size caps are
+per transfer, not a global disk-space quota. Peak article/part buffers follow
+configured NNTP and decoded-part bounds; the worker count bounds concurrent use.
+
+This queue stages explicitly selected raw yEnc files. It does not create requester
+or canonical library jobs, fetch NZB URLs, search Newznab, extract archives or
+repair PAR2. Ordinary Engine admission and native Newznab follow, preserving
+quality, numbering, requester approval/quota, ownership, import and Plex gates.
+The 0.22.3 source requires its own complete CI publication.

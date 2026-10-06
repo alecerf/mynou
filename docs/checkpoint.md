@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.22.2
+# Project checkpoint — Mynou 0.22.3
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -12,13 +12,22 @@ alone creates release tags and publishes artifacts from validated commits.
 
 ## Implemented scope
 
-The active 0.22.2 increment adds single-file checked private Usenet workspaces.
-Immutable NZB/provider/limit bindings and article-associated receipts are
-revalidated at restart. Streamed assembly requires exact coverage and complete
-CRC, with checked prepared output proofs before atomic publication and ready
-state. Read-only recovery validates without writing; process ownership and
-private/link checks protect storage. Original fixtures, including 65 MiB output,
-await this source's exact complete CI. Native queue/admission/Newznab follow.
+The active 0.22.3 source adds an opt-in native Usenet staging queue. Checked
+source blobs and queue records capture immutable file/provider/limit identities.
+Persisted reservations precede NNTP; retained receipts skip repeat acquisition.
+Two bounded workers use per-provider transport ownership and fence paused,
+cancelled or stopped results. Restart recovery, complete output revalidation,
+private storage and guarded CLI/API/browser controls retain admission boundaries.
+This source requires its own complete Actions validation and publication.
+Ordinary Engine/Newznab acquisition follows before verified cross-seeding/bulk.
+
+CI published v0.22.2 from `1a4949026a615443fe40767015f97dc90437430d` in
+[run 37439687975](https://github.com/alecerf/mynou/actions/runs/37439687975).
+All five jobs passed: 663 Rust tests across 57 harnesses, none failed or ignored,
+and four scheduler checks. Test execution took 79.506 seconds with two harness
+processes and two threads each. Seven bot-owned assets were published at
+09:01:20 UTC on October 6, 2026. The tag matched the validated source and the
+prior v0.22.1 tag and asset IDs, sizes and digests remained unchanged.
 
 CI published v0.22.1 from `cbc10d16b108c03a157d7afb6c91034ef8ac4343` in
 [run 37436785004](https://github.com/alecerf/mynou/actions/runs/37436785004).

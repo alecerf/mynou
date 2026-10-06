@@ -335,10 +335,8 @@ absolute budgets and one active operation per provider. Protected guarded probes
 never request articles or admit work. Health/attempt counters are ephemeral;
 durable acquisition, Newznab, archives and repair remain subsequent increments.
 
-The active v0.22.2 disk workspace stage awaits exact complete CI. Checked private
-part receipts and exact streamed assembly/recovery have explicit source/provider/
-size bindings, one native owner, bounded part buffers and prepared/ready output
-proofs. The original in-memory assembler keeps its 64 MiB cap; disk workspaces
-capture a positive limit up to one TiB. This stage provides no native queue,
-background acquisition or implicit library admission. Newznab/Engine integration,
-archives and repair remain subsequent increments.
+The v0.22.2 workspace stage passed all five jobs. Checked private receipts and
+streamed assembly/recovery retain exact source/provider/size and output proofs.
+The active v0.22.3 queue adds reviewed private staging, retained attempt budgets
+and at most two workers. Its exact CI is pending. Raw staging never admits a
+library job; Newznab/admission, archives and repair remain later increments.
