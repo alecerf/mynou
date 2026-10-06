@@ -85,7 +85,7 @@ class Native:
         if path == "pulls/3/reviews": return deepcopy(self.reviews)
         if path == "pulls/3/files": return self.files
         if path.startswith("actions/runs?head_sha="):
-            return [{"id": i + 20, "name": name, "head_sha": self.current_pr["head"]["sha"], "created_at": lease.stamp(AT), "run_attempt": 1,
+            return [{"id": i + 20, "name": name, "head_sha": self.current_pr["head"]["sha"], "status": "completed", "conclusion": "success", "created_at": lease.stamp(AT), "run_attempt": 1,
                 "html_url": "https://example.invalid/original-ci/" + str(i)} for i, name in enumerate(CFG["required_workflows"])]
         if path.startswith("actions/runs/20/jobs"):
             names = CFG["required_workflows"]["Mynou CI"]

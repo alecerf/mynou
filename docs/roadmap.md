@@ -21,8 +21,6 @@ This scope passed complete Actions validation and publication as recorded below.
 Compressed/solid/split/encrypted RAR, RAR4, PAR2, multi-file packs and Usenet
 upgrades remain subsequent bounded increments.
 
-## Preceding published stage: 0.22.9
-
 CI published v0.22.10 from `f5c59506d0a8d431d09e9f351e2de2ef71b124f9` in
 [run 37510460908](https://github.com/alecerf/mynou/actions/runs/37510460908).
 All five jobs passed: 804 Rust tests across 62 harnesses, none failed or ignored,
@@ -30,6 +28,8 @@ and four scheduler checks. Test execution took 99.854 seconds with two harness
 processes and two threads each. Seven bot-owned assets were published at
 18:23:45 UTC on October 6, 2026. The tag matched the validated source and the
 prior v0.22.9 tag and asset IDs, sizes and digests remained unchanged.
+
+## Preceding published stage: 0.22.9
 
 CI published v0.22.9 from `e69e2b323a74a0d60678bdd797e34d3fbc28e8be` in
 [run 37508514751](https://github.com/alecerf/mynou/actions/runs/37508514751).
