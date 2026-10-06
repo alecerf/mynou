@@ -379,7 +379,7 @@ fn strict_settings_defaults_and_public_debug_keep_endpoints_and_credentials_priv
     minimal.insert("host", "nntp.example.test");
     let server = usenet::Server::from_json(&minimal).unwrap();
     assert!(!format!("{server:?}").contains("example.test"));
-    for (key, value) in [
+    let cases: [(&str, Value); 7] = [
         ("host", "http://example.test".into()),
         ("host", "bad host".into()),
         ("port", 0_u32.into()),
@@ -387,7 +387,8 @@ fn strict_settings_defaults_and_public_debug_keep_endpoints_and_credentials_priv
         ("tls", "yes".into()),
         ("username_env", "bad-name".into()),
         ("extra", true.into()),
-    ] {
+    ];
+    for (key, value) in cases {
         let mut v = p.json(true);
         v.insert(key, value);
         assert!(usenet::Server::from_json(&v).is_err());
