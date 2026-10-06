@@ -39,7 +39,7 @@ fn namespace(c: &Config) -> std::path::PathBuf {
         .state_dir
         .join("archives")
 }
-fn fail(c: Config, p: &Provider, h: &Http) -> Job {
+pub(super) fn fail(c: Config, p: &Provider, h: &Http) -> Job {
     let engine = Engine::open(c).unwrap();
     let id = engine.submit(movie()).unwrap().remove(0).id;
     let workers = engine.start();

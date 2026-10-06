@@ -782,6 +782,11 @@ pub(crate) fn namespace_present(root: &Path) -> Result<bool> {
 #[cfg(test)]
 #[path = "../../tests/archive_support/mod.rs"]
 mod fixtures;
+#[cfg(test)]
+use fixtures as archive_support;
+#[cfg(test)]
+#[path = "../../tests/rar_support/mod.rs"]
+mod rar_fixtures;
 
 #[cfg(test)]
 mod tests {
@@ -802,6 +807,9 @@ mod tests {
     }
     impl Fixture {
         fn new() -> Self {
+            Self::with_format(Format::Zip)
+        }
+        fn with_format(format: Format) -> Self {
             let stamp = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
@@ -818,8 +826,17 @@ mod tests {
                 builder.mode(0o700);
             }
             builder.create(&parent).unwrap();
-            let source = parent.join("Original.Movie.2026.1080p.zip");
-            let bytes = fixtures::stored_zip("Original/Original.Movie.2026.1080p.mp4", MEDIA);
+            let (source_name, bytes) = match format {
+                Format::Zip => (
+                    "Original.Movie.2026.1080p.zip",
+                    fixtures::stored_zip("Original/Original.Movie.2026.1080p.mp4", MEDIA),
+                ),
+                Format::Rar5 => (
+                    "Original.Movie.2026.1080p.rar",
+                    rar_fixtures::stored("Original/Original.Movie.2026.1080p.mp4", MEDIA),
+                ),
+            };
+            let source = parent.join(source_name);
             let mut file = private_options()
                 .create_new(true)
                 .write(true)
@@ -827,7 +844,13 @@ mod tests {
                 .unwrap();
             file.write_all(&bytes).unwrap();
             file.sync_all().unwrap();
-            let zip = Zip::read(&mut Cursor::new(&bytes), Limits::default()).unwrap();
+            let archive = Parsed::read(
+                &mut Cursor::new(&bytes),
+                format,
+                Limits::default(),
+                &AtomicBool::new(true),
+            )
+            .unwrap();
             let owner = Owner {
                 job_id: "original-job".into(),
                 binding: digest(b"original-owner"),
@@ -838,7 +861,7 @@ mod tests {
                 &source,
                 bytes.len() as u64,
                 &digest(&bytes),
-                &Parsed::Zip(zip),
+                &archive,
                 0,
             )
             .unwrap();
@@ -898,6 +921,72 @@ mod tests {
         assert_eq!(proof.bytes, MEDIA.len() as u64);
         assert_eq!(proof.sha256, digest(MEDIA));
         assert_eq!(fs::read(path).unwrap(), MEDIA);
+    }
+    #[test]
+    fn rar_writing_and_complete_intents_keep_their_explicit_format_during_recovery() {
+        let f = Fixture::with_format(Format::Rar5);
+        let workspace = f.open();
+        let mut partial = private_options()
+            .create_new(true)
+            .write(true)
+            .open(workspace.path().unwrap())
+            .unwrap();
+        partial.write_all(&MEDIA[..19]).unwrap();
+        partial.sync_all().unwrap();
+        drop(partial);
+        drop(workspace);
+        assert_eq!(
+            &fs::read(f.root.join("archive.bin")).unwrap()[..8],
+            RAR_MAGIC
+        );
+        Workspace::preflight(&f.root, &f.source, &f.preparation).unwrap();
+        assert_eq!(fs::read(f.output()).unwrap(), MEDIA[..19]);
+        let proof = f.complete();
+        assert_eq!(proof.sha256, digest(MEDIA));
+        let frame = fs::read(f.root.join("archive.bin")).unwrap();
+        let modified = fs::metadata(f.output()).unwrap().modified().unwrap();
+        Workspace::preflight(&f.root, &f.source, &f.preparation).unwrap();
+        assert_eq!(f.complete(), proof);
+        assert_eq!(
+            fs::metadata(f.output()).unwrap().modified().unwrap(),
+            modified
+        );
+        assert_eq!(fs::read(f.root.join("archive.bin")).unwrap(), frame);
+        assert_eq!(
+            f.preparation
+                .plan
+                .to_json()
+                .get("format")
+                .and_then(Value::as_str),
+            Some("rar5-stored")
+        );
+        let zip = Fixture::new();
+        assert!(zip.preparation.plan.to_json().get("format").is_none());
+        assert_eq!(
+            Plan::from_json(&zip.preparation.plan.to_json()).unwrap(),
+            zip.preparation.plan
+        );
+    }
+    #[test]
+    fn rar_descriptor_downgrade_and_format_rebinding_fail_without_writes() {
+        let f = Fixture::with_format(Format::Rar5);
+        f.complete();
+        let path = f.root.join("archive.bin");
+        let (v, bytes) = disk::read_frame(&path, RAR_MAGIC, 0).unwrap();
+        disk::write_frame(&path, MAGIC, &v, &bytes).unwrap();
+        let before = fs::read(&path).unwrap();
+        assert!(Workspace::preflight(&f.root, &f.source, &f.preparation).is_err());
+        assert_eq!(fs::read(&path).unwrap(), before);
+        assert_eq!(fs::read(f.output()).unwrap(), MEDIA);
+        let mut plan = f.preparation.plan.to_json();
+        plan.insert("format", "zip");
+        assert!(Plan::from_json(&plan).is_err());
+        plan.insert("format", "rar5-stored");
+        plan.insert("entry_method", "deflate");
+        assert!(Plan::from_json(&plan).is_err());
+        plan.insert("entry_method", "stored");
+        plan.insert("source_name", "Original.Movie.2026.1080p.zip");
+        assert!(Plan::from_json(&plan).is_err());
     }
     #[test]
     fn completed_descriptor_can_join_the_preceding_journal_intent_without_rewriting() {

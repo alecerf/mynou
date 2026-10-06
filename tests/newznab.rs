@@ -5,6 +5,9 @@ mod archive_support;
 #[path = "newznab_support/archives.rs"]
 mod archives;
 mod library_support;
+#[path = "newznab_support/rar_admission.rs"]
+mod rar_admission;
+mod rar_support;
 mod requester_support;
 mod usenet_support;
 mod web_support;
