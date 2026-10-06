@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.20.7
+# Project checkpoint — Mynou 0.21.0
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -12,11 +12,17 @@ alone creates release tags and publishes artifacts from validated commits.
 
 ## Implemented scope
 
-The active 0.20.7 increment adds atomic requester/IRC outcome events and opt-in
-native HTTP notification delivery. Immutable route bindings, stable IDs, bounded
-attempts, saved leases and fixed errors retain delivery through restarts. Guarded
-CLI/API/browser controls preserve acquisition state. Local protocol, persistence,
-preference and protected-control scenarios await their exact complete CI run.
+The active 0.21.0 increment adds native source Basic/Bearer/form authentication,
+origin-bound ephemeral sessions, bounded one-time renewal, intervals/429 cooldowns
+and protected alias-only health views. It retains RSS/JSON/Torznab parsing and
+selection gates. Original local protocol fixtures await exact complete CI.
+
+CI published v0.20.7 from 3de105188e855e35b5ae86be012df43842c25148 in run
+37429460979: all five jobs, 602 Rust tests across 53 harnesses, four scheduler
+checks and 63.950 seconds of execution at two processes/two threads. Seven bot
+assets were published at 07:28:39 UTC on October 6, 2026; the tag matched and
+v0.20.6's tag/assets remained unchanged. Durable native notification delivery
+retains atomic outcomes, stable IDs, bounded leases/retries and guarded controls.
 
 CI published v0.20.6 from 0b7d9c67a666b6929c626a930450f3dccae13d41 in run
 37427693256. All five jobs passed with 585 Rust tests across 52 harnesses and four

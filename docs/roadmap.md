@@ -5,13 +5,22 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current implementation: 0.20.7, awaiting CI
+## Current implementation: 0.21.0, awaiting CI
 
-Durable requester/IRC outcomes precede opt-in native HTTP notification delivery.
-Route bindings, stable IDs, saved leases and bounded attempts survive restart;
-CLI/API/browser management keeps delivery separate from acquisition. The source
-and original local scenarios await their exact complete CI/publication. Native
-indexer authentication/session/configuration follows next, then 0.22–0.23.
+Native source authentication and bounded session renewal share existing
+RSS/JSON/Torznab adapters. Configured intervals and 429 cooldowns bound requests;
+protected source health omits endpoints and credentials. Original local protocol
+fixtures and this source await complete CI/publication. Checked source policy
+configuration follows in 0.21.1, then all 0.22–0.23 stages.
+
+## Preceding published stage: 0.20.7
+
+Durable atomic requester/IRC outcomes precede opt-in native HTTP notifications.
+Stable IDs, immutable route bindings, leases and bounded attempts retain delivery
+through restart. Guarded CLI/API/browser controls affect delivery alone. Run
+37429460979 passed all five jobs for 3de105188e855e35b5ae86be012df43842c25148:
+602 tests/53 harnesses and four scheduler checks. CI published seven bot assets
+at 07:28:39 UTC on October 6, 2026; v0.20.6's tag/assets stayed unchanged.
 
 ## Preceding published stage: 0.20.6
 

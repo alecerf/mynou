@@ -79,9 +79,9 @@ provide newer weights. Timing history affects ordering only. A malformed history
 cannot suppress tests. Concurrency and timeout options can be tuned in CI, with
 explicit bounds; this is not permission to execute the scheduler locally.
 
-The checked-in weights cover all 52 harnesses measured by the successful
-validation job in [run 37427693256](https://github.com/alecerf/mynou/actions/runs/37427693256),
-including requester admission. That job executed 585 tests in 64.921 seconds
+The checked-in weights cover all 53 harnesses measured by the successful
+validation job in [run 37429460979](https://github.com/alecerf/mynou/actions/runs/37429460979),
+including native notification delivery. That job executed 602 tests in 63.950 seconds
 with two processes and two threads per harness. These measurements set scheduling
 order for the following scope. New harnesses receive a weight only after a
 successful observed run; these durations describe the preceding source.

@@ -239,9 +239,12 @@ bounded pagination and bulk job/library/transfer/series controls. It does not ed
 configuration or adopt a complete existing Plex library. Plex requester policies
 provide reviewed approvals, quotas and routing with recorded notification outcomes;
 requester self-service remains later work. Explicit native HTTP notification routes
-are implemented in 0.20.7 and await their own complete CI; see notifications.md.
-Indexer integrations support RSS/JSON/Torznab endpoints; a general tracker adapter
-catalog, interactive logins and Usenet remain later work. Opt-in IRC reception
+passed complete 0.20.7 CI/publication; see notifications.md.
+Indexer integrations support RSS/JSON/Torznab endpoints. Native Basic, Bearer and
+explicit single-cookie form authentication, bounded renewal, request intervals
+and redacted health are implemented in 0.21.0 and await their own exact CI. Login
+redirects, CSRF/CAPTCHA/interactive flows, arbitrary cookie jars and a general
+tracker adapter catalog remain unsupported; Usenet follows later. Opt-in IRC reception
 supports an explicit strict JSON envelope and review rules, with eight sources,
 64 rules, 1,000 retained identities and an 8 MiB checked snapshot. Duplicates do
 not rewrite history; full history rejects new identities without pruning.

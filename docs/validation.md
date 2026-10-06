@@ -11,12 +11,16 @@ revision.
 
 ## Automated checks and releases
 
-The active 0.20.7 scenarios cover strict notification routes, atomic outcome
-creation, preferences, duplicate suppression, original native HTTP delivery,
-credential isolation, redirect refusal, persistent retries and expired leases,
-route disable/removal, immutable bindings, old magic/corruption, live capacity,
-terminal pruning, protected controls, offline reads and background delivery.
-These require their own complete Actions run and CI publication.
+The active 0.21.0 scenarios cover native Basic/Bearer credentials, explicit form
+login, shared/expired sessions and one-time 401 renewal, cookie scope/transport/
+expiry/ambiguity, strict settings, source interval/429 cooldown, disabled sources,
+independent providers, concurrent busy rejection, redirects, missing credentials,
+RSS/Torznab parsing/parse failures and protected API/browser/CLI health views.
+These require their own complete Actions run and publication.
+
+The 0.20.7 outcome/delivery scenarios passed the complete run recorded below with
+602 Rust tests. CI-only lint correction simplified the route binding condition;
+no checks were suppressed or run locally.
 
 The 0.20.6 request-admission scenarios passed the exact complete run recorded
 below with 585 Rust tests. The first run found a public null source field in its
@@ -866,3 +870,27 @@ release/tag/asset creation was performed. The following source needs its own CI.
 | mynou-v0.20.6-source.zip | 614791204 | 7129195 | 4a726f7beaa982307c5319ee4e55bf41da076538c69b350917524d2cbf11dc0b |
 | mynou-v0.20.6-source.zip.sha256 | 614791206 | 91 | a8b9a9c7dd87bb2bc98c91986f8861ff4a4345f6c02e557e94b19e80e1f59bbe |
 | SHA256SUMS | 614791183 | 289 | ab622336f97e0bcd7449013ab370156b7080fdcef3a03274725683e2bbf9e07e |
+
+## Recorded 0.20.7 CI evidence
+
+[Run 37429460979](https://github.com/alecerf/mynou/actions/runs/37429460979)
+passed all five jobs for `3de105188e855e35b5ae86be012df43842c25148`: 602 Rust
+tests across 53 harnesses, none failed/ignored, four scheduler checks, graph,
+formatting/Clippy, both builds, demonstrations and packaging. Test execution was
+63.950 seconds at two processes/two threads.
+
+Actions published [v0.20.7](https://github.com/alecerf/mynou/releases/tag/v0.20.7)
+at 07:28:39 UTC on October 6, 2026, release 404433070. The exact tag, seven bot
+asset IDs/sizes/digests and immutable prior v0.20.6 were checked. Proof:
+`/workspace/scratch/mynou-20.7-release-proof.json`. No local validation or manual
+release/tag/asset creation was performed. The following scope needs its own CI.
+
+| Asset | ID | Bytes | SHA-256 |
+| --- | ---: | ---: | --- |
+| mynou-v0.20.7-linux-amd64-image.tar.gz | 614826657 | 2002257 | e1ec3ea8d88ecb29b9e2976cd37466382f98beecc81f5a328bcbd1d335fd3f38 |
+| mynou-v0.20.7-linux-amd64-image.tar.gz.sha256 | 614826654 | 105 | b93cd3f9b5f24f4a1b22e446e551787ca5d3e43d8de3b215a99fc3c62490c774 |
+| mynou-v0.20.7-linux-x86_64 | 614826651 | 4092768 | 400dcb3cf767c0d7fff7e12f0d0e4e61f75d90705f0cc1c5c326776543ff3f9e |
+| mynou-v0.20.7-linux-x86_64.sha256 | 614826658 | 93 | b8cdfc171f645f3fdd6d1f05c94c200e66b662d4560fd9af9e2b7b44a3612a27 |
+| mynou-v0.20.7-source.zip | 614826680 | 7352219 | 3c9ed8f9bb332503536a26fa735df3053e218ecd06ee7e9eb404a52f05744a2d |
+| mynou-v0.20.7-source.zip.sha256 | 614826685 | 91 | c4817f811e7672b488583e284ebf57ee0ac7684b54f95ef9f8a3dfebc99a016a |
+| SHA256SUMS | 614826656 | 289 | f4f1183bbab6fc42ac459be45555fad663c9f7ec207e02c8a773199762cfe7f5 |

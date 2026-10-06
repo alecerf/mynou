@@ -1,7 +1,7 @@
 # Durable notifications
 
-Mynou 0.20.7 implements opt-in native HTTP outcome delivery. This source awaits its
-own complete CI/publication. Requester preferences still select `none`, `decisions`
+Mynou 0.20.7 implements opt-in native HTTP outcome delivery. It passed complete
+CI/publication in run 37429460979 with 602 Rust tests and four scheduler checks. Requester preferences still select `none`, `decisions`
 or `all`; the existing bounded account inbox remains available. IRC source routes
 receive first receipt, review, admission, routing and aborted recovery outcomes.
 
