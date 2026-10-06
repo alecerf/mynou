@@ -3,13 +3,17 @@ use super::admission::{configured, progress, read_snapshot, retained, wait_state
 use super::archive_support::{Fixture, archive, hex, stored_zip};
 use super::requester_support as accounts;
 use super::*;
-use mynou::{archive::Limits, requesters::digest, store::Job};
+use mynou::{archive::Limits, store::Job};
 use std::{
     os::unix::fs::{MetadataExt, PermissionsExt},
     path::Path,
 };
 
 const MEDIA: &[u8] = include_bytes!("../../examples/demo.mp4");
+
+fn digest(bytes: &[u8]) -> String {
+    sha256(bytes).iter().map(|b| format!("{b:02x}")).collect()
+}
 
 fn enabled(d: &Directory, p: &Provider, h: &Http) -> Config {
     let mut c = configured(d, p, h);
