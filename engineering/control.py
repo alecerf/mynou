@@ -39,6 +39,9 @@ def select(state, issues, at):
     active = [i for i in managed if labels(i) & {"status:in-progress", "status:review"}]
     if active:
         return {"action": "recover", "issue": min(active, key=lambda i: i["number"])["number"], "instruction": "Finish/recover existing delivery before unrelated work."}
+    circuit = [i for i in managed if state["attempts"].get(str(i["number"]), {}).get("unchanged", 0) >= 3]
+    if circuit:
+        return {"action": "triage", "issue": min(circuit, key=lambda i: i["number"])["number"], "instruction": "Circuit breaker requires a changed approach; never repeat unchanged implementation."}
     ready = [i for i in managed if "status:blocked" not in labels(i)]
     if not ready:
         return {"action": "idle", "instruction": "No executable valuable backlog. Do not invent work or repeatedly rescan."}
@@ -80,7 +83,7 @@ def recover_native(api, state, at):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["wake", "status", "acquire", "checkpoint", "release", "recover", "attempt", "qa-gate", "deliver", "branch-sweep"])
+    parser.add_argument("command", choices=["wake", "status", "acquire", "checkpoint", "release", "recover", "attempt", "qa-gate", "deliver", "branch-sweep", "branch-cleanup"])
     parser.add_argument("--role")
     parser.add_argument("--issue", type=int)
     parser.add_argument("--worker", default="codex-worker")
@@ -107,13 +110,26 @@ def main():
         return
     head, state = read_state(api)
     at = lease.now()
+    if args.command == "branch-cleanup":
+        import delivery
+        held = lease.owned(state, args.lease, at)
+        if held["role"] not in ("quality", "triage") or not args.branch or not args.commit:
+            raise ValueError("Cleanup requires Quality/Triage ownership and an exact branch head")
+        print(json.dumps(delivery.cleanup_branch(api, args.branch, args.commit, held), indent=2))
+        return
     if args.command == "status":
         print(json.dumps({"control_sha": head, "state": state}, indent=2))
         return
     if args.command == "wake":
         # Admission happens before any backlog/domain investigation.
         issues = [] if state["lease"] is not None else api.pages("issues?state=open&labels=agent-work")
-        print(json.dumps(dict(select(state, issues, at), control_sha=head), indent=2))
+        action = select(state, issues, at)
+        if action["action"] == "idle":
+            import qa
+            prs = api.pages("pulls?state=open")
+            if prs:
+                action = {"action": "triage-pr", "pr": min(prs, key=lambda p: p["number"])["number"], "instruction": "Recover open PR and create/link a meaningful Issue if missing; inspect CI before new work."}
+        print(json.dumps(dict(action, control_sha=head), indent=2))
         return
     identity = args.lease
     if args.command == "acquire":

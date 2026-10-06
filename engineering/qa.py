@@ -147,7 +147,10 @@ def evaluate(api, pr_number, cfg=None, include_gate=False):
         if "agent-work" not in {l["name"] for l in issue["labels"]}:
             raise ValueError("Linked Issue is outside the managed engineering backlog")
         risks.update(l["name"] for l in issue["labels"])
-    if risks & {"risk:high", "risk:critical"}:
+    if not risks & {"risk:low", "risk:medium", "risk:high", "risk:critical"}:
+        raise ValueError("Linked work lacks a triaged risk classification")
+    sensitive = any(p == "AGENTS.md" or p.startswith(("engineering/", ".agents/", ".github/", "src/crypto", "src/tls", "src/pki")) for p in paths)
+    if sensitive or risks & {"risk:high", "risk:critical"}:
         proof.append(review_proof(api, cfg, "security", reviews, pr, paths, issues))
     if unresolved(api, pr_number):
         raise ValueError("Unresolved review conversations block delivery")

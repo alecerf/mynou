@@ -32,10 +32,17 @@ def cleanup_branch(api, name, expected, held):
         return {"branch": name, "result": "preserved: head changed"}
     prs = api.pages("pulls?state=all")
     issues = api.pages("issues?state=open")
+    issue_refs = [i for i in issues if "pull_request" not in i]
+    if len(issue_refs) > 20:
+        return {"branch": name, "result": "preserved: Issue-reference audit needs a narrower scope"}
+    for issue in issue_refs:
+        comments = api.pages(f"issues/{issue['number']}/comments")
+        if any(name in (c.get("body") or "") for c in comments):
+            return {"branch": name, "result": "preserved: open Issue comment references branch"}
     default = api.ref(cfg["default_branch"])
     comparison = api.rest("GET", f"compare/{expected}...{default}")
     allowed, reason = branch_decision(name, expected, cfg, comparison["status"],
-        [p for p in prs if p["state"] == "open"], [i for i in issues if "pull_request" not in i], held,
+        [p for p in prs if p["state"] == "open"], issue_refs, held,
         [p for p in prs if p.get("merged_at")], source["protected"])
     if not allowed:
         return {"branch": name, "result": "preserved: " + reason}
