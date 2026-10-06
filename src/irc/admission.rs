@@ -281,6 +281,15 @@ impl Engine {
             return Err("IRC: retained series identity is ambiguous".into());
         }
         let deadline = Instant::now() + Duration::from_secs(10);
+        let configured_account = self
+            .config
+            .requesters
+            .accounts
+            .iter()
+            .find(|a| rule.requester.as_deref() == Some(a.id.as_str()))
+            .ok_or("IRC: requester account is unavailable")?;
+        integrations::requester_identity_before(&self.config, configured_account, deadline)
+            .map_err(|_| "IRC: requester identity could not be verified".to_owned())?;
         let canonical = integrations::irc_catalog_request_before(
             &self.config,
             &record.announcement.request,

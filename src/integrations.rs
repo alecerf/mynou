@@ -381,6 +381,23 @@ pub(crate) fn requester_watchlist(
     account: &crate::requesters::Account,
     deadline: Instant,
 ) -> Result<Vec<Request>> {
+    let cfg = verified_requester_config_before(config, account, deadline)?;
+    watchlist_identities_before(&cfg, deadline, crate::requesters::MAX_POLL_ITEMS)
+}
+
+pub(crate) fn requester_identity_before(
+    config: &Config,
+    account: &crate::requesters::Account,
+    deadline: Instant,
+) -> Result<()> {
+    verified_requester_config_before(config, account, deadline).map(|_| ())
+}
+
+fn verified_requester_config_before(
+    config: &Config,
+    account: &crate::requesters::Account,
+    deadline: Instant,
+) -> Result<Config> {
     let token =
         config::secret(&account.token_env).map_err(|_| "Plex: account token unavailable")?;
     let mut cfg = config.clone();
@@ -393,7 +410,7 @@ pub(crate) fn requester_watchlist(
     {
         return Err("Plex account identity changed".into());
     }
-    watchlist_identities_before(&cfg, deadline, crate::requesters::MAX_POLL_ITEMS)
+    Ok(cfg)
 }
 pub(crate) fn requester_movie_before(
     config: &Config,
