@@ -203,7 +203,9 @@ fn file_entry(
             0o040000 if directory => (),
             0o100000 if !directory => (),
             _ => {
-                return Err("RAR5 links, devices and conflicting file types are unsupported".into());
+                return Err(
+                    "RAR5 links, devices and conflicting file types are unsupported".into(),
+                );
             }
         },
         _ => return Err("RAR5 unsupported host or file attributes".into()),
