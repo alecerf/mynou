@@ -840,6 +840,7 @@ pub(super) fn frame(title: &str, active: &str, session: Option<&Session>, body: 
             ("/ui/irc", "Announcements"),
             ("/ui/notifications", "Notifications"),
             ("/ui/indexers", "Indexers"),
+            ("/ui/usenet", "Usenet"),
         ] {
             html.push_str(&format!(
                 "<a href={path}{}>{label}</a>",

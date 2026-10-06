@@ -6,6 +6,7 @@ mod notification_views;
 mod requester_views;
 mod series_views;
 mod session;
+mod usenet_views;
 mod views;
 
 use crate::{
@@ -250,6 +251,10 @@ impl Web {
                 requester_views::list(engine, &session)?
             }
             "/ui/irc" => irc_views::list(engine, &session, &query)?,
+            "/ui/usenet" => {
+                query.only(&[])?;
+                usenet_views::list(engine, &session)
+            }
             "/ui/indexers" => {
                 query.only(&[])?;
                 indexer_views::list(engine, &session)
@@ -321,6 +326,33 @@ impl Web {
         session: &Session,
     ) -> Result<Response> {
         match path {
+            "/ui/usenet/probe" => {
+                form.only(&["csrf", "id", "apply", "plan_id"])?;
+                let id = form.value("id")?;
+                if form.value("apply")? == "yes" {
+                    let q = lock(&self.sessions)?.usenet_preview(
+                        &session.id,
+                        id,
+                        form.value("plan_id")?,
+                    )?;
+                    let report = engine.usenet_probe(id, &q)?;
+                    lock(&self.sessions)?.clear_usenet_preview(&session.id);
+                    return self.redirect(session,"/ui/usenet",vec![if report.get("probe_success").and_then(crate::json::Value::as_bool) == Some(true) {"Usenet connection probe succeeded".into()} else {"Usenet connection probe failed; inspect settings and server availability".into()}]);
+                }
+                form.only(&["csrf", "id"])?;
+                let mut q = crate::usenet::ProbeRequest {
+                    apply: false,
+                    plan_id: None,
+                };
+                let report = engine.usenet_probe(id, &q)?;
+                q.apply = true;
+                q.plan_id = report
+                    .get("plan_id")
+                    .and_then(crate::json::Value::as_str)
+                    .map(str::to_owned);
+                lock(&self.sessions)?.save_usenet_preview(&session.id, id, q)?;
+                Ok(Response::html(200, usenet_views::review(session, &report)))
+            }
             "/ui/indexers/control" => {
                 form.only(&["csrf", "id", "action", "apply", "plan_id"])?;
                 let id = form.value("id")?;

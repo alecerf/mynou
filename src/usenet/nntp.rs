@@ -181,7 +181,10 @@ pub(super) fn probe_guarded(s: &Server, guard: Option<&str>) -> Result<()> {
     if guard.is_some_and(|g| g != s.guard(&h)) {
         return Err("NNTP: probe review is stale; preview again".into());
     }
-    h.attempts = h.attempts.saturating_add(1);
+    h.attempts = h
+        .attempts
+        .checked_add(1)
+        .ok_or("NNTP: attempt counter exhausted")?;
     let result = (|| -> Result<()> {
         let mut conn = Connection::open(s, Instant::now() + s.timeout())?;
         conn.command("QUIT")?;
@@ -206,7 +209,10 @@ pub fn body(s: &Server, id: &str) -> Result<Vec<u8>> {
         return Err("NNTP: invalid article identity".into());
     }
     let mut h = s.health.try_lock().map_err(|_| "NNTP: server is busy")?;
-    h.attempts = h.attempts.saturating_add(1);
+    h.attempts = h
+        .attempts
+        .checked_add(1)
+        .ok_or("NNTP: attempt counter exhausted")?;
     let result = (|| -> Result<Vec<u8>> {
         let mut conn = Connection::open(s, Instant::now() + s.timeout())?;
         conn.command(&format!("BODY <{id}>"))?;
