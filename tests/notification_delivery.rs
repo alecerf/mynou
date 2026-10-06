@@ -79,6 +79,12 @@ impl Receiver {
                 let id = payload.get("id").unwrap().as_str().unwrap();
                 assert!(fields["idempotency-key"] == id && fields["x-mynou-event-id"] == id);
                 assert_eq!(fields["content-type"], "application/json");
+                if let Some(auth) = fields.get("authorization") {
+                    assert!(
+                        auth == &format!("Bearer {}", std::env::var("PATH").unwrap().trim()),
+                        "Receiver credential mismatch"
+                    );
+                }
                 c.lock().unwrap().push(payload);
                 let (status, location) = r.lock().unwrap().clone();
                 let location = location
@@ -666,4 +672,24 @@ fn background_worker_delivers_only_opted_in_routes() {
     drop(workers);
     assert_eq!(r.calls.lock().unwrap().len(), 1);
     irc_support::no_jobs(&e);
+}
+
+#[test]
+fn successful_environment_credentials_stay_in_headers_and_out_of_event_history() {
+    let d = Directory::new();
+    let r = Receiver::open();
+    let mut cfg = configured(&d, &r);
+    cfg.notifications.routes[0].token_env = Some("PATH".into());
+    let e = Engine::open(cfg).unwrap();
+    irc_support::receive(&e, 7);
+    assert_eq!(
+        e.dispatch_notifications()
+            .unwrap()
+            .get("delivered")
+            .unwrap()
+            .as_u64(),
+        Some(1)
+    );
+    assert_eq!(r.calls.lock().unwrap().len(), 1);
+    redacted(&e.notifications(0, 100).unwrap());
 }

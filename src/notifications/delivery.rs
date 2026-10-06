@@ -72,7 +72,9 @@ impl Engine {
         change: impl FnOnce(&mut DeliveryState) -> Result<T>,
     ) -> Result<T> {
         if self.read_only || self.stopped.load(Ordering::Acquire) {
-            return Err("Notifications: delivery changes require a running writable service".into());
+            return Err(
+                "Notifications: delivery changes require a running writable service".into(),
+            );
         }
         if kind == "irc" {
             let mut store = lock(&self.irc_store)?;
