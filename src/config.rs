@@ -496,7 +496,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
     }
     let notifications =
         crate::notifications::Settings::from_json(v.get("notifications"), &requesters, &irc)?;
-    Ok(Config {
+    let config = Config {
         store_dir: path(&base, text(v, "store_dir", "state/jobs")?)?,
         listen,
         api_token_env: text(v, "api_token_env", "MYNOU_API_TOKEN")?,
@@ -546,8 +546,23 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         requesters,
         irc,
         notifications,
-        usenet: crate::usenet::Settings::from_json(v.get("usenet"))?,
-    })
+        usenet: crate::usenet::Settings::from_json_at(v.get("usenet"), &base)?,
+    };
+    if let Some(downloads) = &config.usenet.downloads {
+        let root = &downloads.state_dir;
+        for other in [
+            &config.store_dir,
+            &config.downloads.state_dir,
+            &config.downloads.data_dir,
+            &config.movies_root,
+            &config.series_root,
+        ] {
+            if root.starts_with(other) || other.starts_with(root) {
+                return Err("Configuration: Usenet storage must be separate from other state and media roots".into());
+            }
+        }
+    }
+    Ok(config)
 }
 pub fn secret(name: &str) -> Result<String> {
     let value = std::env::var(name).unwrap_or_default().trim().to_owned();

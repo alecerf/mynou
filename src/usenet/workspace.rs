@@ -566,6 +566,30 @@ impl Workspace {
             None
         }
     }
+    pub(super) fn verify_ready(&mut self) -> Result<PathBuf> {
+        let result = (|| {
+            let mut parts = BTreeMap::new();
+            for n in 1..=self.count {
+                let p = self.read_part(n)?;
+                self.validate(&p)?;
+                parts.insert(n, Summary::from(&p));
+            }
+            self.parts = parts;
+            self.recover()?;
+            self.available_file()
+                .ok_or_else(|| "Usenet workspace: verified output is unavailable".into())
+        })();
+        if result.is_err() {
+            self.poisoned = true;
+        }
+        result
+    }
+    pub(super) fn first_missing(&self) -> Option<u32> {
+        (1..=self.count).find(|n| !self.parts.contains_key(n))
+    }
+    pub(super) fn verified_numbers(&self) -> impl Iterator<Item = u32> + '_ {
+        self.parts.keys().copied()
+    }
     pub fn report(&self) -> Value {
         let mut v = Value::object();
         v.insert("binding", self.binding.clone());

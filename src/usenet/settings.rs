@@ -2,6 +2,7 @@
 use crate::{Result, json::Value};
 use std::{
     net::IpAddr,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -185,13 +186,56 @@ impl Server {
 #[derive(Clone, Debug, Default)]
 pub struct Settings {
     pub servers: Vec<Server>,
+    pub downloads: Option<Downloads>,
+}
+#[derive(Clone, Debug)]
+pub struct Downloads {
+    pub enabled: bool,
+    pub state_dir: PathBuf,
+    pub max_active: usize,
+    pub max_attempts: u8,
+    pub max_file_bytes: u64,
+}
+impl Downloads {
+    fn parse(v: &Value, base: &Path) -> Result<Self> {
+        crate::numbering::only(
+            v,
+            &[
+                "enabled",
+                "state_dir",
+                "max_active",
+                "max_attempts",
+                "max_file_bytes",
+            ],
+        )?;
+        let enabled = match v.get("enabled") {
+            None => false,
+            Some(Value::Bool(b)) => *b,
+            _ => return Err("Usenet: invalid downloads enabled flag".into()),
+        };
+        let state_dir = match v.get("state_dir") {
+            None => "state/usenet".to_owned(),
+            Some(Value::String(s)) if !s.trim().is_empty() => s.clone(),
+            _ => return Err("Usenet: invalid downloads state directory".into()),
+        };
+        Ok(Self {
+            enabled,
+            state_dir: crate::config::path(base, state_dir)?,
+            max_active: number(v, "max_active", 2, 1, 2)? as usize,
+            max_attempts: number(v, "max_attempts", 3, 1, 10)? as u8,
+            max_file_bytes: number(v, "max_file_bytes", 64 << 30, 1, 1 << 40)?,
+        })
+    }
 }
 impl Settings {
     pub fn from_json(v: Option<&Value>) -> Result<Self> {
+        Self::from_json_at(v, Path::new("."))
+    }
+    pub(crate) fn from_json_at(v: Option<&Value>, base: &Path) -> Result<Self> {
         let Some(v) = v else {
             return Ok(Self::default());
         };
-        crate::numbering::only(v, &["servers"])?;
+        crate::numbering::only(v, &["servers", "downloads"])?;
         let rows = v
             .get("servers")
             .and_then(Value::as_array)
@@ -205,13 +249,24 @@ impl Settings {
             }
             servers.push(s);
         }
-        Ok(Self { servers })
+        let downloads = v
+            .get("downloads")
+            .map(|v| Downloads::parse(v, base))
+            .transpose()?;
+        if downloads.as_ref().is_some_and(|d| d.enabled) && servers.is_empty() {
+            return Err("Usenet: enabled downloads require a server".into());
+        }
+        Ok(Self { servers, downloads })
     }
     pub fn report(&self) -> Value {
         let mut v = Value::object();
         v.insert(
             "servers",
             Value::Array(self.servers.iter().map(Server::report).collect()),
+        );
+        v.insert(
+            "downloads_enabled",
+            self.downloads.as_ref().is_some_and(|d| d.enabled),
         );
         v
     }

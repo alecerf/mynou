@@ -71,6 +71,9 @@ fn valid_group(s: &str) -> bool {
 }
 impl Nzb {
     pub fn read_file(path: &Path) -> Result<Self> {
+        Self::parse(&Self::read_bytes(path)?)
+    }
+    pub fn read_bytes(path: &Path) -> Result<Vec<u8>> {
         crate::store::reject_symlinks(path).map_err(|_| "NZB: invalid input path")?;
         let m = std::fs::symlink_metadata(path).map_err(|_| "NZB: cannot inspect input")?;
         if !m.is_file() || m.len() == 0 || m.len() > MAX_BYTES as u64 {
@@ -91,7 +94,10 @@ impl Nzb {
         file.take(MAX_BYTES as u64 + 1)
             .read_to_end(&mut bytes)
             .map_err(|_| "NZB: cannot read input")?;
-        Self::parse(&bytes)
+        if bytes.is_empty() || bytes.len() > MAX_BYTES {
+            return Err("NZB: document size exceeds the limit".into());
+        }
+        Ok(bytes)
     }
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         if bytes.is_empty() || bytes.len() > MAX_BYTES {
