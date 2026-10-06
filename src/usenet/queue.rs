@@ -116,10 +116,29 @@ impl Client {
         Ok(client)
     }
     pub(crate) fn prepare(settings: &Settings, read_only: bool) -> Result<Self> {
-        let downloads = settings
+        let mut downloads = settings
             .downloads
             .clone()
             .ok_or("Usenet queue: downloads are not configured")?;
+        if !(1..=2).contains(&downloads.max_active)
+            || !(1..=10).contains(&downloads.max_attempts)
+            || downloads.max_file_bytes == 0
+            || downloads.max_file_bytes > 1 << 40
+            || settings.servers.len() > 8
+        {
+            return Err("Usenet queue: invalid immutable resource bounds".into());
+        }
+        downloads.state_dir = crate::config::path(
+            std::path::Path::new("."),
+            downloads
+                .state_dir
+                .to_str()
+                .ok_or("Usenet queue: invalid storage path")?
+                .to_owned(),
+        )?;
+        if downloads.state_dir.file_name().is_none() {
+            return Err("Usenet queue: private storage root is required".into());
+        }
         let root = &downloads.state_dir;
         let existing = storage::exists(root)?;
         let mut owner = None;
@@ -693,17 +712,17 @@ impl Client {
         row.reservation = None;
         row.revision = revision;
         row.next_attempt = 0;
+        let result = match result {
+            Ok(Some(p)) => work.workspace.accept(&p, &work.article).map(|()| false),
+            Ok(None) => Ok(true),
+            Err(e) => Err(e),
+        };
         match result {
-            Ok(Some(p)) => {
-                if let Err(e) = work.workspace.accept(&p, &work.article) {
-                    inner.poisoned = true;
-                    inner.workspaces.insert(work.id.clone(), work.workspace);
-                    return Err(e);
-                }
+            Ok(false) => {
                 row.phase = Phase::Queued;
                 row.error = None;
             }
-            Ok(None) => {
+            Ok(true) => {
                 row.phase = Phase::Complete;
                 row.error = None;
             }

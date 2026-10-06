@@ -253,9 +253,6 @@ impl Settings {
             .get("downloads")
             .map(|v| Downloads::parse(v, base))
             .transpose()?;
-        if downloads.as_ref().is_some_and(|d| d.enabled) && servers.is_empty() {
-            return Err("Usenet: enabled downloads require a server".into());
-        }
         Ok(Self { servers, downloads })
     }
     pub fn report(&self) -> Value {

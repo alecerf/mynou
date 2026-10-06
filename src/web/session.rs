@@ -654,6 +654,77 @@ mod tests {
     use super::*;
 
     #[test]
+    fn usenet_queue_reviews_bind_action_and_cannot_be_used_as_probes() {
+        let mut sessions = Sessions::new();
+        let challenge = sessions.challenge("localhost").unwrap();
+        let session = sessions
+            .login(&challenge.id, &challenge.csrf, "http://localhost", true)
+            .unwrap()
+            .unwrap();
+        let target = "a".repeat(64);
+        let guard = "b".repeat(64);
+        let q = crate::usenet::QueueControl {
+            action: "pause".into(),
+            apply: true,
+            plan_id: Some(guard.clone()),
+        };
+        sessions
+            .save_usenet_queue_preview(&session.id, &target, q.clone())
+            .unwrap();
+        assert!(
+            sessions
+                .usenet_queue_preview(&session.id, &target, "pause", &guard)
+                .is_ok()
+        );
+        assert!(
+            sessions
+                .usenet_queue_preview(&session.id, &target, "cancel", &guard)
+                .is_err()
+        );
+        assert!(
+            sessions
+                .usenet_queue_preview("other", &target, "pause", &guard)
+                .is_err()
+        );
+        assert!(
+            sessions
+                .usenet_preview(&session.id, &target, &guard)
+                .is_err()
+        );
+        sessions
+            .0
+            .get_mut(&session.id)
+            .unwrap()
+            .usenet_preview
+            .as_mut()
+            .unwrap()
+            .expires = Instant::now();
+        assert!(
+            sessions
+                .usenet_queue_preview(&session.id, &target, "pause", &guard)
+                .is_err()
+        );
+        sessions
+            .save_usenet_queue_preview(&session.id, &target, q)
+            .unwrap();
+        sessions
+            .save_usenet_preview(
+                &session.id,
+                "original",
+                crate::usenet::ProbeRequest {
+                    apply: true,
+                    plan_id: Some(guard.clone()),
+                },
+            )
+            .unwrap();
+        assert!(
+            sessions
+                .usenet_queue_preview(&session.id, &target, "pause", &guard)
+                .is_err()
+        );
+    }
+
+    #[test]
     fn usenet_probe_reviews_bind_session_server_guard_and_expiry() {
         let mut sessions = Sessions::new();
         let challenge = sessions.challenge("localhost").unwrap();
