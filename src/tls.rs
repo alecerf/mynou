@@ -820,6 +820,7 @@ mod tests {
         CertificateVerify,
         Finished,
         Application,
+        Nntp,
     }
 
     fn local_server(fault: Fault) -> (SocketAddr, JoinHandle<Result<()>>) {
@@ -955,6 +956,45 @@ mod tests {
                 "c ap traffic",
                 &transcript.clone().finalize(),
             )?)?;
+            if matches!(fault, Fault::Nntp) {
+                stream
+                    .write_all(&send.seal(23, b"201 Original NNTP TLS fixture ready\r\n")?)
+                    .map_err(|_| "NNTP TLS fixture write failed")?;
+                for (expected, reply) in [
+                    (
+                        format!(
+                            "AUTHINFO USER {}\r\n",
+                            std::env::var("PWD").map_err(|_| "Fixture environment unavailable")?
+                        ),
+                        b"381 Password required\r\n".as_slice(),
+                    ),
+                    (
+                        format!(
+                            "AUTHINFO PASS {}\r\n",
+                            std::env::var("PATH").map_err(|_| "Fixture environment unavailable")?
+                        ),
+                        b"281 Accepted\r\n".as_slice(),
+                    ),
+                    ("QUIT\r\n".into(), b"205 Closing\r\n".as_slice()),
+                ] {
+                    let mut command = Vec::new();
+                    while !command.ends_with(b"\r\n") {
+                        let (header, payload) = read_record(&mut stream)?;
+                        let (kind, part) = receive.open(&header, &payload)?;
+                        if kind != 23 || command.len() + part.len() > 8192 {
+                            return Err("Invalid NNTP TLS fixture record".into());
+                        }
+                        command.extend_from_slice(&part);
+                    }
+                    if command != expected.as_bytes() {
+                        return Err("NNTP TLS fixture command mismatch".into());
+                    }
+                    stream
+                        .write_all(&send.seal(23, reply)?)
+                        .map_err(|_| "NNTP TLS fixture write failed")?;
+                }
+                return Ok(());
+            }
             let (header, payload) = read_record(&mut stream)?;
             let (kind, request) = receive.open(&header, &payload)?;
             if kind != 23 || request != b"ping" {
@@ -1003,6 +1043,14 @@ mod tests {
             hostname,
             roots,
         )
+    }
+
+    #[test]
+    fn native_nntp_authenticates_and_probes_over_verified_local_tls() {
+        let (address, server) = local_server(Fault::Nntp);
+        let stream = connect_local(address, "localhost", test_fixture::ROOT_PEM).unwrap();
+        crate::usenet::nntp::test_verified_tls_probe(stream).unwrap();
+        server.join().unwrap().unwrap();
     }
 
     #[test]

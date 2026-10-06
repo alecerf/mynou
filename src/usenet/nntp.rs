@@ -86,6 +86,9 @@ impl Connection {
         } else {
             Wire::Plain(tcp)
         };
+        Self::authenticate(wire, deadline, auth)
+    }
+    fn authenticate(wire: Wire, deadline: Instant, auth: Option<(String, String)>) -> Result<Self> {
         let mut conn = Self {
             input: BufReader::with_capacity(8192, wire),
             deadline,
@@ -172,6 +175,25 @@ impl Connection {
         Ok((code, message))
     }
 }
+fn finish_probe(mut conn: Connection) -> Result<()> {
+    conn.command("QUIT")?;
+    if conn.status()?.0 != 205 {
+        return Err("NNTP: quit rejected".into());
+    }
+    remaining(conn.deadline)?;
+    Ok(())
+}
+#[cfg(test)]
+pub(crate) fn test_verified_tls_probe(mut stream: TlsStream) -> Result<()> {
+    let deadline = Instant::now() + std::time::Duration::from_secs(5);
+    stream.set_deadline(deadline);
+    let auth = Some((credential("PWD", true)?, credential("PATH", false)?));
+    finish_probe(Connection::authenticate(
+        Wire::Tls(Box::new(stream)),
+        deadline,
+        auth,
+    )?)
+}
 /// A connection/authentication/QUIT probe, with no article request or persistent work.
 pub fn probe(s: &Server) -> Result<()> {
     probe_guarded(s, None)
@@ -185,15 +207,7 @@ pub(super) fn probe_guarded(s: &Server, guard: Option<&str>) -> Result<()> {
         .attempts
         .checked_add(1)
         .ok_or("NNTP: attempt counter exhausted")?;
-    let result = (|| -> Result<()> {
-        let mut conn = Connection::open(s, Instant::now() + s.timeout())?;
-        conn.command("QUIT")?;
-        if conn.status()?.0 != 205 {
-            return Err("NNTP: quit rejected".into());
-        }
-        remaining(conn.deadline)?;
-        Ok(())
-    })();
+    let result = Connection::open(s, Instant::now() + s.timeout()).and_then(finish_probe);
     if result.is_ok() {
         h.successes = h.successes.saturating_add(1);
         h.last_error = None;
