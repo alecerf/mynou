@@ -140,7 +140,8 @@ impl Server {
     pub fn timeout(&self) -> Duration {
         Duration::from_millis(self.timeout_ms)
     }
-    pub(super) fn binding(&self) -> String {
+    /// Stable provider identity including credential names, never credential values.
+    pub fn binding(&self) -> String {
         let v = Value::Array(vec![
             self.id.clone().into(),
             self.host.clone().into(),

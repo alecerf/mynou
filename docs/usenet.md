@@ -365,7 +365,8 @@ descriptor bindings and version-1 record serialization remain unchanged.
 
 `retained_owned` returns a checked private inventory for joint preflight without
 authorizing anything. `authorize_owned` grants a bounded deadline of at most
-sixty seconds after the caller rechecks admission. These permissions are not
+sixty seconds after the caller rechecks admission, bounded by both wall and
+monotonic clocks. These permissions are not
 persisted: reopening an already queued/complete record still needs a fresh grant.
 Expired permissions pause active work and invalidate reservations. `hold_owned`
 revokes permission, fences late responses and preserves receipts/output. An old
@@ -374,7 +375,10 @@ start a duplicate operation. Renewal preserves an unexpired active reservation.
 `retry_owned` is explicit and retains the original per-article attempt budgets.
 
 `verified_owned_file` rechecks owner, unexpired permission, receipts and complete
-output, including permission after verification. It returns a private path only;
+output, including permission after verification. Disk verification uses a bounded
+active slot outside the queue mutex so the owner can renew or revoke permission.
+Revocation changes the grant generation; immediately granting permission again
+cannot publish a result from the revoked verification. It returns a private path only;
 identity, quality, requester, ownership, media/import and Plex checks still belong
 to the library caller. Raw `verified_file` and raw CLI/API/browser controls reject
 owned transfers. Public progress exposes ownership and current authorization

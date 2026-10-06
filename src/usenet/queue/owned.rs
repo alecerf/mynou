@@ -11,7 +11,19 @@ use crate::{
 use std::{
     path::PathBuf,
     sync::{Arc, atomic::Ordering},
+    time::{Duration, Instant},
 };
+
+pub(super) struct Permit {
+    until: u64,
+    deadline: Instant,
+    serial: u64,
+}
+impl Permit {
+    fn active(&self) -> bool {
+        self.until > store::now() && self.deadline > Instant::now()
+    }
+}
 
 /// Immutable owner identity supplied by a trusted library admission caller.
 /// A digest alone does not establish approval or authorize a media import.
@@ -118,17 +130,13 @@ impl Inner {
         )
     }
     pub(super) fn owner_allowed(&self, r: &Record) -> bool {
-        r.owner.is_none()
-            || self
-                .permits
-                .get(&r.id)
-                .is_some_and(|until| *until > store::now())
+        r.owner.is_none() || self.permits.get(&r.id).is_some_and(Permit::active)
     }
     pub(super) fn expire_permits(&mut self) -> Result<bool> {
         let ids = self
             .permits
             .iter()
-            .filter(|(_, until)| **until <= store::now())
+            .filter(|(_, permit)| !permit.active())
             .map(|(id, _)| id.clone())
             .collect::<Vec<_>>();
         let mut next = self.data.clone();
@@ -329,9 +337,19 @@ impl Client {
         if until <= now || until > now.saturating_add(60) || self.stopped.load(Ordering::Acquire) {
             return Err("Usenet queue: invalid or expired owner permission".into());
         }
+        let mut permit = Permit {
+            until,
+            deadline: Instant::now()
+                .checked_add(Duration::from_secs(until - now))
+                .ok_or("Usenet queue: invalid owner time budget")?,
+            serial: 0,
+        };
         let mut inner = self.lock()?;
         inner.writable()?;
         inner.expire_permits()?;
+        if !permit.active() {
+            return Err("Usenet queue: owner permission expired before application".into());
+        }
         let r = inner
             .data
             .records
@@ -382,7 +400,20 @@ impl Client {
             r.error = None;
             inner.persist(next)?;
         }
-        inner.permits.insert(id.into(), until);
+        if !permit.active() {
+            return Err("Usenet queue: owner permission expired during application".into());
+        }
+        permit.serial = match inner.permits.get(id).filter(|p| p.active()) {
+            Some(previous) => previous.serial,
+            None => {
+                inner.permission_revision = inner
+                    .permission_revision
+                    .checked_add(1)
+                    .ok_or("Usenet queue: owner permission generation exhausted")?;
+                inner.permission_revision
+            }
+        };
+        inner.permits.insert(id.into(), permit);
         Ok(())
     }
     /// Revoke permission and fence active results without discarding verified bytes.
@@ -422,6 +453,14 @@ impl Client {
     /// Reverify private bytes only for the same currently authorized owner.
     /// The caller still must apply canonical identity, profile, import and Plex gates.
     pub fn verified_owned_file(&self, id: &str, owner: &Owner) -> Result<PathBuf> {
+        self.verified_owned_by(id, owner, Workspace::verify_ready)
+    }
+    fn verified_owned_by(
+        &self,
+        id: &str,
+        owner: &Owner,
+        verify: impl FnOnce(&mut Workspace) -> Result<PathBuf>,
+    ) -> Result<PathBuf> {
         owner.validate()?;
         let mut inner = self.lock()?;
         let r = inner
@@ -438,17 +477,215 @@ impl Client {
         {
             return Err("Usenet queue: authorized verified file is unavailable".into());
         }
-        let w = inner
+        if inner.active.len() >= inner.settings.max_active || inner.active.contains(id) {
+            return Err("Usenet queue: verification slot is busy".into());
+        }
+        let serial = inner
+            .permits
+            .get(id)
+            .ok_or("Usenet queue: owner permission is absent")?
+            .serial;
+        let mut workspace = inner
             .workspaces
-            .get_mut(id)
+            .remove(id)
             .ok_or("Usenet queue: workspace is unavailable")?;
-        let result = w.verify_ready();
+        inner.active.insert(id.into());
+        drop(inner);
+        let _active = super::Active {
+            inner: self.inner.clone(),
+            id: id.into(),
+        };
+        // Disk hashing never prevents owner renewal/revocation or other bounded work.
+        let result = verify(&mut workspace);
+        let mut inner = self.lock()?;
+        inner.workspaces.insert(id.into(), workspace);
         if result.is_err() {
             inner.poisoned = true;
         }
-        if !inner.owner_allowed(&r) || self.stopped.load(Ordering::Acquire) {
-            return Err("Usenet queue: owner permission expired during verification".into());
+        if inner.poisoned
+            || self.stopped.load(Ordering::Acquire)
+            || inner.data.records.get(id).is_none_or(|current| {
+                current.phase != Phase::Complete || current.owner.as_ref() != Some(owner)
+            })
+            || !inner
+                .permits
+                .get(id)
+                .is_some_and(|p| p.active() && p.serial == serial)
+        {
+            return Err(
+                "Usenet queue: owner permission changed or verification requires recovery".into(),
+            );
         }
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        fs,
+        sync::{atomic::AtomicU64, mpsc},
+        thread,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    struct Directory(PathBuf);
+    impl Directory {
+        fn new() -> Self {
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let root = std::env::temp_dir().join(format!(
+                "mynou-owner-verification-{}-{timestamp}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir(&root).unwrap();
+            Self(root)
+        }
+    }
+    impl Drop for Directory {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+    fn completed() -> (Directory, Client, OwnedTransfer) {
+        let root = Directory::new();
+        let mut cfg = crate::config::default_json();
+        cfg.get_mut("downloads").unwrap().insert("enabled", false);
+        cfg.insert("usenet", json::parse(r#"{"servers":[{"id":"original","host":"127.0.0.1","port":119,"tls":false}],"downloads":{"enabled":true,"state_dir":"queue","max_file_bytes":4096}}"#).unwrap());
+        let settings = crate::config::from_json(&cfg, &root.0).unwrap().usenet;
+        let client = Client::open(&settings, false).unwrap();
+        let owner = Owner {
+            job_id: "original-owner".into(),
+            binding: "e".repeat(64),
+        };
+        let transfer = client.stage_owned(
+            b"<nzb><file subject=\"Original lock fixture\"><groups><group>alt.binaries.fixture</group></groups><segments><segment number=\"1\" bytes=\"1024\">proof@fixture.test</segment></segments></file></nzb>",
+            "original", &settings.servers[0].binding(), 0, &owner,
+        ).unwrap();
+        // Original checked disk fixture, with no NNTP connection or library import.
+        let payload = b"proof";
+        let mut article = b"=ybegin line=128 size=5 name=original.bin\r\n".to_vec();
+        article.extend(payload.iter().map(|b| b.wrapping_add(42)));
+        article.extend_from_slice(
+            format!(
+                "\r\n=yend size=5 crc32={:08x}\r\n",
+                crate::usenet::yenc::crc32(payload)
+            )
+            .as_bytes(),
+        );
+        let part = crate::usenet::yenc::decode(&article).unwrap();
+        {
+            let mut inner = client.lock().unwrap();
+            let mut next = inner.data.clone();
+            let revision = next.next().unwrap();
+            let row = next.records.get_mut(&transfer.id).unwrap();
+            row.attempts[0] = 1;
+            row.phase = Phase::Queued;
+            row.revision = revision;
+            inner.persist(next).unwrap();
+            let workspace = inner.workspaces.get_mut(&transfer.id).unwrap();
+            workspace.accept(&part, "proof@fixture.test").unwrap();
+            workspace.assemble().unwrap();
+            let mut next = inner.data.clone();
+            let revision = next.next().unwrap();
+            let row = next.records.get_mut(&transfer.id).unwrap();
+            row.phase = Phase::Complete;
+            row.revision = revision;
+            inner.verified.insert(transfer.id.clone(), 1);
+            inner.persist(next).unwrap();
+        }
+        (root, client, transfer)
+    }
+    fn verification_gate(revoke: bool) {
+        let (_root, client, transfer) = completed();
+        client
+            .authorize_owned(&transfer.id, &transfer.owner, store::now() + 60)
+            .unwrap();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let worker_client = client.clone();
+        let worker_transfer = transfer.clone();
+        let worker = thread::spawn(move || {
+            worker_client.verified_owned_by(
+                &worker_transfer.id,
+                &worker_transfer.owner,
+                |workspace| {
+                    started_tx
+                        .send(())
+                        .map_err(|_| "Original verification gate closed")?;
+                    release_rx
+                        .recv_timeout(Duration::from_secs(4))
+                        .map_err(|_| "Original verification gate timed out")?;
+                    workspace.verify_ready()
+                },
+            )
+        });
+        started_rx.recv_timeout(Duration::from_secs(4)).unwrap();
+        // Both calls must complete while the worker owns its private workspace.
+        assert_eq!(
+            client
+                .report()
+                .unwrap()
+                .get("active")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert!(
+            client
+                .verified_owned_file(&transfer.id, &transfer.owner)
+                .is_err()
+        );
+        if revoke {
+            client.hold_owned(&transfer.id, &transfer.owner).unwrap();
+        }
+        client
+            .authorize_owned(&transfer.id, &transfer.owner, store::now() + 60)
+            .unwrap();
+        release_tx.send(()).unwrap();
+        let verified = worker.join().unwrap();
+        assert_eq!(verified.is_err(), revoke);
+        assert_eq!(
+            client
+                .report()
+                .unwrap()
+                .get("active")
+                .and_then(Value::as_u64),
+            Some(0)
+        );
+        let ready = client
+            .verified_owned_file(&transfer.id, &transfer.owner)
+            .unwrap();
+        assert_eq!(fs::read(ready).unwrap(), b"proof");
+        assert_eq!(client.retained_owned().unwrap()[0].attempts, 1);
+    }
+    #[test]
+    fn disk_verification_allows_renewal_without_holding_the_queue_mutex() {
+        verification_gate(false);
+    }
+    #[test]
+    fn revocation_and_regrant_fence_a_preceding_disk_verification() {
+        verification_gate(true);
+    }
+    #[test]
+    fn a_future_wall_deadline_cannot_extend_an_elapsed_monotonic_permission() {
+        let permit = Permit {
+            until: u64::MAX,
+            deadline: Instant::now(),
+            serial: 1,
+        };
+        assert!(!permit.active());
+    }
+    #[test]
+    fn a_future_monotonic_deadline_cannot_restore_an_expired_wall_permission() {
+        let permit = Permit {
+            until: 0,
+            deadline: Instant::now() + Duration::from_secs(60),
+            serial: 1,
+        };
+        assert!(!permit.active());
     }
 }
