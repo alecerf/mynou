@@ -171,6 +171,25 @@ impl Inner {
     }
 }
 impl Client {
+    pub(crate) fn private_root(&self) -> Result<PathBuf> {
+        Ok(self.lock()?.settings.state_dir.clone())
+    }
+    pub(crate) fn owned_source(&self, id: &str, owner: &Owner) -> Result<Arc<Vec<u8>>> {
+        let inner = self.lock()?;
+        let row = inner
+            .data
+            .records
+            .get(id)
+            .ok_or("Usenet queue: transfer is absent")?;
+        if inner.poisoned || row.owner.as_ref() != Some(owner) {
+            return Err("Usenet queue: checked owner source is unavailable".into());
+        }
+        inner
+            .sources
+            .get(&row.source)
+            .map(|s| s.bytes.clone())
+            .ok_or_else(|| "Usenet queue: retained source is absent".into())
+    }
     /// Read the checked inventory for joint journal/queue preflight. Never authorizes work.
     pub fn retained_owned(&self) -> Result<Vec<OwnedTransfer>> {
         let inner = self.lock()?;

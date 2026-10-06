@@ -59,18 +59,46 @@ impl Engine {
 
     /// Loads existing storage without creating, repairing, or changing its permissions.
     pub fn open_for_preview(config: Config) -> Result<Arc<Self>> {
+        let queue = Self::prepare_usenet(&config, false, true)?;
         let store = Store::open_read_only(&config.store_dir)?;
-        Self::from_store(config, store, false, true)
+        Self::from_store(config, store, queue, false, true)
     }
 
     fn open_with_downloads(config: Config, start_downloads: bool) -> Result<Arc<Self>> {
-        let store = Store::open(&config.store_dir)?;
-        Self::from_store(config, store, start_downloads, false)
+        let queue = Self::prepare_usenet(&config, start_downloads, false)?;
+        if !config.store_dir.exists()
+            && queue
+                .as_ref()
+                .is_some_and(|c| c.retained_owned().is_ok_and(|r| !r.is_empty()))
+        {
+            return Err("Usenet admission: retained preparation has no library journal".into());
+        }
+        let store = Store::prepare(&config.store_dir)?;
+        Self::from_store(config, store, queue, start_downloads, false)
+    }
+
+    fn prepare_usenet(
+        config: &Config,
+        start_downloads: bool,
+        read_only: bool,
+    ) -> Result<Option<crate::usenet::queue::Client>> {
+        config
+            .usenet
+            .downloads
+            .as_ref()
+            .map(|d| {
+                crate::usenet::queue::Client::prepare(
+                    &config.usenet,
+                    read_only || !start_downloads || !d.enabled,
+                )
+            })
+            .transpose()
     }
 
     fn from_store(
         config: Config,
         mut store: Store,
+        usenet_queue: Option<crate::usenet::queue::Client>,
         start_downloads: bool,
         read_only: bool,
     ) -> Result<Arc<Self>> {
@@ -90,17 +118,10 @@ impl Engine {
             crate::irc::admission::recovered_state(&irc_store.state, &requester_store.state)?;
         let irc_recovered = crate::irc::routing::recovered_state(&irc_admitted, &store)?;
         let irc_recovery_changed = irc_recovered != irc_store.state;
-        let usenet_queue = config
-            .usenet
-            .downloads
-            .as_ref()
-            .map(|d| {
-                crate::usenet::queue::Client::prepare(
-                    &config.usenet,
-                    read_only || !start_downloads || !d.enabled,
-                )
-            })
-            .transpose()?;
+        crate::usenet::admission::validate_storage(&store, usenet_queue.as_ref())?;
+        if !read_only {
+            store.initialize()?;
+        }
         indexer_store.initialize(&config)?;
         requester_store.initialize()?;
         irc_store.initialize()?;

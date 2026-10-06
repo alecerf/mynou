@@ -1,4 +1,6 @@
 //! Native bounded Usenet formats. Metadata inspection never contacts providers.
+pub mod admission;
+mod engine;
 mod management;
 pub use management::{ProbeRequest, QueueControl};
 pub mod newznab;

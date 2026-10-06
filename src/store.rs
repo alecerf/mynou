@@ -24,6 +24,8 @@ const REQUESTER_JOURNAL_MAGIC: &[u8; 8] = b"MYNOUJ04";
 const REQUESTER_SNAPSHOT_MAGIC: &[u8; 8] = b"MYNOUS04";
 const IRC_JOURNAL_MAGIC: &[u8; 8] = b"MYNOUJ05";
 const IRC_SNAPSHOT_MAGIC: &[u8; 8] = b"MYNOUS05";
+const USENET_JOURNAL_MAGIC: &[u8; 8] = b"MYNOUJ06";
+const USENET_SNAPSHOT_MAGIC: &[u8; 8] = b"MYNOUS06";
 mod groups;
 mod irc;
 pub use groups::SharedUpgrade;
@@ -84,6 +86,7 @@ pub struct Job {
     pub shared_upgrade: Option<SharedUpgrade>,
     pub requester: Option<crate::requesters::Provenance>,
     pub irc_origin: Option<crate::irc::Origin>,
+    pub usenet_origin: Option<crate::usenet::admission::Origin>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -111,6 +114,8 @@ pub struct Store {
     next_compaction_at: u64,
     maintenance_error: Option<String>,
     read_only: bool,
+    preparing: bool,
+    recovery_tail: Option<u64>,
 }
 
 pub fn now() -> u64 {
@@ -414,6 +419,12 @@ impl Job {
             |values: &[String]| Value::Array(values.iter().cloned().map(Value::String).collect());
         object([
             (
+                "usenet_origin",
+                self.usenet_origin
+                    .as_ref()
+                    .map_or(Value::Null, crate::usenet::admission::Origin::to_json),
+            ),
+            (
                 "irc_origin",
                 self.irc_origin
                     .as_ref()
@@ -479,6 +490,10 @@ impl Job {
             _ => return Err("invalid job progress".to_owned()),
         };
         let job = Self {
+            usenet_origin: match map.get("usenet_origin") {
+                None | Some(Value::Null) => None,
+                Some(v) => Some(crate::usenet::admission::Origin::from_json(v)?),
+            },
             irc_origin: match map.get("irc_origin") {
                 None | Some(Value::Null) => None,
                 Some(v) => Some(crate::irc::Origin::from_json(v)?),
@@ -537,6 +552,9 @@ impl Job {
             return Err("Invalid requester media identity or captured provenance".into());
         }
         if let Some(origin) = &job.irc_origin {
+            origin.validate_job(&job)?;
+        }
+        if let Some(origin) = &job.usenet_origin {
             origin.validate_job(&job)?;
         }
         if job.shared_upgrade.is_some()
@@ -789,6 +807,8 @@ impl Store {
                 next_compaction_at: COMPACTION_BYTES,
                 maintenance_error: None,
                 read_only: false,
+                preparing: false,
+                recovery_tail: None,
             };
             store.load_snapshot()?;
             store.replay()?;
@@ -799,6 +819,49 @@ impl Store {
     /// Loads existing durable state without creating files, changing permissions,
     /// or repairing an interrupted journal. The lock excludes concurrent writers.
     pub fn open_read_only(directory: &Path) -> Result<Self> {
+        Self::read_existing(directory, false)
+    }
+
+    pub(crate) fn prepare(directory: &Path) -> Result<Self> {
+        reject_symlinks(directory)?;
+        match fs::symlink_metadata(directory) {
+            Ok(_) => Self::read_existing(directory, true),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self::open(directory),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    pub(crate) fn initialize(&mut self) -> Result<()> {
+        if !self.preparing {
+            return Ok(());
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&self.directory, fs::Permissions::from_mode(0o700))
+                .map_err(|e| e.to_string())?;
+            self._lock
+                .set_permissions(fs::Permissions::from_mode(0o600))
+                .map_err(|e| e.to_string())?;
+        }
+        self.journal = secure_file(&self.directory.join("journal.bin"))?;
+        if let Some(tail) = self.recovery_tail {
+            self.journal
+                .set_len(tail)
+                .and_then(|_| self.journal.sync_all())
+                .map_err(|e| e.to_string())?;
+        }
+        self.journal
+            .seek(SeekFrom::End(0))
+            .map_err(|e| e.to_string())?;
+        sync_directory(&self.directory)?;
+        self.read_only = false;
+        self.preparing = false;
+        self.recovery_tail = None;
+        Ok(())
+    }
+
+    fn read_existing(directory: &Path, preparing: bool) -> Result<Self> {
         #[cfg(not(unix))]
         return Err("durable storage currently requires a Unix system".to_owned());
 
@@ -838,6 +901,8 @@ impl Store {
                 next_compaction_at: COMPACTION_BYTES,
                 maintenance_error: None,
                 read_only: true,
+                preparing,
+                recovery_tail: None,
             };
             store.load_snapshot()?;
             store.replay()?;
@@ -1031,6 +1096,7 @@ impl Store {
             shared_upgrade: None,
             requester: parent.requester.clone(),
             irc_origin: None,
+            usenet_origin: None,
         };
         self.commit(job.clone(), "library upgrade recorded")?;
         Ok(job)
@@ -1252,6 +1318,7 @@ impl Store {
                 shared_upgrade: None,
                 requester: None,
                 irc_origin: None,
+                usenet_origin: None,
             });
         }
         self.validate_shared_batch(&jobs)?;
@@ -1475,6 +1542,7 @@ impl Store {
             shared_upgrade: None,
             requester,
             irc_origin: None,
+            usenet_origin: None,
         };
         self.commit(job.clone(), "request recorded")?;
         Ok(job)
@@ -1485,6 +1553,7 @@ impl Store {
             .jobs
             .get(&job.id)
             .ok_or_else(|| "unknown job".to_owned())?;
+        crate::usenet::admission::validate_transition(current, &job)?;
         if current.key != job.key
             || current.request != job.request
             || current.created_at != job.created_at
@@ -1695,6 +1764,7 @@ impl Store {
             && job.request.source_path.is_none()
             && job.request.source_url.is_none()
             && job.irc_origin.is_none()
+            && job.usenet_origin.is_none()
         {
             // A fresh automatic search must not inherit the previous release's
             // URL or baseline, even if the process stops immediately afterward.
@@ -1757,6 +1827,9 @@ impl Store {
 
     fn validate_lineage(&self, job: &Job) -> Result<()> {
         self.check_irc_ownership(job)?;
+        if let Some(origin) = &job.usenet_origin {
+            origin.validate_job(job)?;
+        }
         if let Some(origin) = &job.irc_origin {
             origin.validate_job(job)?;
         }
@@ -1826,6 +1899,7 @@ impl Store {
             return Err("An unrelated request cannot replace shared-file ownership".into());
         }
         if let Some(current) = self.jobs.get(&job.id) {
+            crate::usenet::admission::validate_transition(current, job)?;
             if current.irc_origin != job.irc_origin
                 && !(current.irc_origin.is_none()
                     && job.irc_origin.is_some()
@@ -1912,8 +1986,8 @@ impl Store {
                 return Err("ready import provenance is immutable".to_owned());
             }
         } else {
-            if job.irc_origin.is_some() {
-                return Err("IRC provenance requires a previously admitted job".into());
+            if job.irc_origin.is_some() || job.usenet_origin.is_some() {
+                return Err("Acquisition provenance requires a previously admitted job".into());
             }
             if self.by_key.contains_key(&job.key) {
                 return Err("duplicate request identity".to_owned());
@@ -2050,7 +2124,9 @@ impl Store {
             return Err("transaction too large".to_owned());
         }
         let mut frame = Vec::with_capacity(116 + payload.len());
-        frame.extend_from_slice(if jobs.iter().any(|j| j.irc_origin.is_some()) {
+        frame.extend_from_slice(if jobs.iter().any(|j| j.usenet_origin.is_some()) {
+            USENET_JOURNAL_MAGIC
+        } else if jobs.iter().any(|j| j.irc_origin.is_some()) {
             IRC_JOURNAL_MAGIC
         } else if jobs.iter().any(|j| j.requester.is_some()) {
             REQUESTER_JOURNAL_MAGIC
@@ -2140,7 +2216,9 @@ impl Store {
             return Err("snapshot too large".to_owned());
         }
         let mut bytes = Vec::with_capacity(payload.len() + 48);
-        bytes.extend_from_slice(if self.jobs.values().any(|j| j.irc_origin.is_some()) {
+        bytes.extend_from_slice(if self.jobs.values().any(|j| j.usenet_origin.is_some()) {
+            USENET_SNAPSHOT_MAGIC
+        } else if self.jobs.values().any(|j| j.irc_origin.is_some()) {
             IRC_SNAPSHOT_MAGIC
         } else if self.jobs.values().any(|j| j.requester.is_some()) {
             REQUESTER_SNAPSHOT_MAGIC
@@ -2224,6 +2302,7 @@ impl Store {
             && &bytes[..8] != GROUP_SNAPSHOT_MAGIC
             && &bytes[..8] != REQUESTER_SNAPSHOT_MAGIC
             && &bytes[..8] != IRC_SNAPSHOT_MAGIC
+            && &bytes[..8] != USENET_SNAPSHOT_MAGIC
         {
             return Err("invalid snapshot format".to_owned());
         }
@@ -2253,19 +2332,27 @@ impl Store {
         let mut keys = BTreeMap::new();
         for value in job_values {
             let job = Job::from_json(value)?;
-            if job.irc_origin.is_some() && &bytes[..8] != IRC_SNAPSHOT_MAGIC {
+            if job.usenet_origin.is_some() && &bytes[..8] != USENET_SNAPSHOT_MAGIC {
+                return Err("Usenet provenance requires snapshot format 6".into());
+            }
+            if job.irc_origin.is_some()
+                && &bytes[..8] != IRC_SNAPSHOT_MAGIC
+                && &bytes[..8] != USENET_SNAPSHOT_MAGIC
+            {
                 return Err("IRC provenance requires snapshot format 5".into());
             }
             if job.requester.is_some()
                 && &bytes[..8] != REQUESTER_SNAPSHOT_MAGIC
                 && &bytes[..8] != IRC_SNAPSHOT_MAGIC
+                && &bytes[..8] != USENET_SNAPSHOT_MAGIC
             {
                 return Err("Requester provenance requires snapshot format 4".into());
             }
             if group_format(&job)
                 && (&bytes[..8] != GROUP_SNAPSHOT_MAGIC
                     && &bytes[..8] != REQUESTER_SNAPSHOT_MAGIC
-                    && &bytes[..8] != IRC_SNAPSHOT_MAGIC)
+                    && &bytes[..8] != IRC_SNAPSHOT_MAGIC
+                    && &bytes[..8] != USENET_SNAPSHOT_MAGIC)
             {
                 return Err("Shared-group upgrades require snapshot format 3".into());
             }
@@ -2335,6 +2422,7 @@ impl Store {
                 && &header[..8] != GROUP_JOURNAL_MAGIC
                 && &header[..8] != REQUESTER_JOURNAL_MAGIC
                 && &header[..8] != IRC_JOURNAL_MAGIC
+                && &header[..8] != USENET_JOURNAL_MAGIC
             {
                 return Err(format!("corrupt journal at byte {offset}"));
             }
@@ -2398,12 +2486,19 @@ impl Store {
                 .iter()
                 .all(|key| !job_map.contains_key(*key));
                 let job = Job::from_json(job_value)?;
-                if job.irc_origin.is_some() && &header[..8] != IRC_JOURNAL_MAGIC {
+                if job.usenet_origin.is_some() && &header[..8] != USENET_JOURNAL_MAGIC {
+                    return Err("Usenet provenance requires journal format 6".into());
+                }
+                if job.irc_origin.is_some()
+                    && &header[..8] != IRC_JOURNAL_MAGIC
+                    && &header[..8] != USENET_JOURNAL_MAGIC
+                {
                     return Err("IRC provenance requires journal format 5".into());
                 }
                 if job.requester.is_some()
                     && &header[..8] != REQUESTER_JOURNAL_MAGIC
                     && &header[..8] != IRC_JOURNAL_MAGIC
+                    && &header[..8] != USENET_JOURNAL_MAGIC
                 {
                     return Err("Requester provenance requires journal format 4".into());
                 }
@@ -2411,6 +2506,7 @@ impl Store {
                     && (&header[..8] != GROUP_JOURNAL_MAGIC
                         && &header[..8] != REQUESTER_JOURNAL_MAGIC)
                     && &header[..8] != IRC_JOURNAL_MAGIC
+                    && &header[..8] != USENET_JOURNAL_MAGIC
                 {
                     return Err("Shared-group upgrades require journal format 3".into());
                 }
@@ -2432,7 +2528,8 @@ impl Store {
                 if let Some(action) = map.get("group_action") {
                     if (&header[..8] != GROUP_JOURNAL_MAGIC
                         && &header[..8] != REQUESTER_JOURNAL_MAGIC
-                        && &header[..8] != IRC_JOURNAL_MAGIC)
+                        && &header[..8] != IRC_JOURNAL_MAGIC
+                        && &header[..8] != USENET_JOURNAL_MAGIC)
                         || map.contains_key("shared_owners")
                     {
                         return Err("Group action requires journal format 3".into());
@@ -2457,6 +2554,7 @@ impl Store {
                     if &header[..8] != SHARED_JOURNAL_MAGIC
                         && &header[..8] != REQUESTER_JOURNAL_MAGIC
                         && &header[..8] != IRC_JOURNAL_MAGIC
+                        && &header[..8] != USENET_JOURNAL_MAGIC
                     {
                         return Err("Shared ownership requires journal format 2".into());
                     }
@@ -2488,6 +2586,7 @@ impl Store {
                 if jobs.iter().any(|j| j.requester.is_some())
                     && &header[..8] != REQUESTER_JOURNAL_MAGIC
                     && &header[..8] != IRC_JOURNAL_MAGIC
+                    && &header[..8] != USENET_JOURNAL_MAGIC
                 {
                     return Err("Requester provenance requires journal format 4".into());
                 }
@@ -2520,6 +2619,10 @@ impl Store {
     }
 
     fn truncate_tail(&mut self, length: u64) -> Result<()> {
+        if self.preparing {
+            self.recovery_tail = Some(length);
+            return Ok(());
+        }
         if self.read_only {
             return Err("storage recovery required: incomplete journal tail; open storage for writing to repair it".to_owned());
         }
