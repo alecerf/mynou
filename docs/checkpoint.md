@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.22.5
+# Project checkpoint — Mynou 0.22.6
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -12,16 +12,28 @@ alone creates release tags and publishes artifacts from validated commits.
 
 ## Implemented scope
 
-The active 0.22.5 source adds held native Usenet preparations with immutable
-owner/source/provider/limit bindings. Private workspace proofs bind the owner.
-Trusted library callers grant at most sixty seconds of nonpersistent permission
-after checking current admission. Restart needs fresh authorization; expiry,
-revocation and late results preserve receipts and spent attempts. Raw queue
-controls cannot adopt or resume owned files, and owned output needs fresh
-authorization and complete verification. This is an admission primitive: automatic
-canonical/requester library jobs are not connected in this increment.
+The active 0.22.6 source connects typed Newznab acquisitions to approved canonical
+movie and episode jobs. The journal captures the selection/profile, exact NZB
+hash and preparation limits before held staging; only a matching current lease
+and approved demand may grant queue permission. Permissions expire at the lease
+deadline or thirty seconds, and polling/heartbeats renew them without resetting
+article attempts. Cancellation/removal revoke rights and fence late results.
+Joint journal/queue/source/owner checks precede existing-journal tail repair,
+initializer writes and workers. A checked held crash window can be linked without
+refetching the document. Fully reverified single-file media must satisfy filename,
+year/numbering, captured quality and actual size policy before ordinary analysis
+and atomic import. Plex must confirm the exact imported path. Explicit retry
+retains source identity and budgets. Public projections omit private bindings.
 This source requires its own complete Actions validation and publication.
-Ordinary Engine admission follows immediately, before cross-seeding/bulk.
+Archive/PAR2, pack and Usenet-upgrade support remain separate increments.
+
+CI published v0.22.5 from `a3c326f9a8234e19077dea83d2804ef0cd611773` in
+[run 37470439302](https://github.com/alecerf/mynou/actions/runs/37470439302).
+All five jobs passed: 712 Rust tests across 60 harnesses, none failed or ignored,
+and four scheduler checks. Test execution took 77.994 seconds with two harness
+processes and two threads each. Seven bot-owned assets were published at
+13:27:07 UTC on October 6, 2026. The tag matched the validated source and the
+prior v0.22.4 tag and asset IDs, sizes and digests remained unchanged.
 
 CI published v0.22.4 from `93711ac221c97edd0392d8e262e3b3961553561a` in
 [run 37465017605](https://github.com/alecerf/mynou/actions/runs/37465017605).

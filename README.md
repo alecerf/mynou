@@ -1,4 +1,4 @@
-# Mynou 0.22.5 — Rust, standard library only
+# Mynou 0.22.6 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -101,7 +101,7 @@ Checked source policy and guarded controls retain pauses through restart.
 inspection, original yEnc decoding and mandatory part/whole-file CRC checks.
 Multipart assembly rejects missing, overlapping or conflicting ranges. This
 format scope passed all five jobs with 639 Rust tests and seven published assets.
-The active 0.22.1 scope adds original bounded NNTP/TLS authentication, exact article
+The 0.22.1 scope adds original bounded NNTP/TLS authentication, exact article
 body transport and reviewed non-acquiring probes through CLI/API/browser paths.
 v0.22.1 passed all five jobs with 652 Rust tests and seven published assets.
 v0.22.2 passed all five jobs with 663 Rust tests across 57 harnesses and seven
@@ -109,10 +109,16 @@ published assets. Checked private receipts support recoverable streamed output.
 v0.22.3 passed all five jobs with 680 Rust tests across 58 harnesses and seven
 published assets. Its durable native staging queue retains verified receipts and
 article attempt budgets. v0.22.4 passed all five jobs with 693 Rust tests across
-59 harnesses and seven published assets. Typed Newznab discovery and bound
-document transport precede the active 0.22.5 held-owner increment, whose exact CI
-is pending. Automatic library admission follows. See [Newznab configuration](docs/usenet.md#native-newznab-discovery-in-0224) and
-[held ownership](docs/usenet.md#held-library-ownership-in-0225).
+59 harnesses and seven published assets. v0.22.5 passed all five jobs with 712
+Rust tests across 60 harnesses and seven published assets. Held owner bindings,
+nonpersistent permission and revocation protect private verified output.
+The active 0.22.6 source connects Newznab and native Usenet to approved canonical
+movie/episode jobs, captured quality/destinations, identity and size checks,
+atomic imports and exact Plex confirmation. Its own CI is pending. Only
+single-file direct-media NZBs are supported in this increment; archive/PAR2,
+packs and Usenet upgrades remain later stages. See [Newznab configuration](docs/usenet.md#native-newznab-discovery-in-0224),
+[held ownership](docs/usenet.md#held-library-ownership-in-0225) and
+[library admission](docs/usenet.md#native-library-admission-in-0226).
 
 ## Try it
 
@@ -146,8 +152,8 @@ from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, o
 build the image from the source archive:
 
 ```sh
-docker load -i mynou-v0.22.5-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.22.5 .
+docker load -i mynou-v0.22.6-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.22.6 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d

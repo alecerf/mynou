@@ -6,8 +6,9 @@ Native NNTP passed complete v0.22.1 CI with 652 Rust tests and seven assets.
 The disk workspace and durable queue increments passed complete v0.22.2 and
 v0.22.3 CI with 663 and 680 Rust tests respectively. The v0.22.4 source
 added typed Newznab discovery and bound document reads, passing all five jobs
-with 693 Rust tests and seven CI assets. Held ownership is the active 0.22.5
-increment; automatic library admission follows. All code uses Rust std only. No external
+with 693 Rust tests and seven CI assets. Held ownership passed v0.22.5 CI with 712 Rust tests across 60 harnesses and seven
+published assets. Native library admission is the active 0.22.6 increment, pending
+its own complete CI. All code uses Rust std only. No external
 decoder, downloader, archive tool or repair helper is invoked.
 
 ## NZB inspection
@@ -346,8 +347,8 @@ Public reports exclude URLs, credential names/values and raw document identities
 `queue::Owner` captures a bounded job ID and SHA-256 binding supplied by a trusted
 library caller. The caller is responsible for deriving that binding from checked
 admission/provenance and verifying current approval before granting permission.
-The identity is not independently proof of canonical admission. The current
-Engine does not yet create or authorize these records automatically.
+The identity is not independently proof of canonical admission. The 0.22.5 Engine did not create or authorize these records automatically;
+the 0.22.6 admission path below connects this interface.
 
 `Client::stage_owned` requires that owner, exact original NZB bytes, a selected
 file index, provider ID and matching immutable provider binding. Source bytes,
@@ -389,5 +390,49 @@ authorization endpoint.
 The original fixtures cover held constructor recovery, restart without automatic
 rights, receipt reuse, expiry/renewal, active revocation, exhausted budgets,
 raw/owned conflicts, metadata/format downgrade and renamed/corrupt storage.
-This active increment requires its own complete CI. Ordinary Engine admission
-follows immediately; it must perform joint ownership validation before workers.
+The 0.22.5 increment passed complete CI. The following native library path
+performs joint ownership validation before recovery writes and workers.
+
+
+## Native library admission in 0.22.6
+
+Enable `usenet.downloads.enabled` and a Newznab source as shown above. Ordinary
+movie and episode requests can then use Mynou's native NNTP queue, even with
+torrent downloads disabled. Requester approval, quotas and captured destinations
+precede selection. A search preview remains nonacquiring and reports whether the
+native library path is enabled; metadata acceptance does not prove payload content.
+
+The library journal captures typed selection, original quality profile and a
+checked owner binding before reading the NZB. The exact document hash and file/
+attempt limits are durable before held preparation. Only a matching, approved
+current job lease authorizes article work. Grants expire at the earlier lease
+deadline or thirty seconds and remain subject to the queue's monotonic cap.
+Polling and heartbeats renew permission. Cancellation and requester removal
+revoke it; late responses cannot publish receipts. Explicit job/requester retry
+retains source, document, selected file and every spent article attempt. Native
+Usenet failures wait for explicit retry; an exhausted queue cannot be reset by
+raising configuration limits. Raw transfer controls remain unavailable to owners.
+
+Startup loads all known ownership proofs before initializer changes, existing-
+journal permission changes, interrupted-tail repair or workers. It rejects
+orphans, rebound/absent transfers, mismatched document/provider/limits and
+files outside their private workspace without repairing them. A held zero-attempt
+preparation whose matching document intent is already durable can be joined after
+restart without fetching the NZB again. Reopening restores no permissions.
+
+Only one direct-media file per NZB is supported here. Complete part/output
+integrity is reverified outside queue/journal locks. The decoded filename must
+match the requested title, year and selected episode numbering, satisfy the frozen
+quality profile and have a supported video container. Actual size must satisfy
+the bound Newznab policy. Ordinary native media analysis and cancellable atomic
+import follow these checks; Plex must confirm the exact imported path. Public
+job projections contain aliases/progress identities, with no owner/provider
+bindings, article IDs or NZB contents. Library job cancel/retry controls own these
+transfers in the CLI, authenticated API and browser.
+
+RAR/ZIP extraction, PAR2 repair, multi-file packs and Usenet upgrade acquisitions
+are not enabled in this increment. The legacy torrent-oriented search/upgrade
+selector continues to reject a selected Usenet candidate. It cannot send an NZB
+to the torrent client. Changed source/provider/profile bindings withhold new
+authorization; no fallback to another provider is implicit. All new fixtures use
+original local media and loopback Newznab, NNTP and Plex. This source awaits CI.

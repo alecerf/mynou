@@ -1081,3 +1081,29 @@ was performed.
 | mynou-v0.22.4-linux-x86_64.sha256 | 615495827 | 93 | 8b66aec8f00250b247e0030c97232495da0002f8fb6b65a5f622d33156de6722 |
 | mynou-v0.22.4-source.zip | 615495859 | 8222360 | 480e2f3d321b58170969e11f01385cc4995a1e517e74f2640ff9f34f5da35319 |
 | mynou-v0.22.4-source.zip.sha256 | 615495873 | 91 | 4084f0d6c31df974703d497b68a2763fbc62d76ffbbbe6735cea35661f8ed527 |
+
+
+## Recorded 0.22.5 CI evidence
+
+CI published v0.22.5 from `a3c326f9a8234e19077dea83d2804ef0cd611773` in
+[run 37470439302](https://github.com/alecerf/mynou/actions/runs/37470439302).
+All five jobs passed: 712 Rust tests across 60 harnesses, none failed or ignored,
+and four scheduler checks. Test execution took 77.994 seconds with two harness
+processes and two threads each. Seven bot-owned assets were published at
+13:27:07 UTC on October 6, 2026. The tag matched the validated source and the
+prior v0.22.4 tag and asset IDs, sizes and digests remained unchanged.
+
+Successful jobs: Build x86_64-unknown-linux-gnu 112292209155, validate 112292209487, Build x86_64-unknown-linux-musl 112292209581, package 112293371238, release 112293672030.
+Release 404740551 and all seven assets belong to github-actions[bot].
+CI caught a missing browser helper import; it was fixed without changing any gate.
+No local validation or manual publication was performed.
+
+| Asset | ID | Bytes | SHA-256 |
+| --- | --- | ---: | --- |
+| mynou-v0.22.5-linux-amd64-image.tar.gz.sha256 | 615596305 | 105 | f6ea368ae74f0ff54ec6a65386dbeab8117ddf204090854b393a01f2ba1c86aa |
+| mynou-v0.22.5-linux-amd64-image.tar.gz | 615596307 | 2198950 | 335e1b60e1a0aec0b3e39613220f70b752690119dfe46879a4e4b01ce72df855 |
+| mynou-v0.22.5-linux-x86_64 | 615596311 | 4535136 | cbc1c4eacf62e5464dc5321a5187e1f8bd4a39a5a339d8226ecf116c74c9d770 |
+| mynou-v0.22.5-linux-x86_64.sha256 | 615596312 | 93 | e7fe3a7ed35e74638e3edd1da72f98f56da7b75db3a081ea863f32acaa7ceef6 |
+| SHA256SUMS | 615596317 | 289 | a3d47d99ca84373ac0c051ad9dc39320cdd139de7eb93550ab8e8a93e79a4a32 |
+| mynou-v0.22.5-source.zip | 615596344 | 8299235 | 06e95eaa8cc330b9a95bc51ffcdc67d51ea12a2b27b045b9426aed5f0032604c |
+| mynou-v0.22.5-source.zip.sha256 | 615596361 | 91 | bc5d1fb214c445241477cb891d1da3d77e3195615e4998852f7ec053028f8a29 |

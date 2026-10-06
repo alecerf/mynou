@@ -325,22 +325,25 @@ The original v0.22.0 NZB/yEnc implementation passed complete CI.
 NZB input is bounded UTF-8 XML without DTD expansion, at most 1,024 files and
 32,768 articles. Native yEnc requires part CRCs, exact ranges and a final complete
 CRC; decoded parts are at most 16 MiB and initial in-memory assembly at most
-64 MiB. CRC is accidental-corruption detection, not media identity. NNTP,
-Newznab, persistent acquisition/recovery, archives and PAR2 repair remain later
-increments. See [native Usenet stages](usenet.md) for the explicit contract.
+64 MiB. CRC is accidental-corruption detection, not media identity. Later validated increments provide NNTP, Newznab and persistent acquisition.
+Archive extraction and PAR2 repair still require later increments. See [native Usenet stages](usenet.md) for the explicit contract.
 
 The original v0.22.1 NNTP/TLS stage passed complete CI. It uses
 verified implicit TLS, strict AUTHINFO/BODY identities, bounded CRLF/dot bodies,
 absolute budgets and one active operation per provider. Protected guarded probes
 never request articles or admit work. Health/attempt counters are ephemeral;
-durable acquisition, Newznab, archives and repair remain subsequent increments.
+Durable acquisition and Newznab have subsequent validated releases; archives
+and repair remain separate increments.
 
 The v0.22.2 workspace stage passed all five jobs. Checked private receipts and
 streamed assembly/recovery retain exact source/provider/size and output proofs.
 The v0.22.3 queue passed complete CI with 680 Rust tests. It adds reviewed private
 staging, retained attempt budgets and at most two workers. Raw staging never
 admits a library job. The v0.22.4 typed Newznab discovery/document transport scope
-passed complete CI. The active v0.22.5 held-owner interface needs its own exact CI;
-automatic library admission, archives and repair remain later increments.
+passed complete CI. The v0.22.5 held-owner interface passed all five jobs with 712 Rust tests.
+The active 0.22.6 native canonical/requester library path needs its own exact CI.
+It supports one direct-media file per NZB; archives/PAR2, packs and Usenet upgrades
+remain subsequent increments. Existing-journal recovery is deferred until joint
+ownership validation, while valid held preparations can be linked after restart.
 Metadata acceptance never proves downloaded content. Owner digests supplied to
 the library interface do not independently establish admission or approval.

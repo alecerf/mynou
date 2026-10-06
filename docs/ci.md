@@ -197,3 +197,10 @@ This supports source edits when the execution workspace is unavailable. It does
 not validate source or publish a release. A completed scope still reaches trunk
 and passes the original graph, formatting, Clippy, scheduler, all-target test,
 build, packaging and publication gates for its exact source commit.
+
+
+The v0.22.5 run completed all 60 harnesses with 712 passing Rust tests in
+77.994 seconds. The held-owner harness took 2.017 seconds; these actual timings
+now guide scheduling. The expanded native Newznab/library harness retains its
+preceding observed weight until its own completed run provides a measurement.
+No new performance estimate replaces observed history.
