@@ -2,7 +2,7 @@
 use crate::Result;
 use std::collections::BTreeMap;
 const MAX_ITEMS: usize = 100_000;
-const MAX_XML: usize = 8 * 1024 * 1024;
+pub(crate) const MAX_XML: usize = 8 * 1024 * 1024;
 
 #[derive(Debug)]
 pub(crate) struct Element {
@@ -16,7 +16,7 @@ impl Element {
     pub(crate) fn local(&self) -> &str {
         self.name.rsplit(':').next().unwrap_or(&self.name)
     }
-    fn child(&self, name: &str) -> Option<&Self> {
+    pub(crate) fn child(&self, name: &str) -> Option<&Self> {
         self.children.iter().find(|child| child.local() == name)
     }
 }

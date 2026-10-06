@@ -13,7 +13,7 @@ use crate::json::{self, Value};
 use crate::net::{self, HttpClient};
 use crate::selection::{Assessment, tokens};
 use crate::store::{RecordedRelease, Request};
-use crate::xml::parse_xml;
+use crate::xml::{MAX_XML, parse_xml};
 
 const MAX_ITEMS: usize = 100_000;
 const MAX_PAGES: usize = 1_000;
