@@ -5,14 +5,23 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current implementation: 0.20.6, awaiting CI
+## Current implementation: 0.20.7, awaiting CI
 
-Reviewed request rules target an explicit requester. Fresh catalog/account
-confirmation, full-scope guards, explicit origins, checked intent recovery and
-ordinary requester admission retain approval/quotas and frozen ownership.
-Original local fixtures cover protected controls, races, numbering, crash states
-and native import. Complete CI/publication is required for this source. Durable
-notification delivery follows next, then all 0.21–0.23 stages.
+Durable requester/IRC outcomes precede opt-in native HTTP notification delivery.
+Route bindings, stable IDs, saved leases and bounded attempts survive restart;
+CLI/API/browser management keeps delivery separate from acquisition. The source
+and original local scenarios await their exact complete CI/publication. Native
+indexer authentication/session/configuration follows next, then 0.22–0.23.
+
+## Preceding published stage: 0.20.6
+
+Reviewed request rules confirm the selected Plex identity and fresh canonical
+catalog facts before admitting persistent explicit requester origins. Ordinary
+approval/quotas, captured routes, numbering and checked intent recovery remain
+mandatory. Run 37427693256 passed all five jobs for
+0b7d9c67a666b6929c626a930450f3dccae13d41: 585 tests across 52 harnesses and four
+scheduler checks. CI published seven bot assets at 07:10:02 UTC on October 6,
+2026; the preceding v0.20.5 tag/assets remained unchanged.
 
 ## Preceding published stage: 0.20.5
 

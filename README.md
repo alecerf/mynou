@@ -1,4 +1,4 @@
-# Mynou 0.20.6 — Rust, standard library only
+# Mynou 0.20.7 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -76,7 +76,16 @@ fresh catalog and requester identities, then retain canonical demand under the
 existing approval, quota, sharing and captured-route controls. Explicit origins
 survive empty watchlist polls; checked intent recovery prevents replay. CLI, API
 and browser controls require the reviewed guard. The 0.20.6 implementation and
-its original local-service fixtures await their own complete CI/publication.
+its original local-service fixtures passed all five jobs in run 37427693256:
+585 Rust tests across 52 harnesses and four scheduler checks. CI published
+[v0.20.6](https://github.com/alecerf/mynou/releases/tag/v0.20.6) from the exact
+validated source with seven assets; the prior release remained unchanged.
+
+[Durable notification delivery](docs/notifications.md) now records requester and
+IRC outcomes in their owning snapshots before native HTTP delivery. Opt-in routes
+retain immutable identities, stable event IDs, bounded attempts and redacted
+CLI/API/browser controls. Delivery is at-least-once; receiver deduplication is
+required. The 0.20.7 implementation awaits its own complete CI/publication.
 
 ## Try it
 
@@ -110,8 +119,8 @@ from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, o
 build the image from the source archive:
 
 ```sh
-docker load -i mynou-v0.20.6-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.20.6 .
+docker load -i mynou-v0.20.7-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.20.7 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d

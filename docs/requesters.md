@@ -194,7 +194,9 @@ bounded inbox, with up to 1,000 retained records globally and 100 recent outcome
 on an account page. Repeated polls do not repeat the same outcome. `decisions`
 omits routine reservation/active transitions; `all` includes them. Credential
 values and endpoint URLs are absent from reports and recorded outcomes. External
-notification delivery and a requester self-service login are later integrations.
+[notification delivery](notifications.md) is implemented in 0.20.7; requester
+self-service login remains later work. Durable route events respect the same
+preferences and retain their original account scope.
 
 ## Reviewed IRC origins in 0.20.6
 

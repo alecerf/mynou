@@ -238,7 +238,8 @@ pages and native forms, with page refreshes rather than live streaming. It has
 bounded pagination and bulk job/library/transfer/series controls. It does not edit
 configuration or adopt a complete existing Plex library. Plex requester policies
 provide reviewed approvals, quotas and routing with recorded notification outcomes;
-requester self-service and external notification transports remain later work.
+requester self-service remains later work. Explicit native HTTP notification routes
+are implemented in 0.20.7 and await their own complete CI; see notifications.md.
 Indexer integrations support RSS/JSON/Torznab endpoints; a general tracker adapter
 catalog, interactive logins and Usenet remain later work. Opt-in IRC reception
 supports an explicit strict JSON envelope and review rules, with eight sources,
@@ -256,7 +257,7 @@ and credentials; remote use requires verified TLS, and failure has no
 unauthenticated fallback. Only PLAIN is supported; credentials retain their
 UTF-8 bytes without SASLprep or Unicode normalization. IRC pack/upgrade actions
 and broader tracker text adapters,
-notification delivery, cross-seeding and broader bulk automation remain later work.
+broader notification transports, cross-seeding and broader bulk automation remain later work.
 See [IRC behavior](irc.md) for protocol, deadlines and recovery. Complete
 validation/publication passed for v0.20.3; later commits require their own complete CI.
 The 0.20.4 NickServ increment requires exact configured sender/account notices
@@ -271,7 +272,13 @@ network budget; synchronous DNS can exceed it and late results are rejected.
 Title-only, missing/future catalog facts, ambiguous retained series and mismatched
 source labels stay unresolved. Aborted admission intents are terminal and never
 replayed. New origin semantics use requester snapshot format 2 and IRC format 3;
-old binaries cannot safely read those files. This increment awaits complete CI.
+old binaries cannot safely read those files. Complete v0.20.6 CI/publication passed
+with 585 Rust tests. Notification route/event semantics require requester format 3
+and IRC format 4. Delivery is at-least-once, limited to 32 routes and 1,024 events
+per store, eight attempts and eight events per dispatch. Only terminal events can
+be pruned; full live capacity rejects a new owning outcome rather than dropping
+work. No redirect or unbounded retry is permitted. HTTP calls have a five-second
+budget; synchronous DNS can exceed it. Receiver deduplication is required.
 
 The [roadmap](roadmap.md) separates these capabilities into future releases.
 

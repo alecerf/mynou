@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.20.6
+# Project checkpoint — Mynou 0.20.7
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -12,17 +12,19 @@ alone creates release tags and publishes artifacts from validated commits.
 
 ## Implemented scope
 
-The active 0.20.6 increment adds guarded request actions for an explicit
-configured requester. Fresh Plex identity and catalog facts must agree before
-persistent locks. Apply binds the original claim, full demand/jobs scope,
-numbering, captured policy and UTC day. A checked intent precedes the explicit
-requester origin; ordinary admission retains approvals, quotas and compatible
-sharing. Empty watchlists preserve those origins, and tombstones cannot revive.
-Checked recovery commits a durable origin or aborts an uncommitted intent without
-replay before native workers start. Protected CLI/API/browser controls expose
-stable aliases and generic errors. Original local catalog/account/native fixtures
-cover races, quota/approval gates, retained numbering, recovery, corruption,
-protected sessions and native import. This source awaits its own complete CI.
+The active 0.20.7 increment adds atomic requester/IRC outcome events and opt-in
+native HTTP notification delivery. Immutable route bindings, stable IDs, bounded
+attempts, saved leases and fixed errors retain delivery through restarts. Guarded
+CLI/API/browser controls preserve acquisition state. Local protocol, persistence,
+preference and protected-control scenarios await their exact complete CI run.
+
+CI published v0.20.6 from 0b7d9c67a666b6929c626a930450f3dccae13d41 in run
+37427693256. All five jobs passed with 585 Rust tests across 52 harnesses and four
+scheduler checks. Execution took 64.921 seconds at two processes/two threads.
+Seven bot assets were published at 07:10:02 UTC on October 6, 2026; the exact tag
+matched, and v0.20.5's tag and asset IDs/sizes/digests stayed unchanged. Its reviewed
+IRC request scope retains fresh account/catalog confirmation, approvals, quotas,
+numbering, explicit origins and checked intent recovery.
 
 CI published the preceding 0.20.5 requester-selector scope from
 861f8ae2f0274f82a7351fe1a5ddb890b8391f01 in run 37423924045. All five jobs passed:

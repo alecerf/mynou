@@ -11,12 +11,17 @@ revision.
 
 ## Automated checks and releases
 
-The active 0.20.6 request-admission scenarios cover strict account/source scope,
-fresh catalog and Plex identities, pure previews, approvals and quotas, sharing,
-operator conflicts, retained numbering, concurrent/stale/racing reviews, checked
-crash recovery, cross-store corruption, format downgrades, protected CLI/API/
-browser sessions and a native verified import. These require their own complete
-Actions run and CI publication.
+The active 0.20.7 scenarios cover strict notification routes, atomic outcome
+creation, preferences, duplicate suppression, original native HTTP delivery,
+credential isolation, redirect refusal, persistent retries and expired leases,
+route disable/removal, immutable bindings, old magic/corruption, live capacity,
+terminal pruning, protected controls, offline reads and background delivery.
+These require their own complete Actions run and CI publication.
+
+The 0.20.6 request-admission scenarios passed the exact complete run recorded
+below with 585 Rust tests. The first run found a public null source field in its
+API report; the corrected source omitted private source fields and passed all
+checks without weakening the protected browser/API scenario.
 
 The 0.20.5 requester-selector scenarios cover bounded configured aliases,
 unchanged null/default fingerprints, operator/missing/pending/conflicting
@@ -836,3 +841,28 @@ server or public-torrent throughput.
 [raw results](benchmark-results.json) preserve the historical benchmark. The
 [checkpoint](checkpoint.md) describes the implementation and remaining personal
 installation configuration.
+
+## Recorded 0.20.6 CI evidence
+
+[Run 37427693256](https://github.com/alecerf/mynou/actions/runs/37427693256)
+passed all five jobs for `0b7d9c67a666b6929c626a930450f3dccae13d41`:
+585 Rust tests across 52 harnesses, none failed/ignored, four scheduler checks,
+graph/format/Clippy, both Linux builds, standalone/container demos and packaging.
+Measured test execution was 64.921 seconds at two processes/two threads.
+
+Actions published [v0.20.6](https://github.com/alecerf/mynou/releases/tag/v0.20.6)
+at 07:10:02 UTC on October 6, 2026, release 404419318. The exact commit tag and all
+seven asset IDs/sizes/digests/uploaders were checked. The v0.20.5 tag and assets
+stayed unchanged. The proof is retained in
+`/workspace/scratch/mynou-20.6-release-proof.json`. No local validation or manual
+release/tag/asset creation was performed. The following source needs its own CI.
+
+| Asset | ID | Bytes | SHA-256 |
+| --- | ---: | ---: | --- |
+| mynou-v0.20.6-linux-amd64-image.tar.gz | 614791185 | 1949980 | ca322cbe69ef7d628d7e80b124304838a0c0d6d49d9369d9ea77894809f3245f |
+| mynou-v0.20.6-linux-amd64-image.tar.gz.sha256 | 614791184 | 105 | 8f8e182dca3b0dfc6b7023a34be277e94c8ea6ee37f830c1a92ab08e380b80e0 |
+| mynou-v0.20.6-linux-x86_64 | 614791193 | 3953504 | 5b6cd4f56247c97f8d83ea4ff1ffe8dd4738028a03b079befcea62f2f9d880d2 |
+| mynou-v0.20.6-linux-x86_64.sha256 | 614791191 | 93 | c1fc066fa9f172f282b2bf9a64c7e7a750aaf87ffb668c2a603a43d1e05d1434 |
+| mynou-v0.20.6-source.zip | 614791204 | 7129195 | 4a726f7beaa982307c5319ee4e55bf41da076538c69b350917524d2cbf11dc0b |
+| mynou-v0.20.6-source.zip.sha256 | 614791206 | 91 | a8b9a9c7dd87bb2bc98c91986f8861ff4a4345f6c02e557e94b19e80e1f59bbe |
+| SHA256SUMS | 614791183 | 289 | ab622336f97e0bcd7449013ab370156b7080fdcef3a03274725683e2bbf9e07e |
