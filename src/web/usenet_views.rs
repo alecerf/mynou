@@ -1,7 +1,7 @@
 //! Provider aliases and reviewed non-acquiring connection probes.
 use super::{
     session::Session,
-    views::{array, e, form, frame, hidden, scalar, text},
+    views::{array, e, flag, form, frame, hidden, scalar, text},
 };
 use crate::{engine::Engine, json::Value};
 use std::sync::Arc;
