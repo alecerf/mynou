@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.22.4
+# Project checkpoint — Mynou 0.22.5
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -12,15 +12,24 @@ alone creates release tags and publishes artifacts from validated commits.
 
 ## Implemented scope
 
-The active 0.22.4 source adds a native Newznab adapter and typed Usenet
-advertisements. Movie/year and seasonal/absolute episode identity, selection
-profiles, explicit provider bindings, advertised size and password policies gate
-candidates. Public search previews identify the transport without private URLs
-or credentials. Bound NZB document reads reuse native authentication, source
-pause/generation, rate, origin and absolute-deadline checks; they never queue an
-article or create a library job. Existing torrent source bindings remain intact.
+The active 0.22.5 source adds held native Usenet preparations with immutable
+owner/source/provider/limit bindings. Private workspace proofs bind the owner.
+Trusted library callers grant at most sixty seconds of nonpersistent permission
+after checking current admission. Restart needs fresh authorization; expiry,
+revocation and late results preserve receipts and spent attempts. Raw queue
+controls cannot adopt or resume owned files, and owned output needs fresh
+authorization and complete verification. This is an admission primitive: automatic
+canonical/requester library jobs are not connected in this increment.
 This source requires its own complete Actions validation and publication.
-Ordinary Engine admission follows before verified cross-seeding/bulk.
+Ordinary Engine admission follows immediately, before cross-seeding/bulk.
+
+CI published v0.22.4 from `93711ac221c97edd0392d8e262e3b3961553561a` in
+[run 37465017605](https://github.com/alecerf/mynou/actions/runs/37465017605).
+All five jobs passed: 693 Rust tests across 59 harnesses, none failed or ignored,
+and four scheduler checks. Test execution took 81.582 seconds with two harness
+processes and two threads each. Seven bot-owned assets were published at
+12:44:29 UTC on October 6, 2026. The tag matched the validated source and the
+prior v0.22.3 tag and asset IDs, sizes and digests remained unchanged.
 
 CI published v0.22.3 from `e4e77c9ddf142bafd91b17a32bfb7741efb45230` in
 [run 37459145003](https://github.com/alecerf/mynou/actions/runs/37459145003).

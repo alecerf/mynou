@@ -339,6 +339,8 @@ The v0.22.2 workspace stage passed all five jobs. Checked private receipts and
 streamed assembly/recovery retain exact source/provider/size and output proofs.
 The v0.22.3 queue passed complete CI with 680 Rust tests. It adds reviewed private
 staging, retained attempt budgets and at most two workers. Raw staging never
-admits a library job. The active v0.22.4 typed Newznab discovery/document transport
-scope needs its own exact CI; automatic library admission, archives and repair
-remain later increments. Metadata acceptance never proves downloaded content.
+admits a library job. The v0.22.4 typed Newznab discovery/document transport scope
+passed complete CI. The active v0.22.5 held-owner interface needs its own exact CI;
+automatic library admission, archives and repair remain later increments.
+Metadata acceptance never proves downloaded content. Owner digests supplied to
+the library interface do not independently establish admission or approval.

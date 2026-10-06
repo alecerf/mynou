@@ -4,9 +4,10 @@ v0.22.0 provides original bounded NZB and yEnc format primitives. It passed all
 five CI jobs in run 37434792979 with 639 Rust tests and seven published assets.
 Native NNTP passed complete v0.22.1 CI with 652 Rust tests and seven assets.
 The disk workspace and durable queue increments passed complete v0.22.2 and
-v0.22.3 CI with 663 and 680 Rust tests respectively. The active v0.22.4 source
-adds typed Newznab discovery and bound document reads; its exact CI is pending.
-Automatic library admission follows. All code uses Rust std only. No external
+v0.22.3 CI with 663 and 680 Rust tests respectively. The v0.22.4 source
+added typed Newznab discovery and bound document reads, passing all five jobs
+with 693 Rust tests and seven CI assets. Held ownership is the active 0.22.5
+increment; automatic library admission follows. All code uses Rust std only. No external
 decoder, downloader, archive tool or repair helper is invoked.
 
 ## NZB inspection
@@ -339,3 +340,50 @@ requests NNTP articles, enqueues a transfer or creates a library job. Ordinary
 torrent selection rejects a selected NZB until native library admission is
 implemented. Season-pack acquisition does not inspect Newznab advertisements.
 Public reports exclude URLs, credential names/values and raw document identities.
+
+## Held library ownership in 0.22.5
+
+`queue::Owner` captures a bounded job ID and SHA-256 binding supplied by a trusted
+library caller. The caller is responsible for deriving that binding from checked
+admission/provenance and verifying current approval before granting permission.
+The identity is not independently proof of canonical admission. The current
+Engine does not yet create or authorize these records automatically.
+
+`Client::stage_owned` requires that owner, exact original NZB bytes, a selected
+file index, provider ID and matching immutable provider binding. Source bytes,
+owner/resource identities and a preparation intent are durable before workspace
+creation; the completed preparation is held and cannot be claimed by workers.
+Exact repeated preparation is idempotent. A source file already retained as raw
+work cannot be adopted, and a job ID cannot be rebound to another preparation.
+Different selected files may retain independent ownership. New limits cannot
+replace captured limits through an idempotent call.
+
+Workspace bindings combine provider and owner. Descriptors and receipts therefore
+reject storage renamed under another valid owner identity. Owned queues use
+MYNOUU02, and a version-1 frame cannot contain owned records. Raw record identity,
+descriptor bindings and version-1 record serialization remain unchanged.
+
+`retained_owned` returns a checked private inventory for joint preflight without
+authorizing anything. `authorize_owned` grants a bounded deadline of at most
+sixty seconds after the caller rechecks admission. These permissions are not
+persisted: reopening an already queued/complete record still needs a fresh grant.
+Expired permissions pause active work and invalidate reservations. `hold_owned`
+revokes permission, fences late responses and preserves receipts/output. An old
+worker retains its active slot until returning; immediate reauthorization cannot
+start a duplicate operation. Renewal preserves an unexpired active reservation.
+`retry_owned` is explicit and retains the original per-article attempt budgets.
+
+`verified_owned_file` rechecks owner, unexpired permission, receipts and complete
+output, including permission after verification. It returns a private path only;
+identity, quality, requester, ownership, media/import and Plex checks still belong
+to the library caller. Raw `verified_file` and raw CLI/API/browser controls reject
+owned transfers. Public progress exposes ownership and current authorization
+without bindings, document contents, paths or credentials. The browser directs
+owned transfer control to its library job. There is no new raw ownership or
+authorization endpoint.
+
+The original fixtures cover held constructor recovery, restart without automatic
+rights, receipt reuse, expiry/renewal, active revocation, exhausted budgets,
+raw/owned conflicts, metadata/format downgrade and renamed/corrupt storage.
+This active increment requires its own complete CI. Ordinary Engine admission
+follows immediately; it must perform joint ownership validation before workers.
