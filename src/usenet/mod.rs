@@ -2,6 +2,7 @@
 mod management;
 pub use management::{ProbeRequest, QueueControl};
 pub mod nntp;
+pub mod newznab;
 pub mod nzb;
 pub mod queue;
 mod settings;

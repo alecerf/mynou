@@ -57,20 +57,22 @@ impl Options {
             ]),
         }
     }
-    fn binding(&self, source: &Source) -> String {
-        digest(
-            json::stringify(&Value::Array(vec![
-                source.name.clone().into(),
-                source.kind.clone().into(),
-                source.url.clone().into(),
-                source.api_key_env.clone().into(),
-                self.min_interval_ms.to_string().into(),
-                self.auth_binding(),
-            ]))
-            .as_bytes(),
-        )
+    pub(crate) fn binding(&self, source: &Source) -> String {
+        let mut fields = vec![
+            source.name.clone().into(),
+            source.kind.clone().into(),
+            source.url.clone().into(),
+            source.api_key_env.clone().into(),
+            self.min_interval_ms.to_string().into(),
+            self.auth_binding(),
+        ];
+        // Preserve the exact preceding binding for every existing torrent source.
+        if let Some(options) = &self.newznab {
+            fields.push(options.json());
+        }
+        digest(json::stringify(&Value::Array(fields)).as_bytes())
     }
-    pub(super) fn identity(&self, source: &Source) -> String {
+    pub(crate) fn identity(&self, source: &Source) -> String {
         self.id.clone().unwrap_or_else(|| self.binding(source))
     }
     pub(super) fn effective_enabled(&self) -> bool {
@@ -464,6 +466,7 @@ impl Engine {
                 source_url: None,
             };
             let ok = crate::integrations::probe_source(
+                &self.config,
                 source,
                 &request,
                 Instant::now() + Duration::from_secs(5),

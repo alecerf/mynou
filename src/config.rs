@@ -425,11 +425,12 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
                     "min_interval_ms",
                     "authentication",
                     "id",
+                    "usenet",
                 ],
             )?;
             let kind = text(source, "kind", "json")?;
-            if !["rss", "json", "torznab"].contains(&kind.as_str()) {
-                return Err("Configuration: expected an rss, json or torznab source".into());
+            if !["rss", "json", "torznab", "newznab"].contains(&kind.as_str()) {
+                return Err("Configuration: expected an rss, json, torznab or newznab source".into());
             }
             let url = text(source, "url", "")?;
             crate::net::parse_url(&url)?;
@@ -548,6 +549,13 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         notifications,
         usenet: crate::usenet::Settings::from_json_at(v.get("usenet"), &base)?,
     };
+    for source in &config.sources {
+        if let Some(options) = &source.options.newznab
+            && !config.usenet.servers.iter().any(|s| s.id() == options.server_id)
+        {
+            return Err("Configuration: Newznab requires a configured Usenet server ID".into());
+        }
+    }
     if let Some(downloads) = &config.usenet.downloads {
         let root = &downloads.state_dir;
         for other in [
