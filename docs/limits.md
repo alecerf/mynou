@@ -341,9 +341,15 @@ The v0.22.3 queue passed complete CI with 680 Rust tests. It adds reviewed priva
 staging, retained attempt budgets and at most two workers. Raw staging never
 admits a library job. The v0.22.4 typed Newznab discovery/document transport scope
 passed complete CI. The v0.22.5 held-owner interface passed all five jobs with 712 Rust tests.
-The active 0.22.6 native canonical/requester library path needs its own exact CI.
+The v0.22.6 native canonical/requester library path passed complete CI with 729 Rust tests.
 It supports one direct-media file per NZB; archives/PAR2, packs and Usenet upgrades
 remain subsequent increments. Existing-journal recovery is deferred until joint
 ownership validation, while valid held preparations can be linked after restart.
 Metadata acceptance never proves downloaded content. Owner digests supplied to
 the library interface do not independently establish admission or approval.
+
+The active 0.22.7 ZIP/DEFLATE [format scope](archives.md) requires its own CI.
+It supports classic single-disk stored/DEFLATE entries within captured limits;
+inspection never verifies content and decoding never chooses output paths.
+Automatic archive admission, ZIP64, RAR, PAR2 and multi-file imports remain
+separate increments. No archive decoder or repair helper is invoked.

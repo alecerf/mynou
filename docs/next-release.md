@@ -1,4 +1,4 @@
-# Active release — 0.22.6 native Usenet library admission
+# Active release — 0.22.7 bounded ZIP and DEFLATE formats
 
 Continue all roadmap stages autonomously. A green publication starts the next
 scope; do not stop at a checkpoint. AGENTS.md mandates English, Rust std only,
@@ -6,6 +6,14 @@ zero dependencies, no unsafe/FFI/copied code/external runtime helpers or local
 validation. Formatting is an edit. Commit meaningful chunks, push completed scope,
 inspect all five jobs and fix reds through commits. Actions alone publishes exact
 source tags/assets. Complete publication before a successor push.
+
+CI published v0.22.6 from `c933f289860ab73615de7c61c4f58edbc2b88bc8` in
+[run 37476040909](https://github.com/alecerf/mynou/actions/runs/37476040909).
+All five jobs passed: 729 Rust tests across 60 harnesses, none failed or ignored,
+and four scheduler checks. Test execution took 93.111 seconds with two harness
+processes and two threads each. Seven bot-owned assets were published at
+14:09:19 UTC on October 6, 2026. The tag matched the validated source and the
+prior v0.22.5 tag and asset IDs, sizes and digests remained unchanged.
 
 CI published v0.22.5 from `a3c326f9a8234e19077dea83d2804ef0cd611773` in
 [run 37470439302](https://github.com/alecerf/mynou/actions/runs/37470439302).
@@ -39,29 +47,25 @@ processes and two threads each. Seven bot-owned assets were published at
 09:01:20 UTC on October 6, 2026. The tag matched the validated source and the
 prior v0.22.1 tag and asset IDs, sizes and digests remained unchanged.
 
-The active 0.22.6 source connects typed Newznab acquisitions to approved canonical
-movie and episode jobs. The journal captures the selection/profile, exact NZB
-hash and preparation limits before held staging; only a matching current lease
-and approved demand may grant queue permission. Permissions expire at the lease
-deadline or thirty seconds, and polling/heartbeats renew them without resetting
-article attempts. Cancellation/removal revoke rights and fence late results.
-Joint journal/queue/source/owner checks precede existing-journal tail repair,
-initializer writes and workers. A checked held crash window can be linked without
-refetching the document. Fully reverified single-file media must satisfy filename,
-year/numbering, captured quality and actual size policy before ordinary analysis
-and atomic import. Plex must confirm the exact imported path. Explicit retry
-retains source identity and budgets. Public projections omit private bindings.
+The active 0.22.7 source adds original bounded classic ZIP parsing and streaming
+raw DEFLATE decoding. Stored, fixed-Huffman and dynamic-Huffman payloads use a
+32 KiB window, bounded lookup tables and 64 KiB writes; decoded size and CRC must
+match the checked directory before a payload proof is returned. Headers,
+descriptors, names, attributes, offsets, overlap and resource limits are checked.
+The read-only `zip-inspect` CLI reports metadata with `content_verified: false`
+and creates no output, jobs or network requests. Generic extraction writes only
+to a caller-owned provisional sink and rechecks metadata before decoding.
 This source requires its own complete Actions validation and publication.
-Archive/PAR2, pack and Usenet-upgrade support remain separate increments.
+Ownership-bound archive admission follows in 0.22.8; ZIP64, RAR, PAR2, multi-file
+packs and Usenet upgrades remain separate bounded increments.
 
-After publication, continue native bounded archive/repair and Usenet-upgrade increments.
-Implement original ZIP/DEFLATE first with retained provenance and no external helpers;
-RAR/PAR2 and multi-file admission require their own checked stages.
-Preserve canonical requester approval,
-quota/profile/ownership/numbering/import/Plex gates; raw queue output cannot bypass
-them. Use original synthetic media and loopback provider/indexer/Plex fixtures.
-Improve safe constructor recovery through explicit checked intents if needed;
-never repair unknown/corrupt data implicitly. RAR/ZIP/PAR2 need separate original
-bounded implementations, without helpers. Then continue 0.23 verified cross-seeding
-and guarded bulk controls. Record exact source/five jobs/tests/seven bot assets and
-prior immutability at every publication. No broad parity/performance claims.
+After publication, continue 0.22.8 ownership-bound ZIP admission. Capture the
+exact verified archive identity, selected entry, decoder limits and output proof
+before publishing private results; recheck canonical/requester lease and approval
+before every durable transition. Keep source/output separate and private, and
+copy library imports. Recovery must reject unknown or corrupt extraction state
+before initializer writes. Then implement separate bounded RAR/PAR2, multi-file
+and Usenet-upgrade increments, followed by 0.23 verified cross-seeding and guarded
+bulk controls. Use original synthetic media and loopback services only. Record
+exact source/five jobs/tests/seven bot assets and prior immutability at every
+publication. No broad parity or unmeasured performance claims.

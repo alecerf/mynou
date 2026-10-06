@@ -1,4 +1,4 @@
-# Mynou 0.22.6 — Rust, standard library only
+# Mynou 0.22.7 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -112,13 +112,18 @@ article attempt budgets. v0.22.4 passed all five jobs with 693 Rust tests across
 59 harnesses and seven published assets. v0.22.5 passed all five jobs with 712
 Rust tests across 60 harnesses and seven published assets. Held owner bindings,
 nonpersistent permission and revocation protect private verified output.
-The active 0.22.6 source connects Newznab and native Usenet to approved canonical
+v0.22.6 connects Newznab and native Usenet to approved canonical
 movie/episode jobs, captured quality/destinations, identity and size checks,
-atomic imports and exact Plex confirmation. Its own CI is pending. Only
+atomic imports and exact Plex confirmation. All five jobs passed with 729 Rust
+tests and seven bot-published assets. Only
 single-file direct-media NZBs are supported in this increment; archive/PAR2,
 packs and Usenet upgrades remain later stages. See [Newznab configuration](docs/usenet.md#native-newznab-discovery-in-0224),
 [held ownership](docs/usenet.md#held-library-ownership-in-0225) and
 [library admission](docs/usenet.md#native-library-admission-in-0226).
+
+The active 0.22.7 increment adds [bounded ZIP and streaming DEFLATE](docs/archives.md),
+including read-only `zip-inspect`. Its complete CI is pending; automatic archive
+library admission follows in a separate increment.
 
 ## Try it
 
@@ -152,8 +157,8 @@ from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, o
 build the image from the source archive:
 
 ```sh
-docker load -i mynou-v0.22.6-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.22.6 .
+docker load -i mynou-v0.22.7-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.22.7 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d

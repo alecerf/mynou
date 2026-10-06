@@ -7,8 +7,8 @@ The disk workspace and durable queue increments passed complete v0.22.2 and
 v0.22.3 CI with 663 and 680 Rust tests respectively. The v0.22.4 source
 added typed Newznab discovery and bound document reads, passing all five jobs
 with 693 Rust tests and seven CI assets. Held ownership passed v0.22.5 CI with 712 Rust tests across 60 harnesses and seven
-published assets. Native library admission is the active 0.22.6 increment, pending
-its own complete CI. All code uses Rust std only. No external
+published assets. Native library admission passed all five v0.22.6 jobs with 729 Rust tests
+and seven bot-published assets. All code uses Rust std only. No external
 decoder, downloader, archive tool or repair helper is invoked.
 
 ## NZB inspection
@@ -432,9 +432,13 @@ job projections contain aliases/progress identities, with no owner/provider
 bindings, article IDs or NZB contents. Library job cancel/retry controls own these
 transfers in the CLI, authenticated API and browser.
 
-RAR/ZIP extraction, PAR2 repair, multi-file packs and Usenet upgrade acquisitions
+Automatic RAR/ZIP extraction, PAR2 repair, multi-file packs and Usenet upgrade acquisitions
 are not enabled in this increment. The legacy torrent-oriented search/upgrade
 selector continues to reject a selected Usenet candidate. It cannot send an NZB
 to the torrent client. Changed source/provider/profile bindings withhold new
 authorization; no fallback to another provider is implicit. All new fixtures use
-original local media and loopback Newznab, NNTP and Plex. This source awaits CI.
+original local media and loopback Newznab, NNTP and Plex. The complete 0.22.6 run passed; see [validation evidence](validation.md#recorded-0226-ci-evidence).
+
+The 0.22.7 [archive format scope](archives.md) adds bounded ZIP/DEFLATE
+primitives and read-only inspection. Ownership-bound extraction and library
+admission follow separately; raw archive bytes cannot bypass the gates above.

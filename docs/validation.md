@@ -1107,3 +1107,31 @@ No local validation or manual publication was performed.
 | SHA256SUMS | 615596317 | 289 | a3d47d99ca84373ac0c051ad9dc39320cdd139de7eb93550ab8e8a93e79a4a32 |
 | mynou-v0.22.5-source.zip | 615596344 | 8299235 | 06e95eaa8cc330b9a95bc51ffcdc67d51ea12a2b27b045b9426aed5f0032604c |
 | mynou-v0.22.5-source.zip.sha256 | 615596361 | 91 | bc5d1fb214c445241477cb891d1da3d77e3195615e4998852f7ec053028f8a29 |
+
+
+## Recorded 0.22.6 CI evidence
+
+CI published v0.22.6 from `c933f289860ab73615de7c61c4f58edbc2b88bc8` in
+[run 37476040909](https://github.com/alecerf/mynou/actions/runs/37476040909).
+All five jobs passed: 729 Rust tests across 60 harnesses, none failed or ignored,
+and four scheduler checks. Test execution took 93.111 seconds with two harness
+processes and two threads each. Seven bot-owned assets were published at
+14:09:19 UTC on October 6, 2026. The tag matched the validated source and the
+prior v0.22.5 tag and asset IDs, sizes and digests remained unchanged.
+
+Successful jobs: validate 112311577638, Build x86_64-unknown-linux-musl 112311577978, Build x86_64-unknown-linux-gnu 112311578070, package 112312897489, release 112313313029.
+Release 404803169 and all seven assets belong to github-actions[bot].
+CI caught fixture size/worker-start mistakes and a private-source hard-link issue;
+fixtures were corrected and owned imports now copy to an independent inode.
+Every original gate remained enabled. No local validation or manual publication
+was performed.
+
+| Asset | ID | Bytes | SHA-256 |
+| --- | --- | ---: | --- |
+| mynou-v0.22.6-linux-x86_64 | 615709921 | 4629344 | 3e07a941df13bac772a9da8406666d5c93fe8a9588da7c5a5ec16bc118628ac6 |
+| SHA256SUMS | 615709922 | 289 | 23ff61a0479325de8f8a1339837bf4d5fc9d292a4ba89e2d7bbced2d2a025222 |
+| mynou-v0.22.6-linux-x86_64.sha256 | 615709923 | 93 | 157979b263b9e866fdc6513117932a46cd5f8120ea25999693359c0129689221 |
+| mynou-v0.22.6-linux-amd64-image.tar.gz.sha256 | 615709924 | 105 | cb9f60e98046983c80cc51d25f0eea9358d290a7251ce86bced051b665428340 |
+| mynou-v0.22.6-linux-amd64-image.tar.gz | 615709926 | 2238925 | ede9b62734e4e18c6a0f34f7f55599092b081c1de1675e2e566897eac55827d6 |
+| mynou-v0.22.6-source.zip | 615709944 | 8473685 | 4d27c277ca5bc482f8284c950b3835d6d392a3ebdf9bec6f8f799e23f33dabf5 |
+| mynou-v0.22.6-source.zip.sha256 | 615709948 | 91 | 744b3218176dce9605f406ff032f464e1e701da985d9e97fcc19492a06ccb352 |
