@@ -1,5 +1,6 @@
 //! Native bounded Usenet formats. Metadata inspection never contacts providers.
 pub mod admission;
+pub mod archive;
 mod engine;
 mod management;
 pub use management::{ProbeRequest, QueueControl};

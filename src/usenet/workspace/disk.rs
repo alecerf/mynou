@@ -16,7 +16,7 @@ const MAX_HEADER: usize = 16 * 1024;
 fn error() -> String {
     "Usenet workspace: invalid, corrupt or inaccessible private file".into()
 }
-pub(super) fn private_file(path: &Path, max: u64) -> Result<File> {
+pub(in crate::usenet) fn private_file(path: &Path, max: u64) -> Result<File> {
     reject_symlinks(path).map_err(|_| error())?;
     let m = fs::symlink_metadata(path).map_err(|_| error())?;
     if !m.is_file() || m.len() > max {
@@ -43,7 +43,7 @@ pub(super) fn private_file(path: &Path, max: u64) -> Result<File> {
     }
     Ok(file)
 }
-pub(super) fn read_frame(
+pub(in crate::usenet) fn read_frame(
     path: &Path,
     magic: &[u8; 8],
     max_data: usize,
@@ -80,7 +80,12 @@ pub(super) fn read_frame(
         json::parse(std::str::from_utf8(&header).map_err(|_| error())?).map_err(|_| error())?;
     Ok((header, data))
 }
-pub(super) fn write_frame(path: &Path, magic: &[u8; 8], header: &Value, data: &[u8]) -> Result<()> {
+pub(in crate::usenet) fn write_frame(
+    path: &Path,
+    magic: &[u8; 8],
+    header: &Value,
+    data: &[u8],
+) -> Result<()> {
     reject_symlinks(path).map_err(|_| error())?;
     let header = json::stringify(header).into_bytes();
     if header.is_empty() || header.len() > MAX_HEADER {

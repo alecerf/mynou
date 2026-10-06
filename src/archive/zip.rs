@@ -189,6 +189,9 @@ fn name(bytes: &[u8], flags: u16) -> Result<(String, bool)> {
     }
     Ok((name.into(), directory))
 }
+pub(super) fn checked_entry_path(path: &str) -> Result<bool> {
+    name(path.as_bytes(), 0x0800).map(|(_, directory)| directory)
+}
 fn attributes(made: u16, external: u32, directory: bool) -> Result<()> {
     let host = made >> 8;
     if !matches!(host, 0 | 3) || external & 0xffff & !0x37 != 0 {

@@ -1,5 +1,5 @@
 //! Single-file verified private receipts and streamed output. No network or library writes.
-mod disk;
+pub(super) mod disk;
 use super::{
     nzb::Nzb,
     yenc::{Crc32, MAX_PART_BYTES, Part},
@@ -161,6 +161,14 @@ fn clean_root(root: &Path) -> Result<PathBuf> {
 }
 
 impl Workspace {
+    pub(in crate::usenet) fn output_identity(&self) -> Result<(String, u64, String)> {
+        let output = self
+            .output
+            .as_ref()
+            .filter(|_| self.phase == "ready" && !self.poisoned)
+            .ok_or("Usenet workspace: checked output identity is unavailable")?;
+        Ok((output.name.clone(), output.size, output.sha.clone()))
+    }
     pub fn create(
         root: &Path,
         source: &[u8],

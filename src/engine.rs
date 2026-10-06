@@ -67,6 +67,14 @@ impl Engine {
     fn open_with_downloads(config: Config, start_downloads: bool) -> Result<Arc<Self>> {
         let queue = Self::prepare_usenet(&config, start_downloads, false)?;
         if !config.store_dir.exists()
+            && let Some(client) = &queue
+            && crate::usenet::archive::namespace_present(&client.private_root()?.join("archives"))?
+        {
+            return Err(
+                "Usenet admission: retained archive namespace has no library journal".into(),
+            );
+        }
+        if !config.store_dir.exists()
             && queue
                 .as_ref()
                 .is_some_and(|c| c.retained_owned().is_ok_and(|r| !r.is_empty()))

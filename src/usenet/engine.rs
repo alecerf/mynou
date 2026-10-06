@@ -64,7 +64,13 @@ impl Engine {
         job.acquisition_url = Some(selected.url);
         if let Some(target) = selected.usenet {
             let (_, profile) = config.selection.profile(&job.request.kind)?;
-            job.usenet_origin = Some(Origin::capture(job, selected.id, target, profile.clone())?);
+            job.usenet_origin = Some(Origin::capture(
+                job,
+                selected.id,
+                target,
+                profile.clone(),
+                config.usenet.downloads.as_ref().and_then(|d| d.zip),
+            )?);
             self.persist_usenet_job(job)?;
         } else {
             lock(&self.store)?.update(job.clone())?;
@@ -104,6 +110,15 @@ impl Engine {
         let (name, profile) = config.selection.profile(&job.request.kind)?;
         if job.release.as_ref().is_none_or(|r| r.profile != name) || profile != &origin.profile {
             return Err("Usenet admission: captured profile changed".into());
+        }
+        if origin.archive_limits.is_some()
+            && config
+                .usenet
+                .downloads
+                .as_ref()
+                .is_none_or(|d| d.zip.is_none())
+        {
+            return Err("Usenet admission: captured ZIP capability is disabled".into());
         }
         let ledger = lock(&self.requester_store)?;
         let store = lock(&self.store)?;
@@ -304,14 +319,44 @@ impl Engine {
             .usenet_queue
             .as_ref()
             .ok_or("Native Usenet downloads are disabled")?;
-        let path = match client.verified_owned_file(id, &origin.owner(job)) {
-            Err(e) if e == "Usenet queue: verification slot is busy" => {
-                job.state = "downloading".into();
-                job.next_attempt_at = store::now().saturating_add(1);
-                return Ok(false);
-            }
-            other => other?,
-        };
+        let mut archive_proof = None;
+        let path =
+            match client.verified_owned_operation(id, &origin.owner(job), |path, bytes, sha| {
+                if path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|e| e.eq_ignore_ascii_case("zip"))
+                {
+                    let (path, proof) =
+                        self.advance_usenet_archive(job, path, bytes, sha, active)?;
+                    archive_proof = Some(proof);
+                    Ok(path)
+                } else {
+                    if origin.archive.is_some() {
+                        return Err("Usenet admission: captured ZIP source changed".into());
+                    }
+                    Ok(path.to_owned())
+                }
+            }) {
+                Err(e) if e == "Usenet queue: verification slot is busy" => {
+                    job.state = "downloading".into();
+                    job.next_attempt_at = store::now().saturating_add(1);
+                    return Ok(false);
+                }
+                other => other?,
+            };
+        crate::archive::deflate::active(active)?;
+        if let Some(proof) = archive_proof {
+            job.usenet_origin
+                .as_mut()
+                .and_then(|o| o.archive.as_mut())
+                .ok_or("Usenet admission: verified archive lacks a captured intent")?
+                .output = Some(proof);
+        }
+        let origin = job
+            .usenet_origin
+            .as_ref()
+            .ok_or("Usenet admission: missing origin")?;
         origin.validate_file(job, &path)?;
         let source = origin.target.configured(&config)?;
         let options = source
@@ -331,5 +376,109 @@ impl Engine {
         job.files = vec![path.to_string_lossy().into_owned()];
         self.persist_usenet_job(job)?;
         Ok(true)
+    }
+    fn advance_usenet_archive(
+        &self,
+        job: &mut Job,
+        source: &std::path::Path,
+        bytes: u64,
+        sha: &str,
+        active: &AtomicBool,
+    ) -> Result<(std::path::PathBuf, super::archive::Proof)> {
+        self.require_usenet_lease(job)?;
+        let mut origin = job
+            .usenet_origin
+            .clone()
+            .ok_or("Usenet admission: missing origin")?;
+        origin.validate_zip_source(job, source)?;
+        let limits = origin
+            .archive_limits
+            .ok_or("Usenet admission: ZIP acquisition is disabled")?;
+        let config = self.configuration_for(job);
+        let options = origin
+            .target
+            .configured(&config)?
+            .options
+            .newznab
+            .as_ref()
+            .ok_or("Newznab: missing source settings")?;
+        if bytes < options.minimum_bytes || bytes > options.maximum_bytes {
+            return Err(
+                "Usenet admission: verified ZIP size is outside captured source policy".into(),
+            );
+        }
+        let id = origin
+            .transfer_id
+            .clone()
+            .ok_or("Usenet admission: missing archive transfer")?;
+        if origin.archive.is_none() {
+            let mut input = super::workspace::disk::private_file(source, bytes)?;
+            let zip = crate::archive::Zip::read_cancellable(&mut input, limits, active)?;
+            let media: Vec<_> = zip
+                .entries()
+                .iter()
+                .enumerate()
+                .filter(|(_, entry)| {
+                    !entry.is_directory()
+                        && std::path::Path::new(entry.name())
+                            .extension()
+                            .and_then(|s| s.to_str())
+                            .is_some_and(|ext| {
+                                ["mp4", "m4v", "mov", "mkv", "webm", "avi"]
+                                    .contains(&ext.to_ascii_lowercase().as_str())
+                            })
+                })
+                .collect();
+            if media.len() != 1 {
+                return Err(
+                    "Usenet admission: ZIP must contain exactly one supported media entry".into(),
+                );
+            }
+            origin.validate_file(job, std::path::Path::new(media[0].1.name()))?;
+            if media[0].1.bytes() < options.minimum_bytes
+                || media[0].1.bytes() > options.maximum_bytes
+            {
+                return Err(
+                    "Usenet admission: decoded ZIP media is outside captured source size policy"
+                        .into(),
+                );
+            }
+            let plan = super::archive::Plan::capture(
+                origin.owner(job),
+                id.clone(),
+                source,
+                bytes,
+                sha,
+                &zip,
+                media[0].0,
+            )?;
+            origin.archive = Some(super::archive::Preparation { plan, output: None });
+            job.usenet_origin = Some(origin.clone());
+            self.persist_usenet_job(job)?;
+        }
+        let preparation = origin
+            .archive
+            .as_ref()
+            .ok_or("Usenet admission: missing archive intent")?;
+        if preparation.plan.source_bytes != bytes || preparation.plan.source_sha256 != sha {
+            return Err(
+                "Usenet admission: ZIP differs from its original verified queue output".into(),
+            );
+        }
+        self.require_usenet_lease(job)?;
+        crate::archive::deflate::active(active)?;
+        let namespace = self
+            .usenet_queue
+            .as_ref()
+            .ok_or("Native Usenet downloads are disabled")?
+            .private_root()?
+            .join("archives");
+        super::archive::prepare_namespace(&namespace, active)?;
+        let mut workspace =
+            super::archive::Workspace::open(&namespace.join(&id), source, preparation, active)?;
+        let proof = workspace.extract(source, active)?;
+        let path = workspace.path()?;
+        self.require_usenet_lease(job)?;
+        Ok((path, proof))
     }
 }

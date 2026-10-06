@@ -57,6 +57,8 @@ pub struct Origin {
     pub binding: String,
     pub document: Option<Document>,
     pub transfer_id: Option<String>,
+    pub archive_limits: Option<crate::archive::Limits>,
+    pub archive: Option<super::archive::Preparation>,
 }
 fn text(v: &Value, k: &str) -> Result<String> {
     v.get(k)
@@ -73,6 +75,12 @@ impl Origin {
         v.insert("server_id", self.target.server_id.clone());
         v.insert("advertised_bytes", self.target.advertised_bytes.to_string());
         v.insert("document_captured", self.document.is_some());
+        v.insert("zip_enabled", self.archive_limits.is_some());
+        v.insert("archive_prepared", self.archive.is_some());
+        v.insert(
+            "archive_verified",
+            self.archive.as_ref().is_some_and(|p| p.output.is_some()),
+        );
         v.insert(
             "transfer_id",
             self.transfer_id.clone().map_or(Value::Null, Value::from),
@@ -95,6 +103,12 @@ impl Origin {
             "transfer_id",
             self.transfer_id.clone().map_or(Value::Null, Value::from),
         );
+        if let Some(limits) = self.archive_limits {
+            v.insert("archive_limits", limits.to_json());
+        }
+        if let Some(archive) = &self.archive {
+            v.insert("archive", archive.to_json());
+        }
         v
     }
     pub fn from_json(v: &Value) -> Result<Self> {
@@ -107,6 +121,8 @@ impl Origin {
                 "binding",
                 "document",
                 "transfer_id",
+                "archive_limits",
+                "archive",
             ],
         )?;
         let origin = Self {
@@ -127,11 +143,24 @@ impl Origin {
                 Some(Value::String(s)) if valid_digest(s) => Some(s.clone()),
                 _ => return Err("Usenet admission: invalid transfer identity".into()),
             },
+            archive_limits: v
+                .get("archive_limits")
+                .map(crate::archive::Limits::from_json)
+                .transpose()?,
+            archive: v
+                .get("archive")
+                .map(super::archive::Preparation::from_json)
+                .transpose()?,
         };
         if !valid_digest(&origin.candidate_id)
             || !valid_digest(&origin.binding)
             || origin.target.password_protected
             || origin.transfer_id.is_some() && origin.document.is_none()
+            || origin.archive.is_some()
+                && (origin.archive_limits.is_none() || origin.transfer_id.is_none())
+            || origin
+                .archive_limits
+                .is_some_and(|p| v.get("archive_limits") != Some(&p.to_json()))
         {
             return Err("Usenet admission: invalid selection provenance".into());
         }
@@ -142,6 +171,7 @@ impl Origin {
         candidate_id: String,
         target: Target,
         profile: Profile,
+        archive_limits: Option<crate::archive::Limits>,
     ) -> Result<Self> {
         let mut origin = Self {
             candidate_id,
@@ -150,6 +180,8 @@ impl Origin {
             binding: String::new(),
             document: None,
             transfer_id: None,
+            archive_limits,
+            archive: None,
         };
         origin.binding = origin.identity(job)?;
         origin.validate_job(job)?;
@@ -164,23 +196,24 @@ impl Origin {
             .acquisition_url
             .as_ref()
             .ok_or("Usenet admission: missing selected acquisition")?;
-        Ok(digest(
-            json::stringify(&Value::Array(vec![
-                job.id.clone().into(),
-                job.key.clone().into(),
-                job.request.to_json(),
-                job.created_at.to_string().into(),
-                job.requester
-                    .as_ref()
-                    .map_or(Value::Null, crate::requesters::Provenance::to_json),
-                release.to_json(),
-                url.clone().into(),
-                self.target.to_json(),
-                self.candidate_id.clone().into(),
-                self.profile.to_json(),
-            ]))
-            .as_bytes(),
-        ))
+        let mut fields = vec![
+            job.id.clone().into(),
+            job.key.clone().into(),
+            job.request.to_json(),
+            job.created_at.to_string().into(),
+            job.requester
+                .as_ref()
+                .map_or(Value::Null, crate::requesters::Provenance::to_json),
+            release.to_json(),
+            url.clone().into(),
+            self.target.to_json(),
+            self.candidate_id.clone().into(),
+            self.profile.to_json(),
+        ];
+        if let Some(limits) = self.archive_limits {
+            fields.push(limits.to_json());
+        }
+        Ok(digest(json::stringify(&Value::Array(fields)).as_bytes()))
     }
     pub fn owner(&self, job: &Job) -> Owner {
         Owner {
@@ -222,6 +255,24 @@ impl Origin {
         {
             return Err("Usenet admission: job differs from its captured selection".into());
         }
+        if let Some(preparation) = &self.archive {
+            let plan = &preparation.plan;
+            if plan.owner != self.owner(job)
+                || self.transfer_id.as_deref() != Some(plan.transfer_id.as_str())
+                || self.archive_limits != Some(plan.limits)
+                || self
+                    .document
+                    .as_ref()
+                    .is_none_or(|d| plan.source_bytes > d.max_file_bytes)
+                || !job.files.is_empty() && preparation.output.is_none()
+            {
+                return Err(
+                    "Usenet admission: archive differs from its captured owner or policy".into(),
+                );
+            }
+            self.validate_zip_source(job, Path::new(&plan.source_name))?;
+            self.validate_file(job, Path::new(&plan.entry_name))?;
+        }
         if let Some(path) = job.files.first() {
             let path = Path::new(path);
             self.validate_file(job, path)?;
@@ -243,6 +294,15 @@ impl Origin {
             {
                 return Err("Usenet admission: private path differs from its owner".into());
             }
+            if let Some(preparation) = &self.archive
+                && path.file_name().and_then(|n| n.to_str())
+                    != Some(preparation.plan.output_name()?.as_str())
+            {
+                return Err(
+                    "Usenet admission: archive output filename differs from its captured entry"
+                        .into(),
+                );
+            }
         }
         Ok(())
     }
@@ -261,6 +321,20 @@ impl Origin {
                 "Usenet admission: verified filename does not satisfy media identity and profile"
                     .into(),
             );
+        }
+        Ok(())
+    }
+    pub(crate) fn validate_zip_source(&self, job: &Job, path: &Path) -> Result<()> {
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        if self.archive_limits.is_none()
+            || !path
+                .extension()
+                .and_then(|s| s.to_str())
+                .is_some_and(|e| e.eq_ignore_ascii_case("zip"))
+            || !integrations::release_identity_matches(&job.request, stem)
+            || !self.profile.assess(stem, &job.request.title).accepted
+        {
+            return Err("Usenet admission: ZIP source does not satisfy captured identity/profile or opt-in policy".into());
         }
         Ok(())
     }
@@ -285,6 +359,7 @@ impl Origin {
                 && (!matches!(transfer.state.as_str(), "held" | "preparing")
                     || transfer.attempts != 0
                     || transfer.verified_parts != 0)
+            || self.archive.is_some() && transfer.state != "complete"
         {
             return Err("Usenet admission: queue differs from its captured preparation".into());
         }
@@ -303,7 +378,8 @@ pub(crate) fn validate_transition(current: &Job, next: &Job) -> Result<()> {
                 && current.lease_id.is_some()
                 && next.state == "processing"
                 && origin.document.is_none()
-                && origin.transfer_id.is_none() =>
+                && origin.transfer_id.is_none()
+                && origin.archive.is_none() =>
         {
             origin.validate_job(next)
         }
@@ -312,6 +388,15 @@ pub(crate) fn validate_transition(current: &Job, next: &Job) -> Result<()> {
                 && old.target == origin.target
                 && old.profile == origin.profile
                 && old.binding == origin.binding
+                && old.archive_limits == origin.archive_limits
+                && old.archive.as_ref().is_none_or(|p| {
+                    origin.archive.as_ref().is_some_and(|next| {
+                        p.plan == next.plan
+                            && p.output
+                                .as_ref()
+                                .is_none_or(|o| next.output.as_ref() == Some(o))
+                    })
+                })
                 && old
                     .document
                     .as_ref()
@@ -340,6 +425,19 @@ pub(crate) fn validate_storage(store: &Store, client: Option<&Client>) -> Result
         .map(Client::retained_owned)
         .transpose()?
         .unwrap_or_default();
+    if let Some(client) = client {
+        let plans = jobs
+            .iter()
+            .filter_map(|job| {
+                job.usenet_origin
+                    .as_ref()?
+                    .archive
+                    .as_ref()
+                    .map(|p| p.plan.transfer_id.clone())
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        super::archive::validate_namespace(&client.private_root()?.join("archives"), &plans)?;
+    }
     for transfer in &retained {
         let job = store
             .get(&transfer.owner.job_id)
@@ -376,12 +474,29 @@ pub(crate) fn validate_storage(store: &Store, client: Option<&Client>) -> Result
                     .transfer_id
                     .as_deref()
                     .ok_or("Usenet admission: transfer is absent")?;
-                let parent = root.join("files").join(id).join("output");
+                let parent = root
+                    .join(if origin.archive.is_some() {
+                        "archives"
+                    } else {
+                        "files"
+                    })
+                    .join(id)
+                    .join("output");
                 if Path::new(&job.files[0]).parent() != Some(parent.as_path()) {
                     return Err(
                         "Usenet admission: file is outside its captured private workspace".into(),
                     );
                 }
+            }
+            if let Some(preparation) = &origin.archive {
+                let client = client.ok_or("Usenet admission: queue is absent")?;
+                let source = client
+                    .retained_owned_output(&preparation.plan.transfer_id, &origin.owner(&job))?;
+                let root = client
+                    .private_root()?
+                    .join("archives")
+                    .join(&preparation.plan.transfer_id);
+                super::archive::Workspace::preflight(&root, &source, preparation)?;
             }
         }
     }

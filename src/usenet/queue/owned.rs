@@ -515,12 +515,46 @@ impl Client {
     pub fn verified_owned_file(&self, id: &str, owner: &Owner) -> Result<PathBuf> {
         self.verified_owned_by(id, owner, Workspace::verify_ready)
     }
-    fn verified_owned_by(
+    /// Runs a private library operation in a bounded slot outside the queue mutex.
+    /// Callback errors do not invalidate good article proofs. Source corruption
+    /// does, and permission revocation/regrant fences the operation's result.
+    pub(crate) fn verified_owned_operation<T>(
         &self,
         id: &str,
         owner: &Owner,
-        verify: impl FnOnce(&mut Workspace) -> Result<PathBuf>,
-    ) -> Result<PathBuf> {
+        operation: impl FnOnce(&std::path::Path, u64, &str) -> Result<T>,
+    ) -> Result<T> {
+        self.verified_owned_by(id, owner, |workspace| {
+            let path = workspace.verify_ready()?;
+            let (_, bytes, sha) = workspace.output_identity()?;
+            let result = operation(&path, bytes, &sha);
+            workspace.verify_ready()?;
+            Ok(result)
+        })?
+    }
+    /// Checked startup inventory only; this does not grant operational rights.
+    pub(crate) fn retained_owned_output(&self, id: &str, owner: &Owner) -> Result<PathBuf> {
+        let inner = self.lock()?;
+        let row = inner
+            .data
+            .records
+            .get(id)
+            .ok_or("Usenet queue: transfer is absent")?;
+        if inner.poisoned || row.owner.as_ref() != Some(owner) {
+            return Err("Usenet queue: checked owner output is unavailable".into());
+        }
+        inner
+            .workspaces
+            .get(id)
+            .and_then(Workspace::available_file)
+            .ok_or_else(|| "Usenet queue: checked output is absent".into())
+    }
+    fn verified_owned_by<T>(
+        &self,
+        id: &str,
+        owner: &Owner,
+        verify: impl FnOnce(&mut Workspace) -> Result<T>,
+    ) -> Result<T> {
         owner.validate()?;
         let mut inner = self.lock()?;
         let r = inner

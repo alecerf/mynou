@@ -31,7 +31,7 @@ pub struct Decoded {
     pub sha256: [u8; 32],
 }
 
-pub(super) fn active(flag: &AtomicBool) -> Result<()> {
+pub(crate) fn active(flag: &AtomicBool) -> Result<()> {
     if flag.load(Ordering::Acquire) {
         Ok(())
     } else {
