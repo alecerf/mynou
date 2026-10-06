@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 34,
+  "generation": 35,
   "lease": {
     "id": "d3d8f6bc-45d5-4884-a21f-830ebf94e35d",
     "worker": "codex-primary-bootstrap",
     "role": "qa",
     "issue": 1,
     "acquired_at": "2026-10-06T19:39:36Z",
-    "heartbeat_at": "2026-10-06T19:39:36Z",
-    "expires_at": "2026-10-06T20:24:36Z",
+    "heartbeat_at": "2026-10-06T19:42:18Z",
+    "expires_at": "2026-10-06T20:27:18Z",
     "branch": "work/autonomous-organization",
     "commit": "78db76a3c12e706228f3ca643d839ae8f8c5f2ae",
     "pr": 3
   },
   "checkpoint": {
-    "at": "2026-10-06T19:39:11Z",
+    "at": "2026-10-06T19:42:18Z",
     "issue": 1,
-    "role": "security",
+    "role": "qa",
     "branch": "work/autonomous-organization",
     "commit": "78db76a3c12e706228f3ca643d839ae8f8c5f2ae",
     "pr": 3,
-    "summary": "Security inspected the complete prior 40-path diff plus the exact current three-path correction. Read-only sweeps cannot mutate; stale/circuit handoffs bind current work before first checkpoint and retain bounded prior context. No new security concerns; original ownership/trigger/merged-head fixes remain intact. Current organization job 112463881830 in run 37520231024 is green; core validation is still executing. No local validation.",
-    "next_action": "Post fresh Security pass record at this exact head, release, then QA verifies its prior findings, complete acceptance/diff and actual core CI before its own pass record. No merge until the QA job is genuinely green."
+    "summary": "QA verified the two prior corrections and the complete delivery control paths, with all four core jobs green in run 37520231158 and 32 organization scenarios passed. One interrupted-cleanup case remains: linked Issues become Done before dependency reconciliation; if branch/API cleanup then fails, later wakes skip the Done PR and leave native dependents status:blocked indefinitely. Recovery must repair that metadata even after Issue closure, and critical dependency reconciliation must precede risky branch cleanup.",
+    "next_action": "Quality adds bounded recovery of blocked native dependents independently of Issue Done, orders reconciliation before branch cleanup, and covers failure-after-close plus restart with CI-only scenarios. Then fresh Security and QA reviews; no further unrelated bootstrap scope."
   },
   "attempts": {}
 }
