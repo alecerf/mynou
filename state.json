@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 37,
+  "generation": 38,
   "lease": {
     "id": "19d5f90b-04da-4956-bf98-7a4eafd55754",
     "worker": "codex-primary-bootstrap",
     "role": "quality",
     "issue": 1,
     "acquired_at": "2026-10-06T19:42:49Z",
-    "heartbeat_at": "2026-10-06T19:42:49Z",
-    "expires_at": "2026-10-06T20:27:49Z",
+    "heartbeat_at": "2026-10-06T19:46:08Z",
+    "expires_at": "2026-10-06T20:31:08Z",
     "branch": "work/autonomous-organization",
-    "commit": "78db76a3c12e706228f3ca643d839ae8f8c5f2ae",
+    "commit": "7497f5a29198270e711a1c03c814043ed5011508",
     "pr": 3
   },
   "checkpoint": {
-    "at": "2026-10-06T19:42:18Z",
+    "at": "2026-10-06T19:46:08Z",
     "issue": 1,
-    "role": "qa",
+    "role": "quality",
     "branch": "work/autonomous-organization",
-    "commit": "78db76a3c12e706228f3ca643d839ae8f8c5f2ae",
+    "commit": "7497f5a29198270e711a1c03c814043ed5011508",
     "pr": 3,
-    "summary": "QA verified the two prior corrections and the complete delivery control paths, with all four core jobs green in run 37520231158 and 32 organization scenarios passed. One interrupted-cleanup case remains: linked Issues become Done before dependency reconciliation; if branch/API cleanup then fails, later wakes skip the Done PR and leave native dependents status:blocked indefinitely. Recovery must repair that metadata even after Issue closure, and critical dependency reconciliation must precede risky branch cleanup.",
-    "next_action": "Quality adds bounded recovery of blocked native dependents independently of Issue Done, orders reconciliation before branch cleanup, and covers failure-after-close plus restart with CI-only scenarios. Then fresh Security and QA reviews; no further unrelated bootstrap scope."
+    "summary": "Fixed the remaining actual QA finding: every mutating delivery wake can recover blocked native dependents under a fresh Quality lease even after a parent is Done, and normal cleanup repairs dependencies before optional branch work. Added three CI-only interruption/restart/open-blocker regressions. Local b320f8eff069b3bf673c330e5d66fb8f5ea4c46b maps to remote 7497f5a29198270e711a1c03c814043ed5011508, tree 2406aed580012e750d9599126f697645f86e1d86. Current CI pending; no local validation.",
+    "next_action": "Inspect current 35 organization scenarios and core jobs. Release for Security verification of the three-path correction, then QA acceptance/current-head review and actual agent-qa-review success. Merge bootstrap, verify default workflows and immutable release, then cleanup and end slice."
   },
   "attempts": {}
 }
