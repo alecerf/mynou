@@ -13,6 +13,7 @@ use std::{
 };
 const MAGIC: &[u8; 8] = b"MYNOUI01";
 const ROUTE_MAGIC: &[u8; 8] = b"MYNOUI02";
+const ADMISSION_MAGIC: &[u8; 8] = b"MYNOUI03";
 const MAX_BYTES: usize = 8 * 1024 * 1024;
 pub(crate) struct AnnouncementStore {
     pub state: State,
@@ -50,7 +51,9 @@ impl AnnouncementStore {
                     .read_to_end(&mut bytes)
                     .map_err(|_| "IRC: cannot read history")?;
                 if bytes.len() < 48
-                    || (&bytes[..8] != MAGIC && &bytes[..8] != ROUTE_MAGIC)
+                    || (&bytes[..8] != MAGIC
+                        && &bytes[..8] != ROUTE_MAGIC
+                        && &bytes[..8] != ADMISSION_MAGIC)
                     || u64::from_le_bytes(
                         bytes[8..16]
                             .try_into()
@@ -64,8 +67,13 @@ impl AnnouncementStore {
                     std::str::from_utf8(&bytes[16..bytes.len() - 32])
                         .map_err(|_| "IRC: history is not UTF-8")?,
                 )?)?;
-                if state.records.values().any(|r| r.route.is_some()) && &bytes[..8] != ROUTE_MAGIC {
+                if state.records.values().any(|r| r.route.is_some()) && &bytes[..8] == MAGIC {
                     return Err("IRC: acquisition reservations require history format 2".into());
+                }
+                if state.records.values().any(|r| r.admission.is_some())
+                    && &bytes[..8] != ADMISSION_MAGIC
+                {
+                    return Err("IRC: requester admissions require history format 3".into());
                 }
                 state
             }
@@ -119,7 +127,9 @@ impl AnnouncementStore {
             return Err("IRC: history exceeds 8 MiB".into());
         }
         let mut bytes = Vec::with_capacity(payload.len() + 48);
-        bytes.extend_from_slice(if next.records.values().any(|r| r.route.is_some()) {
+        bytes.extend_from_slice(if next.records.values().any(|r| r.admission.is_some()) {
+            ADMISSION_MAGIC
+        } else if next.records.values().any(|r| r.route.is_some()) {
             ROUTE_MAGIC
         } else {
             MAGIC

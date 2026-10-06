@@ -1,4 +1,5 @@
 //! Opt-in IRC claims, audit reviews, and routing to existing approved work.
+pub(crate) mod admission;
 pub(crate) mod client;
 mod engine;
 pub(crate) mod format;
@@ -420,8 +421,9 @@ impl Rule {
             || !valid_id(&r.source)
             || !matches!(r.kind.as_str(), "movie" | "episode")
             || !profile_name(&r.profile)
-            || !matches!(r.action.as_str(), "review" | "grab")
+            || !matches!(r.action.as_str(), "review" | "grab" | "request")
             || r.requester.as_ref().is_some_and(|s| !valid_id(s))
+            || (r.action == "request" && r.requester.is_none())
         {
             return Err("IRC: invalid rule identity or profile".into());
         }
@@ -489,8 +491,12 @@ impl Settings {
                 {
                     return Err("IRC: duplicate rule or unknown source/profile".into());
                 }
-                if r.action == "grab" && settings.source(&r.source)?.magnet_template.is_none() {
-                    return Err("IRC: grab rules require a configured magnet template".into());
+                if matches!(r.action.as_str(), "grab" | "request")
+                    && settings.source(&r.source)?.magnet_template.is_none()
+                {
+                    return Err(
+                        "IRC: acquisition rules require a configured magnet template".into(),
+                    );
                 }
                 settings.rules.push(r);
             }
@@ -719,6 +725,7 @@ pub(crate) struct Record {
     pub first_seen: u64,
     pub decided_at: Option<u64>,
     pub route: Option<routing::Route>,
+    pub admission: Option<admission::Admission>,
 }
 impl Record {
     pub(crate) fn public_json(&self) -> Value {
@@ -733,6 +740,9 @@ impl Record {
                 .as_ref()
                 .map_or(Value::Null, routing::Route::public_json),
         );
+        if let Some(a) = &self.admission {
+            v.insert("admission", a.public_json());
+        }
         v.insert("outcome", outcome(&self.evaluations));
         v.insert("identity_verified", false);
         v.insert(
@@ -759,6 +769,9 @@ impl Record {
                 .as_ref()
                 .map_or(Value::Null, routing::Route::to_json),
         );
+        if let Some(a) = &self.admission {
+            v.insert("admission", a.to_json());
+        }
         v.insert(
             "evaluations",
             Value::Array(self.evaluations.iter().map(Evaluation::to_json).collect()),
@@ -788,6 +801,7 @@ impl Record {
                 "first_seen",
                 "decided_at",
                 "route",
+                "admission",
             ],
         )?;
         let r = Self {
@@ -818,6 +832,10 @@ impl Record {
                 None | Some(Value::Null) => None,
                 Some(v) => Some(routing::Route::from_json(v)?),
             },
+            admission: match v.get("admission") {
+                None | Some(Value::Null) => None,
+                Some(v) => Some(admission::Admission::from_json(v)?),
+            },
         };
         let unique: BTreeSet<_> = r.evaluations.iter().map(|e| &e.rule_id).collect();
         if !hash(&r.binding)
@@ -828,12 +846,17 @@ impl Record {
             || unique.len() != r.evaluations.len()
             || !matches!(
                 r.decision.as_str(),
-                "pending" | "acknowledged" | "dismissed"
+                "pending" | "acknowledged" | "dismissed" | "requested"
             )
             || (r.decision == "pending") != r.decided_at.is_none()
             || r.decided_at.is_some_and(|t| t < r.first_seen)
         {
             return Err("IRC: inconsistent announcement provenance".into());
+        }
+        if let Some(a) = &r.admission {
+            a.validate_record(&r)?;
+        } else if r.decision == "requested" {
+            return Err("IRC: requested decision has no durable admission".into());
         }
         if let Some(route) = &r.route {
             route.origin.validate_record(&r)?;
@@ -930,7 +953,7 @@ impl ControlRequest {
         Ok(q)
     }
     pub fn validate(&self) -> Result<()> {
-        if !matches!(self.action.as_str(), "acknowledge" | "dismiss")
+        if !matches!(self.action.as_str(), "acknowledge" | "dismiss" | "request")
             || self.apply != self.plan_id.is_some()
             || self.plan_id.as_ref().is_some_and(|s| !hash(s))
         {

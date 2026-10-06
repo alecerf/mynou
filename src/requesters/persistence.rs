@@ -13,6 +13,7 @@ use std::{
     path::{Path, PathBuf},
 };
 const MAGIC: &[u8; 8] = b"MYNOUR01";
+const IRC_MAGIC: &[u8; 8] = b"MYNOUR02";
 const MAX_BYTES: usize = 16 * 1024 * 1024;
 
 pub(crate) struct RequesterStore {
@@ -49,7 +50,7 @@ impl RequesterStore {
                     .read_to_end(&mut bytes)
                     .map_err(|_| "Requester: cannot read snapshot")?;
                 if bytes.len() < 48
-                    || &bytes[..8] != MAGIC
+                    || (&bytes[..8] != MAGIC && &bytes[..8] != IRC_MAGIC)
                     || u64::from_le_bytes(
                         bytes[8..16]
                             .try_into()
@@ -59,10 +60,19 @@ impl RequesterStore {
                 {
                     return Err("Requester: corrupt or unsupported snapshot".into());
                 }
-                State::from_json(&json::parse(
+                let state = State::from_json(&json::parse(
                     std::str::from_utf8(&bytes[16..bytes.len() - 32])
                         .map_err(|_| "Requester: snapshot is not UTF-8")?,
-                )?)?
+                )?)?;
+                if state
+                    .demands
+                    .values()
+                    .any(|d| d.origins.iter().any(|o| o.starts_with("irc:")))
+                    && &bytes[..8] != IRC_MAGIC
+                {
+                    return Err("Requester: explicit IRC origins require snapshot format 2".into());
+                }
+                state
             }
         };
         let mut store = Self {
@@ -127,7 +137,17 @@ impl RequesterStore {
             return Err("Requester: snapshot exceeds 16 MiB".into());
         }
         let mut bytes = Vec::with_capacity(payload.len() + 48);
-        bytes.extend_from_slice(MAGIC);
+        bytes.extend_from_slice(
+            if state
+                .demands
+                .values()
+                .any(|d| d.origins.iter().any(|o| o.starts_with("irc:")))
+            {
+                IRC_MAGIC
+            } else {
+                MAGIC
+            },
+        );
         bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
         bytes.extend_from_slice(&payload);
         bytes.extend_from_slice(&sha256(&bytes));

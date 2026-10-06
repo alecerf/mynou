@@ -579,7 +579,10 @@ impl Demand {
             || (d.origins.is_empty() && !matches!(d.state.as_str(), "removed" | "rejected"))
             || d.origins.len() > MAX_POLL_ITEMS
             || d.origins.iter().any(|origin| {
-                origin.is_empty() || origin.len() > 4096 || origin.chars().any(char::is_control)
+                origin.is_empty()
+                    || origin.len() > 4096
+                    || origin.chars().any(char::is_control)
+                    || (origin.starts_with("irc:") && !crate::irc::admission::valid_origin(origin))
             })
             || d.id != Self::identity(&d.account_id, &d.request)
             || d.revision == 0

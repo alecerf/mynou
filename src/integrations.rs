@@ -555,7 +555,18 @@ pub(crate) fn series_plan_before(
         }
     };
     let details = fresh_catalog(config, &format!("tv/{id}"), &[], deadline)?;
-    if integer(&details, "id").is_some_and(|actual| actual != id) {
+    series_plan_details_before(config, request, include_specials, id, &details, deadline)
+}
+
+fn series_plan_details_before(
+    config: &Config,
+    request: &Request,
+    include_specials: bool,
+    id: u64,
+    details: &Value,
+    deadline: Instant,
+) -> Result<crate::series::Plan> {
+    if integer(details, "id").is_some_and(|actual| actual != id) {
         return Err("TMDB catalog: series identity mismatch".into());
     }
     let seasons = details
@@ -568,7 +579,7 @@ pub(crate) fn series_plan_before(
     let mut identity = request.clone();
     identity.tmdb_id = Some(id);
     if identity.year == 0 {
-        identity.year = string(&details, "first_air_date")
+        identity.year = string(details, "first_air_date")
             .filter(|text| crate::date::day(text).is_ok())
             .and_then(|text| text[..4].parse().ok())
             .unwrap_or(0);
@@ -647,6 +658,102 @@ pub(crate) fn series_plan_before(
     plan.validate()?;
     remaining_search_time(deadline)?;
     Ok(plan)
+}
+
+/// A new IRC demand requires fresh catalog facts, without changing a series plan.
+pub(crate) fn irc_catalog_request_before(
+    config: &Config,
+    claim: &Request,
+    retained: Option<&crate::series::Record>,
+    deadline: Instant,
+) -> Result<Request> {
+    claim.validate()?;
+    if !matches!(claim.kind.as_str(), "movie" | "episode") || claim.year == 0 {
+        return Err("IRC: new demand requires a complete catalog identity".into());
+    }
+    let id = claim.tmdb_id.ok_or("IRC: missing catalog identity")?;
+    let movie = claim.kind == "movie";
+    let details = fresh_catalog(
+        config,
+        &format!("{}/{id}", if movie { "movie" } else { "tv" }),
+        &[],
+        deadline,
+    )?;
+    let title = string(&details, if movie { "title" } else { "name" })
+        .filter(|s| !s.is_empty() && s.len() <= 512 && !s.chars().any(char::is_control))
+        .ok_or("IRC: catalog title is missing or invalid")?;
+    let date = string(
+        &details,
+        if movie {
+            "release_date"
+        } else {
+            "first_air_date"
+        },
+    )
+    .filter(|s| crate::date::day(s).is_ok())
+    .ok_or("IRC: catalog date is missing or invalid")?;
+    if integer(&details, "id") != Some(id)
+        || tokens(title).is_empty()
+        || tokens(title) != tokens(&claim.title)
+        || date[..4].parse::<u32>().ok() != Some(claim.year)
+        || date > crate::date::today().as_str()
+    {
+        return Err("IRC: catalog facts differ from the announcement or are not released".into());
+    }
+    let mut canonical = claim.clone();
+    canonical.title = title.into();
+    if !movie {
+        let mut scope = retained.map_or_else(|| canonical.clone(), |r| r.plan.request.clone());
+        scope.kind = "series".into();
+        scope.title = canonical.title.clone();
+        scope.year = canonical.year;
+        if retained.is_some() {
+            // Retained mappings can point outside the original catalog season.
+            scope.season = 0;
+            scope.episode = 0;
+        }
+        let plan = series_plan_details_before(config, &scope, true, id, &details, deadline)?;
+        if let Some(retained) = retained {
+            let mut checked = retained.clone();
+            checked.accept_catalog(retained.normalize_catalog(plan)?)?;
+            let episode = checked
+                .plan
+                .episodes
+                .iter()
+                .find(|e| e.season == claim.season && e.episode == claim.episode)
+                .ok_or("IRC: claimed episode is absent from the retained canonical scope")?;
+            if episode.catalog_id.is_none()
+                || episode
+                    .air_date
+                    .as_deref()
+                    .is_none_or(|d| d > crate::date::today().as_str())
+            {
+                return Err(
+                    "IRC: claimed episode is not released with a stable catalog identity".into(),
+                );
+            }
+            canonical = checked.episode_request(episode);
+        } else {
+            let episode = plan
+                .episodes
+                .iter()
+                .find(|e| e.season == claim.season && e.episode == claim.episode)
+                .ok_or("IRC: claimed episode is absent from the catalog")?;
+            if episode.catalog_id.is_none()
+                || episode
+                    .air_date
+                    .as_deref()
+                    .is_none_or(|d| d > crate::date::today().as_str())
+            {
+                return Err(
+                    "IRC: claimed episode is not released with a stable catalog identity".into(),
+                );
+            }
+        }
+    }
+    canonical.validate()?;
+    remaining_search_time(deadline)?;
+    Ok(canonical)
 }
 
 fn fresh_catalog(

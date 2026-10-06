@@ -424,7 +424,7 @@ impl Engine {
     }
 
     /// Mutex order everywhere is requester ledger, then request journal.
-    fn admit_requester_demand(
+    pub(crate) fn admit_requester_demand(
         &self,
         ledger: &mut super::RequesterStore,
         jobs: &mut Store,
@@ -767,7 +767,9 @@ impl Engine {
                         .values_mut()
                         .filter(|d| d.account_id == account.id)
                     {
-                        d.origins.retain(|origin| origins.contains(origin));
+                        d.origins.retain(|origin| {
+                            origin.starts_with("irc:") || origins.contains(origin)
+                        });
                     }
                     let removed: Vec<_> = next
                         .demands

@@ -158,6 +158,7 @@ impl Engine {
             first_seen: now,
             decided_at: None,
             route: None,
+            admission: None,
         };
         let mut next = ledger.state.clone();
         next.records.insert(id, record.clone());
@@ -172,6 +173,9 @@ impl Engine {
         if !hash(id) {
             return Err("IRC: invalid announcement ID".into());
         }
+        if query.action == "request" {
+            return self.irc_request_control(id, query);
+        }
         let mut ledger = lock(&self.irc_store)?;
         let r = ledger
             .state
@@ -183,7 +187,7 @@ impl Engine {
         if !valid_id(&source.id) || source.binding() != r.binding {
             return Err("IRC: source identity changed".into());
         }
-        if r.decision != "pending" {
+        if r.decision != "pending" || r.admission.is_some() {
             return Err("IRC: announcement was already reviewed".into());
         }
         let mut scope = r.to_json();

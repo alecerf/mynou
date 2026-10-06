@@ -399,7 +399,7 @@ pub(crate) fn enabled(config: &Config) -> bool {
     config.downloads_enabled
         && config.irc.rules.iter().any(|r| {
             r.enabled
-                && r.action == "grab"
+                && matches!(r.action.as_str(), "grab" | "request")
                 && config
                     .irc
                     .sources
@@ -432,7 +432,7 @@ pub(crate) fn selection_from_irc(
     };
     config.irc.rules.iter().any(|r| {
         r.enabled
-            && r.action == "grab"
+            && matches!(r.action.as_str(), "grab" | "request")
             && r.kind == job.request.kind
             && r.profile == name
             && selected_interest(config, r, job, requesters)
@@ -475,6 +475,11 @@ fn selected_interest(
             && matches!(d.state.as_str(), "reserved" | "active" | "ready")
             && d.job_id.as_deref() == Some(job.id.as_str())
             && d.capture == provenance.capture
+            && (rule.action != "request"
+                || d.origins.iter().any(|o| {
+                    super::admission::split_origin(o)
+                        .is_some_and(|(source, _)| source == rule.source)
+                }))
     })
 }
 
@@ -499,7 +504,7 @@ fn video(path: &str) -> bool {
                 .any(|ext| s.eq_ignore_ascii_case(ext))
         })
 }
-fn title_matches(request: &crate::store::Request, label: &str) -> bool {
+pub(crate) fn title_matches(request: &crate::store::Request, label: &str) -> bool {
     let t = tokens(label);
     let name = tokens(&request.title);
     if name.is_empty() || !t.starts_with(&name) {
@@ -659,7 +664,7 @@ impl Runtime {
 }
 
 fn matched_rule<'a>(config: &'a Config, r: &Record, fingerprint: &str) -> Result<&'a super::Rule> {
-    if r.decision != "pending"
+    if !matches!(r.decision.as_str(), "pending" | "requested")
         || r.route.is_some()
         || super::outcome(&r.evaluations) != "matched"
         || r.fingerprint != fingerprint
@@ -679,7 +684,18 @@ fn matched_rule<'a>(config: &'a Config, r: &Record, fingerprint: &str) -> Result
         .irc
         .rules
         .iter()
-        .find(|rule| rule.id == evaluation.rule_id && rule.enabled && rule.action == "grab")
+        .find(|rule| {
+            rule.id == evaluation.rule_id
+                && rule.enabled
+                && ((rule.action == "grab" && r.admission.is_none() && r.decision == "pending")
+                    || (rule.action == "request"
+                        && r.decision == "requested"
+                        && r.admission.as_ref().is_some_and(|a| {
+                            a.phase == "committed"
+                                && a.rule_id == rule.id
+                                && rule.requester.as_deref() == Some(a.account_id.as_str())
+                        })))
+        })
         .ok_or("IRC: matched rule does not authorize acquisition".into())
 }
 
@@ -715,6 +731,20 @@ fn candidate(
     }
     if !selected_interest(config, rule, &job, requesters) {
         return Err("IRC: selected requester has no compatible approved demand".into());
+    }
+    if rule.action == "request" {
+        let a = r
+            .admission
+            .as_ref()
+            .ok_or("IRC: request acquisition has no committed origin")?;
+        if !requesters
+            .demands
+            .get(&a.demand_id)
+            .is_some_and(|d| d.origins.contains(&format!("irc:{}:{}", r.source_id, r.id)))
+            || a.request.source_numbering != job.request.source_numbering
+        {
+            return Err("IRC: request acquisition has no committed origin".into());
+        }
     }
     if tokens(&job.request.title) != tokens(&r.announcement.request.title)
         || job.request.year != r.announcement.request.year
@@ -778,6 +808,7 @@ impl Engine {
                 }
                 "IRC: acquisition has no approved demand" => "approval_required",
                 "IRC: selected requester has no compatible approved demand" => "requester_mismatch",
+                "IRC: request acquisition has no committed origin" => "requester_mismatch",
                 "IRC: claim differs from the admitted canonical title or source labels" => {
                     "claim_mismatch"
                 }

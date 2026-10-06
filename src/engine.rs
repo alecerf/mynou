@@ -77,7 +77,9 @@ impl Engine {
         let mut irc_store =
             crate::irc::AnnouncementStore::open(&config.store_dir, &config.irc, read_only)?;
         crate::requesters::engine::validate_storage(&requester_store.state, &store)?;
-        let irc_recovered = crate::irc::routing::recovered_state(&irc_store.state, &store)?;
+        let irc_admitted =
+            crate::irc::admission::recovered_state(&irc_store.state, &requester_store.state)?;
+        let irc_recovered = crate::irc::routing::recovered_state(&irc_admitted, &store)?;
         let irc_recovery_changed = irc_recovered != irc_store.state;
         requester_store.initialize()?;
         irc_store.initialize()?;

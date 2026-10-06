@@ -63,7 +63,7 @@ const HELP: &str = "Mynou — media automation using Rust std only
   announcements [--offset N --limit N] [--config mynou.json]
   announcement ANNOUNCEMENT_ID [--config mynou.json]
   irc-preview SOURCE_ID --announcement FILE | --text FILE [--config mynou.json]
-  irc-control ANNOUNCEMENT_ID --action acknowledge|dismiss [--apply --plan-id ID] [--config mynou.json]
+  irc-control ANNOUNCEMENT_ID --action acknowledge|dismiss|request [--apply --plan-id ID] [--config mynou.json]
   jobs | status | sync [--config mynou.json]
   show | events | retry | cancel ID [--config mynou.json]
   healthcheck [--config mynou.json]
@@ -838,7 +838,7 @@ fn execute(args: Args) -> Result<()> {
                 "action",
                 args.options
                     .get("action")
-                    .ok_or("Specify --action acknowledge or dismiss")?
+                    .ok_or("Specify --action acknowledge, dismiss or request")?
                     .clone(),
             );
             value.insert("apply", args.options.contains_key("apply"));

@@ -17,7 +17,7 @@ pub(super) fn list(engine: &Arc<Engine>, session: &Session, query: &Form) -> Res
     let sources = engine.irc_sources()?;
     let report = engine.irc_announcements(offset, limit)?;
     let mut body = String::from(
-        "<section class=panel><h1>IRC announcements</h1><p>Receive configured announcements, inspect filters and record audit reviews. Explicit grab rules route verified candidates to existing approved requests. Reviews do not authorize downloads.</p><h2>Sources</h2><table><thead><tr><th>Source</th><th>Channel</th><th>Format</th><th>Authentication</th><th>Connection</th><th>Received</th><th>Duplicates</th></tr></thead><tbody>",
+        "<section class=panel><h1>IRC announcements</h1><p>Receive configured announcements and inspect filters. Grab rules route verified candidates to existing requests. Request rules offer reviewed requester demand; approvals and quotas apply.</p><h2>Sources</h2><table><thead><tr><th>Source</th><th>Channel</th><th>Format</th><th>Authentication</th><th>Connection</th><th>Received</th><th>Duplicates</th></tr></thead><tbody>",
     );
     for s in array(sources.get("sources").unwrap_or(&Value::Null)) {
         let h = s.get("health").unwrap_or(&Value::Null);
@@ -102,7 +102,11 @@ pub(super) fn detail(engine: &Arc<Engine>, session: &Session, id: &str) -> Resul
     if text(&r, "decision") == "pending" {
         body.push_str(&form("/ui/irc/control", session));
         body.push_str(&hidden("id", id));
-        body.push_str("<button name=action value=acknowledge>Review acknowledgement</button><button name=action value=dismiss>Review dismissal</button></form>");
+        body.push_str("<button name=action value=acknowledge>Review acknowledgement</button><button name=action value=dismiss>Review dismissal</button>");
+        if engine.irc_request_available(id)? {
+            body.push_str("<button name=action value=request>Review requester demand</button>");
+        }
+        body.push_str("</form>");
     }
     body.push_str("</section>");
     Ok(frame(
@@ -115,7 +119,7 @@ pub(super) fn detail(engine: &Arc<Engine>, session: &Session, id: &str) -> Resul
 fn describe(r: &Value) -> String {
     let a = r.get("announcement").unwrap_or(&Value::Null);
     let mut body = format!(
-        "<p><a href=/ui/irc>All announcements</a></p><section class=panel><h1>{}</h1><p>Source: {}. Filter result: {}. Decision: {}.</p><p>Claimed media: {} ({}) S{}E{}. TMDB ID: {}.</p><p>Claimed torrent hash: {}.</p><p>Catalog identity remains a source claim. Automatic routing verifies torrent metadata against an existing approved request. Acknowledgement and dismissal are audit decisions; use the linked job to cancel acquisition.</p><table><thead><tr><th>Rule</th><th>Profile</th><th>Outcome</th></tr></thead><tbody>",
+        "<p><a href=/ui/irc>All announcements</a></p><section class=panel><h1>{}</h1><p>Source: {}. Filter result: {}. Decision: {}.</p><p>Claimed media: {} ({}) S{}E{}. TMDB ID: {}.</p><p>Claimed torrent hash: {}.</p><p>New requester demand requires catalog confirmation. Torrent metadata is verified before acquisition. Acknowledgement and dismissal record audit decisions; requester approvals and quotas govern request reviews.</p><table><thead><tr><th>Rule</th><th>Profile</th><th>Outcome</th></tr></thead><tbody>",
         display(text(a, "title")),
         e(text(r, "source_id")),
         e(text(r, "outcome")),
@@ -136,6 +140,10 @@ fn describe(r: &Value) -> String {
         ));
     }
     body.push_str("</tbody></table>");
+    if let Some(a) = r.get("admission") {
+        body.push_str(&format!("<h2>Requester demand</h2><p>Account: {}. Admission: {}.</p><p><a href=\"/ui/requesters/{}\">View requester demand and approvals</a></p>",
+            e(text(a, "account_id")), e(text(a, "phase")), e(text(a, "account_id"))));
+    }
     body.push_str(&format!(
         "<h2>Acquisition routing</h2><p>Outcome: {}.</p>",
         e(text(r, "routing_outcome"))
@@ -153,6 +161,12 @@ pub(super) fn review(session: &Session, id: &str, report: &Value) -> String {
     let r = report.get("announcement").unwrap_or(&Value::Null);
     let mut body = describe(r);
     body.push_str(&format!("<h2>Review {}</h2>", e(text(report, "action"))));
+    if text(report, "action") == "request" {
+        let request = report.get("canonical_request").unwrap_or(&Value::Null);
+        body.push_str(&format!("<p>Confirmed media: {} ({}). Requester: {}. Profile: {}. Destination: {}.</p><p>Requester approval required: {}. Existing demand is retained when present; quotas govern admission.</p>",
+            display(text(request, "title")), scalar(request, "year"), e(text(report, "account_id")),
+            e(text(report, "profile")), e(text(report, "destination")), scalar(report, "approval_required")));
+    }
     body.push_str(&form("/ui/irc/control", session));
     for (k, v) in [
         ("id", id),
