@@ -41,12 +41,17 @@ pub(super) fn list(engine: &Arc<Engine>, session: &Session) -> crate::Result<Str
             e(text(r, "last_error"))
         ));
         let state = text(r, "state");
-        let actions: &[&str] = match state {
-            "queued" | "downloading" | "verifying" => &["pause", "cancel"],
-            "paused" => &["resume", "cancel"],
-            "failed" => &["retry", "cancel"],
-            "complete" => &["cancel"],
-            _ => &[],
+        let actions: &[&str] = if flag(r, "library_owned") {
+            body.push_str("The library job controls this transfer.");
+            &[]
+        } else {
+            match state {
+                "queued" | "downloading" | "verifying" => &["pause", "cancel"],
+                "paused" => &["resume", "cancel"],
+                "failed" => &["retry", "cancel"],
+                "complete" => &["cancel"],
+                _ => &[],
+            }
         };
         for action in actions {
             body.push_str(&form("/ui/usenet/control", session));

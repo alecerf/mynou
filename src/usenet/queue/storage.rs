@@ -10,6 +10,7 @@ use std::{
     path::Path,
 };
 pub(super) const QUEUE: &[u8; 8] = b"MYNOUU01";
+pub(super) const OWNED_QUEUE: &[u8; 8] = b"MYNOUU02";
 pub(super) const SOURCE: &[u8; 8] = b"MYNOUN01";
 fn error() -> String {
     "Usenet queue: invalid, corrupt or inaccessible private storage".into()
@@ -69,6 +70,12 @@ pub(super) fn file(path: &Path, max: u64) -> Result<File> {
     Ok(f)
 }
 pub(super) fn read(path: &Path, magic: &[u8; 8], max: usize) -> Result<Vec<u8>> {
+    read_frame(path, &[magic], max).map(|(bytes, _)| bytes)
+}
+pub(super) fn read_queue(path: &Path, max: usize) -> Result<(Vec<u8>, bool)> {
+    read_frame(path, &[QUEUE, OWNED_QUEUE], max).map(|(bytes, version)| (bytes, version == 1))
+}
+fn read_frame(path: &Path, magics: &[&[u8; 8]], max: usize) -> Result<(Vec<u8>, usize)> {
     let f = file(path, max as u64 + 48)?;
     let mut bytes = Vec::new();
     f.take(max as u64 + 49)
@@ -76,14 +83,17 @@ pub(super) fn read(path: &Path, magic: &[u8; 8], max: usize) -> Result<Vec<u8>> 
         .map_err(|_| error())?;
     if bytes.len() < 48
         || bytes.len() > max + 48
-        || &bytes[..8] != magic
         || u64::from_le_bytes(bytes[8..16].try_into().map_err(|_| error())?)
             != (bytes.len() - 48) as u64
         || sha256(&bytes[..bytes.len() - 32]).as_slice() != &bytes[bytes.len() - 32..]
     {
         return Err(error());
     }
-    Ok(bytes[16..bytes.len() - 32].to_vec())
+    let version = magics
+        .iter()
+        .position(|magic| magic.as_slice() == &bytes[..8])
+        .ok_or_else(error)?;
+    Ok((bytes[16..bytes.len() - 32].to_vec(), version))
 }
 pub(super) fn write(path: &Path, magic: &[u8; 8], payload: &[u8]) -> Result<()> {
     reject_symlinks(path).map_err(|_| error())?;

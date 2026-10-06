@@ -1,5 +1,6 @@
 //! Native private NZB queue. Network I/O never holds the persistent state lock.
 mod model;
+mod owned;
 mod storage;
 use super::{
     Downloads, ProbeRequest, Server, Settings, nntp,
@@ -17,6 +18,7 @@ use crate::{
 use model::{
     Data, MAX_RECORDS, MAX_SNAPSHOT, MAX_SOURCE_BYTES, MAX_SOURCES, Phase, Record, Reservation,
 };
+pub use owned::{OwnedTransfer, Owner};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::File,
@@ -42,6 +44,7 @@ struct Inner {
     workspaces: BTreeMap<String, Workspace>,
     verified: BTreeMap<String, u32>,
     active: BTreeSet<String>,
+    permits: BTreeMap<String, u64>,
     epoch: String,
     _owner: Option<File>,
     existing: bool,
@@ -68,7 +71,11 @@ impl Inner {
         }
         if let Err(e) = storage::write(
             &self.settings.state_dir.join("queue.bin"),
-            storage::QUEUE,
+            if next.records.values().any(|r| r.owner.is_some()) {
+                storage::OWNED_QUEUE
+            } else {
+                storage::QUEUE
+            },
             &bytes,
         ) {
             self.poisoned = true;
@@ -152,11 +159,15 @@ impl Client {
                     .map_err(|_| "Usenet queue: another client owns storage")?;
                 owner = Some(f);
             }
-            let bytes = storage::read(&root.join("queue.bin"), storage::QUEUE, MAX_SNAPSHOT)?;
-            Data::parse(&json::parse(
+            let (bytes, owned_format) = storage::read_queue(&root.join("queue.bin"), MAX_SNAPSHOT)?;
+            let data = Data::parse(&json::parse(
                 std::str::from_utf8(&bytes)
                     .map_err(|_| "Usenet queue: invalid snapshot encoding")?,
-            )?)?
+            )?)?;
+            if !owned_format && data.records.values().any(|r| r.owner.is_some()) {
+                return Err("Usenet queue: captured ownership requires format 2".into());
+            }
+            data
         } else {
             Data::default()
         };
@@ -226,7 +237,8 @@ impl Client {
                 {
                     return Err("Usenet queue: receipt has no reserved attempt".into());
                 }
-                if r.phase == Phase::Preparing && w.first_missing() != Some(1) {
+                if matches!(r.phase, Phase::Preparing | Phase::Held) && w.first_missing() != Some(1)
+                {
                     return Err(
                         "Usenet queue: preparing workspace already contains articles".into(),
                     );
@@ -251,6 +263,7 @@ impl Client {
                 workspaces,
                 verified,
                 active: BTreeSet::new(),
+                permits: BTreeMap::new(),
                 epoch: digest(&random_bytes::<16>()?),
                 _owner: owner,
                 existing,
@@ -341,6 +354,8 @@ impl Client {
                     .ok_or("Usenet queue: missing recovery record")?;
                 row.phase = if removed {
                     Phase::Paused
+                } else if r.phase == Phase::Preparing && r.owner.is_some() {
+                    Phase::Held
                 } else if inner.workspaces[&r.id].available_file().is_some() {
                     Phase::Complete
                 } else {
@@ -393,6 +408,14 @@ impl Client {
                 v.insert("source_id", r.source.clone());
                 v.insert("file_index", r.file_index as u32);
                 v.insert("server_id", r.server.clone());
+                v.insert("library_owned", r.owner.is_some());
+                v.insert(
+                    "owner_authorized",
+                    r.owner.is_some()
+                        && inner.owner_allowed(r)
+                        && !inner.poisoned
+                        && !self.stopped.load(Ordering::Acquire),
+                );
                 v.insert(
                     "state",
                     if inner.poisoned {
@@ -438,6 +461,14 @@ impl Client {
             .get(file_index)
             .ok_or("Usenet queue: file index is absent")?;
         let mut inner = self.lock()?;
+        if inner
+            .data
+            .records
+            .values()
+            .any(|r| r.source == nzb.id && r.file_index == file_index && r.owner.is_some())
+        {
+            return Err("Usenet queue: the selected file is retained by a library owner".into());
+        }
         let server = inner
             .servers
             .get(server_id)
@@ -472,6 +503,7 @@ impl Client {
         let mut next = inner.data.clone();
         let revision = next.next()?;
         let row = Record {
+            owner: None,
             id: id.clone(),
             source: nzb.id.clone(),
             file_index,
@@ -575,6 +607,9 @@ impl Client {
             .get(id)
             .ok_or("Usenet queue: transfer is absent")?
             .clone();
+        if r.owner.is_some() {
+            return Err("Usenet queue: use the owning library job's controls".into());
+        }
         let phase = match action {
             "pause"
                 if matches!(
@@ -643,7 +678,7 @@ impl Client {
                 .data
                 .records
                 .get(id)
-                .is_none_or(|r| r.phase != Phase::Complete)
+                .is_none_or(|r| r.phase != Phase::Complete || r.owner.is_some())
         {
             return Err("Usenet queue: verified file is unavailable".into());
         }
@@ -687,6 +722,7 @@ impl Client {
             })
         };
         let mut inner = self.lock()?;
+        inner.expire_permits()?;
         let current = inner
             .data
             .records
@@ -694,6 +730,7 @@ impl Client {
             .ok_or("Usenet queue: active record is absent")?;
         let valid = !self.stopped.load(Ordering::Acquire)
             && !inner.poisoned
+            && inner.owner_allowed(current)
             && current
                 .reservation
                 .as_ref()
@@ -761,8 +798,9 @@ impl Client {
     fn claim(&self) -> Result<(bool, Option<Work>)> {
         let mut inner = self.lock()?;
         inner.writable()?;
+        let expired = inner.expire_permits()?;
         if inner.active.len() >= inner.settings.max_active {
-            return Ok((false, None));
+            return Ok((expired, None));
         }
         let mut candidates = inner
             .data
@@ -770,6 +808,7 @@ impl Client {
             .values()
             .filter(|r| {
                 r.phase == Phase::Queued
+                    && inner.owner_allowed(r)
                     && r.next_attempt <= store::now()
                     && !inner.active.contains(&r.id)
             })
@@ -858,7 +897,7 @@ impl Client {
                 }),
             ));
         }
-        Ok((false, None))
+        Ok((expired, None))
     }
 }
 struct Work {

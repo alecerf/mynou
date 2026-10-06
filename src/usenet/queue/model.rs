@@ -12,6 +12,7 @@ pub(super) const MAX_SNAPSHOT: usize = 8 * 1024 * 1024;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Phase {
     Preparing,
+    Held,
     Queued,
     Downloading,
     Verifying,
@@ -24,6 +25,7 @@ impl Phase {
     pub fn name(self) -> &'static str {
         match self {
             Self::Preparing => "preparing",
+            Self::Held => "held",
             Self::Queued => "queued",
             Self::Downloading => "downloading",
             Self::Verifying => "verifying",
@@ -36,6 +38,7 @@ impl Phase {
     fn parse(s: &str) -> Result<Self> {
         match s {
             "preparing" => Ok(Self::Preparing),
+            "held" => Ok(Self::Held),
             "queued" => Ok(Self::Queued),
             "downloading" => Ok(Self::Downloading),
             "verifying" => Ok(Self::Verifying),
@@ -65,6 +68,7 @@ pub(super) struct Reservation {
 }
 #[derive(Clone)]
 pub(super) struct Record {
+    pub owner: Option<super::Owner>,
     pub id: String,
     pub source: String,
     pub file_index: usize,
@@ -103,6 +107,10 @@ impl Record {
     }
     pub fn json(&self) -> Value {
         let mut v = Value::object();
+        // Omit the field for preceding raw records to preserve their format contract.
+        if let Some(owner) = &self.owner {
+            v.insert("owner", owner.to_json());
+        }
         v.insert("id", self.id.clone());
         v.insert("source", self.source.clone());
         v.insert("file_index", self.file_index as u32);
@@ -148,6 +156,7 @@ impl Record {
                 "reservation",
                 "next_attempt",
                 "error",
+                "owner",
             ],
         )?;
         let rows = v
@@ -184,6 +193,7 @@ impl Record {
                         | "verification_failed"
                         | "attempts_exhausted"
                         | "provider_removed"
+                        | "owner_inactive"
                 ) =>
             {
                 Some(s.clone())
@@ -191,6 +201,7 @@ impl Record {
             _ => return Err("Usenet queue: invalid diagnostic".into()),
         };
         let r = Self {
+            owner: v.get("owner").map(super::Owner::from_json).transpose()?,
             id: text(v, "id")?,
             source: text(v, "source")?,
             file_index: usize::try_from(number(v, "file_index")?)
@@ -220,13 +231,14 @@ impl Record {
             || r.order == 0
             || r.revision < r.order
             || r.id
-                != Self::identity(
+                != Self::captured_identity(
                     &r.source,
                     r.file_index,
                     &r.server,
                     &r.binding,
                     r.max_file,
                     r.limit,
+                    r.owner.as_ref(),
                 )
             || matches!(r.phase, Phase::Downloading | Phase::Verifying) != r.reservation.is_some()
             || r.reservation.as_ref().is_some_and(|p| {
@@ -239,8 +251,10 @@ impl Record {
                             || r.attempts[p.part as usize - 1] == 0
                     }
             })
-            || (r.phase == Phase::Preparing
+            || (matches!(r.phase, Phase::Preparing | Phase::Held)
                 && (r.attempts.iter().any(|n| *n != 0) || r.error.is_some()))
+            || (r.phase == Phase::Held && r.owner.is_none())
+            || (r.error.as_deref() == Some("owner_inactive") && r.owner.is_none())
             || (r.phase != Phase::Queued && r.next_attempt != 0)
         {
             return Err("Usenet queue: inconsistent record".into());
@@ -275,8 +289,18 @@ impl Data {
         let mut orders = BTreeSet::new();
         let mut sources = BTreeSet::new();
         let mut count = 0;
+        let mut locations = BTreeMap::new();
+        let mut owners = BTreeSet::new();
         for v in rows {
             let r = Record::parse(v)?;
+            let occupied = locations.insert((r.source.clone(), r.file_index), r.owner.is_some());
+            if occupied.is_some_and(|owned| owned || r.owner.is_some())
+                || r.owner
+                    .as_ref()
+                    .is_some_and(|o| !owners.insert(o.job_id.clone()))
+            {
+                return Err("Usenet queue: conflicting library ownership".into());
+            }
             count += r.attempts.len();
             sources.insert(r.source.clone());
             if r.revision > revision
