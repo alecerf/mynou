@@ -70,6 +70,13 @@ pub struct VerifiedEntry {
     sha256: [u8; 32],
 }
 impl VerifiedEntry {
+    pub(super) fn checked(bytes: u64, crc32: u32, sha256: [u8; 32]) -> Self {
+        Self {
+            bytes,
+            crc32,
+            sha256,
+        }
+    }
     pub fn bytes(&self) -> u64 {
         self.bytes
     }

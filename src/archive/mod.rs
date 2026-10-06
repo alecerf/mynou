@@ -1,8 +1,10 @@
 //! Original, bounded archive parsers. Decoding never chooses filesystem paths.
 pub mod deflate;
+mod rar;
 mod zip;
 
 use crate::{Result, json::Value};
+pub use rar::{Entry as RarEntry, Rar5};
 pub use zip::{Entry, Method, VerifiedEntry, Zip};
 pub(crate) fn checked_entry_path(path: &str) -> Result<bool> {
     zip::checked_entry_path(path)
