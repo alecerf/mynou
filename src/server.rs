@@ -254,6 +254,7 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
     match (method, path) {
         ("GET", "/api/status") => Ok((200, engine.status()?)),
         ("GET", "/api/indexers") => Ok((200, engine.indexers()?)),
+        ("GET", "/api/usenet") => Ok((200, engine.usenet_servers())),
         ("GET", "/api/transfers") => Ok((200, engine.transfers()?)),
         ("GET", "/api/library") => Ok((200, engine.library()?)),
         ("GET", "/api/series") => Ok((200, engine.series()?)),
@@ -398,6 +399,19 @@ fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<
                     }
                 }
                 return Ok((404, error("Unknown IRC route")));
+            }
+            if let Some(tail) = path.strip_prefix("/api/usenet/") {
+                if let Some(id) = tail.strip_suffix("/probe")
+                    && crate::requesters::valid_id(id)
+                    && method == "POST"
+                {
+                    let v = control_body(body, &["apply", "plan_id"], false)?;
+                    return Ok((
+                        200,
+                        engine.usenet_probe(id, &crate::usenet::ProbeRequest::from_json(&v)?)?,
+                    ));
+                }
+                return Ok((404, error("Unknown Usenet route")));
             }
             if let Some(tail) = path.strip_prefix("/api/indexers/") {
                 if let Some(id) = tail.strip_suffix("/control")

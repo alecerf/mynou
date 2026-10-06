@@ -24,6 +24,8 @@ const HELP: &str = "Mynou — media automation using Rust std only
   init [--config mynou.json]
   analyze FILE [--json]
   nzb-inspect FILE
+  usenet [--config mynou.json]
+  usenet-probe SERVER_ID [--apply --plan-id ID] [--config mynou.json]
   doctor [--config mynou.json]
   serve [--config mynou.json]
   submit --title TITLE [--kind movie|episode|series|file] [--year YEAR]
@@ -123,7 +125,8 @@ impl Args {
                 &["config", "help"]
             }
             "requesters" | "requester-sync" => &["config", "help"],
-            "indexers" => &["config", "help"],
+            "indexers" | "usenet" => &["config", "help"],
+            "usenet-probe" => &["config", "help", "apply", "plan-id"],
             "indexer-control" => &["config", "help", "action", "apply", "plan-id"],
             "notifications" => &["config", "help", "offset", "limit"],
             "notifications-dispatch" => &["config", "help"],
@@ -223,6 +226,7 @@ impl Args {
                 "irc-control",
                 "notification-control",
                 "indexer-control",
+                "usenet-probe",
                 "analyze",
                 "nzb-inspect",
                 "show",
@@ -782,6 +786,43 @@ fn execute(args: Args) -> Result<()> {
                 output(&call(&config, &path, "GET", "/api/indexers", None)?);
             } else {
                 output(&Engine::open_for_preview(config)?.indexers()?);
+            }
+        }
+        "usenet" => {
+            if online {
+                output(&call(&config, &path, "GET", "/api/usenet", None)?);
+            } else {
+                output(&config.usenet.report());
+            }
+        }
+        "usenet-probe" => {
+            let mut v = Value::object();
+            v.insert("apply", args.options.contains_key("apply"));
+            v.insert(
+                "plan_id",
+                args.options
+                    .get("plan-id")
+                    .cloned()
+                    .map_or(Value::Null, Value::from),
+            );
+            let q = mynou::usenet::ProbeRequest::from_json(&v)?;
+            let id = &args.positions[0];
+            if !mynou::requesters::valid_id(id) {
+                return Err("Usenet: invalid server ID".into());
+            }
+            if online {
+                output(&call(
+                    &config,
+                    &path,
+                    "POST",
+                    &format!("/api/usenet/{id}/probe"),
+                    Some(&q.to_json()),
+                )?);
+            } else {
+                if q.apply {
+                    return Err("Usenet: application requires the running service".into());
+                }
+                output(&Engine::open_for_preview(config)?.usenet_probe(id, &q)?);
             }
         }
         "indexer-control" => {

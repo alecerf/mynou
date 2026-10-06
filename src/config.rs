@@ -79,6 +79,7 @@ pub struct Config {
     pub requesters: crate::requesters::Settings,
     pub irc: crate::irc::Settings,
     pub notifications: crate::notifications::Settings,
+    pub usenet: crate::usenet::Settings,
 }
 
 fn object(items: Vec<(&str, Value)>) -> Value {
@@ -363,6 +364,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             "requesters",
             "irc",
             "notifications",
+            "usenet",
         ],
     )?;
     if number(v, "schema_version", 0, 1)? != 1 {
@@ -544,6 +546,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         requesters,
         irc,
         notifications,
+        usenet: crate::usenet::Settings::from_json(v.get("usenet"))?,
     })
 }
 pub fn secret(name: &str) -> Result<String> {

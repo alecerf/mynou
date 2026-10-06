@@ -7,6 +7,8 @@ const MAX_FILE_BYTES: u64 = 1 << 40;
 const MAX_PARTS: u32 = 32_768;
 const MAX_PREAMBLE: usize = 16 * 1024;
 const MAX_HEADER: usize = 4096;
+/// Worst-case escaping plus one CRLF per decoded byte, and bounded headers.
+pub const MAX_ARTICLE_BYTES: usize = 4 * MAX_PART_BYTES + MAX_PREAMBLE + 3 * MAX_HEADER;
 
 const fn table() -> [u32; 256] {
     let mut out = [0; 256];
@@ -173,7 +175,7 @@ fn line<'a>(bytes: &'a [u8], at: &mut usize, max: usize) -> Result<&'a [u8]> {
     Ok(&rest[..n - 1])
 }
 pub fn decode(bytes: &[u8]) -> Result<Part> {
-    if bytes.is_empty() || bytes.len() > 2 * MAX_PART_BYTES + MAX_PREAMBLE + 3 * MAX_HEADER {
+    if bytes.is_empty() || bytes.len() > MAX_ARTICLE_BYTES {
         return Err("yEnc: article size exceeds the limit".into());
     }
     let mut at = 0;
