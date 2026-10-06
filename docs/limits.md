@@ -329,8 +329,16 @@ CRC; decoded parts are at most 16 MiB and initial in-memory assembly at most
 Newznab, persistent acquisition/recovery, archives and PAR2 repair remain later
 increments. See [native Usenet stages](usenet.md) for the explicit contract.
 
-The active v0.22.1 original NNTP/TLS stage awaits exact complete CI. It uses
+The original v0.22.1 NNTP/TLS stage passed complete CI. It uses
 verified implicit TLS, strict AUTHINFO/BODY identities, bounded CRLF/dot bodies,
 absolute budgets and one active operation per provider. Protected guarded probes
 never request articles or admit work. Health/attempt counters are ephemeral;
 durable acquisition, Newznab, archives and repair remain subsequent increments.
+
+The active v0.22.2 disk workspace stage awaits exact complete CI. Checked private
+part receipts and exact streamed assembly/recovery have explicit source/provider/
+size bindings, one native owner, bounded part buffers and prepared/ready output
+proofs. The original in-memory assembler keeps its 64 MiB cap; disk workspaces
+capture a positive limit up to one TiB. This stage provides no native queue,
+background acquisition or implicit library admission. Newznab/Engine integration,
+archives and repair remain subsequent increments.

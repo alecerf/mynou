@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.22.1
+# Project checkpoint — Mynou 0.22.2
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -12,13 +12,21 @@ alone creates release tags and publishes artifacts from validated commits.
 
 ## Implemented scope
 
-The active 0.22.1 increment adds original NNTP/TLS authentication and exact
-bounded article body transport. Opt-in immutable provider settings refer to
-credential environment names. Guarded non-acquiring connection probes have
-protected CLI/API/browser paths, service-bound attempt guards and expiring browser
-reviews. Private endpoints/credentials/raw statuses are excluded from reports.
-Original local protocol and verified TLS fixtures await this source's exact CI.
-Disk-backed acquisition/recovery and Newznab remain subsequent increments.
+The active 0.22.2 increment adds single-file checked private Usenet workspaces.
+Immutable NZB/provider/limit bindings and article-associated receipts are
+revalidated at restart. Streamed assembly requires exact coverage and complete
+CRC, with checked prepared output proofs before atomic publication and ready
+state. Read-only recovery validates without writing; process ownership and
+private/link checks protect storage. Original fixtures, including 65 MiB output,
+await this source's exact complete CI. Native queue/admission/Newznab follow.
+
+CI published v0.22.1 from `cbc10d16b108c03a157d7afb6c91034ef8ac4343` in
+[run 37436785004](https://github.com/alecerf/mynou/actions/runs/37436785004).
+All five jobs passed: 652 Rust tests across 56 harnesses, none failed or ignored,
+and four scheduler checks. Test execution took 71.509 seconds with two harness
+processes and two threads each. Seven bot-owned assets were published at
+08:35:55 UTC on October 6, 2026. The tag matched the validated source and the
+prior v0.22.0 tag and asset IDs, sizes and digests remained unchanged.
 
 CI published v0.22.0 from `9644114e5f1e8c2ed679d57a3a2b18c479ee4ac2` in
 [run 37434792979](https://github.com/alecerf/mynou/actions/runs/37434792979).

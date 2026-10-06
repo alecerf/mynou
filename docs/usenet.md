@@ -2,8 +2,9 @@
 
 v0.22.0 provides original bounded NZB and yEnc format primitives. It passed all
 five CI jobs in run 37434792979 with 639 Rust tests and seven published assets.
-The active v0.22.1 native NNTP increment needs its own complete CI. All code uses
-Rust std only.
+Native NNTP passed complete v0.22.1 CI with 652 Rust tests and seven assets.
+The active v0.22.2 disk workspace increment needs its own complete CI. All code
+uses Rust std only.
 These primitives establish format and accidental-corruption checks; full Usenet
 search, NNTP acquisition, durable transfer management and recovery follow in
 separate releases. No external decoder, downloader, archive tool or repair helper
@@ -140,5 +141,59 @@ require origin/CSRF checks.
 
 A probe checks greeting/authentication and QUIT (205), never BODY or another
 article command. It cannot create a download or library job. Probe health is
-explicitly ephemeral; durable transfer management/recovery follows in 0.22.2.
+explicitly ephemeral; durable transfer management follows after the disk workspace
+increment.
 There is no exposed article-download API or automatic NNTP polling in this stage.
+
+## Checked private workspaces in 0.22.2
+
+`usenet::workspace::Workspace` creates a new private single-file workspace from
+original NZB bytes, file index, immutable provider binding digest and explicit
+positive file-size limit up to one TiB. Original NZB bytes must be retained by the
+caller and supplied again on reopening. A new directory is required; existing
+storage is never adopted by creation. Clean paths, 0700 directories, 0600 regular
+files and an exclusive native process-owner lock protect the workspace.
+
+A checked MYNOUW01 descriptor binds exact NZB byte identity, file index, provider,
+part count and file-size cap. Each MYNOUP01 receipt binds that workspace and the
+expected article identity to immutable verified yEnc metadata/data. Frames have
+bounded header/data lengths and SHA-256 checks. Accepting a part requires the
+exact original article ID and number from the NZB inventory. Receipt publication
+uses exclusive private temporaries, file synchronization, atomic rename and
+directory synchronization. Repeated identical parts are idempotent; conflicting
+or unexpected existing receipts are preserved and rejected.
+
+Reopening verifies immutable inputs, every retained receipt frame, article
+binding, range/size/header constraints and part CRC before reuse. Missing receipts
+remain missing; corruption, unsupported formats, public permissions, symlinks or
+shared hardlinks fail closed. No receipt is considered verified merely because a
+path or file size exists. Read-only opening requires existing checked storage and
+never creates, repairs, assembles or publishes anything.
+
+Complete assembly requires exactly numbered parts, consistent names/size/count,
+contiguous coverage and the final whole-file CRC. It reads one bounded part at a
+time and writes in 64 KiB chunks, updating CRC32 and SHA-256. The output may exceed
+the 64 MiB in-memory assembler cap while remaining inside its captured file-size
+limit. Decoded names select only basenames inside the workspace's private output
+subdirectory; source/library files are never assembly destinations. Existing
+foreign outputs are preserved and rejected.
+
+After verifying/synchronizing the complete temporary output, the descriptor
+records its name, length, CRC, SHA-256 and owned temporary identity as `prepared`.
+Only then can it be atomically published, synchronized and marked `ready`.
+Writable reopening verifies prepared temporary or published bytes and completes
+that transition without reacquisition. Read-only reopening checks the same proof
+and leaves the prepared state/files unchanged. Complete outputs are rechecked on
+reopening. Uncertain persistence suppresses available output and requires reopening.
+
+Public workspace reports expose binding/phase/part counts/readiness, without
+subjects, article IDs, decoded names or provider details. The available file is a
+previously verified private path; an importer must retain ordinary captured
+quality/ownership gates and verify content immediately before use.
+
+This is a library/storage increment. It does not yet start background downloads,
+expose an article-download API, implement a transfer queue or admit library work.
+Native queue/management, ordinary Engine acquisition and Newznab follow separately.
+Original fixtures include restart, conflict preservation, private/link rejection,
+CRC/frame corruption, prepared publication windows and a 65 MiB streamed file;
+this source requires its own complete Actions validation.

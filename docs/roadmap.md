@@ -5,14 +5,25 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current implementation: 0.22.1, awaiting CI
+## Current implementation: 0.22.2, awaiting CI
 
-Original bounded NNTP uses verified TLS and AUTHINFO, with exact BODY identity,
-dot-unstuffing, absolute budgets and fixed private-safe errors. Guarded probes
-check connection/authentication without reading articles or queuing work. Native
-local protocol/TLS fixtures require this source's complete CI/publication.
-Disk-backed acquisition/recovery and Newznab continue in further 0.22 increments;
-verified cross-seeding and bulk controls follow in 0.23.
+Original checked disk receipts bind verified parts to exact NZB/file/provider
+identities. Single-file workspaces require private storage and exclusive process
+ownership. Streamed assembly lifts the in-memory file cap while retaining bounded
+parts and complete integrity gates. Checked prepared/ready proofs recover output
+publication without acquisition; offline recovery never writes. Original fixtures
+await this source's complete CI/publication. Native queue/Engine/Newznab continue
+in further 0.22 increments, followed by verified cross-seeding and bulk controls.
+
+## Preceding published stage: 0.22.1
+
+CI published v0.22.1 from `cbc10d16b108c03a157d7afb6c91034ef8ac4343` in
+[run 37436785004](https://github.com/alecerf/mynou/actions/runs/37436785004).
+All five jobs passed: 652 Rust tests across 56 harnesses, none failed or ignored,
+and four scheduler checks. Test execution took 71.509 seconds with two harness
+processes and two threads each. Seven bot-owned assets were published at
+08:35:55 UTC on October 6, 2026. The tag matched the validated source and the
+prior v0.22.0 tag and asset IDs, sizes and digests remained unchanged.
 
 ## Preceding published stage: 0.22.0
 
