@@ -31,6 +31,14 @@ also retain their current execution. This policy was added after a queued
 publication was cancelled during GitHub's runner-assignment incident. It changes
 queue ordering, not the graph/test/build/package/publication gates.
 
+If a historical publication lost its default-branch head and GitHub rejects
+release creation because its workflow differs from trunk, retain its exact
+validated commit on a source branch before retrying the existing run. The
+0.20.4 recovery used release-source/0.20.4 and attempt 4 of run 37362054311.
+[GitHub documents the source-ref check](https://github.blog/changelog/2023-11-02-github-actions-enforcing-workflow-scope-when-creating-a-release/).
+Retained validation/build/package results remain tied to the original commit;
+the retry performs publication only. Actions alone creates tags and assets.
+
 The static build also compiles the Rust standard-library-only packaging example.
 The next job receives that tool and the checked binary as a workflow artifact,
 so neither is recompiled for packaging. It explicitly passes the current source

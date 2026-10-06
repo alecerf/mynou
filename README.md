@@ -58,9 +58,10 @@ See the [recorded evidence](docs/validation.md#recorded-0203-ci-evidence).
 Required [NickServ identification](docs/irc.md#required-nickserv-identification-in-0204)
 now gates channel entry on exact trusted account confirmation. Failures close
 the connection; retries identify again and public health redacts credentials.
-The NickServ source passed validation, GNU/musl builds and packaging in run
-37362054311: 560 Rust tests across 50 harnesses and four scheduler checks. Its
-publication is queued during GitHub's runner-assignment incident.
+CI published [v0.20.4](https://github.com/alecerf/mynou/releases/tag/v0.20.4)
+from its exact validated source after all five jobs passed in run 37362054311,
+attempt 4: 560 Rust tests across 50 harnesses and four scheduler checks.
+See the [recorded evidence](docs/validation.md#recorded-0204-ci-evidence).
 
 Optional [requester selectors](docs/irc.md#requester-selectors-in-0205) now bind
 IRC grabs to one account's compatible approved demand, including shared work.

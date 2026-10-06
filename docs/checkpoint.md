@@ -23,10 +23,11 @@ CI and publication. Trunk queue protection preserves the preceding publication.
 The preceding 0.20.4 increment adds required NickServ identification. Exact trusted
 account confirmation precedes JOIN; forged membership, failures and expired
 registration cannot bypass it. Original local fixtures cover credentials, trust,
-reconnect/restart, redaction, the native CLI and shutdown. Complete validation
-and both builds/packaging passed in run 37362054311 with 560 Rust tests across
-50 harnesses and four scheduler checks. CI publication is queued during GitHub's
-runner-assignment incident; this does not establish a published release.
+reconnect/restart, redaction, the native CLI and shutdown. Run 37362054311, attempt 4, completed all five jobs for
+35dec95705bb067dbcd2f149dfd8b050f0f550c1, retaining its original 560-test,
+50-harness validation and four scheduler checks. CI published v0.20.4 at
+06:25:00 UTC on October 6, 2026, with seven bot-owned assets. The prior v0.20.3
+tag and assets remain unchanged. The prepared 0.20.5 scope follows immediately.
 
 The published 0.20.3 increment adds one configurable fixed-delimiter text grammar,
 bounded IRC display formatting and pure CLI/API text previews. Complete explicit

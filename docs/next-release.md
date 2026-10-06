@@ -11,8 +11,8 @@ publication waits for a runner. Complete all five jobs and exact publication
 evidence before pushing that successor, including runs using the earlier
 workflow definition. Workflow concurrency now uses literal false for in-progress
 cancellation. The early 0.20.5 run was held after the queued NickServ publication
-was cancelled; retry NickServ publication in CI for its original source first. GitHub
-Actions alone creates tags/releases/assets; published versions stay immutable.
+was cancelled; attempt 4 recovered the exact NickServ publication through CI.
+GitHub Actions alone creates tags/releases/assets; published versions stay immutable.
 
 The completed v0.20.3 text-format release passed run 37360688158 for
 a2a3c9f1ec9a0cd6af09031b24c246be8614d2c8: 551 Rust tests across 49 harnesses,
@@ -34,15 +34,20 @@ imports, restart, stale selectors, protected reports and selected-account remova
 during metadata I/O. This source has not yet passed its own workflow.
 
 The preceding NickServ source 35dec95705bb067dbcd2f149dfd8b050f0f550c1 passed
-validation, GNU/musl builds and packaging in run 37362054311 with 560 Rust tests
-across 50 harnesses and four scheduler checks. Its original queued release job
-111939907953 was cancelled. Attempt 2's release job 111946521736 also ended
-without a runner; GitHub's annotation reports "The job was not acquired by Runner
-of type hosted even after multiple attempts". Attempt 3 retries publication for
-the exact validated source during the documented GitHub runner-assignment
-incident, without pending deployment approvals. The following 0.20.5 run
-37364436393 was deliberately held. Record NickServ's exact tag/seven
-assets once CI publishes, then push this corrected 0.20.5 scope and inspect it.
+all five jobs in run 37362054311, attempt 4. The original 560 Rust tests across
+50 harnesses and four scheduler checks were retained; retrying publication did
+not rerun those tests. CI published v0.20.4 on October 6, 2026, at 06:25:00 UTC,
+release 404383229, with seven bot assets and the exact source tag. The previous
+v0.20.3 tag/asset IDs/sizes/digests stayed unchanged.
+
+The first queued publication was superseded by the premature successor. The
+second attempt failed hosted-runner allocation during GitHub's incident. Attempt
+3 received a runner but release creation returned 403 because the historical
+workflow source differed from trunk and had no source branch head. Retaining
+release-source/0.20.4 at the exact validated commit allowed attempt 4 to publish
+through the existing workflow. No release/tag/asset was manually created. The
+following 0.20.5 run 37364436393 was deliberately held. Push this corrected
+0.20.5 scope now and inspect all five jobs before the following release.
 
 src/irc/nickserv.rs owns strict settings, bounded transient IDENTIFY credentials
 and required exact trusted NOTICE confirmation. protocol.rs gates channel

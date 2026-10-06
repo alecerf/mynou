@@ -14,17 +14,17 @@ configuration, missing/pending/conflicting interests, native import, restart,
 stale reviews, protected reports and removal during inspection. Complete CI
 and publication are pending. Reviewed new-demand actions follow in 0.20.6.
 
-## Preceding implementation: 0.20.4, publication queued
+## Preceding published stage: 0.20.4
 
 Required NickServ identification binds exact service/account confirmation before
 channel membership. Failure closes the connection, reconnect repeats the exchange
 and public health redacts credentials. Original local fixtures cover trust,
 maximum commands, missing credentials, restart, shutdown and fixed deadlines.
-Validation, both builds and packaging passed in run 37362054311 with 560 Rust
-tests across 50 harnesses and four scheduler checks. Publication is queued
-during GitHub's runner-assignment incident. Trunk queue protection keeps the
-publication intact before the following complete workflow. Reviewed demand and
-durable notification routing follow immediately, then 0.21–0.23.
+Run 37362054311, attempt 4, passed all five jobs for the original source,
+retaining 560 Rust tests across 50 harnesses and four scheduler checks. CI
+published v0.20.4 on October 6, 2026, at 06:25:00 UTC, with seven checked bot
+assets and an unchanged v0.20.3 tag/assets. Reviewed demand and durable
+notification routing follow immediately after 0.20.5, then 0.21–0.23.
 
 ## Previous published stage: 0.20.3
 

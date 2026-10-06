@@ -23,9 +23,9 @@ connections, redaction, repeated handshakes, credential/command bounds, missing
 credentials, shutdown and the fixed registration deadline. An original native
 CLI fixture exercises a maximum password without secret persistence/logging.
 The exact NickServ source passed its validation job with 560 Rust tests across
-50 harnesses and four scheduler checks. GNU/musl builds and packaging also passed;
-publication is still queued during GitHub's runner-assignment incident. This
-does not establish a published release. Later scopes need their own workflow.
+50 harnesses and four scheduler checks. GNU/musl builds, packaging and CI
+publication passed in attempt 4; exact tag and asset evidence is recorded below.
+Later scopes need their own workflow.
 
 The 0.20.3 text scenarios exercise bounded complete grammar configuration,
 canonical numeric/hash fields, link redaction, fragmented formatting controls,
@@ -162,6 +162,37 @@ allowance across seasons. Existing full validation remains required.
 The recorded run below validates these scenarios through GitHub Actions only.
 No local tests, lint, builds or demos ran.
 
+## Recorded 0.20.4 CI evidence
+
+[Run 37362054311, attempt 4](https://github.com/alecerf/mynou/actions/runs/37362054311/attempts/4)
+passed all five jobs for `35dec95705bb067dbcd2f149dfd8b050f0f550c1`.
+**560 Rust tests** passed across **50 harnesses**, with none failed or ignored,
+plus four scheduler checks. Observed test execution was 67.422 seconds with two
+processes and two threads per harness. Validation, GNU/musl builds and packaging
+were retained from the original successful jobs; the retry ran publication.
+No local validation ran.
+
+CI published [v0.20.4](https://github.com/alecerf/mynou/releases/tag/v0.20.4)
+on October 6, 2026, at 06:25:00 UTC, from that exact source. Release 404383229
+and all seven assets belong to github-actions[bot]. The previous v0.20.3 tag and
+asset IDs/sizes/digests remain unchanged. The first publication was superseded,
+the second failed hosted-runner allocation and the third rejected historical
+workflow permissions. A source branch preserved the exact commit; attempt 4
+verified the original artifact checksums and published entirely through CI.
+
+| Asset | ID | Bytes | SHA-256 |
+| --- | --- | --- | --- |
+| mynou-v0.20.4-linux-amd64-image.tar.gz | 614693691 | 1925736 | `a60a5b6c0bf086a43f52f295afe3946c773c3dce85e99be8ad1806b845e6cf0f` |
+| mynou-v0.20.4-linux-amd64-image.tar.gz.sha256 | 614693688 | 105 | `e5efef033d6a736b19ba89b2559c92815d73c36d227a3374c3862f2ded352def` |
+| mynou-v0.20.4-linux-x86_64 | 614693698 | 3892064 | `5219bccc915548325093386b6291bf052f8fbc4b9ddd29872e7311229001014f` |
+| mynou-v0.20.4-linux-x86_64.sha256 | 614693697 | 93 | `08d51f1eb3b5b6b8f1edd8de18f94c5d1e1a0d2f3f8fa8d89f9eb078e4f4942b` |
+| mynou-v0.20.4-source.zip | 614693733 | 6969520 | `594b375c97d437aa8b806aa3cd61087234a6cf000c2a255f80d6aa4436f0aa45` |
+| mynou-v0.20.4-source.zip.sha256 | 614693736 | 91 | `f8e11a36d4e80f96ecf1953195de2ed9820e39f7900407a96dc8e16949758268` |
+| SHA256SUMS | 614693700 | 289 | `0847717faa2dc81ccc5919156ad341ea00ec8528b02e1d401c21d3a0e757d5f7` |
+
+This evidence validates the NickServ source. The prepared requester-selector
+source requires its own complete workflow before the next action release.
+
 ## Recorded 0.20.3 CI evidence
 
 [Run 37360688158](https://github.com/alecerf/mynou/actions/runs/37360688158)
@@ -187,8 +218,8 @@ The previous v0.20.2 tag and asset IDs/sizes/digests remain unchanged.
 | mynou-v0.20.3-source.zip.sha256 | 613433126 | 91 | `6b36ac582f9c8b994f7a38be66dd5c336d365668c21671c2e38bb2af0376e8be` |
 | SHA256SUMS | 613433108 | 289 | `3faaf67c12c7e91c9bf39a936baf4f69867201ca69e905ad1144a9f9c67fdf2b` |
 
-This evidence validates the text-format release. The following NickServ changes
-require their own complete Actions run and CI publication before continuing.
+This evidence validates the text-format source. NickServ has separate exact
+source evidence above; following changes require their own complete workflow.
 
 ## Recorded 0.20.2 CI evidence
 
