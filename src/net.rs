@@ -181,6 +181,12 @@ impl HttpClient {
         self
     }
 
+    /// Keep endpoint-bound requests from redirecting to another handler.
+    pub fn without_redirects(mut self) -> Self {
+        self.redirects = 0;
+        self
+    }
+
     /// Ignore HTTP_PROXY/HTTPS_PROXY/NO_PROXY, useful for isolated local peers.
     pub fn without_proxy(mut self) -> Self {
         self.environment_proxy = false;

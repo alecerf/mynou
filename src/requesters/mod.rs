@@ -698,6 +698,7 @@ pub(crate) struct State {
     pub operator_jobs: BTreeSet<String>,
     pub notifications: Vec<Value>,
     pub notification_sequence: u64,
+    pub delivery: crate::notifications::DeliveryState,
 }
 impl State {
     pub(crate) fn empty() -> Self {
@@ -708,6 +709,7 @@ impl State {
             operator_jobs: BTreeSet::new(),
             notifications: Vec::new(),
             notification_sequence: 0,
+            delivery: crate::notifications::DeliveryState::default(),
         }
     }
     pub(crate) fn to_json(&self) -> Value {
@@ -732,6 +734,9 @@ impl State {
             ),
         );
         v.insert("notifications", Value::Array(self.notifications.clone()));
+        if !self.delivery.is_empty() {
+            v.insert("delivery", self.delivery.to_json());
+        }
         v.insert(
             "notification_sequence",
             self.notification_sequence.to_string(),
@@ -748,11 +753,13 @@ impl State {
                 "operator_jobs",
                 "notifications",
                 "notification_sequence",
+                "delivery",
             ],
         )?;
         let mut s = Self::empty();
         s.revision = integer(v, "revision")?;
         s.notification_sequence = integer(v, "notification_sequence")?;
+        s.delivery = crate::notifications::DeliveryState::from_json(v.get("delivery"))?;
         let list = |key| {
             v.get(key)
                 .and_then(Value::as_array)
@@ -827,6 +834,21 @@ impl State {
         if s.notifications.len() > MAX_NOTIFICATIONS {
             return Err("Requester: notification capacity reached".into());
         }
+        for r in s.delivery.routes.values() {
+            if r.kind != "requester" || !s.accounts.contains_key(&r.scope) {
+                return Err("Requester: unbound notification route".into());
+            }
+        }
+        for e in s.delivery.events.values() {
+            if e.signal.emission > s.notification_sequence
+                || !s
+                    .demands
+                    .get(&e.signal.subject)
+                    .is_some_and(|d| d.account_id == e.signal.scope)
+            {
+                return Err("Requester: unbound notification event".into());
+            }
+        }
         Ok(s)
     }
     pub(crate) fn notify(&mut self, id: &str, outcome: &str, now: u64) -> Result<()> {
@@ -854,6 +876,14 @@ impl State {
         v.insert("demand_id", d.id.clone());
         v.insert("outcome", outcome);
         v.insert("at", now.to_string());
+        self.delivery.enqueue(crate::notifications::Signal {
+            kind: "requester".into(),
+            scope: d.account_id.clone(),
+            subject: d.id.clone(),
+            emission: self.notification_sequence,
+            outcome: outcome.into(),
+            at: now,
+        })?;
         self.notifications.push(v);
         if self.notifications.len() > MAX_NOTIFICATIONS {
             self.notifications.remove(0);

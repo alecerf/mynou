@@ -875,6 +875,7 @@ pub(crate) struct State {
     pub revision: u64,
     pub bindings: BTreeMap<String, String>,
     pub records: BTreeMap<String, Record>,
+    pub delivery: crate::notifications::DeliveryState,
 }
 impl State {
     pub(crate) fn to_json(&self) -> Value {
@@ -893,12 +894,16 @@ impl State {
             "records",
             Value::Array(self.records.values().map(Record::to_json).collect()),
         );
+        if !self.delivery.is_empty() {
+            v.insert("delivery", self.delivery.to_json());
+        }
         v
     }
     pub(crate) fn from_json(v: &Value) -> Result<Self> {
-        only(v, &["revision", "bindings", "records"])?;
+        only(v, &["revision", "bindings", "records", "delivery"])?;
         let mut s = Self {
             revision: integer(v, "revision")?,
+            delivery: crate::notifications::DeliveryState::from_json(v.get("delivery"))?,
             ..Self::default()
         };
         for (k, v) in v
@@ -927,6 +932,20 @@ impl State {
                 || s.records.insert(r.id.clone(), r).is_some()
             {
                 return Err("IRC: duplicate or unbound announcement".into());
+            }
+        }
+        for r in s.delivery.routes.values() {
+            if r.kind != "irc" || !s.bindings.contains_key(&r.scope) {
+                return Err("IRC: unbound notification route".into());
+            }
+        }
+        for e in s.delivery.events.values() {
+            if !s
+                .records
+                .get(&e.signal.subject)
+                .is_some_and(|r| r.source_id == e.signal.scope && r.revision >= e.signal.emission)
+            {
+                return Err("IRC: unbound notification event".into());
             }
         }
         Ok(s)
