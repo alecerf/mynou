@@ -49,13 +49,20 @@ impl Http {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
-        let feed = Arc::new(Mutex::new((200, rss(&item(TITLE, "1024", "")).into_bytes())));
+        let feed = Arc::new(Mutex::new((
+            200,
+            rss(&item(TITLE, "1024", "")).into_bytes(),
+        )));
         let document = Arc::new(Mutex::new((200, usenet_support::source(1, 1))));
         let calls = Arc::new(Mutex::new(Vec::new()));
         let blocked = Arc::new(AtomicBool::new(false));
         let stop = Arc::new(AtomicBool::new(false));
         let (f, d, c, b, s) = (
-            feed.clone(), document.clone(), calls.clone(), blocked.clone(), stop.clone(),
+            feed.clone(),
+            document.clone(),
+            calls.clone(),
+            blocked.clone(),
+            stop.clone(),
         );
         let worker = thread::spawn(move || {
             while !s.load(Ordering::Acquire) {
@@ -67,8 +74,12 @@ impl Http {
                     }
                     Err(e) => panic!("Original Newznab fixture accept failed: {e}"),
                 };
-                stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
-                stream.set_write_timeout(Some(Duration::from_secs(3))).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                stream
+                    .set_write_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
                 let mut head = Vec::new();
                 while !head.ends_with(b"\r\n\r\n") {
                     assert!(head.len() < 16_384);
@@ -82,12 +93,24 @@ impl Http {
                     continue;
                 }
                 let head = String::from_utf8(head).unwrap();
-                let path = head.lines().next().unwrap().strip_prefix("GET ").unwrap()
-                    .strip_suffix(" HTTP/1.1").unwrap().to_owned();
-                let fields: BTreeMap<_, _> = head.lines().skip(1)
+                let path = head
+                    .lines()
+                    .next()
+                    .unwrap()
+                    .strip_prefix("GET ")
+                    .unwrap()
+                    .strip_suffix(" HTTP/1.1")
+                    .unwrap()
+                    .to_owned();
+                let fields: BTreeMap<_, _> = head
+                    .lines()
+                    .skip(1)
                     .filter_map(|l| l.split_once(':'))
-                    .map(|(k, v)| (k.to_ascii_lowercase(), v.trim().to_owned())).collect();
-                c.lock().unwrap().push((path.clone(), fields.get("authorization").cloned()));
+                    .map(|(k, v)| (k.to_ascii_lowercase(), v.trim().to_owned()))
+                    .collect();
+                c.lock()
+                    .unwrap()
+                    .push((path.clone(), fields.get("authorization").cloned()));
                 let response = if path.starts_with("/api?") {
                     f.lock().unwrap().clone()
                 } else {
@@ -99,13 +122,24 @@ impl Http {
                     assert!(start.elapsed() < Duration::from_secs(3));
                     thread::sleep(Duration::from_millis(2));
                 }
-                let _ = write!(stream,
+                let _ = write!(
+                    stream,
                     "HTTP/1.1 {} Fixture\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                    response.0, response.1.len());
+                    response.0,
+                    response.1.len()
+                );
                 let _ = stream.write_all(&response.1);
             }
         });
-        Self { url, feed, document, calls, blocked, stop, thread: Some(worker) }
+        Self {
+            url,
+            feed,
+            document,
+            calls,
+            blocked,
+            stop,
+            thread: Some(worker),
+        }
     }
     fn replace(&self, text: &str) {
         *self.feed.lock().unwrap() = (200, text.as_bytes().to_vec());
@@ -130,14 +164,19 @@ fn rss(items: &str) -> String {
     format!("<rss version=\"2.0\" xmlns:newznab=\"{NS}\"><channel>{items}</channel></rss>")
 }
 fn item(title: &str, size: &str, extra: &str) -> String {
-    format!("<item><title>{title}</title><enclosure url=\"/get?id=original&amp;apikey={PRIVATE_KEY}\" length=\"{size}\" type=\"application/x-nzb\"/><newznab:attr name=\"size\" value=\"{size}\"/>{extra}</item>")
+    format!(
+        "<item><title>{title}</title><enclosure url=\"/get?id=original&amp;apikey={PRIVATE_KEY}\" length=\"{size}\" type=\"application/x-nzb\"/><newznab:attr name=\"size\" value=\"{size}\"/>{extra}</item>"
+    )
 }
 fn value(p: &Provider, h: &Http) -> Value {
     let mut v = config::default_json();
     v.insert("listen", "127.0.0.1:0");
     v.get_mut("downloads").unwrap().insert("enabled", false);
     let mut usenet = usenet_support::usenet(p);
-    usenet.get_mut("downloads").unwrap().insert("enabled", false);
+    usenet
+        .get_mut("downloads")
+        .unwrap()
+        .insert("enabled", false);
     v.insert("usenet", usenet);
     let mut s = Value::object();
     s.insert("id", "original-indexer");
@@ -145,12 +184,17 @@ fn value(p: &Provider, h: &Http) -> Value {
     s.insert("kind", "newznab");
     s.insert("url", format!("{}/api", h.url));
     s.insert("api_key_env", "MYNOU_ABSENT_NEWZNAB_FIXTURE_KEY_376185");
-    s.insert("usenet", json::parse(r#"{"server_id":"original","minimum_bytes":1,"maximum_bytes":4096}"#).unwrap());
+    s.insert(
+        "usenet",
+        json::parse(r#"{"server_id":"original","minimum_bytes":1,"maximum_bytes":4096}"#).unwrap(),
+    );
     v.insert("indexers", Value::Array(vec![s]));
     v
 }
 fn source(v: &mut Value) -> &mut Value {
-    let Value::Array(s) = v.get_mut("indexers").unwrap() else { panic!("source array") };
+    let Value::Array(s) = v.get_mut("indexers").unwrap() else {
+        panic!("source array")
+    };
     &mut s[0]
 }
 fn cfg(d: &Directory, p: &Provider, h: &Http) -> Config {
@@ -168,19 +212,48 @@ fn select(c: &Config, r: &Request) -> integrations::SelectedRelease {
     integrations::select_acquisition(c, r, Instant::now() + Duration::from_secs(3)).unwrap()
 }
 fn fetch(c: &Config, selected: &integrations::SelectedRelease) -> mynou::Result<Vec<u8>> {
-    newznab::fetch_document(c, selected.usenet.as_ref().unwrap(), &selected.url,
-        Instant::now() + Duration::from_secs(3))
+    newznab::fetch_document(
+        c,
+        selected.usenet.as_ref().unwrap(),
+        &selected.url,
+        Instant::now() + Duration::from_secs(3),
+    )
 }
 fn redacted(v: &Value) {
     let text = json::stringify(v);
-    for private in [PRIVATE_KEY, "http://", "https://", "magnet:", "apikey=", "file0-part1@", "token_env", "password_env", "username_env"] {
-        assert!(!text.contains(private), "Public Newznab data exposed private metadata");
+    for private in [
+        PRIVATE_KEY,
+        "http://",
+        "https://",
+        "magnet:",
+        "apikey=",
+        "file0-part1@",
+        "token_env",
+        "password_env",
+        "username_env",
+    ] {
+        assert!(
+            !text.contains(private),
+            "Public Newznab data exposed private metadata"
+        );
     }
 }
 fn control(engine: &Engine, action: &str) {
-    let mut q = ControlRequest { action: action.into(), apply: false, plan_id: None };
-    q.plan_id = Some(engine.indexer_control("original-indexer", &q).unwrap()
-        .get("plan_id").unwrap().as_str().unwrap().into());
+    let mut q = ControlRequest {
+        action: action.into(),
+        apply: false,
+        plan_id: None,
+    };
+    q.plan_id = Some(
+        engine
+            .indexer_control("original-indexer", &q)
+            .unwrap()
+            .get("plan_id")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .into(),
+    );
     q.apply = true;
     engine.indexer_control("original-indexer", &q).unwrap();
 }
@@ -200,9 +273,15 @@ fn typed_discovery_uses_movie_identity_and_not_torrent_seed_thresholds() {
     let row = &accepted[0];
     assert_eq!(row.get("transport").and_then(Value::as_str), Some("usenet"));
     assert_eq!(row.get("seeders"), Some(&Value::Null));
-    assert_eq!(row.get("advertised_bytes").and_then(Value::as_str), Some("1024"));
+    assert_eq!(
+        row.get("advertised_bytes").and_then(Value::as_str),
+        Some("1024")
+    );
     assert_eq!(row.get("content_verified"), Some(&Value::Bool(false)));
-    assert_eq!(row.get("library_admission_supported"), Some(&Value::Bool(false)));
+    assert_eq!(
+        row.get("library_admission_supported"),
+        Some(&Value::Bool(false))
+    );
     redacted(&report);
     let path = h.calls.lock().unwrap()[0].0.clone();
     for query in ["q=Fixture%20Movie", "t=movie", "year=2024", "tmdbid=42"] {
@@ -229,7 +308,13 @@ fn ordinary_torrent_selection_cannot_misroute_an_nzb_to_the_torrent_client() {
     let error = integrations::select_release(&c, &movie()).err().unwrap();
     assert!(error.contains("Usenet library admission"));
     assert!(integrations::search(&c, &movie()).is_err());
-    assert!(h.calls.lock().unwrap().iter().all(|(path, _)| path.starts_with("/api?")));
+    assert!(
+        h.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|(path, _)| path.starts_with("/api?"))
+    );
     assert_eq!(files(&d.0), before);
     assert!(p.requests.lock().unwrap().is_empty());
 }
@@ -242,11 +327,16 @@ fn quality_identity_size_and_password_policy_reject_independent_claims() {
     h.replace(&rss(&[
         item(TITLE, "1024", ""),
         item(TITLE, "4097", ""),
-        item(TITLE, "1024", "<newznab:attr name=\"password\" value=\"1\"/>"),
+        item(
+            TITLE,
+            "1024",
+            "<newznab:attr name=\"password\" value=\"1\"/>",
+        ),
         item("Fixture.Movie.2023.1080p.WEB-DL.x264", "1024", ""),
         item("Fixture.Movie.Sequel.2024.1080p", "1024", ""),
         item("Fixture.Movie.2024.720p.WEB-DL.x264", "1024", ""),
-    ].concat()));
+    ]
+    .concat()));
     let mut v = value(&p, &h);
     v.insert("selection", json::parse(r#"{"movie_profile":"original","episode_profile":"original","profiles":{"original":{"resolutions":[1080]}}}"#).unwrap());
     let c = config::from_json(&v, &d.0).unwrap();
@@ -273,18 +363,36 @@ fn malformed_enclosures_and_conflicting_namespaces_cannot_impersonate_valid_item
         good.replace("/get?id=original", "magnet:?xt=urn:btih:fixture"),
         good.replace("length=\"1024\"", "length=\"1025\""),
         good.replace("newznab:attr", "attr"),
-        good.replace("<item>", "<item xmlns:newznab=\"https://untrusted.invalid/\">"),
-        item(TITLE, "1024", "<newznab:attr name=\"size\" value=\"1024\"/>"),
-        item(TITLE, "1024", "<newznab:attr name=\"password\" value=\"0\"/><newznab:attr name=\"passworded\" value=\"1\"/>"),
+        good.replace(
+            "<item>",
+            "<item xmlns:newznab=\"https://untrusted.invalid/\">",
+        ),
+        item(
+            TITLE,
+            "1024",
+            "<newznab:attr name=\"size\" value=\"1024\"/>",
+        ),
+        item(
+            TITLE,
+            "1024",
+            "<newznab:attr name=\"password\" value=\"0\"/><newznab:attr name=\"passworded\" value=\"1\"/>",
+        ),
         item(TITLE, "1024", "<title>Other Movie</title>"),
         good.replace("length=\"1024\"", "length=\"0\""),
-        item(TITLE, "1024", "<newznab:attr name=\"password\" value=\"true\"/>"),
+        item(
+            TITLE,
+            "1024",
+            "<newznab:attr name=\"password\" value=\"true\"/>",
+        ),
     ];
     h.replace(&rss(&(good + &bad.concat())));
     let report = integrations::search_report(&cfg(&d, &p, &h), &movie()).unwrap();
     assert_eq!(entries(&report, "accepted").len(), 1);
     assert!(entries(&report, "rejected").is_empty());
-    assert_eq!(report.get("candidate_count").and_then(Value::as_u64), Some(1));
+    assert_eq!(
+        report.get("candidate_count").and_then(Value::as_u64),
+        Some(1)
+    );
     assert_eq!(h.count(), 1);
     assert!(p.requests.lock().unwrap().is_empty());
 }
@@ -294,11 +402,15 @@ fn namespace_aliases_size_attributes_and_alternate_nzb_mime_are_supported() {
     let d = Directory::new();
     let p = Provider::open();
     let h = Http::open();
-    let text = item(TITLE, "1024", "<newznab:attr name=\"passworded\" value=\"0\"/>")
-        .replace(" length=\"1024\"", "")
-        .replace("newznab:attr", "original:attr")
-        .replace("<item>", &format!("<item xmlns:original=\"{NS}\">"))
-        .replace("application/x-nzb", "application/x-nzb+xml");
+    let text = item(
+        TITLE,
+        "1024",
+        "<newznab:attr name=\"passworded\" value=\"0\"/>",
+    )
+    .replace(" length=\"1024\"", "")
+    .replace("newznab:attr", "original:attr")
+    .replace("<item>", &format!("<item xmlns:original=\"{NS}\">"))
+    .replace("application/x-nzb", "application/x-nzb+xml");
     h.replace(&rss(&text));
     let selected = select(&cfg(&d, &p, &h), &movie());
     assert_eq!(selected.usenet.unwrap().advertised_bytes, 1024);
@@ -318,7 +430,8 @@ fn seasonal_and_absolute_episode_queries_keep_canonical_identity_rules() {
     h.replace(&rss(&[
         item("Fixture.Series.2024.S02E03.1080p.WEB-DL", "1024", ""),
         item("Fixture.Series.2024.S01E03.1080p.WEB-DL", "1024", ""),
-    ].concat()));
+    ]
+    .concat()));
     let report = integrations::search_report(&c, &r).unwrap();
     assert_eq!(entries(&report, "accepted").len(), 1);
     assert_eq!(entries(&report, "rejected").len(), 1);
@@ -331,7 +444,8 @@ fn seasonal_and_absolute_episode_queries_keep_canonical_identity_rules() {
         item("Fixture.Series.2024.013.1080p.WEB-DL", "1024", ""),
         item("Fixture.Series.2024.014.1080p.WEB-DL", "1024", ""),
         item("Fixture.Series.2024.S02E03.1080p.WEB-DL", "1024", ""),
-    ].concat()));
+    ]
+    .concat()));
     let report = integrations::search_report(&c, &r).unwrap();
     assert_eq!(entries(&report, "accepted").len(), 1);
     assert_eq!(entries(&report, "rejected").len(), 2);
@@ -364,9 +478,18 @@ fn bound_document_fetch_reuses_native_basic_and_bearer_authentication_without_qu
         let calls = h.calls.lock().unwrap();
         assert_eq!(calls.len(), 2);
         assert_eq!(calls[0].1, calls[1].1);
-        assert!(calls[1].1.as_ref().unwrap().starts_with(if mode == "basic" { "Basic " } else { "Bearer " }));
+        assert!(
+            calls[1]
+                .1
+                .as_ref()
+                .unwrap()
+                .starts_with(if mode == "basic" { "Basic " } else { "Bearer " })
+        );
         if mode == "bearer" {
-            assert_eq!(calls[1].1.as_ref().unwrap(), &format!("Bearer {}", std::env::var("PWD").unwrap()));
+            assert_eq!(
+                calls[1].1.as_ref().unwrap(),
+                &format!("Bearer {}", std::env::var("PWD").unwrap())
+            );
         }
         assert!(calls[1].0.contains(PRIVATE_KEY));
         assert_eq!(files(&d.0), before);
@@ -384,22 +507,57 @@ fn captured_identity_and_deadline_fail_before_http_or_article_io() {
     let selected = select(&c, &movie());
     let original = selected.usenet.as_ref().unwrap();
     for target in [
-        Target { indexer_binding: "0".repeat(64), ..original.clone() },
-        Target { server_binding: "0".repeat(64), ..original.clone() },
-        Target { server_id: "removed".into(), ..original.clone() },
-        Target { advertised_bytes: 4097, ..original.clone() },
-        Target { password_protected: true, ..original.clone() },
-        Target { advertised_bytes: 0, ..original.clone() },
+        Target {
+            indexer_binding: "0".repeat(64),
+            ..original.clone()
+        },
+        Target {
+            server_binding: "0".repeat(64),
+            ..original.clone()
+        },
+        Target {
+            server_id: "removed".into(),
+            ..original.clone()
+        },
+        Target {
+            advertised_bytes: 4097,
+            ..original.clone()
+        },
+        Target {
+            password_protected: true,
+            ..original.clone()
+        },
+        Target {
+            advertised_bytes: 0,
+            ..original.clone()
+        },
     ] {
-        assert!(newznab::fetch_document(&c, &target, &selected.url,
-            Instant::now() + Duration::from_secs(2)).is_err());
+        assert!(
+            newznab::fetch_document(
+                &c,
+                &target,
+                &selected.url,
+                Instant::now() + Duration::from_secs(2)
+            )
+            .is_err()
+        );
     }
-    for url in ["https://other.invalid/get?id=original", "//other.invalid/get?id=original", "magnet:?xt=urn:btih:fixture"] {
-        assert!(newznab::fetch_document(&c, original, url, Instant::now() + Duration::from_secs(2)).is_err());
+    for url in [
+        "https://other.invalid/get?id=original",
+        "//other.invalid/get?id=original",
+        "magnet:?xt=urn:btih:fixture",
+    ] {
+        assert!(
+            newznab::fetch_document(&c, original, url, Instant::now() + Duration::from_secs(2))
+                .is_err()
+        );
     }
     assert!(newznab::fetch_document(&c, original, &selected.url, Instant::now()).is_err());
     let mut changed = value(&p, &h);
-    source(&mut changed).get_mut("usenet").unwrap().insert("maximum_bytes", 2048_u32);
+    source(&mut changed)
+        .get_mut("usenet")
+        .unwrap()
+        .insert("maximum_bytes", 2048_u32);
     assert!(fetch(&config::from_json(&changed, &d.0).unwrap(), &selected).is_err());
     assert_eq!(h.count(), 1);
     assert!(p.requests.lock().unwrap().is_empty());
@@ -421,8 +579,14 @@ fn source_pause_and_in_flight_generation_fence_cover_document_fetches() {
     let target = selected.usenet.clone().unwrap();
     let url = selected.url.clone();
     let cloned = c.clone();
-    let worker = thread::spawn(move || newznab::fetch_document(&cloned, &target, &url,
-        Instant::now() + Duration::from_secs(3)));
+    let worker = thread::spawn(move || {
+        newznab::fetch_document(
+            &cloned,
+            &target,
+            &url,
+            Instant::now() + Duration::from_secs(3),
+        )
+    });
     usenet_support::wait(|| h.count() == 2);
     control(&engine, "reset_session");
     h.blocked.store(false, Ordering::Release);
@@ -440,7 +604,10 @@ fn bounded_feed_errors_and_malformed_documents_are_fixed_and_nonacquiring() {
     let c = cfg(&d, &p, &h);
     for bad in [
         format!("<error code=\"100\" description=\"{PRIVATE_KEY}\"/>"),
-        format!("<!DOCTYPE rss [<!ENTITY leak SYSTEM 'https://other.invalid/'>]>{}", rss("")),
+        format!(
+            "<!DOCTYPE rss [<!ENTITY leak SYSTEM 'https://other.invalid/'>]>{}",
+            rss("")
+        ),
         rss(&item(TITLE, "1024", "").repeat(4097)),
         "<rss><channel/><channel/></rss>".into(),
     ] {
@@ -482,7 +649,9 @@ fn strict_configuration_requires_explicit_provider_and_bounded_size_policy() {
     source(&mut v).insert("kind", "torznab");
     assert!(config::from_json(&v, &d.0).is_err());
     let mut v = value(&p, &h);
-    let Value::Object(s) = source(&mut v) else { panic!() };
+    let Value::Object(s) = source(&mut v) else {
+        panic!()
+    };
     s.remove("usenet");
     assert!(config::from_json(&v, &d.0).is_err());
     assert_eq!(h.count(), 0);
@@ -496,13 +665,25 @@ fn preceding_torrent_source_binding_contract_reopens_without_rewriting_policy() 
     let h = Http::open();
     let mut v = value(&p, &h);
     source(&mut v).insert("kind", "json");
-    let Value::Object(s) = source(&mut v) else { panic!() };
+    let Value::Object(s) = source(&mut v) else {
+        panic!()
+    };
     s.remove("usenet");
     let c = config::from_json(&v, &d.0).unwrap();
     drop(Engine::open_for_management(c.clone()).unwrap());
     let s = &c.sources[0];
-    let fields = Value::Array(vec![s.name.clone().into(), s.kind.clone().into(), s.url.clone().into(), s.api_key_env.clone().into(), "0".into(), Value::Null]);
-    let binding: String = sha256(json::stringify(&fields).as_bytes()).iter().map(|b| format!("{b:02x}")).collect();
+    let fields = Value::Array(vec![
+        s.name.clone().into(),
+        s.kind.clone().into(),
+        s.url.clone().into(),
+        s.api_key_env.clone().into(),
+        "0".into(),
+        Value::Null,
+    ]);
+    let binding: String = sha256(json::stringify(&fields).as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
     let mut row = Value::object();
     row.insert("id", "original-indexer");
     row.insert("binding", binding);
@@ -521,7 +702,10 @@ fn preceding_torrent_source_binding_contract_reopens_without_rewriting_policy() 
     fs::write(&path, &bytes).unwrap();
     let engine = Engine::open_for_management(c).unwrap();
     assert_eq!(fs::read(path).unwrap(), bytes);
-    assert_eq!(entries(&engine.indexers().unwrap(), "sources")[0].get("enabled"), Some(&Value::Bool(true)));
+    assert_eq!(
+        entries(&engine.indexers().unwrap(), "sources")[0].get("enabled"),
+        Some(&Value::Bool(true))
+    );
     assert_eq!(h.count(), 0);
 }
 
@@ -538,14 +722,33 @@ fn authenticated_api_cli_and_browser_preview_typed_releases_without_jobs_or_down
     let body = json::stringify(&movie().to_json());
     assert_eq!(server.call("POST", "/api/search", &[], &body).status, 401);
     assert_eq!(h.count(), 0);
-    let report = server.call("POST", "/api/search", &[("Authorization", &format!("Bearer {TOKEN}"))], &body);
+    let report = server.call(
+        "POST",
+        "/api/search",
+        &[("Authorization", &format!("Bearer {TOKEN}"))],
+        &body,
+    );
     assert_eq!(report.status, 200, "{}", report.body);
     let parsed = json::parse(&report.body).unwrap();
     redacted(&parsed);
     let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .current_dir(&d.0).env("MYNOU_API_TOKEN", TOKEN)
-        .args(["search", "--kind", "movie", "--title", "Fixture Movie", "--year", "2024", "--tmdb-id", "42"])
-        .stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        .current_dir(&d.0)
+        .env("MYNOU_API_TOKEN", TOKEN)
+        .args([
+            "search",
+            "--kind",
+            "movie",
+            "--title",
+            "Fixture Movie",
+            "--year",
+            "2024",
+            "--tmdb-id",
+            "42",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
     let start = Instant::now();
     while child.try_wait().unwrap().is_none() {
         if start.elapsed() > Duration::from_secs(8) {
@@ -556,16 +759,40 @@ fn authenticated_api_cli_and_browser_preview_typed_releases_without_jobs_or_down
         thread::sleep(Duration::from_millis(5));
     }
     let output = child.wait_with_output().unwrap();
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-    assert_eq!(json::parse(std::str::from_utf8(&output.stdout).unwrap().trim()).unwrap(), parsed);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        json::parse(std::str::from_utf8(&output.stdout).unwrap().trim()).unwrap(),
+        parsed
+    );
     let browser = Browser::login(&server);
-    let preview = browser.post(&server, "/ui/search", &[("kind", "movie"), ("title", "Fixture Movie"), ("year", "2024"), ("source_kind", "auto")]);
+    let preview = browser.post(
+        &server,
+        "/ui/search",
+        &[
+            ("kind", "movie"),
+            ("title", "Fixture Movie"),
+            ("year", "2024"),
+            ("source_kind", "auto"),
+        ],
+    );
     assert_eq!(preview.status, 200, "{}", preview.body);
     assert!(preview.body.contains(TITLE));
+    assert!(preview.body.contains("Usenet"));
+    assert!(preview.body.contains("1024 bytes advertised"));
     assert!(!preview.body.contains(PRIVATE_KEY));
     preview.no_secrets();
     assert!(lock(&server.engine.store).unwrap().list().is_empty());
-    assert!(h.calls.lock().unwrap().iter().all(|(path, _)| path.starts_with("/api?")));
+    assert!(
+        h.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|(path, _)| path.starts_with("/api?"))
+    );
     assert!(p.requests.lock().unwrap().is_empty());
     assert_eq!(files(&d.0), before);
 }

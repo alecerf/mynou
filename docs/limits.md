@@ -337,6 +337,8 @@ durable acquisition, Newznab, archives and repair remain subsequent increments.
 
 The v0.22.2 workspace stage passed all five jobs. Checked private receipts and
 streamed assembly/recovery retain exact source/provider/size and output proofs.
-The active v0.22.3 queue adds reviewed private staging, retained attempt budgets
-and at most two workers. Its exact CI is pending. Raw staging never admits a
-library job; Newznab/admission, archives and repair remain later increments.
+The v0.22.3 queue passed complete CI with 680 Rust tests. It adds reviewed private
+staging, retained attempt budgets and at most two workers. Raw staging never
+admits a library job. The active v0.22.4 typed Newznab discovery/document transport
+scope needs its own exact CI; automatic library admission, archives and repair
+remain later increments. Metadata acceptance never proves downloaded content.

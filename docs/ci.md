@@ -79,9 +79,9 @@ provide newer weights. Timing history affects ordering only. A malformed history
 cannot suppress tests. Concurrency and timeout options can be tuned in CI, with
 explicit bounds; this is not permission to execute the scheduler locally.
 
-The checked-in weights cover all 53 harnesses measured by the successful
-validation job in [run 37429460979](https://github.com/alecerf/mynou/actions/runs/37429460979),
-including native notification delivery. That job executed 602 tests in 63.950 seconds
+The checked-in weights cover all 58 harnesses measured by the successful
+validation job in [run 37459145003](https://github.com/alecerf/mynou/actions/runs/37459145003),
+including native Usenet staging. That job executed 680 tests in 80.652 seconds
 with two processes and two threads per harness. These measurements set scheduling
 order for the following scope. New harnesses receive a weight only after a
 successful observed run; these durations describe the preceding source.
@@ -188,3 +188,12 @@ The v0.22.2 run completed all 57 harnesses with 663 passing Rust tests in
 79.506 seconds. Its workspace harness took 18.445 seconds, including the original
 65 MiB fixture. Weights now contain these actual measurements; the new queue
 harness uses the scheduler default until its first completed passing run.
+
+## Optional source formatting branches
+
+The `format/**` branch namespace runs an editing-only workflow with Rust 1.99.0
+rustfmt. The bot commits formatting edits through a regular fast-forward push.
+This supports source edits when the execution workspace is unavailable. It does
+not validate source or publish a release. A completed scope still reaches trunk
+and passes the original graph, formatting, Clippy, scheduler, all-target test,
+build, packaging and publication gates for its exact source commit.

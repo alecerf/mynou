@@ -3,12 +3,11 @@
 v0.22.0 provides original bounded NZB and yEnc format primitives. It passed all
 five CI jobs in run 37434792979 with 639 Rust tests and seven published assets.
 Native NNTP passed complete v0.22.1 CI with 652 Rust tests and seven assets.
-The active v0.22.2 disk workspace increment needs its own complete CI. All code
-uses Rust std only.
-These primitives establish format and accidental-corruption checks; full Usenet
-search, NNTP acquisition, durable transfer management and recovery follow in
-separate releases. No external decoder, downloader, archive tool or repair helper
-is invoked.
+The disk workspace and durable queue increments passed complete v0.22.2 and
+v0.22.3 CI with 663 and 680 Rust tests respectively. The active v0.22.4 source
+adds typed Newznab discovery and bound document reads; its exact CI is pending.
+Automatic library admission follows. All code uses Rust std only. No external
+decoder, downloader, archive tool or repair helper is invoked.
 
 ## NZB inspection
 
@@ -64,9 +63,8 @@ file contains only successfully verified bytes. This initial in-memory assembly
 is limited to 64 MiB. Larger disk-backed assembly, verified restart recovery and
 controlled import remain subsequent stages.
 
-UUEncode, Base64/MIME article decoding, RAR/ZIP extraction and PAR2 repair are
-outside this release's explicit format contract. Durable acquisition and Newznab
-search are not yet connected. Original synthetic format fixtures cover corruption,
+UUEncode, Base64/MIME article decoding, RAR/ZIP extraction and PAR2 repair remain
+outside the explicit format contract. Original synthetic format fixtures cover corruption,
 structure limits, escaped bytes, multipart ordering/coverage, CRC differences,
 unsafe paths and the read-only CLI. Validation runs only in GitHub Actions.
 
@@ -266,7 +264,78 @@ per transfer, not a global disk-space quota. Peak article/part buffers follow
 configured NNTP and decoded-part bounds; the worker count bounds concurrent use.
 
 This queue stages explicitly selected raw yEnc files. It does not create requester
-or canonical library jobs, fetch NZB URLs, search Newznab, extract archives or
-repair PAR2. Ordinary Engine admission and native Newznab follow, preserving
-quality, numbering, requester approval/quota, ownership, import and Plex gates.
-The 0.22.3 source requires its own complete CI publication.
+or canonical library jobs, extract archives or repair PAR2. Ordinary Engine
+admission follows, preserving quality, numbering, requester approval/quota,
+ownership, import and Plex gates. The 0.22.3 source passed all five jobs in run
+37459145003 and CI published seven assets from the exact validated commit.
+
+## Native Newznab discovery in 0.22.4
+
+Configure an explicit native provider and a matching Newznab source:
+
+```json
+{
+  "usenet": {
+    "servers": [
+      {
+        "id": "primary",
+        "host": "nntp.example.test",
+        "port": 563,
+        "tls": true,
+        "username_env": "MYNOU_NNTP_USERNAME",
+        "password_env": "MYNOU_NNTP_PASSWORD"
+      }
+    ]
+  },
+  "indexers": [
+    {
+      "id": "native-newznab",
+      "name": "Usenet source",
+      "kind": "newznab",
+      "url": "https://indexer.example.test/api",
+      "api_key_env": "MYNOU_NEWZNAB_API_KEY",
+      "usenet": {
+        "server_id": "primary",
+        "minimum_bytes": 1,
+        "maximum_bytes": 68719476736
+      }
+    }
+  ]
+}
+```
+
+The source reuses optional native Basic, Bearer or explicit form authentication,
+source health, rate limits and reviewed pause/reset/probe controls. Its provider
+ID must exist. Size bounds are positive numeric bytes up to one TiB, defaulting
+to one byte through 64 GiB. Lower bounds cannot exceed upper bounds. These source
+settings join only the Newznab binding; existing torrent policy bytes stay intact.
+Changing a stable ID's binding requires a new ID.
+
+`search`, protected `POST /api/search` and browser search preview Newznab metadata
+alongside other sources. Movie queries include title, supplied TMDB ID and year;
+episode queries retain canonical seasonal or explicitly mapped absolute labels.
+Usenet candidates still pass title/year/episode and profile rules. They report
+`transport: "usenet"`, advertised bytes and password flags with null seeders.
+Torrent seeder thresholds do not apply. Password-protected or out-of-size-policy
+advertisements are rejected. Advertised size and title are metadata claims, never
+proof of acquired content.
+
+RSS accepts at most 4096 items per source within the original XML bounds. A valid
+item needs one bounded title and one same-origin NZB enclosure with MIME type
+`application/x-nzb` or `application/x-nzb+xml`. Size comes from a positive bounded
+enclosure length or a correctly namespaced Newznab size attribute; simultaneous
+claims must match. Known size/password attributes require the standard Newznab
+namespace. Duplicate/conflicting claims, unsafe references and malformed items
+are omitted; an invalid document or oversized inventory fails the source.
+Only explicit zero/one password flags are supported. There is no gzip expansion,
+redirect following, cross-origin enclosure fetch or magnet interpretation.
+
+The library `select_acquisition` retains a private typed target binding source,
+provider and advertised policies. `newznab::fetch_document` accepts that bound
+target, rechecks configuration and source policy, reads within the native body
+and deadline bounds, and validates exact original NZB bytes. Existing enclosure
+API keys are preserved; otherwise the configured key is appended. Neither call
+requests NNTP articles, enqueues a transfer or creates a library job. Ordinary
+torrent selection rejects a selected NZB until native library admission is
+implemented. Season-pack acquisition does not inspect Newznab advertisements.
+Public reports exclude URLs, credential names/values and raw document identities.

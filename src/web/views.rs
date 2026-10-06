@@ -234,11 +234,12 @@ pub fn search(
                 ("accepted", "Accepted releases"),
                 ("rejected", "Rejected releases"),
             ] {
-                body.push_str(&format!("<h3>{label}</h3><div class=table-wrap><table><caption>{label}</caption><thead><tr><th scope=col>Release</th><th scope=col>Source</th><th scope=col>Seeds</th><th scope=col>Score</th><th scope=col>Decision</th></tr></thead><tbody>"));
+                body.push_str(&format!("<h3>{label}</h3><div class=table-wrap><table><caption>{label}</caption><thead><tr><th scope=col>Release</th><th scope=col>Source</th><th scope=col>Type</th><th scope=col>Availability</th><th scope=col>Score</th><th scope=col>Decision</th></tr></thead><tbody>"));
                 for candidate in report.get(key).map(array).unwrap_or_default() {
                     let selected = report.get("selected_candidate_id").and_then(Value::as_str)
                         == candidate.get("id").and_then(Value::as_str);
                     let assessment = candidate.get("assessment").unwrap_or(&Value::Null);
+                    let usenet = text(candidate, "transport") == "usenet";
                     let reasons = assessment
                         .get("reasons")
                         .map(array)
@@ -250,7 +251,7 @@ pub fn search(
                         .collect::<Vec<_>>()
                         .join("; ");
                     body.push_str(&format!(
-                        "<tr><td>{}{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+                        "<tr><td>{}{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
                         display(text(candidate, "title")),
                         if selected {
                             "<small>Automatically selected</small>"
@@ -258,7 +259,12 @@ pub fn search(
                             ""
                         },
                         display(text(candidate, "source")),
-                        scalar(candidate, "seeders"),
+                        if usenet { "Usenet" } else { "Torrent" },
+                        if usenet {
+                            format!("{} bytes advertised", scalar(candidate, "advertised_bytes"))
+                        } else {
+                            format!("{} seeders", scalar(candidate, "seeders"))
+                        },
                         assessment
                             .get("rank")
                             .map(|rank| scalar(rank, "custom_score"))

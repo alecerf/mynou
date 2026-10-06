@@ -5,6 +5,9 @@ selection. Native authentication/session/health passed complete v0.21.0 CI.
 Configure an endpoint that directly serves that adapter; fetches reject redirects.
 Existing sources default to enabled, without authentication or interval limits.
 Existing API-key query configuration remains supported.
+The native Newznab adapter in 0.22.4 adds explicit Usenet metadata/provider
+bindings through the same authentication and source-policy controls. See
+[Newznab configuration and staged limits](usenet.md#native-newznab-discovery-in-0224).
 
 ```json
 {
@@ -106,4 +109,3 @@ cooldowns and busy rejection still apply; an unavailable probe does not reset
 these limits. A crash after recording a probe may leave an unknown transport
 outcome; no automatic replay occurs. Browser reviews bind source, action, guard
 and session, expire after ten minutes and require CSRF/origin checks.
-

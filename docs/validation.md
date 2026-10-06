@@ -11,14 +11,15 @@ revision.
 
 ## Automated checks and releases
 
-The active 0.22.3 source adds an opt-in native Usenet staging queue. Checked
-source blobs and queue records capture immutable file/provider/limit identities.
-Persisted reservations precede NNTP; retained receipts skip repeat acquisition.
-Two bounded workers use per-provider transport ownership and fence paused,
-cancelled or stopped results. Restart recovery, complete output revalidation,
-private storage and guarded CLI/API/browser controls retain admission boundaries.
+The active 0.22.4 source adds a native Newznab adapter and typed Usenet
+advertisements. Movie/year and seasonal/absolute episode identity, selection
+profiles, explicit provider bindings, advertised size and password policies gate
+candidates. Public search previews identify the transport without private URLs
+or credentials. Bound NZB document reads reuse native authentication, source
+pause/generation, rate, origin and absolute-deadline checks; they never queue an
+article or create a library job. Existing torrent source bindings remain intact.
 This source requires its own complete Actions validation and publication.
-Ordinary Engine/Newznab acquisition follows before verified cross-seeding/bulk.
+Ordinary Engine admission follows before verified cross-seeding/bulk.
 
 The preceding 0.22.2 workspace fixtures passed exact CI, including the 65 MiB
 streamed output. Its 18.445-second observed harness weight now guides scheduling.
@@ -1027,3 +1028,28 @@ prior v0.22.1 tag and asset IDs, sizes and digests remained unchanged.
 | mynou-v0.22.2-linux-amd64-image.tar.gz.sha256 | 615013358 | 105 | bcb5ed8f489cf41381d3bb9ec73bcb88647e090b5c7a29756accd25ca8dd7849 |
 | mynou-v0.22.2-source.zip | 615013375 | 7787398 | 07317ed2df6c629558e6fb62806fd925c24692b230445cb6af7ca02d35730ec3 |
 | mynou-v0.22.2-source.zip.sha256 | 615013380 | 91 | 174676b4d3b7fb98d847ed0f565823e8901ac927198c6fdc223b0a9f1df9a6ca |
+
+## Recorded 0.22.3 CI evidence
+
+CI published v0.22.3 from `e4e77c9ddf142bafd91b17a32bfb7741efb45230` in
+[run 37459145003](https://github.com/alecerf/mynou/actions/runs/37459145003).
+All five jobs passed: 680 Rust tests across 58 harnesses, none failed or ignored,
+and four scheduler checks. Test execution took 80.652 seconds with two harness
+processes and two threads each. Seven bot-owned assets were published at
+11:54:05 UTC on October 6, 2026. The tag matched the validated source and the
+prior v0.22.2 tag and asset IDs, sizes and digests remained unchanged.
+
+The successful job IDs were validate 112254027758, musl 112254027836,
+GNU 112254028028, package 112254938441 and release 112255143288.
+Release 404652015 and all assets belong to github-actions[bot]. No local
+validation or manual publication was performed.
+
+| Asset | ID | Bytes | SHA-256 |
+| --- | --- | ---: | --- |
+| mynou-v0.22.3-linux-x86_64.sha256 | 615378317 | 93 | 7e602fa37287dd9639dec9d9648e9cb40a6fbdd0b7aaf863e1ad6f535aeea6cf |
+| mynou-v0.22.3-linux-amd64-image.tar.gz.sha256 | 615378318 | 105 | df56f25c7356c23bf6d84a4b80d4e0e4680f6bfc75a88524acc503dc83e9e285 |
+| SHA256SUMS | 615378319 | 289 | fa2c8023f4abe39572a5e13c0c205aec23503280d5ac4ff5639db3dd7d9ab1fe |
+| mynou-v0.22.3-linux-amd64-image.tar.gz | 615378320 | 2177727 | 565018005cf8f0c4a243bdbf798df12d571e560ecf0288e237538edbfd977247 |
+| mynou-v0.22.3-linux-x86_64 | 615378321 | 4494176 | 933f41aec731c941555031a36776ea504c2868fe75ca9c92f5b6eddb4115f912 |
+| mynou-v0.22.3-source.zip.sha256 | 615378334 | 91 | 8345bf1d832a4b536d53bc42a48b0438d145ce79e0a8403e126e60642a906fb1 |
+| mynou-v0.22.3-source.zip | 615378336 | 8139603 | 07fe3d33f3e0afe9033ccec9a44940151be8edcb48075ec747ac303a2900eed3 |
