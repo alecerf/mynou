@@ -34,12 +34,13 @@ use web_support::{Browser, Server, TOKEN};
 const PRIVATE_KEY: &str = "original-document-private-key";
 const TITLE: &str = "Fixture.Movie.2024.1080p.WEB-DL.x264";
 const NS: &str = "http://www.newznab.com/DTD/2010/feeds/attributes/";
+type RequestLog = Vec<(String, Option<String>)>;
 
 struct Http {
     url: String,
     feed: Arc<Mutex<(u16, Vec<u8>)>>,
     document: Arc<Mutex<(u16, Vec<u8>)>>,
-    calls: Arc<Mutex<Vec<(String, Option<String>)>>>,
+    calls: Arc<Mutex<RequestLog>>,
     blocked: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
