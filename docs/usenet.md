@@ -425,7 +425,9 @@ integrity is reverified outside queue/journal locks. The decoded filename must
 match the requested title, year and selected episode numbering, satisfy the frozen
 quality profile and have a supported video container. Actual size must satisfy
 the bound Newznab policy. Ordinary native media analysis and cancellable atomic
-import follow these checks; Plex must confirm the exact imported path. Public
+import follow these checks. Import copies to an independent inode before atomic
+publication so the checked source stays private and can be reopened; Plex must
+confirm the exact imported path. Public
 job projections contain aliases/progress identities, with no owner/provider
 bindings, article IDs or NZB contents. Library job cancel/retry controls own these
 transfers in the CLI, authenticated API and browser.

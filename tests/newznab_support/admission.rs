@@ -110,6 +110,17 @@ fn native_direct_media_reaches_the_library_without_a_torrent_client() {
     let workers = engine.start();
     let ready = wait_state(&engine, &id, "ready");
     assert_eq!(fs::read(&ready.imports[0]).unwrap(), MEDIA);
+    {
+        use std::os::unix::fs::MetadataExt;
+        let source = fs::metadata(&ready.files[0]).unwrap();
+        let imported = fs::metadata(&ready.imports[0]).unwrap();
+        assert_eq!(source.nlink(), 1);
+        assert_eq!(source.mode() & 0o077, 0);
+        assert_ne!(
+            (source.dev(), source.ino()),
+            (imported.dev(), imported.ino())
+        );
+    }
     assert_eq!(p.requests.lock().unwrap().len(), 2);
     assert_eq!(h.count(), 2);
     assert_eq!(ready.release.as_ref().unwrap().title, TITLE);

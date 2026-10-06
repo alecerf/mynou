@@ -255,6 +255,17 @@ pub fn import_file_cancellable(
     import_to_target(source, library, request, None, active)
 }
 
+/// Preserve a checked private source inode while publishing an independent import.
+pub(crate) fn import_private_file_cancellable(
+    source: &Path,
+    library: &Path,
+    request: &Request,
+    active: &AtomicBool,
+) -> Result<PathBuf> {
+    let destination = target(source, library, request, None)?;
+    import_destination(source, library, destination, active, true)
+}
+
 /// Imports an upgrade beside the existing media without changing its title or
 /// directory. The revision must be a 32-character hexadecimal job identifier.
 /// Reusing a revision is safe only when the destination contains identical bytes.

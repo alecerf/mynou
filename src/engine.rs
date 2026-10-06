@@ -675,7 +675,9 @@ impl Engine {
         job: &Job,
         active: &AtomicBool,
     ) -> Result<std::path::PathBuf> {
-        if let Some(file) = &job.shared_file {
+        if job.usenet_origin.is_some() {
+            organizer::import_private_file_cancellable(source, root, &job.request, active)
+        } else if let Some(file) = &job.shared_file {
             organizer::import_shared_file_cancellable(source, root, file, active)
         } else if job.upgrade_parent.is_some() {
             organizer::import_versioned_file_cancellable(
