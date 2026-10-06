@@ -228,7 +228,7 @@ impl Client {
                     &path,
                     &source.bytes,
                     r.file_index,
-                    &r.binding,
+                    &Inner::workspace_binding(r),
                     r.max_file,
                     true,
                 )?;
@@ -321,12 +321,18 @@ impl Client {
                     &path,
                     &source.bytes,
                     r.file_index,
-                    &r.binding,
+                    &Inner::workspace_binding(r),
                     r.max_file,
                     false,
                 )?
             } else {
-                Workspace::create(&path, &source.bytes, r.file_index, &r.binding, r.max_file)?
+                Workspace::create(
+                    &path,
+                    &source.bytes,
+                    r.file_index,
+                    &Inner::workspace_binding(r),
+                    r.max_file,
+                )?
             };
             inner
                 .verified

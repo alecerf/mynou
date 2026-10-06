@@ -103,6 +103,20 @@ impl Record {
     }
 }
 impl Inner {
+    pub(super) fn workspace_binding(r: &Record) -> String {
+        r.owner.as_ref().map_or_else(
+            || r.binding.clone(),
+            |owner| {
+                digest(
+                    json::stringify(&Value::Array(vec![
+                        r.binding.clone().into(),
+                        owner.to_json(),
+                    ]))
+                    .as_bytes(),
+                )
+            },
+        )
+    }
     pub(super) fn owner_allowed(&self, r: &Record) -> bool {
         r.owner.is_none()
             || self
@@ -279,7 +293,7 @@ impl Client {
             &inner.workspace_path(&id),
             bytes,
             file_index,
-            &row.binding,
+            &Inner::workspace_binding(&row),
             row.max_file,
         ) {
             Ok(w) => w,
@@ -301,7 +315,7 @@ impl Client {
         OwnedTransfer::capture(&inner.data.records[&id], 0)
     }
     /// Trusted callers grant at most sixty seconds after validating current admission.
-    /// Permissions are never persisted, inherited through reopening or reset on retry.
+    /// Permissions are never persisted or inherited through reopening; budgets stay intact.
     pub fn authorize_owned(&self, id: &str, owner: &Owner, until: u64) -> Result<()> {
         self.set_owned_permit(id, owner, until, false)
     }
