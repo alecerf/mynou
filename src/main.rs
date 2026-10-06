@@ -23,6 +23,7 @@ const HELP: &str = "Mynou — media automation using Rust std only
 
   init [--config mynou.json]
   analyze FILE [--json]
+  nzb-inspect FILE
   doctor [--config mynou.json]
   serve [--config mynou.json]
   submit --title TITLE [--kind movie|episode|series|file] [--year YEAR]
@@ -203,6 +204,7 @@ impl Args {
                 "limit",
             ],
             "analyze" => &["json", "help"],
+            "nzb-inspect" => &["help"],
             "demo" | "setup-docker" => &["dir", "help"],
             "help" | "--help" | "version" | "--version" => &[],
             _ => return Err(format!("Unknown command: {command}")),
@@ -222,6 +224,7 @@ impl Args {
                 "notification-control",
                 "indexer-control",
                 "analyze",
+                "nzb-inspect",
                 "show",
                 "events",
                 "retry",
@@ -487,6 +490,11 @@ fn execute(args: Args) -> Result<()> {
                 "mynou {} — Rust std, 0 dependencies",
                 env!("CARGO_PKG_VERSION")
             );
+            return Ok(());
+        }
+        "nzb-inspect" => {
+            let nzb = mynou::usenet::nzb::Nzb::read_file(Path::new(&args.positions[0]))?;
+            output(&nzb.report());
             return Ok(());
         }
         "analyze" => {
