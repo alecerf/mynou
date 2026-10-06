@@ -147,6 +147,19 @@ fn directory(path: &Path) -> Result<()> {
     }
     Ok(())
 }
+fn clean_root(root: &Path) -> Result<PathBuf> {
+    if root.file_name().is_none() || root.components().any(|c| matches!(c, Component::ParentDir)) {
+        return Err("Usenet workspace: clean directory path required".into());
+    }
+    Ok(if root.is_absolute() {
+        root.to_owned()
+    } else {
+        std::env::current_dir()
+            .map_err(|_| "Usenet workspace: current directory unavailable")?
+            .join(root)
+    })
+}
+
 impl Workspace {
     pub fn create(
         root: &Path,
@@ -156,13 +169,14 @@ impl Workspace {
         max_file: u64,
     ) -> Result<Self> {
         let (p, articles) = plan(source, index, server_binding, max_file)?;
+        let root = clean_root(root)?;
         let count = articles.len() as u32;
         if root.file_name().is_none()
             || root.components().any(|c| matches!(c, Component::ParentDir))
         {
             return Err("Usenet workspace: clean directory path required".into());
         }
-        reject_symlinks(root).map_err(|_| "Usenet workspace: invalid directory path")?;
+        reject_symlinks(&root).map_err(|_| "Usenet workspace: invalid directory path")?;
         let mut builder = fs::DirBuilder::new();
         #[cfg(unix)]
         {
@@ -170,7 +184,7 @@ impl Workspace {
             builder.mode(0o700);
         }
         builder
-            .create(root)
+            .create(&root)
             .map_err(|_| "Usenet workspace: new private directory required")?;
         let owner = private_options()
             .create_new(true)
@@ -189,7 +203,7 @@ impl Workspace {
             .map_err(|_| "Usenet workspace: owner synchronization failed")?;
         let binding = crate::requesters::digest(json::stringify(&p).as_bytes());
         let mut w = Self {
-            root: root.into(),
+            root: root.clone(),
             _owner: owner,
             plan: p,
             binding,
@@ -216,8 +230,9 @@ impl Workspace {
         read_only: bool,
     ) -> Result<Self> {
         let (p, articles) = plan(source, index, server_binding, max_file)?;
+        let root = clean_root(root)?;
         let count = articles.len() as u32;
-        directory(root)?;
+        directory(&root)?;
         directory(&root.join("output"))?;
         let owner = disk::private_file(&root.join(".owner"), 0)?;
         owner
@@ -244,7 +259,7 @@ impl Workspace {
         }
         let binding = crate::requesters::digest(json::stringify(&p).as_bytes());
         let mut w = Self {
-            root: root.into(),
+            root: root.clone(),
             _owner: owner,
             plan: p,
             binding,
@@ -455,8 +470,12 @@ impl Workspace {
             _ => return Err("Usenet workspace: verified output is missing".into()),
         }
         if self.phase == "prepared" && !self.read_only {
-            sync_directory(&self.root.join("output"))
-                .map_err(|_| "Usenet workspace: output durability uncertain")?;
+            if sync_directory(&self.root.join("output")).is_err() {
+                self.poisoned = true;
+                return Err(
+                    "Usenet workspace: output durability uncertain; reopen required".into(),
+                );
+            }
             self.phase = "ready".into();
             self.save()?;
         }
@@ -539,7 +558,7 @@ impl Workspace {
         }
     }
     pub fn available_file(&self) -> Option<PathBuf> {
-        if self.phase == "ready" {
+        if self.phase == "ready" && !self.poisoned {
             self.output
                 .as_ref()
                 .map(|o| self.root.join("output").join(&o.name))
@@ -550,10 +569,17 @@ impl Workspace {
     pub fn report(&self) -> Value {
         let mut v = Value::object();
         v.insert("binding", self.binding.clone());
-        v.insert("phase", self.phase.clone());
+        v.insert(
+            "phase",
+            if self.poisoned {
+                "recovery_required"
+            } else {
+                self.phase.as_str()
+            },
+        );
         v.insert("verified_parts", self.parts.len() as u32);
         v.insert("total_parts", self.count);
-        v.insert("ready", self.phase == "ready");
+        v.insert("ready", self.phase == "ready" && !self.poisoned);
         v
     }
 }
