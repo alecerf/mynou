@@ -5,21 +5,29 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current implementation: 0.22.8, awaiting CI
+## Current implementation: 0.22.9, awaiting CI
 
-The active 0.22.8 source adds opt-in, ownership-bound ZIP extraction to native
-Usenet movie and episode admission. Selection captures decoder limits. A checked
-private intent binds the original queue source SHA-256, owner, chosen media entry
-and bounds before output creation; exact size, CRC and SHA precede completion.
-Extraction holds a bounded queue slot outside its mutex. Revocation fences results
-before journal attachment, and current approved leases gate durable transitions.
-Known writing intents restart partial output; completed private proofs can join
-the preceding journal intent without rewriting. Unknown or corrupt state is
-rejected before recovery writes. ZIP-aware jobs require journal format 7.
-Outer and inner filename/numbering/profile, source and decoded size, native media,
-independent-inode atomic import and exact Plex checks all remain required.
+The active 0.22.9 source adds original bounded RAR5 parsing and stored-payload
+verification. Headers have checked CRCs, bounded variable integers and an explicit
+main/file/end layout. Safe UTF-8 names, file types, collisions and declared limits
+are checked. Stored payloads stream in 64 KiB chunks into caller-owned provisional
+sinks and return size/CRC/SHA proof only after exact integrity and cancellation
+checks. Structural metadata is reparsed before extraction. Read-only `rar-inspect`
+reports `content_verified: false` without configuration, network or output writes.
 This source requires its own complete Actions validation and publication.
-ZIP64, RAR, PAR2, multi-file packs and Usenet upgrades remain separate increments.
+Compressed/solid/split/encrypted RAR, RAR4, service blocks and most extras remain
+unsupported explicitly. Native RAR admission, PAR2, multi-file packs and Usenet
+upgrades follow in separate increments; the verified v0.22.8 ZIP path remains.
+
+## Preceding published stage: 0.22.8
+
+CI published v0.22.8 from `ca1aac9c215b491ffcba1b98c1fc3136a543dfd6` in
+[run 37506471621](https://github.com/alecerf/mynou/actions/runs/37506471621).
+All five jobs passed: 773 Rust tests across 61 harnesses, none failed or ignored,
+and four scheduler checks. Test execution took 95.048 seconds with two harness
+processes and two threads each. Seven bot-owned assets were published at
+17:52:59 UTC on October 6, 2026. The tag matched the validated source and the
+prior v0.22.7 tag and asset IDs, sizes and digests remained unchanged.
 
 ## Preceding published stage: 0.22.7
 

@@ -217,3 +217,8 @@ The v0.22.7 run completed all 61 harnesses with 750 passing Rust tests in
 Newznab/library target 11.903 seconds. The timing manifest records these actual
 measurements; expanded v0.22.8 targets retain preceding weights until their own
 completed run provides observations. All targets and gates remain required.
+
+The v0.22.8 run completed all 61 harnesses with 773 passing Rust tests in
+95.048 seconds. The manifest now records this run's actual observations, including
+expanded ZIP library/recovery fixtures. The new RAR target uses the scheduler
+default until its own completed passing run. All targets remain required.

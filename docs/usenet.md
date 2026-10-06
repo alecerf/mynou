@@ -439,9 +439,10 @@ to the torrent client. Changed source/provider/profile bindings withhold new
 authorization; no fallback to another provider is implicit. All new fixtures use
 original local media and loopback Newznab, NNTP and Plex. The complete 0.22.6 run passed; see [validation evidence](validation.md#recorded-0226-ci-evidence).
 
-The 0.22.7 [archive formats](archives.md) passed complete CI. Active v0.22.8 adds
-[opt-in native ZIP library admission](archives.md#native-zip-library-admission-in-0228)
-with captured bounds, private extraction intent/proofs, permission fencing and
-journal format 7. It supports one media entry in one ZIP/NZB file and requires its
-own complete CI. RAR, PAR2, multi-file packs and Usenet upgrades remain later
-increments. Raw archive bytes cannot bypass the gates above.
+The v0.22.7 archive formats and v0.22.8 opt-in ZIP library admission passed
+complete CI, the latter with 773 Rust tests. The native ZIP path uses captured
+bounds, private extraction proofs, current permission and journal format 7 for
+one media entry in one ZIP/NZB file. Raw bytes cannot bypass library gates.
+Active v0.22.9 adds [stored RAR5 formats](archives.md#bounded-rar5-stored-formats-in-0229),
+awaiting its own CI. Native RAR admission, additional compressed/repair formats,
+multi-file packs and Usenet upgrades remain subsequent increments.

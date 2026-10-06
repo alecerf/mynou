@@ -351,9 +351,15 @@ the library interface do not independently establish admission or approval.
 The v0.22.7 ZIP/DEFLATE [format scope](archives.md) passed complete CI.
 It supports classic single-disk stored/DEFLATE entries within captured limits;
 inspection never verifies content and decoding never chooses output paths.
-The active v0.22.8 opt-in library path supports one supported media entry in one
+The verified v0.22.8 opt-in library path supports one supported media entry in one
 ZIP/NZB file, captured source/entry/bounds, private restartable extraction and
 verified output proofs. It requires current permission, native media checks,
-independent-inode import and exact Plex confirmation, and awaits its own CI.
+independent-inode import and exact Plex confirmation, and passed all five jobs with 773 Rust tests.
 ZIP64, RAR, PAR2, multi-file packs and Usenet upgrades remain later increments.
 No external archive decoder or repair helper is invoked.
+
+Active v0.22.9 adds a bounded stored RAR5 [format subset](archives.md#bounded-rar5-stored-formats-in-0229)
+with 2 MiB total headers, checked integers/CRCs, safe names/types and 64 KiB
+streaming. It awaits complete CI and does not enable automatic RAR admission.
+Compressed/solid/split/encrypted RAR, RAR4, service blocks and most extras are
+explicitly unsupported. No archive helper or crate is used.

@@ -1,8 +1,9 @@
 # Native archive formats
 
-The original ZIP and raw DEFLATE formats passed complete v0.22.7 CI. The active
-v0.22.8 increment adds opt-in native Usenet library admission and requires its own
-complete Actions validation. No external archive program or crate is used.
+The original ZIP and raw DEFLATE formats passed complete v0.22.7 CI, and opt-in
+ZIP library admission passed v0.22.8 CI with 773 Rust tests. Active v0.22.9 adds
+original RAR5 stored formats and requires its own complete Actions validation.
+No external archive program or crate is used.
 
 ## Read-only inspection
 
@@ -37,7 +38,7 @@ decoder never creates directories or chooses a filesystem destination.
 
 ZIP64, split/multi-disk ZIP, encryption, legacy non-ASCII encodings, alternate
 Unicode-path extras and other compression methods produce explicit errors.
-RAR and PAR2 are separate future original implementations.
+RAR5 stored formats follow below; compressed/other RAR and PAR2 remain separate increments.
 
 ## Bounds and streaming
 
@@ -153,3 +154,46 @@ The admission fixtures also cover private writing/completed interruption windows
 foreign or corrupt state, changed sources, links, format downgrade, stored/deflated
 movie imports, canonical absolute-numbered episodes, captured limits across
 restart, requester approval/destinations and exact Plex confirmation.
+
+## Bounded RAR5 stored formats in 0.22.9
+
+```sh
+mynou rar-inspect original.rar
+```
+
+Inspection is read-only and reports declared metadata with `content_verified`
+false. It reads no configuration, creates no output or job, and rejects symlink
+input. `Rar5::extract` reparses metadata, streams a selected payload into a
+caller-owned provisional sink and returns exact size, checked CRC and calculated
+SHA. Cancellation after the final write still returns failure. The caller must
+retain partial bytes privately and apply its own publication transaction.
+Automatic native RAR library admission is a subsequent increment.
+
+The original parser follows the [RAR5 structure specification](https://www.rarlab.com/technote.htm).
+It accepts a signature at offset zero, main/file/end headers, single-volume
+stored files, Unix/Windows regular files/directories, optional second-resolution
+mtime and bounded high-precision time extras. Header CRC covers encoded header
+size and all fields. File payload CRC is mandatory; directory data must be empty.
+Variable integers are at most ten bytes, with checked overflow; header size at
+most three bytes. Padded integer encodings remain checked. Stored version 0/1
+compression information is validated without allocating a dictionary.
+
+The source is bounded by captured total output plus 2 MiB. Total headers,
+including signature/CRCs/length fields, are at most 2 MiB; extra areas at most
+4 KiB. Shared archive limits bound entries, each output and total declared output.
+Stored size must equal packed size. The parser seeks over payloads, and extraction
+uses 64 KiB chunks without whole-payload allocation or reading adjacent headers.
+Portable path limits and case/ancestor collision checks match the ZIP contract.
+Directory names are normalized with a trailing slash; metadata never chooses a
+filesystem destination.
+
+RAR4, compressed/solid RAR, split/volume archives, encryption, self-extracting
+prefixes, recovery/service blocks, links/devices, owner/hash/version/redirection
+extras and unknown block/extra types are rejected explicitly. Hidden and trailing
+data are rejected. This bounded subset is not general RAR compatibility or a
+performance claim. Compressed RAR and PAR2 remain original implementation stages.
+
+Original CI fixtures use independent header/CRC encoding, one original golden
+archive, the original demo MP4, malformed headers and integer/path/type cases,
+limits, streaming, metadata changes, cancellation, sink errors and read-only CLI.
+No reference implementation source or public archive was copied.
