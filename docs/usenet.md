@@ -443,6 +443,8 @@ The v0.22.7 archive formats and v0.22.8 opt-in ZIP library admission passed
 complete CI, the latter with 773 Rust tests. The native ZIP path uses captured
 bounds, private extraction proofs, current permission and journal format 7 for
 one media entry in one ZIP/NZB file. Raw bytes cannot bypass library gates.
-Active v0.22.9 adds [stored RAR5 formats](archives.md#bounded-rar5-stored-formats-in-0229),
-awaiting its own CI. Native RAR admission, additional compressed/repair formats,
-multi-file packs and Usenet upgrades remain subsequent increments.
+Stored RAR5 formats passed v0.22.9 CI with 791 Rust tests. Active v0.22.10 adds
+[opt-in stored RAR5 library admission](archives.md#native-stored-rar5-admission-in-02210),
+with explicit format and separate private descriptor/journal versions, awaiting
+its own CI. Compressed RAR, PAR2, multi-file packs and Usenet upgrades remain
+subsequent increments.

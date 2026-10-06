@@ -222,3 +222,8 @@ The v0.22.8 run completed all 61 harnesses with 773 passing Rust tests in
 95.048 seconds. The manifest now records this run's actual observations, including
 expanded ZIP library/recovery fixtures. The new RAR target uses the scheduler
 default until its own completed passing run. All targets remain required.
+
+The v0.22.9 run completed 62 harnesses with 791 Rust tests in 97.770 seconds.
+Its RAR format target took 0.114 seconds; the manifest records every observed
+target duration from that completed run. Expanded native admission fixtures retain
+preceding weights until their own passing measurements. All gates remain enabled.

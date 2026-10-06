@@ -1,8 +1,9 @@
 # Native archive formats
 
 The original ZIP and raw DEFLATE formats passed complete v0.22.7 CI, and opt-in
-ZIP library admission passed v0.22.8 CI with 773 Rust tests. Active v0.22.9 adds
-original RAR5 stored formats and requires its own complete Actions validation.
+ZIP library admission passed v0.22.8 CI with 773 Rust tests. Stored RAR5 formats passed complete v0.22.9 CI with 791 Rust tests. Active
+v0.22.10 adds native stored RAR5 admission and requires its own complete Actions
+validation.
 No external archive program or crate is used.
 
 ## Read-only inspection
@@ -167,7 +168,7 @@ input. `Rar5::extract` reparses metadata, streams a selected payload into a
 caller-owned provisional sink and returns exact size, checked CRC and calculated
 SHA. Cancellation after the final write still returns failure. The caller must
 retain partial bytes privately and apply its own publication transaction.
-Automatic native RAR library admission is a subsequent increment.
+The active native stored RAR5 admission increment follows below.
 
 The original parser follows the [RAR5 structure specification](https://www.rarlab.com/technote.htm).
 It accepts a signature at offset zero, main/file/end headers, single-volume
@@ -197,3 +198,37 @@ Original CI fixtures use independent header/CRC encoding, one original golden
 archive, the original demo MP4, malformed headers and integer/path/type cases,
 limits, streaming, metadata changes, cancellation, sink errors and read-only CLI.
 No reference implementation source or public archive was copied.
+
+## Native stored RAR5 admission in 0.22.10
+
+Opt in with `usenet.downloads.rar: {}` or the same bounded limit fields as ZIP.
+The provider, native downloads and bound Newznab source must already be configured.
+Absent/null `rar` retains previous capabilities. Stored RAR5 is admitted from one
+`.rar` file in one NZB, containing exactly one supported media entry. Auxiliary
+entries are checked structurally and counted against bounds but never extracted.
+Unsupported compressed/solid/split/encrypted RAR fails explicitly.
+
+Selection captures complete RAR limits as a separately tagged owner capability.
+Changing limits cannot raise an existing job's budget. Disabling a captured
+capability withholds new authorization. Existing ZIP-only identity/plan JSON omits
+the new fields, keeping prior bindings and descriptor/journal formats unchanged.
+New RAR plans serialize `format: rar5-stored`; source extension, actual parser,
+entry method, exact original source hash and complete selected entry must agree.
+A RAR source cannot use ZIP permission or adopt disguised ZIP bytes.
+
+RAR descriptors use `MYNOUA02`; ZIP descriptors remain `MYNOUA01`. Captured RAR
+capability requires journal/snapshot format 8 even before an archive intent exists;
+ZIP-only jobs retain format 7 and direct-media jobs retain format 6. Checksummed
+older magic cannot downgrade RAR-aware records. Public origins expose capability
+and prepared/verified booleans while omitting plans, hashes, bindings and secrets.
+
+The same private intent-before-output, exact CRC/SHA, source/output rehash,
+complete-frame-before-journal-link, known partial restart and read-only joint
+preflight apply. Current approved leases and bounded permission slots fence
+publication, including revocation and regrant. No raw extraction route grants
+library rights. Original media/identity/numbering/profile/source-and-decoded-size,
+requester destination, independent-inode atomic import and exact Plex imported
+path checks remain required.
+
+Native PAR2 repair, compressed RAR, multi-file packs and Usenet upgrades remain
+separate original increments. CI alone validates and publishes this stage.

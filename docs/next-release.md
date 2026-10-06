@@ -1,4 +1,4 @@
-# Active release — 0.22.9 bounded RAR5 stored formats
+# Active release — 0.22.10 ownership-bound stored RAR5 admission
 
 Continue all roadmap stages autonomously. A green publication starts the next
 scope; do not stop at a checkpoint. AGENTS.md mandates English, Rust std only,
@@ -6,6 +6,14 @@ zero dependencies, no unsafe/FFI/copied code/external runtime helpers or local
 validation. Formatting is an edit. Commit meaningful chunks, push completed scope,
 inspect all five jobs and fix reds through commits. Actions alone publishes exact
 source tags/assets. Complete publication before a successor push.
+
+CI published v0.22.9 from `e69e2b323a74a0d60678bdd797e34d3fbc28e8be` in
+[run 37508514751](https://github.com/alecerf/mynou/actions/runs/37508514751).
+All five jobs passed: 791 Rust tests across 62 harnesses, none failed or ignored,
+and four scheduler checks. Test execution took 97.770 seconds with two harness
+processes and two threads each. Seven bot-owned assets were published at
+18:08:36 UTC on October 6, 2026. The tag matched the validated source and the
+prior v0.22.8 tag and asset IDs, sizes and digests remained unchanged.
 
 CI published v0.22.8 from `ca1aac9c215b491ffcba1b98c1fc3136a543dfd6` in
 [run 37506471621](https://github.com/alecerf/mynou/actions/runs/37506471621).
@@ -63,26 +71,29 @@ processes and two threads each. Seven bot-owned assets were published at
 09:01:20 UTC on October 6, 2026. The tag matched the validated source and the
 prior v0.22.1 tag and asset IDs, sizes and digests remained unchanged.
 
-The active 0.22.9 source adds original bounded RAR5 parsing and stored-payload
-verification. Headers have checked CRCs, bounded variable integers and an explicit
-main/file/end layout. Safe UTF-8 names, file types, collisions and declared limits
-are checked. Stored payloads stream in 64 KiB chunks into caller-owned provisional
-sinks and return size/CRC/SHA proof only after exact integrity and cancellation
-checks. Structural metadata is reparsed before extraction. Read-only `rar-inspect`
-reports `content_verified: false` without configuration, network or output writes.
+The active 0.22.10 source adds opt-in stored RAR5 admission to native Usenet
+movie and episode jobs. `usenet.downloads.rar` captures immutable decoder bounds
+and a separately tagged owner capability. The exact source, format, entry, owner
+and output proof use the existing private extraction and current-permission
+workflow. RAR extraction descriptors require format 2 and RAR-aware journal
+records/snapshots require format 8; checksum-valid downgrades are rejected.
+ZIP-only selection identities, plan serialization and format-1/7 storage remain
+compatible. Unknown or corrupt private state is rejected before recovery writes.
+Outer/inner identity, numbering, profile and size, native media, copied atomic
+import, approved requester/destination and exact Plex gates remain required.
 This source requires its own complete Actions validation and publication.
-Compressed/solid/split/encrypted RAR, RAR4, service blocks and most extras remain
-unsupported explicitly. Native RAR admission, PAR2, multi-file packs and Usenet
-upgrades follow in separate increments; the verified v0.22.8 ZIP path remains.
+Compressed/solid/split/encrypted RAR, RAR4, PAR2, multi-file packs and Usenet
+upgrades remain subsequent bounded increments.
 
-After publication, continue 0.22.10 ownership-bound stored RAR5 admission.
-Capture format, exact source/entry/owner and limits without changing legacy ZIP
-identities. Reuse private journal/frame intent-before-write, complete-before-link
-recovery, current permission fences and independent library imports. Then continue
-original RAR compression and PAR2 increments, multi-file admission and Usenet
-upgrades, followed by 0.23 verified cross-seeding and guarded bulk controls.
-Use original synthetic media and loopback services only. Record exact source,
-five jobs, test counts, seven bot assets and prior immutability at every
-publication. A green release starts the next scope; do not stop at a checkpoint.
-English and Rust std only, no local validation, manual publication or unmeasured
-performance/parity claims.
+After publication, continue 0.22.11 original PAR2 format foundations, then
+bounded GF(2^16) repair and ownership-bound multi-file recovery/admission. Keep
+RAR compression as a separate original implementation increment; do not claim
+compressed RAR support from the stored subset. Continue multi-file/pack and
+Usenet-upgrade stages, then 0.23 verified cross-seeding and guarded bulk controls.
+Preserve source/entry/owner identity, captured bounds, private intent/proofs,
+current canonical/requester permission and independent library imports. Use
+original synthetic media and loopback services only. Record exact source, five
+jobs, test counts, seven bot assets and prior immutability at every publication.
+A green release starts the next scope; do not stop at a checkpoint. English,
+Rust std only, no local validation or manual publication. No unmeasured
+performance or broad parity claims.

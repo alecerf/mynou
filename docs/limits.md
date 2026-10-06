@@ -358,8 +358,14 @@ independent-inode import and exact Plex confirmation, and passed all five jobs w
 ZIP64, RAR, PAR2, multi-file packs and Usenet upgrades remain later increments.
 No external archive decoder or repair helper is invoked.
 
-Active v0.22.9 adds a bounded stored RAR5 [format subset](archives.md#bounded-rar5-stored-formats-in-0229)
+Verified v0.22.9 adds a bounded stored RAR5 [format subset](archives.md#bounded-rar5-stored-formats-in-0229)
 with 2 MiB total headers, checked integers/CRCs, safe names/types and 64 KiB
-streaming. It awaits complete CI and does not enable automatic RAR admission.
+streaming. It passed all five jobs with 791 Rust tests; automatic admission follows.
 Compressed/solid/split/encrypted RAR, RAR4, service blocks and most extras are
 explicitly unsupported. No archive helper or crate is used.
+
+Active v0.22.10 admits one stored RAR5 media entry from one NZB file after explicit
+`usenet.downloads.rar` opt-in. It freezes format/limits/owner identity, uses private
+RAR descriptor 2 and journal 8, and keeps all native media/import/requester/Plex
+gates. It requires its own CI. Compressed RAR, PAR2 and multi-file acquisition
+remain separate stages. No implicit repair, cleanup or format fallback occurs.

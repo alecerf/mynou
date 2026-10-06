@@ -1,4 +1,4 @@
-# Mynou 0.22.9 — Rust, standard library only
+# Mynou 0.22.10 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -125,10 +125,11 @@ v0.22.7 passed all five jobs with 750 Rust tests and seven bot-published assets,
 providing [bounded ZIP and streaming DEFLATE](docs/archives.md) and read-only
 `zip-inspect`. v0.22.8 passed all five jobs with 773 Rust tests and seven assets, adding opt-in
 ownership-bound ZIP library admission for one media entry with the existing
-requester, identity, import and Plex gates. Active v0.22.9 adds original bounded
-RAR5 stored-file parsing/extraction and read-only `rar-inspect`; its own CI is
-pending. Native RAR admission, compressed RAR, PAR2, multi-file packs and Usenet
-upgrades remain subsequent increments.
+requester, identity, import and Plex gates. v0.22.9 passed all five jobs with 791 Rust tests, adding original bounded RAR5
+stored-file formats and read-only `rar-inspect`. Active v0.22.10 adds opt-in stored
+RAR5 library admission with captured format/limits and the existing private
+ownership/import/Plex gates; its own CI is pending. Compressed RAR, PAR2,
+multi-file packs and Usenet upgrades remain subsequent increments.
 
 ## Try it
 
@@ -162,8 +163,8 @@ from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, o
 build the image from the source archive:
 
 ```sh
-docker load -i mynou-v0.22.9-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.22.9 .
+docker load -i mynou-v0.22.10-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.22.10 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d

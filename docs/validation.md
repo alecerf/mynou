@@ -1190,3 +1190,30 @@ remained enabled. No local validation or manual publication was performed.
 | mynou-v0.22.8-linux-amd64-image.tar.gz | 616234546 | 2294388 | c51b41f7fb575f06701c003135e16015d3a3337deb04529096567742283d8a78 |
 | mynou-v0.22.8-source.zip | 616234564 | 8964259 | 22c740e0ea18b927ce3607dc508e8150e7e210c0bd8f609ef6a9a1bbd5476408 |
 | mynou-v0.22.8-source.zip.sha256 | 616234566 | 91 | 3b015eff6961459afd60d5b0d5eff70c6603a11d1cef5429ac0d7e2ba210a959 |
+
+
+## Recorded 0.22.9 CI evidence
+
+CI published v0.22.9 from `e69e2b323a74a0d60678bdd797e34d3fbc28e8be` in
+[run 37508514751](https://github.com/alecerf/mynou/actions/runs/37508514751).
+All five jobs passed: 791 Rust tests across 62 harnesses, none failed or ignored,
+and four scheduler checks. Test execution took 97.770 seconds with two harness
+processes and two threads each. Seven bot-owned assets were published at
+18:08:36 UTC on October 6, 2026. The tag matched the validated source and the
+prior v0.22.8 tag and asset IDs, sizes and digests remained unchanged.
+
+Successful jobs: validate 112423249595, Build x86_64-unknown-linux-gnu 112423249907, Build x86_64-unknown-linux-musl 112423249991, package 112424560637, release 112424845848.
+Release 405009834 and all seven assets belong to github-actions[bot].
+The original stored RAR5 subset and all preceding fixtures passed the first
+complete workflow. Every gate remained enabled. No local validation or manual
+publication was performed.
+
+| Asset | ID | Bytes | SHA-256 |
+| --- | --- | ---: | --- |
+| mynou-v0.22.9-linux-x86_64.sha256 | 616271100 | 93 | b3ae96738ba6334476b8e0f3256417208ddf7ca3051f8e073ea7711512f22e10 |
+| SHA256SUMS | 616271103 | 289 | a5e63f7f7db6d87248acc98a1463b2b72bf61229ea7bcc95dc21d05acb47d480 |
+| mynou-v0.22.9-linux-amd64-image.tar.gz.sha256 | 616271104 | 105 | c212cd85cb39b55db6cad47110122d531024af145f26c7ffe7372b35d0b6fa04 |
+| mynou-v0.22.9-linux-x86_64 | 616271106 | 4772704 | 0347b3bfb86f729a43af0b7ccc8092e5f284879e07a8fd06a1df7dcd376fd158 |
+| mynou-v0.22.9-linux-amd64-image.tar.gz | 616271107 | 2303425 | 5b50e73643d6f9e66e0cca2a40c288d4aaf8c85d40312c4c1e92d46eba00dff5 |
+| mynou-v0.22.9-source.zip.sha256 | 616271114 | 91 | c93cdceaaedd3b86d7a2a20652e31820009595828856ac615c20ec61fed1a83a |
+| mynou-v0.22.9-source.zip | 616271116 | 9038164 | 3f8aca387fb735ce82b25e99ac0f91051f8b63567ac36d48c5122cd82c8998d3 |

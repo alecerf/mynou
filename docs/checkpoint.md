@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.22.9
+# Project checkpoint — Mynou 0.22.10
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -12,17 +12,27 @@ alone creates release tags and publishes artifacts from validated commits.
 
 ## Implemented scope
 
-The active 0.22.9 source adds original bounded RAR5 parsing and stored-payload
-verification. Headers have checked CRCs, bounded variable integers and an explicit
-main/file/end layout. Safe UTF-8 names, file types, collisions and declared limits
-are checked. Stored payloads stream in 64 KiB chunks into caller-owned provisional
-sinks and return size/CRC/SHA proof only after exact integrity and cancellation
-checks. Structural metadata is reparsed before extraction. Read-only `rar-inspect`
-reports `content_verified: false` without configuration, network or output writes.
+The active 0.22.10 source adds opt-in stored RAR5 admission to native Usenet
+movie and episode jobs. `usenet.downloads.rar` captures immutable decoder bounds
+and a separately tagged owner capability. The exact source, format, entry, owner
+and output proof use the existing private extraction and current-permission
+workflow. RAR extraction descriptors require format 2 and RAR-aware journal
+records/snapshots require format 8; checksum-valid downgrades are rejected.
+ZIP-only selection identities, plan serialization and format-1/7 storage remain
+compatible. Unknown or corrupt private state is rejected before recovery writes.
+Outer/inner identity, numbering, profile and size, native media, copied atomic
+import, approved requester/destination and exact Plex gates remain required.
 This source requires its own complete Actions validation and publication.
-Compressed/solid/split/encrypted RAR, RAR4, service blocks and most extras remain
-unsupported explicitly. Native RAR admission, PAR2, multi-file packs and Usenet
-upgrades follow in separate increments; the verified v0.22.8 ZIP path remains.
+Compressed/solid/split/encrypted RAR, RAR4, PAR2, multi-file packs and Usenet
+upgrades remain subsequent bounded increments.
+
+CI published v0.22.9 from `e69e2b323a74a0d60678bdd797e34d3fbc28e8be` in
+[run 37508514751](https://github.com/alecerf/mynou/actions/runs/37508514751).
+All five jobs passed: 791 Rust tests across 62 harnesses, none failed or ignored,
+and four scheduler checks. Test execution took 97.770 seconds with two harness
+processes and two threads each. Seven bot-owned assets were published at
+18:08:36 UTC on October 6, 2026. The tag matched the validated source and the
+prior v0.22.8 tag and asset IDs, sizes and digests remained unchanged.
 
 CI published v0.22.8 from `ca1aac9c215b491ffcba1b98c1fc3136a543dfd6` in
 [run 37506471621](https://github.com/alecerf/mynou/actions/runs/37506471621).
