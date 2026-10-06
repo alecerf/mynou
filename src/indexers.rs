@@ -146,7 +146,9 @@ impl Options {
         };
         options.newznab = match (v.get("kind").and_then(Value::as_str), v.get("usenet")) {
             (Some("newznab"), Some(v)) => Some(crate::usenet::newznab::Options::parse(v)?),
-            (Some("newznab"), None) => return Err("Indexer: Newznab requires explicit Usenet settings".into()),
+            (Some("newznab"), None) => {
+                return Err("Indexer: Newznab requires explicit Usenet settings".into());
+            }
             (_, Some(_)) => return Err("Indexer: Usenet settings require the Newznab kind".into()),
             (_, None) => None,
         };

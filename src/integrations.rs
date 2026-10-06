@@ -1123,11 +1123,21 @@ fn json_releases(value: &Value, base: &str) -> Result<Vec<Release>> {
     Ok(out)
 }
 
-pub(crate) fn probe_source(config: &Config, source: &Source, request: &Request, deadline: Instant) -> bool {
+pub(crate) fn probe_source(
+    config: &Config,
+    source: &Source,
+    request: &Request,
+    deadline: Instant,
+) -> bool {
     source_releases(config, source, request, deadline).is_ok()
 }
 
-fn source_releases(config: &Config, source: &Source, request: &Request, deadline: Instant) -> Result<Vec<Release>> {
+fn source_releases(
+    config: &Config,
+    source: &Source,
+    request: &Request,
+    deadline: Instant,
+) -> Result<Vec<Release>> {
     let mut pairs = vec![("q", request.title.clone())];
     let numbering =
         request
@@ -1193,12 +1203,14 @@ fn source_releases(config: &Config, source: &Source, request: &Request, deadline
             json_releases(&json::parse(text)?, &source.url)
         } else if source.kind == "newznab" {
             crate::usenet::newznab::parse_feed(text, source, config).map(|rows| {
-                rows.into_iter().map(|a| Release {
-                    title: a.title,
-                    url: a.url,
-                    seeders: 0,
-                    usenet: Some(a.target),
-                }).collect()
+                rows.into_iter()
+                    .map(|a| Release {
+                        title: a.title,
+                        url: a.url,
+                        seeders: 0,
+                        usenet: Some(a.target),
+                    })
+                    .collect()
             })
         } else {
             rss_releases(text, &source.url)
@@ -1223,7 +1235,14 @@ impl Candidate {
         value.insert("id", self.id.clone());
         value.insert("title", report_text(&self.release.title, 2_048));
         value.insert("source", report_text(&self.source, 128));
-        value.insert("transport", if self.release.usenet.is_some() { "usenet" } else { "torrent" });
+        value.insert(
+            "transport",
+            if self.release.usenet.is_some() {
+                "usenet"
+            } else {
+                "torrent"
+            },
+        );
         if let Some(target) = &self.release.usenet {
             value.insert("advertised_bytes", target.advertised_bytes.to_string());
             value.insert("password_protected", target.password_protected);
@@ -1320,7 +1339,10 @@ fn candidate_allocation_bytes(
         + source_len
         + string_bytes
         + vector_bytes
-        + release.usenet.as_ref().map_or(0, crate::usenet::newznab::Target::allocation_bytes)
+        + release
+            .usenet
+            .as_ref()
+            .map_or(0, crate::usenet::newznab::Target::allocation_bytes)
         + 512
 }
 
@@ -1469,17 +1491,29 @@ fn search_candidates_mode(
                             else { "Release does not match the requested title, year or episode" }.into());
                 }
                 if let Some(target) = &release.usenet {
-                    let options = source.options.newznab.as_ref().ok_or("Newznab: missing source policy")?;
+                    let options = source
+                        .options
+                        .newznab
+                        .as_ref()
+                        .ok_or("Newznab: missing source policy")?;
                     if target.password_protected {
                         assessment.accepted = false;
-                        assessment.reasons.push("Newznab release is advertised as password protected".into());
+                        assessment
+                            .reasons
+                            .push("Newznab release is advertised as password protected".into());
                     }
                     if target.advertised_bytes < options.minimum_bytes
                         || target.advertised_bytes > options.maximum_bytes
-                        || config.usenet.downloads.as_ref().is_some_and(|d| target.advertised_bytes > d.max_file_bytes)
+                        || config
+                            .usenet
+                            .downloads
+                            .as_ref()
+                            .is_some_and(|d| target.advertised_bytes > d.max_file_bytes)
                     {
                         assessment.accepted = false;
-                        assessment.reasons.push("Newznab release is outside the configured size interval".into());
+                        assessment
+                            .reasons
+                            .push("Newznab release is outside the configured size interval".into());
                     }
                 } else if release.seeders < config.minimum_seeders {
                     assessment.accepted = false;
@@ -1586,7 +1620,9 @@ pub struct SelectedRelease {
 fn selected_release(result: SearchResult) -> Result<SelectedRelease> {
     let selected = selected_acquisition(result)?;
     if selected.usenet.is_some() {
-        return Err("Search: native Usenet library admission is not enabled in this increment".into());
+        return Err(
+            "Search: native Usenet library admission is not enabled in this increment".into(),
+        );
     }
     Ok(selected)
 }
@@ -1642,18 +1678,28 @@ pub fn select_release(config: &Config, request: &Request) -> Result<SelectedRele
 }
 
 /// Typed metadata for a prospective acquisition. No source content is acquired.
-pub fn select_acquisition(config: &Config, request: &Request, deadline: Instant) -> Result<SelectedRelease> {
+pub fn select_acquisition(
+    config: &Config,
+    request: &Request,
+    deadline: Instant,
+) -> Result<SelectedRelease> {
     request.validate()?;
     if request.source_path.is_some() || request.source_url.is_some() {
         return Err("Search: manual sources do not have a verified release assessment".into());
     }
-    let deadline = deadline.min(Instant::now().checked_add(SEARCH_BUDGET).ok_or("Search: invalid time budget")?);
+    let deadline = deadline.min(
+        Instant::now()
+            .checked_add(SEARCH_BUDGET)
+            .ok_or("Search: invalid time budget")?,
+    );
     selected_acquisition(search_candidates_before(config, request, deadline)?)
 }
 
 pub(crate) fn newznab_document_url(source: &Source, url: &str) -> Result<String> {
     let path = net::parse_url(url)?.path;
-    let has_key = path.split_once('?').is_some_and(|(_,q)| q.split('&').any(|p| p.split('=').next() == Some("apikey")));
+    let has_key = path
+        .split_once('?')
+        .is_some_and(|(_, q)| q.split('&').any(|p| p.split('=').next() == Some("apikey")));
     if has_key {
         return Ok(url.to_owned());
     }

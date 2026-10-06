@@ -19,17 +19,29 @@ pub(crate) struct Options {
 impl Options {
     pub fn parse(v: &Value) -> Result<Self> {
         crate::numbering::only(v, &["server_id", "minimum_bytes", "maximum_bytes"])?;
-        let server_id = v.get("server_id").and_then(Value::as_str).filter(|s| valid_id(s))
-            .ok_or("Newznab: explicit server ID is required")?.to_owned();
-        let get = |key: &str, default: u64| v.get(key).map_or(Ok(default), |v| {
-            v.as_u64().filter(|n| *n > 0 && *n <= 1 << 40).ok_or("Newznab: invalid size policy")
-        });
+        let server_id = v
+            .get("server_id")
+            .and_then(Value::as_str)
+            .filter(|s| valid_id(s))
+            .ok_or("Newznab: explicit server ID is required")?
+            .to_owned();
+        let get = |key: &str, default: u64| {
+            v.get(key).map_or(Ok(default), |v| {
+                v.as_u64()
+                    .filter(|n| *n > 0 && *n <= 1 << 40)
+                    .ok_or("Newznab: invalid size policy")
+            })
+        };
         let minimum_bytes = get("minimum_bytes", 1)?;
         let maximum_bytes = get("maximum_bytes", 64 << 30)?;
         if minimum_bytes > maximum_bytes {
             return Err("Newznab: invalid size interval".into());
         }
-        Ok(Self { server_id, minimum_bytes, maximum_bytes })
+        Ok(Self {
+            server_id,
+            minimum_bytes,
+            maximum_bytes,
+        })
     }
     pub fn json(&self) -> Value {
         let mut v = Value::object();
@@ -72,32 +84,77 @@ impl Target {
         v
     }
     pub fn from_json(v: &Value) -> Result<Self> {
-        crate::numbering::only(v, &["indexer_id", "indexer_binding", "server_id", "server_binding", "advertised_bytes", "password_protected"])?;
-        let s = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_owned).ok_or("Newznab: invalid captured identity");
+        crate::numbering::only(
+            v,
+            &[
+                "indexer_id",
+                "indexer_binding",
+                "server_id",
+                "server_binding",
+                "advertised_bytes",
+                "password_protected",
+            ],
+        )?;
+        let s = |k: &str| {
+            v.get(k)
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .ok_or("Newznab: invalid captured identity")
+        };
         let t = Self {
             indexer_id: s("indexer_id")?,
             indexer_binding: s("indexer_binding")?,
             server_id: s("server_id")?,
             server_binding: s("server_binding")?,
-            advertised_bytes: v.get("advertised_bytes").and_then(|v| v.as_u64().or_else(|| v.as_str()?.parse().ok())).filter(|n| *n > 0 && *n <= 1 << 40).ok_or("Newznab: invalid captured size")?,
-            password_protected: v.get("password_protected").and_then(Value::as_bool).ok_or("Newznab: invalid captured password flag")?,
+            advertised_bytes: v
+                .get("advertised_bytes")
+                .and_then(|v| v.as_u64().or_else(|| v.as_str()?.parse().ok()))
+                .filter(|n| *n > 0 && *n <= 1 << 40)
+                .ok_or("Newznab: invalid captured size")?,
+            password_protected: v
+                .get("password_protected")
+                .and_then(Value::as_bool)
+                .ok_or("Newznab: invalid captured password flag")?,
         };
-        if !valid_id(&t.indexer_id) || !valid_id(&t.server_id) || !valid_digest(&t.indexer_binding) || !valid_digest(&t.server_binding) {
+        if !valid_id(&t.indexer_id)
+            || !valid_id(&t.server_id)
+            || !valid_digest(&t.indexer_binding)
+            || !valid_digest(&t.server_binding)
+        {
             return Err("Newznab: invalid captured binding".into());
         }
         Ok(t)
     }
     pub(crate) fn allocation_bytes(&self) -> usize {
-        self.indexer_id.capacity() + self.indexer_binding.capacity() + self.server_id.capacity() + self.server_binding.capacity()
+        self.indexer_id.capacity()
+            + self.indexer_binding.capacity()
+            + self.server_id.capacity()
+            + self.server_binding.capacity()
     }
     pub(crate) fn configured<'a>(&self, config: &'a Config) -> Result<&'a Source> {
-        let source = config.sources.iter().find(|s| {
-            s.kind == "newznab" && s.options.identity(s) == self.indexer_id && s.options.binding(s) == self.indexer_binding
-        }).ok_or("Newznab: captured indexer is unavailable or changed")?;
-        let options = source.options.newznab.as_ref().ok_or("Newznab: missing source settings")?;
-        if options.server_id != self.server_id || self.advertised_bytes < options.minimum_bytes
-            || self.advertised_bytes > options.maximum_bytes || self.password_protected
-            || !config.usenet.servers.iter().any(|s| s.id() == self.server_id && s.binding() == self.server_binding)
+        let source = config
+            .sources
+            .iter()
+            .find(|s| {
+                s.kind == "newznab"
+                    && s.options.identity(s) == self.indexer_id
+                    && s.options.binding(s) == self.indexer_binding
+            })
+            .ok_or("Newznab: captured indexer is unavailable or changed")?;
+        let options = source
+            .options
+            .newznab
+            .as_ref()
+            .ok_or("Newznab: missing source settings")?;
+        if options.server_id != self.server_id
+            || self.advertised_bytes < options.minimum_bytes
+            || self.advertised_bytes > options.maximum_bytes
+            || self.password_protected
+            || !config
+                .usenet
+                .servers
+                .iter()
+                .any(|s| s.id() == self.server_id && s.binding() == self.server_binding)
         {
             return Err("Newznab: captured provider or release policy is unavailable".into());
         }
@@ -121,7 +178,9 @@ fn size(s: &str) -> Result<u64> {
     if s.is_empty() || s.len() > 20 || !s.bytes().all(|b| b.is_ascii_digit()) {
         return Err("Newznab: invalid advertised size".into());
     }
-    s.parse::<u64>().ok().filter(|n| *n > 0 && *n <= 1 << 40)
+    s.parse::<u64>()
+        .ok()
+        .filter(|n| *n > 0 && *n <= 1 << 40)
         .ok_or_else(|| "Newznab: invalid advertised size".into())
 }
 pub(crate) fn download_url(url: &str, base: &str) -> Result<String> {
@@ -139,16 +198,37 @@ pub(crate) fn download_url(url: &str, base: &str) -> Result<String> {
     }
     Ok(url)
 }
-fn item(e: &Element, root: &Element, channel: &Element, source: &Source, server: &Server) -> Result<Advertisement> {
-    let title = one(e, "title")?.filter(|e| e.children.is_empty()).map(|e| e.text.trim())
-        .filter(|s| !s.is_empty() && s.len() <= 2048).ok_or("Newznab: missing title")?;
+fn item(
+    e: &Element,
+    root: &Element,
+    channel: &Element,
+    source: &Source,
+    server: &Server,
+) -> Result<Advertisement> {
+    let title = one(e, "title")?
+        .filter(|e| e.children.is_empty())
+        .map(|e| e.text.trim())
+        .filter(|s| !s.is_empty() && s.len() <= 2048)
+        .ok_or("Newznab: missing title")?;
     let enclosure = one(e, "enclosure")?.ok_or("Newznab: missing NZB enclosure")?;
-    if !enclosure.children.is_empty() || !enclosure.text.trim().is_empty()
-        || !enclosure.attrs.get("type").is_some_and(|s| matches!(s.trim().to_ascii_lowercase().as_str(), "application/x-nzb" | "application/x-nzb+xml"))
+    if !enclosure.children.is_empty()
+        || !enclosure.text.trim().is_empty()
+        || !enclosure.attrs.get("type").is_some_and(|s| {
+            matches!(
+                s.trim().to_ascii_lowercase().as_str(),
+                "application/x-nzb" | "application/x-nzb+xml"
+            )
+        })
     {
         return Err("Newznab: unsupported enclosure type".into());
     }
-    let url = download_url(enclosure.attrs.get("url").ok_or("Newznab: missing download reference")?, &source.url)?;
+    let url = download_url(
+        enclosure
+            .attrs
+            .get("url")
+            .ok_or("Newznab: missing download reference")?,
+        &source.url,
+    )?;
     let mut advertised = enclosure.attrs.get("length").map(|s| size(s)).transpose()?;
     let mut size_attr = false;
     let mut password = None;
@@ -157,12 +237,24 @@ fn item(e: &Element, root: &Element, channel: &Element, source: &Source, server:
         if !matches!(key, "size" | "password" | "passworded") {
             continue;
         }
-        let prefix = a.name.split_once(':').map(|(p,_)| format!("xmlns:{p}")).ok_or("Newznab: metadata namespace is required")?;
-        let namespace = [a, e, channel, root].iter().find_map(|e| e.attrs.get(&prefix));
-        if namespace.map(String::as_str) != Some(NAMESPACE) || !a.children.is_empty() || !a.text.trim().is_empty() {
+        let prefix = a
+            .name
+            .split_once(':')
+            .map(|(p, _)| format!("xmlns:{p}"))
+            .ok_or("Newznab: metadata namespace is required")?;
+        let namespace = [a, e, channel, root]
+            .iter()
+            .find_map(|e| e.attrs.get(&prefix));
+        if namespace.map(String::as_str) != Some(NAMESPACE)
+            || !a.children.is_empty()
+            || !a.text.trim().is_empty()
+        {
             return Err("Newznab: invalid metadata namespace or structure".into());
         }
-        let value = a.attrs.get("value").ok_or("Newznab: missing metadata value")?;
+        let value = a
+            .attrs
+            .get("value")
+            .ok_or("Newznab: missing metadata value")?;
         if key == "size" {
             let n = size(value)?;
             if size_attr || advertised.is_some_and(|s| s != n) {
@@ -184,10 +276,19 @@ fn item(e: &Element, root: &Element, channel: &Element, source: &Source, server:
     Ok(Advertisement {
         title: title.into(),
         url,
-        target: Target::new(source, server, advertised.ok_or("Newznab: missing advertised size")?, password.unwrap_or(false)),
+        target: Target::new(
+            source,
+            server,
+            advertised.ok_or("Newznab: missing advertised size")?,
+            password.unwrap_or(false),
+        ),
     })
 }
-pub(crate) fn parse_feed(text: &str, source: &Source, config: &Config) -> Result<Vec<Advertisement>> {
+pub(crate) fn parse_feed(
+    text: &str,
+    source: &Source,
+    config: &Config,
+) -> Result<Vec<Advertisement>> {
     let root = parse_xml(text).map_err(|_| "Newznab: invalid or unsupported XML")?;
     if root.local() == "error" {
         return Err("Newznab: indexer service error".into());
@@ -196,10 +297,24 @@ pub(crate) fn parse_feed(text: &str, source: &Source, config: &Config) -> Result
         return Err("Newznab: expected RSS metadata".into());
     }
     let channel = one(&root, "channel")?.ok_or("Newznab: missing channel")?;
-    let options = source.options.newznab.as_ref().ok_or("Newznab: missing source settings")?;
-    let server = config.usenet.servers.iter().find(|s| s.id() == options.server_id).ok_or("Newznab: provider is not configured")?;
+    let options = source
+        .options
+        .newznab
+        .as_ref()
+        .ok_or("Newznab: missing source settings")?;
+    let server = config
+        .usenet
+        .servers
+        .iter()
+        .find(|s| s.id() == options.server_id)
+        .ok_or("Newznab: provider is not configured")?;
     let mut out = Vec::new();
-    for (i, e) in channel.children.iter().filter(|e| e.local() == "item").enumerate() {
+    for (i, e) in channel
+        .children
+        .iter()
+        .filter(|e| e.local() == "item")
+        .enumerate()
+    {
         if i >= MAX_ITEMS {
             return Err("Newznab: advertised item limit exceeded".into());
         }
@@ -212,12 +327,18 @@ pub(crate) fn parse_feed(text: &str, source: &Source, config: &Config) -> Result
 }
 /// Fetch a bound original NZB document with the native indexer's authentication,
 /// origin, rate, policy and absolute-deadline gates. Never creates a transfer.
-pub fn fetch_document(config: &Config, target: &Target, url: &str, deadline: std::time::Instant) -> Result<Vec<u8>> {
+pub fn fetch_document(
+    config: &Config,
+    target: &Target,
+    url: &str,
+    deadline: std::time::Instant,
+) -> Result<Vec<u8>> {
     Target::from_json(&target.to_json())?;
     let source = target.configured(config)?;
     let url = download_url(url, &source.url)?;
     let url = crate::integrations::newznab_document_url(source, &url)?;
-    let response = crate::indexers::fetch(source, &url, "application/x-nzb, application/xml", deadline)?;
+    let response =
+        crate::indexers::fetch(source, &url, "application/x-nzb, application/xml", deadline)?;
     let parsed = Nzb::parse(&response.body);
     crate::indexers::parsed(source, parsed.is_ok());
     parsed?;
