@@ -11,11 +11,18 @@ revision.
 
 ## Automated checks and releases
 
+The active 0.20.6 request-admission scenarios cover strict account/source scope,
+fresh catalog and Plex identities, pure previews, approvals and quotas, sharing,
+operator conflicts, retained numbering, concurrent/stale/racing reviews, checked
+crash recovery, cross-store corruption, format downgrades, protected CLI/API/
+browser sessions and a native verified import. These require their own complete
+Actions run and CI publication.
+
 The 0.20.5 requester-selector scenarios cover bounded configured aliases,
 unchanged null/default fingerprints, operator/missing/pending/conflicting
 interest rejection, compatible shared native imports, restart, stale selectors,
 protected reports and selected-interest removal during metadata inspection.
-They require their own complete Actions run and CI publication.
+They passed run 37423924045 and CI publication for the exact source recorded below.
 
 The 0.20.4 NickServ scenarios cover strict exclusive authentication settings,
 exact service/account notices, early or forged membership, permanently failed
@@ -161,6 +168,34 @@ allowance across seasons. Existing full validation remains required.
 
 The recorded run below validates these scenarios through GitHub Actions only.
 No local tests, lint, builds or demos ran.
+
+## Recorded 0.20.5 CI evidence
+
+[Run 37423924045](https://github.com/alecerf/mynou/actions/runs/37423924045)
+passed all five jobs for `861f8ae2f0274f82a7351fe1a5ddb890b8391f01`.
+**568 Rust tests** passed across **51 harnesses**, with none failed or ignored,
+plus four scheduler checks. Observed test execution was 61.795 seconds with two
+processes and two threads per harness. The graph, formatting, Clippy, GNU/musl
+builds, native/container demos, packaging and CI publication passed. No local
+validation ran.
+
+CI published [v0.20.5](https://github.com/alecerf/mynou/releases/tag/v0.20.5)
+on October 6, 2026, at 06:31:53 UTC, from that exact source. Release 404389242
+and all seven assets belong to github-actions[bot]. The preceding v0.20.4 tag
+and asset IDs/sizes/digests remain unchanged.
+
+| Asset | ID | Bytes | SHA-256 |
+| --- | --- | --- | --- |
+| mynou-v0.20.5-linux-amd64-image.tar.gz | 614708179 | 1925144 | `a0e52a8d5acd33539cf3eec66e03e79571f9a45c7835ea0bc19bddad37f94abc` |
+| mynou-v0.20.5-linux-amd64-image.tar.gz.sha256 | 614708175 | 105 | `6c2e5bd7fbfb06df32cd7f673a970b16fc2e909b8c5bea0b3b11e0ccf04ea25b` |
+| mynou-v0.20.5-linux-x86_64 | 614708172 | 3896160 | `1750167f737eec36fa00f5cc163a05b71b55493d3eb83c2fd3ae3ac1666c1064` |
+| mynou-v0.20.5-linux-x86_64.sha256 | 614708171 | 93 | `a541da03c789a91b7bf7c91a97c8c94dc8c5138f129f54faf2ccdb1071d7307b` |
+| mynou-v0.20.5-source.zip | 614708194 | 7000031 | `e1d1dd0758db36dc238681a5694722b1873f3c1b0fcd6500d5e235c6ce74b997` |
+| mynou-v0.20.5-source.zip.sha256 | 614708195 | 91 | `c047ebd1bca231a12a6af5b8bd4aaf4c7cab33ed0d61d428d23bf6de3c4f7974` |
+| SHA256SUMS | 614708173 | 289 | `8fc9321f2e4706fa0d041189944210e38a36aabbad7c6294365b882ee622d830` |
+
+This evidence validates requester selection. New request admission requires
+its own completed workflow and publication before notification delivery.
 
 ## Recorded 0.20.4 CI evidence
 

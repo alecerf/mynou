@@ -1,9 +1,9 @@
-# IRC reception, audit reviews and approved candidate routing
+# IRC reception, reviews, requester demand and verified routing
 
 Mynou 0.20.0 adds opt-in receivers, deterministic filters, durable duplicate
 suppression and guarded audit reviews. The 0.20.1 increment adds explicit grab
 rules: verified candidates attach only to existing admitted canonical jobs.
-Reviews change no download work. Reception and routing passed complete CI.
+Acknowledgement/dismissal change no download work. Reception and routing passed complete CI.
 The 0.20.2 increment adds required SASL PLAIN authentication and passed complete
 CI/publication with 543 Rust tests. Exact source/run/asset evidence is recorded in
 [validation](validation.md#recorded-0202-ci-evidence). Later commits require their
@@ -174,8 +174,63 @@ Waiting and final routing use the same selection predicate. Routing rechecks
 the selected interest after metadata I/O and immediately before reservation;
 removing a selected co-owner cannot borrow another account's approval. The other
 account's job and ready media remain intact. Public source/API/browser reports
-show only the stable requester alias. Selection does not create new demand;
-reviewed new-demand actions follow in the next increment.
+show only the stable requester alias. Selection does not create new demand.
+Reviewed demand is a separate request action in the following increment.
+
+## Reviewed requester demand in 0.20.6
+
+Set a rule's action to request and select an explicit configured requester:
+
+    {
+      "id": "movie-requests",
+      "source": "releases",
+      "enabled": true,
+      "kind": "movie",
+      "profile": "any",
+      "action": "request",
+      "requester": "home"
+    }
+
+The source needs a pinned magnet_template, and home must be a configured account.
+One current rule must match; receipt alone creates no demand. Review through the
+browser or the existing protected control endpoint. CLI commands are:
+
+    mynou irc-control ANNOUNCEMENT_ID --action request --config mynou.json
+    mynou irc-control ANNOUNCEMENT_ID --action request --apply --plan-id REVIEW_ID --config mynou.json
+
+Request preview verifies the selected account's current Plex user identity and
+fresh TMDB details under one ten-second budget. Complete catalog ID/title/year
+and released dates are required. Episode facts need a stable episode ID and an
+aired date; retained canonical/source numbering is checked without changing a
+series plan. Multiple retained series identities, future/missing/mismatched facts
+and incompatible source labels remain unresolved. HTTP calls occur outside
+persistent locks. Synchronous DNS can exceed the budget; late results are rejected.
+Offline preview reads private state without writes. Apply requires the service.
+Pure irc-preview and acknowledgement/dismissal retain their existing behavior.
+
+The request guard binds the first claim, configuration, full requester/job scope,
+captured profile/route, retained numbering and UTC day. Apply rechecks this scope
+under series, IRC, requester and job locks. An IRC intent is written before the
+canonical explicit origin. Ordinary requester admission retains pending approval,
+quotas and compatible sharing; existing unready operator work cannot stand in for
+a captured request. Existing compatible demand retains its job and original
+capture. Removed/rejected identities remain tombstones.
+
+Successful empty Plex polls preserve irc:SOURCE:ANNOUNCEMENT origins. Approved
+request work waits for a matching explicit-origin candidate; routing retains
+hash-authenticated metadata, exact file/profile/source labels and physical
+ownership before native publication. Required approval and exhausted quota
+cannot be bypassed. Approval can capture current policy through the ordinary
+reviewed requester controls. Identity/transport failures expose fixed errors,
+and public admission reports contain stable aliases and demand status.
+
+Before native startup, recovery validates both directions between intents and
+requester origins. A durable origin completes a prepared intent; an intent whose
+origin was not written aborts without replay. Committed/aborted decisions remain
+terminal. Canonical request and source numbering remain stored in both proof and
+demand. New semantics require requester format 2 and IRC format 3; older snapshots
+remain readable when they contain no new semantics. Earlier binaries cannot read
+these new formats safely. Preserve private backups before a downgrade.
 
 ## Explicit release claims
 
@@ -280,13 +335,14 @@ API routes retain operator Bearer authentication:
 - GET /api/irc/announcements?offset=0&limit=50 lists at most 200 claims.
 - GET /api/irc/announcements/ID exposes one claim.
 - POST /api/irc/preview accepts source_id and announcement in an 8 KiB body.
-- POST /api/irc/announcements/ID/control accepts action acknowledge or dismiss.
+- POST /api/irc/announcements/ID/control accepts acknowledge, dismiss or request.
   Preview omits apply/plan_id; apply adds apply:true and the returned plan_id.
 
 Strict guards bind original claim/evaluations, source binding, row revision,
 action and current rules/profiles. Duplicate or unrelated receipts do not
 invalidate a current review. Acknowledged/dismissed records are terminal;
-replay never revives them. Reviews change no job, requester quota or imported file.
+replay never revives them. Acknowledgement/dismissal change no job, requester
+quota or imported file. Request review uses the separate full-scope contract above.
 
 ## Bounds, recovery and connections
 
@@ -332,10 +388,12 @@ acquisition. A routed candidate resets the waiting job's next attempt to zero.
 
 One background pass attempts one candidate, sharing a ten-second availability
 and metadata budget.
-Rules must have one unreviewed match and the original configuration fingerprint.
+Rules must have one current match and the original configuration fingerprint.
+Grab uses an unreviewed claim; request uses its committed reviewed demand.
 Canonical media identity, normalized title, year and exact source numbering must
 match one admitted job. A required approval or exhausted quota cannot be bypassed:
-IRC uses existing durable admission and never creates or charges requester work.
+Routing uses existing durable admission. Only an explicitly reviewed request
+action can create demand; ordinary requester machinery performs quota charging.
 Claimed catalog IDs remain claims; agreement with admitted labels does not prove
 semantic catalog identity from torrent bytes.
 

@@ -5,14 +5,22 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current implementation: 0.20.5, awaiting CI
+## Current implementation: 0.20.6, awaiting CI
 
-Explicit requester selectors require compatible approved retained demand for
-one configured account, including shared co-ownership. Metadata admission
-rechecks that interest before reservation. Original local fixtures cover strict
-configuration, missing/pending/conflicting interests, native import, restart,
-stale reviews, protected reports and removal during inspection. Complete CI
-and publication are pending. Reviewed new-demand actions follow in 0.20.6.
+Reviewed request rules target an explicit requester. Fresh catalog/account
+confirmation, full-scope guards, explicit origins, checked intent recovery and
+ordinary requester admission retain approval/quotas and frozen ownership.
+Original local fixtures cover protected controls, races, numbering, crash states
+and native import. Complete CI/publication is required for this source. Durable
+notification delivery follows next, then all 0.21–0.23 stages.
+
+## Preceding published stage: 0.20.5
+
+Explicit requester selectors require compatible approved retained demand and
+recheck it after metadata inspection. Run 37423924045 passed all five jobs for
+861f8ae2f0274f82a7351fe1a5ddb890b8391f01 with 568 Rust tests across 51 harnesses
+and four scheduler checks. CI published seven assets on October 6, 2026,
+at 06:31:53 UTC; the prior v0.20.4 tag/assets remained unchanged.
 
 ## Preceding published stage: 0.20.4
 

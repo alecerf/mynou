@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.20.5
+# Project checkpoint — Mynou 0.20.6
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -12,13 +12,23 @@ alone creates release tags and publishes artifacts from validated commits.
 
 ## Implemented scope
 
-The active 0.20.5 increment adds explicit requester selectors to IRC rules.
-Compatible approved co-owners can route shared work; operator jobs, pending
-approvals and conflicting destinations cannot substitute for the selected
-interest. Waiting and final reservation share the same predicate. Original
-local fixtures cover strict settings, immutable legacy guards, native imports,
-restart and removal during metadata I/O. This scope still requires its complete
-CI and publication. Trunk queue protection preserves the preceding publication.
+The active 0.20.6 increment adds guarded request actions for an explicit
+configured requester. Fresh Plex identity and catalog facts must agree before
+persistent locks. Apply binds the original claim, full demand/jobs scope,
+numbering, captured policy and UTC day. A checked intent precedes the explicit
+requester origin; ordinary admission retains approvals, quotas and compatible
+sharing. Empty watchlists preserve those origins, and tombstones cannot revive.
+Checked recovery commits a durable origin or aborts an uncommitted intent without
+replay before native workers start. Protected CLI/API/browser controls expose
+stable aliases and generic errors. Original local catalog/account/native fixtures
+cover races, quota/approval gates, retained numbering, recovery, corruption,
+protected sessions and native import. This source awaits its own complete CI.
+
+CI published the preceding 0.20.5 requester-selector scope from
+861f8ae2f0274f82a7351fe1a5ddb890b8391f01 in run 37423924045. All five jobs passed:
+568 Rust tests across 51 harnesses, four scheduler checks and CI publication at
+06:31:53 UTC on October 6, 2026. Seven assets belong to github-actions[bot]; the
+v0.20.4 tag and asset IDs/sizes/digests remained unchanged.
 
 The preceding 0.20.4 increment adds required NickServ identification. Exact trusted
 account confirmation precedes JOIN; forged membership, failures and expired

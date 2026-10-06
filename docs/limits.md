@@ -244,7 +244,7 @@ catalog, interactive logins and Usenet remain later work. Opt-in IRC reception
 supports an explicit strict JSON envelope and review rules, with eight sources,
 64 rules, 1,000 retained identities and an 8 MiB checked snapshot. Duplicates do
 not rewrite history; full history rejects new identities without pruning.
-Reviews create no acquisition work. The 0.20.1 increment adds explicit grab rules
+Acknowledgement and dismissal create no acquisition work. The 0.20.1 increment adds explicit grab rules
 and hash-pinned metadata verification for existing approved requests, immutable
 origins and exact file imports. Catalog claims must agree with admitted labels;
 this does not prove semantic media identity. Queued compatible jobs wait for
@@ -254,18 +254,25 @@ requiring complete explicit catalog/hash claims. It does not resolve title-only
 provider messages. The 0.20.2 increment adds required SASL PLAIN with bounded capabilities
 and credentials; remote use requires verified TLS, and failure has no
 unauthenticated fallback. Only PLAIN is supported; credentials retain their
-UTF-8 bytes without SASLprep or Unicode normalization. New-demand actions,
-packs/upgrades and broader tracker text adapters,
+UTF-8 bytes without SASLprep or Unicode normalization. IRC pack/upgrade actions
+and broader tracker text adapters,
 notification delivery, cross-seeding and broader bulk automation remain later work.
 See [IRC behavior](irc.md) for protocol, deadlines and recovery. Complete
 validation/publication passed for v0.20.3; later commits require their own complete CI.
 The 0.20.4 NickServ increment requires exact configured sender/account notices
 before membership. It supports the explicit IDENTIFY account/password command,
 with bounded ASCII credentials and no interactive fallback; complete validation
-passed for that source with 560 Rust tests in the validation job; CI publication
-is queued during GitHub's runner-assignment incident. The 0.20.5 selector increment
-binds grabs to one compatible approved requester interest and rechecks it after
-metadata work. It creates no demand and requires its own complete workflow.
+and publication passed for that source with 560 Rust tests. The 0.20.5 selector
+increment binds grabs to one compatible approved requester and passed complete
+CI/publication with 568 Rust tests. The 0.20.6 implementation adds guarded new
+demand with fresh catalog/account confirmation, explicit persistent origins,
+approval/quotas and checked recovery. Request review uses a shared ten-second
+network budget; synchronous DNS can exceed it and late results are rejected.
+Title-only, missing/future catalog facts, ambiguous retained series and mismatched
+source labels stay unresolved. Aborted admission intents are terminal and never
+replayed. New origin semantics use requester snapshot format 2 and IRC format 3;
+old binaries cannot safely read those files. This increment awaits complete CI.
+
 The [roadmap](roadmap.md) separates these capabilities into future releases.
 
 ## Persistence and platform

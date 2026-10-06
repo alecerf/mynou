@@ -195,3 +195,23 @@ on an account page. Repeated polls do not repeat the same outcome. `decisions`
 omits routine reservation/active transitions; `all` includes them. Credential
 values and endpoint URLs are absent from reports and recorded outcomes. External
 notification delivery and a requester self-service login are later integrations.
+
+## Reviewed IRC origins in 0.20.6
+
+An explicit request rule selects a configured account. Guarded operator review
+verifies its Plex identity and fresh canonical catalog facts before creating
+requester demand. Existing approval, quota, profile, route and shared-ownership
+machinery handles admission. The rule cannot create independent operator demand
+or revive a removed/rejected canonical identity.
+
+Origins use a reserved irc:SOURCE:ANNOUNCEMENT namespace and survive successful
+empty watchlist polls. A checked IRC intent precedes their durable write. Startup
+checks both stores before native workers; a durable origin completes its intent,
+while an intent without its origin aborts without replay. Approval can recapture
+an unadmitted policy through the existing reviewed controls. The canonical request
+and retained source numbering stay frozen in the intent and demand.
+
+Requester format 2 and IRC format 3 prevent older binaries from silently removing
+explicit origins. Earlier checked formats remain readable when they contain no
+new semantics. Back up private storage before downgrading; preserve the library
+and downloads. See [IRC requests](irc.md#reviewed-requester-demand-in-0206).
