@@ -125,7 +125,7 @@ def review_proof(api, cfg, role, reviews, pr, paths, issues):
 
 
 def evaluate(api, pr_number, cfg=None, include_gate=False):
-    cfg = cfg or config()
+    cfg = cfg or api.cfg
     pr = api.rest("GET", f"pulls/{pr_number}")
     if pr["state"] != "open" or pr["draft"] or pr["base"]["ref"] != cfg["default_branch"]:
         raise ValueError("Only a ready open PR against the default branch can pass")
