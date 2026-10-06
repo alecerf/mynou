@@ -83,6 +83,92 @@ impl Part {
     pub fn file_crc(&self) -> Option<u32> {
         self.file_crc
     }
+    pub(super) fn receipt_header(&self) -> crate::json::Value {
+        let mut v = crate::json::Value::object();
+        v.insert("name", self.name.clone());
+        v.insert("total_size", self.total_size.to_string());
+        v.insert("number", self.number);
+        v.insert("total_parts", self.total_parts);
+        v.insert("begin", self.begin.to_string());
+        v.insert("length", self.data.len().to_string());
+        v.insert("part_crc", crc32(&self.data));
+        v.insert(
+            "file_crc",
+            self.file_crc
+                .map_or(crate::json::Value::Null, crate::json::Value::from),
+        );
+        v
+    }
+    pub(super) fn from_receipt(v: &crate::json::Value, data: Vec<u8>) -> Result<Self> {
+        use crate::json::Value;
+        crate::numbering::only(
+            v,
+            &[
+                "name",
+                "total_size",
+                "number",
+                "total_parts",
+                "begin",
+                "length",
+                "part_crc",
+                "file_crc",
+            ],
+        )?;
+        let num = |k: &str| -> Result<u64> {
+            v.get(k)
+                .and_then(|v| v.as_u64().or_else(|| v.as_str()?.parse().ok()))
+                .ok_or_else(|| format!("yEnc receipt: invalid {k}"))
+        };
+        let name = v
+            .get("name")
+            .and_then(Value::as_str)
+            .filter(|s| valid_name(s))
+            .ok_or("yEnc receipt: invalid name")?
+            .to_owned();
+        let total_size = num("total_size")?;
+        let number = u32::try_from(num("number")?).map_err(|_| "yEnc receipt: invalid number")?;
+        let total_parts =
+            u32::try_from(num("total_parts")?).map_err(|_| "yEnc receipt: invalid total")?;
+        let begin = num("begin")?;
+        let file_crc = match v.get("file_crc") {
+            Some(Value::Null) => None,
+            Some(v) => Some(
+                v.as_u64()
+                    .and_then(|n| u32::try_from(n).ok())
+                    .ok_or("yEnc receipt: invalid file CRC")?,
+            ),
+            None => return Err("yEnc receipt: missing file CRC field".into()),
+        };
+        let crc = crc32(&data);
+        if data.is_empty()
+            || data.len() > MAX_PART_BYTES
+            || num("length")? != data.len() as u64
+            || total_size == 0
+            || total_size > MAX_FILE_BYTES
+            || total_parts == 0
+            || total_parts > MAX_PARTS
+            || number == 0
+            || number > total_parts
+            || begin
+                .checked_add(data.len() as u64)
+                .is_none_or(|end| end > total_size)
+            || num("part_crc")? != u64::from(crc)
+            || (number == total_parts) != file_crc.is_some()
+            || (total_parts == 1
+                && (begin != 0 || data.len() as u64 != total_size || file_crc != Some(crc)))
+        {
+            return Err("yEnc receipt: invalid range, identity or CRC".into());
+        }
+        Ok(Self {
+            name,
+            total_size,
+            number,
+            total_parts,
+            begin,
+            data,
+            file_crc,
+        })
+    }
 }
 #[derive(Debug, PartialEq, Eq)]
 pub struct VerifiedFile {
