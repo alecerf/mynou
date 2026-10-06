@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 7,
+  "generation": 8,
   "lease": {
     "id": "123e7a5f-744c-4900-9f49-937a3d17e640",
     "worker": "codex-primary-bootstrap",
     "role": "security",
     "issue": 1,
     "acquired_at": "2026-10-06T19:17:41Z",
-    "heartbeat_at": "2026-10-06T19:17:41Z",
-    "expires_at": "2026-10-06T20:02:41Z",
+    "heartbeat_at": "2026-10-06T19:18:32Z",
+    "expires_at": "2026-10-06T20:03:32Z",
     "branch": "work/autonomous-organization",
     "commit": "eba1b46d38b60cd53554017f83c8e68636fa7417",
     "pr": 3
   },
   "checkpoint": {
-    "at": "2026-10-06T19:13:00Z",
+    "at": "2026-10-06T19:18:32Z",
     "issue": 1,
-    "role": "quality",
+    "role": "security",
     "branch": "work/autonomous-organization",
-    "commit": "a318a36a89818ea0a4d92c38b2b99580a64b48f6",
+    "commit": "eba1b46d38b60cd53554017f83c8e68636fa7417",
     "pr": 3,
-    "summary": "Bootstrap scope pushed in two meaningful commits at a318a36a89818ea0a4d92c38b2b99580a64b48f6 (tree ae2ed528ca836f8c9a47d27470ce1c543ea32426). Eight Skills, lease/recovery/gates, Issues/dependencies, CI scenarios and resume docs are implemented. No local validation. Await complete CI and actual separate Security/QA review.",
-    "next_action": "Inspect Actions results, fix failures through commits, then release Quality and acquire Security for the exact diff."
+    "summary": "Security rejects this head: the orphan control branch holds state.json only, so its push cannot invoke the default-branch workflow; deletion lacks a fresh ownership fence immediately before mutation. Recovery also needs an exact merged-PR preservation path for squash-merged/deleted interrupted branches. Native policy and 23 scenarios passed, but actual review remains blocked.",
+    "next_action": "Quality must replace the unsupported control-push trigger with a native default-branch handoff event, fence deletion, cover merged recovery and add regressions. Then Security inspects the exact corrected head."
   },
   "attempts": {}
 }
