@@ -79,7 +79,9 @@ impl Engine {
                 Err(e)
                     if matches!(
                         e.as_str(),
-                        "NNTP: server is busy" | "NNTP: probe review is stale; preview again"
+                        "NNTP: server is busy"
+                            | "NNTP: probe review is stale; preview again"
+                            | "NNTP: attempt counter exhausted"
                     ) =>
                 {
                     return Err(e);

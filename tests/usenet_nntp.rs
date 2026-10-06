@@ -187,12 +187,11 @@ impl Drop for Provider {
     fn drop(&mut self) {
         self.blocked.store(false, Ordering::Release);
         self.stop.store(true, Ordering::Release);
-        if let Some(t) = self.thread.take() {
-            if let Err(e) = t.join()
-                && !thread::panicking()
-            {
-                std::panic::resume_unwind(e);
-            }
+        if let Some(t) = self.thread.take()
+            && let Err(e) = t.join()
+            && !thread::panicking()
+        {
+            std::panic::resume_unwind(e);
         }
     }
 }
