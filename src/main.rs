@@ -26,6 +26,7 @@ const HELP: &str = "Mynou — media automation using Rust std only
   nzb-inspect FILE
   zip-inspect FILE
   rar-inspect FILE
+  par2-inspect FILE
   usenet [--config mynou.json]
   usenet-probe SERVER_ID [--apply --plan-id ID] [--config mynou.json]
   usenet-queue [--config mynou.json]
@@ -216,7 +217,7 @@ impl Args {
                 "limit",
             ],
             "analyze" => &["json", "help"],
-            "nzb-inspect" | "zip-inspect" | "rar-inspect" => &["help"],
+            "nzb-inspect" | "zip-inspect" | "rar-inspect" | "par2-inspect" => &["help"],
             "demo" | "setup-docker" => &["dir", "help"],
             "help" | "--help" | "version" | "--version" => &[],
             _ => return Err(format!("Unknown command: {command}")),
@@ -242,6 +243,7 @@ impl Args {
                 "nzb-inspect",
                 "zip-inspect",
                 "rar-inspect",
+                "par2-inspect",
                 "show",
                 "events",
                 "retry",
@@ -528,6 +530,14 @@ fn execute(args: Args) -> Result<()> {
                 mynou::archive::Limits::default(),
             )?;
             output(&archive.report());
+            return Ok(());
+        }
+        "par2-inspect" => {
+            let set = mynou::par2::Set::read_file(
+                Path::new(&args.positions[0]),
+                mynou::par2::Limits::default(),
+            )?;
+            output(&set.report());
             return Ok(());
         }
         "analyze" => {
