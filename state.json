@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 170,
-  "lease": null,
+  "generation": 171,
+  "lease": {
+    "id": "dc93e1a4-0042-44cb-a7f7-62d199995555",
+    "worker": "codex-cadence-recovery",
+    "role": "master",
+    "issue": 9,
+    "acquired_at": "2026-10-07T15:50:38Z",
+    "heartbeat_at": "2026-10-07T15:50:38Z",
+    "expires_at": "2026-10-07T16:35:38Z",
+    "branch": "work/par2-multifile-recovery",
+    "commit": "bfdff54f096150968ae725fa19d89e356ed24417",
+    "pr": 10
+  },
   "checkpoint": {
     "at": "2026-10-07T15:35:59Z",
     "issue": 9,
