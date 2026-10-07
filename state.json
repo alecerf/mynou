@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 120,
+  "generation": 121,
   "lease": {
     "id": "ba18b579-b3fb-4cb3-b8a5-5e0320eddb31",
     "worker": "codex-par2-recovery-implementation",
     "role": "rust",
     "issue": 6,
     "acquired_at": "2026-10-07T10:39:23Z",
-    "heartbeat_at": "2026-10-07T10:43:26Z",
-    "expires_at": "2026-10-07T11:28:26Z",
+    "heartbeat_at": "2026-10-07T10:46:09Z",
+    "expires_at": "2026-10-07T11:31:09Z",
     "branch": "work/par2-recovery",
-    "commit": "e425cab368a9efd0804bf8d733dbaa2e9ec7829f",
+    "commit": "b6da8b1e5b5785456849ac92c3a7009147146b22",
     "pr": 8
   },
   "checkpoint": {
-    "at": "2026-10-07T10:43:26Z",
+    "at": "2026-10-07T10:46:09Z",
     "issue": 6,
     "role": "rust",
     "branch": "work/par2-recovery",
-    "commit": "e425cab368a9efd0804bf8d733dbaa2e9ec7829f",
+    "commit": "b6da8b1e5b5785456849ac92c3a7009147146b22",
     "pr": 8,
-    "summary": "Original Rust recovery source committed and transported to native e425cab368a9efd0804bf8d733dbaa2e9ec7829f on work/par2-recovery/draftPR8/base9d506f2767033fb4a71c586f71f5d3da83dcacb5. Added caller-owned single-file recovery with checked bounds, consecutive parity rows/matrix inversion, captured source/payload binding, slice MD5/CRC and full-file/first16KiB integrity, cancellation and no filesystem writes. Four original synthetic CI tests cover multi-erasure/truncation/missing/empty input, parity/source/resource failures, unchanged input and final whole-file integrity. Source tests/checks not run locally. New CI triggered; actual results pending. Security analysis comments6036185966/6036186237 are design notes, not final review. Version bump and final Security/QA still pending.",
-    "next_action": "Inspect actual exact-head CI; fix real failures with original commits. Add remaining in-operation source-change and cancellation regression fixtures; finish version/docs/acceptance, then distinct exact-head Security and QA phases before ready/green merge and CI-only immutable0.22.12.",
+    "summary": "Draft PR8 recovery implementation preserved at native b6da8b1e5b5785456849ac92c3a7009147146b22/base9d506f2767033fb4a71c586f71f5d3da83dcacb5 on work/par2-recovery. Original local2de550647310f4f0b5e5236d4de615764b208f6b/treec68d7bcfce42a8df03e451349534df29d67d30ef transported via single-parent non-force source bridge. Includes original core Vec-only recovery and six synthetic CI tests, including header/payload mutations after initial source hash, final source identity mutation, cancellation/growth during reads and immutable protected input. Initial CI37609233470 validate112752153719 failed formatting only; actual diff fixed through original nativecdf235fe3b6aec36372c0c452db00b27efdf973e. Intermediate CI37609361618 passed formatting and was running Clippy; new exact-head CI pending. No local tests/lint/builds/validation or final Security/QA.",
+    "next_action": "Inspect current exact-head CI and fix real failures; preserve same Issue6/draftPR8. Remaining work: hard-bound/chunk and maximum-erasure coverage if needed, version/docs acceptance, final exact-head Security and QA reviews, every objective gate, merge/cleanup and actual immutable v0.22.12 CI publication.",
     "publication": {
       "commit": "9d506f2767033fb4a71c586f71f5d3da83dcacb5",
       "state": "ci-passed",
@@ -32,7 +32,7 @@
       "conclusion": "success"
     },
     "ci": {
-      "commit": "e425cab368a9efd0804bf8d733dbaa2e9ec7829f",
+      "commit": "b6da8b1e5b5785456849ac92c3a7009147146b22",
       "status": "pending",
       "qa": "not-performed-draft",
       "release": "not-performed-pr"
