@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 207,
+  "generation": 208,
   "lease": {
     "id": "cf34fe10-dd42-4ea6-af6d-42ae3d766df3",
     "worker": "codex-hourly-20261007-1732",
     "role": "rust",
     "issue": 13,
     "acquired_at": "2026-10-07T17:41:28Z",
-    "heartbeat_at": "2026-10-07T17:59:19Z",
-    "expires_at": "2026-10-07T18:44:19Z",
+    "heartbeat_at": "2026-10-07T18:03:02Z",
+    "expires_at": "2026-10-07T18:48:02Z",
     "branch": "work/par2-verification",
-    "commit": "eb4ae3378c292ba32938f32ea82c0d7d8054a6cc",
+    "commit": "c07111816044c3d25a556b3e80b7a758aa38935b",
     "pr": 14
   },
   "checkpoint": {
-    "at": "2026-10-07T17:59:19Z",
+    "at": "2026-10-07T18:03:02Z",
     "issue": 13,
     "role": "rust",
     "branch": "work/par2-verification",
-    "commit": "eb4ae3378c292ba32938f32ea82c0d7d8054a6cc",
+    "commit": "c07111816044c3d25a556b3e80b7a758aa38935b",
     "pr": 14,
-    "summary": "Original read-only PAR2 verification source is preserved remotely at work/par2-verification:eb4ae3378c292ba32938f32ea82c0d7d8054a6cc based on trunk 07ef2f73f5ac923f783b9bd27e4662bb7529bbd2. Proposed 0.22.14 has exact-ID/global-index diagnosis, bounded readonly CLI, source/path/byte fencing and original fixtures. Linked draft PR #14 opened; actual Actions pending, no successful validation or final Security/QA claimed. No local checks or writes/admission scope.",
-    "next_action": "Inspect actual #14 Actions and fix red results with original commits. Keep draft until separate exact-head/base Security and independent complete-diff QA under their own leases and every objective gate green. Deadline 18:12:14Z, exit reserve 18:07:14Z.",
+    "summary": "Rust source for #13 / draft PR #14 is remotely preserved at c07111816044c3d25a556b3e80b7a758aa38935b, base 07ef2f73f5ac923f783b9bd27e4662bb7529bbd2. Native CI 37663328604 failed formatting at job 112936124907 before Clippy/tests (skipped); GNU build 112936125283 succeeded. Applied all 27 formatting hunks from actual Actions output as an original commit, without running any local formatter/check. Fresh-head Actions now determine validation; no green current checks or publication claimed. Separate final Security and QA pending.",
+    "next_action": "Security: complete-diff exact-head/base review at current source while fresh Actions execute. QA only after actual verification evidence; new source/base invalidates records. Deadline 18:12:14Z, reserve 18:07:14Z. Preserve draft and pause for real waits.",
     "source_bridge": {
       "commits": [
         {
@@ -34,10 +34,25 @@
           "local": "091cc4eb418e9e04d4459fbdaead2322471fb2a0",
           "remote": "eb4ae3378c292ba32938f32ea82c0d7d8054a6cc",
           "tree": "ec8525f7166bbaa41f36d2b52f51448942a4a869"
+        },
+        {
+          "local": "d60f7968e2c73609844d5872c2181749955f2b75",
+          "remote": "c07111816044c3d25a556b3e80b7a758aa38935b",
+          "tree": "7b131a0999ea98bc9aafa7f0ee2eb41166a27b90"
         }
       ]
     },
     "review_base_sha": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
+    "ci": {
+      "head": "eb4ae3378c292ba32938f32ea82c0d7d8054a6cc",
+      "run_id": 37663328604,
+      "validate_job": 112936124907,
+      "validation": "formatting-failed; Clippy/tests skipped",
+      "gnu_job": 112936125283,
+      "gnu_conclusion": "success",
+      "corrected_by": "c07111816044c3d25a556b3e80b7a758aa38935b",
+      "current_head_state": "pending-native-checks"
+    },
     "publication": {
       "commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
       "state": "ci-passed",
