@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 253,
+  "generation": 254,
   "lease": {
     "id": "30c6216b-ab93-4500-bafa-8620c4fb1b9c",
     "worker": "codex-hourly-20261007T192857Z",
     "role": "security",
     "issue": 15,
     "acquired_at": "2026-10-07T20:01:20Z",
-    "heartbeat_at": "2026-10-07T20:01:20Z",
-    "expires_at": "2026-10-07T20:46:20Z",
+    "heartbeat_at": "2026-10-07T20:02:54Z",
+    "expires_at": "2026-10-07T20:47:54Z",
     "branch": "work/par2-recovery-workspace",
     "commit": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
     "pr": 16
   },
   "checkpoint": {
-    "at": "2026-10-07T20:01:14Z",
+    "at": "2026-10-07T20:02:54Z",
     "issue": 15,
-    "role": "rust",
+    "role": "security",
     "branch": "work/par2-recovery-workspace",
     "commit": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
     "pr": 16,
-    "summary": "PR #16 original source 36ac55c4556b06d696be86ee8d7d4ddf7cbd418e corrects the three fixture calls diagnosed by CI: SHA-256 values now use a separate original hex encoder. Native current-head CI 37678694142 validation 112988796254 passed dependency, formatting, Clippy, scheduler and organization checks; harness compilation/tests and GNU/musl builds are in progress. Engineering 37678694081 succeeded while draft, not QA. No local checks or full green claimed.",
-    "next_action": "Security: review the actual complete current-head/base diff under its own lease while CI completes; reserve checkpoint/release time. Then independent logical QA only after required deterministic evidence.",
+    "summary": "Security inspected the complete actual 14-path PR #16 diff at head 36ac55c4556b06d696be86ee8d7d4ddf7cbd418e/base 7910156c6cce0f74a9ab530b289c3734750bc994, plus reused private frame/file primitives and recovery ceilings. Exact captured owner/source/policy, bounded header/content/inventory, fixed File-ID private writes, exclusive std ownership, synchronized descriptor publication and original full/slice/prefix integrity are coherent for the documented caller-controlled private Unix namespace. No blocking Security finding in this bounded library scope. No live authorization, overwrite/library admission or hostile atomic snapshot granted. CI compilation/tests/builds still pending at last observation; no QA or full green claimed.",
+    "next_action": "Submit actual separately leased head/base-bound native Security COMMENT; then checkpoint/release for CI completion and a distinct exact-head/base complete-diff QA phase.",
     "publication": {
       "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
       "state": "ci-passed",
@@ -201,6 +201,13 @@
       "engineering_run": 37678694081,
       "engineering_conclusion": "success",
       "qa_gate": "not_performed"
+    },
+    "security_phase": {
+      "state": "reviewed-awaiting-native-record",
+      "head": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
+      "base": "7910156c6cce0f74a9ab530b289c3734750bc994",
+      "reviewed_paths": 14,
+      "supported_scope": "caller-controlled private Unix namespace; no current permission or repair/admission capability"
     }
   },
   "attempts": {}
