@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 286,
-  "lease": null,
+  "generation": 287,
+  "lease": {
+    "id": "wake5-qa-macos-20261007T213002Z",
+    "worker": "codex-hourly-20261007T213002Z",
+    "role": "qa",
+    "issue": 17,
+    "acquired_at": "2026-10-07T21:46:06Z",
+    "heartbeat_at": "2026-10-07T21:46:06Z",
+    "expires_at": "2026-10-07T22:31:06Z",
+    "branch": "work/macos-builds",
+    "commit": "330cdbd7e8d2530c8900579206cc5e3075934d92",
+    "pr": 20
+  },
   "checkpoint": {
     "issue": 17,
     "role": "security",
