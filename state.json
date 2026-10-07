@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 127,
+  "generation": 128,
   "lease": {
     "id": "041a3b01-7ebb-4e48-9601-b679655013c9",
     "worker": "codex-par2-release-completion",
     "role": "rust",
     "issue": 6,
     "acquired_at": "2026-10-07T11:36:44Z",
-    "heartbeat_at": "2026-10-07T11:36:44Z",
-    "expires_at": "2026-10-07T12:21:44Z",
+    "heartbeat_at": "2026-10-07T11:41:32Z",
+    "expires_at": "2026-10-07T12:26:32Z",
     "branch": "work/par2-recovery",
-    "commit": "78c1039589c233f353b58fbec031b4d6b337e5c6",
+    "commit": "af582ff9e20194b1b29e1b0b6db37ab507c13e97",
     "pr": 8
   },
   "checkpoint": {
-    "at": "2026-10-07T11:36:31Z",
+    "at": "2026-10-07T11:41:32Z",
     "issue": 6,
-    "role": "master",
+    "role": "rust",
     "branch": "work/par2-recovery",
-    "commit": "78c1039589c233f353b58fbec031b4d6b337e5c6",
+    "commit": "af582ff9e20194b1b29e1b0b6db37ab507c13e97",
     "pr": 8,
-    "summary": "Recovered Issue6/draftPR8/head78c1039589c233f353b58fbec031b4d6b337e5c6/base9d506f2767033fb4a71c586f71f5d3da83dcacb5 on preserved work/par2-recovery. Actual Mynou CI37609920355 completed SUCCESS: validate112754634981, GNU112754635094, musl112754635137, package112755667877; release112755868434 skipped. Native prerequisite5 closed; no final reviews. Planned minimum sequence is Rust completion of documented bounds coverage and version/support0.22.12, then exact-head Security/QA after CI. No unrelated work, local validation or publication.",
-    "next_action": "Release Master, acquire Rust at same branch/head/PR, complete bounded acceptance and original regression fixtures/version/docs. Keep draft until actual final CI and separate full-diff exact-head/base Security/QA; then normal objective-gated CI-only delivery.",
+    "summary": "Completed proposed0.22.12 release source on existing draftPR8/work/par2-recovery: nativeaf582ff9e20194b1b29e1b0b6db37ab507c13e97/base9d506f2767033fb4a71c586f71f5d3da83dcacb5; original local0c408089bd182e3221a037a9145e1becff7fb358/tree3572211225da9489b99861a4063165bfcf5d0932 transported with sole-parent non-force source protocol. Added original maximum-eight-erasure and65540-byte slice/chunk/padding fixtures; updated dependency-free Cargo version/lock, README/deployment/support/limits/current roadmap/checkpoint and proposed release contract. Historical prior release evidence/assets preserved. Recovered previous native78c103 CI37609920355 green:836 Rust/64harnesses/0failed/98.135s,4scheduler/53organization, GNU/musl/package success; previous evidence is not current-head pass. Current CI triggered, actual results pending. No local validation, final Security/QA or release.",
+    "next_action": "Inspect exact-head CI and fix real failures. Once source stable, release Rust and acquire Security on final PR head/base; review every native changed path, acceptance/resource/source boundaries and actual CI. Record a review-phase checkpoint and truthful native Security record, then release and acquire logically distinct QA for full-diff acceptance/CI review. Ready/merge only after both real reviews and every objective gate; actual immutable0.22.12 publication remains CI-only.",
     "publication": {
       "commit": "9d506f2767033fb4a71c586f71f5d3da83dcacb5",
       "state": "ci-passed",
@@ -32,13 +32,19 @@
       "conclusion": "success"
     },
     "ci": {
-      "commit": "78c1039589c233f353b58fbec031b4d6b337e5c6",
-      "run_id": 37609920355,
-      "status": "completed",
-      "conclusion": "success",
-      "organization_run_id": 37609920348,
+      "commit": "af582ff9e20194b1b29e1b0b6db37ab507c13e97",
+      "status": "pending",
       "qa": "not-performed-draft",
-      "release": "not-performed-pr"
+      "release": "not-performed-pr",
+      "prior_verified": {
+        "commit": "78c1039589c233f353b58fbec031b4d6b337e5c6",
+        "run_id": 37609920355,
+        "status": "completed",
+        "conclusion": "success",
+        "rust_passed": 836,
+        "rust_failed": 0,
+        "seconds": 98.135
+      }
     }
   },
   "attempts": {}
