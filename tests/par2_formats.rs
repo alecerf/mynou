@@ -235,8 +235,12 @@ fn recovery_checks_large_slice_chunks_and_zero_padding_with_an_independent_oracl
     *damaged.last_mut().unwrap() ^= 0x5a;
     let captured = damaged.clone();
     assert_eq!(
-        set.recover_single(&mut Cursor::new(&source), &damaged, RecoveryLimits::default())
-            .unwrap(),
+        set.recover_single(
+            &mut Cursor::new(&source),
+            &damaged,
+            RecoveryLimits::default()
+        )
+        .unwrap(),
         original
     );
     assert_eq!(damaged, captured);
