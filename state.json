@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 316,
+  "generation": 317,
   "lease": {
     "id": "wake6-quality-macos-cleanup-20261007T222619Z",
     "worker": "codex-hourly-20261007T222619Z",
     "role": "quality",
     "issue": 17,
     "acquired_at": "2026-10-07T22:35:56Z",
-    "heartbeat_at": "2026-10-07T22:35:56Z",
-    "expires_at": "2026-10-07T23:20:56Z",
+    "heartbeat_at": "2026-10-07T22:36:36Z",
+    "expires_at": "2026-10-07T23:21:36Z",
     "branch": "trunk",
     "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
     "pr": 20
   },
   "checkpoint": {
     "issue": 17,
-    "role": "master",
+    "role": "quality",
     "branch": "trunk",
     "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
     "pr": 20,
-    "at": "2026-10-07T22:33:22Z",
-    "summary": "Merged PR20 after all actual objective gates passed. Verified default merge commit 8a0ada56baa24b566e306af75768b90ed08b55ca has exact parents4cf7580+ce35b775 and source tree c58f1932d8a5f1a158d7f8776681e7debc3f2954, identical to reviewed head. Source native macOS support is integrated; immutable v0.22.16 release still requires actual default CI/publication. No manual tagging/artifact upload.",
-    "next": "Quality cleanup under its own lease: close/update managed Issue17, repair native dependencies and confirm safe automatic work branch deletion. Then Master recovers exact default CI/publication before other work.",
+    "at": "2026-10-07T22:36:36Z",
+    "summary": "Quality verified native Issue17 auto-closed as completed, PR20 merged at8a0ada56, work/macos-builds automatically absent (404), no open PRs and no native blocking/dependent Issues. Source and historical review evidence are preserved. Updating managed completion labels; default CI/publication remains to recover.",
+    "next": "Finish managed labels/native handoff; release Quality. Master must recover default8a0ada56 CI and immutable v0.22.16 before any other work.",
     "qa": {
       "schema": 1,
       "role": "qa",
@@ -276,6 +276,21 @@
       "organization_tests": 53,
       "previous_release_id": 406055926,
       "previous_assets_unchanged": true
+    },
+    "cleanup": {
+      "issue": 17,
+      "pr": 20,
+      "issue_state": "closed",
+      "state_reason": "completed",
+      "closed_at": "2026-10-07T22:33:21Z",
+      "merged_at": "2026-10-07T22:33:19Z",
+      "merged_branch": "work/macos-builds",
+      "branch_absent": true,
+      "branch_ref_response": 404,
+      "open_prs": 0,
+      "native_blocked_by": [],
+      "native_blocking": [],
+      "manual_branch_deletion": false
     }
   },
   "attempts": {}
