@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 217,
+  "generation": 218,
   "lease": {
     "id": "0010e9f2-fc82-4ed8-bc0e-ecdcd0221e07",
     "worker": "codex-hourly-20261007T182558Z",
     "role": "master",
     "issue": 13,
     "acquired_at": "2026-10-07T18:30:35Z",
-    "heartbeat_at": "2026-10-07T18:30:35Z",
-    "expires_at": "2026-10-07T19:15:35Z",
+    "heartbeat_at": "2026-10-07T18:31:24Z",
+    "expires_at": "2026-10-07T19:16:24Z",
     "branch": "work/par2-verification",
     "commit": "18548f24e57b2845559c513638f82dee8c30f211",
     "pr": 14
   },
   "checkpoint": {
-    "at": "2026-10-07T18:09:23Z",
+    "at": "2026-10-07T18:31:24Z",
     "issue": 13,
-    "role": "rust",
+    "role": "master",
     "branch": "work/par2-verification",
     "commit": "18548f24e57b2845559c513638f82dee8c30f211",
     "pr": 14,
-    "summary": "Bounded wake source preserved for #13 / draft PR #14 at work/par2-verification:18548f24e57b2845559c513638f82dee8c30f211, base07ef2f73f5ac923f783b9bd27e4662bb7529bbd2. Added read-only exact-ID PAR2 diagnosis API/CLI, twelve original fixtures and proposed0.22.14 docs. Initial CI37663328604 failed fmt before tests; actual27 formatter hunks were applied without local checking. CI37663684804 passed fmt/dependency and both release builds but failed Clippy test initializer; tests/package/release skipped. Separate complete-diff Security5446361233 rejected c07111816044c3d25a556b3e80b7a758aa38935b for insufficient live scratch/report overhead and final path fences preceding last source hash. Original correction commit now reserves512KiB, adds tight-budget regression, moves final fences after source hashing and fixes initializer. These corrections still need fresh Security/QA and actual current-head CI. CI37664282613 is observed in_progress/None; Engineering37664282571 succeeded while draft (not QA). No local validation, second worker, merge or publication. Whole wake is in final-five-minute remote handoff reserve; capacity/scheduling remains best-effort.",
-    "next_action": "Recover #13 / PR #14 first. Inspect actual CI37664282613 at exact remote18548f24e57b2845559c513638f82dee8c30f211/base07ef2f73f5ac923f783b9bd27e4662bb7529bbd2: if red, Rust fixes actual findings; if green, separate exact-head/base Security must verify5446361233 corrections and full diff, then logically independent complete-diff QA under its own lease. Do not treat old rejected review as passed or mark ready/merge before every objective gate. Then native expected-head merge, immutable Actions publication, issue/dependency/branch cleanup. Preserve partial branch and linked PR; no duplicate Issue. The wake began17:32:14Z; deadline18:12:14Z was never reset. Idle/busy admission remains mandatory.",
+    "summary": "Recovered #13 / draft PR #14 at exact head18548f24e57b2845559c513638f82dee8c30f211/base07ef2f73f5ac923f783b9bd27e4662bb7529bbd2. Native CI37664282613 completed success: validate112939389626, GNU112939389971, musl112939389919 and package112940692349 all success; release112941028440 skipped for PR. Prior Security5446361233 rejected old head and no current passed review exists. Branch preserves the original source. Existing task reconciliation is complete. No local checks or other workers.",
+    "next_action": "Separate exact-head/base Security complete-diff verification of prior5446361233 findings and all changed paths, then independent QA and objective-gated delivery within the current wake deadline19:05:58Z.",
     "source_bridge": {
       "commits": [
         {
@@ -46,22 +46,6 @@
           "tree": "f409792c0c794b9c022527ad709021a60eecedfc"
         }
       ]
-    },
-    "task_reconciliation": {
-      "success": true,
-      "automation_id": "6ac54c387af0819184713674c48b3845",
-      "title": "Mynou engineering",
-      "is_enabled": true,
-      "schedule": "BEGIN:VEVENT\nDTSTART:20261006T193000\nRRULE:FREQ=HOURLY;INTERVAL=1\nEND:VEVENT",
-      "timing_mode": "exact_schedule",
-      "default_timezone": "America/Los_Angeles",
-      "updated_at": "2026-10-07T16:24:41.034231+00:00",
-      "prompt_path": "engineering/worker-prompt.md",
-      "policy_commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
-      "prompt_matches_merged_source": true,
-      "schedule_unchanged": true,
-      "timezone_unchanged": true,
-      "issue_comment": 6042165261
     },
     "retained_product_release": {
       "commit": "6085368588c8077af53d15bc4f07d752e670e445",
@@ -119,13 +103,21 @@
         }
       ]
     },
-    "security_status": {
-      "review_id": 5446361233,
-      "review_head": "c07111816044c3d25a556b3e80b7a758aa38935b",
-      "verdict": "rejected",
-      "correction_head": "18548f24e57b2845559c513638f82dee8c30f211",
-      "verification": "fresh Security/QA pending",
-      "lease_checkpoint": "64bfc83b09e6dc68fedeb12eb93c05e285509091"
+    "task_reconciliation": {
+      "success": true,
+      "automation_id": "6ac54c387af0819184713674c48b3845",
+      "title": "Mynou engineering",
+      "is_enabled": true,
+      "schedule": "BEGIN:VEVENT\nDTSTART:20261006T193000\nRRULE:FREQ=HOURLY;INTERVAL=1\nEND:VEVENT",
+      "timing_mode": "exact_schedule",
+      "default_timezone": "America/Los_Angeles",
+      "updated_at": "2026-10-07T16:24:41.034231+00:00",
+      "prompt_path": "engineering/worker-prompt.md",
+      "policy_commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
+      "prompt_matches_merged_source": true,
+      "schedule_unchanged": true,
+      "timezone_unchanged": true,
+      "issue_comment": 6042165261
     },
     "previous_publication": {
       "commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
@@ -140,30 +132,28 @@
       "retained_tag_commit": "6085368588c8077af53d15bc4f07d752e670e445",
       "retained_assets_unchanged": true
     },
+    "security_status": {
+      "review_id": 5446361233,
+      "review_head": "c07111816044c3d25a556b3e80b7a758aa38935b",
+      "verdict": "rejected",
+      "correction_head": "18548f24e57b2845559c513638f82dee8c30f211",
+      "verification": "fresh Security/QA pending",
+      "lease_checkpoint": "64bfc83b09e6dc68fedeb12eb93c05e285509091"
+    },
     "review_base_sha": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
     "ci": {
       "head": "18548f24e57b2845559c513638f82dee8c30f211",
-      "observed_runs": [
-        {
-          "id": 37664282571,
-          "name": "Engineering checks",
-          "head": "18548f24e57b2845559c513638f82dee8c30f211",
-          "status": "completed",
-          "conclusion": "success"
-        },
-        {
-          "id": 37664282613,
-          "name": "Mynou CI",
-          "head": "18548f24e57b2845559c513638f82dee8c30f211",
-          "status": "in_progress",
-          "conclusion": null
-        }
-      ],
-      "pending_review": true,
-      "pending_publication": true,
-      "tests_passed": null
-    },
-    "handoff_recovery": "Earlier post-CAS Rust handoff failed because the saved pre-checkpoint lease had the old source tuple. Control/source were durable; recovered native evidence here. Use the checkpoint-updated lease tuple or control.py release after re-reading current state."
+      "run_id": 37664282613,
+      "status": "completed",
+      "conclusion": "success",
+      "jobs": {
+        "validate": 112939389626,
+        "gnu": 112939389971,
+        "musl": 112939389919,
+        "package": 112940692349
+      },
+      "release": "skipped"
+    }
   },
   "attempts": {}
 }
