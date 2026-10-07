@@ -53,9 +53,33 @@ embedded. Scalar buffers contain little-endian words; each operation is limited
 to 1 MiB and checks cancellation between 64 KiB chunks. Mid-operation cancellation
 can leave a partial caller-owned sum, which must be discarded. Arithmetic does
 not verify packet identity, parity, protected content or repaired output. The
-existing inspector continues to report `repair_supported: false` until verified
-recovery is implemented. Fixed specification constants and an independently
+existing inspector continues to report `repair_supported: false`: inspection
+does not recover or verify described files. Fixed specification constants and an independently
 authored polynomial long-division oracle run only in CI; no results are inferred.
+
+The draft library increment adds `Set::recover_single` and its cancellable
+variant. They accept the captured PAR2 source and immutable caller-provided
+protected bytes, and return a caller-owned `Vec<u8>` only after verification.
+Short input represents a truncated prefix; empty input represents a missing
+file. Exactly one described recoverable file is supported, with at most 256
+slices, eight damaged or missing slices, 16 MiB of content and 1 MiB per slice.
+`RecoveryLimits` may tighten the 32 MiB additional-memory and 128 million field
+operation ceilings. Captured metadata and caller-owned inputs are excluded from
+the additional-memory budget. Memory/work bounds are checked before parity
+buffers and output are allocated. Missing slices require consecutive recovery
+exponents starting at zero; unsupported row selections fail closed.
+
+Recovery rechecks source length/SHA-256 before and after the operation, and binds
+each used packet header, payload SHA-256 and packet MD5 to the captured metadata.
+Zero-padded slice MD5/CRC32, full-file MD5 and first-16-KiB MD5 are verified before
+return. Failed or cancelled partial output is discarded. Checksums do not prove
+authenticity, and these checks cannot guarantee a mutable reader remains stable
+after return. Cancellation is checked between bounded synchronous read, hash
+and field-operation chunks, not within a blocking caller `Read`.
+
+No CLI repair, output path selection, filesystem write, overwrite, ownership
+journal or library admission is added. This remains a draft until the linked PR
+has actual CI evidence and final logically separate Security and QA reviews.
 
 Ownership-bound multi-file recovery,
 volume merging and library admission require subsequent explicit work. Existing

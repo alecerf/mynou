@@ -2,6 +2,9 @@
 //! repairs files, writes state, or grants permission to import media.
 pub mod gf16;
 mod parser;
+mod recovery;
+
+pub use recovery::RecoveryLimits;
 
 use crate::{Result, json::Value};
 
