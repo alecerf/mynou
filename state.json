@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 320,
+  "generation": 321,
   "lease": {
     "id": "wake6-master-macos-publication-20261007T222619Z",
     "worker": "codex-hourly-20261007T222619Z",
     "role": "master",
     "issue": 17,
     "acquired_at": "2026-10-07T22:36:51Z",
-    "heartbeat_at": "2026-10-07T22:36:51Z",
-    "expires_at": "2026-10-07T23:21:51Z",
+    "heartbeat_at": "2026-10-07T22:37:54Z",
+    "expires_at": "2026-10-07T23:22:54Z",
     "branch": "trunk",
     "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
     "pr": 20
   },
   "checkpoint": {
     "issue": 17,
-    "role": "quality",
+    "role": "master",
     "branch": "trunk",
     "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
     "pr": 20,
-    "at": "2026-10-07T22:36:42Z",
-    "summary": "Quality cleanup complete: Issue17 is closed/completed with managed status:done; PR20 is merged at8a0ada56. GitHub automatically removed work/macos-builds (fresh404); no open PRs or native Issue dependencies remain. No manual branch deletion or local verification. Default CI/release remains separate delivery recovery.",
-    "next": "Release Quality and acquire Master to recover exact default8a0ada56 CI and immutable v0.22.16 publication before unrelated work.",
+    "at": "2026-10-07T22:37:54Z",
+    "summary": "PR20 is merged at exact reviewed tree8a0ada56; native Issue17 and automatic branch cleanup are complete. Default push Mynou CI37696923958 is genuinely in progress: validate, ARM macOS and both Linux builds succeeded, Intel macOS remains in progress; package/release not yet observed. Engineering default37696924016 succeeded. v0.22.16 lookup returned404. Stop for real external CI wait; no duplicate dispatch, polling, manual publication or unrelated work.",
+    "next": "Recovery first: inspect exact-source default CI37696923958 at8a0ada56. On failure preserve actual evidence and fix through serial specialist/CI/QA. On success verify all required jobs including release, actual immutable v0.22.16 tag/source and all11 bot assets/checksums; compare unchanged v0.22.15 baseline, persist native proof. Only then triage existing user #18/#19; no duplicate Issues.",
     "qa": {
       "schema": 1,
       "role": "qa",
@@ -291,6 +291,59 @@
       "native_blocked_by": [],
       "native_blocking": [],
       "manual_branch_deletion": false
+    },
+    "publication": {
+      "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
+      "state": "ci-pending",
+      "at": "2026-10-07T22:37:53Z",
+      "branch": "trunk",
+      "run_id": 37696923958,
+      "event": "push",
+      "attempt": 1,
+      "status": "in_progress",
+      "conclusion": null,
+      "url": "https://github.com/alecerf/mynou/actions/runs/37696923958",
+      "tag": "v0.22.16",
+      "release_observed": false,
+      "release_lookup_response": 404,
+      "manual_dispatch": false,
+      "jobs": [
+        {
+          "id": 113050826415,
+          "name": "Build x86_64-apple-darwin",
+          "status": "in_progress",
+          "conclusion": null
+        },
+        {
+          "id": 113050826731,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113050826744,
+          "name": "validate",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113050826749,
+          "name": "Build x86_64-unknown-linux-musl",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113050826816,
+          "name": "Build aarch64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "default_ref_verified": "8a0ada56baa24b566e306af75768b90ed08b55ca",
+      "engineering_run_id": 37696924016,
+      "engineering_conclusion": "success",
+      "expected_asset_count": 11,
+      "publication_not_inferred": true
     }
   },
   "attempts": {}
