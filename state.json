@@ -1,28 +1,47 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 38,
-  "lease": {
-    "id": "19d5f90b-04da-4956-bf98-7a4eafd55754",
-    "worker": "codex-primary-bootstrap",
-    "role": "quality",
-    "issue": 1,
-    "acquired_at": "2026-10-06T19:42:49Z",
-    "heartbeat_at": "2026-10-06T19:46:08Z",
-    "expires_at": "2026-10-06T20:31:08Z",
-    "branch": "work/autonomous-organization",
-    "commit": "7497f5a29198270e711a1c03c814043ed5011508",
-    "pr": 3
-  },
+  "generation": 39,
+  "lease": null,
   "checkpoint": {
-    "at": "2026-10-06T19:46:08Z",
+    "at": "2026-10-07T01:33:27Z",
     "issue": 1,
     "role": "quality",
     "branch": "work/autonomous-organization",
     "commit": "7497f5a29198270e711a1c03c814043ed5011508",
     "pr": 3,
     "summary": "Fixed the remaining actual QA finding: every mutating delivery wake can recover blocked native dependents under a fresh Quality lease even after a parent is Done, and normal cleanup repairs dependencies before optional branch work. Added three CI-only interruption/restart/open-blocker regressions. Local b320f8eff069b3bf673c330e5d66fb8f5ea4c46b maps to remote 7497f5a29198270e711a1c03c814043ed5011508, tree 2406aed580012e750d9599126f697645f86e1d86. Current CI pending; no local validation.",
-    "next_action": "Inspect current 35 organization scenarios and core jobs. Release for Security verification of the three-path correction, then QA acceptance/current-head review and actual agent-qa-review success. Merge bootstrap, verify default workflows and immutable release, then cleanup and end slice."
+    "next_action": "Recovered expired capacity lease; inspect preserved work before selecting new work.",
+    "recovery": {
+      "issue": true,
+      "branch": true,
+      "pr": true,
+      "ci": true,
+      "commit_preserved": true,
+      "issue_state": "open",
+      "branch_head": "7497f5a29198270e711a1c03c814043ed5011508",
+      "preservation": "branch/default ancestry",
+      "prs": [
+        {
+          "number": 3,
+          "state": "open",
+          "head": "7497f5a29198270e711a1c03c814043ed5011508",
+          "merged_at": null
+        }
+      ],
+      "runs": [
+        {
+          "id": 37521366525,
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "id": 37521366488,
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    }
   },
   "attempts": {}
 }
