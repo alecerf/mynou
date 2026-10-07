@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 228,
+  "generation": 229,
   "lease": {
     "id": "d3d4cefb-f9e1-46eb-a59e-d31c2b11335f",
     "worker": "codex-hourly-20261007T182558Z",
     "role": "triage",
     "issue": 13,
     "acquired_at": "2026-10-07T18:36:48Z",
-    "heartbeat_at": "2026-10-07T18:36:48Z",
-    "expires_at": "2026-10-07T19:21:48Z",
+    "heartbeat_at": "2026-10-07T18:38:03Z",
+    "expires_at": "2026-10-07T19:23:03Z",
     "branch": "trunk",
     "commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
     "pr": 14
   },
   "checkpoint": {
-    "at": "2026-10-07T18:36:42Z",
+    "at": "2026-10-07T18:38:03Z",
     "issue": 13,
-    "role": "qa",
-    "branch": "work/par2-verification",
-    "commit": "18548f24e57b2845559c513638f82dee8c30f211",
+    "role": "triage",
+    "branch": "trunk",
+    "commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
     "pr": 14,
-    "summary": "Independent logical complete-diff QA5446698146 passed exact18548f24e57b2845559c513638f82dee8c30f211/base07ef2f73f5ac923f783b9bd27e4662bb7529bbd2 at scoped checkpoint5de82c4501b2a9221e4c01da3fcb6daef5760cfe. All16 changed paths and12 fixtures reviewed against Issue13 acceptance and actual858-test CI. Separate Security5446669213 passed under its distinct historical lease; prior rejection fixes verified. Latest organization112951257265 success; draft gate112951332451 is skipped, not green. No source modifications or local checks.",
-    "next_action": "Triage delivery updates concise PR evidence and marks ready; every current objective job, including actual agent-qa-review, must be green before native expected-head merge. Actions publishes immutable release; preserve actual publication/cleanup and source mapping in control/native handoffs. Same wake deadline19:05:58Z.",
+    "summary": "PR14 is now ready with concise user-impact/verification body. Actual complete-diff Security5446669213 and independent QA5446698146 passed18548f24e57b2845559c513638f82dee8c30f211/base07ef2f73f5ac923f783b9bd27e4662bb7529bbd2 under their separate historical leases. Native CI37664282613 all four required jobs green;858 Rust tests/64 harnesses/0 failures. Ready transition triggers a fresh Engineering machine agent-qa-review; prior draft skipped gate is not success. Triage execution branch is trunk so the product source branch remains eligible for safe native post-merge cleanup. Source/control and native review artifacts are durable. No local validation or additional worker.",
+    "next_action": "Read the ready-triggered current-head Engineering jobs and all objective gates once after checkpoint. If every actual gate is green and native head/base/integration unchanged, expected-head merge and Actions-only publication. If awaiting external CI, checkpoint actual pending run/release and stop; trusted mechanical delivery or future hourly wake recovers. Reserve starts19:00:58Z, deadline19:05:58Z.",
     "source_bridge": {
       "commits": [
         {
@@ -160,6 +160,12 @@
       "base": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
       "verdict": "passed",
       "lease_checkpoint": "5de82c4501b2a9221e4c01da3fcb6daef5760cfe"
+    },
+    "delivery": {
+      "pr_head": "18548f24e57b2845559c513638f82dee8c30f211",
+      "pr_base": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
+      "ready": true,
+      "qa_gate": "fresh ready-triggered observation pending"
     }
   },
   "attempts": {}
