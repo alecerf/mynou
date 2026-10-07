@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 202,
+  "generation": 203,
   "lease": {
     "id": "40e65e19-8705-4384-bce4-96567d05a5df",
     "worker": "codex-hourly-20261007-1732",
     "role": "security",
     "issue": 13,
     "acquired_at": "2026-10-07T17:38:46Z",
-    "heartbeat_at": "2026-10-07T17:38:46Z",
-    "expires_at": "2026-10-07T18:23:46Z",
+    "heartbeat_at": "2026-10-07T17:41:23Z",
+    "expires_at": "2026-10-07T18:26:23Z",
     "branch": "work/par2-verification",
     "commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
     "pr": null
   },
   "checkpoint": {
-    "at": "2026-10-07T17:38:41Z",
-    "issue": 11,
-    "role": "master",
-    "branch": "trunk",
+    "at": "2026-10-07T17:41:23Z",
+    "issue": 13,
+    "role": "security",
+    "branch": "work/par2-verification",
     "commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
-    "pr": 12,
-    "summary": "Recovery confirmed PR #12 merged at 07ef2f73f5ac923f783b9bd27e4662bb7529bbd2 and default CI 37651557558 actually successful. Live enabled hourly task has the merged canonical prompt; no pending task reconciliation. Native admission found no open managed Issue/PR; created authorized bounded read-only PAR2 verification Issue #13, with completed native prerequisite #9. No product validation or second worker.",
-    "next_action": "Continue #13 with separate Security analysis, then Rust implementation/CI, final Security and independent QA. One wake began 17:32:14Z, deadline 18:12:14Z; reserve final five minutes. No implicit filesystem repair or library authority.",
+    "pr": null,
+    "summary": "Security scoped #13 read-only verification: exact IDs/global slice ordering, full/prefix/slice hashes, checked aggregate budgets, cooperative chunks, explicit presence, no parity/ownership authority. Filesystem reads require no-follow/nonblocking existing std options, all ancestor/type/inode/length fences, protected/source revalidation and final missing-path checks. Safe std cannot promise an atomic adversarial filesystem snapshot. Native Issue #13 Security handoff retains the full bounded design; no implementation or local validation.",
+    "next_action": "Rust: implement read-only API/CLI and original fixtures within this wake deadline 18:12:14Z, five-minute exit reserve. Final distinct Security/QA after actual Actions; no write/admission scope.",
     "publication": {
       "commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
       "state": "ci-passed",
@@ -107,67 +107,6 @@
           "digest": "sha256:edf469d5ab42165ba0e27b258507152dd31f35d8c828d6d963bda0d16d6537de"
         }
       ]
-    },
-    "merged_cadence": {
-      "issue": 11,
-      "pr": 12,
-      "branch": "work/engineering-cadence",
-      "head": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
-      "merge_commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
-      "merged_at": "2026-10-07T16:22:51Z",
-      "branch_cleanup": "native branch listing confirms absent; original exact head preserved in merged PR/history"
-    },
-    "merged_work": {
-      "issue": 9,
-      "pr": 10,
-      "branch": "work/par2-multifile-recovery",
-      "head": "bfdff54f096150968ae725fa19d89e356ed24417",
-      "merge_commit": "6085368588c8077af53d15bc4f07d752e670e445",
-      "merged_at": "2026-10-07T16:00:34Z",
-      "branch_cleanup": "native guarded cleanup: already absent",
-      "reviews": {
-        "security": {
-          "review_id": 5444603361,
-          "submitted_at": "2026-10-07T15:34:58Z",
-          "head": "bfdff54f096150968ae725fa19d89e356ed24417",
-          "base": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
-          "lease_checkpoint": "daa866c26c4ef0d954c1e56ebaf0734e3e64ceab",
-          "verdict": "passed",
-          "state": "COMMENTED",
-          "identity": "alecerf"
-        },
-        "qa": {
-          "review_id": 5444892856,
-          "submitted_at": "2026-10-07T15:56:42Z",
-          "head": "bfdff54f096150968ae725fa19d89e356ed24417",
-          "base": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
-          "lease_checkpoint": "eb571750a6858c9ee6862f1d73780b2ef6377842",
-          "verdict": "passed",
-          "state": "COMMENTED",
-          "identity": "alecerf"
-        }
-      },
-      "source_bridge": {
-        "commits": [
-          {
-            "local": "b08c470d956434f0e02165b5b80b6f10e5d987b6",
-            "remote": "d4938b72b5451d31bd46eb61d620d06c8608470c",
-            "tree": "2f87f3e603a05c96a9a6e65bd6fd906cdc50615c"
-          },
-          {
-            "local": "060d605351761243eeb8e0d0b7d5a2b9abcb1949",
-            "remote": "bfdff54f096150968ae725fa19d89e356ed24417",
-            "tree": "560c4504ac2d20ee124210511400ffa7c16e9e0f"
-          }
-        ]
-      }
-    },
-    "next_work": {
-      "issue": 13,
-      "role": "security",
-      "branch": "work/par2-verification",
-      "base": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
-      "deadline": "2026-10-07T18:12:14Z"
     }
   },
   "attempts": {}
