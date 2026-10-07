@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 332,
+  "generation": 333,
   "lease": {
     "id": "wake7-security-registry-plan-20261007T232627Z",
     "worker": "codex-hourly-20261007T232627Z",
     "role": "security",
     "issue": 18,
     "acquired_at": "2026-10-07T23:30:40Z",
-    "heartbeat_at": "2026-10-07T23:30:40Z",
-    "expires_at": "2026-10-08T00:15:40Z",
+    "heartbeat_at": "2026-10-07T23:32:09Z",
+    "expires_at": "2026-10-08T00:17:09Z",
     "branch": "trunk",
     "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
     "pr": null
   },
   "checkpoint": {
     "issue": 18,
-    "role": "master",
+    "role": "security",
     "branch": "trunk",
     "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
     "pr": null,
-    "at": "2026-10-07T23:30:31Z",
-    "summary": "Recovered v0.22.16 publication and selected oldest executable managed user Issue18: private GHCR images and smaller release assets. Live backlog has only18/19, no open PR or partial source branch, no native Issue18 dependencies. Bounded migration will preserve all objective build/runtime gates and published history; Security precedes implementation.",
-    "next_action": "Persist Issue18 acceptance/priority/risk then release Master; acquire Security to specify registry publication trust boundaries before original Quality implementation.",
+    "at": "2026-10-07T23:32:09Z",
+    "summary": "Security planned Issue18 registry trust boundaries: private package preflight, default-only ephemeral package token, credential-free checkout, SHA/version collision refusal, exact image/source proof, pulled digest runtime verification and visible idempotent recovery. GHCR tags lack server immutability/CAS; docs must recommend digest pins and avoid unsupported claims. No source implementation or publishing occurred.",
+    "next_action": "Release Security and acquire Quality for original CI/package/docs implementation. Final complete-diff Security review and independent QA follow actual source commit/CI.",
     "publication_baseline": {
       "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
       "state": "published",
@@ -155,23 +155,17 @@
         }
       ]
     },
-    "publication": {
-      "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
-      "state": "ci-passed",
-      "run_id": 37696923958,
-      "status": "completed",
-      "conclusion": "success",
-      "release_observed": true,
-      "release_id": 406222389,
-      "tag": "v0.22.16",
-      "immutable": true,
-      "asset_count": 11
-    },
-    "selected_issue": 18,
-    "managed_open_issues": [
-      18,
-      19
-    ]
+    "security_plan": {
+      "scope": "Private GHCR publication and reduced release assets",
+      "controls": [
+        "Write packages/contents only on the guarded default-branch release job; PR jobs remain read-only and do not receive registry secrets.",
+        "Use only ephemeral repository GITHUB_TOKEN, stdin Docker login, private package preflight, source/revision/version OCI labels, no visibility mutation.",
+        "Freshly reject conflicting source/version tags before any push; retain content-addressed image digest and re-pull/verify checked binary and readonly isolated demo. Registry tags are mutable by platform; no server immutability/CAS claim.",
+        "Do not delete/retag old releases or packages. Publish container before new immutable release; interrupted publication retries verify existing exact image.",
+        "Same-run/SHA artifacts and checksum checks remain; reduce asset inventory deterministically. Remove only original source ZIP packager after actual reference review.",
+        "Native same-identity COMMENT Security and independent QA must cover entire final diff and real PR CI; actual default publication is later, not inferred."
+      ]
+    }
   },
   "attempts": {}
 }
