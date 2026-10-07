@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 281,
-  "lease": null,
+  "generation": 282,
+  "lease": {
+    "id": "wake5-security-macos-review-20261007T213002Z",
+    "worker": "codex-hourly-20261007T213002Z",
+    "role": "security",
+    "issue": 17,
+    "acquired_at": "2026-10-07T21:45:04Z",
+    "heartbeat_at": "2026-10-07T21:45:04Z",
+    "expires_at": "2026-10-07T22:30:04Z",
+    "branch": "work/macos-builds",
+    "commit": "330cdbd7e8d2530c8900579206cc5e3075934d92",
+    "pr": 20
+  },
   "checkpoint": {
     "issue": 17,
     "role": "quality",
