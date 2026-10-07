@@ -317,6 +317,86 @@ fn recovery_checks_full_file_integrity_even_when_every_slice_matches() {
     );
 }
 
+struct MutatedSource {
+    cursor: Cursor<Vec<u8>>,
+    mutate_at_start: Option<u64>,
+    mutate_at_end: u32,
+    endings: u32,
+    byte: usize,
+}
+impl Read for MutatedSource {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        self.cursor.read(bytes)
+    }
+}
+impl Seek for MutatedSource {
+    fn seek(&mut self, from: SeekFrom) -> io::Result<u64> {
+        if from == SeekFrom::End(0) {
+            self.endings += 1;
+        }
+        let change = self.mutate_at_start.is_some_and(|offset| {
+            from == SeekFrom::Start(offset)
+        }) || (from == SeekFrom::End(0) && self.endings == self.mutate_at_end);
+        if change {
+            self.cursor.get_mut()[self.byte] ^= 1;
+            self.mutate_at_start = None;
+        }
+        self.cursor.seek(from)
+    }
+}
+
+#[test]
+fn recovery_rejects_source_mutation_between_capture_hash_payload_and_return() {
+    let source = Fixture::recovery(b"abcdefghijklmnopq", 8, 3).bytes();
+    let set = read(&source).unwrap();
+    let offset = set.recovery()[0].data_offset() - 68;
+    for byte in [offset as usize + 16, offset as usize + 68] {
+        let mut reader = MutatedSource {
+            cursor: Cursor::new(source.clone()),
+            mutate_at_start: Some(offset),
+            mutate_at_end: 0,
+            endings: 0,
+            byte,
+        };
+        assert!(
+            set.recover_single(&mut reader, b"", RecoveryLimits::default())
+                .unwrap_err()
+                .contains("changed")
+        );
+    }
+    let mut reader = MutatedSource {
+        cursor: Cursor::new(source),
+        mutate_at_start: None,
+        mutate_at_end: 3, // Beginning of the final whole-source identity scan.
+        endings: 0,
+        byte: 80,
+    };
+    assert!(
+        set.recover_single(&mut reader, b"", RecoveryLimits::default())
+            .unwrap_err()
+            .contains("identity changed")
+    );
+}
+
+#[test]
+fn recovery_cancellation_and_source_growth_during_reads_return_no_output() {
+    let source = Fixture::recovery(b"abcdefghijklmnopq", 8, 3).bytes();
+    let set = read(&source).unwrap();
+    for grow in [false, true] {
+        let flag = AtomicBool::new(true);
+        let mut reader = Interrupted {
+            cursor: Cursor::new(source.clone()),
+            flag: &flag,
+            grow,
+            endings: 0,
+        };
+        assert!(
+            set.recover_single_cancellable(&mut reader, b"", RecoveryLimits::default(), &flag)
+                .is_err()
+        );
+    }
+}
+
 #[test]
 fn published_rfc_1321_vectors_match_one_shot_and_streamed_boundaries() {
     let vectors = [
