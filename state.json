@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 91,
-  "lease": {
-    "id": "56ec6c35-f526-4073-8af5-3694339b57e0",
-    "worker": "github-actions-delivery",
-    "role": "triage",
-    "issue": 5,
-    "acquired_at": "2026-10-07T07:48:03Z",
-    "heartbeat_at": "2026-10-07T07:48:16Z",
-    "expires_at": "2026-10-07T08:33:16Z",
-    "branch": "work/ci-release-recovery",
-    "commit": "9d506f2767033fb4a71c586f71f5d3da83dcacb5",
-    "pr": 7
-  },
+  "generation": 92,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-07T07:48:16Z",
     "issue": 5,
