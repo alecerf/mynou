@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 215,
-  "lease": {
-    "id": "8971de00-d563-42ea-bdf9-7836a111b29c",
-    "worker": "codex-hourly-20261007-1732",
-    "role": "rust",
-    "issue": 13,
-    "acquired_at": "2026-10-07T18:05:46Z",
-    "heartbeat_at": "2026-10-07T18:09:23Z",
-    "expires_at": "2026-10-07T18:54:23Z",
-    "branch": "work/par2-verification",
-    "commit": "18548f24e57b2845559c513638f82dee8c30f211",
-    "pr": 14
-  },
+  "generation": 216,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-07T18:09:23Z",
     "issue": 13,
