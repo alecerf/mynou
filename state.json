@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 239,
-  "lease": null,
+  "generation": 240,
+  "lease": {
+    "id": "46eb5c08-ff72-4a15-8fe3-bb2de200c1e3",
+    "worker": "codex-hourly-20261007T192857Z",
+    "role": "security",
+    "issue": 15,
+    "acquired_at": "2026-10-07T19:37:06Z",
+    "heartbeat_at": "2026-10-07T19:37:06Z",
+    "expires_at": "2026-10-07T20:22:06Z",
+    "branch": "work/par2-recovery-workspace",
+    "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
+    "pr": null
+  },
   "checkpoint": {
     "at": "2026-10-07T19:37:00Z",
     "issue": 13,
