@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 51,
-  "lease": {
-    "id": "14099d34-7054-496b-8b75-abf5f26f35c8",
-    "worker": "codex-par2-slice",
-    "role": "security",
-    "issue": 2,
-    "acquired_at": "2026-10-07T05:32:39Z",
-    "heartbeat_at": "2026-10-07T05:34:15Z",
-    "expires_at": "2026-10-07T06:19:15Z",
-    "branch": "work/par2-foundation",
-    "commit": "837daac0deefa01b9e0ea651c9dfb17cac813532",
-    "pr": null
-  },
+  "generation": 52,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-07T05:34:15Z",
     "issue": 2,
