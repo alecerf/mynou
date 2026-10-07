@@ -85,8 +85,8 @@ impl MultiRecoveryLimits {
 /// a missing file/truncated prefix. An ID is not ownership or authorization.
 #[derive(Clone, Copy, Debug)]
 pub struct RecoveryInput<'a> {
-    id: [u8; 16],
-    bytes: &'a [u8],
+    pub(super) id: [u8; 16],
+    pub(super) bytes: &'a [u8],
 }
 
 impl<'a> RecoveryInput<'a> {
@@ -145,7 +145,11 @@ fn exact<R: Read>(reader: &mut R, bytes: &mut [u8], flag: &AtomicBool) -> Result
     active(flag)
 }
 
-fn slice_matches(bytes: &[u8], expected: &SliceChecksum, flag: &AtomicBool) -> Result<bool> {
+pub(super) fn slice_matches(
+    bytes: &[u8],
+    expected: &SliceChecksum,
+    flag: &AtomicBool,
+) -> Result<bool> {
     let mut digest = Md5::default();
     let mut crc = Crc32::default();
     for chunk in bytes.chunks(CHUNK) {
@@ -157,7 +161,7 @@ fn slice_matches(bytes: &[u8], expected: &SliceChecksum, flag: &AtomicBool) -> R
     Ok(digest.finalize() == expected.md5 && crc.finish() == expected.crc32)
 }
 
-fn padded_slice(input: &[u8], index: usize, scratch: &mut [u8]) -> bool {
+pub(super) fn padded_slice(input: &[u8], index: usize, scratch: &mut [u8]) -> bool {
     scratch.fill(0);
     let start = index * scratch.len();
     let end = (start + scratch.len()).min(input.len());
@@ -426,7 +430,11 @@ impl Set {
         Ok(outputs)
     }
 
-    fn verify_source<R: Read + Seek>(&self, reader: &mut R, flag: &AtomicBool) -> Result<()> {
+    pub(super) fn verify_source<R: Read + Seek>(
+        &self,
+        reader: &mut R,
+        flag: &AtomicBool,
+    ) -> Result<()> {
         active(flag)?;
         let length = reader
             .seek(SeekFrom::End(0))

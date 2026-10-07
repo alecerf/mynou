@@ -1,4 +1,4 @@
-# Mynou 0.22.13 — Rust, standard library only
+# Mynou 0.22.14 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -137,12 +137,18 @@ verification and repair are not performed by this inspector.
 GF(2^16) arithmetic, up to eight erased slices, immutable protected input and
 fully verified caller-owned output. Its Actions release and native review evidence
 are recorded in Issue #6 / PR #8.
-The proposed 0.22.13 source adds multi-file recovery into memory: exact File IDs,
-global Main/file/slice coefficients, aggregate limits and verification of every
-file before any output is returned. No filesystem repair or ownership/library
-admission is introduced. See the [proposed release scope](docs/releases/0.22.13.md);
-actual CI, separate Security/QA and Actions publication are still required.
-Compressed RAR, multi-file packs and Usenet upgrades remain subsequent increments.
+Actions published v0.22.13 multi-file memory recovery at
+`6085368588c8077af53d15bc4f07d752e670e445`, with all five jobs green in
+[run 37648617664](https://github.com/alecerf/mynou/actions/runs/37648617664),
+846 Rust tests and seven immutable bot assets. Exact File IDs, one global
+coefficient map and aggregate bounds govern the memory-only engine.
+
+Proposed 0.22.14 adds read-only `par2-verify FILE --root DIRECTORY` and a library
+verification report. It identifies damaged/missing protected slices and checks
+whole-file integrity without reconstruction, writes or ownership/library authority.
+Clean verification exits zero; damage prints JSON and exits nonzero. See
+[verification support](docs/par2.md) and [release scope](docs/releases/0.22.14.md).
+Actions, separate Security and independent QA establish actual release state.
 
 ## Autonomous engineering
 
@@ -184,8 +190,8 @@ from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, o
 build the image from the source archive:
 
 ```sh
-docker load -i mynou-v0.22.13-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.22.13 .
+docker load -i mynou-v0.22.14-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.22.14 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d

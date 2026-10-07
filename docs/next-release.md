@@ -1,21 +1,26 @@
-# Current product work — proposed 0.22.13 multi-file PAR2 memory recovery
+# Current product work — proposed 0.22.14 read-only PAR2 verification
 
-Engineering bootstrap #1 / PR #3, format foundation #2 / PR #4, release-trigger
-reliability #5 / PR #7 and single-file recovery #6 / PR #8 are complete.
-Actions published v0.22.12 at `d0c37f773b45b8948eb8c5b67a55e89f64ddbe10`:
-all five jobs green in run 37617472864 and 838 Rust tests. Native handoffs retain
-immutable tag/asset, review and cleanup evidence.
+GitHub Actions published v0.22.13 multi-file memory recovery at
+`6085368588c8077af53d15bc4f07d752e670e445` in run 37648617664: all five jobs
+passed, 846 Rust tests across 64 harnesses and seven immutable bot assets.
+[Issue #9](https://github.com/alecerf/mynou/issues/9) comment 6041888395 and
+[PR #10](https://github.com/alecerf/mynou/pull/10) retain actual native publication,
+Security/QA and cleanup evidence. Cadence #11 / PR #12 is delivered separately;
+its organization-only merge did not retag the product.
 
-[Issue #9](https://github.com/alecerf/mynou/issues/9) and
-[draft PR #10](https://github.com/alecerf/mynou/pull/10) own the next bounded source:
-original multi-file recovery into verified caller-owned memory. Exact File IDs,
-global Main/file/slice coefficients and combined limits protect the entire set.
-See [support and limits](par2.md) and [release scope](releases/0.22.13.md).
+[Issue #13](https://github.com/alecerf/mynou/issues/13) owns the next bounded
+repair-planning prerequisite: diagnose protected content before considering any
+filesystem repair. `par2-verify FILE --root DIRECTORY` and exact-ID library
+reports check slices, full-file and first-16-KiB hashes with bounded reads,
+identity fencing and cancellation. No parity correctness, ownership, atomic
+snapshot, writes or library admission is claimed. See [support](par2.md) and
+[proposed scope](releases/0.22.14.md).
 
-Finish actual CI, final exact-head/base complete-diff Security and independent QA,
-merge and immutable Actions publication before ownership-bound filesystem/library
-work. Recovery uses GitHub state and serial role leases. No local tests, lint,
-builds, binaries, validation or manual releases. A proposed version is not published.
+Complete actual CI, separate exact-head/base Security and independent QA, merge
+and immutable Actions publication before ownership-bound persistent repair and
+admission. Use one configured whole-wake deadline with serial role leases and a
+five-minute handoff reserve. No local validation or manual publication. A proposed
+source version does not establish publication.
 
 CI published v0.22.10 from `f5c59506d0a8d431d09e9f351e2de2ef71b124f9` in
 [run 37510460908](https://github.com/alecerf/mynou/actions/runs/37510460908).
@@ -103,7 +108,7 @@ This scope passed complete Actions validation and publication as recorded below.
 Compressed/solid/split/encrypted RAR, RAR4, PAR2, multi-file packs and Usenet
 upgrades remain subsequent bounded increments.
 
-After 0.22.13 publication, continue ownership-bound filesystem recovery/admission. Keep
+After 0.22.14 verification publication, continue ownership-bound persistent repair/admission. Keep
 RAR compression as a separate original implementation increment; do not claim
 compressed RAR support from the stored subset. Continue multi-file/pack and
 Usenet-upgrade stages, then 0.23 verified cross-seeding and guarded bulk controls.

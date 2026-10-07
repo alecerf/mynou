@@ -1,4 +1,4 @@
-# Project checkpoint — proposed Mynou 0.22.13
+# Project checkpoint — proposed Mynou 0.22.14
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -13,20 +13,24 @@ alone creates release tags and publishes artifacts from validated commits.
 
 ## Implemented scope
 
-Current multi-file memory recovery is tracked in [Issue #9](https://github.com/alecerf/mynou/issues/9),
-[draft PR #10](https://github.com/alecerf/mynou/pull/10) and the durable GitHub lease.
-The proposed 0.22.13 source shares the bounded single-file engine across exact
-File-ID inputs, global coefficients, combined resource budgets and all-or-nothing
-verified outputs. No filesystem repair or ownership/library admission is added.
-Security scope is Issue #9 comment 6039126699; final complete-diff Security/QA and
-actual CI remain required. See [support](par2.md) and the [release contract](releases/0.22.13.md).
+GitHub Actions published v0.22.13 multi-file memory recovery at
+`6085368588c8077af53d15bc4f07d752e670e445`: all five jobs green in run
+37648617664, 846 Rust tests across 64 harnesses and seven immutable assets.
+Issue #9 comment 6041888395 / PR #10 retain exact review/publication/cleanup proof.
+
+Proposed 0.22.14 in [Issue #13](https://github.com/alecerf/mynou/issues/13) adds
+bounded read-only protected-content diagnosis through the library and CLI, with
+exact File IDs/global slice indices, whole-file checks and source/path/byte
+revalidation. It neither reconstructs parity nor creates ownership, writes or
+library admission. Separate Security/QA and Actions still establish delivery.
+See [support](par2.md) and [release contract](releases/0.22.14.md).
 This document is product context, not live execution or verification state.
 
 GitHub Actions published v0.22.12 at `d0c37f773b45b8948eb8c5b67a55e89f64ddbe10`
 with all five jobs green in run 37617472864, 838 Rust tests across 64 harnesses,
 four scheduler and 53 organization checks, and seven bot-uploaded assets.
 Issue #6 / PR #8 preserve exact Security/QA, publication and merged-branch cleanup
-proof. These are the baseline; no new test success is inferred for 0.22.13.
+proof. These are historical evidence; no new test success is inferred for proposed source.
 Read-only PAR2 core inspection from Issue #2 / PR #4 was published as v0.22.11
 at `57b15534158b0eb40d4f13450d51fdf33c7d81bb`.
 Engineering bootstrap #1 / PR #3 is complete on trunk at
