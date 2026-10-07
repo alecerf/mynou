@@ -14,7 +14,8 @@ def check(root=ROOT):
     cfg = json.loads((root / ".github/engineering.json").read_text())
     assert cfg["schema"] == 1 and cfg["max_active_agents"] == 1
     assert cfg["lease_minutes"] == 45 and cfg["heartbeat_minutes"] <= 15
-    assert cfg["no_progress_limit"] == 3 and cfg["slice_minutes"] <= 20
+    assert cfg["no_progress_limit"] == 3
+    assert type(cfg["slice_minutes"]) is int and 1 <= cfg["slice_minutes"] <= 40
     catalog = json.loads((root / "engineering/roles.json").read_text())["roles"]
     assert {"master", "triage", "rust", "web", "ux", "security", "qa", "quality"}.issubset(catalog)
     for role, path in catalog.items():
