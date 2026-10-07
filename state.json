@@ -1,35 +1,375 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 326,
+  "generation": 327,
   "lease": {
     "id": "wake7-master-macos-recovery-20261007T232627Z",
     "worker": "codex-hourly-20261007T232627Z",
     "role": "master",
     "issue": 17,
     "acquired_at": "2026-10-07T23:27:14Z",
-    "heartbeat_at": "2026-10-07T23:27:14Z",
-    "expires_at": "2026-10-08T00:12:14Z",
+    "heartbeat_at": "2026-10-07T23:28:25Z",
+    "expires_at": "2026-10-08T00:13:25Z",
     "branch": "trunk",
     "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
     "pr": 20
   },
   "checkpoint": {
-    "at": "2026-10-07T22:38:57Z",
     "issue": 17,
-    "role": "triage",
+    "role": "master",
     "branch": "trunk",
     "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
     "pr": 20,
-    "summary": "Default-source CI transition: ci-passed at 8a0ada56baa24b566e306af75768b90ed08b55ca; native evidence {'commit': '8a0ada56baa24b566e306af75768b90ed08b55ca', 'state': 'ci-passed', 'at': '2026-10-07T22:38:57Z', 'run_id': 37696923958, 'status': 'completed', 'conclusion': 'success'}. No release publication is inferred.",
-    "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases.",
+    "at": "2026-10-07T23:28:25Z",
+    "summary": "Recovered and verified actual CI-published immutable v0.22.16 at default8a0ada56: all7 jobs in run37696923958 succeeded,864 Rust tests/0failed,4 scheduler and53 organization checks. Both native macOS demos reached ready/Plex scan confirmed; package/release checksums succeeded. Release406222389/tag exact source,11 uploaded bot assets. v0.22.15's7 IDs/names/sizes/digests unchanged. Cleanup and reviews preserved; no task reconciliation is pending.",
+    "next_action": "Release completed Issue17 recovery and choose highest-priority executable native user Issue from live backlog. Existing #18/#19 remain separate; inspect actual open work first and do not duplicate it.",
+    "qa": {
+      "schema": 1,
+      "role": "qa",
+      "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
+      "base_sha": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
+      "lease_checkpoint": "207bf8ee54b55232785e0d555a06c53ae3d432a2",
+      "verdict": "passed",
+      "summary": "Complete independent logical review accepted native Apple Silicon/Intel build and deployment support after actual exact-head CI and corrected checksum failure handling. Default-branch CI and immutable publication remain separate delivery steps.",
+      "reviewed_paths": [
+        ".github/engineering.json",
+        ".github/scripts/publish-release.sh",
+        ".github/workflows/ci.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "README.md",
+        "docs/ci.md",
+        "docs/deployment.md",
+        "docs/macos.md",
+        "docs/next-release.md",
+        "docs/releases/0.22.16.md"
+      ],
+      "acceptance": [
+        "Both macOS26 native architectures compile offline/locked, match exact Mach-O architecture and complete original local torrent/media/import/Plex demonstration.",
+        "Same-workflow/SHA artifacts are copied byte-for-byte with executable permissions and verified release checksums; Linux GNU/musl, container and source archive checks remain required.",
+        "Actual Actions passed zero-dependency graph, formatting, Clippy,864 Rust tests,4 scheduler checks and53 organization scenarios.",
+        "English installation selects the correct architecture, uses private-repository downloads and guarded checksum/install/configuration commands; PEM trust and absence of Apple Developer signature/notarization are explicit.",
+        "Prior QA5448782569 checksum/configuration concern was verified in the actual corrected && chains; no unresolved inline review threads.",
+        "Exact-head/base Security5448796536 and historical held Security checkpointda8a336cbbc41b5044482ccb611a4a5e6d828fbd were verified; same GitHub identity is logical review, not formal self-approval."
+      ],
+      "evidence": [
+        "PR #20 actual complete 11-path diff at ce35b775 /4cf7580 and native Issue #17 acceptance.",
+        "Mynou CI37691964651 attempt1: validate113035157748, ARM113035157345, Intel113035157702, GNU113035157645, musl113035157781, package113036465846 all SUCCESS; release correctly SKIPPED for PR.",
+        "Validation log:864 passed/0failed in90.373s,4 scheduler tests and53 organization tests.",
+        "ARM/Intel logs: actual Mach-O arm64/x86_64 executables; ready library import and plex_scan_confirmed=true on their native runners.",
+        "Packaging log: all five primary asset checksums OK, including macos-arm64 and macos-x86_64; Docker readonly/network-isolated demo, checked binary byte preservation and source ZIP integrity passed.",
+        "Engineering checks37692344754 organization113035395324 SUCCESS; agent-qa-review is currently skipped while draft and must become green after ready transition.",
+        "GitHub PR CI uses its synthetic merge9ec93b4c5a0a56c181d5f54b2ea3d21160e628f5 for this recorded head/base; publication requires actual default-branch CI, not this PR run."
+      ],
+      "findings": []
+    },
+    "qa_native_review": {
+      "success": true,
+      "review_id": 5449213677
+    },
+    "security": {
+      "schema": 1,
+      "role": "security",
+      "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
+      "base_sha": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
+      "lease_checkpoint": "da8a336cbbc41b5044482ccb611a4a5e6d828fbd",
+      "verdict": "passed",
+      "summary": "Complete corrected diff reviewed; QA's checksum/configuration failure-path concern is addressed. No blocking Security findings. Actual required CI and independent QA remain merge prerequisites.",
+      "reviewed_paths": [
+        ".github/engineering.json",
+        ".github/scripts/publish-release.sh",
+        ".github/workflows/ci.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "README.md",
+        "docs/ci.md",
+        "docs/deployment.md",
+        "docs/macos.md",
+        "docs/next-release.md",
+        "docs/releases/0.22.16.md"
+      ],
+      "acceptance": [
+        "Checksum and directory failures now stop installation/demo; init/doctor failures stop service startup.",
+        "Native builds keep read-only contents and disabled checkout credentials; standard macOS26 runners introduce no paid larger runner or new token.",
+        "Same-run target/SHA-scoped checked artifacts, byte-preserving copies, checksums and immutable default CI publication remain required.",
+        "Native installation documents PEM trust, Gatekeeper per-application controls and absence of Apple Developer signature/notarization without disabling security."
+      ],
+      "evidence": [
+        "Complete actual 11-path corrected PR #20 diff at ce35b775df90c49ab40ec98e1b3407b45c721c6d /4cf7580.",
+        "QA COMMENT5448782569 concern was compared with actual corrected docs/macos.md && chains; no concern is resolved merely because a commit appeared.",
+        "Current-head Actions37691964651 pending; no complete runtime success is claimed.",
+        "Prior-head ARM64 job113032694993 genuinely verified Mach-O arm64 and ready import/Plex demo; historical evidence only, not new-head CI."
+      ],
+      "findings": []
+    },
+    "security_native_review": {
+      "success": true,
+      "review_id": 5448796536
+    },
+    "source": {
+      "remote_commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
+      "tree": "c58f1932d8a5f1a158d7f8776681e7debc3f2954",
+      "base_commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
+      "changed_paths": [
+        ".github/workflows/ci.yml",
+        ".github/engineering.json",
+        "Cargo.toml",
+        "Cargo.lock",
+        "README.md",
+        "docs/macos.md",
+        "docs/releases/0.22.16.md",
+        "docs/ci.md",
+        "docs/deployment.md",
+        "docs/next-release.md",
+        ".github/scripts/publish-release.sh"
+      ]
+    },
+    "ci": {
+      "run_id": 37691964651,
+      "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
+      "event": "pull_request",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "id": 113035157345,
+          "name": "Build aarch64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113035157645,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113035157702,
+          "name": "Build x86_64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113035157748,
+          "name": "validate",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113035157781,
+          "name": "Build x86_64-unknown-linux-musl",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113036465846,
+          "name": "package",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113036635440,
+          "name": "release",
+          "status": "completed",
+          "conclusion": "skipped"
+        }
+      ],
+      "rust_tests": 864,
+      "rust_failures": 0,
+      "rust_seconds": 90.373,
+      "scheduler_tests": 4,
+      "organization_tests": 53,
+      "organization_run_id": 37692344754,
+      "organization_job_id": 113035395324
+    },
+    "gate": {
+      "run_id": 37696677176,
+      "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
+      "base_sha": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
+      "organization_job": 113050000966,
+      "qa_job": 113050053556,
+      "conclusion": "success",
+      "required_check_names": [
+        "validate",
+        "Build x86_64-unknown-linux-gnu",
+        "Build x86_64-unknown-linux-musl",
+        "Build aarch64-apple-darwin",
+        "Build x86_64-apple-darwin",
+        "package",
+        "organization",
+        "agent-qa-review"
+      ],
+      "observed_at": "2026-10-07T22:32:06Z"
+    },
+    "merge": {
+      "sha": "8a0ada56baa24b566e306af75768b90ed08b55ca",
+      "merged": true,
+      "message": "Pull Request successfully merged",
+      "parents": [
+        "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
+        "ce35b775df90c49ab40ec98e1b3407b45c721c6d"
+      ],
+      "tree": "c58f1932d8a5f1a158d7f8776681e7debc3f2954"
+    },
+    "publication_baseline": {
+      "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
+      "state": "published",
+      "branch": "trunk",
+      "run_id": 37696923958,
+      "status": "completed",
+      "conclusion": "success",
+      "release_id": 406222389,
+      "tag": "v0.22.16",
+      "url": "https://github.com/alecerf/mynou/releases/tag/v0.22.16",
+      "published_at": "2026-10-07T22:38:42Z",
+      "immutable": true,
+      "assets": [
+        {
+          "id": 620005087,
+          "name": "mynou-v0.22.16-linux-amd64-image.tar.gz",
+          "size": 2354546,
+          "digest": "sha256:a034a8ff4cd578f7b1df0f4607c1dbb260237a90c1109b82a84187b0479dd883"
+        },
+        {
+          "id": 620005088,
+          "name": "mynou-v0.22.16-linux-amd64-image.tar.gz.sha256",
+          "size": 106,
+          "digest": "sha256:e6b352366028188bb6f878aaabb64e6f5bb2cddf5a93c464206cd95e97c879ce"
+        },
+        {
+          "id": 620005091,
+          "name": "mynou-v0.22.16-linux-x86_64",
+          "size": 4887392,
+          "digest": "sha256:0d1aec512ab3dcff5f80e59e5fdd82e835f2af54028c73dda80579089f08fd33"
+        },
+        {
+          "id": 620005089,
+          "name": "mynou-v0.22.16-linux-x86_64.sha256",
+          "size": 94,
+          "digest": "sha256:59876c7d79775cfc469b181e932c63e3dcbd1533ca8435f7fd75b8ad5fbc26e6"
+        },
+        {
+          "id": 620005118,
+          "name": "mynou-v0.22.16-macos-arm64",
+          "size": 3729120,
+          "digest": "sha256:753bb7d376ea32f5e1cbdf833c88ce0c921015a2e99a26c07e61170ad5563b7c"
+        },
+        {
+          "id": 620005114,
+          "name": "mynou-v0.22.16-macos-arm64.sha256",
+          "size": 93,
+          "digest": "sha256:831d8d9bdf5e3be3fd8f8b52b48f0d8e590617597e100a0e986e61e6b8a3d1c2"
+        },
+        {
+          "id": 620005116,
+          "name": "mynou-v0.22.16-macos-x86_64",
+          "size": 4504360,
+          "digest": "sha256:d53154814e9ff4fbda714b68c79035a7f8461cbe4d5f693bff5b5ddb9f01d3eb"
+        },
+        {
+          "id": 620005121,
+          "name": "mynou-v0.22.16-macos-x86_64.sha256",
+          "size": 94,
+          "digest": "sha256:faa5e586b23deb3f7bc4dfd3777324d8f679f2e9257f3627d6473eed0cf3740d"
+        },
+        {
+          "id": 620005130,
+          "name": "mynou-v0.22.16-source.zip",
+          "size": 9422155,
+          "digest": "sha256:e1ceed53552fab2b5ed1dab43071aade2184b359a5434752069a45672190dd10"
+        },
+        {
+          "id": 620005139,
+          "name": "mynou-v0.22.16-source.zip.sha256",
+          "size": 92,
+          "digest": "sha256:664daed4c14c971e85b04eac7039e55985a4ab6803621597cbd39587d5c4588f"
+        },
+        {
+          "id": 620005090,
+          "name": "SHA256SUMS",
+          "size": 479,
+          "digest": "sha256:59aae05f00685466910825ad5d56f326eb279b60e0b81d63e00fae6ae47c73da"
+        }
+      ],
+      "rust_tests": 864,
+      "rust_failures": 0,
+      "rust_seconds": 100.579,
+      "scheduler_tests": 4,
+      "organization_tests": 53,
+      "previous_release_id": 406150016,
+      "previous_assets_unchanged": true,
+      "jobs": [
+        {
+          "id": 113050826415,
+          "name": "Build x86_64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113050826731,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113050826744,
+          "name": "validate",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113050826749,
+          "name": "Build x86_64-unknown-linux-musl",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113050826816,
+          "name": "Build aarch64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113052416643,
+          "name": "package",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113052605054,
+          "name": "release",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    "cleanup": {
+      "issue": 17,
+      "pr": 20,
+      "issue_state": "closed",
+      "state_reason": "completed",
+      "closed_at": "2026-10-07T22:33:21Z",
+      "merged_at": "2026-10-07T22:33:19Z",
+      "merged_branch": "work/macos-builds",
+      "branch_absent": true,
+      "branch_ref_response": 404,
+      "open_prs": 0,
+      "native_blocked_by": [],
+      "native_blocking": [],
+      "manual_branch_deletion": false
+    },
     "publication": {
       "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
       "state": "ci-passed",
-      "at": "2026-10-07T22:38:57Z",
       "run_id": 37696923958,
       "status": "completed",
-      "conclusion": "success"
+      "conclusion": "success",
+      "release_observed": true,
+      "release_id": 406222389,
+      "tag": "v0.22.16",
+      "immutable": true,
+      "asset_count": 11
     }
   },
   "attempts": {}
