@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 183,
+  "generation": 184,
   "lease": {
     "id": "2d28c84f-bf7d-4e21-b940-43b129c6d1f6",
     "worker": "codex-cadence-quality",
     "role": "quality",
     "issue": 11,
     "acquired_at": "2026-10-07T16:02:47Z",
-    "heartbeat_at": "2026-10-07T16:12:00Z",
-    "expires_at": "2026-10-07T16:57:00Z",
+    "heartbeat_at": "2026-10-07T16:13:46Z",
+    "expires_at": "2026-10-07T16:58:46Z",
     "branch": "work/engineering-cadence",
     "commit": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
     "pr": 12
   },
   "checkpoint": {
-    "at": "2026-10-07T16:12:00Z",
+    "at": "2026-10-07T16:13:46Z",
     "issue": 11,
     "role": "quality",
     "branch": "work/engineering-cadence",
     "commit": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
     "pr": 12,
-    "summary": "Quality implemented cadence Issue #11 as draft PR #12 at work/engineering-cadence:056487dc0c4d8ffe04dce1b48153c2e29403ad4a, base 6085368588c8077af53d15bc4f07d752e670e445. Seven original paths encode one 40-minute deadline, serial ready phase chaining, final five-minute handoff reserve, hourly mechanical recovery/daily health, canonical worker prompt and positive CI budget guard. Concurrency/recovery/security/QA/secret invariants remain. Native PR CI 37649725943 is completed/success; no local validation, final Security/QA or task prompt update. Recovered v0.22.13 publication: native release 405936360/tag 6085368588c8077af53d15bc4f07d752e670e445, seven bot assets, all five default CI 37648617664 jobs successful, 846 Rust tests/64 harnesses/0 failures/104.057s. Native Issue #9 proof comment 6041888395; merged-branch cleanup remains.",
-    "next_action": "Finish guarded cleanup of exact merged work/par2-multifile-recovery head bfdff54f096150968ae725fa19d89e356ed24417. Checkpoint/release; acquire separate Security for #11 / PR #12 at head 056487dc0c4d8ffe04dce1b48153c2e29403ad4a / base 6085368588c8077af53d15bc4f07d752e670e445; review all seven paths and actual CI. Release/reacquire independent QA after green required jobs. Keep draft until satisfactory records, then require all objective gates before merge. Reconcile existing hourly task 6ac54c387af0819184713674c48b3845 using merged engineering/worker-prompt.md, retaining cadence/timezone and persisting actual response. No duplicate tasks, unrelated product work or published asset retagging.",
+    "summary": "Quality cadence implementation is complete on draft PR #12 / Issue #11 at work/engineering-cadence:056487dc0c4d8ffe04dce1b48153c2e29403ad4a, base 6085368588c8077af53d15bc4f07d752e670e445. Seven original changed paths implement the accepted bounded 40-minute serial phase chaining, hourly mechanical fallback/daily branch health and versioned task instruction. Native CI 37649725943 is actually completed/successful; no local checks, final Security/QA or live task prompt change. Previous v0.22.13 release 405936360/tag 6085368588c8077af53d15bc4f07d752e670e445 was verified with seven immutable bot assets and all five default CI 37648617664 jobs green. Guarded native cleanup found the exact merged work/par2-multifile-recovery branch already absent; original source remains preserved in merged PR #10/history. Issue #9 is closed/Done and #11 native prerequisite complete.",
+    "next_action": "Acquire separate Security for #11 / PR #12 at exact head 056487dc0c4d8ffe04dce1b48153c2e29403ad4a and base 6085368588c8077af53d15bc4f07d752e670e445. Inspect all seven native changed paths, privilege/lease/recovery/truthful review invariants and actual CI logs. Checkpoint/record native Security then release/reacquire independent QA. Keep draft until records; require all gates before merge. After merge reconcile the single existing hourly task from engineering/worker-prompt.md, preserving ID/cadence/timezone and actual response; recover an interrupted update even if Issue #11 closes.",
     "previous_publication": {
       "commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
       "state": "ci-passed",
@@ -43,7 +43,7 @@
       "head": "bfdff54f096150968ae725fa19d89e356ed24417",
       "merge_commit": "6085368588c8077af53d15bc4f07d752e670e445",
       "merged_at": "2026-10-07T16:00:34Z",
-      "branch_cleanup": "pending",
+      "branch_cleanup": "native guarded cleanup: already absent",
       "reviews": {
         "security": {
           "review_id": 5444603361,
