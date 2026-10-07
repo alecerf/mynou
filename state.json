@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 135,
+  "generation": 136,
   "lease": {
     "id": "5480b69f-1ca0-4f52-9898-ac820de8b27d",
     "worker": "codex-par2-final-qa",
     "role": "qa",
     "issue": 6,
     "acquired_at": "2026-10-07T11:49:01Z",
-    "heartbeat_at": "2026-10-07T11:49:01Z",
-    "expires_at": "2026-10-07T12:34:01Z",
+    "heartbeat_at": "2026-10-07T11:52:09Z",
+    "expires_at": "2026-10-07T12:37:09Z",
     "branch": "work/par2-recovery",
     "commit": "53b4f30982b5297439d6baec751731b295cfd02a",
     "pr": 8
   },
   "checkpoint": {
-    "at": "2026-10-07T11:48:20Z",
+    "at": "2026-10-07T11:52:09Z",
     "issue": 6,
-    "role": "security",
+    "role": "qa",
     "branch": "work/par2-recovery",
     "commit": "53b4f30982b5297439d6baec751731b295cfd02a",
     "pr": 8,
-    "summary": "Final Security review5441799612 COMMENT passed at native53b4f30982b5297439d6baec751731b295cfd02a/base9d506f2767033fb4a71c586f71f5d3da83dcacb5, PR8/Issue6/work/par2-recovery. Actual full15-path diff, acceptance, parser joins, identity/bounds/cancellation/private output, independent fixtures and all manifests/docs reviewed; no blocking findings. Historical scoped Security proof checkpoint24c72b73cff34edb57ba74d5eb0128ce9307d51a remains in control ancestry. Exact-head MynouCI37615898725 SUCCESS: validate112774018298 (838 Rust/64harnesses/0failed/98.326s,formats0.370s,GF160.416s,4scheduler/53organization), GNU112774018464, musl112774018716, package112775087168; release112775289416 skipped. No local validation/formal self-approval/manual publication. Proposed0.22.12 source stable; final QA not performed, keep draft.",
-    "next_action": "Release Security and acquire logically distinct QA at same exact head/base/PR. Actually inspect complete native15-path diff and Issue6 acceptance, verify Security review5441799612/provenance and actual complete current-head CI logs/jobs. Pass only if no blocking findings and all required CI green; native COMMENT QA record needs live exact-head/base checkpoint. Then release for owned Master/delivery readiness, objective gate and CI-only immutable publication; no new product work until release/cleanup succeeds.",
+    "summary": "QA independently challenged complete native15-path diff at53b4f30982b5297439d6baec751731b295cfd02a/base9d506f2767033fb4a71c586f71f5d3da83dcacb5, Issue6/PR8/work/par2-recovery. Re-read acceptance, original field/matrix/recovery code, independent fixtures, all manifests/version/docs, actual full CI log and scoped Security review5441799612/proof24c72b73cff34edb57ba74d5eb0128ce9307d51a. Single-file additive API, row ordering/zero padding, unsupported/corrupt/mutated input rejection, chunk cancellation, output-only boundary and original regression baseline checked. All configured native objective jobs green; no unresolved review threads or blocking QA finding. Actual838 Rust/64harnesses/0failed/98.326s,4scheduler/53organization,GF160.416s/PAR2formats0.370s. No local validation/formal self-approval; release not yet published. Native QA COMMENT record will use this live exact-head scoped checkpoint.",
+    "next_action": "Submit truthful passed QA native COMMENT record using this checkpoint, all15reviewedpaths and actual CI/security evidence; release QA. Acquire Master for final concise PR body/readiness after both reviews and unchanged head/base. Ready-for-review triggers actual agent-qa-review gate; keep unmerged until every objective gate green. Release to trusted mechanical delivery for same-head merge/default CI dispatch/cleanup, then recover actual immutable0.22.12 publication before new roadmap. Stop cleanly around20minutes; preserve original source and previous immutable assets.",
     "publication": {
       "commit": "9d506f2767033fb4a71c586f71f5d3da83dcacb5",
       "state": "ci-passed",
@@ -36,9 +36,9 @@
       "run_id": 37615898725,
       "status": "completed",
       "conclusion": "success",
-      "organization_run_id": 37615898690,
-      "qa": "not-performed-draft",
+      "organization_run_id": 37616517392,
       "security_review_id": 5441799612,
+      "qa": "review-complete-record-pending",
       "release": "not-performed-pr"
     }
   },
