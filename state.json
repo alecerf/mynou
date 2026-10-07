@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 110,
-  "lease": null,
+  "generation": 111,
+  "lease": {
+    "id": "5861d9d0-3a4f-4c95-a0fe-2b19673f1e96",
+    "worker": "codex-par2-arithmetic",
+    "role": "rust",
+    "issue": 6,
+    "acquired_at": "2026-10-07T09:40:05Z",
+    "heartbeat_at": "2026-10-07T09:40:05Z",
+    "expires_at": "2026-10-07T10:25:05Z",
+    "branch": "work/par2-recovery",
+    "commit": "9d506f2767033fb4a71c586f71f5d3da83dcacb5",
+    "pr": null
+  },
   "checkpoint": {
     "at": "2026-10-07T09:39:50Z",
     "issue": 6,
