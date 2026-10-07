@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 124,
+  "generation": 125,
   "lease": {
     "id": "02309465-fca7-49cb-95bd-082f39121302",
     "worker": "codex-par2-release-recovery",
     "role": "master",
     "issue": 6,
     "acquired_at": "2026-10-07T11:35:40Z",
-    "heartbeat_at": "2026-10-07T11:35:40Z",
-    "expires_at": "2026-10-07T12:20:40Z",
+    "heartbeat_at": "2026-10-07T11:36:31Z",
+    "expires_at": "2026-10-07T12:21:31Z",
     "branch": "work/par2-recovery",
     "commit": "78c1039589c233f353b58fbec031b4d6b337e5c6",
     "pr": 8
   },
   "checkpoint": {
-    "at": "2026-10-07T10:50:51Z",
+    "at": "2026-10-07T11:36:31Z",
     "issue": 6,
-    "role": "rust",
+    "role": "master",
     "branch": "work/par2-recovery",
     "commit": "78c1039589c233f353b58fbec031b4d6b337e5c6",
     "pr": 8,
-    "summary": "Issue6 recovery implementation preserved in draftPR8/work/par2-recovery, native78c1039589c233f353b58fbec031b4d6b337e5c6/base9d506f2767033fb4a71c586f71f5d3da83dcacb5; original localc424090453faa84e606a99f2655fe65b03556959/treef85cb96b7b349ca0883d9867aab45600dddddd9d. Added bounded caller-owned Vec-only single-file PAR2 recovery: checked memory/work, consecutive parity rows, captured source/header/payload identity, zero-padded MD5/CRC and final full/first16KiB integrity, cancellation, no writes/input mutation. Six original recovery fixtures cover damage/multiple erasures/truncation/missing/empty input, parity/limits/full-file errors, source mutations and interruption. Core nativecdf235fe3b6aec36372c0c452db00b27efdf973e CI37609361618 succeeded: validate112752816063 (834 Rust passed/0failed/100.928s), GNU112752816100, musl112752815755, package112753890149; release112754046430 skipped. Later b6 mutation-fixture CI37609466635/validate112754048818 failed formatting before tests, corrected exactly in current head. Current CI37609920355 in_progress; no current-head pass inferred. Engineering37609920348 completed success, logical QA unperformed/draft. Native Rust handoffs Issue6036346694/PR6036346937; Security boundary notes6036185966/6036186237 were analysis, not final review. Version0.22.11 remains; final Security/QA, version/acceptance and publication pending. No local validation or merge/release.",
-    "next_action": "Release Rust and stop this bounded slice. Fresh worker reads control ref/state first and exits quietly for valid lease. Recover same draftPR8/head78c1039589c233f353b58fbec031b4d6b337e5c6 and actual CI37609920355 before new work. Acquire one Rust lease, fix actual failures, finish bounded acceptance (maximum-erasure/chunk coverage if justified), version/docs0.22.12. Then release/reacquire distinct exact-head/base Security and QA roles and actually review the complete final diff, record truthful native review gates. Ready/merge only after every objective gate green; verify actual immutable CI-only0.22.12 publication and safe Issue/branch cleanup before next roadmap. Preserve original commits/one Issue/PR; capacity loss pauses, not fails. No local checks, duplicate work, concurrent workers or manual publication.",
+    "summary": "Recovered Issue6/draftPR8/head78c1039589c233f353b58fbec031b4d6b337e5c6/base9d506f2767033fb4a71c586f71f5d3da83dcacb5 on preserved work/par2-recovery. Actual Mynou CI37609920355 completed SUCCESS: validate112754634981, GNU112754635094, musl112754635137, package112755667877; release112755868434 skipped. Native prerequisite5 closed; no final reviews. Planned minimum sequence is Rust completion of documented bounds coverage and version/support0.22.12, then exact-head Security/QA after CI. No unrelated work, local validation or publication.",
+    "next_action": "Release Master, acquire Rust at same branch/head/PR, complete bounded acceptance and original regression fixtures/version/docs. Keep draft until actual final CI and separate full-diff exact-head/base Security/QA; then normal objective-gated CI-only delivery.",
     "publication": {
       "commit": "9d506f2767033fb4a71c586f71f5d3da83dcacb5",
       "state": "ci-passed",
@@ -34,20 +34,11 @@
     "ci": {
       "commit": "78c1039589c233f353b58fbec031b4d6b337e5c6",
       "run_id": 37609920355,
-      "status": "in_progress",
-      "conclusion": null,
+      "status": "completed",
+      "conclusion": "success",
       "organization_run_id": 37609920348,
       "qa": "not-performed-draft",
-      "release": "not-performed-pr",
-      "prior_verified": {
-        "commit": "cdf235fe3b6aec36372c0c452db00b27efdf973e",
-        "run_id": 37609361618,
-        "status": "completed",
-        "conclusion": "success",
-        "rust_passed": 834,
-        "rust_failed": 0,
-        "seconds": 100.928
-      }
+      "release": "not-performed-pr"
     }
   },
   "attempts": {}
