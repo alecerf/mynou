@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 276,
-  "lease": {
-    "id": "wake5-security-macos-plan-20261007T213002Z",
-    "worker": "codex-hourly-20261007T213002Z",
-    "role": "security",
-    "issue": 17,
-    "acquired_at": "2026-10-07T21:41:30Z",
-    "heartbeat_at": "2026-10-07T21:42:01Z",
-    "expires_at": "2026-10-07T22:27:01Z",
-    "branch": "trunk",
-    "commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
-    "pr": null
-  },
+  "generation": 277,
+  "lease": null,
   "checkpoint": {
     "issue": 17,
     "role": "security",
