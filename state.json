@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 79,
+  "generation": 80,
   "lease": {
     "id": "c4d4bcf7-8175-499a-8669-d076f572d2cd",
     "worker": "codex-ci-recovery",
     "role": "quality",
     "issue": 5,
     "acquired_at": "2026-10-07T07:28:18Z",
-    "heartbeat_at": "2026-10-07T07:38:35Z",
-    "expires_at": "2026-10-07T08:23:35Z",
+    "heartbeat_at": "2026-10-07T07:39:26Z",
+    "expires_at": "2026-10-07T08:24:26Z",
     "branch": "work/ci-release-recovery",
     "commit": "ac3ecd57f6eaf58a69c70781321731aa5345a61d",
     "pr": 7
   },
   "checkpoint": {
-    "at": "2026-10-07T07:38:35Z",
+    "at": "2026-10-07T07:39:26Z",
     "issue": 5,
     "role": "quality",
     "branch": "work/ci-release-recovery",
     "commit": "ac3ecd57f6eaf58a69c70781321731aa5345a61d",
     "pr": 7,
-    "summary": "Issue #5 implementation is durably pushed as original local c5efbe7dec01925cf2cc9b82c3232c853ca813e9 mapped to remote ac3ecd57f6eaf58a69c70781321731aa5345a61d, tree 2ca962418c07a27fa01e7e8ee4b4ce6460525e31, branch work/ci-release-recovery, linked PR #7 at base 57b15534158b0eb40d4f13450d51fdf33c7d81bb. Four infrastructure paths add explicit default CI dispatch/recovery after bot merges, exact-source/native-run fences, durable accepted/uncertain/failed evidence and visibility grace, least Actions write scope, original CI-only scenarios and recovery/scheduling docs. No local validation or product/release/source-after-review claim. CI and separate Security/QA remain pending; no merge is authorized until fresh objective gates pass.",
-    "next_action": "Read the exact PR #7 CI jobs/logs and fix actual reds through original commits. Once deterministic CI is green, checkpoint/release Quality; acquire a distinct exact-head/base Security lease and review all four complete native diffs and permission/failure paths. Then checkpoint/release and acquire a distinct QA lease for complete-diff acceptance review. After actual green QA gate, auto-deliver; inspect a real default-source CI wake under installed code and immutable v0.22.11, clean up and unblock #6. Stop this bounded slice after useful progress; source and next action are already remote."
+    "summary": "PR #7 implements Issue #5 on work/ci-release-recovery at remote ac3ecd57f6eaf58a69c70781321731aa5345a61d (original local c5efbe7dec01925cf2cc9b82c3232c853ca813e9; tree 2ca962418c07a27fa01e7e8ee4b4ce6460525e31), reviewed base to use 57b15534158b0eb40d4f13450d51fdf33c7d81bb. Four infrastructure paths, no product/version changes. Actual Engineering checks run 37588527330 organization job 112684206004 succeeded, exercising policy and original scenarios. Mynou CI 37588527243 has successful dependency, formatting, Clippy, scheduler and organization-policy steps; Rust test execution/build/package are still pending actual completion. agent-qa-review correctly waits for actual distinct reviews. No local checks or merge/publication claim. Implementation is ready for separate logical Security then QA, preserving exact source.",
+    "next_action": "Acquire separate Security at exact PR #7 head/base, inspect all four complete native patches and actual scenario logs, challenge trusted Actions-write scope, token suppression, branch-ref races, uncertain responses, lease/CAS fences and immutable publication. Core CI may finish during review; never fabricate its outcome. Persist scoped Security findings/review, release, then acquire distinct QA for complete acceptance/diff and actual CI evidence. Fix findings through Quality before any review pass. Stop this bounded slice with exact remote progress and recoverable next action if time remains insufficient."
   },
   "attempts": {}
 }
