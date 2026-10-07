@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 258,
+  "generation": 259,
   "lease": {
     "id": "wake4-qa-20261007T203225Z",
     "worker": "codex-hourly-20261007T203225Z",
     "role": "qa",
     "issue": 15,
     "acquired_at": "2026-10-07T20:33:49Z",
-    "heartbeat_at": "2026-10-07T20:37:27Z",
-    "expires_at": "2026-10-07T21:22:27Z",
+    "heartbeat_at": "2026-10-07T20:39:19Z",
+    "expires_at": "2026-10-07T21:24:19Z",
     "branch": "work/par2-recovery-workspace",
     "commit": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
     "pr": 16
   },
   "checkpoint": {
-    "at": "2026-10-07T20:37:27Z",
+    "at": "2026-10-07T20:39:19Z",
     "issue": 15,
     "role": "qa",
     "branch": "work/par2-recovery-workspace",
     "commit": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
     "pr": 16,
-    "summary": "Independent logical QA read every actual changed path in PR #16 at exact head36ac55c4556b06d696be86ee8d7d4ddf7cbd418e/base7910156c6cce0f74a9ab530b289c3734750bc994, Issue #15 acceptance, prior findings, reused private file/frame and verification bounds, actual CI logs and Security provenance. New private File-ID staging, full read-only integrity on same owner/source/policy reopen, locking, bounded working allocations, publication semantics and explicit no-admission/platform/race limits are coherent. All four required CI jobs passed:864 Rust tests/64 harnesses/0failed/96.800s,4 scheduler and53 organization checks; container/binary/source checksums passed. Security5447677084 current-head/base COMMENT is trusted, separately leased, within lifetime and control ancestor. No unresolved threads or blocking QA findings. Actual native QA record is next, not yet submitted.",
-    "next_action": "Submit current-head/base native QA COMMENT anchored to this distinct QA checkpoint, then checkpoint/release. Master can ready PR and recover the actual objective QA gate; exact-head merge only after every gate is green. Actions alone publishes v0.22.15; preserve original branch/source and perform native cleanup.",
+    "summary": "Independent logical complete-diff QA passed in native COMMENT5448059625 at PR #16 head36ac55c4556b06d696be86ee8d7d4ddf7cbd418e/base7910156c6cce0f74a9ab530b289c3734750bc994, under separate QA lease/checkpoint0e0f1ca84e2808475aa4310a2e98127221370770. All14 paths, Issue #15 acceptance, prior findings, Security5447677084 provenance/lifetime/ancestry, private filesystem/verification primitives and actual CI logs reviewed. Four required CI jobs and organization passed;864 Rust tests/64 harnesses/0failed plus4 scheduler/53 organization. No unresolved threads or blocking findings. Same GitHub identity truthfully uses COMMENT, not formal self-approval. QA merge gate remains pending while draft; v0.22.15 not yet merged/published.",
+    "next_action": "Master read fresh exact PR head/base and actual objective gates, mark PR ready after passed QA, wait for native agent-qa-review to become actually green. Only all-green current gates allow exact-head merge under delivery ownership; then recover default CI/publication and native Issue/dependency/branch cleanup.",
     "publication": {
       "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
       "state": "ci-passed",
@@ -231,12 +231,13 @@
       "rust_seconds": 96.8,
       "scheduler_tests": 4,
       "organization_tests": 53,
-      "qa_gate": "pending-native-QA",
-      "qa_review": "reviewed-awaiting-native-record",
+      "qa_gate": "pending-ready-PR",
+      "qa_review": "passed",
       "organization_run": 37679136558,
       "organization_job": 112990290502,
       "organization_conclusion": "success",
-      "native_run_conclusion": "success"
+      "native_run_conclusion": "success",
+      "qa_review_id": 5448059625
     },
     "wake": {
       "started_at": "2026-10-07T20:32:25Z",
@@ -244,7 +245,7 @@
       "checkpoint_reserve_at": "2026-10-07T21:07:25Z"
     },
     "qa_phase": {
-      "state": "reviewed-awaiting-native-record",
+      "state": "passed",
       "head": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
       "base": "7910156c6cce0f74a9ab530b289c3734750bc994",
       "reviewed_paths": [
@@ -263,7 +264,9 @@
         "src/usenet/par2_workspace.rs",
         "tests/par2_formats.rs"
       ],
-      "lease_id": "wake4-qa-20261007T203225Z"
+      "lease_id": "wake4-qa-20261007T203225Z",
+      "lease_checkpoint": "0e0f1ca84e2808475aa4310a2e98127221370770",
+      "native_review_id": 5448059625
     }
   },
   "attempts": {}
