@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 156,
-  "lease": {
-    "id": "29feda64-139c-43ab-ad0a-7d6754b1b146",
-    "worker": "codex-next-roadmap-triage",
-    "role": "triage",
-    "issue": 6,
-    "acquired_at": "2026-10-07T12:43:16Z",
-    "heartbeat_at": "2026-10-07T12:45:25Z",
-    "expires_at": "2026-10-07T13:30:25Z",
-    "branch": "trunk",
-    "commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
-    "pr": 8
-  },
+  "generation": 157,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-07T12:45:25Z",
     "issue": 6,
