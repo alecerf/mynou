@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 337,
+  "generation": 338,
   "lease": {
     "id": "wake7-quality-registry-implementation-20261007T232627Z",
     "worker": "codex-hourly-20261007T232627Z",
     "role": "quality",
     "issue": 18,
     "acquired_at": "2026-10-07T23:32:16Z",
-    "heartbeat_at": "2026-10-07T23:41:12Z",
-    "expires_at": "2026-10-08T00:26:12Z",
+    "heartbeat_at": "2026-10-07T23:41:41Z",
+    "expires_at": "2026-10-08T00:26:41Z",
     "branch": "work/registry-releases",
     "commit": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
-    "pr": null
+    "pr": 21
   },
   "checkpoint": {
     "issue": 18,
     "role": "quality",
     "branch": "work/registry-releases",
     "commit": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
-    "pr": null,
-    "at": "2026-10-07T23:41:12Z",
-    "summary": "Original Issue18 implementation is preserved on work/registry-releases ata7c6b8d2fda11c99382508f9bd7d1c3abc464345, tree8092f713a3d3dcd5cb6bb2ff5d7939689452a02b, parent8a0ada56. All19 edited paths and retired ZIP packager committed through Git Data API; exact expected-parent non-force source ref advanced. No local validation or package publication; CI and separate Security/QA remain required.",
-    "next_action": "Open one linked draft PR with actual pending verification, then release Quality and review complete real diff under exact-head/base Security lease.",
+    "pr": 21,
+    "at": "2026-10-07T23:41:41Z",
+    "summary": "Quality committed original Issue18 implementationa7c6b8d2fda11c99382508f9bd7d1c3abc464345 on work/registry-releases and opened draft PR21 linked to18. GitHub reports20 changed files/567 additions/552 removals. Actual CI is not yet inspected; no local verification or registry/release publication is claimed. All prior immutable v0.22.16 proof preserved.",
+    "next_action": "Release Quality. Acquire separate Security at exact PR21 head a7c6b8d2fda11c99382508f9bd7d1c3abc464345/base8a0ada56 and inspect complete actual diff, trust boundaries and tests. Then independent QA/actual Actions recovery before delivery.",
     "publication_baseline": {
       "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
       "state": "published",
