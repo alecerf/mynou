@@ -167,7 +167,9 @@ impl Set {
                     || inputs[..index].iter().any(|other| other.id == input.id)
             })
         {
-            return Err("PAR2 verification requires exactly one input per recoverable File ID".into());
+            return Err(
+                "PAR2 verification requires exactly one input per recoverable File ID".into(),
+            );
         }
         for file in &files {
             let input = inputs.iter().find(|input| input.id == file.id).unwrap();
@@ -248,7 +250,9 @@ fn same(before: &Metadata, after: &Metadata) -> bool {
 
 fn metadata(path: &Path) -> Result<Option<Metadata>> {
     match fs::symlink_metadata(path) {
-        Ok(m) if m.file_type().is_symlink() => Err("PAR2 verification rejects symbolic links".into()),
+        Ok(m) if m.file_type().is_symlink() => {
+            Err("PAR2 verification rejects symbolic links".into())
+        }
         Ok(m) => Ok(Some(m)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(_) => Err("PAR2 verification cannot inspect selected path".into()),
@@ -294,7 +298,10 @@ fn open(path: &Path, captured: &Metadata) -> Result<File> {
         .read(true)
         .open(path)
         .map_err(|_| "PAR2 verification cannot open selected regular file")?;
-    if !same(captured, &file.metadata().map_err(|_| "PAR2 metadata failed")?) {
+    if !same(
+        captured,
+        &file.metadata().map_err(|_| "PAR2 metadata failed")?,
+    ) {
         return Err("PAR2 verification opened identity changed".into());
     }
     Ok(file)
@@ -356,8 +363,7 @@ pub fn verify_directory_cancellable(
         .sum();
     // At most ten path chains, each bounded to 128 components / 8 KiB paths,
     // plus metadata/report/reread overhead. Caller buffers are internal here.
-    if protected_bytes + u64::from(set.slice_bytes) + (12 << 20)
-        > limits.recovery.max_working_bytes
+    if protected_bytes + u64::from(set.slice_bytes) + (12 << 20) > limits.recovery.max_working_bytes
     {
         return Err("PAR2 directory verification exceeds its working-memory budget".into());
     }
@@ -409,7 +415,9 @@ pub fn verify_directory_cancellable(
         if let Some(reader) = input {
             if !same(
                 captured[0].metadata.as_ref().unwrap(),
-                &reader.metadata().map_err(|_| "PAR2 protected metadata failed")?,
+                &reader
+                    .metadata()
+                    .map_err(|_| "PAR2 protected metadata failed")?,
             ) {
                 return Err("PAR2 protected file changed".into());
             }

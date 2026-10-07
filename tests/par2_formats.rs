@@ -1242,36 +1242,57 @@ fn cli_input_symbolic_links_are_rejected_without_writes() {
 
 #[test]
 fn verification_reports_main_order_global_damage_without_using_parity() {
-    let bytes = Fixture::files(&[("first.bin", b"abcde"), ("second.bin", b"123456789")], 2, 4)
-        .bytes();
+    let bytes = Fixture::files(
+        &[("first.bin", b"abcde"), ("second.bin", b"123456789")],
+        2,
+        4,
+    )
+    .bytes();
     let set = read(&bytes).unwrap();
     let inputs = [
         RecoveryInput::new(*set.files()[1].id(), b"1234XXXX9"),
         RecoveryInput::new(*set.files()[0].id(), b"abcde"),
     ];
     let report = set
-        .verify_files(&mut Cursor::new(&bytes), &inputs, MultiRecoveryLimits::default())
+        .verify_files(
+            &mut Cursor::new(&bytes),
+            &inputs,
+            MultiRecoveryLimits::default(),
+        )
         .unwrap();
     assert!(!report.content_verified());
     assert!(report.files()[0].content_verified());
     assert_eq!(report.files()[1].damaged_slices(), &[(1, 3)]);
     assert_eq!(report.files()[0].id(), set.files()[0].id());
-    for key in ["repair_supported", "parity_verified", "ownership_verified", "snapshot_guaranteed"] {
+    for key in [
+        "repair_supported",
+        "parity_verified",
+        "ownership_verified",
+        "snapshot_guaranteed",
+    ] {
         assert_eq!(report.to_json().get(key), Some(&Value::Bool(false)));
     }
 }
 
 #[test]
 fn verification_distinguishes_truncated_slices_and_all_missing_content() {
-    let bytes = Fixture::files(&[("first.bin", b"abcdefgh"), ("second.bin", b"12345")], 2, 4)
-        .bytes();
+    let bytes = Fixture::files(
+        &[("first.bin", b"abcdefgh"), ("second.bin", b"12345")],
+        2,
+        4,
+    )
+    .bytes();
     let set = read(&bytes).unwrap();
     let inputs = [
         RecoveryInput::new(*set.files()[0].id(), b"abcde"),
         RecoveryInput::new(*set.files()[1].id(), b""),
     ];
     let report = set
-        .verify_files(&mut Cursor::new(&bytes), &inputs, MultiRecoveryLimits::default())
+        .verify_files(
+            &mut Cursor::new(&bytes),
+            &inputs,
+            MultiRecoveryLimits::default(),
+        )
         .unwrap();
     assert_eq!(report.files()[0].damaged_slices(), &[(1, 1)]);
     assert_eq!(report.files()[1].damaged_slices(), &[(0, 2), (1, 3)]);
@@ -1281,20 +1302,35 @@ fn verification_distinguishes_truncated_slices_and_all_missing_content() {
 
 #[test]
 fn verification_handles_empty_and_nonrecoverable_descriptions() {
-    let bytes = Fixture::files(&[("empty.bin", b""), ("data.bin", b"abcd"), ("note.txt", b"x")], 2, 4)
-        .bytes();
+    let bytes = Fixture::files(
+        &[
+            ("empty.bin", b""),
+            ("data.bin", b"abcd"),
+            ("note.txt", b"x"),
+        ],
+        2,
+        4,
+    )
+    .bytes();
     let set = read(&bytes).unwrap();
     let inputs = [
         RecoveryInput::new(*set.files()[1].id(), b"abcd"),
         RecoveryInput::new(*set.files()[0].id(), b""),
     ];
     let report = set
-        .verify_files(&mut Cursor::new(&bytes), &inputs, MultiRecoveryLimits::default())
+        .verify_files(
+            &mut Cursor::new(&bytes),
+            &inputs,
+            MultiRecoveryLimits::default(),
+        )
         .unwrap();
     assert!(report.content_verified());
     assert_eq!(report.files().len(), 2);
     assert!(report.files()[0].damaged_slices().is_empty());
-    assert_eq!(report.files()[0].to_json().get("present"), Some(&Value::Null));
+    assert_eq!(
+        report.files()[0].to_json().get("present"),
+        Some(&Value::Null)
+    );
 }
 
 #[test]
@@ -1306,12 +1342,22 @@ fn verification_never_hides_whole_file_disagreement_behind_good_slices() {
     let set = read(&bytes).unwrap();
     let inputs = [RecoveryInput::new(*set.files()[0].id(), &original)];
     let report = set
-        .verify_files(&mut Cursor::new(&bytes), &inputs, MultiRecoveryLimits::default())
+        .verify_files(
+            &mut Cursor::new(&bytes),
+            &inputs,
+            MultiRecoveryLimits::default(),
+        )
         .unwrap();
     assert!(report.files()[0].damaged_slices().is_empty());
     assert!(!report.content_verified());
-    assert_eq!(report.files()[0].to_json().get("md5_matches"), Some(&Value::Bool(false)));
-    assert_eq!(report.files()[0].to_json().get("first_16k_md5_matches"), Some(&Value::Bool(true)));
+    assert_eq!(
+        report.files()[0].to_json().get("md5_matches"),
+        Some(&Value::Bool(false))
+    );
+    assert_eq!(
+        report.files()[0].to_json().get("first_16k_md5_matches"),
+        Some(&Value::Bool(true))
+    );
 }
 
 #[test]
@@ -1320,22 +1366,49 @@ fn verification_rejects_bad_input_coverage_and_budgets_before_source_reads() {
     let set = read(&bytes).unwrap();
     let a = RecoveryInput::new(*set.files()[0].id(), b"abcdefgh");
     let b = RecoveryInput::new(*set.files()[1].id(), b"12345");
-    for inputs in [vec![], vec![a], vec![a, a], vec![a, RecoveryInput::new([0; 16], b"")],
-        vec![RecoveryInput::new(*set.files()[0].id(), b"too many bytes"), b]] {
-        assert!(set.verify_files(&mut Cursor::new([]), &inputs, MultiRecoveryLimits::default()).is_err());
+    for inputs in [
+        vec![],
+        vec![a],
+        vec![a, a],
+        vec![a, RecoveryInput::new([0; 16], b"")],
+        vec![
+            RecoveryInput::new(*set.files()[0].id(), b"too many bytes"),
+            b,
+        ],
+    ] {
+        assert!(
+            set.verify_files(
+                &mut Cursor::new([]),
+                &inputs,
+                MultiRecoveryLimits::default()
+            )
+            .is_err()
+        );
     }
     let mut limits = MultiRecoveryLimits::default();
     limits.max_files = 1;
-    assert!(set.verify_files(&mut Cursor::new([]), &[a, b], limits).is_err());
+    assert!(
+        set.verify_files(&mut Cursor::new([]), &[a, b], limits)
+            .is_err()
+    );
     limits = MultiRecoveryLimits::default();
     limits.recovery.max_file_bytes = 12;
-    assert!(set.verify_files(&mut Cursor::new([]), &[a, b], limits).is_err());
+    assert!(
+        set.verify_files(&mut Cursor::new([]), &[a, b], limits)
+            .is_err()
+    );
     limits = MultiRecoveryLimits::default();
     limits.recovery.max_slices = 3;
-    assert!(set.verify_files(&mut Cursor::new([]), &[a, b], limits).is_err());
+    assert!(
+        set.verify_files(&mut Cursor::new([]), &[a, b], limits)
+            .is_err()
+    );
     limits = MultiRecoveryLimits::default();
     limits.recovery.max_working_bytes = 4;
-    assert!(set.verify_files(&mut Cursor::new([]), &[a, b], limits).is_err());
+    assert!(
+        set.verify_files(&mut Cursor::new([]), &[a, b], limits)
+            .is_err()
+    );
 }
 
 #[test]
@@ -1346,7 +1419,9 @@ fn verification_can_diagnose_more_damage_than_the_recovery_erasure_budget() {
     let inputs = [RecoveryInput::new(*set.files()[0].id(), b"")];
     let mut limits = MultiRecoveryLimits::default();
     limits.recovery.max_missing_slices = 0;
-    let report = set.verify_files(&mut Cursor::new(&bytes), &inputs, limits).unwrap();
+    let report = set
+        .verify_files(&mut Cursor::new(&bytes), &inputs, limits)
+        .unwrap();
     assert_eq!(report.files()[0].damaged_slices().len(), 10);
     assert!(!report.content_verified());
 }
@@ -1358,12 +1433,40 @@ fn verification_rejects_changed_source_and_cancelled_reads() {
     let inputs = [RecoveryInput::new(*set.files()[0].id(), b"abcde")];
     let mut changed = bytes.clone();
     *changed.last_mut().unwrap() ^= 1;
-    assert!(set.verify_files(&mut Cursor::new(changed), &inputs, MultiRecoveryLimits::default()).is_err());
+    assert!(
+        set.verify_files(
+            &mut Cursor::new(changed),
+            &inputs,
+            MultiRecoveryLimits::default()
+        )
+        .is_err()
+    );
     let flag = AtomicBool::new(false);
-    assert!(set.verify_files_cancellable(&mut Cursor::new(&bytes), &inputs, MultiRecoveryLimits::default(), &flag).is_err());
+    assert!(
+        set.verify_files_cancellable(
+            &mut Cursor::new(&bytes),
+            &inputs,
+            MultiRecoveryLimits::default(),
+            &flag
+        )
+        .is_err()
+    );
     flag.store(true, Ordering::Release);
-    let mut interrupted = Interrupted { cursor: Cursor::new(bytes), flag: &flag, grow: false, endings: 0 };
-    assert!(set.verify_files_cancellable(&mut interrupted, &inputs, MultiRecoveryLimits::default(), &flag).is_err());
+    let mut interrupted = Interrupted {
+        cursor: Cursor::new(bytes),
+        flag: &flag,
+        grow: false,
+        endings: 0,
+    };
+    assert!(
+        set.verify_files_cancellable(
+            &mut interrupted,
+            &inputs,
+            MultiRecoveryLimits::default(),
+            &flag
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -1374,14 +1477,35 @@ fn directory_verification_preserves_inputs_and_reports_missing_empty_files() {
     fs::write(&source, &bytes).unwrap();
     fs::create_dir(directory.0.join("nested")).unwrap();
     fs::write(directory.0.join("nested/data.bin"), b"abcde").unwrap();
-    let report = verify_directory(&source, &directory.0, Limits::default(), MultiRecoveryLimits::default()).unwrap();
+    let report = verify_directory(
+        &source,
+        &directory.0,
+        Limits::default(),
+        MultiRecoveryLimits::default(),
+    )
+    .unwrap();
     assert!(!report.content_verified());
-    assert_eq!(report.files()[0].to_json().get("present"), Some(&Value::Bool(false)));
+    assert_eq!(
+        report.files()[0].to_json().get("present"),
+        Some(&Value::Bool(false))
+    );
     assert!(report.files()[0].damaged_slices().is_empty());
     fs::write(directory.0.join("empty.bin"), b"").unwrap();
-    assert!(verify_directory(&source, &directory.0, Limits::default(), MultiRecoveryLimits::default()).unwrap().content_verified());
+    assert!(
+        verify_directory(
+            &source,
+            &directory.0,
+            Limits::default(),
+            MultiRecoveryLimits::default()
+        )
+        .unwrap()
+        .content_verified()
+    );
     assert_eq!(fs::read(&source).unwrap(), bytes);
-    assert_eq!(fs::read(directory.0.join("nested/data.bin")).unwrap(), b"abcde");
+    assert_eq!(
+        fs::read(directory.0.join("nested/data.bin")).unwrap(),
+        b"abcde"
+    );
     assert!(!directory.0.join("mynou.json").exists());
     assert!(!directory.0.join("state").exists());
 }
@@ -1392,22 +1516,64 @@ fn directory_verification_does_not_create_missing_paths_and_rejects_types_and_bo
     let source = directory.0.join("set.par2");
     let bytes = Fixture::files(&[("missing/data.bin", b"abcde")], 1, 4).bytes();
     fs::write(&source, &bytes).unwrap();
-    let report = verify_directory(&source, &directory.0, Limits::default(), MultiRecoveryLimits::default()).unwrap();
+    let report = verify_directory(
+        &source,
+        &directory.0,
+        Limits::default(),
+        MultiRecoveryLimits::default(),
+    )
+    .unwrap();
     assert_eq!(report.files()[0].damaged_slices(), &[(0, 0), (1, 1)]);
     assert!(!directory.0.join("missing").exists());
-    assert!(verify_directory(&source, &directory.0.join("absent"), Limits::default(), MultiRecoveryLimits::default()).is_err());
+    assert!(
+        verify_directory(
+            &source,
+            &directory.0.join("absent"),
+            Limits::default(),
+            MultiRecoveryLimits::default()
+        )
+        .is_err()
+    );
     fs::create_dir(directory.0.join("missing")).unwrap();
     fs::create_dir(directory.0.join("missing/data.bin")).unwrap();
-    assert!(verify_directory(&source, &directory.0, Limits::default(), MultiRecoveryLimits::default()).is_err());
+    assert!(
+        verify_directory(
+            &source,
+            &directory.0,
+            Limits::default(),
+            MultiRecoveryLimits::default()
+        )
+        .is_err()
+    );
     fs::remove_dir(directory.0.join("missing/data.bin")).unwrap();
     fs::write(directory.0.join("missing/data.bin"), b"oversized").unwrap();
-    assert!(verify_directory(&source, &directory.0, Limits::default(), MultiRecoveryLimits::default()).is_err());
+    assert!(
+        verify_directory(
+            &source,
+            &directory.0,
+            Limits::default(),
+            MultiRecoveryLimits::default()
+        )
+        .is_err()
+    );
     let mut limits = MultiRecoveryLimits::default();
     limits.recovery.max_file_bytes = 4;
     assert!(verify_directory(&source, &directory.0, Limits::default(), limits).is_err());
-    assert!(verify_directory_cancellable(&source, &directory.0, Limits::default(), MultiRecoveryLimits::default(), &AtomicBool::new(false)).is_err());
+    assert!(
+        verify_directory_cancellable(
+            &source,
+            &directory.0,
+            Limits::default(),
+            MultiRecoveryLimits::default(),
+            &AtomicBool::new(false)
+        )
+        .is_err()
+    );
     assert_eq!(fs::read(&source).unwrap(), bytes);
-    assert_eq!(fs::read(directory.0.join("missing/data.bin")).unwrap(), b"oversized");
+    assert_eq!(
+        fs::read(directory.0.join("missing/data.bin")).unwrap(),
+        b"oversized"
+    );
 }
 
 #[cfg(unix)]
@@ -1416,20 +1582,56 @@ fn directory_verification_rejects_links_in_source_root_and_protected_ancestors()
     use std::os::unix::fs::symlink;
     let directory = Directory::new();
     let source = directory.0.join("set.par2");
-    fs::write(&source, Fixture::files(&[("nested/data.bin", b"abcde")], 1, 4).bytes()).unwrap();
+    fs::write(
+        &source,
+        Fixture::files(&[("nested/data.bin", b"abcde")], 1, 4).bytes(),
+    )
+    .unwrap();
     let actual = directory.0.join("actual");
     fs::create_dir(&actual).unwrap();
     fs::write(actual.join("data.bin"), b"abcde").unwrap();
     symlink(&actual, directory.0.join("nested")).unwrap();
-    assert!(verify_directory(&source, &directory.0, Limits::default(), MultiRecoveryLimits::default()).is_err());
+    assert!(
+        verify_directory(
+            &source,
+            &directory.0,
+            Limits::default(),
+            MultiRecoveryLimits::default()
+        )
+        .is_err()
+    );
     fs::remove_file(directory.0.join("nested")).unwrap();
     fs::create_dir(directory.0.join("nested")).unwrap();
     symlink(actual.join("data.bin"), directory.0.join("nested/data.bin")).unwrap();
-    assert!(verify_directory(&source, &directory.0, Limits::default(), MultiRecoveryLimits::default()).is_err());
+    assert!(
+        verify_directory(
+            &source,
+            &directory.0,
+            Limits::default(),
+            MultiRecoveryLimits::default()
+        )
+        .is_err()
+    );
     symlink(&source, directory.0.join("link.par2")).unwrap();
-    assert!(verify_directory(&directory.0.join("link.par2"), &directory.0, Limits::default(), MultiRecoveryLimits::default()).is_err());
+    assert!(
+        verify_directory(
+            &directory.0.join("link.par2"),
+            &directory.0,
+            Limits::default(),
+            MultiRecoveryLimits::default()
+        )
+        .is_err()
+    );
     symlink(&directory.0, directory.0.join("root-link")).unwrap();
-    assert!(verify_directory(&source, &directory.0.join("root-link"), Limits::default(), MultiRecoveryLimits::default()).is_err());
+    assert!(
+        verify_directory(
+            &source,
+            &directory.0.join("root-link"),
+            Limits::default(),
+            MultiRecoveryLimits::default()
+        )
+        .is_err()
+    );
     assert_eq!(fs::read(actual.join("data.bin")).unwrap(), b"abcde");
 }
 
@@ -1444,19 +1646,37 @@ fn cli_verification_outputs_diagnosis_and_fails_on_damage_without_initialization
         fs::write(&protected, input).unwrap();
         let output = Command::new(env!("CARGO_BIN_EXE_mynou"))
             .current_dir(&directory.0)
-            .args(["par2-verify", source.to_str().unwrap(), "--root", directory.0.to_str().unwrap()])
-            .output().unwrap();
-        assert_eq!(output.status.success(), clean, "{}", String::from_utf8_lossy(&output.stderr));
+            .args([
+                "par2-verify",
+                source.to_str().unwrap(),
+                "--root",
+                directory.0.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.success(),
+            clean,
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         let report = json::parse(std::str::from_utf8(&output.stdout).unwrap().trim()).unwrap();
         assert_eq!(report.get("content_verified"), Some(&Value::Bool(clean)));
         assert_eq!(fs::read(&protected).unwrap(), input);
         assert_eq!(fs::read(&source).unwrap(), bytes);
         assert_eq!(fs::read_dir(&directory.0).unwrap().count(), 2);
     }
-    for options in [vec![], vec!["--config", "forbidden.json"], vec!["--root", "missing"]] {
+    for options in [
+        vec![],
+        vec!["--config", "forbidden.json"],
+        vec!["--root", "missing"],
+    ] {
         let output = Command::new(env!("CARGO_BIN_EXE_mynou"))
             .current_dir(&directory.0)
-            .args(["par2-verify", source.to_str().unwrap()]).args(options).output().unwrap();
+            .args(["par2-verify", source.to_str().unwrap()])
+            .args(options)
+            .output()
+            .unwrap();
         assert!(!output.status.success());
     }
     assert!(!directory.0.join("forbidden.json").exists());
