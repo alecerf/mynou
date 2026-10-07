@@ -1,4 +1,4 @@
-# Project checkpoint — proposed Mynou 0.22.11
+# Project checkpoint — proposed Mynou 0.22.12
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -6,16 +6,23 @@ Go. The rewrite replaces SQLite, ffprobe, and the Go torrent engine. Data from
 previous versions stays separate and is not migrated implicitly.
 
 All project prose and diagnostics must be English. The active development policy
-prohibits local tests and lint. Make meaningful commits on work branches, use reviewed PRs, inspect
+prohibits local tests, lint, builds, binaries and validation. Make meaningful commits on work branches, use reviewed PRs, inspect
 GitHub Actions, and fix failures until required checks pass. See
 [the organization resume runbook](../engineering/README.md). GitHub Actions
 alone creates release tags and publishes artifacts from validated commits.
 
 ## Implemented scope
 
-Current PAR2 work is tracked in Issue #2 and the durable GitHub lease/PR.
-Original MD5 and bounded read-only core inspection now have synthetic fixture
-coverage; actual results require CI, Security and QA. See [PAR2 scope](par2.md).
+Current PAR2 recovery is tracked in [Issue #6](https://github.com/alecerf/mynou/issues/6),
+[PR #8](https://github.com/alecerf/mynou/pull/8) and the durable GitHub control lease.
+The proposed 0.22.12 source adds original GF(2^16) arithmetic and bounded
+single-file recovery into verified caller-owned bytes, without implicit file
+writes or library admission. Source versions do not establish release publication.
+Use native Issue/PR/Actions evidence for exact-head CI, final separate Security/QA
+and delivery; this document is product context, not live execution state.
+See [PAR2 scope](par2.md) and the [release contract](releases/0.22.12.md).
+Read-only PAR2 core inspection from Issue #2 / PR #4 was published as v0.22.11
+at `57b15534158b0eb40d4f13450d51fdf33c7d81bb`.
 Engineering bootstrap #1 / PR #3 is complete on trunk at
 `afd6fa65f1189d181d8ce70161367309480a0730`.
 

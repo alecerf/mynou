@@ -202,6 +202,47 @@ fn recovery_returns_verified_bytes_for_damage_truncation_and_missing_input() {
 }
 
 #[test]
+fn recovery_supports_eight_missing_slices_and_rejects_a_tighter_erasure_limit() {
+    let original: [u8; 32] = std::array::from_fn(|index| index as u8);
+    let source = Fixture::recovery(&original, 4, 8).bytes();
+    let set = read(&source).unwrap();
+    let limits = RecoveryLimits::default();
+    assert_eq!(
+        set.recover_single(&mut Cursor::new(&source), b"", limits)
+            .unwrap(),
+        original
+    );
+    assert!(
+        set.recover_single(
+            &mut Cursor::new(&source),
+            b"",
+            RecoveryLimits {
+                max_missing_slices: 7,
+                ..limits
+            }
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn recovery_checks_large_slice_chunks_and_zero_padding_with_an_independent_oracle() {
+    let original: Vec<u8> = (0..65_547).map(|index| (index % 251) as u8).collect();
+    let source = Fixture::recovery(&original, 65_540, 2).bytes();
+    let set = read(&source).unwrap();
+    let mut damaged = original.clone();
+    damaged[65_536] ^= 0xa5;
+    *damaged.last_mut().unwrap() ^= 0x5a;
+    let captured = damaged.clone();
+    assert_eq!(
+        set.recover_single(&mut Cursor::new(&source), &damaged, RecoveryLimits::default())
+            .unwrap(),
+        original
+    );
+    assert_eq!(damaged, captured);
+}
+
+#[test]
 fn recovery_requires_consecutive_rows_and_rejects_incorrect_parity() {
     let original = b"abcdefghijklmnopq";
     let mut fixture = Fixture::recovery(original, 8, 3);

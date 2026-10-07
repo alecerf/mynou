@@ -1,4 +1,4 @@
-# Native PAR2 inspection in 0.22.11
+# Native PAR2 inspection and bounded recovery
 
 `mynou par2-inspect FILE` reads one regular file containing a complete,
 contiguous PAR2 core packet set and prints its checked metadata as JSON. It
@@ -42,9 +42,8 @@ padding/identity, duplicates, paths, bounds, cancellation, streaming recovery
 payloads and read-only CLI behavior. Actual verification is recorded in the linked
 PR and GitHub Actions; this document does not claim unpublished test results.
 
-The next bounded increment is original GF(2^16) recovery with independently
-checked arithmetic and parity fixtures. Its arithmetic foundation is being
-developed in Issue #6: `par2::gf16` supplies original bounded multiplication,
+The 0.22.12 library increment adds original GF(2^16) recovery with independently
+checked arithmetic and parity fixtures. `par2::gf16` supplies bounded multiplication,
 inversion, powers, coefficient assignment and caller-owned scaled buffers.
 It follows the authors' [PAR2 2.0 Recovery Slice specification](https://parchive.sourceforge.net/docs/specifications/parity-volume-spec/article-spec.html),
 with polynomial 0x1100b and primitive input constants in Main/file/slice order.
@@ -58,7 +57,7 @@ does not recover or verify described files. Fixed specification constants and an
 independently authored polynomial long-division oracle run only in CI; no results
 are inferred.
 
-The draft library increment adds `Set::recover_single` and its cancellable
+The library adds `Set::recover_single` and its cancellable
 variant. They accept the captured PAR2 source and immutable caller-provided
 protected bytes, and return a caller-owned `Vec<u8>` only after verification.
 Short input represents a truncated prefix; empty input represents a missing
@@ -79,8 +78,24 @@ after return. Cancellation is checked between bounded synchronous read, hash
 and field-operation chunks, not within a blocking caller `Read`.
 
 No CLI repair, output path selection, filesystem write, overwrite, ownership
-journal or library admission is added. This remains a draft until the linked PR
-has actual CI evidence and final logically separate Security and QA reviews.
+journal or library admission is added. [Issue #6](https://github.com/alecerf/mynou/issues/6)
+and [PR #8](https://github.com/alecerf/mynou/pull/8) contain the authoritative
+CI, logically separate Security/QA review and publication evidence. A proposed
+version in source does not establish publication.
+
+Call the library with the same PAR2 source captured during inspection and the
+protected file bytes; successful recovery does not modify either input:
+
+```rust
+use mynou::par2::{Limits, RecoveryLimits, Set};
+use std::io::Cursor;
+
+fn recover_bytes(par2_bytes: &[u8], protected_bytes: &[u8]) -> mynou::Result<Vec<u8>> {
+    let mut source = Cursor::new(par2_bytes);
+    let captured = Set::read(&mut source, Limits::default())?;
+    captured.recover_single(&mut source, protected_bytes, RecoveryLimits::default())
+}
+```
 
 Ownership-bound multi-file recovery,
 volume merging and library admission require subsequent explicit work. Existing
