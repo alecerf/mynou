@@ -7,7 +7,7 @@ use library_support::Directory;
 use mynou::{
     crypto::{Md5, md5, sha256},
     json::{self, Value},
-    par2::{Limits, Set},
+    par2::{Limits, RecoveryLimits, Set},
 };
 use std::{
     fs,
@@ -57,6 +57,39 @@ struct Fixture {
 }
 
 impl Fixture {
+    fn recovery(data: &[u8], slice_bytes: usize, rows: u32) -> Self {
+        let mut fixture = Self::files(&[("Original.bin", data)], 1, slice_bytes);
+        fixture.packets.retain(|(kind, _)| *kind != RECOVERY);
+        // Published primitive constants; parity uses the independent polynomial
+        // long-division oracle below, never the production field implementation.
+        let constants = [2u16, 4, 16, 128, 256, 2048, 8192, 16384, 4107, 32856, 17132];
+        for exponent in 0..rows {
+            let mut parity = vec![0u8; slice_bytes];
+            for (index, slice) in data.chunks(slice_bytes).enumerate() {
+                let mut padded = slice.to_vec();
+                padded.resize(slice_bytes, 0);
+                let mut factor = 1;
+                for _ in 0..exponent {
+                    factor = reference_multiply(factor, constants[index]);
+                }
+                for (target, source) in parity
+                    .as_chunks_mut::<2>()
+                    .0
+                    .iter_mut()
+                    .zip(padded.as_chunks::<2>().0)
+                {
+                    *target = (u16::from_le_bytes(*target)
+                        ^ reference_multiply(u16::from_le_bytes(*source), factor))
+                    .to_le_bytes();
+                }
+            }
+            let mut body = exponent.to_le_bytes().to_vec();
+            body.extend_from_slice(&parity);
+            fixture.packets.push((RECOVERY, body));
+        }
+        fixture
+    }
+
     fn files(files: &[(&str, &[u8])], recoverable: u32, slice_bytes: usize) -> Self {
         let mut main = (slice_bytes as u64).to_le_bytes().to_vec();
         main.extend_from_slice(&recoverable.to_le_bytes());
@@ -109,6 +142,305 @@ impl Fixture {
 
 fn read(bytes: &[u8]) -> mynou::Result<Set> {
     Set::read(&mut Cursor::new(bytes), Limits::default())
+}
+
+fn reference_multiply(left: u16, right: u16) -> u16 {
+    let mut product = 0u32;
+    for bit in 0..16 {
+        if right & (1 << bit) != 0 {
+            product ^= u32::from(left) << bit;
+        }
+    }
+    for bit in (16..32).rev() {
+        if product & (1 << bit) != 0 {
+            product ^= 0x1_100b << (bit - 16);
+        }
+    }
+    product as u16
+}
+
+#[test]
+fn recovery_returns_verified_bytes_for_damage_truncation_and_missing_input() {
+    let original = b"Original parity, not third-party bytes!";
+    let fixture = Fixture::recovery(original, 8, 5);
+    let source = fixture.bytes();
+    let set = read(&source).unwrap();
+    let limits = RecoveryLimits::default();
+    assert_eq!(
+        set.recover_single(&mut Cursor::new(&source), original, limits)
+            .unwrap(),
+        original
+    );
+    for indexes in [&[0usize][..], &[1, 3][..], &[0, 2, 4][..]] {
+        let mut damaged = original.to_vec();
+        for index in indexes {
+            damaged[index * 8] ^= 0x5a;
+        }
+        let captured = damaged.clone();
+        assert_eq!(
+            set.recover_single(&mut Cursor::new(&source), &damaged, limits)
+                .unwrap(),
+            original
+        );
+        assert_eq!(damaged, captured);
+    }
+    for length in [0, 1, 7, 16, original.len() - 1] {
+        assert_eq!(
+            set.recover_single(&mut Cursor::new(&source), &original[..length], limits)
+                .unwrap(),
+            original
+        );
+    }
+    let empty = Fixture::recovery(b"", 4, 0).bytes();
+    assert!(
+        read(&empty)
+            .unwrap()
+            .recover_single(&mut Cursor::new(&empty), b"", limits)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn recovery_supports_eight_missing_slices_and_rejects_a_tighter_erasure_limit() {
+    let original: [u8; 32] = std::array::from_fn(|index| index as u8);
+    let source = Fixture::recovery(&original, 4, 8).bytes();
+    let set = read(&source).unwrap();
+    let limits = RecoveryLimits::default();
+    assert_eq!(
+        set.recover_single(&mut Cursor::new(&source), b"", limits)
+            .unwrap(),
+        original
+    );
+    assert!(
+        set.recover_single(
+            &mut Cursor::new(&source),
+            b"",
+            RecoveryLimits {
+                max_missing_slices: 7,
+                ..limits
+            }
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn recovery_checks_large_slice_chunks_and_zero_padding_with_an_independent_oracle() {
+    let original: Vec<u8> = (0..65_547).map(|index| (index % 251) as u8).collect();
+    let source = Fixture::recovery(&original, 65_540, 2).bytes();
+    let set = read(&source).unwrap();
+    let mut damaged = original.clone();
+    damaged[65_536] ^= 0xa5;
+    *damaged.last_mut().unwrap() ^= 0x5a;
+    let captured = damaged.clone();
+    assert_eq!(
+        set.recover_single(
+            &mut Cursor::new(&source),
+            &damaged,
+            RecoveryLimits::default()
+        )
+        .unwrap(),
+        original
+    );
+    assert_eq!(damaged, captured);
+}
+
+#[test]
+fn recovery_requires_consecutive_rows_and_rejects_incorrect_parity() {
+    let original = b"abcdefghijklmnopq";
+    let mut fixture = Fixture::recovery(original, 8, 3);
+    let limits = RecoveryLimits::default();
+    fixture
+        .packets
+        .retain(|(kind, body)| *kind != RECOVERY || body[..4] != 1u32.to_le_bytes());
+    let source = fixture.bytes();
+    assert!(
+        read(&source)
+            .unwrap()
+            .recover_single(&mut Cursor::new(&source), b"", limits)
+            .is_err()
+    );
+    let mut fixture = Fixture::recovery(original, 8, 3);
+    fixture.body_mut(RECOVERY)[4] ^= 1;
+    let source = fixture.bytes(); // Valid packet hashes, mathematically wrong parity.
+    assert!(
+        read(&source)
+            .unwrap()
+            .recover_single(&mut Cursor::new(&source), b"", limits)
+            .unwrap_err()
+            .contains("integrity")
+    );
+    let multiple = Fixture::files(&[("a", b"abcd"), ("b", b"efgh")], 2, 4).bytes();
+    assert!(
+        read(&multiple)
+            .unwrap()
+            .recover_single(&mut Cursor::new(&multiple), b"abcd", limits)
+            .is_err()
+    );
+}
+
+#[test]
+fn recovery_enforces_input_source_and_resource_boundaries() {
+    let original = b"abcdefghijklmnopq";
+    let fixture = Fixture::recovery(original, 8, 3);
+    let source = fixture.bytes();
+    let set = read(&source).unwrap();
+    let limits = RecoveryLimits::default();
+    let mut changed = source.clone();
+    *changed.last_mut().unwrap() ^= 1;
+    for bytes in [changed, source[..source.len() - 1].to_vec()] {
+        assert!(
+            set.recover_single(&mut Cursor::new(bytes), b"", limits)
+                .is_err()
+        );
+    }
+    for restricted in [
+        RecoveryLimits {
+            max_file_bytes: 16,
+            ..limits
+        },
+        RecoveryLimits {
+            max_slices: 2,
+            ..limits
+        },
+        RecoveryLimits {
+            max_missing_slices: 2,
+            ..limits
+        },
+        RecoveryLimits {
+            max_slice_bytes: 4,
+            ..limits
+        },
+        RecoveryLimits {
+            max_working_bytes: 1,
+            ..limits
+        },
+        RecoveryLimits {
+            max_field_operations: 1,
+            ..limits
+        },
+        RecoveryLimits {
+            max_missing_slices: 9,
+            ..limits
+        },
+    ] {
+        assert!(
+            set.recover_single(&mut Cursor::new(&source), b"", restricted)
+                .is_err()
+        );
+    }
+    assert!(
+        set.recover_single(&mut Cursor::new(&source), &[0; 18], limits)
+            .is_err()
+    );
+    let flag = AtomicBool::new(false);
+    let mut reader = Cursor::new(&source);
+    assert!(
+        set.recover_single_cancellable(&mut reader, b"", limits, &flag)
+            .is_err()
+    );
+    assert_eq!(reader.position(), 0);
+}
+
+#[test]
+fn recovery_checks_full_file_integrity_even_when_every_slice_matches() {
+    let original = vec![b'x'; 16_385];
+    let mut fixture = Fixture::recovery(&original, 4096, 0);
+    fixture.body_mut(DESCRIPTION)[16] ^= 1;
+    let source = fixture.bytes();
+    assert!(
+        read(&source)
+            .unwrap()
+            .recover_single(
+                &mut Cursor::new(&source),
+                &original,
+                RecoveryLimits::default()
+            )
+            .unwrap_err()
+            .contains("file integrity")
+    );
+}
+
+struct MutatedSource {
+    cursor: Cursor<Vec<u8>>,
+    mutate_at_start: Option<u64>,
+    mutate_at_end: u32,
+    endings: u32,
+    byte: usize,
+}
+impl Read for MutatedSource {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        self.cursor.read(bytes)
+    }
+}
+impl Seek for MutatedSource {
+    fn seek(&mut self, from: SeekFrom) -> io::Result<u64> {
+        if from == SeekFrom::End(0) {
+            self.endings += 1;
+        }
+        let change = self
+            .mutate_at_start
+            .is_some_and(|offset| from == SeekFrom::Start(offset))
+            || (from == SeekFrom::End(0) && self.endings == self.mutate_at_end);
+        if change {
+            self.cursor.get_mut()[self.byte] ^= 1;
+            self.mutate_at_start = None;
+        }
+        self.cursor.seek(from)
+    }
+}
+
+#[test]
+fn recovery_rejects_source_mutation_between_capture_hash_payload_and_return() {
+    let source = Fixture::recovery(b"abcdefghijklmnopq", 8, 3).bytes();
+    let set = read(&source).unwrap();
+    let offset = set.recovery()[0].data_offset() - 68;
+    for byte in [offset as usize + 16, offset as usize + 68] {
+        let mut reader = MutatedSource {
+            cursor: Cursor::new(source.clone()),
+            mutate_at_start: Some(offset),
+            mutate_at_end: 0,
+            endings: 0,
+            byte,
+        };
+        assert!(
+            set.recover_single(&mut reader, b"", RecoveryLimits::default())
+                .unwrap_err()
+                .contains("changed")
+        );
+    }
+    let mut reader = MutatedSource {
+        cursor: Cursor::new(source),
+        mutate_at_start: None,
+        mutate_at_end: 3, // Beginning of the final whole-source identity scan.
+        endings: 0,
+        byte: 80,
+    };
+    assert!(
+        set.recover_single(&mut reader, b"", RecoveryLimits::default())
+            .unwrap_err()
+            .contains("identity changed")
+    );
+}
+
+#[test]
+fn recovery_cancellation_and_source_growth_during_reads_return_no_output() {
+    let source = Fixture::recovery(b"abcdefghijklmnopq", 8, 3).bytes();
+    let set = read(&source).unwrap();
+    for grow in [false, true] {
+        let flag = AtomicBool::new(true);
+        let mut reader = Interrupted {
+            cursor: Cursor::new(source.clone()),
+            flag: &flag,
+            grow,
+            endings: 0,
+        };
+        assert!(
+            set.recover_single_cancellable(&mut reader, b"", RecoveryLimits::default(), &flag)
+                .is_err()
+        );
+    }
 }
 
 #[test]

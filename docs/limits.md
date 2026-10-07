@@ -369,3 +369,20 @@ Active v0.22.10 admits one stored RAR5 media entry from one NZB file after expli
 RAR descriptor 2 and journal 8, and keeps all native media/import/requester/Plex
 gates. It requires its own CI. Compressed RAR, PAR2 and multi-file acquisition
 remain separate stages. No implicit repair, cleanup or format fallback occurs.
+
+## Bounded PAR2 library recovery in 0.22.12
+
+The proposed [single-file API](par2.md) accepts exactly one described recoverable
+file in a captured complete core set. Hard limits are 16 MiB of protected content,
+256 input slices, eight damaged/missing slices, 1 MiB per slice, 32 MiB additional
+working buffers and 134,217,728 field operations. Smaller `RecoveryLimits` are
+supported; the captured Set and caller-owned inputs are outside the buffer budget.
+Missing slices require consecutive recovery exponents beginning at zero.
+
+Recovery verifies captured source length/SHA-256 before/after, each used recovery
+header/packet/payload, zero-padded slice MD5/CRC32, full-file MD5 and first-16-KiB
+MD5. Cancellation is checked between bounded synchronous chunks; a blocking
+caller Read cannot be interrupted. Changed/corrupt/unsupported input fails closed.
+Successful output is a caller-owned Vec, never an implicit filesystem write,
+overwrite, ownership journal or permission to admit media. Existing Usenet and
+library protections remain required for subsequent integration.

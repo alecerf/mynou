@@ -5,14 +5,23 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current proposed increment: 0.22.11
+## Current proposed increment: 0.22.12
 
-Original RFC 1321 compatibility MD5 and bounded PAR2 core inspection are
-implemented under Issue #2, with synthetic hostile-format and CLI fixtures.
-No repair, protected-content verification, volume merging or library admission
-is claimed. See [PAR2 support and bounds](par2.md). Actual CI, Security/QA and
-publication evidence remain in the linked PR and Actions. Follow with bounded
-GF(2^16) repair, then ownership-bound multi-file recovery.
+Original GF(2^16) arithmetic and bounded single-file recovery are implemented
+under [Issue #6](https://github.com/alecerf/mynou/issues/6) /
+[PR #8](https://github.com/alecerf/mynou/pull/8). The library returns fully
+verified caller-owned bytes within explicit limits. No implicit filesystem writes,
+volume merging or library admission are introduced. See [PAR2 support](par2.md)
+and [release scope](releases/0.22.12.md). Actual CI, separate Security/QA and
+publication evidence remain in the linked PR and Actions. Follow publication
+with ownership-bound multi-file recovery/admission.
+
+## Preceding published stage: 0.22.11
+
+Issue #2 / PR #4 delivered original compatibility MD5 and bounded read-only PAR2
+core inspection at `57b15534158b0eb40d4f13450d51fdf33c7d81bb`. It does not
+invoke repair or verify described file contents. Native Actions retain immutable
+release evidence; later infrastructure commits do not retag published assets.
 
 ## Published implementation: 0.22.10
 

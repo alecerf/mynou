@@ -1,4 +1,4 @@
-# Mynou 0.22.11 — Rust, standard library only
+# Mynou 0.22.12 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -132,7 +132,13 @@ and the existing private ownership/import/Plex gates.
 
 0.22.11 adds [native PAR2 inspection](docs/par2.md) through `par2-inspect FILE`: bounded
 core packets, verified metadata identity and read-only JSON reports. Content
-verification, repair, volume merging and library admission remain future work.
+verification and repair are not performed by this inspector.
+0.22.12 adds a bounded [single-file recovery library API](docs/par2.md): original
+GF(2^16) arithmetic, up to eight erased slices, immutable protected input and
+fully verified caller-owned output. No implicit file writes or library admission
+are introduced. Volume merging and ownership-bound multi-file recovery follow
+separately. See the [proposed release scope](docs/releases/0.22.12.md); publication
+requires actual CI and separate Security/QA reviews.
 Compressed RAR, multi-file packs and Usenet upgrades remain subsequent increments.
 
 ## Autonomous engineering
@@ -175,8 +181,8 @@ from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, o
 build the image from the source archive:
 
 ```sh
-docker load -i mynou-v0.22.11-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.22.11 .
+docker load -i mynou-v0.22.12-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.22.12 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d
