@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 85,
-  "lease": null,
+  "generation": 86,
+  "lease": {
+    "id": "3484e6cb-461a-4c98-8a00-04da578d7b79",
+    "worker": "codex-ci-recovery-qa",
+    "role": "qa",
+    "issue": 5,
+    "acquired_at": "2026-10-07T07:43:19Z",
+    "heartbeat_at": "2026-10-07T07:43:19Z",
+    "expires_at": "2026-10-07T08:28:19Z",
+    "branch": "work/ci-release-recovery",
+    "commit": "ac3ecd57f6eaf58a69c70781321731aa5345a61d",
+    "pr": 7
+  },
   "checkpoint": {
     "at": "2026-10-07T07:43:13Z",
     "issue": 5,
