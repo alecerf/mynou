@@ -1,15 +1,15 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 357,
+  "generation": 358,
   "lease": {
     "id": "wake7-quality-registry-cleanup-20261007T232627Z",
     "worker": "codex-hourly-20261007T232627Z",
     "role": "quality",
     "issue": 18,
     "acquired_at": "2026-10-07T23:49:33Z",
-    "heartbeat_at": "2026-10-07T23:50:41Z",
-    "expires_at": "2026-10-08T00:35:41Z",
+    "heartbeat_at": "2026-10-07T23:50:47Z",
+    "expires_at": "2026-10-08T00:35:47Z",
     "branch": "trunk",
     "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
     "pr": 21
@@ -20,9 +20,9 @@
     "branch": "trunk",
     "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
     "pr": 21,
-    "at": "2026-10-07T23:50:41Z",
-    "summary": "Quality verified actual PR21 merged at551e82d2 and Issue18 auto-closed/completed; source work/registry-releases automatically absent (GitHub404), no open PRs or native Issue18 dependencies remain. Useful source is preserved in exact merge parent/tree. Update managed status:done; default GHCR/release publication remains unverified.",
-    "next_action": "Finish native Issue18 completion labels and handoff, release Quality. Master recovers exact default551e82d2 CI/private package/digest/immutable v0.22.17 before any #19 work.",
+    "at": "2026-10-07T23:50:47Z",
+    "summary": "Quality post-merge cleanup complete for Issue18/PR21: closed/completed with status:done, native automatic work branch deletion freshly verified404, no open PRs/dependencies. Exact reviewed source/CI/Security/QA/gate proof preserved. No manual deletion, local check or package/release publication.",
+    "next_action": "Release Quality; Master must recover default CI at551e82d2, verify private GHCR/content digest and immutable v0.22.17 before unrelated backlog. Stop cleanly for real pending CI without polling.",
     "publication_baseline": {
       "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
       "state": "published",
