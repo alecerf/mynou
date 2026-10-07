@@ -1,15 +1,15 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 342,
+  "generation": 343,
   "lease": {
     "id": "wake7-security-registry-review-20261007T232627Z",
     "worker": "codex-hourly-20261007T232627Z",
     "role": "security",
     "issue": 18,
     "acquired_at": "2026-10-07T23:41:49Z",
-    "heartbeat_at": "2026-10-07T23:43:34Z",
-    "expires_at": "2026-10-08T00:28:34Z",
+    "heartbeat_at": "2026-10-07T23:43:38Z",
+    "expires_at": "2026-10-08T00:28:38Z",
     "branch": "work/registry-releases",
     "commit": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
     "pr": 21
@@ -20,9 +20,9 @@
     "branch": "work/registry-releases",
     "commit": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
     "pr": 21,
-    "at": "2026-10-07T23:43:34Z",
-    "summary": "Security completed actual20-path review for PR21 at a7c6b8d2/8a0ada56. No blocking findings: default-only private package token, fail-closed association/tag checks, exact image/digest/binary/demo proof and guarded installation retain trust. CI remains in progress; no runtime/publication success is inferred.",
-    "next_action": "Record exact-head/base native Security COMMENT with this held lease checkpoint. Release Security; acquire logically independent QA and verify complete diff/actual CI before acceptance.",
+    "at": "2026-10-07T23:43:38Z",
+    "summary": "Recorded actual complete-diff exact-head/base Security COMMENT for PR21 ata7c6b8d2fda11c99382508f9bd7d1c3abc464345. No blocking Security findings; native CI is still pending and private GHCR/default release is not claimed.",
+    "next_action": "Release Security; acquire independent QA at this exact head/base, inspect actual full diff and CI. Only passing CI and truthful QA can enable objective merge gate.",
     "publication_baseline": {
       "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
       "state": "published",
@@ -191,6 +191,56 @@
       "base_sha": "8a0ada56baa24b566e306af75768b90ed08b55ca",
       "pr": 21,
       "issue": 18
+    },
+    "security": {
+      "schema": 1,
+      "role": "security",
+      "head_sha": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
+      "base_sha": "8a0ada56baa24b566e306af75768b90ed08b55ca",
+      "verdict": "passed",
+      "summary": "Complete registry migration diff reviewed. Default-only ephemeral package publishing, private associated package checks, collision refusal, source/image/digest and re-pulled binary/runtime verification preserve the publication trust boundary. No blocking Security findings; actual required CI/QA and later private default publication remain separate prerequisites.",
+      "reviewed_paths": [
+        ".github/scripts/publish-release.sh",
+        ".github/scripts/publish_container.py",
+        ".github/scripts/test_durations.json",
+        ".github/scripts/test_publication.py",
+        ".github/workflows/ci.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "Dockerfile",
+        "README.md",
+        "compose.yaml",
+        "deploy-compose.yaml",
+        "docs/ci.md",
+        "docs/deployment.md",
+        "docs/macos.md",
+        "docs/next-release.md",
+        "docs/releases/0.22.17.md",
+        "docs/validation.md",
+        "examples/package_release.rs",
+        "src/main.rs",
+        "tests/cli.rs"
+      ],
+      "acceptance": [
+        "PR jobs retain contents read; only exact-default release has packages write. Both Python entry guard and native job guard reject PR/other source execution.",
+        "Password only through stdin, private temporary Docker config, no token-containing argv/output/asset, no visibility mutation or paid service.",
+        "Private repository association and registry lookup failures fail closed; all existing tags are checked before pushes, then checked again. Different source/version/image IDs are rejected; no server tag CAS claim.",
+        "Same-run/SHA image and checked binary are retained internally. Publication re-pulls one content digest, verifies exact OCI identity/image ID, compares executable SHA and runs readonly network-isolated local demo before release.",
+        "Four release files and guarded selected-manifest installation replace unused archives; existing release histories, container least privilege, native Mac checks and source-copy permissions remain.",
+        "Actual10 publication regression sources cover failures/retry without external runtime dependencies. Rust code only changes version-bound embedded Compose and English output; safe std/zero dependencies preserved."
+      ],
+      "evidence": [
+        "Actual complete20-path PR21 diff ata7c6b8d2fda11c99382508f9bd7d1c3abc464345/8a0ada56baa24b566e306af75768b90ed08b55ca and native Issue18 acceptance.",
+        "Original ZIP packager deletion compared against complete prior source; only workflow/timing references existed and both are removed.",
+        "Native Actions37703667637 is still in progress; no test success or registry availability is inferred. Native Engineering37703667612 succeeded.",
+        "Actual native package/registry permission, private visibility and content digest require later successful default-branch CI; mocks cannot prove them."
+      ],
+      "findings": [],
+      "lease_checkpoint": "f244291ff36f9734660254cf69b8acaf2ce95e0c"
+    },
+    "security_native_review": {
+      "success": true,
+      "review_id": 5449727189
     }
   },
   "attempts": {}
