@@ -26,6 +26,10 @@ const CHECKSUMS: [u8; 16] = *b"PAR 2.0\0IFSC\0\0\0\0";
 const RECOVERY: [u8; 16] = *b"PAR 2.0\0RecvSlic";
 const CREATOR: [u8; 16] = *b"PAR 2.0\0Creator\0";
 
+fn digest_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
 fn padded(mut bytes: Vec<u8>) -> Vec<u8> {
     bytes.resize(bytes.len().next_multiple_of(4), 0);
     bytes
@@ -1728,7 +1732,7 @@ fn recovery_parent() -> Directory {
 fn recovery_owner() -> Owner {
     Owner {
         job_id: "original-par2-owner".into(),
-        binding: hex(&sha256(b"captured-job-policy")),
+        binding: digest_hex(&sha256(b"captured-job-policy")),
     }
 }
 
@@ -1853,7 +1857,7 @@ fn private_recovery_rejects_different_owner_source_policy_and_validly_rehashed_s
         .is_err()
     );
     changed_owner = owner.clone();
-    changed_owner.binding = hex(&sha256(b"other-policy"));
+    changed_owner.binding = digest_hex(&sha256(b"other-policy"));
     assert!(
         RecoveryWorkspace::open(
             &root,
@@ -1946,7 +1950,7 @@ fn private_recovery_does_not_trust_a_rehashed_output_instead_of_par2_integrity()
     rewrite_recovery_descriptor(&root.join("recovery.bin"), |v| {
         v.insert(
             "outputs",
-            Value::Array(vec![Value::from(hex(&sha256(b"XXXXX")))]),
+            Value::Array(vec![Value::from(digest_hex(&sha256(b"XXXXX")))]),
         );
     });
     let error = RecoveryWorkspace::open(
