@@ -1,40 +1,37 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 179,
+  "generation": 180,
   "lease": {
     "id": "f8408b38-b15d-43ec-bb76-0002ba2939da",
     "worker": "codex-ready-delivery",
     "role": "triage",
     "issue": 9,
     "acquired_at": "2026-10-07T15:58:54Z",
-    "heartbeat_at": "2026-10-07T16:00:19Z",
-    "expires_at": "2026-10-07T16:45:19Z",
+    "heartbeat_at": "2026-10-07T16:02:43Z",
+    "expires_at": "2026-10-07T16:47:43Z",
     "branch": "work/par2-multifile-recovery",
     "commit": "bfdff54f096150968ae725fa19d89e356ed24417",
     "pr": 10
   },
   "checkpoint": {
-    "at": "2026-10-07T16:00:19Z",
+    "at": "2026-10-07T16:02:43Z",
     "issue": 9,
     "role": "triage",
     "branch": "work/par2-multifile-recovery",
     "commit": "bfdff54f096150968ae725fa19d89e356ed24417",
     "pr": 10,
-    "summary": "Triage is ready to merge PR #10 through observed objective gates: native Mynou CI 37639921027 validate/GNU/musl/package successful; ready Engineering 37648171879 organization 112884275164 and agent-qa-review 112884380973 both actually successful at head bfdff54f096150968ae725fa19d89e356ed24417 / base d0c37f773b45b8948eb8c5b67a55e89f64ddbe10. Native separate Security 5444603361 and QA 5444892856 passed with historical owned exact-scope checkpoints; native review threads empty. PR is ready/open/mergeable, default unchanged, no local validation. Native merge has not yet happened; this preserves exact pre-merge evidence/intent.",
-    "next_action": "Merge PR #10 only at expected head bfdff54f096150968ae725fa19d89e356ed24417 using native GitHub. Observe exact merged/default commit and native CI trigger; preserve publication intent if bot dispatch is needed. Checkpoint merge and required default CI/release state, release Triage and recover publication/branch/dependency cleanup before next product work. User cadence Issue #11 is the next explicitly requested organization task.",
+    "summary": "PR #10 / Issue #9 was natively squash-merged by expected source head bfdff54f096150968ae725fa19d89e356ed24417 onto trunk commit 6085368588c8077af53d15bc4f07d752e670e445 at 16:00:34Z. Exact-head/base Security 5444603361, independent QA 5444892856 and all native objective gates were green (Engineering 37648171879, required CI 37639921027). Native default push CI 37648617664 is actually in progress; v0.22.13 publication is pending, no dispatch needed and no local checks/manual release. Issue #9 is closed/Done. Native #11 blocker #9 is closed and #11 is Ready for the explicit user cadence improvement. Preserve original source mappings and pending publication/branch cleanup. No unrelated product implementation is started.",
+    "next_action": "Release this Triage phase and acquire Quality for Issue #11 at default 6085368588c8077af53d15bc4f07d752e670e445 on work/engineering-cadence. Implement only the accepted organization policy: 40-minute chained ready transitions with serial role leases, hourly mechanical recovery/daily health sweep, updated runbook/Master/CI policy and versioned task prompt. Native default CI/publication 37648617664 remains pending and must be recovered before unrelated product work or cadence PR delivery; never fabricate publication. After CI and separate Security/QA, merge cadence policy and update only the existing hourly task prompt.",
     "publication": {
-      "commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
-      "state": "ci-passed",
-      "at": "2026-10-07T12:41:25Z",
-      "run_id": 37617472864,
-      "status": "completed",
-      "conclusion": "success",
-      "release_id": 405711761,
-      "tag": "v0.22.12",
-      "url": "https://github.com/alecerf/mynou/releases/tag/v0.22.12",
-      "issue_comment": 6038114159,
-      "pr_comment": 6038114600
+      "commit": "6085368588c8077af53d15bc4f07d752e670e445",
+      "state": "ci-pending",
+      "at": "2026-10-07T16:02:43Z",
+      "run_id": 37648617664,
+      "status": "in_progress",
+      "conclusion": null,
+      "issue": 9,
+      "pr": 10
     },
     "security_scope": {
       "issue": 9,
@@ -117,13 +114,13 @@
       "tests/par2_formats.rs"
     ],
     "next_work": {
-      "issue": 9,
-      "status": "review",
+      "issue": 11,
+      "status": "ready",
       "role": "quality",
-      "branch": "work/par2-multifile-recovery",
-      "pr": 10,
-      "head": "bfdff54f096150968ae725fa19d89e356ed24417",
-      "base": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10"
+      "branch": "work/engineering-cadence",
+      "head": "6085368588c8077af53d15bc4f07d752e670e445",
+      "base": "6085368588c8077af53d15bc4f07d752e670e445",
+      "pr": null
     },
     "security_review": {
       "review_id": 5444603361,
@@ -162,6 +159,28 @@
       "qa_job": 112884380973,
       "organization_job": 112884275164,
       "state": "observed-green-native-merge-pending"
+    },
+    "previous_publication": {
+      "commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
+      "state": "ci-passed",
+      "at": "2026-10-07T12:41:25Z",
+      "run_id": 37617472864,
+      "status": "completed",
+      "conclusion": "success",
+      "release_id": 405711761,
+      "tag": "v0.22.12",
+      "url": "https://github.com/alecerf/mynou/releases/tag/v0.22.12",
+      "issue_comment": 6038114159,
+      "pr_comment": 6038114600
+    },
+    "merged_work": {
+      "issue": 9,
+      "pr": 10,
+      "branch": "work/par2-multifile-recovery",
+      "head": "bfdff54f096150968ae725fa19d89e356ed24417",
+      "merge_commit": "6085368588c8077af53d15bc4f07d752e670e445",
+      "merged_at": "2026-10-07T16:00:34Z",
+      "branch_cleanup": "pending"
     }
   },
   "attempts": {}
