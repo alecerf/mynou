@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 128,
+  "generation": 129,
   "lease": {
     "id": "041a3b01-7ebb-4e48-9601-b679655013c9",
     "worker": "codex-par2-release-completion",
     "role": "rust",
     "issue": 6,
     "acquired_at": "2026-10-07T11:36:44Z",
-    "heartbeat_at": "2026-10-07T11:41:32Z",
-    "expires_at": "2026-10-07T12:26:32Z",
+    "heartbeat_at": "2026-10-07T11:42:56Z",
+    "expires_at": "2026-10-07T12:27:56Z",
     "branch": "work/par2-recovery",
-    "commit": "af582ff9e20194b1b29e1b0b6db37ab507c13e97",
+    "commit": "53b4f30982b5297439d6baec751731b295cfd02a",
     "pr": 8
   },
   "checkpoint": {
-    "at": "2026-10-07T11:41:32Z",
+    "at": "2026-10-07T11:42:56Z",
     "issue": 6,
     "role": "rust",
     "branch": "work/par2-recovery",
-    "commit": "af582ff9e20194b1b29e1b0b6db37ab507c13e97",
+    "commit": "53b4f30982b5297439d6baec751731b295cfd02a",
     "pr": 8,
-    "summary": "Completed proposed0.22.12 release source on existing draftPR8/work/par2-recovery: nativeaf582ff9e20194b1b29e1b0b6db37ab507c13e97/base9d506f2767033fb4a71c586f71f5d3da83dcacb5; original local0c408089bd182e3221a037a9145e1becff7fb358/tree3572211225da9489b99861a4063165bfcf5d0932 transported with sole-parent non-force source protocol. Added original maximum-eight-erasure and65540-byte slice/chunk/padding fixtures; updated dependency-free Cargo version/lock, README/deployment/support/limits/current roadmap/checkpoint and proposed release contract. Historical prior release evidence/assets preserved. Recovered previous native78c103 CI37609920355 green:836 Rust/64harnesses/0failed/98.135s,4scheduler/53organization, GNU/musl/package success; previous evidence is not current-head pass. Current CI triggered, actual results pending. No local validation, final Security/QA or release.",
-    "next_action": "Inspect exact-head CI and fix real failures. Once source stable, release Rust and acquire Security on final PR head/base; review every native changed path, acceptance/resource/source boundaries and actual CI. Record a review-phase checkpoint and truthful native Security record, then release and acquire logically distinct QA for full-diff acceptance/CI review. Ready/merge only after both real reviews and every objective gate; actual immutable0.22.12 publication remains CI-only.",
+    "summary": "Rust completed proposed0.22.12 acceptance scope on draftPR8/work/par2-recovery at native53b4f30982b5297439d6baec751731b295cfd02a/base9d506f2767033fb4a71c586f71f5d3da83dcacb5. Original recovery/GF16 implementation and eight recovery fixtures cover maximum-eight erasures,65540-byte slices/chunk padding, damage/truncation/missing/empty input, insufficient/wrong parity, limits, whole-file integrity, source mutation/interruption and unchanged input. Updated zero-dependency Cargo version/lock and support/limits/deployment/roadmap/current-work/release docs. Nativeaf582ff9e20194b1b29e1b0b6db37ab507c13e97 CI37615680205/validate112773311531 failed formatting only; exact correction committed and transported through original localdd4ac27 source. New exact-head CI pending. Prior78c103 CI37609920355 passed836 Rust/64harnesses/98.135s; applies only to that head. No local validation, final Security/QA, merge or publication. All original commits preserved.",
+    "next_action": "Release Rust; acquire Security at exact current PR8 head/base, inspect every native changed path and actual acceptance/CI/source/resource boundaries, record scoped review-phase checkpoint and truthful native Security review. Then release and acquire logically distinct QA, actually review complete final diff, acceptance and actual current-head CI, including Security findings. Keep draft until both real reviews and objective CI gates; CI alone publishes immutable0.22.12. Finish/recover this PR before new roadmap work.",
     "publication": {
       "commit": "9d506f2767033fb4a71c586f71f5d3da83dcacb5",
       "state": "ci-passed",
@@ -32,19 +32,10 @@
       "conclusion": "success"
     },
     "ci": {
-      "commit": "af582ff9e20194b1b29e1b0b6db37ab507c13e97",
+      "commit": "53b4f30982b5297439d6baec751731b295cfd02a",
       "status": "pending",
       "qa": "not-performed-draft",
-      "release": "not-performed-pr",
-      "prior_verified": {
-        "commit": "78c1039589c233f353b58fbec031b4d6b337e5c6",
-        "run_id": 37609920355,
-        "status": "completed",
-        "conclusion": "success",
-        "rust_passed": 836,
-        "rust_failed": 0,
-        "seconds": 98.135
-      }
+      "release": "not-performed-pr"
     }
   },
   "attempts": {}
