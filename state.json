@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 219,
-  "lease": null,
+  "generation": 220,
+  "lease": {
+    "id": "a25ac436-766f-4e1b-a983-c487316cab8b",
+    "worker": "codex-hourly-20261007T182558Z",
+    "role": "security",
+    "issue": 13,
+    "acquired_at": "2026-10-07T18:31:29Z",
+    "heartbeat_at": "2026-10-07T18:31:29Z",
+    "expires_at": "2026-10-07T19:16:29Z",
+    "branch": "work/par2-verification",
+    "commit": "18548f24e57b2845559c513638f82dee8c30f211",
+    "pr": 14
+  },
   "checkpoint": {
     "at": "2026-10-07T18:31:24Z",
     "issue": 13,
