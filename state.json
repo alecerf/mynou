@@ -1,28 +1,43 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 206,
+  "generation": 207,
   "lease": {
     "id": "cf34fe10-dd42-4ea6-af6d-42ae3d766df3",
     "worker": "codex-hourly-20261007-1732",
     "role": "rust",
     "issue": 13,
     "acquired_at": "2026-10-07T17:41:28Z",
-    "heartbeat_at": "2026-10-07T17:57:31Z",
-    "expires_at": "2026-10-07T18:42:31Z",
+    "heartbeat_at": "2026-10-07T17:59:19Z",
+    "expires_at": "2026-10-07T18:44:19Z",
     "branch": "work/par2-verification",
-    "commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
-    "pr": null
+    "commit": "eb4ae3378c292ba32938f32ea82c0d7d8054a6cc",
+    "pr": 14
   },
   "checkpoint": {
-    "at": "2026-10-07T17:57:31Z",
+    "at": "2026-10-07T17:59:19Z",
     "issue": 13,
     "role": "rust",
     "branch": "work/par2-verification",
-    "commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
-    "pr": null,
-    "summary": "Rust implementation for #13 is committed locally (937c17f) and source transport is next. Read-only verification API/CLI, original diagnosis/path/cancellation fixtures and proposed 0.22.14 docs are authored. Native durable source remains base 07ef2f73f5ac923f783b9bd27e4662bb7529bbd2 until Git Data transport. No local tests/lint/builds/binaries/validation; no CI result claimed.",
-    "next_action": "Transport original commits to work/par2-verification, open one linked draft PR and inspect actual Actions. One whole wake deadline 18:12:14Z; exit reserve starts 18:07:14Z. Review cannot pass without actual CI and exact-head/base separately leased Security/QA.",
+    "commit": "eb4ae3378c292ba32938f32ea82c0d7d8054a6cc",
+    "pr": 14,
+    "summary": "Original read-only PAR2 verification source is preserved remotely at work/par2-verification:eb4ae3378c292ba32938f32ea82c0d7d8054a6cc based on trunk 07ef2f73f5ac923f783b9bd27e4662bb7529bbd2. Proposed 0.22.14 has exact-ID/global-index diagnosis, bounded readonly CLI, source/path/byte fencing and original fixtures. Linked draft PR #14 opened; actual Actions pending, no successful validation or final Security/QA claimed. No local checks or writes/admission scope.",
+    "next_action": "Inspect actual #14 Actions and fix red results with original commits. Keep draft until separate exact-head/base Security and independent complete-diff QA under their own leases and every objective gate green. Deadline 18:12:14Z, exit reserve 18:07:14Z.",
+    "source_bridge": {
+      "commits": [
+        {
+          "local": "937c17f006c7afbf305ab3cb30c3f23c1832e09f",
+          "remote": "d6963197460154f9fd68a0a3a947989fd37112f0",
+          "tree": "336d65a5dd25a1722ec890cf0a4c766cefadc267"
+        },
+        {
+          "local": "091cc4eb418e9e04d4459fbdaead2322471fb2a0",
+          "remote": "eb4ae3378c292ba32938f32ea82c0d7d8054a6cc",
+          "tree": "ec8525f7166bbaa41f36d2b52f51448942a4a869"
+        }
+      ]
+    },
+    "review_base_sha": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
     "publication": {
       "commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
       "state": "ci-passed",
