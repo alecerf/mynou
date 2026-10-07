@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 52,
-  "lease": null,
+  "generation": 53,
+  "lease": {
+    "id": "4985de01-e01d-4ebb-a437-c6f8f04739ab",
+    "worker": "codex-par2-slice",
+    "role": "rust",
+    "issue": 2,
+    "acquired_at": "2026-10-07T05:34:30Z",
+    "heartbeat_at": "2026-10-07T05:34:30Z",
+    "expires_at": "2026-10-07T06:19:30Z",
+    "branch": "work/par2-foundation",
+    "commit": "837daac0deefa01b9e0ea651c9dfb17cac813532",
+    "pr": null
+  },
   "checkpoint": {
     "at": "2026-10-07T05:34:15Z",
     "issue": 2,
