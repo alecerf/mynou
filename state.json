@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 47,
+  "generation": 48,
   "lease": {
     "id": "d82d049d-48d4-4f85-ab25-e9c6aa9ba089",
     "worker": "codex-recovery-slice",
     "role": "triage",
     "issue": 1,
     "acquired_at": "2026-10-07T01:39:56Z",
-    "heartbeat_at": "2026-10-07T01:41:37Z",
-    "expires_at": "2026-10-07T02:26:37Z",
+    "heartbeat_at": "2026-10-07T01:46:04Z",
+    "expires_at": "2026-10-07T02:31:04Z",
     "branch": "trunk",
     "commit": "afd6fa65f1189d181d8ce70161367309480a0730",
     "pr": 3
   },
   "checkpoint": {
-    "at": "2026-10-07T01:41:37Z",
+    "at": "2026-10-07T01:46:04Z",
     "issue": 1,
     "role": "triage",
     "branch": "trunk",
     "commit": "afd6fa65f1189d181d8ce70161367309480a0730",
     "pr": 3,
-    "summary": "PR #3 merged by its author through expected-head native merge at afd6fa65f1189d181d8ce70161367309480a0730 after exact required core CI and renewed agent-qa-review job 112588807044 in run 37558036692 succeeded. Gate verified actual QA review 5436606078 and Security review 5436593242 at head 7497f5a29198270e711a1c03c814043ed5011508/base f5c59506d0a8d431d09e9f351e2de2ef71b124f9. Delivery lease uses trunk so native merged-branch deletion cannot remove an execution branch. Default workflows now installed; post-merge CI/cleanup pending.",
-    "next_action": "Verify all five default Mynou CI jobs and organization checks, preserve v0.22.10 tag/assets, repair Issue/dependency status and safely clean merged branches. Release the lease, verify the real handoff-triggered trusted delivery Action, then stop with Issue #2 queued."
+    "summary": "Bootstrap merged at afd6fa65f1189d181d8ce70161367309480a0730 (trunk). PR #3 exact source 7497f5a29198270e711a1c03c814043ed5011508, base f5c59506d0a8d431d09e9f351e2de2ef71b124f9, QA review 5436606078 and Security review 5436593242 were verified by agent-qa-review job 112588807044/run 37558036692. Main CI 37558322571: all five jobs successful, 804 Rust tests/62 harnesses; main Engineering checks 37558322499: policy and 35 original scenarios passed. CI correctly declined to republish 0.22.10; v0.22.10/v0.22.9 tags and seven asset IDs/sizes/digests each remain unchanged. Issue #1 closed/Done; native dependency #2 Ready, PAR2 branch 837daac0deefa01b9e0ea651c9dfb17cac813532 preserved. PR source branch auto-deleted; exact preserved merged branches format/newznab-0.22.4 and release-source/0.20.4 safely deleted after native PR/Issue/comment/head/ownership audit. Actual six-hour task wake 2026-10-07T01:31:07Z recovered an expired Quality lease without work loss; scheduled future/reset wake remains best-effort. Default trusted mechanical Action 37558338261 actually respected this active lease and exited busy. All source/checks are remote; no local tests/lint/builds/validation or manual releases. No concurrent agents. Projects/settings/protection/security admin limits remain documented.",
+    "next_action": "Bootstrap complete. On the next bounded wake, read control first; recover any newer interrupted lease/PR/CI before new work. If still free, acquire the appropriate Triage/Rust role for native Ready Issue #2; preserve work/par2-foundation at 837daac0deefa01b9e0ea651c9dfb17cac813532, incorporate current trunk organization without discarding source, then complete one bounded PAR2 acceptance transition through CI-only checks and distinct Security/QA. No product work this slice. Native release handoff should trigger trusted default-branch delivery; actual workflow_run admission already verified busy-safe. Stop cleanly after releasing this lease."
   },
   "attempts": {}
 }
