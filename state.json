@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 304,
-  "lease": {
-    "id": "wake6-master-recovery-20261007T222619Z",
-    "worker": "codex-hourly-20261007T222619Z",
-    "role": "master",
-    "issue": 17,
-    "acquired_at": "2026-10-07T22:27:42Z",
-    "heartbeat_at": "2026-10-07T22:28:22Z",
-    "expires_at": "2026-10-07T23:13:22Z",
-    "branch": "work/macos-builds",
-    "commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
-    "pr": 20
-  },
+  "generation": 305,
+  "lease": null,
   "checkpoint": {
     "issue": 17,
     "role": "master",
