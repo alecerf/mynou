@@ -1,86 +1,61 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 263,
+  "generation": 264,
   "lease": {
     "id": "wake4-master-20261007T203225Z",
     "worker": "codex-hourly-20261007T203225Z",
     "role": "master",
     "issue": 15,
     "acquired_at": "2026-10-07T20:39:26Z",
-    "heartbeat_at": "2026-10-07T20:42:48Z",
-    "expires_at": "2026-10-07T21:27:48Z",
+    "heartbeat_at": "2026-10-07T20:46:46Z",
+    "expires_at": "2026-10-07T21:31:46Z",
     "branch": "work/par2-recovery-workspace",
     "commit": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
     "pr": 16
   },
   "checkpoint": {
-    "at": "2026-10-07T20:42:48Z",
+    "at": "2026-10-07T20:46:46Z",
     "issue": 15,
     "role": "master",
     "branch": "work/par2-recovery-workspace",
     "commit": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
     "pr": 16,
-    "summary": "PR #16 exact head36ac55c4556b06d696be86ee8d7d4ddf7cbd418e/base7910156c6cce0f74a9ab530b289c3734750bc994 is ready and mergeable. Every objective check is actually green:CI37678694142 validation/GNU/musl/package and Engineering37683828747 organization113006390674/agent-qa-review113006455560. Actual QA-gate log names independent QA5448059625/checkpoint0e0f1ca84e2808475aa4310a2e98127221370770 and Security5447677084/checkpoint1b5a2b8fc661106ff5f63f5afaaf5f67c468a653. Trunk matches reviewed base. Merge intent is durably recorded under owned Master lease; merge itself has not yet occurred.",
-    "next_action": "Re-read fresh control ownership and exact PR/base/default fences; perform native expected-head merge with all actual green objective gates. Inspect resulting merge commit and native PR/default CI before any dispatch. Actions alone publishes v0.22.15; then close/Done/dependency/native branch cleanup, preserving original immutable v0.22.14 assets.",
+    "summary": "PR #16 merged at20:42:56Z after every actual objective gate green, including Engineering37683828747 agent-qa-review113006455560, independent QA5448059625 and Security5447677084. Original source36ac55c4556b06d696be86ee8d7d4ddf7cbd418e is preserved in trunk merge4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8; native sole reviewed merge parents are base7910156c6cce0f74a9ab530b289c3734750bc994 and source, with identical treebdc2670644e92b7fe3ffc36c85d801b4cb69cd3d. Issue #15 natively closed and reconciled Done; no downstream dependencies. GitHub deleted work/par2-recovery-workspace (native ref404), no manual branch deletion. v0.22.14 remains immutable with seven unchanged asset IDs/names/sizes/digests. Exact-default push CI37684129315 is in progress:GNU113007438239/musl113007437773 success;validate113007438219 pending. v0.22.15 release endpoint404, so no release/publication success claimed. Stop for real external CI wait; all state/handoffs preserved, no local validation or second worker.",
+    "next_action": "Recover publication of trunk4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8 in native push CI37684129315 before unrelated work, even though #15 is closed/Done. Read exact run/jobs/logs and actual v0.22.15 release/tag/assets; only real all-green default CI, matching tag/source, immutable seven bot assets and unchanged prior v0.22.14 asset proof establish publication. Do not duplicate dispatch because a native exact-default push run exists. If pending, checkpoint/release for CI; if failed, triage actual findings without discarding source or altering old assets. Preserve original maps and review/gate provenance. After publication recovery, select highest-priority executable native managed work or the next bounded authorized roadmap prerequisite; idle without evidence.",
     "publication": {
-      "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
-      "state": "ci-passed",
-      "run_id": 37668451522,
-      "status": "completed",
-      "conclusion": "success",
-      "release_id": 406055926,
-      "tag": "v0.22.14",
-      "url": "https://github.com/alecerf/mynou/releases/tag/v0.22.14",
-      "published_at": "2026-10-07T18:42:52Z",
-      "immutable": true,
-      "assets": [
+      "commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
+      "branch": "trunk",
+      "state": "ci-running",
+      "run_id": 37684129315,
+      "status": "in_progress",
+      "conclusion": null,
+      "event": "push",
+      "observed_at": "2026-10-07T20:46:46Z",
+      "jobs": [
         {
-          "id": 619497394,
-          "name": "mynou-v0.22.14-linux-amd64-image.tar.gz",
-          "size": 2354446,
-          "digest": "sha256:0e96cfb74680fec9a7877fd52b487863c61ef7829126a8b6f26ccccc56c153c9"
+          "id": 113007437773,
+          "name": "Build x86_64-unknown-linux-musl",
+          "status": "completed",
+          "conclusion": "success"
         },
         {
-          "id": 619497398,
-          "name": "mynou-v0.22.14-linux-amd64-image.tar.gz.sha256",
-          "size": 106,
-          "digest": "sha256:a2627f84e8a3e26989f92543e98864514a725c92c1f637586a1110515248132c"
+          "id": 113007438219,
+          "name": "validate",
+          "status": "in_progress",
+          "conclusion": null
         },
         {
-          "id": 619497393,
-          "name": "mynou-v0.22.14-linux-x86_64",
-          "size": 4887392,
-          "digest": "sha256:7b6d50b04b67795ad1956458f0e39f464a6fa8197b0244c86053c2a17c28cd7f"
-        },
-        {
-          "id": 619497395,
-          "name": "mynou-v0.22.14-linux-x86_64.sha256",
-          "size": 94,
-          "digest": "sha256:2f9f8dae8305a79e37b80a096b5a1723de12f4f77d02c2fd89413a936a897e03"
-        },
-        {
-          "id": 619497424,
-          "name": "mynou-v0.22.14-source.zip",
-          "size": 9369451,
-          "digest": "sha256:bcf4fefc387bbdcbaf76b97b421c9fd4e807b9ba3ce37893ad7f3c4ffedc4640"
-        },
-        {
-          "id": 619497432,
-          "name": "mynou-v0.22.14-source.zip.sha256",
-          "size": 92,
-          "digest": "sha256:c25537c0ac069f76de382cae4f41b5f8ef254e76d46143afa1fd17a32ae8a4a9"
-        },
-        {
-          "id": 619497397,
-          "name": "SHA256SUMS",
-          "size": 292,
-          "digest": "sha256:ffff475b52129cf8314b0757f9365cab32f8e93deb5a44dc6966d675353ec9d9"
+          "id": 113007438239,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "status": "completed",
+          "conclusion": "success"
         }
       ],
-      "previous_release_id": 405936360,
-      "previous_assets_unchanged": true,
-      "issue_comment": 6045313189
+      "tag": "v0.22.15",
+      "release_observation": "native release-by-tag endpoint returned404; not yet published",
+      "previous_release_id": 406055926,
+      "previous_assets_unchanged": true
     },
     "retained_product_release": {
       "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
@@ -139,7 +114,9 @@
       ],
       "previous_release_id": 405936360,
       "previous_assets_unchanged": true,
-      "issue_comment": 6045313189
+      "issue_comment": 6045313189,
+      "assets_rechecked_at": "2026-10-07T20:46:46Z",
+      "assets_unchanged": true
     },
     "task_reconciliation": {
       "success": true,
@@ -244,7 +221,9 @@
     "wake": {
       "started_at": "2026-10-07T20:32:25Z",
       "deadline_at": "2026-10-07T21:12:25Z",
-      "checkpoint_reserve_at": "2026-10-07T21:07:25Z"
+      "checkpoint_reserve_at": "2026-10-07T21:07:25Z",
+      "ended_at": "2026-10-07T20:46:46Z",
+      "stopping_reason": "real external wait: exact-default native CI still in progress; no polling or duplicate dispatch"
     },
     "qa_phase": {
       "state": "passed",
@@ -271,12 +250,31 @@
       "native_review_id": 5448059625
     },
     "delivery": {
-      "state": "merge-intent",
+      "state": "merged",
       "pr": 16,
       "head_sha": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
       "base_sha": "7910156c6cce0f74a9ab530b289c3734750bc994",
       "qa_review": 5448059625,
-      "security_review": 5447677084
+      "security_review": 5447677084,
+      "merge_commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
+      "merged_at": "2026-10-07T20:42:56Z",
+      "merge_tree": "bdc2670644e92b7fe3ffc36c85d801b4cb69cd3d",
+      "reviewed_merge_parents": [
+        "7910156c6cce0f74a9ab530b289c3734750bc994",
+        "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e"
+      ]
+    },
+    "post_merge": {
+      "issue": 15,
+      "state": "closed",
+      "status": "done",
+      "native_closed_at": "2026-10-07T20:42:57Z",
+      "downstream_issues": [],
+      "source_branch": "work/par2-recovery-workspace",
+      "source_branch_state": "native ref absent after merge",
+      "default_branch": "trunk",
+      "default_commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
+      "source_preserved": true
     }
   },
   "attempts": {}
