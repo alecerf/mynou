@@ -1,15 +1,15 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 307,
+  "generation": 308,
   "lease": {
     "id": "wake6-qa-macos-20261007T222619Z",
     "worker": "codex-hourly-20261007T222619Z",
     "role": "qa",
     "issue": 17,
     "acquired_at": "2026-10-07T22:28:30Z",
-    "heartbeat_at": "2026-10-07T22:28:33Z",
-    "expires_at": "2026-10-07T23:13:33Z",
+    "heartbeat_at": "2026-10-07T22:30:45Z",
+    "expires_at": "2026-10-07T23:15:45Z",
     "branch": "work/macos-builds",
     "commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
     "pr": 20
@@ -20,9 +20,9 @@
     "branch": "work/macos-builds",
     "commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
     "pr": 20,
-    "at": "2026-10-07T22:28:33Z",
-    "summary": "Independent final logical QA reviewing PR #20 at exact head ce35b775df90c49ab40ec98e1b3407b45c721c6d and base4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8 under this new QA lease, after prior implementation and Security released. Native CI is green; no passing review yet until actual full diff/log review.",
-    "next": "Read every actual changed path and complete native validation/Mac/package evidence, verify prior failed-checksum concern and matching Security provenance, then record final QA.",
+    "at": "2026-10-07T22:30:45Z",
+    "summary": "Independent QA inspected all 11 actual PR #20 changed paths, Issue17 acceptance and native logs. Exact-head CI37691964651 has six required green jobs,864 Rust tests/0failed/90.373s,4 scheduler/53 organization checks. ARM64/Intel native Mach-O demos each reached ready import and confirmed Plex; package checked both Mac binaries, Linux/source/container integrity. Corrected && install/config chains resolve QA5448782569; zero inline threads. Security5448796536 matches head/base and historical held lease. Ready to record passing QA; no default release claimed.",
+    "next": "Submit truthful exact-head/base QA COMMENT with this held review checkpoint, release, then Master marks ready and completes objectively gated delivery.",
     "review_phase": {
       "role": "qa",
       "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
@@ -84,41 +84,6 @@
     "security_native_review": {
       "success": true,
       "review_id": 5448796536
-    },
-    "previous_qa_rejection": {
-      "schema": 1,
-      "role": "qa",
-      "head_sha": "330cdbd7e8d2530c8900579206cc5e3075934d92",
-      "base_sha": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
-      "lease_checkpoint": "1cb4218dccc7b43f280ab91d63f7d46df56ed9cd",
-      "verdict": "rejected",
-      "summary": "Native Apple Silicon demo is verified, but installation instructions can continue after failed checksum verification. Correct the guarded execution before acceptance.",
-      "reviewed_paths": [
-        ".github/engineering.json",
-        ".github/scripts/publish-release.sh",
-        ".github/workflows/ci.yml",
-        "Cargo.lock",
-        "Cargo.toml",
-        "README.md",
-        "docs/ci.md",
-        "docs/deployment.md",
-        "docs/macos.md",
-        "docs/next-release.md",
-        "docs/releases/0.22.16.md"
-      ],
-      "acceptance": [
-        "Both Mac targets and original Linux/organization gates are configured; same-run checked artifacts and immutable release policy are preserved.",
-        "English native architecture, PEM trust and signing behavior are documented; copy/paste failure handling needs correction."
-      ],
-      "evidence": [
-        "Complete actual 11-path PR #20 diff reviewed at head 330cdbd7e8d2530c8900579206cc5e3075934d92 / base4cf7580.",
-        "CI37691546668 Apple Silicon job113032694993: Mach-O arm64, actual ready import and plex_scan_confirmed=true; Linux GNU/musl jobs successful.",
-        "Engineering37691546565 organization113032693928: 53 scenarios pass; CI Intel/validation/package were pending, so no complete green result claimed.",
-        "Separate native Security COMMENT5448763835 uses a held exact-head/base Security lease."
-      ],
-      "findings": [
-        "docs/macos.md download/install code block uses independent commands. A failed cd or shasum does not stop mkdir/install/demo in an ordinary interactive shell; chain dependent commands with &&. Likewise guard configuration/init/doctor/serve so an earlier failure cannot start the next step."
-      ]
     },
     "publication_baseline": {
       "commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
@@ -184,6 +149,65 @@
       "organization_tests": 53,
       "previous_release_id": 406055926,
       "previous_assets_unchanged": true
+    },
+    "ci": {
+      "run_id": 37691964651,
+      "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
+      "event": "pull_request",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "id": 113035157345,
+          "name": "Build aarch64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113035157645,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113035157702,
+          "name": "Build x86_64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113035157748,
+          "name": "validate",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113035157781,
+          "name": "Build x86_64-unknown-linux-musl",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113036465846,
+          "name": "package",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113036635440,
+          "name": "release",
+          "status": "completed",
+          "conclusion": "skipped"
+        }
+      ],
+      "rust_tests": 864,
+      "rust_failures": 0,
+      "rust_seconds": 90.373,
+      "scheduler_tests": 4,
+      "organization_tests": 53,
+      "organization_run_id": 37692344754,
+      "organization_job_id": 113035395324
     }
   },
   "attempts": {}
