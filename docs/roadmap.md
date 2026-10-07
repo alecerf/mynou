@@ -5,18 +5,25 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current proposed increment: 0.22.12
+## Current proposed increment: 0.22.13
 
-Original GF(2^16) arithmetic and bounded single-file recovery are implemented
-under [Issue #6](https://github.com/alecerf/mynou/issues/6) /
-[PR #8](https://github.com/alecerf/mynou/pull/8). The library returns fully
-verified caller-owned bytes within explicit limits. No implicit filesystem writes,
-volume merging or library admission are introduced. See [PAR2 support](par2.md)
-and [release scope](releases/0.22.12.md). Actual CI, separate Security/QA and
-publication evidence remain in the linked PR and Actions. Follow publication
-with ownership-bound multi-file recovery/admission.
+Bounded multi-file PAR2 memory recovery is implemented as draft source under
+[Issue #9](https://github.com/alecerf/mynou/issues/9) /
+[PR #10](https://github.com/alecerf/mynou/pull/10). The shared engine binds File IDs,
+uses global coefficients, checks aggregate budgets and verifies every output
+before returning any. No filesystem repair, ownership journal, volume merging or
+library admission is added. See [support](par2.md) and [release scope](releases/0.22.13.md).
+Actual CI, final separately leased Security/QA and Actions publication remain
+required. Follow publication with ownership-bound filesystem recovery/admission.
 
-## Preceding published stage: 0.22.11
+## Preceding published stage: 0.22.12
+
+Issue #6 / PR #8 delivered original GF16 and bounded single-file PAR2 recovery.
+Actions published v0.22.12 at `d0c37f773b45b8948eb8c5b67a55e89f64ddbe10` in
+run 37617472864, all five jobs green and 838 Rust tests. Native Issue/PR handoffs
+retain exact tag/asset, review and branch cleanup evidence.
+
+## Published inspection foundation: 0.22.11
 
 Issue #2 / PR #4 delivered original compatibility MD5 and bounded read-only PAR2
 core inspection at `57b15534158b0eb40d4f13450d51fdf33c7d81bb`. It does not

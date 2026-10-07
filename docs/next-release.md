@@ -1,18 +1,21 @@
-# Current product work — proposed 0.22.12 PAR2 recovery
+# Current product work — proposed 0.22.13 multi-file PAR2 memory recovery
 
-Engineering bootstrap #1 / PR #3 is complete at
-`afd6fa65f1189d181d8ce70161367309480a0730`. Issue #2 / PR #4 completed the
-read-only PAR2 format foundation, published as v0.22.11 at
-`57b15534158b0eb40d4f13450d51fdf33c7d81bb`. Release-trigger reliability #5 / PR #7
-is complete. [Issue #6](https://github.com/alecerf/mynou/issues/6) and
-[PR #8](https://github.com/alecerf/mynou/pull/8) own the next bounded source.
-It adds original GF(2^16) arithmetic and single-file reconstruction into verified
-caller-owned bytes. See [support and limits](par2.md); no filesystem repair or
-Usenet/library admission is introduced.
+Engineering bootstrap #1 / PR #3, format foundation #2 / PR #4, release-trigger
+reliability #5 / PR #7 and single-file recovery #6 / PR #8 are complete.
+Actions published v0.22.12 at `d0c37f773b45b8948eb8c5b67a55e89f64ddbe10`:
+all five jobs green in run 37617472864 and 838 Rust tests. Native handoffs retain
+immutable tag/asset, review and cleanup evidence.
 
-Finish current CI, exact-head Security/QA, merge and immutable CI publication
-before starting ownership-bound multi-file recovery. Recovery uses GitHub state and serial
-role leases. No local tests/lint/builds/binaries/validation or manual releases.
+[Issue #9](https://github.com/alecerf/mynou/issues/9) and
+[draft PR #10](https://github.com/alecerf/mynou/pull/10) own the next bounded source:
+original multi-file recovery into verified caller-owned memory. Exact File IDs,
+global Main/file/slice coefficients and combined limits protect the entire set.
+See [support and limits](par2.md) and [release scope](releases/0.22.13.md).
+
+Finish actual CI, final exact-head/base complete-diff Security and independent QA,
+merge and immutable Actions publication before ownership-bound filesystem/library
+work. Recovery uses GitHub state and serial role leases. No local tests, lint,
+builds, binaries, validation or manual releases. A proposed version is not published.
 
 CI published v0.22.10 from `f5c59506d0a8d431d09e9f351e2de2ef71b124f9` in
 [run 37510460908](https://github.com/alecerf/mynou/actions/runs/37510460908).
@@ -100,7 +103,7 @@ This scope passed complete Actions validation and publication as recorded below.
 Compressed/solid/split/encrypted RAR, RAR4, PAR2, multi-file packs and Usenet
 upgrades remain subsequent bounded increments.
 
-After 0.22.12 publication, continue ownership-bound multi-file recovery/admission. Keep
+After 0.22.13 publication, continue ownership-bound filesystem recovery/admission. Keep
 RAR compression as a separate original implementation increment; do not claim
 compressed RAR support from the stored subset. Continue multi-file/pack and
 Usenet-upgrade stages, then 0.23 verified cross-seeding and guarded bulk controls.

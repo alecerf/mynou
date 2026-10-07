@@ -101,3 +101,37 @@ Ownership-bound multi-file recovery,
 volume merging and library admission require subsequent explicit work. Existing
 Usenet ownership, requester, destination, media-analysis and Plex gates remain
 required for any future admission.
+
+## Proposed multi-file memory recovery in 0.22.13
+
+`Set::recover_files` and `recover_files_cancellable` accept one `RecoveryInput`
+for every captured recoverable File ID. Construct each input with
+`RecoveryInput::new(*description.id(), protected_bytes)`. Caller order is irrelevant;
+empty bytes explicitly represent a missing file, and short bytes a truncated
+prefix. Unknown, duplicate, nonrecoverable, omitted or oversized inputs fail.
+Nonrecoverable descriptions remain captured metadata and do not consume recovery
+coefficients. Empty recoverable files require an input but contribute no slices.
+
+The shared engine uses a single global slice map in captured Main/file/slice order.
+It returns `RecoveredFile` values in Main order only after every slice and every
+file passes integrity checks. `id()` identifies the captured File ID; `bytes()`
+borrows the output and `into_bytes()` transfers its caller-owned Vec. The existing
+single-file API keeps its exactly-one-described-file subset and delegates to this
+same engine.
+
+`MultiRecoveryLimits` defaults to eight recoverable files and the existing
+`RecoveryLimits`. Its `recovery.max_file_bytes` limits **combined** described
+content to 16 MiB; slice count, erasures, working memory and field operations are
+likewise aggregate: 256 slices, eight erasures, 1 MiB slices, 32 MiB additional
+memory and 134217728 field operations. Applications may tighten these bounds.
+All output buffers, scratch, residuals and bounded mapping/matrix/table overhead
+are covered; captured Set metadata and caller-owned inputs remain excluded.
+Source/packet reread binding, padded-slice/full-file integrity, cooperative
+cancellation and discarded partial outputs apply to the entire operation.
+
+This is original safe Rust std-only memory recovery, not ownership authorization,
+filesystem repair, media admission or volume merging. Inspection still reports
+`content_verified: false` and `repair_supported: false`. Original multi-file
+fixtures and all previous tests run only in Actions. [Issue #9](https://github.com/alecerf/mynou/issues/9)
+and [PR #10](https://github.com/alecerf/mynou/pull/10) retain actual CI and final
+review/publication state; no result is inferred from this proposed source.

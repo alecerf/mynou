@@ -372,7 +372,7 @@ remain separate stages. No implicit repair, cleanup or format fallback occurs.
 
 ## Bounded PAR2 library recovery in 0.22.12
 
-The proposed [single-file API](par2.md) accepts exactly one described recoverable
+The [single-file API](par2.md) accepts exactly one described recoverable
 file in a captured complete core set. Hard limits are 16 MiB of protected content,
 256 input slices, eight damaged/missing slices, 1 MiB per slice, 32 MiB additional
 working buffers and 134,217,728 field operations. Smaller `RecoveryLimits` are
@@ -386,3 +386,17 @@ caller Read cannot be interrupted. Changed/corrupt/unsupported input fails close
 Successful output is a caller-owned Vec, never an implicit filesystem write,
 overwrite, ownership journal or permission to admit media. Existing Usenet and
 library protections remain required for subsequent integration.
+
+## Proposed aggregate PAR2 memory recovery in 0.22.13
+
+The [multi-file API](par2.md) accepts exactly one immutable input per captured
+recoverable File ID and returns verified caller-owned outputs in Main order.
+`MultiRecoveryLimits.max_files` defaults to eight and may be reduced.
+`MultiRecoveryLimits.recovery` applies the existing limits to the **whole set**:
+16 MiB combined content, 256 total slices, eight total erasures, 1 MiB slices,
+32 MiB additional memory and 134217728 field operations. Combined output, scratch,
+residuals and bounded table/mapping/matrix overhead count toward working memory.
+No per-file budget reset, implicit input omission or partial result is permitted.
+No filesystem write, ownership journal, acquisition or library permission is added.
+Final CI, separately leased Security/QA and immutable Actions publication remain
+required; this document is not verification evidence.
