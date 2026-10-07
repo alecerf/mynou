@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 192,
-  "lease": {
-    "id": "31cf806c-8605-4a98-b850-998721031781",
-    "worker": "codex-cadence-independent-qa",
-    "role": "qa",
-    "issue": 11,
-    "acquired_at": "2026-10-07T16:17:20Z",
-    "heartbeat_at": "2026-10-07T16:21:06Z",
-    "expires_at": "2026-10-07T17:06:06Z",
-    "branch": "work/engineering-cadence",
-    "commit": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
-    "pr": 12
-  },
+  "generation": 193,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-07T16:21:06Z",
     "issue": 11,
