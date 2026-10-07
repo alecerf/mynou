@@ -1,32 +1,35 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 146,
+  "generation": 147,
   "lease": {
     "id": "3e3c1a3b-d870-4662-a91f-367506693d13",
     "worker": "github-actions-publication-recovery",
     "role": "triage",
     "issue": 6,
     "acquired_at": "2026-10-07T11:56:38Z",
-    "heartbeat_at": "2026-10-07T11:56:38Z",
-    "expires_at": "2026-10-07T12:41:38Z",
+    "heartbeat_at": "2026-10-07T11:56:42Z",
+    "expires_at": "2026-10-07T12:41:42Z",
     "branch": "trunk",
     "commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
     "pr": 8
   },
   "checkpoint": {
-    "at": "2026-10-07T11:56:15Z",
+    "at": "2026-10-07T11:56:42Z",
     "issue": 6,
     "role": "triage",
-    "branch": "work/par2-recovery",
+    "branch": "trunk",
     "commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
     "pr": 8,
-    "summary": "Default-source CI transition: accepted at d0c37f773b45b8948eb8c5b67a55e89f64ddbe10; native evidence {'commit': 'd0c37f773b45b8948eb8c5b67a55e89f64ddbe10', 'state': 'accepted', 'at': '2026-10-07T11:56:15Z'}. No release publication is inferred.",
+    "summary": "Default-source CI transition: ci-pending at d0c37f773b45b8948eb8c5b67a55e89f64ddbe10; native evidence {'commit': 'd0c37f773b45b8948eb8c5b67a55e89f64ddbe10', 'state': 'ci-pending', 'at': '2026-10-07T11:56:42Z', 'run_id': 37617472864, 'status': 'in_progress', 'conclusion': None}. No release publication is inferred.",
     "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases.",
     "publication": {
       "commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
-      "state": "accepted",
-      "at": "2026-10-07T11:56:15Z"
+      "state": "ci-pending",
+      "at": "2026-10-07T11:56:42Z",
+      "run_id": 37617472864,
+      "status": "in_progress",
+      "conclusion": null
     }
   },
   "attempts": {}
