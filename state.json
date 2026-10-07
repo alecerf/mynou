@@ -1,15 +1,15 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 308,
+  "generation": 309,
   "lease": {
     "id": "wake6-qa-macos-20261007T222619Z",
     "worker": "codex-hourly-20261007T222619Z",
     "role": "qa",
     "issue": 17,
     "acquired_at": "2026-10-07T22:28:30Z",
-    "heartbeat_at": "2026-10-07T22:30:45Z",
-    "expires_at": "2026-10-07T23:15:45Z",
+    "heartbeat_at": "2026-10-07T22:30:49Z",
+    "expires_at": "2026-10-07T23:15:49Z",
     "branch": "work/macos-builds",
     "commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
     "pr": 20
@@ -20,31 +20,92 @@
     "branch": "work/macos-builds",
     "commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
     "pr": 20,
-    "at": "2026-10-07T22:30:45Z",
-    "summary": "Independent QA inspected all 11 actual PR #20 changed paths, Issue17 acceptance and native logs. Exact-head CI37691964651 has six required green jobs,864 Rust tests/0failed/90.373s,4 scheduler/53 organization checks. ARM64/Intel native Mach-O demos each reached ready import and confirmed Plex; package checked both Mac binaries, Linux/source/container integrity. Corrected && install/config chains resolve QA5448782569; zero inline threads. Security5448796536 matches head/base and historical held lease. Ready to record passing QA; no default release claimed.",
-    "next": "Submit truthful exact-head/base QA COMMENT with this held review checkpoint, release, then Master marks ready and completes objectively gated delivery.",
+    "at": "2026-10-07T22:30:49Z",
+    "summary": "Submitted passing native QA COMMENT for exact ce35b775 /4cf7580 after full actual diff/log review. All six required PR CI jobs and organization are green; both Mac demos/package checks and corrected install guard verified. Separate matching Security recorded. Machine agent-qa-review is not yet green because PR remains draft; merge/default CI/publication remain pending.",
+    "next": "Master: mark PR #20 ready, preserve native truthful verification, verify actual machine QA gate and every objective check, then merge exact unchanged head and recover cleanup/default publication.",
     "review_phase": {
+      "schema": 1,
       "role": "qa",
       "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
-      "base_sha": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8"
-    },
-    "source": {
-      "remote_commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
-      "tree": "c58f1932d8a5f1a158d7f8776681e7debc3f2954",
-      "base_commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
-      "changed_paths": [
-        ".github/workflows/ci.yml",
+      "base_sha": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
+      "lease_checkpoint": "207bf8ee54b55232785e0d555a06c53ae3d432a2",
+      "verdict": "passed",
+      "summary": "Complete independent logical review accepted native Apple Silicon/Intel build and deployment support after actual exact-head CI and corrected checksum failure handling. Default-branch CI and immutable publication remain separate delivery steps.",
+      "reviewed_paths": [
         ".github/engineering.json",
-        "Cargo.toml",
+        ".github/scripts/publish-release.sh",
+        ".github/workflows/ci.yml",
         "Cargo.lock",
+        "Cargo.toml",
         "README.md",
-        "docs/macos.md",
-        "docs/releases/0.22.16.md",
         "docs/ci.md",
         "docs/deployment.md",
+        "docs/macos.md",
         "docs/next-release.md",
-        ".github/scripts/publish-release.sh"
-      ]
+        "docs/releases/0.22.16.md"
+      ],
+      "acceptance": [
+        "Both macOS26 native architectures compile offline/locked, match exact Mach-O architecture and complete original local torrent/media/import/Plex demonstration.",
+        "Same-workflow/SHA artifacts are copied byte-for-byte with executable permissions and verified release checksums; Linux GNU/musl, container and source archive checks remain required.",
+        "Actual Actions passed zero-dependency graph, formatting, Clippy,864 Rust tests,4 scheduler checks and53 organization scenarios.",
+        "English installation selects the correct architecture, uses private-repository downloads and guarded checksum/install/configuration commands; PEM trust and absence of Apple Developer signature/notarization are explicit.",
+        "Prior QA5448782569 checksum/configuration concern was verified in the actual corrected && chains; no unresolved inline review threads.",
+        "Exact-head/base Security5448796536 and historical held Security checkpointda8a336cbbc41b5044482ccb611a4a5e6d828fbd were verified; same GitHub identity is logical review, not formal self-approval."
+      ],
+      "evidence": [
+        "PR #20 actual complete 11-path diff at ce35b775 /4cf7580 and native Issue #17 acceptance.",
+        "Mynou CI37691964651 attempt1: validate113035157748, ARM113035157345, Intel113035157702, GNU113035157645, musl113035157781, package113036465846 all SUCCESS; release correctly SKIPPED for PR.",
+        "Validation log:864 passed/0failed in90.373s,4 scheduler tests and53 organization tests.",
+        "ARM/Intel logs: actual Mach-O arm64/x86_64 executables; ready library import and plex_scan_confirmed=true on their native runners.",
+        "Packaging log: all five primary asset checksums OK, including macos-arm64 and macos-x86_64; Docker readonly/network-isolated demo, checked binary byte preservation and source ZIP integrity passed.",
+        "Engineering checks37692344754 organization113035395324 SUCCESS; agent-qa-review is currently skipped while draft and must become green after ready transition.",
+        "GitHub PR CI uses its synthetic merge9ec93b4c5a0a56c181d5f54b2ea3d21160e628f5 for this recorded head/base; publication requires actual default-branch CI, not this PR run."
+      ],
+      "findings": []
+    },
+    "qa": {
+      "schema": 1,
+      "role": "qa",
+      "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
+      "base_sha": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
+      "lease_checkpoint": "207bf8ee54b55232785e0d555a06c53ae3d432a2",
+      "verdict": "passed",
+      "summary": "Complete independent logical review accepted native Apple Silicon/Intel build and deployment support after actual exact-head CI and corrected checksum failure handling. Default-branch CI and immutable publication remain separate delivery steps.",
+      "reviewed_paths": [
+        ".github/engineering.json",
+        ".github/scripts/publish-release.sh",
+        ".github/workflows/ci.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "README.md",
+        "docs/ci.md",
+        "docs/deployment.md",
+        "docs/macos.md",
+        "docs/next-release.md",
+        "docs/releases/0.22.16.md"
+      ],
+      "acceptance": [
+        "Both macOS26 native architectures compile offline/locked, match exact Mach-O architecture and complete original local torrent/media/import/Plex demonstration.",
+        "Same-workflow/SHA artifacts are copied byte-for-byte with executable permissions and verified release checksums; Linux GNU/musl, container and source archive checks remain required.",
+        "Actual Actions passed zero-dependency graph, formatting, Clippy,864 Rust tests,4 scheduler checks and53 organization scenarios.",
+        "English installation selects the correct architecture, uses private-repository downloads and guarded checksum/install/configuration commands; PEM trust and absence of Apple Developer signature/notarization are explicit.",
+        "Prior QA5448782569 checksum/configuration concern was verified in the actual corrected && chains; no unresolved inline review threads.",
+        "Exact-head/base Security5448796536 and historical held Security checkpointda8a336cbbc41b5044482ccb611a4a5e6d828fbd were verified; same GitHub identity is logical review, not formal self-approval."
+      ],
+      "evidence": [
+        "PR #20 actual complete 11-path diff at ce35b775 /4cf7580 and native Issue #17 acceptance.",
+        "Mynou CI37691964651 attempt1: validate113035157748, ARM113035157345, Intel113035157702, GNU113035157645, musl113035157781, package113036465846 all SUCCESS; release correctly SKIPPED for PR.",
+        "Validation log:864 passed/0failed in90.373s,4 scheduler tests and53 organization tests.",
+        "ARM/Intel logs: actual Mach-O arm64/x86_64 executables; ready library import and plex_scan_confirmed=true on their native runners.",
+        "Packaging log: all five primary asset checksums OK, including macos-arm64 and macos-x86_64; Docker readonly/network-isolated demo, checked binary byte preservation and source ZIP integrity passed.",
+        "Engineering checks37692344754 organization113035395324 SUCCESS; agent-qa-review is currently skipped while draft and must become green after ready transition.",
+        "GitHub PR CI uses its synthetic merge9ec93b4c5a0a56c181d5f54b2ea3d21160e628f5 for this recorded head/base; publication requires actual default-branch CI, not this PR run."
+      ],
+      "findings": []
+    },
+    "qa_native_review": {
+      "success": true,
+      "review_id": 5449213677
     },
     "security": {
       "schema": 1,
@@ -84,6 +145,83 @@
     "security_native_review": {
       "success": true,
       "review_id": 5448796536
+    },
+    "source": {
+      "remote_commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
+      "tree": "c58f1932d8a5f1a158d7f8776681e7debc3f2954",
+      "base_commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
+      "changed_paths": [
+        ".github/workflows/ci.yml",
+        ".github/engineering.json",
+        "Cargo.toml",
+        "Cargo.lock",
+        "README.md",
+        "docs/macos.md",
+        "docs/releases/0.22.16.md",
+        "docs/ci.md",
+        "docs/deployment.md",
+        "docs/next-release.md",
+        ".github/scripts/publish-release.sh"
+      ]
+    },
+    "ci": {
+      "run_id": 37691964651,
+      "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
+      "event": "pull_request",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "id": 113035157345,
+          "name": "Build aarch64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113035157645,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113035157702,
+          "name": "Build x86_64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113035157748,
+          "name": "validate",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113035157781,
+          "name": "Build x86_64-unknown-linux-musl",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113036465846,
+          "name": "package",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113036635440,
+          "name": "release",
+          "status": "completed",
+          "conclusion": "skipped"
+        }
+      ],
+      "rust_tests": 864,
+      "rust_failures": 0,
+      "rust_seconds": 90.373,
+      "scheduler_tests": 4,
+      "organization_tests": 53,
+      "organization_run_id": 37692344754,
+      "organization_job_id": 113035395324
     },
     "publication_baseline": {
       "commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
@@ -149,65 +287,6 @@
       "organization_tests": 53,
       "previous_release_id": 406055926,
       "previous_assets_unchanged": true
-    },
-    "ci": {
-      "run_id": 37691964651,
-      "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
-      "event": "pull_request",
-      "attempt": 1,
-      "status": "completed",
-      "conclusion": "success",
-      "jobs": [
-        {
-          "id": 113035157345,
-          "name": "Build aarch64-apple-darwin",
-          "status": "completed",
-          "conclusion": "success"
-        },
-        {
-          "id": 113035157645,
-          "name": "Build x86_64-unknown-linux-gnu",
-          "status": "completed",
-          "conclusion": "success"
-        },
-        {
-          "id": 113035157702,
-          "name": "Build x86_64-apple-darwin",
-          "status": "completed",
-          "conclusion": "success"
-        },
-        {
-          "id": 113035157748,
-          "name": "validate",
-          "status": "completed",
-          "conclusion": "success"
-        },
-        {
-          "id": 113035157781,
-          "name": "Build x86_64-unknown-linux-musl",
-          "status": "completed",
-          "conclusion": "success"
-        },
-        {
-          "id": 113036465846,
-          "name": "package",
-          "status": "completed",
-          "conclusion": "success"
-        },
-        {
-          "id": 113036635440,
-          "name": "release",
-          "status": "completed",
-          "conclusion": "skipped"
-        }
-      ],
-      "rust_tests": 864,
-      "rust_failures": 0,
-      "rust_seconds": 90.373,
-      "scheduler_tests": 4,
-      "organization_tests": 53,
-      "organization_run_id": 37692344754,
-      "organization_job_id": 113035395324
     }
   },
   "attempts": {}
