@@ -1,15 +1,15 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 351,
+  "generation": 352,
   "lease": {
     "id": "wake7-master-registry-delivery-20261007T232627Z",
     "worker": "codex-hourly-20261007T232627Z",
     "role": "master",
     "issue": 18,
     "acquired_at": "2026-10-07T23:47:01Z",
-    "heartbeat_at": "2026-10-07T23:47:45Z",
-    "expires_at": "2026-10-08T00:32:45Z",
+    "heartbeat_at": "2026-10-07T23:47:52Z",
+    "expires_at": "2026-10-08T00:32:52Z",
     "branch": "work/registry-releases",
     "commit": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
     "pr": 21
@@ -20,9 +20,9 @@
     "branch": "work/registry-releases",
     "commit": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
     "pr": 21,
-    "at": "2026-10-07T23:47:45Z",
-    "summary": "Master recovered passing Security5449727189 and independent QA5449746769 at exact PR21 a7c6b8d2/8a0ada56. All actual required PR CI37703667637 jobs/logs succeeded (864Rust/63harnesses,4scheduler+10publication,53organization,4builds/container/4assets). Ready transition and machine-gate evidence are still required; no GHCR/default release is inferred.",
-    "next_action": "Mark PR21 ready and update truthful native description/Issue metadata. Verify fresh exact-head/base objective agent-qa-review and all check-runs; merge only actual all green under owned lease.",
+    "at": "2026-10-07T23:47:52Z",
+    "summary": "PR21 is ready; native description records actual all-required PR CI, separate Security/QA and explicit unverified default GHCR publication. Issue18 metadata is current Master/review. Objective machine QA gate is the remaining merge prerequisite; head/base unchanged a7c6b8d2/8a0ada56.",
+    "next_action": "Inspect fresh actual exact-head agent-qa-review/organization and all required check-runs plus native head/base. If all green, exact-head merge; otherwise preserve real pending/failure state without polling.",
     "publication_baseline": {
       "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
       "state": "published",
