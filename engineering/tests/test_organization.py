@@ -440,6 +440,245 @@ class CleanupRecoveryScenarios(unittest.TestCase):
         self.assertIn("status:blocked", control.labels(native.issues[1]))
 
 
+class PublicationScenarios(unittest.TestCase):
+    class Publication(CleanupRecoveryScenarios.Dependencies):
+        def __init__(self):
+            super().__init__(parent_done=True)
+            self.default = HEAD
+            self.current_pr = dict(pr(), state="closed", merged_at=lease.stamp(AT), merge_commit_sha=HEAD)
+            self.runs = []
+            self.dispatches = []
+            self.dispatch_error = None
+            self.advance_after_dispatch = False
+            self.checkpoints = []
+        def ref(self, name):
+            return self.control_head if name == "control/engineering" else self.default
+        def rest(self, method, path, value=None):
+            if method == "POST" and path == "actions/workflows/ci.yml/dispatches":
+                owner = self.current_state["lease"]
+                if owner is None: raise AssertionError("Dispatch must own the global lease")
+                intent = self.current_state["checkpoint"]["publication"]
+                if intent["state"] != "dispatching": raise AssertionError("Dispatch intent must already be durable")
+                self.dispatches.append((deepcopy(value), deepcopy(owner), deepcopy(intent)))
+                if self.dispatch_error is not None: raise self.dispatch_error
+                if self.advance_after_dispatch: self.default = BASE
+                return None  # Real GitHub dispatch accepts with an empty 204.
+            return super().rest(method, path, value)
+        def pages(self, path, key=None):
+            if path == "pulls?state=all": return [deepcopy(self.current_pr)]
+            if path.startswith("actions/workflows/ci.yml/runs?head_sha="):
+                if key != "workflow_runs": raise AssertionError("Read the native workflow run collection")
+                return deepcopy(self.runs)
+            return super().pages(path, key)
+        def save(self, api, expected, value, message):
+            self.checkpoints.append(deepcopy(value["checkpoint"]))
+            return super().save(api, expected, value, message)
+
+    def native_run(self, event="workflow_dispatch", status="completed", conclusion="success", **extra):
+        return dict(id=40, head_sha=HEAD, head_branch="trunk", event=event, status=status, conclusion=conclusion, **extra)
+
+    def execute(self, native, at=AT):
+        with patch.object(delivery, "read_state", side_effect=native.read), patch.object(delivery, "save", side_effect=native.save), patch.object(lease, "now", return_value=at):
+            return delivery.run(native)
+
+    def test_bot_merge_with_no_push_run_dispatches_even_when_issue_is_done(self):
+        native = self.Publication()
+        result = self.execute(native)
+        self.assertEqual(result["action"], "publication-recovery")
+        self.assertEqual(result["publication"]["state"], "accepted")
+        self.assertEqual(native.dispatches[0][0], {"ref": "trunk"})
+        self.assertEqual(native.dispatches[0][1]["commit"], HEAD)
+        self.assertEqual(native.dispatches[0][1]["pr"], 3)
+        self.assertEqual(native.current_state["checkpoint"]["publication"]["commit"], HEAD)
+        self.assertIsNone(native.current_state["lease"])
+        self.assertIn("status:blocked", control.labels(native.issues[1]))
+        self.assertFalse(native.deleted)
+
+    def test_dispatch_visibility_grace_avoids_immediate_duplicates_after_restart(self):
+        native = self.Publication()
+        self.execute(native)
+        result = self.execute(native, AT + timedelta(minutes=1))
+        self.assertEqual(result["publication"]["state"], "awaiting-visibility")
+        self.assertEqual(len(native.dispatches), 1)
+        self.assertEqual(native.current_state["checkpoint"]["publication"]["at"], lease.stamp(AT))
+
+    def test_visibility_grace_expires_and_natively_missing_run_is_recoverable(self):
+        native = self.Publication()
+        self.execute(native)
+        self.execute(native, AT + timedelta(minutes=6))
+        self.assertEqual(len(native.dispatches), 2)
+
+    def test_interruption_before_response_retains_intent_and_delays_retry(self):
+        native = self.Publication()
+        native.current_state = held("triage")
+        with patch.object(delivery, "read_state", side_effect=native.read), patch.object(delivery, "save", side_effect=native.save), patch.object(lease, "now", return_value=AT), patch.object(native, "rest", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt): delivery.dispatch_default_ci(native, "original-owner", HEAD)
+        self.assertEqual(native.current_state["checkpoint"]["publication"]["state"], "dispatching")
+        native.current_state = lease.release(native.current_state, AT, "original-owner")
+        result = self.execute(native, AT + timedelta(minutes=1))
+        self.assertEqual(result["publication"]["state"], "awaiting-visibility")
+        self.assertFalse(native.dispatches)
+
+    def test_transport_failure_is_truthful_and_accepted_but_lost_response_deduplicates(self):
+        native = self.Publication()
+        native.dispatch_error = RuntimeError("Original synthetic lost response")
+        with self.assertRaises(RuntimeError): self.execute(native)
+        self.assertIsNone(native.current_state["lease"])
+        self.assertEqual(native.current_state["checkpoint"]["publication"]["state"], "unknown")
+        native.runs = [self.native_run(status="in_progress", conclusion=None)]
+        native.dispatch_error = None
+        result = self.execute(native, AT + timedelta(minutes=1))
+        self.assertEqual(result["publication"]["run_id"], 40)
+        self.assertEqual(result["publication"]["state"], "ci-pending")
+        self.assertEqual(len(native.dispatches), 1)
+
+    def test_rejected_dispatch_is_visible_and_does_not_complete_publication(self):
+        native = self.Publication()
+        native.dispatch_error = APIError(403)
+        with self.assertRaises(APIError): self.execute(native)
+        detail = native.current_state["checkpoint"]["publication"]
+        self.assertEqual((detail["state"], detail["error"]), ("failed", "HTTP 403"))
+        self.assertIsNone(native.current_state["lease"])
+        self.assertIn("status:blocked", control.labels(native.issues[1]))
+        native.dispatch_error = None
+        self.execute(native, AT + timedelta(minutes=1))
+        self.assertEqual(len(native.dispatches), 2)
+
+    def test_existing_push_or_dispatch_success_prevents_duplicate_dispatch(self):
+        for event in ["push", "workflow_dispatch"]:
+            native = self.Publication()
+            native.runs = [self.native_run(event=event)]
+            result = self.execute(native)
+            self.assertEqual(result["action"], "dependency-recovery")
+            self.assertFalse(native.dispatches)
+            self.assertIn("status:ready", control.labels(native.issues[1]))
+
+    def test_pending_native_run_preempts_other_delivery_and_has_no_duplicate(self):
+        native = self.Publication()
+        native.runs = [self.native_run(status="queued", conclusion=None)]
+        with patch.object(qa, "evaluate", side_effect=AssertionError("Pending publication must precede new PR work")):
+            result = self.execute(native)
+            repeat = self.execute(native, AT + timedelta(minutes=1))
+        self.assertEqual(result["publication"]["state"], "ci-pending")
+        self.assertEqual(repeat["action"], "publication-pending")
+        self.assertFalse(native.dispatches)
+        self.assertIn("status:blocked", control.labels(native.issues[1]))
+
+    def test_failed_native_ci_is_not_green_and_is_not_blindly_redispatched(self):
+        for conclusion in ["failure", "cancelled", "timed_out", "skipped"]:
+            native = self.Publication()
+            native.runs = [self.native_run(conclusion=conclusion)]
+            with self.assertRaises(ValueError): self.execute(native)
+            self.assertEqual(native.current_state["checkpoint"]["publication"]["state"], "ci-failed")
+            self.assertFalse(native.dispatches)
+            self.assertIsNone(native.current_state["lease"])
+
+    def test_success_observed_after_acceptance_is_checkpointed_without_republication(self):
+        native = self.Publication()
+        self.execute(native)
+        native.runs = [self.native_run()]
+        result = self.execute(native, AT + timedelta(minutes=1))
+        self.assertEqual(result["publication"]["state"], "ci-passed")
+        self.assertEqual(native.current_state["checkpoint"]["publication"]["run_id"], 40)
+        self.assertEqual(len(native.dispatches), 1)
+
+    def test_wrong_source_branch_or_pr_event_cannot_satisfy_default_ci(self):
+        for field, value in [("head_sha", BASE), ("head_branch", "work/original"), ("event", "pull_request")]:
+            native = self.Publication()
+            run = self.native_run()
+            run[field] = value
+            native.runs = [run]
+            self.execute(native)
+            self.assertEqual(len(native.dispatches), 1)
+
+    def test_head_change_after_intent_or_during_dispatch_fails_closed(self):
+        for before in [True, False]:
+            native = self.Publication()
+            native.current_state = held("triage")
+            native.advance_after_dispatch = not before
+            original_save = native.save
+            def save_with_external_writer(api, expected, value, message):
+                result = original_save(api, expected, value, message)
+                if before and value["checkpoint"].get("publication", {}).get("state") == "dispatching": native.default = BASE
+                return result
+            with patch.object(delivery, "read_state", side_effect=native.read), patch.object(delivery, "save", side_effect=save_with_external_writer), patch.object(lease, "now", return_value=AT):
+                with self.assertRaises(ValueError): delivery.dispatch_default_ci(native, "original-owner", HEAD)
+            self.assertEqual(native.current_state["checkpoint"]["publication"]["state"], "head-changed")
+            self.assertEqual(len(native.dispatches), 0 if before else 1)
+
+    def test_changed_default_cannot_recover_old_commit_by_dispatching_new_source(self):
+        native = self.Publication()
+        self.execute(native)
+        native.default = BASE
+        with self.assertRaises(ValueError): self.execute(native, AT + timedelta(minutes=6))
+        self.assertEqual(len(native.dispatches), 1)
+        self.assertIsNone(native.current_state["lease"])
+
+    def test_live_lease_exits_before_native_domain_reads_or_dispatch(self):
+        native = self.Publication()
+        native.current_state = held("rust")
+        with patch.object(native, "pages", side_effect=AssertionError("Busy wake must not investigate")), patch.object(native, "ref", side_effect=AssertionError("Busy wake must not read source")):
+            self.assertEqual(self.execute(native)["action"], "busy")
+        self.assertFalse(native.dispatches)
+
+    def test_foreign_expired_or_wrong_source_owner_never_dispatches(self):
+        for role, identity, at, commit in [("qa", "original-owner", AT, HEAD), ("triage", "foreign-owner", AT, HEAD),
+                ("triage", "original-owner", AT + timedelta(hours=1), HEAD), ("triage", "original-owner", AT, BASE)]:
+            native = self.Publication()
+            native.current_state = held(role)
+            with patch.object(delivery, "read_state", side_effect=native.read), patch.object(lease, "now", return_value=at):
+                with self.assertRaises(ValueError): delivery.dispatch_default_ci(native, identity, commit)
+            self.assertFalse(native.dispatches)
+
+    def test_dispatch_permission_is_only_in_trusted_default_code_workflow(self):
+        root = Path(__file__).resolve().parents[2]
+        privileged = (root / ".github/workflows/engineering-delivery.yml").read_text()
+        checks = (root / ".github/workflows/engineering-checks.yml").read_text()
+        self.assertIn("actions: write", privileged)
+        self.assertIn("ref: trunk", privileged)
+        self.assertIn("persist-credentials: false", privileged)
+        self.assertNotIn("pull_request_target", privileged)
+        self.assertNotIn("actions: write", checks)
+
+    def test_confirmed_automatic_merge_dispatches_exact_merged_commit_before_cleanup(self):
+        merged_commit = "e" * 40
+        class Merger(self.Publication):
+            def __init__(self):
+                super().__init__()
+                self.current_pr = pr()
+                self.default = BASE
+                self.issues[0] = issue(status="review")
+                self.merges = []
+            def rest(self, method, path, value=None):
+                if method == "PUT" and path == "pulls/3/merge":
+                    self.merges.append((deepcopy(value), deepcopy(self.current_state["lease"])))
+                    self.default = merged_commit
+                    self.current_pr.update(state="closed", merged_at=lease.stamp(AT), merge_commit_sha=merged_commit)
+                    return {"merged": True, "sha": merged_commit}
+                return super().rest(method, path, value)
+        native = Merger()
+        proof = {"issues": [1], "head": HEAD, "base": BASE}
+        with patch.object(qa, "evaluate", return_value=proof) as gates:
+            result = self.execute(native)
+        self.assertEqual(gates.call_count, 2)  # Before and after acquiring delivery.
+        self.assertEqual(result["action"], "delivered")
+        self.assertEqual(native.merges[0][0], {"sha": HEAD, "merge_method": "merge"})
+        self.assertEqual(native.dispatches[0][1]["commit"], merged_commit)
+        self.assertEqual(native.dispatches[0][2]["commit"], merged_commit)
+        self.assertEqual(native.current_state["checkpoint"]["publication"]["state"], "accepted")
+        self.assertIsNone(native.current_state["lease"])
+        self.assertIn("status:done", control.labels(native.issues[0]))
+
+    def test_unmanaged_or_wrong_repository_merge_never_dispatches(self):
+        for kind in ["unmanaged", "fork", "base"]:
+            native = self.Publication()
+            if kind == "unmanaged": native.issues[0]["labels"] = []
+            elif kind == "fork": native.current_pr["head"]["repo"]["full_name"] = "untrusted/fork"
+            else: native.current_pr["base"]["ref"] = "unrelated"
+            self.execute(native)
+            self.assertFalse(native.dispatches)
+
+
 class AtomicCAS(unittest.TestCase):
     def test_competing_writer_cannot_overwrite_a_new_lease_without_force(self):
         class Race(GitHub):
