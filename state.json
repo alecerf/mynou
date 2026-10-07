@@ -1,32 +1,33 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 94,
+  "generation": 95,
   "lease": {
     "id": "6d43a95c-9729-44ef-aeb7-d63ec7fe8b51",
     "worker": "github-actions-publication-recovery",
     "role": "triage",
     "issue": 5,
     "acquired_at": "2026-10-07T07:48:43Z",
-    "heartbeat_at": "2026-10-07T07:48:47Z",
-    "expires_at": "2026-10-07T08:33:47Z",
+    "heartbeat_at": "2026-10-07T07:48:51Z",
+    "expires_at": "2026-10-07T08:33:51Z",
     "branch": "trunk",
     "commit": "9d506f2767033fb4a71c586f71f5d3da83dcacb5",
     "pr": 7
   },
   "checkpoint": {
-    "at": "2026-10-07T07:48:47Z",
+    "at": "2026-10-07T07:48:51Z",
     "issue": 5,
     "role": "triage",
     "branch": "trunk",
     "commit": "9d506f2767033fb4a71c586f71f5d3da83dcacb5",
     "pr": 7,
-    "summary": "Default-source CI transition: dispatching at 9d506f2767033fb4a71c586f71f5d3da83dcacb5; native evidence {'commit': '9d506f2767033fb4a71c586f71f5d3da83dcacb5', 'state': 'dispatching', 'at': '2026-10-07T07:48:47Z'}. No release publication is inferred.",
+    "summary": "Default-source CI transition: failed at 9d506f2767033fb4a71c586f71f5d3da83dcacb5; native evidence {'commit': '9d506f2767033fb4a71c586f71f5d3da83dcacb5', 'state': 'failed', 'at': '2026-10-07T07:48:51Z', 'error': 'HTTP 403'}. No release publication is inferred.",
     "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases.",
     "publication": {
       "commit": "9d506f2767033fb4a71c586f71f5d3da83dcacb5",
-      "state": "dispatching",
-      "at": "2026-10-07T07:48:47Z"
+      "state": "failed",
+      "at": "2026-10-07T07:48:51Z",
+      "error": "HTTP 403"
     }
   },
   "attempts": {}
