@@ -1,28 +1,33 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 294,
+  "generation": 295,
   "lease": {
     "id": "wake5-security-macos-correction-20261007T213002Z",
     "worker": "codex-hourly-20261007T213002Z",
     "role": "security",
     "issue": 17,
     "acquired_at": "2026-10-07T21:48:58Z",
-    "heartbeat_at": "2026-10-07T21:48:58Z",
-    "expires_at": "2026-10-07T22:33:58Z",
+    "heartbeat_at": "2026-10-07T21:49:02Z",
+    "expires_at": "2026-10-07T22:34:02Z",
     "branch": "work/macos-builds",
     "commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
     "pr": 20
   },
   "checkpoint": {
     "issue": 17,
-    "role": "quality",
+    "role": "security",
     "branch": "work/macos-builds",
     "commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
     "pr": 20,
-    "at": "2026-10-07T21:48:21Z",
-    "summary": "Corrected QA finding in native macOS installation/configuration guide: cd/checksum/install/demo and init/doctor/serve now form && chains, preventing execution after a failed prerequisite. Pushed original correction to the existing PR #20; no local checks. New head invalidates previous passing Security record and requires complete-diff re-review and actual green CI.",
-    "next": "Separate Security re-review at the new exact head/base, then independent QA; inspect actual CI and preserve a real external wait if pending.",
+    "at": "2026-10-07T21:49:02Z",
+    "summary": "Security re-review of corrected PR #20 at exact head ce35b775df90c49ab40ec98e1b3407b45c721c6d / base 4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8 begins under a new held lease. Previous Security passed record is stale at the old head; QA rejected the unguarded install guide and Quality committed a correction.",
+    "next": "Review the entire actual corrected diff and native execution/artifact evidence; verify the checksum/configuration failure paths now stop. Record truthful exact-head/base Security review.",
+    "review_phase": {
+      "role": "security",
+      "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
+      "base_sha": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8"
+    },
     "source": {
       "remote_commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
       "tree": "c58f1932d8a5f1a158d7f8776681e7debc3f2954",
