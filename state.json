@@ -1,15 +1,15 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 346,
+  "generation": 347,
   "lease": {
     "id": "wake7-qa-registry-review-20261007T232627Z",
     "worker": "codex-hourly-20261007T232627Z",
     "role": "qa",
     "issue": 18,
     "acquired_at": "2026-10-07T23:43:45Z",
-    "heartbeat_at": "2026-10-07T23:44:25Z",
-    "expires_at": "2026-10-08T00:29:25Z",
+    "heartbeat_at": "2026-10-07T23:46:50Z",
+    "expires_at": "2026-10-08T00:31:50Z",
     "branch": "work/registry-releases",
     "commit": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
     "pr": 21
@@ -20,9 +20,9 @@
     "branch": "work/registry-releases",
     "commit": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
     "pr": 21,
-    "at": "2026-10-07T23:44:25Z",
-    "summary": "Independent logical QA starts after Quality and Security have released. Exact scope: PR21 head a7c6b8d2fda11c99382508f9bd7d1c3abc464345/base8a0ada56, native Issue18 acceptance and Security5449727189. No QA acceptance or current CI success is inferred.",
-    "next_action": "Critically inspect complete current diff and native CI logs, acceptance/regressions/security record. Reject real concerns; pass only after all required jobs actually succeed.",
+    "at": "2026-10-07T23:46:50Z",
+    "summary": "Independent QA completed actual20-path diff, Issue18 acceptance, native Security historical provenance and all relevant CI logs. Current PR CI37703667637 succeeded:864 Rust tests/63 harnesses,4 scheduler+10 publication tests,53 organization; four builds/container/demo/4-file packaging green. No findings/threads. Actual default private package/release remains unverified.",
+    "next_action": "Submit truthful exact-head/base QA COMMENT using this held lease checkpoint. Release QA; Master marks PR ready and verifies machine gate plus all fresh objective checks before any merge.",
     "publication_baseline": {
       "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
       "state": "published",
@@ -234,6 +234,67 @@
     "security_native_review": {
       "success": true,
       "review_id": 5449727189
+    },
+    "ci": {
+      "run_id": 37703667637,
+      "head_sha": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
+      "base_sha": "8a0ada56baa24b566e306af75768b90ed08b55ca",
+      "event": "pull_request",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "id": 113072834888,
+          "name": "validate",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113072835058,
+          "name": "Build aarch64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113072835072,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113072835207,
+          "name": "Build x86_64-unknown-linux-musl",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113072835300,
+          "name": "Build x86_64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113073722028,
+          "name": "package",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113073920822,
+          "name": "release",
+          "status": "completed",
+          "conclusion": "skipped"
+        }
+      ],
+      "rust_tests": 864,
+      "rust_harnesses": 63,
+      "rust_failures": 0,
+      "rust_seconds": 99.773,
+      "scheduler_tests": 4,
+      "publication_tests": 10,
+      "organization_tests": 53,
+      "synthetic_merge_sha": "1d9b3f4c5e0a8c783598eaf01ff15de6330636bb"
     },
     "review_phase": {
       "role": "qa",
