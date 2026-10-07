@@ -1,8 +1,8 @@
 # Install Mynou with Docker
 
-Examples use the proposed source version 0.22.14. Until its reviewed Actions
-release is published, use the latest actually published release assets. Source
-versions and PR checks do not establish publication.
+Examples use actually published v0.22.14. Proposed v0.22.15 adds private recovery
+workspace support; install it only after its reviewed Actions release is published.
+Source versions and PR checks do not establish publication.
 
 The final image is `scratch`: a static Rust executable and a TLS CA PEM bundle.
 The container invokes no external programs. Rust 1.99.0 and its Alpine environment
