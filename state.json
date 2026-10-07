@@ -1,58 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 40,
+  "generation": 41,
   "lease": {
     "id": "50dd538a-1204-452a-86d9-d677887cc2a8",
     "worker": "codex-recovery-slice",
     "role": "security",
     "issue": 1,
     "acquired_at": "2026-10-07T01:33:53Z",
-    "heartbeat_at": "2026-10-07T01:33:53Z",
-    "expires_at": "2026-10-07T02:18:53Z",
+    "heartbeat_at": "2026-10-07T01:34:40Z",
+    "expires_at": "2026-10-07T02:19:40Z",
     "branch": "work/autonomous-organization",
     "commit": "7497f5a29198270e711a1c03c814043ed5011508",
     "pr": 3
   },
   "checkpoint": {
-    "at": "2026-10-07T01:33:27Z",
+    "at": "2026-10-07T01:34:40Z",
     "issue": 1,
-    "role": "quality",
+    "role": "security",
     "branch": "work/autonomous-organization",
     "commit": "7497f5a29198270e711a1c03c814043ed5011508",
     "pr": 3,
-    "summary": "Fixed the remaining actual QA finding: every mutating delivery wake can recover blocked native dependents under a fresh Quality lease even after a parent is Done, and normal cleanup repairs dependencies before optional branch work. Added three CI-only interruption/restart/open-blocker regressions. Local b320f8eff069b3bf673c330e5d66fb8f5ea4c46b maps to remote 7497f5a29198270e711a1c03c814043ed5011508, tree 2406aed580012e750d9599126f697645f86e1d86. Current CI pending; no local validation.",
-    "next_action": "Recovered expired capacity lease; inspect preserved work before selecting new work.",
-    "recovery": {
-      "issue": true,
-      "branch": true,
-      "pr": true,
-      "ci": true,
-      "commit_preserved": true,
-      "issue_state": "open",
-      "branch_head": "7497f5a29198270e711a1c03c814043ed5011508",
-      "preservation": "branch/default ancestry",
-      "prs": [
-        {
-          "number": 3,
-          "state": "open",
-          "head": "7497f5a29198270e711a1c03c814043ed5011508",
-          "merged_at": null
-        }
-      ],
-      "runs": [
-        {
-          "id": 37521366525,
-          "status": "completed",
-          "conclusion": "failure"
-        },
-        {
-          "id": 37521366488,
-          "status": "completed",
-          "conclusion": "success"
-        }
-      ]
-    }
+    "summary": "Recovered the expired prior worker from native Issue/branch/commit/PR/CI without losing source. Security inspected the complete previously reviewed 40-path scope and exact three-path dependency-recovery correction at 7497f5a29198270e711a1c03c814043ed5011508. All prior findings are resolved: metadata recovery owns a Quality lease, preserves open blockers, precedes risky branch cleanup and runs even after a parent is Done. Core run 37521366488 has four required successful jobs; organization job 112467549436 passed all 35 scenarios. Old QA job failed only for a missing current record. No local validation.",
+    "next_action": "Post fresh Security pass at exact current head/base, release, then QA verifies its corrected acceptance and records its own review. Observe the actual renewed QA gate before merge; maintain a bounded slice and clean checkpoint."
   },
   "attempts": {}
 }
