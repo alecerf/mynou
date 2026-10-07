@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 257,
+  "generation": 258,
   "lease": {
     "id": "wake4-qa-20261007T203225Z",
     "worker": "codex-hourly-20261007T203225Z",
     "role": "qa",
     "issue": 15,
     "acquired_at": "2026-10-07T20:33:49Z",
-    "heartbeat_at": "2026-10-07T20:33:49Z",
-    "expires_at": "2026-10-07T21:18:49Z",
+    "heartbeat_at": "2026-10-07T20:37:27Z",
+    "expires_at": "2026-10-07T21:22:27Z",
     "branch": "work/par2-recovery-workspace",
     "commit": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
     "pr": 16
   },
   "checkpoint": {
-    "at": "2026-10-07T20:04:55Z",
+    "at": "2026-10-07T20:37:27Z",
     "issue": 15,
-    "role": "security",
+    "role": "qa",
     "branch": "work/par2-recovery-workspace",
     "commit": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
     "pr": 16,
-    "summary": "Issue #15 / draft PR #16 is remotely preserved at 36ac55c4556b06d696be86ee8d7d4ddf7cbd418e on work/par2-recovery-workspace, base 7910156c6cce0f74a9ab530b289c3734750bc994. Native CI37678694142 passed validate112988796254, GNU112988796621, musl112988796541 and package112990036468. Actual validation log: 864 Rust tests/64 harnesses/0 failures/96.800s; four scheduler and 53 organization tests passed. PR release112990256663 correctly skipped. Complete-diff Security COMMENT5447677084 passed under separate exact-head/base control1b5a2b8fc661106ff5f63f5afaaf5f67c468a653. Independent logical QA and actual QA merge gate remain unperformed; PR stays draft/unmerged. v0.22.14 actual immutable publication/cleanup is retained. Whole-wake checkpoint reserve reached; no local validation or new worker.",
-    "next_action": "Recover #15 / PR #16 first. Verify current remote head/base and all native CI/review state, then acquire a distinct QA lease at 36ac55c4556b06d696be86ee8d7d4ddf7cbd418e/base7910156c6cce0f74a9ab530b289c3734750bc994 and review the entire actual 14-path diff, acceptance and native logs. Validate Security5447677084; record actual independent QA. Only then ready PR, obtain every objective gate green and exact-head merge; CI alone publishes v0.22.15, then native Issue/branch/publication cleanup. If anchors changed, Security/QA must review anew. Do not duplicate Issues or discard this branch.",
+    "summary": "Independent logical QA read every actual changed path in PR #16 at exact head36ac55c4556b06d696be86ee8d7d4ddf7cbd418e/base7910156c6cce0f74a9ab530b289c3734750bc994, Issue #15 acceptance, prior findings, reused private file/frame and verification bounds, actual CI logs and Security provenance. New private File-ID staging, full read-only integrity on same owner/source/policy reopen, locking, bounded working allocations, publication semantics and explicit no-admission/platform/race limits are coherent. All four required CI jobs passed:864 Rust tests/64 harnesses/0failed/96.800s,4 scheduler and53 organization checks; container/binary/source checksums passed. Security5447677084 current-head/base COMMENT is trusted, separately leased, within lifetime and control ancestor. No unresolved threads or blocking QA findings. Actual native QA record is next, not yet submitted.",
+    "next_action": "Submit current-head/base native QA COMMENT anchored to this distinct QA checkpoint, then checkpoint/release. Master can ready PR and recover the actual objective QA gate; exact-head merge only after every gate is green. Actions alone publishes v0.22.15; preserve original branch/source and perform native cleanup.",
     "publication": {
       "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
       "state": "ci-passed",
@@ -231,14 +231,39 @@
       "rust_seconds": 96.8,
       "scheduler_tests": 4,
       "organization_tests": 53,
-      "qa_gate": "not_performed",
-      "qa_review": "not_performed"
+      "qa_gate": "pending-native-QA",
+      "qa_review": "reviewed-awaiting-native-record",
+      "organization_run": 37679136558,
+      "organization_job": 112990290502,
+      "organization_conclusion": "success",
+      "native_run_conclusion": "success"
     },
     "wake": {
-      "started_at": "2026-10-07T19:28:57Z",
-      "deadline_at": "2026-10-07T20:08:57Z",
-      "checkpoint_reserve_at": "2026-10-07T20:03:57Z",
-      "stopping_reason": "configured whole-wake checkpoint reserve reached; independent QA pending"
+      "started_at": "2026-10-07T20:32:25Z",
+      "deadline_at": "2026-10-07T21:12:25Z",
+      "checkpoint_reserve_at": "2026-10-07T21:07:25Z"
+    },
+    "qa_phase": {
+      "state": "reviewed-awaiting-native-record",
+      "head": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
+      "base": "7910156c6cce0f74a9ab530b289c3734750bc994",
+      "reviewed_paths": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "README.md",
+        "docs/checkpoint.md",
+        "docs/deployment.md",
+        "docs/limits.md",
+        "docs/next-release.md",
+        "docs/par2.md",
+        "docs/releases/0.22.14.md",
+        "docs/releases/0.22.15.md",
+        "docs/roadmap.md",
+        "src/usenet/mod.rs",
+        "src/usenet/par2_workspace.rs",
+        "tests/par2_formats.rs"
+      ],
+      "lease_id": "wake4-qa-20261007T203225Z"
     }
   },
   "attempts": {}
