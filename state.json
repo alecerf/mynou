@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 278,
+  "generation": 279,
   "lease": {
     "id": "wake5-quality-macos-20261007T213002Z",
     "worker": "codex-hourly-20261007T213002Z",
     "role": "quality",
     "issue": 17,
     "acquired_at": "2026-10-07T21:42:08Z",
-    "heartbeat_at": "2026-10-07T21:42:08Z",
-    "expires_at": "2026-10-07T22:27:08Z",
-    "branch": "trunk",
+    "heartbeat_at": "2026-10-07T21:42:12Z",
+    "expires_at": "2026-10-07T22:27:12Z",
+    "branch": "work/macos-builds",
     "commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
     "pr": null
   },
   "checkpoint": {
     "issue": 17,
-    "role": "security",
-    "branch": "trunk",
+    "role": "quality",
+    "branch": "work/macos-builds",
     "commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
     "pr": null,
-    "at": "2026-10-07T21:42:01Z",
-    "summary": "Security planning for #17: use only standard macos-26/macOS-26-intel runners and official existing Actions; builds keep read-only contents, checkout credentials disabled, artifact names include target and exact workflow SHA. Packaging downloads only these same-run artifacts and adds checked SHA-256 manifests. Release remains default-branch CI with existing immutable publication, no new tokens or paid services. Native binaries are unsigned/not notarized; checksums establish integrity, not Apple developer identity. Native CLI demo must use a canonical private temporary root to avoid macOS symlink ancestors. Final complete-diff Security and independent QA still required; this planning is not merge approval.",
-    "next": "Quality: implement native macOS matrix build/demo/architecture checks and same-source release checksums, required gates, v0.22.16 and English native install guide. Keep Linux/container artifacts for #18 to address separately."
+    "at": "2026-10-07T21:42:12Z",
+    "summary": "Created work/macos-builds from published trunk 4cf7580. Implementing bounded user macOS build/deployment support after separate Security planning; no tests/builds executed locally.",
+    "next": "Implement original CI, package/checksum gates and English installation documentation; commit remotely and open one draft PR for #17."
   },
   "attempts": {}
 }
