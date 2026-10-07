@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 361,
-  "lease": {
-    "id": "wake7-master-registry-publication-20261007T232627Z",
-    "worker": "codex-hourly-20261007T232627Z",
-    "role": "master",
-    "issue": 18,
-    "acquired_at": "2026-10-07T23:50:56Z",
-    "heartbeat_at": "2026-10-07T23:52:27Z",
-    "expires_at": "2026-10-08T00:37:27Z",
-    "branch": "trunk",
-    "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
-    "pr": 21
-  },
+  "generation": 362,
+  "lease": null,
   "checkpoint": {
     "issue": 18,
     "role": "master",
