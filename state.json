@@ -1,35 +1,35 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 105,
+  "generation": 106,
   "lease": {
     "id": "dfa5865a-98e4-40b6-8938-d2c23fec3a42",
     "worker": "codex-native-ci-verification",
     "role": "triage",
     "issue": 5,
     "acquired_at": "2026-10-07T08:38:05Z",
-    "heartbeat_at": "2026-10-07T08:39:16Z",
-    "expires_at": "2026-10-07T09:24:16Z",
+    "heartbeat_at": "2026-10-07T08:43:47Z",
+    "expires_at": "2026-10-07T09:28:47Z",
     "branch": "trunk",
     "commit": "9d506f2767033fb4a71c586f71f5d3da83dcacb5",
     "pr": 7
   },
   "checkpoint": {
-    "at": "2026-10-07T08:39:16Z",
+    "at": "2026-10-07T08:43:47Z",
     "issue": 5,
     "role": "triage",
     "branch": "trunk",
     "commit": "9d506f2767033fb4a71c586f71f5d3da83dcacb5",
     "pr": 7,
-    "summary": "Fresh trusted native Issue handoff succeeded: delivery37594943427/job112705169145 from installed trunk9d explicitly dispatched MynouCI37594977295 at exact 9d506f2767033fb4a71c586f71f5d3da83dcacb5/default trunk/eventworkflow_dispatch. Actual run state in_progress/None. v0.22.11 native release405431367/tag57b155 retains all seven original asset IDs/sizes/digests; no release/tag writes. Issue5 closed/statusDone; Issue6 Ready with native blocker5closed, but product work remains paused pending full default CI proof. Source branch work/ci-release-recovery headac3 preserved for guarded cleanup after actual green CI.",
-    "next_action": "Inspect all actual default-source CI jobs/logs; on success record no overwrite of v0.22.11, safely audit/delete merged source branch, hand off next Issue6 without implementing unrelated functionality in this slice.",
+    "summary": "Issue5/PR7 delivery recovery complete at merged trunk9d506f2767033fb4a71c586f71f5d3da83dcacb5. Fresh trusted delivery37594943427/job112705169145 used installed Actions:write and recovered closedIssue5; native defaultCI37594977295 completedSUCCESS, all5jobs green (validate112705290537, GNU112705289982, musl112705290373, package112706345164, release112706512853). Actual822 Rust/63harnesses/0failed/98.880s,4 scheduler and53 organization tests; no local checks/source edits. Releasejob preserved v0.22.11, tag57b15534158b0eb40d4f13450d51fdf33c7d81bb and release405431367/7same assetIDs,sizes,digests. Native guardedcleanup deleted work/ci-release-recovery exactheadac3ecd57f6eaf58a69c70781321731aa5345a61d after preservation/audit. Issue5 Done; Issue6 Ready/nativeblocker5closed. Fullnativehandoffs Issuecomment6034307999 / PRcomment6034308237; PRdescription now actualverified. Distinct premerge Security5439142389/QA5439193373/gate37589456346 remain preserved.",
+    "next_action": "Release this exact-source Triage lease and end the bounded recovery slice. Next worker must read control ref/state first; valid foreignlease means immediatequietexit. Recover outstanding native CI/cleanup before newwork; then triage highestpriority executable managed Issue6 (bounded native PAR2 GF16/single-file recovery) from durable Issueacceptance/references, own exactlyone rolelease, serialized Security/Rust/QA as needed, CIonlyimmutable v0.22.12 later. Bootstrap1/PR3, PAR2foundation2/PR4 and delivery5/PR7 are complete; do notduplicate ordiscard originalsource. No infinitework or guaranteeofhourlycapacity/resetwake.",
     "publication": {
       "commit": "9d506f2767033fb4a71c586f71f5d3da83dcacb5",
-      "state": "ci-pending",
-      "at": "2026-10-07T08:39:16Z",
+      "state": "ci-passed",
+      "at": "2026-10-07T08:43:47Z",
       "run_id": 37594977295,
-      "status": "in_progress",
-      "conclusion": null
+      "status": "completed",
+      "conclusion": "success"
     }
   },
   "attempts": {}
