@@ -118,7 +118,10 @@ fn published_rfc_1321_vectors_match_one_shot_and_streamed_boundaries() {
         ("a", "0cc175b9c0f1b6a831c399e269772661"),
         ("abc", "900150983cd24fb0d6963f7d28e17f72"),
         ("message digest", "f96b697d7cb7938d525a2f31aaf161d0"),
-        ("abcdefghijklmnopqrstuvwxyz", "c3fcd3d76192e4007dfb496cca67e13b"),
+        (
+            "abcdefghijklmnopqrstuvwxyz",
+            "c3fcd3d76192e4007dfb496cca67e13b",
+        ),
         (
             "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
             "d174ab98d277d9f5a5611c2c9f419d9f",
@@ -170,7 +173,10 @@ fn complete_unordered_packets_join_original_file_and_recovery_metadata() {
     assert!(set.files()[0].is_recoverable());
     assert_eq!(set.files()[0].slices().len(), 2);
     assert_eq!(set.files()[0].slices()[1].md5(), &md5(b"e\0\0\0"));
-    assert_eq!(set.files()[0].slices()[1].crc32(), reference_crc(b"e\0\0\0"));
+    assert_eq!(
+        set.files()[0].slices()[1].crc32(),
+        reference_crc(b"e\0\0\0")
+    );
     assert_eq!(set.recovery()[0].exponent(), 42);
     assert_eq!(set.recovery()[0].bytes(), 4);
     assert_eq!(set.recovery()[0].sha256(), &sha256(&[0; 4]));
@@ -191,7 +197,9 @@ fn complete_unordered_packets_join_original_file_and_recovery_metadata() {
 #[test]
 fn main_order_nonrecoverable_files_and_empty_files_remain_explicit() {
     let mut fixture = Fixture::files(&[("z.mp4", b"abcd"), ("a.txt", b"")], 1, 4);
-    fixture.packets.retain(|p| p.0 != CHECKSUMS || p.1.len() > 16);
+    fixture
+        .packets
+        .retain(|p| p.0 != CHECKSUMS || p.1.len() > 16);
     fixture.packets.reverse();
     let set = read(&fixture.bytes()).unwrap();
     assert_eq!(set.files()[0].name(), "z.mp4");
@@ -243,7 +251,11 @@ fn checksum_valid_wrong_set_and_main_identifiers_are_rejected() {
         [7; 16],
         &fixture.packets[0].1,
     ));
-    assert!(read(&bytes).unwrap_err().contains("different recovery sets"));
+    assert!(
+        read(&bytes)
+            .unwrap_err()
+            .contains("different recovery sets")
+    );
 }
 
 #[test]
@@ -524,5 +536,10 @@ fn cli_input_symbolic_links_are_rejected_without_writes() {
     let link = directory.0.join("link.par2");
     std::os::unix::fs::symlink(&source, &link).unwrap();
     assert!(Set::read_file(&link, Limits::default()).is_err());
-    assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+    assert!(
+        fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
 }
