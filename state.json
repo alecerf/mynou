@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 336,
+  "generation": 337,
   "lease": {
     "id": "wake7-quality-registry-implementation-20261007T232627Z",
     "worker": "codex-hourly-20261007T232627Z",
     "role": "quality",
     "issue": 18,
     "acquired_at": "2026-10-07T23:32:16Z",
-    "heartbeat_at": "2026-10-07T23:41:04Z",
-    "expires_at": "2026-10-08T00:26:04Z",
+    "heartbeat_at": "2026-10-07T23:41:12Z",
+    "expires_at": "2026-10-08T00:26:12Z",
     "branch": "work/registry-releases",
-    "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
+    "commit": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
     "pr": null
   },
   "checkpoint": {
     "issue": 18,
     "role": "quality",
     "branch": "work/registry-releases",
-    "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
+    "commit": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
     "pr": null,
-    "at": "2026-10-07T23:41:04Z",
-    "summary": "Quality prepared original Issue18 CI/GHCR migration: four release files, source-SHA-scoped internal image, default-only private package publisher with collision/identity/digest checks, ten CI-only regressions, version-bound Compose and English installation. Retired ZIP packager has only workflow/timing references; product runtime stays Rust std only. No tests/lint/builds/binaries/validation executed locally.",
-    "next_action": "Create preserved work/registry-releases from exact published8a0ada56, commit original source through Git Data API, open one linked draft PR and record actual native CI. Release Quality before complete-diff Security.",
+    "at": "2026-10-07T23:41:12Z",
+    "summary": "Original Issue18 implementation is preserved on work/registry-releases ata7c6b8d2fda11c99382508f9bd7d1c3abc464345, tree8092f713a3d3dcd5cb6bb2ff5d7939689452a02b, parent8a0ada56. All19 edited paths and retired ZIP packager committed through Git Data API; exact expected-parent non-force source ref advanced. No local validation or package publication; CI and separate Security/QA remain required.",
+    "next_action": "Open one linked draft PR with actual pending verification, then release Quality and review complete real diff under exact-head/base Security lease.",
     "publication_baseline": {
       "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
       "state": "published",
@@ -192,7 +192,9 @@
         "examples/package_release.rs"
       ],
       "removed_path": "examples/package_release.rs",
-      "planned_version": "0.22.17"
+      "planned_version": "0.22.17",
+      "remote_commit": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
+      "tree": "8092f713a3d3dcd5cb6bb2ff5d7939689452a02b"
     }
   },
   "attempts": {}
