@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 67,
-  "lease": null,
+  "generation": 68,
+  "lease": {
+    "id": "dcaf2022-9210-4ea1-9b74-f53d9f84ce6c",
+    "worker": "github-actions-delivery",
+    "role": "triage",
+    "issue": 2,
+    "acquired_at": "2026-10-07T05:55:12Z",
+    "heartbeat_at": "2026-10-07T05:55:12Z",
+    "expires_at": "2026-10-07T06:40:12Z",
+    "branch": "work/par2-foundation",
+    "commit": "85cb2e29dbe5baa3677071e4dabc974f576b82b6",
+    "pr": 4
+  },
   "checkpoint": {
     "at": "2026-10-07T05:54:19Z",
     "issue": 2,
