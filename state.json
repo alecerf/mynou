@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 71,
+  "generation": 72,
   "lease": {
     "id": "a88b7aff-4415-4588-81b0-ab6a67900998",
     "worker": "codex-publication-recovery",
     "role": "triage",
     "issue": 2,
     "acquired_at": "2026-10-07T05:58:29Z",
-    "heartbeat_at": "2026-10-07T05:58:29Z",
-    "expires_at": "2026-10-07T06:43:29Z",
+    "heartbeat_at": "2026-10-07T06:01:09Z",
+    "expires_at": "2026-10-07T06:46:09Z",
     "branch": "trunk",
     "commit": "57b15534158b0eb40d4f13450d51fdf33c7d81bb",
     "pr": 4
   },
   "checkpoint": {
-    "at": "2026-10-07T05:55:21Z",
+    "at": "2026-10-07T06:01:09Z",
     "issue": 2,
     "role": "triage",
-    "branch": "work/par2-foundation",
+    "branch": "trunk",
     "commit": "57b15534158b0eb40d4f13450d51fdf33c7d81bb",
     "pr": 4,
-    "summary": "PR #4 merged at 57b15534158b0eb40d4f13450d51fdf33c7d81bb; exact QA/CI gates passed.",
-    "next_action": "Finish native Issue/dependency/branch cleanup, then resume backlog."
+    "summary": "Trusted Actions actually merged PR #4 at 57b15534158b0eb40d4f13450d51fdf33c7d81bb after core CI and real Security review 5438186110 / QA 5438215997. Issue #2 completed and merged source preserved. Observed no native Actions runs at the merged head: GITHUB_TOKEN merge push did not trigger default release CI. Under an owned post-merge Triage lease on trunk, explicitly dispatched ci.yml for this exact unchanged default commit; CI alone will validate/publish. Created real reliability Issue #5 to automate/recover this missing trigger before future releases, and user-roadmap GF16 Issue #6 with native blocker #5. No successor implementation, local validation, manual tag/asset publication, paid services or concurrent worker. Current publication remains pending actual evidence.",
+    "next_action": "Inspect the exact merged-head Mynou CI dispatch and all five jobs; fix actual reds with reviewed source if needed. Verify bot-owned v0.22.11 exact tag and seven asset identities/digests, v0.22.10 immutability and native cleanup, then persist outcome/release lease. Next bounded work is #5 release-trigger recovery; #6 remains blocked until that reviewed fix and current publication complete."
   },
   "attempts": {}
 }
