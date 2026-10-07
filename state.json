@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 68,
+  "generation": 69,
   "lease": {
     "id": "dcaf2022-9210-4ea1-9b74-f53d9f84ce6c",
     "worker": "github-actions-delivery",
     "role": "triage",
     "issue": 2,
     "acquired_at": "2026-10-07T05:55:12Z",
-    "heartbeat_at": "2026-10-07T05:55:12Z",
-    "expires_at": "2026-10-07T06:40:12Z",
+    "heartbeat_at": "2026-10-07T05:55:21Z",
+    "expires_at": "2026-10-07T06:40:21Z",
     "branch": "work/par2-foundation",
-    "commit": "85cb2e29dbe5baa3677071e4dabc974f576b82b6",
+    "commit": "57b15534158b0eb40d4f13450d51fdf33c7d81bb",
     "pr": 4
   },
   "checkpoint": {
-    "at": "2026-10-07T05:54:19Z",
+    "at": "2026-10-07T05:55:21Z",
     "issue": 2,
-    "role": "qa",
+    "role": "triage",
     "branch": "work/par2-foundation",
-    "commit": "85cb2e29dbe5baa3677071e4dabc974f576b82b6",
+    "commit": "57b15534158b0eb40d4f13450d51fdf33c7d81bb",
     "pr": 4,
-    "summary": "QA complete: actual exact-head/base Security COMMENT 5438186110 and distinct logical QA COMMENT submitted at PR #4 head 85cb2e29dbe5baa3677071e4dabc974f576b82b6/base afd6fa65f1189d181d8ce70161367309480a0730. Full 17-file diff and actual 822 passing Rust tests/63 harnesses, 18 PAR2 cases, zero failed/ignored, 98.761s, 4 scheduler and 35 organization scenarios reviewed. All required core jobs in run 37577818607 and fresh organization 112652150701 in run 37578314609 succeeded. Source-only PAR2 foundation acceptance has no blocking findings. Native machine review gate/automatic merge and default CI release still pending; no published 0.22.11 claim. Source/local mapping df412d021bece4835ccaa2615101d07bc37d8c56 -> 85cb2e29dbe5baa3677071e4dabc974f576b82b6, tree ea125985d418a85c553e40b70b22fb56e68f560f.",
-    "next_action": "Release QA so trusted serialized delivery can evaluate real exact-head/base Security/QA and fresh agent-qa-review, merge only green gates and clean #2/branch. Recovery must verify resulting native merge/default CI and seven immutable bot-published v0.22.11 assets, preserve v0.22.10 tag/assets, then queue/execute the bounded GF16 successor. Do not duplicate the PR, redo valid reviews, manually release or start successor before publication."
+    "summary": "PR #4 merged at 57b15534158b0eb40d4f13450d51fdf33c7d81bb; exact QA/CI gates passed.",
+    "next_action": "Finish native Issue/dependency/branch cleanup, then resume backlog."
   },
   "attempts": {}
 }
