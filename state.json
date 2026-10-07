@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 46,
+  "generation": 47,
   "lease": {
     "id": "d82d049d-48d4-4f85-ab25-e9c6aa9ba089",
     "worker": "codex-recovery-slice",
     "role": "triage",
     "issue": 1,
     "acquired_at": "2026-10-07T01:39:56Z",
-    "heartbeat_at": "2026-10-07T01:39:56Z",
-    "expires_at": "2026-10-07T02:24:56Z",
+    "heartbeat_at": "2026-10-07T01:41:37Z",
+    "expires_at": "2026-10-07T02:26:37Z",
     "branch": "trunk",
-    "commit": "f5c59506d0a8d431d09e9f351e2de2ef71b124f9",
+    "commit": "afd6fa65f1189d181d8ce70161367309480a0730",
     "pr": 3
   },
   "checkpoint": {
-    "at": "2026-10-07T01:37:06Z",
+    "at": "2026-10-07T01:41:37Z",
     "issue": 1,
-    "role": "qa",
-    "branch": "work/autonomous-organization",
-    "commit": "7497f5a29198270e711a1c03c814043ed5011508",
+    "role": "triage",
+    "branch": "trunk",
+    "commit": "afd6fa65f1189d181d8ce70161367309480a0730",
     "pr": 3,
-    "summary": "Independent QA accepts current bootstrap source after reviewing complete 40-path scope, prior rejection records and exact final correction. All QA findings are resolved: strictly read-only sweeps, correct pre-checkpoint recovery/circuit handoffs, dependency repair before branch cleanup and restart repair after Done. Current core run 37521366488 has all four required jobs green; actual validate log confirms 804 Rust tests across 62 harnesses, four scheduler checks and 35 organization scenarios, no failures/ignored. Native Security pass 5436593242 is current and separately leased. Unsupported capabilities are honestly documented; no local validation.",
-    "next_action": "Post exact-head/base QA COMMENT record, release, inspect the actual renewed agent-qa-review job. Deliver PR #3 only when objective gates succeed; verify installed default workflows and cleanup, then checkpoint/release within this bounded slice."
+    "summary": "PR #3 merged by its author through expected-head native merge at afd6fa65f1189d181d8ce70161367309480a0730 after exact required core CI and renewed agent-qa-review job 112588807044 in run 37558036692 succeeded. Gate verified actual QA review 5436606078 and Security review 5436593242 at head 7497f5a29198270e711a1c03c814043ed5011508/base f5c59506d0a8d431d09e9f351e2de2ef71b124f9. Delivery lease uses trunk so native merged-branch deletion cannot remove an execution branch. Default workflows now installed; post-merge CI/cleanup pending.",
+    "next_action": "Verify all five default Mynou CI jobs and organization checks, preserve v0.22.10 tag/assets, repair Issue/dependency status and safely clean merged branches. Release the lease, verify the real handoff-triggered trusted delivery Action, then stop with Issue #2 queued."
   },
   "attempts": {}
 }
