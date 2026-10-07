@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 214,
+  "generation": 215,
   "lease": {
     "id": "8971de00-d563-42ea-bdf9-7836a111b29c",
     "worker": "codex-hourly-20261007-1732",
     "role": "rust",
     "issue": 13,
     "acquired_at": "2026-10-07T18:05:46Z",
-    "heartbeat_at": "2026-10-07T18:05:46Z",
-    "expires_at": "2026-10-07T18:50:46Z",
+    "heartbeat_at": "2026-10-07T18:09:23Z",
+    "expires_at": "2026-10-07T18:54:23Z",
     "branch": "work/par2-verification",
-    "commit": "c07111816044c3d25a556b3e80b7a758aa38935b",
+    "commit": "18548f24e57b2845559c513638f82dee8c30f211",
     "pr": 14
   },
   "checkpoint": {
-    "at": "2026-10-07T18:05:42Z",
+    "at": "2026-10-07T18:09:23Z",
     "issue": 13,
-    "role": "security",
+    "role": "rust",
     "branch": "work/par2-verification",
-    "commit": "c07111816044c3d25a556b3e80b7a758aa38935b",
+    "commit": "18548f24e57b2845559c513638f82dee8c30f211",
     "pr": 14,
-    "summary": "Complete-diff Security rejected c07111816044c3d25a556b3e80b7a758aa38935b with two native findings: account live source/report allocations in scratch overhead and run final path/missing identity fences after final source hashing. Actual CI37663684804 failed Clippy test initializer after fmt/zero-dependency success and GNU/musl builds; tests skipped. Native exact-head/base COMMENT review anchors historical Security checkpoint64bfc83b09e6dc68fedeb12eb93c05e285509091. No passed Security or QA. Earlier stale-tuple Rust native handoff error is now documented; its control/source transitions were durable and owned.",
-    "next_action": "Rust: correct both Security findings plus actual Clippy initializer, add tight-budget regression, push original source and checkpoint/release before18:12:14Z. New head needs fresh CI, final Security and independent QA; remain draft. No local checks.",
+    "summary": "Bounded wake source preserved for #13 / draft PR #14 at work/par2-verification:18548f24e57b2845559c513638f82dee8c30f211, base07ef2f73f5ac923f783b9bd27e4662bb7529bbd2. Added read-only exact-ID PAR2 diagnosis API/CLI, twelve original fixtures and proposed0.22.14 docs. Initial CI37663328604 failed fmt before tests; actual27 formatter hunks were applied without local checking. CI37663684804 passed fmt/dependency and both release builds but failed Clippy test initializer; tests/package/release skipped. Separate complete-diff Security5446361233 rejected c07111816044c3d25a556b3e80b7a758aa38935b for insufficient live scratch/report overhead and final path fences preceding last source hash. Original correction commit now reserves512KiB, adds tight-budget regression, moves final fences after source hashing and fixes initializer. These corrections still need fresh Security/QA and actual current-head CI. CI37664282613 is observed in_progress/None; Engineering37664282571 succeeded while draft (not QA). No local validation, second worker, merge or publication. Whole wake is in final-five-minute remote handoff reserve; capacity/scheduling remains best-effort.",
+    "next_action": "Recover #13 / PR #14 first. Inspect actual CI37664282613 at exact remote18548f24e57b2845559c513638f82dee8c30f211/base07ef2f73f5ac923f783b9bd27e4662bb7529bbd2: if red, Rust fixes actual findings; if green, separate exact-head/base Security must verify5446361233 corrections and full diff, then logically independent complete-diff QA under its own lease. Do not treat old rejected review as passed or mark ready/merge before every objective gate. Then native expected-head merge, immutable Actions publication, issue/dependency/branch cleanup. Preserve partial branch and linked PR; no duplicate Issue. The wake began17:32:14Z; deadline18:12:14Z was never reset. Idle/busy admission remains mandatory.",
     "source_bridge": {
       "commits": [
         {
@@ -39,21 +39,13 @@
           "local": "d60f7968e2c73609844d5872c2181749955f2b75",
           "remote": "c07111816044c3d25a556b3e80b7a758aa38935b",
           "tree": "7b131a0999ea98bc9aafa7f0ee2eb41166a27b90"
+        },
+        {
+          "local": "c7b06cf3ddc243283f1bf8fa0c99b8534c706c13",
+          "remote": "18548f24e57b2845559c513638f82dee8c30f211",
+          "tree": "f409792c0c794b9c022527ad709021a60eecedfc"
         }
       ]
-    },
-    "publication": {
-      "commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
-      "state": "ci-passed",
-      "at": "2026-10-07T16:30:09Z",
-      "run_id": 37651557558,
-      "status": "completed",
-      "conclusion": "success",
-      "new_product_release": false,
-      "retained_release_id": 405936360,
-      "retained_tag": "v0.22.13",
-      "retained_tag_commit": "6085368588c8077af53d15bc4f07d752e670e445",
-      "retained_assets_unchanged": true
     },
     "task_reconciliation": {
       "success": true,
@@ -127,30 +119,51 @@
         }
       ]
     },
-    "reviewed_paths": [
-      "Cargo.lock",
-      "Cargo.toml",
-      "README.md",
-      "docs/checkpoint.md",
-      "docs/deployment.md",
-      "docs/limits.md",
-      "docs/next-release.md",
-      "docs/par2.md",
-      "docs/releases/0.22.13.md",
-      "docs/releases/0.22.14.md",
-      "docs/roadmap.md",
-      "src/main.rs",
-      "src/par2/mod.rs",
-      "src/par2/recovery.rs",
-      "src/par2/verification.rs",
-      "tests/par2_formats.rs"
-    ],
-    "review_base_sha": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
     "security_status": {
-      "head": "c07111816044c3d25a556b3e80b7a758aa38935b",
+      "review_id": 5446361233,
+      "review_head": "c07111816044c3d25a556b3e80b7a758aa38935b",
       "verdict": "rejected",
+      "correction_head": "18548f24e57b2845559c513638f82dee8c30f211",
+      "verification": "fresh Security/QA pending",
       "lease_checkpoint": "64bfc83b09e6dc68fedeb12eb93c05e285509091"
-    }
+    },
+    "previous_publication": {
+      "commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
+      "state": "ci-passed",
+      "at": "2026-10-07T16:30:09Z",
+      "run_id": 37651557558,
+      "status": "completed",
+      "conclusion": "success",
+      "new_product_release": false,
+      "retained_release_id": 405936360,
+      "retained_tag": "v0.22.13",
+      "retained_tag_commit": "6085368588c8077af53d15bc4f07d752e670e445",
+      "retained_assets_unchanged": true
+    },
+    "review_base_sha": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
+    "ci": {
+      "head": "18548f24e57b2845559c513638f82dee8c30f211",
+      "observed_runs": [
+        {
+          "id": 37664282571,
+          "name": "Engineering checks",
+          "head": "18548f24e57b2845559c513638f82dee8c30f211",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 37664282613,
+          "name": "Mynou CI",
+          "head": "18548f24e57b2845559c513638f82dee8c30f211",
+          "status": "in_progress",
+          "conclusion": null
+        }
+      ],
+      "pending_review": true,
+      "pending_publication": true,
+      "tests_passed": null
+    },
+    "handoff_recovery": "Earlier post-CAS Rust handoff failed because the saved pre-checkpoint lease had the old source tuple. Control/source were durable; recovered native evidence here. Use the checkpoint-updated lease tuple or control.py release after re-reading current state."
   },
   "attempts": {}
 }
