@@ -5,6 +5,15 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
+## Current proposed increment: 0.22.11
+
+Original RFC 1321 compatibility MD5 and bounded PAR2 core inspection are
+implemented under Issue #2, with synthetic hostile-format and CLI fixtures.
+No repair, protected-content verification, volume merging or library admission
+is claimed. See [PAR2 support and bounds](par2.md). Actual CI, Security/QA and
+publication evidence remain in the linked PR and Actions. Follow with bounded
+GF(2^16) repair, then ownership-bound multi-file recovery.
+
 ## Published implementation: 0.22.10
 
 The active 0.22.10 source adds opt-in stored RAR5 admission to native Usenet

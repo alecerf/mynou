@@ -1,4 +1,4 @@
-# Project checkpoint — Mynou 0.22.10
+# Project checkpoint — proposed Mynou 0.22.11
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -13,7 +13,13 @@ alone creates release tags and publishes artifacts from validated commits.
 
 ## Implemented scope
 
-The active 0.22.10 source adds opt-in stored RAR5 admission to native Usenet
+Current PAR2 work is tracked in Issue #2 and the durable GitHub lease/PR.
+Original MD5 and bounded read-only core inspection now have synthetic fixture
+coverage; actual results require CI, Security and QA. See [PAR2 scope](par2.md).
+Engineering bootstrap #1 / PR #3 is complete on trunk at
+`afd6fa65f1189d181d8ce70161367309480a0730`.
+
+The published 0.22.10 source adds opt-in stored RAR5 admission to native Usenet
 movie and episode jobs. `usenet.downloads.rar` captures immutable decoder bounds
 and a separately tagged owner capability. The exact source, format, entry, owner
 and output proof use the existing private extraction and current-permission

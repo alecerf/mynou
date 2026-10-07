@@ -1245,3 +1245,13 @@ prior v0.22.9 tag and asset IDs, sizes and digests remained unchanged.
 | mynou-v0.22.10-linux-x86_64.sha256 | 616304522 | 94 | `sha256:134452485d694f643bf0ec7b84b55876743d53ae06718d3730021cbb04b188f2` |
 | mynou-v0.22.10-source.zip | 616304543 | 9089389 | `sha256:c0aed8115a7fc3a4a9638da8292c95ba6d7b43be5cd003f6eddde695cc15d244` |
 | mynou-v0.22.10-source.zip.sha256 | 616304558 | 92 | `sha256:80d2929c3cf4bb969acc0880ab02cda437b2732ce844594f941ff94fd3203908` |
+
+
+## Proposed 0.22.11 verification
+
+Original `tests/par2_formats.rs` covers RFC MD5 vectors and complete, hostile
+PAR2 fixtures, joins, identities, padding, paths, limits, cancellation, streamed
+recovery bytes and read-only CLI behavior. No local validation occurred.
+Required checks and exact-head Security/QA must succeed before merge; CI alone
+publishes. Native Issue #2 / its PR and Actions hold actual evidence. The existing
+CI timing history remains measured v0.22.10 data until new results are observed.

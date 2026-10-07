@@ -370,6 +370,10 @@ impl Set {
             return Err("PAR2 source length changed during inspection".into());
         }
         let main = main.ok_or("PAR2 complete inspection requires a Main packet")?;
+        let set_id = set_id.ok_or("PAR2 set identifier is missing")?;
+        if md5(&main) != set_id {
+            return Err("PAR2 recovery set identifier disagrees with its Main packet".into());
+        }
         if creators.is_empty() {
             return Err("PAR2 complete inspection requires a Creator packet".into());
         }
@@ -434,7 +438,7 @@ impl Set {
         }
         active(flag)?;
         Ok(Self {
-            id: set_id.ok_or("PAR2 set identifier is missing")?,
+            id: set_id,
             slice_bytes,
             files,
             recovery: recovery.into_values().collect(),
@@ -443,7 +447,7 @@ impl Set {
             ignored_packets,
             source_bytes,
             source_sha256: source_hash.finalize(),
-            set_id_matches_main: md5(&main) == set_id.expect("checked PAR2 set identifier"),
+            set_id_matches_main: true,
             limits,
         })
     }
