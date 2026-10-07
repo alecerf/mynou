@@ -1,93 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 275,
+  "generation": 276,
   "lease": {
     "id": "wake5-security-macos-plan-20261007T213002Z",
     "worker": "codex-hourly-20261007T213002Z",
     "role": "security",
     "issue": 17,
     "acquired_at": "2026-10-07T21:41:30Z",
-    "heartbeat_at": "2026-10-07T21:41:30Z",
-    "expires_at": "2026-10-07T22:26:30Z",
+    "heartbeat_at": "2026-10-07T21:42:01Z",
+    "expires_at": "2026-10-07T22:27:01Z",
     "branch": "trunk",
     "commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
     "pr": null
   },
   "checkpoint": {
     "issue": 17,
-    "role": "master",
+    "role": "security",
     "branch": "trunk",
     "commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
     "pr": null,
-    "at": "2026-10-07T21:41:24Z",
-    "summary": "Recovered v0.22.15 publication, immutable asset preservation and cleanup. Selected user Issue #17: native macOS binaries for Apple Silicon/Intel with required builds, native smoke checks, checksums and English install guide; standard macOS 26 runners confirmed from actions/runner-images. Registry/control requests remain separate.",
-    "next": "Security: assess CI artifact/publication trust and signing boundary, then Quality implements bounded macOS CI/package/docs scope.",
-    "publication_recovery": {
-      "commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
-      "state": "published",
-      "branch": "trunk",
-      "run_id": 37684129315,
-      "status": "completed",
-      "conclusion": "success",
-      "release_id": 406150016,
-      "tag": "v0.22.15",
-      "url": "https://github.com/alecerf/mynou/releases/tag/v0.22.15",
-      "published_at": "2026-10-07T20:46:51Z",
-      "immutable": true,
-      "assets": [
-        {
-          "id": 619773552,
-          "name": "mynou-v0.22.15-linux-amd64-image.tar.gz",
-          "size": 2352847,
-          "digest": "sha256:049de30bbe232b92a2a0d457ac40cf449e7824f9d81ceb1d5c551387b53d46a1"
-        },
-        {
-          "id": 619773558,
-          "name": "mynou-v0.22.15-linux-amd64-image.tar.gz.sha256",
-          "size": 106,
-          "digest": "sha256:b0c7cba9ec6a33a3bb379f32cee8524f06e33e18dc86cc0b26628175f76831af"
-        },
-        {
-          "id": 619773550,
-          "name": "mynou-v0.22.15-linux-x86_64",
-          "size": 4887392,
-          "digest": "sha256:03a8e4285e136ab906f3d8dc81c55b757f55425ad2d2d44d14f0cb6bf8d9a2df"
-        },
-        {
-          "id": 619773553,
-          "name": "mynou-v0.22.15-linux-x86_64.sha256",
-          "size": 94,
-          "digest": "sha256:e651f7e7f536e6bb05737b1f590f3946292c56fe0eff346757c44f7067578f8b"
-        },
-        {
-          "id": 619773579,
-          "name": "mynou-v0.22.15-source.zip",
-          "size": 9410279,
-          "digest": "sha256:cb1dcb3e7c9d082de3acc52d44f87828c2d69b05b76e623d4ce6b9acc8cb72ed"
-        },
-        {
-          "id": 619773580,
-          "name": "mynou-v0.22.15-source.zip.sha256",
-          "size": 92,
-          "digest": "sha256:a32a1361edeebcd8f6be7f6774203f2b9cad87e615b20982b1e9fe8cebdcce17"
-        },
-        {
-          "id": 619773554,
-          "name": "SHA256SUMS",
-          "size": 292,
-          "digest": "sha256:80c098a919ec4456f6f3e1dd20aade806add81d523f6ce3b95b6c260dc85bbd6"
-        }
-      ],
-      "rust_tests": 864,
-      "rust_harnesses": 64,
-      "rust_failures": 0,
-      "rust_seconds": 104.05,
-      "scheduler_tests": 4,
-      "organization_tests": 53,
-      "previous_release_id": 406055926,
-      "previous_assets_unchanged": true
-    }
+    "at": "2026-10-07T21:42:01Z",
+    "summary": "Security planning for #17: use only standard macos-26/macOS-26-intel runners and official existing Actions; builds keep read-only contents, checkout credentials disabled, artifact names include target and exact workflow SHA. Packaging downloads only these same-run artifacts and adds checked SHA-256 manifests. Release remains default-branch CI with existing immutable publication, no new tokens or paid services. Native binaries are unsigned/not notarized; checksums establish integrity, not Apple developer identity. Native CLI demo must use a canonical private temporary root to avoid macOS symlink ancestors. Final complete-diff Security and independent QA still required; this planning is not merge approval.",
+    "next": "Quality: implement native macOS matrix build/demo/architecture checks and same-source release checksums, required gates, v0.22.16 and English native install guide. Keep Linux/container artifacts for #18 to address separately."
   },
   "attempts": {}
 }
