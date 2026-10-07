@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 321,
-  "lease": {
-    "id": "wake6-master-macos-publication-20261007T222619Z",
-    "worker": "codex-hourly-20261007T222619Z",
-    "role": "master",
-    "issue": 17,
-    "acquired_at": "2026-10-07T22:36:51Z",
-    "heartbeat_at": "2026-10-07T22:37:54Z",
-    "expires_at": "2026-10-07T23:22:54Z",
-    "branch": "trunk",
-    "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
-    "pr": 20
-  },
+  "generation": 322,
+  "lease": null,
   "checkpoint": {
     "issue": 17,
     "role": "master",
