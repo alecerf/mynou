@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 158,
+  "generation": 159,
   "lease": {
     "id": "727f327e-ef66-4d33-b998-6090098a6476",
     "worker": "codex-multifile-security-scope",
     "role": "security",
     "issue": 9,
     "acquired_at": "2026-10-07T13:31:08Z",
-    "heartbeat_at": "2026-10-07T13:31:08Z",
-    "expires_at": "2026-10-07T14:16:08Z",
+    "heartbeat_at": "2026-10-07T13:37:24Z",
+    "expires_at": "2026-10-07T14:22:24Z",
     "branch": "trunk",
     "commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
     "pr": null
   },
   "checkpoint": {
-    "at": "2026-10-07T12:45:25Z",
-    "issue": 6,
-    "role": "triage",
+    "at": "2026-10-07T13:37:24Z",
+    "issue": 9,
+    "role": "security",
     "branch": "trunk",
     "commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
-    "pr": 8,
-    "summary": "Publication-recovery slice completed: immutable v0.22.12 at trunk d0c37f773b45b8948eb8c5b67a55e89f64ddbe10; all five exact-source CI jobs green, 838 Rust tests, seven bot assets verified; native publication comments 6038114159/6038114600. Separately leased Quality audited and deleted merged work/par2-recovery head 53b4f30982b5297439d6baec751731b295cfd02a; source preserved. Triage created exactly one user-roadmap successor Issue #9 for bounded multi-file PAR2 memory recovery, Ready/P1/high/Security, with native completed prerequisite #6. No open PR or implementation branch exists. No product source change, local validation or manual publication this slice.",
-    "next_action": "Next wake: recover control/PR/CI state first, then acquire Security for managed Ready Issue #9 scope review at exact trunk d0c37f773b45b8948eb8c5b67a55e89f64ddbe10. Release/checkpoint before Rust; create one linked branch/PR when implementation starts. No local validation; CI alone tests and publishes.",
+    "pr": null,
+    "summary": "Issue #9 pre-implementation Security scope completed at exact trunk d0c37f773b45b8948eb8c5b67a55e89f64ddbe10, preserved in native comment 6039126699. Actual Set/parser, single-file recovery, source/packet binding, GF16, original fixtures and authors PAR2 specification inspected. Requirements: captured Main-ordered global slice map; exact immutable File-ID input coverage; combined eight-file/16MiB/256-slice/eight-erasure/1MiB-slice/32MiB-memory/134217728-operation bounds; all-or-nothing per-file integrity and cancellation; no identity-to-authorization or filesystem/admission authority. No open PR or partial branch exists; previous exact-source CI 37617472864 remains success. No new implementation, test result or passed PR review is claimed; no local validation. Issue #9 is Ready/P1/high with role Rust and completed native prerequisite #6.",
+    "next_action": "Next bounded slice: read control state/ref and recover first; acquire Rust for Ready Issue #9 at current exact default. Read Security comment 6039126699, implement original bounded multi-file memory recovery on one work/par2-multifile-recovery branch and linked draft PR, preserve 838-test baseline, push original source commits and use CI only. Later complete-diff exact-head/base Security verification and independent QA are still required before objective-gated merge/Actions release.",
     "publication": {
       "commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
       "state": "ci-passed",
@@ -36,16 +36,17 @@
       "issue_comment": 6038114159,
       "pr_comment": 6038114600
     },
-    "cleanup": {
-      "branch": "work/par2-recovery",
-      "head": "53b4f30982b5297439d6baec751731b295cfd02a",
-      "result": "deleted",
-      "source_preserved": true
+    "security_scope": {
+      "issue": 9,
+      "source_commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
+      "issue_comment": 6039126699,
+      "stage": "pre-implementation-analysis",
+      "pr_review": false
     },
     "next_work": {
       "issue": 9,
       "status": "ready",
-      "role": "security",
+      "role": "rust",
       "branch": null,
       "pr": null,
       "base_commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
