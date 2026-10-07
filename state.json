@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 224,
+  "generation": 225,
   "lease": {
     "id": "c60654b2-cb5f-4d52-9fdc-5bab14f2069b",
     "worker": "codex-hourly-20261007T182558Z",
     "role": "qa",
     "issue": 13,
     "acquired_at": "2026-10-07T18:34:01Z",
-    "heartbeat_at": "2026-10-07T18:34:01Z",
-    "expires_at": "2026-10-07T19:19:01Z",
+    "heartbeat_at": "2026-10-07T18:35:38Z",
+    "expires_at": "2026-10-07T19:20:38Z",
     "branch": "work/par2-verification",
     "commit": "18548f24e57b2845559c513638f82dee8c30f211",
     "pr": 14
   },
   "checkpoint": {
-    "at": "2026-10-07T18:33:56Z",
+    "at": "2026-10-07T18:35:38Z",
     "issue": 13,
-    "role": "security",
+    "role": "qa",
     "branch": "work/par2-verification",
     "commit": "18548f24e57b2845559c513638f82dee8c30f211",
     "pr": 14,
-    "summary": "Separate Security complete-diff review5446669213 passed at18548f24e57b2845559c513638f82dee8c30f211/base07ef2f73f5ac923f783b9bd27e4662bb7529bbd2 under owned checkpoint9fdd1a6a5ba82d8f0c962048bb75745abe00065f. Both prior5446361233 findings addressed and all16 changed paths, exact input/budget/source/path/read-only/cancellation boundaries reviewed. Native CI37664282613 green:858 Rust tests/64 harnesses/0 failed,4 scheduler and53 organization checks; formatter/Clippy/zero dependencies, both builds and package success. Shared-identity COMMENT records logical review without fabricated self-approval. No source changes or local checks.",
-    "next_action": "Acquire distinct QA exact-head/base lease; independently inspect actual complete diff and acceptance, real CI evidence, Security5446669213 and threads. Reject actual findings or publish real QA v1 record, then ready and objective-gated merge/publication. Same whole-wake deadline19:05:58Z.",
+    "summary": "Independent logical QA read the complete actual16-file native diff and Issue13 acceptance, challenged global/local slice indices, truncation/padding, empty presence and nonrecoverable selection, whole-file/slice disagreement, exact input coverage, resource/cancellation bounds, source/protected-byte/path fences and CLI offline/no-initialization behavior. All12 original fixtures are shown passing in native validate112939389626; full CI37664282613 has858 Rust tests/64 harnesses/0 failures101.243s,4 scheduler/53 organization checks, formatter/Clippy/zero dependencies and both builds/package success. Existing recovery algorithm is unchanged except sibling reuse visibility. Docs are English and distinguish proposed0.22.14 from actual0.22.13 publication and non-snapshot/no-repair authority. Actual Security5446669213 is head/base-bound and anchored to its separate historical valid lease. Native threads empty; organization112951257265 success. Draft QA gate112951332451 skipped, not green. No unresolved QA finding, local validation or identity independence claimed.",
+    "next_action": "Publish actual passed QA v1 COMMENT anchored to this owned exact-head/base checkpoint, then release QA and acquire Triage delivery. Update concise PR verification, mark ready and allow trusted objective gate; merge only after actual current gate success. Same wake deadline19:05:58Z with reserve19:00:58Z.",
     "source_bridge": {
       "commits": [
         {
