@@ -5,15 +5,15 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current proposed increment: 0.22.14
+## Current proposed increment: 0.22.15
 
-Actions published the native single-file and multi-file PAR2 memory foundations
-as v0.22.12 and v0.22.13. Issue #13 now adds bounded protected-content diagnosis:
-exact-ID library reports and an offline read-only CLI report damaged/missing
-slices, lengths and whole-file integrity before ownership-bound persistent repair.
-This adds no writes, journal/admission capability, parity verification or atomic
-filesystem snapshot. See [support](par2.md), [release scope](releases/0.22.14.md)
-and live native Issues/PRs for actual CI/review/publication state.
+Actions published native single/multi-file memory recovery and read-only
+diagnosis through v0.22.14. Issue #15 adds owner-bound private persistence:
+verified reconstruction, new private outputs, exact source/policy/owner descriptor,
+standard file locking and complete integrity on reopening. Existing-file repair,
+automatic queue activation and library admission remain subsequent integration.
+See [support](par2.md), [scope](releases/0.22.15.md) and native Issues/PRs for actual
+CI/review/publication state. No hostile atomic filesystem snapshot is claimed.
 
 ## Preceding published stage: 0.22.12
 
