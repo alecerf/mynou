@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 345,
+  "generation": 346,
   "lease": {
     "id": "wake7-qa-registry-review-20261007T232627Z",
     "worker": "codex-hourly-20261007T232627Z",
     "role": "qa",
     "issue": 18,
     "acquired_at": "2026-10-07T23:43:45Z",
-    "heartbeat_at": "2026-10-07T23:43:45Z",
-    "expires_at": "2026-10-08T00:28:45Z",
+    "heartbeat_at": "2026-10-07T23:44:25Z",
+    "expires_at": "2026-10-08T00:29:25Z",
     "branch": "work/registry-releases",
     "commit": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
     "pr": 21
   },
   "checkpoint": {
     "issue": 18,
-    "role": "security",
+    "role": "qa",
     "branch": "work/registry-releases",
     "commit": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
     "pr": 21,
-    "at": "2026-10-07T23:43:38Z",
-    "summary": "Recorded actual complete-diff exact-head/base Security COMMENT for PR21 ata7c6b8d2fda11c99382508f9bd7d1c3abc464345. No blocking Security findings; native CI is still pending and private GHCR/default release is not claimed.",
-    "next_action": "Release Security; acquire independent QA at this exact head/base, inspect actual full diff and CI. Only passing CI and truthful QA can enable objective merge gate.",
+    "at": "2026-10-07T23:44:25Z",
+    "summary": "Independent logical QA starts after Quality and Security have released. Exact scope: PR21 head a7c6b8d2fda11c99382508f9bd7d1c3abc464345/base8a0ada56, native Issue18 acceptance and Security5449727189. No QA acceptance or current CI success is inferred.",
+    "next_action": "Critically inspect complete current diff and native CI logs, acceptance/regressions/security record. Reject real concerns; pass only after all required jobs actually succeed.",
     "publication_baseline": {
       "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
       "state": "published",
@@ -185,13 +185,6 @@
       "remote_commit": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
       "tree": "8092f713a3d3dcd5cb6bb2ff5d7939689452a02b"
     },
-    "review_phase": {
-      "role": "security",
-      "head_sha": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
-      "base_sha": "8a0ada56baa24b566e306af75768b90ed08b55ca",
-      "pr": 21,
-      "issue": 18
-    },
     "security": {
       "schema": 1,
       "role": "security",
@@ -241,6 +234,13 @@
     "security_native_review": {
       "success": true,
       "review_id": 5449727189
+    },
+    "review_phase": {
+      "role": "qa",
+      "head_sha": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
+      "base_sha": "8a0ada56baa24b566e306af75768b90ed08b55ca",
+      "pr": 21,
+      "issue": 18
     }
   },
   "attempts": {}
