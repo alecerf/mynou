@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 121,
+  "generation": 122,
   "lease": {
     "id": "ba18b579-b3fb-4cb3-b8a5-5e0320eddb31",
     "worker": "codex-par2-recovery-implementation",
     "role": "rust",
     "issue": 6,
     "acquired_at": "2026-10-07T10:39:23Z",
-    "heartbeat_at": "2026-10-07T10:46:09Z",
-    "expires_at": "2026-10-07T11:31:09Z",
+    "heartbeat_at": "2026-10-07T10:50:51Z",
+    "expires_at": "2026-10-07T11:35:51Z",
     "branch": "work/par2-recovery",
-    "commit": "b6da8b1e5b5785456849ac92c3a7009147146b22",
+    "commit": "78c1039589c233f353b58fbec031b4d6b337e5c6",
     "pr": 8
   },
   "checkpoint": {
-    "at": "2026-10-07T10:46:09Z",
+    "at": "2026-10-07T10:50:51Z",
     "issue": 6,
     "role": "rust",
     "branch": "work/par2-recovery",
-    "commit": "b6da8b1e5b5785456849ac92c3a7009147146b22",
+    "commit": "78c1039589c233f353b58fbec031b4d6b337e5c6",
     "pr": 8,
-    "summary": "Draft PR8 recovery implementation preserved at native b6da8b1e5b5785456849ac92c3a7009147146b22/base9d506f2767033fb4a71c586f71f5d3da83dcacb5 on work/par2-recovery. Original local2de550647310f4f0b5e5236d4de615764b208f6b/treec68d7bcfce42a8df03e451349534df29d67d30ef transported via single-parent non-force source bridge. Includes original core Vec-only recovery and six synthetic CI tests, including header/payload mutations after initial source hash, final source identity mutation, cancellation/growth during reads and immutable protected input. Initial CI37609233470 validate112752153719 failed formatting only; actual diff fixed through original nativecdf235fe3b6aec36372c0c452db00b27efdf973e. Intermediate CI37609361618 passed formatting and was running Clippy; new exact-head CI pending. No local tests/lint/builds/validation or final Security/QA.",
-    "next_action": "Inspect current exact-head CI and fix real failures; preserve same Issue6/draftPR8. Remaining work: hard-bound/chunk and maximum-erasure coverage if needed, version/docs acceptance, final exact-head Security and QA reviews, every objective gate, merge/cleanup and actual immutable v0.22.12 CI publication.",
+    "summary": "Issue6 recovery implementation preserved in draftPR8/work/par2-recovery, native78c1039589c233f353b58fbec031b4d6b337e5c6/base9d506f2767033fb4a71c586f71f5d3da83dcacb5; original localc424090453faa84e606a99f2655fe65b03556959/treef85cb96b7b349ca0883d9867aab45600dddddd9d. Added bounded caller-owned Vec-only single-file PAR2 recovery: checked memory/work, consecutive parity rows, captured source/header/payload identity, zero-padded MD5/CRC and final full/first16KiB integrity, cancellation, no writes/input mutation. Six original recovery fixtures cover damage/multiple erasures/truncation/missing/empty input, parity/limits/full-file errors, source mutations and interruption. Core nativecdf235fe3b6aec36372c0c452db00b27efdf973e CI37609361618 succeeded: validate112752816063 (834 Rust passed/0failed/100.928s), GNU112752816100, musl112752815755, package112753890149; release112754046430 skipped. Later b6 mutation-fixture CI37609466635/validate112754048818 failed formatting before tests, corrected exactly in current head. Current CI37609920355 in_progress; no current-head pass inferred. Engineering37609920348 completed success, logical QA unperformed/draft. Native Rust handoffs Issue6036346694/PR6036346937; Security boundary notes6036185966/6036186237 were analysis, not final review. Version0.22.11 remains; final Security/QA, version/acceptance and publication pending. No local validation or merge/release.",
+    "next_action": "Release Rust and stop this bounded slice. Fresh worker reads control ref/state first and exits quietly for valid lease. Recover same draftPR8/head78c1039589c233f353b58fbec031b4d6b337e5c6 and actual CI37609920355 before new work. Acquire one Rust lease, fix actual failures, finish bounded acceptance (maximum-erasure/chunk coverage if justified), version/docs0.22.12. Then release/reacquire distinct exact-head/base Security and QA roles and actually review the complete final diff, record truthful native review gates. Ready/merge only after every objective gate green; verify actual immutable CI-only0.22.12 publication and safe Issue/branch cleanup before next roadmap. Preserve original commits/one Issue/PR; capacity loss pauses, not fails. No local checks, duplicate work, concurrent workers or manual publication.",
     "publication": {
       "commit": "9d506f2767033fb4a71c586f71f5d3da83dcacb5",
       "state": "ci-passed",
@@ -32,10 +32,22 @@
       "conclusion": "success"
     },
     "ci": {
-      "commit": "b6da8b1e5b5785456849ac92c3a7009147146b22",
-      "status": "pending",
+      "commit": "78c1039589c233f353b58fbec031b4d6b337e5c6",
+      "run_id": 37609920355,
+      "status": "in_progress",
+      "conclusion": null,
+      "organization_run_id": 37609920348,
       "qa": "not-performed-draft",
-      "release": "not-performed-pr"
+      "release": "not-performed-pr",
+      "prior_verified": {
+        "commit": "cdf235fe3b6aec36372c0c452db00b27efdf973e",
+        "run_id": 37609361618,
+        "status": "completed",
+        "conclusion": "success",
+        "rust_passed": 834,
+        "rust_failed": 0,
+        "seconds": 100.928
+      }
     }
   },
   "attempts": {}
