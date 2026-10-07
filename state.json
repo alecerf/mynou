@@ -1,107 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 199,
+  "generation": 200,
   "lease": {
     "id": "741aea6a-9664-4e4e-abe7-e42fcabc18a0",
     "worker": "codex-hourly-20261007-1732",
     "role": "master",
     "issue": 11,
     "acquired_at": "2026-10-07T17:33:49Z",
-    "heartbeat_at": "2026-10-07T17:33:49Z",
-    "expires_at": "2026-10-07T18:18:49Z",
+    "heartbeat_at": "2026-10-07T17:38:41Z",
+    "expires_at": "2026-10-07T18:23:41Z",
     "branch": "trunk",
     "commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
     "pr": 12
   },
   "checkpoint": {
-    "at": "2026-10-07T16:30:09Z",
+    "at": "2026-10-07T17:38:41Z",
     "issue": 11,
     "role": "master",
-    "branch": "work/engineering-cadence",
-    "commit": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
+    "branch": "trunk",
+    "commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
     "pr": 12,
-    "summary": "User cadence improvement completed: PR #12 / Issue #11 merged to trunk 07ef2f73f5ac923f783b9bd27e4662bb7529bbd2 from original work/engineering-cadence:056487dc0c4d8ffe04dce1b48153c2e29403ad4a after separate Security 5445122042, independent QA 5445158311, required CI 37649725943 and ready agent-qa-review 112894484227 / Engineering 37651124380 passed. Existing task 6ac54c387af0819184713674c48b3845 actually accepted canonical merged prompt at 16:24:41Z; enabled hourly schedule/timezone/ID unchanged (native Issue #11 receipt 6042165261). One 40-minute deadline chains ready roles with checkpoint/release/reacquire and five-minute final reserve; mechanical recovery hourly, health daily/manual, MAX_ACTIVE_AGENTS=1 and gates intact. Actual default push CI 37651557558 completed successfully, all five jobs green. Native v0.22.13 release 405936360/tag 6085368588c8077af53d15bc4f07d752e670e445 and all seven asset IDs/sizes/digests are unchanged. Both merged work branches are natively absent; original source remains in merged PR/history. No local validation, duplicate/paid worker or manual release. This is the original wake exit; an arriving scheduled prompt did not start another slice or reset its deadline.",
-    "next_action": "Next supported wake: read authoritative control ref/state before domain work; exit if busy and recover stale work first. Cadence Issue #11 / PR #12 and PAR2 Issue #9 / PR #10 are delivered, task reconciliation/default CI/branch cleanup complete; do not repeat them or create a duplicate schedule. Read live native backlog and the authorized roadmap for the highest-priority bounded executable next work, with minimal sequential roles and one whole configured 40-minute deadline. Preserve five minutes for handoff; capacity loss pauses work. Hourly AI scheduling is the supported maximum and post-reset wake remains best-effort, with no quota/reset API or guaranteed VM. Idle without valuable work.",
-    "previous_publication": {
-      "commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
-      "state": "ci-passed",
-      "at": "2026-10-07T12:41:25Z",
-      "run_id": 37617472864,
-      "status": "completed",
-      "conclusion": "success",
-      "release_id": 405711761,
-      "tag": "v0.22.12",
-      "url": "https://github.com/alecerf/mynou/releases/tag/v0.22.12",
-      "issue_comment": 6038114159,
-      "pr_comment": 6038114600
-    },
-    "merged_work": {
-      "issue": 9,
-      "pr": 10,
-      "branch": "work/par2-multifile-recovery",
-      "head": "bfdff54f096150968ae725fa19d89e356ed24417",
-      "merge_commit": "6085368588c8077af53d15bc4f07d752e670e445",
-      "merged_at": "2026-10-07T16:00:34Z",
-      "branch_cleanup": "native guarded cleanup: already absent",
-      "reviews": {
-        "security": {
-          "review_id": 5444603361,
-          "submitted_at": "2026-10-07T15:34:58Z",
-          "head": "bfdff54f096150968ae725fa19d89e356ed24417",
-          "base": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
-          "lease_checkpoint": "daa866c26c4ef0d954c1e56ebaf0734e3e64ceab",
-          "verdict": "passed",
-          "state": "COMMENTED",
-          "identity": "alecerf"
-        },
-        "qa": {
-          "review_id": 5444892856,
-          "submitted_at": "2026-10-07T15:56:42Z",
-          "head": "bfdff54f096150968ae725fa19d89e356ed24417",
-          "base": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
-          "lease_checkpoint": "eb571750a6858c9ee6862f1d73780b2ef6377842",
-          "verdict": "passed",
-          "state": "COMMENTED",
-          "identity": "alecerf"
-        }
-      },
-      "source_bridge": {
-        "commits": [
-          {
-            "local": "b08c470d956434f0e02165b5b80b6f10e5d987b6",
-            "remote": "d4938b72b5451d31bd46eb61d620d06c8608470c",
-            "tree": "2f87f3e603a05c96a9a6e65bd6fd906cdc50615c"
-          },
-          {
-            "local": "060d605351761243eeb8e0d0b7d5a2b9abcb1949",
-            "remote": "bfdff54f096150968ae725fa19d89e356ed24417",
-            "tree": "560c4504ac2d20ee124210511400ffa7c16e9e0f"
-          }
-        ]
-      }
-    },
-    "cadence_request": {
-      "issue": 11,
-      "native_blocker": 9,
-      "task_id": "6ac54c387af0819184713674c48b3845",
-      "planned_slice_minutes": 40,
-      "ai_cadence": "hourly-platform-maximum",
-      "mechanical_cadence": "hourly-with-daily-branch-health",
-      "state": "applied",
-      "prompt_path": "engineering/worker-prompt.md",
-      "policy_commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
-      "applied_at": "2026-10-07T16:24:41Z"
-    },
-    "source_bridge": {
-      "commits": [
-        {
-          "local": "3d5cbbf6e145ad119a2d908e0d3fdb255c2079de",
-          "remote": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
-          "tree": "a110327823d3646a6ef7bed3ef52011ba40d60dc"
-        }
-      ]
-    },
+    "summary": "Recovery confirmed PR #12 merged at 07ef2f73f5ac923f783b9bd27e4662bb7529bbd2 and default CI 37651557558 actually successful. Live enabled hourly task has the merged canonical prompt; no pending task reconciliation. Native admission found no open managed Issue/PR; created authorized bounded read-only PAR2 verification Issue #13, with completed native prerequisite #9. No product validation or second worker.",
+    "next_action": "Continue #13 with separate Security analysis, then Rust implementation/CI, final Security and independent QA. One wake began 17:32:14Z, deadline 18:12:14Z; reserve final five minutes. No implicit filesystem repair or library authority.",
     "publication": {
       "commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
       "state": "ci-passed",
@@ -115,87 +36,21 @@
       "retained_tag_commit": "6085368588c8077af53d15bc4f07d752e670e445",
       "retained_assets_unchanged": true
     },
-    "ci": {
-      "run_id": 37649725943,
-      "head": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
-      "status": "completed",
-      "conclusion": "success",
-      "rust_tests": 846,
-      "harnesses": 64,
-      "test_seconds": 95.151,
-      "validate_job": 112889585489,
-      "jobs": [
-        {
-          "name": "validate",
-          "id": 112889585489,
-          "conclusion": "success"
-        },
-        {
-          "name": "Build x86_64-unknown-linux-gnu",
-          "id": 112889585558,
-          "conclusion": "success"
-        },
-        {
-          "name": "Build x86_64-unknown-linux-musl",
-          "id": 112889585741,
-          "conclusion": "success"
-        },
-        {
-          "name": "package",
-          "id": 112890707485,
-          "conclusion": "success"
-        },
-        {
-          "name": "release",
-          "id": 112890930791,
-          "conclusion": "skipped"
-        }
-      ]
-    },
-    "next_work": {
-      "status": "resume-native-backlog",
-      "role": "master",
-      "completed_issue": 11,
-      "completed_pr": 12,
-      "policy_commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2"
-    },
-    "review_head_sha": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
-    "review_base_sha": "6085368588c8077af53d15bc4f07d752e670e445",
-    "reviewed_paths": [
-      ".agents/skills/mynou-master/SKILL.md",
-      ".github/engineering.json",
-      ".github/workflows/engineering-delivery.yml",
-      "AGENTS.md",
-      "engineering/README.md",
-      "engineering/policy.py",
-      "engineering/worker-prompt.md"
-    ],
-    "security_review": {
-      "review_id": 5445122042,
-      "head": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
-      "base": "6085368588c8077af53d15bc4f07d752e670e445",
-      "lease_checkpoint": "ec396908ab7f977ea77f59e2a48c146d636585dc",
-      "submitted_at": "2026-10-07T16:16:17Z",
-      "verdict": "passed",
-      "state": "COMMENTED"
-    },
-    "qa_review": {
-      "review_id": 5445158311,
-      "head": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
-      "base": "6085368588c8077af53d15bc4f07d752e670e445",
-      "lease_checkpoint": "d125b852667341b94abc20158c47b9e45361d8c8",
-      "submitted_at": "2026-10-07T16:19:25Z",
-      "verdict": "passed",
-      "state": "COMMENTED"
-    },
-    "merge_gate": {
-      "head": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
-      "base": "6085368588c8077af53d15bc4f07d752e670e445",
-      "ci_run": 37649725943,
-      "engineering_run": 37651124380,
-      "qa_job": 112894484227,
-      "organization_job": 112894423230,
-      "state": "observed-green-native-merge-pending"
+    "task_reconciliation": {
+      "success": true,
+      "automation_id": "6ac54c387af0819184713674c48b3845",
+      "title": "Mynou engineering",
+      "is_enabled": true,
+      "schedule": "BEGIN:VEVENT\nDTSTART:20261006T193000\nRRULE:FREQ=HOURLY;INTERVAL=1\nEND:VEVENT",
+      "timing_mode": "exact_schedule",
+      "default_timezone": "America/Los_Angeles",
+      "updated_at": "2026-10-07T16:24:41.034231+00:00",
+      "prompt_path": "engineering/worker-prompt.md",
+      "policy_commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
+      "prompt_matches_merged_source": true,
+      "schedule_unchanged": true,
+      "timezone_unchanged": true,
+      "issue_comment": 6042165261
     },
     "retained_product_release": {
       "commit": "6085368588c8077af53d15bc4f07d752e670e445",
@@ -262,21 +117,57 @@
       "merged_at": "2026-10-07T16:22:51Z",
       "branch_cleanup": "native branch listing confirms absent; original exact head preserved in merged PR/history"
     },
-    "task_reconciliation": {
-      "success": true,
-      "automation_id": "6ac54c387af0819184713674c48b3845",
-      "title": "Mynou engineering",
-      "is_enabled": true,
-      "schedule": "BEGIN:VEVENT\nDTSTART:20261006T193000\nRRULE:FREQ=HOURLY;INTERVAL=1\nEND:VEVENT",
-      "timing_mode": "exact_schedule",
-      "default_timezone": "America/Los_Angeles",
-      "updated_at": "2026-10-07T16:24:41.034231+00:00",
-      "prompt_path": "engineering/worker-prompt.md",
-      "policy_commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
-      "prompt_matches_merged_source": true,
-      "schedule_unchanged": true,
-      "timezone_unchanged": true,
-      "issue_comment": 6042165261
+    "merged_work": {
+      "issue": 9,
+      "pr": 10,
+      "branch": "work/par2-multifile-recovery",
+      "head": "bfdff54f096150968ae725fa19d89e356ed24417",
+      "merge_commit": "6085368588c8077af53d15bc4f07d752e670e445",
+      "merged_at": "2026-10-07T16:00:34Z",
+      "branch_cleanup": "native guarded cleanup: already absent",
+      "reviews": {
+        "security": {
+          "review_id": 5444603361,
+          "submitted_at": "2026-10-07T15:34:58Z",
+          "head": "bfdff54f096150968ae725fa19d89e356ed24417",
+          "base": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
+          "lease_checkpoint": "daa866c26c4ef0d954c1e56ebaf0734e3e64ceab",
+          "verdict": "passed",
+          "state": "COMMENTED",
+          "identity": "alecerf"
+        },
+        "qa": {
+          "review_id": 5444892856,
+          "submitted_at": "2026-10-07T15:56:42Z",
+          "head": "bfdff54f096150968ae725fa19d89e356ed24417",
+          "base": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
+          "lease_checkpoint": "eb571750a6858c9ee6862f1d73780b2ef6377842",
+          "verdict": "passed",
+          "state": "COMMENTED",
+          "identity": "alecerf"
+        }
+      },
+      "source_bridge": {
+        "commits": [
+          {
+            "local": "b08c470d956434f0e02165b5b80b6f10e5d987b6",
+            "remote": "d4938b72b5451d31bd46eb61d620d06c8608470c",
+            "tree": "2f87f3e603a05c96a9a6e65bd6fd906cdc50615c"
+          },
+          {
+            "local": "060d605351761243eeb8e0d0b7d5a2b9abcb1949",
+            "remote": "bfdff54f096150968ae725fa19d89e356ed24417",
+            "tree": "560c4504ac2d20ee124210511400ffa7c16e9e0f"
+          }
+        ]
+      }
+    },
+    "next_work": {
+      "issue": 13,
+      "role": "security",
+      "branch": "work/par2-verification",
+      "base": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
+      "deadline": "2026-10-07T18:12:14Z"
     }
   },
   "attempts": {}
