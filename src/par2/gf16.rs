@@ -84,8 +84,7 @@ pub fn inverse(value: u16) -> Option<u16> {
         return None;
     }
     let table = tables();
-    let exponent =
-        (FIELD_PERIOD - u32::from(table.logarithms[usize::from(value)])) % FIELD_PERIOD;
+    let exponent = (FIELD_PERIOD - u32::from(table.logarithms[usize::from(value)])) % FIELD_PERIOD;
     Some(table.powers[exponent as usize])
 }
 
