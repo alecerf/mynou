@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 176,
-  "lease": {
-    "id": "64c73593-cde9-4a49-85cf-c5a0ea10bb2c",
-    "worker": "codex-multifile-independent-qa",
-    "role": "qa",
-    "issue": 9,
-    "acquired_at": "2026-10-07T15:54:18Z",
-    "heartbeat_at": "2026-10-07T15:57:21Z",
-    "expires_at": "2026-10-07T16:42:21Z",
-    "branch": "work/par2-multifile-recovery",
-    "commit": "bfdff54f096150968ae725fa19d89e356ed24417",
-    "pr": 10
-  },
+  "generation": 177,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-07T15:57:21Z",
     "issue": 9,
