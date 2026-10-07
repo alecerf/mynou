@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 335,
+  "generation": 336,
   "lease": {
     "id": "wake7-quality-registry-implementation-20261007T232627Z",
     "worker": "codex-hourly-20261007T232627Z",
     "role": "quality",
     "issue": 18,
     "acquired_at": "2026-10-07T23:32:16Z",
-    "heartbeat_at": "2026-10-07T23:32:16Z",
-    "expires_at": "2026-10-08T00:17:16Z",
-    "branch": "trunk",
+    "heartbeat_at": "2026-10-07T23:41:04Z",
+    "expires_at": "2026-10-08T00:26:04Z",
+    "branch": "work/registry-releases",
     "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
     "pr": null
   },
   "checkpoint": {
     "issue": 18,
-    "role": "security",
-    "branch": "trunk",
+    "role": "quality",
+    "branch": "work/registry-releases",
     "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
     "pr": null,
-    "at": "2026-10-07T23:32:09Z",
-    "summary": "Security planned Issue18 registry trust boundaries: private package preflight, default-only ephemeral package token, credential-free checkout, SHA/version collision refusal, exact image/source proof, pulled digest runtime verification and visible idempotent recovery. GHCR tags lack server immutability/CAS; docs must recommend digest pins and avoid unsupported claims. No source implementation or publishing occurred.",
-    "next_action": "Release Security and acquire Quality for original CI/package/docs implementation. Final complete-diff Security review and independent QA follow actual source commit/CI.",
+    "at": "2026-10-07T23:41:04Z",
+    "summary": "Quality prepared original Issue18 CI/GHCR migration: four release files, source-SHA-scoped internal image, default-only private package publisher with collision/identity/digest checks, ten CI-only regressions, version-bound Compose and English installation. Retired ZIP packager has only workflow/timing references; product runtime stays Rust std only. No tests/lint/builds/binaries/validation executed locally.",
+    "next_action": "Create preserved work/registry-releases from exact published8a0ada56, commit original source through Git Data API, open one linked draft PR and record actual native CI. Release Quality before complete-diff Security.",
     "publication_baseline": {
       "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
       "state": "published",
@@ -165,6 +165,34 @@
         "Same-run/SHA artifacts and checksum checks remain; reduce asset inventory deterministically. Remove only original source ZIP packager after actual reference review.",
         "Native same-identity COMMENT Security and independent QA must cover entire final diff and real PR CI; actual default publication is later, not inferred."
       ]
+    },
+    "source": {
+      "base_commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
+      "branch": "work/registry-releases",
+      "changed_paths": [
+        ".github/workflows/ci.yml",
+        ".github/scripts/publish_container.py",
+        ".github/scripts/test_publication.py",
+        "Dockerfile",
+        "deploy-compose.yaml",
+        "src/main.rs",
+        "compose.yaml",
+        "tests/cli.rs",
+        "Cargo.toml",
+        "Cargo.lock",
+        ".github/scripts/test_durations.json",
+        ".github/scripts/publish-release.sh",
+        "README.md",
+        "docs/deployment.md",
+        "docs/macos.md",
+        "docs/ci.md",
+        "docs/validation.md",
+        "docs/next-release.md",
+        "docs/releases/0.22.17.md",
+        "examples/package_release.rs"
+      ],
+      "removed_path": "examples/package_release.rs",
+      "planned_version": "0.22.17"
     }
   },
   "attempts": {}
