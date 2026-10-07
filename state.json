@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 244,
+  "generation": 245,
   "lease": {
     "id": "88a033e7-8d77-441f-ad7b-918e77d5aae4",
     "worker": "codex-hourly-20261007T192857Z",
     "role": "rust",
     "issue": 15,
     "acquired_at": "2026-10-07T19:39:46Z",
-    "heartbeat_at": "2026-10-07T19:51:18Z",
-    "expires_at": "2026-10-07T20:36:18Z",
+    "heartbeat_at": "2026-10-07T19:55:36Z",
+    "expires_at": "2026-10-07T20:40:36Z",
     "branch": "work/par2-recovery-workspace",
-    "commit": "325792fbb8b7f58b36392bacae419d2b72b02252",
+    "commit": "e7cfa78d42094f25df3634333de1ecd0464e619f",
     "pr": 16
   },
   "checkpoint": {
-    "at": "2026-10-07T19:51:18Z",
+    "at": "2026-10-07T19:55:36Z",
     "issue": 15,
     "role": "rust",
     "branch": "work/par2-recovery-workspace",
-    "commit": "325792fbb8b7f58b36392bacae419d2b72b02252",
+    "commit": "e7cfa78d42094f25df3634333de1ecd0464e619f",
     "pr": 16,
-    "summary": "Original #15 private recovery workspace source committed/pushed to work/par2-recovery-workspace:325792fbb8b7f58b36392bacae419d2b72b02252 from published7910156c6cce0f74a9ab530b289c3734750bc994. New source borrows immutable Set/source, reuses Owner/std locking/private frame and native reconstruction/verification, reconstructs before new private writes, commits exact descriptor after readback, and checks complete bounded inventory on reopen. Unix private namespace only; no overwrites/admission. Six original CI-only fixtures and proposed0.22.15/support/actual0.22.14 docs. No local checks or current-head CI/review success claimed. Remote source trees exactly preserve original local commits.",
-    "next_action": "Recover draft PR16 current CI, apply actual compiler/formatter/lint findings through meaningful commits and new remote head, then separate exact-head/base Security and independent QA when ready. Same wake deadline20:08:57Z; reserve starts20:03:57Z. If real external CI wait, persist exact evidence and release rather than polling.",
+    "summary": "#15 / draft PR16 current original source work/par2-recovery-workspace:e7cfa78d42094f25df3634333de1ecd0464e619f, base7910156c6cce0f74a9ab530b289c3734750bc994. Owner-bound private Unix recovery staging/reopen, complete immutable descriptor/integrity/inventory/locking and six original fixtures plus proposed0.22.15 docs. CI37677633730 at preceding325792 failed formatting only: validate112985118954; GNU112985119514 and musl112985119425 succeeded, tests/Clippy/package/release skipped. Applied actual36 CI formatter hunks without local checks. Initial source patch context conflict from the two added final publication fences was corrected; no source discarded. Added final root/complete inventory checks after descriptor publication and documented exact memory/platform/durability limits. New current-head CI is pending; no final Security/QA, passed new tests, merge or publication claimed.",
+    "next_action": "Separate Security complete-diff review of exacte7cfa78d42094f25df3634333de1ecd0464e619f/base7910156c6cce0f74a9ab530b289c3734750bc994 is immediately executable while deterministic CI checks run. Read every changed path, scope, final fences, live memory, owner/source/policy and read-only reopen. Record actual findings; independent QA only after actual required CI green. Whole wake deadline20:08:57Z; reserve20:03:57Z. If a real CI wait remains after ready review, checkpoint/release and stop.",
     "publication": {
       "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
       "state": "ci-passed",
@@ -168,6 +168,11 @@
           "local": "f0cb9948f66ac9b56562351b82669090951babc2",
           "remote": "325792fbb8b7f58b36392bacae419d2b72b02252",
           "tree": "b84f044878bb8f2c0a86b7eb711642b2cd2bc7a8"
+        },
+        {
+          "local": "9a3ecd1fd98dd40ea0fa1bce7be401ec27a5482f",
+          "remote": "e7cfa78d42094f25df3634333de1ecd0464e619f",
+          "tree": "b51b9fd93708618dbd620b74de4c1ea6154f337a"
         }
       ]
     },
