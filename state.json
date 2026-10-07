@@ -1,15 +1,15 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 312,
+  "generation": 313,
   "lease": {
     "id": "wake6-master-macos-delivery-20261007T222619Z",
     "worker": "codex-hourly-20261007T222619Z",
     "role": "master",
     "issue": 17,
     "acquired_at": "2026-10-07T22:30:56Z",
-    "heartbeat_at": "2026-10-07T22:31:03Z",
-    "expires_at": "2026-10-07T23:16:03Z",
+    "heartbeat_at": "2026-10-07T22:33:13Z",
+    "expires_at": "2026-10-07T23:18:13Z",
     "branch": "work/macos-builds",
     "commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
     "pr": 20
@@ -20,9 +20,9 @@
     "branch": "work/macos-builds",
     "commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
     "pr": 20,
-    "at": "2026-10-07T22:31:03Z",
-    "summary": "QA passed under a distinct exact-head/base lease and released; Master acquired delivery at ce35b775 /4cf7580 and marked existing PR20 ready. Native actual CI37691964651/organization green; separate Security and independent QA records preserved. Awaiting real objective agent-qa-review check; no merge or default publication claimed.",
-    "next": "Inspect actual machine gate and native checks at unchanged PR head/base. If all green merge exact head, repair native issue/dependencies/branch state and recover default CI/publication; stop cleanly for a real external wait.",
+    "at": "2026-10-07T22:33:13Z",
+    "summary": "Actual machine agent-qa-review113050053556 and organization113050000966 succeeded in Engineering37696677176. Exact-head CI37691964651 has all six required green jobs, including both Mac targets; native check-runs confirm each current source check. PR20 ready/open/mergeable clean, unchanged ce35b775/4cf7580 and no unresolved threads. Objective gates permit exact-head author merge; default CI/publication are still separate.",
+    "next": "Merge PR20 by exact ce35b775 head, verify actual default commit/parents/tree, then serialized Quality repairs Issue/dependencies/branch state and Master recovers default CI/publication.",
     "qa": {
       "schema": 1,
       "role": "qa",
@@ -183,6 +183,25 @@
       "organization_run_id": 37692344754,
       "organization_job_id": 113035395324
     },
+    "gate": {
+      "run_id": 37696677176,
+      "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
+      "base_sha": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
+      "organization_job": 113050000966,
+      "qa_job": 113050053556,
+      "conclusion": "success",
+      "required_check_names": [
+        "validate",
+        "Build x86_64-unknown-linux-gnu",
+        "Build x86_64-unknown-linux-musl",
+        "Build aarch64-apple-darwin",
+        "Build x86_64-apple-darwin",
+        "package",
+        "organization",
+        "agent-qa-review"
+      ],
+      "observed_at": "2026-10-07T22:32:06Z"
+    },
     "publication_baseline": {
       "commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
       "state": "published",
@@ -247,6 +266,12 @@
       "organization_tests": 53,
       "previous_release_id": 406055926,
       "previous_assets_unchanged": true
+    },
+    "merge_intent": {
+      "pr": 20,
+      "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
+      "base_sha": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
+      "method": "merge"
     }
   },
   "attempts": {}
