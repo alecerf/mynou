@@ -171,7 +171,6 @@ impl Set {
         }
         for file in &files {
             let input = inputs.iter().find(|input| input.id == file.id).unwrap();
-            let first_global_slice = global;
             if input.bytes.len() as u64 > file.bytes {
                 return Err("PAR2 verification input exceeds its captured length".into());
             }
@@ -187,6 +186,7 @@ impl Set {
         for file in files {
             active(flag)?;
             let input = inputs.iter().find(|input| input.id == file.id).unwrap();
+            let first_global_slice = global;
             let mut damaged_slices = Vec::new();
             for (local, expected) in file.slices.iter().enumerate() {
                 active(flag)?;
