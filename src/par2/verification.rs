@@ -14,7 +14,7 @@ use std::{
 };
 
 const CHUNK: usize = 64 << 10;
-const OVERHEAD: u64 = 64 << 10;
+const OVERHEAD: u64 = 512 << 10;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FileVerification {
@@ -436,12 +436,12 @@ pub fn verify_directory_cancellable(
         }
     }
     active(flag)?;
+    set.verify_source(&mut source, flag)?;
     check(&root_fences)?;
     check(&source_fences)?;
     for (captured, _) in &selected {
         check(captured)?;
     }
-    set.verify_source(&mut source, flag)?;
     active(flag)?;
     Ok(result)
 }

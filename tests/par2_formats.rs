@@ -1385,8 +1385,10 @@ fn verification_rejects_bad_input_coverage_and_budgets_before_source_reads() {
             .is_err()
         );
     }
-    let mut limits = MultiRecoveryLimits::default();
-    limits.max_files = 1;
+    let mut limits = MultiRecoveryLimits {
+        max_files: 1,
+        ..MultiRecoveryLimits::default()
+    };
     assert!(
         set.verify_files(&mut Cursor::new([]), &[a, b], limits)
             .is_err()
@@ -1680,4 +1682,34 @@ fn cli_verification_outputs_diagnosis_and_fails_on_damage_without_initialization
         assert!(!output.status.success());
     }
     assert!(!directory.0.join("forbidden.json").exists());
+}
+
+#[test]
+fn verification_budgets_live_source_hash_and_report_overhead() {
+    let bytes = Fixture::files(&[("padded.bin", b"abcde")], 1, 1 << 20).bytes();
+    let set = read(&bytes).unwrap();
+    let inputs = [RecoveryInput::new(*set.files()[0].id(), b"abcde")];
+    let tight = MultiRecoveryLimits {
+        recovery: RecoveryLimits {
+            max_working_bytes: (1 << 20) + (64 << 10),
+            ..RecoveryLimits::default()
+        },
+        ..MultiRecoveryLimits::default()
+    };
+    let error = set
+        .verify_files(&mut Cursor::new(&bytes), &inputs, tight)
+        .unwrap_err();
+    assert!(error.contains("scratch limits"));
+    let allowed = MultiRecoveryLimits {
+        recovery: RecoveryLimits {
+            max_working_bytes: (1 << 20) + (512 << 10),
+            ..tight.recovery
+        },
+        ..tight
+    };
+    assert!(
+        set.verify_files(&mut Cursor::new(&bytes), &inputs, allowed)
+            .unwrap()
+            .content_verified()
+    );
 }
