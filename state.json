@@ -1,41 +1,54 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 291,
+  "generation": 292,
   "lease": {
     "id": "wake5-quality-macos-correction-20261007T213002Z",
     "worker": "codex-hourly-20261007T213002Z",
     "role": "quality",
     "issue": 17,
     "acquired_at": "2026-10-07T21:48:14Z",
-    "heartbeat_at": "2026-10-07T21:48:14Z",
-    "expires_at": "2026-10-07T22:33:14Z",
+    "heartbeat_at": "2026-10-07T21:48:21Z",
+    "expires_at": "2026-10-07T22:33:21Z",
     "branch": "work/macos-builds",
-    "commit": "330cdbd7e8d2530c8900579206cc5e3075934d92",
+    "commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
     "pr": 20
   },
   "checkpoint": {
     "issue": 17,
-    "role": "qa",
+    "role": "quality",
     "branch": "work/macos-builds",
-    "commit": "330cdbd7e8d2530c8900579206cc5e3075934d92",
+    "commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
     "pr": 20,
-    "at": "2026-10-07T21:48:07Z",
-    "summary": "Independent QA read all 11 actual changed paths and native Security record. Apple Silicon and Linux builds/demos are actually green; Intel/validate were still running. Found a real install-guide failure path: checksum/cd errors do not prevent later install/demo commands when pasted in an ordinary shell. Reject pending a guarded command sequence; no complete CI or QA success claimed.",
-    "next": "Quality: guard download/checksum/install/demo and configuration commands with success chaining. Commit correction remotely, then separate Security/QA at the new exact head/base.",
-    "review_phase": {
+    "at": "2026-10-07T21:48:21Z",
+    "summary": "Corrected QA finding in native macOS installation/configuration guide: cd/checksum/install/demo and init/doctor/serve now form && chains, preventing execution after a failed prerequisite. Pushed original correction to the existing PR #20; no local checks. New head invalidates previous passing Security record and requires complete-diff re-review and actual green CI.",
+    "next": "Separate Security re-review at the new exact head/base, then independent QA; inspect actual CI and preserve a real external wait if pending.",
+    "source": {
+      "remote_commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
+      "tree": "c58f1932d8a5f1a158d7f8776681e7debc3f2954",
+      "base_commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
+      "changed_paths": [
+        ".github/workflows/ci.yml",
+        ".github/engineering.json",
+        "Cargo.toml",
+        "Cargo.lock",
+        "README.md",
+        "docs/macos.md",
+        "docs/releases/0.22.16.md",
+        "docs/ci.md",
+        "docs/deployment.md",
+        "docs/next-release.md",
+        ".github/scripts/publish-release.sh"
+      ]
+    },
+    "previous_qa_rejection": {
+      "schema": 1,
       "role": "qa",
       "head_sha": "330cdbd7e8d2530c8900579206cc5e3075934d92",
-      "base_sha": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8"
-    },
-    "security": {
-      "schema": 1,
-      "role": "security",
-      "head_sha": "330cdbd7e8d2530c8900579206cc5e3075934d92",
       "base_sha": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
-      "lease_checkpoint": "373ab1e117a7eb4de2d5d5991bcf823ef03cc24f",
-      "verdict": "passed",
-      "summary": "Complete-diff Security review found no blocking issue; runtime/merge readiness remains conditional on actual required CI and independent QA.",
+      "lease_checkpoint": "1cb4218dccc7b43f280ab91d63f7d46df56ed9cd",
+      "verdict": "rejected",
+      "summary": "Native Apple Silicon demo is verified, but installation instructions can continue after failed checksum verification. Correct the guarded execution before acceptance.",
       "reviewed_paths": [
         ".github/engineering.json",
         ".github/scripts/publish-release.sh",
@@ -50,35 +63,17 @@
         "docs/releases/0.22.16.md"
       ],
       "acceptance": [
-        "Both standard native macOS builds and demos gate packaging; Linux/container gates remain.",
-        "Same-run target/SHA-scoped artifacts preserve checked bytes; immutable publication remains default CI only.",
-        "No new write privileges, credentials, third-party/runtime dependencies, paid runner or security bypass.",
-        "English native guide distinguishes checksum integrity from Apple signing and documents existing PEM trust without disabling TLS."
+        "Both Mac targets and original Linux/organization gates are configured; same-run checked artifacts and immutable release policy are preserved.",
+        "English native architecture, PEM trust and signing behavior are documented; copy/paste failure handling needs correction."
       ],
       "evidence": [
-        "Actual PR #20 full 11-file diff at 330cdbd7e8d2530c8900579206cc5e3075934d92.",
-        "Native Actions run 37691546668 was in progress, including both real macOS runner jobs; no runtime success is asserted.",
-        "Existing src/tls.rs load_roots supports /etc/ssl/cert.pem and MYNOU_CA_FILE; existing src/demo.rs confirms ready import and Plex scan.",
-        "Official actions/runner-images README lists standard macos-26 arm64 and macos-26-intel x64."
+        "Complete actual 11-path PR #20 diff reviewed at head 330cdbd7e8d2530c8900579206cc5e3075934d92 / base4cf7580.",
+        "CI37691546668 Apple Silicon job113032694993: Mach-O arm64, actual ready import and plex_scan_confirmed=true; Linux GNU/musl jobs successful.",
+        "Engineering37691546565 organization113032693928: 53 scenarios pass; CI Intel/validation/package were pending, so no complete green result claimed.",
+        "Separate native Security COMMENT5448763835 uses a held exact-head/base Security lease."
       ],
-      "findings": []
-    },
-    "source": {
-      "remote_commit": "330cdbd7e8d2530c8900579206cc5e3075934d92",
-      "tree": "f2d96deeef0ae6256d2342a669782bc63eace4a2",
-      "base_commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
-      "changed_paths": [
-        ".github/workflows/ci.yml",
-        ".github/engineering.json",
-        "Cargo.toml",
-        "Cargo.lock",
-        "README.md",
-        "docs/macos.md",
-        "docs/releases/0.22.16.md",
-        "docs/ci.md",
-        "docs/deployment.md",
-        "docs/next-release.md",
-        ".github/scripts/publish-release.sh"
+      "findings": [
+        "docs/macos.md download/install code block uses independent commands. A failed cd or shasum does not stop mkdir/install/demo in an ordinary interactive shell; chain dependent commands with &&. Likewise guard configuration/init/doctor/serve so an earlier failure cannot start the next step."
       ]
     },
     "publication_baseline": {
@@ -145,25 +140,6 @@
       "organization_tests": 53,
       "previous_release_id": 406055926,
       "previous_assets_unchanged": true
-    },
-    "ci": {
-      "run_id": 37691546668,
-      "green_jobs": [
-        "Build x86_64-unknown-linux-musl",
-        "Build x86_64-unknown-linux-gnu",
-        "Build aarch64-apple-darwin"
-      ],
-      "pending_jobs": [
-        "Build x86_64-apple-darwin",
-        "validate",
-        "package"
-      ],
-      "organization": {
-        "run_id": 37691546565,
-        "job_id": 113032693928,
-        "conclusion": "success",
-        "tests": 53
-      }
     }
   },
   "attempts": {}
