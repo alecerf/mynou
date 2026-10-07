@@ -1,15 +1,15 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 283,
+  "generation": 284,
   "lease": {
     "id": "wake5-security-macos-review-20261007T213002Z",
     "worker": "codex-hourly-20261007T213002Z",
     "role": "security",
     "issue": 17,
     "acquired_at": "2026-10-07T21:45:04Z",
-    "heartbeat_at": "2026-10-07T21:45:07Z",
-    "expires_at": "2026-10-07T22:30:07Z",
+    "heartbeat_at": "2026-10-07T21:45:55Z",
+    "expires_at": "2026-10-07T22:30:55Z",
     "branch": "work/macos-builds",
     "commit": "330cdbd7e8d2530c8900579206cc5e3075934d92",
     "pr": 20
@@ -20,9 +20,9 @@
     "branch": "work/macos-builds",
     "commit": "330cdbd7e8d2530c8900579206cc5e3075934d92",
     "pr": 20,
-    "at": "2026-10-07T21:45:07Z",
-    "summary": "Security reviewing the entire actual PR #20 diff at exact head 330cdbd7e8d2530c8900579206cc5e3075934d92 and base 4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8. Initial planning was separate; no final review or CI success claimed yet.",
-    "next": "Read every changed path and relevant workflow/artifact trust context; record actual exact-head/base Security findings. QA waits for actual required CI results.",
+    "at": "2026-10-07T21:45:55Z",
+    "summary": "Security inspected all 11 actual changed paths of PR #20 at exact head/base. No blocking security findings: contents permissions unchanged, no fork write execution, same-workflow/SHA artifacts, native architecture/demo gates, byte-preserving package/checksums and immutable default CI publication. PEM trust and per-application Gatekeeper/signing limitations are documented. Required CI is running; Security does not claim runtime success.",
+    "next": "Independent QA: review complete diff and acceptance under its own exact-head/base lease; read actual CI. Reject any failures, otherwise wait if jobs are pending.",
     "review_phase": {
       "role": "security",
       "head_sha": "330cdbd7e8d2530c8900579206cc5e3075934d92",
