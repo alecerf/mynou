@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 360,
+  "generation": 361,
   "lease": {
     "id": "wake7-master-registry-publication-20261007T232627Z",
     "worker": "codex-hourly-20261007T232627Z",
     "role": "master",
     "issue": 18,
     "acquired_at": "2026-10-07T23:50:56Z",
-    "heartbeat_at": "2026-10-07T23:50:56Z",
-    "expires_at": "2026-10-08T00:35:56Z",
+    "heartbeat_at": "2026-10-07T23:52:27Z",
+    "expires_at": "2026-10-08T00:37:27Z",
     "branch": "trunk",
     "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
     "pr": 21
   },
   "checkpoint": {
     "issue": 18,
-    "role": "quality",
+    "role": "master",
     "branch": "trunk",
     "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
     "pr": 21,
-    "at": "2026-10-07T23:50:47Z",
-    "summary": "Quality post-merge cleanup complete for Issue18/PR21: closed/completed with status:done, native automatic work branch deletion freshly verified404, no open PRs/dependencies. Exact reviewed source/CI/Security/QA/gate proof preserved. No manual deletion, local check or package/release publication.",
-    "next_action": "Release Quality; Master must recover default CI at551e82d2, verify private GHCR/content digest and immutable v0.22.17 before unrelated backlog. Stop cleanly for real pending CI without polling.",
+    "at": "2026-10-07T23:52:27Z",
+    "summary": "One bounded wake recovered actual immutable v0.22.16 publication, then implemented user Issue18 through serial Security/Quality/Security/QA/Master delivery, merged PR21 at551e82d2 and finished Quality cleanup. Actual PR tests/builds/package/machine gates passed. Default push CI37704415292 remains in progress; Engineering37704415222 succeeded. v0.22.17 lookup404 and private GHCR/digest are unverified. Stop for real external CI wait; no polling, duplicate dispatch, local check or manual publication.",
+    "next_action": "Recover exact default CI37704415292 at551e82d2 before #19. If red inspect actual failed logs and partial registry/release state; preserve useful work and correct through controlled serial source/CI/review. If green verify all7 jobs including release, native private associated package proof and digest/source/binary/demo in publisher log, exact immutable v0.22.17 tag/4 bot assets and unchanged v0.22.16 baseline. Persist native handoff, then triage existing #19; no duplicate Issues/task/worker.",
     "publication_baseline": {
       "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
       "state": "published",
@@ -430,6 +430,63 @@
       "native_blocked_by": [],
       "native_blocking": [],
       "manual_branch_deletion": false
+    },
+    "publication": {
+      "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
+      "state": "ci-pending",
+      "at": "2026-10-07T23:52:26Z",
+      "branch": "trunk",
+      "run_id": 37704415292,
+      "event": "push",
+      "attempt": 1,
+      "status": "in_progress",
+      "conclusion": null,
+      "url": "https://github.com/alecerf/mynou/actions/runs/37704415292",
+      "tag": "v0.22.17",
+      "release_observed": false,
+      "release_lookup_response": 404,
+      "registry_observed": false,
+      "registry_image": "ghcr.io/alecerf/mynou",
+      "registry_version_tag": "0.22.17",
+      "registry_source_tag": "sha-551e82d2c4158b9af2080081bbac3e1d18c949ea",
+      "expected_asset_count": 4,
+      "manual_dispatch": false,
+      "default_ref_verified": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
+      "engineering_run_id": 37704415222,
+      "engineering_conclusion": "success",
+      "jobs": [
+        {
+          "id": 113075262085,
+          "name": "Build x86_64-apple-darwin",
+          "status": "in_progress",
+          "conclusion": null
+        },
+        {
+          "id": 113075262098,
+          "name": "validate",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113075262103,
+          "name": "Build x86_64-unknown-linux-musl",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113075262200,
+          "name": "Build aarch64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113075262234,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "publication_not_inferred": true
     }
   },
   "attempts": {}
