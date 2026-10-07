@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 338,
-  "lease": {
-    "id": "wake7-quality-registry-implementation-20261007T232627Z",
-    "worker": "codex-hourly-20261007T232627Z",
-    "role": "quality",
-    "issue": 18,
-    "acquired_at": "2026-10-07T23:32:16Z",
-    "heartbeat_at": "2026-10-07T23:41:41Z",
-    "expires_at": "2026-10-08T00:26:41Z",
-    "branch": "work/registry-releases",
-    "commit": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
-    "pr": 21
-  },
+  "generation": 339,
+  "lease": null,
   "checkpoint": {
     "issue": 18,
     "role": "quality",
