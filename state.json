@@ -1,30 +1,30 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 287,
+  "generation": 288,
   "lease": {
     "id": "wake5-qa-macos-20261007T213002Z",
     "worker": "codex-hourly-20261007T213002Z",
     "role": "qa",
     "issue": 17,
     "acquired_at": "2026-10-07T21:46:06Z",
-    "heartbeat_at": "2026-10-07T21:46:06Z",
-    "expires_at": "2026-10-07T22:31:06Z",
+    "heartbeat_at": "2026-10-07T21:46:09Z",
+    "expires_at": "2026-10-07T22:31:09Z",
     "branch": "work/macos-builds",
     "commit": "330cdbd7e8d2530c8900579206cc5e3075934d92",
     "pr": 20
   },
   "checkpoint": {
     "issue": 17,
-    "role": "security",
+    "role": "qa",
     "branch": "work/macos-builds",
     "commit": "330cdbd7e8d2530c8900579206cc5e3075934d92",
     "pr": 20,
-    "at": "2026-10-07T21:45:59Z",
-    "summary": "Completed separate Security review of all 11 actual PR #20 paths; native COMMENT records exact head/base and held review checkpoint. No blocking security findings. Actual CI was still running, so runtime and merge success are not claimed.",
-    "next": "Independent QA under exact head/base lease: inspect complete actual diff, user acceptance and all required native CI; fail closed on red/pending gates.",
+    "at": "2026-10-07T21:46:09Z",
+    "summary": "Independent logical QA phase for PR #20 begins after Quality implementation and separate complete-diff Security review were checkpointed and released. Reviewing exact head 330cdbd7e8d2530c8900579206cc5e3075934d92 / base 4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8. No QA pass or CI success claimed.",
+    "next": "Review every actual changed path, native Mac acceptance, platform compatibility and complete required CI; fix/review rejected findings or checkpoint a real external wait.",
     "review_phase": {
-      "role": "security",
+      "role": "qa",
       "head_sha": "330cdbd7e8d2530c8900579206cc5e3075934d92",
       "base_sha": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8"
     },
