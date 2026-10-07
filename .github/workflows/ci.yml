@@ -86,14 +86,26 @@ jobs:
           key: ${{ steps.cache.outputs.cache-primary-key }}
   build:
     name: Build ${{ matrix.target }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        target: [x86_64-unknown-linux-gnu, x86_64-unknown-linux-musl]
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-latest
+          - target: aarch64-apple-darwin
+            runner: macos-26
+            arch: arm64
+          - target: x86_64-apple-darwin
+            runner: macos-26-intel
+            arch: x86_64
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
       - name: Restore exact release binaries
         id: cache
         uses: actions/cache/restore@v6.1.0
@@ -117,7 +129,8 @@ jobs:
           else
             cargo build --release --offline --locked --target "$TARGET" --bin mynou
           fi
-      - name: Verify the release binary
+      - name: Verify the Linux release binary
+        if: runner.os == 'Linux'
         env:
           TARGET: ${{ matrix.target }}
         run: |
@@ -131,9 +144,42 @@ jobs:
             test -x "target/$TARGET/release/examples/package_release"
           fi
           sha256sum "$binary"
+      - name: Verify the macOS release binary
+        if: runner.os == 'macOS'
+        env:
+          TARGET: ${{ matrix.target }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          binary="target/$TARGET/release/mynou"
+          test -x "$binary"
+          file "$binary"
+          test "$(lipo -archs "$binary")" = "$ARCH"
+          otool -hv "$binary"
+          otool -L "$binary"
+          shasum -a 256 "$binary"
       - name: Run the standalone demonstration
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: target/x86_64-unknown-linux-musl/release/mynou demo --dir "$RUNNER_TEMP/mynou-demo"
+        if: matrix.target == 'x86_64-unknown-linux-musl' || runner.os == 'macOS'
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          demo_root=$(cd "$RUNNER_TEMP" && pwd -P)
+          "target/$TARGET/release/mynou" demo --dir "$demo_root/mynou-demo" > "$RUNNER_TEMP/mynou-demo.json"
+          cat "$RUNNER_TEMP/mynou-demo.json"
+          python3 - "$RUNNER_TEMP/mynou-demo.json" <<'DEMO'
+          import json, sys
+          with open(sys.argv[1]) as stream:
+              result = json.load(stream)
+          assert result["job"]["state"] == "ready"
+          assert result["plex_scan_confirmed"] is True
+          DEMO
+      - name: Preserve native macOS deliverables for packaging
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: mynou-native-${{ matrix.target }}-${{ github.sha }}
+          path: target/${{ matrix.target }}/release/mynou
+          if-no-files-found: error
+          retention-days: 1
       - name: Preserve static deliverables for packaging
         if: matrix.target == 'x86_64-unknown-linux-musl'
         uses: actions/upload-artifact@v7.0.1
@@ -166,6 +212,14 @@ jobs:
         with:
           name: mynou-static-${{ github.sha }}
           path: ${{ runner.temp }}/mynou-static
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: mynou-native-aarch64-apple-darwin-${{ github.sha }}
+          path: ${{ runner.temp }}/mynou-macos-arm64
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: mynou-native-x86_64-apple-darwin-${{ github.sha }}
+          path: ${{ runner.temp }}/mynou-macos-x86_64
       - name: Prepare checked static deliverables
         run: |
           chmod 755 "$RUNNER_TEMP/mynou-static/mynou" "$RUNNER_TEMP/mynou-static/examples/package_release"
@@ -194,6 +248,14 @@ jobs:
           "$RUNNER_TEMP/mynou-static/examples/package_release" \
             "$RUNNER_TEMP/mynou-release" "$VERSION" \
             "$RUNNER_TEMP/mynou-static/mynou" "$RUNNER_TEMP/mynou-image.tar.gz" "$GITHUB_WORKSPACE"
+          for arch in arm64 x86_64; do
+            name="mynou-v$VERSION-macos-$arch"
+            test ! -e "$RUNNER_TEMP/mynou-release/$name"
+            install -m 755 "$RUNNER_TEMP/mynou-macos-$arch/mynou" "$RUNNER_TEMP/mynou-release/$name"
+            test -x "$RUNNER_TEMP/mynou-release/$name"
+            cmp "$RUNNER_TEMP/mynou-macos-$arch/mynou" "$RUNNER_TEMP/mynou-release/$name"
+            (cd "$RUNNER_TEMP/mynou-release" && sha256sum "$name" | tee "$name.sha256" >> SHA256SUMS)
+          done
           (cd "$RUNNER_TEMP/mynou-release" && sha256sum -c SHA256SUMS)
           python3 - "$RUNNER_TEMP/mynou-release/mynou-v$VERSION-source.zip" <<'ARCHIVE'
           import hashlib, sys, zipfile

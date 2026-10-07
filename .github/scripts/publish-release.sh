@@ -35,7 +35,9 @@ Mynou $version uses Rust 1.99.0 and the standard library only: no Cargo dependen
 
 This release was built and published by [GitHub Actions]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) after dependency, formatting, Clippy, test, native demonstration and Docker checks passed.
 
-The source ZIP includes the complete project and a static Linux x86_64 binary. The standalone binary and Docker image archive are also supplied separately. Verify downloads with \`sha256sum -c SHA256SUMS\`.
+The source ZIP includes the complete project and a static Linux x86_64 binary. The standalone Linux binary, native macOS Apple Silicon/Intel binaries and Docker image archive are also supplied separately. Verify Linux downloads with \`sha256sum -c SHA256SUMS\`.
+
+On macOS, choose the matching architecture and verify it with \`shasum -a 256 -c FILE.sha256\`. Follow the [native macOS guide]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/macos.md). No Apple Developer signature or notarization is supplied.
 
 Load the Docker image with \`docker load -i mynou-v$version-linux-amd64-image.tar.gz\`, then follow the [Docker deployment guide]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/deployment.md). Configure your Plex server and media sources before enabling synchronization. [Protocol and format limits]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/limits.md) remain explicit.
 

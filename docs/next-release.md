@@ -1,4 +1,24 @@
-# Current product work — proposed 0.22.15 private PAR2 recovery persistence
+# Current product work — proposed 0.22.16 native macOS deployment
+
+Actions published v0.22.15 at `4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8`
+in [run 37684129315](https://github.com/alecerf/mynou/actions/runs/37684129315):
+all five jobs green, 864 Rust tests across 64 harnesses, four scheduler checks,
+53 organization checks and seven immutable bot-owned assets. The prior v0.22.14
+assets remain unchanged. Issue #15 / PR #16 retain review, publication and cleanup.
+
+User [Issue #17](https://github.com/alecerf/mynou/issues/17) owns native macOS
+deployment. Build, inspect and run the acquisition/import demo on Apple Silicon
+and Intel runners; package same-source binaries with checksums and require both
+targets in the objective gates. See [scope](releases/0.22.16.md) and
+[installation](macos.md). Actual Actions, separate Security and independent QA
+precede immutable CI publication.
+
+User #18 (Docker registry/release simplification) and #19 (control storage)
+remain separate backlog work. Prioritize executable user requests over the next
+PAR2 integration scope. Preserve recovery leases, original source, safe Rust std
+and truthful verification; do not infer shipment from a proposed source version.
+
+## Earlier PAR2 work and publication history
 
 GitHub Actions published v0.22.13 multi-file memory recovery at
 `6085368588c8077af53d15bc4f07d752e670e445` in run 37648617664: all five jobs
@@ -13,7 +33,7 @@ Actions published v0.22.14 read-only diagnosis at
 green, 858 Rust tests and seven immutable assets. Issue #13 comment6045313189 /
 PR #14 retain Security/QA, machine gate, native cleanup and publication evidence.
 
-[Issue #15](https://github.com/alecerf/mynou/issues/15) now owns owner-bound
+Completed [Issue #15](https://github.com/alecerf/mynou/issues/15) delivered owner-bound
 private persistence: reconstruct every file before new private writes, hold a
 standard file lock, commit exact immutable source/policy/inventory and reverify
 all reopened output. No existing-file overwrite or automatic library/queue

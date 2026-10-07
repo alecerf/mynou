@@ -9,11 +9,22 @@
   "heartbeat_minutes": 15,
   "slice_minutes": 40,
   "no_progress_limit": 3,
-  "trusted_reviewers": ["alecerf"],
+  "trusted_reviewers": [
+    "alecerf"
+  ],
   "project": null,
   "required_workflows": {
-    "Mynou CI": ["validate", "Build x86_64-unknown-linux-gnu", "Build x86_64-unknown-linux-musl", "package"],
-    "Engineering checks": ["organization"]
+    "Mynou CI": [
+      "validate",
+      "Build x86_64-unknown-linux-gnu",
+      "Build x86_64-unknown-linux-musl",
+      "Build aarch64-apple-darwin",
+      "Build x86_64-apple-darwin",
+      "package"
+    ],
+    "Engineering checks": [
+      "organization"
+    ]
   },
   "observed_capabilities": {
     "observed_at": "2026-10-06",

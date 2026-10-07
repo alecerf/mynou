@@ -1,4 +1,4 @@
-# Mynou 0.22.15 — Rust, standard library only
+# Mynou 0.22.16 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -152,12 +152,22 @@ Actions published v0.22.14 at `7910156c6cce0f74a9ab530b289c3734750bc994`:
 all five jobs in run 37668451522 passed, with 858 Rust tests and seven immutable
 assets. Issue #13 / PR #14 retain actual publication and review evidence.
 
-Proposed 0.22.15 adds an owner-bound private PAR2 recovery workspace library API.
+Actions published v0.22.15 at `4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8`:
+all five jobs in run 37684129315 passed, including 864 Rust tests across 64
+harnesses. Seven immutable bot-owned assets and the prior release were verified.
+
+0.22.15 adds an owner-bound private PAR2 recovery workspace library API.
 Verified memory reconstruction is persisted in a new private directory and
 checked against exact owner/source/policy and complete integrity on reopening.
 It does not overwrite existing files or activate queue/library admission. See
 [workspace support](docs/par2.md) and [release scope](docs/releases/0.22.15.md).
 Separate Security, independent QA and Actions establish actual delivery.
+
+Proposed 0.22.16 adds native macOS executables for Apple Silicon and Intel.
+Both architectures must pass native build, architecture and acquisition/import
+demo checks before CI may package or publish them. See the
+[macOS installation guide](docs/macos.md) and [release scope](docs/releases/0.22.16.md).
+Publication and macOS success require actual completed Actions evidence.
 
 ## Autonomous engineering
 
@@ -190,6 +200,15 @@ The demo starts a local torrent peer and simulated Plex/indexer responses,
 downloads the included synthetic media, analyzes it, imports it, and confirms
 availability. It needs no Plex account, public source, or personal secret. The
 demo directory must not already exist.
+
+## Install on macOS
+
+Download the `macos-arm64` binary for Apple Silicon or `macos-x86_64` for Intel,
+together with its `.sha256` file, from the matching published GitHub release.
+Verify it with `shasum -a 256 -c FILE.sha256` before installation.
+The [macOS guide](docs/macos.md) covers installation, native configuration,
+TLS trust and Apple's application security controls. Rust and Docker are not
+required to run the standalone macOS executable.
 
 ## Install with Docker
 
@@ -418,7 +437,7 @@ and Docker behavior. The Cargo graph must contain exactly one package, `mynou`,
 with no dependencies. Network tests use local services.
 
 All Cargo test harnesses run with bounded process/thread parallelism and retained
-per-target timings/logs. Native and static builds run concurrently; Docker and
+per-target timings/logs. Linux native/static and macOS Apple Silicon/Intel builds run concurrently; Docker and
 packaging reuse the checked static artifacts. Every required job still gates
 publication. See [CI execution and caches](docs/ci.md) for exact behavior.
 
@@ -429,6 +448,7 @@ from that validated commit, and publishes:
 - `mynou-vVERSION-source.zip`, including the static binary and an internal
   `SHA256SUMS` manifest;
 - `mynou-vVERSION-linux-x86_64`, the static binary;
+- `mynou-vVERSION-macos-arm64` and `mynou-vVERSION-macos-x86_64`, native macOS binaries;
 - `mynou-vVERSION-linux-amd64-image.tar.gz`, a saved Docker image;
 - `SHA256SUMS` and individual `.sha256` files for the release assets.
 
