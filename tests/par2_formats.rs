@@ -7,7 +7,7 @@ use library_support::Directory;
 use mynou::{
     crypto::{Md5, md5, sha256},
     json::{self, Value},
-    par2::{Limits, RecoveryLimits, Set},
+    par2::{Limits, MultiRecoveryLimits, RecoveryInput, RecoveryLimits, Set},
 };
 use std::{
     fs,
@@ -58,14 +58,28 @@ struct Fixture {
 
 impl Fixture {
     fn recovery(data: &[u8], slice_bytes: usize, rows: u32) -> Self {
-        let mut fixture = Self::files(&[("Original.bin", data)], 1, slice_bytes);
+        Self::multi_recovery(&[("Original.bin", data)], 1, slice_bytes, rows)
+    }
+
+    fn multi_recovery(
+        files: &[(&str, &[u8])],
+        recoverable: u32,
+        slice_bytes: usize,
+        rows: u32,
+    ) -> Self {
+        let mut fixture = Self::files(files, recoverable, slice_bytes);
         fixture.packets.retain(|(kind, _)| *kind != RECOVERY);
         // Published primitive constants; parity uses the independent polynomial
         // long-division oracle below, never the production field implementation.
         let constants = [2u16, 4, 16, 128, 256, 2048, 8192, 16384, 4107, 32856, 17132];
         for exponent in 0..rows {
             let mut parity = vec![0u8; slice_bytes];
-            for (index, slice) in data.chunks(slice_bytes).enumerate() {
+            for (index, slice) in files
+                .iter()
+                .take(recoverable as usize)
+                .flat_map(|(_, data)| data.chunks(slice_bytes))
+                .enumerate()
+            {
                 let mut padded = slice.to_vec();
                 padded.resize(slice_bytes, 0);
                 let mut factor = 1;
@@ -157,6 +171,240 @@ fn reference_multiply(left: u16, right: u16) -> u16 {
         }
     }
     product as u16
+}
+
+#[test]
+fn multi_recovery_uses_global_coefficients_with_reordered_inputs_and_empty_files() {
+    let first = b"abcdefghijklmn";
+    let second = b"UVWXY";
+    let source = Fixture::multi_recovery(
+        &[("Zulu.bin", first), ("Alpha.bin", second), ("Empty.bin", b"")],
+        3,
+        4,
+        6,
+    )
+    .bytes();
+    let set = read(&source).unwrap();
+    let mut damaged = first.to_vec();
+    damaged[5] ^= 0x55;
+    damaged[13] ^= 0xaa;
+    let before = damaged.clone();
+    let inputs = [
+        RecoveryInput::new(*set.files()[2].id(), b""),
+        RecoveryInput::new(*set.files()[1].id(), b""),
+        RecoveryInput::new(*set.files()[0].id(), &damaged),
+    ];
+    let outputs = set
+        .recover_files(&mut Cursor::new(&source), &inputs, MultiRecoveryLimits::default())
+        .unwrap();
+    assert_eq!(outputs.len(), 3);
+    for (index, expected) in [first.as_slice(), second.as_slice(), b""].iter().enumerate() {
+        assert_eq!(outputs[index].id(), set.files()[index].id());
+        assert_eq!(outputs[index].bytes(), *expected);
+    }
+    assert_eq!(damaged, before);
+    assert_eq!(first, b"abcdefghijklmn");
+    assert_eq!(second, b"UVWXY");
+}
+
+#[test]
+fn multi_recovery_supports_eight_erasures_across_wholly_missing_files() {
+    let first = b"abcdefghijklmnop";
+    let second = b"ABCDEFGHIJKLMNOP";
+    let source = Fixture::multi_recovery(&[("one.bin", first), ("two.bin", second)], 2, 4, 8)
+        .bytes();
+    let set = read(&source).unwrap();
+    let inputs = [
+        RecoveryInput::new(*set.files()[0].id(), b""),
+        RecoveryInput::new(*set.files()[1].id(), b""),
+    ];
+    let outputs = set
+        .recover_files(&mut Cursor::new(&source), &inputs, MultiRecoveryLimits::default())
+        .unwrap();
+    assert_eq!(outputs[0].bytes(), first);
+    assert_eq!(outputs[1].bytes(), second);
+    let mut tighter = MultiRecoveryLimits::default();
+    tighter.recovery.max_missing_slices = 7;
+    assert!(set.recover_files(&mut Cursor::new(&source), &inputs, tighter).is_err());
+}
+
+#[test]
+fn multi_recovery_rejects_ambiguous_identity_coverage_before_reading_source() {
+    let source = Fixture::multi_recovery(
+        &[("one.bin", b"abcd"), ("two.bin", b"EFGH"), ("note.txt", b"spare")],
+        2,
+        4,
+        2,
+    )
+    .bytes();
+    let set = read(&source).unwrap();
+    let first = RecoveryInput::new(*set.files()[0].id(), b"abcd");
+    let second = RecoveryInput::new(*set.files()[1].id(), b"EFGH");
+    let unrelated = RecoveryInput::new(*set.files()[2].id(), b"spare");
+    for inputs in [
+        vec![first],
+        vec![first, first],
+        vec![first, unrelated],
+        vec![RecoveryInput::new([0; 16], b""), second],
+        vec![first, second, unrelated],
+        vec![RecoveryInput::new(*set.files()[0].id(), b"abcdef"), second],
+    ] {
+        let mut reader = Cursor::new(&source);
+        assert!(set.recover_files(&mut reader, &inputs, MultiRecoveryLimits::default()).is_err());
+        assert_eq!(reader.position(), 0);
+    }
+    let outputs = set
+        .recover_files(
+            &mut Cursor::new(&source),
+            &[second, first],
+            MultiRecoveryLimits::default(),
+        )
+        .unwrap();
+    assert_eq!(outputs.len(), 2);
+    assert_eq!(outputs[0].id(), set.files()[0].id());
+    assert_eq!(outputs[1].id(), set.files()[1].id());
+    assert!(set.recover_single(&mut Cursor::new(&source), b"abcd", RecoveryLimits::default()).is_err());
+}
+
+#[test]
+fn multi_recovery_applies_content_slice_erasure_memory_and_work_budgets_to_the_set() {
+    let source = Fixture::multi_recovery(
+        &[("one.bin", b"abcdefghi"), ("two.bin", b"ABCDEFGHI")],
+        2,
+        8,
+        4,
+    )
+    .bytes();
+    let set = read(&source).unwrap();
+    let inputs = [
+        RecoveryInput::new(*set.files()[0].id(), b""),
+        RecoveryInput::new(*set.files()[1].id(), b""),
+    ];
+    let limits = MultiRecoveryLimits::default();
+    for recovery in [
+        RecoveryLimits { max_file_bytes: 17, ..limits.recovery },
+        RecoveryLimits { max_slices: 3, ..limits.recovery },
+        RecoveryLimits { max_missing_slices: 3, ..limits.recovery },
+        RecoveryLimits { max_slice_bytes: 4, ..limits.recovery },
+        RecoveryLimits { max_working_bytes: (512 << 10) + 8 + 9, ..limits.recovery },
+        RecoveryLimits { max_field_operations: 1, ..limits.recovery },
+    ] {
+        assert!(set.recover_files(
+            &mut Cursor::new(&source),
+            &inputs,
+            MultiRecoveryLimits { recovery, ..limits },
+        ).is_err());
+    }
+    for max_files in [0, 1, 9] {
+        assert!(set.recover_files(
+            &mut Cursor::new(&source),
+            &inputs,
+            MultiRecoveryLimits { max_files, ..limits },
+        ).is_err());
+    }
+    let nine: Vec<_> = (0..9).map(|i| (format!("empty-{i}.bin"), b"".as_slice())).collect();
+    let names: Vec<_> = nine.iter().map(|(name, data)| (name.as_str(), *data)).collect();
+    let source = Fixture::multi_recovery(&names, 9, 4, 0).bytes();
+    let set = read(&source).unwrap();
+    let inputs: Vec<_> = set.files().iter().map(|f| RecoveryInput::new(*f.id(), b"")).collect();
+    assert!(set.recover_files(&mut Cursor::new(&source), &inputs, limits).is_err());
+}
+
+#[test]
+fn multi_recovery_requires_combined_consecutive_rows_and_mathematically_correct_parity() {
+    let original = Fixture::multi_recovery(
+        &[("one.bin", b"abcde"), ("two.bin", b"FGHIJK")],
+        2,
+        4,
+        4,
+    );
+    let mut incorrect = original.clone();
+    incorrect.body_mut(RECOVERY)[4] ^= 0x55;
+    let mut insufficient = original;
+    insufficient.packets.retain(|(kind, body)| *kind != RECOVERY || body[..4] != 1u32.to_le_bytes());
+    for fixture in [incorrect, insufficient] {
+        let source = fixture.bytes(); // Hash-valid packets do not certify parity.
+        let set = read(&source).unwrap();
+        let inputs: Vec<_> = set.files().iter().map(|f| RecoveryInput::new(*f.id(), b"")).collect();
+        assert!(set.recover_files(&mut Cursor::new(&source), &inputs, MultiRecoveryLimits::default()).is_err());
+    }
+}
+
+#[test]
+fn multi_recovery_checks_large_chunks_truncated_prefixes_and_each_files_zero_padding() {
+    let first = vec![0x37; 65_541];
+    let second = vec![0xc9; 65_543];
+    let source = Fixture::multi_recovery(&[("one.bin", &first), ("two.bin", &second)], 2, 65_540, 4)
+        .bytes();
+    let set = read(&source).unwrap();
+    let inputs = [
+        RecoveryInput::new(*set.files()[0].id(), &first[..65_530]),
+        RecoveryInput::new(*set.files()[1].id(), b""),
+    ];
+    let outputs = set
+        .recover_files(&mut Cursor::new(&source), &inputs, MultiRecoveryLimits::default())
+        .unwrap();
+    assert_eq!(outputs[0].bytes(), first);
+    assert_eq!(outputs[1].bytes(), second);
+    assert_eq!(first, vec![0x37; 65_541]);
+    assert_eq!(second, vec![0xc9; 65_543]);
+}
+
+#[test]
+fn multi_recovery_returns_no_outputs_if_a_later_file_fails_whole_file_integrity() {
+    let second = vec![0x7b; 16_385];
+    let mut fixture = Fixture::multi_recovery(&[("one.bin", b"abcd"), ("two.bin", &second)], 2, 4096, 0);
+    let body = &mut fixture.packets.iter_mut().filter(|p| p.0 == DESCRIPTION).nth(1).unwrap().1;
+    body[16] ^= 1; // Whole-file MD5 is excluded from File ID; all slice checks still match.
+    let source = fixture.bytes();
+    let set = read(&source).unwrap();
+    let inputs = [
+        RecoveryInput::new(*set.files()[0].id(), b"abcd"),
+        RecoveryInput::new(*set.files()[1].id(), &second),
+    ];
+    assert!(set.recover_files(&mut Cursor::new(&source), &inputs, MultiRecoveryLimits::default()).unwrap_err().contains("file integrity"));
+    assert_eq!(second, vec![0x7b; 16_385]);
+}
+
+#[test]
+fn multi_recovery_rejects_source_changes_and_cancellation_without_partial_outputs() {
+    let source = Fixture::multi_recovery(
+        &[("one.bin", b"abcde"), ("two.bin", b"FGHIJK")],
+        2,
+        4,
+        4,
+    ).bytes();
+    let set = read(&source).unwrap();
+    let inputs: Vec<_> = set.files().iter().map(|f| RecoveryInput::new(*f.id(), b"")).collect();
+    let offset = set.recovery()[0].data_offset() - 68;
+    for (start, end, byte) in [
+        (Some(offset), 0, offset as usize + 16),
+        (Some(offset), 0, offset as usize + 68),
+        (None, 3, 80),
+    ] {
+        let mut reader = MutatedSource {
+            cursor: Cursor::new(source.clone()),
+            mutate_at_start: start,
+            mutate_at_end: end,
+            endings: 0,
+            byte,
+        };
+        assert!(set.recover_files(&mut reader, &inputs, MultiRecoveryLimits::default()).is_err());
+    }
+    let flag = AtomicBool::new(false);
+    let mut reader = Cursor::new(&source);
+    assert!(set.recover_files_cancellable(&mut reader, &inputs, MultiRecoveryLimits::default(), &flag).is_err());
+    assert_eq!(reader.position(), 0);
+    for grow in [false, true] {
+        let flag = AtomicBool::new(true);
+        let mut reader = Interrupted {
+            cursor: Cursor::new(source.clone()),
+            flag: &flag,
+            grow,
+            endings: 0,
+        };
+        assert!(set.recover_files_cancellable(&mut reader, &inputs, MultiRecoveryLimits::default(), &flag).is_err());
+    }
 }
 
 #[test]

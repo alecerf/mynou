@@ -15,6 +15,7 @@ const OVERHEAD: u64 = 512 << 10;
 
 /// Limits on additional buffers and field operations, excluding the captured Set
 /// and caller-owned inputs. Applications may tighten, never raise, these bounds.
+/// Multi-file recovery applies the byte/slice/erasure budgets to the entire set.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RecoveryLimits {
     pub max_file_bytes: u64,
@@ -51,6 +52,68 @@ impl RecoveryLimits {
             return Err("PAR2 recovery limits exceed the supported bounds".into());
         }
         Ok(())
+    }
+}
+
+/// Aggregate recovery bounds. The existing single-file limits remain compatible;
+/// their max_file_bytes field limits combined content when used here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MultiRecoveryLimits {
+    pub max_files: u32,
+    pub recovery: RecoveryLimits,
+}
+
+impl Default for MultiRecoveryLimits {
+    fn default() -> Self {
+        Self {
+            max_files: 8,
+            recovery: RecoveryLimits::default(),
+        }
+    }
+}
+
+impl MultiRecoveryLimits {
+    pub fn validate(self) -> Result<()> {
+        if !(1..=8).contains(&self.max_files) {
+            return Err("PAR2 multi-file recovery supports at most eight files".into());
+        }
+        self.recovery.validate()
+    }
+}
+
+/// Explicit immutable bytes for one captured File ID. Empty/short bytes denote
+/// a missing file/truncated prefix. An ID is not ownership or authorization.
+#[derive(Clone, Copy, Debug)]
+pub struct RecoveryInput<'a> {
+    id: [u8; 16],
+    bytes: &'a [u8],
+}
+
+impl<'a> RecoveryInput<'a> {
+    pub fn new(id: [u8; 16], bytes: &'a [u8]) -> Self {
+        Self { id, bytes }
+    }
+}
+
+/// Fully verified caller-owned output, bound to the captured File ID. This
+/// integrity result grants no permission to write files or admit media.
+#[derive(Debug, PartialEq, Eq)]
+pub struct RecoveredFile {
+    id: [u8; 16],
+    bytes: Vec<u8>,
+}
+
+impl RecoveredFile {
+    pub fn id(&self) -> &[u8; 16] {
+        &self.id
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.bytes
     }
 }
 
@@ -165,19 +228,87 @@ impl Set {
         if self.files.len() != 1 || !self.files[0].recoverable {
             return Err("PAR2 recovery requires exactly one described recoverable file".into());
         }
-        let file = &self.files[0];
-        let slice_bytes = self.slice_bytes as usize;
-        let count = file.slices.len();
-        if file.bytes > limits.max_file_bytes
-            || self.slice_bytes > limits.max_slice_bytes
-            || count > limits.max_slices as usize
-            || protected.len() as u64 > file.bytes
+        let inputs = [RecoveryInput::new(self.files[0].id, protected)];
+        let mut outputs = self.recover_files_cancellable(
+            source,
+            &inputs,
+            MultiRecoveryLimits {
+                max_files: 1,
+                recovery: limits,
+            },
+            flag,
+        )?;
+        Ok(outputs.remove(0).into_bytes())
+    }
+
+    /// Reconstruct every recoverable file in one captured set. Each File ID needs
+    /// exactly one explicit input; caller order is irrelevant. Outputs follow
+    /// captured Main order and are returned only after every file is verified.
+    pub fn recover_files<R: Read + Seek>(
+        &self,
+        source: &mut R,
+        inputs: &[RecoveryInput<'_>],
+        limits: MultiRecoveryLimits,
+    ) -> Result<Vec<RecoveredFile>> {
+        self.recover_files_cancellable(source, inputs, limits, &AtomicBool::new(true))
+    }
+
+    /// No partial outputs escape failure/cancellation. Cancellation cannot
+    /// interrupt an arbitrary caller-provided blocking Read.
+    pub fn recover_files_cancellable<R: Read + Seek>(
+        &self,
+        source: &mut R,
+        inputs: &[RecoveryInput<'_>],
+        multi_limits: MultiRecoveryLimits,
+        flag: &AtomicBool,
+    ) -> Result<Vec<RecoveredFile>> {
+        active(flag)?;
+        multi_limits.validate()?;
+        let count_files = self.files.iter().filter(|file| file.recoverable).count();
+        if count_files == 0
+            || count_files > multi_limits.max_files as usize
+            || inputs.len() != count_files
         {
+            return Err("PAR2 recovery requires one input per bounded recoverable file".into());
+        }
+        let files: Vec<_> = self.files.iter().filter(|file| file.recoverable).collect();
+        for (index, input) in inputs.iter().enumerate() {
+            if !files.iter().any(|file| file.id == input.id)
+                || inputs[..index].iter().any(|other| other.id == input.id)
+            {
+                return Err("PAR2 recovery input File IDs are unknown or duplicated".into());
+            }
+        }
+        let limits = multi_limits.recovery;
+        let slice_bytes = self.slice_bytes as usize;
+        if self.slice_bytes > limits.max_slice_bytes {
             return Err("PAR2 protected content exceeds recovery limits".into());
         }
-        let length = usize::try_from(file.bytes).map_err(|_| "PAR2 file size is unsupported")?;
-        let minimum_memory = file
-            .bytes
+        let mut protected = Vec::with_capacity(count_files);
+        let mut lengths = Vec::with_capacity(count_files);
+        let mut total_bytes = 0u64;
+        let mut count = 0usize;
+        for file in &files {
+            let input = inputs
+                .iter()
+                .find(|input| input.id == file.id)
+                .ok_or("PAR2 recoverable file input is missing")?;
+            total_bytes = total_bytes
+                .checked_add(file.bytes)
+                .ok_or("PAR2 recovery content budget overflow")?;
+            count = count
+                .checked_add(file.slices.len())
+                .ok_or("PAR2 recovery slice budget overflow")?;
+            if total_bytes > limits.max_file_bytes
+                || count > limits.max_slices as usize
+                || input.bytes.len() as u64 > file.bytes
+            {
+                return Err("PAR2 protected content exceeds recovery limits".into());
+            }
+            lengths.push(usize::try_from(file.bytes).map_err(|_| "PAR2 file size is unsupported")?);
+            protected.push(input.bytes);
+        }
+        let minimum_memory = total_bytes
             .checked_add(u64::from(self.slice_bytes))
             .and_then(|bytes| bytes.checked_add(OVERHEAD))
             .ok_or("PAR2 recovery memory budget overflow")?;
@@ -187,14 +318,20 @@ impl Set {
         self.verify_source(source, flag)?;
         let mut scratch = buffer(slice_bytes)?;
         let mut missing = Vec::new();
-        for (index, expected) in file.slices.iter().enumerate() {
-            active(flag)?;
-            let complete = padded_slice(protected, index, &mut scratch)
-                && (index * slice_bytes + slice_bytes).min(length) <= protected.len();
-            if !complete || !slice_matches(&scratch, expected, flag)? {
-                missing.push(index);
-                if missing.len() > limits.max_missing_slices as usize {
-                    return Err("PAR2 damaged slice count exceeds recovery limits".into());
+        let mut mapping = Vec::with_capacity(count);
+        for (file_index, file) in files.iter().enumerate() {
+            for (local, expected) in file.slices.iter().enumerate() {
+                active(flag)?;
+                let global = mapping.len();
+                mapping.push((file_index, local));
+                let complete = padded_slice(protected[file_index], local, &mut scratch)
+                    && (local * slice_bytes + slice_bytes).min(lengths[file_index])
+                        <= protected[file_index].len();
+                if !complete || !slice_matches(&scratch, expected, flag)? {
+                    missing.push(global);
+                    if missing.len() > limits.max_missing_slices as usize {
+                        return Err("PAR2 damaged slice count exceeds recovery limits".into());
+                    }
                 }
             }
         }
@@ -221,9 +358,9 @@ impl Set {
                 .find(|slice| slice.exponent == exponent as u32)
                 .ok_or("PAR2 recovery requires consecutive parity exponents starting at zero")?;
             let mut row = self.read_recovery(source, captured, flag)?;
-            for index in 0..count {
+            for (index, (file_index, local)) in mapping.iter().enumerate() {
                 if !missing.contains(&index) {
-                    padded_slice(protected, index, &mut scratch);
+                    padded_slice(protected[*file_index], *local, &mut scratch);
                     gf16::add_scaled_cancellable(
                         &mut row,
                         &scratch,
@@ -235,12 +372,19 @@ impl Set {
             residuals.push(row);
         }
         let matrix = inverse_matrix(&missing, flag)?;
-        let mut output = buffer(length)?;
-        for (target, input) in output.chunks_mut(CHUNK).zip(protected.chunks(CHUNK)) {
+        let mut outputs = Vec::with_capacity(count_files);
+        for (index, file) in files.iter().enumerate() {
             active(flag)?;
-            target[..input.len()].copy_from_slice(input);
+            let mut bytes = buffer(lengths[index])?;
+            for (target, input) in bytes.chunks_mut(CHUNK).zip(protected[index].chunks(CHUNK)) {
+                active(flag)?;
+                target[..input.len()].copy_from_slice(input);
+            }
+            outputs.push(RecoveredFile { id: file.id, bytes });
         }
         for (row, index) in missing.iter().enumerate() {
+            let (file_index, local) = mapping[*index];
+            let file = files[file_index];
             scratch.fill(0);
             for (column, residual) in residuals.iter().enumerate() {
                 gf16::add_scaled_cancellable(
@@ -250,34 +394,36 @@ impl Set {
                     flag,
                 )?;
             }
-            let start = index * slice_bytes;
-            let bytes = (length - start).min(slice_bytes);
-            if !slice_matches(&scratch, &file.slices[*index], flag)?
+            let start = local * slice_bytes;
+            let bytes = (lengths[file_index] - start).min(slice_bytes);
+            if !slice_matches(&scratch, &file.slices[local], flag)?
                 || scratch[bytes..].iter().any(|value| *value != 0)
             {
                 return Err("PAR2 reconstructed slice integrity check failed".into());
             }
-            output[start..start + bytes].copy_from_slice(&scratch[..bytes]);
+            outputs[file_index].bytes[start..start + bytes].copy_from_slice(&scratch[..bytes]);
         }
-        for (index, expected) in file.slices.iter().enumerate() {
-            padded_slice(&output, index, &mut scratch);
-            if !slice_matches(&scratch, expected, flag)? {
-                return Err("PAR2 final slice integrity check failed".into());
+        for (file, output) in files.iter().zip(&outputs) {
+            for (index, expected) in file.slices.iter().enumerate() {
+                padded_slice(&output.bytes, index, &mut scratch);
+                if !slice_matches(&scratch, expected, flag)? {
+                    return Err("PAR2 final slice integrity check failed".into());
+                }
             }
-        }
-        let mut digest = Md5::default();
-        for chunk in output.chunks(CHUNK) {
-            active(flag)?;
-            digest.update(chunk);
-        }
-        if digest.finalize() != file.md5
-            || md5(&output[..output.len().min(16_384)]) != file.first_16k_md5
-        {
-            return Err("PAR2 reconstructed file integrity check failed".into());
+            let mut digest = Md5::default();
+            for chunk in output.bytes.chunks(CHUNK) {
+                active(flag)?;
+                digest.update(chunk);
+            }
+            if digest.finalize() != file.md5
+                || md5(&output.bytes[..output.bytes.len().min(16_384)]) != file.first_16k_md5
+            {
+                return Err("PAR2 reconstructed file integrity check failed".into());
+            }
         }
         self.verify_source(source, flag)?;
         active(flag)?;
-        Ok(output)
+        Ok(outputs)
     }
 
     fn verify_source<R: Read + Seek>(&self, reader: &mut R, flag: &AtomicBool) -> Result<()> {
