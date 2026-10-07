@@ -1,0 +1,43 @@
+name: Serialized engineering delivery
+on:
+  workflow_run:
+    workflows: [Mynou CI, Engineering checks]
+    types: [completed]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+  schedule:
+    - cron: '17 */6 * * *'
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+concurrency:
+  group: mynou-global-mechanical-delivery
+  cancel-in-progress: false
+jobs:
+  delivery:
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (contains(github.event.comment.body, '<!-- mynou-transition:v1 -->') &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # A privileged workflow never checks out or executes proposed PR code.
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: trunk
+          persist-credentials: false
+      - name: Recover first and deliver only through exact objective gates
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 engineering/control.py deliver
+      - name: Inspect incremental branch health on scheduled wakes
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 engineering/control.py branch-sweep

@@ -1217,3 +1217,31 @@ publication was performed.
 | mynou-v0.22.9-linux-amd64-image.tar.gz | 616271107 | 2303425 | 5b50e73643d6f9e66e0cca2a40c288d4aaf8c85d40312c4c1e92d46eba00dff5 |
 | mynou-v0.22.9-source.zip.sha256 | 616271114 | 91 | c93cdceaaedd3b86d7a2a20652e31820009595828856ac615c20ec61fed1a83a |
 | mynou-v0.22.9-source.zip | 616271116 | 9038164 | 3f8aca387fb735ce82b25e99ac0f91051f8b63567ac36d48c5122cd82c8998d3 |
+
+## Recorded 0.22.10 CI evidence
+
+CI published v0.22.10 from `f5c59506d0a8d431d09e9f351e2de2ef71b124f9` in
+[run 37510460908](https://github.com/alecerf/mynou/actions/runs/37510460908).
+All five jobs passed: 804 Rust tests across 62 harnesses, none failed or ignored,
+and four scheduler checks. Test execution took 99.854 seconds with two harness
+processes and two threads each. Seven bot-owned assets were published at
+18:23:45 UTC on October 6, 2026. The tag matched the validated source and the
+prior v0.22.9 tag and asset IDs, sizes and digests remained unchanged.
+
+| Job | ID | Conclusion |
+| --- | --- | --- |
+| validate | 112429994392 | success |
+| Build x86_64-unknown-linux-gnu | 112429994575 | success |
+| Build x86_64-unknown-linux-musl | 112429994624 | success |
+| package | 112431350878 | success |
+| release | 112431624583 | success |
+
+| Asset | ID | Bytes | GitHub SHA-256 digest |
+| --- | --- | --- | --- |
+| mynou-v0.22.10-linux-amd64-image.tar.gz | 616304514 | 2309754 | `sha256:95f11a1c5554564a85e8fab03489eeee58c123c68a9e1d007e6a67696992cc04` |
+| mynou-v0.22.10-linux-x86_64 | 616304515 | 4784992 | `sha256:25e7e4a525c4d7c7fd5a0d4debf298dbe78ac3ae979ac6887628b4992f582c7e` |
+| mynou-v0.22.10-linux-amd64-image.tar.gz.sha256 | 616304517 | 106 | `sha256:890802540dd80f50133f9f1c832ac5498ced45349522b47b5d2fdd873f03e5bb` |
+| SHA256SUMS | 616304520 | 292 | `sha256:f9cf12b9b3c5faf2cc3285d175cc02fd345a1db0ea8633c596d38d85dc28a63c` |
+| mynou-v0.22.10-linux-x86_64.sha256 | 616304522 | 94 | `sha256:134452485d694f643bf0ec7b84b55876743d53ae06718d3730021cbb04b188f2` |
+| mynou-v0.22.10-source.zip | 616304543 | 9089389 | `sha256:c0aed8115a7fc3a4a9638da8292c95ba6d7b43be5cd003f6eddde695cc15d244` |
+| mynou-v0.22.10-source.zip.sha256 | 616304558 | 92 | `sha256:80d2929c3cf4bb969acc0880ab02cda437b2732ce844594f941ff94fd3203908` |

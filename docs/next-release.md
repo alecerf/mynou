@@ -1,11 +1,21 @@
-# Active release — 0.22.10 ownership-bound stored RAR5 admission
+# Product work paused for engineering bootstrap — next 0.22.11
 
-Continue all roadmap stages autonomously. A green publication starts the next
-scope; do not stop at a checkpoint. AGENTS.md mandates English, Rust std only,
+Product implementation is paused for [organization bootstrap #1](https://github.com/alecerf/mynou/issues/1).
+The incomplete PAR2 checkpoint is preserved on `work/par2-foundation` under
+[Issue #2](https://github.com/alecerf/mynou/issues/2). Finish bootstrap first;
+then continue the roadmap in bounded serialized execution slices. AGENTS.md mandates English, Rust std only,
 zero dependencies, no unsafe/FFI/copied code/external runtime helpers or local
 validation. Formatting is an edit. Commit meaningful chunks, push completed scope,
 inspect all five jobs and fix reds through commits. Actions alone publishes exact
 source tags/assets. Complete publication before a successor push.
+
+CI published v0.22.10 from `f5c59506d0a8d431d09e9f351e2de2ef71b124f9` in
+[run 37510460908](https://github.com/alecerf/mynou/actions/runs/37510460908).
+All five jobs passed: 804 Rust tests across 62 harnesses, none failed or ignored,
+and four scheduler checks. Test execution took 99.854 seconds with two harness
+processes and two threads each. Seven bot-owned assets were published at
+18:23:45 UTC on October 6, 2026. The tag matched the validated source and the
+prior v0.22.9 tag and asset IDs, sizes and digests remained unchanged.
 
 CI published v0.22.9 from `e69e2b323a74a0d60678bdd797e34d3fbc28e8be` in
 [run 37508514751](https://github.com/alecerf/mynou/actions/runs/37508514751).
@@ -81,7 +91,7 @@ ZIP-only selection identities, plan serialization and format-1/7 storage remain
 compatible. Unknown or corrupt private state is rejected before recovery writes.
 Outer/inner identity, numbering, profile and size, native media, copied atomic
 import, approved requester/destination and exact Plex gates remain required.
-This source requires its own complete Actions validation and publication.
+This scope passed complete Actions validation and publication as recorded below.
 Compressed/solid/split/encrypted RAR, RAR4, PAR2, multi-file packs and Usenet
 upgrades remain subsequent bounded increments.
 
@@ -94,6 +104,6 @@ Preserve source/entry/owner identity, captured bounds, private intent/proofs,
 current canonical/requester permission and independent library imports. Use
 original synthetic media and loopback services only. Record exact source, five
 jobs, test counts, seven bot assets and prior immutability at every publication.
-A green release starts the next scope; do not stop at a checkpoint. English,
+After bootstrap, each green release queues its next bounded scope. English,
 Rust std only, no local validation or manual publication. No unmeasured
 performance or broad parity claims.
