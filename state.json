@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 119,
+  "generation": 120,
   "lease": {
     "id": "ba18b579-b3fb-4cb3-b8a5-5e0320eddb31",
     "worker": "codex-par2-recovery-implementation",
     "role": "rust",
     "issue": 6,
     "acquired_at": "2026-10-07T10:39:23Z",
-    "heartbeat_at": "2026-10-07T10:39:23Z",
-    "expires_at": "2026-10-07T11:24:23Z",
+    "heartbeat_at": "2026-10-07T10:43:26Z",
+    "expires_at": "2026-10-07T11:28:26Z",
     "branch": "work/par2-recovery",
-    "commit": "b8a2b15d527edcf488a9a5a19e4b564457cc9ce1",
+    "commit": "e425cab368a9efd0804bf8d733dbaa2e9ec7829f",
     "pr": 8
   },
   "checkpoint": {
-    "at": "2026-10-07T10:39:09Z",
+    "at": "2026-10-07T10:43:26Z",
     "issue": 6,
-    "role": "security",
+    "role": "rust",
     "branch": "work/par2-recovery",
-    "commit": "b8a2b15d527edcf488a9a5a19e4b564457cc9ce1",
+    "commit": "e425cab368a9efd0804bf8d733dbaa2e9ec7829f",
     "pr": 8,
-    "summary": "Completed pre-implementation Security boundary analysis for Issue6/PR8 at native b8a2b15d527edcf488a9a5a19e4b564457cc9ce1/base9d506f2767033fb4a71c586f71f5d3da83dcacb5. Defined caller-owned Vec-only single-file recovery, 256 slices/8 erasures/16MiB content/1MiB slices, checked memory/work, consecutive parity rows, captured source/payload/packet identity before/after, slice MD5/CRC and final whole-file/first16KiB integrity, cancellation and no filesystem effects. Original Crc32/hash primitives reusable. Native Security design notes on Issue6 and PR8. Actual foundation CI37603001810 remains green; no final Security or QA performed, draft remains unmergeable.",
-    "next_action": "Release Security; acquire Rust on same branch/head/PR to implement this bounded API and original CI fixtures. Keep draft; final version/docs and separate exact-head Security/QA must precede all-green merge and CI-only immutable release.",
+    "summary": "Original Rust recovery source committed and transported to native e425cab368a9efd0804bf8d733dbaa2e9ec7829f on work/par2-recovery/draftPR8/base9d506f2767033fb4a71c586f71f5d3da83dcacb5. Added caller-owned single-file recovery with checked bounds, consecutive parity rows/matrix inversion, captured source/payload binding, slice MD5/CRC and full-file/first16KiB integrity, cancellation and no filesystem writes. Four original synthetic CI tests cover multi-erasure/truncation/missing/empty input, parity/source/resource failures, unchanged input and final whole-file integrity. Source tests/checks not run locally. New CI triggered; actual results pending. Security analysis comments6036185966/6036186237 are design notes, not final review. Version bump and final Security/QA still pending.",
+    "next_action": "Inspect actual exact-head CI; fix real failures with original commits. Add remaining in-operation source-change and cancellation regression fixtures; finish version/docs/acceptance, then distinct exact-head Security and QA phases before ready/green merge and CI-only immutable0.22.12.",
     "publication": {
       "commit": "9d506f2767033fb4a71c586f71f5d3da83dcacb5",
       "state": "ci-passed",
@@ -32,11 +32,8 @@
       "conclusion": "success"
     },
     "ci": {
-      "commit": "b8a2b15d527edcf488a9a5a19e4b564457cc9ce1",
-      "run_id": 37603001810,
-      "status": "completed",
-      "conclusion": "success",
-      "organization_run_id": 37603002119,
+      "commit": "e425cab368a9efd0804bf8d733dbaa2e9ec7829f",
+      "status": "pending",
       "qa": "not-performed-draft",
       "release": "not-performed-pr"
     }
