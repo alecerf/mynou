@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 229,
+  "generation": 230,
   "lease": {
     "id": "d3d4cefb-f9e1-46eb-a59e-d31c2b11335f",
     "worker": "codex-hourly-20261007T182558Z",
     "role": "triage",
     "issue": 13,
     "acquired_at": "2026-10-07T18:36:48Z",
-    "heartbeat_at": "2026-10-07T18:38:03Z",
-    "expires_at": "2026-10-07T19:23:03Z",
+    "heartbeat_at": "2026-10-07T18:40:23Z",
+    "expires_at": "2026-10-07T19:25:23Z",
     "branch": "trunk",
-    "commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
+    "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
     "pr": 14
   },
   "checkpoint": {
-    "at": "2026-10-07T18:38:03Z",
+    "at": "2026-10-07T18:40:23Z",
     "issue": 13,
     "role": "triage",
     "branch": "trunk",
-    "commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
+    "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
     "pr": 14,
-    "summary": "PR14 is now ready with concise user-impact/verification body. Actual complete-diff Security5446669213 and independent QA5446698146 passed18548f24e57b2845559c513638f82dee8c30f211/base07ef2f73f5ac923f783b9bd27e4662bb7529bbd2 under their separate historical leases. Native CI37664282613 all four required jobs green;858 Rust tests/64 harnesses/0 failures. Ready transition triggers a fresh Engineering machine agent-qa-review; prior draft skipped gate is not success. Triage execution branch is trunk so the product source branch remains eligible for safe native post-merge cleanup. Source/control and native review artifacts are durable. No local validation or additional worker.",
-    "next_action": "Read the ready-triggered current-head Engineering jobs and all objective gates once after checkpoint. If every actual gate is green and native head/base/integration unchanged, expected-head merge and Actions-only publication. If awaiting external CI, checkpoint actual pending run/release and stop; trusted mechanical delivery or future hourly wake recovers. Reserve starts19:00:58Z, deadline19:05:58Z.",
+    "summary": "PR14 merged natively at7910156c6cce0f74a9ab530b289c3734750bc994 (2026-10-07T18:39:02Z), preserving original18548f24e57b2845559c513638f82dee8c30f211 and all four source commits. Exact-head/base Security5446669213 and independent QA5446698146 passed complete16-file diff; machine gate112953068515 in Engineering37668254455 success with exact head/base/review proof. PR CI37664282613 all required jobs green,858 Rust tests/64 harnesses/0 failures101.243s. Issue13 native closed/completed and status:done; native work/par2-verification ref404 confirms GitHub post-merge deletion, no blind deletion. Native dependencies reconciled:[]. Default7910156 source CI37668451522 observed in_progress/None; publication is pending, no new release or test success for merge inferred. Default Engineering37668451454 success. No local validation, new scope or additional worker.",
+    "next_action": "Recover exact-source default CI37668451522 and actual v0.22.14 publication first; inspect native completed jobs/tag/release/seven immutable assets and preserve previous0.22.13 identity/digests. If red, use actual logs and a managed correction; if pending, external wait. Source/Issue/PR/reviews/branch cleanup are durable. After publication, triage next bounded ownership-bound persistent PAR2 repair/admission roadmap scope. Wake started18:25:58Z, deadline19:05:58Z; stop on this real publication wait and release before stopping.",
     "source_bridge": {
       "commits": [
         {
@@ -161,11 +161,28 @@
       "verdict": "passed",
       "lease_checkpoint": "5de82c4501b2a9221e4c01da3fcb6daef5760cfe"
     },
+    "publication": {
+      "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
+      "state": "ci-pending",
+      "at": "2026-10-07T18:40:23Z",
+      "run_id": 37668451522,
+      "status": "in_progress",
+      "conclusion": null
+    },
     "delivery": {
-      "pr_head": "18548f24e57b2845559c513638f82dee8c30f211",
-      "pr_base": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
-      "ready": true,
-      "qa_gate": "fresh ready-triggered observation pending"
+      "pr": 14,
+      "source_head": "18548f24e57b2845559c513638f82dee8c30f211",
+      "source_branch": "work/par2-verification",
+      "review_base": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
+      "merged_commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
+      "merged_at": "2026-10-07T18:39:02Z",
+      "qa_gate_run": 37668254455,
+      "qa_gate_job": 112953068515,
+      "qa_gate_conclusion": "success",
+      "issue_closed": true,
+      "status": "done",
+      "branch": "absent (native404)",
+      "dependencies_reconciled": []
     }
   },
   "attempts": {}
