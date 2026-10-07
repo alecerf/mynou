@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 340,
+  "generation": 341,
   "lease": {
     "id": "wake7-security-registry-review-20261007T232627Z",
     "worker": "codex-hourly-20261007T232627Z",
     "role": "security",
     "issue": 18,
     "acquired_at": "2026-10-07T23:41:49Z",
-    "heartbeat_at": "2026-10-07T23:41:49Z",
-    "expires_at": "2026-10-08T00:26:49Z",
+    "heartbeat_at": "2026-10-07T23:41:53Z",
+    "expires_at": "2026-10-08T00:26:53Z",
     "branch": "work/registry-releases",
     "commit": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
     "pr": 21
   },
   "checkpoint": {
     "issue": 18,
-    "role": "quality",
+    "role": "security",
     "branch": "work/registry-releases",
     "commit": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
     "pr": 21,
-    "at": "2026-10-07T23:41:41Z",
-    "summary": "Quality committed original Issue18 implementationa7c6b8d2fda11c99382508f9bd7d1c3abc464345 on work/registry-releases and opened draft PR21 linked to18. GitHub reports20 changed files/567 additions/552 removals. Actual CI is not yet inspected; no local verification or registry/release publication is claimed. All prior immutable v0.22.16 proof preserved.",
-    "next_action": "Release Quality. Acquire separate Security at exact PR21 head a7c6b8d2fda11c99382508f9bd7d1c3abc464345/base8a0ada56 and inspect complete actual diff, trust boundaries and tests. Then independent QA/actual Actions recovery before delivery.",
+    "at": "2026-10-07T23:41:53Z",
+    "summary": "Security review begins under its own exact-head/base lease for PR21 and Issue18. Implementation lease is released; this single worker now performs complete-diff trust-boundary review. No fabricated identity-independent approval or CI success.",
+    "next_action": "Inspect complete native20-file PR diff plus actual Actions; record evidence and any real findings before releasing Security to independent QA.",
     "publication_baseline": {
       "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
       "state": "published",
@@ -155,17 +155,6 @@
         }
       ]
     },
-    "security_plan": {
-      "scope": "Private GHCR publication and reduced release assets",
-      "controls": [
-        "Write packages/contents only on the guarded default-branch release job; PR jobs remain read-only and do not receive registry secrets.",
-        "Use only ephemeral repository GITHUB_TOKEN, stdin Docker login, private package preflight, source/revision/version OCI labels, no visibility mutation.",
-        "Freshly reject conflicting source/version tags before any push; retain content-addressed image digest and re-pull/verify checked binary and readonly isolated demo. Registry tags are mutable by platform; no server immutability/CAS claim.",
-        "Do not delete/retag old releases or packages. Publish container before new immutable release; interrupted publication retries verify existing exact image.",
-        "Same-run/SHA artifacts and checksum checks remain; reduce asset inventory deterministically. Remove only original source ZIP packager after actual reference review.",
-        "Native same-identity COMMENT Security and independent QA must cover entire final diff and real PR CI; actual default publication is later, not inferred."
-      ]
-    },
     "source": {
       "base_commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
       "branch": "work/registry-releases",
@@ -195,6 +184,13 @@
       "planned_version": "0.22.17",
       "remote_commit": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
       "tree": "8092f713a3d3dcd5cb6bb2ff5d7939689452a02b"
+    },
+    "review_phase": {
+      "role": "security",
+      "head_sha": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
+      "base_sha": "8a0ada56baa24b566e306af75768b90ed08b55ca",
+      "pr": 21,
+      "issue": 18
     }
   },
   "attempts": {}
