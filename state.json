@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 194,
+  "generation": 195,
   "lease": {
     "id": "64d2b845-7b6a-4621-b743-d68d76de6d19",
     "worker": "codex-cadence-delivery",
     "role": "master",
     "issue": 11,
     "acquired_at": "2026-10-07T16:21:09Z",
-    "heartbeat_at": "2026-10-07T16:21:09Z",
-    "expires_at": "2026-10-07T17:06:09Z",
+    "heartbeat_at": "2026-10-07T16:22:39Z",
+    "expires_at": "2026-10-07T17:07:39Z",
     "branch": "work/engineering-cadence",
     "commit": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
     "pr": 12
   },
   "checkpoint": {
-    "at": "2026-10-07T16:21:06Z",
+    "at": "2026-10-07T16:22:39Z",
     "issue": 11,
-    "role": "qa",
+    "role": "master",
     "branch": "work/engineering-cadence",
     "commit": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
     "pr": 12,
-    "summary": "Independent complete-diff QA of cadence PR #12 / Issue #11 passed without findings, actually recorded as native COMMENT 5445158311 at head 056487dc0c4d8ffe04dce1b48153c2e29403ad4a / base 6085368588c8077af53d15bc4f07d752e670e445 under historical QA checkpoint d125b852667341b94abc20158c47b9e45361d8c8. Separate Security 5445122042 is current. Required CI 37649725943 passed four jobs with 846 tests/64 harnesses/0 failures/95.151s plus four scheduler/53 organization tests. Actual PR #12 is now ready; fresh agent-qa-review remains to be observed before merge. No local validation or live task update. Task reconciliation is the next real post-merge obligation, not optional completion inferred from Issue closure.",
-    "next_action": "Under a new Master delivery/reconciliation lease, inspect current native ready agent-qa-review, organization and all four required CI gates. Merge only exact head 056487dc0c4d8ffe04dce1b48153c2e29403ad4a after every gate green. Read canonical worker-prompt.md from actual merged policy commit and update only existing task 6ac54c387af0819184713674c48b3845 prompt, preserving enabled hourly schedule/timezone/ID. Persist actual accepted native response and exact policy commit in Issue/control. Observe default CI and verify immutable v0.22.13 tag/assets unchanged, safe native cleanup, then checkpoint/release before the whole-wake deadline.",
+    "summary": "Cadence PR #12 is ready for exact-head native merge. Actual ready Engineering 37651124380 organization 112894423230 and agent-qa-review 112894484227 both succeeded at head 056487dc0c4d8ffe04dce1b48153c2e29403ad4a / base 6085368588c8077af53d15bc4f07d752e670e445; superseded review-event run was cancelled, not treated as green. Required CI 37649725943 validate/GNU/musl/package passed. Separate Security 5445122042 and independent QA 5445158311 inspected all seven paths under distinct historical leases; native threads empty. No local checks, source changes or live task update. Preserve pre-merge evidence and unfinished task reconciliation even if native closing keywords close Issue #11.",
+    "next_action": "Native expected-head merge PR #12. Fence actual merged/default commit and fetch engineering/worker-prompt.md at that immutable policy commit. Update only the existing hourly automation 6ac54c387af0819184713674c48b3845 prompt; preserve enabled cadence/timezone/ID and persist actual response. Observe default CI and safe cleanup without changing published v0.22.13 tag/assets. Final checkpoint/release before whole-wake deadline; if interrupted after merge, next worker recovers task reconciliation before new work despite closed Issue #11.",
     "previous_publication": {
       "commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
       "state": "ci-passed",
@@ -88,7 +88,8 @@
       "planned_slice_minutes": 40,
       "ai_cadence": "hourly-platform-maximum",
       "mechanical_cadence": "hourly-with-daily-branch-health",
-      "state": "implemented-draft-task-unchanged"
+      "state": "merge-ready-task-update-pending",
+      "prompt_path": "engineering/worker-prompt.md"
     },
     "source_bridge": {
       "commits": [
@@ -229,6 +230,15 @@
       "submitted_at": "2026-10-07T16:19:25Z",
       "verdict": "passed",
       "state": "COMMENTED"
+    },
+    "merge_gate": {
+      "head": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
+      "base": "6085368588c8077af53d15bc4f07d752e670e445",
+      "ci_run": 37649725943,
+      "engineering_run": 37651124380,
+      "qa_job": 112894484227,
+      "organization_job": 112894423230,
+      "state": "observed-green-native-merge-pending"
     }
   },
   "attempts": {}
