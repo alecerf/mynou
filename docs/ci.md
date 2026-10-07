@@ -12,16 +12,28 @@ flowchart LR
     Commit --> Validate[Graph, format, Clippy and all tests]
     Commit --> Native[Native release build]
     Commit --> Static[Static release build and demo]
+    Commit --> Mac[macOS arm64 and x86_64 builds and demos]
     Validate --> Package[Docker demo, archive and checksums]
     Native --> Package
     Static --> Package
+    Mac --> Package
     Package --> Release[CI publication]
 ```
 
-Validation and both build targets run concurrently on separate runners. The
-build matrix retains native GNU and static musl coverage. Packaging waits for
-all three jobs to succeed for the same workflow commit; publication waits for
-successful packaging. PR runs validate/build/package but cannot publish.
+Validation and four build targets run concurrently on separate runners. The
+build matrix retains native GNU and static musl coverage and adds native Apple
+Silicon and Intel builds on standard `macos-26` and `macos-26-intel` runners.
+macOS binaries must have the exact target architecture and pass the local
+acquisition/import/Plex demo on their native runner. No larger paid runner is
+selected. Packaging waits for validation and every build to succeed for the
+same workflow commit; publication waits for successful packaging.
+PR runs validate/build/package but cannot publish.
+
+Same-run macOS artifacts include the target and exact source SHA in their names.
+Packaging checks byte-for-byte preservation, executable modes and release
+checksums. Mac binaries are standalone assets; the source ZIP still contains
+the existing Linux static binary. `.github/engineering.json` requires both Mac
+build job names in addition to the original Linux/package/organization gates.
 
 Runs use a noncancelling workflow concurrency group. Complete publication for a
 release before pushing its successor; this also preserves runs created from the

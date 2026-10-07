@@ -1,5 +1,8 @@
 # Install Mynou with Docker
 
+For standalone Apple Silicon or Intel deployment without Docker, use the
+[native macOS installation guide](macos.md).
+
 Examples use actually published v0.22.14. Proposed v0.22.15 adds private recovery
 workspace support; install it only after its reviewed Actions release is published.
 Source versions and PR checks do not establish publication.
