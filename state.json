@@ -1,15 +1,15 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 284,
+  "generation": 285,
   "lease": {
     "id": "wake5-security-macos-review-20261007T213002Z",
     "worker": "codex-hourly-20261007T213002Z",
     "role": "security",
     "issue": 17,
     "acquired_at": "2026-10-07T21:45:04Z",
-    "heartbeat_at": "2026-10-07T21:45:55Z",
-    "expires_at": "2026-10-07T22:30:55Z",
+    "heartbeat_at": "2026-10-07T21:45:59Z",
+    "expires_at": "2026-10-07T22:30:59Z",
     "branch": "work/macos-builds",
     "commit": "330cdbd7e8d2530c8900579206cc5e3075934d92",
     "pr": 20
@@ -20,13 +20,52 @@
     "branch": "work/macos-builds",
     "commit": "330cdbd7e8d2530c8900579206cc5e3075934d92",
     "pr": 20,
-    "at": "2026-10-07T21:45:55Z",
-    "summary": "Security inspected all 11 actual changed paths of PR #20 at exact head/base. No blocking security findings: contents permissions unchanged, no fork write execution, same-workflow/SHA artifacts, native architecture/demo gates, byte-preserving package/checksums and immutable default CI publication. PEM trust and per-application Gatekeeper/signing limitations are documented. Required CI is running; Security does not claim runtime success.",
-    "next": "Independent QA: review complete diff and acceptance under its own exact-head/base lease; read actual CI. Reject any failures, otherwise wait if jobs are pending.",
+    "at": "2026-10-07T21:45:59Z",
+    "summary": "Completed separate Security review of all 11 actual PR #20 paths; native COMMENT records exact head/base and held review checkpoint. No blocking security findings. Actual CI was still running, so runtime and merge success are not claimed.",
+    "next": "Independent QA under exact head/base lease: inspect complete actual diff, user acceptance and all required native CI; fail closed on red/pending gates.",
     "review_phase": {
       "role": "security",
       "head_sha": "330cdbd7e8d2530c8900579206cc5e3075934d92",
       "base_sha": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8"
+    },
+    "security": {
+      "schema": 1,
+      "role": "security",
+      "head_sha": "330cdbd7e8d2530c8900579206cc5e3075934d92",
+      "base_sha": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
+      "lease_checkpoint": "373ab1e117a7eb4de2d5d5991bcf823ef03cc24f",
+      "verdict": "passed",
+      "summary": "Complete-diff Security review found no blocking issue; runtime/merge readiness remains conditional on actual required CI and independent QA.",
+      "reviewed_paths": [
+        ".github/engineering.json",
+        ".github/scripts/publish-release.sh",
+        ".github/workflows/ci.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "README.md",
+        "docs/ci.md",
+        "docs/deployment.md",
+        "docs/macos.md",
+        "docs/next-release.md",
+        "docs/releases/0.22.16.md"
+      ],
+      "acceptance": [
+        "Both standard native macOS builds and demos gate packaging; Linux/container gates remain.",
+        "Same-run target/SHA-scoped artifacts preserve checked bytes; immutable publication remains default CI only.",
+        "No new write privileges, credentials, third-party/runtime dependencies, paid runner or security bypass.",
+        "English native guide distinguishes checksum integrity from Apple signing and documents existing PEM trust without disabling TLS."
+      ],
+      "evidence": [
+        "Actual PR #20 full 11-file diff at 330cdbd7e8d2530c8900579206cc5e3075934d92.",
+        "Native Actions run 37691546668 was in progress, including both real macOS runner jobs; no runtime success is asserted.",
+        "Existing src/tls.rs load_roots supports /etc/ssl/cert.pem and MYNOU_CA_FILE; existing src/demo.rs confirms ready import and Plex scan.",
+        "Official actions/runner-images README lists standard macos-26 arm64 and macos-26-intel x64."
+      ],
+      "findings": []
+    },
+    "security_native_review": {
+      "success": true,
+      "review_id": 5448763835
     },
     "source": {
       "remote_commit": "330cdbd7e8d2530c8900579206cc5e3075934d92",
