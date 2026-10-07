@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 185,
-  "lease": null,
+  "generation": 186,
+  "lease": {
+    "id": "73eea535-55b6-4850-ab70-313605812bf9",
+    "worker": "codex-cadence-security",
+    "role": "security",
+    "issue": 11,
+    "acquired_at": "2026-10-07T16:13:50Z",
+    "heartbeat_at": "2026-10-07T16:13:50Z",
+    "expires_at": "2026-10-07T16:58:50Z",
+    "branch": "work/engineering-cadence",
+    "commit": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
+    "pr": 12
+  },
   "checkpoint": {
     "at": "2026-10-07T16:13:46Z",
     "issue": 11,
