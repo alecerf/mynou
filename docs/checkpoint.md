@@ -1,4 +1,4 @@
-# Project checkpoint — proposed Mynou 0.22.14
+# Project checkpoint — proposed Mynou 0.22.15
 
 The active implementation rule is Rust with its standard library alone: no crates,
 bundled third-party code, FFI, `unsafe`, external runtime programs, or fallback to
@@ -18,12 +18,17 @@ GitHub Actions published v0.22.13 multi-file memory recovery at
 37648617664, 846 Rust tests across 64 harnesses and seven immutable assets.
 Issue #9 comment 6041888395 / PR #10 retain exact review/publication/cleanup proof.
 
-Proposed 0.22.14 in [Issue #13](https://github.com/alecerf/mynou/issues/13) adds
+Published 0.22.14 in [Issue #13](https://github.com/alecerf/mynou/issues/13) adds
 bounded read-only protected-content diagnosis through the library and CLI, with
 exact File IDs/global slice indices, whole-file checks and source/path/byte
 revalidation. It neither reconstructs parity nor creates ownership, writes or
 library admission. Separate Security/QA and Actions still establish delivery.
-See [support](par2.md) and [release contract](releases/0.22.14.md).
+Actual CI37668451522 passed all five jobs, 858 Rust tests and seven immutable
+assets at `7910156c6cce0f74a9ab530b289c3734750bc994`; native comment6045313189
+retains exact publication proof. Proposed 0.22.15 under Issue #15 now persists
+verified owner-bound recovery in new private workspaces and checks reopening.
+This grants no existing-file repair or queue/library admission. See
+[support](par2.md) and [release contract](releases/0.22.15.md).
 This document is product context, not live execution or verification state.
 
 GitHub Actions published v0.22.12 at `d0c37f773b45b8948eb8c5b67a55e89f64ddbe10`

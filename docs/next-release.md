@@ -1,4 +1,4 @@
-# Current product work — proposed 0.22.14 read-only PAR2 verification
+# Current product work — proposed 0.22.15 private PAR2 recovery persistence
 
 GitHub Actions published v0.22.13 multi-file memory recovery at
 `6085368588c8077af53d15bc4f07d752e670e445` in run 37648617664: all five jobs
@@ -8,17 +8,20 @@ passed, 846 Rust tests across 64 harnesses and seven immutable bot assets.
 Security/QA and cleanup evidence. Cadence #11 / PR #12 is delivered separately;
 its organization-only merge did not retag the product.
 
-[Issue #13](https://github.com/alecerf/mynou/issues/13) owns the next bounded
-repair-planning prerequisite: diagnose protected content before considering any
-filesystem repair. `par2-verify FILE --root DIRECTORY` and exact-ID library
-reports check slices, full-file and first-16-KiB hashes with bounded reads,
-identity fencing and cancellation. No parity correctness, ownership, atomic
-snapshot, writes or library admission is claimed. See [support](par2.md) and
-[proposed scope](releases/0.22.14.md).
+Actions published v0.22.14 read-only diagnosis at
+`7910156c6cce0f74a9ab530b289c3734750bc994` in CI37668451522, all five jobs
+green, 858 Rust tests and seven immutable assets. Issue #13 comment6045313189 /
+PR #14 retain Security/QA, machine gate, native cleanup and publication evidence.
+
+[Issue #15](https://github.com/alecerf/mynou/issues/15) now owns owner-bound
+private persistence: reconstruct every file before new private writes, hold a
+standard file lock, commit exact immutable source/policy/inventory and reverify
+all reopened output. No existing-file overwrite or automatic library/queue
+activation is claimed. See [support](par2.md) and [scope](releases/0.22.15.md).
 
 Complete actual CI, separate exact-head/base Security and independent QA, merge
-and immutable Actions publication before ownership-bound persistent repair and
-admission. Use one configured whole-wake deadline with serial role leases and a
+and immutable Actions publication before automatic queue/repair and library
+admission integration. Use one configured whole-wake deadline with serial role leases and a
 five-minute handoff reserve. No local validation or manual publication. A proposed
 source version does not establish publication.
 

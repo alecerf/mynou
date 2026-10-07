@@ -1,4 +1,4 @@
-# Mynou 0.22.14 — Rust, standard library only
+# Mynou 0.22.15 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -148,7 +148,16 @@ verification report. It identifies damaged/missing protected slices and checks
 whole-file integrity without reconstruction, writes or ownership/library authority.
 Clean verification exits zero; damage prints JSON and exits nonzero. See
 [verification support](docs/par2.md) and [release scope](docs/releases/0.22.14.md).
-Actions, separate Security and independent QA establish actual release state.
+Actions published v0.22.14 at `7910156c6cce0f74a9ab530b289c3734750bc994`:
+all five jobs in run 37668451522 passed, with 858 Rust tests and seven immutable
+assets. Issue #13 / PR #14 retain actual publication and review evidence.
+
+Proposed 0.22.15 adds an owner-bound private PAR2 recovery workspace library API.
+Verified memory reconstruction is persisted in a new private directory and
+checked against exact owner/source/policy and complete integrity on reopening.
+It does not overwrite existing files or activate queue/library admission. See
+[workspace support](docs/par2.md) and [release scope](docs/releases/0.22.15.md).
+Separate Security, independent QA and Actions establish actual delivery.
 
 ## Autonomous engineering
 

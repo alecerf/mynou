@@ -11,6 +11,7 @@ use mynou::{
         Limits, MultiRecoveryLimits, RecoveryInput, RecoveryLimits, Set, verify_directory,
         verify_directory_cancellable,
     },
+    usenet::{par2_workspace::RecoveryWorkspace, queue::Owner},
 };
 use std::{
     fs,
@@ -24,6 +25,10 @@ const DESCRIPTION: [u8; 16] = *b"PAR 2.0\0FileDesc";
 const CHECKSUMS: [u8; 16] = *b"PAR 2.0\0IFSC\0\0\0\0";
 const RECOVERY: [u8; 16] = *b"PAR 2.0\0RecvSlic";
 const CREATOR: [u8; 16] = *b"PAR 2.0\0Creator\0";
+
+fn digest_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
 
 fn padded(mut bytes: Vec<u8>) -> Vec<u8> {
     bytes.resize(bytes.len().next_multiple_of(4), 0);
@@ -1711,5 +1716,487 @@ fn verification_budgets_live_source_hash_and_report_overhead() {
         set.verify_files(&mut Cursor::new(&bytes), &inputs, allowed)
             .unwrap()
             .content_verified()
+    );
+}
+
+fn recovery_parent() -> Directory {
+    let directory = Directory::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&directory.0, fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    directory
+}
+
+fn recovery_owner() -> Owner {
+    Owner {
+        job_id: "original-par2-owner".into(),
+        binding: digest_hex(&sha256(b"captured-job-policy")),
+    }
+}
+
+fn rewrite_recovery_descriptor(path: &std::path::Path, change: impl FnOnce(&mut Value)) {
+    let original = fs::read(path).unwrap();
+    let size = u64::from_le_bytes(original[8..16].try_into().unwrap()) as usize;
+    let mut value = json::parse(std::str::from_utf8(&original[24..24 + size]).unwrap()).unwrap();
+    change(&mut value);
+    let header = json::stringify(&value);
+    let mut bytes = b"MYNOUPR1".to_vec();
+    bytes.extend_from_slice(&(header.len() as u64).to_le_bytes());
+    bytes.extend_from_slice(&0u64.to_le_bytes());
+    bytes.extend_from_slice(header.as_bytes());
+    bytes.extend_from_slice(&sha256(&bytes));
+    fs::write(path, bytes).unwrap();
+}
+
+#[test]
+fn private_recovery_persists_global_reconstruction_and_reopens_with_exclusive_owner() {
+    let parent = recovery_parent();
+    let root = parent.0.join("recovery");
+    let source = Fixture::multi_recovery(
+        &[
+            ("nested/Zulu.bin", b"abcdefgh"),
+            ("Alpha.bin", b"12345"),
+            ("Empty.bin", b""),
+            ("Note.txt", b"x"),
+        ],
+        3,
+        4,
+        4,
+    )
+    .bytes();
+    let set = read(&source).unwrap();
+    let owner = recovery_owner();
+    let flag = AtomicBool::new(true);
+    let damaged = b"Xbcdefgh";
+    let inputs = [
+        RecoveryInput::new(*set.files()[2].id(), b""),
+        RecoveryInput::new(*set.files()[1].id(), b""),
+        RecoveryInput::new(*set.files()[0].id(), damaged),
+    ];
+    fs::write(parent.0.join("original.bin"), damaged).unwrap();
+    let workspace = RecoveryWorkspace::create(
+        &root,
+        &owner,
+        &set,
+        &source,
+        &inputs,
+        MultiRecoveryLimits::default(),
+        &flag,
+    )
+    .unwrap();
+    let outputs = workspace.verified_files(&flag).unwrap();
+    assert_eq!(outputs.len(), 3);
+    for (index, expected) in [b"abcdefgh".as_slice(), b"12345", b""].iter().enumerate() {
+        assert_eq!(outputs[index].id(), set.files()[index].id());
+        assert_eq!(outputs[index].name(), set.files()[index].name());
+        assert_eq!(fs::read(outputs[index].path()).unwrap(), *expected);
+        assert_eq!(outputs[index].path().parent(), Some(root.as_path()));
+    }
+    assert!(!root.join("nested").exists());
+    assert_eq!(fs::read_dir(&root).unwrap().count(), 5);
+    assert!(
+        RecoveryWorkspace::open(
+            &root,
+            &owner,
+            &set,
+            &source,
+            MultiRecoveryLimits::default(),
+            &flag
+        )
+        .is_err()
+    );
+    drop(workspace);
+    let reopened = RecoveryWorkspace::open(
+        &root,
+        &owner,
+        &set,
+        &source,
+        MultiRecoveryLimits::default(),
+        &flag,
+    )
+    .unwrap();
+    assert_eq!(reopened.verified_files(&flag).unwrap().len(), 3);
+    assert_eq!(fs::read(parent.0.join("original.bin")).unwrap(), damaged);
+    assert_eq!(fs::read_dir(&parent.0).unwrap().count(), 2);
+}
+
+#[test]
+fn private_recovery_rejects_different_owner_source_policy_and_validly_rehashed_schema() {
+    let parent = recovery_parent();
+    let root = parent.0.join("recovery");
+    let source = Fixture::recovery(b"abcde", 4, 2).bytes();
+    let set = read(&source).unwrap();
+    let owner = recovery_owner();
+    let inputs = [RecoveryInput::new(*set.files()[0].id(), b"abcde")];
+    let flag = AtomicBool::new(true);
+    drop(
+        RecoveryWorkspace::create(
+            &root,
+            &owner,
+            &set,
+            &source,
+            &inputs,
+            MultiRecoveryLimits::default(),
+            &flag,
+        )
+        .unwrap(),
+    );
+    let mut changed_owner = owner.clone();
+    changed_owner.job_id = "different-job".into();
+    assert!(
+        RecoveryWorkspace::open(
+            &root,
+            &changed_owner,
+            &set,
+            &source,
+            MultiRecoveryLimits::default(),
+            &flag
+        )
+        .is_err()
+    );
+    changed_owner = owner.clone();
+    changed_owner.binding = digest_hex(&sha256(b"other-policy"));
+    assert!(
+        RecoveryWorkspace::open(
+            &root,
+            &changed_owner,
+            &set,
+            &source,
+            MultiRecoveryLimits::default(),
+            &flag
+        )
+        .is_err()
+    );
+    let mut changed_source = source.clone();
+    *changed_source.last_mut().unwrap() ^= 1;
+    assert!(
+        RecoveryWorkspace::open(
+            &root,
+            &owner,
+            &set,
+            &changed_source,
+            MultiRecoveryLimits::default(),
+            &flag
+        )
+        .is_err()
+    );
+    let changed_limits = MultiRecoveryLimits {
+        max_files: 1,
+        recovery: RecoveryLimits {
+            max_missing_slices: 1,
+            ..RecoveryLimits::default()
+        },
+    };
+    assert!(RecoveryWorkspace::open(&root, &owner, &set, &source, changed_limits, &flag).is_err());
+    let descriptor = root.join("recovery.bin");
+    let original = fs::read(&descriptor).unwrap();
+    rewrite_recovery_descriptor(&descriptor, |v| v.insert("unexpected", true));
+    assert!(
+        RecoveryWorkspace::open(
+            &root,
+            &owner,
+            &set,
+            &source,
+            MultiRecoveryLimits::default(),
+            &flag
+        )
+        .is_err()
+    );
+    fs::write(&descriptor, &original).unwrap();
+    rewrite_recovery_descriptor(&descriptor, |v| {
+        let mut plan = v.get("plan").unwrap().clone();
+        plan.insert("format", 0u32);
+        v.insert("plan", plan);
+    });
+    assert!(
+        RecoveryWorkspace::open(
+            &root,
+            &owner,
+            &set,
+            &source,
+            MultiRecoveryLimits::default(),
+            &flag
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn private_recovery_does_not_trust_a_rehashed_output_instead_of_par2_integrity() {
+    let parent = recovery_parent();
+    let root = parent.0.join("recovery");
+    let source = Fixture::recovery(b"abcde", 4, 2).bytes();
+    let set = read(&source).unwrap();
+    let owner = recovery_owner();
+    let flag = AtomicBool::new(true);
+    let inputs = [RecoveryInput::new(*set.files()[0].id(), b"abcde")];
+    let workspace = RecoveryWorkspace::create(
+        &root,
+        &owner,
+        &set,
+        &source,
+        &inputs,
+        MultiRecoveryLimits::default(),
+        &flag,
+    )
+    .unwrap();
+    let path = workspace.verified_files(&flag).unwrap()[0]
+        .path()
+        .to_owned();
+    drop(workspace);
+    fs::write(&path, b"XXXXX").unwrap();
+    rewrite_recovery_descriptor(&root.join("recovery.bin"), |v| {
+        v.insert(
+            "outputs",
+            Value::Array(vec![Value::from(digest_hex(&sha256(b"XXXXX")))]),
+        );
+    });
+    let error = RecoveryWorkspace::open(
+        &root,
+        &owner,
+        &set,
+        &source,
+        MultiRecoveryLimits::default(),
+        &flag,
+    )
+    .err()
+    .unwrap();
+    assert!(error.contains("protected integrity mismatch"));
+    assert_eq!(fs::read(&path).unwrap(), b"XXXXX");
+}
+
+#[test]
+fn private_recovery_reverification_rejects_corruption_lengths_and_unknown_inventory() {
+    let parent = recovery_parent();
+    let root = parent.0.join("recovery");
+    let source = Fixture::recovery(b"abcde", 4, 2).bytes();
+    let set = read(&source).unwrap();
+    let owner = recovery_owner();
+    let flag = AtomicBool::new(true);
+    let inputs = [RecoveryInput::new(*set.files()[0].id(), b"abcde")];
+    let workspace = RecoveryWorkspace::create(
+        &root,
+        &owner,
+        &set,
+        &source,
+        &inputs,
+        MultiRecoveryLimits::default(),
+        &flag,
+    )
+    .unwrap();
+    let output = workspace.verified_files(&flag).unwrap()[0]
+        .path()
+        .to_owned();
+    for invalid in [b"XXXXX".as_slice(), b"abcd", b"oversized"] {
+        fs::write(&output, invalid).unwrap();
+        assert!(workspace.verified_files(&flag).is_err());
+    }
+    fs::write(&output, b"abcde").unwrap();
+    let descriptor = root.join("recovery.bin");
+    let original = fs::read(&descriptor).unwrap();
+    let mut corrupt = original.clone();
+    *corrupt.last_mut().unwrap() ^= 1;
+    fs::write(&descriptor, corrupt).unwrap();
+    assert!(workspace.verified_files(&flag).is_err());
+    fs::write(&descriptor, &original).unwrap();
+    fs::write(root.join("foreign.bin"), b"foreign").unwrap();
+    assert!(workspace.verified_files(&flag).is_err());
+    assert_eq!(fs::read(root.join("foreign.bin")).unwrap(), b"foreign");
+    fs::remove_file(root.join("foreign.bin")).unwrap();
+    fs::remove_file(&output).unwrap();
+    assert!(workspace.verified_files(&flag).is_err());
+    fs::write(&output, b"abcde").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&output, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    assert_eq!(workspace.verified_files(&flag).unwrap().len(), 1);
+    fs::remove_file(&descriptor).unwrap();
+    drop(workspace);
+    assert!(
+        RecoveryWorkspace::open(
+            &root,
+            &owner,
+            &set,
+            &source,
+            MultiRecoveryLimits::default(),
+            &flag
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn private_recovery_preflight_errors_create_nothing_and_never_adopt_existing_roots() {
+    let parent = recovery_parent();
+    let source = Fixture::recovery(b"abcde", 4, 2).bytes();
+    let set = read(&source).unwrap();
+    let owner = recovery_owner();
+    let inputs = [RecoveryInput::new(*set.files()[0].id(), b"abcde")];
+    let flag = AtomicBool::new(false);
+    let root = parent.0.join("recovery");
+    assert!(
+        RecoveryWorkspace::create(
+            &root,
+            &owner,
+            &set,
+            &source,
+            &inputs,
+            MultiRecoveryLimits::default(),
+            &flag
+        )
+        .is_err()
+    );
+    flag.store(true, Ordering::Release);
+    assert!(
+        RecoveryWorkspace::create(
+            &root,
+            &owner,
+            &set,
+            b"changed",
+            &inputs,
+            MultiRecoveryLimits::default(),
+            &flag
+        )
+        .is_err()
+    );
+    let invalid_owner = Owner {
+        job_id: "valid".into(),
+        binding: "invalid".into(),
+    };
+    assert!(
+        RecoveryWorkspace::create(
+            &root,
+            &invalid_owner,
+            &set,
+            &source,
+            &inputs,
+            MultiRecoveryLimits::default(),
+            &flag
+        )
+        .is_err()
+    );
+    let tight = MultiRecoveryLimits {
+        recovery: RecoveryLimits {
+            max_working_bytes: 1,
+            ..RecoveryLimits::default()
+        },
+        ..MultiRecoveryLimits::default()
+    };
+    assert!(
+        RecoveryWorkspace::create(&root, &owner, &set, &source, &inputs, tight, &flag).is_err()
+    );
+    assert!(
+        RecoveryWorkspace::create(
+            &root,
+            &owner,
+            &set,
+            &source,
+            &[],
+            MultiRecoveryLimits::default(),
+            &flag
+        )
+        .is_err()
+    );
+    let unavailable = Fixture::recovery(b"abcde", 4, 0).bytes();
+    let missing_set = read(&unavailable).unwrap();
+    let missing = [RecoveryInput::new(*missing_set.files()[0].id(), b"")];
+    assert!(
+        RecoveryWorkspace::create(
+            &root,
+            &owner,
+            &missing_set,
+            &unavailable,
+            &missing,
+            MultiRecoveryLimits::default(),
+            &flag
+        )
+        .is_err()
+    );
+    assert!(!root.exists());
+    assert_eq!(fs::read_dir(&parent.0).unwrap().count(), 0);
+    assert!(
+        RecoveryWorkspace::create(
+            &parent.0.join("missing/child"),
+            &owner,
+            &set,
+            &source,
+            &inputs,
+            MultiRecoveryLimits::default(),
+            &flag
+        )
+        .is_err()
+    );
+    assert!(!parent.0.join("missing").exists());
+    fs::create_dir(&root).unwrap();
+    fs::write(root.join("original"), b"unchanged").unwrap();
+    assert!(
+        RecoveryWorkspace::create(
+            &root,
+            &owner,
+            &set,
+            &source,
+            &inputs,
+            MultiRecoveryLimits::default(),
+            &flag
+        )
+        .is_err()
+    );
+    assert_eq!(fs::read(root.join("original")).unwrap(), b"unchanged");
+}
+
+#[cfg(unix)]
+#[test]
+fn private_recovery_rejects_links_and_nonprivate_modes_without_touching_foreign_bytes() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    let parent = recovery_parent();
+    let root = parent.0.join("recovery");
+    let source = Fixture::recovery(b"abcde", 4, 2).bytes();
+    let set = read(&source).unwrap();
+    let owner = recovery_owner();
+    let flag = AtomicBool::new(true);
+    let inputs = [RecoveryInput::new(*set.files()[0].id(), b"abcde")];
+    let workspace = RecoveryWorkspace::create(
+        &root,
+        &owner,
+        &set,
+        &source,
+        &inputs,
+        MultiRecoveryLimits::default(),
+        &flag,
+    )
+    .unwrap();
+    let output = workspace.verified_files(&flag).unwrap()[0]
+        .path()
+        .to_owned();
+    fs::hard_link(&output, parent.0.join("hard-link")).unwrap();
+    assert!(workspace.verified_files(&flag).is_err());
+    fs::remove_file(parent.0.join("hard-link")).unwrap();
+    fs::set_permissions(&output, fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(workspace.verified_files(&flag).is_err());
+    fs::set_permissions(&output, fs::Permissions::from_mode(0o600)).unwrap();
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(workspace.verified_files(&flag).is_err());
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::write(parent.0.join("foreign"), b"abcde").unwrap();
+    fs::remove_file(&output).unwrap();
+    symlink(parent.0.join("foreign"), &output).unwrap();
+    assert!(workspace.verified_files(&flag).is_err());
+    assert_eq!(fs::read(parent.0.join("foreign")).unwrap(), b"abcde");
+    drop(workspace);
+    symlink(&root, parent.0.join("root-link")).unwrap();
+    assert!(
+        RecoveryWorkspace::open(
+            &parent.0.join("root-link"),
+            &owner,
+            &set,
+            &source,
+            MultiRecoveryLimits::default(),
+            &flag
+        )
+        .is_err()
     );
 }

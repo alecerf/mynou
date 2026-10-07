@@ -137,7 +137,7 @@ and [PR #10](https://github.com/alecerf/mynou/pull/10) retain actual CI and fina
 review/publication state. Actions published v0.22.13 at 6085368588c8077af53d15bc4f07d752e670e445
 in run 37648617664 with 846 Rust tests and seven immutable assets.
 
-## Proposed read-only protected-content verification in 0.22.14
+## Read-only protected-content verification published in 0.22.14
 
 `mynou par2-verify FILE --root DIRECTORY` opens only recoverable protected names
 under an explicitly selected existing root. It prints checked JSON with expected
@@ -179,3 +179,51 @@ no owner and grant no repair, acquisition, import or library permission.
 Original CI fixtures and final separate Security/QA establish actual delivery in
 [Issue #13](https://github.com/alecerf/mynou/issues/13). Filesystem repair and
 ownership-bound admission remain subsequent explicit work.
+
+Actions published v0.22.14 at `7910156c6cce0f74a9ab530b289c3734750bc994`
+in run 37668451522: all five jobs succeeded, 858 Rust tests passed and seven
+immutable bot assets were published. Issue #13 comment 6045313189 records proof.
+
+## Proposed private persistent recovery in 0.22.15
+
+`usenet::par2_workspace::RecoveryWorkspace::create` takes a captured `queue::Owner`,
+immutable `Set`/PAR2 source, exact `RecoveryInput` values, `MultiRecoveryLimits`
+and a cooperative cancellation flag. Every file is reconstructed and fully
+verified before any directory is created. Only a new directory under an existing
+private parent is accepted. Output paths are internal File-ID names; original
+protected names are metadata, never write destinations. Nothing is overwritten.
+
+The workspace holds a standard exclusive `File` lock. Verified output files are
+synchronized and read back before the separately tagged descriptor commits the
+complete owner/source/Main-order inventory and all captured limits. The descriptor
+is at most 16 KiB; an oversized descriptor is rejected before filesystem writes.
+The caller retains borrowed immutable metadata/source, avoiding a metadata copy.
+Reconstruction buffers are dropped before readback. Combined content, slice
+scratch and 1 MiB persistence overhead must fit the captured working budget.
+Existing eight-file/16 MiB/256-slice/eight-erasure/1 MiB-slice/32 MiB-working and
+128 Mi field-operation ceilings remain; stricter policies stay immutable on reopen.
+
+`open` requires the same owner, source, metadata and policy. `verified_files`
+rechecks every output through original padded slice, full-file and prefix checks
+and its retained SHA-256 before returning any private paths. Descriptor checks,
+bounded exact directory inventory, regular-file/private-mode/single-link checks
+and parent/root/opened-file identity fences detect corruption, replacement and
+extra/missing content. All bytes remain unchanged on verification failure.
+Cancellation checks at most 64 KiB read/write/hash chunks and before descriptor
+publication; it cannot interrupt a blocking OS operation. Once the synchronized
+descriptor commits, later cancellation cannot undo the publication.
+
+The supported filesystem is Unix with a caller-controlled private parent.
+Other platforms fail closed before creating a workspace. Kernel file locking
+releases after worker death; there is no permanent boolean lock. Interrupted
+staging without a complete descriptor stays private and unpublished, never
+implicitly adopted. A synchronization error after atomic descriptor rename means
+durability is uncertain and requires checked reopening, never a success claim.
+Safe std paths do not offer an atomic hostile filesystem snapshot or general
+directory-relative capabilities.
+
+A captured owner identifier is not proof of current approval. This library API
+grants no automatic queue activation, existing-file repair, overwrite, download,
+media/import/Plex or library permission. Those gates remain a subsequent integration.
+Original CI-only fixtures and separately leased Security/QA establish delivery in
+[Issue #15](https://github.com/alecerf/mynou/issues/15).

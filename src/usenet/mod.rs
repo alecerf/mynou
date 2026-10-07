@@ -7,6 +7,7 @@ pub use management::{ProbeRequest, QueueControl};
 pub mod newznab;
 pub mod nntp;
 pub mod nzb;
+pub mod par2_workspace;
 pub mod queue;
 mod settings;
 pub mod workspace;

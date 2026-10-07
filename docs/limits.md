@@ -412,3 +412,19 @@ inputs plus 12 MiB conservative bounded path/metadata overhead; paths are at mos
 cooperative between 64 KiB read/hash chunks and cannot interrupt an OS call.
 No atomic filesystem snapshot, parity correctness, ownership or repair permission
 is promised. Missing zero-byte files are reported as absent. See [support](par2.md).
+
+## Proposed private PAR2 persistence in 0.22.15
+
+Only a new workspace below an existing caller-controlled private Unix directory
+is supported. Fixed File-ID outputs, an exclusive standard file lock and a
+separately tagged descriptor bind exact owner/source/inventory/resource policy.
+Descriptor JSON is at most 16 KiB and must fit before any writes. Combined
+protected content plus slice scratch and 1 MiB persistence overhead must fit the
+captured working limit. Borrowed captured Set/source and caller inputs are excluded;
+reconstruction buffers are dropped before bounded readback. Original aggregate
+recovery ceilings remain unchanged. Directory inventory inspects at most its eight
+outputs, owner and descriptor plus one rejecting extra entry, never a public scan.
+Read/write/hash chunks are at most 64 KiB. No existing-file overwrite, automatic
+queue/library admission, live permission inference or hostile atomic snapshot is
+provided. Incomplete staging remains unpublished; post-rename synchronization
+uncertainty requires checked reopen. See [support](par2.md).
