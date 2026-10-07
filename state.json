@@ -1,35 +1,185 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 236,
+  "generation": 237,
   "lease": {
     "id": "codex-20261007T192857Z-master-c2d9c95296d4",
     "worker": "codex-hourly-20261007T192857Z",
     "role": "master",
     "issue": 13,
     "acquired_at": "2026-10-07T19:29:55Z",
-    "heartbeat_at": "2026-10-07T19:29:55Z",
-    "expires_at": "2026-10-07T20:14:55Z",
+    "heartbeat_at": "2026-10-07T19:35:39Z",
+    "expires_at": "2026-10-07T20:20:39Z",
     "branch": "trunk",
     "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
     "pr": 14
   },
   "checkpoint": {
-    "at": "2026-10-07T18:43:09Z",
+    "at": "2026-10-07T19:35:39Z",
     "issue": 13,
-    "role": "triage",
+    "role": "master",
     "branch": "trunk",
     "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
     "pr": 14,
-    "summary": "Default-source CI transition: ci-passed at 7910156c6cce0f74a9ab530b289c3734750bc994; native evidence {'commit': '7910156c6cce0f74a9ab530b289c3734750bc994', 'state': 'ci-passed', 'at': '2026-10-07T18:43:09Z', 'run_id': 37668451522, 'status': 'completed', 'conclusion': 'success'}. No release publication is inferred.",
-    "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases.",
+    "summary": "Recovered actual immutable v0.22.14 publication from7910156c6cce0f74a9ab530b289c3734750bc994. CI37668451522 all five jobs success; validate112953681488:858 Rust tests/64 harnesses/0 failures102.911s,4 scheduler/53 organization checks. Native release406055926 published18:42:52Z, tag matches exact source, seven bot-uploaded assets captured with IDs/sizes/digests. Previous v0.22.13 release405936360 assets unchanged against preserved checkpoint baseline. Issue13 closed/Done, PR14 merged; no open managed Issues/PRs or pending task reconciliation. Actual publication evidence is native Issue13comment6045313189. No local checks or other workers. Existing roadmap calls for owner-bound persistent recovery/admission; inspect only bounded relevant private owner/workspace code and choose the next safe increment.",
+    "next_action": "Master scopes a single next native user-roadmap Issue using existing Usenet Owner/private frame/standard File locking and bounded memory recovery; no duplicate Issues. Before further implementation, checkpoint/release and acquire scoped Security for the new issue, then Rust. Same wake deadline20:08:57Z, reserve20:03:57Z. Preserve current publication and original source mappings.",
     "publication": {
       "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
       "state": "ci-passed",
-      "at": "2026-10-07T18:43:09Z",
       "run_id": 37668451522,
       "status": "completed",
-      "conclusion": "success"
+      "conclusion": "success",
+      "release_id": 406055926,
+      "tag": "v0.22.14",
+      "url": "https://github.com/alecerf/mynou/releases/tag/v0.22.14",
+      "published_at": "2026-10-07T18:42:52Z",
+      "immutable": true,
+      "assets": [
+        {
+          "id": 619497394,
+          "name": "mynou-v0.22.14-linux-amd64-image.tar.gz",
+          "size": 2354446,
+          "digest": "sha256:0e96cfb74680fec9a7877fd52b487863c61ef7829126a8b6f26ccccc56c153c9"
+        },
+        {
+          "id": 619497398,
+          "name": "mynou-v0.22.14-linux-amd64-image.tar.gz.sha256",
+          "size": 106,
+          "digest": "sha256:a2627f84e8a3e26989f92543e98864514a725c92c1f637586a1110515248132c"
+        },
+        {
+          "id": 619497393,
+          "name": "mynou-v0.22.14-linux-x86_64",
+          "size": 4887392,
+          "digest": "sha256:7b6d50b04b67795ad1956458f0e39f464a6fa8197b0244c86053c2a17c28cd7f"
+        },
+        {
+          "id": 619497395,
+          "name": "mynou-v0.22.14-linux-x86_64.sha256",
+          "size": 94,
+          "digest": "sha256:2f9f8dae8305a79e37b80a096b5a1723de12f4f77d02c2fd89413a936a897e03"
+        },
+        {
+          "id": 619497424,
+          "name": "mynou-v0.22.14-source.zip",
+          "size": 9369451,
+          "digest": "sha256:bcf4fefc387bbdcbaf76b97b421c9fd4e807b9ba3ce37893ad7f3c4ffedc4640"
+        },
+        {
+          "id": 619497432,
+          "name": "mynou-v0.22.14-source.zip.sha256",
+          "size": 92,
+          "digest": "sha256:c25537c0ac069f76de382cae4f41b5f8ef254e76d46143afa1fd17a32ae8a4a9"
+        },
+        {
+          "id": 619497397,
+          "name": "SHA256SUMS",
+          "size": 292,
+          "digest": "sha256:ffff475b52129cf8314b0757f9365cab32f8e93deb5a44dc6966d675353ec9d9"
+        }
+      ],
+      "previous_release_id": 405936360,
+      "previous_assets_unchanged": true,
+      "issue_comment": 6045313189
+    },
+    "retained_product_release": {
+      "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
+      "state": "ci-passed",
+      "run_id": 37668451522,
+      "status": "completed",
+      "conclusion": "success",
+      "release_id": 406055926,
+      "tag": "v0.22.14",
+      "url": "https://github.com/alecerf/mynou/releases/tag/v0.22.14",
+      "published_at": "2026-10-07T18:42:52Z",
+      "immutable": true,
+      "assets": [
+        {
+          "id": 619497394,
+          "name": "mynou-v0.22.14-linux-amd64-image.tar.gz",
+          "size": 2354446,
+          "digest": "sha256:0e96cfb74680fec9a7877fd52b487863c61ef7829126a8b6f26ccccc56c153c9"
+        },
+        {
+          "id": 619497398,
+          "name": "mynou-v0.22.14-linux-amd64-image.tar.gz.sha256",
+          "size": 106,
+          "digest": "sha256:a2627f84e8a3e26989f92543e98864514a725c92c1f637586a1110515248132c"
+        },
+        {
+          "id": 619497393,
+          "name": "mynou-v0.22.14-linux-x86_64",
+          "size": 4887392,
+          "digest": "sha256:7b6d50b04b67795ad1956458f0e39f464a6fa8197b0244c86053c2a17c28cd7f"
+        },
+        {
+          "id": 619497395,
+          "name": "mynou-v0.22.14-linux-x86_64.sha256",
+          "size": 94,
+          "digest": "sha256:2f9f8dae8305a79e37b80a096b5a1723de12f4f77d02c2fd89413a936a897e03"
+        },
+        {
+          "id": 619497424,
+          "name": "mynou-v0.22.14-source.zip",
+          "size": 9369451,
+          "digest": "sha256:bcf4fefc387bbdcbaf76b97b421c9fd4e807b9ba3ce37893ad7f3c4ffedc4640"
+        },
+        {
+          "id": 619497432,
+          "name": "mynou-v0.22.14-source.zip.sha256",
+          "size": 92,
+          "digest": "sha256:c25537c0ac069f76de382cae4f41b5f8ef254e76d46143afa1fd17a32ae8a4a9"
+        },
+        {
+          "id": 619497397,
+          "name": "SHA256SUMS",
+          "size": 292,
+          "digest": "sha256:ffff475b52129cf8314b0757f9365cab32f8e93deb5a44dc6966d675353ec9d9"
+        }
+      ],
+      "previous_release_id": 405936360,
+      "previous_assets_unchanged": true,
+      "issue_comment": 6045313189
+    },
+    "source_bridge": {
+      "commits": [
+        {
+          "local": "937c17f006c7afbf305ab3cb30c3f23c1832e09f",
+          "remote": "d6963197460154f9fd68a0a3a947989fd37112f0",
+          "tree": "336d65a5dd25a1722ec890cf0a4c766cefadc267"
+        },
+        {
+          "local": "091cc4eb418e9e04d4459fbdaead2322471fb2a0",
+          "remote": "eb4ae3378c292ba32938f32ea82c0d7d8054a6cc",
+          "tree": "ec8525f7166bbaa41f36d2b52f51448942a4a869"
+        },
+        {
+          "local": "d60f7968e2c73609844d5872c2181749955f2b75",
+          "remote": "c07111816044c3d25a556b3e80b7a758aa38935b",
+          "tree": "7b131a0999ea98bc9aafa7f0ee2eb41166a27b90"
+        },
+        {
+          "local": "c7b06cf3ddc243283f1bf8fa0c99b8534c706c13",
+          "remote": "18548f24e57b2845559c513638f82dee8c30f211",
+          "tree": "f409792c0c794b9c022527ad709021a60eecedfc"
+        }
+      ]
+    },
+    "task_reconciliation": {
+      "success": true,
+      "automation_id": "6ac54c387af0819184713674c48b3845",
+      "title": "Mynou engineering",
+      "is_enabled": true,
+      "schedule": "BEGIN:VEVENT\nDTSTART:20261006T193000\nRRULE:FREQ=HOURLY;INTERVAL=1\nEND:VEVENT",
+      "timing_mode": "exact_schedule",
+      "default_timezone": "America/Los_Angeles",
+      "updated_at": "2026-10-07T16:24:41.034231+00:00",
+      "prompt_path": "engineering/worker-prompt.md",
+      "policy_commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
+      "prompt_matches_merged_source": true,
+      "schedule_unchanged": true,
+      "timezone_unchanged": true,
+      "issue_comment": 6042165261
     }
   },
   "attempts": {}
