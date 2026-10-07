@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 262,
+  "generation": 263,
   "lease": {
     "id": "wake4-master-20261007T203225Z",
     "worker": "codex-hourly-20261007T203225Z",
     "role": "master",
     "issue": 15,
     "acquired_at": "2026-10-07T20:39:26Z",
-    "heartbeat_at": "2026-10-07T20:41:28Z",
-    "expires_at": "2026-10-07T21:26:28Z",
+    "heartbeat_at": "2026-10-07T20:42:48Z",
+    "expires_at": "2026-10-07T21:27:48Z",
     "branch": "work/par2-recovery-workspace",
     "commit": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
     "pr": 16
   },
   "checkpoint": {
-    "at": "2026-10-07T20:41:28Z",
+    "at": "2026-10-07T20:42:48Z",
     "issue": 15,
     "role": "master",
     "branch": "work/par2-recovery-workspace",
     "commit": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
     "pr": 16,
-    "summary": "PR #16 is ready at unchanged head36ac55c4556b06d696be86ee8d7d4ddf7cbd418e/base7910156c6cce0f74a9ab530b289c3734750bc994 after actual independent QA COMMENT5448059625 and separate Security5447677084. Native CI37678694142 all four required jobs passed,864 tests/64 harnesses/0failed. Read the actual trusted-base engineering-checks.yml: ready_for_review triggers organization then actual current logical QA/security gate. Draft skipped gates are not treated as green. Native Issue role is Master, status Review, linked PR remains sole change. The attempted read of nonexistent engineering.yml returned404, corrected by native directory discovery; no validation failure or mutation was fabricated.",
-    "next_action": "Inspect the fresh native ready_for_review Engineering run and actual agent-qa-review result once. If pending, persist/release for external CI and mechanical serialized delivery; do not busy-poll. If all objective gates are actually green and PR head/base unchanged, exact-head self-merge under ownership, then inspect default-branch CI/publication and safely reconcile Issue/dependency/branch state.",
+    "summary": "PR #16 exact head36ac55c4556b06d696be86ee8d7d4ddf7cbd418e/base7910156c6cce0f74a9ab530b289c3734750bc994 is ready and mergeable. Every objective check is actually green:CI37678694142 validation/GNU/musl/package and Engineering37683828747 organization113006390674/agent-qa-review113006455560. Actual QA-gate log names independent QA5448059625/checkpoint0e0f1ca84e2808475aa4310a2e98127221370770 and Security5447677084/checkpoint1b5a2b8fc661106ff5f63f5afaaf5f67c468a653. Trunk matches reviewed base. Merge intent is durably recorded under owned Master lease; merge itself has not yet occurred.",
+    "next_action": "Re-read fresh control ownership and exact PR/base/default fences; perform native expected-head merge with all actual green objective gates. Inspect resulting merge commit and native PR/default CI before any dispatch. Actions alone publishes v0.22.15; then close/Done/dependency/native branch cleanup, preserving original immutable v0.22.14 assets.",
     "publication": {
       "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
       "state": "ci-passed",
@@ -231,13 +231,15 @@
       "rust_seconds": 96.8,
       "scheduler_tests": 4,
       "organization_tests": 53,
-      "qa_gate": "pending-ready-PR",
+      "qa_gate": "passed",
       "qa_review": "passed",
-      "organization_run": 37679136558,
-      "organization_job": 112990290502,
+      "organization_run": 37683828747,
+      "organization_job": 113006390674,
       "organization_conclusion": "success",
       "native_run_conclusion": "success",
-      "qa_review_id": 5448059625
+      "qa_review_id": 5448059625,
+      "qa_gate_run": 37683828747,
+      "qa_gate_job": 113006455560
     },
     "wake": {
       "started_at": "2026-10-07T20:32:25Z",
@@ -267,6 +269,14 @@
       "lease_id": "wake4-qa-20261007T203225Z",
       "lease_checkpoint": "0e0f1ca84e2808475aa4310a2e98127221370770",
       "native_review_id": 5448059625
+    },
+    "delivery": {
+      "state": "merge-intent",
+      "pr": 16,
+      "head_sha": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
+      "base_sha": "7910156c6cce0f74a9ab530b289c3734750bc994",
+      "qa_review": 5448059625,
+      "security_review": 5447677084
     }
   },
   "attempts": {}
