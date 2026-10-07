@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 169,
-  "lease": {
-    "id": "0486d6f2-039c-4cb1-bc4e-95d5f3edd670",
-    "worker": "codex-multifile-security-review",
-    "role": "security",
-    "issue": 9,
-    "acquired_at": "2026-10-07T15:26:46Z",
-    "heartbeat_at": "2026-10-07T15:35:59Z",
-    "expires_at": "2026-10-07T16:20:59Z",
-    "branch": "work/par2-multifile-recovery",
-    "commit": "bfdff54f096150968ae725fa19d89e356ed24417",
-    "pr": 10
-  },
+  "generation": 170,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-07T15:35:59Z",
     "issue": 9,
