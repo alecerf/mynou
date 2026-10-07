@@ -1,10 +1,120 @@
 """Trusted-base mechanical merge and cleanup; no LLM workers or paid services."""
 import uuid
+from datetime import timedelta
+from urllib.parse import quote
 
 from github import APIError
 from control import labels, label_update, read_state, recover_native, save
 import lease
 import qa
+
+
+DISPATCH_VISIBILITY_GRACE = timedelta(minutes=5)
+
+
+def default_ci_run(api, commit):
+    if not isinstance(commit, str) or not lease.SHA.fullmatch(commit):
+        raise ValueError("Default CI requires an exact source commit")
+    branch = api.cfg["default_branch"]
+    runs = api.pages("actions/workflows/ci.yml/runs?head_sha=" + commit
+        + "&branch=" + quote(branch, safe=""), "workflow_runs")
+    eligible = [r for r in runs if r.get("head_sha") == commit and r.get("head_branch") == branch
+        and r.get("event") in ("push", "workflow_dispatch")]
+    return max(eligible, key=lambda r: r["id"]) if eligible else None
+
+
+def checkpoint_publication(api, identity, commit, status, run=None, error=None):
+    head, state = read_state(api)
+    lease.owned(state, identity, lease.now())
+    detail = {"commit": commit, "state": status, "at": lease.stamp(lease.now())}
+    if run is not None:
+        detail.update(run_id=run["id"], status=run["status"], conclusion=run.get("conclusion"))
+    if error is not None:
+        detail["error"] = error
+    value = lease.checkpoint(state, lease.now(), identity,
+        f"Default-source CI transition: {status} at {commit}; native evidence {detail}. No release publication is inferred.",
+        "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases.", commit)
+    value["checkpoint"]["publication"] = detail
+    save(api, head, value, "Checkpoint default-source CI " + status)
+    return detail
+
+
+def dispatch_default_ci(api, identity, commit):
+    _, state = read_state(api)
+    owner = lease.owned(state, identity, lease.now())
+    if owner["role"] not in ("quality", "triage") or owner["commit"] != commit or api.ref(api.cfg["default_branch"]) != commit:
+        raise ValueError("Default source or delivery ownership changed; stop before dispatch")
+    run = default_ci_run(api, commit)
+    if run is not None:
+        status = "ci-passed" if run["status"] == "completed" and run.get("conclusion") == "success" else "ci-pending"
+        if run["status"] == "completed" and status != "ci-passed":
+            status = "ci-failed"
+        detail = checkpoint_publication(api, identity, commit, status, run)
+        if status == "ci-failed":
+            raise ValueError("Exact-source default CI failed; preserve its native run and fix before further delivery")
+        return detail
+    previous = state["checkpoint"].get("publication", {})
+    if previous.get("commit") == commit and previous.get("state") in ("dispatching", "accepted", "unknown"):
+        elapsed = lease.now() - lease.time(previous["at"])
+        if elapsed < DISPATCH_VISIBILITY_GRACE:
+            return dict(previous, state="awaiting-visibility")
+    # Record intent before the irreversible API request. A lost response/checkpoint
+    # leaves a grace period for native run visibility rather than an immediate retry.
+    checkpoint_publication(api, identity, commit, "dispatching")
+    lease.owned(read_state(api)[1], identity, lease.now())
+    if api.ref(api.cfg["default_branch"]) != commit:
+        checkpoint_publication(api, identity, commit, "head-changed")
+        raise ValueError("Default branch advanced before CI dispatch; triage exact-source recovery")
+    try:
+        api.rest("POST", "actions/workflows/ci.yml/dispatches", {"ref": api.cfg["default_branch"]})
+    except APIError as error:
+        checkpoint_publication(api, identity, commit, "failed", error="HTTP " + str(error.status))
+        raise
+    except RuntimeError:
+        checkpoint_publication(api, identity, commit, "unknown", error="Transport outcome uncertain; inspect native runs before retry")
+        raise
+    # GitHub accepts a branch ref, not an expected-SHA dispatch condition. Detect
+    # an external writer's race; never attribute a different run to this source.
+    if api.ref(api.cfg["default_branch"]) != commit:
+        checkpoint_publication(api, identity, commit, "head-changed")
+        raise ValueError("Default branch changed during dispatch; no exact-source CI result is certified")
+    return checkpoint_publication(api, identity, commit, "accepted")
+
+
+def recover_publication(api, head, state, prs):
+    current = api.ref(api.cfg["default_branch"])
+    previous = state["checkpoint"].get("publication", {})
+    if previous.get("commit") and previous["commit"] != current and previous.get("state") != "ci-passed":
+        run = default_ci_run(api, previous["commit"])
+        if run is None or run["status"] != "completed" or run.get("conclusion") != "success":
+            raise ValueError("Unfinished exact-source publication has a changed default head; return to Triage")
+    for pr in prs[:20]:
+        if not pr.get("merged_at") or pr.get("merge_commit_sha") != current or pr["base"]["ref"] != api.cfg["default_branch"]:
+            continue
+        if (pr["head"].get("repo") or {}).get("full_name") != api.repo:
+            continue
+        issues = [api.rest("GET", f"issues/{n}") for n in qa.linked_issues(pr.get("body"))]
+        managed = next((i for i in issues if "agent-work" in labels(i)), None)
+        if managed is None:
+            continue
+        run = default_ci_run(api, current)
+        complete = run is not None and run["status"] == "completed" and run.get("conclusion") == "success"
+        if complete and (previous.get("commit") != current or previous.get("state") == "ci-passed"):
+            return None
+        if run is not None and run["status"] != "completed" and previous.get("run_id") == run["id"]:
+            return {"action": "publication-pending", "commit": current, "run": run["id"]}
+        identity = str(uuid.uuid4())
+        owned = lease.acquire(state, lease.now(), identity, "github-actions-publication-recovery", "triage",
+            managed["number"], api.cfg["default_branch"], current, pr["number"])
+        save(api, head, owned, "Acquire exact-source publication recovery")
+        try:
+            detail = dispatch_default_ci(api, identity, current)
+            return {"action": "publication-recovery", "pr": pr["number"], "publication": detail}
+        finally:
+            h, s = read_state(api)
+            if lease.valid(s, lease.now()) and s["lease"]["id"] == identity:
+                save(api, h, lease.release(s, lease.now(), identity), "Release publication recovery")
+    return None
 
 
 def branch_decision(name, head, cfg, comparison, open_prs, open_issues, held, merged_prs=(), protected=False):
@@ -139,10 +249,13 @@ def run(api, sweep=False):
         recovered = recover_native(api, state, at)
         head = save(api, head, recovered, "Recover interrupted delivery lease")
         state = recovered
+    prs = api.pages("pulls?state=all")
+    publication = recover_publication(api, head, state, prs)
+    if publication is not None:
+        return publication
     repaired = recover_dependencies(api, head, state)
     if repaired is not None:
         return repaired
-    prs = api.pages("pulls?state=all")
     candidates = [p for p in prs if p["state"] == "open" and not p["draft"] and qa.linked_issues(p.get("body"))]
     result = []
     # One useful transition per wake. No concurrently active work items.
@@ -171,11 +284,12 @@ def run(api, sweep=False):
                 f"PR #{candidate['number']} merged at {merged['sha']}; exact QA/CI gates passed.",
                 "Finish native Issue/dependency/branch cleanup, then resume backlog.", merged["sha"])
             head = save(api, head, held, "Checkpoint successful native PR merge")
+            publication = dispatch_default_ci(api, identity, merged["sha"])
             final = api.rest("GET", f"pulls/{candidate['number']}")
             cleanup = cleanup_pr(api, final)
             # The currently held execution branch is kept by cleanup_branch;
             # release then a later sweep/native GitHub deletion removes it.
-            result.append({"pr": candidate["number"], "merged": merged["sha"], "cleanup": cleanup})
+            result.append({"pr": candidate["number"], "merged": merged["sha"], "publication": publication, "cleanup": cleanup})
         finally:
             current_head, current_state = read_state(api)
             if lease.valid(current_state, lease.now()) and current_state["lease"]["id"] == identity:

@@ -35,13 +35,16 @@ are native filtered views. Native Issues/PRs represent work; the control branch
 contains only execution lease, checkpoint and bounded attempt history. Do not
 create a parallel backlog database.
 
-Bootstrap is [Issue #1](https://github.com/alecerf/mynou/issues/1). The paused
-product roadmap is [Issue #2](https://github.com/alecerf/mynou/issues/2), natively
-blocked by #1. Its unvalidated PAR2 branch is preserved remotely; details and
-acceptance are in that Issue. Latest verified product release is v0.22.10 at
-`f5c59506d0a8d431d09e9f351e2de2ef71b124f9`: all five jobs in run 37510460908,
-804 Rust tests across 62 harnesses, four scheduler checks and seven bot assets.
-Bootstrap introduces infrastructure, not a new product release.
+Bootstrap [Issue #1 / PR #3](https://github.com/alecerf/mynou/issues/1) and
+PAR2 inspection [Issue #2 / PR #4](https://github.com/alecerf/mynou/issues/2)
+are complete. The verified product release is v0.22.11 at
+`57b15534158b0eb40d4f13450d51fdf33c7d81bb`: all five jobs in run 37579093331,
+822 Rust tests across 63 harnesses, four scheduler checks and seven bot assets.
+Native Issue/PR handoffs retain the exact review, publication and cleanup proof.
+Release-trigger recovery is [Issue #5](https://github.com/alecerf/mynou/issues/5);
+it natively blocks the next bounded PAR2 recovery stage, Issue #6. Read live
+Issues/control state for current priorities rather than inferring them from this
+historical release record. Infrastructure changes do not retag published assets.
 
 ## Work and roles
 
@@ -168,6 +171,24 @@ execute PR code with write tokens or use paid model infrastructure. Authors may
 self-merge after the same gates when the Action cannot advance; GitHub rules still
 apply. The script is an automatic merger, not native GitHub auto-merge.
 
+Bot-token merges suppress push-triggered workflows. Trusted delivery therefore
+explicitly dispatches `ci.yml` on the unchanged default head; only this privileged
+default-code workflow gains `actions: write`. Native runs are filtered by exact
+commit, default branch and push/dispatch event before another dispatch is attempted.
+Every wake recovers missing/default CI before unrelated delivery, including when
+the merged PR's linked Issue is already closed/Done. Acceptance is checkpointed,
+not described as green CI or published assets. Pending/red native runs remain
+authoritative and prevent unrelated delivery until resolved.
+
+The control checkpoint records dispatch intent before the API call and waits five
+minutes for native run visibility after an accepted/uncertain request. Interruptions
+retain this evidence; no polling or immediate duplicate dispatch is needed. A
+failed dispatch remains visible in Actions and recoverable on a later wake.
+GitHub offers branch-ref dispatch, without an expected-SHA condition: default-head
+fences before and after detect external-writer races, fail closed and require
+Triage rather than certifying a different commit. Ordinary workers must inspect
+this pending publication evidence before starting unrelated product work.
+
 After merge, native closing keywords and existing `delete_branch_on_merge` help.
 Cleanup sets Issue status Done, unblocks completed native dependencies and audits
 branches. Every delivery wake also repairs interrupted blocked-dependency metadata
@@ -184,7 +205,9 @@ Outside actors do not share the lease.
 ## Scheduling, capacity and real limitations
 
 ChatGPT Scheduled Tasks can wake a bounded recovery-first Master through the
-connected GitHub app. A six-hour cadence limits quota waste. Its persisted task
+connected GitHub app. The client selected an hourly wake cadence; the enabled
+task attempts one bounded slice and exits when busy or without useful work. The
+separate mechanical GitHub fallback remains every six hours. Its persisted task
 ID/prompt is recorded in GitHub when installed. Start every wake with admission;
 exit if busy. Web scheduled tasks have connected tools, not a durable local
 workspace, and must use GitHub APIs/CI or stop at the execution boundary honestly.

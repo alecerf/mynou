@@ -12,7 +12,8 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
-  actions: read
+  # GITHUB_TOKEN merge pushes do not trigger CI; native dispatch needs write.
+  actions: write
 concurrency:
   group: mynou-global-mechanical-delivery
   cancel-in-progress: false
