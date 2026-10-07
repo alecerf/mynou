@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 98,
-  "lease": {
-    "id": "6bc94146-e784-4f0f-9b6b-bedf25f10017",
-    "worker": "codex-post-merge-recovery",
-    "role": "triage",
-    "issue": 5,
-    "acquired_at": "2026-10-07T08:30:35Z",
-    "heartbeat_at": "2026-10-07T08:36:45Z",
-    "expires_at": "2026-10-07T09:21:45Z",
-    "branch": "trunk",
-    "commit": "9d506f2767033fb4a71c586f71f5d3da83dcacb5",
-    "pr": 7
-  },
+  "generation": 99,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-07T08:36:45Z",
     "issue": 5,
