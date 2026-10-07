@@ -7,7 +7,7 @@
   "max_active_agents": 1,
   "lease_minutes": 45,
   "heartbeat_minutes": 15,
-  "slice_minutes": 20,
+  "slice_minutes": 40,
   "no_progress_limit": 3,
   "trusted_reviewers": ["alecerf"],
   "project": null,

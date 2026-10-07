@@ -19,14 +19,21 @@ worker may run. Role changes require a durable checkpoint, release and new lease
    before unrelated work. Malformed state fails closed: preserve it and inspect
    native control-branch history; never replace it with an empty lock.
 3. Read the selected Issue acceptance and only relevant Skills/code/logs. Acquire
-   one role, then execute one useful transition. Use existing branches/PRs rather
-   than duplicating them. Master handles missing metadata or new intent.
+   one role and execute. While the next transition is immediately executable and
+   time remains, checkpoint/release and acquire its role in the same worker.
+   Do not end a wake merely because a role finished. Recover the current delivery
+   before unrelated work. Use existing branches/PRs rather than duplicating them.
+   Master handles missing metadata or new intent.
 4. Commit meaningful progress; push it remotely before ending a slice. Checkpoint
    the exact remote commit, PR, concise outcome, checks and next action. Release
    before another role or intentional stop. Renew through checkpoint at least
-   every 15 minutes; use roughly 20-minute slices. Never work after expiry or
-   ownership loss. Unexpected worker death leaves commits recoverable and the
-   45-minute lease expires. Quota loss is paused capacity, never failed work.
+   every 15 minutes. Use `slice_minutes` from configuration (currently 40 minutes)
+   as one deadline for the entire wake; switching roles never resets it. Reserve
+   the final five minutes for remote checkpoint and release. Stop earlier for
+   idle, capacity/ownership loss or a real external wait; do not busy-poll or
+   launch another wake/worker to evade the bound. Unexpected worker death leaves
+   commits recoverable and the unchanged 45-minute lease expires. Quota loss is
+   paused capacity, never failed work.
 
 Native backlog: [managed Issues](https://github.com/alecerf/mynou/issues?q=is%3Aopen+label%3Aagent-work).
 [Current work](https://github.com/alecerf/mynou/issues?q=is%3Aopen+label%3Aagent-work+label%3Astatus%3Ain-progress)
@@ -159,7 +166,7 @@ commits and new review. During initial installation only, the new review-trigger
 workflow is not on default yet: rerun the QA job after posting the records.
 
 The trusted-default `Serialized engineering delivery` Action wakes on completed
-CI, trusted native Issue handoff comments, manual dispatch and a six-hour fallback.
+CI, trusted native Issue handoff comments, manual dispatch and an hourly fallback.
 `release` posts the handoff only after the control commit is durable. The orphan
 control branch contains no workflow; its push cannot invoke a workflow on trunk.
 GitHub-token comments do not recursively trigger Actions, so mechanical delivery
@@ -200,21 +207,34 @@ deletion. Default/control/protected/ambiguous/unique work is preserved. Branch a
 alone never authorizes deletion. REST lacks conditional expected-SHA deletion;
 native merge deletion is preferred, and manual cleanup requires freshly repeated
 evidence, an audit comment and a fresh ownership fence under the global lease.
-Outside actors do not share the lease.
+Outside actors do not share the lease. The inexpensive hourly recovery does not
+repeat branch-health sweeps: these run daily at 03:47 UTC or on explicit dispatch.
 
 ## Scheduling, capacity and real limitations
 
 ChatGPT Scheduled Tasks can wake a bounded recovery-first Master through the
-connected GitHub app. The client selected an hourly wake cadence; the enabled
-task attempts one bounded slice and exits when busy or without useful work. The
-separate mechanical GitHub fallback remains every six hours. Its persisted task
-ID/prompt is recorded in GitHub when installed. Start every wake with admission;
+connected GitHub app. Hourly is the platform's highest supported task frequency;
+the existing enabled task keeps that cadence. Each wake spends its configured
+budget on successive ready transitions, with separate serial role leases and a
+single deadline, rather than one role per hour. The mechanical GitHub fallback
+also runs hourly, with event-triggered delivery retained and a daily health sweep.
+It does not execute an AI worker. Start every wake with admission;
 exit if busy. Web scheduled tasks have connected tools, not a durable local
 workspace, and must use GitHub APIs/CI or stop at the execution boundary honestly.
 They may advance remote work when tools permit; they do not guarantee a fresh
 Codex VM. Native desktop project scheduling requires a running desktop, which is
 not configured here. Codex Cloud CLI exists but its read-only list request returns
 401 with the current authentication; no Cloud worker is launched.
+
+The canonical task instruction is [worker-prompt.md](worker-prompt.md). Merge its
+reviewed changes with the policy before replacing the existing task's prompt.
+Use the persisted task ID from native Issue/control state; inspect it with the
+supported task lookup, retain its cadence/timezone, and never create a duplicate.
+Persist the accepted native task response, policy commit and prompt path in the
+Issue/control handoff. If interrupted after merge but before task reconciliation,
+resume that update before unrelated work even if the Issue is closed. A merged
+file alone does not prove that the live automation changed. Only actual task/API
+responses establish scheduling state.
 
 **Automatic wake after quota reset is best-effort, not guaranteed.** There is no
 quota/reset API, guaranteed post-reset retry, authenticated Cloud submission or
