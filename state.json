@@ -1,28 +1,111 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 279,
+  "generation": 280,
   "lease": {
     "id": "wake5-quality-macos-20261007T213002Z",
     "worker": "codex-hourly-20261007T213002Z",
     "role": "quality",
     "issue": 17,
     "acquired_at": "2026-10-07T21:42:08Z",
-    "heartbeat_at": "2026-10-07T21:42:12Z",
-    "expires_at": "2026-10-07T22:27:12Z",
+    "heartbeat_at": "2026-10-07T21:44:44Z",
+    "expires_at": "2026-10-07T22:29:44Z",
     "branch": "work/macos-builds",
-    "commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
-    "pr": null
+    "commit": "330cdbd7e8d2530c8900579206cc5e3075934d92",
+    "pr": 20
   },
   "checkpoint": {
     "issue": 17,
     "role": "quality",
     "branch": "work/macos-builds",
-    "commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
-    "pr": null,
-    "at": "2026-10-07T21:42:12Z",
-    "summary": "Created work/macos-builds from published trunk 4cf7580. Implementing bounded user macOS build/deployment support after separate Security planning; no tests/builds executed locally.",
-    "next": "Implement original CI, package/checksum gates and English installation documentation; commit remotely and open one draft PR for #17."
+    "commit": "330cdbd7e8d2530c8900579206cc5e3075934d92",
+    "pr": 20,
+    "at": "2026-10-07T21:44:44Z",
+    "summary": "Committed original native macOS CI/build/demo/packaging/checksum gates and English installation guide for proposed v0.22.16. Same-run exact-SHA artifacts, standard macos-26 and macos-26-intel runners; existing Linux/container checks retained. Opened one draft PR linked to #17. No local validation; actual Actions and separate Security/QA pending.",
+    "next": "Security: inspect the complete actual PR diff under exact head/base lease. Then independent QA after every required CI job is actually green.",
+    "source": {
+      "remote_commit": "330cdbd7e8d2530c8900579206cc5e3075934d92",
+      "tree": "f2d96deeef0ae6256d2342a669782bc63eace4a2",
+      "base_commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
+      "changed_paths": [
+        ".github/workflows/ci.yml",
+        ".github/engineering.json",
+        "Cargo.toml",
+        "Cargo.lock",
+        "README.md",
+        "docs/macos.md",
+        "docs/releases/0.22.16.md",
+        "docs/ci.md",
+        "docs/deployment.md",
+        "docs/next-release.md",
+        ".github/scripts/publish-release.sh"
+      ]
+    },
+    "publication_baseline": {
+      "commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
+      "state": "published",
+      "branch": "trunk",
+      "run_id": 37684129315,
+      "status": "completed",
+      "conclusion": "success",
+      "release_id": 406150016,
+      "tag": "v0.22.15",
+      "url": "https://github.com/alecerf/mynou/releases/tag/v0.22.15",
+      "published_at": "2026-10-07T20:46:51Z",
+      "immutable": true,
+      "assets": [
+        {
+          "id": 619773552,
+          "name": "mynou-v0.22.15-linux-amd64-image.tar.gz",
+          "size": 2352847,
+          "digest": "sha256:049de30bbe232b92a2a0d457ac40cf449e7824f9d81ceb1d5c551387b53d46a1"
+        },
+        {
+          "id": 619773558,
+          "name": "mynou-v0.22.15-linux-amd64-image.tar.gz.sha256",
+          "size": 106,
+          "digest": "sha256:b0c7cba9ec6a33a3bb379f32cee8524f06e33e18dc86cc0b26628175f76831af"
+        },
+        {
+          "id": 619773550,
+          "name": "mynou-v0.22.15-linux-x86_64",
+          "size": 4887392,
+          "digest": "sha256:03a8e4285e136ab906f3d8dc81c55b757f55425ad2d2d44d14f0cb6bf8d9a2df"
+        },
+        {
+          "id": 619773553,
+          "name": "mynou-v0.22.15-linux-x86_64.sha256",
+          "size": 94,
+          "digest": "sha256:e651f7e7f536e6bb05737b1f590f3946292c56fe0eff346757c44f7067578f8b"
+        },
+        {
+          "id": 619773579,
+          "name": "mynou-v0.22.15-source.zip",
+          "size": 9410279,
+          "digest": "sha256:cb1dcb3e7c9d082de3acc52d44f87828c2d69b05b76e623d4ce6b9acc8cb72ed"
+        },
+        {
+          "id": 619773580,
+          "name": "mynou-v0.22.15-source.zip.sha256",
+          "size": 92,
+          "digest": "sha256:a32a1361edeebcd8f6be7f6774203f2b9cad87e615b20982b1e9fe8cebdcce17"
+        },
+        {
+          "id": 619773554,
+          "name": "SHA256SUMS",
+          "size": 292,
+          "digest": "sha256:80c098a919ec4456f6f3e1dd20aade806add81d523f6ce3b95b6c260dc85bbd6"
+        }
+      ],
+      "rust_tests": 864,
+      "rust_harnesses": 64,
+      "rust_failures": 0,
+      "rust_seconds": 104.05,
+      "scheduler_tests": 4,
+      "organization_tests": 53,
+      "previous_release_id": 406055926,
+      "previous_assets_unchanged": true
+    }
   },
   "attempts": {}
 }
