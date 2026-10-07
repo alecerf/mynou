@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 113,
+  "generation": 114,
   "lease": {
     "id": "5861d9d0-3a4f-4c95-a0fe-2b19673f1e96",
     "worker": "codex-par2-arithmetic",
     "role": "rust",
     "issue": 6,
     "acquired_at": "2026-10-07T09:40:05Z",
-    "heartbeat_at": "2026-10-07T09:48:11Z",
-    "expires_at": "2026-10-07T10:33:11Z",
+    "heartbeat_at": "2026-10-07T09:53:39Z",
+    "expires_at": "2026-10-07T10:38:39Z",
     "branch": "work/par2-recovery",
     "commit": "b8a2b15d527edcf488a9a5a19e4b564457cc9ce1",
     "pr": 8
   },
   "checkpoint": {
-    "at": "2026-10-07T09:48:11Z",
+    "at": "2026-10-07T09:53:39Z",
     "issue": 6,
     "role": "rust",
     "branch": "work/par2-recovery",
     "commit": "b8a2b15d527edcf488a9a5a19e4b564457cc9ce1",
     "pr": 8,
-    "summary": "Draft PR #8 arithmetic source corrected from actual CI formatting evidence. Latest native head b8a2b15d527edcf488a9a5a19e4b564457cc9ce1, original local 8bcb3fee23cc1cbd07c4cfe1e11e973a638567d9, identical tree f485a9e2c2cd42f3ebfcbf029dc3de2ce1b7c8cf; initial original 5b1768a14317c5a94353bf7a008061cafabce6d0 mapped to c0a45ff5a447a9b2617ad239d52121fc24f7bb18. Actual old Mynou CI 37602848158 validate112731147260 failed only cargo fmt before Clippy/tests; exact single-line correction committed and pushed without local validation. Engineering checks 37602848039 organization112731146863 succeeded at old c0, QA112731204245 correctly skipped for draft, no review success claimed. New exact-head CI pending; full recovery/version/Security/QA remain incomplete.",
-    "next_action": "Observe latest actual Actions for b8a2b15d527edcf488a9a5a19e4b564457cc9ce1; cancel only obsolete prior-head CI if still running to conserve deterministic capacity. Fix actual new errors via commits; checkpoint pending/green jobs honestly and release at bounded slice limit. Next implementation resumes same PR #8/branch for identity-bound bounded single-file recovery; no new Issue/PR, release or merge while incomplete.",
+    "summary": "Issue #6 arithmetic foundation preserved in draft PR #8, work/par2-recovery, native b8a2b15d527edcf488a9a5a19e4b564457cc9ce1/base9d506f2767033fb4a71c586f71f5d3da83dcacb5. Original local8bcb3fee23cc1cbd07c4cfe1e11e973a638567d9 maps to this head/treef485a9e2c2cd42f3ebfcbf029dc3de2ce1b7c8cf; preceding original arithmetic c0a45ff5a447a9b2617ad239d52121fc24f7bb18 preserved. Latest Mynou CI37603001810 SUCCESS: validate112731734843, GNU112731735393, musl112731735184, package112732614228 passed; release112732794209 SKIPPED for PR. Actual830 Rust tests/64 harnesses/0failed/89.125s;8 GF16 tests/0.217s,4 scheduler and53 organization tests passed. Engineering37603002119 organization112731661707 passed, agent-qa-review112731720233 SKIPPED for draft. Earlier formatting failure37602848158 fixed through original commit; no local validation. Full recovery, version0.22.12, Security/QA and delivery still pending; no merge/release/repair claim. Native handoffs Issue comment 6035466357 / PR comment 6035466667. Prerequisite #5 and immutable0.22.11 remain complete/preserved.",
+    "next_action": "Release Rust lease and stop this bounded slice. Fresh worker must read current control ref/state first; valid lease means quiet exit. Recover same draft PR #8/head b8a2b15d527edcf488a9a5a19e4b564457cc9ce1 and actual CI before new work. Acquire one Rust lease on same branch to implement bounded single-file caller-owned Vec recovery per Issue6/Triage comment6035255863, with captured PAR2/payload identity, consecutive rows, checked bounds/cancellation, slice+whole-file integrity and original negative fixtures. Keep draft until full acceptance and version/docs complete; separate exact-head Security/QA and all objective gates precede merge and actual CI-only v0.22.12. No duplicate Issues/PRs, fabricated reviews, local checks or manual publication.",
     "publication": {
       "commit": "9d506f2767033fb4a71c586f71f5d3da83dcacb5",
       "state": "ci-passed",
@@ -30,6 +30,15 @@
       "run_id": 37594977295,
       "status": "completed",
       "conclusion": "success"
+    },
+    "ci": {
+      "commit": "b8a2b15d527edcf488a9a5a19e4b564457cc9ce1",
+      "run_id": 37603001810,
+      "status": "completed",
+      "conclusion": "success",
+      "organization_run_id": 37603002119,
+      "qa": "not-performed-draft",
+      "release": "not-performed-pr"
     }
   },
   "attempts": {}
