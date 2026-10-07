@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 196,
+  "generation": 197,
   "lease": {
     "id": "64d2b845-7b6a-4621-b743-d68d76de6d19",
     "worker": "codex-cadence-delivery",
     "role": "master",
     "issue": 11,
     "acquired_at": "2026-10-07T16:21:09Z",
-    "heartbeat_at": "2026-10-07T16:24:32Z",
-    "expires_at": "2026-10-07T17:09:32Z",
+    "heartbeat_at": "2026-10-07T16:30:09Z",
+    "expires_at": "2026-10-07T17:15:09Z",
     "branch": "work/engineering-cadence",
     "commit": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
     "pr": 12
   },
   "checkpoint": {
-    "at": "2026-10-07T16:24:32Z",
+    "at": "2026-10-07T16:30:09Z",
     "issue": 11,
     "role": "master",
     "branch": "work/engineering-cadence",
     "commit": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
     "pr": 12,
-    "summary": "Cadence PR #12 was natively expected-head squash-merged to trunk 07ef2f73f5ac923f783b9bd27e4662bb7529bbd2 after separate Security 5445122042, independent QA 5445158311, required CI 37649725943 and ready agent-qa-review 112894484227 / Engineering 37651124380 were actually green. The canonical worker-prompt.md was read from that exact immutable merged policy commit. Task 6ac54c387af0819184713674c48b3845 prompt reconciliation is now the unfinished external operation; existing enabled hourly schedule/timezone/ID must remain. Issue #11 may be closed by native keywords, but task update is not yet certified. New default CI will verify organization source without republishing immutable v0.22.13 at 6085368588c8077af53d15bc4f07d752e670e445. No local validation or paid/duplicate worker.",
-    "next_action": "Update only prompt of existing task 6ac54c387af0819184713674c48b3845 from merged engineering/worker-prompt.md at policy commit 07ef2f73f5ac923f783b9bd27e4662bb7529bbd2. Persist actual accepted native task response, enabled hourly schedule/timezone and policy commit in native Issue/control. If response uncertain, inspect actual task before retrying; never create another schedule. Observe default CI, immutable v0.22.13 tag/assets, native branch cleanup and Done metadata; final checkpoint/release before wake deadline.",
+    "summary": "User cadence improvement completed: PR #12 / Issue #11 merged to trunk 07ef2f73f5ac923f783b9bd27e4662bb7529bbd2 from original work/engineering-cadence:056487dc0c4d8ffe04dce1b48153c2e29403ad4a after separate Security 5445122042, independent QA 5445158311, required CI 37649725943 and ready agent-qa-review 112894484227 / Engineering 37651124380 passed. Existing task 6ac54c387af0819184713674c48b3845 actually accepted canonical merged prompt at 16:24:41Z; enabled hourly schedule/timezone/ID unchanged (native Issue #11 receipt 6042165261). One 40-minute deadline chains ready roles with checkpoint/release/reacquire and five-minute final reserve; mechanical recovery hourly, health daily/manual, MAX_ACTIVE_AGENTS=1 and gates intact. Actual default push CI 37651557558 completed successfully, all five jobs green. Native v0.22.13 release 405936360/tag 6085368588c8077af53d15bc4f07d752e670e445 and all seven asset IDs/sizes/digests are unchanged. Both merged work branches are natively absent; original source remains in merged PR/history. No local validation, duplicate/paid worker or manual release. This is the original wake exit; an arriving scheduled prompt did not start another slice or reset its deadline.",
+    "next_action": "Next supported wake: read authoritative control ref/state before domain work; exit if busy and recover stale work first. Cadence Issue #11 / PR #12 and PAR2 Issue #9 / PR #10 are delivered, task reconciliation/default CI/branch cleanup complete; do not repeat them or create a duplicate schedule. Read live native backlog and the authorized roadmap for the highest-priority bounded executable next work, with minimal sequential roles and one whole configured 40-minute deadline. Preserve five minutes for handoff; capacity loss pauses work. Hourly AI scheduling is the supported maximum and post-reset wake remains best-effort, with no quota/reset API or guaranteed VM. Idle without valuable work.",
     "previous_publication": {
       "commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
       "state": "ci-passed",
@@ -88,9 +88,10 @@
       "planned_slice_minutes": 40,
       "ai_cadence": "hourly-platform-maximum",
       "mechanical_cadence": "hourly-with-daily-branch-health",
-      "state": "merged-task-update-pending",
+      "state": "applied",
       "prompt_path": "engineering/worker-prompt.md",
-      "policy_commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2"
+      "policy_commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
+      "applied_at": "2026-10-07T16:24:41Z"
     },
     "source_bridge": {
       "commits": [
@@ -103,11 +104,16 @@
     },
     "publication": {
       "commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
-      "state": "ci-pending",
-      "at": "2026-10-07T16:24:32Z",
-      "status": "await-native-run",
-      "conclusion": null,
-      "new_product_release": false
+      "state": "ci-passed",
+      "at": "2026-10-07T16:30:09Z",
+      "run_id": 37651557558,
+      "status": "completed",
+      "conclusion": "success",
+      "new_product_release": false,
+      "retained_release_id": 405936360,
+      "retained_tag": "v0.22.13",
+      "retained_tag_commit": "6085368588c8077af53d15bc4f07d752e670e445",
+      "retained_assets_unchanged": true
     },
     "ci": {
       "run_id": 37649725943,
@@ -147,13 +153,11 @@
       ]
     },
     "next_work": {
-      "issue": 11,
-      "status": "review",
+      "status": "resume-native-backlog",
       "role": "master",
-      "branch": "work/engineering-cadence",
-      "pr": 12,
-      "head": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
-      "base": "6085368588c8077af53d15bc4f07d752e670e445"
+      "completed_issue": 11,
+      "completed_pr": 12,
+      "policy_commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2"
     },
     "review_head_sha": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
     "review_base_sha": "6085368588c8077af53d15bc4f07d752e670e445",
@@ -256,7 +260,23 @@
       "head": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
       "merge_commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
       "merged_at": "2026-10-07T16:22:51Z",
-      "branch_cleanup": "pending"
+      "branch_cleanup": "native branch listing confirms absent; original exact head preserved in merged PR/history"
+    },
+    "task_reconciliation": {
+      "success": true,
+      "automation_id": "6ac54c387af0819184713674c48b3845",
+      "title": "Mynou engineering",
+      "is_enabled": true,
+      "schedule": "BEGIN:VEVENT\nDTSTART:20261006T193000\nRRULE:FREQ=HOURLY;INTERVAL=1\nEND:VEVENT",
+      "timing_mode": "exact_schedule",
+      "default_timezone": "America/Los_Angeles",
+      "updated_at": "2026-10-07T16:24:41.034231+00:00",
+      "prompt_path": "engineering/worker-prompt.md",
+      "policy_commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
+      "prompt_matches_merged_source": true,
+      "schedule_unchanged": true,
+      "timezone_unchanged": true,
+      "issue_comment": 6042165261
     }
   },
   "attempts": {}
