@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 45,
-  "lease": null,
+  "generation": 46,
+  "lease": {
+    "id": "d82d049d-48d4-4f85-ab25-e9c6aa9ba089",
+    "worker": "codex-recovery-slice",
+    "role": "triage",
+    "issue": 1,
+    "acquired_at": "2026-10-07T01:39:56Z",
+    "heartbeat_at": "2026-10-07T01:39:56Z",
+    "expires_at": "2026-10-07T02:24:56Z",
+    "branch": "trunk",
+    "commit": "f5c59506d0a8d431d09e9f351e2de2ef71b124f9",
+    "pr": 3
+  },
   "checkpoint": {
     "at": "2026-10-07T01:37:06Z",
     "issue": 1,
