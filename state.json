@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 76,
-  "lease": {
-    "id": "7f389cba-6118-47d2-976e-92afa61e15fb",
-    "worker": "codex-schedule-adjustment",
-    "role": "master",
-    "issue": 5,
-    "acquired_at": "2026-10-07T07:19:13Z",
-    "heartbeat_at": "2026-10-07T07:20:13Z",
-    "expires_at": "2026-10-07T08:05:13Z",
-    "branch": "trunk",
-    "commit": "57b15534158b0eb40d4f13450d51fdf33c7d81bb",
-    "pr": null
-  },
+  "generation": 77,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-07T07:20:13Z",
     "issue": 5,
