@@ -1,30 +1,30 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 299,
+  "generation": 300,
   "lease": {
     "id": "wake5-qa-macos-correction-20261007T213002Z",
     "worker": "codex-hourly-20261007T213002Z",
     "role": "qa",
     "issue": 17,
     "acquired_at": "2026-10-07T21:49:56Z",
-    "heartbeat_at": "2026-10-07T21:49:56Z",
-    "expires_at": "2026-10-07T22:34:56Z",
+    "heartbeat_at": "2026-10-07T21:50:00Z",
+    "expires_at": "2026-10-07T22:35:00Z",
     "branch": "work/macos-builds",
     "commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
     "pr": 20
   },
   "checkpoint": {
     "issue": 17,
-    "role": "security",
+    "role": "qa",
     "branch": "work/macos-builds",
     "commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
     "pr": 20,
-    "at": "2026-10-07T21:49:50Z",
-    "summary": "Submitted corrected exact-head/base complete-diff Security COMMENT for PR #20; checksum/configuration concerns are fixed and no blocking security findings remain. Current-head CI is pending; runtime, independent QA and merge/publication are not claimed.",
-    "next": "Independent QA under its own exact-head/base lease: verify complete corrected diff and actual native CI; checkpoint/release on a real external wait.",
+    "at": "2026-10-07T21:50:00Z",
+    "summary": "Independent QA re-review begins at exact corrected head ce35b775df90c49ab40ec98e1b3407b45c721c6d/base4cf7580 after implementation and Security each released. Must verify actual correction and complete diff, then actual required CI. No passing QA is yet recorded.",
+    "next": "Review corrected complete diff and required CI jobs, then reject actual faults or preserve pending CI wait without fabricated success.",
     "review_phase": {
-      "role": "security",
+      "role": "qa",
       "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
       "base_sha": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8"
     },
