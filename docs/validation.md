@@ -145,42 +145,38 @@ Release automation depends on successful validation on `trunk`. It reads
 `Cargo.toml`, creates the version tag and GitHub release for the validated commit
 if that version is new, and publishes:
 
+From 0.22.17, releases contain only these four assets:
+
 | Asset | Contents |
 | --- | --- |
-| `mynou-vVERSION-source.zip` | Full sources, tests, docs, Docker files, synthetic demo, `bin/mynou`, and internal `SHA256SUMS` |
-| `mynou-vVERSION-linux-x86_64` | Static Linux x86_64 binary |
-| `mynou-vVERSION-linux-amd64-image.tar.gz` | Saved Docker image tagged `mynou:VERSION` |
-| `SHA256SUMS` and `.sha256` files | SHA-256 integrity checks for release assets |
+| `mynou-vVERSION-linux-x86_64` | Static Linux x86_64 executable |
+| `mynou-vVERSION-macos-arm64` | Native Apple Silicon executable |
+| `mynou-vVERSION-macos-x86_64` | Native Intel macOS executable |
+| `SHA256SUMS` | One manifest covering those three executables |
 
-CI excludes personal data, secrets, build caches, and old Go sources from the
-source archive. Release creation and artifact uploads are not manual development
-steps. No Docker Hub repository is needed.
+The checked Linux amd64 image is a private GHCR package with its verified digest
+in release notes. Custom source ZIPs, image archives and individual checksum
+assets are retired; earlier published versions remain unchanged. GitHub's native
+source downloads contain source code and require a build.
 
 ## Verify release assets
 
-Download the assets and checksum files from the same release. For example:
+Download your executable and `SHA256SUMS` from the same published release.
+Select its exact filename from the manifest so other architectures need not
+be downloaded. For example, after downloading the 0.22.17 Apple Silicon binary:
 
 ```sh
-sha256sum -c mynou-v0.15.0-source.zip.sha256
-sha256sum -c mynou-v0.15.0-linux-amd64-image.tar.gz.sha256
+awk '$2 == "mynou-v0.22.17-macos-arm64"' SHA256SUMS | shasum -a 256 -c -
 ```
 
-To verify all downloaded assets together, download `SHA256SUMS` and every listed
-asset, then run:
+Use `sha256sum -c -` on Linux. A missing or incorrect selected entry fails
+verification; do not install or execute after failure. Downloading all three
+executables also permits `sha256sum -c SHA256SUMS`.
 
-```sh
-sha256sum -c SHA256SUMS
-```
-
-After extracting the source ZIP, verify its internal manifest from the extracted
-project root:
-
-```sh
-sha256sum -c SHA256SUMS
-```
-
-Checksum verification establishes integrity relative to the downloaded manifest.
-It does not replace reviewing the release's commit and successful Actions run.
+Checksums establish integrity relative to the same release's manifest, not Apple
+signing or publisher identity. Review the exact source and successful Actions
+run. Container deployment uses the verified content digest; registry version
+tags are mutable by authorized writers. See [Docker installation](deployment.md).
 
 ## Automatic pack changes in 0.15.0
 

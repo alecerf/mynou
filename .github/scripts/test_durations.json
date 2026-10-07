@@ -3,7 +3,6 @@
   "observed_run": 37510460908,
   "targets": {
     "examples/benchmark.rs": 0.002,
-    "examples/package_release.rs": 0.002,
     "src/lib.rs": 10.756,
     "src/main.rs": 0.002,
     "tests/archive_formats.rs": 0.718,

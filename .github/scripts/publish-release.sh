@@ -7,7 +7,13 @@ version="$2"
 tag="v$version"
 cd "$release_dir"
 sha256sum -c SHA256SUMS
-for checksum in *.sha256; do sha256sum -c "$checksum"; done
+[[ "$MYNOU_CONTAINER_REF" =~ ^ghcr\.io/alecerf/mynou@sha256:[0-9a-f]{64}$ ]]
+[[ $(find . -maxdepth 1 -type f | wc -l) -eq 4 ]]
+for suffix in linux-x86_64 macos-arm64 macos-x86_64; do
+  test -f "mynou-v$version-$suffix"
+  test ! -L "mynou-v$version-$suffix"
+done
+[[ $(wc -l < SHA256SUMS) -eq 3 ]]
 
 # Published versions are immutable. A new version belongs in Cargo.toml.
 if existing=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,body --jq '(.isDraft|tostring)+"\n"+.body' 2>/dev/null); then
@@ -35,11 +41,15 @@ Mynou $version uses Rust 1.99.0 and the standard library only: no Cargo dependen
 
 This release was built and published by [GitHub Actions]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) after dependency, formatting, Clippy, test, native demonstration and Docker checks passed.
 
-The source ZIP includes the complete project and a static Linux x86_64 binary. The standalone Linux binary, native macOS Apple Silicon/Intel binaries and Docker image archive are also supplied separately. Verify Linux downloads with \`sha256sum -c SHA256SUMS\`.
+Release assets contain only the static Linux x86_64 executable, native macOS Apple Silicon/Intel executables and one \`SHA256SUMS\` manifest. Verify the selected file's manifest entry before installation; the [verification guide]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/validation.md#verify-release-assets) explains partial downloads. Custom source ZIPs, image archives and duplicate checksum files are no longer published. GitHub's native source downloads remain available.
 
-On macOS, choose the matching architecture and verify it with \`shasum -a 256 -c FILE.sha256\`. Follow the [native macOS guide]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/macos.md). No Apple Developer signature or notarization is supplied.
+The checked Linux amd64 container is published separately to private GitHub Container Registry. Its verified content-addressed reference is:
 
-Load the Docker image with \`docker load -i mynou-v$version-linux-amd64-image.tar.gz\`, then follow the [Docker deployment guide]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/deployment.md). Configure your Plex server and media sources before enabling synchronization. [Protocol and format limits]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/limits.md) remain explicit.
+\`$MYNOU_CONTAINER_REF\`
+
+Authenticate to GHCR with package read access and run \`docker pull $MYNOU_CONTAINER_REF\`. Use this digest to pin deployment: registry tags can be changed by authorized writers. Follow the [Docker deployment guide]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/deployment.md). Container publication re-pulls the digest, verifies the checked executable and runs the isolated local demonstration before creating this release.
+
+For macOS, follow the [native macOS guide]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/macos.md). No Apple Developer signature or notarization is supplied. Configure Plex and media sources before synchronization. [Protocol and format limits]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/limits.md) remain explicit.
 
 Source commit: \`$GITHUB_SHA\`. This repository is private; downloads require an authorized GitHub account.
 

@@ -18,6 +18,11 @@ FROM ${BINARY_STAGE} AS binary
 FROM ${RUST_IMAGE} AS trust
 
 FROM scratch
+ARG MYNOU_VERSION
+ARG MYNOU_REVISION
+LABEL org.opencontainers.image.source="https://github.com/alecerf/mynou" \
+      org.opencontainers.image.version="$MYNOU_VERSION" \
+      org.opencontainers.image.revision="$MYNOU_REVISION"
 COPY --from=binary /mynou /mynou
 # This bundle contains trust data, not a library or executable.
 COPY --from=trust /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt

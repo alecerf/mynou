@@ -618,17 +618,15 @@ fn execute(args: Args) -> Result<()> {
             }
             fs::create_dir_all(dir).map_err(|e| e.to_string())?;
             init(&dir.join("mynou.json"), &docker_config())?;
-            private_write(
-                &dir.join("compose.yaml"),
-                include_bytes!("../deploy-compose.yaml"),
-            )?;
+            let compose = include_str!("../deploy-compose.yaml")
+                .replace("MYNOU_VERSION", env!("CARGO_PKG_VERSION"));
+            private_write(&dir.join("compose.yaml"), compose.as_bytes())?;
             for name in ["data", "library/movies", "library/series"] {
                 fs::create_dir_all(dir.join(name)).map_err(|e| e.to_string())?;
             }
             println!(
-                "Created installation in {}. Build the image from source: docker build -t mynou:{} . ; then run: cd {} && docker compose up -d",
+                "Created installation in {}. Authenticate to ghcr.io, then run: cd {} && docker compose pull && docker compose up -d",
                 dir.display(),
-                env!("CARGO_PKG_VERSION"),
                 dir.display()
             );
             return Ok(());

@@ -13,7 +13,7 @@ flowchart LR
     Commit --> Native[Native release build]
     Commit --> Static[Static release build and demo]
     Commit --> Mac[macOS arm64 and x86_64 builds and demos]
-    Validate --> Package[Docker demo, archive and checksums]
+    Validate --> Package[Docker demo, binaries and checksums]
     Native --> Package
     Static --> Package
     Mac --> Package
@@ -31,14 +31,15 @@ PR runs validate/build/package but cannot publish.
 
 Same-run macOS artifacts include the target and exact source SHA in their names.
 Packaging checks byte-for-byte preservation, executable modes and release
-checksums. Mac binaries are standalone assets; the source ZIP still contains
-the existing Linux static binary. `.github/engineering.json` requires both Mac
+checksums. The three executables and one manifest are the only release assets.
+The checked image is retained for one day as a source-SHA-scoped Actions artifact,
+then published to private GHCR only by the successful default release job. `.github/engineering.json` requires both Mac
 build job names in addition to the original Linux/package/organization gates.
 
 Runs use a noncancelling workflow concurrency group. Complete publication for a
 release before pushing its successor; this also preserves runs created from the
 earlier workflow definition. Prepare at most one following scope after successful
-validation/build/package, and inspect all five jobs before pushing it. PR runs
+validation/build/package, and inspect every required job before pushing it. PR runs
 also retain their current execution. This policy was added after a queued
 publication was cancelled during GitHub's runner-assignment incident. It changes
 queue ordering, not the graph/test/build/package/publication gates.
@@ -51,18 +52,30 @@ validated commit on a source branch before retrying the existing run. The
 Retained validation/build/package results remain tied to the original commit;
 the retry performs publication only. Actions alone creates tags and assets.
 
-The static build also compiles the Rust standard-library-only packaging example.
-The next job receives that tool and the checked binary as a workflow artifact,
-so neither is recompiled for packaging. It explicitly passes the current source
-checkout to the packaging tool, independent of the build runner's directory.
+Packaging installs the checked static and native executables without recompiling,
+compares their bytes and verifies one SHA-256 manifest. The unused custom ZIP
+packaging example is retired; GitHub still provides native source downloads.
 
 The Dockerfile defaults to its existing source build. CI selects the `prebuilt`
 stage, assembling the same final scratch image with the checked static binary
 and CA trust data. Docker syntax checks also cover the default build choice.
 CI extracts `/mynou` from the resulting image and compares it byte-for-byte with
 the standalone binary, then runs the existing isolated container demo. Native
-and static checks, standalone/container demos, ZIP integrity, binary permissions
-and all checksum checks remain required. Published versions stay immutable.
+and static checks, standalone/container demos, binary permissions and checksum
+checks remain required. Published versions stay immutable.
+
+Only the default-branch release job has `packages: write`, alongside its existing
+release permission. It uses the ephemeral repository token, private temporary
+Docker credentials and the same-run checked image. The original Python std
+publisher rejects public/unlinked packages, permission/network lookup failures,
+source/version collisions and mismatched image labels. Existing exact tags are
+reused without pushes. It re-pulls the recorded digest, compares the executable
+and repeats the isolated container demo before publishing the immutable release.
+GHCR tags have no server CAS; deployments pin the recorded content digest.
+Ten CI-only publication regressions cover authorization, absence/denial,
+collisions, retry reuse, pulled-byte corruption and demonstration failure.
+Private-package permission and registry availability require actual default CI;
+PR mock checks alone do not establish publication.
 
 ## Parallel test harnesses
 
@@ -126,8 +139,7 @@ eligible caches. A cache miss always performs the normal build.
   relinking the same harnesses; the current Cargo target graph still checks
   complete coverage and every test runs. Formatting, Clippy and scheduler checks
   always execute.
-- Release caches contain only the target binary and, for musl, the packaging
-  executable. Keys include OS/architecture, Rust version, target, manifests,
+- Release caches contain only the target binary. Keys include OS/architecture, Rust version, target, manifests,
   Cargo configuration/build script, every source/example file, embedded
   deployment template and workflow. There
   are no partial-key fallbacks. Only an exact compiler-input match can reuse a

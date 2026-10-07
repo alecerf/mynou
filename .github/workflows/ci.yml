@@ -54,6 +54,8 @@ jobs:
         run: cargo fmt --all --check
       - name: Run Clippy
         run: cargo clippy --all-targets --offline --locked -- -D warnings
+      - name: Check release script syntax
+        run: bash -n .github/scripts/publish-release.sh
       - name: Check the CI test scheduler
         run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
       - name: Verify engineering policy and serialized recovery scenarios
@@ -112,7 +114,6 @@ jobs:
         with:
           path: |
             target/${{ matrix.target }}/release/mynou
-            target/${{ matrix.target }}/release/examples/package_release
           key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99-release-v1-${{ matrix.target }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'examples/**', 'deploy-compose.yaml', '.github/workflows/ci.yml') }}
       - name: Install Rust 1.99.0 and target
         if: steps.cache.outputs.cache-hit != 'true'
@@ -124,11 +125,7 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
         run: |
-          if [[ "$TARGET" == x86_64-unknown-linux-musl ]]; then
-            cargo build --release --offline --locked --target "$TARGET" --bin mynou --example package_release
-          else
-            cargo build --release --offline --locked --target "$TARGET" --bin mynou
-          fi
+          cargo build --release --offline --locked --target "$TARGET" --bin mynou
       - name: Verify the Linux release binary
         if: runner.os == 'Linux'
         env:
@@ -141,7 +138,6 @@ jobs:
           readelf -d "$binary" > "$RUNNER_TEMP/mynou-elf-dynamic.txt"
           if [[ "$TARGET" == x86_64-unknown-linux-musl ]]; then
             if grep -q INTERP "$RUNNER_TEMP/mynou-elf-programs.txt" || grep -q NEEDED "$RUNNER_TEMP/mynou-elf-dynamic.txt"; then exit 1; fi
-            test -x "target/$TARGET/release/examples/package_release"
           fi
           sha256sum "$binary"
       - name: Verify the macOS release binary
@@ -185,9 +181,7 @@ jobs:
         uses: actions/upload-artifact@v7.0.1
         with:
           name: mynou-static-${{ github.sha }}
-          path: |
-            target/x86_64-unknown-linux-musl/release/mynou
-            target/x86_64-unknown-linux-musl/release/examples/package_release
+          path: target/x86_64-unknown-linux-musl/release/mynou
           if-no-files-found: error
           retention-days: 1
       - name: Save exact release binaries
@@ -196,7 +190,6 @@ jobs:
         with:
           path: |
             target/${{ matrix.target }}/release/mynou
-            target/${{ matrix.target }}/release/examples/package_release
           key: ${{ steps.cache.outputs.cache-primary-key }}
   package:
     needs: [validate, build]
@@ -222,7 +215,7 @@ jobs:
           path: ${{ runner.temp }}/mynou-macos-x86_64
       - name: Prepare checked static deliverables
         run: |
-          chmod 755 "$RUNNER_TEMP/mynou-static/mynou" "$RUNNER_TEMP/mynou-static/examples/package_release"
+          chmod 755 "$RUNNER_TEMP/mynou-static/mynou"
           mkdir .ci-image
           cp "$RUNNER_TEMP/mynou-static/mynou" .ci-image/mynou
       - name: Build and verify the container without recompiling
@@ -230,7 +223,8 @@ jobs:
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
           docker build --check .
-          docker build --build-arg BINARY_STAGE=prebuilt --tag "mynou:$VERSION" .
+          docker build --build-arg BINARY_STAGE=prebuilt --build-arg "MYNOU_VERSION=$VERSION" \
+            --build-arg "MYNOU_REVISION=$GITHUB_SHA" --tag "mynou:$VERSION" .
           container=$(docker create "mynou:$VERSION")
           docker cp "$container:/mynou" "$RUNNER_TEMP/mynou-image-binary"
           docker rm "$container"
@@ -245,27 +239,24 @@ jobs:
         env:
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
-          "$RUNNER_TEMP/mynou-static/examples/package_release" \
-            "$RUNNER_TEMP/mynou-release" "$VERSION" \
-            "$RUNNER_TEMP/mynou-static/mynou" "$RUNNER_TEMP/mynou-image.tar.gz" "$GITHUB_WORKSPACE"
+          mkdir "$RUNNER_TEMP/mynou-release"
+          install -m 755 "$RUNNER_TEMP/mynou-static/mynou" "$RUNNER_TEMP/mynou-release/mynou-v$VERSION-linux-x86_64"
+          cmp "$RUNNER_TEMP/mynou-static/mynou" "$RUNNER_TEMP/mynou-release/mynou-v$VERSION-linux-x86_64"
           for arch in arm64 x86_64; do
             name="mynou-v$VERSION-macos-$arch"
-            test ! -e "$RUNNER_TEMP/mynou-release/$name"
             install -m 755 "$RUNNER_TEMP/mynou-macos-$arch/mynou" "$RUNNER_TEMP/mynou-release/$name"
             test -x "$RUNNER_TEMP/mynou-release/$name"
             cmp "$RUNNER_TEMP/mynou-macos-$arch/mynou" "$RUNNER_TEMP/mynou-release/$name"
-            (cd "$RUNNER_TEMP/mynou-release" && sha256sum "$name" | tee "$name.sha256" >> SHA256SUMS)
           done
-          (cd "$RUNNER_TEMP/mynou-release" && sha256sum -c SHA256SUMS)
-          python3 - "$RUNNER_TEMP/mynou-release/mynou-v$VERSION-source.zip" <<'ARCHIVE'
-          import hashlib, sys, zipfile
-          with zipfile.ZipFile(sys.argv[1]) as archive:
-              assert archive.testzip() is None
-              assert (archive.getinfo("mynou/bin/mynou").external_attr >> 16) & 0o777 == 0o755
-              for line in archive.read("mynou/SHA256SUMS").decode().splitlines():
-                  digest, name = line.split("  ", 1)
-                  assert hashlib.sha256(archive.read("mynou/" + name)).hexdigest() == digest
-          ARCHIVE
+          (cd "$RUNNER_TEMP/mynou-release" && sha256sum mynou-* > SHA256SUMS && sha256sum -c SHA256SUMS)
+      - name: Preserve checked image for default publication
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/trunk'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: mynou-container-${{ github.sha }}
+          path: ${{ runner.temp }}/mynou-image.tar.gz
+          if-no-files-found: error
+          retention-days: 1
       - name: Preserve validated release files
         uses: actions/upload-artifact@v7.0.1
         with:
@@ -280,6 +271,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+      packages: write
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -288,8 +280,22 @@ jobs:
         with:
           name: mynou-release-${{ github.sha }}
           path: ${{ runner.temp }}/mynou-release
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: mynou-container-${{ github.sha }}
+          path: ${{ runner.temp }}/mynou-container
+      - name: Publish and verify the private registry image
+        id: container
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.package.outputs.version }}
+        run: |
+          python3 .github/scripts/publish_container.py \
+            "$RUNNER_TEMP/mynou-container/mynou-image.tar.gz" "$VERSION" \
+            "$RUNNER_TEMP/mynou-release/mynou-v$VERSION-linux-x86_64"
       - name: Publish the validated version
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.package.outputs.version }}
+          MYNOU_CONTAINER_REF: ${{ steps.container.outputs.image_ref }}
         run: bash .github/scripts/publish-release.sh "$RUNNER_TEMP/mynou-release" "$VERSION"

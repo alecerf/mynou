@@ -303,7 +303,13 @@ fn docker_setup_is_local_private_and_preserves_existing_destination() {
             .and_then(Value::as_bool),
         Some(true)
     );
-    assert!(deployment.join("compose.yaml").is_file());
+    let compose = fs::read_to_string(deployment.join("compose.yaml")).unwrap();
+    assert!(compose.contains(&format!(
+        "ghcr.io/alecerf/mynou:{}",
+        env!("CARGO_PKG_VERSION")
+    )));
+    assert!(compose.contains("${MYNOU_IMAGE:-"));
+    assert!(!compose.contains("MYNOU_VERSION"));
     assert!(deployment.join("data").is_dir());
     assert!(deployment.join("library/movies").is_dir());
     assert!(
