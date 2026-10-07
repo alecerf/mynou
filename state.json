@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 240,
+  "generation": 241,
   "lease": {
     "id": "46eb5c08-ff72-4a15-8fe3-bb2de200c1e3",
     "worker": "codex-hourly-20261007T192857Z",
     "role": "security",
     "issue": 15,
     "acquired_at": "2026-10-07T19:37:06Z",
-    "heartbeat_at": "2026-10-07T19:37:06Z",
-    "expires_at": "2026-10-07T20:22:06Z",
+    "heartbeat_at": "2026-10-07T19:39:42Z",
+    "expires_at": "2026-10-07T20:24:42Z",
     "branch": "work/par2-recovery-workspace",
     "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
     "pr": null
   },
   "checkpoint": {
-    "at": "2026-10-07T19:37:00Z",
-    "issue": 13,
-    "role": "master",
-    "branch": "trunk",
+    "at": "2026-10-07T19:39:42Z",
+    "issue": 15,
+    "role": "security",
+    "branch": "work/par2-recovery-workspace",
     "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
-    "pr": 14,
-    "summary": "v0.22.14 publication/cleanup recovered and recorded in native Issue13comment6045313189; all five default jobs green,858 tests, immutable release406055926 and seven bot assets, previous0.22.13 unchanged. No open unfinished work existed. Created user-roadmap Issue15 for bounded owner-bound private persistent PAR2 recovery, natively depending on completed13. Scoped existing Owner/std file locking/private checked frames, exact File IDs/source/policy, reconstruction before new private writes, durable all-file descriptor and fail-closed reopening. No existing-file overwrite, implicit permission or automatic queue/library admission. No source changes yet.",
-    "next_action": "Security15 defines minimal safe persistence/resource/owner/source/checksum/cancellation boundaries under its own scoped lease, then releases for Rust implementation on work/par2-recovery-workspace from7910156c6cce0f74a9ab530b289c3734750bc994. Same wake deadline20:08:57Z, reserve20:03:57Z. Preserve publication/task/source history.",
+    "pr": null,
+    "summary": "Pre-implementation Security15 analysis persisted in native Issue15: trusted captured Owner is not live permission; new private parent/root only, standard File lock, exact source/Set/policy inventory and separately tagged bounded descriptor. Verify memory reconstruction before writes, drop output buffers before bounded rereads, original slice/full/prefix/SHA proofs for every output, identity/private mode/single-link/ancestor fences, cancellation before durable manifest publication. Interrupted artifacts stay private/unpublished; no adoption/overwrite/library admission or atomic hostile snapshot claim. Reuse existing original safe std primitives; no final review is claimed.",
+    "next_action": "Rust implements bounded private recovery staging/reopen and original CI-only fixtures/docs on work/par2-recovery-workspace from published7910156c6cce0f74a9ab530b289c3734750bc994. Publish original meaningful source commits and one linked draft PR. CI alone validates; then separate exact-head/base Security and independent QA. Same wake deadline20:08:57Z, reserve20:03:57Z.",
     "publication": {
       "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
       "state": "ci-passed",
@@ -141,30 +141,6 @@
       "previous_assets_unchanged": true,
       "issue_comment": 6045313189
     },
-    "source_bridge": {
-      "commits": [
-        {
-          "local": "937c17f006c7afbf305ab3cb30c3f23c1832e09f",
-          "remote": "d6963197460154f9fd68a0a3a947989fd37112f0",
-          "tree": "336d65a5dd25a1722ec890cf0a4c766cefadc267"
-        },
-        {
-          "local": "091cc4eb418e9e04d4459fbdaead2322471fb2a0",
-          "remote": "eb4ae3378c292ba32938f32ea82c0d7d8054a6cc",
-          "tree": "ec8525f7166bbaa41f36d2b52f51448942a4a869"
-        },
-        {
-          "local": "d60f7968e2c73609844d5872c2181749955f2b75",
-          "remote": "c07111816044c3d25a556b3e80b7a758aa38935b",
-          "tree": "7b131a0999ea98bc9aafa7f0ee2eb41166a27b90"
-        },
-        {
-          "local": "c7b06cf3ddc243283f1bf8fa0c99b8534c706c13",
-          "remote": "18548f24e57b2845559c513638f82dee8c30f211",
-          "tree": "f409792c0c794b9c022527ad709021a60eecedfc"
-        }
-      ]
-    },
     "task_reconciliation": {
       "success": true,
       "automation_id": "6ac54c387af0819184713674c48b3845",
@@ -180,8 +156,7 @@
       "schedule_unchanged": true,
       "timezone_unchanged": true,
       "issue_comment": 6042165261
-    },
-    "next_issue": 15
+    }
   },
   "attempts": {}
 }
