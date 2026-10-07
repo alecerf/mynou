@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 348,
-  "lease": {
-    "id": "wake7-qa-registry-review-20261007T232627Z",
-    "worker": "codex-hourly-20261007T232627Z",
-    "role": "qa",
-    "issue": 18,
-    "acquired_at": "2026-10-07T23:43:45Z",
-    "heartbeat_at": "2026-10-07T23:46:55Z",
-    "expires_at": "2026-10-08T00:31:55Z",
-    "branch": "work/registry-releases",
-    "commit": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
-    "pr": 21
-  },
+  "generation": 349,
+  "lease": null,
   "checkpoint": {
     "issue": 18,
     "role": "qa",
