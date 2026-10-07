@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 237,
+  "generation": 238,
   "lease": {
     "id": "codex-20261007T192857Z-master-c2d9c95296d4",
     "worker": "codex-hourly-20261007T192857Z",
     "role": "master",
     "issue": 13,
     "acquired_at": "2026-10-07T19:29:55Z",
-    "heartbeat_at": "2026-10-07T19:35:39Z",
-    "expires_at": "2026-10-07T20:20:39Z",
+    "heartbeat_at": "2026-10-07T19:37:00Z",
+    "expires_at": "2026-10-07T20:22:00Z",
     "branch": "trunk",
     "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
     "pr": 14
   },
   "checkpoint": {
-    "at": "2026-10-07T19:35:39Z",
+    "at": "2026-10-07T19:37:00Z",
     "issue": 13,
     "role": "master",
     "branch": "trunk",
     "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
     "pr": 14,
-    "summary": "Recovered actual immutable v0.22.14 publication from7910156c6cce0f74a9ab530b289c3734750bc994. CI37668451522 all five jobs success; validate112953681488:858 Rust tests/64 harnesses/0 failures102.911s,4 scheduler/53 organization checks. Native release406055926 published18:42:52Z, tag matches exact source, seven bot-uploaded assets captured with IDs/sizes/digests. Previous v0.22.13 release405936360 assets unchanged against preserved checkpoint baseline. Issue13 closed/Done, PR14 merged; no open managed Issues/PRs or pending task reconciliation. Actual publication evidence is native Issue13comment6045313189. No local checks or other workers. Existing roadmap calls for owner-bound persistent recovery/admission; inspect only bounded relevant private owner/workspace code and choose the next safe increment.",
-    "next_action": "Master scopes a single next native user-roadmap Issue using existing Usenet Owner/private frame/standard File locking and bounded memory recovery; no duplicate Issues. Before further implementation, checkpoint/release and acquire scoped Security for the new issue, then Rust. Same wake deadline20:08:57Z, reserve20:03:57Z. Preserve current publication and original source mappings.",
+    "summary": "v0.22.14 publication/cleanup recovered and recorded in native Issue13comment6045313189; all five default jobs green,858 tests, immutable release406055926 and seven bot assets, previous0.22.13 unchanged. No open unfinished work existed. Created user-roadmap Issue15 for bounded owner-bound private persistent PAR2 recovery, natively depending on completed13. Scoped existing Owner/std file locking/private checked frames, exact File IDs/source/policy, reconstruction before new private writes, durable all-file descriptor and fail-closed reopening. No existing-file overwrite, implicit permission or automatic queue/library admission. No source changes yet.",
+    "next_action": "Security15 defines minimal safe persistence/resource/owner/source/checksum/cancellation boundaries under its own scoped lease, then releases for Rust implementation on work/par2-recovery-workspace from7910156c6cce0f74a9ab530b289c3734750bc994. Same wake deadline20:08:57Z, reserve20:03:57Z. Preserve publication/task/source history.",
     "publication": {
       "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
       "state": "ci-passed",
@@ -180,7 +180,8 @@
       "schedule_unchanged": true,
       "timezone_unchanged": true,
       "issue_comment": 6042165261
-    }
+    },
+    "next_issue": 15
   },
   "attempts": {}
 }
