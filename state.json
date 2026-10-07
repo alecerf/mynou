@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 242,
-  "lease": null,
+  "generation": 243,
+  "lease": {
+    "id": "88a033e7-8d77-441f-ad7b-918e77d5aae4",
+    "worker": "codex-hourly-20261007T192857Z",
+    "role": "rust",
+    "issue": 15,
+    "acquired_at": "2026-10-07T19:39:46Z",
+    "heartbeat_at": "2026-10-07T19:39:46Z",
+    "expires_at": "2026-10-07T20:24:46Z",
+    "branch": "work/par2-recovery-workspace",
+    "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
+    "pr": null
+  },
   "checkpoint": {
     "at": "2026-10-07T19:39:42Z",
     "issue": 15,
