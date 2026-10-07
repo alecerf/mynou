@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 203,
-  "lease": {
-    "id": "40e65e19-8705-4384-bce4-96567d05a5df",
-    "worker": "codex-hourly-20261007-1732",
-    "role": "security",
-    "issue": 13,
-    "acquired_at": "2026-10-07T17:38:46Z",
-    "heartbeat_at": "2026-10-07T17:41:23Z",
-    "expires_at": "2026-10-07T18:26:23Z",
-    "branch": "work/par2-verification",
-    "commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
-    "pr": null
-  },
+  "generation": 204,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-07T17:41:23Z",
     "issue": 13,
