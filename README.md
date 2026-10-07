@@ -1,4 +1,4 @@
-# Mynou 0.22.10 — Rust, standard library only
+# Mynou 0.22.11 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -128,15 +128,20 @@ ownership-bound ZIP library admission for one media entry with the existing
 requester, identity, import and Plex gates. v0.22.9 passed all five jobs with 791 Rust tests, adding original bounded RAR5
 stored-file formats and read-only `rar-inspect`. v0.22.10 passed all five jobs with
 804 Rust tests, adding opt-in stored RAR5 library admission with captured format/limits
-and the existing private ownership/import/Plex gates. Compressed RAR, PAR2,
-multi-file packs and Usenet upgrades remain subsequent increments.
+and the existing private ownership/import/Plex gates.
+
+0.22.11 adds [native PAR2 inspection](docs/par2.md) through `par2-inspect FILE`: bounded
+core packets, verified metadata identity and read-only JSON reports. Content
+verification, repair, volume merging and library admission remain future work.
+Compressed RAR, multi-file packs and Usenet upgrades remain subsequent increments.
 
 ## Autonomous engineering
 
 The [engineering organization](engineering/README.md) owns intent, native GitHub
 backlog, sequential specialist roles, CI, logical review, delivery and recovery.
-Only one engineering worker may execute at once. Product work is preserved while
-bootstrap completes; live progress is in [Issue #1](https://github.com/alecerf/mynou/issues/1).
+Only one engineering worker may execute at once. Bootstrap
+[Issue #1](https://github.com/alecerf/mynou/issues/1) is complete; active product
+work and recovery are tracked by native Issues and the GitHub control checkpoint.
 
 ## Try it
 
@@ -170,8 +175,8 @@ from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, o
 build the image from the source archive:
 
 ```sh
-docker load -i mynou-v0.22.10-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.22.10 .
+docker load -i mynou-v0.22.11-linux-amd64-image.tar.gz
+# Alternative: docker build -t mynou:0.22.11 .
 ./bin/mynou setup-docker --dir ./mynou-docker
 cd mynou-docker
 docker compose up -d

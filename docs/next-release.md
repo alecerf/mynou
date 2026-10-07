@@ -1,13 +1,14 @@
-# Product work paused for engineering bootstrap — next 0.22.11
+# Current product work — 0.22.11 PAR2 format foundation
 
-Product implementation is paused for [organization bootstrap #1](https://github.com/alecerf/mynou/issues/1).
-The incomplete PAR2 checkpoint is preserved on `work/par2-foundation` under
-[Issue #2](https://github.com/alecerf/mynou/issues/2). Finish bootstrap first;
-then continue the roadmap in bounded serialized execution slices. AGENTS.md mandates English, Rust std only,
-zero dependencies, no unsafe/FFI/copied code/external runtime helpers or local
-validation. Formatting is an edit. Commit meaningful chunks, push completed scope,
-inspect all five jobs and fix reds through commits. Actions alone publishes exact
-source tags/assets. Complete publication before a successor push.
+Engineering bootstrap #1 / PR #3 is complete at
+`afd6fa65f1189d181d8ce70161367309480a0730`. [Issue #2](https://github.com/alecerf/mynou/issues/2)
+owns the preserved PAR2 source, independent fixtures and linked release PR.
+The source adds bounded, read-only complete core-set inspection; it does not
+repair files or admit PAR2 to library jobs. See [support and limits](par2.md).
+
+Finish current CI, exact-head Security/QA, merge and immutable CI publication
+before starting bounded GF(2^16) repair. Recovery uses GitHub state and serial
+role leases. No local tests/lint/builds/binaries/validation or manual releases.
 
 CI published v0.22.10 from `f5c59506d0a8d431d09e9f351e2de2ef71b124f9` in
 [run 37510460908](https://github.com/alecerf/mynou/actions/runs/37510460908).

@@ -18,6 +18,7 @@ pub mod notifications;
 pub mod numbering;
 pub mod organizer;
 pub mod pack;
+pub mod par2;
 pub mod pki;
 pub mod requesters;
 pub mod selection;

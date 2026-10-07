@@ -11,10 +11,13 @@ mod aead;
 mod curve;
 #[path = "crypto/hashes.rs"]
 mod hashes;
+#[path = "crypto/md5.rs"]
+mod md5;
 
 pub use aead::ChaCha20Poly1305;
 pub use curve::{x25519, x25519_public_key};
 pub use hashes::{Sha1, Sha256, Sha384, Sha512, sha1, sha256, sha384, sha512};
+pub use md5::{Md5, md5};
 
 use crate::Result;
 
