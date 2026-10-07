@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 87,
+  "generation": 88,
   "lease": {
     "id": "3484e6cb-461a-4c98-8a00-04da578d7b79",
     "worker": "codex-ci-recovery-qa",
     "role": "qa",
     "issue": 5,
     "acquired_at": "2026-10-07T07:43:19Z",
-    "heartbeat_at": "2026-10-07T07:46:44Z",
-    "expires_at": "2026-10-07T08:31:44Z",
+    "heartbeat_at": "2026-10-07T07:47:35Z",
+    "expires_at": "2026-10-07T08:32:35Z",
     "branch": "work/ci-release-recovery",
     "commit": "ac3ecd57f6eaf58a69c70781321731aa5345a61d",
     "pr": 7
   },
   "checkpoint": {
-    "at": "2026-10-07T07:46:44Z",
+    "at": "2026-10-07T07:47:35Z",
     "issue": 5,
     "role": "qa",
     "branch": "work/ci-release-recovery",
     "commit": "ac3ecd57f6eaf58a69c70781321731aa5345a61d",
     "pr": 7,
-    "summary": "Distinct QA phase reviewed all four complete native PR #7 diffs at exact head ac3ecd57f6eaf58a69c70781321731aa5345a61d / base 57b15534158b0eb40d4f13450d51fdf33c7d81bb, Issue #5 acceptance and actual Security COMMENT 5439142389. No blocking QA finding. Original cases cover confirmed merge and Done-Issue recovery, existing/wrong/red runs, accepted/rejected/lost responses, intent visibility grace, changed head, ownership and trusted permission scope; docs accurately state hourly AI vs six-hour mechanical schedules and platform limits. Actual Mynou CI 37588527243 is completed SUCCESS: validate 112684205896, GNU 112684206307, musl 112684206056, package 112685157287. Native decoded validation log: 822 passed/63 harnesses, zero failed/ignored; 4 scheduler and 53 organization scenarios, 98.595s test execution. Fresh Engineering organization job 112685944235 in run 37588996885 succeeded; QA gate awaits this actual review. PR release job correctly skipped. No local checks, version/artifact changes or formal self-approval. Post-merge installed-code CI wake still requires actual verification; dispatch acceptance will not imply publication.",
-    "next_action": "Submit current exact-head QA COMMENT from this checkpoint, then release for trusted objective delivery. On next wake read control first and respect any live delivery lease. Verify actual PR #7 merge/gate, installed trusted-code default CI dispatch at the exact merged source (recover Done Issue if needed), all actual default jobs and immutable v0.22.11 tag/seven assets. Repair real failures through reviewed commits; safely clean the merged branch and native readiness metadata before #6. Do not start PAR2 recovery until Issue #5 is fully delivered and post-merge CI evidence is verified."
+    "summary": "Bounded Issue #5 slice completed implementation and distinct Security/QA: linked PR #7, branch work/ci-release-recovery, remote head ac3ecd57f6eaf58a69c70781321731aa5345a61d (original local c5efbe7dec01925cf2cc9b82c3232c853ca813e9, tree 2ca962418c07a27fa01e7e8ee4b4ce6460525e31), exact base 57b15534158b0eb40d4f13450d51fdf33c7d81bb. Four complete changed paths independently inspected in sequential owned roles. Actual Security COMMENT 5439142389 / checkpoint 26320f785caf287c301f2f18fbe94d1d04b42a2d; actual QA COMMENT 5439193373 / checkpoint 00f7663d92543a116c312e5d020eecbcd6e96862, both passed with no blocking findings. Actual Mynou CI 37588527243 succeeded: 822 Rust tests/63 harnesses, zero failed/ignored, 4 scheduler tests and 53 original organization scenarios; validate, GNU, musl, package all green, PR release correctly skipped. Latest observed Engineering organization job 112685944235 succeeded; agent-qa-review is awaiting fresh native evaluation after the submitted QA record, not claimed green. No local checks, concurrent worker, new version or release asset change. Real merge and installed-code default CI publication transition remain unverified.",
+    "next_action": "Read current control ref/state before any domain work; exit quietly if a valid lease exists. Recover PR #7 actual latest agent-qa-review and trusted merge/cleanup before new work. Exact head/base remain review-bound; repair actual failure or re-review source changes. After confirmed merge, inspect a real native default-source ci.yml run created by installed trusted delivery (also recovers Done/closed #5), all five jobs, dispatch evidence and unchanged published v0.22.11 tag/seven assets. If initial old-code merge suppressed CI, wake the newly installed mechanical delivery workflow through native dispatch rather than publishing manually. Safely clean work/ci-release-recovery only after merged-head/open-Issue/PR/lease audit; repair native readiness before #6. Do not begin dependent PAR2 recovery until this post-merge proof completes. Hourly AI wakes remain best-effort."
   },
   "attempts": {}
 }
