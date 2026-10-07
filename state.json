@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 225,
+  "generation": 226,
   "lease": {
     "id": "c60654b2-cb5f-4d52-9fdc-5bab14f2069b",
     "worker": "codex-hourly-20261007T182558Z",
     "role": "qa",
     "issue": 13,
     "acquired_at": "2026-10-07T18:34:01Z",
-    "heartbeat_at": "2026-10-07T18:35:38Z",
-    "expires_at": "2026-10-07T19:20:38Z",
+    "heartbeat_at": "2026-10-07T18:36:42Z",
+    "expires_at": "2026-10-07T19:21:42Z",
     "branch": "work/par2-verification",
     "commit": "18548f24e57b2845559c513638f82dee8c30f211",
     "pr": 14
   },
   "checkpoint": {
-    "at": "2026-10-07T18:35:38Z",
+    "at": "2026-10-07T18:36:42Z",
     "issue": 13,
     "role": "qa",
     "branch": "work/par2-verification",
     "commit": "18548f24e57b2845559c513638f82dee8c30f211",
     "pr": 14,
-    "summary": "Independent logical QA read the complete actual16-file native diff and Issue13 acceptance, challenged global/local slice indices, truncation/padding, empty presence and nonrecoverable selection, whole-file/slice disagreement, exact input coverage, resource/cancellation bounds, source/protected-byte/path fences and CLI offline/no-initialization behavior. All12 original fixtures are shown passing in native validate112939389626; full CI37664282613 has858 Rust tests/64 harnesses/0 failures101.243s,4 scheduler/53 organization checks, formatter/Clippy/zero dependencies and both builds/package success. Existing recovery algorithm is unchanged except sibling reuse visibility. Docs are English and distinguish proposed0.22.14 from actual0.22.13 publication and non-snapshot/no-repair authority. Actual Security5446669213 is head/base-bound and anchored to its separate historical valid lease. Native threads empty; organization112951257265 success. Draft QA gate112951332451 skipped, not green. No unresolved QA finding, local validation or identity independence claimed.",
-    "next_action": "Publish actual passed QA v1 COMMENT anchored to this owned exact-head/base checkpoint, then release QA and acquire Triage delivery. Update concise PR verification, mark ready and allow trusted objective gate; merge only after actual current gate success. Same wake deadline19:05:58Z with reserve19:00:58Z.",
+    "summary": "Independent logical complete-diff QA5446698146 passed exact18548f24e57b2845559c513638f82dee8c30f211/base07ef2f73f5ac923f783b9bd27e4662bb7529bbd2 at scoped checkpoint5de82c4501b2a9221e4c01da3fcb6daef5760cfe. All16 changed paths and12 fixtures reviewed against Issue13 acceptance and actual858-test CI. Separate Security5446669213 passed under its distinct historical lease; prior rejection fixes verified. Latest organization112951257265 success; draft gate112951332451 is skipped, not green. No source modifications or local checks.",
+    "next_action": "Triage delivery updates concise PR evidence and marks ready; every current objective job, including actual agent-qa-review, must be green before native expected-head merge. Actions publishes immutable release; preserve actual publication/cleanup and source mapping in control/native handoffs. Same wake deadline19:05:58Z.",
     "source_bridge": {
       "commits": [
         {
@@ -153,6 +153,13 @@
       "verdict": "passed",
       "lease_checkpoint": "9fdd1a6a5ba82d8f0c962048bb75745abe00065f",
       "corrected_rejected_review": 5446361233
+    },
+    "qa_status": {
+      "review_id": 5446698146,
+      "head": "18548f24e57b2845559c513638f82dee8c30f211",
+      "base": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
+      "verdict": "passed",
+      "lease_checkpoint": "5de82c4501b2a9221e4c01da3fcb6daef5760cfe"
     }
   },
   "attempts": {}
