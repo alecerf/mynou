@@ -1,15 +1,15 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 296,
+  "generation": 297,
   "lease": {
     "id": "wake5-security-macos-correction-20261007T213002Z",
     "worker": "codex-hourly-20261007T213002Z",
     "role": "security",
     "issue": 17,
     "acquired_at": "2026-10-07T21:48:58Z",
-    "heartbeat_at": "2026-10-07T21:49:46Z",
-    "expires_at": "2026-10-07T22:34:46Z",
+    "heartbeat_at": "2026-10-07T21:49:50Z",
+    "expires_at": "2026-10-07T22:34:50Z",
     "branch": "work/macos-builds",
     "commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
     "pr": 20
@@ -20,13 +20,52 @@
     "branch": "work/macos-builds",
     "commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
     "pr": 20,
-    "at": "2026-10-07T21:49:46Z",
-    "summary": "Security inspected all 11 corrected PR #20 paths at ce35b775 /4cf7580. && chains now stop checksum/cd/init/doctor failure before install/execute/serve. Existing read-only native builds, exact-workflow-SHA artifacts, mandatory architecture/demo checks and immutable CI-only publication remain. No blocking Security finding; new exact-head CI37691964651 was pending, not green.",
-    "next": "Independent QA: inspect the complete corrected diff and validate the prior rejected concern, then obtain actual exact-head required CI evidence. Stop cleanly for pending external jobs.",
+    "at": "2026-10-07T21:49:50Z",
+    "summary": "Submitted corrected exact-head/base complete-diff Security COMMENT for PR #20; checksum/configuration concerns are fixed and no blocking security findings remain. Current-head CI is pending; runtime, independent QA and merge/publication are not claimed.",
+    "next": "Independent QA under its own exact-head/base lease: verify complete corrected diff and actual native CI; checkpoint/release on a real external wait.",
     "review_phase": {
       "role": "security",
       "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
       "base_sha": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8"
+    },
+    "security": {
+      "schema": 1,
+      "role": "security",
+      "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
+      "base_sha": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
+      "lease_checkpoint": "da8a336cbbc41b5044482ccb611a4a5e6d828fbd",
+      "verdict": "passed",
+      "summary": "Complete corrected diff reviewed; QA's checksum/configuration failure-path concern is addressed. No blocking Security findings. Actual required CI and independent QA remain merge prerequisites.",
+      "reviewed_paths": [
+        ".github/engineering.json",
+        ".github/scripts/publish-release.sh",
+        ".github/workflows/ci.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "README.md",
+        "docs/ci.md",
+        "docs/deployment.md",
+        "docs/macos.md",
+        "docs/next-release.md",
+        "docs/releases/0.22.16.md"
+      ],
+      "acceptance": [
+        "Checksum and directory failures now stop installation/demo; init/doctor failures stop service startup.",
+        "Native builds keep read-only contents and disabled checkout credentials; standard macOS26 runners introduce no paid larger runner or new token.",
+        "Same-run target/SHA-scoped checked artifacts, byte-preserving copies, checksums and immutable default CI publication remain required.",
+        "Native installation documents PEM trust, Gatekeeper per-application controls and absence of Apple Developer signature/notarization without disabling security."
+      ],
+      "evidence": [
+        "Complete actual 11-path corrected PR #20 diff at ce35b775df90c49ab40ec98e1b3407b45c721c6d /4cf7580.",
+        "QA COMMENT5448782569 concern was compared with actual corrected docs/macos.md && chains; no concern is resolved merely because a commit appeared.",
+        "Current-head Actions37691964651 pending; no complete runtime success is claimed.",
+        "Prior-head ARM64 job113032694993 genuinely verified Mach-O arm64 and ready import/Plex demo; historical evidence only, not new-head CI."
+      ],
+      "findings": []
+    },
+    "security_native_review": {
+      "success": true,
+      "review_id": 5448796536
     },
     "source": {
       "remote_commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
