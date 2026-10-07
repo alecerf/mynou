@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 65,
+  "generation": 66,
   "lease": {
     "id": "af02b301-e76d-4f86-a008-eb59bbbbffc4",
     "worker": "codex-par2-slice",
     "role": "qa",
     "issue": 2,
     "acquired_at": "2026-10-07T05:50:26Z",
-    "heartbeat_at": "2026-10-07T05:53:36Z",
-    "expires_at": "2026-10-07T06:38:36Z",
+    "heartbeat_at": "2026-10-07T05:54:19Z",
+    "expires_at": "2026-10-07T06:39:19Z",
     "branch": "work/par2-foundation",
     "commit": "85cb2e29dbe5baa3677071e4dabc974f576b82b6",
     "pr": 4
   },
   "checkpoint": {
-    "at": "2026-10-07T05:53:36Z",
+    "at": "2026-10-07T05:54:19Z",
     "issue": 2,
     "role": "qa",
     "branch": "work/par2-foundation",
     "commit": "85cb2e29dbe5baa3677071e4dabc974f576b82b6",
     "pr": 4,
-    "summary": "Distinct logical QA phase inspected the actual complete seventeen-file native diff at stable PR #4 head 85cb2e29dbe5baa3677071e4dabc974f576b82b6 / base afd6fa65f1189d181d8ce70161367309480a0730, including full original MD5/parser/model and all 545 fixture lines. Checked CLI argument registration/early return, exact metadata reports, source-only behavior, Main order, empty/nonrecoverable files, ignored semantics, boundaries and no repair/admission claims. Actual current core run 37577818607 required jobs all passed, 822 tests/63 harnesses, 18 PAR2 cases, zero failures/ignored, 98.761s, 4 scheduler and 35 organization scenarios. Native Security review 5438186110 is exact-head/base under distinct lease/checkpoint 8e7af91cbcfb95439e5389fd8a2ce6a1782febae. No blocking QA finding; machine gate and merge/publication remain pending.",
-    "next_action": "Submit truthful QA COMMENT bound to this historical exact-head/base lease checkpoint after confirming fresh organization job is green, then release. Trusted delivery must require fresh agent-qa-review plus every objective gate; verify native merge/default CI/immutable bot publication and cleanup before executing the next roadmap increment."
+    "summary": "QA complete: actual exact-head/base Security COMMENT 5438186110 and distinct logical QA COMMENT submitted at PR #4 head 85cb2e29dbe5baa3677071e4dabc974f576b82b6/base afd6fa65f1189d181d8ce70161367309480a0730. Full 17-file diff and actual 822 passing Rust tests/63 harnesses, 18 PAR2 cases, zero failed/ignored, 98.761s, 4 scheduler and 35 organization scenarios reviewed. All required core jobs in run 37577818607 and fresh organization 112652150701 in run 37578314609 succeeded. Source-only PAR2 foundation acceptance has no blocking findings. Native machine review gate/automatic merge and default CI release still pending; no published 0.22.11 claim. Source/local mapping df412d021bece4835ccaa2615101d07bc37d8c56 -> 85cb2e29dbe5baa3677071e4dabc974f576b82b6, tree ea125985d418a85c553e40b70b22fb56e68f560f.",
+    "next_action": "Release QA so trusted serialized delivery can evaluate real exact-head/base Security/QA and fresh agent-qa-review, merge only green gates and clean #2/branch. Recovery must verify resulting native merge/default CI and seven immutable bot-published v0.22.11 assets, preserve v0.22.10 tag/assets, then queue/execute the bounded GF16 successor. Do not duplicate the PR, redo valid reviews, manually release or start successor before publication."
   },
   "attempts": {}
 }
