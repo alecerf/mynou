@@ -54,8 +54,9 @@ to 1 MiB and checks cancellation between 64 KiB chunks. Mid-operation cancellati
 can leave a partial caller-owned sum, which must be discarded. Arithmetic does
 not verify packet identity, parity, protected content or repaired output. The
 existing inspector continues to report `repair_supported: false`: inspection
-does not recover or verify described files. Fixed specification constants and an independently
-authored polynomial long-division oracle run only in CI; no results are inferred.
+does not recover or verify described files. Fixed specification constants and an
+independently authored polynomial long-division oracle run only in CI; no results
+are inferred.
 
 The draft library increment adds `Set::recover_single` and its cancellable
 variant. They accept the captured PAR2 source and immutable caller-provided
@@ -63,7 +64,7 @@ protected bytes, and return a caller-owned `Vec<u8>` only after verification.
 Short input represents a truncated prefix; empty input represents a missing
 file. Exactly one described recoverable file is supported, with at most 256
 slices, eight damaged or missing slices, 16 MiB of content and 1 MiB per slice.
-`RecoveryLimits` may tighten the 32 MiB additional-memory and 128 million field
+`RecoveryLimits` may tighten the 32 MiB additional-memory and 128 Mi field
 operation ceilings. Captured metadata and caller-owned inputs are excluded from
 the additional-memory budget. Memory/work bounds are checked before parity
 buffers and output are allocated. Missing slices require consecutive recovery

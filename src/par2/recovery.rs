@@ -119,8 +119,8 @@ fn inverse_matrix(missing: &[usize], flag: &AtomicBool) -> Result<Vec<Vec<u16>>>
             .find(|row| rows[*row][column] != 0)
             .ok_or("PAR2 recovery matrix is singular")?;
         rows.swap(column, pivot);
-        let factor = gf16::inverse(rows[column][column])
-            .ok_or("PAR2 recovery pivot is not invertible")?;
+        let factor =
+            gf16::inverse(rows[column][column]).ok_or("PAR2 recovery pivot is not invertible")?;
         for value in &mut rows[column] {
             *value = gf16::multiply(*value, factor);
         }
@@ -209,7 +209,9 @@ impl Set {
             .and_then(|words| words.checked_add(4 * erased * erased * erased))
             .ok_or("PAR2 recovery field-operation budget overflow")?;
         if working > limits.max_working_bytes || operations > limits.max_field_operations {
-            return Err("PAR2 recovery exceeds its working-memory or field-operation budget".into());
+            return Err(
+                "PAR2 recovery exceeds its working-memory or field-operation budget".into(),
+            );
         }
         let mut residuals = Vec::new();
         for exponent in 0..missing.len() {

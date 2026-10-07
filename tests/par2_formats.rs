@@ -206,9 +206,9 @@ fn recovery_requires_consecutive_rows_and_rejects_incorrect_parity() {
     let original = b"abcdefghijklmnopq";
     let mut fixture = Fixture::recovery(original, 8, 3);
     let limits = RecoveryLimits::default();
-    fixture.packets.retain(|(kind, body)| {
-        *kind != RECOVERY || body[..4] != 1u32.to_le_bytes()
-    });
+    fixture
+        .packets
+        .retain(|(kind, body)| *kind != RECOVERY || body[..4] != 1u32.to_le_bytes());
     let source = fixture.bytes();
     assert!(
         read(&source)
@@ -307,7 +307,11 @@ fn recovery_checks_full_file_integrity_even_when_every_slice_matches() {
     assert!(
         read(&source)
             .unwrap()
-            .recover_single(&mut Cursor::new(&source), &original, RecoveryLimits::default())
+            .recover_single(
+                &mut Cursor::new(&source),
+                &original,
+                RecoveryLimits::default()
+            )
             .unwrap_err()
             .contains("file integrity")
     );
