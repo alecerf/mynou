@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 138,
+  "generation": 139,
   "lease": {
     "id": "58abd2d0-75a2-4a91-8367-845586e9dce1",
     "worker": "codex-par2-ready-delivery",
     "role": "master",
     "issue": 6,
     "acquired_at": "2026-10-07T11:53:23Z",
-    "heartbeat_at": "2026-10-07T11:53:23Z",
-    "expires_at": "2026-10-07T12:38:23Z",
+    "heartbeat_at": "2026-10-07T11:55:07Z",
+    "expires_at": "2026-10-07T12:40:07Z",
     "branch": "work/par2-recovery",
     "commit": "53b4f30982b5297439d6baec751731b295cfd02a",
     "pr": 8
   },
   "checkpoint": {
-    "at": "2026-10-07T11:52:09Z",
+    "at": "2026-10-07T11:55:07Z",
     "issue": 6,
-    "role": "qa",
+    "role": "master",
     "branch": "work/par2-recovery",
     "commit": "53b4f30982b5297439d6baec751731b295cfd02a",
     "pr": 8,
-    "summary": "QA independently challenged complete native15-path diff at53b4f30982b5297439d6baec751731b295cfd02a/base9d506f2767033fb4a71c586f71f5d3da83dcacb5, Issue6/PR8/work/par2-recovery. Re-read acceptance, original field/matrix/recovery code, independent fixtures, all manifests/version/docs, actual full CI log and scoped Security review5441799612/proof24c72b73cff34edb57ba74d5eb0128ce9307d51a. Single-file additive API, row ordering/zero padding, unsupported/corrupt/mutated input rejection, chunk cancellation, output-only boundary and original regression baseline checked. All configured native objective jobs green; no unresolved review threads or blocking QA finding. Actual838 Rust/64harnesses/0failed/98.326s,4scheduler/53organization,GF160.416s/PAR2formats0.370s. No local validation/formal self-approval; release not yet published. Native QA COMMENT record will use this live exact-head scoped checkpoint.",
-    "next_action": "Submit truthful passed QA native COMMENT record using this checkpoint, all15reviewedpaths and actual CI/security evidence; release QA. Acquire Master for final concise PR body/readiness after both reviews and unchanged head/base. Ready-for-review triggers actual agent-qa-review gate; keep unmerged until every objective gate green. Release to trusted mechanical delivery for same-head merge/default CI dispatch/cleanup, then recover actual immutable0.22.12 publication before new roadmap. Stop cleanly around20minutes; preserve original source and previous immutable assets.",
+    "summary": "PR8 marked READY at native53b4f30982b5297439d6baec751731b295cfd02a/base9d506f2767033fb4a71c586f71f5d3da83dcacb5/work/par2-recovery, Issue6 proposed0.22.12. Original localdd4ac27206d7acf64cc0e0ec1aba498121efe376/tree2c235001488394085ae6235682eb0d4dccb6d0bd preserved. Implementation/version/docs and original maximum-eight-erasure/chunk fixtures complete. Separate complete15-path Security COMMENT5441799612/proof24c72b73cff34edb57ba74d5eb0128ce9307d51a and logically independent QA COMMENT5441852133/proof4fd6900f7f3c232c5e1430d23020216cfeac06ce passed with no blocking findings/unresolved threads. Actual exact-head MynouCI37615898725 SUCCESS:838 Rust/64harnesses/0failed/98.326s,4scheduler/53organization, GNU/musl/package green; PR release skipped. Latest reviewed org37616517392 green. Native readiness triggers real agent-qa-review; final machine gate still pending, not fabricated. No local validation, manual merge/release or publication claim. PR body rewritten for final source and actual evidence.",
+    "next_action": "Release Master and stop bounded slice. Trusted Serialized engineering delivery must merge only after actual fresh all-green native agent-qa-review and configured objective jobs, exact reviews/unchanged head/base and an owned mechanical lease; then close/update Issue6, preserve/clean merged branch safely, explicitly dispatch exact-default CI and retain publication checkpoint. Fresh worker reads control ref/state first, exits quietly if a valid lease exists, otherwise recovers PR8/review/CI/cleanup and actual immutablev0.22.12 tag/seven bot assets/prior immutability before any new roadmap work. Failed/pending gate or publication is recoverable capacity/work, never done by assumption. Do not duplicate Issues/PRs or manually publish.",
     "publication": {
       "commit": "9d506f2767033fb4a71c586f71f5d3da83dcacb5",
       "state": "ci-passed",
@@ -38,7 +38,8 @@
       "conclusion": "success",
       "organization_run_id": 37616517392,
       "security_review_id": 5441799612,
-      "qa": "review-complete-record-pending",
+      "qa_review_id": 5441852133,
+      "qa": "native-review-passed-machine-gate-pending",
       "release": "not-performed-pr"
     }
   },
