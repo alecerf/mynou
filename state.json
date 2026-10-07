@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 163,
+  "generation": 164,
   "lease": {
     "id": "0aa8ec17-a4f9-4e62-bcd6-a2393921c55c",
     "worker": "codex-multifile-implementation",
     "role": "rust",
     "issue": 9,
     "acquired_at": "2026-10-07T14:35:27Z",
-    "heartbeat_at": "2026-10-07T14:45:45Z",
-    "expires_at": "2026-10-07T15:30:45Z",
+    "heartbeat_at": "2026-10-07T14:52:39Z",
+    "expires_at": "2026-10-07T15:37:39Z",
     "branch": "work/par2-multifile-recovery",
-    "commit": "d4938b72b5451d31bd46eb61d620d06c8608470c",
+    "commit": "bfdff54f096150968ae725fa19d89e356ed24417",
     "pr": 10
   },
   "checkpoint": {
-    "at": "2026-10-07T14:45:45Z",
+    "at": "2026-10-07T14:52:39Z",
     "issue": 9,
     "role": "rust",
     "branch": "work/par2-multifile-recovery",
-    "commit": "d4938b72b5451d31bd46eb61d620d06c8608470c",
+    "commit": "bfdff54f096150968ae725fa19d89e356ed24417",
     "pr": 10,
-    "summary": "Rust pushed original shared multi-file recovery engine and eight independent fixture cases to work/par2-multifile-recovery at d4938b72b5451d31bd46eb61d620d06c8608470c; linked draft PR #10, base trunk d0c37f773b45b8948eb8c5b67a55e89f64ddbe10. Single-file API delegates to the bounded global-slice engine; exact File-ID coverage, combined budgets and all-or-nothing per-file checks retained. Local source b08c470d956434f0e02165b5b80b6f10e5d987b6 maps to this remote commit with identical tree 2f87f3e603a05c96a9a6e65bd6fd906cdc50615c. No local validation or new CI/review result claimed. Documentation/version and CI corrections remain.",
-    "next_action": "Read actual PR CI, fix failures through commits; complete truthful proposed v0.22.13 support/limits/release documentation. Keep draft; separate complete-diff exact-head/base Security and QA are mandatory before merge.",
+    "summary": "Rust implementation and proposed v0.22.13 documentation are pushed to work/par2-multifile-recovery at bfdff54f096150968ae725fa19d89e356ed24417, draft PR #10 linked to #9; base d0c37f773b45b8948eb8c5b67a55e89f64ddbe10. Shared global multi-file engine, exact immutable File-ID inputs, aggregate budgets, all-file output verification and eight original fixture cases added. Existing single-file subset preserved. Initial CI 37639326078 failed formatting; native job 112853774336 formatter edits were applied in the second source commit. Current CI 37639921027 passed dependency/format/Clippy/scheduler/organization steps; tests/build/package outcome remains native CI, not inferred. Engineering 37639920936 passed organization while draft; QA gate not certified. No local validation, final Security/QA record, merge or publication.",
+    "next_action": "Inspect exact-head CI 37639921027. Fix any actual red through original commits; when required jobs are green, release Rust and acquire separate Security for full-diff exact-head/base verification, then independent QA. Keep PR #10 draft until reviews and scope are complete; no manual release.",
     "publication": {
       "commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
       "state": "ci-passed",
@@ -44,9 +44,50 @@
       "pr_review": false
     },
     "source_bridge": {
-      "local": "b08c470d956434f0e02165b5b80b6f10e5d987b6",
-      "remote": "d4938b72b5451d31bd46eb61d620d06c8608470c",
-      "tree": "2f87f3e603a05c96a9a6e65bd6fd906cdc50615c"
+      "commits": [
+        {
+          "local": "b08c470d956434f0e02165b5b80b6f10e5d987b6",
+          "remote": "d4938b72b5451d31bd46eb61d620d06c8608470c",
+          "tree": "2f87f3e603a05c96a9a6e65bd6fd906cdc50615c"
+        },
+        {
+          "local": "060d605351761243eeb8e0d0b7d5a2b9abcb1949",
+          "remote": "bfdff54f096150968ae725fa19d89e356ed24417",
+          "tree": "560c4504ac2d20ee124210511400ffa7c16e9e0f"
+        }
+      ]
+    },
+    "ci": {
+      "run_id": 37639921027,
+      "head": "bfdff54f096150968ae725fa19d89e356ed24417",
+      "status": "in_progress",
+      "conclusion": null,
+      "jobs": [
+        {
+          "name": "validate",
+          "id": 112855830910,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build x86_64-unknown-linux-musl",
+          "id": 112855831261,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build x86_64-unknown-linux-gnu",
+          "id": 112855831496,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "package",
+          "id": 112857367012,
+          "status": "in_progress",
+          "conclusion": null
+        }
+      ]
     }
   },
   "attempts": {}
