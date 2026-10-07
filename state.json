@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 75,
+  "generation": 76,
   "lease": {
     "id": "7f389cba-6118-47d2-976e-92afa61e15fb",
     "worker": "codex-schedule-adjustment",
     "role": "master",
     "issue": 5,
     "acquired_at": "2026-10-07T07:19:13Z",
-    "heartbeat_at": "2026-10-07T07:19:13Z",
-    "expires_at": "2026-10-07T08:04:13Z",
+    "heartbeat_at": "2026-10-07T07:20:13Z",
+    "expires_at": "2026-10-07T08:05:13Z",
     "branch": "trunk",
     "commit": "57b15534158b0eb40d4f13450d51fdf33c7d81bb",
     "pr": null
   },
   "checkpoint": {
-    "at": "2026-10-07T06:07:36Z",
-    "issue": 2,
-    "role": "triage",
+    "at": "2026-10-07T07:20:13Z",
+    "issue": 5,
+    "role": "master",
     "branch": "trunk",
     "commit": "57b15534158b0eb40d4f13450d51fdf33c7d81bb",
-    "pr": 4,
-    "summary": "Delivered Issue #2 / PR #4: v0.22.11 bounded read-only native PAR2 inspection, original safe Rust std-only MD5/parser and 18 synthetic/RFC-vector cases. Preserved original partial source and bootstrap history; final source head 85cb2e29dbe5baa3677071e4dabc974f576b82b6 was actually merged by trusted Actions at trunk 57b15534158b0eb40d4f13450d51fdf33c7d81bb. Real Security COMMENT review 5438186110 and separate QA COMMENT 5438215997 inspected all 17 changed paths at exact head/base afd6fa65f1189d181d8ce70161367309480a0730; engineering run 37578644319 organization and agent-qa-review jobs succeeded before merge. Recovered missing GITHUB_TOKEN-induced push trigger with explicit CI dispatch: merged-head run 37579093331 all five jobs succeeded, 822 Rust tests/63 harnesses, 18 PAR2 cases, 4 scheduler and 35 organization scenarios; 100.539s test execution. CI bot alone published release 405431367 at 2026-10-07T06:03:10Z, tag v0.22.11 exactly 57b15534158b0eb40d4f13450d51fdf33c7d81bb, seven uploaded bot assets. Native tag/release/asset IDs, sizes and SHA-256 digests of published v0.22.10 match preserved metadata. Source branch work/par2-foundation safely deleted only after exact merged-head preservation/issue/PR/lease audit; only trunk/control remain. Issue #2 closed/completed, #5 ready, #6 has native blocker #5. No local validation, manual release, new worker, paid services or source changes after review.",
-    "next_action": "Next bounded slice: read control ref/state first, recover existing CI/review/cleanup, then acquire Quality lease for executable Issue #5. Fix trusted automated merge/recovery to explicitly dispatch missing default CI without duplicates, including already-closed parent Issues; Security and distinct exact-head/base QA must review workflow/permissions changes, with CI-only scenario validation. Do not begin GF16 recovery Issue #6 until native blocker #5 is completed; v0.22.11 publication is now verified. The scheduled wake remains best-effort with no quota-reset API or guaranteed post-reset worker."
+    "pr": null,
+    "summary": "Client scheduling adjustment only: changed the existing enabled Mynou engineering ChatGPT automation from every six hours to every hour, preserving its bounded recovery-first prompt, same task and MAX_ACTIVE_AGENTS=1 admission checks. The native update API returned success=true and is_enabled=true with RRULE:FREQ=HOURLY;INTERVAL=1, DTSTART 20261006T193000 and existing America/Los_Angeles timezone. Expected clock slots are at minute 30 of each hour; the platform supplied no next_run_time. No duplicate automation, product/source mutation, PR, local checks, paid worker or release change. This is a best-effort compute trigger, not a quota detector: no quota-reset API, guaranteed scheduled Codex VM or guaranteed immediate post-reset wake. v0.22.11 remains CI-published at trunk 57b15534158b0eb40d4f13450d51fdf33c7d81bb; actual release proof and cleanup are retained in Issue #2 / PR #4. Issue #5 remains unimplemented and ready for its next owned Quality slice; Issue #6 stays natively blocked by #5.",
+    "next_action": "On the next hourly wake, read the current control ref/state first and exit if a valid lease exists. Recover existing PR/CI/review/cleanup before new work. Acquire Quality for ready Issue #5 to repair missing CI dispatch after automated bot-token merges, including recovery when the parent Issue is closed; avoid duplicate runs and changed-head publication, retain least privilege, and require Security plus distinct exact-head/base QA and CI-only scenarios. Do not start dependent GF16 recovery Issue #6 before #5 is complete. If capacity or required execution access is unavailable, preserve durable state and pause honestly; never mark work completed/failed merely for quota."
   },
   "attempts": {}
 }
