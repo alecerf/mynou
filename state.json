@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 210,
+  "generation": 211,
   "lease": {
     "id": "7fc21c3a-026e-4293-8be9-49f733e5e5ca",
     "worker": "codex-hourly-20261007-1732",
     "role": "security",
     "issue": 13,
     "acquired_at": "2026-10-07T18:03:06Z",
-    "heartbeat_at": "2026-10-07T18:03:06Z",
-    "expires_at": "2026-10-07T18:48:06Z",
+    "heartbeat_at": "2026-10-07T18:04:46Z",
+    "expires_at": "2026-10-07T18:49:46Z",
     "branch": "work/par2-verification",
     "commit": "c07111816044c3d25a556b3e80b7a758aa38935b",
     "pr": 14
   },
   "checkpoint": {
-    "at": "2026-10-07T18:03:02Z",
+    "at": "2026-10-07T18:04:46Z",
     "issue": 13,
-    "role": "rust",
+    "role": "security",
     "branch": "work/par2-verification",
     "commit": "c07111816044c3d25a556b3e80b7a758aa38935b",
     "pr": 14,
-    "summary": "Rust source for #13 / draft PR #14 is remotely preserved at c07111816044c3d25a556b3e80b7a758aa38935b, base 07ef2f73f5ac923f783b9bd27e4662bb7529bbd2. Native CI 37663328604 failed formatting at job 112936124907 before Clippy/tests (skipped); GNU build 112936125283 succeeded. Applied all 27 formatting hunks from actual Actions output as an original commit, without running any local formatter/check. Fresh-head Actions now determine validation; no green current checks or publication claimed. Separate final Security and QA pending.",
-    "next_action": "Security: complete-diff exact-head/base review at current source while fresh Actions execute. QA only after actual verification evidence; new source/base invalidates records. Deadline 18:12:14Z, reserve 18:07:14Z. Preserve draft and pause for real waits.",
+    "summary": "Separate Security reviewed all 16 actual changed paths of #14 at c07111816044c3d25a556b3e80b7a758aa38935b/base07ef2f73f5ac923f783b9bd27e4662bb7529bbd2. Found two corrections: the 64-KiB scratch overhead omits simultaneously live 64-KiB source hash buffer plus report/map allocations at tight bounds; reserve a conservative complete overhead. Final path/missing fences currently precede final potentially256-MiB source hash; move final fences after it to catch persistent changes during that last read. CI37663684804 current GNU/musl builds passed and formatting passed, but validate112937344299 failed Clippy; tests skipped. No passed final review or merge. Earlier Rust handoff guard rejected the old source tuple after durable role CAS; native handoff is recovered here, not ownership loss.",
+    "next_action": "Record rejected Security review with real findings; Rust corrects these and actual Clippy findings, push before final handoff. Fresh source invalidates this reviewed head. Deadline18:12:14Z, final-five-minute reserve starts18:07:14Z.",
     "source_bridge": {
       "commits": [
         {
@@ -41,17 +41,6 @@
           "tree": "7b131a0999ea98bc9aafa7f0ee2eb41166a27b90"
         }
       ]
-    },
-    "review_base_sha": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
-    "ci": {
-      "head": "eb4ae3378c292ba32938f32ea82c0d7d8054a6cc",
-      "run_id": 37663328604,
-      "validate_job": 112936124907,
-      "validation": "formatting-failed; Clippy/tests skipped",
-      "gnu_job": 112936125283,
-      "gnu_conclusion": "success",
-      "corrected_by": "c07111816044c3d25a556b3e80b7a758aa38935b",
-      "current_head_state": "pending-native-checks"
     },
     "publication": {
       "commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
@@ -137,7 +126,27 @@
           "digest": "sha256:edf469d5ab42165ba0e27b258507152dd31f35d8c828d6d963bda0d16d6537de"
         }
       ]
-    }
+    },
+    "review_head_sha": "c07111816044c3d25a556b3e80b7a758aa38935b",
+    "review_base_sha": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
+    "reviewed_paths": [
+      "Cargo.lock",
+      "Cargo.toml",
+      "README.md",
+      "docs/checkpoint.md",
+      "docs/deployment.md",
+      "docs/limits.md",
+      "docs/next-release.md",
+      "docs/par2.md",
+      "docs/releases/0.22.13.md",
+      "docs/releases/0.22.14.md",
+      "docs/roadmap.md",
+      "src/main.rs",
+      "src/par2/mod.rs",
+      "src/par2/recovery.rs",
+      "src/par2/verification.rs",
+      "tests/par2_formats.rs"
+    ]
   },
   "attempts": {}
 }
