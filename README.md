@@ -126,10 +126,17 @@ providing [bounded ZIP and streaming DEFLATE](docs/archives.md) and read-only
 `zip-inspect`. v0.22.8 passed all five jobs with 773 Rust tests and seven assets, adding opt-in
 ownership-bound ZIP library admission for one media entry with the existing
 requester, identity, import and Plex gates. v0.22.9 passed all five jobs with 791 Rust tests, adding original bounded RAR5
-stored-file formats and read-only `rar-inspect`. Active v0.22.10 adds opt-in stored
-RAR5 library admission with captured format/limits and the existing private
-ownership/import/Plex gates; its own CI is pending. Compressed RAR, PAR2,
+stored-file formats and read-only `rar-inspect`. v0.22.10 passed all five jobs with
+804 Rust tests, adding opt-in stored RAR5 library admission with captured format/limits
+and the existing private ownership/import/Plex gates. Compressed RAR, PAR2,
 multi-file packs and Usenet upgrades remain subsequent increments.
+
+## Autonomous engineering
+
+The [engineering organization](engineering/README.md) owns intent, native GitHub
+backlog, sequential specialist roles, CI, logical review, delivery and recovery.
+Only one engineering worker may execute at once. Product work is preserved while
+bootstrap completes; live progress is in [Issue #1](https://github.com/alecerf/mynou/issues/1).
 
 ## Try it
 

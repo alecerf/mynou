@@ -1,0 +1,11 @@
+name: Add or improve something
+description: Provide product intent; the organization owns scope, decisions, implementation and review.
+labels: ['agent-work', 'enhancement', 'origin:user', 'status:inbox']
+body:
+  - type: textarea
+    id: intent
+    attributes:
+      label: What should become better?
+      description: Tell us the desired outcome. You do not need to plan engineering work.
+    validations:
+      required: true

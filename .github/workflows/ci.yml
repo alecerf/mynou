@@ -56,6 +56,10 @@ jobs:
         run: cargo clippy --all-targets --offline --locked -- -D warnings
       - name: Check the CI test scheduler
         run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
+      - name: Verify engineering policy and serialized recovery scenarios
+        run: |
+          python3 engineering/policy.py
+          python3 -m unittest discover -s engineering/tests -p 'test_*.py' -v
       - name: Compile all test harnesses
         if: steps.cache.outputs.cache-hit != 'true'
         run: cargo test --all-targets --no-run --offline --locked --message-format=json-render-diagnostics > target/debug/mynou-ci-test-build.jsonl

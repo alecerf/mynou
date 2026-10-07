@@ -1,0 +1,17 @@
+name: Something is broken
+description: Describe the problem; the engineering organization owns investigation and delivery.
+title: "Bug: "
+labels: ['agent-work', 'bug', 'origin:user', 'status:inbox']
+body:
+  - type: textarea
+    id: intent
+    attributes:
+      label: What went wrong?
+      description: Describe the behavior and what you expected. Engineering details are optional.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Useful context
+      description: Optional steps, version or redacted error. Never include tokens or private media.
