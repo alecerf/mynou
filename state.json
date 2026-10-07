@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 64,
+  "generation": 65,
   "lease": {
     "id": "af02b301-e76d-4f86-a008-eb59bbbbffc4",
     "worker": "codex-par2-slice",
     "role": "qa",
     "issue": 2,
     "acquired_at": "2026-10-07T05:50:26Z",
-    "heartbeat_at": "2026-10-07T05:50:26Z",
-    "expires_at": "2026-10-07T06:35:26Z",
+    "heartbeat_at": "2026-10-07T05:53:36Z",
+    "expires_at": "2026-10-07T06:38:36Z",
     "branch": "work/par2-foundation",
     "commit": "85cb2e29dbe5baa3677071e4dabc974f576b82b6",
     "pr": 4
   },
   "checkpoint": {
-    "at": "2026-10-07T05:49:39Z",
+    "at": "2026-10-07T05:53:36Z",
     "issue": 2,
-    "role": "security",
+    "role": "qa",
     "branch": "work/par2-foundation",
     "commit": "85cb2e29dbe5baa3677071e4dabc974f576b82b6",
     "pr": 4,
-    "summary": "Security completed actual all-seventeen-path review and inspected required current-head core Actions run 37577818607: validate 112650600476, GNU 112650600647, musl 112650600752 and package 112651364095 all succeeded; PR release intentionally skipped. Actual full-suite log and original PAR2/RFC fixtures reviewed. Current organization job 112650612242 also succeeded. Main identity finding is rejected by source and exercised by checksum-valid wrong-set fixture. No blocking findings; strict read-only subset, MD5 non-authorization, synchronous cancellation and in-place mutation limits are explicit. Ready to submit a truthful exact-head/base Security record; logical QA remains separate and pending.",
-    "next_action": "Submit native Security COMMENT at exact head/base using this historical role checkpoint, release Security, then acquire QA to independently inspect the actual complete current diff, acceptance, diagnostics, core CI and Security provenance. Do not merge until fresh agent-qa-review is green."
+    "summary": "Distinct logical QA phase inspected the actual complete seventeen-file native diff at stable PR #4 head 85cb2e29dbe5baa3677071e4dabc974f576b82b6 / base afd6fa65f1189d181d8ce70161367309480a0730, including full original MD5/parser/model and all 545 fixture lines. Checked CLI argument registration/early return, exact metadata reports, source-only behavior, Main order, empty/nonrecoverable files, ignored semantics, boundaries and no repair/admission claims. Actual current core run 37577818607 required jobs all passed, 822 tests/63 harnesses, 18 PAR2 cases, zero failures/ignored, 98.761s, 4 scheduler and 35 organization scenarios. Native Security review 5438186110 is exact-head/base under distinct lease/checkpoint 8e7af91cbcfb95439e5389fd8a2ce6a1782febae. No blocking QA finding; machine gate and merge/publication remain pending.",
+    "next_action": "Submit truthful QA COMMENT bound to this historical exact-head/base lease checkpoint after confirming fresh organization job is green, then release. Trusted delivery must require fresh agent-qa-review plus every objective gate; verify native merge/default CI/immutable bot publication and cleanup before executing the next roadmap increment."
   },
   "attempts": {}
 }
