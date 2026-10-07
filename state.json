@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 155,
+  "generation": 156,
   "lease": {
     "id": "29feda64-139c-43ab-ad0a-7d6754b1b146",
     "worker": "codex-next-roadmap-triage",
     "role": "triage",
     "issue": 6,
     "acquired_at": "2026-10-07T12:43:16Z",
-    "heartbeat_at": "2026-10-07T12:43:16Z",
-    "expires_at": "2026-10-07T13:28:16Z",
+    "heartbeat_at": "2026-10-07T12:45:25Z",
+    "expires_at": "2026-10-07T13:30:25Z",
     "branch": "trunk",
     "commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
     "pr": 8
   },
   "checkpoint": {
-    "at": "2026-10-07T12:42:42Z",
+    "at": "2026-10-07T12:45:25Z",
     "issue": 6,
-    "role": "quality",
+    "role": "triage",
     "branch": "trunk",
     "commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
     "pr": 8,
-    "summary": "Quality audited exact work/par2-recovery head 53b4f30982b5297439d6baec751731b295cfd02a against merged PR #8, default d0c37f773b45b8948eb8c5b67a55e89f64ddbe10, native open PR/Issue bodies/comments and live ownership. Guarded cleanup deleted the merged branch; useful source is preserved in Git history, PR #8 and immutable v0.22.12. Issue #6 is closed/Done. All five default-source CI jobs and 838 Rust tests passed, and seven bot assets were verified in native publication comments 6038114159/6038114600; the v0.22.11 tag/assets remain unchanged. No local validation or manual publication.",
-    "next_action": "Release Quality, then Triage one bounded next Issue from the existing authorized multi-file PAR2 recovery roadmap; do not start new implementation in this publication-recovery slice.",
+    "summary": "Publication-recovery slice completed: immutable v0.22.12 at trunk d0c37f773b45b8948eb8c5b67a55e89f64ddbe10; all five exact-source CI jobs green, 838 Rust tests, seven bot assets verified; native publication comments 6038114159/6038114600. Separately leased Quality audited and deleted merged work/par2-recovery head 53b4f30982b5297439d6baec751731b295cfd02a; source preserved. Triage created exactly one user-roadmap successor Issue #9 for bounded multi-file PAR2 memory recovery, Ready/P1/high/Security, with native completed prerequisite #6. No open PR or implementation branch exists. No product source change, local validation or manual publication this slice.",
+    "next_action": "Next wake: recover control/PR/CI state first, then acquire Security for managed Ready Issue #9 scope review at exact trunk d0c37f773b45b8948eb8c5b67a55e89f64ddbe10. Release/checkpoint before Rust; create one linked branch/PR when implementation starts. No local validation; CI alone tests and publishes.",
     "publication": {
       "commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
       "state": "ci-passed",
@@ -41,6 +41,15 @@
       "head": "53b4f30982b5297439d6baec751731b295cfd02a",
       "result": "deleted",
       "source_preserved": true
+    },
+    "next_work": {
+      "issue": 9,
+      "status": "ready",
+      "role": "security",
+      "branch": null,
+      "pr": null,
+      "base_commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
+      "completed_native_prerequisite": 6
     }
   },
   "attempts": {}
