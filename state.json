@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 243,
+  "generation": 244,
   "lease": {
     "id": "88a033e7-8d77-441f-ad7b-918e77d5aae4",
     "worker": "codex-hourly-20261007T192857Z",
     "role": "rust",
     "issue": 15,
     "acquired_at": "2026-10-07T19:39:46Z",
-    "heartbeat_at": "2026-10-07T19:39:46Z",
-    "expires_at": "2026-10-07T20:24:46Z",
+    "heartbeat_at": "2026-10-07T19:51:18Z",
+    "expires_at": "2026-10-07T20:36:18Z",
     "branch": "work/par2-recovery-workspace",
-    "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
-    "pr": null
+    "commit": "325792fbb8b7f58b36392bacae419d2b72b02252",
+    "pr": 16
   },
   "checkpoint": {
-    "at": "2026-10-07T19:39:42Z",
+    "at": "2026-10-07T19:51:18Z",
     "issue": 15,
-    "role": "security",
+    "role": "rust",
     "branch": "work/par2-recovery-workspace",
-    "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
-    "pr": null,
-    "summary": "Pre-implementation Security15 analysis persisted in native Issue15: trusted captured Owner is not live permission; new private parent/root only, standard File lock, exact source/Set/policy inventory and separately tagged bounded descriptor. Verify memory reconstruction before writes, drop output buffers before bounded rereads, original slice/full/prefix/SHA proofs for every output, identity/private mode/single-link/ancestor fences, cancellation before durable manifest publication. Interrupted artifacts stay private/unpublished; no adoption/overwrite/library admission or atomic hostile snapshot claim. Reuse existing original safe std primitives; no final review is claimed.",
-    "next_action": "Rust implements bounded private recovery staging/reopen and original CI-only fixtures/docs on work/par2-recovery-workspace from published7910156c6cce0f74a9ab530b289c3734750bc994. Publish original meaningful source commits and one linked draft PR. CI alone validates; then separate exact-head/base Security and independent QA. Same wake deadline20:08:57Z, reserve20:03:57Z.",
+    "commit": "325792fbb8b7f58b36392bacae419d2b72b02252",
+    "pr": 16,
+    "summary": "Original #15 private recovery workspace source committed/pushed to work/par2-recovery-workspace:325792fbb8b7f58b36392bacae419d2b72b02252 from published7910156c6cce0f74a9ab530b289c3734750bc994. New source borrows immutable Set/source, reuses Owner/std locking/private frame and native reconstruction/verification, reconstructs before new private writes, commits exact descriptor after readback, and checks complete bounded inventory on reopen. Unix private namespace only; no overwrites/admission. Six original CI-only fixtures and proposed0.22.15/support/actual0.22.14 docs. No local checks or current-head CI/review success claimed. Remote source trees exactly preserve original local commits.",
+    "next_action": "Recover draft PR16 current CI, apply actual compiler/formatter/lint findings through meaningful commits and new remote head, then separate exact-head/base Security and independent QA when ready. Same wake deadline20:08:57Z; reserve starts20:03:57Z. If real external CI wait, persist exact evidence and release rather than polling.",
     "publication": {
       "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
       "state": "ci-passed",
@@ -156,7 +156,23 @@
       "schedule_unchanged": true,
       "timezone_unchanged": true,
       "issue_comment": 6042165261
-    }
+    },
+    "source_bridge": {
+      "commits": [
+        {
+          "local": "77a5a258ec58144590232c31f1a657cf9272dcbc",
+          "remote": "978339cba673784332e8be73f52cc68a80dcc7ae",
+          "tree": "73f660b148f6edd6e0bd48b88c11a62d506c6065"
+        },
+        {
+          "local": "f0cb9948f66ac9b56562351b82669090951babc2",
+          "remote": "325792fbb8b7f58b36392bacae419d2b72b02252",
+          "tree": "b84f044878bb8f2c0a86b7eb711642b2cd2bc7a8"
+        }
+      ]
+    },
+    "security_analysis_comment": 6045443435,
+    "review_base_sha": "7910156c6cce0f74a9ab530b289c3734750bc994"
   },
   "attempts": {}
 }
