@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 195,
+  "generation": 196,
   "lease": {
     "id": "64d2b845-7b6a-4621-b743-d68d76de6d19",
     "worker": "codex-cadence-delivery",
     "role": "master",
     "issue": 11,
     "acquired_at": "2026-10-07T16:21:09Z",
-    "heartbeat_at": "2026-10-07T16:22:39Z",
-    "expires_at": "2026-10-07T17:07:39Z",
+    "heartbeat_at": "2026-10-07T16:24:32Z",
+    "expires_at": "2026-10-07T17:09:32Z",
     "branch": "work/engineering-cadence",
     "commit": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
     "pr": 12
   },
   "checkpoint": {
-    "at": "2026-10-07T16:22:39Z",
+    "at": "2026-10-07T16:24:32Z",
     "issue": 11,
     "role": "master",
     "branch": "work/engineering-cadence",
     "commit": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
     "pr": 12,
-    "summary": "Cadence PR #12 is ready for exact-head native merge. Actual ready Engineering 37651124380 organization 112894423230 and agent-qa-review 112894484227 both succeeded at head 056487dc0c4d8ffe04dce1b48153c2e29403ad4a / base 6085368588c8077af53d15bc4f07d752e670e445; superseded review-event run was cancelled, not treated as green. Required CI 37649725943 validate/GNU/musl/package passed. Separate Security 5445122042 and independent QA 5445158311 inspected all seven paths under distinct historical leases; native threads empty. No local checks, source changes or live task update. Preserve pre-merge evidence and unfinished task reconciliation even if native closing keywords close Issue #11.",
-    "next_action": "Native expected-head merge PR #12. Fence actual merged/default commit and fetch engineering/worker-prompt.md at that immutable policy commit. Update only the existing hourly automation 6ac54c387af0819184713674c48b3845 prompt; preserve enabled cadence/timezone/ID and persist actual response. Observe default CI and safe cleanup without changing published v0.22.13 tag/assets. Final checkpoint/release before whole-wake deadline; if interrupted after merge, next worker recovers task reconciliation before new work despite closed Issue #11.",
+    "summary": "Cadence PR #12 was natively expected-head squash-merged to trunk 07ef2f73f5ac923f783b9bd27e4662bb7529bbd2 after separate Security 5445122042, independent QA 5445158311, required CI 37649725943 and ready agent-qa-review 112894484227 / Engineering 37651124380 were actually green. The canonical worker-prompt.md was read from that exact immutable merged policy commit. Task 6ac54c387af0819184713674c48b3845 prompt reconciliation is now the unfinished external operation; existing enabled hourly schedule/timezone/ID must remain. Issue #11 may be closed by native keywords, but task update is not yet certified. New default CI will verify organization source without republishing immutable v0.22.13 at 6085368588c8077af53d15bc4f07d752e670e445. No local validation or paid/duplicate worker.",
+    "next_action": "Update only prompt of existing task 6ac54c387af0819184713674c48b3845 from merged engineering/worker-prompt.md at policy commit 07ef2f73f5ac923f783b9bd27e4662bb7529bbd2. Persist actual accepted native task response, enabled hourly schedule/timezone and policy commit in native Issue/control. If response uncertain, inspect actual task before retrying; never create another schedule. Observe default CI, immutable v0.22.13 tag/assets, native branch cleanup and Done metadata; final checkpoint/release before wake deadline.",
     "previous_publication": {
       "commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
       "state": "ci-passed",
@@ -88,8 +88,9 @@
       "planned_slice_minutes": 40,
       "ai_cadence": "hourly-platform-maximum",
       "mechanical_cadence": "hourly-with-daily-branch-health",
-      "state": "merge-ready-task-update-pending",
-      "prompt_path": "engineering/worker-prompt.md"
+      "state": "merged-task-update-pending",
+      "prompt_path": "engineering/worker-prompt.md",
+      "policy_commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2"
     },
     "source_bridge": {
       "commits": [
@@ -101,60 +102,12 @@
       ]
     },
     "publication": {
-      "commit": "6085368588c8077af53d15bc4f07d752e670e445",
-      "state": "ci-passed",
-      "at": "2026-10-07T16:12:00Z",
-      "run_id": 37648617664,
-      "status": "completed",
-      "conclusion": "success",
-      "release_id": 405936360,
-      "tag": "v0.22.13",
-      "url": "https://github.com/alecerf/mynou/releases/tag/v0.22.13",
-      "issue_comment": 6041888395,
-      "assets": [
-        {
-          "id": 619149427,
-          "name": "mynou-v0.22.13-linux-amd64-image.tar.gz",
-          "size": 2339049,
-          "digest": "sha256:d47c7f8f8b9ac1c774eb39e9b0ace345ade3523ca4d901429b2d9acbc89b5cf5"
-        },
-        {
-          "id": 619149431,
-          "name": "mynou-v0.22.13-linux-amd64-image.tar.gz.sha256",
-          "size": 106,
-          "digest": "sha256:f92c7c34935149c787c8e68084041f9a9b7f52a4c7ed0faf1d167d72bbbe0e2c"
-        },
-        {
-          "id": 619149433,
-          "name": "mynou-v0.22.13-linux-x86_64",
-          "size": 4854624,
-          "digest": "sha256:744b8e8d99ae53d5123701b5a078b87df79df4198b4b9c99c937029c9b45dd9a"
-        },
-        {
-          "id": 619149438,
-          "name": "mynou-v0.22.13-linux-x86_64.sha256",
-          "size": 94,
-          "digest": "sha256:bde873362f4803ee094c63e0a307bca1fd6f4257bde23967d0e617a8b96e1af4"
-        },
-        {
-          "id": 619149457,
-          "name": "mynou-v0.22.13-source.zip",
-          "size": 9297914,
-          "digest": "sha256:ef2fab82bf71067eb95131b249244c99210fcb757508831c7e66d460375ad49d"
-        },
-        {
-          "id": 619149468,
-          "name": "mynou-v0.22.13-source.zip.sha256",
-          "size": 92,
-          "digest": "sha256:4eed5dd4779137de78c7e4866d6de4cda3225de81c506f924e311f41571c8e37"
-        },
-        {
-          "id": 619149434,
-          "name": "SHA256SUMS",
-          "size": 292,
-          "digest": "sha256:edf469d5ab42165ba0e27b258507152dd31f35d8c828d6d963bda0d16d6537de"
-        }
-      ]
+      "commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
+      "state": "ci-pending",
+      "at": "2026-10-07T16:24:32Z",
+      "status": "await-native-run",
+      "conclusion": null,
+      "new_product_release": false
     },
     "ci": {
       "run_id": 37649725943,
@@ -239,6 +192,71 @@
       "qa_job": 112894484227,
       "organization_job": 112894423230,
       "state": "observed-green-native-merge-pending"
+    },
+    "retained_product_release": {
+      "commit": "6085368588c8077af53d15bc4f07d752e670e445",
+      "state": "ci-passed",
+      "at": "2026-10-07T16:12:00Z",
+      "run_id": 37648617664,
+      "status": "completed",
+      "conclusion": "success",
+      "release_id": 405936360,
+      "tag": "v0.22.13",
+      "url": "https://github.com/alecerf/mynou/releases/tag/v0.22.13",
+      "issue_comment": 6041888395,
+      "assets": [
+        {
+          "id": 619149427,
+          "name": "mynou-v0.22.13-linux-amd64-image.tar.gz",
+          "size": 2339049,
+          "digest": "sha256:d47c7f8f8b9ac1c774eb39e9b0ace345ade3523ca4d901429b2d9acbc89b5cf5"
+        },
+        {
+          "id": 619149431,
+          "name": "mynou-v0.22.13-linux-amd64-image.tar.gz.sha256",
+          "size": 106,
+          "digest": "sha256:f92c7c34935149c787c8e68084041f9a9b7f52a4c7ed0faf1d167d72bbbe0e2c"
+        },
+        {
+          "id": 619149433,
+          "name": "mynou-v0.22.13-linux-x86_64",
+          "size": 4854624,
+          "digest": "sha256:744b8e8d99ae53d5123701b5a078b87df79df4198b4b9c99c937029c9b45dd9a"
+        },
+        {
+          "id": 619149438,
+          "name": "mynou-v0.22.13-linux-x86_64.sha256",
+          "size": 94,
+          "digest": "sha256:bde873362f4803ee094c63e0a307bca1fd6f4257bde23967d0e617a8b96e1af4"
+        },
+        {
+          "id": 619149457,
+          "name": "mynou-v0.22.13-source.zip",
+          "size": 9297914,
+          "digest": "sha256:ef2fab82bf71067eb95131b249244c99210fcb757508831c7e66d460375ad49d"
+        },
+        {
+          "id": 619149468,
+          "name": "mynou-v0.22.13-source.zip.sha256",
+          "size": 92,
+          "digest": "sha256:4eed5dd4779137de78c7e4866d6de4cda3225de81c506f924e311f41571c8e37"
+        },
+        {
+          "id": 619149434,
+          "name": "SHA256SUMS",
+          "size": 292,
+          "digest": "sha256:edf469d5ab42165ba0e27b258507152dd31f35d8c828d6d963bda0d16d6537de"
+        }
+      ]
+    },
+    "merged_cadence": {
+      "issue": 11,
+      "pr": 12,
+      "branch": "work/engineering-cadence",
+      "head": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
+      "merge_commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
+      "merged_at": "2026-10-07T16:22:51Z",
+      "branch_cleanup": "pending"
     }
   },
   "attempts": {}
