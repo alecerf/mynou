@@ -1,35 +1,313 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 269,
+  "generation": 270,
   "lease": {
     "id": "wake5-master-20261007T213002Z",
     "worker": "codex-hourly-20261007T213002Z",
     "role": "master",
     "issue": 15,
     "acquired_at": "2026-10-07T21:31:24Z",
-    "heartbeat_at": "2026-10-07T21:31:24Z",
-    "expires_at": "2026-10-07T22:16:24Z",
+    "heartbeat_at": "2026-10-07T21:36:24Z",
+    "expires_at": "2026-10-07T22:21:24Z",
     "branch": "trunk",
     "commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
     "pr": 16
   },
   "checkpoint": {
-    "at": "2026-10-07T20:48:07Z",
+    "at": "2026-10-07T21:36:24Z",
     "issue": 15,
-    "role": "triage",
+    "role": "master",
     "branch": "trunk",
     "commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
     "pr": 16,
-    "summary": "Default-source CI transition: ci-passed at 4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8; native evidence {'commit': '4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8', 'state': 'ci-passed', 'at': '2026-10-07T20:48:07Z', 'run_id': 37684129315, 'status': 'completed', 'conclusion': 'success'}. No release publication is inferred.",
-    "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases.",
+    "summary": "Actual v0.22.15 publication recovered: immutable release406150016/tag exact trunk4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8 at20:46:51Z. Default CI37684129315 all five jobs green; actual log864 Rust tests/64 harnesses/0failed/104.050s,4 scheduler and53 organization tests. Seven actual github-actions[bot] assets inspected; prior v0.22.14 assets unchanged against original native control4ba71c4abcb8dea8c291ab45c2503d460c8bb0f4. Proof is native #15 comment6047305513. Original source maps, passed Security/QA/gate, native closure/branch cleanup and accepted scheduling response restored from control history after mechanical CI checkpoint replacement. Native new user Issues #17 macOS, #18 registry image distribution, #19 alternative control storage exist, with no open PR. #17 is oldest executable deployment request and is selected next.",
+    "next_action": "Master acquire #17 at published4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8; define bounded native Apple Silicon/Intel macOS build/distribution acceptance, inspect actual supported hosted runners/current CI/packager, then minimum Security/implementation/CI/QA sequence. Preserve existing Linux deliverables and published assets; do not conflate #18/#19 changes or invent package CAS APIs. Whole wake deadline22:10:02Z, reserve22:05:02Z.",
+    "task_reconciliation": {
+      "success": true,
+      "automation_id": "6ac54c387af0819184713674c48b3845",
+      "title": "Mynou engineering",
+      "is_enabled": true,
+      "schedule": "BEGIN:VEVENT\nDTSTART:20261006T193000\nRRULE:FREQ=HOURLY;INTERVAL=1\nEND:VEVENT",
+      "timing_mode": "exact_schedule",
+      "default_timezone": "America/Los_Angeles",
+      "updated_at": "2026-10-07T16:24:41.034231+00:00",
+      "prompt_path": "engineering/worker-prompt.md",
+      "policy_commit": "07ef2f73f5ac923f783b9bd27e4662bb7529bbd2",
+      "prompt_matches_merged_source": true,
+      "schedule_unchanged": true,
+      "timezone_unchanged": true,
+      "issue_comment": 6042165261
+    },
+    "source_bridge": {
+      "commits": [
+        {
+          "local": "77a5a258ec58144590232c31f1a657cf9272dcbc",
+          "remote": "978339cba673784332e8be73f52cc68a80dcc7ae",
+          "tree": "73f660b148f6edd6e0bd48b88c11a62d506c6065"
+        },
+        {
+          "local": "f0cb9948f66ac9b56562351b82669090951babc2",
+          "remote": "325792fbb8b7f58b36392bacae419d2b72b02252",
+          "tree": "b84f044878bb8f2c0a86b7eb711642b2cd2bc7a8"
+        },
+        {
+          "local": "9a3ecd1fd98dd40ea0fa1bce7be401ec27a5482f",
+          "remote": "e7cfa78d42094f25df3634333de1ecd0464e619f",
+          "tree": "b51b9fd93708618dbd620b74de4c1ea6154f337a"
+        },
+        {
+          "local": "69dbadb615b7aa8b5aeb28fe3d477eec936b3f3a",
+          "remote": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
+          "tree": "bdc2670644e92b7fe3ffc36c85d801b4cb69cd3d"
+        }
+      ]
+    },
+    "security_phase": {
+      "state": "passed",
+      "head": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
+      "base": "7910156c6cce0f74a9ab530b289c3734750bc994",
+      "lease_checkpoint": "1b5a2b8fc661106ff5f63f5afaaf5f67c468a653",
+      "lease_id": "30c6216b-ab93-4500-bafa-8620c4fb1b9c",
+      "native_review_id": 5447677084,
+      "submitted_at": "2026-10-07T20:03:21Z",
+      "reviewed_paths": 14,
+      "scope": "caller-controlled private Unix namespace; no current permission or repair/admission capability"
+    },
+    "qa_phase": {
+      "state": "passed",
+      "head": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
+      "base": "7910156c6cce0f74a9ab530b289c3734750bc994",
+      "reviewed_paths": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "README.md",
+        "docs/checkpoint.md",
+        "docs/deployment.md",
+        "docs/limits.md",
+        "docs/next-release.md",
+        "docs/par2.md",
+        "docs/releases/0.22.14.md",
+        "docs/releases/0.22.15.md",
+        "docs/roadmap.md",
+        "src/usenet/mod.rs",
+        "src/usenet/par2_workspace.rs",
+        "tests/par2_formats.rs"
+      ],
+      "lease_id": "wake4-qa-20261007T203225Z",
+      "lease_checkpoint": "0e0f1ca84e2808475aa4310a2e98127221370770",
+      "native_review_id": 5448059625
+    },
+    "ci": {
+      "run_id": 37678694142,
+      "head": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
+      "state": "required-jobs-passed",
+      "jobs": [
+        {
+          "id": 112988796254,
+          "name": "validate",
+          "conclusion": "success"
+        },
+        {
+          "id": 112988796621,
+          "name": "GNU",
+          "conclusion": "success"
+        },
+        {
+          "id": 112988796541,
+          "name": "musl",
+          "conclusion": "success"
+        },
+        {
+          "id": 112990036468,
+          "name": "package",
+          "conclusion": "success"
+        },
+        {
+          "id": 112990256663,
+          "name": "release",
+          "conclusion": "skipped"
+        }
+      ],
+      "rust_tests_passed": 864,
+      "rust_harnesses": 64,
+      "rust_failed": 0,
+      "rust_seconds": 96.8,
+      "scheduler_tests": 4,
+      "organization_tests": 53,
+      "qa_gate": "passed",
+      "qa_review": "passed",
+      "organization_run": 37683828747,
+      "organization_job": 113006390674,
+      "organization_conclusion": "success",
+      "native_run_conclusion": "success",
+      "qa_review_id": 5448059625,
+      "qa_gate_run": 37683828747,
+      "qa_gate_job": 113006455560
+    },
+    "delivery": {
+      "state": "merged",
+      "pr": 16,
+      "head_sha": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
+      "base_sha": "7910156c6cce0f74a9ab530b289c3734750bc994",
+      "qa_review": 5448059625,
+      "security_review": 5447677084,
+      "merge_commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
+      "merged_at": "2026-10-07T20:42:56Z",
+      "merge_tree": "bdc2670644e92b7fe3ffc36c85d801b4cb69cd3d",
+      "reviewed_merge_parents": [
+        "7910156c6cce0f74a9ab530b289c3734750bc994",
+        "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e"
+      ]
+    },
+    "post_merge": {
+      "issue": 15,
+      "state": "closed",
+      "status": "done",
+      "native_closed_at": "2026-10-07T20:42:57Z",
+      "downstream_issues": [],
+      "source_branch": "work/par2-recovery-workspace",
+      "source_branch_state": "native ref absent after merge",
+      "default_branch": "trunk",
+      "default_commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
+      "source_preserved": true
+    },
     "publication": {
       "commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
-      "state": "ci-passed",
-      "at": "2026-10-07T20:48:07Z",
+      "state": "published",
+      "branch": "trunk",
       "run_id": 37684129315,
       "status": "completed",
-      "conclusion": "success"
+      "conclusion": "success",
+      "release_id": 406150016,
+      "tag": "v0.22.15",
+      "url": "https://github.com/alecerf/mynou/releases/tag/v0.22.15",
+      "published_at": "2026-10-07T20:46:51Z",
+      "immutable": true,
+      "assets": [
+        {
+          "id": 619773552,
+          "name": "mynou-v0.22.15-linux-amd64-image.tar.gz",
+          "size": 2352847,
+          "digest": "sha256:049de30bbe232b92a2a0d457ac40cf449e7824f9d81ceb1d5c551387b53d46a1"
+        },
+        {
+          "id": 619773558,
+          "name": "mynou-v0.22.15-linux-amd64-image.tar.gz.sha256",
+          "size": 106,
+          "digest": "sha256:b0c7cba9ec6a33a3bb379f32cee8524f06e33e18dc86cc0b26628175f76831af"
+        },
+        {
+          "id": 619773550,
+          "name": "mynou-v0.22.15-linux-x86_64",
+          "size": 4887392,
+          "digest": "sha256:03a8e4285e136ab906f3d8dc81c55b757f55425ad2d2d44d14f0cb6bf8d9a2df"
+        },
+        {
+          "id": 619773553,
+          "name": "mynou-v0.22.15-linux-x86_64.sha256",
+          "size": 94,
+          "digest": "sha256:e651f7e7f536e6bb05737b1f590f3946292c56fe0eff346757c44f7067578f8b"
+        },
+        {
+          "id": 619773579,
+          "name": "mynou-v0.22.15-source.zip",
+          "size": 9410279,
+          "digest": "sha256:cb1dcb3e7c9d082de3acc52d44f87828c2d69b05b76e623d4ce6b9acc8cb72ed"
+        },
+        {
+          "id": 619773580,
+          "name": "mynou-v0.22.15-source.zip.sha256",
+          "size": 92,
+          "digest": "sha256:a32a1361edeebcd8f6be7f6774203f2b9cad87e615b20982b1e9fe8cebdcce17"
+        },
+        {
+          "id": 619773554,
+          "name": "SHA256SUMS",
+          "size": 292,
+          "digest": "sha256:80c098a919ec4456f6f3e1dd20aade806add81d523f6ce3b95b6c260dc85bbd6"
+        }
+      ],
+      "rust_tests": 864,
+      "rust_harnesses": 64,
+      "rust_failures": 0,
+      "rust_seconds": 104.05,
+      "scheduler_tests": 4,
+      "organization_tests": 53,
+      "previous_release_id": 406055926,
+      "previous_assets_unchanged": true,
+      "issue_comment": 6047305513
+    },
+    "retained_product_release": {
+      "commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
+      "state": "published",
+      "branch": "trunk",
+      "run_id": 37684129315,
+      "status": "completed",
+      "conclusion": "success",
+      "release_id": 406150016,
+      "tag": "v0.22.15",
+      "url": "https://github.com/alecerf/mynou/releases/tag/v0.22.15",
+      "published_at": "2026-10-07T20:46:51Z",
+      "immutable": true,
+      "assets": [
+        {
+          "id": 619773552,
+          "name": "mynou-v0.22.15-linux-amd64-image.tar.gz",
+          "size": 2352847,
+          "digest": "sha256:049de30bbe232b92a2a0d457ac40cf449e7824f9d81ceb1d5c551387b53d46a1"
+        },
+        {
+          "id": 619773558,
+          "name": "mynou-v0.22.15-linux-amd64-image.tar.gz.sha256",
+          "size": 106,
+          "digest": "sha256:b0c7cba9ec6a33a3bb379f32cee8524f06e33e18dc86cc0b26628175f76831af"
+        },
+        {
+          "id": 619773550,
+          "name": "mynou-v0.22.15-linux-x86_64",
+          "size": 4887392,
+          "digest": "sha256:03a8e4285e136ab906f3d8dc81c55b757f55425ad2d2d44d14f0cb6bf8d9a2df"
+        },
+        {
+          "id": 619773553,
+          "name": "mynou-v0.22.15-linux-x86_64.sha256",
+          "size": 94,
+          "digest": "sha256:e651f7e7f536e6bb05737b1f590f3946292c56fe0eff346757c44f7067578f8b"
+        },
+        {
+          "id": 619773579,
+          "name": "mynou-v0.22.15-source.zip",
+          "size": 9410279,
+          "digest": "sha256:cb1dcb3e7c9d082de3acc52d44f87828c2d69b05b76e623d4ce6b9acc8cb72ed"
+        },
+        {
+          "id": 619773580,
+          "name": "mynou-v0.22.15-source.zip.sha256",
+          "size": 92,
+          "digest": "sha256:a32a1361edeebcd8f6be7f6774203f2b9cad87e615b20982b1e9fe8cebdcce17"
+        },
+        {
+          "id": 619773554,
+          "name": "SHA256SUMS",
+          "size": 292,
+          "digest": "sha256:80c098a919ec4456f6f3e1dd20aade806add81d523f6ce3b95b6c260dc85bbd6"
+        }
+      ],
+      "rust_tests": 864,
+      "rust_harnesses": 64,
+      "rust_failures": 0,
+      "rust_seconds": 104.05,
+      "scheduler_tests": 4,
+      "organization_tests": 53,
+      "previous_release_id": 406055926,
+      "previous_assets_unchanged": true,
+      "issue_comment": 6047305513
+    },
+    "wake": {
+      "started_at": "2026-10-07T21:30:02Z",
+      "deadline_at": "2026-10-07T22:10:02Z",
+      "checkpoint_reserve_at": "2026-10-07T22:05:02Z"
     }
   },
   "attempts": {}
