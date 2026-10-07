@@ -3,81 +3,92 @@
 For standalone Apple Silicon or Intel deployment without Docker, use the
 [native macOS installation guide](macos.md).
 
-Examples use actually published v0.22.14. Proposed v0.22.15 adds private recovery
-workspace support; install it only after its reviewed Actions release is published.
-Source versions and PR checks do not establish publication.
+Registry delivery begins with 0.22.17. Use a published release whose notes include
+a verified `ghcr.io/alecerf/mynou@sha256:...` reference; source versions and PR
+checks do not establish publication. Earlier immutable releases retain their
+image archives and original installation instructions.
 
-The final image is `scratch`: a static Rust executable and a TLS CA PEM bundle.
-The container invokes no external programs. Rust 1.99.0 and its Alpine environment
-are used only during builds. The default image target is
-`x86_64-unknown-linux-musl`.
+The Linux amd64 image is `scratch`: one static Rust executable and TLS CA PEM
+data. It invokes no external programs. Docker builds use Rust 1.99.0, but the
+host needs only Docker and its Compose plugin. Apple Silicon Docker requires
+Linux amd64 emulation; this release does not claim a native Linux arm64 image.
 
-## Install without Rust on the host
+## Authenticate and pull
 
-Download the source ZIP and image archive from
-[GitHub Releases](https://github.com/alecerf/mynou/releases), verify their
-[checksums](validation.md#verify-release-assets), and extract the sources.
-Load the validated release image:
+The repository and GHCR package remain private. Use an account authorized for the
+package and a GitHub personal access token (classic) with `read:packages`.
+Authenticate interactively so the token is not recorded in shell history:
 
 ```sh
-docker load -i mynou-v0.22.14-linux-amd64-image.tar.gz
+docker login ghcr.io
 ```
 
-Alternatively, build the image from the extracted sources:
+Use Docker's credential helper for retained credentials. Do not place the token
+in Mynou configuration, Issues or release notes. CI uses its ephemeral repository
+token; no Docker Hub account or new repository secret is needed.
+
+Copy the exact digest from the published release notes into `MYNOU_IMAGE`.
+A digest identifies immutable content even when an authorized writer changes a
+registry tag. The version tag `ghcr.io/alecerf/mynou:0.22.17` is convenient for
+discovery, but a digest pin is recommended for installations:
 
 ```sh
-docker build -t mynou:0.22.14 .
+MYNOU_IMAGE='ghcr.io/alecerf/mynou@sha256:REPLACE_WITH_RELEASE_DIGEST'
+docker pull "$MYNOU_IMAGE"
 ```
 
-Use the image binary to prepare an installation in a new directory:
+## Prepare an installation
+
+After a successful pull, use that image in a new owned directory:
 
 ```sh
-docker run --rm --network none \
+docker run --rm --network none --read-only --cap-drop ALL \
+  --security-opt no-new-privileges:true \
   --user "$(id -u):$(id -g)" \
-  --mount "type=bind,src=$PWD,dst=/work" \
-  --workdir /work \
-  mynou:0.22.14 setup-docker --dir mynou-docker
+  --mount "type=bind,src=$PWD,dst=/work" --workdir /work \
+  "$MYNOU_IMAGE" setup-docker --dir mynou-docker &&
+  printf '\nMYNOU_UID=%s\nMYNOU_GID=%s\nMYNOU_IMAGE=%s\n' \
+    "$(id -u)" "$(id -g)" "$MYNOU_IMAGE" >> mynou-docker/.env
 ```
 
-If your account does not use UID/GID 1000, add its IDs to the generated `.env`:
+`setup-docker` refuses an existing installation directory and creates private
+configuration and an API token. Its Compose template uses the executable's own
+version; `MYNOU_IMAGE` in the private `.env` retains your digest override.
+Run as an ordinary account that owns the configuration, data and library.
+Existing custom UID/GID settings and all mounts remain supported.
 
 ```sh
-printf '\nMYNOU_UID=%s\nMYNOU_GID=%s\n' "$(id -u)" "$(id -g)" >> mynou-docker/.env
+cd mynou-docker &&
+  docker compose config --quiet &&
+  docker compose pull &&
+  docker compose up -d &&
+  docker compose exec mynou /mynou doctor --config /config/mynou.json
 ```
 
-Use a regular account for this procedure. If root created the files, assign the
-installation directory to the chosen container user. That user must also be able
-to read the private `mynou.json` file.
+The installation contains `compose.yaml`, `mynou.json`, a private `.env`,
+`data/` and `library/movies/` and `library/series/`. Data stores requests,
+torrents and downloads; media mounts separately. The image stays read-only,
+capabilities are removed and the container uses an unprivileged user.
 
-```sh
-cd mynou-docker
-docker compose config --quiet
-docker compose up -d
-docker compose logs -f mynou
-docker compose exec mynou /mynou doctor --config /config/mynou.json
-```
+For a deliberate local source build, clone the repository and use its source
+`compose.yaml`, or build `mynou:0.22.17` and set `MYNOU_IMAGE` to that local
+tag. CI alone publishes release packages. GitHub's native source downloads
+contain sources and need a build; no bundled executable ZIP is maintained.
 
-`setup-docker` refuses to overwrite an existing directory. It generates:
+## Upgrade safely
 
-```text
-mynou-docker/
-├── compose.yaml
-├── mynou.json
-├── .env
-├── data/
-└── library/
-    ├── movies/
-    └── series/
-```
+Read the new published release, back up configuration and retained data, then
+pull its recorded digest. Stop the service before replacing its running image,
+set `MYNOU_IMAGE` in the installation's private `.env`, and run
+`docker compose up -d`. Keep existing configuration, journals, downloads and
+library mounts. Roll back by restoring the previous digest and compatible data;
+do not delete earlier image versions or user data automatically.
 
-`data` contains requests, torrents, and downloads. The library is mounted
-separately. The image filesystem stays read-only, Linux capabilities are removed,
-and the container uses an unprivileged user by default.
-
-The source ZIP also includes `bin/mynou`; you may use its `setup-docker` command
-instead of running that command inside Docker. The image archive is published as
-a GitHub release asset, so no container registry login is needed beyond access to
-the GitHub repository.
+CI checks pre-existing version/source tags and refuses a conflicting image.
+Interrupted publication reuses the exact checked image, re-pulls its digest,
+compares the executable and runs the isolated demonstration before announcing
+a release. GitHub's registry does not provide tag compare-and-swap or enforce
+this policy against outside writers; the recorded content digest is authoritative.
 
 ## Connect your existing Plex server
 

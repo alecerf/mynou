@@ -1,4 +1,4 @@
-# Mynou 0.22.16 — Rust, standard library only
+# Mynou 0.22.17 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -204,8 +204,8 @@ demo directory must not already exist.
 ## Install on macOS
 
 Download the `macos-arm64` binary for Apple Silicon or `macos-x86_64` for Intel,
-together with its `.sha256` file, from the matching published GitHub release.
-Verify it with `shasum -a 256 -c FILE.sha256` before installation.
+together with `SHA256SUMS`, from the matching published GitHub release.
+Verify its selected manifest entry before installation.
 The [macOS guide](docs/macos.md) covers installation, native configuration,
 TLS trust and Apple's application security controls. Rust and Docker are not
 required to run the standalone macOS executable.
@@ -213,23 +213,16 @@ required to run the standalone macOS executable.
 ## Install with Docker
 
 The final `scratch` image contains the static binary and TLS trust data. It runs
-as user 1000 and contains no shell or shared library. Download the image archive
-from [GitHub Releases](https://github.com/alecerf/mynou/releases) and load it, or
-build the image from the source archive:
+as user 1000 and contains no shell or shared library. From 0.22.17, Actions
+publishes it to private `ghcr.io/alecerf/mynou` and records a verified digest
+in the release notes. Use an actually published version; PR checks do not
+establish registry availability.
 
-```sh
-docker load -i mynou-v0.22.14-linux-amd64-image.tar.gz
-# Alternative: docker build -t mynou:0.22.14 .
-./bin/mynou setup-docker --dir ./mynou-docker
-cd mynou-docker
-docker compose up -d
-docker compose exec mynou /mynou doctor --config /config/mynou.json
-```
-
-Configuration, an API token, the data directory, and the library directories are
-generated. If your user ID is not 1000, set `MYNOU_UID` and `MYNOU_GID` in `.env`
-before starting Compose. The [Docker guide](docs/deployment.md) explains file
-ownership, shared Plex paths, and installation without Rust on the host.
+Authenticate with package read access, pull the release's digest and run its
+`setup-docker` command to create the installation. The generated Compose file
+uses the running version and accepts a `MYNOU_IMAGE` digest override.
+Follow the [Docker guide](docs/deployment.md) for authentication, setup and
+upgrades. Source builds remain available through `compose.yaml`.
 
 ## Implemented features
 
@@ -445,12 +438,15 @@ A successful run on `trunk` automatically publishes the version from
 `Cargo.toml` if it has not been released. CI creates the matching tag and release
 from that validated commit, and publishes:
 
-- `mynou-vVERSION-source.zip`, including the static binary and an internal
-  `SHA256SUMS` manifest;
 - `mynou-vVERSION-linux-x86_64`, the static binary;
 - `mynou-vVERSION-macos-arm64` and `mynou-vVERSION-macos-x86_64`, native macOS binaries;
-- `mynou-vVERSION-linux-amd64-image.tar.gz`, a saved Docker image;
-- `SHA256SUMS` and individual `.sha256` files for the release assets.
+- `SHA256SUMS`, one manifest covering the three executables.
+
+The checked Linux amd64 image is a private GitHub Container Registry package,
+published before the release with source/version labels and a verified digest.
+No custom source ZIP, image archive or duplicate checksum assets are published
+from 0.22.17. GitHub's native source downloads and earlier immutable releases
+remain available. Registry tags are not server-immutable; pin the recorded digest.
 
 No Docker Hub account or manual artifact upload is needed. The
 [validation guide](docs/validation.md) distinguishes historical 0.6.0 results

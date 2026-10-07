@@ -1,22 +1,24 @@
-# Current product work — proposed 0.22.16 native macOS deployment
+# Current product work — proposed 0.22.17 private registry delivery
 
-Actions published v0.22.15 at `4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8`
-in [run 37684129315](https://github.com/alecerf/mynou/actions/runs/37684129315):
-all five jobs green, 864 Rust tests across 64 harnesses, four scheduler checks,
-53 organization checks and seven immutable bot-owned assets. The prior v0.22.14
-assets remain unchanged. Issue #15 / PR #16 retain review, publication and cleanup.
+Actions published immutable v0.22.16 at
+`8a0ada56baa24b566e306af75768b90ed08b55ca` in
+[run 37696923958](https://github.com/alecerf/mynou/actions/runs/37696923958):
+all seven jobs succeeded, 864 Rust tests across 64 harnesses, four scheduler checks,
+53 organization checks and eleven bot assets. Both native macOS demos reached
+ready imports with Plex confirmation. Release406222389/tag and source match;
+the seven v0.22.15 asset IDs/names/sizes/digests remain unchanged. Issue #17 /
+PR #20 retain independent review and source/Issue/branch cleanup evidence.
 
-User [Issue #17](https://github.com/alecerf/mynou/issues/17) owns native macOS
-deployment. Build, inspect and run the acquisition/import demo on Apple Silicon
-and Intel runners; package same-source binaries with checksums and require both
-targets in the objective gates. See [scope](releases/0.22.16.md) and
-[installation](macos.md). Actual Actions, separate Security and independent QA
-precede immutable CI publication.
+User [Issue #18](https://github.com/alecerf/mynou/issues/18) moves checked Docker
+images to private GHCR and removes unused release archives/duplicate checksums.
+One linked PR must preserve all validation/native/container gates, private package
+permissions, conflicting-tag refusal, checked digest pulls and immutable prior
+releases. See [scope](releases/0.22.17.md). Actual default publication remains
+required before claiming registry availability.
 
-User #18 (Docker registry/release simplification) and #19 (control storage)
-remain separate backlog work. Prioritize executable user requests over the next
-PAR2 integration scope. Preserve recovery leases, original source, safe Rust std
-and truthful verification; do not infer shipment from a proposed source version.
+User #19 (control storage) remains independent backlog work. Prioritize executable
+user requests over the next PAR2 integration scope. Keep serial leases, safe Rust
+std and truthful recovery. No local validation or manual publication.
 
 ## Earlier PAR2 work and publication history
 
