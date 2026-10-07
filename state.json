@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 159,
-  "lease": {
-    "id": "727f327e-ef66-4d33-b998-6090098a6476",
-    "worker": "codex-multifile-security-scope",
-    "role": "security",
-    "issue": 9,
-    "acquired_at": "2026-10-07T13:31:08Z",
-    "heartbeat_at": "2026-10-07T13:37:24Z",
-    "expires_at": "2026-10-07T14:22:24Z",
-    "branch": "trunk",
-    "commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
-    "pr": null
-  },
+  "generation": 160,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-07T13:37:24Z",
     "issue": 9,
