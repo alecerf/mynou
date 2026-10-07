@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 271,
-  "lease": null,
+  "generation": 272,
+  "lease": {
+    "id": "wake5-master-macos-20261007T213002Z",
+    "worker": "codex-hourly-20261007T213002Z",
+    "role": "master",
+    "issue": 17,
+    "acquired_at": "2026-10-07T21:36:31Z",
+    "heartbeat_at": "2026-10-07T21:36:31Z",
+    "expires_at": "2026-10-07T22:21:31Z",
+    "branch": "trunk",
+    "commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
+    "pr": null
+  },
   "checkpoint": {
     "at": "2026-10-07T21:36:24Z",
     "issue": 15,
