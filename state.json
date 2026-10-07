@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 254,
+  "generation": 255,
   "lease": {
     "id": "30c6216b-ab93-4500-bafa-8620c4fb1b9c",
     "worker": "codex-hourly-20261007T192857Z",
     "role": "security",
     "issue": 15,
     "acquired_at": "2026-10-07T20:01:20Z",
-    "heartbeat_at": "2026-10-07T20:02:54Z",
-    "expires_at": "2026-10-07T20:47:54Z",
+    "heartbeat_at": "2026-10-07T20:04:55Z",
+    "expires_at": "2026-10-07T20:49:55Z",
     "branch": "work/par2-recovery-workspace",
     "commit": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
     "pr": 16
   },
   "checkpoint": {
-    "at": "2026-10-07T20:02:54Z",
+    "at": "2026-10-07T20:04:55Z",
     "issue": 15,
     "role": "security",
     "branch": "work/par2-recovery-workspace",
     "commit": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
     "pr": 16,
-    "summary": "Security inspected the complete actual 14-path PR #16 diff at head 36ac55c4556b06d696be86ee8d7d4ddf7cbd418e/base 7910156c6cce0f74a9ab530b289c3734750bc994, plus reused private frame/file primitives and recovery ceilings. Exact captured owner/source/policy, bounded header/content/inventory, fixed File-ID private writes, exclusive std ownership, synchronized descriptor publication and original full/slice/prefix integrity are coherent for the documented caller-controlled private Unix namespace. No blocking Security finding in this bounded library scope. No live authorization, overwrite/library admission or hostile atomic snapshot granted. CI compilation/tests/builds still pending at last observation; no QA or full green claimed.",
-    "next_action": "Submit actual separately leased head/base-bound native Security COMMENT; then checkpoint/release for CI completion and a distinct exact-head/base complete-diff QA phase.",
+    "summary": "Issue #15 / draft PR #16 is remotely preserved at 36ac55c4556b06d696be86ee8d7d4ddf7cbd418e on work/par2-recovery-workspace, base 7910156c6cce0f74a9ab530b289c3734750bc994. Native CI37678694142 passed validate112988796254, GNU112988796621, musl112988796541 and package112990036468. Actual validation log: 864 Rust tests/64 harnesses/0 failures/96.800s; four scheduler and 53 organization tests passed. PR release112990256663 correctly skipped. Complete-diff Security COMMENT5447677084 passed under separate exact-head/base control1b5a2b8fc661106ff5f63f5afaaf5f67c468a653. Independent logical QA and actual QA merge gate remain unperformed; PR stays draft/unmerged. v0.22.14 actual immutable publication/cleanup is retained. Whole-wake checkpoint reserve reached; no local validation or new worker.",
+    "next_action": "Recover #15 / PR #16 first. Verify current remote head/base and all native CI/review state, then acquire a distinct QA lease at 36ac55c4556b06d696be86ee8d7d4ddf7cbd418e/base7910156c6cce0f74a9ab530b289c3734750bc994 and review the entire actual 14-path diff, acceptance and native logs. Validate Security5447677084; record actual independent QA. Only then ready PR, obtain every objective gate green and exact-head merge; CI alone publishes v0.22.15, then native Issue/branch/publication cleanup. If anchors changed, Security/QA must review anew. Do not duplicate Issues or discard this branch.",
     "publication": {
       "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
       "state": "ci-passed",
@@ -183,31 +183,62 @@
     },
     "security_analysis_comment": 6045443435,
     "review_base_sha": "7910156c6cce0f74a9ab530b289c3734750bc994",
+    "security_phase": {
+      "state": "passed",
+      "head": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
+      "base": "7910156c6cce0f74a9ab530b289c3734750bc994",
+      "lease_checkpoint": "1b5a2b8fc661106ff5f63f5afaaf5f67c468a653",
+      "lease_id": "30c6216b-ab93-4500-bafa-8620c4fb1b9c",
+      "native_review_id": 5447677084,
+      "submitted_at": "2026-10-07T20:03:21Z",
+      "reviewed_paths": 14,
+      "scope": "caller-controlled private Unix namespace; no current permission or repair/admission capability"
+    },
     "ci": {
       "run_id": 37678694142,
       "head": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
-      "state": "in_progress",
-      "validate_job": 112988796254,
-      "observed_passed_steps": [
-        "dependencies",
-        "formatting",
-        "clippy",
-        "scheduler",
-        "engineering policy"
+      "state": "required-jobs-passed",
+      "jobs": [
+        {
+          "id": 112988796254,
+          "name": "validate",
+          "conclusion": "success"
+        },
+        {
+          "id": 112988796621,
+          "name": "GNU",
+          "conclusion": "success"
+        },
+        {
+          "id": 112988796541,
+          "name": "musl",
+          "conclusion": "success"
+        },
+        {
+          "id": 112990036468,
+          "name": "package",
+          "conclusion": "success"
+        },
+        {
+          "id": 112990256663,
+          "name": "release",
+          "conclusion": "skipped"
+        }
       ],
-      "tests": "pending",
-      "gnu_job": 112988796621,
-      "musl_job": 112988796541,
-      "engineering_run": 37678694081,
-      "engineering_conclusion": "success",
-      "qa_gate": "not_performed"
+      "rust_tests_passed": 864,
+      "rust_harnesses": 64,
+      "rust_failed": 0,
+      "rust_seconds": 96.8,
+      "scheduler_tests": 4,
+      "organization_tests": 53,
+      "qa_gate": "not_performed",
+      "qa_review": "not_performed"
     },
-    "security_phase": {
-      "state": "reviewed-awaiting-native-record",
-      "head": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
-      "base": "7910156c6cce0f74a9ab530b289c3734750bc994",
-      "reviewed_paths": 14,
-      "supported_scope": "caller-controlled private Unix namespace; no current permission or repair/admission capability"
+    "wake": {
+      "started_at": "2026-10-07T19:28:57Z",
+      "deadline_at": "2026-10-07T20:08:57Z",
+      "checkpoint_reserve_at": "2026-10-07T20:03:57Z",
+      "stopping_reason": "configured whole-wake checkpoint reserve reached; independent QA pending"
     }
   },
   "attempts": {}
