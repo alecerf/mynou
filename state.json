@@ -1,28 +1,33 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 306,
+  "generation": 307,
   "lease": {
     "id": "wake6-qa-macos-20261007T222619Z",
     "worker": "codex-hourly-20261007T222619Z",
     "role": "qa",
     "issue": 17,
     "acquired_at": "2026-10-07T22:28:30Z",
-    "heartbeat_at": "2026-10-07T22:28:30Z",
-    "expires_at": "2026-10-07T23:13:30Z",
+    "heartbeat_at": "2026-10-07T22:28:33Z",
+    "expires_at": "2026-10-07T23:13:33Z",
     "branch": "work/macos-builds",
     "commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
     "pr": 20
   },
   "checkpoint": {
     "issue": 17,
-    "role": "master",
+    "role": "qa",
     "branch": "work/macos-builds",
     "commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
     "pr": 20,
-    "at": "2026-10-07T22:28:22Z",
-    "summary": "Recovered PR #20/Issue #17 at unchanged ce35b775 /4cf7580. Native CI37691964651 attempt1 completed successfully: validate, both native macOS builds/demos, Linux GNU/musl and package all green; release correctly skipped on PR. Source branch is preserved. Security5448796536 still matches exact head/base; independent final QA remains necessary.",
-    "next": "Independent QA under its own exact-head/base lease: inspect complete actual diff, native CI logs, original acceptance and corrected finding, then record truthful passed/rejected review.",
+    "at": "2026-10-07T22:28:33Z",
+    "summary": "Independent final logical QA reviewing PR #20 at exact head ce35b775df90c49ab40ec98e1b3407b45c721c6d and base4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8 under this new QA lease, after prior implementation and Security released. Native CI is green; no passing review yet until actual full diff/log review.",
+    "next": "Read every actual changed path and complete native validation/Mac/package evidence, verify prior failed-checksum concern and matching Security provenance, then record final QA.",
+    "review_phase": {
+      "role": "qa",
+      "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
+      "base_sha": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8"
+    },
     "source": {
       "remote_commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
       "tree": "c58f1932d8a5f1a158d7f8776681e7debc3f2954",
@@ -179,56 +184,6 @@
       "organization_tests": 53,
       "previous_release_id": 406055926,
       "previous_assets_unchanged": true
-    },
-    "ci": {
-      "run_id": 37691964651,
-      "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
-      "status": "completed",
-      "conclusion": "success",
-      "jobs": [
-        {
-          "id": 113035157345,
-          "name": "Build aarch64-apple-darwin",
-          "status": "completed",
-          "conclusion": "success"
-        },
-        {
-          "id": 113035157645,
-          "name": "Build x86_64-unknown-linux-gnu",
-          "status": "completed",
-          "conclusion": "success"
-        },
-        {
-          "id": 113035157702,
-          "name": "Build x86_64-apple-darwin",
-          "status": "completed",
-          "conclusion": "success"
-        },
-        {
-          "id": 113035157748,
-          "name": "validate",
-          "status": "completed",
-          "conclusion": "success"
-        },
-        {
-          "id": 113035157781,
-          "name": "Build x86_64-unknown-linux-musl",
-          "status": "completed",
-          "conclusion": "success"
-        },
-        {
-          "id": 113036465846,
-          "name": "package",
-          "status": "completed",
-          "conclusion": "success"
-        },
-        {
-          "id": 113036635440,
-          "name": "release",
-          "status": "completed",
-          "conclusion": "skipped"
-        }
-      ]
     }
   },
   "attempts": {}
