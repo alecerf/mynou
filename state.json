@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 165,
-  "lease": {
-    "id": "0aa8ec17-a4f9-4e62-bcd6-a2393921c55c",
-    "worker": "codex-multifile-implementation",
-    "role": "rust",
-    "issue": 9,
-    "acquired_at": "2026-10-07T14:35:27Z",
-    "heartbeat_at": "2026-10-07T14:54:58Z",
-    "expires_at": "2026-10-07T15:39:58Z",
-    "branch": "work/par2-multifile-recovery",
-    "commit": "bfdff54f096150968ae725fa19d89e356ed24417",
-    "pr": 10
-  },
+  "generation": 166,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-07T14:54:58Z",
     "issue": 9,
