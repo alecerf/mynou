@@ -1,32 +1,35 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 104,
+  "generation": 105,
   "lease": {
     "id": "dfa5865a-98e4-40b6-8938-d2c23fec3a42",
     "worker": "codex-native-ci-verification",
     "role": "triage",
     "issue": 5,
     "acquired_at": "2026-10-07T08:38:05Z",
-    "heartbeat_at": "2026-10-07T08:38:05Z",
-    "expires_at": "2026-10-07T09:23:05Z",
+    "heartbeat_at": "2026-10-07T08:39:16Z",
+    "expires_at": "2026-10-07T09:24:16Z",
     "branch": "trunk",
     "commit": "9d506f2767033fb4a71c586f71f5d3da83dcacb5",
     "pr": 7
   },
   "checkpoint": {
-    "at": "2026-10-07T08:37:16Z",
+    "at": "2026-10-07T08:39:16Z",
     "issue": 5,
     "role": "triage",
     "branch": "trunk",
     "commit": "9d506f2767033fb4a71c586f71f5d3da83dcacb5",
     "pr": 7,
-    "summary": "Default-source CI transition: accepted at 9d506f2767033fb4a71c586f71f5d3da83dcacb5; native evidence {'commit': '9d506f2767033fb4a71c586f71f5d3da83dcacb5', 'state': 'accepted', 'at': '2026-10-07T08:37:16Z'}. No release publication is inferred.",
-    "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases.",
+    "summary": "Fresh trusted native Issue handoff succeeded: delivery37594943427/job112705169145 from installed trunk9d explicitly dispatched MynouCI37594977295 at exact 9d506f2767033fb4a71c586f71f5d3da83dcacb5/default trunk/eventworkflow_dispatch. Actual run state in_progress/None. v0.22.11 native release405431367/tag57b155 retains all seven original asset IDs/sizes/digests; no release/tag writes. Issue5 closed/statusDone; Issue6 Ready with native blocker5closed, but product work remains paused pending full default CI proof. Source branch work/ci-release-recovery headac3 preserved for guarded cleanup after actual green CI.",
+    "next_action": "Inspect all actual default-source CI jobs/logs; on success record no overwrite of v0.22.11, safely audit/delete merged source branch, hand off next Issue6 without implementing unrelated functionality in this slice.",
     "publication": {
       "commit": "9d506f2767033fb4a71c586f71f5d3da83dcacb5",
-      "state": "accepted",
-      "at": "2026-10-07T08:37:16Z"
+      "state": "ci-pending",
+      "at": "2026-10-07T08:39:16Z",
+      "run_id": 37594977295,
+      "status": "in_progress",
+      "conclusion": null
     }
   },
   "attempts": {}
