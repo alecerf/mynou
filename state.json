@@ -1,15 +1,15 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 317,
+  "generation": 318,
   "lease": {
     "id": "wake6-quality-macos-cleanup-20261007T222619Z",
     "worker": "codex-hourly-20261007T222619Z",
     "role": "quality",
     "issue": 17,
     "acquired_at": "2026-10-07T22:35:56Z",
-    "heartbeat_at": "2026-10-07T22:36:36Z",
-    "expires_at": "2026-10-07T23:21:36Z",
+    "heartbeat_at": "2026-10-07T22:36:42Z",
+    "expires_at": "2026-10-07T23:21:42Z",
     "branch": "trunk",
     "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
     "pr": 20
@@ -20,9 +20,9 @@
     "branch": "trunk",
     "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
     "pr": 20,
-    "at": "2026-10-07T22:36:36Z",
-    "summary": "Quality verified native Issue17 auto-closed as completed, PR20 merged at8a0ada56, work/macos-builds automatically absent (404), no open PRs and no native blocking/dependent Issues. Source and historical review evidence are preserved. Updating managed completion labels; default CI/publication remains to recover.",
-    "next": "Finish managed labels/native handoff; release Quality. Master must recover default8a0ada56 CI and immutable v0.22.16 before any other work.",
+    "at": "2026-10-07T22:36:42Z",
+    "summary": "Quality cleanup complete: Issue17 is closed/completed with managed status:done; PR20 is merged at8a0ada56. GitHub automatically removed work/macos-builds (fresh404); no open PRs or native Issue dependencies remain. No manual branch deletion or local verification. Default CI/release remains separate delivery recovery.",
+    "next": "Release Quality and acquire Master to recover exact default8a0ada56 CI and immutable v0.22.16 publication before unrelated work.",
     "qa": {
       "schema": 1,
       "role": "qa",
