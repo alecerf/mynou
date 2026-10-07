@@ -1,5 +1,9 @@
 # Install Mynou with Docker
 
+Examples use the proposed source version 0.22.13. Until its reviewed Actions
+release is published, use the latest actually published release assets. Source
+versions and PR checks do not establish publication.
+
 The final image is `scratch`: a static Rust executable and a TLS CA PEM bundle.
 The container invokes no external programs. Rust 1.99.0 and its Alpine environment
 are used only during builds. The default image target is
@@ -13,13 +17,13 @@ Download the source ZIP and image archive from
 Load the validated release image:
 
 ```sh
-docker load -i mynou-v0.22.12-linux-amd64-image.tar.gz
+docker load -i mynou-v0.22.13-linux-amd64-image.tar.gz
 ```
 
 Alternatively, build the image from the extracted sources:
 
 ```sh
-docker build -t mynou:0.22.12 .
+docker build -t mynou:0.22.13 .
 ```
 
 Use the image binary to prepare an installation in a new directory:
@@ -29,7 +33,7 @@ docker run --rm --network none \
   --user "$(id -u):$(id -g)" \
   --mount "type=bind,src=$PWD,dst=/work" \
   --workdir /work \
-  mynou:0.22.12 setup-docker --dir mynou-docker
+  mynou:0.22.13 setup-docker --dir mynou-docker
 ```
 
 If your account does not use UID/GID 1000, add its IDs to the generated `.env`:

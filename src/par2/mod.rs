@@ -4,7 +4,7 @@ pub mod gf16;
 mod parser;
 mod recovery;
 
-pub use recovery::RecoveryLimits;
+pub use recovery::{MultiRecoveryLimits, RecoveredFile, RecoveryInput, RecoveryLimits};
 
 use crate::{Result, json::Value};
 
