@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 86,
+  "generation": 87,
   "lease": {
     "id": "3484e6cb-461a-4c98-8a00-04da578d7b79",
     "worker": "codex-ci-recovery-qa",
     "role": "qa",
     "issue": 5,
     "acquired_at": "2026-10-07T07:43:19Z",
-    "heartbeat_at": "2026-10-07T07:43:19Z",
-    "expires_at": "2026-10-07T08:28:19Z",
+    "heartbeat_at": "2026-10-07T07:46:44Z",
+    "expires_at": "2026-10-07T08:31:44Z",
     "branch": "work/ci-release-recovery",
     "commit": "ac3ecd57f6eaf58a69c70781321731aa5345a61d",
     "pr": 7
   },
   "checkpoint": {
-    "at": "2026-10-07T07:43:13Z",
+    "at": "2026-10-07T07:46:44Z",
     "issue": 5,
-    "role": "security",
+    "role": "qa",
     "branch": "work/ci-release-recovery",
     "commit": "ac3ecd57f6eaf58a69c70781321731aa5345a61d",
     "pr": 7,
-    "summary": "Distinct complete-diff Security review passed for PR #7 head ac3ecd57f6eaf58a69c70781321731aa5345a61d / base 57b15534158b0eb40d4f13450d51fdf33c7d81bb. Actual native COMMENT review 5439142389 is anchored to Security checkpoint 26320f785caf287c301f2f18fbe94d1d04b42a2d under this exact role lease. All four changed paths were read completely. Actions-write trusted-default scope, live source/lease/CAS fences, original 53 CI-passed scenarios, truthful uncertain/failure recovery and CI-only immutable artifacts were assessed. No blocking Security finding; no formal self-approval fabricated. Both Linux builds passed; use fresh native CI to determine Rust test/package completion. Source has not changed after review and no local validation ran.",
-    "next_action": "Acquire distinct QA for exact PR #7 head/base. Read complete four-file diff, Issue #5 acceptance, Security review 5439142389 and actual full CI jobs/logs. Record rejection if any recovery/correctness finding; only pass after actual green deterministic evidence. Then release for trusted mechanical merge and inspect a real native default CI wake from installed code. If time expires, preserve exact QA outcome/remaining action; #6 stays blocked until #5 delivery is fully verified."
+    "summary": "Distinct QA phase reviewed all four complete native PR #7 diffs at exact head ac3ecd57f6eaf58a69c70781321731aa5345a61d / base 57b15534158b0eb40d4f13450d51fdf33c7d81bb, Issue #5 acceptance and actual Security COMMENT 5439142389. No blocking QA finding. Original cases cover confirmed merge and Done-Issue recovery, existing/wrong/red runs, accepted/rejected/lost responses, intent visibility grace, changed head, ownership and trusted permission scope; docs accurately state hourly AI vs six-hour mechanical schedules and platform limits. Actual Mynou CI 37588527243 is completed SUCCESS: validate 112684205896, GNU 112684206307, musl 112684206056, package 112685157287. Native decoded validation log: 822 passed/63 harnesses, zero failed/ignored; 4 scheduler and 53 organization scenarios, 98.595s test execution. Fresh Engineering organization job 112685944235 in run 37588996885 succeeded; QA gate awaits this actual review. PR release job correctly skipped. No local checks, version/artifact changes or formal self-approval. Post-merge installed-code CI wake still requires actual verification; dispatch acceptance will not imply publication.",
+    "next_action": "Submit current exact-head QA COMMENT from this checkpoint, then release for trusted objective delivery. On next wake read control first and respect any live delivery lease. Verify actual PR #7 merge/gate, installed trusted-code default CI dispatch at the exact merged source (recover Done Issue if needed), all actual default jobs and immutable v0.22.11 tag/seven assets. Repair real failures through reviewed commits; safely clean the merged branch and native readiness metadata before #6. Do not start PAR2 recovery until Issue #5 is fully delivered and post-merge CI evidence is verified."
   },
   "attempts": {}
 }
