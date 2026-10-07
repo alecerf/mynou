@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 250,
+  "generation": 251,
   "lease": {
     "id": "e8af6426-250e-4aad-84c6-962af674e0b4",
     "worker": "codex-hourly-20261007T192857Z",
     "role": "rust",
     "issue": 15,
     "acquired_at": "2026-10-07T19:59:23Z",
-    "heartbeat_at": "2026-10-07T19:59:23Z",
-    "expires_at": "2026-10-07T20:44:23Z",
+    "heartbeat_at": "2026-10-07T20:01:14Z",
+    "expires_at": "2026-10-07T20:46:14Z",
     "branch": "work/par2-recovery-workspace",
-    "commit": "e7cfa78d42094f25df3634333de1ecd0464e619f",
+    "commit": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
     "pr": 16
   },
   "checkpoint": {
-    "at": "2026-10-07T19:59:18Z",
+    "at": "2026-10-07T20:01:14Z",
     "issue": 15,
-    "role": "security",
+    "role": "rust",
     "branch": "work/par2-recovery-workspace",
-    "commit": "e7cfa78d42094f25df3634333de1ecd0464e619f",
+    "commit": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
     "pr": 16,
-    "summary": "PR #16 complete-diff Security review is incomplete and not passed. Current-head CI 37678012150 validation job 112986412769 passed dependency and formatting checks, then failed test-target compilation at three fixture calls using the pre-existing hex decoder instead of a digest encoder (six E0308/E0277 diagnostics). Tests were skipped. GNU build passed. No QA success or merge claimed.",
-    "next_action": "Rust: correct the three digest-encoding fixture calls from the actual CI diagnostics, commit/push original source, then checkpoint/release for CI and fresh exact-head complete-diff Security and QA.",
+    "summary": "PR #16 original source 36ac55c4556b06d696be86ee8d7d4ddf7cbd418e corrects the three fixture calls diagnosed by CI: SHA-256 values now use a separate original hex encoder. Native current-head CI 37678694142 validation 112988796254 passed dependency, formatting, Clippy, scheduler and organization checks; harness compilation/tests and GNU/musl builds are in progress. Engineering 37678694081 succeeded while draft, not QA. No local checks or full green claimed.",
+    "next_action": "Security: review the actual complete current-head/base diff under its own lease while CI completes; reserve checkpoint/release time. Then independent logical QA only after required deterministic evidence.",
     "publication": {
       "commit": "7910156c6cce0f74a9ab530b289c3734750bc994",
       "state": "ci-passed",
@@ -173,11 +173,35 @@
           "local": "9a3ecd1fd98dd40ea0fa1bce7be401ec27a5482f",
           "remote": "e7cfa78d42094f25df3634333de1ecd0464e619f",
           "tree": "b51b9fd93708618dbd620b74de4c1ea6154f337a"
+        },
+        {
+          "local": "69dbadb615b7aa8b5aeb28fe3d477eec936b3f3a",
+          "remote": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
+          "tree": "bdc2670644e92b7fe3ffc36c85d801b4cb69cd3d"
         }
       ]
     },
     "security_analysis_comment": 6045443435,
-    "review_base_sha": "7910156c6cce0f74a9ab530b289c3734750bc994"
+    "review_base_sha": "7910156c6cce0f74a9ab530b289c3734750bc994",
+    "ci": {
+      "run_id": 37678694142,
+      "head": "36ac55c4556b06d696be86ee8d7d4ddf7cbd418e",
+      "state": "in_progress",
+      "validate_job": 112988796254,
+      "observed_passed_steps": [
+        "dependencies",
+        "formatting",
+        "clippy",
+        "scheduler",
+        "engineering policy"
+      ],
+      "tests": "pending",
+      "gnu_job": 112988796621,
+      "musl_job": 112988796541,
+      "engineering_run": 37678694081,
+      "engineering_conclusion": "success",
+      "qa_gate": "not_performed"
+    }
   },
   "attempts": {}
 }
