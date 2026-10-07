@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 78,
+  "generation": 79,
   "lease": {
     "id": "c4d4bcf7-8175-499a-8669-d076f572d2cd",
     "worker": "codex-ci-recovery",
     "role": "quality",
     "issue": 5,
     "acquired_at": "2026-10-07T07:28:18Z",
-    "heartbeat_at": "2026-10-07T07:28:18Z",
-    "expires_at": "2026-10-07T08:13:18Z",
+    "heartbeat_at": "2026-10-07T07:38:35Z",
+    "expires_at": "2026-10-07T08:23:35Z",
     "branch": "work/ci-release-recovery",
-    "commit": "57b15534158b0eb40d4f13450d51fdf33c7d81bb",
-    "pr": null
+    "commit": "ac3ecd57f6eaf58a69c70781321731aa5345a61d",
+    "pr": 7
   },
   "checkpoint": {
-    "at": "2026-10-07T07:20:13Z",
+    "at": "2026-10-07T07:38:35Z",
     "issue": 5,
-    "role": "master",
-    "branch": "trunk",
-    "commit": "57b15534158b0eb40d4f13450d51fdf33c7d81bb",
-    "pr": null,
-    "summary": "Client scheduling adjustment only: changed the existing enabled Mynou engineering ChatGPT automation from every six hours to every hour, preserving its bounded recovery-first prompt, same task and MAX_ACTIVE_AGENTS=1 admission checks. The native update API returned success=true and is_enabled=true with RRULE:FREQ=HOURLY;INTERVAL=1, DTSTART 20261006T193000 and existing America/Los_Angeles timezone. Expected clock slots are at minute 30 of each hour; the platform supplied no next_run_time. No duplicate automation, product/source mutation, PR, local checks, paid worker or release change. This is a best-effort compute trigger, not a quota detector: no quota-reset API, guaranteed scheduled Codex VM or guaranteed immediate post-reset wake. v0.22.11 remains CI-published at trunk 57b15534158b0eb40d4f13450d51fdf33c7d81bb; actual release proof and cleanup are retained in Issue #2 / PR #4. Issue #5 remains unimplemented and ready for its next owned Quality slice; Issue #6 stays natively blocked by #5.",
-    "next_action": "On the next hourly wake, read the current control ref/state first and exit if a valid lease exists. Recover existing PR/CI/review/cleanup before new work. Acquire Quality for ready Issue #5 to repair missing CI dispatch after automated bot-token merges, including recovery when the parent Issue is closed; avoid duplicate runs and changed-head publication, retain least privilege, and require Security plus distinct exact-head/base QA and CI-only scenarios. Do not start dependent GF16 recovery Issue #6 before #5 is complete. If capacity or required execution access is unavailable, preserve durable state and pause honestly; never mark work completed/failed merely for quota."
+    "role": "quality",
+    "branch": "work/ci-release-recovery",
+    "commit": "ac3ecd57f6eaf58a69c70781321731aa5345a61d",
+    "pr": 7,
+    "summary": "Issue #5 implementation is durably pushed as original local c5efbe7dec01925cf2cc9b82c3232c853ca813e9 mapped to remote ac3ecd57f6eaf58a69c70781321731aa5345a61d, tree 2ca962418c07a27fa01e7e8ee4b4ce6460525e31, branch work/ci-release-recovery, linked PR #7 at base 57b15534158b0eb40d4f13450d51fdf33c7d81bb. Four infrastructure paths add explicit default CI dispatch/recovery after bot merges, exact-source/native-run fences, durable accepted/uncertain/failed evidence and visibility grace, least Actions write scope, original CI-only scenarios and recovery/scheduling docs. No local validation or product/release/source-after-review claim. CI and separate Security/QA remain pending; no merge is authorized until fresh objective gates pass.",
+    "next_action": "Read the exact PR #7 CI jobs/logs and fix actual reds through original commits. Once deterministic CI is green, checkpoint/release Quality; acquire a distinct exact-head/base Security lease and review all four complete native diffs and permission/failure paths. Then checkpoint/release and acquire a distinct QA lease for complete-diff acceptance review. After actual green QA gate, auto-deliver; inspect a real default-source CI wake under installed code and immutable v0.22.11, clean up and unblock #6. Stop this bounded slice after useful progress; source and next action are already remote."
   },
   "attempts": {}
 }
