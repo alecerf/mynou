@@ -1,15 +1,15 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 288,
+  "generation": 289,
   "lease": {
     "id": "wake5-qa-macos-20261007T213002Z",
     "worker": "codex-hourly-20261007T213002Z",
     "role": "qa",
     "issue": 17,
     "acquired_at": "2026-10-07T21:46:06Z",
-    "heartbeat_at": "2026-10-07T21:46:09Z",
-    "expires_at": "2026-10-07T22:31:09Z",
+    "heartbeat_at": "2026-10-07T21:48:07Z",
+    "expires_at": "2026-10-07T22:33:07Z",
     "branch": "work/macos-builds",
     "commit": "330cdbd7e8d2530c8900579206cc5e3075934d92",
     "pr": 20
@@ -20,9 +20,9 @@
     "branch": "work/macos-builds",
     "commit": "330cdbd7e8d2530c8900579206cc5e3075934d92",
     "pr": 20,
-    "at": "2026-10-07T21:46:09Z",
-    "summary": "Independent logical QA phase for PR #20 begins after Quality implementation and separate complete-diff Security review were checkpointed and released. Reviewing exact head 330cdbd7e8d2530c8900579206cc5e3075934d92 / base 4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8. No QA pass or CI success claimed.",
-    "next": "Review every actual changed path, native Mac acceptance, platform compatibility and complete required CI; fix/review rejected findings or checkpoint a real external wait.",
+    "at": "2026-10-07T21:48:07Z",
+    "summary": "Independent QA read all 11 actual changed paths and native Security record. Apple Silicon and Linux builds/demos are actually green; Intel/validate were still running. Found a real install-guide failure path: checksum/cd errors do not prevent later install/demo commands when pasted in an ordinary shell. Reject pending a guarded command sequence; no complete CI or QA success claimed.",
+    "next": "Quality: guard download/checksum/install/demo and configuration commands with success chaining. Commit correction remotely, then separate Security/QA at the new exact head/base.",
     "review_phase": {
       "role": "qa",
       "head_sha": "330cdbd7e8d2530c8900579206cc5e3075934d92",
@@ -62,10 +62,6 @@
         "Official actions/runner-images README lists standard macos-26 arm64 and macos-26-intel x64."
       ],
       "findings": []
-    },
-    "security_native_review": {
-      "success": true,
-      "review_id": 5448763835
     },
     "source": {
       "remote_commit": "330cdbd7e8d2530c8900579206cc5e3075934d92",
@@ -149,6 +145,25 @@
       "organization_tests": 53,
       "previous_release_id": 406055926,
       "previous_assets_unchanged": true
+    },
+    "ci": {
+      "run_id": 37691546668,
+      "green_jobs": [
+        "Build x86_64-unknown-linux-musl",
+        "Build x86_64-unknown-linux-gnu",
+        "Build aarch64-apple-darwin"
+      ],
+      "pending_jobs": [
+        "Build x86_64-apple-darwin",
+        "validate",
+        "package"
+      ],
+      "organization": {
+        "run_id": 37691546565,
+        "job_id": 113032693928,
+        "conclusion": "success",
+        "tests": 53
+      }
     }
   },
   "attempts": {}
