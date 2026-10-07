@@ -1,165 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 182,
+  "generation": 183,
   "lease": {
     "id": "2d28c84f-bf7d-4e21-b940-43b129c6d1f6",
     "worker": "codex-cadence-quality",
     "role": "quality",
     "issue": 11,
     "acquired_at": "2026-10-07T16:02:47Z",
-    "heartbeat_at": "2026-10-07T16:02:47Z",
-    "expires_at": "2026-10-07T16:47:47Z",
+    "heartbeat_at": "2026-10-07T16:12:00Z",
+    "expires_at": "2026-10-07T16:57:00Z",
     "branch": "work/engineering-cadence",
-    "commit": "6085368588c8077af53d15bc4f07d752e670e445",
-    "pr": null
+    "commit": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
+    "pr": 12
   },
   "checkpoint": {
-    "at": "2026-10-07T16:02:43Z",
-    "issue": 9,
-    "role": "triage",
-    "branch": "work/par2-multifile-recovery",
-    "commit": "bfdff54f096150968ae725fa19d89e356ed24417",
-    "pr": 10,
-    "summary": "PR #10 / Issue #9 was natively squash-merged by expected source head bfdff54f096150968ae725fa19d89e356ed24417 onto trunk commit 6085368588c8077af53d15bc4f07d752e670e445 at 16:00:34Z. Exact-head/base Security 5444603361, independent QA 5444892856 and all native objective gates were green (Engineering 37648171879, required CI 37639921027). Native default push CI 37648617664 is actually in progress; v0.22.13 publication is pending, no dispatch needed and no local checks/manual release. Issue #9 is closed/Done. Native #11 blocker #9 is closed and #11 is Ready for the explicit user cadence improvement. Preserve original source mappings and pending publication/branch cleanup. No unrelated product implementation is started.",
-    "next_action": "Release this Triage phase and acquire Quality for Issue #11 at default 6085368588c8077af53d15bc4f07d752e670e445 on work/engineering-cadence. Implement only the accepted organization policy: 40-minute chained ready transitions with serial role leases, hourly mechanical recovery/daily health sweep, updated runbook/Master/CI policy and versioned task prompt. Native default CI/publication 37648617664 remains pending and must be recovered before unrelated product work or cadence PR delivery; never fabricate publication. After CI and separate Security/QA, merge cadence policy and update only the existing hourly task prompt.",
-    "publication": {
-      "commit": "6085368588c8077af53d15bc4f07d752e670e445",
-      "state": "ci-pending",
-      "at": "2026-10-07T16:02:43Z",
-      "run_id": 37648617664,
-      "status": "in_progress",
-      "conclusion": null,
-      "issue": 9,
-      "pr": 10
-    },
-    "security_scope": {
-      "issue": 9,
-      "source_commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
-      "issue_comment": 6039126699,
-      "stage": "pre-implementation-analysis",
-      "pr_review": false
-    },
-    "source_bridge": {
-      "commits": [
-        {
-          "local": "b08c470d956434f0e02165b5b80b6f10e5d987b6",
-          "remote": "d4938b72b5451d31bd46eb61d620d06c8608470c",
-          "tree": "2f87f3e603a05c96a9a6e65bd6fd906cdc50615c"
-        },
-        {
-          "local": "060d605351761243eeb8e0d0b7d5a2b9abcb1949",
-          "remote": "bfdff54f096150968ae725fa19d89e356ed24417",
-          "tree": "560c4504ac2d20ee124210511400ffa7c16e9e0f"
-        }
-      ]
-    },
-    "ci": {
-      "run_id": 37639921027,
-      "head": "bfdff54f096150968ae725fa19d89e356ed24417",
-      "status": "completed",
-      "conclusion": "success",
-      "rust_tests": 846,
-      "harnesses": 64,
-      "test_seconds": 105.8,
-      "validate_job": 112855830910,
-      "jobs": [
-        {
-          "name": "validate",
-          "id": 112855830910,
-          "status": "completed",
-          "conclusion": "success"
-        },
-        {
-          "name": "Build x86_64-unknown-linux-musl",
-          "id": 112855831261,
-          "status": "completed",
-          "conclusion": "success"
-        },
-        {
-          "name": "Build x86_64-unknown-linux-gnu",
-          "id": 112855831496,
-          "status": "completed",
-          "conclusion": "success"
-        },
-        {
-          "name": "package",
-          "id": 112857367012,
-          "status": "completed",
-          "conclusion": "success"
-        },
-        {
-          "name": "release",
-          "id": 112857701362,
-          "status": "completed",
-          "conclusion": "skipped"
-        }
-      ]
-    },
-    "review_head_sha": "bfdff54f096150968ae725fa19d89e356ed24417",
-    "review_base_sha": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
-    "reviewed_paths": [
-      "Cargo.lock",
-      "Cargo.toml",
-      "README.md",
-      "docs/checkpoint.md",
-      "docs/deployment.md",
-      "docs/limits.md",
-      "docs/next-release.md",
-      "docs/par2.md",
-      "docs/releases/0.22.13.md",
-      "docs/roadmap.md",
-      "src/par2/mod.rs",
-      "src/par2/recovery.rs",
-      "tests/par2_formats.rs"
-    ],
-    "next_work": {
-      "issue": 11,
-      "status": "ready",
-      "role": "quality",
-      "branch": "work/engineering-cadence",
-      "head": "6085368588c8077af53d15bc4f07d752e670e445",
-      "base": "6085368588c8077af53d15bc4f07d752e670e445",
-      "pr": null
-    },
-    "security_review": {
-      "review_id": 5444603361,
-      "submitted_at": "2026-10-07T15:34:58Z",
-      "head": "bfdff54f096150968ae725fa19d89e356ed24417",
-      "base": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
-      "lease_checkpoint": "daa866c26c4ef0d954c1e56ebaf0734e3e64ceab",
-      "verdict": "passed",
-      "state": "COMMENTED",
-      "identity": "alecerf"
-    },
-    "cadence_request": {
-      "issue": 11,
-      "native_blocker": 9,
-      "task_id": "6ac54c387af0819184713674c48b3845",
-      "planned_slice_minutes": 40,
-      "ai_cadence": "hourly-platform-maximum",
-      "mechanical_cadence": "hourly-with-daily-branch-health",
-      "state": "triaged-not-applied"
-    },
-    "qa_review": {
-      "review_id": 5444892856,
-      "submitted_at": "2026-10-07T15:56:42Z",
-      "head": "bfdff54f096150968ae725fa19d89e356ed24417",
-      "base": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
-      "lease_checkpoint": "eb571750a6858c9ee6862f1d73780b2ef6377842",
-      "verdict": "passed",
-      "state": "COMMENTED",
-      "identity": "alecerf"
-    },
-    "merge_gate": {
-      "head": "bfdff54f096150968ae725fa19d89e356ed24417",
-      "base": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
-      "ci_run": 37639921027,
-      "engineering_run": 37648171879,
-      "qa_job": 112884380973,
-      "organization_job": 112884275164,
-      "state": "observed-green-native-merge-pending"
-    },
+    "at": "2026-10-07T16:12:00Z",
+    "issue": 11,
+    "role": "quality",
+    "branch": "work/engineering-cadence",
+    "commit": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
+    "pr": 12,
+    "summary": "Quality implemented cadence Issue #11 as draft PR #12 at work/engineering-cadence:056487dc0c4d8ffe04dce1b48153c2e29403ad4a, base 6085368588c8077af53d15bc4f07d752e670e445. Seven original paths encode one 40-minute deadline, serial ready phase chaining, final five-minute handoff reserve, hourly mechanical recovery/daily health, canonical worker prompt and positive CI budget guard. Concurrency/recovery/security/QA/secret invariants remain. Native PR CI 37649725943 is completed/success; no local validation, final Security/QA or task prompt update. Recovered v0.22.13 publication: native release 405936360/tag 6085368588c8077af53d15bc4f07d752e670e445, seven bot assets, all five default CI 37648617664 jobs successful, 846 Rust tests/64 harnesses/0 failures/104.057s. Native Issue #9 proof comment 6041888395; merged-branch cleanup remains.",
+    "next_action": "Finish guarded cleanup of exact merged work/par2-multifile-recovery head bfdff54f096150968ae725fa19d89e356ed24417. Checkpoint/release; acquire separate Security for #11 / PR #12 at head 056487dc0c4d8ffe04dce1b48153c2e29403ad4a / base 6085368588c8077af53d15bc4f07d752e670e445; review all seven paths and actual CI. Release/reacquire independent QA after green required jobs. Keep draft until satisfactory records, then require all objective gates before merge. Reconcile existing hourly task 6ac54c387af0819184713674c48b3845 using merged engineering/worker-prompt.md, retaining cadence/timezone and persisting actual response. No duplicate tasks, unrelated product work or published asset retagging.",
     "previous_publication": {
       "commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
       "state": "ci-passed",
@@ -180,7 +43,132 @@
       "head": "bfdff54f096150968ae725fa19d89e356ed24417",
       "merge_commit": "6085368588c8077af53d15bc4f07d752e670e445",
       "merged_at": "2026-10-07T16:00:34Z",
-      "branch_cleanup": "pending"
+      "branch_cleanup": "pending",
+      "reviews": {
+        "security": {
+          "review_id": 5444603361,
+          "submitted_at": "2026-10-07T15:34:58Z",
+          "head": "bfdff54f096150968ae725fa19d89e356ed24417",
+          "base": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
+          "lease_checkpoint": "daa866c26c4ef0d954c1e56ebaf0734e3e64ceab",
+          "verdict": "passed",
+          "state": "COMMENTED",
+          "identity": "alecerf"
+        },
+        "qa": {
+          "review_id": 5444892856,
+          "submitted_at": "2026-10-07T15:56:42Z",
+          "head": "bfdff54f096150968ae725fa19d89e356ed24417",
+          "base": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
+          "lease_checkpoint": "eb571750a6858c9ee6862f1d73780b2ef6377842",
+          "verdict": "passed",
+          "state": "COMMENTED",
+          "identity": "alecerf"
+        }
+      },
+      "source_bridge": {
+        "commits": [
+          {
+            "local": "b08c470d956434f0e02165b5b80b6f10e5d987b6",
+            "remote": "d4938b72b5451d31bd46eb61d620d06c8608470c",
+            "tree": "2f87f3e603a05c96a9a6e65bd6fd906cdc50615c"
+          },
+          {
+            "local": "060d605351761243eeb8e0d0b7d5a2b9abcb1949",
+            "remote": "bfdff54f096150968ae725fa19d89e356ed24417",
+            "tree": "560c4504ac2d20ee124210511400ffa7c16e9e0f"
+          }
+        ]
+      }
+    },
+    "cadence_request": {
+      "issue": 11,
+      "native_blocker": 9,
+      "task_id": "6ac54c387af0819184713674c48b3845",
+      "planned_slice_minutes": 40,
+      "ai_cadence": "hourly-platform-maximum",
+      "mechanical_cadence": "hourly-with-daily-branch-health",
+      "state": "implemented-draft-task-unchanged"
+    },
+    "source_bridge": {
+      "commits": [
+        {
+          "local": "3d5cbbf6e145ad119a2d908e0d3fdb255c2079de",
+          "remote": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
+          "tree": "a110327823d3646a6ef7bed3ef52011ba40d60dc"
+        }
+      ]
+    },
+    "publication": {
+      "commit": "6085368588c8077af53d15bc4f07d752e670e445",
+      "state": "ci-passed",
+      "at": "2026-10-07T16:12:00Z",
+      "run_id": 37648617664,
+      "status": "completed",
+      "conclusion": "success",
+      "release_id": 405936360,
+      "tag": "v0.22.13",
+      "url": "https://github.com/alecerf/mynou/releases/tag/v0.22.13",
+      "issue_comment": 6041888395,
+      "assets": [
+        {
+          "id": 619149427,
+          "name": "mynou-v0.22.13-linux-amd64-image.tar.gz",
+          "size": 2339049,
+          "digest": "sha256:d47c7f8f8b9ac1c774eb39e9b0ace345ade3523ca4d901429b2d9acbc89b5cf5"
+        },
+        {
+          "id": 619149431,
+          "name": "mynou-v0.22.13-linux-amd64-image.tar.gz.sha256",
+          "size": 106,
+          "digest": "sha256:f92c7c34935149c787c8e68084041f9a9b7f52a4c7ed0faf1d167d72bbbe0e2c"
+        },
+        {
+          "id": 619149433,
+          "name": "mynou-v0.22.13-linux-x86_64",
+          "size": 4854624,
+          "digest": "sha256:744b8e8d99ae53d5123701b5a078b87df79df4198b4b9c99c937029c9b45dd9a"
+        },
+        {
+          "id": 619149438,
+          "name": "mynou-v0.22.13-linux-x86_64.sha256",
+          "size": 94,
+          "digest": "sha256:bde873362f4803ee094c63e0a307bca1fd6f4257bde23967d0e617a8b96e1af4"
+        },
+        {
+          "id": 619149457,
+          "name": "mynou-v0.22.13-source.zip",
+          "size": 9297914,
+          "digest": "sha256:ef2fab82bf71067eb95131b249244c99210fcb757508831c7e66d460375ad49d"
+        },
+        {
+          "id": 619149468,
+          "name": "mynou-v0.22.13-source.zip.sha256",
+          "size": 92,
+          "digest": "sha256:4eed5dd4779137de78c7e4866d6de4cda3225de81c506f924e311f41571c8e37"
+        },
+        {
+          "id": 619149434,
+          "name": "SHA256SUMS",
+          "size": 292,
+          "digest": "sha256:edf469d5ab42165ba0e27b258507152dd31f35d8c828d6d963bda0d16d6537de"
+        }
+      ]
+    },
+    "ci": {
+      "run_id": 37649725943,
+      "head": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    "next_work": {
+      "issue": 11,
+      "status": "review",
+      "role": "security",
+      "branch": "work/engineering-cadence",
+      "pr": 12,
+      "head": "056487dc0c4d8ffe04dce1b48153c2e29403ad4a",
+      "base": "6085368588c8077af53d15bc4f07d752e670e445"
     }
   },
   "attempts": {}
