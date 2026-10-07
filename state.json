@@ -1,85 +1,45 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 303,
+  "generation": 304,
   "lease": {
     "id": "wake6-master-recovery-20261007T222619Z",
     "worker": "codex-hourly-20261007T222619Z",
     "role": "master",
     "issue": 17,
     "acquired_at": "2026-10-07T22:27:42Z",
-    "heartbeat_at": "2026-10-07T22:27:42Z",
-    "expires_at": "2026-10-07T23:12:42Z",
+    "heartbeat_at": "2026-10-07T22:28:22Z",
+    "expires_at": "2026-10-07T23:13:22Z",
     "branch": "work/macos-builds",
     "commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
     "pr": 20
   },
   "checkpoint": {
     "issue": 17,
-    "role": "qa",
+    "role": "master",
     "branch": "work/macos-builds",
     "commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
     "pr": 20,
-    "at": "2026-10-07T21:51:43Z",
-    "summary": "Bounded wake recovered CI-published immutable v0.22.15 and preserved its asset proof. For user #17, original native macOS CI/package/checksum/gate/install scope and QA correction are remotely committed on existing PR #20 at ce35b775. Corrected complete-diff Security5448796536 passed. Independent QA read all 11 corrected paths and verified its rejected checksum/configuration concern is fixed; current-head CI37691964651 is pending with no jobs visible. No passed QA, merge or v0.22.16 publication claimed. Stop for real external CI wait, preserving exact source and reviews.",
-    "next": "Next wake recover exact-head CI37691964651 before unrelated work. Fix actual red jobs if any. Otherwise, under a fresh exact-head/base QA lease, confirm every required current-head job and inspect native logs, recheck actual complete diff and Security5448796536, then submit truthful passed QA. Delivery marks PR ready, verifies objective agent-qa-review and all checks, merges exact head, cleans Issue/branch, and recovers default CI/immutable v0.22.16 publication.",
-    "review_phase": {
-      "role": "qa",
-      "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
-      "base_sha": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8"
-    },
-    "qa_partial": {
-      "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
-      "base_sha": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
-      "verdict": "pending-ci",
-      "reviewed_paths": [
-        ".github/engineering.json",
-        ".github/scripts/publish-release.sh",
+    "at": "2026-10-07T22:28:22Z",
+    "summary": "Recovered PR #20/Issue #17 at unchanged ce35b775 /4cf7580. Native CI37691964651 attempt1 completed successfully: validate, both native macOS builds/demos, Linux GNU/musl and package all green; release correctly skipped on PR. Source branch is preserved. Security5448796536 still matches exact head/base; independent final QA remains necessary.",
+    "next": "Independent QA under its own exact-head/base lease: inspect complete actual diff, native CI logs, original acceptance and corrected finding, then record truthful passed/rejected review.",
+    "source": {
+      "remote_commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
+      "tree": "c58f1932d8a5f1a158d7f8776681e7debc3f2954",
+      "base_commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
+      "changed_paths": [
         ".github/workflows/ci.yml",
-        "Cargo.lock",
+        ".github/engineering.json",
         "Cargo.toml",
+        "Cargo.lock",
         "README.md",
+        "docs/macos.md",
+        "docs/releases/0.22.16.md",
         "docs/ci.md",
         "docs/deployment.md",
-        "docs/macos.md",
         "docs/next-release.md",
-        "docs/releases/0.22.16.md"
-      ],
-      "corrected_finding": "QA5448782569: all dependent native install/checksum/demo and configure/init/doctor/serve commands now use &&; actual complete corrected diff reviewed, no unresolved source finding.",
-      "evidence": [
-        {
-          "run_id": 37691964651,
-          "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
-          "status": "pending",
-          "jobs_visible": 0,
-          "observed_at": "2026-10-07T21:50:03Z"
-        },
-        {
-          "run_id": 37691964545,
-          "job_id": 113034149728,
-          "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
-          "name": "organization",
-          "status": "completed",
-          "conclusion": "success"
-        },
-        {
-          "run_id": 37691546668,
-          "head_sha": "330cdbd7e8d2530c8900579206cc5e3075934d92",
-          "historical": true,
-          "green_jobs": [
-            "validate",
-            "Build x86_64-unknown-linux-gnu",
-            "Build x86_64-unknown-linux-musl",
-            "Build aarch64-apple-darwin"
-          ],
-          "pending_jobs": [
-            "Build x86_64-apple-darwin",
-            "package"
-          ],
-          "note": "Prior-head green jobs do not establish current-head acceptance."
-        }
-      ],
-      "next": "Next wake recover exact-head CI37691964651 before unrelated work. Fix actual red jobs if any. Otherwise, under a fresh exact-head/base QA lease, confirm every required current-head job and inspect native logs, recheck actual complete diff and Security5448796536, then submit truthful passed QA. Delivery marks PR ready, verifies objective agent-qa-review and all checks, merges exact head, cleans Issue/branch, and recovers default CI/immutable v0.22.16 publication."
+        ".github/scripts/publish-release.sh"
+      ]
     },
     "security": {
       "schema": 1,
@@ -155,24 +115,6 @@
         "docs/macos.md download/install code block uses independent commands. A failed cd or shasum does not stop mkdir/install/demo in an ordinary interactive shell; chain dependent commands with &&. Likewise guard configuration/init/doctor/serve so an earlier failure cannot start the next step."
       ]
     },
-    "source": {
-      "remote_commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
-      "tree": "c58f1932d8a5f1a158d7f8776681e7debc3f2954",
-      "base_commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
-      "changed_paths": [
-        ".github/workflows/ci.yml",
-        ".github/engineering.json",
-        "Cargo.toml",
-        "Cargo.lock",
-        "README.md",
-        "docs/macos.md",
-        "docs/releases/0.22.16.md",
-        "docs/ci.md",
-        "docs/deployment.md",
-        "docs/next-release.md",
-        ".github/scripts/publish-release.sh"
-      ]
-    },
     "publication_baseline": {
       "commit": "4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8",
       "state": "published",
@@ -238,12 +180,55 @@
       "previous_release_id": 406055926,
       "previous_assets_unchanged": true
     },
-    "wake": {
-      "started_at": "2026-10-07T21:30:02Z",
-      "deadline": "2026-10-07T22:10:02Z",
-      "stop_reason": "external-ci-wait",
-      "no_local_validation": true,
-      "no_other_workers": true
+    "ci": {
+      "run_id": 37691964651,
+      "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
+      "status": "completed",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "id": 113035157345,
+          "name": "Build aarch64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113035157645,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113035157702,
+          "name": "Build x86_64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113035157748,
+          "name": "validate",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113035157781,
+          "name": "Build x86_64-unknown-linux-musl",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113036465846,
+          "name": "package",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113036635440,
+          "name": "release",
+          "status": "completed",
+          "conclusion": "skipped"
+        }
+      ]
     }
   },
   "attempts": {}
