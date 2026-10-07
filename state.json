@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 139,
-  "lease": {
-    "id": "58abd2d0-75a2-4a91-8367-845586e9dce1",
-    "worker": "codex-par2-ready-delivery",
-    "role": "master",
-    "issue": 6,
-    "acquired_at": "2026-10-07T11:53:23Z",
-    "heartbeat_at": "2026-10-07T11:55:07Z",
-    "expires_at": "2026-10-07T12:40:07Z",
-    "branch": "work/par2-recovery",
-    "commit": "53b4f30982b5297439d6baec751731b295cfd02a",
-    "pr": 8
-  },
+  "generation": 140,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-07T11:55:07Z",
     "issue": 6,
