@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 55,
+  "generation": 56,
   "lease": {
     "id": "4985de01-e01d-4ebb-a437-c6f8f04739ab",
     "worker": "codex-par2-slice",
     "role": "rust",
     "issue": 2,
     "acquired_at": "2026-10-07T05:34:30Z",
-    "heartbeat_at": "2026-10-07T05:42:47Z",
-    "expires_at": "2026-10-07T06:27:47Z",
+    "heartbeat_at": "2026-10-07T05:43:27Z",
+    "expires_at": "2026-10-07T06:28:27Z",
     "branch": "work/par2-foundation",
     "commit": "e660788cba7f388d3f65d01cc0bf2a4dec03ba3a",
-    "pr": null
+    "pr": 4
   },
   "checkpoint": {
-    "at": "2026-10-07T05:42:47Z",
+    "at": "2026-10-07T05:43:27Z",
     "issue": 2,
     "role": "rust",
     "branch": "work/par2-foundation",
     "commit": "e660788cba7f388d3f65d01cc0bf2a4dec03ba3a",
-    "pr": null,
-    "summary": "Completed original strict PAR2 core inspection and Main-set identity rejection, RFC MD5 vectors and original hostile/streaming/read-only CLI fixtures, plus proposed 0.22.11 version/support/release documentation. Transported local bb3b7d9732cb18d1289a34d8fd681a83b49304e0 to exact remote e660788cba7f388d3f65d01cc0bf2a4dec03ba3a, identical tree d7181e5dbaba4c25aa23d8304f3531f00a424de6. Original PAR2 and bootstrap histories preserved through native merge 53ed21fa9dd1bfbe0c96ddefcc34713b05130ae1. No local tests, formatting tools, lint, compilation or validation. CI not yet observed for completed scope.",
-    "next_action": "Open one completed-scope PR linked to native Issue #2, inspect every required CI job and fix observed reds through commits. Then exact-head/base Security and logically independent QA, objective delivery, CI-only immutable 0.22.11 publication, cleanup and successor roadmap issue."
+    "pr": 4,
+    "summary": "Opened linked PR #4 for complete proposed 0.22.11 PAR2 core inspection at e660788cba7f388d3f65d01cc0bf2a4dec03ba3a, base afd6fa65f1189d181d8ce70161367309480a0730. Seventeen changed product/docs/test paths; original interrupted source and reviewed default organization are preserved. Strict Main identity finding addressed with hostile fixture. Independent Security/QA and every required Actions job remain pending. No local validation and no publication claimed.",
+    "next_action": "Inspect PR #4 native Actions; fix any formatting/Clippy/runtime failure via source commits and exact checkpoint. After required core and organization jobs succeed, release Rust and acquire exact-head/base Security and QA sequentially; do not merge before agent-qa-review succeeds."
   },
   "attempts": {}
 }
