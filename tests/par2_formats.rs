@@ -334,9 +334,10 @@ impl Seek for MutatedSource {
         if from == SeekFrom::End(0) {
             self.endings += 1;
         }
-        let change = self.mutate_at_start.is_some_and(|offset| {
-            from == SeekFrom::Start(offset)
-        }) || (from == SeekFrom::End(0) && self.endings == self.mutate_at_end);
+        let change = self
+            .mutate_at_start
+            .is_some_and(|offset| from == SeekFrom::Start(offset))
+            || (from == SeekFrom::End(0) && self.endings == self.mutate_at_end);
         if change {
             self.cursor.get_mut()[self.byte] ^= 1;
             self.mutate_at_start = None;
