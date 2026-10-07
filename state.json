@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 162,
+  "generation": 163,
   "lease": {
     "id": "0aa8ec17-a4f9-4e62-bcd6-a2393921c55c",
     "worker": "codex-multifile-implementation",
     "role": "rust",
     "issue": 9,
     "acquired_at": "2026-10-07T14:35:27Z",
-    "heartbeat_at": "2026-10-07T14:36:47Z",
-    "expires_at": "2026-10-07T15:21:47Z",
+    "heartbeat_at": "2026-10-07T14:45:45Z",
+    "expires_at": "2026-10-07T15:30:45Z",
     "branch": "work/par2-multifile-recovery",
-    "commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
-    "pr": null
+    "commit": "d4938b72b5451d31bd46eb61d620d06c8608470c",
+    "pr": 10
   },
   "checkpoint": {
-    "at": "2026-10-07T14:36:47Z",
+    "at": "2026-10-07T14:45:45Z",
     "issue": 9,
     "role": "rust",
     "branch": "work/par2-multifile-recovery",
-    "commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
-    "pr": null,
-    "summary": "Rust selected new work/par2-multifile-recovery at native default d0c37f773b45b8948eb8c5b67a55e89f64ddbe10 for Issue #9. No open PR or partial source branch was present. Security scope is native comment 6039126699; no new product change or CI result yet.",
-    "next_action": "Implement original aggregate multi-file recovery and independent fixtures; commit/push source through the documented bridge; open one linked draft PR. No local validation.",
+    "commit": "d4938b72b5451d31bd46eb61d620d06c8608470c",
+    "pr": 10,
+    "summary": "Rust pushed original shared multi-file recovery engine and eight independent fixture cases to work/par2-multifile-recovery at d4938b72b5451d31bd46eb61d620d06c8608470c; linked draft PR #10, base trunk d0c37f773b45b8948eb8c5b67a55e89f64ddbe10. Single-file API delegates to the bounded global-slice engine; exact File-ID coverage, combined budgets and all-or-nothing per-file checks retained. Local source b08c470d956434f0e02165b5b80b6f10e5d987b6 maps to this remote commit with identical tree 2f87f3e603a05c96a9a6e65bd6fd906cdc50615c. No local validation or new CI/review result claimed. Documentation/version and CI corrections remain.",
+    "next_action": "Read actual PR CI, fix failures through commits; complete truthful proposed v0.22.13 support/limits/release documentation. Keep draft; separate complete-diff exact-head/base Security and QA are mandatory before merge.",
     "publication": {
       "commit": "d0c37f773b45b8948eb8c5b67a55e89f64ddbe10",
       "state": "ci-passed",
@@ -42,6 +42,11 @@
       "issue_comment": 6039126699,
       "stage": "pre-implementation-analysis",
       "pr_review": false
+    },
+    "source_bridge": {
+      "local": "b08c470d956434f0e02165b5b80b6f10e5d987b6",
+      "remote": "d4938b72b5451d31bd46eb61d620d06c8608470c",
+      "tree": "2f87f3e603a05c96a9a6e65bd6fd906cdc50615c"
     }
   },
   "attempts": {}
