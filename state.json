@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 353,
+  "generation": 354,
   "lease": {
     "id": "wake7-master-registry-delivery-20261007T232627Z",
     "worker": "codex-hourly-20261007T232627Z",
     "role": "master",
     "issue": 18,
     "acquired_at": "2026-10-07T23:47:01Z",
-    "heartbeat_at": "2026-10-07T23:49:20Z",
-    "expires_at": "2026-10-08T00:34:20Z",
-    "branch": "work/registry-releases",
-    "commit": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
+    "heartbeat_at": "2026-10-07T23:49:26Z",
+    "expires_at": "2026-10-08T00:34:26Z",
+    "branch": "trunk",
+    "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
     "pr": 21
   },
   "checkpoint": {
     "issue": 18,
     "role": "master",
-    "branch": "work/registry-releases",
-    "commit": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
+    "branch": "trunk",
+    "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
     "pr": 21,
-    "at": "2026-10-07T23:49:20Z",
-    "summary": "Fresh actual objective checks are all SUCCESS for PR21 head a7c6b8d2/base8a0ada56. Engineering37704271783 machine gate113074851858 verified actual QA5449746769/bf1b9186 and Security5449727189/f244291f; complete20-file provenance and required CI are bound. Native PR ready/open/mergeable clean; default unchanged. Exact-head merge authorized, publication remains unverified.",
-    "next_action": "Merge exact a7c6b8d2 head once, verify actual merge parents/tree/default, then sequential Quality cleanup and Master exact-default CI/GHCR publication recovery. No manual tag/package/release.",
+    "at": "2026-10-07T23:49:26Z",
+    "summary": "Merged PR21 at551e82d2c4158b9af2080081bbac3e1d18c949ea after actual all objective gates passed. Actual merge has exact reviewed parents8a0ada56+a7c6b8d2 and source tree8092f713a3d3dcd5cb6bb2ff5d7939689452a02b, identical to reviewed head; default points to it. Original GHCR/release migration is integrated. No package/v0.22.17 publication is inferred.",
+    "next_action": "Release Master for separate Quality: verify Issue18 auto-closure/dependencies and safe automatic work/registry-releases deletion, finish managed labels/handoff. Then Master recovers actual exact-default CI/GHCR publication before #19.",
     "publication_baseline": {
       "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
       "state": "published",
@@ -405,6 +405,16 @@
         }
       ],
       "conclusion": "success"
+    },
+    "merge": {
+      "sha": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
+      "merged": true,
+      "message": "Pull Request successfully merged",
+      "parents": [
+        "8a0ada56baa24b566e306af75768b90ed08b55ca",
+        "a7c6b8d2fda11c99382508f9bd7d1c3abc464345"
+      ],
+      "tree": "8092f713a3d3dcd5cb6bb2ff5d7939689452a02b"
     }
   },
   "attempts": {}
