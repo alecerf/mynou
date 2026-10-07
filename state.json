@@ -1,15 +1,15 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 295,
+  "generation": 296,
   "lease": {
     "id": "wake5-security-macos-correction-20261007T213002Z",
     "worker": "codex-hourly-20261007T213002Z",
     "role": "security",
     "issue": 17,
     "acquired_at": "2026-10-07T21:48:58Z",
-    "heartbeat_at": "2026-10-07T21:49:02Z",
-    "expires_at": "2026-10-07T22:34:02Z",
+    "heartbeat_at": "2026-10-07T21:49:46Z",
+    "expires_at": "2026-10-07T22:34:46Z",
     "branch": "work/macos-builds",
     "commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
     "pr": 20
@@ -20,9 +20,9 @@
     "branch": "work/macos-builds",
     "commit": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
     "pr": 20,
-    "at": "2026-10-07T21:49:02Z",
-    "summary": "Security re-review of corrected PR #20 at exact head ce35b775df90c49ab40ec98e1b3407b45c721c6d / base 4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8 begins under a new held lease. Previous Security passed record is stale at the old head; QA rejected the unguarded install guide and Quality committed a correction.",
-    "next": "Review the entire actual corrected diff and native execution/artifact evidence; verify the checksum/configuration failure paths now stop. Record truthful exact-head/base Security review.",
+    "at": "2026-10-07T21:49:46Z",
+    "summary": "Security inspected all 11 corrected PR #20 paths at ce35b775 /4cf7580. && chains now stop checksum/cd/init/doctor failure before install/execute/serve. Existing read-only native builds, exact-workflow-SHA artifacts, mandatory architecture/demo checks and immutable CI-only publication remain. No blocking Security finding; new exact-head CI37691964651 was pending, not green.",
+    "next": "Independent QA: inspect the complete corrected diff and validate the prior rejected concern, then obtain actual exact-head required CI evidence. Stop cleanly for pending external jobs.",
     "review_phase": {
       "role": "security",
       "head_sha": "ce35b775df90c49ab40ec98e1b3407b45c721c6d",
