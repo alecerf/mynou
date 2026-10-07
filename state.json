@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 177,
-  "lease": null,
+  "generation": 178,
+  "lease": {
+    "id": "f8408b38-b15d-43ec-bb76-0002ba2939da",
+    "worker": "codex-ready-delivery",
+    "role": "triage",
+    "issue": 9,
+    "acquired_at": "2026-10-07T15:58:54Z",
+    "heartbeat_at": "2026-10-07T15:58:54Z",
+    "expires_at": "2026-10-07T16:43:54Z",
+    "branch": "work/par2-multifile-recovery",
+    "commit": "bfdff54f096150968ae725fa19d89e356ed24417",
+    "pr": 10
+  },
   "checkpoint": {
     "at": "2026-10-07T15:57:21Z",
     "issue": 9,
