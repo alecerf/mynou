@@ -43,7 +43,21 @@ payloads and read-only CLI behavior. Actual verification is recorded in the link
 PR and GitHub Actions; this document does not claim unpublished test results.
 
 The next bounded increment is original GF(2^16) recovery with independently
-checked arithmetic and parity fixtures. Ownership-bound multi-file recovery,
+checked arithmetic and parity fixtures. Its arithmetic foundation is being
+developed in Issue #6: `par2::gf16` supplies original bounded multiplication,
+inversion, powers, coefficient assignment and caller-owned scaled buffers.
+It follows the authors' [PAR2 2.0 Recovery Slice specification](https://parchive.sourceforge.net/docs/specifications/parity-volume-spec/article-spec.html),
+with polynomial 0x1100b and primitive input constants in Main/file/slice order.
+Tables are generated once using std `OnceLock`; no third-party data or code is
+embedded. Scalar buffers contain little-endian words; each operation is limited
+to 1 MiB and checks cancellation between 64 KiB chunks. Mid-operation cancellation
+can leave a partial caller-owned sum, which must be discarded. Arithmetic does
+not verify packet identity, parity, protected content or repaired output. The
+existing inspector continues to report `repair_supported: false` until verified
+recovery is implemented. Fixed specification constants and an independently
+authored polynomial long-division oracle run only in CI; no results are inferred.
+
+Ownership-bound multi-file recovery,
 volume merging and library admission require subsequent explicit work. Existing
 Usenet ownership, requester, destination, media-analysis and Plex gates remain
 required for any future admission.
