@@ -400,3 +400,15 @@ No per-file budget reset, implicit input omission or partial result is permitted
 No filesystem write, ownership journal, acquisition or library permission is added.
 Final CI, separately leased Security/QA and immutable Actions publication remain
 required; this document is not verification evidence.
+
+## Proposed read-only PAR2 verification in 0.22.14
+
+`par2-verify FILE --root DIRECTORY` and exact-ID library reports diagnose protected
+content within eight files/16 MiB/256 slices/1 MiB slices, without recovery writes
+or admission. Source and protected bytes are revalidated; symbolic-link/type/path
+changes fail closed when observed. The directory adapter budgets internally read
+inputs plus 12 MiB conservative bounded path/metadata overhead; paths are at most
+8 KiB/128 components. Scratch must fit captured working limits. Cancellation is
+cooperative between 64 KiB read/hash chunks and cannot interrupt an OS call.
+No atomic filesystem snapshot, parity correctness, ownership or repair permission
+is promised. Missing zero-byte files are reported as absent. See [support](par2.md).

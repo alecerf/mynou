@@ -27,6 +27,7 @@ const HELP: &str = "Mynou — media automation using Rust std only
   zip-inspect FILE
   rar-inspect FILE
   par2-inspect FILE
+  par2-verify FILE --root DIRECTORY
   usenet [--config mynou.json]
   usenet-probe SERVER_ID [--apply --plan-id ID] [--config mynou.json]
   usenet-queue [--config mynou.json]
@@ -218,6 +219,7 @@ impl Args {
             ],
             "analyze" => &["json", "help"],
             "nzb-inspect" | "zip-inspect" | "rar-inspect" | "par2-inspect" => &["help"],
+            "par2-verify" => &["root", "help"],
             "demo" | "setup-docker" => &["dir", "help"],
             "help" | "--help" | "version" | "--version" => &[],
             _ => return Err(format!("Unknown command: {command}")),
@@ -244,6 +246,7 @@ impl Args {
                 "zip-inspect",
                 "rar-inspect",
                 "par2-inspect",
+                "par2-verify",
                 "show",
                 "events",
                 "retry",
@@ -538,6 +541,23 @@ fn execute(args: Args) -> Result<()> {
                 mynou::par2::Limits::default(),
             )?;
             output(&set.report());
+            return Ok(());
+        }
+        "par2-verify" => {
+            let root = args
+                .options
+                .get("root")
+                .ok_or("par2-verify requires --root DIRECTORY")?;
+            let verified = mynou::par2::verify_directory(
+                Path::new(&args.positions[0]),
+                Path::new(root),
+                mynou::par2::Limits::default(),
+                mynou::par2::MultiRecoveryLimits::default(),
+            )?;
+            output(&verified.to_json());
+            if !verified.content_verified() {
+                return Err("PAR2 protected content is damaged or missing".into());
+            }
             return Ok(());
         }
         "analyze" => {

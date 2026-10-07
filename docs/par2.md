@@ -102,7 +102,7 @@ volume merging and library admission require subsequent explicit work. Existing
 Usenet ownership, requester, destination, media-analysis and Plex gates remain
 required for any future admission.
 
-## Proposed multi-file memory recovery in 0.22.13
+## Multi-file memory recovery published in 0.22.13
 
 `Set::recover_files` and `recover_files_cancellable` accept one `RecoveryInput`
 for every captured recoverable File ID. Construct each input with
@@ -134,4 +134,48 @@ filesystem repair, media admission or volume merging. Inspection still reports
 `content_verified: false` and `repair_supported: false`. Original multi-file
 fixtures and all previous tests run only in Actions. [Issue #9](https://github.com/alecerf/mynou/issues/9)
 and [PR #10](https://github.com/alecerf/mynou/pull/10) retain actual CI and final
-review/publication state; no result is inferred from this proposed source.
+review/publication state. Actions published v0.22.13 at 6085368588c8077af53d15bc4f07d752e670e445
+in run 37648617664 with 846 Rust tests and seven immutable assets.
+
+## Proposed read-only protected-content verification in 0.22.14
+
+`mynou par2-verify FILE --root DIRECTORY` opens only recoverable protected names
+under an explicitly selected existing root. It prints checked JSON with expected
+and observed lengths, presence, local/global Main-order damaged-slice indices,
+padded MD5/CRC32 and whole-file/first-16-KiB integrity. Clean content exits zero;
+damage or missing files print the diagnosis and exit nonzero. Invalid format,
+paths, input identity or bounds fail without a partial report. Empty-file presence
+is explicit: missing zero-byte files are not silently declared present.
+
+The library `Set::verify_files` / `verify_files_cancellable` uses the same exact-ID
+`RecoveryInput` bindings as recovery. Caller order is irrelevant; unknown,
+duplicate, omitted, nonrecoverable or oversized inputs fail. Immutable byte inputs
+cannot establish filesystem presence (`present: null`); valid empty bytes can
+verify an empty declared file. Reports follow Main order, excluding nonrecoverable
+files. Whole-file disagreement fails content verification even if every slice
+matches. Diagnosis can report all 256 damaged slices; the recovery erasure and
+field-operation bounds do not imply that reported damage can be reconstructed.
+No recovery arithmetic or parity correctness is certified.
+
+Use `MultiRecoveryLimits` to tighten eight files, 16 MiB combined declared/read
+bytes, 256 slices and 1 MiB slices. Verification scratch/report overhead must fit
+`max_working_bytes`; the directory adapter additionally budgets its internally
+captured input buffers and a conservative 12 MiB path/metadata/reread allowance.
+Each path is limited to 8 KiB and 128 components. The captured Set is excluded,
+as for memory recovery. Source hashing/readback and protected reads operate in
+64 KiB chunks. The cancellable directory API checks between chunks and OS calls;
+cancellation cannot interrupt a blocking OS operation.
+
+The adapter rejects symbolic-link source/root/selected ancestors and nonregular
+inputs, compares opened/path type and length (plus device/inode on Unix), rechecks
+the original PAR2 source and re-reads protected handles against captured bytes.
+Missing leaves/parents remain missing at final fencing. It creates no directories,
+configuration, journals or files. Safe Rust std has no general directory-relative
+open capability or atomic filesystem snapshot: hostile concurrent mutations may
+still evade observations. `snapshot_guaranteed`, `parity_verified`,
+`ownership_verified` and `repair_supported` remain false. Checksums authenticate
+no owner and grant no repair, acquisition, import or library permission.
+
+Original CI fixtures and final separate Security/QA establish actual delivery in
+[Issue #13](https://github.com/alecerf/mynou/issues/13). Filesystem repair and
+ownership-bound admission remain subsequent explicit work.

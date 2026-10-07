@@ -5,16 +5,15 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current proposed increment: 0.22.13
+## Current proposed increment: 0.22.14
 
-Bounded multi-file PAR2 memory recovery is implemented as draft source under
-[Issue #9](https://github.com/alecerf/mynou/issues/9) /
-[PR #10](https://github.com/alecerf/mynou/pull/10). The shared engine binds File IDs,
-uses global coefficients, checks aggregate budgets and verifies every output
-before returning any. No filesystem repair, ownership journal, volume merging or
-library admission is added. See [support](par2.md) and [release scope](releases/0.22.13.md).
-Actual CI, final separately leased Security/QA and Actions publication remain
-required. Follow publication with ownership-bound filesystem recovery/admission.
+Actions published the native single-file and multi-file PAR2 memory foundations
+as v0.22.12 and v0.22.13. Issue #13 now adds bounded protected-content diagnosis:
+exact-ID library reports and an offline read-only CLI report damaged/missing
+slices, lengths and whole-file integrity before ownership-bound persistent repair.
+This adds no writes, journal/admission capability, parity verification or atomic
+filesystem snapshot. See [support](par2.md), [release scope](releases/0.22.14.md)
+and live native Issues/PRs for actual CI/review/publication state.
 
 ## Preceding published stage: 0.22.12
 
