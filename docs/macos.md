@@ -18,12 +18,15 @@ Terminal running under Rosetta can report Intel on an Apple Silicon machine.
 For Apple Silicon, after downloading both files into Downloads:
 
 ```sh
-cd "$HOME/Downloads"
-shasum -a 256 -c mynou-v0.22.16-macos-arm64.sha256
-mkdir -p "$HOME/.local/bin"
-install -m 755 mynou-v0.22.16-macos-arm64 "$HOME/.local/bin/mynou"
-"$HOME/.local/bin/mynou" demo --dir "$HOME/mynou-demo"
+cd "$HOME/Downloads" &&
+  shasum -a 256 -c mynou-v0.22.16-macos-arm64.sha256 &&
+  mkdir -p "$HOME/.local/bin" &&
+  install -m 755 mynou-v0.22.16-macos-arm64 "$HOME/.local/bin/mynou" &&
+  "$HOME/.local/bin/mynou" demo --dir "$HOME/mynou-demo"
 ```
+
+Each step runs only if the preceding one succeeds. A checksum failure prevents
+installation and execution; download the matching release files again before retrying.
 
 On Intel, replace `macos-arm64` with `macos-x86_64` in both filenames.
 The demonstration directory must not already exist. It uses synthetic media,
@@ -41,11 +44,11 @@ the application. Keep Gatekeeper enabled globally.
 Create an owned directory outside the download folder:
 
 ```sh
-mkdir -p "$HOME/Library/Application Support/Mynou"
-cd "$HOME/Library/Application Support/Mynou"
-"$HOME/.local/bin/mynou" init --config ./mynou.json
-"$HOME/.local/bin/mynou" doctor --config ./mynou.json
-"$HOME/.local/bin/mynou" serve --config ./mynou.json
+mkdir -p "$HOME/Library/Application Support/Mynou" &&
+  cd "$HOME/Library/Application Support/Mynou" &&
+  "$HOME/.local/bin/mynou" init --config ./mynou.json &&
+  "$HOME/.local/bin/mynou" doctor --config ./mynou.json &&
+  "$HOME/.local/bin/mynou" serve --config ./mynou.json
 ```
 
 `init` creates configuration and a private `.env` containing a random API token.
