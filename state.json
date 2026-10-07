@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 107,
-  "lease": null,
+  "generation": 108,
+  "lease": {
+    "id": "f39058cf-29d7-4467-8c7f-67e10cf69935",
+    "worker": "codex-par2-triage",
+    "role": "triage",
+    "issue": 6,
+    "acquired_at": "2026-10-07T09:33:35Z",
+    "heartbeat_at": "2026-10-07T09:33:35Z",
+    "expires_at": "2026-10-07T10:18:35Z",
+    "branch": "trunk",
+    "commit": "9d506f2767033fb4a71c586f71f5d3da83dcacb5",
+    "pr": null
+  },
   "checkpoint": {
     "at": "2026-10-07T08:43:47Z",
     "issue": 5,
