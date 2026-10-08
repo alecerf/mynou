@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 486,
-  "lease": {
-    "id": "wake12-qa-recovery-20261008T042605Z",
-    "worker": "codex-hourly-20261008T042605Z",
-    "role": "qa",
-    "issue": 19,
-    "acquired_at": "2026-10-08T04:38:34Z",
-    "heartbeat_at": "2026-10-08T04:45:42Z",
-    "expires_at": "2026-10-08T05:30:42Z",
-    "branch": "work/control-ref-adapter",
-    "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
-    "pr": 24
-  },
+  "generation": 487,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-08T04:45:42Z",
     "issue": 19,
