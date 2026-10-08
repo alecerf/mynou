@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 401,
-  "lease": {
-    "id": "wake9-qa-registry-correction-20261008T014700Z",
-    "worker": "codex-hourly-20261008T012904Z",
-    "role": "qa",
-    "issue": 18,
-    "acquired_at": "2026-10-08T01:47:28Z",
-    "heartbeat_at": "2026-10-08T01:54:00Z",
-    "expires_at": "2026-10-08T02:39:00Z",
-    "branch": "work/registry-recovery",
-    "commit": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
-    "pr": 22
-  },
+  "generation": 402,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-08T01:54:00Z",
     "issue": 18,
