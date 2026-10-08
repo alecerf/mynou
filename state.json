@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 740,
+  "generation": 741,
   "lease": {
     "id": "codex-continuous-20261008143128Z-triage-1791471596000",
     "worker": "codex-continuous-20261008143128Z",
     "role": "triage",
     "issue": 19,
     "acquired_at": "2026-10-08T14:59:56Z",
-    "heartbeat_at": "2026-10-08T14:59:56Z",
-    "expires_at": "2026-10-08T15:44:56Z",
+    "heartbeat_at": "2026-10-08T15:02:19Z",
+    "expires_at": "2026-10-08T15:47:19Z",
     "branch": "work/control-ref-adapter",
     "commit": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T14:59:43Z",
+    "at": "2026-10-08T15:02:19Z",
     "issue": 19,
-    "role": "qa",
+    "role": "triage",
     "branch": "work/control-ref-adapter",
     "commit": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
     "pr": 24,
-    "summary": "Independent QA19 completed all 20 actual native PR24 diff paths at 6951b58/base c348, checked Issue19 acceptance and previous rejection5457079884. Owned schema2 renewal/release and parent-proven resume correct the gap; installation and live proof remain distinct. Actual six source CI jobs, organization132 and both security jobs passed; 864 Rust/0 failed,24 infra; CodeQL green and no native threads. No remaining proposed-source findings; gate still awaits this review.",
-    "next_action": "Submit exact-head QA COMMENT, hand off actual evidence and release; sequential delivery role verifies fresh machine gate and all source/head/base/thread/ownership checks before merge, then default publication and live cutover.",
+    "summary": "Delivery19 verified exact-head/base Security5458546217 and QA5458620861, all source CI/audit jobs and latest machine agent-qa-review113379571824/run37797158291 actually green. Native PR24 ready/mergeable and threads empty; current default c348 unchanged. Installation merge authorized; live migration remains unfinished and Issue19 must be reopened/kept In Progress.",
+    "next_action": "Merge PR24 by exact head6951b58 and preserve original two-parent installed source; recover actual default CI/publication and pending Task reconciliation before any live fence/notes activation or retirement.",
     "publication": {
       "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
       "state": "published",
@@ -650,6 +650,24 @@
       "organization_job": 113377539104,
       "threads": 0,
       "gate": "pending review; not claimed green",
+      "live_cutover": false
+    },
+    "installation19": {
+      "state": "merge-intent",
+      "pr": 24,
+      "head": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
+      "base": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
+      "branch": "work/control-ref-adapter",
+      "security_review": 5458546217,
+      "qa_review": 5458620861,
+      "gate": {
+        "run": 37797158291,
+        "job": 113379571824,
+        "conclusion": "success"
+      },
+      "source_ci": 37795700353,
+      "security_ci": 37795700335,
+      "version": "0.22.25",
       "live_cutover": false
     }
   },
