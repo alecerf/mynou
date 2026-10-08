@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 758,
-  "lease": {
-    "id": "comment-6063261719",
-    "worker": "codex-resume-20261008T151223Z",
-    "role": "quality",
-    "issue": 19,
-    "acquired_at": "2026-10-08T15:26:57Z",
-    "heartbeat_at": "2026-10-08T15:33:24Z",
-    "expires_at": "2026-10-08T16:18:24Z",
-    "branch": "trunk",
-    "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
-    "pr": 24
-  },
+  "generation": 759,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-08T15:33:24Z",
     "issue": 19,
