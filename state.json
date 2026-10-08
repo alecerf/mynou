@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 441,
-  "lease": null,
+  "generation": 442,
+  "lease": {
+    "id": "e6eb5739-852f-4d24-84b0-27ad2f52aa64",
+    "worker": "github-actions-cleanup",
+    "role": "quality",
+    "issue": 18,
+    "acquired_at": "2026-10-08T02:55:49Z",
+    "heartbeat_at": "2026-10-08T02:55:49Z",
+    "expires_at": "2026-10-08T03:40:49Z",
+    "branch": "work/container-demo-cleanup",
+    "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+    "pr": 23
+  },
   "checkpoint": {
     "at": "2026-10-08T02:55:32Z",
     "issue": 18,
