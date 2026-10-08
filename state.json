@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 652,
+  "generation": 653,
   "lease": {
     "id": "codex-hourly-20261008112927Z-quality-1791460198000",
     "worker": "codex-hourly-20261008112927Z",
     "role": "quality",
     "issue": 30,
     "acquired_at": "2026-10-08T11:49:58Z",
-    "heartbeat_at": "2026-10-08T11:54:41Z",
-    "expires_at": "2026-10-08T12:39:41Z",
+    "heartbeat_at": "2026-10-08T11:58:10Z",
+    "expires_at": "2026-10-08T12:43:10Z",
     "branch": "trunk",
     "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
     "pr": null
   },
   "checkpoint": {
-    "at": "2026-10-08T11:54:41Z",
+    "at": "2026-10-08T11:58:10Z",
     "issue": 30,
     "role": "quality",
     "branch": "trunk",
     "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
     "pr": null,
-    "summary": "Actual connected checkpoint command6059254996 succeeded in trusted-default run37772952404/job113296751243 atsourcecedd. Nativebot receipt6059258638 names control86041aa351dd249b9e6eaf4ce88dfdca6e5e3237 andcurrentQuality30lease; actualstate gen650→651 retains worker/role/source, soleparent7e1fcca698a39fec531002bcd3f3fe80c56397db andexpectedCP. Nativeorigin22006964/User/OWNER wasunedited. Adopted onlythisverifiedown transition. Fixed inertprobe ref wasabsent; nextprove creation thenupdate withoutchanging canonicalstate/authority.",
-    "next_action": "Submit one strict probe-notes native command with expectedcurrentcontrolSHA and expected_probe_sha:null onlyafterfreshabsence/ownership fence. Read actualdefaultRun/receipt/probe commit/tree/marker; onlythen fresh exact-probe-head update. Ifqueued/fails preserveandstop, no blindretry/activation.",
+    "summary": "Quality30 actual notes create proved: command6059292608/default run37773211984/job113297617566/botreceipt6059296655 names fixedprobe432ede9c62475397ef93cb6a1b5f089d0f556988. Nativecommit soleparent7f723d97729a88608d8c7182cf6c1559dad1ada1; tree only probe.json, inert kind/control/commentID withno lease. Currentcanonicalhead unchanged. Evidence-reader key collision was corrected using original nativecommand envelope; no remote mutation arose from that read error. Earlier canonical checkpoint6059254996 proved. Next exact-probe update.",
+    "next_action": "Submit one strict probe-notes update with expectedcurrentcanonicalhead and expected_probe_sha432ede9c62475397ef93cb6a1b5f089d0f556988. Verify actualdefaultjob/receipt/newnotescommit soleparent andunchanged canonical. Onlyactualcompleteproof permits30closure/unblock19; preserve24/source053, no cutover/taskchange.",
     "publication": {
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "state": "published",
@@ -346,7 +346,7 @@
       "source": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "worker": "codex-hourly-20261008112927Z",
       "lease": "codex-hourly-20261008112927Z-quality-1791460198000",
-      "state": "actual-canonical-checkpoint-proved",
+      "state": "canonical-checkpoint-and-inert-note-create-proved",
       "command_id": 6059254996,
       "run_id": 37772952404,
       "job_id": 113296751243,
@@ -355,7 +355,17 @@
       "control_commit": "86041aa351dd249b9e6eaf4ce88dfdca6e5e3237",
       "generation_before": 650,
       "generation_after": 651,
-      "notes_activation": false
+      "notes_activation": false,
+      "notes_create": {
+        "command_id": 6059292608,
+        "run_id": 37773211984,
+        "job_id": 113297617566,
+        "receipt_id": 6059296655,
+        "control_sha": "7f723d97729a88608d8c7182cf6c1559dad1ada1",
+        "probe_sha": "432ede9c62475397ef93cb6a1b5f089d0f556988",
+        "inert_tree": true,
+        "sole_parent": "7f723d97729a88608d8c7182cf6c1559dad1ada1"
+      }
     }
   },
   "attempts": {
