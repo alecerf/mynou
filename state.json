@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 569,
+  "generation": 570,
   "lease": {
     "id": "codex-hourly-20261008082654Z-security-20261008083520",
     "worker": "codex-hourly-20261008082654Z",
     "role": "security",
     "issue": 28,
     "acquired_at": "2026-10-08T08:35:20Z",
-    "heartbeat_at": "2026-10-08T08:35:20Z",
-    "expires_at": "2026-10-08T09:20:20Z",
+    "heartbeat_at": "2026-10-08T08:37:16Z",
+    "expires_at": "2026-10-08T09:22:16Z",
     "branch": "work/public-source-private-package",
     "commit": "b028b1dd058842d7ebc551d4f822519d9d4d1e85",
     "pr": 29
   },
   "checkpoint": {
-    "at": "2026-10-08T08:35:12Z",
+    "at": "2026-10-08T08:37:16Z",
     "issue": 28,
-    "role": "quality",
+    "role": "security",
     "branch": "work/public-source-private-package",
     "commit": "b028b1dd058842d7ebc551d4f822519d9d4d1e85",
     "pr": 29,
-    "summary": "Quality committed six original source changes asb028b1dd058842d7ebc551d4f822519d9d4d1e85/treea7d42c893c83cd87b1fcdb59766f5b1dfdcbefe6, sole parent04e99496318; preserved filemodes, nonforce expected-parent source update. ReadyPR29 closes recoveryIssue28. Exact native source identity/public-private boolean, strict private package and existingtrustgates retained; new proof/copy/regressions/fresh0.22.21. Actual CI now owns checks; no localvalidation.",
-    "next_action": "Release Quality and acquire exact-head/base Security for full six-file diff. Review all privileged publication boundaries and CI-onlyregressions, record actual result. Then fresh greenCI-bound independentQA and gatedcorrective delivery; no oldrelease success claim.",
+    "summary": "Distinct Security reviewed all six actual PR29 patches and surrounding trusteddefault release workflow/fullpublisher boundaries atb028b1dd/base04e994. Public source is explicitlyclientauthorized; exact name/ID/boolean metadata remains verified before Docker, package remainsstrictprivate with stableID/association/collision/digest/bytes/isolation/cleanup unchanged. Proof/copy distinguish sourceprivacy; no token/permissions/packagevisibility mutation. CIvalidate113222980085 passed864Rust/24infra/64org and2newregressions; history113222979771 passed. Remainingplatform/package/audit andfreshQA still gate merge.",
+    "next_action": "Submit actual complete-diff scoped Security COMMENT, checkpoint/release. IndependentQA must review current6patches and all required native logs/provenance when green; no successful realprivateimage or immutable0.22.21 publication is inferred yet.",
     "publication": {
       "commit": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
       "state": "ci-failed",
@@ -119,7 +119,10 @@
       "tree": "a7d42c893c83cd87b1fcdb59766f5b1dfdcbefe6",
       "parent": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
       "version": "0.22.21",
-      "state": "source-committed-awaiting-ci-security-qa"
+      "state": "security-reviewed-awaiting-qa",
+      "source_ci": 37750720668,
+      "security_audit": 37750720672,
+      "organization": 37750720597
     }
   },
   "attempts": {
