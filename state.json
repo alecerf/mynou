@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 598,
+  "generation": 599,
   "lease": {
     "id": "codex-hourly-20261008093523Z-security-1791453336000",
     "worker": "codex-hourly-20261008093523Z",
     "role": "security",
     "issue": 30,
     "acquired_at": "2026-10-08T09:55:36Z",
-    "heartbeat_at": "2026-10-08T09:55:36Z",
-    "expires_at": "2026-10-08T10:40:36Z",
+    "heartbeat_at": "2026-10-08T09:59:46Z",
+    "expires_at": "2026-10-08T10:44:46Z",
     "branch": "work/native-control-commands",
     "commit": "681d0f7e4f8905688005b2f60ce71442fba76e7e",
     "pr": 31
   },
   "checkpoint": {
-    "at": "2026-10-08T09:55:29Z",
+    "at": "2026-10-08T09:59:46Z",
     "issue": 30,
-    "role": "quality",
+    "role": "security",
     "branch": "work/native-control-commands",
     "commit": "681d0f7e4f8905688005b2f60ce71442fba76e7e",
     "pr": 31,
-    "summary": "Original std-only comment transport source pushed at681d0f7e4f8905688005b2f60ce71442fba76e7e (soleparentcafac/tree75e8692d466c8fa139aa0824e4f0d8034a02ea4d); draftPR31 linksIssue30. Nine paths add strict native authentication/schema, existing lease/native recovery commands, inertnotesprobe, CI trust/recovery cases, transport docs andfresh0.22.22. No localvalidation, default activation, taskupdate ornoteswrite occurred.",
-    "next_action": "ReleaseQuality; separateSecurity complete-diff review at681d0f7/basecafac; inspect actualCI. Then QA under own exactsourcelease only when meaningful. Preserve19/24 and requirepostmerge nativecomment/defaulttransport proof beforeIssue30Done.",
+    "summary": "Separate Security complete-diff review inspected all9 actual nativePR31 paths at681d0f7/basecafac, including bounded nativeactor/mailbox/created-comment authentication, exactschema/sourcebinding, native recovery, currentphase release guard, no-rawinputlogs, inertfixednotesprobe withbefore/after ownership andsoleparentforce:false writes, trusteddefault-only workflow/readpermissions andCI cases. ActualEngineering37759939738 organization113253625087 passed81 scenarios; Security37759939760 bothjobs passed. Sourcevalidate113253625103 actualgreen; remainingpackage/platform gates not certified yet. Livebackend stillnotexecuted.",
+    "next_action": "Submit exacthead/base nativeSecurity record with this heldlease checkpoint; releaseSecurity and acquireQA for independent complete-diff scrutiny, actual acceptance/evidence and refreshednativeCI. No migrationactivation/taskchange.",
     "publication": {
       "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
       "state": "published",
@@ -210,10 +210,13 @@
       "head": "681d0f7e4f8905688005b2f60ce71442fba76e7e",
       "base": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
       "tree": "75e8692d466c8fa139aa0824e4f0d8034a02ea4d",
-      "state": "draft-source-pushed",
+      "state": "security-reviewed-source; draft; live proof pending",
       "canonical_ref": "refs/heads/control/engineering",
       "live_proof": "not run; privileged workflow not on default",
-      "parent_issue": 19
+      "parent_issue": 19,
+      "engineering": 37759939738,
+      "source_ci": 37759939764,
+      "security_audit": 37759939760
     }
   },
   "attempts": {
