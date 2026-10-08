@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 760,
+  "generation": 761,
   "lease": {
     "id": "comment-6064566046",
     "worker": "codex-product-20261008T1637Z",
     "role": "master",
     "issue": 36,
     "acquired_at": "2026-10-08T16:38:27Z",
-    "heartbeat_at": "2026-10-08T16:38:27Z",
-    "expires_at": "2026-10-08T17:23:27Z",
+    "heartbeat_at": "2026-10-08T16:41:59Z",
+    "expires_at": "2026-10-08T17:26:59Z",
     "branch": "trunk",
     "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
     "pr": null
   },
   "checkpoint": {
-    "at": "2026-10-08T15:33:24Z",
-    "issue": 19,
-    "role": "quality",
+    "at": "2026-10-08T16:41:59Z",
+    "issue": 36,
+    "role": "master",
     "branch": "trunk",
     "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
-    "pr": 24,
-    "summary": "Issue19 delivered/closed Done; PR24 merged trunk57cfe88bd9dac249d6949a470afc357e835060f9, v0.22.25 actual immutable publication406963891/CI37797446857. Guarded retirement6063301706/run37801066190/job113393116862/receipt6063318234: notes9404057/gen757 retired-confirmed, prepared-parentff8219b. Legacy matching refs empty; only branch trunk. Native compare preserves held QA c9d769 ancestry. Actual hourly Task78077a9 prompt/ID/cadence/timezone verified, attestation6063044134. Acceptance handoffs Issue6063368802/PR6063369145; prerequisites25/28/30 and PAR2 roadmap2 completed. Fresh native open Issues/PRs empty. Canonical migration phase/current checkpoint governs; earlier source/time-bound auxiliary records are historical, not pending requests.",
-    "next_action": "Confirm this real post-retirement canonical notes checkpoint and release Qualitycomment-6063261719; verify lease-null. Then idle: no executable native user work or bounded evidence-based defect remains from this delivery. Existing hourly Task remains best-effort recovery. Next wake must resolve installed config/fixed refs, verify historical fence ancestry and canonical notes lease before domain; do not recreate legacy or repeat delivered cutover/publication/task updates.",
+    "pr": null,
+    "summary": "User product continuation recorded as nativeIssue36. Proposed v0.22.26 selects independent available PAR2 parity rows; original implementation currently requires0..missing_count. Exact acceptance/riskhigh in Issue36. Default57cfe88/v0.22.25 actual CI/security/organization green; Issue19 cutover complete, sole notes5ad history preserved. New work/36-par2-available-rows branches original default57, no code edits or PR yet.",
+    "next_action": "Confirm Master checkpoint, release, then acquire Rust36 at work/36-par2-available-rows57cfe88. Implement deterministic bounded independent row selection and exact-exponent inversion/residuals, original CI-only edge fixtures, focused English docs and proposed0.22.26. Open one linked PR, actualCI, distinct Security and complete-diff QA before gated merge/Actions publication.",
     "publication": {
       "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
       "state": "published",
@@ -498,14 +498,14 @@
       "publication_pr_handoff": 6062225589
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T15:02:19Z",
+      "at": "2026-10-08T15:33:24Z",
       "issue": 19,
-      "role": "triage",
-      "branch": "work/control-ref-adapter",
-      "commit": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
+      "role": "quality",
+      "branch": "trunk",
+      "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
       "pr": 24,
-      "summary": "Delivery19 verified exact-head/base Security5458546217 and QA5458620861, all source CI/audit jobs and latest machine agent-qa-review113379571824/run37797158291 actually green. Native PR24 ready/mergeable and threads empty; current default c348 unchanged. Installation merge authorized; live migration remains unfinished and Issue19 must be reopened/kept In Progress.",
-      "next_action": "Merge PR24 by exact head6951b58 and preserve original two-parent installed source; recover actual default CI/publication and pending Task reconciliation before any live fence/notes activation or retirement."
+      "summary": "Issue19 delivered/closed Done; PR24 merged trunk57cfe88bd9dac249d6949a470afc357e835060f9, v0.22.25 actual immutable publication406963891/CI37797446857. Guarded retirement6063301706/run37801066190/job113393116862/receipt6063318234: notes9404057/gen757 retired-confirmed, prepared-parentff8219b. Legacy matching refs empty; only branch trunk. Native compare preserves held QA c9d769 ancestry. Actual hourly Task78077a9 prompt/ID/cadence/timezone verified, attestation6063044134. Acceptance handoffs Issue6063368802/PR6063369145; prerequisites25/28/30 and PAR2 roadmap2 completed. Fresh native open Issues/PRs empty. Canonical migration phase/current checkpoint governs; earlier source/time-bound auxiliary records are historical, not pending requests.",
+      "next_action": "Confirm this real post-retirement canonical notes checkpoint and release Qualitycomment-6063261719; verify lease-null. Then idle: no executable native user work or bounded evidence-based defect remains from this delivery. Existing hourly Task remains best-effort recovery. Next wake must resolve installed config/fixed refs, verify historical fence ancestry and canonical notes lease before domain; do not recreate legacy or repeat delivered cutover/publication/task updates."
     },
     "task_reconciliation": {
       "issue": 19,
@@ -702,7 +702,7 @@
       "task_receipt": 6063044134,
       "task_id": "6ac54c387af0819184713674c48b3845",
       "fence_sha": "5c305bfbee1e0225dcd8a35cdbb8cb491a084f11",
-      "transport_comment_id": 6063394668,
+      "transport_comment_id": 6064626226,
       "retirement": "confirmed",
       "notes_proof_sha": "96e3439dbc1800f708aab0c5680211f105176e14"
     }
