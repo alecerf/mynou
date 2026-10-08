@@ -1,35 +1,1080 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 444,
+  "generation": 445,
   "lease": {
     "id": "wake11-master-publication-recovery-20261008T032912Z",
     "worker": "codex-hourly-20261008T032912Z",
     "role": "master",
     "issue": 18,
     "acquired_at": "2026-10-08T03:30:55Z",
-    "heartbeat_at": "2026-10-08T03:30:55Z",
-    "expires_at": "2026-10-08T04:15:55Z",
+    "heartbeat_at": "2026-10-08T03:35:47Z",
+    "expires_at": "2026-10-08T04:20:47Z",
     "branch": "trunk",
     "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
     "pr": 23
   },
   "checkpoint": {
-    "at": "2026-10-08T02:55:32Z",
+    "at": "2026-10-08T03:35:47Z",
     "issue": 18,
-    "role": "triage",
+    "role": "master",
     "branch": "trunk",
     "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
     "pr": 23,
-    "summary": "Default-source CI transition: ci-passed at d647be6edfd6e892474b2602bbc9047ad4047c2f; native evidence {'commit': 'd647be6edfd6e892474b2602bbc9047ad4047c2f', 'state': 'ci-passed', 'at': '2026-10-08T02:55:32Z', 'run_id': 37719852082, 'status': 'completed', 'conclusion': 'success'}. No release publication is inferred.",
-    "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases.",
+    "summary": "Verified actual default CI 37719852082: all seven jobs succeeded, 864 Rust tests/63 harnesses, private pulled GHCR runtime/binary/cleanup proof, and immutable native v0.22.19 release with three binaries and SHA256SUMS. Baseline v0.22.16's 11 asset identities/sizes/digests are unchanged. Issue18 Done/closed, PR23 merged, branch404, no blocking dependencies or open PRs.",
+    "next_action": "Acquire Master for native user Issue19, scope a safe replacement for branch-backed engineering control without weakening atomic serialization, and continue ready transitions within the same wake.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
-      "state": "ci-passed",
-      "at": "2026-10-08T02:55:32Z",
+      "state": "published",
+      "branch": "trunk",
       "run_id": 37719852082,
       "status": "completed",
-      "conclusion": "success"
+      "conclusion": "success",
+      "release_job_id": 113125834189,
+      "release_id": 406361491,
+      "tag": "v0.22.19",
+      "url": "https://github.com/alecerf/mynou/releases/tag/v0.22.19",
+      "published_at": "2026-10-08T02:55:26Z",
+      "immutable": true,
+      "assets": [
+        {
+          "id": 620537247,
+          "name": "mynou-v0.22.19-linux-x86_64",
+          "size": 4891488,
+          "digest": "sha256:8bd8649c0bd5bb9a6db8c3a12266aa048666d9c4180c01bb2d9e4f5f65f57e54"
+        },
+        {
+          "id": 620537245,
+          "name": "mynou-v0.22.19-macos-arm64",
+          "size": 3729072,
+          "digest": "sha256:430174bc47bea7bdc9f3300b4abbf0cd94e6f6844758f59cc022404603f5da54"
+        },
+        {
+          "id": 620537240,
+          "name": "mynou-v0.22.19-macos-x86_64",
+          "size": 4508464,
+          "digest": "sha256:089da007a3bba82b1234657b1523dafae187708a09b5eecff232070d8c591256"
+        },
+        {
+          "id": 620537244,
+          "name": "SHA256SUMS",
+          "size": 281,
+          "digest": "sha256:b9a18cd0efef8fdc96e189f67641c148bdede9d175ba9066f075c3e391e11f84"
+        }
+      ],
+      "container": {
+        "binary_sha256": "8bd8649c0bd5bb9a6db8c3a12266aa048666d9c4180c01bb2d9e4f5f65f57e54",
+        "image": "ghcr.io/alecerf/mynou@sha256:04e724dd87981b2cd75ad5db696416a888b712509015adbe4f356c3bdf517220",
+        "package_id": 15695108,
+        "repository": "alecerf/mynou",
+        "repository_association": "not_exposed",
+        "repository_id": 1403318143,
+        "source": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+        "verification_cleanup": "completed",
+        "verification_user": "1001:1001",
+        "version": "0.22.19",
+        "visibility": "private"
+      },
+      "tests": {
+        "passed": 864,
+        "failed": 0,
+        "harnesses": 63,
+        "seconds": 101.155,
+        "infrastructure": 22,
+        "organization": 53
+      },
+      "jobs": [
+        {
+          "id": 113124767916,
+          "name": "Build aarch64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113124768055,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113124768076,
+          "name": "Build x86_64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113124768150,
+          "name": "validate",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113124768158,
+          "name": "Build x86_64-unknown-linux-musl",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113125627912,
+          "name": "package",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113125834189,
+          "name": "release",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    "publication_baseline": {
+      "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
+      "state": "published",
+      "branch": "trunk",
+      "run_id": 37696923958,
+      "status": "completed",
+      "conclusion": "success",
+      "release_id": 406222389,
+      "tag": "v0.22.16",
+      "url": "https://github.com/alecerf/mynou/releases/tag/v0.22.16",
+      "published_at": "2026-10-07T22:38:42Z",
+      "immutable": true,
+      "assets": [
+        {
+          "id": 620005087,
+          "name": "mynou-v0.22.16-linux-amd64-image.tar.gz",
+          "size": 2354546,
+          "digest": "sha256:a034a8ff4cd578f7b1df0f4607c1dbb260237a90c1109b82a84187b0479dd883"
+        },
+        {
+          "id": 620005088,
+          "name": "mynou-v0.22.16-linux-amd64-image.tar.gz.sha256",
+          "size": 106,
+          "digest": "sha256:e6b352366028188bb6f878aaabb64e6f5bb2cddf5a93c464206cd95e97c879ce"
+        },
+        {
+          "id": 620005091,
+          "name": "mynou-v0.22.16-linux-x86_64",
+          "size": 4887392,
+          "digest": "sha256:0d1aec512ab3dcff5f80e59e5fdd82e835f2af54028c73dda80579089f08fd33"
+        },
+        {
+          "id": 620005089,
+          "name": "mynou-v0.22.16-linux-x86_64.sha256",
+          "size": 94,
+          "digest": "sha256:59876c7d79775cfc469b181e932c63e3dcbd1533ca8435f7fd75b8ad5fbc26e6"
+        },
+        {
+          "id": 620005118,
+          "name": "mynou-v0.22.16-macos-arm64",
+          "size": 3729120,
+          "digest": "sha256:753bb7d376ea32f5e1cbdf833c88ce0c921015a2e99a26c07e61170ad5563b7c"
+        },
+        {
+          "id": 620005114,
+          "name": "mynou-v0.22.16-macos-arm64.sha256",
+          "size": 93,
+          "digest": "sha256:831d8d9bdf5e3be3fd8f8b52b48f0d8e590617597e100a0e986e61e6b8a3d1c2"
+        },
+        {
+          "id": 620005116,
+          "name": "mynou-v0.22.16-macos-x86_64",
+          "size": 4504360,
+          "digest": "sha256:d53154814e9ff4fbda714b68c79035a7f8461cbe4d5f693bff5b5ddb9f01d3eb"
+        },
+        {
+          "id": 620005121,
+          "name": "mynou-v0.22.16-macos-x86_64.sha256",
+          "size": 94,
+          "digest": "sha256:faa5e586b23deb3f7bc4dfd3777324d8f679f2e9257f3627d6473eed0cf3740d"
+        },
+        {
+          "id": 620005130,
+          "name": "mynou-v0.22.16-source.zip",
+          "size": 9422155,
+          "digest": "sha256:e1ceed53552fab2b5ed1dab43071aade2184b359a5434752069a45672190dd10"
+        },
+        {
+          "id": 620005139,
+          "name": "mynou-v0.22.16-source.zip.sha256",
+          "size": 92,
+          "digest": "sha256:664daed4c14c971e85b04eac7039e55985a4ab6803621597cbd39587d5c4588f"
+        },
+        {
+          "id": 620005090,
+          "name": "SHA256SUMS",
+          "size": 479,
+          "digest": "sha256:59aae05f00685466910825ad5d56f326eb279b60e0b81d63e00fae6ae47c73da"
+        }
+      ],
+      "rust_tests": 864,
+      "rust_failures": 0,
+      "rust_seconds": 100.579,
+      "scheduler_tests": 4,
+      "organization_tests": 53,
+      "previous_release_id": 406150016,
+      "previous_assets_unchanged": true,
+      "jobs": [
+        {
+          "id": 113050826415,
+          "name": "Build x86_64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113050826731,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113050826744,
+          "name": "validate",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113050826749,
+          "name": "Build x86_64-unknown-linux-musl",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113050826816,
+          "name": "Build aarch64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113052416643,
+          "name": "package",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113052605054,
+          "name": "release",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    "source": {
+      "base_commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
+      "branch": "work/registry-releases",
+      "changed_paths": [
+        ".github/workflows/ci.yml",
+        ".github/scripts/publish_container.py",
+        ".github/scripts/test_publication.py",
+        "Dockerfile",
+        "deploy-compose.yaml",
+        "src/main.rs",
+        "compose.yaml",
+        "tests/cli.rs",
+        "Cargo.toml",
+        "Cargo.lock",
+        ".github/scripts/test_durations.json",
+        ".github/scripts/publish-release.sh",
+        "README.md",
+        "docs/deployment.md",
+        "docs/macos.md",
+        "docs/ci.md",
+        "docs/validation.md",
+        "docs/next-release.md",
+        "docs/releases/0.22.17.md",
+        "examples/package_release.rs"
+      ],
+      "removed_path": "examples/package_release.rs",
+      "planned_version": "0.22.17",
+      "remote_commit": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
+      "tree": "8092f713a3d3dcd5cb6bb2ff5d7939689452a02b"
+    },
+    "ci": {
+      "run_id": 37703667637,
+      "head_sha": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
+      "base_sha": "8a0ada56baa24b566e306af75768b90ed08b55ca",
+      "event": "pull_request",
+      "attempt": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "id": 113072834888,
+          "name": "validate",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113072835058,
+          "name": "Build aarch64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113072835072,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113072835207,
+          "name": "Build x86_64-unknown-linux-musl",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113072835300,
+          "name": "Build x86_64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113073722028,
+          "name": "package",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113073920822,
+          "name": "release",
+          "status": "completed",
+          "conclusion": "skipped"
+        }
+      ],
+      "rust_tests": 864,
+      "rust_harnesses": 63,
+      "rust_failures": 0,
+      "rust_seconds": 99.773,
+      "scheduler_tests": 4,
+      "publication_tests": 10,
+      "organization_tests": 53,
+      "synthetic_merge_sha": "1d9b3f4c5e0a8c783598eaf01ff15de6330636bb"
+    },
+    "qa": {
+      "schema": 1,
+      "role": "qa",
+      "head_sha": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
+      "base_sha": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "lease_checkpoint": "d7274428db7398300d3057e9ef03ca1e1dd4adaa",
+      "verdict": "passed",
+      "summary": "Independent logical QA inspected all thirteen actual diff paths and source/runtime/output boundaries after every required source CI job passed. The real shared Docker demo completed cleanup as nonroot1001:1001 while configured-user1000 coverage remained. Failure regressions and all product gates passed; no blocking findings. Default19 publication remains required for Issue18.",
+      "reviewed_paths": [
+        ".github/scripts/publish_container.py",
+        ".github/scripts/test_publication.py",
+        ".github/workflows/ci.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "README.md",
+        "compose.yaml",
+        "docs/ci.md",
+        "docs/deployment.md",
+        "docs/macos.md",
+        "docs/next-release.md",
+        "docs/releases/0.22.19.md",
+        "docs/validation.md"
+      ],
+      "acceptance": [
+        "Complete native current diff, Issue18 acceptance/recovery evidence, full publisher flow, workflow permissions, meaningful regression behavior and all English version/deployment/recovery docs reviewed independently.",
+        "Real PR package CI executed the identical shared verification cleanup path with private runner-owned bind mount and nonroot1001:1001: ready, Plex confirmed and cleanup completed.",
+        "Production image1000:1000 inspection and configured-user1000 package runtime demonstration retained; readonly root/network none/cap-drop/no-new-privileges remain mandatory.",
+        "Temporary demo and credential workspaces close successfully before publication JSON/GITHUB_OUTPUT/stdout. The actual CI cleanup-error regression left both proof and existing Actions output unchanged.",
+        "Actual root refusal, private mount removal/ownership and readonly local-image-selector regression cases passed. Prior package/source/private identity, collision, retry, pulled-byte and failed-demo cases still pass.",
+        "All required source CI jobs green; safe Rust std and zero Cargo dependencies retained. New19 source/version preserves actual17/18images and earlier immutable assets.",
+        "No actual default19 publication or immutable release inferred from PR. Private prior18image proof and its later failed cleanup are represented separately; meaningful change has distinct scope-bound Security and QA phases."
+      ],
+      "evidence": [
+        "Native PR23 exact sourcef3483b9c6ba772285db18ebc7fc276cc768ad00a/baseebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114,13files,empty native review threads.",
+        "Mynou CI37719111412 exact source completedSUCCESS: validate113122402761, four builds113122402899/113122402945/113122403003/113122403023 and package113123185960 allSUCCESS. PR release113123364690 correctlySKIPPED.",
+        "Actual validate log:22infrastructure tests including all4new cleanup/root/output/selector cases,53organization tests and63Rust harnesses;864passed/0failed in103.080s. Dependency graph,formatting,Clippy and script syntax stepsSUCCESS.",
+        "Actual package log02:45:13Z: cleanup=completed,plex_scan_confirmed=true,state=ready,user=1001:1001 after shared --verify-demo. Separate default1000container demo reachedready/Plextrue. All3v19 executable checksumsOK.",
+        "Native ARM64/Intel macOS logs prove Mach-O arm64/x86_64 and ready/Plex-confirmed standalone demos. Linux musl demo also ready/Plex-confirmed; nativeGNU target succeeded.",
+        "Latest Engineering37719273585 organization113122923470SUCCESS; QA gate113122967344SKIPPED whiledraft. Actual Security5450767410 uses historical7fe67496ee6f38473324d5372c0a545594a2224d heldSecurity lease for the same Issue18/PR23/source within acquisition/expiration.",
+        "Immutable16release406222389 all11native assets match preserved baseline. Prior18default37715379732 verified private image991a217cd046c00697b975bff35b4bc23d4f7a85f0b4d14b90cd904684c7cf68 then failed cleanup; native18release404. No overwrite/manual publication/local validation."
+      ],
+      "findings": []
+    },
+    "qa_native_review": {
+      "success": true,
+      "review_id": 5449746769
+    },
+    "security": {
+      "schema": 1,
+      "role": "security",
+      "head_sha": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
+      "base_sha": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "lease_checkpoint": "7fe67496ee6f38473324d5372c0a545594a2224d",
+      "verdict": "passed",
+      "summary": "Complete thirteen-path Security review found no blocking concerns. Verification uses a private runner-owned synthetic mount with explicit nonroot UID/GID, retains configured-user1000 validation and all image/source/privacy/collision guards, and emits proof only after successful cleanup. Actual source CI and independent QA remain prerequisites; no new release success claimed.",
+      "reviewed_paths": [
+        ".github/scripts/publish_container.py",
+        ".github/scripts/test_publication.py",
+        ".github/workflows/ci.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "README.md",
+        "compose.yaml",
+        "docs/ci.md",
+        "docs/deployment.md",
+        "docs/macos.md",
+        "docs/next-release.md",
+        "docs/releases/0.22.19.md",
+        "docs/validation.md"
+      ],
+      "acceptance": [
+        "Reviewed every actual changed path, full publisher/source/package guards, workflow permissions, regression cases, version/manifests and English installation/recovery/release documentation.",
+        "Shared synthetic demo rejects root UID/GID, mounts only a fresh private0700 runner-owned directory, retains readonly root/network none/cap-drop ALL/no-new-privileges and removes the tree before returning.",
+        "New readonly CLI accepts only exact local Mynou version tags, performs no GHCR lookup/login/push or publication output and is reused by PR package CI with unchanged read-only permissions.",
+        "Configured-user1000 package demonstration and inspected production1000:1000 image policy remain separate mandatory gates; verification-only UID override does not change product or installation defaults.",
+        "Publication JSON/GITHUB_OUTPUT/stdout are emitted after both demo and credential TemporaryDirectory contexts close successfully. Cleanup errors still fail visibly; no privileged cleanup, ignored errors or exposed credentials.",
+        "Default-only exact private repository/package identity, OCI labels/source/runtime, conflicting-tag refusal, pulled digest/executable SHA, immutable prior releases and std-only product constraints remain unchanged.",
+        "New19 source/version avoids replacement of actually observed17/18 images. Meaningful CI cases challenge mount removal/ownership, root identity, cleanup failure without proof and readonly image selector."
+      ],
+      "evidence": [
+        "Native PR23 exact headf3483b9c6ba772285db18ebc7fc276cc768ad00a/baseebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114; complete13-path native diff and current publisher/workflow inspected.",
+        "Actual prior defaultCI37715379732 release113111514725 verified private package15695108/repo1403318143/image991a217cd046c00697b975bff35b4bc23d4f7a85f0b4d14b90cd904684c7cf68/binary1c6ddb01eeeecfc480e43a5cd9d776802d5a2ffa6c7a524058d27a9940bbd80e then failed host cleanup; native18 release404.",
+        "Native immutable16 release406222389 and all11asset IDs/names/sizes/digests match preserved baseline. No image or release overwrite performed.",
+        "SourceCI37719111412 was inprogress when admitted; Engineering37719111541 succeeded while draft. New source tests/cleanup/default19 publication are not inferred from source or prior18 proof.",
+        "Separate Security planning checkpoint4f60b57f52c712c69840aff8b1daaf331bcac019 rejected root/sudo/ignored-cleanup/permission changes; this later scoped Security phase inspected the actual implementation."
+      ],
+      "findings": []
+    },
+    "security_native_review": {
+      "success": true,
+      "review_id": 5450457499
+    },
+    "gate": {
+      "pr": 23,
+      "head": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
+      "base": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "run": 37719702099,
+      "job": 113124333296,
+      "conclusion": "success",
+      "qa_review_id": 5450786129,
+      "qa_checkpoint": "d7274428db7398300d3057e9ef03ca1e1dd4adaa",
+      "security_review_id": 5450767410,
+      "security_checkpoint": "7fe67496ee6f38473324d5372c0a545594a2224d",
+      "ci": 37719111412
+    },
+    "merge": {
+      "pr": 23,
+      "head": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
+      "base": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+      "tree": "a81965e2829d3bec4051a9c17d69ca2b10c7d26f",
+      "parents": [
+        "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+        "f3483b9c6ba772285db18ebc7fc276cc768ad00a"
+      ],
+      "merged_at": "2026-10-08T02:50:38Z",
+      "native_verified": true
+    },
+    "cleanup": {
+      "issue": 18,
+      "status": "done",
+      "branch": "work/container-demo-cleanup",
+      "branch_state": "deleted by native merge cleanup; fresh ref read 404",
+      "blocking_dependencies": []
+    },
+    "recovery": {
+      "issue18_reopened": true,
+      "source_unchanged": true,
+      "old_release_assets_unchanged": true,
+      "checked_artifacts": [
+        {
+          "id": 11518708659,
+          "name": "mynou-container-551e82d2c4158b9af2080081bbac3e1d18c949ea",
+          "digest": "sha256:35dc6c8c034477cbcd7a764d89d5622d9534c0db5a2724afac4e20b441349e53",
+          "expires_at": "2026-10-08T23:53:14Z",
+          "head_sha": "551e82d2c4158b9af2080081bbac3e1d18c949ea"
+        },
+        {
+          "id": 11518488947,
+          "name": "mynou-release-551e82d2c4158b9af2080081bbac3e1d18c949ea",
+          "digest": "sha256:486a60651ab4ae7ef703bf9541308d559e32b65c2c43b91fca6ddbfbf904b6b2",
+          "expires_at": "2026-10-14T23:53:16Z",
+          "head_sha": "551e82d2c4158b9af2080081bbac3e1d18c949ea"
+        }
+      ],
+      "local_checks": false,
+      "subagents": false
+    },
+    "recovery_source": {
+      "branch": "work/container-demo-cleanup",
+      "base": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "commit": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
+      "tree": "a81965e2829d3bec4051a9c17d69ca2b10c7d26f",
+      "pr": 23,
+      "issue": 18,
+      "version": "0.22.19",
+      "preserved_previous_pr": 22
+    },
+    "diagnostic_security": {
+      "schema": 1,
+      "role": "security",
+      "head_sha": "0356649d2b8364c2ec4061f080d28de9b842cfb9",
+      "base_sha": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
+      "lease_checkpoint": "8c43ccda2ed4dad94dcd5c3a75832f422c62a5f9",
+      "verdict": "passed",
+      "summary": "Complete diagnostic diff is a narrow read-only probe, not publication recovery completion. Same-repository branch gating, contents/package read only, fixed GETs, bounded parsing and allowlisted metadata protect credentials and partial registry state. Strict default publisher and immutable source/version guards remain untouched; actual CI and later corrective head need fresh review.",
+      "reviewed_paths": [
+        ".github/scripts/inspect_package.py",
+        ".github/scripts/test_package_inspection.py",
+        ".github/workflows/ci.yml",
+        "docs/ci.md"
+      ],
+      "acceptance": [
+        "All four native changed paths were inspected; no package/visibility/tag/delete operation or privileged default publication change.",
+        "PR probe receives only repository-scoped ephemeral contents/package read; fork/other branch cannot invoke its job. Checkout does not persist credentials.",
+        "Inspector rejects wrong event/repository/source/version before API requests; only two fixed GETs are allowed, with bounded one-page versions and response lengths.",
+        "No raw error/description/owner/unrelated tag output. Allowed visibility, repository-field booleans and matching typed digest evidence explicitly do not claim publication.",
+        "Partial default images and earlier releases are preserved. Draft recovery remains incomplete; no unchanged release retry or merge is authorized by this diagnostic review."
+      ],
+      "evidence": [
+        "Actual complete four-path native PR22 diff at0356649d2b8364c2ec4061f080d28de9b842cfb9/551e82d2c4158b9af2080081bbac3e1d18c949ea.",
+        "Actual default CI37704415292 attempt2 release113091080992 failed the unchanged guard; new PR CI evidence has not yet been inspected.",
+        "Five meaningful CI-only inspection regression sources cover safe output/partial tags, missing metadata/full pages, scopes/forks, denied/hidden404 and malformed/oversized inputs. These are source-reviewed, not locally executed."
+      ],
+      "findings": [],
+      "native_review": {
+        "success": true,
+        "review_id": 5450400942
+      }
+    },
+    "registry_diagnosis": {
+      "run_id": 37713788379,
+      "job_id": 113105507230,
+      "head": "0356649d2b8364c2ec4061f080d28de9b842cfb9",
+      "base": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
+      "conclusion": "success",
+      "actual_permissions": {
+        "contents": "read",
+        "packages": "read"
+      },
+      "proof": {
+        "image": "ghcr.io/alecerf/mynou",
+        "listed_versions": 1,
+        "observed_tags": [
+          {
+            "digest": "sha256:675ef89d1bed913973e7682e9633e8fb3b229eecc5d98dc8a132f1b49af2040c",
+            "tag": "0.22.17"
+          },
+          {
+            "digest": "sha256:675ef89d1bed913973e7682e9633e8fb3b229eecc5d98dc8a132f1b49af2040c",
+            "tag": "sha-551e82d2c4158b9af2080081bbac3e1d18c949ea"
+          }
+        ],
+        "package_identity_matches": true,
+        "publication_verified": false,
+        "repository_fields": {
+          "full_name": false,
+          "id": false,
+          "name": false,
+          "owner": false
+        },
+        "repository_metadata": "missing",
+        "versions_complete": true,
+        "visibility": "private"
+      },
+      "package_association_not_verified": true
+    },
+    "corrective_decision": {
+      "scope": "Replace undocumented/missing association assumption with supported explicit identity and provenance checks; preserve strict privacy and reported conflicting repository rejection.",
+      "required": [
+        "Verify native private source repository full_name/id against GITHUB_REPOSITORY and GITHUB_REPOSITORY_ID before publication",
+        "Verify native package owner/name/type/private visibility and stable positive package ID across publication",
+        "Keep reported conflicting repository metadata a hard rejection; absent metadata is recorded unverified, never described as associated",
+        "Keep exact source/revision/version/runtime/digest/binary/demo checks and refuse all source/version image collisions",
+        "Advance new source to0.22.18 because actual 0.22.17 image tags already exist; preserve their actual digest675ef89d... and prior immutable releases",
+        "Remove temporary PR probe in same recovery PR after evidence; keep bounded read-only helper/regressions as reusable diagnosis",
+        "Separate full corrected Security/QA; actual required CI and later default private publication needed"
+      ]
+    },
+    "qa_review_pending": {
+      "schema": 1,
+      "role": "qa",
+      "head_sha": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
+      "base_sha": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
+      "verdict": "passed",
+      "summary": "Independent logical QA reviewed the complete twelve-path correction after all required source CI jobs passed. Explicit private source/package identity checks replace an absent optional metadata assumption while collision, privacy, digest, binary and runtime guards remain. No blocking findings; actual default publication is still required to finish Issue18.",
+      "reviewed_paths": [
+        ".github/scripts/publish_container.py",
+        ".github/scripts/test_publication.py",
+        "Cargo.lock",
+        "Cargo.toml",
+        "README.md",
+        "compose.yaml",
+        "docs/ci.md",
+        "docs/deployment.md",
+        "docs/macos.md",
+        "docs/next-release.md",
+        "docs/releases/0.22.18.md",
+        "docs/validation.md"
+      ],
+      "acceptance": [
+        "Reviewed all twelve current native diff paths and the full publisher flow, meaningful CI-only regressions, version/manifests/Compose and English installation/recovery documentation.",
+        "Trusted workflow repository ID/name, private native repository and strict private package owner/name/type/stable positive ID are verified; public, foreign, malformed or substituted identities fail closed.",
+        "Reported conflicting association remains rejected. Omitted optional metadata is explicitly not_exposed and is never claimed to prove UI linkage; actual partial17 tags remain preserved by fresh18 source/version.",
+        "Original same-run checked image, nonroot runtime/OCI source identity, preflight collision refusal, exact-tag retry reuse, re-pulled content digest, executable SHA and isolated demo checks are preserved.",
+        "Temporary diagnostic permission/job/helper are absent from final diff; workflow equals base. Safe Rust std, zero Cargo dependencies, no product source code/dependency changes or manual publication.",
+        "All required Mynou CI and Engineering organization jobs passed at exact head. Release was correctly skipped on PR; machine QA gate and later default publication remain distinct pending delivery transitions."
+      ],
+      "evidence": [
+        "Native PR22 open draft exact head1cbe42828fe1bf594cd6458796eefa65c3a0096d/base551e82d2c4158b9af2080081bbac3e1d18c949ea,12changed files; native review threads empty.",
+        "Mynou CI37714490728 completed SUCCESS at exact head: validate113107741065, four native builds113107740929/113107741059/113107741149/113107741209, package113108584149 all SUCCESS; release113108694770 SKIPPED.",
+        "Actual validate log:18 infrastructure tests including all four new private context/package substitution cases,53 organization tests,63Rust harnesses,864passed/0failed in99.845s; dependency graph/formatting/Clippy/source syntax steps all SUCCESS.",
+        "Actual ARM64/Intel macOS logs prove native Mach-O architecture and ready/Plex-confirmed standalone demos; Linux musl demo also ready/Plex-confirmed.",
+        "Actual package log proves checked readonly network-none/cap-drop/no-new-privileges container demo ready/Plex-confirmed and SHA256SUMS verifies all three0.22.18 executables.",
+        "Engineering37714490697 organization113107740865 SUCCESS at same source; agent-qa-review correctly SKIPPED while draft. Actual complete-diff Security COMMENT5450457499 bound to historical Security lease3f203a1c02bf5aacadfc914e98dce5512c1de876.",
+        "Read-only diagnostic37713788379/job113105507230 retained actual private partial17 image digest675ef89d1bed913973e7682e9633e8fb3b229eecc5d98dc8a132f1b49af2040c and absent metadata. No default18/private registry/release publication success claimed."
+      ],
+      "findings": []
+    },
+    "qa_ci": {
+      "run": 37714490728,
+      "engineering": 37714490697,
+      "jobs": [
+        {
+          "id": 113107740929,
+          "name": "Build aarch64-apple-darwin",
+          "conclusion": "success"
+        },
+        {
+          "id": 113107741059,
+          "name": "Build x86_64-unknown-linux-musl",
+          "conclusion": "success"
+        },
+        {
+          "id": 113107741065,
+          "name": "validate",
+          "conclusion": "success"
+        },
+        {
+          "id": 113107741149,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "conclusion": "success"
+        },
+        {
+          "id": 113107741209,
+          "name": "Build x86_64-apple-darwin",
+          "conclusion": "success"
+        },
+        {
+          "id": 113108584149,
+          "name": "package",
+          "conclusion": "success"
+        },
+        {
+          "id": 113108694770,
+          "name": "release",
+          "conclusion": "skipped"
+        }
+      ],
+      "rust_passed": 864,
+      "harnesses": 63,
+      "rust_seconds": 99.845,
+      "infrastructure_tests": 18,
+      "organization_tests": 53,
+      "publication": false
+    },
+    "qa_native": {
+      "success": true,
+      "review_id": 5450786129
+    },
+    "security_native": {
+      "success": true,
+      "review_id": 5450767410
+    },
+    "delivery": {
+      "pr": 23,
+      "merged": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+      "head": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
+      "base": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "gate_run": 37719702099,
+      "gate_job": 113124333296,
+      "gate_conclusion": "success",
+      "publication_verified": false
+    },
+    "previous_assets_verified_at": "2026-10-08T03:36:00Z",
+    "previous_failed_publication": {
+      "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
+      "state": "ci-failed",
+      "at": "2026-10-08T01:30:18Z",
+      "branch": "trunk",
+      "run_id": 37704415292,
+      "event": "push",
+      "attempt": 2,
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://github.com/alecerf/mynou/actions/runs/37704415292",
+      "tag": "v0.22.17",
+      "release_observed": false,
+      "release_lookup_response": 404,
+      "registry_observed": true,
+      "registry_image": "ghcr.io/alecerf/mynou",
+      "registry_version_tag": "0.22.17",
+      "registry_source_tag": "sha-551e82d2c4158b9af2080081bbac3e1d18c949ea",
+      "expected_asset_count": 4,
+      "manual_dispatch": false,
+      "default_ref_verified": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
+      "engineering_run_id": 37704415222,
+      "engineering_conclusion": "success",
+      "publication_not_inferred": true,
+      "failed_job": 113091080992,
+      "failure": "GHCR package must be private and linked to this repository",
+      "failure_phase": "unresolved before-push versus after-push check; captured successful command output is not in native logs",
+      "registry_partial_state": "Actual read-only diagnostic confirmed private partial17/source tags at675ef89d1bed913973e7682e9633e8fb3b229eecc5d98dc8a132f1b49af2040c; preserved by fresh18 source/version.",
+      "previous_assets_unchanged": true,
+      "previous_jobs": [
+        {
+          "id": 113091080992,
+          "name": "release",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "id": 113091081210,
+          "name": "validate",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113091081866,
+          "name": "Build aarch64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113091107134,
+          "name": "Build x86_64-unknown-linux-musl",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113091119231,
+          "name": "Build x86_64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113091124218,
+          "name": "package",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113091126250,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "previous_conclusion": "failure",
+      "retry": {
+        "state": "completed",
+        "job_id": 113076409833,
+        "run_id": 37704415292,
+        "original_attempt": 1,
+        "native_attempt_observed": 2,
+        "native_status": "completed",
+        "native_response": {
+          "success": true
+        },
+        "accepted_at": "2026-10-08T00:44:25Z",
+        "scope": "failed release job only",
+        "source": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
+        "unchanged_retry_limit": 1,
+        "next_on_same_failure": "Do not rerun this unchanged approach again. Read actual failed log, add sanitized visibility/repository/stage diagnostics through reviewed source/CI if needed; preserve partial source/version images and releases.",
+        "conclusion": "failure"
+      },
+      "corrective_pr": 22,
+      "corrective_merge": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114"
+    },
+    "wake": {
+      "started_at": "2026-10-08T03:29:12Z",
+      "deadline": "2026-10-08T04:09:12.000Z",
+      "checkpoint_reserve": "2026-10-08T04:04:12.000Z"
+    },
+    "recovery_plan": {
+      "version": "0.22.19",
+      "issue": 18,
+      "previous_pr": 22,
+      "base": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "source_change_required": true,
+      "secret_exposure": false,
+      "paid_infrastructure": false,
+      "staging_root_uid_gid": "use nonroot effective runner identity, private0700 mount, shared CI helper; no sudo/root/ignored cleanup",
+      "publication_output_boundary": "only after all workspace context managers complete",
+      "preserve_default_user1000_gate": true
+    },
+    "cleanup_security_plan": {
+      "observed_failure_job": 113111514725,
+      "source": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "image_proof": {
+        "binary_sha256": "1c6ddb01eeeecfc480e43a5cd9d776802d5a2ffa6c7a524058d27a9940bbd80e",
+        "image": "ghcr.io/alecerf/mynou@sha256:991a217cd046c00697b975bff35b4bc23d4f7a85f0b4d14b90cd904684c7cf68",
+        "package_id": 15695108,
+        "repository": "alecerf/mynou",
+        "repository_association": "not_exposed",
+        "repository_id": 1403318143,
+        "source": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+        "version": "0.22.18",
+        "visibility": "private"
+      },
+      "decision": "Match verification-only bind-mount process effective UID/GID to the nonroot runner; isolate synthetic directory0700 and require successful removal. Keep image configured1000:1000 inspection and actual default-user package demo.",
+      "must_keep": [
+        "Default-only scoped ephemeral token and package/source private identity guards",
+        "OCI version/revision/source, runtime policy, collision refusal, digest re-pull/executable SHA and immutable prior releases",
+        "Readonly root, network none, cap-drop ALL and no-new-privileges on both runtime verifications",
+        "PR jobs receive no write token or registry publication",
+        "No proof/GITHUB_OUTPUT before all temporary credential/demo workspaces finish cleanup"
+      ],
+      "must_reject": [
+        "Root UID or root primary GID verification",
+        "Privileged/sudo cleanup or ignored cleanup failures",
+        "Unsupported API/UI association claims",
+        "Overwriting existing17/18 version or source images"
+      ],
+      "logical_review_pending": true
+    },
+    "cleanup_security_review": {
+      "schema": 1,
+      "role": "security",
+      "head_sha": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
+      "base_sha": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "verdict": "passed",
+      "summary": "Complete thirteen-path Security review found no blocking concerns. Verification uses a private runner-owned synthetic mount with explicit nonroot UID/GID, retains configured-user1000 validation and all image/source/privacy/collision guards, and emits proof only after successful cleanup. Actual source CI and independent QA remain prerequisites; no new release success claimed.",
+      "reviewed_paths": [
+        ".github/scripts/publish_container.py",
+        ".github/scripts/test_publication.py",
+        ".github/workflows/ci.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "README.md",
+        "compose.yaml",
+        "docs/ci.md",
+        "docs/deployment.md",
+        "docs/macos.md",
+        "docs/next-release.md",
+        "docs/releases/0.22.19.md",
+        "docs/validation.md"
+      ],
+      "acceptance": [
+        "Reviewed every actual changed path, full publisher/source/package guards, workflow permissions, regression cases, version/manifests and English installation/recovery/release documentation.",
+        "Shared synthetic demo rejects root UID/GID, mounts only a fresh private0700 runner-owned directory, retains readonly root/network none/cap-drop ALL/no-new-privileges and removes the tree before returning.",
+        "New readonly CLI accepts only exact local Mynou version tags, performs no GHCR lookup/login/push or publication output and is reused by PR package CI with unchanged read-only permissions.",
+        "Configured-user1000 package demonstration and inspected production1000:1000 image policy remain separate mandatory gates; verification-only UID override does not change product or installation defaults.",
+        "Publication JSON/GITHUB_OUTPUT/stdout are emitted after both demo and credential TemporaryDirectory contexts close successfully. Cleanup errors still fail visibly; no privileged cleanup, ignored errors or exposed credentials.",
+        "Default-only exact private repository/package identity, OCI labels/source/runtime, conflicting-tag refusal, pulled digest/executable SHA, immutable prior releases and std-only product constraints remain unchanged.",
+        "New19 source/version avoids replacement of actually observed17/18 images. Meaningful CI cases challenge mount removal/ownership, root identity, cleanup failure without proof and readonly image selector."
+      ],
+      "evidence": [
+        "Native PR23 exact headf3483b9c6ba772285db18ebc7fc276cc768ad00a/baseebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114; complete13-path native diff and current publisher/workflow inspected.",
+        "Actual prior defaultCI37715379732 release113111514725 verified private package15695108/repo1403318143/image991a217cd046c00697b975bff35b4bc23d4f7a85f0b4d14b90cd904684c7cf68/binary1c6ddb01eeeecfc480e43a5cd9d776802d5a2ffa6c7a524058d27a9940bbd80e then failed host cleanup; native18 release404.",
+        "Native immutable16 release406222389 and all11asset IDs/names/sizes/digests match preserved baseline. No image or release overwrite performed.",
+        "SourceCI37719111412 was inprogress when admitted; Engineering37719111541 succeeded while draft. New source tests/cleanup/default19 publication are not inferred from source or prior18 proof.",
+        "Separate Security planning checkpoint4f60b57f52c712c69840aff8b1daaf331bcac019 rejected root/sudo/ignored-cleanup/permission changes; this later scoped Security phase inspected the actual implementation."
+      ],
+      "findings": []
+    },
+    "cleanup_qa_review": {
+      "schema": 1,
+      "role": "qa",
+      "head_sha": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
+      "base_sha": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "verdict": "passed",
+      "summary": "Independent logical QA inspected all thirteen actual diff paths and source/runtime/output boundaries after every required source CI job passed. The real shared Docker demo completed cleanup as nonroot1001:1001 while configured-user1000 coverage remained. Failure regressions and all product gates passed; no blocking findings. Default19 publication remains required for Issue18.",
+      "reviewed_paths": [
+        ".github/scripts/publish_container.py",
+        ".github/scripts/test_publication.py",
+        ".github/workflows/ci.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "README.md",
+        "compose.yaml",
+        "docs/ci.md",
+        "docs/deployment.md",
+        "docs/macos.md",
+        "docs/next-release.md",
+        "docs/releases/0.22.19.md",
+        "docs/validation.md"
+      ],
+      "acceptance": [
+        "Complete native current diff, Issue18 acceptance/recovery evidence, full publisher flow, workflow permissions, meaningful regression behavior and all English version/deployment/recovery docs reviewed independently.",
+        "Real PR package CI executed the identical shared verification cleanup path with private runner-owned bind mount and nonroot1001:1001: ready, Plex confirmed and cleanup completed.",
+        "Production image1000:1000 inspection and configured-user1000 package runtime demonstration retained; readonly root/network none/cap-drop/no-new-privileges remain mandatory.",
+        "Temporary demo and credential workspaces close successfully before publication JSON/GITHUB_OUTPUT/stdout. The actual CI cleanup-error regression left both proof and existing Actions output unchanged.",
+        "Actual root refusal, private mount removal/ownership and readonly local-image-selector regression cases passed. Prior package/source/private identity, collision, retry, pulled-byte and failed-demo cases still pass.",
+        "All required source CI jobs green; safe Rust std and zero Cargo dependencies retained. New19 source/version preserves actual17/18images and earlier immutable assets.",
+        "No actual default19 publication or immutable release inferred from PR. Private prior18image proof and its later failed cleanup are represented separately; meaningful change has distinct scope-bound Security and QA phases."
+      ],
+      "evidence": [
+        "Native PR23 exact sourcef3483b9c6ba772285db18ebc7fc276cc768ad00a/baseebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114,13files,empty native review threads.",
+        "Mynou CI37719111412 exact source completedSUCCESS: validate113122402761, four builds113122402899/113122402945/113122403003/113122403023 and package113123185960 allSUCCESS. PR release113123364690 correctlySKIPPED.",
+        "Actual validate log:22infrastructure tests including all4new cleanup/root/output/selector cases,53organization tests and63Rust harnesses;864passed/0failed in103.080s. Dependency graph,formatting,Clippy and script syntax stepsSUCCESS.",
+        "Actual package log02:45:13Z: cleanup=completed,plex_scan_confirmed=true,state=ready,user=1001:1001 after shared --verify-demo. Separate default1000container demo reachedready/Plextrue. All3v19 executable checksumsOK.",
+        "Native ARM64/Intel macOS logs prove Mach-O arm64/x86_64 and ready/Plex-confirmed standalone demos. Linux musl demo also ready/Plex-confirmed; nativeGNU target succeeded.",
+        "Latest Engineering37719273585 organization113122923470SUCCESS; QA gate113122967344SKIPPED whiledraft. Actual Security5450767410 uses historical7fe67496ee6f38473324d5372c0a545594a2224d heldSecurity lease for the same Issue18/PR23/source within acquisition/expiration.",
+        "Immutable16release406222389 all11native assets match preserved baseline. Prior18default37715379732 verified private image991a217cd046c00697b975bff35b4bc23d4f7a85f0b4d14b90cd904684c7cf68 then failed cleanup; native18release404. No overwrite/manual publication/local validation."
+      ],
+      "findings": []
+    },
+    "cleanup_ci": {
+      "run": 37719111412,
+      "conclusion": "success",
+      "engineering_run": 37719273585,
+      "organization_job": 113122923470,
+      "jobs": [
+        {
+          "id": 113122402761,
+          "name": "validate",
+          "conclusion": "success"
+        },
+        {
+          "id": 113122402899,
+          "name": "Build x86_64-unknown-linux-musl",
+          "conclusion": "success"
+        },
+        {
+          "id": 113122402945,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "conclusion": "success"
+        },
+        {
+          "id": 113122403003,
+          "name": "Build x86_64-apple-darwin",
+          "conclusion": "success"
+        },
+        {
+          "id": 113122403023,
+          "name": "Build aarch64-apple-darwin",
+          "conclusion": "success"
+        },
+        {
+          "id": 113123185960,
+          "name": "package",
+          "conclusion": "success"
+        },
+        {
+          "id": 113123364690,
+          "name": "release",
+          "conclusion": "skipped"
+        }
+      ],
+      "rust_passed": 864,
+      "rust_failed": 0,
+      "harnesses": 63,
+      "rust_seconds": 103.08,
+      "infrastructure_tests": 22,
+      "organization_tests": 53,
+      "actual_shared_demo": {
+        "user": "1001:1001",
+        "state": "ready",
+        "plex_scan_confirmed": true,
+        "cleanup": "completed"
+      },
+      "publication": false
+    },
+    "previous_failed_cleanup_publication": {
+      "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "state": "ci-failed",
+      "at": "2026-10-08T02:00:49Z",
+      "run_id": 37715379732,
+      "status": "completed",
+      "conclusion": "failure",
+      "branch": "trunk",
+      "event": "push",
+      "attempt": 1,
+      "tag": "v0.22.18",
+      "url": "https://github.com/alecerf/mynou/actions/runs/37715379732",
+      "failed_job": 113111514725,
+      "failure": "Operation not permitted removing UID1000-owned synthetic demo/seeder during TemporaryDirectory cleanup",
+      "failure_stage": "after pulled image/digest/binary/demo proof; before immutable GitHub release",
+      "registry_observed": true,
+      "image_verified": true,
+      "image_proof": {
+        "binary_sha256": "1c6ddb01eeeecfc480e43a5cd9d776802d5a2ffa6c7a524058d27a9940bbd80e",
+        "image": "ghcr.io/alecerf/mynou@sha256:991a217cd046c00697b975bff35b4bc23d4f7a85f0b4d14b90cd904684c7cf68",
+        "package_id": 15695108,
+        "repository": "alecerf/mynou",
+        "repository_association": "not_exposed",
+        "repository_id": 1403318143,
+        "source": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+        "version": "0.22.18",
+        "visibility": "private"
+      },
+      "release_observed": false,
+      "release_lookup_response": 404,
+      "immutable_release_verified": false,
+      "publication_not_inferred": true,
+      "previous16_assets_unchanged": true,
+      "jobs": [
+        {
+          "id": 113110531509,
+          "name": "validate",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113110531614,
+          "name": "Build aarch64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113110531662,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113110531669,
+          "name": "Build x86_64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113110531726,
+          "name": "Build x86_64-unknown-linux-musl",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113111349136,
+          "name": "package",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113111514725,
+          "name": "release",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    "retrospective": {
+      "cause": "PR container runtime check did not exercise publisher TemporaryDirectory cleanup; valid image proof was emitted before host cleanup failed.",
+      "encoded_fix": "Shared real read-only package/publisher demo cleanup plus explicit nonroot private mount owner and no-output-on-cleanup-failure CI regression."
+    },
+    "publication_recovery": {
+      "previous_control_checkpoint": "478d31a21e5cce1c55b22d29dd86912c93a7f680",
+      "previous_baseline": "v0.22.16",
+      "baseline_assets_unchanged": true,
+      "registry_association": "not_exposed",
+      "older_partial_registry_versions": "Historical 0.22.17/0.22.18 proofs preserved; no fresh registry read claimed.",
+      "current_native_issue_state": "closed/status:done",
+      "current_native_pr_state": "merged",
+      "execution_branch": "work/container-demo-cleanup returns native 404",
+      "blocking_dependencies": [],
+      "open_prs": 0
+    },
+    "next_managed_work": {
+      "issue": 19,
+      "origin": "user",
+      "intent": "Replace branch-backed engineering control storage; packages are a suggestion.",
+      "native_status": "inbox",
+      "existing_comments": 0
     }
   },
   "attempts": {
