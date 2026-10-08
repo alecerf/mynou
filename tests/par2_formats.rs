@@ -75,12 +75,26 @@ impl Fixture {
         slice_bytes: usize,
         rows: u32,
     ) -> Self {
+        let exponents: Vec<_> = (0..rows).collect();
+        Self::multi_recovery_exponents(files, recoverable, slice_bytes, &exponents)
+    }
+
+    fn recovery_exponents(data: &[u8], slice_bytes: usize, exponents: &[u32]) -> Self {
+        Self::multi_recovery_exponents(&[("Original.bin", data)], 1, slice_bytes, exponents)
+    }
+
+    fn multi_recovery_exponents(
+        files: &[(&str, &[u8])],
+        recoverable: u32,
+        slice_bytes: usize,
+        exponents: &[u32],
+    ) -> Self {
         let mut fixture = Self::files(files, recoverable, slice_bytes);
         fixture.packets.retain(|(kind, _)| *kind != RECOVERY);
         // Published primitive constants; parity uses the independent polynomial
         // long-division oracle below, never the production field implementation.
         let constants = [2u16, 4, 16, 128, 256, 2048, 8192, 16384, 4107, 32856, 17132];
-        for exponent in 0..rows {
+        for &exponent in exponents {
             let mut parity = vec![0u8; slice_bytes];
             for (index, slice) in files
                 .iter()
@@ -90,10 +104,7 @@ impl Fixture {
             {
                 let mut padded = slice.to_vec();
                 padded.resize(slice_bytes, 0);
-                let mut factor = 1;
-                for _ in 0..exponent {
-                    factor = reference_multiply(factor, constants[index]);
-                }
+                let factor = reference_power(constants[index], exponent);
                 for (target, source) in parity
                     .as_chunks_mut::<2>()
                     .0
@@ -179,6 +190,295 @@ fn reference_multiply(left: u16, right: u16) -> u16 {
         }
     }
     product as u16
+}
+
+fn reference_power(mut value: u16, mut exponent: u32) -> u16 {
+    let mut result = 1;
+    while exponent != 0 {
+        if exponent & 1 != 0 {
+            result = reference_multiply(result, value);
+        }
+        value = reference_multiply(value, value);
+        exponent >>= 1;
+    }
+    result
+}
+
+#[test]
+fn recovery_accepts_nonzero_nonconsecutive_parity_and_preserves_damaged_input() {
+    let original = b"abcdefgh";
+    let source = Fixture::recovery_exponents(original, 4, &[7, 9]).bytes();
+    let set = read(&source).unwrap();
+    for protected in [b"XbcdefgY".as_slice(), b""] {
+        let before = protected.to_vec();
+        assert_eq!(
+            set.recover_single(
+                &mut Cursor::new(&source),
+                protected,
+                RecoveryLimits::default(),
+            )
+            .unwrap(),
+            original
+        );
+        assert_eq!(protected, before.as_slice());
+    }
+}
+
+#[test]
+fn recovery_skips_a_dependent_early_row_for_a_later_independent_row() {
+    let original = b"abcdefghijkl";
+    // Global columns0/2 use constants2/16. Rows0/21845 are proportional,
+    // since2^(3*21845)=1; row21846 separates them.
+    let source = Fixture::recovery_exponents(original, 4, &[0, 21845, 21846]).bytes();
+    let set = read(&source).unwrap();
+    let protected = b"XbcdefghYjkl";
+    assert_eq!(
+        set.recover_single(
+            &mut Cursor::new(&source),
+            protected,
+            RecoveryLimits::default(),
+        )
+        .unwrap(),
+        original
+    );
+    assert_eq!(protected, b"XbcdefghYjkl");
+}
+
+#[test]
+fn recovery_rejects_available_rows_with_insufficient_rank_without_partial_output() {
+    let original = b"abcdefghijkl";
+    let source = Fixture::recovery_exponents(original, 4, &[0, 21845]).bytes();
+    let set = read(&source).unwrap();
+    let protected = b"XbcdefghYjkl";
+    assert!(
+        set.recover_single(
+            &mut Cursor::new(&source),
+            protected,
+            RecoveryLimits::default(),
+        )
+        .unwrap_err()
+        .contains("independent")
+    );
+    assert_eq!(protected, b"XbcdefghYjkl");
+    assert_eq!(
+        source,
+        Fixture::recovery_exponents(original, 4, &[0, 21845]).bytes()
+    );
+}
+
+#[test]
+fn recovery_selection_charges_dependent_candidates_before_any_parity_seek() {
+    let source = Fixture::recovery_exponents(b"abcdefghijkl", 4, &[0, 21845, 21846]).bytes();
+    let set = read(&source).unwrap();
+    let mut reader = MutatedSource {
+        cursor: Cursor::new(source.clone()),
+        mutate_at_start: Some(set.recovery()[0].data_offset() - 68),
+        mutate_at_end: 0,
+        endings: 0,
+        byte: set.recovery()[0].data_offset() as usize,
+    };
+    let restricted = RecoveryLimits {
+        max_field_operations: 70,
+        ..RecoveryLimits::default()
+    };
+    assert!(
+        set.recover_single(&mut reader, b"XbcdefghYjkl", restricted)
+            .unwrap_err()
+            .contains("row selection")
+    );
+    // This reader would mutate the source on the first parity-packet seek.
+    assert_eq!(reader.cursor.get_ref(), &source);
+    let sufficient = RecoveryLimits {
+        max_field_operations: 100,
+        ..RecoveryLimits::default()
+    };
+    assert_eq!(
+        set.recover_single(&mut Cursor::new(&source), b"XbcdefghYjkl", sufficient)
+            .unwrap(),
+        b"abcdefghijkl"
+    );
+}
+
+#[test]
+fn available_rows_retain_global_main_order_with_reversed_multifile_inputs() {
+    let source = Fixture::multi_recovery_exponents(
+        &[("Zulu.bin", b"abcdefgh"), ("Alpha.bin", b"IJKL")],
+        2,
+        4,
+        &[13, 14, 15],
+    )
+    .bytes();
+    let set = read(&source).unwrap();
+    let inputs = [
+        RecoveryInput::new(*set.files()[1].id(), b""),
+        RecoveryInput::new(*set.files()[0].id(), b""),
+    ];
+    let outputs = set
+        .recover_files(
+            &mut Cursor::new(&source),
+            &inputs,
+            MultiRecoveryLimits::default(),
+        )
+        .unwrap();
+    assert_eq!(outputs[0].id(), set.files()[0].id());
+    assert_eq!(outputs[0].bytes(), b"abcdefgh");
+    assert_eq!(outputs[1].id(), set.files()[1].id());
+    assert_eq!(outputs[1].bytes(), b"IJKL");
+}
+
+#[test]
+fn available_shifted_rows_recover_eight_erasures_across_two_files() {
+    let exponents: Vec<_> = (19..27).collect();
+    let source = Fixture::multi_recovery_exponents(
+        &[("one.bin", b"abcdefghijklmnop"), ("two.bin", b"ABCDEFGHIJKLMNOP")],
+        2,
+        4,
+        &exponents,
+    )
+    .bytes();
+    let set = read(&source).unwrap();
+    let inputs = [
+        RecoveryInput::new(*set.files()[0].id(), b""),
+        RecoveryInput::new(*set.files()[1].id(), b""),
+    ];
+    let outputs = set
+        .recover_files(
+            &mut Cursor::new(&source),
+            &inputs,
+            MultiRecoveryLimits::default(),
+        )
+        .unwrap();
+    assert_eq!(outputs[0].bytes(), b"abcdefghijklmnop");
+    assert_eq!(outputs[1].bytes(), b"ABCDEFGHIJKLMNOP");
+}
+
+#[test]
+fn available_rows_support_the_highest_accepted_exponent_and_initial_cancellation() {
+    let source = Fixture::recovery_exponents(b"abcd", 4, &[65534]).bytes();
+    let set = read(&source).unwrap();
+    assert_eq!(
+        set.recover_single(
+            &mut Cursor::new(&source),
+            b"",
+            RecoveryLimits::default(),
+        )
+        .unwrap(),
+        b"abcd"
+    );
+    let mut reader = Cursor::new(&source);
+    assert!(
+        set.recover_single_cancellable(
+            &mut reader,
+            b"",
+            RecoveryLimits::default(),
+            &AtomicBool::new(false),
+        )
+        .is_err()
+    );
+    assert_eq!(reader.position(), 0);
+}
+
+#[test]
+fn row_selection_is_exponent_ordered_and_does_not_certify_unused_parity() {
+    let mut fixture = Fixture::recovery_exponents(b"abcdefgh", 4, &[11, 5, 2]);
+    fixture.body_mut(RECOVERY)[4] ^= 0x55; // Exponent11 is not selected.
+    for reversed in [false, true] {
+        let mut ordered = fixture.clone();
+        if reversed {
+            ordered.packets.reverse();
+        }
+        let source = ordered.bytes();
+        let set = read(&source).unwrap();
+        assert_eq!(
+            set.recover_single(
+                &mut Cursor::new(&source),
+                b"",
+                RecoveryLimits::default(),
+            )
+            .unwrap(),
+            b"abcdefgh"
+        );
+    }
+}
+
+#[test]
+fn corrupt_selected_nonzero_parity_fails_integrity_without_basis_retries() {
+    let mut fixture = Fixture::recovery_exponents(b"abcdefgh", 4, &[7, 9, 10]);
+    fixture.body_mut(RECOVERY)[4] ^= 1;
+    let source = fixture.bytes(); // Packet-valid, mathematically invalid selected row.
+    assert!(
+        read(&source)
+            .unwrap()
+            .recover_single(
+                &mut Cursor::new(&source),
+                b"",
+                RecoveryLimits::default(),
+            )
+            .unwrap_err()
+            .contains("integrity")
+    );
+}
+
+#[test]
+fn private_workspace_persists_and_reopens_recovery_from_available_nonzero_rows() {
+    let parent = recovery_parent();
+    let root = parent.0.join("available-rows");
+    let source = Fixture::recovery_exponents(b"abcdefgh", 4, &[7, 9]).bytes();
+    let set = read(&source).unwrap();
+    let owner = recovery_owner();
+    let flag = AtomicBool::new(true);
+    let inputs = [RecoveryInput::new(*set.files()[0].id(), b"")];
+    let workspace = RecoveryWorkspace::create(
+        &root,
+        &owner,
+        &set,
+        &source,
+        &inputs,
+        MultiRecoveryLimits::default(),
+        &flag,
+    )
+    .unwrap();
+    let outputs = workspace.verified_files(&flag).unwrap();
+    assert_eq!(outputs.len(), 1);
+    assert_eq!(fs::read(outputs[0].path()).unwrap(), b"abcdefgh");
+    drop(workspace);
+    let reopened = RecoveryWorkspace::open(
+        &root,
+        &owner,
+        &set,
+        &source,
+        MultiRecoveryLimits::default(),
+        &flag,
+    )
+    .unwrap();
+    assert_eq!(
+        fs::read(reopened.verified_files(&flag).unwrap()[0].path()).unwrap(),
+        b"abcdefgh"
+    );
+}
+
+#[test]
+fn private_workspace_rank_failure_creates_no_directory_or_output() {
+    let parent = recovery_parent();
+    let root = parent.0.join("unavailable-rank");
+    let source = Fixture::recovery_exponents(b"abcdefghijkl", 4, &[0, 21845]).bytes();
+    let set = read(&source).unwrap();
+    let owner = recovery_owner();
+    let inputs = [RecoveryInput::new(*set.files()[0].id(), b"XbcdefghYjkl")];
+    assert!(
+        RecoveryWorkspace::create(
+            &root,
+            &owner,
+            &set,
+            &source,
+            &inputs,
+            MultiRecoveryLimits::default(),
+            &AtomicBool::new(true),
+        )
+        .is_err()
+    );
+    assert!(!root.exists());
+    assert_eq!(fs::read_dir(&parent.0).unwrap().count(), 0);
 }
 
 #[test]
@@ -390,7 +690,7 @@ fn multi_recovery_applies_content_slice_erasure_memory_and_work_budgets_to_the_s
 }
 
 #[test]
-fn multi_recovery_requires_combined_consecutive_rows_and_mathematically_correct_parity() {
+fn multi_recovery_requires_combined_independent_rows_and_mathematically_correct_parity() {
     let original =
         Fixture::multi_recovery(&[("one.bin", b"abcde"), ("two.bin", b"FGHIJK")], 2, 4, 4);
     let mut incorrect = original.clone();
@@ -616,7 +916,7 @@ fn recovery_checks_large_slice_chunks_and_zero_padding_with_an_independent_oracl
 }
 
 #[test]
-fn recovery_requires_consecutive_rows_and_rejects_incorrect_parity() {
+fn recovery_requires_enough_independent_rows_and_rejects_incorrect_parity() {
     let original = b"abcdefghijklmnopq";
     let mut fixture = Fixture::recovery(original, 8, 3);
     let limits = RecoveryLimits::default();

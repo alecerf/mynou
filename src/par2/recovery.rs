@@ -171,14 +171,71 @@ pub(super) fn padded_slice(input: &[u8], index: usize, scratch: &mut [u8]) -> bo
     start < input.len()
 }
 
-fn inverse_matrix(missing: &[usize], flag: &AtomicBool) -> Result<Vec<Vec<u16>>> {
+// Captured recovery packets are unique and sorted by exponent by the reader.
+// A small normalized echelon basis skips dependent rows without payload reads.
+fn select_rows<'a>(
+    missing: &[usize],
+    recovery: &'a [RecoverySlice],
+    available_operations: &mut u64,
+    flag: &AtomicBool,
+) -> Result<Vec<&'a RecoverySlice>> {
+    let count = missing.len();
+    let mut selected = Vec::with_capacity(count);
+    if count == 0 {
+        return Ok(selected);
+    }
+    let mut basis = [[0u16; 8]; 8];
+    // Charge every candidate before arithmetic, even when it is dependent:
+    // coefficients, worst-case scaled elimination, normalization and inverse.
+    let row_operations = (count * count + 2 * count + 1) as u64;
+    for captured in recovery {
+        active(flag)?;
+        *available_operations = available_operations
+            .checked_sub(row_operations)
+            .ok_or("PAR2 recovery row selection exceeds its field-operation budget")?;
+        let mut row = [0u16; 8];
+        for (column, index) in missing.iter().enumerate() {
+            row[column] = gf16::coefficient(*index as u32, captured.exponent)?;
+        }
+        for (pivot, base) in basis.iter().enumerate().take(count) {
+            if base[pivot] != 0 && row[pivot] != 0 {
+                let factor = row[pivot];
+                for (target, source) in row[pivot..count].iter_mut().zip(&base[pivot..count]) {
+                    *target ^= gf16::multiply(*source, factor);
+                }
+            }
+        }
+        if let Some(pivot) = row[..count].iter().position(|value| *value != 0) {
+            let factor = gf16::inverse(row[pivot])
+                .ok_or("PAR2 recovery selection pivot is not invertible")?;
+            for value in &mut row[pivot..count] {
+                *value = gf16::multiply(*value, factor);
+            }
+            basis[pivot] = row;
+            selected.push(captured);
+            if selected.len() == count {
+                active(flag)?;
+                return Ok(selected);
+            }
+        }
+    }
+    active(flag)?;
+    Err("PAR2 recovery lacks enough independent available parity slices".into())
+}
+
+fn inverse_matrix(
+    missing: &[usize],
+    selected: &[&RecoverySlice],
+    flag: &AtomicBool,
+) -> Result<Vec<Vec<u16>>> {
     let count = missing.len();
     let mut rows = vec![vec![0u16; 2 * count]; count];
-    for (exponent, row) in rows.iter_mut().enumerate() {
-        for (column, index) in missing.iter().enumerate() {
-            row[column] = gf16::coefficient(*index as u32, exponent as u32)?;
+    for (index, (row, captured)) in rows.iter_mut().zip(selected).enumerate() {
+        active(flag)?;
+        for (column, position) in missing.iter().enumerate() {
+            row[column] = gf16::coefficient(*position as u32, captured.exponent)?;
         }
-        row[count + exponent] = 1;
+        row[count + index] = 1;
     }
     for column in 0..count {
         active(flag)?;
@@ -354,13 +411,11 @@ impl Set {
                 "PAR2 recovery exceeds its working-memory or field-operation budget".into(),
             );
         }
-        let mut residuals = Vec::new();
-        for exponent in 0..missing.len() {
-            let captured = self
-                .recovery
-                .iter()
-                .find(|slice| slice.exponent == exponent as u32)
-                .ok_or("PAR2 recovery requires consecutive parity exponents starting at zero")?;
+        let mut available_operations = limits.max_field_operations - operations;
+        let selected = select_rows(&missing, &self.recovery, &mut available_operations, flag)?;
+        let matrix = inverse_matrix(&missing, &selected, flag)?;
+        let mut residuals = Vec::with_capacity(selected.len());
+        for captured in &selected {
             let mut row = self.read_recovery(source, captured, flag)?;
             for (index, (file_index, local)) in mapping.iter().enumerate() {
                 if !missing.contains(&index) {
@@ -368,14 +423,13 @@ impl Set {
                     gf16::add_scaled_cancellable(
                         &mut row,
                         &scratch,
-                        gf16::coefficient(index as u32, exponent as u32)?,
+                        gf16::coefficient(index as u32, captured.exponent)?,
                         flag,
                     )?;
                 }
             }
             residuals.push(row);
         }
-        let matrix = inverse_matrix(&missing, flag)?;
         let mut outputs = Vec::with_capacity(count_files);
         for (index, file) in files.iter().enumerate() {
             active(flag)?;
