@@ -22,6 +22,11 @@ jobs:
       version: ${{ steps.metadata.outputs.version }}
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Audit reachable source history for credential patterns
+        run: python3 engineering/secret_audit.py history --output "$RUNNER_TEMP/source-audit.json"
       - name: Install Rust 1.99.0
         run: |
           rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
