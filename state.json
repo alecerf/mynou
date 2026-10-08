@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 829,
-  "lease": null,
+  "generation": 830,
+  "lease": {
+    "id": "codex-recovery-20261008T204807Z-security-343a951c-22cb-49bb-990b-c56dcdc2ffff",
+    "worker": "codex-recovery-20261008T204807Z",
+    "role": "security",
+    "issue": 44,
+    "acquired_at": "2026-10-08T21:17:05Z",
+    "heartbeat_at": "2026-10-08T21:17:05Z",
+    "expires_at": "2026-10-08T22:02:05Z",
+    "branch": "work/44-publication-recovery",
+    "commit": "2ffb9a6a892ffa96e25871706aac228663b24a2a",
+    "pr": 49
+  },
   "checkpoint": {
     "at": "2026-10-08T21:15:34Z",
     "issue": 44,
