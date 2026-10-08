@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 388,
+  "generation": 389,
   "lease": {
     "id": "wake9-security-probe-20261008T013740Z",
     "worker": "codex-hourly-20261008T012904Z",
     "role": "security",
     "issue": 18,
     "acquired_at": "2026-10-08T01:37:23Z",
-    "heartbeat_at": "2026-10-08T01:37:23Z",
-    "expires_at": "2026-10-08T02:22:23Z",
+    "heartbeat_at": "2026-10-08T01:38:03Z",
+    "expires_at": "2026-10-08T02:23:03Z",
     "branch": "work/registry-recovery",
     "commit": "0356649d2b8364c2ec4061f080d28de9b842cfb9",
     "pr": 22
   },
   "checkpoint": {
-    "at": "2026-10-08T01:37:15Z",
+    "at": "2026-10-08T01:38:03Z",
     "issue": 18,
-    "role": "quality",
+    "role": "security",
     "branch": "work/registry-recovery",
     "commit": "0356649d2b8364c2ec4061f080d28de9b842cfb9",
     "pr": 22,
-    "summary": "Original four-path diagnostic source committed remotely0356649d/tree4dc673fb on preserved work/registry-recovery; draft linked PR22 opened. Read-only fixed package/version GET probe (same-repository branch, packagesread only),5 meaningful CI regressions and English docs; default publisher unchanged. Actual default attempt2 failure retained; diagnosis alone cannot merge/complete #18. No local checks.",
-    "next_action": "Security: actual complete four-path diff review at0356649d/551e82d2 under own exact lease. Inspect actual PR CI registry-inspection output when available, not poll; use evidence for supported correction and retire temporary probe before ready.",
+    "summary": "Security completed independent four-path diagnostic diff review at0356649d/551e82d2. Same-repository packagesread probe only, fixed bounded GETs and filtered output preserve secrets and strict publisher/image/release guards. No blocking Security findings in diagnosis scope; actual CI and full Issue18 recovery acceptance remain pending. Source-only review, no local tests.",
+    "next_action": "Inspect actual native PR22 CI/probe output once available; if it identifies a supported correction return sequentially to Quality on same branch/PR. Diagnosis alone stays draft and unmerged.",
     "publication": {
       "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
       "state": "ci-failed",
@@ -560,6 +560,34 @@
         "docs/ci.md"
       ],
       "diagnosis_not_completion": true
+    },
+    "diagnostic_security": {
+      "schema": 1,
+      "role": "security",
+      "head_sha": "0356649d2b8364c2ec4061f080d28de9b842cfb9",
+      "base_sha": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
+      "lease_checkpoint": "",
+      "verdict": "passed",
+      "summary": "Complete diagnostic diff is a narrow read-only probe, not publication recovery completion. Same-repository branch gating, contents/package read only, fixed GETs, bounded parsing and allowlisted metadata protect credentials and partial registry state. Strict default publisher and immutable source/version guards remain untouched; actual CI and later corrective head need fresh review.",
+      "reviewed_paths": [
+        ".github/scripts/inspect_package.py",
+        ".github/scripts/test_package_inspection.py",
+        ".github/workflows/ci.yml",
+        "docs/ci.md"
+      ],
+      "acceptance": [
+        "All four native changed paths were inspected; no package/visibility/tag/delete operation or privileged default publication change.",
+        "PR probe receives only repository-scoped ephemeral contents/package read; fork/other branch cannot invoke its job. Checkout does not persist credentials.",
+        "Inspector rejects wrong event/repository/source/version before API requests; only two fixed GETs are allowed, with bounded one-page versions and response lengths.",
+        "No raw error/description/owner/unrelated tag output. Allowed visibility, repository-field booleans and matching typed digest evidence explicitly do not claim publication.",
+        "Partial default images and earlier releases are preserved. Draft recovery remains incomplete; no unchanged release retry or merge is authorized by this diagnostic review."
+      ],
+      "evidence": [
+        "Actual complete four-path native PR22 diff at0356649d2b8364c2ec4061f080d28de9b842cfb9/551e82d2c4158b9af2080081bbac3e1d18c949ea.",
+        "Actual default CI37704415292 attempt2 release113091080992 failed the unchanged guard; new PR CI evidence has not yet been inspected.",
+        "Five meaningful CI-only inspection regression sources cover safe output/partial tags, missing metadata/full pages, scopes/forks, denied/hidden404 and malformed/oversized inputs. These are source-reviewed, not locally executed."
+      ],
+      "findings": []
     }
   },
   "attempts": {
