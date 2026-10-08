@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 692,
+  "generation": 693,
   "lease": {
     "id": "codex-continuous-policy-20261008131744Z-security-1791465816000",
     "worker": "codex-continuous-policy-20261008131744Z",
     "role": "security",
     "issue": 34,
     "acquired_at": "2026-10-08T13:23:36Z",
-    "heartbeat_at": "2026-10-08T13:25:08Z",
-    "expires_at": "2026-10-08T14:10:08Z",
+    "heartbeat_at": "2026-10-08T13:25:13Z",
+    "expires_at": "2026-10-08T14:10:13Z",
     "branch": "work/continuous-engineering",
     "commit": "f12a37e873561fbd3de3ccdd30883b9f41c2a4c3",
     "pr": 35
   },
   "checkpoint": {
-    "at": "2026-10-08T13:25:08Z",
+    "at": "2026-10-08T13:25:13Z",
     "issue": 34,
     "role": "security",
     "branch": "work/continuous-engineering",
     "commit": "f12a37e873561fbd3de3ccdd30883b9f41c2a4c3",
     "pr": 35,
-    "summary": "Separate Security34 complete actual11-path native diff atf12a37e873561fbd3de3ccdd30883b9f41c2a4c3/basecedd inspected. Continuouspolicy leaves globalsoleworker,45-minute finiteexpiry,15-minutecheckpoint, serialroles, source-boundQA/CI, secret/publicationpermissions unchanged. Taskchange stillpostmerge-only. No infinitequota/platformcapability claim. RequiredCI pending, notcertified.",
-    "next_action": "Record exact-head Securitycode review, release then acquire logicallyindependentQA34. QA inspectsactualfull diff andrequiredCI evidence before anypass. PersistactualTaskreconciliation afterreviewedmerge.",
+    "summary": "Actual separate Securityreview5457288321 passed complete11-path exactsource/base underce4db06ac9fb945f9c8c5957c59343384359922a; CIpending is not green, liveTaskunchanged. Originalpolicycommit and Issue19migrationwork preserved.",
+    "next_action": "Distinct QA34 at exacthead/base reads fullnative diff, acceptance and actualrequiredCI logs. Stop/handoff for a realCIwait; no fakepass or busy polling.",
     "publication": {
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "state": "published",
@@ -437,7 +437,7 @@
       "state": "Partial native success; lastMacIntel build inprogress and package unobserved. No greengate/merge/publishedv24 claim."
     },
     "execution_policy_request": {
-      "state": "awaiting-security-ci",
+      "state": "security-reviewed-awaiting-qa-ci",
       "issue": 34,
       "branch": "work/continuous-engineering",
       "base": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
@@ -461,7 +461,9 @@
       ],
       "pr": 35,
       "source": "f12a37e873561fbd3de3ccdd30883b9f41c2a4c3",
-      "tree": "5c450890a2b6bedf8d8d64fd99a0cd38d89ff6d6"
+      "tree": "5c450890a2b6bedf8d8d64fd99a0cd38d89ff6d6",
+      "security_review": 5457288321,
+      "security_checkpoint": "ce4db06ac9fb945f9c8c5957c59343384359922a"
     },
     "previous_checkpoint": {
       "at": "2026-10-08T13:23:15Z",
