@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 797,
+  "generation": 798,
   "lease": {
     "id": "comment-6066333710",
     "worker": "codex-product-20261008T1637Z",
     "role": "master",
     "issue": 38,
     "acquired_at": "2026-10-08T18:22:24Z",
-    "heartbeat_at": "2026-10-08T18:27:28Z",
-    "expires_at": "2026-10-08T19:12:28Z",
+    "heartbeat_at": "2026-10-08T18:36:48Z",
+    "expires_at": "2026-10-08T19:21:48Z",
     "branch": "trunk",
     "commit": "5fb6bcb46b80926b212e5bce0fccbf42addcfcbe",
     "pr": 43
   },
   "checkpoint": {
-    "at": "2026-10-08T18:27:28Z",
+    "at": "2026-10-08T18:36:48Z",
     "issue": 38,
     "role": "master",
     "branch": "trunk",
     "commit": "5fb6bcb46b80926b212e5bce0fccbf42addcfcbe",
     "pr": 43,
-    "summary": "PR43 actuallymerged at5fb6bcb46b80926b212e5bce0fccbf42addcfcbe; exactparents reviewedbase d67/source6a3fac9 and tree6c4f658 confirmed. Ninth Productrole/native42 boundedplanning trigger installed, real39-41 backlog and native40blocked39 retained. Distinct Security5460910415 andQA5461039573; latestobjective gate113468921282, allrequiredsourceCI/audit/CodeQL green beforemerge. Delivery helddefaultsource and persisted phasebeforemerge; postmergecheckpoint binds actualtrunk/mergedPR without restoringdeletedsource. NativeIssue38closed bylinkedPR. DefaultActions nowrun; no v0.22.27 publication claim or localvalidation.",
-    "next_action": "Confirm thisactualdefault checkpoint; record nativeIssue38/PR43 handoff. Recover mergeddefaultCI/immutableActions publication and safe mergedbranch/Issue status cleanup before Product42 discovery or39/41implementation. Continue immediatelyready recovery only; release before actualexternalCI wait or stopping. ExistinghourlyTask remainsunchanged.",
+    "summary": "Corrected delivery: Issue38 remained OPEN after merge and is now actually Closed/Done following native immutable v0.22.27 publication proof (Issue comment6066571399). PR43 merged trunk5fb6bcb46b80926b212e5bce0fccbf42addcfcbe; distinct Security5460910415/QA5461039573 and accepted gate113468921282 preceded merge. DefaultCI37824292805 all7 jobs success; Security37824292777 both success; defaultCodeQL/Engineering success. Native release407145259 published2026-10-08T18:32:46Z, immutabletrue, tag5fb6, 3binaryassets+SHA256SUMS. Release113475666045 proves matching Linux b54cb238/privateGHCR1628117/nonroot1001:1001/cleanup complete. Actual merged work/38-product-backlog absent404; no leased work branch recreated. Product role/Issue42 queue trigger installed; proposals39/40/41 preserved with actual40blocked39. Zero recognized secret findings/gaps in selected fetchedhistory/completedinventory audit, not exhaustive safety proof. No localvalidation. Machine publication field may still retain v26 until trusted delivery reconciliation; this summary/native handoff contains actual v27 evidence.",
+    "next_action": "Confirm checkpoint/soleparent/receipt; release this Master38 delivery lease, post native release handoff for trusted deterministic publication reconciliation (no AI worker). Recover actual canonical v27 publication first. Then Product42 on actualtrunk: inspect existing native queue/recent source evidence, maintain bounded useful feature/bug priorities under its own lease. No replacement schedule or duplicate issues.",
     "publication": {
       "commit": "d67becbd5a09ff51bdd8e2a3d43a9f44ef849f74",
       "state": "published",
@@ -702,7 +702,7 @@
       "task_receipt": 6063044134,
       "task_id": "6ac54c387af0819184713674c48b3845",
       "fence_sha": "5c305bfbee1e0225dcd8a35cdbb8cb491a084f11",
-      "transport_comment_id": 6066419151,
+      "transport_comment_id": 6066576974,
       "retirement": "confirmed",
       "notes_proof_sha": "96e3439dbc1800f708aab0c5680211f105176e14"
     }
