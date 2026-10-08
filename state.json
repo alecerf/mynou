@@ -1,80 +1,80 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 780,
+  "generation": 781,
   "lease": {
     "id": "bd272aec-b237-4b3c-bb11-0c0eb87c8783",
     "worker": "codex-product-20261008T1637Z",
     "role": "quality",
     "issue": 38,
     "acquired_at": "2026-10-08T17:31:35Z",
-    "heartbeat_at": "2026-10-08T17:31:35Z",
-    "expires_at": "2026-10-08T18:16:35Z",
+    "heartbeat_at": "2026-10-08T17:37:11Z",
+    "expires_at": "2026-10-08T18:22:11Z",
     "branch": "trunk",
     "commit": "d67becbd5a09ff51bdd8e2a3d43a9f44ef849f74",
     "pr": null
   },
   "checkpoint": {
-    "at": "2026-10-08T17:26:21Z",
+    "at": "2026-10-08T17:37:11Z",
     "issue": 38,
-    "role": "master",
+    "role": "quality",
     "branch": "trunk",
     "commit": "d67becbd5a09ff51bdd8e2a3d43a9f44ef849f74",
     "pr": null,
-    "summary": "Master38 recovered actual prior product delivery:PR37 mergedd67becb; immutablev0.22.26/release407086571 at17:20:17Z; native exacttag and all7jobs defaultCI37814772739 successful, defaultSecurity37814772776 bothjobs success; fourassets622491454/455/453/456, actual source reviews/gate preserved. Native36closed/Done and handoff recorded. ConfiguredVM GitHub admin API actually works (no secret outputs), enabling safe branch/dependency/role-label administration missing in connector wrappers. NativeProductOwner38 and product39/40/41 live.",
-    "next_action": "Release Master38; acquire Quality38 at trunk d67becb/PRnull. Perform original native branch audit under exact ownership, preserve merged parents and delete only temporary merged work/36-par2-available-rows after no valid lease/PR/openIssue references it; set real #40->#39 native dependency. Checkpoint/release, then Master38 implements modular ProductOwner/catalog/triage planning policy via reviewed separatePR.",
+    "summary": "Quality38 completed actual preserved-parent branch audit and deleted temporary merged source; original recovery reference retained in closed36 comment6065519761 and canonical history. Native #40 blocked_by #39 is configured; role:product label exists but role is not yet installed. Prior product publication verified immutablev0.22.26/release407086571 exactd67becb with all7 defaultCI37814772739 jobs and audit37814772776 successful.",
+    "next_action": "Release Quality38; acquire Master38 on exactpublished default, implement modular ProductOwner/catalog/Master-Triage/backlog policy and safe delivery checkpoint lesson in one original linked PR; actualCI, separateSecurity/full-diffQA, gatedmerge, Actionspublication. Initial product39/40/41 native evidence retained.",
     "publication": {
-      "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
+      "commit": "d67becbd5a09ff51bdd8e2a3d43a9f44ef849f74",
       "state": "published",
-      "version": "0.22.25",
-      "at": "2026-10-08T15:07:45Z",
-      "release_id": 406963891,
+      "version": "0.22.26",
+      "at": "2026-10-08T17:20:17Z",
+      "release_id": 407086571,
       "immutable": true,
-      "tag_commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
-      "run_id": 37797446857,
+      "tag_commit": "d67becbd5a09ff51bdd8e2a3d43a9f44ef849f74",
+      "run_id": 37814772739,
       "status": "completed",
       "conclusion": "success",
       "assets": [
         {
-          "id": 622162047,
-          "name": "mynou-v0.22.25-linux-x86_64",
+          "id": 622491454,
+          "name": "mynou-v0.22.26-linux-x86_64",
           "size": 4891488,
-          "digest": "sha256:7d5b54e29a0837cc486cb50ebef50900d652f1e9dc5ab09a469ea5f8d4af3fda"
+          "digest": "sha256:fcfa64f9ce883194dc7b0a31a4a157b6ab9c42ecf40f849f2332fcefd6096fb2"
         },
         {
-          "id": 622162053,
-          "name": "mynou-v0.22.25-macos-arm64",
-          "size": 3729072,
-          "digest": "sha256:df06158bee143e3ae988f4420ac48c4270496a586fa39884b238722430f04fe1"
+          "id": 622491455,
+          "name": "mynou-v0.22.26-macos-arm64",
+          "size": 3729104,
+          "digest": "sha256:7c85749681bdb2cd532d6ac42723efce825c9bfb21e5ed141c3125fd70630cb5"
         },
         {
-          "id": 622162055,
-          "name": "mynou-v0.22.25-macos-x86_64",
+          "id": 622491453,
+          "name": "mynou-v0.22.26-macos-x86_64",
           "size": 4508464,
-          "digest": "sha256:54fbf6212f571878e73fc4d8e2be3880d86e6893ada7b23034c95ac501454787"
+          "digest": "sha256:206d8ebd7278a15eb8e9ee35fbaa55324ab4409dca3740d3f498ee99a8a17787"
         },
         {
-          "id": 622162050,
+          "id": 622491456,
           "name": "SHA256SUMS",
           "size": 281,
-          "digest": "sha256:80531032933dae61b0ac84cfeb9ebf5da959caafe27a5ada2839a9eb637683bc"
+          "digest": "sha256:bedf1c3b04c97c900c41e1dd28771a8853886fbaf28fd6cc845f532463c43f7a"
         }
       ],
       "registry_proof": {
-        "binary_sha256": "7d5b54e29a0837cc486cb50ebef50900d652f1e9dc5ab09a469ea5f8d4af3fda",
-        "image": "ghcr.io/alecerf/mynou@sha256:f5dfc1a329c35e980fe31ee31be0e0a631fc232efa8772fbe5a161121132c6e6",
+        "binary_sha256": "fcfa64f9ce883194dc7b0a31a4a157b6ab9c42ecf40f849f2332fcefd6096fb2",
+        "image": "ghcr.io/alecerf/mynou@sha256:a572f2a0fe6378b2994ce4ce0423bb0f5ad0cab43a581efea3285b5a6e8684ed",
         "package_id": 15695108,
         "repository": "alecerf/mynou",
         "repository_association": "reported-match",
         "repository_id": 1403318143,
         "repository_visibility": "public",
-        "source": "57cfe88bd9dac249d6949a470afc357e835060f9",
+        "source": "d67becbd5a09ff51bdd8e2a3d43a9f44ef849f74",
         "verification_cleanup": "completed",
         "verification_user": "1001:1001",
-        "version": "0.22.25",
+        "version": "0.22.26",
         "visibility": "private"
       },
-      "security_audit_run": 37797446878
+      "security_audit_run": 37814772776
     },
     "recovery": {
       "pr": 26,
@@ -251,57 +251,57 @@
       "proof_notes_update": 6059349914
     },
     "previous_publication": {
-      "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
+      "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
       "state": "published",
-      "version": "0.22.24",
-      "at": "2026-10-08T13:38:43Z",
-      "release_id": 406870757,
+      "version": "0.22.25",
+      "at": "2026-10-08T15:07:45Z",
+      "release_id": 406963891,
       "immutable": true,
-      "tag_commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
-      "run_id": 37785002953,
+      "tag_commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
+      "run_id": 37797446857,
       "status": "completed",
       "conclusion": "success",
       "assets": [
         {
-          "id": 621942087,
-          "name": "mynou-v0.22.24-linux-x86_64",
+          "id": 622162047,
+          "name": "mynou-v0.22.25-linux-x86_64",
           "size": 4891488,
-          "digest": "sha256:55ef27c649e40aa9e907696f7fce72bf1d7887a893b58011b062a2fffa8d73e7"
+          "digest": "sha256:7d5b54e29a0837cc486cb50ebef50900d652f1e9dc5ab09a469ea5f8d4af3fda"
         },
         {
-          "id": 621942086,
-          "name": "mynou-v0.22.24-macos-arm64",
-          "size": 3729104,
-          "digest": "sha256:44a42a69d97474903af49ebc879c32f5ff7a67fa57dd3f1ce7d6d7309852dc4d"
+          "id": 622162053,
+          "name": "mynou-v0.22.25-macos-arm64",
+          "size": 3729072,
+          "digest": "sha256:df06158bee143e3ae988f4420ac48c4270496a586fa39884b238722430f04fe1"
         },
         {
-          "id": 621942088,
-          "name": "mynou-v0.22.24-macos-x86_64",
+          "id": 622162055,
+          "name": "mynou-v0.22.25-macos-x86_64",
           "size": 4508464,
-          "digest": "sha256:3d9062db019a49617f3f7781f072213e46da8ae2684533bec3b1ffe4ebb988f7"
+          "digest": "sha256:54fbf6212f571878e73fc4d8e2be3880d86e6893ada7b23034c95ac501454787"
         },
         {
-          "id": 621942089,
+          "id": 622162050,
           "name": "SHA256SUMS",
           "size": 281,
-          "digest": "sha256:b82a05d95c6095fedea12eb25ab52bee995f2585f40424da245eb910559ca463"
+          "digest": "sha256:80531032933dae61b0ac84cfeb9ebf5da959caafe27a5ada2839a9eb637683bc"
         }
       ],
       "registry_proof": {
-        "binary_sha256": "55ef27c649e40aa9e907696f7fce72bf1d7887a893b58011b062a2fffa8d73e7",
-        "image": "ghcr.io/alecerf/mynou@sha256:82f5bca4636f4f0f70e7865ad7feecc8760cacd5a1daadee89f6b0cc050d99ec",
+        "binary_sha256": "7d5b54e29a0837cc486cb50ebef50900d652f1e9dc5ab09a469ea5f8d4af3fda",
+        "image": "ghcr.io/alecerf/mynou@sha256:f5dfc1a329c35e980fe31ee31be0e0a631fc232efa8772fbe5a161121132c6e6",
         "package_id": 15695108,
         "repository": "alecerf/mynou",
         "repository_association": "reported-match",
         "repository_id": 1403318143,
         "repository_visibility": "public",
-        "source": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
+        "source": "57cfe88bd9dac249d6949a470afc357e835060f9",
         "verification_cleanup": "completed",
         "verification_user": "1001:1001",
-        "version": "0.22.24",
+        "version": "0.22.25",
         "visibility": "private"
       },
-      "security_audit_run": 37785003097
+      "security_audit_run": 37797446878
     },
     "control_bridge_recovery": {
       "issue": 32,
