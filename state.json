@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 748,
+  "generation": 749,
   "lease": {
     "id": "codex-resume-20261008T151223Z-master-1791472370000",
     "worker": "codex-resume-20261008T151223Z",
     "role": "master",
     "issue": 19,
     "acquired_at": "2026-10-08T15:12:50Z",
-    "heartbeat_at": "2026-10-08T15:14:37Z",
-    "expires_at": "2026-10-08T15:59:37Z",
+    "heartbeat_at": "2026-10-08T15:16:57Z",
+    "expires_at": "2026-10-08T16:01:57Z",
     "branch": "trunk",
     "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T15:14:37Z",
+    "at": "2026-10-08T15:16:57Z",
     "issue": 19,
     "role": "master",
     "branch": "trunk",
     "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
     "pr": 24,
-    "summary": "Recovered actual immutable v0.22.25 publication at57cfe88: all7defaultCI jobs and security green, tag exactsource,4nativeassets/privateGHCRproof confirmed. CI864Rust/0failed/63harnesses,24infra/132org,containerPlex/cleanup1001:1001/3checksumOK; recognized-pattern5303objects/722archives2411members0findings/gaps within inventory scope. Next actual existing-task reconciliation before any fence.",
-    "next_action": "Update and confirm the existing hourly Task to exact reviewed installed prompt, preserving ID/cadence/timezone and actual safe accepted response; create truthful native attestation, then fixed default-code fence/activation commands. Issue19 remains in progress until live proof/Quality retirement.",
+    "summary": "Actual existing hourly Task prompt-only update accepted/confirmed at installed57cfe88; ID,enabled,cadence/timezone unchanged. Native attestation6063044134 records actual safe response digest/source/promptblob. Immutable v25/defaultCI/security verified. Legacy still soleauthority; next fixed reviewed fence/activation.",
+    "next_action": "Under this exact Master19/trunk57cfe88/PR24 lease submit fence-control with native task receipt; inspect actual command/run/ref/schema2/soleparent before activation. Owned pending fence renew/release available; no unsupported direct notes wrapper.",
     "publication": {
       "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
       "state": "published",
@@ -191,44 +191,14 @@
     "control_storage": {
       "issue": 19,
       "pr": 24,
-      "branch": "work/control-ref-adapter",
-      "source": "b8493cad2c475c39e48f1eb7acb10e678e6c0832",
-      "pr_reported_base": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
-      "current_default": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
+      "current_default": "57cfe88bd9dac249d6949a470afc357e835060f9",
       "authority": "refs/heads/control/engineering",
       "candidate": "refs/notes/mynou-engineering",
-      "state": "Draft preserved; QA rejected fenced lease renewal/checkpoint/release/resume gap",
-      "security_review": 5457051939,
-      "qa_review": 5457079884,
-      "old_source_ci": 37728256136,
-      "old_organization_ci": 37728256161,
-      "proposal": "Trusted native comment/default Action canonical checkpoint and fixed inert notes create/update are now actually proved atv23. Reviewed migration staging/fencing/activation commands remain to implement.",
-      "scheduler_capabilities": "Live task not inspected/changed; reviewed workerprompt proposal unmerged, so reconciliation is not yet eligible.",
-      "boundary": "Connected branch-named writes remain scoped; fixed inert notes namespace verified through reviewed Actions. No general migration writer or live activation is claimed.",
-      "cutover": "No legacyfence, notes activation, task update orbranchdeletion. Explicit retirement intent conditioned on actualproof and actualTaskresponse.",
-      "native_handoff": 6060622945,
-      "preserved_pr_handoff": 6060623320,
-      "retirement_intent": "Delete legacy only after actual notes proof/history/task reconciliation; reviewed implementation now proposed",
-      "design": "Fixed legacy schema2 fence -> notes creation from fence ancestry -> verified task reconciliation -> explicit Quality retirement; no second acquirable authority.",
-      "proposal_tree": "e010e0deeb7d191c0d9b708a42b1a69364f3c79a",
-      "live_cutover": "Not performed; legacy soleauthority unchanged",
-      "rejected_security": 5456964286,
-      "rejection_checkpoint": "079d5345daafdd794f1753485a295034fa38a44d",
-      "security_checkpoint": "1bc82b0deebb86d69901be1eb7ab15864551282e",
-      "qa_findings": [
-        "After schema2 fence, checkpoint/release use control.read_state and throwPending; recovery rejects lease:null. Explicit renewal, durable release and safe evidence-based resume must cover deliberate boundedstop, not just expired-worker death."
-      ],
-      "qa_checkpoint": "7daccc75db37d11a023a4faf42d830f4ffceb8b1",
-      "source_ci": 37781499542,
-      "organization_ci": 37781499531,
-      "security_ci": 37781499585,
-      "source_tree": "e010e0deeb7d191c0d9b708a42b1a69364f3c79a",
-      "source_history": {
-        "original_preserved": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
-        "integration": "fb6f67139b4a756d4533efd15cb7553423d4204e",
-        "integration_default": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
-        "correction": "b8493cad2c475c39e48f1eb7acb10e678e6c0832"
-      }
+      "state": "reviewed code installed/published; actual existing Task reconciled; live fence pending",
+      "source": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
+      "security_review": 5458546217,
+      "qa_review": 5458620861,
+      "task_receipt": 6063044134
     },
     "control_bridge_design": {
       "state": "fixed scoped transport implemented/published/actually proved",
@@ -538,12 +508,12 @@
       "next_action": "Merge PR24 by exact head6951b58 and preserve original two-parent installed source; recover actual default CI/publication and pending Task reconciliation before any live fence/notes activation or retirement."
     },
     "task_reconciliation": {
-      "issue": 34,
-      "pr": 35,
+      "issue": 19,
+      "pr": 24,
       "task_id": "6ac54c387af0819184713674c48b3845",
       "prompt_path": "engineering/worker-prompt.md",
-      "policy_commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
-      "prompt_sha": "0704f5a50fd8da1a375133188425765f43c14251",
+      "policy_commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
+      "prompt_sha": "78077a9657bd361b1478d5ec4508fe9ef2340954",
       "state": "reconciled",
       "actual_response": {
         "success": true,
@@ -555,13 +525,13 @@
           "is_enabled": true,
           "schedule": "BEGIN:VEVENT\nDTSTART:20261006T193000\nRRULE:FREQ=HOURLY;INTERVAL=1\nEND:VEVENT",
           "default_timezone": "America/Los_Angeles",
-          "updated_at": "2026-10-08T13:32:27.972284+00:00"
+          "updated_at": "2026-10-08T15:15:14.187510+00:00"
         }
       },
+      "response_digest": "8e5f4b7f68cac070115940c03c7e704a5024d157ba7cc9b1b45077d354733c8f",
       "native_lookup_confirmed": true,
       "cadence": "hourly",
-      "issue_handoff": 6061031567,
-      "pr_handoff": 6061031909
+      "attestation_id": 6063044134
     },
     "pending_source_edits": null,
     "source_fix19": {
@@ -706,19 +676,9 @@
       "version": "0.22.25",
       "live_cutover": false
     },
-    "pending_task_reconciliation": {
-      "issue": 19,
-      "pr": 24,
-      "policy_commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
-      "prompt_path": "engineering/worker-prompt.md",
-      "prompt_sha": "78077a9657bd361b1478d5ec4508fe9ef2340954",
-      "task_id": "6ac54c387af0819184713674c48b3845",
-      "state": "pending successful default CI/publication; no live Task mutation"
-    },
+    "pending_task_reconciliation": null,
     "execution_boundary": {
-      "kind": "publication recovered; next ready task reconciliation",
-      "capacity_failure": false,
-      "issue_completed": false,
+      "kind": "task recovered; next ready fixed fence request",
       "single_worker": true,
       "notes_activated": false,
       "legacy_deleted": false
