@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 420,
+  "generation": 421,
   "lease": {
     "id": "wake10-quality-cleanup-fix-20261008T023800Z",
     "worker": "codex-hourly-20261008T023108Z",
@@ -873,10 +873,10 @@
   },
   "attempts": {
     "18": {
-      "approach": "Sanitized read-only package visibility/repository/stage diagnosis in CI; preserve strict publication and partial immutable image identities",
-      "fingerprint": "551e82d2c4158b9af2080081bbac3e1d18c949ea:37704415292:attempt2:113091080992:package-private-or-link-guard",
+      "approach": "Match private synthetic verification bind mount to nonroot runner UID/GID; share cleanup path with PR CI and publish proof only after successful cleanup",
+      "fingerprint": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114:37715379732:113111514725:post-proof-owned-demo-cleanup",
       "unchanged": 1,
-      "at": "2026-10-08T01:31:15Z"
+      "at": "2026-10-08T02:37:45Z"
     }
   }
 }
