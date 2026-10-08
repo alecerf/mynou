@@ -22,6 +22,14 @@ def check_execution(cfg):
     assert cfg["no_progress_limit"] == 3
 
 
+def check_product(cfg, catalog):
+    planning = cfg["product_planning"]
+    assert "product" in catalog
+    assert type(planning["issue"]) is int and planning["issue"] > 0
+    assert type(planning["ready_minimum"]) is int and planning["ready_minimum"] == 3
+    assert type(planning["ready_maximum"]) is int and planning["ready_maximum"] == 5
+
+
 def check(root=ROOT):
     cfg = json.loads((root / ".github/engineering.json").read_text())
     assert cfg["schema"] == 1
@@ -31,6 +39,7 @@ def check(root=ROOT):
     settings(cfg)
     catalog = json.loads((root / "engineering/roles.json").read_text())["roles"]
     assert {"master", "triage", "rust", "web", "ux", "security", "qa", "quality"}.issubset(catalog)
+    check_product(cfg, catalog)
     for role, path in catalog.items():
         assert re.fullmatch(r"[a-z][a-z0-9-]{0,47}", role)
         assert path == f".agents/skills/mynou-{role}/SKILL.md"

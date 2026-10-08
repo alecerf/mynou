@@ -1,33 +1,27 @@
-# Current product work — proposed 0.22.26 available PAR2 rows
+# Current work — proposed 0.22.27 product ownership
 
-Actions published immutable v0.22.25 at
-`57cfe88bd9dac249d6949a470afc357e835060f9` after all seven jobs in
-[CI37797446857](https://github.com/alecerf/mynou/actions/runs/37797446857)
-succeeded. Four native executable/checksum assets and the private GHCR image
-were verified; native Issue #19 records publication and completed control
-migration. Earlier immutable releases remain preserved.
+Actions published immutable v0.22.26 at
+`d67becbd5a09ff51bdd8e2a3d43a9f44ef849f74` after all seven jobs in
+[CI37814772739](https://github.com/alecerf/mynou/actions/runs/37814772739)
+succeeded, including 875 Rust tests. Native Issue36/PR37 retain separate
+Security/QA, four executable/checksum assets, private GHCR digest and branch
+cleanup evidence. Earlier immutable releases remain preserved.
 
-Client-requested product work resumes in [Issue #36](https://github.com/alecerf/mynou/issues/36),
-branch `work/36-par2-available-rows`, from that exact published baseline.
-The new bounded recovery increment selects a complete independent basis from
-captured available parity rows, including nonzero/nonconsecutive exponents.
-Global Main-order coefficients, immutable inputs, exact source/packet/final
-integrity, private owner binding and existing aggregate limits remain required.
+Client [Issue38](https://github.com/alecerf/mynou/issues/38) installs a distinct
+modular Product Owner in the existing one-worker engineering organization.
+It uses the standing native Issue42 and a small deterministic planning trigger;
+Master retains execution, Triage verifies readiness and UX designs the experience.
+Current native proposals cover media-sized recovery (#39), ownership-bound automatic
+Usenet repair (#40, blocked by39, Needs Triage) and guided private setup (#41).
+The Product role keeps this queue useful without inventing failures or busywork.
+See [scope](releases/0.22.27.md) and [runbook](../engineering/README.md).
 
-Independent original fixtures must cover dependent-row skipping, insufficient
-rank, reversed multi-file inputs, eight shifted-row erasures, highest accepted
-exponents, work-budget exhaustion before parity seeks, cancellation, invalid
-selected parity and verified private workspace reopening. See [scope](releases/0.22.26.md).
-No automatic queue/library adoption, existing-file overwrite, volume merging or
-unmeasured performance claim is included.
-
-Finish this item through actual CI, distinct Security/full-diff QA, objective
-merge and immutable Actions publication before selecting the next product item.
-The client also requests a durable Product Owner planning role and a useful
-prioritized feature/bug backlog. Master must preserve that intent and seed
-evidence-based next product scopes; do not equate an empty backlog with product
-completeness. Keep one worker, sequential leases, frequent remote checkpoints,
-CI-only validation and continuous useful execution with honest external waits.
+Finish current source through actual CI, distinct Security/full-diff QA, objective
+merge and Actions publication before unrelated implementation. Then review the
+known product opportunities under a Product lease and choose the highest-value
+executable item. English, safe Rust std, zero Cargo dependencies, frequent remote
+checkpoints, native recovery and no local validation/manual publication remain
+required. Hourly scheduling is unchanged and remains best-effort.
 
 ## Earlier PAR2 work and publication history
 

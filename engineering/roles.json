@@ -8,6 +8,7 @@
     "ux": ".agents/skills/mynou-ux/SKILL.md",
     "security": ".agents/skills/mynou-security/SKILL.md",
     "qa": ".agents/skills/mynou-qa/SKILL.md",
-    "quality": ".agents/skills/mynou-quality/SKILL.md"
+    "quality": ".agents/skills/mynou-quality/SKILL.md",
+    "product": ".agents/skills/mynou-product/SKILL.md"
   }
 }

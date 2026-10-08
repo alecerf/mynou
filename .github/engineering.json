@@ -63,5 +63,10 @@
     "issue": 19,
     "pr": 24
   },
-  "execution_mode": "continuous"
+  "execution_mode": "continuous",
+  "product_planning": {
+    "issue": 42,
+    "ready_minimum": 3,
+    "ready_maximum": 5
+  }
 }
