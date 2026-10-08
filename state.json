@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 467,
+  "generation": 468,
   "lease": {
     "id": "wake11-qa-control-ref-complete-diff-20261008T032912Z",
     "worker": "codex-hourly-20261008T032912Z",
     "role": "qa",
     "issue": 19,
     "acquired_at": "2026-10-08T03:54:51Z",
-    "heartbeat_at": "2026-10-08T03:54:51Z",
-    "expires_at": "2026-10-08T04:39:51Z",
+    "heartbeat_at": "2026-10-08T03:58:08Z",
+    "expires_at": "2026-10-08T04:43:08Z",
     "branch": "work/control-ref-adapter",
     "commit": "e44bfc7e8319d1be7b0200bfa838d132ffe51efc",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T03:54:41Z",
+    "at": "2026-10-08T03:58:08Z",
     "issue": 19,
-    "role": "security",
+    "role": "qa",
     "branch": "work/control-ref-adapter",
     "commit": "e44bfc7e8319d1be7b0200bfa838d132ffe51efc",
     "pr": 24,
-    "summary": "Security independently re-read all ten corrected native patches at e44bfc7/base d647. Actual prior findings are addressed by default-branch and legacy-namespace guards and CI regressions. Preparatory adapter security is satisfactory: strict ref/object binding, one configured authority, original sole-parent force:false arbitration, QA ancestry and protected cleanup. Live migration remains unimplemented; draft must not merge as completed Issue19. Native package CI still running; no full green CI claim.",
-    "next_action": "QA acquires its own exact-head/base lease, reads the entire actual diff and actual logs, and records unfinished cutover acceptance before delivery.",
+    "summary": "Independent QA read every native PR24 patch, actual six successful source CI jobs/logs, 864 Rust tests/63 harnesses, 66 organization checks including all13 new ref scenarios, both macOS/static demos and package private cleanup/checksums. Security provenance is exact-head scoped and in control ancestry; prior findings are fixed. Reject full delivery because legacy fence/cutover/recovery, actual hourly-worker notes writes and task/admission reconciliation are unfinished. Keep draft/unmerged; CI green is not completed migration.",
+    "next_action": "Release QA; Master/Triage records the exact connected-writer execution boundary and preserves same PR24/branch/head. Implement and prove a safe cutover only through supported APIs; no repeated CI or duplicate work.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -1178,6 +1178,194 @@
         "legacy branch-only namespace required"
       ],
       "tests": "Two original regression scenarios authored; execution pending CI"
+    },
+    "control_storage_qa_review": {
+      "head": "e44bfc7e8319d1be7b0200bfa838d132ffe51efc",
+      "base": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+      "paths": [
+        ".github/engineering.json",
+        "engineering/README.md",
+        "engineering/control-storage.md",
+        "engineering/control.py",
+        "engineering/delivery.py",
+        "engineering/github.py",
+        "engineering/lease.py",
+        "engineering/policy.py",
+        "engineering/qa.py",
+        "engineering/tests/test_control_refs.py"
+      ],
+      "verdict": "rejected",
+      "findings": [
+        "Issue19 live cutover is unfinished: PR24 only prepares the adapter. No legacy-worker fence, interrupted migration/recovery implementation, actual scheduled-worker non-branch write proof or reconciled admission/task policy exists. Keep this PR draft and unmerged; complete these acceptance criteria in the same preserved work before certifying delivery. Passing fixture CI is not live backend-write evidence."
+      ],
+      "evidence": {
+        "run": 37724667203,
+        "head": "e44bfc7e8319d1be7b0200bfa838d132ffe51efc",
+        "status": "completed",
+        "conclusion": "success",
+        "required_jobs": [
+          {
+            "id": 113139999440,
+            "name": "validate",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "id": 113139999545,
+            "name": "Build x86_64-unknown-linux-musl",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "id": 113139999590,
+            "name": "Build x86_64-unknown-linux-gnu",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "id": 113139999664,
+            "name": "Build aarch64-apple-darwin",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "id": 113139999673,
+            "name": "Build x86_64-apple-darwin",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "id": 113140594849,
+            "name": "package",
+            "status": "completed",
+            "conclusion": "success"
+          }
+        ],
+        "release": {
+          "id": 113140742616,
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        "tests": {
+          "rust": 864,
+          "failed": 0,
+          "harnesses": 63,
+          "seconds": 97.175,
+          "ci_tooling": 22,
+          "organization": 66,
+          "new_control_reference": 13
+        },
+        "organization": {
+          "run": 37724667230,
+          "job": 113139999531,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        "agent_qa_review": {
+          "job": 113140041170,
+          "status": "completed",
+          "conclusion": "skipped",
+          "reason": "draft"
+        },
+        "runtime": {
+          "package_cleanup": "completed",
+          "package_user": "1001:1001",
+          "package_plex_scan_confirmed": true,
+          "macos_arm64": "ready/Plex scan confirmed",
+          "macos_x86_64": "ready/Plex scan confirmed",
+          "musl": "ready/Plex scan confirmed"
+        },
+        "security": {
+          "review_id": 5451128647,
+          "lease_checkpoint": "ae8b58d53a3cede63358ef6f03ee40b6ac915f1c",
+          "ancestry": "ahead",
+          "scope": "preparatory adapter only"
+        }
+      }
+    },
+    "control_storage_ci": {
+      "run": 37724667203,
+      "head": "e44bfc7e8319d1be7b0200bfa838d132ffe51efc",
+      "status": "completed",
+      "conclusion": "success",
+      "required_jobs": [
+        {
+          "id": 113139999440,
+          "name": "validate",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113139999545,
+          "name": "Build x86_64-unknown-linux-musl",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113139999590,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113139999664,
+          "name": "Build aarch64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113139999673,
+          "name": "Build x86_64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113140594849,
+          "name": "package",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "release": {
+        "id": 113140742616,
+        "status": "completed",
+        "conclusion": "skipped"
+      },
+      "tests": {
+        "rust": 864,
+        "failed": 0,
+        "harnesses": 63,
+        "seconds": 97.175,
+        "ci_tooling": 22,
+        "organization": 66,
+        "new_control_reference": 13
+      },
+      "organization": {
+        "run": 37724667230,
+        "job": 113139999531,
+        "status": "completed",
+        "conclusion": "success"
+      },
+      "agent_qa_review": {
+        "job": 113140041170,
+        "status": "completed",
+        "conclusion": "skipped",
+        "reason": "draft"
+      },
+      "runtime": {
+        "package_cleanup": "completed",
+        "package_user": "1001:1001",
+        "package_plex_scan_confirmed": true,
+        "macos_arm64": "ready/Plex scan confirmed",
+        "macos_x86_64": "ready/Plex scan confirmed",
+        "musl": "ready/Plex scan confirmed"
+      },
+      "security": {
+        "review_id": 5451128647,
+        "lease_checkpoint": "ae8b58d53a3cede63358ef6f03ee40b6ac915f1c",
+        "ancestry": "ahead",
+        "scope": "preparatory adapter only"
+      }
     }
   },
   "attempts": {
