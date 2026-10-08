@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 644,
+  "generation": 645,
   "lease": {
     "id": "codex-hourly-20261008112927Z-security-1791459262000",
     "worker": "codex-hourly-20261008112927Z",
     "role": "security",
     "issue": 32,
     "acquired_at": "2026-10-08T11:34:22Z",
-    "heartbeat_at": "2026-10-08T11:34:22Z",
-    "expires_at": "2026-10-08T12:19:22Z",
+    "heartbeat_at": "2026-10-08T11:43:45Z",
+    "expires_at": "2026-10-08T12:28:45Z",
     "branch": "trunk",
     "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
     "pr": 33
   },
   "checkpoint": {
-    "at": "2026-10-08T11:34:14Z",
+    "at": "2026-10-08T11:43:45Z",
     "issue": 32,
-    "role": "master",
+    "role": "security",
     "branch": "trunk",
     "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
     "pr": 33,
-    "summary": "Recovery confirmed immutable bot release406732310/v0.22.23 published11:04:39Z at exact default/tagced0fe652469fa6916831e0fb09cccc1a8784f79 with four native assets. Default CI37767226158 seven jobs succeeded; Engineering37767226188 succeeded and CodeQL37767225919 succeeded. Actual default Security37767226110 failed: source-history113277735502 passed, actions-logs113277735964 failed. Cause and registry proof not yet inspected; no clean-security or live-transport claim. Recover this actual red before Issue30 proof.",
-    "next_action": "Release Master; Security32 inspect actual failed audit log113277735964 and native run evidence safely, preserving any real finding without secret values. Choose a bounded correction or justified deterministic retry; do not retag published v23. Registry/release log proof and source-bound CI remain to verify before30 live proof.",
+    "summary": "Security read actual failed default audit job113277735964 after connected retrieval recovered: preserved report schema1/statuserror/error_typeHTTPFailure/http_status502. This is an incomplete audit, not clean log evidence. Actual source-history113277735502 passed over4897 objects with0 recognized findings/0 gaps. Immutable v23/tag/sourcecedd and CI release private-package proof match; no source or release changes. A single retry of only the failed read-only audit job is justified by the observed upstream502.",
+    "next_action": "Retry only nativejob113277735964 in run37767226110 once under current ownership. Persist acceptance/run attempt; while it executes finish current exact-source publication evidence. If pending at the next ready transition, release for the external wait; do not busy-poll or repeat rerun. Red audit remains authoritative until actual success.",
     "publication": {
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "state": "immutable-release-observed-security-recovery-pending",
@@ -62,14 +62,14 @@
       ]
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T11:04:56Z",
+      "at": "2026-10-08T11:34:14Z",
       "issue": 32,
-      "role": "triage",
+      "role": "master",
       "branch": "trunk",
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "pr": 33,
-      "summary": "Default-source CI transition: ci-passed at ced0fe652469fa6916831e0fb09cccc1a8784f79; native evidence {'commit': 'ced0fe652469fa6916831e0fb09cccc1a8784f79', 'state': 'ci-passed', 'at': '2026-10-08T11:04:56Z', 'run_id': 37767226158, 'status': 'completed', 'conclusion': 'success'}. No release publication is inferred.",
-      "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases."
+      "summary": "Recovery confirmed immutable bot release406732310/v0.22.23 published11:04:39Z at exact default/tagced0fe652469fa6916831e0fb09cccc1a8784f79 with four native assets. Default CI37767226158 seven jobs succeeded; Engineering37767226188 succeeded and CodeQL37767225919 succeeded. Actual default Security37767226110 failed: source-history113277735502 passed, actions-logs113277735964 failed. Cause and registry proof not yet inspected; no clean-security or live-transport claim. Recover this actual red before Issue30 proof.",
+      "next_action": "Release Master; Security32 inspect actual failed audit log113277735964 and native run evidence safely, preserving any real finding without secret values. Choose a bounded correction or justified deterministic retry; do not retag published v23. Registry/release log proof and source-bound CI remain to verify before30 live proof."
     },
     "recovery": {
       "pr": 26,
@@ -308,7 +308,12 @@
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "run_id": 37767226110,
       "failed_job": 113277735964,
-      "state": "actual-default-audit-red-cause-unread"
+      "failed_attempt": 1,
+      "error_type": "HTTPFailure",
+      "http_status": 502,
+      "state": "single-job-rerun-intent",
+      "failed_report": "Native113277735964 log: schema1/statuserror/HTTPFailure/502; preserved redacted artifact11544822063",
+      "read_boundary": "First connected log fetch internal error; artifact storage fallback network read failed; subsequent connected native failed log read succeeded."
     }
   },
   "attempts": {
@@ -323,6 +328,12 @@
       "fingerprint": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c:cafac339b3e24954fc8a802d97fe3cfb793c05d6:rejected5451528384:branch-only-connector:task-tools-exposed:proposed-ci-comment-bridge",
       "unchanged": 1,
       "at": "2026-10-08T09:03:57Z"
+    },
+    "32": {
+      "approach": "Retry only the failed read-only Actions audit job for observed GitHub archive HTTP502",
+      "fingerprint": "ced0fe652469fa6916831e0fb09cccc1a8784f79:37767226110:HTTP502",
+      "unchanged": 1,
+      "at": "2026-10-08T11:43:45Z"
     }
   }
 }
