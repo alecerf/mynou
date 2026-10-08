@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 741,
+  "generation": 742,
   "lease": {
     "id": "codex-continuous-20261008143128Z-triage-1791471596000",
     "worker": "codex-continuous-20261008143128Z",
     "role": "triage",
     "issue": 19,
     "acquired_at": "2026-10-08T14:59:56Z",
-    "heartbeat_at": "2026-10-08T15:02:19Z",
-    "expires_at": "2026-10-08T15:47:19Z",
-    "branch": "work/control-ref-adapter",
-    "commit": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
+    "heartbeat_at": "2026-10-08T15:02:30Z",
+    "expires_at": "2026-10-08T15:47:30Z",
+    "branch": "trunk",
+    "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T15:02:19Z",
+    "at": "2026-10-08T15:02:30Z",
     "issue": 19,
     "role": "triage",
-    "branch": "work/control-ref-adapter",
-    "commit": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
+    "branch": "trunk",
+    "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
     "pr": 24,
-    "summary": "Delivery19 verified exact-head/base Security5458546217 and QA5458620861, all source CI/audit jobs and latest machine agent-qa-review113379571824/run37797158291 actually green. Native PR24 ready/mergeable and threads empty; current default c348 unchanged. Installation merge authorized; live migration remains unfinished and Issue19 must be reopened/kept In Progress.",
-    "next_action": "Merge PR24 by exact head6951b58 and preserve original two-parent installed source; recover actual default CI/publication and pending Task reconciliation before any live fence/notes activation or retirement.",
+    "summary": "PR24 installation merged natively by exact head with every current objective gate green. Actual merge57cfe88bd9dac249d6949a470afc357e835060f9 preserves c348/6951b58 parents and complete source history. Live cutover is not performed; native closing metadata must stay/reopen Issue19 In Progress. Actions must publish immutable v25 before Task/fence/notes/retirement.",
+    "next_action": "Recover native default CI/publication for installed merge; preserve pending existing-Task reconciliation. Release delivery and acquire Master19 for metadata/recovery only; stop on real CI publication wait.",
     "publication": {
       "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
       "state": "published",
@@ -497,14 +497,14 @@
       "publication_pr_handoff": 6062225589
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T14:35:12Z",
-      "issue": 34,
-      "role": "quality",
-      "branch": "trunk",
-      "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
-      "pr": 35,
-      "summary": "Quality34 closed actualnativeIssueDone after immutablev24/defaultCI/privateimage proof; nativehandoffs6062224986/6062225589 preserveevidence. LiveTaskcontinuousalreadyreconciled, no repeat. PR24/b849 remainsunique anddraft, no legacybranchretirement.",
-      "next_action": "Master19 afterrelease: nativeIssue/reviews/source recovery; Quality19 fixesfencedrenew/checkpoint/release/resume withCI-onlycases andcurrentdefaultcontinuousintegration. DistinctSecurity/QA thenactualCI/gate merge beforelivecutover."
+      "at": "2026-10-08T15:02:19Z",
+      "issue": 19,
+      "role": "triage",
+      "branch": "work/control-ref-adapter",
+      "commit": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
+      "pr": 24,
+      "summary": "Delivery19 verified exact-head/base Security5458546217 and QA5458620861, all source CI/audit jobs and latest machine agent-qa-review113379571824/run37797158291 actually green. Native PR24 ready/mergeable and threads empty; current default c348 unchanged. Installation merge authorized; live migration remains unfinished and Issue19 must be reopened/kept In Progress.",
+      "next_action": "Merge PR24 by exact head6951b58 and preserve original two-parent installed source; recover actual default CI/publication and pending Task reconciliation before any live fence/notes activation or retirement."
     },
     "task_reconciliation": {
       "issue": 34,
@@ -653,11 +653,16 @@
       "live_cutover": false
     },
     "installation19": {
-      "state": "merge-intent",
+      "state": "installed; live cutover pending",
       "pr": 24,
       "head": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
       "base": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
-      "branch": "work/control-ref-adapter",
+      "merge": "57cfe88bd9dac249d6949a470afc357e835060f9",
+      "tree": "a66b831197084b4e75d867fe63bb179accfe4cab",
+      "parents": [
+        "c348081a0024dc70552c5ba1b2eda0000f9eb177",
+        "6951b58bbc5e578f3fdfe97190b17006ccfa347e"
+      ],
       "security_review": 5458546217,
       "qa_review": 5458620861,
       "gate": {
@@ -669,6 +674,13 @@
       "security_ci": 37795700335,
       "version": "0.22.25",
       "live_cutover": false
+    },
+    "pending_task_reconciliation": {
+      "issue": 19,
+      "pr": 24,
+      "policy_commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
+      "prompt_path": "engineering/worker-prompt.md",
+      "state": "pending; after successful default CI/publication"
     }
   },
   "attempts": {
