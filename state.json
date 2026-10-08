@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 844,
+  "generation": 845,
   "lease": {
     "id": "codex-recovery-20261008T204807Z-master-e80f7ae6-7fc4-43c6-8029-a25fe919d9f9",
     "worker": "codex-recovery-20261008T204807Z",
     "role": "master",
     "issue": 44,
     "acquired_at": "2026-10-08T21:38:34Z",
-    "heartbeat_at": "2026-10-08T21:38:34Z",
-    "expires_at": "2026-10-08T22:23:34Z",
+    "heartbeat_at": "2026-10-08T21:41:06Z",
+    "expires_at": "2026-10-08T22:26:06Z",
     "branch": "trunk",
-    "commit": "46a6b67a6ce3de468f2304e7847d6da04203d056",
-    "pr": null
+    "commit": "f34d827e47835da589eb8333199e88e035dcb410",
+    "pr": 49
   },
   "checkpoint": {
-    "at": "2026-10-08T21:37:21Z",
+    "at": "2026-10-08T21:41:06Z",
     "issue": 44,
-    "role": "qa",
-    "branch": "work/44-publication-recovery",
-    "commit": "1644b2fc41f5850221a3f42a8fe31f984d659263",
+    "role": "master",
+    "branch": "trunk",
+    "commit": "f34d827e47835da589eb8333199e88e035dcb410",
     "pr": 49,
-    "summary": "QA actual complete13-path exact1644/base46a passed; actualnativeCOMMENT5463140511 binds checkpointc433ff7c89e09b18b4ac8e5d7b66927b2dd5d7ab. Security5463073088accepted/resolvedthread. CI37846375507all6sourcejobs success;887Rust0failures64harnesses,165org/24scheduler. Actual source/log security audits0selectedfindings/gaps with inventory exclusions. NativeIssue44handoff persisted. No local checks, merged publication or QA machinegreen claimed.",
-    "next_action": "Release QA; acquire Master44 at exactdefault46a/trunk/PR49, verify latest actualmachinegate and completecurrentPR/default bindings then author expected-head merge. Recover exactdefaultCI receipt and immutablev0.22.29 before Product/cleanup. Preserve original1644tree020c.",
+    "summary": "PR49 actually merged21:39:54Z totrunkf34d827e47835da589eb8333199e88e035dcb410/tree020c8875daa4597c19bb6ebc7193b055e56b153d; nativeparents46a+1644 confirm original full-reviewed source. ActualQA gate113554252001green(QA5463140511/Security5463073088), allconfiguredsourcejobs/CodeQLsuccessful. ExactdefaultpushMynouCI37848363526/Security37848363555inprogress; no duplicate dispatch/manualrelease/localchecks. Branchwork/44-publication-recovery retained. Native44/49handoffs recorded; v0.22.29 not yet published, acceptance/cleanup pending.",
+    "next_action": "Recovery first at real external wait: inspect exactdefaultCI37848363526 and Security37848363555. On success consume native source/run/attempt receipt; verify actual immutablev0.22.29 tag/source4assets/privateimage/nonrootbinary/cleanup and record actualpublished_at, then finish Issue44/branch cleanup safely and rearmProduct42. Do not infer publication from greenPRCI or existingv0.22.28 record; preserve1644/PR49/currentmergef34d.",
     "publication": {
       "commit": "46a6b67a6ce3de468f2304e7847d6da04203d056",
       "state": "published",
@@ -524,14 +524,14 @@
       "publication_pr_handoff": 6062225589
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T21:01:54Z",
+      "at": "2026-10-08T21:37:21Z",
       "issue": 44,
-      "role": "master",
-      "branch": "trunk",
-      "commit": "46a6b67a6ce3de468f2304e7847d6da04203d056",
-      "pr": null,
-      "summary": "Master44 planned the actual publication/recovery defect repair; native scope and evidence updated in Issue44, handoff6068978866. Shipped41 is Closed/Done with immutable v0.22.28 recorded. Created original source branch work/44-publication-recovery at current default46a6b67a6ce3de468f2304e7847d6da04203d056; no new repair source, tests or green gates claimed. Existing migration resolver already uses bounded native compare; preserve it. Quality will verify safe merged41 cleanup and implement verified publication reconciliation, exact merged-lease preservation, default-bound delivery and release at publication waits without increasing request ceiling.",
-      "next_action": "Release Master; acquire Quality44 on work/44-publication-recovery at46a6b67a6ce3de468f2304e7847d6da04203d056. Finish fresh branch audit, then original bounded source, CI-only checks, distinct Security/QA."
+      "role": "qa",
+      "branch": "work/44-publication-recovery",
+      "commit": "1644b2fc41f5850221a3f42a8fe31f984d659263",
+      "pr": 49,
+      "summary": "QA actual complete13-path exact1644/base46a passed; actualnativeCOMMENT5463140511 binds checkpointc433ff7c89e09b18b4ac8e5d7b66927b2dd5d7ab. Security5463073088accepted/resolvedthread. CI37846375507all6sourcejobs success;887Rust0failures64harnesses,165org/24scheduler. Actual source/log security audits0selectedfindings/gaps with inventory exclusions. NativeIssue44handoff persisted. No local checks, merged publication or QA machinegreen claimed.",
+      "next_action": "Release QA; acquire Master44 at exactdefault46a/trunk/PR49, verify latest actualmachinegate and completecurrentPR/default bindings then author expected-head merge. Recover exactdefaultCI receipt and immutablev0.22.29 before Product/cleanup. Preserve original1644tree020c."
     },
     "task_reconciliation": {
       "issue": 19,
