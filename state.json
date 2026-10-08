@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 791,
-  "lease": null,
+  "generation": 792,
+  "lease": {
+    "id": "a8f9237b-1c5c-4e47-a361-0cf9d5960ac5",
+    "worker": "codex-product-20261008T1637Z",
+    "role": "qa",
+    "issue": 38,
+    "acquired_at": "2026-10-08T18:06:07Z",
+    "heartbeat_at": "2026-10-08T18:06:07Z",
+    "expires_at": "2026-10-08T18:51:07Z",
+    "branch": "work/38-product-backlog",
+    "commit": "6a3fac9b3b2e1bab48d847f7abedcc294be3f67d",
+    "pr": 43
+  },
   "checkpoint": {
     "at": "2026-10-08T18:04:57Z",
     "issue": 38,
