@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 560,
-  "lease": {
-    "id": "codex-hourly-20261008T073509Z-quality-20261008074338",
-    "worker": "codex-hourly-20261008T073509Z",
-    "role": "quality",
-    "issue": 27,
-    "acquired_at": "2026-10-08T07:43:38Z",
-    "heartbeat_at": "2026-10-08T07:49:36Z",
-    "expires_at": "2026-10-08T08:34:36Z",
-    "branch": "trunk",
-    "commit": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
-    "pr": 26
-  },
+  "generation": 561,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-08T07:49:36Z",
     "issue": 27,
