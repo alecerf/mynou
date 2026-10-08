@@ -1,32 +1,35 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 634,
+  "generation": 635,
   "lease": {
     "id": "codex-hourly-20261008103416Z-quality-1791456988000",
     "worker": "codex-hourly-20261008103416Z",
     "role": "quality",
     "issue": 32,
     "acquired_at": "2026-10-08T10:56:28Z",
-    "heartbeat_at": "2026-10-08T11:00:33Z",
-    "expires_at": "2026-10-08T11:45:33Z",
+    "heartbeat_at": "2026-10-08T11:02:32Z",
+    "expires_at": "2026-10-08T11:47:32Z",
     "branch": "trunk",
     "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
     "pr": 33
   },
   "checkpoint": {
-    "at": "2026-10-08T11:00:33Z",
+    "at": "2026-10-08T11:02:32Z",
     "issue": 32,
     "role": "quality",
     "branch": "trunk",
     "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
     "pr": 33,
-    "summary": "NativeexactheadmergePR33 succeeded: mergeced0fe652469fa6916831e0fb09cccc1a8784f79; original2053b30/base719 preserved with actualSecurity5455447204/QA5455490361 andmachinegate37766901214/113276714409. Correctedsource ondefault; v23publicationnotyetverified, no directtags/release/upload. v22 immutableproof retained. RecoverdefaultCI beforeactual30liveproof;19/24/053 preserved, canonicalbranchstillauthority.",
-    "next_action": "Inspect actualnewdefaultCI/security/engineering/immutablev23publication andsafeautobranchcleanup; onlythen30actualnewdefaultcontrol/notesproof. Ifpendingexternalwait, checkpoint exactrun/source+nativehandoffs and release.",
+    "summary": "PR #33 merged at ced0fe652469fa6916831e0fb09cccc1a8784f79 after actual Security5455447204, QA5455490361, required source CI and machine gate37766901214/job113276714409. Issue32 native-closed and labeledDone; merged branch ref list empty, no manual deletion. Issue30 remains open/Review; its native blocker32 is closed. Issue19/draft24/source053 preserved. Actual default CI37767226158 is in progress; Security37767226110 queued, Engineering37767226188 succeeded, CodeQL37767225919 in progress. v23 is not yet verified published; no live corrected proof or notes activation. No local checks.",
+    "next_action": "Next wake recover exact-default CI37767226158, Security37767226110, Engineering37767226188 and immutable v0.22.23/tag/assets/private-package proof atced0fe652469fa6916831e0fb09cccc1a8784f79 first. Then Quality30 at trunk/currentdefault with pr:null can issue a fresh exact-head native checkpoint command and, if successful, inert notes create/update proof. Keep30 open until actual proof; only then unblock19/24. Stop this wake for the external CI/publication wait; release before stopping.",
     "publication": {
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
-      "state": "pending-native-default-ci",
-      "version": "0.22.23"
+      "state": "native-default-ci-in-progress",
+      "version": "0.22.23",
+      "run_id": 37767226158,
+      "status": "in_progress",
+      "conclusion": null
     },
     "previous_checkpoint": {
       "at": "2026-10-08T11:00:25Z",
@@ -98,12 +101,14 @@
       "premerge_source_ci": 37759939764
     },
     "cleanup": {
-      "issue": 30,
-      "state": "open/Review intentionally pending actual transport/publication acceptance",
+      "issue": 32,
+      "state": "native-closed and Done after objective-gated source merge",
+      "merged_branch": "work/native-comment-identity",
+      "branch_result": "Native matching-ref list empty after merge; no manual deletion",
+      "parent_issue": 30,
+      "parent_state": "open/Review; native blocker32 closed, actual publication/transport proof pending",
       "dependency_issue": 19,
-      "dependency_state": "blocked by nativeopen30",
-      "merged_branch": "work/native-control-commands",
-      "branch_result": "Native ref GET404 verified after merge; no manual deletion, usefulsource preserved inmergedPR31/default719",
+      "dependency_state": "Blocked by native open30",
       "preserved_pr": 24,
       "preserved_commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c"
     },
@@ -162,7 +167,7 @@
       "head": "681d0f7e4f8905688005b2f60ce71442fba76e7e",
       "base": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
       "tree": "75e8692d466c8fa139aa0824e4f0d8034a02ea4d",
-      "state": "publication-verified; live request rejected before write",
+      "state": "v22 publication verified; corrective PR33 merged, v23 publication and fresh live proof pending",
       "canonical_ref": "refs/heads/control/engineering",
       "live_proof": "not passed; no notes write; failure preserved",
       "parent_issue": 19,
@@ -188,77 +193,88 @@
       "failed_run": 37764921208,
       "failed_job": 113270103787,
       "failed_code": "edited-or-replaced-comment",
-      "unchanged_control": "162edcb5c7a685b0e653084f5c4636c69c9c4bf0"
+      "unchanged_control": "162edcb5c7a685b0e653084f5c4636c69c9c4bf0",
+      "corrective_issue": 32,
+      "corrective_pr": 33,
+      "corrective_merge": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
+      "corrective_default_ci": 37767226158
     },
     "previous_publication": {
-      "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
+      "commit": "7193547206a9e954bea44e9570716b23e4e660b2",
       "state": "published",
-      "at": "2026-10-08T08:49:26Z",
-      "version": "0.22.21",
-      "run_id": 37751867488,
+      "at": "2026-10-08T10:11:31Z",
+      "version": "0.22.22",
+      "run_id": 37761256529,
       "status": "completed",
       "conclusion": "success",
-      "release_id": 406617913,
+      "release_id": 406690100,
       "immutable": true,
-      "tag_commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
+      "tag_commit": "7193547206a9e954bea44e9570716b23e4e660b2",
       "assets": [
         {
-          "id": 621269215,
-          "name": "mynou-v0.22.21-linux-x86_64",
+          "id": 621454683,
+          "name": "mynou-v0.22.22-linux-x86_64",
           "size": 4891488,
-          "digest": "sha256:09b21bc988d90c7dcd43116e1e0f5927b09ea7f281996d789b09336556674157"
+          "digest": "sha256:fd29311efe9a713a50401ca9aa9d885e94fa95e1c7098367a7e6efa807aecf26"
         },
         {
-          "id": 621269212,
-          "name": "mynou-v0.22.21-macos-arm64",
-          "size": 3729088,
-          "digest": "sha256:64a5ba4825c83124e2270ef2de112f9826b9b09bdc2119d21d6c5b9460cb1731"
+          "id": 621454678,
+          "name": "mynou-v0.22.22-macos-arm64",
+          "size": 3729072,
+          "digest": "sha256:92af20e5417ae0eb35fea183a4a6e05fff2e810ea12108559a7d536ede2cf708"
         },
         {
-          "id": 621269218,
-          "name": "mynou-v0.22.21-macos-x86_64",
+          "id": 621454682,
+          "name": "mynou-v0.22.22-macos-x86_64",
           "size": 4508464,
-          "digest": "sha256:bf2eacf3a4217169dfa9d52b06ac7315ba9e9802d2fc8a9c3e1d9148425abaf1"
+          "digest": "sha256:7b09013747345434dfb97e116dd9883c4400fc390957825257de592bea99a909"
         },
         {
-          "id": 621269216,
+          "id": 621454679,
           "name": "SHA256SUMS",
           "size": 281,
-          "digest": "sha256:cb6f41638e734dc30241c5bb1b9e37752c523f65ea4c61638a5bfd01ff917001"
+          "digest": "sha256:820391bdc2f0c0137ee9456e30d9cd6245898100529763b0c1f330c979525e15"
         }
       ],
       "registry_proof": {
-        "binary_sha256": "09b21bc988d90c7dcd43116e1e0f5927b09ea7f281996d789b09336556674157",
-        "image": "ghcr.io/alecerf/mynou@sha256:9ba8e1bdd13e465a0a2e9285abe4547da14c140f6ff0784a18c32fea97b81aee",
+        "binary_sha256": "fd29311efe9a713a50401ca9aa9d885e94fa95e1c7098367a7e6efa807aecf26",
+        "image": "ghcr.io/alecerf/mynou@sha256:d3a8129236f2c42c2c0d411548b20b20b98c9cc3981edd6f9c5f92077ff69cac",
         "package_id": 15695108,
         "repository": "alecerf/mynou",
         "repository_association": "reported-match",
         "repository_id": 1403318143,
         "repository_visibility": "public",
-        "source": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
+        "source": "7193547206a9e954bea44e9570716b23e4e660b2",
         "verification_cleanup": "completed",
         "verification_user": "1001:1001",
-        "version": "0.22.21",
+        "version": "0.22.22",
         "visibility": "private"
       },
-      "security_audit_run": 37751867517
+      "security_audit_run": 37761256575
     },
     "control_bridge_recovery": {
       "issue": 32,
       "pr": 33,
-      "branch": "work/native-comment-identity",
       "source": "2053b30d99dfaddf59e1f4fb7d16df57dc376cb9",
       "base": "7193547206a9e954bea44e9570716b23e4e660b2",
       "merge_commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
-      "state": "merged-publication-pending",
+      "state": "merged-default-publication-pending",
       "parent_issue": 30,
       "qa_review": 5455490361,
+      "qa_checkpoint": "9bea1de466fcae019205272341ce679fd5a56279",
       "security_review": 5455447204,
+      "security_checkpoint": "0066100ef2f08255950a447ed51eccdb7bc4f9d8",
       "gate_run": 37766901214,
       "gate_job": 113276714409,
+      "default_ci": 37767226158,
+      "default_security": 37767226110,
+      "default_engineering": 37767226188,
+      "default_codeql": 37767225919,
       "failed_run": 37764921208,
       "failed_command": 6058054220,
-      "failed_code": "edited-or-replaced-comment"
+      "failed_code": "edited-or-replaced-comment",
+      "native_issue_handoff": 6058366057,
+      "native_pr_handoff": 6058366362
     }
   },
   "attempts": {
