@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 565,
+  "generation": 566,
   "lease": {
     "id": "codex-hourly-20261008082654Z-quality-20261008083052",
     "worker": "codex-hourly-20261008082654Z",
     "role": "quality",
     "issue": 28,
     "acquired_at": "2026-10-08T08:30:52Z",
-    "heartbeat_at": "2026-10-08T08:30:52Z",
-    "expires_at": "2026-10-08T09:15:52Z",
-    "branch": "trunk",
+    "heartbeat_at": "2026-10-08T08:33:03Z",
+    "expires_at": "2026-10-08T09:18:03Z",
+    "branch": "work/public-source-private-package",
     "commit": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
     "pr": null
   },
   "checkpoint": {
-    "at": "2026-10-08T08:30:44Z",
-    "issue": 27,
-    "role": "master",
-    "branch": "trunk",
+    "at": "2026-10-08T08:33:03Z",
+    "issue": 28,
+    "role": "quality",
+    "branch": "work/public-source-private-package",
     "commit": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
-    "pr": 26,
-    "summary": "Recovered actual defaultCI37745425271 failure at04e99496318: six build/package jobs passed; release113206816150 rejected now-public native repository at the obsolete private-source guard, before publication. Nativev0.22.20 lookup404. Created meaningful recoveryIssue28 with exact acceptance; no repeatedCI, source mutation or release claim. Container package privacy/identity/tag/digest/runtime gates must remain intact.",
-    "next_action": "Release Master and acquire Quality on the current exact remote default to implement the smallest guarded repository-visibility adaptation, source/package visibility proof, release copy correction and CI-only regressions in one linkedPR. Separate Security/QA; preserve19/PR24.",
+    "pr": null,
+    "summary": "Quality prepared the minimal source-visibility repair for Issue28: exact native identity and booleanprivate metadata, independent source/package visibility proof, positive public/private and negative malformed/foreign/public-package CI regressions, truthful release copy and fresh0.22.21. Created the one recovery branch at04e99496318; no source checks/builds/publication ran locally.",
+    "next_action": "Commit these six original source edits against the exact remote parent and open one linkedPR; checkpoint actual remote source/PR, release for complete-diff Security then freshCI-bound QA.",
     "publication": {
       "commit": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
       "state": "ci-failed",
@@ -36,14 +36,14 @@
       "recovery_issue": 28
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T07:45:26Z",
+      "at": "2026-10-08T08:30:44Z",
       "issue": 27,
-      "role": "quality",
-      "branch": "work/publication-handoff-recovery",
-      "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
+      "role": "master",
+      "branch": "trunk",
+      "commit": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
       "pr": 26,
-      "summary": "Owned Quality delivery verified exact PR26 head99138218/base d647, managed Issues25/27 and empty reviewthreads. All configured objective gates actually green: source37742148752 sixjobs, Security37742148708 twojobs, newestEngineering37745176435 organization113204841751 and agent113204891739. Gate actual log validates QA5453360050/ada689672573ceb4f098922b60bac969a821604f and Security5453084901/6e027509. Default base unchanged. Ready to merge by expected source; no publication yet.",
-      "next_action": "Merge preserved PR26 by exact expected99138218 only; inspect new default source and native CI, dispatch trusted defaultCI only if absent, persist intent first. Actions alone publishes0.22.20; cleanup Issues25/27 and unblock19 only with actual merge evidence."
+      "summary": "Recovered actual defaultCI37745425271 failure at04e99496318: six build/package jobs passed; release113206816150 rejected now-public native repository at the obsolete private-source guard, before publication. Nativev0.22.20 lookup404. Created meaningful recoveryIssue28 with exact acceptance; no repeatedCI, source mutation or release claim. Container package privacy/identity/tag/digest/runtime gates must remain intact.",
+      "next_action": "Release Master and acquire Quality on the current exact remote default to implement the smallest guarded repository-visibility adaptation, source/package visibility proof, release copy correction and CI-only regressions in one linkedPR. Separate Security/QA; preserve19/PR24."
     },
     "recovery": {
       "pr": 26,
