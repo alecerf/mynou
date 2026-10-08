@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 428,
+  "generation": 429,
   "lease": {
     "id": "wake10-qa-cleanup-review-20261008T024400Z",
     "worker": "codex-hourly-20261008T023108Z",
     "role": "qa",
     "issue": 18,
     "acquired_at": "2026-10-08T02:43:38Z",
-    "heartbeat_at": "2026-10-08T02:43:38Z",
-    "expires_at": "2026-10-08T03:28:38Z",
+    "heartbeat_at": "2026-10-08T02:47:10Z",
+    "expires_at": "2026-10-08T03:32:10Z",
     "branch": "work/container-demo-cleanup",
     "commit": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
     "pr": 23
   },
   "checkpoint": {
-    "at": "2026-10-08T02:43:31Z",
+    "at": "2026-10-08T02:47:10Z",
     "issue": 18,
-    "role": "security",
+    "role": "qa",
     "branch": "work/container-demo-cleanup",
     "commit": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
     "pr": 23,
-    "summary": "Security completed actual thirteen-path PR23 diff review: no blocking findings. Private nonroot runner-owned verification and post-cleanup proof ordering preserve production1000 CI/runtime and all source/package/privacy gates. Required source CI/independent QA/default19 publication remain separate.",
-    "next_action": "Submit exact-head/base native Security COMMENT; release and acquire QA to challenge complete diff and actual source CI, then gate/merge only when objectively green.",
+    "summary": "Independent logical QA reviewed all thirteen current paths; every required exact-source CI job passed. Actual shared nonroot1001:1001 Docker demo completed cleanup; preserved default1000demo,864Rust/22infra/53organization tests and all native/package gates passed. No blocking QA findings; machine gate/default19 publication pending.",
+    "next_action": "Submit native exact-head/base QA COMMENT; release and acquire Master, finalize ready PR23 and native Issue labels, verify actual machine gate/source fences and merge only when allgreen.",
     "publication": {
       "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
       "state": "ci-failed",
@@ -910,6 +910,104 @@
         "Separate Security planning checkpoint4f60b57f52c712c69840aff8b1daaf331bcac019 rejected root/sudo/ignored-cleanup/permission changes; this later scoped Security phase inspected the actual implementation."
       ],
       "findings": []
+    },
+    "cleanup_qa_review": {
+      "schema": 1,
+      "role": "qa",
+      "head_sha": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
+      "base_sha": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "verdict": "passed",
+      "summary": "Independent logical QA inspected all thirteen actual diff paths and source/runtime/output boundaries after every required source CI job passed. The real shared Docker demo completed cleanup as nonroot1001:1001 while configured-user1000 coverage remained. Failure regressions and all product gates passed; no blocking findings. Default19 publication remains required for Issue18.",
+      "reviewed_paths": [
+        ".github/scripts/publish_container.py",
+        ".github/scripts/test_publication.py",
+        ".github/workflows/ci.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "README.md",
+        "compose.yaml",
+        "docs/ci.md",
+        "docs/deployment.md",
+        "docs/macos.md",
+        "docs/next-release.md",
+        "docs/releases/0.22.19.md",
+        "docs/validation.md"
+      ],
+      "acceptance": [
+        "Complete native current diff, Issue18 acceptance/recovery evidence, full publisher flow, workflow permissions, meaningful regression behavior and all English version/deployment/recovery docs reviewed independently.",
+        "Real PR package CI executed the identical shared verification cleanup path with private runner-owned bind mount and nonroot1001:1001: ready, Plex confirmed and cleanup completed.",
+        "Production image1000:1000 inspection and configured-user1000 package runtime demonstration retained; readonly root/network none/cap-drop/no-new-privileges remain mandatory.",
+        "Temporary demo and credential workspaces close successfully before publication JSON/GITHUB_OUTPUT/stdout. The actual CI cleanup-error regression left both proof and existing Actions output unchanged.",
+        "Actual root refusal, private mount removal/ownership and readonly local-image-selector regression cases passed. Prior package/source/private identity, collision, retry, pulled-byte and failed-demo cases still pass.",
+        "All required source CI jobs green; safe Rust std and zero Cargo dependencies retained. New19 source/version preserves actual17/18images and earlier immutable assets.",
+        "No actual default19 publication or immutable release inferred from PR. Private prior18image proof and its later failed cleanup are represented separately; meaningful change has distinct scope-bound Security and QA phases."
+      ],
+      "evidence": [
+        "Native PR23 exact sourcef3483b9c6ba772285db18ebc7fc276cc768ad00a/baseebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114,13files,empty native review threads.",
+        "Mynou CI37719111412 exact source completedSUCCESS: validate113122402761, four builds113122402899/113122402945/113122403003/113122403023 and package113123185960 allSUCCESS. PR release113123364690 correctlySKIPPED.",
+        "Actual validate log:22infrastructure tests including all4new cleanup/root/output/selector cases,53organization tests and63Rust harnesses;864passed/0failed in103.080s. Dependency graph,formatting,Clippy and script syntax stepsSUCCESS.",
+        "Actual package log02:45:13Z: cleanup=completed,plex_scan_confirmed=true,state=ready,user=1001:1001 after shared --verify-demo. Separate default1000container demo reachedready/Plextrue. All3v19 executable checksumsOK.",
+        "Native ARM64/Intel macOS logs prove Mach-O arm64/x86_64 and ready/Plex-confirmed standalone demos. Linux musl demo also ready/Plex-confirmed; nativeGNU target succeeded.",
+        "Latest Engineering37719273585 organization113122923470SUCCESS; QA gate113122967344SKIPPED whiledraft. Actual Security5450767410 uses historical7fe67496ee6f38473324d5372c0a545594a2224d heldSecurity lease for the same Issue18/PR23/source within acquisition/expiration.",
+        "Immutable16release406222389 all11native assets match preserved baseline. Prior18default37715379732 verified private image991a217cd046c00697b975bff35b4bc23d4f7a85f0b4d14b90cd904684c7cf68 then failed cleanup; native18release404. No overwrite/manual publication/local validation."
+      ],
+      "findings": []
+    },
+    "cleanup_ci": {
+      "run": 37719111412,
+      "conclusion": "success",
+      "engineering_run": 37719273585,
+      "organization_job": 113122923470,
+      "jobs": [
+        {
+          "id": 113122402761,
+          "name": "validate",
+          "conclusion": "success"
+        },
+        {
+          "id": 113122402899,
+          "name": "Build x86_64-unknown-linux-musl",
+          "conclusion": "success"
+        },
+        {
+          "id": 113122402945,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "conclusion": "success"
+        },
+        {
+          "id": 113122403003,
+          "name": "Build x86_64-apple-darwin",
+          "conclusion": "success"
+        },
+        {
+          "id": 113122403023,
+          "name": "Build aarch64-apple-darwin",
+          "conclusion": "success"
+        },
+        {
+          "id": 113123185960,
+          "name": "package",
+          "conclusion": "success"
+        },
+        {
+          "id": 113123364690,
+          "name": "release",
+          "conclusion": "skipped"
+        }
+      ],
+      "rust_passed": 864,
+      "rust_failed": 0,
+      "harnesses": 63,
+      "rust_seconds": 103.08,
+      "infrastructure_tests": 22,
+      "organization_tests": 53,
+      "actual_shared_demo": {
+        "user": "1001:1001",
+        "state": "ready",
+        "plex_scan_confirmed": true,
+        "cleanup": "completed"
+      },
+      "publication": false
     }
   },
   "attempts": {
