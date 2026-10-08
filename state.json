@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 632,
+  "generation": 633,
   "lease": {
     "id": "codex-hourly-20261008103416Z-quality-1791456988000",
     "worker": "codex-hourly-20261008103416Z",
     "role": "quality",
     "issue": 32,
     "acquired_at": "2026-10-08T10:56:28Z",
-    "heartbeat_at": "2026-10-08T10:58:15Z",
-    "expires_at": "2026-10-08T11:43:15Z",
+    "heartbeat_at": "2026-10-08T11:00:25Z",
+    "expires_at": "2026-10-08T11:45:25Z",
     "branch": "work/native-comment-identity",
     "commit": "2053b30d99dfaddf59e1f4fb7d16df57dc376cb9",
     "pr": 33
   },
   "checkpoint": {
-    "at": "2026-10-08T10:58:15Z",
+    "at": "2026-10-08T11:00:25Z",
     "issue": 32,
     "role": "quality",
     "branch": "work/native-comment-identity",
     "commit": "2053b30d99dfaddf59e1f4fb7d16df57dc376cb9",
     "pr": 33,
-    "summary": "Quality madePR33 ready bynativeGraphQL afterseparateSecurity5455447204 cp0066100 andQA5455490361 cp9bea1de atsame2053b30/base719. ActualrequiredsourceCI37766166661 sixgreen; Security37766166766 bothgreen; CodeQL37766165025 threegreen; organization113274775825green. UpdatedPR description withactualevidence andliveprooflimit. AwaitactualnewreadyQA gate; no merge yet.",
-    "next_action": "Read currentreadyEngineeringagent-qa-review log andfreshsource/default/reviews/threads. Ifallobjectivegatesgreen, exactheadauthor-selfmerge; CI alonepublishv23. Then recover30actualcorrecteddefaultcontrol/notesproof withoutactivating19backend; stopforrealexternalwait/deadline.",
+    "summary": "Quality verifiedactualreadyEngineering37766901214 organization113276664372 andagent-qa-review113276714409 completed/success. Nativegate log binds2053b30/base719,Issue32,QA5455490361 cp9bea1de/Security5455447204 cp0066100 andactualrequiredCI37766166661/37766901214/37766166766. AllCodeQLgreen; nativePRready/clean/currenthead/base/default unchanged; reviewsactualCOMMENT, threadsempty. Objectivegatesgreen; exactheadmerge next.",
+    "next_action": "Author-selfmergePR33 with expected2053b30, immediately persistactualmerge/default and CIpublicationpending. OnlyCI publishesimmutablev23; recoverdefaultCI/publication before30actualliveproof or19cutover.",
     "publication": {
       "commit": "7193547206a9e954bea44e9570716b23e4e660b2",
       "state": "published",
@@ -98,16 +98,15 @@
       "security_checkpoint": "6e02750960c6683c6c04bcd26306942b09c16b5d"
     },
     "pending_qa": {
-      "state": "logical-review-passed-awaiting-machine-gate",
+      "state": "machine-gate-passed",
       "head_sha": "2053b30d99dfaddf59e1f4fb7d16df57dc376cb9",
       "base_sha": "7193547206a9e954bea44e9570716b23e4e660b2",
       "review_id": 5455490361,
       "lease_checkpoint": "9bea1de466fcae019205272341ce679fd5a56279",
       "security_review": 5455447204,
       "security_checkpoint": "0066100ef2f08255950a447ed51eccdb7bc4f9d8",
-      "source_ci": 37766166661,
-      "security_audit": 37766166766,
-      "codeql_run": 37766165025
+      "run_id": 37766901214,
+      "gate_job": 113276714409
     },
     "preserved_work": {
       "issue": 19,
