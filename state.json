@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 515,
+  "generation": 516,
   "lease": {
     "id": "wake14-master-recovery-20261008T063352Z",
     "worker": "codex-hourly-20261008T063352Z",
     "role": "master",
     "issue": 25,
     "acquired_at": "2026-10-08T06:35:15Z",
-    "heartbeat_at": "2026-10-08T06:35:15Z",
-    "expires_at": "2026-10-08T07:20:15Z",
+    "heartbeat_at": "2026-10-08T06:36:39Z",
+    "expires_at": "2026-10-08T07:21:39Z",
     "branch": "work/publication-handoff-recovery",
     "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
     "pr": 26
   },
   "checkpoint": {
-    "at": "2026-10-08T05:38:43Z",
+    "at": "2026-10-08T06:36:39Z",
     "issue": 25,
     "role": "master",
     "branch": "work/publication-handoff-recovery",
     "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
     "pr": 26,
-    "summary": "Recovery-only wake: PR #26 remains open and unmerged at 9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a against d647be6edfd6e892474b2602bbc9047ad4047c2f. Native Actions state is unchanged: source CI 37729200692 succeeded, but final Engineering run 37730229376 failed organization without a runner or steps and skipped agent-qa-review. QA review 5451664028 remains rejected; Security review 5451648764 covers the static diff. No newer capacity or successful-run evidence, source edits, local checks, reruns, merge or release. Issue #19 / PR #24 and its native dependency on #25 are preserved. Stop early for the recorded Actions account-capacity wait.",
-    "next_action": "Wait for changed GitHub Actions account capacity; do not repeat unchanged failed runs. On the next supported wake, recover PR #26 at its exact head/base, rerun only failed required Engineering checks once capacity is demonstrably restored, then acquire a separate QA lease for a fresh complete-diff review and actual gate verification. Merge only with every objective gate green; CI alone publishes 0.22.20. Preserve and then unblock Issue #19 / PR #24. Capacity loss pauses work; no paid infrastructure or automatic spending-limit change.",
+    "summary": "Recovery-only wake: PR #26 remains open at 9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a, base d647be6edfd6e892474b2602bbc9047ad4047c2f. Source CI 37729200692 remains successful. Latest required Engineering run 37730229376 attempt 1 still failed organization job 113157440291 without a runner or steps; agent-qa-review 113157455224 was skipped. Native Security review 5451648764 and rejected QA review 5451664028 are unchanged. The sole newer repository run 37733443950 was skipped and is not restored-capacity evidence. Native Issue #19 is still blocked by open #25; partial PR #24 is preserved. No source edits, local checks, CI retries, merge, publication or additional workers. Stop early for the recorded Actions account-capacity wait.",
+    "next_action": "Wait for actual changed GitHub Actions capacity, not elapsed quota time. Recover PR #26 at its exact head/base; only once capacity changes, rerun failed required Engineering checks, then checkpoint/release and acquire QA for a fresh complete-diff review and actual objective-gate verification. Merge only when every required gate is green. Actions alone publishes 0.22.20; preserve immutable releases. Afterwards clean up safely and unblock Issue #19 / PR #24. Do not repeat unchanged retries or treat capacity loss as failed or completed work.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -404,11 +404,11 @@
       "next": "Prove supported hourly writer and restart-safe legacy fencing before migration; current VM admin access200 is not web-writer proof."
     },
     "wake": {
-      "start": "2026-10-08T05:31:52Z",
-      "deadline": "2026-10-08T06:11:52.000Z",
-      "reserve": "2026-10-08T06:06:52.000Z",
+      "start": "2026-10-08T06:33:52Z",
+      "deadline": "2026-10-08T07:13:52.000Z",
+      "reserve": "2026-10-08T07:08:52.000Z",
       "max_active_agents": 1,
-      "worker": "codex-hourly-20261008T053152Z",
+      "worker": "codex-hourly-20261008T063352Z",
       "local_checks": false,
       "subagents": false,
       "stop_reason": "external Actions capacity wait"
@@ -449,13 +449,15 @@
       "security_review": 5451648764,
       "qa_review": 5451664028,
       "qa_verdict": "rejected",
-      "no_new_native_runs": true,
+      "no_new_pr_runs": true,
+      "newer_repository_run": 37733443950,
+      "newer_run_conclusion": "skipped",
       "no_capacity_change_evidence": true,
       "rerun": false,
       "merge": false,
       "preserved_issue": 19,
       "native_blocked_by": 25,
-      "billing_evidence": "Prior native annotations HTTP 200 are preserved in gate_failure; this wake observed unchanged run/job state, not a new billing annotation"
+      "billing_evidence": "Previously verified native HTTP 200 annotations remain in gate_failure; current wake read unchanged runs/jobs/reviews and did not re-read billing annotations"
     }
   },
   "attempts": {
