@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 396,
+  "generation": 397,
   "lease": {
     "id": "wake9-security-correction-20261008T014520Z",
     "worker": "codex-hourly-20261008T012904Z",
     "role": "security",
     "issue": 18,
     "acquired_at": "2026-10-08T01:45:39Z",
-    "heartbeat_at": "2026-10-08T01:45:39Z",
-    "expires_at": "2026-10-08T02:30:39Z",
+    "heartbeat_at": "2026-10-08T01:47:15Z",
+    "expires_at": "2026-10-08T02:32:15Z",
     "branch": "work/registry-recovery",
     "commit": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
     "pr": 22
   },
   "checkpoint": {
-    "at": "2026-10-08T01:45:13Z",
+    "at": "2026-10-08T01:47:15Z",
     "issue": 18,
-    "role": "quality",
+    "role": "security",
     "branch": "work/registry-recovery",
     "commit": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
     "pr": 22,
-    "summary": "Corrective0.22.18 source committed remotely on existing draftPR22, preserving original diagnostic0356649d in ancestry. Temporary read-only probe/helper retired. Supported exact private source-repository ID/context and private owner/name/type/stable packageID replace missing-field assumption; reported conflicting links still block. Original collision/digest/image/bytes/demo guards retained. No local check or publication; actual CI/Security/QA pending.",
-    "next_action": "Acquire Security exact final PR head/base551e82d2, inspect actual complete native diff and new CI before independent QA; only all real objective gates may permit merge. Older17image digest and immutable16 assets preserved.",
+    "summary": "Security independently accepted all12 actual corrected paths at1cbe4282/base551e82d2. Exact private native repository ID/name, private owner/name/type/stable packageID and reported-link rejection preserve intended confidentiality/authorized source identity; omission is honestlynot_exposed. Existing image/collision/digest/binary/runtime gates unchanged;17images preserved;temporaryprobe retired. Corrective CI still pending, no local/test/publication success invented.",
+    "next_action": "Submit native exact-head Security record, release; independent QA reviews complete12-path actual diff, corrected Issue18 acceptance, actual newCI and historical diagnostic proof. Ready only after real CI/QA, then Master exact gate/merge for this corrective recovery.",
     "publication": {
       "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
       "state": "ci-failed",
@@ -393,48 +393,41 @@
     "security": {
       "schema": 1,
       "role": "security",
-      "head_sha": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
-      "base_sha": "8a0ada56baa24b566e306af75768b90ed08b55ca",
+      "head_sha": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
+      "base_sha": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
+      "lease_checkpoint": "",
       "verdict": "passed",
-      "summary": "Complete registry migration diff reviewed. Default-only ephemeral package publishing, private associated package checks, collision refusal, source/image/digest and re-pulled binary/runtime verification preserve the publication trust boundary. No blocking Security findings; actual required CI/QA and later private default publication remain separate prerequisites.",
+      "summary": "Complete corrected diff replaces a missing optional association assumption with supported explicit private source-repository and package identity/provenance checks. Reported conflicting links still fail; omitted UI linkage is recorded unverified. New source/version preserves actual partial17images and earlier immutable assets. No blocking Security findings; required CI/QA and later actual default publication remain prerequisites.",
       "reviewed_paths": [
-        ".github/scripts/publish-release.sh",
         ".github/scripts/publish_container.py",
-        ".github/scripts/test_durations.json",
         ".github/scripts/test_publication.py",
-        ".github/workflows/ci.yml",
         "Cargo.lock",
         "Cargo.toml",
-        "Dockerfile",
         "README.md",
         "compose.yaml",
-        "deploy-compose.yaml",
         "docs/ci.md",
         "docs/deployment.md",
         "docs/macos.md",
         "docs/next-release.md",
-        "docs/releases/0.22.17.md",
-        "docs/validation.md",
-        "examples/package_release.rs",
-        "src/main.rs",
-        "tests/cli.rs"
+        "docs/releases/0.22.18.md",
+        "docs/validation.md"
       ],
       "acceptance": [
-        "PR jobs retain contents read; only exact-default release has packages write. Both Python entry guard and native job guard reject PR/other source execution.",
-        "Password only through stdin, private temporary Docker config, no token-containing argv/output/asset, no visibility mutation or paid service.",
-        "Private repository association and registry lookup failures fail closed; all existing tags are checked before pushes, then checked again. Different source/version/image IDs are rejected; no server tag CAS claim.",
-        "Same-run/SHA image and checked binary are retained internally. Publication re-pulls one content digest, verifies exact OCI identity/image ID, compares executable SHA and runs readonly network-isolated local demo before release.",
-        "Four release files and guarded selected-manifest installation replace unused archives; existing release histories, container least privilege, native Mac checks and source-copy permissions remain.",
-        "Actual10 publication regression sources cover failures/retry without external runtime dependencies. Rust code only changes version-bound embedded Compose and English output; safe std/zero dependencies preserved."
+        "Actual twelve-path diff reviewed, including all metadata failure/identity paths, regression changes, manifests, Compose and English installation/recovery/release docs.",
+        "Exact trusted default name/ref/event/source plus bounded numeric GITHUB_REPOSITORY_ID are required. Native private repository ID/full_name must match before any Docker operation.",
+        "Private package owner/name/container type/positive ID are mandatory; same package ID required after pushes. Reported wrong/malformed repository full_name or ID remains a hard failure; missing field is explicitly not_exposed.",
+        "All preflight source/version collisions, private stdin credentials, same-run checked image, OCI source/revision/version/nonroot runtime, digest pull, executable SHA and isolated demo gates remain unchanged.",
+        "Actual diagnostic proof identifies partial0.22.17 images;0.22.18 avoids their replacement. Original privacy checks and objective gates stay; temporary package-read PR job/helper retired from final source.",
+        "No unsupported GraphQL granular-registry lookup, UI linkage claim, visibility mutation, deletion, token output or product dependency added. New meaningful CI regressions challenge private context/package substitution and omitted/conflicting metadata."
       ],
       "evidence": [
-        "Actual complete20-path PR21 diff ata7c6b8d2fda11c99382508f9bd7d1c3abc464345/8a0ada56baa24b566e306af75768b90ed08b55ca and native Issue18 acceptance.",
-        "Original ZIP packager deletion compared against complete prior source; only workflow/timing references existed and both are removed.",
-        "Native Actions37703667637 is still in progress; no test success or registry availability is inferred. Native Engineering37703667612 succeeded.",
-        "Actual native package/registry permission, private visibility and content digest require later successful default-branch CI; mocks cannot prove them."
+        "Native complete PR22 twelve-path diff at1cbe42828fe1bf594cd6458796eefa65c3a0096d/551e82d2c4158b9af2080081bbac3e1d18c949ea.",
+        "Actual read-only registry-inspection113105507230 inCI37713788379 succeeded with contentsread/packagesread: private expectedpackage,1completeversionpage, both17/source tags same675ef89d1bed913973e7682e9633e8fb3b229eecc5d98dc8a132f1b49af2040c digest, no repository metadata; publication_verified=false.",
+        "Original diagnostic CI37713788379 all six required validate/four-build/package jobs succeeded; PR release correctly skipped. Corrective CI37714490728 remains inprogress and Engineering37714490697 succeeded while draft; no new tests or publication success inferred.",
+        "Native Issue18 acceptance now documents the supported identity/provenance proof and its unverified UI association boundary. Exact private source repo ID1403318143 is established by native repository metadata.",
+        "Official GitHub Packages documentation: optional REST package repository metadata; granular Container registry has no supported GraphQL Packages API. Actual observed output, not API invention, drove the correction."
       ],
-      "findings": [],
-      "lease_checkpoint": "f244291ff36f9734660254cf69b8acaf2ce95e0c"
+      "findings": []
     },
     "security_native_review": {
       "success": true,
