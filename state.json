@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 535,
+  "generation": 536,
   "lease": {
     "id": "wake15-quality-public-security-20261008T064648Z",
     "worker": "codex-capacity-recovery-20261008T064648Z",
     "role": "quality",
     "issue": 27,
     "acquired_at": "2026-10-08T07:06:39Z",
-    "heartbeat_at": "2026-10-08T07:06:39Z",
-    "expires_at": "2026-10-08T07:51:39Z",
+    "heartbeat_at": "2026-10-08T07:13:36Z",
+    "expires_at": "2026-10-08T07:58:36Z",
     "branch": "work/publication-handoff-recovery",
     "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
     "pr": 26
   },
   "checkpoint": {
-    "at": "2026-10-08T07:06:30Z",
+    "at": "2026-10-08T07:13:36Z",
     "issue": 27,
-    "role": "security",
-    "branch": "trunk",
-    "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
-    "pr": null,
-    "summary": "Security triage for user Issue #27: repo is public, CI capacity restored, but native secret-alert reads and enabling secret scanning/push protection returned HTTP 403 Resource not accessible by integration. Native private reporting GET is 200 and currently disabled. Existing CI policy checks only current tracked high-confidence GitHub/OpenAI token patterns; it does not audit full history or Actions logs. SECURITY.md assumes private Issues, now unsafe guidance. No actual secret exposure is claimed. Preserve green prior PR #26 repair but hold merge while adding a small original std-only CI audit and safe disclosure instructions.",
-    "next_action": "Release Security analysis and acquire Quality implementation for #27 on preserved PR #26 branch at 9fb3e6dc. Extend this one existing linked PR with current/history/log audits, redacted bounded reports, regression coverage and public-safe security documentation. CI only runs all scans. Link both #25/#27, invalidate old source-bound reviews on push and obtain fresh full-diff Security/QA. Record actual missing native permission; never claim arbitrary sensitive-data absence from regex scanning.",
+    "role": "quality",
+    "branch": "work/publication-handoff-recovery",
+    "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
+    "pr": 26,
+    "summary": "Original public-security source changes are prepared for preserved PR #26: selected credential/private-key detection across reachable Git objects and completed Actions-attempt log archives, bounded downloads/ZIP expansion, strict HTTPS storage redirects without forwarding the GitHub token, redacted reports and seven meaningful CI-only regressions. Public-safe SECURITY.md replaces private-Issue guidance. Proposed read-only Security audit jobs become required, and main validation also audits full fetched history. No local scans/tests/builds, detected credential finding or green new-source checks are claimed.",
+    "next_action": "Create one original source commit with sole parent 9fb3e6dc and advance preserved PR #26 branch by expected SHA, force false. Link #27 alongside #25; CI alone performs full source/history and completed-log scans. Inspect actual redacted outcomes and all checks, then distinct complete-diff Security and QA at new exact head/base. Hold delivery until current audit findings/gaps are resolved.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -516,9 +516,10 @@
       "origin": "user",
       "priority": "p1",
       "risk": "high",
-      "state": "in-progress",
+      "state": "implementation-prepared",
       "scope": "Public source/history and existing Actions logs",
-      "blocked_delivery_pr": 26
+      "blocked_delivery_pr": 26,
+      "linked_pr": 26
     },
     "public_security_analysis": {
       "issue": 27,
@@ -532,6 +533,18 @@
       "plan": "Original Python std CI-only complete reachable history and accessible Actions-attempt log audit; sanitized findings and coverage gaps; safe disclosure docs",
       "findings": "No real credential finding yet",
       "reuse_pr": 26
+    },
+    "public_security_source_plan": {
+      "parent": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
+      "files": [
+        "engineering/secret_audit.py",
+        "engineering/tests/test_secret_audit.py",
+        ".github/workflows/security-audit.yml",
+        "SECURITY.md",
+        ".github/workflows/ci.yml",
+        ".github/engineering.json"
+      ],
+      "local_validation": false
     }
   },
   "attempts": {
