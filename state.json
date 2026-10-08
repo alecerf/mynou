@@ -1,32 +1,32 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 408,
+  "generation": 409,
   "lease": {
     "id": "wake9-quality-cleanup-registry-20261008T015700Z",
     "worker": "codex-hourly-20261008T012904Z",
     "role": "quality",
     "issue": 18,
     "acquired_at": "2026-10-08T01:57:39Z",
-    "heartbeat_at": "2026-10-08T01:57:39Z",
-    "expires_at": "2026-10-08T02:42:39Z",
+    "heartbeat_at": "2026-10-08T01:58:35Z",
+    "expires_at": "2026-10-08T02:43:35Z",
     "branch": "trunk",
     "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
     "pr": 22
   },
   "checkpoint": {
-    "at": "2026-10-08T01:57:33Z",
+    "at": "2026-10-08T01:58:35Z",
     "issue": 18,
-    "role": "master",
+    "role": "quality",
     "branch": "trunk",
     "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
     "pr": 22,
-    "summary": "PR22 merged at ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114 with exact reviewed parents/tree after every objective gate green. Native push CI37715379732 is running; native auto-deletion removed the merged branch. Issue18 auto-closed by merge but actual publication acceptance remains pending.",
-    "next_action": "Release Master; Quality reopens Issue18 for actual default publication, records automatic branch cleanup and native immutable-release/CI evidence, then checkpoints/releases for the external CI wait.",
+    "summary": "PR22 correction merged after actual green Security/independent QA/objective CI gates; exact parents/tree verified. Native merged branch auto-deleted404, no open PRs, no Issue18 blocking dependents; Issue18 reopened and remains Review until actual default18 publication. Native push CI37715379732 is inprogress (ARM64 build success);18release404. Real external CI wait: no polling or unrelated work.",
+    "next_action": "Recovery-first read latest exact-source default CI37715379732 for ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114. If green inspect actual release job log private repository/package IDs, pulled digest/binary/demo and native immutable v0.22.18 four asset IDs/names/sizes/digests/tag source; compare prior16 baseline. Then complete Issue18/cleanup. If red preserve actual failed stage/log and partial18tags, correct source via one managed linked PR with fresh scoped Security/QA; do not blindly retry or overwrite17/18. Only afterward Issue19.",
     "publication": {
       "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
       "state": "ci-pending",
-      "at": "2026-10-08T01:56:48Z",
+      "at": "2026-10-08T01:57:44Z",
       "branch": "trunk",
       "run_id": 37715379732,
       "event": "push",
@@ -46,7 +46,40 @@
       "engineering_run_id": 37715379741,
       "engineering_conclusion": "success",
       "publication_not_inferred": true,
-      "previous_assets_unchanged": true
+      "previous_assets_unchanged": true,
+      "release_lookup_response": 404,
+      "jobs": [
+        {
+          "id": 113110531509,
+          "name": "validate",
+          "status": "in_progress",
+          "conclusion": null
+        },
+        {
+          "id": 113110531614,
+          "name": "Build aarch64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113110531662,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "status": "in_progress",
+          "conclusion": null
+        },
+        {
+          "id": 113110531669,
+          "name": "Build x86_64-apple-darwin",
+          "status": "in_progress",
+          "conclusion": null
+        },
+        {
+          "id": 113110531726,
+          "name": "Build x86_64-unknown-linux-musl",
+          "status": "in_progress",
+          "conclusion": null
+        }
+      ]
     },
     "publication_baseline": {
       "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
@@ -431,11 +464,16 @@
       "pr": 22,
       "branch": "work/registry-recovery",
       "branch_head": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
+      "preserved_merge": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
       "branch_lookup": 404,
       "native_auto_deleted": true,
       "open_prs": [],
-      "issue_auto_closed": true,
-      "publication_acceptance_pending": true
+      "blocking_dependents": [],
+      "issue_reopened": true,
+      "issue_state": "open",
+      "issue_status": "status:review",
+      "publication_acceptance_pending": true,
+      "previous_immutable_assets_unchanged": true
     },
     "recovery": {
       "issue18_reopened": true,
@@ -758,6 +796,17 @@
       },
       "corrective_pr": 22,
       "corrective_merge": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114"
+    },
+    "wake": {
+      "worker": "codex-hourly-20261008T012904Z",
+      "started_at": "2026-10-08T01:29:04Z",
+      "slice_minutes": 40,
+      "deadline": "2026-10-08T02:09:04Z",
+      "stop_reason": "actual default CI external wait",
+      "concurrent_workers": 0,
+      "local_validation": false,
+      "manual_publication": false,
+      "paid_infrastructure": false
     }
   },
   "attempts": {
