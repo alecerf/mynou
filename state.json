@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 576,
-  "lease": null,
+  "generation": 577,
+  "lease": {
+    "id": "codex-hourly-20261008082654Z-quality-20261008084148",
+    "worker": "codex-hourly-20261008082654Z",
+    "role": "quality",
+    "issue": 28,
+    "acquired_at": "2026-10-08T08:41:48Z",
+    "heartbeat_at": "2026-10-08T08:41:48Z",
+    "expires_at": "2026-10-08T09:26:48Z",
+    "branch": "work/public-source-private-package",
+    "commit": "b028b1dd058842d7ebc551d4f822519d9d4d1e85",
+    "pr": 29
+  },
   "checkpoint": {
     "at": "2026-10-08T08:41:39Z",
     "issue": 28,
