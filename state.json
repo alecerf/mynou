@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 432,
+  "generation": 433,
   "lease": {
     "id": "wake10-master-cleanup-delivery-20261008T024700Z",
     "worker": "codex-hourly-20261008T023108Z",
     "role": "master",
     "issue": 18,
     "acquired_at": "2026-10-08T02:47:18Z",
-    "heartbeat_at": "2026-10-08T02:48:43Z",
-    "expires_at": "2026-10-08T03:33:43Z",
+    "heartbeat_at": "2026-10-08T02:50:33Z",
+    "expires_at": "2026-10-08T03:35:33Z",
     "branch": "work/container-demo-cleanup",
     "commit": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
     "pr": 23
   },
   "checkpoint": {
-    "at": "2026-10-08T02:48:43Z",
+    "at": "2026-10-08T02:50:33Z",
     "issue": 18,
     "role": "master",
     "branch": "work/container-demo-cleanup",
     "commit": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
     "pr": 23,
-    "summary": "PR23 exact-source CI and independent QA5450786129/Security5450767410 are actually green. Real shared nonroot1001:1001 Docker cleanup completed, production1000 gate retained. Final PR description/Issue18 labels updated; objective gate and default19 publication pending.",
-    "next_action": "Mark PR23 ready; inspect actual fresh organization/agent-qa-review and all native required jobs, source/base integration and conversations; merge corrective PR only with every objective gategreen.",
+    "summary": "Every objective PR23 native gate is green at exact head/base. Actual agent-qa-review113124333296 proved QA5450786129/Security5450767410 with scoped historical leases and CI37719111412/Engineering37719702099. Integration clean, threads empty;19release404. Corrective merge is for current failed18publication, not unrelated delivery.",
+    "next_action": "Author-self-merge by expected exact head, verify native default source/parents/tree, then separate Quality cleanup and actual default19 publication recovery.",
     "publication": {
       "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
       "state": "ci-failed",
@@ -417,62 +417,17 @@
       "review_id": 5450457499
     },
     "gate": {
-      "head_sha": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
-      "base_sha": "8a0ada56baa24b566e306af75768b90ed08b55ca",
-      "run_id": 37704271783,
-      "qa_job": 113074851858,
-      "organization_job": 113074798244,
-      "required_checks": [
-        {
-          "id": 113072834888,
-          "name": "validate",
-          "conclusion": "success",
-          "url": "https://github.com/alecerf/mynou/actions/runs/37703667637/job/113072834888"
-        },
-        {
-          "id": 113072835072,
-          "name": "Build x86_64-unknown-linux-gnu",
-          "conclusion": "success",
-          "url": "https://github.com/alecerf/mynou/actions/runs/37703667637/job/113072835072"
-        },
-        {
-          "id": 113072835207,
-          "name": "Build x86_64-unknown-linux-musl",
-          "conclusion": "success",
-          "url": "https://github.com/alecerf/mynou/actions/runs/37703667637/job/113072835207"
-        },
-        {
-          "id": 113072835058,
-          "name": "Build aarch64-apple-darwin",
-          "conclusion": "success",
-          "url": "https://github.com/alecerf/mynou/actions/runs/37703667637/job/113072835058"
-        },
-        {
-          "id": 113072835300,
-          "name": "Build x86_64-apple-darwin",
-          "conclusion": "success",
-          "url": "https://github.com/alecerf/mynou/actions/runs/37703667637/job/113072835300"
-        },
-        {
-          "id": 113073722028,
-          "name": "package",
-          "conclusion": "success",
-          "url": "https://github.com/alecerf/mynou/actions/runs/37703667637/job/113073722028"
-        },
-        {
-          "id": 113074798244,
-          "name": "organization",
-          "conclusion": "success",
-          "url": "https://github.com/alecerf/mynou/actions/runs/37704271783/job/113074798244"
-        },
-        {
-          "id": 113074851858,
-          "name": "agent-qa-review",
-          "conclusion": "success",
-          "url": "https://github.com/alecerf/mynou/actions/runs/37704271783/job/113074851858"
-        }
-      ],
-      "conclusion": "success"
+      "pr": 23,
+      "head": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
+      "base": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "run": 37719702099,
+      "job": 113124333296,
+      "conclusion": "success",
+      "qa_review_id": 5450786129,
+      "qa_checkpoint": "d7274428db7398300d3057e9ef03ca1e1dd4adaa",
+      "security_review_id": 5450767410,
+      "security_checkpoint": "7fe67496ee6f38473324d5372c0a545594a2224d",
+      "ci": 37719111412
     },
     "merge": {
       "sha": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
@@ -712,10 +667,12 @@
       "pr": 23,
       "head": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
       "base": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
-      "ci": 37719111412,
-      "qa_review_id": 5450786129,
-      "security_review_id": 5450767410,
-      "publication_verified": false
+      "corrective_default": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "gate_run": 37719702099,
+      "gate_job": 113124333296,
+      "gate_conclusion": "success",
+      "publication_verified": false,
+      "release19_lookup_response": 404
     },
     "previous_assets_verified_at": "2026-10-08T01:55:25Z",
     "previous_failed_publication": {
