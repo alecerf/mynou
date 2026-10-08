@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 526,
+  "generation": 527,
   "lease": {
     "id": "wake15-quality-delivery-20261008T064648Z",
     "worker": "codex-capacity-recovery-20261008T064648Z",
     "role": "quality",
     "issue": 25,
     "acquired_at": "2026-10-08T06:53:42Z",
-    "heartbeat_at": "2026-10-08T06:53:42Z",
-    "expires_at": "2026-10-08T07:38:42Z",
+    "heartbeat_at": "2026-10-08T06:56:03Z",
+    "expires_at": "2026-10-08T07:41:03Z",
     "branch": "work/publication-handoff-recovery",
     "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
     "pr": 26
   },
   "checkpoint": {
-    "at": "2026-10-08T06:53:33Z",
+    "at": "2026-10-08T06:56:03Z",
     "issue": 25,
-    "role": "qa",
+    "role": "quality",
     "branch": "work/publication-handoff-recovery",
     "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
     "pr": 26,
-    "summary": "Distinct complete-diff QA passed exact PR #26 head/base after restored real runner execution. Native QA COMMENT review 5452774635 at scoped historical checkpoint a5569d329892782bb08931a689e8ecaec9c2de1b supersedes prior capacity rejection 5451664028. All six required source CI jobs and recovered organization 113187382812 succeeded; complete native diff, code context and job logs inspected. Security 5451648764 is valid for unchanged source/base, with compact historical lease/ancestry and no unresolved threads. Actual machine QA gate is not yet certified; no merge/release/local validation.",
-    "next_action": "Release QA and acquire Quality for delivery recovery. Read fresh source/base, required checks and native reviews; inspect every gate outcome and unresolved threads. Merge only after objective success, then preserve exact remote merge/default source and recover Actions-owned publication and native cleanup. If a real CI wait remains, checkpoint/release instead of polling.",
+    "summary": "PR #26 is delivery-ready at exact 9fb3e6dc/base d647: source CI 37729200692 and latest Engineering 37740094173 are successful, including organization 113188650857 and actual agent-qa-review 113188686520 validating QA 5452774635/Security 5451648764. Fresh threads are empty. Merge has not occurred. The client now requests a security audit of newly public repository source/history and Actions logs for credentials or sensitive data. Pause merge for this higher-risk explicit request; preserve all exact-head delivery proof.",
+    "next_action": "Release Quality and acquire Master to triage the public-repository credential exposure audit against native existing Issues, then use a separate Security lease. Prefer native GitHub protection and CI-only deterministic scans; never print discovered secrets. Preserve PR #26 ready state and resume only after current security concerns are resolved. No local scans/tests or additional workers.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -462,16 +462,17 @@
       "visibility": "public",
       "native_repo_private": false,
       "origin": "client visibility change",
-      "engineering_run": 37730229376,
+      "engineering_run": 37740094173,
       "previous_attempt": 1,
       "rerun_state": "accepted",
-      "required_checks_green": false,
+      "required_checks_green": true,
       "rerun_response": {
         "success": true
       },
       "actual_runner": 1000001175,
       "organization_job": 113187382812,
-      "organization": "success"
+      "organization": "success",
+      "state": "runner-capacity-restored"
     },
     "qa_review_phase": {
       "head": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
@@ -497,6 +498,24 @@
       "organization_log_read": true,
       "local_checks": false,
       "gate": "in_progress"
+    },
+    "objective_gate": {
+      "head": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
+      "base": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+      "source_ci": 37729200692,
+      "engineering_ci": 37740094173,
+      "organization_job": 113188650857,
+      "qa_gate_job": 113188686520,
+      "qa_review": 5452774635,
+      "security_review": 5451648764,
+      "all_required_green": true,
+      "merged": false
+    },
+    "user_security_request": {
+      "origin": "user",
+      "scope": "Public repository code/history and Actions logs must not expose credentials or sensitive data",
+      "state": "needs-triage",
+      "source": "public visibility change and explicit client security instruction"
     }
   },
   "attempts": {
