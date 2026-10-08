@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 413,
-  "lease": null,
+  "generation": 414,
+  "lease": {
+    "id": "wake10-master-release-recovery-20261008T023108Z",
+    "worker": "codex-hourly-20261008T023108Z",
+    "role": "master",
+    "issue": 18,
+    "acquired_at": "2026-10-08T02:32:34Z",
+    "heartbeat_at": "2026-10-08T02:32:34Z",
+    "expires_at": "2026-10-08T03:17:34Z",
+    "branch": "trunk",
+    "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+    "pr": 22
+  },
   "checkpoint": {
     "at": "2026-10-08T02:00:49Z",
     "issue": 18,
