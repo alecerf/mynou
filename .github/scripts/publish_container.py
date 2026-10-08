@@ -33,24 +33,72 @@ class Publisher:
         self.repo = os.environ["GITHUB_REPOSITORY"]
         self.source = os.environ["GITHUB_SHA"]
         self.image = "ghcr.io/" + self.repo.lower()
+        repository_id = os.environ.get("GITHUB_REPOSITORY_ID", "")
         if (self.repo != "alecerf/mynou"
                 or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version)
                 or not re.fullmatch(r"[0-9a-f]{40}", self.source)
+                or not re.fullmatch(r"[1-9][0-9]{0,18}", repository_id)
                 or os.environ.get("GITHUB_REF") != "refs/heads/trunk"
                 or os.environ.get("GITHUB_EVENT_NAME") not in ("push", "workflow_dispatch")):
             raise ValueError("Publication requires exact trusted-default source")
+        self.repository_id = int(repository_id)
+        if self.repository_id >= 2 ** 63:
+            raise ValueError("Invalid publishing repository identity")
+        self.package_id = None
+        self.package_association = "not_exposed"
         self.package_path = "/users/alecerf/packages/container/mynou"
+
+    def api_object(self, path):
+        raw = self.run(["gh", "api", "--method", "GET", path])
+        if len(raw) > 65_536:
+            raise ValueError("Publication metadata exceeds its bound")
+        try:
+            value = json.loads(raw)
+        except ValueError:
+            raise ValueError("Publication metadata is malformed") from None
+        if not isinstance(value, dict):
+            raise ValueError("Publication metadata requires an object")
+        return value
+
+    def repository_context(self):
+        try:
+            repository = self.api_object("/repos/" + self.repo)
+        except CommandError:
+            raise RuntimeError("Cannot verify the publishing repository") from None
+        if (repository.get("full_name") != self.repo
+                or type(repository.get("id")) is not int
+                or repository["id"] != self.repository_id
+                or repository.get("private") is not True):
+            raise ValueError("Publication requires the exact private repository")
 
     def private_package(self, allow_missing=False):
         try:
-            package = json.loads(self.run(["gh", "api", self.package_path]))
+            package = self.api_object(self.package_path)
         except CommandError as error:
             if allow_missing and re.search(r"\bHTTP 404\b", error.stderr):
                 return
-            raise RuntimeError("Cannot verify private repository-associated package") from None
+            raise RuntimeError("Cannot verify private package identity") from None
+        owner = package.get("owner")
+        identity = package.get("id")
         if (package.get("visibility") != "private"
-                or (package.get("repository") or {}).get("full_name") != self.repo):
-            raise ValueError("GHCR package must be private and linked to this repository")
+                or package.get("name") != "mynou"
+                or package.get("package_type") != "container"
+                or not isinstance(owner, dict) or owner.get("login") != "alecerf"
+                or type(identity) is not int or not 0 < identity < 2 ** 63):
+            raise ValueError("GHCR package must have the exact private owner/name/type identity")
+        linked = package.get("repository")
+        if linked is not None and (not isinstance(linked, dict)
+                or linked.get("full_name") != self.repo
+                or ("id" in linked and (type(linked["id"]) is not int
+                                       or linked["id"] != self.repository_id))):
+            raise ValueError("GHCR package reports a conflicting repository association")
+        # Container metadata can omit this optional REST field. Do not turn
+        # omission into a claim of linkage: exact private source/package IDs,
+        # scoped-token access and verified pulled image provenance are required.
+        if self.package_id is not None and identity != self.package_id:
+            raise ValueError("Package identity changed during publication")
+        self.package_id = identity
+        self.package_association = "reported-match" if linked is not None else "not_exposed"
 
     def existing(self, ref):
         try:
@@ -79,6 +127,7 @@ class Publisher:
         return image
 
     def publish(self, archive, binary, root):
+        self.repository_context()
         self.private_package(allow_missing=True)
         self.run(["docker", "load", "--input", str(archive)])
         local = "mynou:" + self.version
@@ -129,7 +178,9 @@ class Publisher:
         if result.get("job", {}).get("state") != "ready" or result.get("plex_scan_confirmed") is not True:
             raise ValueError("Published container demonstration failed")
         return {"image": pinned, "version": self.version, "source": self.source,
-                "visibility": "private", "binary_sha256": file_digest(binary)}
+                "visibility": "private", "binary_sha256": file_digest(binary),
+                "repository": self.repo, "repository_id": self.repository_id,
+                "package_id": self.package_id, "repository_association": self.package_association}
 
 
 def main():
