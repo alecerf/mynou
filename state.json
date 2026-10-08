@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 417,
+  "generation": 418,
   "lease": {
     "id": "wake10-security-cleanup-plan-20261008T023600Z",
     "worker": "codex-hourly-20261008T023108Z",
     "role": "security",
     "issue": 18,
     "acquired_at": "2026-10-08T02:36:47Z",
-    "heartbeat_at": "2026-10-08T02:36:47Z",
-    "expires_at": "2026-10-08T03:21:47Z",
+    "heartbeat_at": "2026-10-08T02:37:36Z",
+    "expires_at": "2026-10-08T03:22:36Z",
     "branch": "trunk",
     "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
     "pr": 22
   },
   "checkpoint": {
-    "at": "2026-10-08T02:36:40Z",
+    "at": "2026-10-08T02:37:36Z",
     "issue": 18,
-    "role": "master",
+    "role": "security",
     "branch": "trunk",
     "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
     "pr": 22,
-    "summary": "Recovered actual default18 CI37715379732: all six validate/build/package jobs succeeded; release113111514725 failed after private registry/digest/binary/demo proof during runner cleanup of a UID1000-owned synthetic seeder directory. Immutable18 release404; prior16 eleven assets unchanged. This is a new cleanup failure, not the prior association guard.",
-    "next_action": "Sequential Security planning then Quality: shared nonroot runner-UID/GID synthetic verification with private bind mount, real PR CI cleanup coverage, output only after successful workspace cleanup. Keep configured-user1000 package demo and all private/source/collision gates. Fresh19 source/version preserves actual17/18images; one corrective PR for existing18.",
+    "summary": "Security planning: the supported private registry checks actually passed; the failure is host cleanup of a synthetic bind-mounted tree created by configured nonroot container UID1000. Approved bounded runner-identity cleanup verification without root/sudo, world-writable new mounts, ignored errors or registry permission changes.",
+    "next_action": "Quality implements one linked corrective PR for18: shared private0700 nonroot runner-UID/GID demo helper reused by PR package CI and publisher; retain configured1000 factory demo/image policy; delay proof/output until successful context cleanup; add failure/ownership regressions; fresh19 preserves observed17/18tags.",
     "publication": {
       "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
       "state": "ci-failed",
@@ -839,6 +839,36 @@
       "staging_root_uid_gid": "use nonroot effective runner identity, private0700 mount, shared CI helper; no sudo/root/ignored cleanup",
       "publication_output_boundary": "only after all workspace context managers complete",
       "preserve_default_user1000_gate": true
+    },
+    "cleanup_security_plan": {
+      "observed_failure_job": 113111514725,
+      "source": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "image_proof": {
+        "binary_sha256": "1c6ddb01eeeecfc480e43a5cd9d776802d5a2ffa6c7a524058d27a9940bbd80e",
+        "image": "ghcr.io/alecerf/mynou@sha256:991a217cd046c00697b975bff35b4bc23d4f7a85f0b4d14b90cd904684c7cf68",
+        "package_id": 15695108,
+        "repository": "alecerf/mynou",
+        "repository_association": "not_exposed",
+        "repository_id": 1403318143,
+        "source": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+        "version": "0.22.18",
+        "visibility": "private"
+      },
+      "decision": "Match verification-only bind-mount process effective UID/GID to the nonroot runner; isolate synthetic directory0700 and require successful removal. Keep image configured1000:1000 inspection and actual default-user package demo.",
+      "must_keep": [
+        "Default-only scoped ephemeral token and package/source private identity guards",
+        "OCI version/revision/source, runtime policy, collision refusal, digest re-pull/executable SHA and immutable prior releases",
+        "Readonly root, network none, cap-drop ALL and no-new-privileges on both runtime verifications",
+        "PR jobs receive no write token or registry publication",
+        "No proof/GITHUB_OUTPUT before all temporary credential/demo workspaces finish cleanup"
+      ],
+      "must_reject": [
+        "Root UID or root primary GID verification",
+        "Privileged/sudo cleanup or ignored cleanup failures",
+        "Unsupported API/UI association claims",
+        "Overwriting existing17/18 version or source images"
+      ],
+      "logical_review_pending": true
     }
   },
   "attempts": {
