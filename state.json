@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 540,
+  "generation": 541,
   "lease": {
     "id": "wake15-security-complete-review-20261008T064648Z",
     "worker": "codex-capacity-recovery-20261008T064648Z",
     "role": "security",
     "issue": 27,
     "acquired_at": "2026-10-08T07:17:18Z",
-    "heartbeat_at": "2026-10-08T07:17:18Z",
-    "expires_at": "2026-10-08T08:02:18Z",
+    "heartbeat_at": "2026-10-08T07:19:07Z",
+    "expires_at": "2026-10-08T08:04:07Z",
     "branch": "work/publication-handoff-recovery",
     "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
     "pr": 26
   },
   "checkpoint": {
-    "at": "2026-10-08T07:17:10Z",
+    "at": "2026-10-08T07:19:07Z",
     "issue": 27,
-    "role": "quality",
+    "role": "security",
     "branch": "work/publication-handoff-recovery",
     "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
     "pr": 26,
-    "summary": "Security audit CI 37742148708 at 99138218a1f6e8689ac9fb31bfbcb79c4a5ae253 actually succeeded: source-history 113195095006 scanned 4560 reachable Git objects; actions-logs 113195095306 inventoried 529 runs, examined/scanned 531 completed-attempt archives and 1800 members. Both redacted reports show zero recognized-pattern findings and no coverage gaps; three running workflows are explicitly excluded from the completed snapshot. Native source validate and organization checks already succeeded; macOS builds/package are still pending. No arbitrary-sensitive-data all-clear, current QA, merge or release is claimed. Original source retains prior repair; Issue #27 shares preserved PR #26 with #25.",
-    "next_action": "Release implementation and acquire a distinct Security lease at new exact PR #26 head/base. Inspect every changed path and CI audit evidence, trust/token redirect boundaries, redaction, resource bounds, reporting and native missing-permission limits. Record truthful Security acceptance or findings; then release for complete-diff QA only once all required CI jobs are actually green. Remain within this wake's single deadline and reserve.",
+    "summary": "Distinct Security reviewed every actual 12-file PR #26 patch at 99138218a1f6e8689ac9fb31bfbcb79c4a5ae253/base d647be6edfd6e892474b2602bbc9047ad4047c2f, including the complete added auditor. Read-only permissions, no write-token PR execution, strict HTTPS storage redirects with a fresh unauthenticated request, redacted errors/findings, bounded Git/HTTP/ZIP parsing, truthful missing/pending coverage and provider-pattern limits pass static Security. Native Security audit 37742148708 passed 4560 Git objects and 531 archives/1800 logs with zero recognized findings/gaps. Main validate passed 864 Rust tests and 22 infra/64 organization cases, including seven audit regressions; remaining platform/package and fresh QA still gate delivery. Native secret protection remains permission-denied, not claimed enabled.",
+    "next_action": "Post scoped complete-diff Security COMMENT with actual bounded audit evidence and limitations, then checkpoint/release. Fresh QA must separately inspect all 12 actual patches, native audit coverage, complete required CI and this historical Security lease before accepting. Do not merge or publish based on audit regex alone or old-source proof.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -585,6 +585,29 @@
       "scope": "Selected provider token formats/private-key markers, fetched reachable refs and completed accessible attempts at inventory time",
       "native_secret_admin_http": 403,
       "local_validation": false
+    },
+    "public_security_review": {
+      "head": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
+      "base": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+      "verdict": "passed",
+      "reviewed_paths": [
+        ".github/engineering.json",
+        ".github/workflows/ci.yml",
+        ".github/workflows/security-audit.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "SECURITY.md",
+        "engineering/README.md",
+        "engineering/delivery.py",
+        "engineering/lease.py",
+        "engineering/secret_audit.py",
+        "engineering/tests/test_organization.py",
+        "engineering/tests/test_secret_audit.py"
+      ],
+      "audit_run": 37742148708,
+      "recognized_pattern_findings": 0,
+      "native_admin_http": 403,
+      "scope": "Static complete diff and bounded provider/private-key audit; no arbitrary sensitive-data absence claim"
     }
   },
   "attempts": {
