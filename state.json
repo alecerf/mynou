@@ -1,36 +1,84 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 870,
+  "generation": 871,
   "lease": {
     "id": "8b3c5cf2-9f26-442b-b28e-1a61c4b5159e",
     "worker": "github-actions-publication-recovery",
     "role": "triage",
     "issue": 50,
     "acquired_at": "2026-10-08T22:50:21Z",
-    "heartbeat_at": "2026-10-08T22:50:21Z",
-    "expires_at": "2026-10-08T23:35:21Z",
+    "heartbeat_at": "2026-10-08T22:50:28Z",
+    "expires_at": "2026-10-08T23:35:28Z",
     "branch": "trunk",
     "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
     "pr": 51
   },
   "checkpoint": {
-    "at": "2026-10-08T22:47:03Z",
+    "at": "2026-10-08T22:50:28Z",
     "issue": 50,
-    "role": "master",
+    "role": "triage",
     "branch": "trunk",
     "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
     "pr": 51,
-    "summary": "PR51 actually merged2026-10-08T22:46:14Z at current native trunk b11d88d5e9dd67d45980ba6c85716811dd6d3101/tree5e0e9a39a490ff10020a1d5d6a87c38c48376c35, exact parents f34d827e47835da589eb8333199e88e035dcb410 and original80b0d3eb17ce6df583643060b5cce990f53dd1ef. Source Security5463717433/QA5463751243 and objective gate113578227157/run37855290440 passed, all required current source checks green. Actual defaultCI37855541518 and Security37855541483 in progress; defaultEngineering37855541574 success, native delivery37855562502 in progress. This is an external Actions publication wait, not quota failure/completion. No v0.22.30release/private-proof/reconciliation claim; old v0.22.29/PR49/source branch preserved. Native50 stays open with44blocked; Safari48 remains next after recovery. No local checks or CI dispatch duplication.",
-    "next_action": "Release this exact default-bound Master lease for native Actions publication/reconciliation. On the next recovery wake inspect actual CI37855541518, immutable current-default v0.22.30release/source-run-attempt receipt/private proof and durable checkpoint; recover actual failures safely without repeating unchanged attempts. Then complete50/44 and safe merged-branch cleanup under Quality before Triage of user Safari48. No busy-poll or replacement worker.",
+    "summary": "Actions publication verified: v0.22.30 at b11d88d5e9dd67d45980ba6c85716811dd6d3101; immutable release407323363, native run37855541518 and private source-bound proof.",
+    "next_action": "Finish native Issue/dependency/branch cleanup; then resume preserved work or Product planning.",
     "publication": {
-      "commit": "f34d827e47835da589eb8333199e88e035dcb410",
-      "state": "publication-unverified",
-      "at": "2026-10-08T22:07:04Z",
-      "run_id": 37848363526,
+      "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
+      "state": "published",
+      "version": "0.22.30",
+      "at": "2026-10-08T22:50:07Z",
+      "release_id": 407323363,
+      "immutable": true,
+      "tag_commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
+      "run_id": 37855541518,
+      "run_attempt": 1,
       "status": "completed",
       "conclusion": "success",
-      "error": "Native immutable release or source-bound private proof is unavailable/conflicting"
+      "assets": [
+        {
+          "id": 623220133,
+          "name": "mynou-v0.22.30-linux-x86_64",
+          "size": 4899680,
+          "digest": "sha256:dd396da7adba5099c402423d130331cf423c386e4bc3057f8833b28e69cc7421"
+        },
+        {
+          "id": 623220137,
+          "name": "mynou-v0.22.30-macos-arm64",
+          "size": 3745600,
+          "digest": "sha256:32a7e47a7b8a2822864aead8c8e625aaa2b9365c128e682e9c0cfc3e1b45d076"
+        },
+        {
+          "id": 623220138,
+          "name": "mynou-v0.22.30-macos-x86_64",
+          "size": 4516672,
+          "digest": "sha256:3163e64e49c83e05fda5d561a0c16cdbc5828bf0afc4d023baaedd5dfaa5ee0a"
+        },
+        {
+          "id": 623220136,
+          "name": "SHA256SUMS",
+          "size": 281,
+          "digest": "sha256:0fd58547bf31c97c4982c7f28dce7d30aa2b4264271aaaeb0087a0797a5ae5fc"
+        }
+      ],
+      "registry_proof": {
+        "image": "ghcr.io/alecerf/mynou@sha256:854d3703cd6b242eb269e65d454c2b1c1a1f1e536468428c73a88c5334335621",
+        "version": "0.22.30",
+        "source": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
+        "visibility": "private",
+        "binary_sha256": "dd396da7adba5099c402423d130331cf423c386e4bc3057f8833b28e69cc7421",
+        "repository": "alecerf/mynou",
+        "repository_id": 1403318143,
+        "repository_visibility": "public",
+        "package_id": 15695108,
+        "repository_association": "reported-match",
+        "verification_user": "1001:1001",
+        "verification_cleanup": "completed"
+      },
+      "proof_artifact": {
+        "id": 11583648415,
+        "digest": "sha256:2bdc96263e1bf61294263b73f0f6b4cfe9d6d8819526899e0c0e7f73b6ecb879"
+      }
     },
     "recovery": {
       "issue": true,
