@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 856,
+  "generation": 857,
   "lease": {
     "id": "codex-recovery-20261008T222604Z-quality-942e6502-c5a1-4be2-b944-440961b1bf4b",
     "worker": "codex-recovery-20261008T222604Z",
     "role": "quality",
     "issue": 50,
     "acquired_at": "2026-10-08T22:33:26Z",
-    "heartbeat_at": "2026-10-08T22:33:26Z",
-    "expires_at": "2026-10-08T23:18:26Z",
+    "heartbeat_at": "2026-10-08T22:36:22Z",
+    "expires_at": "2026-10-08T23:21:22Z",
     "branch": "work/50-canonical-rest",
-    "commit": "f34d827e47835da589eb8333199e88e035dcb410",
-    "pr": null
+    "commit": "80b0d3eb17ce6df583643060b5cce990f53dd1ef",
+    "pr": 51
   },
   "checkpoint": {
-    "at": "2026-10-08T22:32:46Z",
-    "issue": 44,
-    "role": "triage",
-    "branch": "trunk",
-    "commit": "f34d827e47835da589eb8333199e88e035dcb410",
-    "pr": 49,
-    "summary": "Triage44 preservedactualf34d/PR49 and immutablev0.22.29 release407287872published21:43:58Z/all7nativeCI37848363526/receipt11580497515. Actualfailure boundary:GitHub.rest empty path adds slash;nativeGET/repos/alecerf/mynou/404 vs canonicalendpoint200/id1403318143/public. Existingpublication mocks bypassHTTPtransport. NewdistinctnativeIssue50P1/high/Quality created;44nativelyblockedby50; sourcebranchwork/50-canonical-reststartsfromf34d, old49branchpreserved. No local checks/republication/secrets/rawloghandoff/unchangedretry.",
-    "next_action": "ReleaseTriage44 and acquireQuality50 atwork/50-canonical-rest/f34d, noPRyet. Correct only RESTrootjoin, original CItransportregression and boundedHTTPfailureclassification; createone linkedPR50 atnewversion0.22.30. CI-only checks, distinctSecurity/full-diffQA and allgates beforemerge; then actualdefaultpublicationreceipt/cleanupunblocks44 and preservesSafari48 fornexttriage.",
+    "at": "2026-10-08T22:36:22Z",
+    "issue": 50,
+    "role": "quality",
+    "branch": "work/50-canonical-rest",
+    "commit": "80b0d3eb17ce6df583643060b5cce990f53dd1ef",
+    "pr": 51,
+    "summary": "Quality50 originalsource80b0d3eb17ce6df583643060b5cce990f53dd1ef/tree5e0e9a39a490ff10020a1d5d6a87c38c48376c35 pushed onwork/50-canonical-rest soleparentf34d; one linkedPR51. Eightpaths fix onlycanonicalRESTroot preservingnonemptyquery/bodyroutes, safeHTTPstatus-only failurecheckpoint,3originalCIregressions and proposedv0.22.30scope. Actualnative root404 vs canonical200 recordedbyTriage;44nativelyblockedby50. Nativev0.22.29/PR49 assets/sourcebranch preserved. No local checks; newsourceCI/Security/QA/gates/publicationnotyetclaimed.",
+    "next_action": "ReleaseQuality; acquireseparateSecurity50 at exactremotehead80b0d3eb17ce6df583643060b5cce990f53dd1ef/basef34d/PR51 and inspectcompleteactual8-pathdiff plusactualcurrentCI/audits; thenseparateexact-head/baseQA. Fixanyactualredviaoriginalcommit. Objectivegreenbeforemerge; Actionsalonepublication and actualreceipt/cleanupbefore44done;Safari48afterrecovery.",
     "publication": {
       "commit": "f34d827e47835da589eb8333199e88e035dcb410",
       "state": "publication-unverified",
@@ -473,14 +473,14 @@
       "publication_pr_handoff": 6062225589
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T21:37:21Z",
+      "at": "2026-10-08T22:32:46Z",
       "issue": 44,
-      "role": "qa",
-      "branch": "work/44-publication-recovery",
-      "commit": "1644b2fc41f5850221a3f42a8fe31f984d659263",
+      "role": "triage",
+      "branch": "trunk",
+      "commit": "f34d827e47835da589eb8333199e88e035dcb410",
       "pr": 49,
-      "summary": "QA actual complete13-path exact1644/base46a passed; actualnativeCOMMENT5463140511 binds checkpointc433ff7c89e09b18b4ac8e5d7b66927b2dd5d7ab. Security5463073088accepted/resolvedthread. CI37846375507all6sourcejobs success;887Rust0failures64harnesses,165org/24scheduler. Actual source/log security audits0selectedfindings/gaps with inventory exclusions. NativeIssue44handoff persisted. No local checks, merged publication or QA machinegreen claimed.",
-      "next_action": "Release QA; acquire Master44 at exactdefault46a/trunk/PR49, verify latest actualmachinegate and completecurrentPR/default bindings then author expected-head merge. Recover exactdefaultCI receipt and immutablev0.22.29 before Product/cleanup. Preserve original1644tree020c."
+      "summary": "Triage44 preservedactualf34d/PR49 and immutablev0.22.29 release407287872published21:43:58Z/all7nativeCI37848363526/receipt11580497515. Actualfailure boundary:GitHub.rest empty path adds slash;nativeGET/repos/alecerf/mynou/404 vs canonicalendpoint200/id1403318143/public. Existingpublication mocks bypassHTTPtransport. NewdistinctnativeIssue50P1/high/Quality created;44nativelyblockedby50; sourcebranchwork/50-canonical-reststartsfromf34d, old49branchpreserved. No local checks/republication/secrets/rawloghandoff/unchangedretry.",
+      "next_action": "ReleaseTriage44 and acquireQuality50 atwork/50-canonical-rest/f34d, noPRyet. Correct only RESTrootjoin, original CItransportregression and boundedHTTPfailureclassification; createone linkedPR50 atnewversion0.22.30. CI-only checks, distinctSecurity/full-diffQA and allgates beforemerge; then actualdefaultpublicationreceipt/cleanupunblocks44 and preservesSafari48 fornexttriage."
     },
     "task_reconciliation": {
       "issue": 19,
