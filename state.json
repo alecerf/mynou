@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 699,
-  "lease": null,
+  "generation": 700,
+  "lease": {
+    "id": "codex-continuous-policy-20261008131744Z-triage-1791466160000",
+    "worker": "codex-continuous-policy-20261008131744Z",
+    "role": "triage",
+    "issue": 34,
+    "acquired_at": "2026-10-08T13:29:20Z",
+    "heartbeat_at": "2026-10-08T13:29:20Z",
+    "expires_at": "2026-10-08T14:14:20Z",
+    "branch": "work/continuous-engineering",
+    "commit": "f12a37e873561fbd3de3ccdd30883b9f41c2a4c3",
+    "pr": 35
+  },
   "checkpoint": {
     "at": "2026-10-08T13:28:32Z",
     "issue": 34,
