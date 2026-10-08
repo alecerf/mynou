@@ -1,38 +1,38 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 371,
+  "generation": 372,
   "lease": {
     "id": "wake8-triage-release-retry-20261008T004200Z",
     "worker": "codex-hourly-20261008T003520Z",
     "role": "triage",
     "issue": 18,
     "acquired_at": "2026-10-08T00:42:13Z",
-    "heartbeat_at": "2026-10-08T00:43:45Z",
-    "expires_at": "2026-10-08T01:28:45Z",
+    "heartbeat_at": "2026-10-08T00:44:26Z",
+    "expires_at": "2026-10-08T01:29:26Z",
     "branch": "trunk",
     "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
     "pr": 21
   },
   "checkpoint": {
-    "at": "2026-10-08T00:43:45Z",
+    "at": "2026-10-08T00:44:26Z",
     "issue": 18,
     "role": "triage",
     "branch": "trunk",
     "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
     "pr": 21,
-    "summary": "Issue18 reopened for actual failed registry delivery. Six default jobs passed; only release failed private/repository-link guard. Checked same-source internal image/release artifacts are unexpired. Recorded exactly one release-only retry intent, not actual success; old immutable v0.22.16 assets verified unchanged. Partial package/tag state remains unknown and is preserved.",
-    "next_action": "Submit one native rerun for failed release113076409833, then checkpoint actual accepted/native attempt. Stop for CI wait; recurrence requires changed diagnostic approach, no unchanged rerun.",
+    "summary": "Recovered publication failure and reopened Issue18. Default validate/four builds/package succeeded; native release113076409833 failed private/repository-link guard. Accepted exactly one native release-job-only rerun37704415292 at unchanged551e82d2; actual run statusqueued, observed attempt1, conclusionnull. Source/release artifacts unexpired and v0.22.16 baseline unchanged. Package/partial tags/digest and v0.22.17 publication remain unverified. Stop for real CI wait.",
+    "next_action": "Recover run37704415292 exact551e82d2 before #19. If completedgreen verify actual private associated package/digest/source/binary/demo, all native jobs, immutable v0.22.17 tag/four botassets and unchangedv16. If sameguardfailure do NOT retry unchanged: targeted sanitized phase/package metadata diagnostics, followed by Security/CI/QA for source changes. Preserve partialtags; no ownerpermission diagnosis or visibility mutation without actual evidence.",
     "publication": {
       "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
-      "state": "ci-failed",
-      "at": "2026-10-08T00:41:00Z",
+      "state": "ci-pending",
+      "at": "2026-10-08T00:44:25Z",
       "branch": "trunk",
       "run_id": 37704415292,
       "event": "push",
       "attempt": 1,
-      "status": "completed",
-      "conclusion": "failure",
+      "status": "queued",
+      "conclusion": null,
       "url": "https://github.com/alecerf/mynou/actions/runs/37704415292",
       "tag": "v0.22.17",
       "release_observed": false,
@@ -46,7 +46,13 @@
       "default_ref_verified": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
       "engineering_run_id": 37704415222,
       "engineering_conclusion": "success",
-      "jobs": [
+      "publication_not_inferred": true,
+      "failed_job": 113076409833,
+      "failure": "GHCR package must be private and linked to this repository",
+      "failure_phase": "unresolved before-push versus after-push check; captured successful command output is not in native logs",
+      "registry_partial_state": "unknown; preserve existing source/version tags",
+      "previous_assets_unchanged": true,
+      "previous_jobs": [
         {
           "id": 113075262085,
           "name": "Build x86_64-apple-darwin",
@@ -90,22 +96,22 @@
           "conclusion": "failure"
         }
       ],
-      "publication_not_inferred": true,
-      "failed_job": 113076409833,
-      "failure": "GHCR package must be private and linked to this repository",
-      "failure_phase": "unresolved before-push versus after-push check; captured successful command output is not in native logs",
-      "registry_partial_state": "unknown; preserve existing source/version tags",
-      "previous_assets_unchanged": true,
+      "previous_conclusion": "failure",
       "retry": {
-        "state": "intent",
+        "state": "accepted",
         "job_id": 113076409833,
         "run_id": 37704415292,
-        "observed_attempt": 1,
+        "original_attempt": 1,
+        "native_attempt_observed": 1,
+        "native_status": "queued",
+        "native_response": {
+          "success": true
+        },
+        "accepted_at": "2026-10-08T00:44:25Z",
         "scope": "failed release job only",
         "source": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
         "unchanged_retry_limit": 1,
-        "reason": "Allow already checked exact-source image tags/package association to settle without rebuilding; association lag is not proven",
-        "next_on_same_failure": "No second unchanged retry. Sanitized stage/package visibility/repository diagnostics through source/CI and Security/QA; preserve any existing images/version."
+        "next_on_same_failure": "Do not rerun this unchanged approach again. Read actual failed log, add sanitized visibility/repository/stage diagnostics through reviewed source/CI if needed; preserve partial source/version images and releases."
       }
     },
     "publication_baseline": {
@@ -515,6 +521,29 @@
       "native_blocked_by": [],
       "native_blocking": [],
       "manual_branch_deletion": false
+    },
+    "recovery": {
+      "issue18_reopened": true,
+      "source_unchanged": true,
+      "old_release_assets_unchanged": true,
+      "checked_artifacts": [
+        {
+          "id": 11518708659,
+          "name": "mynou-container-551e82d2c4158b9af2080081bbac3e1d18c949ea",
+          "digest": "sha256:35dc6c8c034477cbcd7a764d89d5622d9534c0db5a2724afac4e20b441349e53",
+          "expires_at": "2026-10-08T23:53:14Z",
+          "head_sha": "551e82d2c4158b9af2080081bbac3e1d18c949ea"
+        },
+        {
+          "id": 11518488947,
+          "name": "mynou-release-551e82d2c4158b9af2080081bbac3e1d18c949ea",
+          "digest": "sha256:486a60651ab4ae7ef703bf9541308d559e32b65c2c43b91fca6ddbfbf904b6b2",
+          "expires_at": "2026-10-14T23:53:16Z",
+          "head_sha": "551e82d2c4158b9af2080081bbac3e1d18c949ea"
+        }
+      ],
+      "local_checks": false,
+      "subagents": false
     }
   },
   "attempts": {
