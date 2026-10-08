@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 764,
+  "generation": 765,
   "lease": {
     "id": "comment-6064646554",
     "worker": "codex-product-20261008T1637Z",
     "role": "rust",
     "issue": 36,
     "acquired_at": "2026-10-08T16:43:09Z",
-    "heartbeat_at": "2026-10-08T16:56:22Z",
-    "expires_at": "2026-10-08T17:41:22Z",
+    "heartbeat_at": "2026-10-08T17:03:41Z",
+    "expires_at": "2026-10-08T17:48:41Z",
     "branch": "work/36-par2-available-rows",
-    "commit": "90e2212d1ee474bde9c7ef24a465649851a2f0f8",
+    "commit": "65530f4f432a1b0af6ba71457c5ded574b91e728",
     "pr": 37
   },
   "checkpoint": {
-    "at": "2026-10-08T16:56:22Z",
+    "at": "2026-10-08T17:03:41Z",
     "issue": 36,
     "role": "rust",
     "branch": "work/36-par2-available-rows",
-    "commit": "90e2212d1ee474bde9c7ef24a465649851a2f0f8",
+    "commit": "65530f4f432a1b0af6ba71457c5ded574b91e728",
     "pr": 37,
-    "summary": "Rust36 source committed/pushed original90e2212d1ee474bde9c7ef24a465649851a2f0f8/treeae744859b16f19cbfb74b714cb258ca6df298f31, sole parent57cfe88, work/36-par2-available-rows / PR37. Proposed0.22.26 adds independent available row selection with bounded charged work/exact-exponent inversion/residuals; 11 original CI-only fixtures and focused docs/version. No local validation. Client additionally requests persistent Product Owner planning and prioritized genuine product backlog; recorded next-release/docs36, to be queued by Master without weakening one-worker or current QA.",
-    "next_action": "Inspect actual source CI, fix any red through Rust commits; checkpoint/release implementation. Separate Security and complete-diff QA acquire exact source/base PR37 and record actual evidence before gated delivery/Actions publication. Preserve client Product Owner/backlog request; after current source checkpoint seed bounded evidence-based feature Issues and reviewed persistent planning Skill.",
+    "summary": "PR #37 original source 65530f4f432a1b0af6ba71457c5ded574b91e728 applies actual CI rustfmt feedback from validate job 113433230875; source 90e2212 has successful GNU/musl/ARM builds and security jobs but validate failed before tests. No local checks. Product Owner/backlog request retained for a separate organization change after current recovery.",
+    "next_action": "Confirm this source checkpoint; release Rust and acquire Security for complete-diff integrity/budget review, then QA under its exact head/base lease. Observe new source CI, correct actual failures; never merge red/unreviewed.",
     "publication": {
       "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
       "state": "published",
@@ -702,7 +702,7 @@
       "task_receipt": 6063044134,
       "task_id": "6ac54c387af0819184713674c48b3845",
       "fence_sha": "5c305bfbee1e0225dcd8a35cdbb8cb491a084f11",
-      "transport_comment_id": 6064872761,
+      "transport_comment_id": 6064998064,
       "retirement": "confirmed",
       "notes_proof_sha": "96e3439dbc1800f708aab0c5680211f105176e14"
     }
