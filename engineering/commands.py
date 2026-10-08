@@ -119,10 +119,16 @@ def authenticate(api, event, at, actor, triggering_actor):
     native = api.rest("GET", f"issues/comments/{comment_id}")
     require(native.get("id") == comment_id and native.get("issue_url") ==
         f"https://api.github.com/repos/{cfg['repository']}/issues/{settings['issue']}", "wrong-native-comment")
-    require(native.get("user") == user and native.get("body") == origin.get("body")
-        and native.get("created_at") == origin.get("created_at")
-        and native.get("updated_at") == native.get("created_at")
-        and origin.get("updated_at") == origin.get("created_at"), "edited-or-replaced-comment")
+    # Webhook and REST profile objects have different optional fields. Author
+    # authority comes from the stable policy-bound identity, not profile shape.
+    native_user = native.get("user")
+    require(isinstance(native_user, dict) and native_user.get("type") == "User"
+        and native_user.get("login") == actor and type(native_user.get("id")) is int
+        and native_user["id"] == actors[actor], "untrusted-native-comment-author")
+    require(native.get("body") == origin.get("body"), "comment-body-changed")
+    require(native.get("created_at") == origin.get("created_at"), "comment-created-at-changed")
+    require(native.get("updated_at") == native.get("created_at"), "native-comment-edited")
+    require(origin.get("updated_at") == origin.get("created_at"), "event-comment-edited")
     require(native.get("author_association") in {"OWNER", "MEMBER", "COLLABORATOR"}, "untrusted-association")
     age = at - lease.time(native["created_at"])
     require(timedelta(0) <= age <= timedelta(seconds=settings["max_age_seconds"]), "stale-command")

@@ -326,3 +326,47 @@ class TransportCases(unittest.TestCase):
         self.assertNotIn("actions: write", workflow)
         self.assertNotIn("packages: write", workflow)
         self.assertNotIn("github.event.comment.body }}", workflow)
+
+    def test_native_and_event_profile_metadata_can_differ_without_authority_change(self):
+        native = Native()
+        args = {"worker": "one-worker", "role": "quality", "issue": 5,
+            "branch": "work/source", "commit": SOURCE, "pr": 6}
+        event = native.event("acquire", args)
+        native.native_comments[event["comment"]["id"]]["user"].update(
+            user_view_type="public", avatar_url="https://example.invalid/native-avatar")
+        event["comment"]["user"]["avatar_url"] = "https://example.invalid/webhook-avatar"
+        result = self.run_command(native, event)
+        self.assertEqual(result["control_sha"], native.head)
+        self.assertEqual(native.state["lease"]["worker"], "one-worker")
+        self.assertEqual(len(native.writes), 1)
+
+    def test_native_author_login_id_and_type_remain_policy_bound(self):
+        for field, bad_value in [("login", "outsider"), ("id", 201), ("id", True), ("type", "Bot")]:
+            with self.subTest(field=field, value_type=type(bad_value).__name__):
+                native = Native()
+                event = native.event("recover", {})
+                native.native_comments[event["comment"]["id"]]["user"][field] = bad_value
+                with self.assertRaisesRegex(commands.Rejected, "^untrusted-native-comment-author$"):
+                    self.run_command(native, event)
+                self.assertFalse(native.writes)
+                self.assertFalse(native.probe_requests)
+
+    def test_body_creation_and_edit_guards_have_distinct_nonrevealing_codes(self):
+        cases = [
+            ("body", "private-user-value", "comment-body-changed"),
+            ("created_at", lease.stamp(AT + timedelta(seconds=1)), "comment-created-at-changed"),
+            ("updated_at", lease.stamp(AT + timedelta(seconds=1)), "native-comment-edited"),
+        ]
+        for field, value, code in cases:
+            with self.subTest(field=field):
+                native = Native()
+                event = native.event("recover", {})
+                native.native_comments[event["comment"]["id"]][field] = value
+                with self.assertRaisesRegex(commands.Rejected, "^" + code + "$"):
+                    self.run_command(native, event)
+                self.assertFalse(native.writes)
+        native = Native()
+        event = native.event("recover", {})
+        event["comment"]["updated_at"] = lease.stamp(AT + timedelta(seconds=1))
+        with self.assertRaisesRegex(commands.Rejected, "^event-comment-edited$"):
+            self.run_command(native, event)
