@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 865,
+  "generation": 866,
   "lease": {
     "id": "codex-recovery-20261008T222604Z-master-920555b2-5aef-4325-955d-26d044030914",
     "worker": "codex-recovery-20261008T222604Z",
     "role": "master",
     "issue": 50,
     "acquired_at": "2026-10-08T22:44:24Z",
-    "heartbeat_at": "2026-10-08T22:44:24Z",
-    "expires_at": "2026-10-08T23:29:24Z",
+    "heartbeat_at": "2026-10-08T22:45:04Z",
+    "expires_at": "2026-10-08T23:30:04Z",
     "branch": "trunk",
     "commit": "f34d827e47835da589eb8333199e88e035dcb410",
     "pr": null
   },
   "checkpoint": {
-    "at": "2026-10-08T22:43:22Z",
+    "at": "2026-10-08T22:45:04Z",
     "issue": 50,
-    "role": "qa",
-    "branch": "work/50-canonical-rest",
-    "commit": "80b0d3eb17ce6df583643060b5cce990f53dd1ef",
-    "pr": 51,
-    "summary": "QA independently reviewed all 8 current native PR51 paths at head80b0d3eb17ce6df583643060b5cce990f53dd1ef/basef34d827e47835da589eb8333199e88e035dcb410. Canonical empty-root correction preserves child/query/payload transport; bounded HTTP diagnostics exclude raw exceptions/secrets and retain fail-closed recovery/ownership release. All required source CI37854519506 jobs green: validate887Rust/0fail/64harnesses,24scheduler and168organization tests,4platform builds/package; the3new regressions passed through real REST/request and safe failure paths. Security5463717433 passed. Audit37854519524 completed success:3198reachableobjects/0selected-pattern findings/gaps and1039visible completed attempts/2933logmembers/0findings/gaps at inventory; live runs excluded as reported. CodeQL37854516493 success,0reviewthreads. No source finding; no local checks, source merge, live proof reconciliation orv0.22.30publication claimed.",
-    "next_action": "Submit exact-head/base native QA COMMENT passed anchored to this QA checkpoint; release QA, acquire Master on trunk, verify latest objective QA gate and all current required checks before expected-head merge. Recover actual Actions publication; preserve44/49 until verified receipt and cleanup.",
+    "role": "master",
+    "branch": "trunk",
+    "commit": "f34d827e47835da589eb8333199e88e035dcb410",
+    "pr": null,
+    "summary": "Master50 owns exact default f34d827e47835da589eb8333199e88e035dcb410 for expected-head delivery of PR51/source80b0d3eb17ce6df583643060b5cce990f53dd1ef/tree5e0e9a39a490ff10020a1d5d6a87c38c48376c35. Native Security5463717433 and QA5463751243 passed under distinct exact-head/base phase checkpoints. All6 sourceCI jobs,organization,bothSecurityaudits andCodeQL actually completed success; zero reviewthreads. Latest observed objective agent-qa-review113576817566/run37854801503 is still in progress, so no green gate/merge claimed. One linkedPR/Issue50,44nativeblocker preserved; v29immutablepublished but receipt recovery unfinished.",
+    "next_action": "Re-read current objective QA gate after this required pre-merge checkpoint. If every latest required check is green and exact PR/head/base/default/ownership fences hold, expected-head merge51. Otherwise checkpoint the actual external wait and release; never busy-poll. After merge recover actual default Actions-only publication/receipt/cleanup before user Safari48.",
     "publication": {
       "commit": "f34d827e47835da589eb8333199e88e035dcb410",
       "state": "publication-unverified",
@@ -473,14 +473,14 @@
       "publication_pr_handoff": 6062225589
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T22:32:46Z",
-      "issue": 44,
-      "role": "triage",
-      "branch": "trunk",
-      "commit": "f34d827e47835da589eb8333199e88e035dcb410",
-      "pr": 49,
-      "summary": "Triage44 preservedactualf34d/PR49 and immutablev0.22.29 release407287872published21:43:58Z/all7nativeCI37848363526/receipt11580497515. Actualfailure boundary:GitHub.rest empty path adds slash;nativeGET/repos/alecerf/mynou/404 vs canonicalendpoint200/id1403318143/public. Existingpublication mocks bypassHTTPtransport. NewdistinctnativeIssue50P1/high/Quality created;44nativelyblockedby50; sourcebranchwork/50-canonical-reststartsfromf34d, old49branchpreserved. No local checks/republication/secrets/rawloghandoff/unchangedretry.",
-      "next_action": "ReleaseTriage44 and acquireQuality50 atwork/50-canonical-rest/f34d, noPRyet. Correct only RESTrootjoin, original CItransportregression and boundedHTTPfailureclassification; createone linkedPR50 atnewversion0.22.30. CI-only checks, distinctSecurity/full-diffQA and allgates beforemerge; then actualdefaultpublicationreceipt/cleanupunblocks44 and preservesSafari48 fornexttriage."
+      "at": "2026-10-08T22:43:22Z",
+      "issue": 50,
+      "role": "qa",
+      "branch": "work/50-canonical-rest",
+      "commit": "80b0d3eb17ce6df583643060b5cce990f53dd1ef",
+      "pr": 51,
+      "summary": "QA independently reviewed all 8 current native PR51 paths at head80b0d3eb17ce6df583643060b5cce990f53dd1ef/basef34d827e47835da589eb8333199e88e035dcb410. Canonical empty-root correction preserves child/query/payload transport; bounded HTTP diagnostics exclude raw exceptions/secrets and retain fail-closed recovery/ownership release. All required source CI37854519506 jobs green: validate887Rust/0fail/64harnesses,24scheduler and168organization tests,4platform builds/package; the3new regressions passed through real REST/request and safe failure paths. Security5463717433 passed. Audit37854519524 completed success:3198reachableobjects/0selected-pattern findings/gaps and1039visible completed attempts/2933logmembers/0findings/gaps at inventory; live runs excluded as reported. CodeQL37854516493 success,0reviewthreads. No source finding; no local checks, source merge, live proof reconciliation orv0.22.30publication claimed.",
+      "next_action": "Submit exact-head/base native QA COMMENT passed anchored to this QA checkpoint; release QA, acquire Master on trunk, verify latest objective QA gate and all current required checks before expected-head merge. Recover actual Actions publication; preserve44/49 until verified receipt and cleanup."
     },
     "task_reconciliation": {
       "issue": 19,
