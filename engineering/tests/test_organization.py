@@ -186,6 +186,33 @@ class LeaseScenarios(unittest.TestCase):
         self.assertEqual(current["checkpoint"]["branch"], "work/original")
         self.assertEqual(current["checkpoint"]["circuit_breaker"]["unchanged"], 3)
 
+    def test_checkpoint_preserves_evidence_and_bounded_prior_work_handoff(self):
+        original = held("triage")
+        original["checkpoint"] = {
+            "at": lease.stamp(AT), "issue": 2, "role": "rust",
+            "branch": "work/interrupted", "commit": BASE, "pr": 4,
+            "summary": "Useful interrupted source", "next_action": "Inspect PR4",
+            "source": {"commit": BASE, "pr": 4},
+            "publication": {"commit": HEAD, "state": "published", "release_id": 42},
+            "previous_checkpoint": {"summary": "Older bounded handoff"},
+        }
+        result = lease.checkpoint(original, AT + timedelta(minutes=1), "original-owner",
+            "Native CI recovery", "Resume preserved work")
+        for key in ["issue", "role", "branch", "commit", "pr"]:
+            self.assertEqual(result["checkpoint"][key], result["lease"][key])
+        self.assertEqual(result["checkpoint"]["source"], original["checkpoint"]["source"])
+        self.assertEqual(result["checkpoint"]["publication"], original["checkpoint"]["publication"])
+        prior = result["checkpoint"]["previous_checkpoint"]
+        self.assertEqual((prior["issue"], prior["commit"], prior["pr"]), (2, BASE, 4))
+        self.assertEqual(prior["next_action"], "Inspect PR4")
+        self.assertNotIn("previous_checkpoint", prior)
+        result["checkpoint"]["source"]["commit"] = HEAD
+        self.assertEqual(original["checkpoint"]["source"]["commit"], BASE)
+        repeated = lease.checkpoint(result, AT + timedelta(minutes=2), "original-owner",
+            "Same recovery owner", "Resume preserved work")
+        self.assertEqual(repeated["checkpoint"]["previous_checkpoint"], prior)
+        self.assertEqual(repeated["lease"]["heartbeat_at"], lease.stamp(AT + timedelta(minutes=2)))
+
     def test_malformed_state_and_foreign_owner_fail_closed(self):
         for s in [dict(state(), max_active_agents=2), dict(state(), permanent_lock=True), dict(state(), generation=True)]:
             with self.assertRaises(ValueError): lease.validate(s)
@@ -581,6 +608,58 @@ class PublicationScenarios(unittest.TestCase):
         self.assertEqual(result["publication"]["state"], "ci-passed")
         self.assertEqual(native.current_state["checkpoint"]["publication"]["run_id"], 40)
         self.assertEqual(len(native.dispatches), 1)
+
+    def test_terminal_published_source_does_not_overwrite_active_work_on_repeated_wakes(self):
+        for terminal in ["published", "ci-passed"]:
+            native = self.Publication()
+            native.runs = [self.native_run()]
+            native.current_state["checkpoint"] = {
+                "issue": 2, "role": "rust", "branch": "work/interrupted", "commit": BASE, "pr": 4,
+                "summary": "Useful interrupted implementation", "next_action": "Resume PR4",
+                "source": {"commit": BASE, "pr": 4},
+                "publication": {"commit": HEAD, "state": terminal, "run_id": 40, "release_id": 42},
+            }
+            original = deepcopy(native.current_state)
+            for _ in range(2):
+                result = delivery.recover_publication(native, native.control_head,
+                    native.current_state, [deepcopy(native.current_pr)])
+                self.assertIsNone(result)
+            self.assertEqual(native.current_state, original)
+            self.assertFalse(native.writes)
+            self.assertFalse(native.dispatches)
+
+    def test_published_record_cannot_hide_native_ci_failure(self):
+        native = self.Publication()
+        native.current_state["checkpoint"] = {"publication":
+            {"commit": HEAD, "state": "published", "run_id": 40, "release_id": 42}}
+        native.runs = [dict(self.native_run(conclusion="failure"), id=41)]
+        with self.assertRaises(ValueError):
+            self.execute(native)
+        self.assertEqual(native.current_state["checkpoint"]["publication"]["state"], "ci-failed")
+        self.assertEqual(native.current_state["checkpoint"]["publication"]["run_id"], 41)
+        self.assertFalse(native.dispatches)
+        self.assertIsNone(native.current_state["lease"])
+
+    def test_required_ci_recovery_retains_interrupted_source_and_next_action(self):
+        native = self.Publication()
+        native.current_state["checkpoint"] = {
+            "at": lease.stamp(AT), "issue": 2, "role": "rust",
+            "branch": "work/interrupted", "commit": BASE, "pr": 4,
+            "summary": "Useful interrupted implementation", "next_action": "Resume PR4",
+            "source": {"commit": BASE, "pr": 4},
+            "control_storage": {"state": "blocked", "commit": BASE},
+        }
+        result = self.execute(native)
+        self.assertEqual(result["publication"]["state"], "accepted")
+        checkpoint = native.current_state["checkpoint"]
+        self.assertEqual(checkpoint["source"], {"commit": BASE, "pr": 4})
+        self.assertEqual(checkpoint["control_storage"], {"state": "blocked", "commit": BASE})
+        self.assertEqual(checkpoint["previous_checkpoint"]["next_action"], "Resume PR4")
+        self.assertEqual(checkpoint["previous_checkpoint"]["pr"], 4)
+        self.assertNotIn("previous_checkpoint", checkpoint["previous_checkpoint"])
+        self.assertEqual(checkpoint["commit"], HEAD)
+        self.assertEqual(len(native.dispatches), 1)
+        self.assertIsNone(native.current_state["lease"])
 
     def test_wrong_source_branch_or_pr_event_cannot_satisfy_default_ci(self):
         for field, value in [("head_sha", BASE), ("head_branch", "work/original"), ("event", "pull_request")]:

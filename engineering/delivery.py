@@ -99,7 +99,10 @@ def recover_publication(api, head, state, prs):
             continue
         run = default_ci_run(api, current)
         complete = run is not None and run["status"] == "completed" and run.get("conclusion") == "success"
-        if complete and (previous.get("commit") != current or previous.get("state") == "ci-passed"):
+        # A published immutable release is also a terminal observation. Requiring
+        # fresh native CI here avoids trusting a stale record while leaving an
+        # unrelated active-work handoff untouched on repeated scheduler wakes.
+        if complete and (previous.get("commit") != current or previous.get("state") in ("ci-passed", "published")):
             return None
         if run is not None and run["status"] != "completed" and previous.get("run_id") == run["id"]:
             return {"action": "publication-pending", "commit": current, "run": run["id"]}

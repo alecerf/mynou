@@ -53,11 +53,6 @@ it natively blocks the next bounded PAR2 recovery stage, Issue #6. Read live
 Issues/control state for current priorities rather than inferring them from this
 historical release record. Infrastructure changes do not retag published assets.
 
-The [control-storage adapter](control-storage.md) prepares explicit branch/notes
-reference handling for Issue #19. Its current `control_ref` and legacy
-`control_branch` identify the same live branch. It does not activate a second
-authority or prove that scheduled workers can write non-branch references.
-
 ## Work and roles
 
 Each meaningful Issue carries one label per managed family: `status:`,
@@ -199,7 +194,13 @@ failed dispatch remains visible in Actions and recoverable on a later wake.
 GitHub offers branch-ref dispatch, without an expected-SHA condition: default-head
 fences before and after detect external-writer races, fail closed and require
 Triage rather than certifying a different commit. Ordinary workers must inspect
-this pending publication evidence before starting unrelated product work.
+this pending publication evidence before starting unrelated product work. A same-source published
+record is terminal only while the latest eligible native default CI is successful;
+repeated mechanical wakes then leave the active-work checkpoint unchanged. Actual
+CI failures still preempt delivery. Necessary checkpoint updates retain source-bound
+metadata and one concise previous-work handoff, without nesting full checkpoints.
+Retained evidence describes its recorded source; it never certifies a new head or
+substitutes for native CI and exact-head/base reviews.
 
 After merge, native closing keywords and existing `delete_branch_on_merge` help.
 Cleanup sets Issue status Done, unblocks completed native dependencies and audits

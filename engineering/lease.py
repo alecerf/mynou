@@ -90,9 +90,17 @@ def checkpoint(state, at, identity, summary, next_action, commit=None, pr=None):
     lease["heartbeat_at"] = stamp(at)
     lease["expires_at"] = stamp(at + TTL)
     result["generation"] += 1
-    result["checkpoint"] = {"at": stamp(at), "issue": held["issue"], "role": held["role"],
-        "branch": lease["branch"], "commit": lease["commit"], "pr": lease["pr"],
-        "summary": summary, "next_action": next_action}
+    previous = result["checkpoint"]
+    # Retain source-bound evidence and one concise prior-work handoff. Replacing
+    # the whole record during mechanical recovery loses interrupted work; nesting
+    # full checkpoints would instead grow without bound on repeated wakes.
+    keys = ["issue", "branch", "pr"]
+    if previous and any(previous.get(key) != lease[key] for key in keys):
+        previous["previous_checkpoint"] = {key: previous[key] for key in
+            ["at", "issue", "role", "branch", "commit", "pr", "summary", "next_action"] if key in previous}
+    previous.update(at=stamp(at), issue=held["issue"], role=held["role"],
+        branch=lease["branch"], commit=lease["commit"], pr=lease["pr"],
+        summary=summary, next_action=next_action)
     return validate(result)
 
 
