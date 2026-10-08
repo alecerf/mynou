@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 869,
-  "lease": null,
+  "generation": 870,
+  "lease": {
+    "id": "8b3c5cf2-9f26-442b-b28e-1a61c4b5159e",
+    "worker": "github-actions-publication-recovery",
+    "role": "triage",
+    "issue": 50,
+    "acquired_at": "2026-10-08T22:50:21Z",
+    "heartbeat_at": "2026-10-08T22:50:21Z",
+    "expires_at": "2026-10-08T23:35:21Z",
+    "branch": "trunk",
+    "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
+    "pr": 51
+  },
   "checkpoint": {
     "at": "2026-10-08T22:47:03Z",
     "issue": 50,
