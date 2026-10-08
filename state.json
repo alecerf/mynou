@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 550,
+  "generation": 551,
   "lease": {
     "id": "codex-hourly-20261008T073509Z-master-20261008073951",
     "worker": "codex-hourly-20261008T073509Z",
     "role": "master",
     "issue": 27,
     "acquired_at": "2026-10-08T07:39:51Z",
-    "heartbeat_at": "2026-10-08T07:39:51Z",
-    "expires_at": "2026-10-08T08:24:51Z",
+    "heartbeat_at": "2026-10-08T07:40:25Z",
+    "expires_at": "2026-10-08T08:25:25Z",
     "branch": "work/publication-handoff-recovery",
     "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
     "pr": 26
   },
   "checkpoint": {
-    "at": "2026-10-08T07:30:02Z",
-    "issue": 18,
-    "role": "triage",
-    "branch": "trunk",
-    "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
-    "pr": 23,
-    "summary": "Default-source CI transition: ci-passed at d647be6edfd6e892474b2602bbc9047ad4047c2f; native evidence {'commit': 'd647be6edfd6e892474b2602bbc9047ad4047c2f', 'state': 'ci-passed', 'at': '2026-10-08T07:30:02Z', 'run_id': 37719852082, 'status': 'completed', 'conclusion': 'success'}. No release publication is inferred.",
-    "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases.",
+    "at": "2026-10-08T07:40:25Z",
+    "issue": 27,
+    "role": "master",
+    "branch": "work/publication-handoff-recovery",
+    "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
+    "pr": 26,
+    "summary": "Recovered preserved PR26 at99138218/base d647 and open Issues25/27 from native handoffs after the old scheduler overwrote the latest checkpoint. SourceCI37742148752 and Security37742148708 succeeded; native Security5453084901 exact head. Current QA absent; latest Engineering37742698403 failed waiting for QA. No merge or new publication.",
+    "next_action": "Acquire exact-head/base QA and independently review all12 native patches, required source/audit logs, Security lease ancestry and threads; submit only actual acceptance. Preserve migration PR24/Issue19.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "ci-passed",
@@ -30,6 +30,37 @@
       "run_id": 37719852082,
       "status": "completed",
       "conclusion": "success"
+    },
+    "previous_checkpoint": {
+      "at": "2026-10-08T07:30:02Z",
+      "issue": 18,
+      "role": "triage",
+      "branch": "trunk",
+      "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+      "pr": 23,
+      "summary": "Default-source CI transition: ci-passed at d647be6edfd6e892474b2602bbc9047ad4047c2f; native evidence {'commit': 'd647be6edfd6e892474b2602bbc9047ad4047c2f', 'state': 'ci-passed', 'at': '2026-10-08T07:30:02Z', 'run_id': 37719852082, 'status': 'completed', 'conclusion': 'success'}. No release publication is inferred.",
+      "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases."
+    },
+    "recovery": {
+      "pr": 26,
+      "issue": 27,
+      "branch": "work/publication-handoff-recovery",
+      "head_sha": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
+      "base_sha": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+      "prior_checkpoint": "c2ca489916a90f369af95d5a8ef67919347fc84d",
+      "native_handoff": 6054817023,
+      "security_review": 5453084901,
+      "security_checkpoint": "6e02750960c6683c6c04bcd26306942b09c16b5d"
+    },
+    "pending_qa": {
+      "state": "incomplete",
+      "head_sha": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253"
+    },
+    "preserved_work": {
+      "issue": 19,
+      "pr": 24,
+      "branch": "work/control-ref-adapter",
+      "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c"
     }
   },
   "attempts": {
