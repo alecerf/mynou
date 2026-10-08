@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 528,
-  "lease": null,
+  "generation": 529,
+  "lease": {
+    "id": "wake15-master-public-security-20261008T064648Z",
+    "worker": "codex-capacity-recovery-20261008T064648Z",
+    "role": "master",
+    "issue": 25,
+    "acquired_at": "2026-10-08T06:56:11Z",
+    "heartbeat_at": "2026-10-08T06:56:11Z",
+    "expires_at": "2026-10-08T07:41:11Z",
+    "branch": "work/publication-handoff-recovery",
+    "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
+    "pr": 26
+  },
   "checkpoint": {
     "at": "2026-10-08T06:56:03Z",
     "issue": 25,
