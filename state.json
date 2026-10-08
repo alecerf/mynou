@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 450,
+  "generation": 451,
   "lease": {
     "id": "wake11-security-control-storage-plan-20261008T032912Z",
     "worker": "codex-hourly-20261008T032912Z",
     "role": "security",
     "issue": 19,
     "acquired_at": "2026-10-08T03:41:35Z",
-    "heartbeat_at": "2026-10-08T03:41:35Z",
-    "expires_at": "2026-10-08T04:26:35Z",
+    "heartbeat_at": "2026-10-08T03:43:10Z",
+    "expires_at": "2026-10-08T04:28:10Z",
     "branch": "trunk",
     "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
     "pr": null
   },
   "checkpoint": {
-    "at": "2026-10-08T03:41:26Z",
+    "at": "2026-10-08T03:43:10Z",
     "issue": 19,
-    "role": "master",
+    "role": "security",
     "branch": "trunk",
     "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
     "pr": null,
-    "summary": "Triaged native user Issue19: branch-independent control is a high-risk organizational storage change. Use an explicit non-branch Git reference to preserve sole-parent/non-force arbitration and historical QA ancestry. First prepare namespace-aware administration without activating a new live lease. Full cutover requires actual non-branch worker writes and a fail-closed legacy-worker fence; neither is fabricated.",
-    "next_action": "Acquire Security for bounded cutover/adapter threat analysis, then Quality for original adapter/source/tests in the same linked draft PR. No product version bump or live task change yet.",
+    "summary": "Security analysis: a package/Issue body without conditional update cannot replace the global arbiter. Prepare explicit heads/notes reference handling with strict namespace and exact commit-object checks; reject ambiguous branch/ref configuration and never write release tags. Preserve sole-parent CAS, fail closed on stale/competing writes, and retain commit-bound QA ancestry. Live migration is barred until legacy workers are fenced and actual scheduled-worker writes are proved.",
+    "next_action": "Quality implements the bounded reference adapter and CI-only namespace/race/history regressions in one draft PR; Security and QA will review its exact complete diff after implementation.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -1089,6 +1089,23 @@
         "preserve historical QA/source and checkpoint commits",
         "no release mutation"
       ]
+    },
+    "control_storage_security_plan": {
+      "source": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+      "scope": "Preparatory adapter; no live lease relocation",
+      "must_preserve": [
+        "strict reference and response identity",
+        "legacy branch/ref alias consistency",
+        "force false and exactly one parent",
+        "no automatic storage fallback or dual authority",
+        "same historical commit-based review proof",
+        "no product publication"
+      ],
+      "activation_blockers": [
+        "actual non-branch API writes from scheduled worker",
+        "safe legacy-worker fencing and interrupted cutover recovery"
+      ],
+      "review": "Design analysis only; no implementation review or green gate claimed"
     }
   },
   "attempts": {
