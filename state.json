@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 531,
-  "lease": null,
+  "generation": 532,
+  "lease": {
+    "id": "wake15-security-public-audit-20261008T064648Z",
+    "worker": "codex-capacity-recovery-20261008T064648Z",
+    "role": "security",
+    "issue": 27,
+    "acquired_at": "2026-10-08T06:57:54Z",
+    "heartbeat_at": "2026-10-08T06:57:54Z",
+    "expires_at": "2026-10-08T07:42:54Z",
+    "branch": "trunk",
+    "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+    "pr": null
+  },
   "checkpoint": {
     "at": "2026-10-08T06:57:45Z",
     "issue": 25,
