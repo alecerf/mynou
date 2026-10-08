@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 397,
+  "generation": 398,
   "lease": {
     "id": "wake9-security-correction-20261008T014520Z",
     "worker": "codex-hourly-20261008T012904Z",
     "role": "security",
     "issue": 18,
     "acquired_at": "2026-10-08T01:45:39Z",
-    "heartbeat_at": "2026-10-08T01:47:15Z",
-    "expires_at": "2026-10-08T02:32:15Z",
+    "heartbeat_at": "2026-10-08T01:47:20Z",
+    "expires_at": "2026-10-08T02:32:20Z",
     "branch": "work/registry-recovery",
     "commit": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
     "pr": 22
   },
   "checkpoint": {
-    "at": "2026-10-08T01:47:15Z",
+    "at": "2026-10-08T01:47:20Z",
     "issue": 18,
     "role": "security",
     "branch": "work/registry-recovery",
     "commit": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
     "pr": 22,
-    "summary": "Security independently accepted all12 actual corrected paths at1cbe4282/base551e82d2. Exact private native repository ID/name, private owner/name/type/stable packageID and reported-link rejection preserve intended confidentiality/authorized source identity; omission is honestlynot_exposed. Existing image/collision/digest/binary/runtime gates unchanged;17images preserved;temporaryprobe retired. Corrective CI still pending, no local/test/publication success invented.",
-    "next_action": "Submit native exact-head Security record, release; independent QA reviews complete12-path actual diff, corrected Issue18 acceptance, actual newCI and historical diagnostic proof. Ready only after real CI/QA, then Master exact gate/merge for this corrective recovery.",
+    "summary": "Separate complete12-path exact-head Security review recorded natively for corrected1cbe4282/551e82d2; no findings. Actual new required CI and independent QA pending; repository association omission explicitly unverified. Actual old17 private tags and prior16 release proof preserved.",
+    "next_action": "Independent QA: complete-diff acceptance and actual CI/log review at exact currenthead/base. Maintain draft while checks pending; no assertion of shipping from PR tests.",
     "publication": {
       "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
       "state": "ci-failed",
@@ -395,7 +395,7 @@
       "role": "security",
       "head_sha": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
       "base_sha": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
-      "lease_checkpoint": "",
+      "lease_checkpoint": "3f203a1c02bf5aacadfc914e98dce5512c1de876",
       "verdict": "passed",
       "summary": "Complete corrected diff replaces a missing optional association assumption with supported explicit private source-repository and package identity/provenance checks. Reported conflicting links still fail; omitted UI linkage is recorded unverified. New source/version preserves actual partial17images and earlier immutable assets. No blocking Security findings; required CI/QA and later actual default publication remain prerequisites.",
       "reviewed_paths": [
@@ -431,7 +431,7 @@
     },
     "security_native_review": {
       "success": true,
-      "review_id": 5449727189
+      "review_id": 5450457499
     },
     "gate": {
       "head_sha": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
