@@ -1,0 +1,55 @@
+name: Security audit
+on:
+  pull_request:
+  push:
+    branches: [trunk]
+  workflow_dispatch:
+  schedule:
+    - cron: '23 3 * * 1'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: mynou-security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+jobs:
+  source-history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Audit all reachable Git objects without exposing findings
+        run: python3 engineering/secret_audit.py history --output "$RUNNER_TEMP/source-audit.json"
+      - name: Preserve redacted source coverage
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: security-source-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/source-audit.json
+          retention-days: 7
+          if-no-files-found: error
+  actions-logs:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Audit completed Actions attempt logs without publishing raw logs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 engineering/secret_audit.py logs --output "$RUNNER_TEMP/actions-audit.json"
+      - name: Preserve redacted log coverage
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: security-actions-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/actions-audit.json
+          retention-days: 7
+          if-no-files-found: error

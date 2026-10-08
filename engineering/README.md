@@ -270,3 +270,21 @@ Material self-improvements to Skills, policy, tooling and role boundaries follow
 the same reviewed process. Encode repeated friction once. Do not silently remove
 concurrency, durable recovery, secrets or truthful QA. Validation evidence and
 scenario coverage are recorded in [validation.md](validation.md).
+
+## Connected control transport
+
+[The strict comment transport](command-transport.md) lets a scheduled web worker
+request lease administration through reviewed default Actions using the connected
+GitHub comment API. It retains canonical Git state and the existing single-parent,
+non-force arbitration. Installation does not activate notes or reconcile the
+hourly task; actual post-merge proof and Issue #19 cutover remain distinct steps.
+
+## Reviewed notes cutover
+
+[Canonical control and retirement](control-storage.md) defines schema2 legacy fencing,
+notes authority, interrupted-fence recovery and verified old-branch retirement.
+Installation and live activation are separate acceptance stages. Issue19 remains
+In Progress until actual notes proof, existing-task reconciliation and retirement.
+Use the resolved canonical authority for admission/review ancestry; do not infer
+it from a missing branch or initialize empty state. The task prompt changes only
+after reviewed merge and an actual native Task response.

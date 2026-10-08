@@ -106,9 +106,9 @@ class PublicationTests(unittest.TestCase):
         publisher.private_package()
         self.assertEqual(publisher.package_association, "reported-match")
 
-    def test_wrong_or_public_source_repository_blocks_every_docker_command(self):
+    def test_wrong_or_malformed_source_repository_blocks_every_docker_command(self):
         for changes in ({"id": 7}, {"id": True}, {"full_name": "other/repo"},
-                        {"private": False}):
+                        {"private": None}, {"private": "false"}, {"private": 0}):
             registry = Registry()
             def native(args, input=None):
                 if args[-1] == "/repos/alecerf/mynou":
@@ -117,6 +117,43 @@ class PublicationTests(unittest.TestCase):
             with self.subTest(changes=changes), tempfile.TemporaryDirectory() as directory:
                 with self.assertRaises(ValueError):
                     root = Path(directory)
+                    Publisher("0.22.17", native).publish(root / "archive", root / "binary", root)
+            self.assertFalse(any(args[0] == "docker" for args, _ in registry.calls))
+
+    def test_exact_public_or_private_source_retains_private_package_proof(self):
+        for private in (False, True):
+            registry = Registry()
+            def native(args, input=None):
+                if args[-1] == "/repos/alecerf/mynou":
+                    return json.dumps(dict(REPOSITORY, private=private))
+                return registry(args, input=input)
+            with self.subTest(private=private), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                binary = root / "checked"
+                binary.write_bytes(b"checked")
+                proof = Publisher("0.22.17", native).publish(root / "archive", binary, root)
+            self.assertEqual(proof["repository_visibility"], "private" if private else "public")
+            self.assertEqual(proof["visibility"], "private")
+            self.assertEqual(proof["repository_id"], REPOSITORY["id"])
+            self.assertEqual(proof["package_id"], PACKAGE["id"])
+            self.assertEqual(proof["image"], registry.digest)
+            self.assertEqual(proof["verification_cleanup"], "completed")
+            self.assertNotIn(ENV["GH_TOKEN"], json.dumps(proof))
+
+    def test_public_source_cannot_authorize_public_or_foreign_package(self):
+        for changes in ({"visibility": "public"},
+                        {"repository": {"full_name": "other/repo"}},
+                        {"repository": {"full_name": "alecerf/mynou", "id": 7}}):
+            registry = Registry()
+            def native(args, input=None):
+                if args[-1] == "/repos/alecerf/mynou":
+                    return json.dumps(dict(REPOSITORY, private=False))
+                if args[-1] == "/users/alecerf/packages/container/mynou":
+                    return json.dumps(dict(PACKAGE, **changes))
+                return registry(args, input=input)
+            with self.subTest(changes=changes), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                with self.assertRaises(ValueError):
                     Publisher("0.22.17", native).publish(root / "archive", root / "binary", root)
             self.assertFalse(any(args[0] == "docker" for args, _ in registry.calls))
 

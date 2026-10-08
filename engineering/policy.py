@@ -16,6 +16,8 @@ def check(root=ROOT):
     cfg = json.loads((root / ".github/engineering.json").read_text())
     assert cfg["schema"] == 1 and cfg["max_active_agents"] == 1
     control_reference(cfg)
+    from migration import settings
+    settings(cfg)
     assert cfg["lease_minutes"] == 45 and cfg["heartbeat_minutes"] <= 15
     assert cfg["no_progress_limit"] == 3
     assert type(cfg["slice_minutes"]) is int and 1 <= cfg["slice_minutes"] <= 40

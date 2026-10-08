@@ -24,6 +24,10 @@
     ],
     "Engineering checks": [
       "organization"
+    ],
+    "Security audit": [
+      "source-history",
+      "actions-logs"
     ]
   },
   "observed_capabilities": {
@@ -43,5 +47,21 @@
     "quota_introspection": false,
     "guaranteed_quota_reset_wake": false
   },
-  "control_ref": "refs/heads/control/engineering"
+  "control_commands": {
+    "issue": 30,
+    "issue_id": 5759498447,
+    "repository_id": 1403318143,
+    "trusted_actors": {
+      "alecerf": 22006964
+    },
+    "max_age_seconds": 300
+  },
+  "control_ref": "refs/heads/control/engineering",
+  "control_migration": {
+    "mode": "fenced-notes-v1",
+    "legacy_ref": "refs/heads/control/engineering",
+    "target_ref": "refs/notes/mynou-engineering",
+    "issue": 19,
+    "pr": 24
+  }
 }

@@ -91,8 +91,9 @@ class Publisher:
         if (repository.get("full_name") != self.repo
                 or type(repository.get("id")) is not int
                 or repository["id"] != self.repository_id
-                or repository.get("private") is not True):
-            raise ValueError("Publication requires the exact private repository")
+                or type(repository.get("private")) is not bool):
+            raise ValueError("Publication requires exact verified repository metadata")
+        self.repository_visibility = "private" if repository["private"] else "public"
 
     def private_package(self, allow_missing=False):
         try:
@@ -193,6 +194,7 @@ class Publisher:
         return {"image": pinned, "version": self.version, "source": self.source,
                 "visibility": "private", "binary_sha256": file_digest(binary),
                 "repository": self.repo, "repository_id": self.repository_id,
+                "repository_visibility": self.repository_visibility,
                 "package_id": self.package_id, "repository_association": self.package_association,
                 "verification_user": demo["user"], "verification_cleanup": demo["cleanup"]}
 

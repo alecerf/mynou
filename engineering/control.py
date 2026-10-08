@@ -6,6 +6,7 @@ import uuid
 
 from github import APIError, GitHub, ROOT, control_reference
 import lease
+import migration
 
 
 def labels(issue):
@@ -19,14 +20,16 @@ def label_update(api, number, family, value):
 
 
 def read_state(api):
-    cfg = api.cfg
-    head = api.ref(control_reference(cfg))
-    return head, lease.validate(api.file(cfg["state_path"], head))
+    _, head, state = migration.resolve(api)
+    return head, state
 
 
 def save(api, expected, value, message):
     lease.validate(value)
-    return api.cas_file(control_reference(api.cfg), expected, api.cfg["state_path"], value, message)
+    location, head, _ = migration.resolve(api)
+    if head != expected:
+        raise RuntimeError("Execution authority changed; stop and reconstruct state")
+    return api.cas_file(location, expected, api.cfg["state_path"], value, message)
 
 
 def handoff(api, previous, checkpoint, control_sha):
@@ -122,7 +125,15 @@ def main():
         import delivery
         print(json.dumps(delivery.run(api, args.command == "branch-sweep"), indent=2))
         return
-    head, state = read_state(api)
+    try:
+        head, state = read_state(api)
+    except migration.Pending as pending:
+        if args.command not in ("wake", "status"):
+            raise
+        print(json.dumps({"action": "busy" if lease.valid(pending.state, lease.now()) else "recover-fence",
+            "control_sha": pending.head, "lease": pending.state["lease"],
+            "instruction": "Exit when busy; otherwise recover the native interrupted fence before domain work."}))
+        return
     at = lease.now()
     if args.command == "branch-cleanup":
         import delivery

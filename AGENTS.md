@@ -9,10 +9,11 @@ decisions that cannot responsibly be inferred.
 - **MAX_ACTIVE_AGENTS = 1.** Use one worker with sequential specialist roles.
   Never launch a child/cloud/CLI worker while the current worker is active.
   CI processes are deterministic machinery, not engineering agents.
-- GitHub is durable memory. Acquire the renewable `control/engineering` lease
-  before engineering work. Checkpoint to pushed commits and Issues/PRs; release
+- GitHub is durable memory. Acquire the renewable canonical Git-ref lease
+  before engineering work (configuration and `engineering/control-storage.md`). Checkpoint to pushed commits and Issues/PRs; release
   before another role. Stop immediately if ownership or renewal is lost.
   Expired leases require recovery of Issues, branches, PRs and CI before reuse.
+  A schema2 legacy fence is not a lease store; follow notes admission/recovery.
 - Read the control ref/state before investigation, then
   [the resume runbook](engineering/README.md) and native backlog. Recover first.
   Workers and local files are

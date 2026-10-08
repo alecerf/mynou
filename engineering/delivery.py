@@ -7,6 +7,7 @@ from github import APIError, control_reference, reference
 from control import labels, label_update, read_state, recover_native, save
 import lease
 import qa
+import migration
 
 
 DISPATCH_VISIBILITY_GRACE = timedelta(minutes=5)
@@ -183,12 +184,17 @@ def cleanup_branch(api, name, expected, held):
 def cleanup_pr(api, pr):
     if not pr.get("merged_at"):
         raise ValueError("Unmerged PR cannot be cleaned up as delivered")
+    pending_cutover = migration.settings(api.cfg) is not None and pr["number"] == 24 and read_state(api)[1]["checkpoint"].get("control_migration", {}).get("phase") != "retired"
     for number in qa.linked_issues(pr.get("body")):
         issue = api.rest("GET", f"issues/{number}")
         if "agent-work" not in labels(issue):
             raise ValueError("Cleanup requires a managed linked Issue")
-        api.rest("PATCH", f"issues/{number}", {"state": "closed", "state_reason": "completed"})
-        label_update(api, number, "status", "done")
+        if pending_cutover and number == 19:
+            api.rest("PATCH", f"issues/{number}", {"state": "open", "state_reason": "reopened"})
+            label_update(api, number, "status", "in-progress")
+        else:
+            api.rest("PATCH", f"issues/{number}", {"state": "closed", "state_reason": "completed"})
+            label_update(api, number, "status", "done")
     # Repair dependencies before optional branch work can fail. Later wakes also
     # reconcile independently of whether this parent's status is already Done.
     held = read_state(api)[1]["lease"]
@@ -240,7 +246,11 @@ def recover_dependencies(api, head, state):
 
 
 def run(api, sweep=False):
-    head, state = read_state(api)
+    try:
+        head, state = read_state(api)
+    except migration.Pending as pending:
+        return {"action": "busy" if lease.valid(pending.state, lease.now()) else "recover-fence",
+            "control_sha": pending.head, "instruction": "Preserve the migration; no domain work until activation/recovery."}
     at = lease.now()
     if lease.valid(state, at):
         return {"action": "busy", "instruction": "Mechanical delivery waits for the current engineering role to release."}
@@ -302,6 +312,9 @@ def run(api, sweep=False):
     # Recover cleanup after a worker disappeared immediately following merge.
     for pr in [p for p in prs if p.get("merged_at") and qa.linked_issues(p.get("body"))][:10]:
         issues = [api.rest("GET", f"issues/{n}") for n in qa.linked_issues(pr.get("body"))]
+        if migration.settings(api.cfg) is not None and pr["number"] == 24 and state["checkpoint"].get("control_migration", {}).get("phase") != "retired":
+            return {"action": "cutover-pending", "issue": 19, "pr": 24,
+                "instruction": "Master must finish live notes proof/task reconciliation/retirement; merge is not delivery completion."}
         unfinished = any("agent-work" in labels(i) and "status:done" not in labels(i) for i in issues)
         if unfinished:
             identity = str(uuid.uuid4())
