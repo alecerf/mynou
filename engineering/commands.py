@@ -24,7 +24,7 @@ COMMANDS = {
     "recover": set(),
     "attempt": {"worker", "lease", "approach", "fingerprint"},
     "probe-notes": {"worker", "lease", "expected_probe_sha"},
-    "fence-control": {"worker", "lease"},
+    "fence-control": {"worker", "lease", "task_receipt_id"},
     "activate-control": {"worker", "lease"},
     "recover-fence": {"worker"},
     "retire-control": {"worker", "lease", "notes_proof_sha", "task_receipt_id"},
@@ -95,6 +95,8 @@ def payload(body):
         require(all(isinstance(args[k], str) and 1 <= len(args[k]) <= 256 for k in ["approach", "fingerprint"]), "invalid-attempt-text")
     if command == "probe-notes":
         require(args["expected_probe_sha"] is None or sha(args["expected_probe_sha"]), "invalid-probe-sha")
+    if command == "fence-control":
+        require(integer(args["task_receipt_id"]), "invalid-task-receipt")
     if command == "retire-control":
         require(sha(args["notes_proof_sha"]) and integer(args["task_receipt_id"]), "invalid-retirement-proof")
     return value
@@ -239,7 +241,7 @@ def execute(api, event, at, actor, triggering_actor):
     comment_id, value = authenticate(api, event, at, actor, triggering_actor)
     args = value["args"]
     handlers = {
-        "fence-control": lambda: migration.fence(api, value["expected_sha"], args["worker"], args["lease"]),
+        "fence-control": lambda: migration.fence(api, value["expected_sha"], args["worker"], args["lease"], args["task_receipt_id"]),
         "activate-control": lambda: migration.activate(api, value["expected_sha"], args["worker"], args["lease"]),
         "recover-fence": lambda: migration.recover_fence(api, value["expected_sha"], args["worker"], comment_id),
         "retire-control": lambda: migration.retire(api, value["expected_sha"], args["worker"], args["lease"], args["notes_proof_sha"], args["task_receipt_id"]),

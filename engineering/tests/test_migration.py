@@ -43,6 +43,14 @@ class Native(GitHub):
         self.race = False
         self.create_race = False
         self.stop_after_delete = False
+        self.work_issue = {"number": 19, "state": "open", "labels": [{"name": "agent-work"}]}
+        self.open_issues = []
+        self.comments[202] = {"user": {"type": "User", "login": "alecerf", "id": 200},
+            "issue_url": "https://api.github.com/repos/alecerf/mynou/issues/19",
+            "created_at": lease.stamp(AT), "updated_at": lease.stamp(AT),
+            "body": migration.TASK_MARKER + "\n" + commands.FENCE + "json\n" + json.dumps({
+                "schema": 1, "task_id": "synthetic-existing-task", "policy_commit": SOURCE,
+                "prompt_sha": PROMPT, "enabled": True, "cadence": "hourly", "response_digest": "0" * 64}) + "\n" + commands.FENCE}
 
     def ancestor(self, old, new):
         seen, pending = set(), [new]
@@ -61,6 +69,8 @@ class Native(GitHub):
         return deepcopy(self.states[ref])
 
     def pages(self, path, key=None):
+        if path == "issues?state=open":
+            return deepcopy(self.open_issues)
         if path == "pulls?state=open":
             return []
         if path == "pulls?state=all":
@@ -84,7 +94,13 @@ class Native(GitHub):
             old, new = path.removeprefix("compare/").split("...")
             return {"status": "identical" if old == new else "ahead" if self.ancestor(old, new) else "diverged"}
         if method == "GET" and path == "issues/19":
-            return {"number": 19, "state": "open"}
+            return deepcopy(self.work_issue)
+        if method == "PATCH" and path == "issues/19":
+            normalized = deepcopy(value)
+            if "labels" in normalized:
+                normalized["labels"] = [{"name": label} for label in normalized["labels"]]
+            self.work_issue.update(normalized)
+            return deepcopy(self.work_issue)
         if method == "GET" and path.startswith("issues/comments/"):
             return deepcopy(self.comments[int(path.rsplit("/", 1)[1])])
         if method == "GET" and path.startswith("contents/engineering/worker-prompt.md?ref="):
@@ -140,7 +156,7 @@ class CutoverScenarios(unittest.TestCase):
 
     def fenced(self):
         api = Native()
-        result = migration.fence(api, HEAD, "one-worker", "owner")
+        result = migration.fence(api, HEAD, "one-worker", "owner", 202)
         return api, result["control_sha"]
 
     def activated(self):
@@ -201,14 +217,14 @@ class CutoverScenarios(unittest.TestCase):
             api = Native()
             api.states[HEAD]["lease"]["role"] = role
             with self.subTest(worker=worker, role=role), self.assertRaises(ValueError):
-                migration.fence(api, HEAD, worker, "owner")
+                migration.fence(api, HEAD, worker, "owner", 202)
             self.assertFalse(any(c[0] == "POST" for c in api.calls))
 
     def test_competing_fence_sibling_wins_without_force_or_retry(self):
         api = Native()
         api.race = True
         with self.assertRaises(RuntimeError):
-            migration.fence(api, HEAD, "one-worker", "owner")
+            migration.fence(api, HEAD, "one-worker", "owner", 202)
         self.assertEqual(api.refs[migration.LEGACY], "e" * 40)
         writes = [c for c in api.calls if c[0] == "PATCH"]
         self.assertEqual(len(writes), 1)
@@ -219,7 +235,7 @@ class CutoverScenarios(unittest.TestCase):
         api = Native()
         api.refs[migration.TARGET] = "e" * 40
         with self.assertRaises(ValueError):
-            migration.fence(api, HEAD, "one-worker", "owner")
+            migration.fence(api, HEAD, "one-worker", "owner", 202)
         self.assertEqual(api.refs[migration.LEGACY], HEAD)
         api, fence = self.fenced()
         api.create_race = True
@@ -302,6 +318,51 @@ class CutoverScenarios(unittest.TestCase):
         result = migration.retire(api, head, "one-worker", "quality-owner", proof, 202)
         self.assertEqual(api.file("state.json", result["control_sha"])["checkpoint"]["control_migration"]["phase"], "retired")
         self.assertEqual(sum(c[0] == "DELETE" for c in api.calls), 1)
+
+    def test_unreconciled_task_blocks_fence_before_any_mutation(self):
+        api = Native()
+        api.comments[202]["updated_at"] = lease.stamp(AT + timedelta(seconds=1))
+        with self.assertRaises(ValueError):
+            migration.fence(api, HEAD, "one-worker", "owner", 202)
+        self.assertEqual(api.refs[migration.LEGACY], HEAD)
+        self.assertFalse(any(c[0] == "POST" for c in api.calls))
+
+    def test_other_open_issue_reference_blocks_retirement(self):
+        api, _, proof = self.retirement_ready()
+        api.open_issues = [{"number": 40, "title": "Investigate control/engineering", "body": ""}]
+        with self.assertRaises(ValueError):
+            migration.retire(api, proof, "one-worker", "quality-owner", proof, 202)
+        self.assertIn(migration.LEGACY, api.refs)
+        self.assertFalse(any(c[0] == "DELETE" for c in api.calls))
+
+    def test_source_change_after_retirement_intent_blocks_deletion(self):
+        api, _, proof = self.retirement_ready()
+        original = api.cas_file
+        def changed(location, expected, path, value, message):
+            result = original(location, expected, path, value, message)
+            if message == "Prepare verified legacy retirement":
+                api.refs["refs/heads/trunk"] = "c" * 40
+            return result
+        api.cas_file = changed
+        with self.assertRaises(ValueError):
+            migration.retire(api, proof, "one-worker", "quality-owner", proof, 202)
+        self.assertIn(migration.LEGACY, api.refs)
+        self.assertFalse(any(c[0] == "DELETE" for c in api.calls))
+
+    def test_old_merger_completion_is_reopened_under_one_owned_lease(self):
+        import delivery
+        api = Native()
+        state = lease.release(api.states[HEAD], AT, "owner")
+        api.states[HEAD] = state
+        api.work_issue.update(state="closed", labels=[{"name": "agent-work"}, {"name": "status:done"}])
+        result = delivery.recover_cutover_metadata(api, HEAD, state, {"number": 24}, [api.work_issue])
+        self.assertEqual(result["action"], "cutover-metadata-recovered")
+        self.assertEqual(api.work_issue["state"], "open")
+        self.assertIn("status:in-progress", control.labels(api.work_issue))
+        current = control.read_state(api)[1]
+        self.assertIsNone(current["lease"])
+        self.assertEqual(current["checkpoint"]["pending_task_reconciliation"]["policy_commit"], SOURCE)
+        self.assertEqual(current["checkpoint"]["issue"], 19)
 
     def test_migration_envelopes_reject_arbitrary_refs_and_invalid_proof(self):
         for command, args in [("fence-control", {"worker": "one-worker", "lease": "owner", "ref": "refs/tags/release"}),

@@ -64,8 +64,8 @@ alone are not a live-backend capability claim.
 
 ## Fixed migration commands
 
-Issue19 adds strict `fence-control` and `activate-control` commands with `worker`
-and `lease`, `recover-fence` with `worker`, and `retire-control` with `worker`,
+Issue19 adds strict `fence-control` with `worker`, `lease` and native
+`task_receipt_id`, and `activate-control` with `worker` and `lease`, `recover-fence` with `worker`, and `retire-control` with `worker`,
 `lease`, exact `notes_proof_sha` and native `task_receipt_id`. The existing
 schema1 envelope and `expected_sha` remain mandatory. These use only reviewed
 fixed legacy/notes refs; no caller selects a path, script or arbitrary authority.

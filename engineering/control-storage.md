@@ -42,11 +42,16 @@ this operation delivered. Actions alone publishes the new immutable version.
 
 After actual default CI/publication is successful:
 
-1. Master acquires Issue19 at the exact installed default merge, linked PR24.
+1. Master reconciles the **existing** hourly task with the merged admission prompt,
+   retains native ID/cadence/timezone, checks the actual supported response and
+   records its trusted attestation. This precedes fencing so interruption resumes
+   through the updated schedule. Master acquires Issue19 at the exact installed
+   default merge, linked PR24.
    The strict native-comment/default-Action transport uses the fixed mailbox30,
    trusted native identities, freshness, unedited payload, exact heads and leases.
 2. `fence-control` checks source and current objective review/CI gates,
-   absent target and fresh owner. It writes the schema2 fence on legacy by CAS.
+   the actual task attestation, absent target and fresh owner. It writes the
+   schema2 fence on legacy by CAS.
    No candidate notes ref exists before this write.
 3. `activate-control` creates notes from an original valid-state commit
    whose sole parent is that fence. All old commits, reviews, attempts and
@@ -56,9 +61,9 @@ After actual default CI/publication is successful:
 4. Run a real canonical `checkpoint` command through the same transport
    on notes. Its commit records the native command ID. Preserve actual
    command/receipt/run and exact-parent proof; fixture tests are not live proof.
-5. Reconcile the **existing** hourly task with merged worker-prompt.md, retaining
-   native ID, cadence and timezone. Inspect the actual supported lookup/update
-   response. Never create a duplicate schedule or invent a Task API in Actions.
+5. Recheck the existing hourly task against the accepted response and merged
+   prompt before retirement. Never create a duplicate schedule or invent a Task
+   API in Actions.
 6. Quality may request `retire-control` only with actual notes write proof
    and recorded Task reconciliation. Source/default gates, owner, fence, open
    PRs and fresh exact legacy head are checked again. Retirement intent is first

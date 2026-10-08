@@ -117,18 +117,20 @@ def source_ready(api, held):
     return current
 
 
-def fence(api, expected, worker, identity):
+def fence(api, expected, worker, identity, task_comment):
     location, state, held = owned(api, expected, worker, identity, "master")
     if location != LEGACY or settings(api.cfg) is None:
         raise ValueError("Only the reviewed legacy authority can be fenced")
     policy = source_ready(api, held)
+    task = task_proof(api, task_comment, policy)
     if optional_ref(api, TARGET) is not None:
         raise ValueError("Notes already exists; preserve it rather than overwrite")
     value = lease.checkpoint(state, lease.now(), identity,
         "Legacy admission fenced; complete state/history preserved.",
         "Activate fixed notes from this fence; recover the nested expired lease if interrupted.")
     value["checkpoint"]["control_migration"] = {"phase": "fenced", "legacy_ref": LEGACY,
-        "target_ref": TARGET, "policy_commit": policy, "origin_sha": expected}
+        "target_ref": TARGET, "policy_commit": policy, "origin_sha": expected,
+        "task_receipt": task_comment, "task_id": task["task_id"]}
     # Recheck the canonical owner after all read-only source/gate investigation.
     owned(api, expected, worker, identity, "master")
     record = {"schema": 2, "kind": KIND, "legacy_ref": LEGACY, "target_ref": TARGET,
@@ -282,6 +284,11 @@ def retire(api, expected, worker, identity, proof_sha, task_comment):
         raise ValueError("Legacy fence changed; never blindly delete")
     if any(p["head"]["ref"] == "control/engineering" for p in api.pages("pulls?state=open")):
         raise ValueError("An open PR references the legacy branch")
+    other_issues = api.pages("issues?state=open")
+    if any(i.get("number") != 19 and "pull_request" not in i and
+            "control/engineering" in ((i.get("title") or "") + "\n" + (i.get("body") or ""))
+            for i in other_issues):
+        raise ValueError("Another open Issue references legacy control; preserve ambiguity")
     # Record retirement intent in notes before an unconditioned REST deletion.
     value = lease.checkpoint(state, lease.now(), identity,
         "Verified notes ancestry/transport and actual-task attestation; legacy retirement intent recorded.",
@@ -290,6 +297,8 @@ def retire(api, expected, worker, identity, proof_sha, task_comment):
         task_id=task["task_id"], notes_proof_sha=proof_sha)
     head = api.cas_file(TARGET, expected, api.cfg["state_path"], value, "Prepare verified legacy retirement")
     owned(api, head, worker, identity, "quality")
+    if api.ref(api.cfg["default_branch"]) != policy:
+        raise ValueError("Installed source changed before retirement")
     if legacy_head is not None and api.ref(LEGACY) != fence_head:
         raise ValueError("Legacy branch changed before deletion")
     # GitHub REST has no conditional delete. Fresh exact fences are the strongest
