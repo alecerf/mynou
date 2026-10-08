@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 485,
+  "generation": 486,
   "lease": {
     "id": "wake12-qa-recovery-20261008T042605Z",
     "worker": "codex-hourly-20261008T042605Z",
     "role": "qa",
     "issue": 19,
     "acquired_at": "2026-10-08T04:38:34Z",
-    "heartbeat_at": "2026-10-08T04:38:34Z",
-    "expires_at": "2026-10-08T05:23:34Z",
+    "heartbeat_at": "2026-10-08T04:45:42Z",
+    "expires_at": "2026-10-08T05:30:42Z",
     "branch": "work/control-ref-adapter",
     "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T04:38:26Z",
+    "at": "2026-10-08T04:45:42Z",
     "issue": 19,
-    "role": "security",
+    "role": "qa",
     "branch": "work/control-ref-adapter",
     "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
     "pr": 24,
-    "summary": "Complete-diff Security review passes the preparatory reference adapter and recovery-preservation fix. Native CI success remains mandatory, and this does not certify an unimplemented live cutover or a scheduled-web general-ref writer.",
-    "next_action": "QA: independently inspect all11 actual PR patches, native acceptance and new CI logs at053fb1f1/base d647. Reject final delivery while live cutover/hourly writer criteria remain incomplete; do not treat preparatory Security pass as activation.",
+    "summary": "Complete-diff QA inspected all11 PR24 paths and actual sourceCI37728256136: six required jobs green,864 Rust/63 harnesses/91.288s,22 infra and70 organization tests; all4 new recovery scenarios pass, runtime/package evidence read. Security5451459825 exact053/base d647 and historicallease2eac ancestry verified. Reject whole Issue19 delivery: branchless hourly writer, legacy fence, restart-safe cutover and policy/task reconciliation remain unfinished; draft QA gate is skipped.",
+    "next_action": "Master: isolate the concrete handoff-loss bug into a distinct urgent reliability repair for the live scheduler, preserving Issue19/PR24/branch and all migration work. Do not certify or merge incomplete migration.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -1478,6 +1478,70 @@
         "Fresh pinned control.py and qa.py show scheduling uses managed native Issues/attempts and reviews use actual source-bound native proof, not retained checkpoint metadata."
       ],
       "findings": []
+    },
+    "recovery_overwrite_ci": {
+      "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
+      "run_id": 37728256136,
+      "jobs": [
+        {
+          "id": 113151249505,
+          "name": "validate",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113151249807,
+          "name": "Build x86_64-unknown-linux-musl",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113151249817,
+          "name": "Build aarch64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113151249821,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113151249890,
+          "name": "Build x86_64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113151811861,
+          "name": "package",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113151939866,
+          "name": "release",
+          "status": "completed",
+          "conclusion": "skipped"
+        }
+      ],
+      "tests": {
+        "rust": 864,
+        "harnesses": 63,
+        "seconds": 91.288,
+        "infra": 22,
+        "organization": 70,
+        "new_regressions": 4
+      },
+      "reviewed_package_job": 113151811861
+    },
+    "recovery_overwrite_qa": {
+      "verdict": "rejected",
+      "scope": "Whole Issue19 delivery; preparatory adapter and durability regressions reviewed",
+      "head": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
+      "base": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+      "security_native_review": 5451459825
     }
   },
   "attempts": {
