@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 510,
-  "lease": {
-    "id": "wake12-qa-compact-review-20261008T042605Z",
-    "worker": "codex-hourly-20261008T042605Z",
-    "role": "qa",
-    "issue": 25,
-    "acquired_at": "2026-10-08T04:58:56Z",
-    "heartbeat_at": "2026-10-08T05:01:29Z",
-    "expires_at": "2026-10-08T05:46:29Z",
-    "branch": "work/publication-handoff-recovery",
-    "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
-    "pr": 26
-  },
+  "generation": 511,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-08T05:01:29Z",
     "issue": 25,
