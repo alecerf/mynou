@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 763,
+  "generation": 764,
   "lease": {
     "id": "comment-6064646554",
     "worker": "codex-product-20261008T1637Z",
     "role": "rust",
     "issue": 36,
     "acquired_at": "2026-10-08T16:43:09Z",
-    "heartbeat_at": "2026-10-08T16:43:09Z",
-    "expires_at": "2026-10-08T17:28:09Z",
+    "heartbeat_at": "2026-10-08T16:56:22Z",
+    "expires_at": "2026-10-08T17:41:22Z",
     "branch": "work/36-par2-available-rows",
-    "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
-    "pr": null
+    "commit": "90e2212d1ee474bde9c7ef24a465649851a2f0f8",
+    "pr": 37
   },
   "checkpoint": {
-    "at": "2026-10-08T16:41:59Z",
+    "at": "2026-10-08T16:56:22Z",
     "issue": 36,
-    "role": "master",
-    "branch": "trunk",
-    "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
-    "pr": null,
-    "summary": "User product continuation recorded as nativeIssue36. Proposed v0.22.26 selects independent available PAR2 parity rows; original implementation currently requires0..missing_count. Exact acceptance/riskhigh in Issue36. Default57cfe88/v0.22.25 actual CI/security/organization green; Issue19 cutover complete, sole notes5ad history preserved. New work/36-par2-available-rows branches original default57, no code edits or PR yet.",
-    "next_action": "Confirm Master checkpoint, release, then acquire Rust36 at work/36-par2-available-rows57cfe88. Implement deterministic bounded independent row selection and exact-exponent inversion/residuals, original CI-only edge fixtures, focused English docs and proposed0.22.26. Open one linked PR, actualCI, distinct Security and complete-diff QA before gated merge/Actions publication.",
+    "role": "rust",
+    "branch": "work/36-par2-available-rows",
+    "commit": "90e2212d1ee474bde9c7ef24a465649851a2f0f8",
+    "pr": 37,
+    "summary": "Rust36 source committed/pushed original90e2212d1ee474bde9c7ef24a465649851a2f0f8/treeae744859b16f19cbfb74b714cb258ca6df298f31, sole parent57cfe88, work/36-par2-available-rows / PR37. Proposed0.22.26 adds independent available row selection with bounded charged work/exact-exponent inversion/residuals; 11 original CI-only fixtures and focused docs/version. No local validation. Client additionally requests persistent Product Owner planning and prioritized genuine product backlog; recorded next-release/docs36, to be queued by Master without weakening one-worker or current QA.",
+    "next_action": "Inspect actual source CI, fix any red through Rust commits; checkpoint/release implementation. Separate Security and complete-diff QA acquire exact source/base PR37 and record actual evidence before gated delivery/Actions publication. Preserve client Product Owner/backlog request; after current source checkpoint seed bounded evidence-based feature Issues and reviewed persistent planning Skill.",
     "publication": {
       "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
       "state": "published",
@@ -498,14 +498,14 @@
       "publication_pr_handoff": 6062225589
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T15:33:24Z",
-      "issue": 19,
-      "role": "quality",
+      "at": "2026-10-08T16:41:59Z",
+      "issue": 36,
+      "role": "master",
       "branch": "trunk",
       "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
-      "pr": 24,
-      "summary": "Issue19 delivered/closed Done; PR24 merged trunk57cfe88bd9dac249d6949a470afc357e835060f9, v0.22.25 actual immutable publication406963891/CI37797446857. Guarded retirement6063301706/run37801066190/job113393116862/receipt6063318234: notes9404057/gen757 retired-confirmed, prepared-parentff8219b. Legacy matching refs empty; only branch trunk. Native compare preserves held QA c9d769 ancestry. Actual hourly Task78077a9 prompt/ID/cadence/timezone verified, attestation6063044134. Acceptance handoffs Issue6063368802/PR6063369145; prerequisites25/28/30 and PAR2 roadmap2 completed. Fresh native open Issues/PRs empty. Canonical migration phase/current checkpoint governs; earlier source/time-bound auxiliary records are historical, not pending requests.",
-      "next_action": "Confirm this real post-retirement canonical notes checkpoint and release Qualitycomment-6063261719; verify lease-null. Then idle: no executable native user work or bounded evidence-based defect remains from this delivery. Existing hourly Task remains best-effort recovery. Next wake must resolve installed config/fixed refs, verify historical fence ancestry and canonical notes lease before domain; do not recreate legacy or repeat delivered cutover/publication/task updates."
+      "pr": null,
+      "summary": "User product continuation recorded as nativeIssue36. Proposed v0.22.26 selects independent available PAR2 parity rows; original implementation currently requires0..missing_count. Exact acceptance/riskhigh in Issue36. Default57cfe88/v0.22.25 actual CI/security/organization green; Issue19 cutover complete, sole notes5ad history preserved. New work/36-par2-available-rows branches original default57, no code edits or PR yet.",
+      "next_action": "Confirm Master checkpoint, release, then acquire Rust36 at work/36-par2-available-rows57cfe88. Implement deterministic bounded independent row selection and exact-exponent inversion/residuals, original CI-only edge fixtures, focused English docs and proposed0.22.26. Open one linked PR, actualCI, distinct Security and complete-diff QA before gated merge/Actions publication."
     },
     "task_reconciliation": {
       "issue": 19,
@@ -702,7 +702,7 @@
       "task_receipt": 6063044134,
       "task_id": "6ac54c387af0819184713674c48b3845",
       "fence_sha": "5c305bfbee1e0225dcd8a35cdbb8cb491a084f11",
-      "transport_comment_id": 6064626226,
+      "transport_comment_id": 6064872761,
       "retirement": "confirmed",
       "notes_proof_sha": "96e3439dbc1800f708aab0c5680211f105176e14"
     }
