@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 731,
+  "generation": 732,
   "lease": {
     "id": "codex-continuous-20261008143128Z-quality-1791470204000",
     "worker": "codex-continuous-20261008143128Z",
     "role": "quality",
     "issue": 19,
     "acquired_at": "2026-10-08T14:36:44Z",
-    "heartbeat_at": "2026-10-08T14:47:30Z",
-    "expires_at": "2026-10-08T15:32:30Z",
+    "heartbeat_at": "2026-10-08T14:50:29Z",
+    "expires_at": "2026-10-08T15:35:29Z",
     "branch": "work/control-ref-adapter",
-    "commit": "b8493cad2c475c39e48f1eb7acb10e678e6c0832",
+    "commit": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T14:47:30Z",
+    "at": "2026-10-08T14:50:29Z",
     "issue": 19,
     "role": "quality",
     "branch": "work/control-ref-adapter",
-    "commit": "b8493cad2c475c39e48f1eb7acb10e678e6c0832",
+    "commit": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
     "pr": 24,
-    "summary": "Authored original owned fenced checkpoint/release, strict Master19/source scope and native-parent released-fence recovery plus ten CI-only regression scenarios. Edits remain in memory; source head b849 unchanged. No local checks or activation performed.",
-    "next_action": "Persist an original integration commit preserving b849 and current default c348 histories, continuous policy and published v24; propose unpublished v25, then sequential Security/full-diff QA and actual CI.",
+    "summary": "Pushed original source 6951b58: owned fenced checkpoint/release, parent-bound released/expired recovery and eleven CI-only regressions. Integration preserves b849 and published continuous default c348; v24 notes retained and new unpublished v25 proposed. No local checks, live fence, notes activation or Task changes.",
+    "next_action": "Record native implementation handoff; release Quality19, acquire exact-head Security19, inspect complete actual PR diff and current CI; independent QA after Security and actual checks.",
     "publication": {
       "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
       "state": "published",
@@ -532,18 +532,19 @@
       "issue_handoff": 6061031567,
       "pr_handoff": 6061031909
     },
-    "pending_source_edits": {
-      "issue": 19,
+    "pending_source_edits": null,
+    "source_fix19": {
+      "head": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
+      "tree": "a66b831197084b4e75d867fe63bb179accfe4cab",
+      "branch": "work/control-ref-adapter",
       "pr": 24,
-      "head": "b8493cad2c475c39e48f1eb7acb10e678e6c0832",
       "base": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
-      "paths": [
-        "engineering/control.py",
-        "engineering/migration.py",
-        "engineering/commands.py",
-        "engineering/tests/test_migration.py"
+      "parents": [
+        "b8493cad2c475c39e48f1eb7acb10e678e6c0832",
+        "c348081a0024dc70552c5ba1b2eda0000f9eb177"
       ],
-      "stage": "authored, not remotely committed or CI-verified"
+      "qa_finding": 5457079884,
+      "stage": "remote source persisted; fresh CI/Security/QA required"
     }
   },
   "attempts": {
