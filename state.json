@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 767,
+  "generation": 768,
   "lease": {
     "id": "comment-6065010478",
     "worker": "codex-product-20261008T1637Z",
     "role": "security",
     "issue": 36,
     "acquired_at": "2026-10-08T17:04:27Z",
-    "heartbeat_at": "2026-10-08T17:04:27Z",
-    "expires_at": "2026-10-08T17:49:27Z",
+    "heartbeat_at": "2026-10-08T17:06:13Z",
+    "expires_at": "2026-10-08T17:51:13Z",
     "branch": "work/36-par2-available-rows",
     "commit": "65530f4f432a1b0af6ba71457c5ded574b91e728",
     "pr": 37
   },
   "checkpoint": {
-    "at": "2026-10-08T17:03:41Z",
+    "at": "2026-10-08T17:06:13Z",
     "issue": 36,
-    "role": "rust",
+    "role": "security",
     "branch": "work/36-par2-available-rows",
     "commit": "65530f4f432a1b0af6ba71457c5ded574b91e728",
     "pr": 37,
-    "summary": "PR #37 original source 65530f4f432a1b0af6ba71457c5ded574b91e728 applies actual CI rustfmt feedback from validate job 113433230875; source 90e2212 has successful GNU/musl/ARM builds and security jobs but validate failed before tests. No local checks. Product Owner/backlog request retained for a separate organization change after current recovery.",
-    "next_action": "Confirm this source checkpoint; release Rust and acquire Security for complete-diff integrity/budget review, then QA under its exact head/base lease. Observe new source CI, correct actual failures; never merge red/unreviewed.",
+    "summary": "Security36 reviewed every actual PR37 path at head65530f4/base57cfe88: validated<=8 normalized basis, aggregate caps and candidate precharge; selected exponent/header identity, source SHA before/after, slice/prefix/file checks, cancellation, immutable inputs and existing private owner binding preserved. Source-history113436473218 passed:3098 reachable objects,0 recognized findings,0 gaps. Connected Actions-log read unavailable while job pending; no audit/CI green or publication claim.",
+    "next_action": "Post truthful exact-head/base native Security code-review record at this lease checkpoint; release, acquire QA36, inspect actual diff/acceptance and await every actual required source/audit job before QA pass. Preserve client Product Owner/backlog direction separately.",
     "publication": {
       "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
       "state": "published",
@@ -702,7 +702,7 @@
       "task_receipt": 6063044134,
       "task_id": "6ac54c387af0819184713674c48b3845",
       "fence_sha": "5c305bfbee1e0225dcd8a35cdbb8cb491a084f11",
-      "transport_comment_id": 6064998064,
+      "transport_comment_id": 6065041058,
       "retirement": "confirmed",
       "notes_proof_sha": "96e3439dbc1800f708aab0c5680211f105176e14"
     }
