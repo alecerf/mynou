@@ -1,36 +1,80 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 579,
+  "generation": 580,
   "lease": {
     "id": "codex-hourly-20261008082654Z-quality-20261008084148",
     "worker": "codex-hourly-20261008082654Z",
     "role": "quality",
     "issue": 28,
     "acquired_at": "2026-10-08T08:41:48Z",
-    "heartbeat_at": "2026-10-08T08:44:39Z",
-    "expires_at": "2026-10-08T09:29:39Z",
+    "heartbeat_at": "2026-10-08T08:54:58Z",
+    "expires_at": "2026-10-08T09:39:58Z",
     "branch": "trunk",
     "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
     "pr": 29
   },
   "checkpoint": {
-    "at": "2026-10-08T08:44:39Z",
+    "at": "2026-10-08T08:54:58Z",
     "issue": 28,
     "role": "quality",
     "branch": "trunk",
     "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
     "pr": 29,
-    "summary": "CorrectivePR29 actuallymerged todefaultcafac339b3e24954fc8a802d97fe3cfb793c05d6 after currentall10objectivejobs anddistinctSecurity5453915524/QA5453951428. Originalb028b1dd preservedbymerge; fresh0.22.21 source. Failed04/v20history remainsrecorded, neverclaimedpublished. NeedactualnewdefaultCI/privatepackage/digest/immutablefour-assetreleaseproof beforepublicationacceptance; no manualpublication orpackagevisibility change.",
-    "next_action": "Recovernewdefault nativeCI; dispatchonlyifabsent withdurableintent/fences. Verifyactualprivatepackage/releasewhenready, retainpendingproof andhandoff ifwaiting. Inspectnativebranchdeletion/Issue28 status; preserve19/PR24.",
+    "summary": "Actualv0.22.21 publication verified atcafac339b3e24954fc8a802d97fe3cfb793c05d6: defaultCI37751867488 all7jobssuccess/864Rust49.408s/24infra64org; nativeimmutable406617913 botrelease published08:49:26Z, exactcommittag andfourassets/digests. Release113228328578 actualproofprivatepackage15695108/publicrepo1403318143/reported-match, image9ba8e1bd..., checkedLinux09b21bc... matchesreleaseasset, nonroot1001:1001cleanupcompleted. DefaultSecurity4702objects/560archives2102members0recognizedfindings/gaps; pending-snapshotlimits explicit. Close28/Done, reconcile19 nativeclosedblockers, preservePR24 before nextrole.",
+    "next_action": "Finish native28 closure/Done and19 dependency-readiness repair, recordactual release handoff and releaseQuality. Whilewakebudgetremains, acquireMaster for preserved19/PR24 recovery; no unrelatedfeatures, newworker, localchecks orduplicate scheduling.",
     "publication": {
       "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
-      "state": "awaiting-native-ci-observation",
-      "at": "2026-10-08T08:44:39Z",
+      "state": "published",
+      "at": "2026-10-08T08:49:26Z",
       "version": "0.22.21",
-      "recovery_issue": 28,
-      "supersedes_failed_source": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
-      "supersedes_failed_run": 37745425271
+      "run_id": 37751867488,
+      "status": "completed",
+      "conclusion": "success",
+      "release_id": 406617913,
+      "immutable": true,
+      "tag_commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
+      "assets": [
+        {
+          "id": 621269215,
+          "name": "mynou-v0.22.21-linux-x86_64",
+          "size": 4891488,
+          "digest": "sha256:09b21bc988d90c7dcd43116e1e0f5927b09ea7f281996d789b09336556674157"
+        },
+        {
+          "id": 621269212,
+          "name": "mynou-v0.22.21-macos-arm64",
+          "size": 3729088,
+          "digest": "sha256:64a5ba4825c83124e2270ef2de112f9826b9b09bdc2119d21d6c5b9460cb1731"
+        },
+        {
+          "id": 621269218,
+          "name": "mynou-v0.22.21-macos-x86_64",
+          "size": 4508464,
+          "digest": "sha256:bf2eacf3a4217169dfa9d52b06ac7315ba9e9802d2fc8a9c3e1d9148425abaf1"
+        },
+        {
+          "id": 621269216,
+          "name": "SHA256SUMS",
+          "size": 281,
+          "digest": "sha256:cb6f41638e734dc30241c5bb1b9e37752c523f65ea4c61638a5bfd01ff917001"
+        }
+      ],
+      "registry_proof": {
+        "binary_sha256": "09b21bc988d90c7dcd43116e1e0f5927b09ea7f281996d789b09336556674157",
+        "image": "ghcr.io/alecerf/mynou@sha256:9ba8e1bdd13e465a0a2e9285abe4547da14c140f6ff0784a18c32fea97b81aee",
+        "package_id": 15695108,
+        "repository": "alecerf/mynou",
+        "repository_association": "reported-match",
+        "repository_id": 1403318143,
+        "repository_visibility": "public",
+        "source": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
+        "verification_cleanup": "completed",
+        "verification_user": "1001:1001",
+        "version": "0.22.21",
+        "visibility": "private"
+      },
+      "security_audit_run": 37751867517
     },
     "previous_checkpoint": {
       "at": "2026-10-08T08:44:33Z",
@@ -69,22 +113,22 @@
       "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c"
     },
     "public_security": {
-      "commit": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
-      "run_id": 37745425165,
-      "history_job": 113205637837,
-      "logs_job": 113205637451,
-      "git_objects": 4626,
-      "completed_attempt_archives": 542,
-      "log_members": 1966,
+      "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
+      "run_id": 37751867517,
+      "history_job": 113226798654,
+      "logs_job": 113226798537,
+      "git_objects": 4702,
+      "completed_attempt_archives": 560,
+      "log_members": 2102,
       "recognized_findings": 0,
       "coverage_gaps": 0,
       "excluded_pending_runs": [
-        37745425271,
-        37745425177,
-        37745425165
+        37751867517,
+        37751867490,
+        37751867488
       ],
-      "native_scanning_admin": "403 Resource not accessible by integration; no enabled native setting claimed",
-      "limitations": "Selected provider/private-key patterns and completed snapshot only; no arbitrary sensitive-data guarantee."
+      "limitations": "Selected provider/private-key patterns and completed snapshot only; no arbitrary sensitive-data guarantee.",
+      "native_scanning_admin": "Prior HTTP403 integration denial remains documented; no repeated request or enabled native-setting claim."
     },
     "delivery": {
       "state": "corrective-merged-awaiting-publication",
@@ -118,7 +162,7 @@
       "tree": "a7d42c893c83cd87b1fcdb59766f5b1dfdcbefe6",
       "parent": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
       "version": "0.22.21",
-      "state": "corrective-merged-awaiting-actions-publication",
+      "state": "publication-verified",
       "source_ci": 37750720668,
       "security_audit": 37750720672,
       "organization": 37750720597,
@@ -128,7 +172,9 @@
       "qa_checkpoint": "b43c9662c5b34a0f4d952adebb2c706444b704f9",
       "engineering": 37751441590,
       "gate_job": 113225673187,
-      "merge_commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6"
+      "merge_commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
+      "release_id": 406617913,
+      "default_ci": 37751867488
     }
   },
   "attempts": {
