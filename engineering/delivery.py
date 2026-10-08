@@ -8,6 +8,7 @@ from control import labels, label_update, read_state, recover_native, save
 import lease
 import qa
 import migration
+import publication as publication_evidence
 
 
 DISPATCH_VISIBILITY_GRACE = timedelta(minutes=5)
@@ -103,7 +104,7 @@ def recover_publication(api, head, state, prs):
         # A published immutable release is also a terminal observation. Requiring
         # fresh native CI here avoids trusting a stale record while leaving an
         # unrelated active-work handoff untouched on repeated scheduler wakes.
-        if complete and (previous.get("commit") != current or previous.get("state") in ("ci-passed", "published")):
+        if complete and previous.get("commit") == current and previous.get("state") == "published":
             return None
         if run is not None and run["status"] != "completed" and previous.get("run_id") == run["id"]:
             return {"action": "publication-pending", "commit": current, "run": run["id"]}
@@ -112,11 +113,37 @@ def recover_publication(api, head, state, prs):
             managed["number"], api.cfg["default_branch"], current, pr["number"])
         save(api, head, owned, "Acquire exact-source publication recovery")
         try:
+            if complete:
+                try:
+                    detail = publication_evidence.verified(api, current, run)
+                except (APIError, RuntimeError, ValueError, KeyError, TypeError):
+                    checkpoint_publication(api, identity, current, "publication-unverified", run,
+                        "Native immutable release or source-bound private proof is unavailable/conflicting")
+                    raise ValueError("Publication evidence is unverified; preserve native runs/release and recover before new delivery") from None
+                fresh = default_ci_run(api, current)
+                h, s = read_state(api)
+                lease.owned(s, identity, lease.now())
+                if (api.ref(api.cfg["default_branch"]) != current or fresh is None
+                        or fresh["id"] != run["id"] or fresh.get("run_attempt") != run.get("run_attempt")
+                        or fresh["status"] != "completed" or fresh.get("conclusion") != "success"):
+                    raise ValueError("Default source/latest CI changed before publication checkpoint")
+                value = lease.checkpoint(s, lease.now(), identity,
+                    f"Actions publication verified: v{detail['version']} at {current}; immutable release{detail['release_id']}, native run{run['id']} and private source-bound proof.",
+                    "Finish native Issue/dependency/branch cleanup; then resume preserved work or Product planning.", current, pr["number"])
+                value["checkpoint"]["publication"] = detail
+                save(api, h, value, "Record verified immutable default publication")
+                return {"action": "publication-recorded", "pr": pr["number"], "publication": detail}
             detail = dispatch_default_ci(api, identity, current)
             return {"action": "publication-recovery", "pr": pr["number"], "publication": detail}
         finally:
             h, s = read_state(api)
             if lease.valid(s, lease.now()) and s["lease"]["id"] == identity:
+                if (s["checkpoint"].get("role") != "triage" or s["checkpoint"].get("issue") != managed["number"]
+                        or s["checkpoint"].get("at") is None
+                        or lease.time(s["checkpoint"]["at"]) < lease.time(s["lease"]["acquired_at"])):
+                    s = lease.checkpoint(s, lease.now(), identity,
+                        "Exact-source publication recovery stopped before verification; native source/run/release remain authoritative.",
+                        "Inspect the preserved publication evidence before unrelated work.")
                 save(api, h, lease.release(s, lease.now(), identity), "Release publication recovery")
     return None
 
@@ -307,25 +334,52 @@ def run(api, sweep=False):
     repaired = recover_dependencies(api, head, state)
     if repaired is not None:
         return repaired
+    # Existing merged work is recovered before a new proposed merge.
+    for pr in [p for p in prs if p.get("merged_at") and qa.linked_issues(p.get("body"))][:10]:
+        issues = [api.rest("GET", f"issues/{n}") for n in qa.linked_issues(pr.get("body"))]
+        if migration.settings(api.cfg) is not None and pr["number"] == 24 and state["checkpoint"].get("control_migration", {}).get("phase") != "retired":
+            return recover_cutover_metadata(api, head, state, pr, issues)
+        managed = [i for i in issues if "agent-work" in labels(i)]
+        unfinished = any("status:done" not in labels(i) for i in managed)
+        if unfinished:
+            identity = str(uuid.uuid4())
+            default = api.ref(api.cfg["default_branch"])
+            held = lease.acquire(state, lease.now(), identity, "github-actions-cleanup", "quality", managed[0]["number"],
+                api.cfg["default_branch"], default, pr["number"])
+            head = save(api, head, held, "Recover post-merge cleanup")
+            cleanup = None
+            try:
+                cleanup = cleanup_pr(api, pr)
+                return {"action": "cleanup", "pr": pr["number"], "result": cleanup}
+            finally:
+                h, s = read_state(api)
+                if lease.valid(s, lease.now()) and s["lease"]["id"] == identity:
+                    s = lease.checkpoint(s, lease.now(), identity,
+                        f"Post-merge cleanup phase for PR #{pr['number']}: {cleanup if cleanup is not None else 'interrupted; native state requires inspection'}.",
+                        "Verify remaining Issue/dependency/branch hygiene, then resume preserved work.")
+                    save(api, h, lease.release(s, lease.now(), identity), "Release recovered cleanup")
     candidates = [p for p in prs if p["state"] == "open" and not p["draft"] and qa.linked_issues(p.get("body"))]
     result = []
-    # One useful transition per wake. No concurrently active work items.
+    # One deterministic transition; no concurrently active engineering workers.
     for candidate in sorted(candidates, key=lambda p: p["number"])[:5]:
-        try:
-            proof = qa.evaluate(api, candidate["number"], include_gate=True)
-        except ValueError as error:
-            result.append({"pr": candidate["number"], "blocked": str(error)})
+        if ((candidate["head"].get("repo") or {}).get("full_name") != api.repo
+                or candidate["base"]["ref"] != api.cfg["default_branch"]):
             continue
+        issues = [api.rest("GET", f"issues/{n}") for n in qa.linked_issues(candidate.get("body"))]
+        managed = next((i for i in issues if i["state"] == "open" and "agent-work" in labels(i)), None)
+        if managed is None:
+            continue
+        default = api.ref(api.cfg["default_branch"])
         identity = str(uuid.uuid4())
         held = lease.acquire(state, lease.now(), identity, "github-actions-delivery", "triage",
-            proof["issues"][0], candidate["head"]["ref"], proof["head"], candidate["number"])
+            managed["number"], api.cfg["default_branch"], default, candidate["number"])
         head = save(api, head, held, "Acquire serialized objective delivery")
         try:
-            # Refresh every gate after acquisition; review or CI may have changed.
+            # Full fresh objective review happens once, under delivery ownership.
             proof = qa.evaluate(api, candidate["number"], include_gate=True)
             current = api.rest("GET", f"pulls/{candidate['number']}")
             lease.owned(read_state(api)[1], identity, lease.now())
-            if current["mergeable"] is not True or api.ref(api.cfg["default_branch"]) != proof["base"]:
+            if current["mergeable"] is not True or proof["base"] != default or api.ref(api.cfg["default_branch"]) != proof["base"]:
                 raise ValueError("PR integration or base changed; revalidate before merge")
             merged = api.rest("PUT", f"pulls/{candidate['number']}/merge", {"sha": proof["head"], "merge_method": "merge"})
             if not merged.get("merged"):
@@ -333,36 +387,28 @@ def run(api, sweep=False):
             head, held = read_state(api)
             held = lease.checkpoint(held, lease.now(), identity,
                 f"PR #{candidate['number']} merged at {merged['sha']}; exact QA/CI gates passed.",
-                "Finish native Issue/dependency/branch cleanup, then resume backlog.", merged["sha"])
+                "Observe exact-default Actions publication; release at that wait, then recover cleanup.", merged["sha"])
             head = save(api, head, held, "Checkpoint successful native PR merge")
             publication = dispatch_default_ci(api, identity, merged["sha"])
-            final = api.rest("GET", f"pulls/{candidate['number']}")
-            cleanup = cleanup_pr(api, final)
-            # The currently held execution branch is kept by cleanup_branch;
-            # release then a later sweep/native GitHub deletion removes it.
-            result.append({"pr": candidate["number"], "merged": merged["sha"], "publication": publication, "cleanup": cleanup})
+            # Native CI publication is an external wait. Do not consume the
+            # remaining request/release budget auditing every Issue/branch here.
+            result.append({"pr": candidate["number"], "merged": merged["sha"], "publication": publication,
+                "cleanup": "pending exact-default publication"})
+        except ValueError as error:
+            result.append({"pr": candidate["number"], "blocked": str(error)})
         finally:
             current_head, current_state = read_state(api)
             if lease.valid(current_state, lease.now()) and current_state["lease"]["id"] == identity:
+                owner = current_state["lease"]
+                if (current_state["checkpoint"].get("role") != owner["role"]
+                        or current_state["checkpoint"].get("issue") != owner["issue"]
+                        or current_state["checkpoint"].get("at") is None
+                        or lease.time(current_state["checkpoint"]["at"]) < lease.time(owner["acquired_at"])):
+                    current_state = lease.checkpoint(current_state, lease.now(), identity,
+                        f"PR #{candidate['number']} delivery did not complete; actual source and objective gates require recovery.",
+                        "Inspect the native PR/gates and preserved source before another delivery attempt.")
                 save(api, current_head, lease.release(current_state, lease.now(), identity), "Release mechanical delivery lease")
-        return {"action": "delivered", "results": result}
-    # Recover cleanup after a worker disappeared immediately following merge.
-    for pr in [p for p in prs if p.get("merged_at") and qa.linked_issues(p.get("body"))][:10]:
-        issues = [api.rest("GET", f"issues/{n}") for n in qa.linked_issues(pr.get("body"))]
-        if migration.settings(api.cfg) is not None and pr["number"] == 24 and state["checkpoint"].get("control_migration", {}).get("phase") != "retired":
-            return recover_cutover_metadata(api, head, state, pr, issues)
-        unfinished = any("agent-work" in labels(i) and "status:done" not in labels(i) for i in issues)
-        if unfinished:
-            identity = str(uuid.uuid4())
-            held = lease.acquire(state, lease.now(), identity, "github-actions-cleanup", "quality", issues[0]["number"],
-                pr["head"]["ref"], pr["merge_commit_sha"], pr["number"])
-            head = save(api, head, held, "Recover post-merge cleanup")
-            try:
-                cleanup = cleanup_pr(api, pr)
-                return {"action": "cleanup", "pr": pr["number"], "result": cleanup}
-            finally:
-                h, s = read_state(api)
-                save(api, h, lease.release(s, lease.now(), identity), "Release recovered cleanup")
+        return {"action": "delivered" if any("merged" in r for r in result) else "idle-or-blocked", "results": result}
     return {"action": "idle-or-blocked", "results": result}
 
 
@@ -382,3 +428,4 @@ def branch_audit(api):
         audit.append({"branch": b["name"], "head": b["commit"]["sha"], "candidate": candidate, "reason": reason})
     return {"action": "quality-audit", "branches": audit,
         "instruction": "Candidates require a complete fresh PR/Issue/comment/head audit and an owned Quality/Triage lease before cleanup."}
+

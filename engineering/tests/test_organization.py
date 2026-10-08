@@ -502,10 +502,12 @@ class PublicationScenarios(unittest.TestCase):
             return super().save(api, expected, value, message)
 
     def native_run(self, event="workflow_dispatch", status="completed", conclusion="success", **extra):
-        return dict(id=40, head_sha=HEAD, head_branch="trunk", event=event, status=status, conclusion=conclusion, **extra)
+        return dict(id=40, head_sha=HEAD, head_branch="trunk", event=event, status=status, conclusion=conclusion, run_attempt=1, **extra)
 
     def execute(self, native, at=AT):
-        with patch.object(delivery, "read_state", side_effect=native.read), patch.object(delivery, "save", side_effect=native.save), patch.object(lease, "now", return_value=at):
+        proof = {"commit": HEAD, "state": "published", "version": "0.22.29", "at": lease.stamp(AT),
+            "release_id": 42, "immutable": True, "run_id": 40, "run_attempt": 1}
+        with patch.object(delivery, "read_state", side_effect=native.read), patch.object(delivery, "save", side_effect=native.save), patch.object(lease, "now", return_value=at), patch.object(delivery.publication_evidence, "verified", return_value=proof):
             return delivery.run(native)
 
     def test_bot_merge_with_no_push_run_dispatches_even_when_issue_is_done(self):
@@ -576,7 +578,8 @@ class PublicationScenarios(unittest.TestCase):
             native = self.Publication()
             native.runs = [self.native_run(event=event)]
             result = self.execute(native)
-            self.assertEqual(result["action"], "dependency-recovery")
+            self.assertEqual(result["action"], "publication-recorded")
+            self.assertEqual(self.execute(native)["action"], "dependency-recovery")
             self.assertFalse(native.dispatches)
             self.assertIn("status:ready", control.labels(native.issues[1]))
 
@@ -605,12 +608,12 @@ class PublicationScenarios(unittest.TestCase):
         self.execute(native)
         native.runs = [self.native_run()]
         result = self.execute(native, AT + timedelta(minutes=1))
-        self.assertEqual(result["publication"]["state"], "ci-passed")
+        self.assertEqual(result["publication"]["state"], "published")
         self.assertEqual(native.current_state["checkpoint"]["publication"]["run_id"], 40)
         self.assertEqual(len(native.dispatches), 1)
 
     def test_terminal_published_source_does_not_overwrite_active_work_on_repeated_wakes(self):
-        for terminal in ["published", "ci-passed"]:
+        for terminal in ["published"]:
             native = self.Publication()
             native.runs = [self.native_run()]
             native.current_state["checkpoint"] = {
@@ -719,7 +722,7 @@ class PublicationScenarios(unittest.TestCase):
         self.assertNotIn("pull_request_target", privileged)
         self.assertNotIn("actions: write", checks)
 
-    def test_confirmed_automatic_merge_dispatches_exact_merged_commit_before_cleanup(self):
+    def test_confirmed_merge_releases_default_source_lease_at_publication_wait(self):
         merged_commit = "e" * 40
         class Merger(self.Publication):
             def __init__(self):
@@ -739,14 +742,19 @@ class PublicationScenarios(unittest.TestCase):
         proof = {"issues": [1], "head": HEAD, "base": BASE}
         with patch.object(qa, "evaluate", return_value=proof) as gates:
             result = self.execute(native)
-        self.assertEqual(gates.call_count, 2)  # Before and after acquiring delivery.
+        self.assertEqual(gates.call_count, 1)  # Complete fresh gates under ownership.
         self.assertEqual(result["action"], "delivered")
         self.assertEqual(native.merges[0][0], {"sha": HEAD, "merge_method": "merge"})
         self.assertEqual(native.dispatches[0][1]["commit"], merged_commit)
+        self.assertEqual(native.dispatches[0][1]["branch"], "trunk")
+        self.assertEqual(native.merges[0][1]["commit"], BASE)
+        self.assertEqual(native.merges[0][1]["branch"], "trunk")
         self.assertEqual(native.dispatches[0][2]["commit"], merged_commit)
         self.assertEqual(native.current_state["checkpoint"]["publication"]["state"], "accepted")
         self.assertIsNone(native.current_state["lease"])
-        self.assertIn("status:done", control.labels(native.issues[0]))
+        self.assertNotIn("status:done", control.labels(native.issues[0]))
+        self.assertFalse(native.deleted)
+        self.assertEqual(result["results"][0]["cleanup"], "pending exact-default publication")
 
     def test_unmanaged_or_wrong_repository_merge_never_dispatches(self):
         for kind in ["unmanaged", "fork", "base"]:
@@ -777,3 +785,4 @@ class AtomicCAS(unittest.TestCase):
         self.assertEqual(race.assert_parent, [HEAD])
         self.assertEqual(race.head, "e" * 40)
         self.assertEqual(race.updates, [{"sha": "f" * 40, "force": False}])
+

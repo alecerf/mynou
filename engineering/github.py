@@ -23,6 +23,25 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise APIError(code)
 
 
+class StorageRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def artifact_destination(value):
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        host = parsed.hostname or ""
+        allowed = (parsed.scheme == "https" and not parsed.username and not parsed.password
+            and parsed.port in (None, 443) and not parsed.fragment
+            and (host.endswith(".blob.core.windows.net") or host.endswith(".githubusercontent.com")))
+    except (TypeError, ValueError):
+        allowed = False
+    if not allowed:
+        raise ValueError("Unsupported publication artifact storage destination")
+    return value
+
+
 def reference(value):
     """Normalize only branch/notes references; never admit release tag writes."""
     if not isinstance(value, str) or not 1 <= len(value) <= 200:
@@ -98,12 +117,15 @@ class GitHub:
         self.opener = urllib.request.build_opener(NoRedirect())
         self.calls = 0
 
-    def request(self, method, path, value=None):
-        if not path.startswith("/") or path.startswith("//"):
-            raise ValueError("GitHub paths must be absolute API paths")
+    def consume_request(self):
         self.calls += 1
         if self.calls > 150:
             raise ValueError("Bounded GitHub request budget exhausted; checkpoint and resume")
+
+    def request(self, method, path, value=None):
+        if not path.startswith("/") or path.startswith("//"):
+            raise ValueError("GitHub paths must be absolute API paths")
+        self.consume_request()
         data = None if value is None else json.dumps(value).encode()
         request = urllib.request.Request("https://api.github.com" + path, data=data, method=method,
             headers={"Authorization": "Bearer " + self.token, "Accept": "application/vnd.github+json",
@@ -120,6 +142,38 @@ class GitHub:
         if len(raw) > MAX_RESPONSE:
             raise ValueError("GitHub response exceeds the bounded size")
         return json.loads(raw) if raw else None
+
+    def publication_archive(self, artifact_id):
+        """Read one small fixed native artifact; never forward auth to signed storage."""
+        if type(artifact_id) is not int or artifact_id <= 0:
+            raise ValueError("Invalid native publication artifact identity")
+        self.consume_request()
+        opener = urllib.request.build_opener(StorageRedirect())
+        request = urllib.request.Request("https://api.github.com/repos/" + self.repo
+            + "/actions/artifacts/" + str(artifact_id) + "/zip", headers={
+                "Authorization": "Bearer " + self.token, "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "mynou-engineering"})
+        limit = 64 * 1024
+        try:
+            try:
+                response = opener.open(request, timeout=30)
+            except urllib.error.HTTPError as redirect:
+                if redirect.code != 302:
+                    raise APIError(redirect.code) from None
+                destination = artifact_destination(redirect.headers.get("Location", ""))
+                self.consume_request()
+                response = opener.open(urllib.request.Request(destination), timeout=30)
+            with response:
+                raw = response.read(limit + 1)
+        except urllib.error.HTTPError as error:
+            raise APIError(error.code) from None
+        except urllib.error.URLError:
+            raise RuntimeError("Publication artifact transport unavailable") from None
+        except OSError:
+            raise RuntimeError("Publication artifact transport unavailable") from None
+        if len(raw) > limit:
+            raise ValueError("Publication artifact exceeds the bounded size")
+        return raw
 
     def rest(self, method, path, value=None):
         return self.request(method, "/repos/" + self.repo + "/" + path, value)
@@ -185,3 +239,4 @@ class GitHub:
         if ref_commit(updated, full) != sha:
             raise RuntimeError("Control update response disagrees; stop and reconstruct remote state")
         return sha
+

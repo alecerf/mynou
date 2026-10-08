@@ -1,4 +1,26 @@
-# Current work — proposed 0.22.28 private guided setup
+# Current work — proposed 0.22.29 verified publication recovery
+
+Actions actually published immutable v0.22.28 at
+`46a6b67a6ce3de468f2304e7847d6da04203d056` in complete successful
+[CI37834316581](https://github.com/alecerf/mynou/actions/runs/37834316581).
+Release407208110 was published2026-10-08T19:51:44Z with the exact tag,
+four named/digested assets and actual source-bound private image/nonroot/cleanup
+proof. Issue41/PR47 retain separate Security/QA, accepted gate and cleanup evidence.
+Its read-only private Setup page is shipped; configuration presence remains
+distinct from verified connectivity or permissions.
+
+[Issue44](https://github.com/alecerf/mynou/issues/44) repairs the verified native
+publication signal consumed by Product planning. It also repairs directly blocking
+legacy default-merge recovery and releases delivery at the external publication
+wait within the existing request ceiling. See [scope](releases/0.22.29.md).
+New source requires actual CI, distinct Security/full-diff QA and Actions-only
+publication. No new product feature or local verification is claimed here.
+
+Native39 and45 remain bounded media-sized PAR2 and live-progress proposals;
+40 is actually blocked by39 and46 requires triage. Product42 maintains useful
+native proposals after recovered delivery; native metadata overrides this snapshot.
+
+## Earlier guided setup scope
 
 Actions actually published immutable v0.22.27 at
 `5fb6bcb46b80926b212e5bce0fccbf42addcfcbe` in complete successful
@@ -14,7 +36,7 @@ bounded live progress (P2). #40 remains Needs Triage and actually blocked by39;
 #44 records the actual structured-publication rearm gap; fix it after41.
 These are native proposal/priority decisions, not delivered features or dates.
 
-[Issue41](https://github.com/alecerf/mynou/issues/41) now proposes a private
+[Issue41](https://github.com/alecerf/mynou/issues/41) delivered a private
 server-rendered Setup page using existing configuration, browser sessions and
 guarded source/Usenet diagnostics. Static missing/attention/configured/optional
 states, matching native routes and first-request guidance expose no raw paths,
@@ -151,3 +173,4 @@ jobs, test counts, seven bot assets and prior immutability at every publication.
 After bootstrap, each green release queues its next bounded scope. English,
 Rust std only, no local validation or manual publication. No unmeasured
 performance or broad parity claims.
+
