@@ -66,8 +66,9 @@ slices, eight damaged or missing slices, 16 MiB of content and 1 MiB per slice.
 `RecoveryLimits` may tighten the 32 MiB additional-memory and 128 Mi field
 operation ceilings. Captured metadata and caller-owned inputs are excluded from
 the additional-memory budget. Memory/work bounds are checked before parity
-buffers and output are allocated. Missing slices require consecutive recovery
-exponents starting at zero; unsupported row selections fail closed.
+buffers and output are allocated. The initial 0.22.12 subset required consecutive recovery
+exponents starting at zero. The proposed 0.22.26 increment selects a bounded
+independent basis from available captured exponents, as described below.
 
 Recovery rechecks source length/SHA-256 before and after the operation, and binds
 each used packet header, payload SHA-256 and packet MD5 to the captured metadata.
@@ -227,3 +228,36 @@ grants no automatic queue activation, existing-file repair, overwrite, download,
 media/import/Plex or library permission. Those gates remain a subsequent integration.
 Original CI-only fixtures and separately leased Security/QA establish delivery in
 [Issue #15](https://github.com/alecerf/mynou/issues/15).
+
+## Available independent parity rows — proposed 0.22.26
+
+Single-file, multi-file and owner-bound workspace recovery can now use nonzero
+or nonconsecutive available recovery exponents. The reader retains unique
+exponents0–65534 in ascending order. Recovery builds a small normalized basis
+over the actual erased global Main/file/slice columns, skips dependent candidates,
+and stops when it has enough independent rows. For example, rows0 and21845 are
+dependent for erased columns0 and2; a later independent row can complete the
+basis. Packet order never changes that selection.
+
+The chosen exponents drive both inversion and parity residuals. A rank-deficient
+set fails without output. A mathematically incorrect selected row fails the
+existing final integrity checks; there is no combinatorial retry across alternative
+bases and no certification of unused parity. Source identity and packet reread
+binding, padded slice MD5/CRC32, prefix/full-file checks, immutable inputs and
+cooperative cancellation remain required.
+
+All existing hard bounds remain. In addition to residual/reconstruction and
+inversion work, each examined candidate is conservatively precharged
+`m*m + 2*m + 1` field operations for at most `m=8` erased slices, including
+coefficients, elimination, normalization and inversion. Dependent candidates
+consume that budget too. Selection uses a fixed eight-row basis; it completes
+before parity buffers and reconstructed output are allocated. A tight captured
+policy can reject this extra work; limits are never raised implicitly.
+
+This extends the existing recovery APIs and private workspace. It does not merge
+PAR2 volumes, repair existing files, grant queue/library permission or establish
+hostile-filesystem snapshot guarantees. Original independent polynomial-oracle
+fixtures cover shifted/nonconsecutive rows, rank deficiency, skipped dependencies,
+global multi-file order, eight erasures, field-work bounds, corruption, cancellation
+and checked private reopening. Actual CI and separate Security/QA evidence belong
+to Issue #36 and its linked PR; this proposed scope is not publication evidence.

@@ -1,32 +1,33 @@
-# Current product work — proposed 0.22.19 container cleanup
+# Current product work — proposed 0.22.26 available PAR2 rows
 
-The last confirmed immutable release remains v0.22.16 at
-`8a0ada56baa24b566e306af75768b90ed08b55ca`, release 406222389, from
-[CI 37696923958](https://github.com/alecerf/mynou/actions/runs/37696923958).
-Its eleven native asset IDs, names, sizes and digests remain unchanged.
+Actions published immutable v0.22.25 at
+`57cfe88bd9dac249d6949a470afc357e835060f9` after all seven jobs in
+[CI37797446857](https://github.com/alecerf/mynou/actions/runs/37797446857)
+succeeded. Four native executable/checksum assets and the private GHCR image
+were verified; native Issue #19 records publication and completed control
+migration. Earlier immutable releases remain preserved.
 
-Merged PR #22 at `ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114` corrected
-optional container association metadata. Default
-[CI 37715379732](https://github.com/alecerf/mynou/actions/runs/37715379732)
-passed all six validate/build/package jobs. Its release job 113111514725
-verified a private image at digest
-`sha256:991a217cd046c00697b975bff35b4bc23d4f7a85f0b4d14b90cd904684c7cf68`,
-package ID 15695108 and source repository ID 1403318143, then failed host
-cleanup of the synthetic container-owned seeder tree. No immutable v0.22.18
-release exists; UI linkage remains unverified.
+Client-requested product work resumes in [Issue #36](https://github.com/alecerf/mynou/issues/36),
+branch `work/36-par2-available-rows`, from that exact published baseline.
+The new bounded recovery increment selects a complete independent basis from
+captured available parity rows, including nonzero/nonconsecutive exponents.
+Global Main-order coefficients, immutable inputs, exact source/packet/final
+integrity, private owner binding and existing aggregate limits remain required.
 
-User [Issue #18](https://github.com/alecerf/mynou/issues/18) now requires the
-bounded cleanup correction: match verification-only bind-mount UID/GID to the
-nonroot runner, use private temporary directories, share the actual cleanup
-path with read-only PR package CI and emit publication proof only after cleanup.
-Retain the configured-user 1000 package demo and all private/source/collision/
-digest/binary/runtime gates. New 0.22.19 source preserves the observed 0.22.17
-and 0.22.18 images. See [scope](releases/0.22.19.md).
+Independent original fixtures must cover dependent-row skipping, insufficient
+rank, reversed multi-file inputs, eight shifted-row erasures, highest accepted
+exponents, work-budget exhaustion before parity seeks, cancellation, invalid
+selected parity and verified private workspace reopening. See [scope](releases/0.22.26.md).
+No automatic queue/library adoption, existing-file overwrite, volume merging or
+unmeasured performance claim is included.
 
-Finish complete-diff Security, independent QA, all objective gates and actual
-default immutable four-asset publication before unrelated user #19 work.
-Use the existing native Issue and one corrective PR, serial leases and durable
-handoffs. No local validation, manual publication or unchanged rerun.
+Finish this item through actual CI, distinct Security/full-diff QA, objective
+merge and immutable Actions publication before selecting the next product item.
+The client also requests a durable Product Owner planning role and a useful
+prioritized feature/bug backlog. Master must preserve that intent and seed
+evidence-based next product scopes; do not equate an empty backlog with product
+completeness. Keep one worker, sequential leases, frequent remote checkpoints,
+CI-only validation and continuous useful execution with honest external waits.
 
 ## Earlier PAR2 work and publication history
 
@@ -51,8 +52,8 @@ activation is claimed. See [support](par2.md) and [scope](releases/0.22.15.md).
 
 Complete actual CI, separate exact-head/base Security and independent QA, merge
 and immutable Actions publication before automatic queue/repair and library
-admission integration. Use one configured whole-wake deadline with serial role leases and a
-five-minute handoff reserve. No local validation or manual publication. A proposed
+admission integration. Use the installed continuous execution policy with serial role leases and
+frequent remote checkpoints; stop for actual waits, capacity or ownership loss. No local validation or manual publication. A proposed
 source version does not establish publication.
 
 CI published v0.22.10 from `f5c59506d0a8d431d09e9f351e2de2ef71b124f9` in

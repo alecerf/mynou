@@ -1,4 +1,4 @@
-# Mynou 0.22.19 — Rust, standard library only
+# Mynou 0.22.26 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -169,6 +169,14 @@ demo checks before CI may package or publish them. See the
 [macOS installation guide](docs/macos.md) and [release scope](docs/releases/0.22.16.md).
 Publication and macOS success require actual completed Actions evidence.
 
+Proposed 0.22.26 extends [bounded PAR2 recovery](docs/par2.md) to select independent
+available parity rows, including nonzero/nonconsecutive exponents. Exact selected
+coefficients, source/packet/final integrity, aggregate bounds and private owner
+binding remain required. This source proposal awaits CI/Security/QA and
+Actions publication; it does not add automatic repair admission or volume merging.
+The current immutable release is
+[v0.22.25](https://github.com/alecerf/mynou/releases/tag/v0.22.25).
+
 ## Autonomous engineering
 
 The [engineering organization](engineering/README.md) owns intent, native GitHub
@@ -330,11 +338,12 @@ The [transfer guide](docs/transfers.md) explains native download controls,
 parallel peer bounds, bandwidth limits and seeding policies. Use
 `downloads.max_peers: 1` to retain a single-peer transfer baseline.
 
-Mynou remains an early integrated implementation. This release adds automatic
-pack search, guarded mappings and opt-in monitored pack preference.
-Alternate/anime numbering rules, multi-episode videos, multi-user policies and full parity with
-Radarr, Sonarr, Pulsarr, qBittorrent, qui, autobrr or Prowlarr remain future work. The
-[release roadmap](docs/roadmap.md) separates the next stages.
+Mynou remains an early integrated implementation. Explicit numbering, shared
+multi-episode ownership and requester policies are supported as described above.
+Automatic PAR2 repair admission, compressed RAR, Usenet packs/upgrades,
+verified cross-seeding and broader consumer onboarding remain product work.
+The [release roadmap](docs/roadmap.md) separates the next stages; current native
+Issues hold the prioritized backlog.
 
 ## Follow a series
 

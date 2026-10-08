@@ -5,15 +5,28 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current proposed increment: 0.22.15
+## Current product increment: proposed 0.22.26
 
-Actions published native single/multi-file memory recovery and read-only
-diagnosis through v0.22.14. Issue #15 adds owner-bound private persistence:
-verified reconstruction, new private outputs, exact source/policy/owner descriptor,
-standard file locking and complete integrity on reopening. Existing-file repair,
-automatic queue activation and library admission remain subsequent integration.
-See [support](par2.md), [scope](releases/0.22.15.md) and native Issues/PRs for actual
-CI/review/publication state. No hostile atomic filesystem snapshot is claimed.
+Issue #36 extends bounded PAR2 recovery to choose independent available parity
+rows rather than requiring exponents starting at zero. Exact selected exponents,
+global Main-order ownership, all integrity checks and existing aggregate limits
+remain required. Selection work is charged before payload/output allocations.
+Source/fixture/documentation changes require actual CI, separately leased Security,
+complete-diff QA and objective delivery before Actions publication.
+
+Actions published immutable v0.22.25 at
+`57cfe88bd9dac249d6949a470afc357e835060f9` after all seven jobs in
+[CI37797446857](https://github.com/alecerf/mynou/actions/runs/37797446857)
+succeeded. Four native executable/checksum assets and the private GHCR image
+were verified; native Issue #19 records publication and completed control
+migration. Earlier immutable releases remain preserved.
+
+## Published PAR2 persistence foundation: 0.22.15
+
+Owner-bound private workspaces reconstruct before new writes and verify the exact
+source/policy/owner inventory on reopening. Existing-file repair, automatic
+queue activation and library admission remain later product integration. Read
+[PAR2 support](par2.md) and native Issues for the actual delivered limits.
 
 ## Preceding published stage: 0.22.12
 
