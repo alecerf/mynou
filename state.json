@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 403,
+  "generation": 404,
   "lease": {
     "id": "wake9-master-delivery-registry-20261008T015700Z",
     "worker": "codex-hourly-20261008T012904Z",
     "role": "master",
     "issue": 18,
     "acquired_at": "2026-10-08T01:54:07Z",
-    "heartbeat_at": "2026-10-08T01:54:07Z",
-    "expires_at": "2026-10-08T02:39:07Z",
+    "heartbeat_at": "2026-10-08T01:54:48Z",
+    "expires_at": "2026-10-08T02:39:48Z",
     "branch": "work/registry-recovery",
     "commit": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
     "pr": 22
   },
   "checkpoint": {
-    "at": "2026-10-08T01:54:00Z",
+    "at": "2026-10-08T01:54:48Z",
     "issue": 18,
-    "role": "qa",
+    "role": "master",
     "branch": "work/registry-recovery",
     "commit": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
     "pr": 22,
-    "summary": "Independent logical QA completed the actual twelve-path correction; all required exact-source PR CI passed. Security review5450457499 passed. Machine gate/merge and actual default18 publication remain pending.",
-    "next_action": "Record exact-head/base QA COMMENT; release QA, acquire Master, finalize PR22/mark ready and observe objective gate before merge.",
+    "summary": "Corrected twelve-path PR22 has green exact-source CI and actual logically independent QA5450500096/Security5450457499. PR description and Issue18 labels updated for delivery; machine QA gate and default publication pending.",
+    "next_action": "Mark PR22 ready; verify fresh organization/agent-qa-review plus all required native check runs, source fences and conversations; author merge only when every gate is green.",
     "publication": {
       "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
       "state": "ci-failed",
@@ -341,50 +341,43 @@
     "qa": {
       "schema": 1,
       "role": "qa",
-      "head_sha": "a7c6b8d2fda11c99382508f9bd7d1c3abc464345",
-      "base_sha": "8a0ada56baa24b566e306af75768b90ed08b55ca",
+      "head_sha": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
+      "base_sha": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
+      "lease_checkpoint": "2043869e5ceb33db505ff758b48811cb9d77f219",
       "verdict": "passed",
-      "summary": "Independent logical QA accepted the complete registry migration after actual PR CI/logs passed. Three checked binaries plus one manifest replace redundant assets; native/isolated demos and original gates remain. Default registry permission, private package/digest availability and immutable new release are later publication requirements, not proven by PR mocks.",
+      "summary": "Independent logical QA reviewed the complete twelve-path correction after all required source CI jobs passed. Explicit private source/package identity checks replace an absent optional metadata assumption while collision, privacy, digest, binary and runtime guards remain. No blocking findings; actual default publication is still required to finish Issue18.",
       "reviewed_paths": [
-        ".github/scripts/publish-release.sh",
         ".github/scripts/publish_container.py",
-        ".github/scripts/test_durations.json",
         ".github/scripts/test_publication.py",
-        ".github/workflows/ci.yml",
         "Cargo.lock",
         "Cargo.toml",
-        "Dockerfile",
         "README.md",
         "compose.yaml",
-        "deploy-compose.yaml",
         "docs/ci.md",
         "docs/deployment.md",
         "docs/macos.md",
         "docs/next-release.md",
-        "docs/releases/0.22.17.md",
-        "docs/validation.md",
-        "examples/package_release.rs",
-        "src/main.rs",
-        "tests/cli.rs"
+        "docs/releases/0.22.18.md",
+        "docs/validation.md"
       ],
       "acceptance": [
-        "Actual required validate/four build/package jobs all succeeded. Zero-dependency graph, formatting, Clippy,14 infrastructure tests (4 scheduler+10 publication),53 organization scenarios and864 Rust tests/63 harnesses passed.",
-        "Both native Mach-O architectures and musl/container demonstrations reached ready with Plex confirmation. Packaging preserved checked executable bytes and verified all3 checksums; native upload log confirms exactly4 release files.",
-        "Generated Compose captures CARGO_PKG_VERSION and MYNOU_IMAGE override; actual existing CLI test preserves private configuration/refuses overwrite and checks the registry/version template. English authentication/digest upgrade and guarded macOS selected-manifest instructions match current assets.",
-        "Complete20-file diff retains all objective gates and leaves previous releases unchanged. Original ZIP packager deletion removes only obsolete workflow/timing references, not product archive support; graph coverage now63 with the same864 tests.",
-        "Exact-head/base native Security5449727189 and its held historical checkpointf244291ff36f9734660254cf69b8acaf2ce95e0c were verified; submitted within lease. No unresolved native review threads.",
-        "PR release is correctly skipped; package-write/credential use remains guarded default-only. Lookup/identity/collision failure and interrupted retry tests are meaningful, but actual registry publication must still be verified after merge."
+        "Reviewed all twelve current native diff paths and the full publisher flow, meaningful CI-only regressions, version/manifests/Compose and English installation/recovery documentation.",
+        "Trusted workflow repository ID/name, private native repository and strict private package owner/name/type/stable positive ID are verified; public, foreign, malformed or substituted identities fail closed.",
+        "Reported conflicting association remains rejected. Omitted optional metadata is explicitly not_exposed and is never claimed to prove UI linkage; actual partial17 tags remain preserved by fresh18 source/version.",
+        "Original same-run checked image, nonroot runtime/OCI source identity, preflight collision refusal, exact-tag retry reuse, re-pulled content digest, executable SHA and isolated demo checks are preserved.",
+        "Temporary diagnostic permission/job/helper are absent from final diff; workflow equals base. Safe Rust std, zero Cargo dependencies, no product source code/dependency changes or manual publication.",
+        "All required Mynou CI and Engineering organization jobs passed at exact head. Release was correctly skipped on PR; machine QA gate and later default publication remain distinct pending delivery transitions."
       ],
       "evidence": [
-        "Actual complete native20-path PR21 diff ata7c6b8d2fda11c99382508f9bd7d1c3abc464345/8a0ada56baa24b566e306af75768b90ed08b55ca; Issue18 acceptance and current native threads[].",
-        "Mynou CI37703667637 attempt1 completed SUCCESS: validate113072834888; ARM113072835058; Intel113072835300; GNU113072835072; musl113072835207; package113073722028 SUCCESS. Release113073920822 correctly SKIPPED.",
-        "Native validation log:864 passed/0failed in99.773s across63 harnesses;14 std infrastructure tests and53 organization checks passed.",
-        "Native macOS/musl logs: actual exact architectures, ready import and plex_scan_confirmed=true. Native package log: readonly isolated demo,3 checksums OK,4 uploaded release files.",
-        "Engineering37703884625 succeeded while draft; objective agent-qa-review must become green after ready transition.",
-        "PR CI executes GitHub's synthetic merge for the recorded exact head/base; actual default source CI/publication remains separate."
+        "Native PR22 open draft exact head1cbe42828fe1bf594cd6458796eefa65c3a0096d/base551e82d2c4158b9af2080081bbac3e1d18c949ea,12changed files; native review threads empty.",
+        "Mynou CI37714490728 completed SUCCESS at exact head: validate113107741065, four native builds113107740929/113107741059/113107741149/113107741209, package113108584149 all SUCCESS; release113108694770 SKIPPED.",
+        "Actual validate log:18 infrastructure tests including all four new private context/package substitution cases,53 organization tests,63Rust harnesses,864passed/0failed in99.845s; dependency graph/formatting/Clippy/source syntax steps all SUCCESS.",
+        "Actual ARM64/Intel macOS logs prove native Mach-O architecture and ready/Plex-confirmed standalone demos; Linux musl demo also ready/Plex-confirmed.",
+        "Actual package log proves checked readonly network-none/cap-drop/no-new-privileges container demo ready/Plex-confirmed and SHA256SUMS verifies all three0.22.18 executables.",
+        "Engineering37714490697 organization113107740865 SUCCESS at same source; agent-qa-review correctly SKIPPED while draft. Actual complete-diff Security COMMENT5450457499 bound to historical Security lease3f203a1c02bf5aacadfc914e98dce5512c1de876.",
+        "Read-only diagnostic37713788379/job113105507230 retained actual private partial17 image digest675ef89d1bed913973e7682e9633e8fb3b229eecc5d98dc8a132f1b49af2040c and absent metadata. No default18/private registry/release publication success claimed."
       ],
-      "findings": [],
-      "lease_checkpoint": "bf1b9186f60cf0a6935ce6189cbb7d02a4811ace"
+      "findings": []
     },
     "qa_native_review": {
       "success": true,
@@ -540,22 +533,13 @@
       "subagents": false
     },
     "recovery_source": {
-      "base": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
-      "head": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
-      "tree": "59fa9612be0dbc8bb27ba6872d86bf8a624c3e8e",
       "branch": "work/registry-recovery",
+      "commit": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
+      "base": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
+      "tree": "59fa9612be0dbc8bb27ba6872d86bf8a624c3e8e",
       "pr": 22,
-      "stage": "supported private identity/provenance correction",
-      "paths": [
-        ".github/scripts/inspect_package.py",
-        ".github/scripts/test_package_inspection.py",
-        ".github/workflows/ci.yml",
-        "docs/ci.md"
-      ],
-      "diagnosis_not_completion": true,
-      "version": "0.22.18",
-      "prior_diagnostic_head": "0356649d2b8364c2ec4061f080d28de9b842cfb9",
-      "temporary_probe_retired": true
+      "issue": 18,
+      "version": "0.22.18"
     },
     "diagnostic_security": {
       "schema": 1,
@@ -724,6 +708,19 @@
       "infrastructure_tests": 18,
       "organization_tests": 53,
       "publication": false
+    },
+    "qa_native": {
+      "success": true,
+      "review_id": 5450500096
+    },
+    "security_native": {
+      "success": true,
+      "review_id": 5450457499
+    },
+    "delivery": {
+      "pr_ready_requested": true,
+      "publication_verified": false,
+      "partial17_preserved": true
     }
   },
   "attempts": {
