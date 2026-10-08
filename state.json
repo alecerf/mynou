@@ -1,32 +1,87 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 823,
+  "generation": 824,
   "lease": {
     "id": "codex-recovery-20261008T204807Z-master-c6d02e2e-d718-4853-b2cc-15f7fd4b9f57",
     "worker": "codex-recovery-20261008T204807Z",
     "role": "master",
     "issue": 44,
     "acquired_at": "2026-10-08T20:48:07Z",
-    "heartbeat_at": "2026-10-08T20:48:07Z",
-    "expires_at": "2026-10-08T21:33:07Z",
+    "heartbeat_at": "2026-10-08T20:55:22Z",
+    "expires_at": "2026-10-08T21:40:22Z",
     "branch": "trunk",
     "commit": "46a6b67a6ce3de468f2304e7847d6da04203d056",
     "pr": null
   },
   "checkpoint": {
-    "at": "2026-10-08T20:43:18Z",
-    "issue": 41,
-    "role": "triage",
-    "branch": "work/41-guided-setup",
+    "at": "2026-10-08T20:55:22Z",
+    "issue": 44,
+    "role": "master",
+    "branch": "trunk",
     "commit": "46a6b67a6ce3de468f2304e7847d6da04203d056",
-    "pr": 47,
-    "summary": "Default-source CI transition: accepted at 46a6b67a6ce3de468f2304e7847d6da04203d056; native evidence {'commit': '46a6b67a6ce3de468f2304e7847d6da04203d056', 'state': 'accepted', 'at': '2026-10-08T19:45:25Z'}. No release publication is inferred.",
-    "next_action": "Recovered expired capacity lease; inspect preserved work before selecting new work.",
+    "pr": null,
+    "summary": "Master44 recovery: Actions actually published immutable v0.22.28 at default46a6b67a6ce3de468f2304e7847d6da04203d056, tree532b2732f258f15613eeccec5df7a06937f55d6a. Release407208110/tagv0.22.28/published2026-10-08T19:51:44Z/four named digested assets and native release113509814093 private source-bound image/nonroot/cleanup proof verified; default CI37834316581 all7jobs success. PR47/sourceedbc/base5fb6 actual merged; distinct Security5461928768 and QA5461991720 accepted by green gate113506712551. Source branchwork/41-guided-setup still exists atedbc and is preserved by defaultmerge parent; cleanup not yet claimed. Expired bot delivery stopped at native request budget; control recover6068525880/run37840276392 failed due old-branch merge preservation guard. Original lease.recover with actual native default/PR/CI evidence applied sole-parent40745c4111e0f00a7e02be8c7aeee2c2558fd75f; first immediate confirmation was uncertain then authoritative native read confirmed. Master44 acquired b6374ed12925d0c643fb734af82a36cf9dec06cb to finish closed41 recovery and repair this same publication/control gap. No local project validation.",
+    "next_action": "Record verified v28 publication in native41/PR47 and mark actual delivered41 Done. Under a separate Quality44 lease, verify and safely clean fully merged41 branch, then implement bounded publication reconciliation plus directly blocking default-merge stale-recovery/request-budget fixes on one preserved44 branch/PR. Actual CI, separate Security/full-diff QA and Actions-only publication remain required; do not reopen shipped41 merely for a lease.",
     "publication": {
       "commit": "46a6b67a6ce3de468f2304e7847d6da04203d056",
-      "state": "accepted",
-      "at": "2026-10-08T19:45:25Z"
+      "state": "published",
+      "version": "0.22.28",
+      "at": "2026-10-08T19:51:44Z",
+      "release_id": 407208110,
+      "immutable": true,
+      "tag_commit": "46a6b67a6ce3de468f2304e7847d6da04203d056",
+      "run_id": 37834316581,
+      "status": "completed",
+      "conclusion": "success",
+      "assets": [
+        {
+          "id": 622840807,
+          "name": "mynou-v0.22.28-linux-x86_64",
+          "size": 4899680,
+          "digest": "sha256:e93f3983d98b954807326f85c0f513750a3f6b8bb0234b14cd87f1c4f0c2e934"
+        },
+        {
+          "id": 622840808,
+          "name": "mynou-v0.22.28-macos-arm64",
+          "size": 3745600,
+          "digest": "sha256:53a981cfaad301c318e73bdf973d4f9f3a5cd373b27fe0d8449b20fcfff176df"
+        },
+        {
+          "id": 622840810,
+          "name": "mynou-v0.22.28-macos-x86_64",
+          "size": 4516672,
+          "digest": "sha256:39404997476079a64a5f7612dc03a3cc8191500e6e8b6666a4141f017b20c952"
+        },
+        {
+          "id": 622840804,
+          "name": "SHA256SUMS",
+          "size": 281,
+          "digest": "sha256:4efcb9ef50c3999225301ba867399c29aac8a9aa0ae31d7514d8a00363e16842"
+        }
+      ],
+      "registry_proof": {
+        "binary_sha256": "e93f3983d98b954807326f85c0f513750a3f6b8bb0234b14cd87f1c4f0c2e934",
+        "image": "ghcr.io/alecerf/mynou@sha256:f23c9220b29657cff8c4cc78b3cfb5f1aa2f5b4059e5eb52996a481979c4bebe",
+        "package_id": 15695108,
+        "repository": "alecerf/mynou",
+        "repository_association": "reported-match",
+        "repository_id": 1403318143,
+        "repository_visibility": "public",
+        "source": "46a6b67a6ce3de468f2304e7847d6da04203d056",
+        "verification_cleanup": "completed",
+        "verification_user": "1001:1001",
+        "version": "0.22.28",
+        "visibility": "private"
+      },
+      "source_security_audit": {
+        "commit": "edbc8edcf05341d1a3d0b7125f06dde408481d42",
+        "tree": "532b2732f258f15613eeccec5df7a06937f55d6a",
+        "run_id": 37831098052,
+        "history_job": 113496340152,
+        "logs_job": 113496339924,
+        "scope": "Pre-merge exact-tree selected-pattern audit; completed attempts at inventory, pending runs excluded."
+      }
     },
     "recovery": {
       "issue": true,
@@ -469,14 +524,14 @@
       "publication_pr_handoff": 6062225589
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T19:04:32Z",
+      "at": "2026-10-08T20:43:18Z",
       "issue": 41,
-      "role": "rust",
+      "role": "triage",
       "branch": "work/41-guided-setup",
-      "commit": "5fb6bcb46b80926b212e5bce0fccbf42addcfcbe",
-      "pr": null,
-      "summary": "Rust41 implementation in progress on preservedwork/41-guided-setup at5fb6bcb46b80926b212e5bce0fccbf42addcfcbe. UXhandoff6066844983 accepted; current config/Engine/status/source-policy/nativeUsenet/browser/session/HTTP fixtures read. Chosen fixed private Setup projection with counts, typedmissing/attention/configured/optional states, requiredsource-auth credential presence, enabledtransport compatibility, lexicalURLs and absolute configuredpaths. No raw paths/URLs/names/credentials/errors or authorization decision from guidance. Reuse nativeguarded Indexer/Usenet diagnostics links, no newprobes/script/CSP/configwrite. Original CI cases planned for realHTTPauth/redaction/read-only snapshots/disabled or incompatible source-route/malformedconfig states; source commits pending. No localvalidation and no QA verdict yet.",
-      "next_action": "Continue this Rust41 lease: author boundedoriginal setupview/navigation/CI fixtures/docs and version0.22.28 proposal, create originalsole-parent remote commit and one linkedPR, checkpointexacthead. Then release before separate Security/full-diffQA; CI alone validates and Actions alone publishes. Existingv27 actuallypublished, Product42review complete; 44rearmrepair recorded."
+      "commit": "46a6b67a6ce3de468f2304e7847d6da04203d056",
+      "pr": 47,
+      "summary": "Default-source CI transition: accepted at 46a6b67a6ce3de468f2304e7847d6da04203d056; native evidence {'commit': '46a6b67a6ce3de468f2304e7847d6da04203d056', 'state': 'accepted', 'at': '2026-10-08T19:45:25Z'}. No release publication is inferred.",
+      "next_action": "Recovered expired capacity lease; inspect preserved work before selecting new work."
     },
     "task_reconciliation": {
       "issue": 19,
