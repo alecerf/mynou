@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 749,
+  "generation": 750,
   "lease": {
     "id": "codex-resume-20261008T151223Z-master-1791472370000",
     "worker": "codex-resume-20261008T151223Z",
     "role": "master",
     "issue": 19,
     "acquired_at": "2026-10-08T15:12:50Z",
-    "heartbeat_at": "2026-10-08T15:16:57Z",
-    "expires_at": "2026-10-08T16:01:57Z",
+    "heartbeat_at": "2026-10-08T15:18:56Z",
+    "expires_at": "2026-10-08T16:03:56Z",
     "branch": "trunk",
     "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T15:16:57Z",
+    "at": "2026-10-08T15:18:56Z",
     "issue": 19,
     "role": "master",
     "branch": "trunk",
     "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
     "pr": 24,
-    "summary": "Actual existing hourly Task prompt-only update accepted/confirmed at installed57cfe88; ID,enabled,cadence/timezone unchanged. Native attestation6063044134 records actual safe response digest/source/promptblob. Immutable v25/defaultCI/security verified. Legacy still soleauthority; next fixed reviewed fence/activation.",
-    "next_action": "Under this exact Master19/trunk57cfe88/PR24 lease submit fence-control with native task receipt; inspect actual command/run/ref/schema2/soleparent before activation. Owned pending fence renew/release available; no unsupported direct notes wrapper.",
+    "summary": "Immutable v25 and actual existing-Task reconciliation complete. Ready for reviewed fixed fence under exact installed Master19/trunk57cfe88/PR24 ownership. Persisted command intent before native request; notes target not yet created.",
+    "next_action": "Submit fence-control at this exact control head with nativeTaskattestation6063044134. Read actual native receipt, schema2/fullnestedstate/soleparent and Actions before activation. Stop or safely release owned fence on real wait/ownership loss.",
     "publication": {
       "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
       "state": "published",
@@ -682,6 +682,16 @@
       "single_worker": true,
       "notes_activated": false,
       "legacy_deleted": false
+    },
+    "live_cutover19": {
+      "stage": "fence-request intent",
+      "policy_commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
+      "task_receipt": 6063044134,
+      "worker": "codex-resume-20261008T151223Z",
+      "lease": "codex-resume-20261008T151223Z-master-1791472370000",
+      "legacy_ref": "refs/heads/control/engineering",
+      "target_ref": "refs/notes/mynou-engineering",
+      "actual_activation": false
     }
   },
   "attempts": {
