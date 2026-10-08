@@ -1,80 +1,32 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 819,
+  "generation": 820,
   "lease": {
     "id": "f13d5e1a-067a-4c70-a1ab-81f2fad360ba",
     "worker": "github-actions-delivery",
     "role": "triage",
     "issue": 41,
     "acquired_at": "2026-10-08T19:44:37Z",
-    "heartbeat_at": "2026-10-08T19:45:03Z",
-    "expires_at": "2026-10-08T20:30:03Z",
+    "heartbeat_at": "2026-10-08T19:45:13Z",
+    "expires_at": "2026-10-08T20:30:13Z",
     "branch": "work/41-guided-setup",
     "commit": "46a6b67a6ce3de468f2304e7847d6da04203d056",
     "pr": 47
   },
   "checkpoint": {
-    "at": "2026-10-08T19:45:03Z",
+    "at": "2026-10-08T19:45:13Z",
     "issue": 41,
     "role": "triage",
     "branch": "work/41-guided-setup",
     "commit": "46a6b67a6ce3de468f2304e7847d6da04203d056",
     "pr": 47,
-    "summary": "PR #47 merged at 46a6b67a6ce3de468f2304e7847d6da04203d056; exact QA/CI gates passed.",
-    "next_action": "Finish native Issue/dependency/branch cleanup, then resume backlog.",
+    "summary": "Default-source CI transition: dispatching at 46a6b67a6ce3de468f2304e7847d6da04203d056; native evidence {'commit': '46a6b67a6ce3de468f2304e7847d6da04203d056', 'state': 'dispatching', 'at': '2026-10-08T19:45:13Z'}. No release publication is inferred.",
+    "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases.",
     "publication": {
-      "commit": "d67becbd5a09ff51bdd8e2a3d43a9f44ef849f74",
-      "state": "published",
-      "version": "0.22.26",
-      "at": "2026-10-08T17:20:17Z",
-      "release_id": 407086571,
-      "immutable": true,
-      "tag_commit": "d67becbd5a09ff51bdd8e2a3d43a9f44ef849f74",
-      "run_id": 37814772739,
-      "status": "completed",
-      "conclusion": "success",
-      "assets": [
-        {
-          "id": 622491454,
-          "name": "mynou-v0.22.26-linux-x86_64",
-          "size": 4891488,
-          "digest": "sha256:fcfa64f9ce883194dc7b0a31a4a157b6ab9c42ecf40f849f2332fcefd6096fb2"
-        },
-        {
-          "id": 622491455,
-          "name": "mynou-v0.22.26-macos-arm64",
-          "size": 3729104,
-          "digest": "sha256:7c85749681bdb2cd532d6ac42723efce825c9bfb21e5ed141c3125fd70630cb5"
-        },
-        {
-          "id": 622491453,
-          "name": "mynou-v0.22.26-macos-x86_64",
-          "size": 4508464,
-          "digest": "sha256:206d8ebd7278a15eb8e9ee35fbaa55324ab4409dca3740d3f498ee99a8a17787"
-        },
-        {
-          "id": 622491456,
-          "name": "SHA256SUMS",
-          "size": 281,
-          "digest": "sha256:bedf1c3b04c97c900c41e1dd28771a8853886fbaf28fd6cc845f532463c43f7a"
-        }
-      ],
-      "registry_proof": {
-        "binary_sha256": "fcfa64f9ce883194dc7b0a31a4a157b6ab9c42ecf40f849f2332fcefd6096fb2",
-        "image": "ghcr.io/alecerf/mynou@sha256:a572f2a0fe6378b2994ce4ce0423bb0f5ad0cab43a581efea3285b5a6e8684ed",
-        "package_id": 15695108,
-        "repository": "alecerf/mynou",
-        "repository_association": "reported-match",
-        "repository_id": 1403318143,
-        "repository_visibility": "public",
-        "source": "d67becbd5a09ff51bdd8e2a3d43a9f44ef849f74",
-        "verification_cleanup": "completed",
-        "verification_user": "1001:1001",
-        "version": "0.22.26",
-        "visibility": "private"
-      },
-      "security_audit_run": 37814772776
+      "commit": "46a6b67a6ce3de468f2304e7847d6da04203d056",
+      "state": "dispatching",
+      "at": "2026-10-08T19:45:13Z"
     },
     "recovery": {
       "pr": 26,
