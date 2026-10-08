@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 514,
-  "lease": null,
+  "generation": 515,
+  "lease": {
+    "id": "wake14-master-recovery-20261008T063352Z",
+    "worker": "codex-hourly-20261008T063352Z",
+    "role": "master",
+    "issue": 25,
+    "acquired_at": "2026-10-08T06:35:15Z",
+    "heartbeat_at": "2026-10-08T06:35:15Z",
+    "expires_at": "2026-10-08T07:20:15Z",
+    "branch": "work/publication-handoff-recovery",
+    "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
+    "pr": 26
+  },
   "checkpoint": {
     "at": "2026-10-08T05:38:43Z",
     "issue": 25,
