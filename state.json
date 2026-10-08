@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 583,
+  "generation": 584,
   "lease": {
     "id": "codex-hourly-20261008082654Z-master-20261008085945",
     "worker": "codex-hourly-20261008082654Z",
     "role": "master",
     "issue": 19,
     "acquired_at": "2026-10-08T08:59:45Z",
-    "heartbeat_at": "2026-10-08T08:59:45Z",
-    "expires_at": "2026-10-08T09:44:45Z",
+    "heartbeat_at": "2026-10-08T09:03:58Z",
+    "expires_at": "2026-10-08T09:48:58Z",
     "branch": "work/control-ref-adapter",
     "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T08:55:08Z",
-    "issue": 28,
-    "role": "quality",
-    "branch": "trunk",
-    "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
-    "pr": 29,
-    "summary": "Verified immutablev0.22.21/defaultcafac publication andactualprivateimageproof; nativeIssue28 closed+Done,19 blockers25/28 bothclosed andstatusReady, recoverybranch nativeabsent, migrationPR24/053fb1preserved. Nativehandoffs28/PR29 retainfullproof andcompact publicationcheckpoint. One currentdelivery iscomplete, with truthful selected-security-pattern limits; no localchecks orsecondworker.",
-    "next_action": "ReleaseQuality; acquireMaster for highest-priority readyuserIssue19/PR24 recovery whileboundedwake time remains. Preserveactualpubproof; inspectupdateddefault, priorQAfindings andrealavailablegeneral-ref writer/fence capabilities before anymigration.",
+    "at": "2026-10-08T09:03:58Z",
+    "issue": 19,
+    "role": "master",
+    "branch": "work/control-ref-adapter",
+    "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
+    "pr": 24,
+    "summary": "Master recovered highest-readyuserIssue19 and preserved draftPR24/branchwork/control-ref-adapter at053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c. ActualoldCI37728256136 succeeded, but QA5451528384 rejects missinglivewriter/fence/interruption/taskcutover; nativePR reportsbased647 while verifieddefaultnowcafac/v0.22.21. Connectedwrite wrappers stillbranch-named; VMREST succeededfornative19→28dependency, notschedulednoteswrite proof. Taskpeek/update toolsareexposed, no lookup/update/duplicate made. Changedproposal: investigatedefaultActions nativecomment transportforarbitrary-ref administration withexistingverifiedcomments/default-onlywrite mechanisms; unimplemented/unproved. No migrationactivation/sourcechange or rerungreenoldCI.",
+    "next_action": "Nextwake recover19/PR24, preserve053branch and refreshit againstcafac carryingpublicsource-release/security/durability repairs andfreshversion. MinimumSecurity-design→Qualityimplementation for a narrow authenticated default-Actions control-command bridge if supported: bounded commands, exactcanonicalref/expectedSHA/role/owner, replay/circuit checks, soleparentnonforce CAS, no PRcode/write-token execution or secondAI. Proveactualnativecomment→CI arbitrary-ref writes beforecutover. Implement staging/failclosedlegacy fence/restart checks; freshcompleteSecurity/QA/CI; onlythenreconcileexistingtask viaactualpeek/update, neverduplicate. Staycanonicalbranch untilallproved.",
     "publication": {
       "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
       "state": "published",
@@ -77,14 +77,14 @@
       "security_audit_run": 37751867517
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T08:44:33Z",
+      "at": "2026-10-08T08:55:08Z",
       "issue": 28,
       "role": "quality",
-      "branch": "work/public-source-private-package",
-      "commit": "b028b1dd058842d7ebc551d4f822519d9d4d1e85",
+      "branch": "trunk",
+      "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
       "pr": 29,
-      "summary": "OwnedQuality verified correctivePR29 exactb028b1dd/base04e994, nativeintegrationtrue, emptythreads and all10actualobjectivejobs green: source37750720668 sixjobs, Security37750720672 twojobs, latestEngineering37751441590 organization113225612101 andQA113225673187. Gateactual log validates QA5453951428/b43c9662 andSecurity5453915524/386098b2. Currentdefault04failedpublication isthiscorrection's explicitcause, notunrelatedwork. Authoritativeowned deliverymaymergebyexpectedsource; no defaultpublication success yet.",
-      "next_action": "Mergeonlyexactb028b1dd correctivePR29, inspectnewdefault/nativeCI andpublication. Persistnewexactsource andpendingCI, no duplicate dispatch ifpushstarts; keepfullrealpackage/immutable0.22.21 verification pending andpreservemigration24."
+      "summary": "Verified immutablev0.22.21/defaultcafac publication andactualprivateimageproof; nativeIssue28 closed+Done,19 blockers25/28 bothclosed andstatusReady, recoverybranch nativeabsent, migrationPR24/053fb1preserved. Nativehandoffs28/PR29 retainfullproof andcompact publicationcheckpoint. One currentdelivery iscomplete, with truthful selected-security-pattern limits; no localchecks orsecondworker.",
+      "next_action": "ReleaseQuality; acquireMaster for highest-priority readyuserIssue19/PR24 recovery whileboundedwake time remains. Preserveactualpubproof; inspectupdateddefault, priorQAfindings andrealavailablegeneral-ref writer/fence capabilities before anymigration."
     },
     "recovery": {
       "pr": 26,
@@ -176,6 +176,25 @@
       "merge_commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
       "release_id": 406617913,
       "default_ci": 37751867488
+    },
+    "control_storage": {
+      "issue": 19,
+      "pr": 24,
+      "branch": "work/control-ref-adapter",
+      "source": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
+      "pr_reported_base": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+      "current_default": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
+      "authority": "refs/heads/control/engineering",
+      "candidate": "refs/notes/mynou-engineering",
+      "state": "preparatory-draft; actual QA rejection outstanding",
+      "security_review": 5451459825,
+      "qa_review": 5451528384,
+      "old_source_ci": 37728256136,
+      "old_organization_ci": 37728256161,
+      "proposal": "Authenticated native Issue-comment to trusted-default deterministic Actions bridge for general-ref lease commands; not implemented or proved.",
+      "scheduler_capabilities": "automations_peek and automations_update tools exposed; native task not looked up or modified this wake.",
+      "boundary": "No verified arbitrary-ref writer through scheduled-web connected write wrappers; local VM REST administration alone does not prove scheduled access.",
+      "cutover": "No staging/fence/activation/task change. Current branch remains sole canonical live authority."
     }
   },
   "attempts": {
@@ -184,6 +203,12 @@
       "fingerprint": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114:37715379732:113111514725:post-proof-owned-demo-cleanup",
       "unchanged": 1,
       "at": "2026-10-08T02:37:45Z"
+    },
+    "19": {
+      "approach": "Investigate original default-Actions native issue-comment control transport to bridge scheduled web's branch-only connector; prove it before any legacy fence or notes activation.",
+      "fingerprint": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c:cafac339b3e24954fc8a802d97fe3cfb793c05d6:rejected5451528384:branch-only-connector:task-tools-exposed:proposed-ci-comment-bridge",
+      "unchanged": 1,
+      "at": "2026-10-08T09:03:57Z"
     }
   }
 }
