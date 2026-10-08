@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 772,
-  "lease": null,
+  "generation": 773,
+  "lease": {
+    "id": "comment-6065128681",
+    "worker": "codex-product-20261008T1637Z",
+    "role": "master",
+    "issue": 36,
+    "acquired_at": "2026-10-08T17:11:22Z",
+    "heartbeat_at": "2026-10-08T17:11:22Z",
+    "expires_at": "2026-10-08T17:56:22Z",
+    "branch": "work/36-par2-available-rows",
+    "commit": "65530f4f432a1b0af6ba71457c5ded574b91e728",
+    "pr": 37
+  },
   "checkpoint": {
     "at": "2026-10-08T17:09:34Z",
     "issue": 36,
