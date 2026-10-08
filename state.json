@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 815,
+  "generation": 816,
   "lease": {
     "id": "comment-6067623334",
     "worker": "codex-product-20261008T1637Z",
     "role": "qa",
     "issue": 41,
     "acquired_at": "2026-10-08T19:38:04Z",
-    "heartbeat_at": "2026-10-08T19:38:04Z",
-    "expires_at": "2026-10-08T20:23:04Z",
+    "heartbeat_at": "2026-10-08T19:41:30Z",
+    "expires_at": "2026-10-08T20:26:30Z",
     "branch": "work/41-guided-setup",
     "commit": "edbc8edcf05341d1a3d0b7125f06dde408481d42",
     "pr": 47
   },
   "checkpoint": {
-    "at": "2026-10-08T19:36:17Z",
+    "at": "2026-10-08T19:41:30Z",
     "issue": 41,
-    "role": "security",
+    "role": "qa",
     "branch": "work/41-guided-setup",
     "commit": "edbc8edcf05341d1a3d0b7125f06dde408481d42",
     "pr": 47,
-    "summary": "Security41 complete actual full12-path diff review PR47 edbc8edcf05341d1a3d0b7125f06dde408481d42/base5fb6bcb46b80926b212e5bce0fccbf42addcfcbe. Reviewed session-before-route/query rejection/no POST, fixed escaped flags/counts/static links and non-authorizing states, no raw creds/envnames/urls/paths/providererrors; sourcepolicy/report read-only; no new I/O, acquisition, writes, token logs, CSP widening, unsafe or dependencies. Original HTTP fixtures passed current native validate113496401025 (887/0); all4 builds+package113497798516 actually success. Audit37831098052 history113496340152 scans3154 fetchedobjects zero recognizedfindings/gaps; logs113496339924 examines941completedattempts/2801members zero findings/gaps, pendingruns excluded/selectedpatterns only. No blocking Security finding. Native record to follow; independent QA not yet executed and merge/publication not claimed.",
-    "next_action": "Record exact-head/base passed Security COMMENT anchored to this actual owned phase checkpoint, release Security lease after verification, then acquire distinct QA41/PR47 for actual complete-diff/acceptance/currentCI review. Preserve old formatter-only failure and no unperformed browser/install verification. Merge only once every objective gate actually green.",
+    "summary": "Distinct QA41 actual complete12-path diff/Issue41/UX6066844983 reviewed at edbc8edcf05341d1a3d0b7125f06dde408481d42/base5fb6bcb46b80926b212e5bce0fccbf42addcfcbe. Read actualstate/sourcepolicy/rendered HTML/sharedCSS/session admission; fixedmissing/attention/configured/optional, separate explicit preview/record, no credential/path/URL projection or newGETI/O. NativeSecurity5461928768 passed separateleaseCP495419. NativeCI37831098049 all4builds/validate/package success:64harnesses887passed0failed50.266s,8HTTPSetup+4credentialcases;24scheduler/144organizationscenarios passed9Skills. Audit37831098052 bothpassed limitedselectedpatterns/completedattempts; CodeQLsuccess; package1001:1001/syntheticready/Plexconfirm/cleanupcompleted. ActualPR47threads empty/headbaseunchanged. No blocking QA finding; browser/installinterop unperformed. Oldformatterred preserved. MachineQA currentlyawaitingactualrecord; no merge/v28publication claim.",
+    "next_action": "Post exact-head/base actual passed QA COMMENT anchored to this owned QA checkpoint and all12paths; release. Acquire Master41 on currentdefault5fb6/trunk with PRnull after verifiedrelease, read actualcurrent objectivegate and nativehead/threads before expectedhead merge. If gate stillpending, persist/release for realexternalwait, not unrelated44work. After merge recover actualdefaultCI/publication/cleanup, then44.",
     "publication": {
       "commit": "d67becbd5a09ff51bdd8e2a3d43a9f44ef849f74",
       "state": "published",
@@ -702,7 +702,7 @@
       "task_receipt": 6063044134,
       "task_id": "6ac54c387af0819184713674c48b3845",
       "fence_sha": "5c305bfbee1e0225dcd8a35cdbb8cb491a084f11",
-      "transport_comment_id": 6067592994,
+      "transport_comment_id": 6067681133,
       "retirement": "confirmed",
       "notes_proof_sha": "96e3439dbc1800f708aab0c5680211f105176e14"
     }
