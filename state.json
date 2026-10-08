@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 813,
-  "lease": {
-    "id": "comment-6067489677",
-    "worker": "codex-product-20261008T1637Z",
-    "role": "security",
-    "issue": 41,
-    "acquired_at": "2026-10-08T19:30:10Z",
-    "heartbeat_at": "2026-10-08T19:36:17Z",
-    "expires_at": "2026-10-08T20:21:17Z",
-    "branch": "work/41-guided-setup",
-    "commit": "edbc8edcf05341d1a3d0b7125f06dde408481d42",
-    "pr": 47
-  },
+  "generation": 814,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-08T19:36:17Z",
     "issue": 41,
