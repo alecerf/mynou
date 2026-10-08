@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 861,
-  "lease": null,
+  "generation": 862,
+  "lease": {
+    "id": "codex-recovery-20261008T222604Z-qa-237eca4b-0062-4212-abbb-512eec06c515",
+    "worker": "codex-recovery-20261008T222604Z",
+    "role": "qa",
+    "issue": 50,
+    "acquired_at": "2026-10-08T22:40:02Z",
+    "heartbeat_at": "2026-10-08T22:40:02Z",
+    "expires_at": "2026-10-08T23:25:02Z",
+    "branch": "work/50-canonical-rest",
+    "commit": "80b0d3eb17ce6df583643060b5cce990f53dd1ef",
+    "pr": 51
+  },
   "checkpoint": {
     "at": "2026-10-08T22:38:43Z",
     "issue": 50,
