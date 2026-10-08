@@ -1,32 +1,32 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 436,
+  "generation": 437,
   "lease": {
     "id": "wake10-quality-postmerge-cleanup-20261008T025200Z",
     "worker": "codex-hourly-20261008T023108Z",
     "role": "quality",
     "issue": 18,
     "acquired_at": "2026-10-08T02:53:28Z",
-    "heartbeat_at": "2026-10-08T02:53:28Z",
-    "expires_at": "2026-10-08T03:38:28Z",
+    "heartbeat_at": "2026-10-08T02:55:00Z",
+    "expires_at": "2026-10-08T03:40:00Z",
     "branch": "trunk",
     "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
     "pr": 23
   },
   "checkpoint": {
-    "at": "2026-10-08T02:53:22Z",
+    "at": "2026-10-08T02:55:00Z",
     "issue": 18,
-    "role": "master",
+    "role": "quality",
     "branch": "trunk",
     "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
     "pr": 23,
-    "summary": "PR23 merged at exact native source d647be6edfd6e892474b2602bbc9047ad4047c2f after actual green QA/Security/objective CI gates; parents/tree match reviewed source. Native merged-branch deletion404 and no open PRs. New native push CI37719852082 is inprogress; Engineering37719851876 succeeded. Issue18 auto-closed but actual19 publication pending.",
-    "next_action": "Release Master/acquire Quality; reopen Issue18 for actual publication acceptance and record cleanup/dependency/native release/CI evidence. Stop for actual external CI wait without polling or unrelated work.",
+    "summary": "Recovered18 publication's actual post-verification cleanup failure, implemented original13-path19 correction and completed sequential Security/independent QA, green objective gates, merge and native cleanup. PR23 source d647be6edfd6e892474b2602bbc9047ad4047c2f exact parents/tree verified; branch auto-deleted404, no open PRs/dependents. Issue18 reopened Review. Actual newdefault CI37719852082 inprogress;19release404. Stop for external wait, no polling/unrelated work.",
+    "next_action": "Recover native default CI37719852082 at exact d647be6edfd6e892474b2602bbc9047ad4047c2f before19/backlog. Green: read actual release log private repo/package IDs, source/digest/binary/demo and verification_user/cleanup; inspect native immutable v0.22.19 release, exact tag source and four bot asset IDs/names/sizes/digests; compare16 baseline and preserve observed17/18images. Persist actual proof, close18 and finish cleanup; then user19. Red: preserve actual failed stage/log/partial19images and choose a changed bounded reviewed approach, not repeated blind retry or overwrite. Quota pauses capacity, never fails/completes work.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "ci-pending",
-      "at": "2026-10-08T02:51:41Z",
+      "at": "2026-10-08T02:53:33Z",
       "branch": "trunk",
       "run_id": 37719852082,
       "event": "push",
@@ -46,7 +46,40 @@
       "default_ref_verified": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "engineering_run_id": 37719851876,
       "engineering_conclusion": "success",
-      "previous_immutable_assets_unchanged": true
+      "previous_immutable_assets_unchanged": true,
+      "release_lookup_response": 404,
+      "jobs": [
+        {
+          "id": 113124767916,
+          "name": "Build aarch64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113124768055,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113124768076,
+          "name": "Build x86_64-apple-darwin",
+          "status": "in_progress",
+          "conclusion": null
+        },
+        {
+          "id": 113124768150,
+          "name": "validate",
+          "status": "in_progress",
+          "conclusion": null
+        },
+        {
+          "id": 113124768158,
+          "name": "Build x86_64-unknown-linux-musl",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
     },
     "publication_baseline": {
       "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
@@ -393,10 +426,14 @@
       "pr": 23,
       "branch": "work/container-demo-cleanup",
       "branch_head": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
+      "preserved_merge": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "branch_lookup": 404,
       "native_auto_deleted": true,
       "open_prs": [],
-      "issue_auto_closed": true,
+      "blocking_dependents": [],
+      "issue_reopened": true,
+      "issue_state": "open",
+      "issue_status": "status:review",
       "publication_acceptance_pending": true
     },
     "recovery": {
@@ -714,15 +751,17 @@
       "corrective_merge": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114"
     },
     "wake": {
-      "worker": "codex-hourly-20261008T012904Z",
-      "started_at": "2026-10-08T01:29:04Z",
+      "worker": "codex-hourly-20261008T023108Z",
+      "started_at": "2026-10-08T02:31:08Z",
       "slice_minutes": 40,
-      "deadline": "2026-10-08T02:09:04Z",
+      "deadline": "2026-10-08T03:11:08.000Z",
+      "reserve_from": "2026-10-08T03:06:08.000Z",
       "stop_reason": "actual default CI external wait",
       "concurrent_workers": 0,
       "local_validation": false,
       "manual_publication": false,
-      "paid_infrastructure": false
+      "paid_infrastructure": false,
+      "task_prompt_changed": false
     },
     "recovery_plan": {
       "version": "0.22.19",
@@ -981,6 +1020,10 @@
           "conclusion": "failure"
         }
       ]
+    },
+    "retrospective": {
+      "cause": "PR container runtime check did not exercise publisher TemporaryDirectory cleanup; valid image proof was emitted before host cleanup failed.",
+      "encoded_fix": "Shared real read-only package/publisher demo cleanup plus explicit nonroot private mount owner and no-output-on-cleanup-failure CI regression."
     }
   },
   "attempts": {
