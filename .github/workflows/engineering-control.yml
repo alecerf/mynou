@@ -1,0 +1,34 @@
+name: Authenticated engineering control
+on:
+  issue_comment:
+    types: [created]
+permissions:
+  contents: write
+  issues: write
+  pull-requests: read
+  actions: read
+concurrency:
+  group: mynou-global-mechanical-delivery
+  cancel-in-progress: false
+jobs:
+  control-command:
+    if: >-
+      github.repository == 'alecerf/mynou' &&
+      github.event.issue.number == 30 &&
+      !github.event.issue.pull_request &&
+      github.actor == 'alecerf' &&
+      github.event.comment.user.id == 22006964 &&
+      startsWith(github.event.comment.body, '<!-- mynou-control-command:v1 -->')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Issue content is data. Only reviewed default code receives write tokens.
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: trunk
+          persist-credentials: false
+      - name: Authenticate native command and update the one canonical ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 engineering/commands.py

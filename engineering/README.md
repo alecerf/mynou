@@ -270,3 +270,11 @@ Material self-improvements to Skills, policy, tooling and role boundaries follow
 the same reviewed process. Encode repeated friction once. Do not silently remove
 concurrency, durable recovery, secrets or truthful QA. Validation evidence and
 scenario coverage are recorded in [validation.md](validation.md).
+
+## Connected control transport
+
+[The strict comment transport](command-transport.md) lets a scheduled web worker
+request lease administration through reviewed default Actions using the connected
+GitHub comment API. It retains canonical Git state and the existing single-parent,
+non-force arbitration. Installation does not activate notes or reconcile the
+hourly task; actual post-merge proof and Issue #19 cutover remain distinct steps.
