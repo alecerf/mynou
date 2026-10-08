@@ -1,45 +1,75 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 641,
+  "generation": 642,
   "lease": {
     "id": "codex-hourly-20261008112927Z-master-1791459133000",
     "worker": "codex-hourly-20261008112927Z",
     "role": "master",
     "issue": 32,
     "acquired_at": "2026-10-08T11:32:13Z",
-    "heartbeat_at": "2026-10-08T11:32:13Z",
-    "expires_at": "2026-10-08T12:17:13Z",
+    "heartbeat_at": "2026-10-08T11:34:14Z",
+    "expires_at": "2026-10-08T12:19:14Z",
     "branch": "trunk",
     "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
     "pr": 33
   },
   "checkpoint": {
-    "at": "2026-10-08T11:04:56Z",
+    "at": "2026-10-08T11:34:14Z",
     "issue": 32,
-    "role": "triage",
+    "role": "master",
     "branch": "trunk",
     "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
     "pr": 33,
-    "summary": "Default-source CI transition: ci-passed at ced0fe652469fa6916831e0fb09cccc1a8784f79; native evidence {'commit': 'ced0fe652469fa6916831e0fb09cccc1a8784f79', 'state': 'ci-passed', 'at': '2026-10-08T11:04:56Z', 'run_id': 37767226158, 'status': 'completed', 'conclusion': 'success'}. No release publication is inferred.",
-    "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases.",
+    "summary": "Recovery confirmed immutable bot release406732310/v0.22.23 published11:04:39Z at exact default/tagced0fe652469fa6916831e0fb09cccc1a8784f79 with four native assets. Default CI37767226158 seven jobs succeeded; Engineering37767226188 succeeded and CodeQL37767225919 succeeded. Actual default Security37767226110 failed: source-history113277735502 passed, actions-logs113277735964 failed. Cause and registry proof not yet inspected; no clean-security or live-transport claim. Recover this actual red before Issue30 proof.",
+    "next_action": "Release Master; Security32 inspect actual failed audit log113277735964 and native run evidence safely, preserving any real finding without secret values. Choose a bounded correction or justified deterministic retry; do not retag published v23. Registry/release log proof and source-bound CI remain to verify before30 live proof.",
     "publication": {
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
-      "state": "ci-passed",
-      "at": "2026-10-08T11:04:56Z",
+      "state": "immutable-release-observed-security-recovery-pending",
+      "version": "0.22.23",
+      "release_id": 406732310,
+      "at": "2026-10-08T11:04:39Z",
+      "immutable": true,
+      "tag_commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "run_id": 37767226158,
       "status": "completed",
-      "conclusion": "success"
+      "conclusion": "success",
+      "assets": [
+        {
+          "id": 621576017,
+          "name": "mynou-v0.22.23-linux-x86_64",
+          "size": 4891488,
+          "digest": "sha256:05c8929d7a15d914eb5316608adab8d6ee20b43567eeba6c1a30697fe390a79e"
+        },
+        {
+          "id": 621576016,
+          "name": "mynou-v0.22.23-macos-arm64",
+          "size": 3729072,
+          "digest": "sha256:e327f6040899b0fc8c9d1eb58ec9f75b068ec683ee2a58c8e7b83d4c35140338"
+        },
+        {
+          "id": 621576010,
+          "name": "mynou-v0.22.23-macos-x86_64",
+          "size": 4508464,
+          "digest": "sha256:3ebe9778587278ad972ca0c97214cd9c5e5b8c4f98d2089156bda1d8e04d1f01"
+        },
+        {
+          "id": 621576018,
+          "name": "SHA256SUMS",
+          "size": 281,
+          "digest": "sha256:37826cc9047566f7a7618247fb912364ac87352b204337ea8cbcce3e63fbac2b"
+        }
+      ]
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T11:00:25Z",
+      "at": "2026-10-08T11:04:56Z",
       "issue": 32,
-      "role": "quality",
-      "branch": "work/native-comment-identity",
-      "commit": "2053b30d99dfaddf59e1f4fb7d16df57dc376cb9",
+      "role": "triage",
+      "branch": "trunk",
+      "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "pr": 33,
-      "summary": "Quality verifiedactualreadyEngineering37766901214 organization113276664372 andagent-qa-review113276714409 completed/success. Nativegate log binds2053b30/base719,Issue32,QA5455490361 cp9bea1de/Security5455447204 cp0066100 andactualrequiredCI37766166661/37766901214/37766166766. AllCodeQLgreen; nativePRready/clean/currenthead/base/default unchanged; reviewsactualCOMMENT, threadsempty. Objectivegatesgreen; exactheadmerge next.",
-      "next_action": "Author-selfmergePR33 with expected2053b30, immediately persistactualmerge/default and CIpublicationpending. OnlyCI publishesimmutablev23; recoverdefaultCI/publication before30actualliveproof or19cutover."
+      "summary": "Default-source CI transition: ci-passed at ced0fe652469fa6916831e0fb09cccc1a8784f79; native evidence {'commit': 'ced0fe652469fa6916831e0fb09cccc1a8784f79', 'state': 'ci-passed', 'at': '2026-10-08T11:04:56Z', 'run_id': 37767226158, 'status': 'completed', 'conclusion': 'success'}. No release publication is inferred.",
+      "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases."
     },
     "recovery": {
       "pr": 26,
@@ -253,7 +283,7 @@
       "source": "2053b30d99dfaddf59e1f4fb7d16df57dc376cb9",
       "base": "7193547206a9e954bea44e9570716b23e4e660b2",
       "merge_commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
-      "state": "merged-default-publication-pending",
+      "state": "immutable-v23-observed-default-audit-red",
       "parent_issue": 30,
       "qa_review": 5455490361,
       "qa_checkpoint": "9bea1de466fcae019205272341ce679fd5a56279",
@@ -272,6 +302,13 @@
       "native_pr_handoff": 6058451961,
       "parent_handoff": 6058452222,
       "migration_handoff": 6058452479
+    },
+    "security_recovery": {
+      "issue": 32,
+      "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
+      "run_id": 37767226110,
+      "failed_job": 113277735964,
+      "state": "actual-default-audit-red-cause-unread"
     }
   },
   "attempts": {
