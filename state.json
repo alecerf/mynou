@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 469,
-  "lease": null,
+  "generation": 470,
+  "lease": {
+    "id": "wake11-master-control-ref-boundary-20261008T032912Z",
+    "worker": "codex-hourly-20261008T032912Z",
+    "role": "master",
+    "issue": 19,
+    "acquired_at": "2026-10-08T03:58:18Z",
+    "heartbeat_at": "2026-10-08T03:58:18Z",
+    "expires_at": "2026-10-08T04:43:18Z",
+    "branch": "work/control-ref-adapter",
+    "commit": "e44bfc7e8319d1be7b0200bfa838d132ffe51efc",
+    "pr": 24
+  },
   "checkpoint": {
     "at": "2026-10-08T03:58:08Z",
     "issue": 19,
