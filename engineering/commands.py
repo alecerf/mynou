@@ -26,6 +26,8 @@ COMMANDS = {
     "probe-notes": {"worker", "lease", "expected_probe_sha"},
     "fence-control": {"worker", "lease", "task_receipt_id"},
     "activate-control": {"worker", "lease"},
+    "checkpoint-fence": {"worker", "lease", "summary", "next_action"},
+    "release-fence": {"worker", "lease"},
     "recover-fence": {"worker"},
     "retire-control": {"worker", "lease", "notes_proof_sha", "task_receipt_id"},
 }
@@ -90,6 +92,8 @@ def payload(body):
         require(sha(args["commit"]) and (args["pr"] is None or integer(args["pr"])), "invalid-source-scope")
     if command == "checkpoint":
         require(sha(args["commit"]) and (args["pr"] is None or integer(args["pr"])), "invalid-source-scope")
+        require(all(isinstance(args[k], str) and 1 <= len(args[k]) <= 2000 for k in ["summary", "next_action"]), "invalid-checkpoint-text")
+    if command == "checkpoint-fence":
         require(all(isinstance(args[k], str) and 1 <= len(args[k]) <= 2000 for k in ["summary", "next_action"]), "invalid-checkpoint-text")
     if command == "attempt":
         require(all(isinstance(args[k], str) and 1 <= len(args[k]) <= 256 for k in ["approach", "fingerprint"]), "invalid-attempt-text")
@@ -243,6 +247,8 @@ def execute(api, event, at, actor, triggering_actor):
     handlers = {
         "fence-control": lambda: migration.fence(api, value["expected_sha"], args["worker"], args["lease"], args["task_receipt_id"]),
         "activate-control": lambda: migration.activate(api, value["expected_sha"], args["worker"], args["lease"]),
+        "checkpoint-fence": lambda: migration.checkpoint_fence(api, value["expected_sha"], args["worker"], args["lease"], args["summary"], args["next_action"]),
+        "release-fence": lambda: migration.release_fence(api, value["expected_sha"], args["worker"], args["lease"]),
         "recover-fence": lambda: migration.recover_fence(api, value["expected_sha"], args["worker"], comment_id),
         "retire-control": lambda: migration.retire(api, value["expected_sha"], args["worker"], args["lease"], args["notes_proof_sha"], args["task_receipt_id"]),
     }

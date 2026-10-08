@@ -8,8 +8,10 @@ worker may run. Role changes require a durable checkpoint, release and new lease
 
 ## Resume without conversation history
 
-1. Read AGENTS.md, this runbook and `.github/engineering.json`. Inspect GitHub
-   `control/engineering:state.json` before investigating or editing anything.
+1. Read configuration only to locate canonical control; inspect its native ref
+   and state under [control-storage.md](control-storage.md) before investigation.
+   Then read AGENTS.md and this runbook. Before migration, use
+   `control/engineering:state.json`; a reviewed schema2 fence routes to notes.
    `python3 engineering/control.py wake` performs that admission check. It is
    administration, not local project validation. A valid lease means exit without
    domain work, polling or spawning another worker.
@@ -17,28 +19,36 @@ worker may run. Role changes require a durable checkpoint, release and new lease
    it refuses to reclaim unpreserved commits. Read the recovered checkpoint and
    relevant PR/Issue comments, including findings. Finish valid interrupted work
    before unrelated work. Malformed state fails closed: preserve it and inspect
-   native control-branch history; never replace it with an empty lock.
+   native canonical-control history; never replace it with an empty lock.
+   An unactivated schema2 fence exits busy for a valid nested owner. Its owner
+   uses `checkpoint-fence`/`release-fence`; a later admitted worker uses
+   `recover-fence` after deliberate release or expiry and native preservation.
 3. Read the selected Issue acceptance and only relevant Skills/code/logs. Acquire
    one role and execute. While the next transition is immediately executable and
-   time remains, checkpoint/release and acquire its role in the same worker.
+   this execution has capacity, checkpoint/release and acquire its role in the same worker.
    Do not end a wake merely because a role finished. Recover the current delivery
    before unrelated work. Use existing branches/PRs rather than duplicating them.
    Master handles missing metadata or new intent.
-4. Commit meaningful progress; push it remotely before ending a slice. Checkpoint
-   the exact remote commit, PR, concise outcome, checks and next action. Release
-   before another role or intentional stop. Renew through checkpoint at least
-   every 15 minutes. Use `slice_minutes` from configuration (currently 40 minutes)
-   as one deadline for the entire wake; switching roles never resets it. Reserve
-   the final five minutes for remote checkpoint and release. Stop earlier for
-   idle, capacity/ownership loss or a real external wait; do not busy-poll or
-   launch another wake/worker to evade the bound. Unexpected worker death leaves
-   commits recoverable and the unchanged 45-minute lease expires. Quota loss is
-   paused capacity, never failed work.
+4. Use `execution_mode: continuous`: there is no application-imposed wake
+   deadline. Finish ready transitions of the current item, then select the next
+   highest-priority executable legitimate work item in this same worker.
+   Recovery/publication waits still precede unrelated work; continuous does not
+   mean inventing work, busy polling or holding a lease while waiting.
+5. Commit and push meaningful progress throughout execution. Checkpoint the exact
+   remote commit, PR, concise outcome, actual checks and next action at least every
+   15 minutes and at role/work boundaries; checkpoint renews the unchanged
+   45-minute lease. Release before another role or intentional stop. Stop for idle,
+   a real external wait, capacity/platform termination or ownership loss. Do not
+   launch another wake/worker to evade platform limits. Save progress proactively,
+   because a platform interruption may prevent a final handoff. Unexpected worker
+   death leaves remote commits/checkpoints recoverable; the lease expires and the
+   next supported wake recovers first. Quota loss is paused capacity, never failed
+   work. No infinite execution or exact quota boundary can be guaranteed.
 
 Native backlog: [managed Issues](https://github.com/alecerf/mynou/issues?q=is%3Aopen+label%3Aagent-work).
 [Current work](https://github.com/alecerf/mynou/issues?q=is%3Aopen+label%3Aagent-work+label%3Astatus%3Ain-progress)
 and [blocked work](https://github.com/alecerf/mynou/issues?q=is%3Aopen+label%3Aagent-work+label%3Astatus%3Ablocked)
-are native filtered views. Native Issues/PRs represent work; the control branch
+are native filtered views. Native Issues/PRs represent work; the canonical Git ref
 contains only execution lease, checkpoint and bounded attempt history. Do not
 create a parallel backlog database.
 
@@ -120,9 +130,12 @@ python3 engineering/source.py --local-base LOCAL_BASE --remote-base REMOTE_BASE 
 
 Remote and local commit IDs can differ while trees match. Preserve the mapping
 in the Issue/PR checkpoint. Prefer normal Git transport when actually available.
-With only connector tools, read the control ref/file, create its replacement tree
-and commit with that exact parent, then use `github_update_ref` with expected SHA
-and force false. This is the same protocol; no local execution is required.
+With only connector tools, read canonical control before requesting an update.
+The connected branch-scoped updater can use the exact-parent non-force protocol
+while legacy schema1 is authoritative. It cannot be treated as a notes updater.
+For notes and a fenced snapshot, use the reviewed authenticated native-comment
+transport, inspect its actual receipt/ref and stop honestly if it is unavailable.
+No local execution is required.
 
 ## Reviews and objective delivery
 
@@ -218,11 +231,14 @@ repeat branch-health sweeps: these run daily at 03:47 UTC or on explicit dispatc
 
 ## Scheduling, capacity and real limitations
 
-ChatGPT Scheduled Tasks can wake a bounded recovery-first Master through the
-connected GitHub app. Hourly is the platform's highest supported task frequency;
-the existing enabled task keeps that cadence. Each wake spends its configured
-budget on successive ready transitions, with separate serial role leases and a
-single deadline, rather than one role per hour. The mechanical GitHub fallback
+ChatGPT Scheduled Tasks can wake a recovery-first Master through the connected
+GitHub app. Hourly is the platform's highest supported task frequency; the existing
+enabled task keeps that cadence as a recovery trigger. Execution continues useful
+ready work without a fixed 40-minute stop, with separate serial role leases and
+15-minute checkpoints. A platform execution still has finite, uncontrolled limits;
+removing the application deadline does not guarantee continuous background compute.
+A scheduled wake that encounters any valid lease exits quietly, even if it is this
+worker's lease. The mechanical GitHub fallback
 also runs hourly, with event-triggered delivery retained and a daily health sweep.
 It does not execute an AI worker. Start every wake with admission;
 exit if busy. Web scheduled tasks have connected tools, not a durable local
@@ -281,10 +297,10 @@ hourly task; actual post-merge proof and Issue #19 cutover remain distinct steps
 
 ## Reviewed notes cutover
 
-[Canonical control and retirement](control-storage.md) defines schema2 legacy fencing,
-notes authority, interrupted-fence recovery and verified old-branch retirement.
-Installation and live activation are separate acceptance stages. Issue19 remains
-In Progress until actual notes proof, existing-task reconciliation and retirement.
-Use the resolved canonical authority for admission/review ancestry; do not infer
-it from a missing branch or initialize empty state. The task prompt changes only
-after reviewed merge and an actual native Task response.
+[Canonical control and retirement](control-storage.md) defines schema2 fencing,
+the renewable sole nested owner, deliberately released/expired native recovery,
+notes authority and verified old-branch retirement. Installation and live
+activation are separate acceptance stages. Issue19 remains In Progress until
+actual notes proof, existing-task reconciliation and retirement. Read the
+resolved authority; never infer it from absence or initialize empty state.
+Only an actual supported Task response proves the live prompt changed.

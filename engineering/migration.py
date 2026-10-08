@@ -127,7 +127,7 @@ def fence(api, expected, worker, identity, task_comment):
         raise ValueError("Notes already exists; preserve it rather than overwrite")
     value = lease.checkpoint(state, lease.now(), identity,
         "Legacy admission fenced; complete state/history preserved.",
-        "Activate fixed notes from this fence; recover the nested expired lease if interrupted.")
+        "Activate fixed notes; checkpoint/renew the owned fence or release it for native recovery.")
     value["checkpoint"]["control_migration"] = {"phase": "fenced", "legacy_ref": LEGACY,
         "target_ref": TARGET, "policy_commit": policy, "origin_sha": expected,
         "task_receipt": task_comment, "task_id": task["task_id"]}
@@ -147,11 +147,64 @@ def pending_owner(api, expected, worker, identity):
         raise ValueError("Migration fence changed")
     state = fenced(api, expected, api.file(api.cfg["state_path"], expected))
     held = lease.owned(state, identity, lease.now())
-    if held["worker"] != worker or held["role"] != "master" or held["issue"] != 19:
-        raise ValueError("Only the owned scoped Master can activate the fence")
+    plan = state["checkpoint"]["control_migration"]
+    if held["worker"] != worker or held["role"] != "master" or held["issue"] != 19 or held["pr"] != 24 or held["branch"] != api.cfg["default_branch"] or held["commit"] != plan["policy_commit"]:
+        raise ValueError("Only the exact owned scoped Master may advance a fence")
     if optional_ref(api, TARGET) is not None:
         raise ValueError("Notes already exists; read canonical state, never replay activation")
     return state, held
+
+
+def save_fence(api, expected, state, message):
+    """Preserve schema2 admission and sole-parent non-force arbitration."""
+    record = {"schema": 2, "kind": KIND, "legacy_ref": LEGACY, "target_ref": TARGET,
+        "parent_sha": expected, "state": lease.validate(state)}
+    result = api.cas_file(LEGACY, expected, api.cfg["state_path"], record, message)
+    if api.ref(LEGACY) != result or optional_ref(api, TARGET) is not None:
+        raise ValueError("Fence ownership or authority changed after write")
+    if fenced(api, result, api.file(api.cfg["state_path"], result)) != state:
+        raise ValueError("Fence state was not confirmed")
+    return {"control_sha": result, "control_ref": LEGACY, "phase": "fenced",
+        "lease_id": None if state["lease"] is None else state["lease"]["id"]}
+
+
+def checkpoint_fence(api, expected, worker, identity, summary, next_action):
+    state, _ = pending_owner(api, expected, worker, identity)
+    value = lease.checkpoint(state, lease.now(), identity, summary, next_action)
+    pending_owner(api, expected, worker, identity)
+    return save_fence(api, expected, value, "Checkpoint renewable fenced migration")
+
+
+def release_fence(api, expected, worker, identity):
+    state, held = pending_owner(api, expected, worker, identity)
+    cp = state["checkpoint"]
+    if any(cp.get(k) != held[k] for k in ["issue", "role", "branch", "commit", "pr"]) or lease.time(cp.get("at")) < lease.time(held["acquired_at"]):
+        raise ValueError("Checkpoint this fenced phase before release")
+    at = lease.now()
+    value = lease.checkpoint(state, at, identity,
+        "Fenced migration deliberately paused; remote progress and owner preserved.",
+        "Recover the released fence from native Issue, branch/commit, PR and CI before activation.")
+    value["checkpoint"]["control_migration"]["released_lease"] = deepcopy(held)
+    value = lease.release(value, at, identity)
+    pending_owner(api, expected, worker, identity)
+    return save_fence(api, expected, value, "Release checkpointed fenced migration")
+
+
+def released_fence_owner(api, expected, state):
+    """Prove deliberate release against its actual still-held native parent."""
+    record = api.file(api.cfg["state_path"], expected)
+    previous = fenced(api, record["parent_sha"], api.file(api.cfg["state_path"], record["parent_sha"]))
+    held = previous["lease"]
+    cp, plan = state["checkpoint"], state["checkpoint"]["control_migration"]
+    if held is None or plan.get("released_lease") != held or not lease.valid(previous, lease.time(cp.get("at"))):
+        raise ValueError("Released fence lacks a valid exact-parent owner handoff")
+    if state["generation"] != previous["generation"] + 2 or state["attempts"] != previous["attempts"]:
+        raise ValueError("Released fence does not preserve its native transition")
+    if any(cp.get(k) != held[k] for k in ["issue", "role", "branch", "commit", "pr"]) or lease.time(cp["at"]) < lease.time(held["acquired_at"]):
+        raise ValueError("Released checkpoint does not bind the held phase")
+    if held["role"] != "master" or held["issue"] != 19 or held["pr"] != 24 or held["branch"] != api.cfg["default_branch"] or held["commit"] != plan["policy_commit"]:
+        raise ValueError("Released fence source scope changed")
+    return held
 
 
 def activate(api, expected, worker, identity):
@@ -187,28 +240,32 @@ def recover_fence(api, expected, worker, comment_id):
         raise ValueError("Migration fence changed")
     state = fenced(api, expected, api.file(api.cfg["state_path"], expected))
     # Valid admission exits before Issue/source/PR/CI work.
-    if lease.valid(state, lease.now()) or state["lease"] is None or optional_ref(api, TARGET) is not None:
-        raise ValueError("Only an expired unactivated fence can be recovered")
+    if lease.valid(state, lease.now()):
+        raise ValueError("A valid fenced owner cannot be reclaimed")
+    if optional_ref(api, TARGET) is not None:
+        raise ValueError("Notes already exists; recover its canonical state instead")
     import control
-    recovered = control.recover_native(api, state, lease.now())
-    previous = state["lease"]
+    if state["lease"] is None:
+        previous = released_fence_owner(api, expected, state)
+        evidence = control.recovery_evidence(api, previous)
+        if not all(evidence.get(k) is True for k in ["issue", "branch", "pr", "ci", "commit_preserved"]):
+            raise ValueError("Released fence requires complete native preservation")
+        recovered = deepcopy(state)
+        recovered["checkpoint"]["recovery"] = evidence
+    else:
+        previous = state["lease"]
+        recovered = control.recover_native(api, state, lease.now())
     value = lease.acquire(recovered, lease.now(), f"comment-{comment_id}", worker, "master",
         19, previous["branch"], previous["commit"], 24)
     value = lease.checkpoint(value, lease.now(), value["lease"]["id"],
-        "Expired migration worker recovered after native Issue/branch/commit/PR/CI preservation.",
-        "Activate fixed notes from the freshly owned legacy fence.")
+        "Interrupted fenced work preserved from native Issue, branch/commit, PR and CI.",
+        "Continue owned fenced checkpoints; activate only with installed source/gates unchanged.")
     value["checkpoint"]["control_migration"] = deepcopy(state["checkpoint"]["control_migration"])
+    value["checkpoint"]["control_migration"].pop("released_lease", None)
     source_ready(api, value["lease"])
     if api.ref(LEGACY) != expected or optional_ref(api, TARGET) is not None:
         raise ValueError("Interrupted fence changed before recovery write")
-    record = {"schema": 2, "kind": KIND, "legacy_ref": LEGACY, "target_ref": TARGET,
-        "parent_sha": expected, "state": value}
-    result = api.cas_file(LEGACY, expected, api.cfg["state_path"], record, "Recover expired fenced migration")
-    if api.ref(LEGACY) != result:
-        raise ValueError("Fence recovery ownership changed after write")
-    return {"control_sha": result, "control_ref": LEGACY, "phase": "fenced",
-        "lease_id": value["lease"]["id"]}
-
+    return save_fence(api, expected, value, "Recover preserved fenced migration")
 
 def transport_proof(api, proof_sha, current):
     """A real exact-parent canonical checkpoint, not an editable claim of success."""

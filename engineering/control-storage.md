@@ -17,8 +17,10 @@ With the fixed migration policy, admission reads both exact control refs:
 
 - A schema1 legacy state and absent notes means legacy is the sole authority.
 - A schema2 legacy fence and absent notes pauses domain work. Its nested lease
-  supplies admission only; a valid lease means exit. Expired capacity requires
-  native Issue, branch/commit, PR and CI preservation before fence recovery.
+  supplies admission only; a valid lease means another wake exits. The already
+  admitted owner can renew/checkpoint or release this same nested lease.
+  Deliberate release or expired capacity requires native Issue, branch/commit,
+  PR and CI preservation before fence recovery.
 - Active notes must descend from the exact native sole-parent legacy fence.
   A changed/recreated legacy branch or conflicting notes fails closed.
 - After retirement, notes admission validates the preserved fence commit and
@@ -52,7 +54,10 @@ After actual default CI/publication is successful:
 2. `fence-control` checks source and current objective review/CI gates,
    the actual task attestation, absent target and fresh owner. It writes the
    schema2 fence on legacy by CAS.
-   No candidate notes ref exists before this write.
+   No candidate notes ref exists before this write. The exact admitted Master
+   owner can use `checkpoint-fence` at least every 15 minutes, or
+   `release-fence` before an intentional stop. Neither creates another authority
+   or changes the installed source scope; both use schema2 sole-parent CAS.
 3. `activate-control` creates notes from an original valid-state commit
    whose sole parent is that fence. All old commits, reviews, attempts and
    checkpoints remain ancestors. Native creation is atomic; an existing target
@@ -80,10 +85,26 @@ All execute reviewed default code, never proposed PR code with write tokens.
 ## Interruption and recovery
 
 Loss before fencing leaves the normal renewable legacy lease. Loss after fencing
-but before notes creation leaves a complete schema2 snapshot. When its lease has
-expired, `recover-fence` performs native preservation, records a new
-single-parent fence and acquires one scoped Master lease. Activation then uses
-that new fence. A valid nested lease cannot be reclaimed.
+but before notes creation leaves a complete schema2 snapshot. An owned
+`checkpoint-fence` renews the unchanged 45-minute lease and records useful
+progress. `release-fence` requires the phase checkpoint, preserves the exact
+still-held native-parent owner as a handoff and releases the sole nested lease.
+It is a historical owner record, never a second active lease.
+
+When the nested lease is expired or deliberately released, `recover-fence`
+inspects the native Issue, branch/commit, PR and CI, preserves useful work and
+acquires one scoped Master lease in a new single-parent fence. A deliberate
+release must match its actual held parent, release timestamp, generation,
+source scope and attempts before recovery; it does not wait for expiry.
+Current installed source/gates must still be valid before recovery or activation.
+A valid nested owner cannot be reclaimed; stale or competing writes stop without
+force or retry. Activation uses the latest recovered fence.
+
+The administrative CLI routes owned `checkpoint`/`release` to the fenced
+operations when schema2 is pending; supply the exact `--worker` and `--lease`.
+A fenced checkpoint cannot replace the source commit or PR. Web workers use the
+strict native `checkpoint-fence`/`release-fence` envelopes instead. This routing
+does not run local checks; recovery is the documented native command protocol.
 
 Loss after notes creation is ordinary notes lease recovery, even if the receipt
 was lost. Read current refs before another command; stale commands never replay

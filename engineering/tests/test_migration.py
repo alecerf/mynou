@@ -2,6 +2,8 @@
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import json
+import io
+from contextlib import redirect_stdout
 from pathlib import Path
 import sys
 import unittest
@@ -263,6 +265,195 @@ class CutoverScenarios(unittest.TestCase):
             self.assertEqual(api.commits[result["control_sha"]]["parents"], [{"sha": fence}])
             active = migration.activate(api, result["control_sha"], "recovered-worker", result["lease_id"])
             self.assertEqual(migration.resolve(api)[1], active["control_sha"])
+
+    def test_fenced_heartbeat_is_renewable_beyond_an_hour_without_new_authority(self):
+        api, head = self.fenced()
+        original = api.file("state.json", head)["state"]
+        for minutes in [15, 30, 45, 60]:
+            old = head
+            at = AT + timedelta(minutes=minutes)
+            with patch.object(lease, "now", return_value=at):
+                result = migration.checkpoint_fence(api, old, "one-worker", "owner",
+                    "Preserved migration progress", "Continue the same installed work")
+            head = result["control_sha"]
+            state = api.file("state.json", head)["state"]
+            self.assertEqual(api.commits[head]["parents"], [{"sha": old}])
+            self.assertEqual(result["lease_id"], "owner")
+            self.assertTrue(lease.valid(state, at))
+            self.assertEqual(state["lease"]["expires_at"], lease.stamp(at + lease.TTL))
+            self.assertEqual(state["attempts"], original["attempts"])
+            self.assertEqual(state["lease"]["commit"], SOURCE)
+            self.assertNotIn(migration.TARGET, api.refs)
+        self.assertEqual(self.source.call_count, 1)
+
+    def test_owned_fenced_release_preserves_parent_and_resumes_without_expiry_wait(self):
+        api, fence = self.fenced()
+        before = api.file("state.json", fence)["state"]
+        at = AT + timedelta(minutes=2)
+        with patch.object(lease, "now", return_value=at):
+            released = migration.release_fence(api, fence, "one-worker", "owner")
+        head = released["control_sha"]
+        state = api.file("state.json", head)["state"]
+        self.assertIsNone(state["lease"])
+        self.assertIsNone(released["lease_id"])
+        self.assertEqual(state["generation"], before["generation"] + 2)
+        self.assertEqual(state["checkpoint"]["control_migration"]["released_lease"], before["lease"])
+        self.assertEqual(api.commits[head]["parents"], [{"sha": fence}])
+        with patch.object(lease, "now", return_value=at + timedelta(minutes=1)):
+            recovered = migration.recover_fence(api, head, "next-worker", 302)
+            value = api.file("state.json", recovered["control_sha"])["state"]
+            self.assertEqual(value["lease"]["worker"], "next-worker")
+            self.assertEqual(value["lease"]["role"], "master")
+            self.assertEqual(value["lease"]["commit"], SOURCE)
+            self.assertEqual(value["lease"]["pr"], 24)
+            self.assertNotIn("released_lease", value["checkpoint"]["control_migration"])
+            self.assertTrue(all(value["checkpoint"]["recovery"][k] for k in
+                ["issue", "branch", "pr", "ci", "commit_preserved"]))
+            active = migration.activate(api, recovered["control_sha"], "next-worker", recovered["lease_id"])
+        self.assertEqual(migration.resolve(api)[:2], (migration.TARGET, active["control_sha"]))
+        self.assertTrue(api.ancestor(fence, active["control_sha"]))
+
+    def test_cli_checkpoint_and_release_can_advance_pending_owned_fence(self):
+        api, fence = self.fenced()
+        with patch.object(control, "GitHub", return_value=api), redirect_stdout(io.StringIO()):
+            with patch.object(sys, "argv", ["control.py", "checkpoint", "--worker", "one-worker",
+                    "--lease", "owner", "--summary", "Actual fenced progress", "--next", "Pause safely"]):
+                control.main()
+            renewed = api.refs[migration.LEGACY]
+            self.assertNotEqual(renewed, fence)
+            with patch.object(sys, "argv", ["control.py", "release", "--worker", "one-worker", "--lease", "owner"]):
+                control.main()
+        self.assertIsNone(api.file("state.json", api.refs[migration.LEGACY])["state"]["lease"])
+        self.assertNotIn(migration.TARGET, api.refs)
+
+    def test_wrong_fenced_scope_or_owner_cannot_checkpoint_or_release(self):
+        for operation in ["checkpoint", "release"]:
+            for key, wrong in [("worker", "other"), ("role", "quality"), ("issue", 20),
+                    ("pr", 25), ("branch", "work/other"), ("commit", HEAD)]:
+                api, fence = self.fenced()
+                api.states[fence]["state"]["lease"][key] = wrong
+                api.calls.clear()
+                with self.subTest(operation=operation, key=key), self.assertRaises(ValueError):
+                    if operation == "checkpoint":
+                        migration.checkpoint_fence(api, fence, "one-worker", "owner", "Progress", "Next")
+                    else:
+                        migration.release_fence(api, fence, "one-worker", "owner")
+                self.assertFalse(any(c[0] in {"POST", "PATCH", "DELETE"} for c in api.calls))
+
+    def test_expired_or_stale_fenced_owner_never_renews_or_releases(self):
+        for expired in [False, True]:
+            for operation in ["checkpoint", "release"]:
+                api, fence = self.fenced()
+                expected = fence if expired else HEAD
+                api.calls.clear()
+                with patch.object(lease, "now", return_value=AT + lease.TTL), \
+                        self.subTest(expired=expired, operation=operation), self.assertRaises(ValueError):
+                    if operation == "checkpoint":
+                        migration.checkpoint_fence(api, expected, "one-worker", "owner", "Progress", "Next")
+                    else:
+                        migration.release_fence(api, expected, "one-worker", "owner")
+                self.assertFalse(any(c[0] in {"POST", "PATCH", "DELETE"} for c in api.calls))
+
+    def test_competing_fenced_checkpoint_or_release_never_overwrites_sibling(self):
+        for operation in ["checkpoint", "release"]:
+            api, fence = self.fenced()
+            api.calls.clear()
+            api.race = True
+            with self.subTest(operation=operation), self.assertRaises(RuntimeError):
+                if operation == "checkpoint":
+                    migration.checkpoint_fence(api, fence, "one-worker", "owner", "Progress", "Next")
+                else:
+                    migration.release_fence(api, fence, "one-worker", "owner")
+            self.assertEqual(api.refs[migration.LEGACY], "e" * 40)
+            writes = [c for c in api.calls if c[0] == "PATCH"]
+            self.assertEqual(len(writes), 1)
+            self.assertFalse(writes[0][2]["force"])
+            self.assertNotIn(migration.TARGET, api.refs)
+
+    def test_released_fence_tampered_handoff_or_transition_cannot_be_reclaimed(self):
+        for kind in ["missing", "owner", "generation", "attempts", "scope"]:
+            api, fence = self.fenced()
+            result = migration.release_fence(api, fence, "one-worker", "owner")
+            head = result["control_sha"]
+            state = api.states[head]["state"]
+            if kind == "missing":
+                del state["checkpoint"]["control_migration"]["released_lease"]
+            elif kind == "owner":
+                state["checkpoint"]["control_migration"]["released_lease"]["worker"] = "other"
+            elif kind == "generation":
+                state["generation"] += 1
+            elif kind == "attempts":
+                state["attempts"] = {}
+            else:
+                state["checkpoint"]["commit"] = HEAD
+            api.calls.clear()
+            with self.subTest(kind=kind), self.assertRaises(ValueError):
+                migration.recover_fence(api, head, "next-worker", 302)
+            self.assertFalse(any(c[0] in {"POST", "PATCH", "DELETE"} for c in api.calls))
+
+    def test_released_fence_requires_actual_native_work_preservation(self):
+        api, fence = self.fenced()
+        released = migration.release_fence(api, fence, "one-worker", "owner")["control_sha"]
+        original = api.rest
+        def unpreserved(method, path, value=None):
+            if path == f"compare/{SOURCE}...{SOURCE}":
+                return {"status": "diverged"}
+            return original(method, path, value)
+        api.rest = unpreserved
+        api.calls.clear()
+        with self.assertRaises(ValueError):
+            migration.recover_fence(api, released, "next-worker", 302)
+        self.assertEqual(api.refs[migration.LEGACY], released)
+        self.assertFalse(any(c[0] in {"POST", "PATCH", "DELETE"} for c in api.calls))
+
+    def test_released_fence_recovery_loses_race_without_force_or_retry(self):
+        api, fence = self.fenced()
+        released = migration.release_fence(api, fence, "one-worker", "owner")["control_sha"]
+        api.calls.clear()
+        api.race = True
+        with self.assertRaises(RuntimeError):
+            migration.recover_fence(api, released, "next-worker", 302)
+        self.assertEqual(api.refs[migration.LEGACY], "e" * 40)
+        writes = [c for c in api.calls if c[0] == "PATCH"]
+        self.assertEqual(len(writes), 1)
+        self.assertFalse(writes[0][2]["force"])
+
+    def test_fenced_command_envelopes_are_bounded_and_fixed_scope(self):
+        for command, args in [
+                ("checkpoint-fence", {"worker": "one-worker", "lease": "owner", "summary": "Progress", "next_action": "Next", "commit": SOURCE}),
+                ("checkpoint-fence", {"worker": "one-worker", "lease": "owner", "summary": "x" * 2001, "next_action": "Next"}),
+                ("release-fence", {"worker": "one-worker", "lease": "owner", "ref": migration.TARGET})]:
+            body = commands.MARKER + "\n" + commands.FENCE + "json\n" + json.dumps(
+                {"schema": 1, "command": command, "expected_sha": HEAD, "args": args}) + "\n" + commands.FENCE
+            with self.subTest(command=command, args=args), self.assertRaises(ValueError):
+                commands.payload(body)
+
+    def test_authenticated_dispatch_handles_fenced_lifecycle_before_normal_state_read(self):
+        api, fence = self.fenced()
+        original = api.rest
+        def receipt(method, path, value=None):
+            if method == "POST" and path == "issues/30/comments":
+                api.calls.append((method, path, deepcopy(value)))
+                return {"id": 500}
+            return original(method, path, value)
+        api.rest = receipt
+        head = fence
+        for comment_id, command, args in [
+                (401, "checkpoint-fence", {"worker": "one-worker", "lease": "owner",
+                    "summary": "Fenced progress", "next_action": "Release for the next wake"}),
+                (402, "release-fence", {"worker": "one-worker", "lease": "owner"}),
+                (403, "recover-fence", {"worker": "next-worker"})]:
+            envelope = {"schema": 1, "command": command, "expected_sha": head, "args": args}
+            body = commands.MARKER + "\n" + commands.FENCE + "json\n" + json.dumps(envelope) + "\n" + commands.FENCE
+            parsed = commands.payload(body)
+            with patch.object(commands, "authenticate", return_value=(comment_id, parsed)):
+                result = commands.execute(api, {}, AT, "alecerf", "alecerf")
+            self.assertEqual(result["command"], command)
+            self.assertEqual(result["command_id"], comment_id)
+            self.assertEqual(api.commits[result["control_sha"]]["parents"], [{"sha": head}])
+            head = result["control_sha"]
+        self.assertEqual(api.file("state.json", head)["state"]["lease"]["worker"], "next-worker")
+        self.assertEqual(sum(c[0] == "POST" and c[1] == "issues/30/comments" for c in api.calls), 3)
 
     def test_bad_fence_parent_or_legacy_rollback_fails_closed(self):
         api, fence, _ = self.activated()

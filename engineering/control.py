@@ -67,13 +67,11 @@ def select(state, issues, at):
     if attempt.get("unchanged", 0) >= 3:
         return {"action": "triage", "issue": chosen["number"], "instruction": "Circuit breaker requires a changed approach before implementation resumes."}
     return {"action": "triage" if not labels(chosen) & {"status:ready"} else "work",
-        "issue": chosen["number"], "instruction": "Acquire one role lease and execute one bounded transition."}
+        "issue": chosen["number"], "instruction": "Acquire one role lease; continue ready transitions under execution_mode, checkpointing and releasing between roles."}
 
 
-def recover_native(api, state, at):
-    held = state["lease"]
-    if held is None or lease.valid(state, at):
-        raise ValueError("No expired lease to recover")
+def recovery_evidence(api, held):
+    """Inspect native work preservation for expired or deliberately released work."""
     issue = api.rest("GET", f"issues/{held['issue']}")
     preserved = api.rest("GET", "git/commits/" + held["commit"])
     try:
@@ -95,7 +93,14 @@ def recover_native(api, state, at):
         "preservation": "exact native merged PR head" if merged else "branch/default ancestry",
         "prs": [{"number": p["number"], "state": p["state"], "head": p["head"]["sha"], "merged_at": p.get("merged_at")} for p in relevant],
         "runs": [{"id": r["id"], "status": r["status"], "conclusion": r["conclusion"]} for r in runs[:10]]}
-    return lease.recover(state, at, evidence)
+    return evidence
+
+
+def recover_native(api, state, at):
+    held = state["lease"]
+    if held is None or lease.valid(state, at):
+        raise ValueError("No expired lease to recover")
+    return lease.recover(state, at, recovery_evidence(api, held))
 
 
 def main():
@@ -128,6 +133,16 @@ def main():
     try:
         head, state = read_state(api)
     except migration.Pending as pending:
+        if args.command == "checkpoint":
+            held = lease.owned(pending.state, args.lease, lease.now())
+            if (args.commit is not None and args.commit != held["commit"]) or (args.pr is not None and args.pr != held["pr"]):
+                raise ValueError("Fenced checkpoints preserve the installed source scope")
+            print(json.dumps(migration.checkpoint_fence(api, pending.head, args.worker,
+                args.lease, args.summary, args.next), indent=2))
+            return
+        if args.command == "release":
+            print(json.dumps(migration.release_fence(api, pending.head, args.worker, args.lease), indent=2))
+            return
         if args.command not in ("wake", "status"):
             raise
         print(json.dumps({"action": "busy" if lease.valid(pending.state, lease.now()) else "recover-fence",
