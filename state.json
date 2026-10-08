@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 573,
+  "generation": 574,
   "lease": {
     "id": "codex-hourly-20261008082654Z-qa-20261008083824",
     "worker": "codex-hourly-20261008082654Z",
     "role": "qa",
     "issue": 28,
     "acquired_at": "2026-10-08T08:38:24Z",
-    "heartbeat_at": "2026-10-08T08:38:24Z",
-    "expires_at": "2026-10-08T09:23:24Z",
+    "heartbeat_at": "2026-10-08T08:40:45Z",
+    "expires_at": "2026-10-08T09:25:45Z",
     "branch": "work/public-source-private-package",
     "commit": "b028b1dd058842d7ebc551d4f822519d9d4d1e85",
     "pr": 29
   },
   "checkpoint": {
-    "at": "2026-10-08T08:38:16Z",
+    "at": "2026-10-08T08:40:45Z",
     "issue": 28,
-    "role": "security",
+    "role": "qa",
     "branch": "work/public-source-private-package",
     "commit": "b028b1dd058842d7ebc551d4f822519d9d4d1e85",
     "pr": 29,
-    "summary": "Separate complete-diff Security nativeCOMMENT5453915524 atb028b1dd/base04e994 is bound to386098b2c9dbcc03882576199af1c98868d41c38. Allsix actual patches and privileged source/package/runtime boundaries inspected; publicsource acceptance is clientauthorized while private package/identity/digest/secret and default-onlywrite gates remain unchanged. CIvalidate passed864Rust/24infra/64org, new2regressions andsourcehistory passed; remaining actualgates and independentQA still required.",
-    "next_action": "Release Security; acquire exactsource QA, independently inspect complete native6diff, actualrequired platform/package/audit logs, Securityhistoricallease/time/ancestry and reviewthreads. Passonlyon actualgreen requiredCI; correctivemerge thenActionspublication, never claim oldv20 released.",
+    "summary": "Independent QA reviewed all6actual PR29 patches and current acceptance under own b028b1dd/base04e994 lease, all6sourceCI+2audit+latestorganization native logs, Security5453915524 currentscope/submission/historicallease386098b2/ancestry and emptythreads. Requiredactualjobsgreen:864Rust/24infra/64org,2newregressions,4builds,3native ready/Plexdemos,1001:1001containercleanup and3checksums. Audit4663Git/550archives/1950members0recognizedfindings/gaps withpending exclusions. Nofinding; defaultregistry/releasepublication stillmustprove aftercorrectivemerge.",
+    "next_action": "Submit exacthead/base complete-diff QA COMMENT boundto thisownhistoricalcheckpoint; release and acquireQuality. Verifyactualnewmachinegate andunchangedhead/base/allconfiguredjobs/threads, thenmergethe correctivePR. Actionsalonemustprove realprivatepackage andimmutable0.22.21; preserve19/PR24.",
     "publication": {
       "commit": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
       "state": "ci-failed",
@@ -57,9 +57,20 @@
       "security_checkpoint": "6e02750960c6683c6c04bcd26306942b09c16b5d"
     },
     "pending_qa": {
-      "state": "not-reviewed-current-recovery-source",
+      "state": "review-completed-awaiting-native-record",
       "head_sha": "b028b1dd058842d7ebc551d4f822519d9d4d1e85",
-      "base_sha": "04e99496318f5cf31f4d8634209cb6956aa3c6ef"
+      "base_sha": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
+      "reviewed_paths": [
+        ".github/scripts/publish-release.sh",
+        ".github/scripts/publish_container.py",
+        ".github/scripts/test_publication.py",
+        "Cargo.lock",
+        "Cargo.toml",
+        "docs/releases/0.22.21.md"
+      ],
+      "source_ci": 37750720668,
+      "security_audit": 37750720672,
+      "organization": 37751059700
     },
     "preserved_work": {
       "issue": 19,
