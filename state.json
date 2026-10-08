@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 655,
+  "generation": 656,
   "lease": {
     "id": "codex-hourly-20261008112927Z-quality-1791460198000",
     "worker": "codex-hourly-20261008112927Z",
     "role": "quality",
     "issue": 30,
     "acquired_at": "2026-10-08T11:49:58Z",
-    "heartbeat_at": "2026-10-08T12:05:40Z",
-    "expires_at": "2026-10-08T12:50:40Z",
+    "heartbeat_at": "2026-10-08T12:06:59Z",
+    "expires_at": "2026-10-08T12:51:59Z",
     "branch": "trunk",
     "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
     "pr": null
   },
   "checkpoint": {
-    "at": "2026-10-08T12:05:40Z",
+    "at": "2026-10-08T12:06:59Z",
     "issue": 30,
     "role": "quality",
     "branch": "trunk",
     "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
     "pr": null,
-    "summary": "Completed recovery delivery at defaultced0fe652469fa6916831e0fb09cccc1a8784f79: immutablev23/privatepackage andactualdefaultCI verified; preservedHTTP502 audit failure recovered in37767226110 attempt2 withactual627 archives/2334 members/0 recognized findings/gaps. Actual nativecontrolcheckpoint andfixed inertnotes create/update proved withreceipts/soleparents/ownedlease/unchangedcanonical probes. Closed30/Done; native19 blockers25/28/30 allclosed,19 nowReady withactualsource53/proof/remainingmigration documented. Draft24 remainspreserved/unmerged. No code/task/protection changes orlocalchecks. Enddomainwork forreserved checkpoints.",
-    "next_action": "Next wake acquire Master19 aftercanonical admission and recover draftPR24/work/control-ref-adapter head053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c againstdefaultcedd andactualpriorQA rejection. Reuse existingwork; design/implement reviewedtyped staging/fence/activation andinterruption recovery usingproven defaultAction transport. Fixedprobe proof doesnot authorize arbitrarywriter/activatecandidate. Refresh source/baseCI/Security/QA beforemerge, reconcileactualexistingtask onlyafterreviewedpolicymerge. Currentcanonicalbranch remainsauthority; stop this40-minute wake afterhandoff/release.",
+    "summary": "Wake completed before its40-minute deadline. Verified immutable v0.22.23 release406732310 at defaultced0fe652469fa6916831e0fb09cccc1a8784f79, native CI and private-image/binary proof. Recovered default audit HTTP502 via accepted retry; actual attempt2 succeeded with selected-scope0findings/gaps. Proved actual canonical checkpoint plus inert notes create/update. Issue30 closed/Done and19 Ready after allnative blockers closed. Preserved draft24/source053; no livebackend/task cutover. Final native handoffs:30=6059470061,31=6059470317,19=6059470579,24=6059470835. No local checks oradditionalworker. Release now.",
+    "next_action": "Fresh admission and recovery first; next bounded work is Master19 on existing draftPR24/work/control-ref-adapter/source053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c versus defaultced0fe652469fa6916831e0fb09cccc1a8784f79. Inspect actual unresolved cutoverQA and integrate the nowproven scoped Action transport with reviewed staging, fail-closed legacy fencing andinterruption recovery. RefreshCI/Security/complete-diffQA beforemerge; reconcile actualexistingtask afterreviewedpolicymerge. Currentcontrol/engineering remains soleauthority; inertprobe isnotlivecontrol. Do not duplicateissues/branches orrepublish immutable releases.",
     "publication": {
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "state": "published",
@@ -155,7 +155,23 @@
       "preserved_pr": 24,
       "preserved_branch": "work/control-ref-adapter",
       "preserved_commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
-      "branch_cleanup": "Previously verified automatic merged-branch removal; no manual deletion this wake."
+      "branch_cleanup": "Previously verified automatic merged-branch removal; no manual deletion this wake.",
+      "native_blockers": [
+        {
+          "issue": 25,
+          "state": "closed"
+        },
+        {
+          "issue": 28,
+          "state": "closed"
+        },
+        {
+          "issue": 30,
+          "state": "closed"
+        }
+      ],
+      "native_parent_status": "Ready",
+      "native_handoff": 6059470579
     },
     "release_recovery": {
       "issue": 28,
@@ -196,7 +212,9 @@
       "proposal": "Trusted native comment/default Action canonical checkpoint and fixed inert notes create/update are now actually proved atv23. Reviewed migration staging/fencing/activation commands remain to implement.",
       "scheduler_capabilities": "automations_peek and automations_update tools exposed; native task not looked up or modified this wake.",
       "boundary": "Connected branch-named writes remain scoped; fixed inert notes namespace verified through reviewed Actions. No general migration writer or live activation is claimed.",
-      "cutover": "No candidate staging, legacy fence, activation or task change. refs/heads/control/engineering remains sole live authority."
+      "cutover": "No candidate staging, legacy fence, activation or task change. refs/heads/control/engineering remains sole live authority.",
+      "native_handoff": 6059470579,
+      "preserved_pr_handoff": 6059470835
     },
     "control_bridge_design": {
       "state": "fixed scoped transport implemented/published/actually proved",
@@ -380,7 +398,12 @@
         "sole_parent": "432ede9c62475397ef93cb6a1b5f089d0f556988",
         "inert_tree": true,
         "canonical_unchanged": true
-      }
+      },
+      "closed_issue": 30,
+      "native_issue_handoff": 6059470061,
+      "native_pr_handoff": 6059470317,
+      "parent_handoff": 6059470579,
+      "preserved_pr_handoff": 6059470835
     }
   },
   "attempts": {
