@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 522,
+  "generation": 523,
   "lease": {
     "id": "wake15-qa-capacity-review-20261008T064648Z",
     "worker": "codex-capacity-recovery-20261008T064648Z",
     "role": "qa",
     "issue": 25,
     "acquired_at": "2026-10-08T06:49:38Z",
-    "heartbeat_at": "2026-10-08T06:49:38Z",
-    "expires_at": "2026-10-08T07:34:38Z",
+    "heartbeat_at": "2026-10-08T06:52:08Z",
+    "expires_at": "2026-10-08T07:37:08Z",
     "branch": "work/publication-handoff-recovery",
     "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
     "pr": 26
   },
   "checkpoint": {
-    "at": "2026-10-08T06:49:30Z",
+    "at": "2026-10-08T06:52:08Z",
     "issue": 25,
-    "role": "master",
+    "role": "qa",
     "branch": "work/publication-handoff-recovery",
     "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
     "pr": 26,
-    "summary": "Native repository visibility is public. GitHub accepted one failed-jobs-only rerun of Engineering run 37730229376 at unchanged PR #26 source 9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a/base d647be6edfd6e892474b2602bbc9047ad4047c2f. Acceptance is not runner success or green CI. Issue #25 is in Review. Source CI remains successful; earlier logical QA rejection must be superseded only after genuine independent complete-diff QA and required fresh organization success. No local checks, source edits, merge or release.",
-    "next_action": "Sequential handoff to QA: release Master, acquire exact-head QA lease, inspect all six actual changed paths, source CI logs, prior native review concerns and new required Engineering job outcome. Keep Security proof source/base-bound. If capacity or CI remains blocked, checkpoint and stop; otherwise post truthful scoped QA and recover actual final gate/delivery.",
+    "summary": "Distinct QA under an exact PR #26 lease inspected every actual six-file patch and delivery/lease context at 9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a/base d647be6edfd6e892474b2602bbc9047ad4047c2f. Native public-capacity rerun 37730229376 attempt 2 organization job 113187382812 now succeeded on a real runner with 57 scenarios and all four new regressions. Source CI 37729200692 still has all six required jobs green; all six job logs reread, including Rust/infrastructure checks, synthetic ready/Plex demos, nonroot cleanup and three checksums. Security review 5451648764 has valid scoped compact historical lease 617692df4dad3ca49439be33c7ce3432785c52c7, source/base match, valid submission time and native ancestry. No review threads. QA source acceptance passes; actual agent-qa-review is still in progress, not certified green.",
+    "next_action": "Post the truthful scoped QA COMMENT superseding prior capacity rejection 5451664028. Release QA; reacquire delivery role only after fresh native objective gates are green. Merge by exact expected SHA when every gate, source/base and findings remain valid; otherwise preserve a genuine CI wait. Actions alone publishes the new version.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -469,6 +469,31 @@
       "rerun_response": {
         "success": true
       }
+    },
+    "qa_review_phase": {
+      "head": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
+      "base": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+      "verdict": "passed",
+      "reviewed_paths": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "engineering/README.md",
+        "engineering/delivery.py",
+        "engineering/lease.py",
+        "engineering/tests/test_organization.py"
+      ],
+      "source_ci": 37729200692,
+      "recovered_engineering_run": 37730229376,
+      "attempt": 2,
+      "organization_job": 113187382812,
+      "organization": "success",
+      "review_threads": 0,
+      "security_review": 5451648764,
+      "security_lease_checkpoint": "617692df4dad3ca49439be33c7ce3432785c52c7",
+      "source_logs_read": 6,
+      "organization_log_read": true,
+      "local_checks": false,
+      "gate": "in_progress"
     }
   },
   "attempts": {
