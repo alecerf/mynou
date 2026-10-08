@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 744,
+  "generation": 745,
   "lease": {
     "id": "codex-continuous-20261008143128Z-master-1791471828000",
     "worker": "codex-continuous-20261008143128Z",
     "role": "master",
     "issue": 19,
     "acquired_at": "2026-10-08T15:03:48Z",
-    "heartbeat_at": "2026-10-08T15:03:48Z",
-    "expires_at": "2026-10-08T15:48:48Z",
+    "heartbeat_at": "2026-10-08T15:05:13Z",
+    "expires_at": "2026-10-08T15:50:13Z",
     "branch": "trunk",
     "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T15:02:30Z",
+    "at": "2026-10-08T15:05:13Z",
     "issue": 19,
-    "role": "triage",
+    "role": "master",
     "branch": "trunk",
     "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
     "pr": 24,
-    "summary": "PR24 installation merged natively by exact head with every current objective gate green. Actual merge57cfe88bd9dac249d6949a470afc357e835060f9 preserves c348/6951b58 parents and complete source history. Live cutover is not performed; native closing metadata must stay/reopen Issue19 In Progress. Actions must publish immutable v25 before Task/fence/notes/retirement.",
-    "next_action": "Recover native default CI/publication for installed merge; preserve pending existing-Task reconciliation. Release delivery and acquire Master19 for metadata/recovery only; stop on real CI publication wait.",
+    "summary": "Reviewed PR24 code installed at57cfe88; native defaultCI37797446857 and security37797446878 are still running, publication not claimed. Issue19 stays open/In Progress under Master; installed prompt prepared but existing Task unchanged pending successful CI. Native source branch removed safely on merge, only trunk and legacy control remain; fixed live notes target absent. Real external publication wait, not quota failure/completion.",
+    "next_action": "Next supported wake: admission/recover first; inspect exact default57cfe88 CI/security/publication and immutable v25. Fix actual reds if any. After all actual default gates/publication green, acquire Master19 on trunk/PR24, reconcile existing hourly Task6ac54c387af0819184713674c48b3845 to installed prompt with actual API receipt/blob and attestation before fence; then notes proof and guarded Quality retirement. No duplicate dispatch/work/task.",
     "publication": {
       "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
       "state": "published",
@@ -117,16 +117,93 @@
       "limitations": "Selected recognized credential patterns and completed inventory snapshot only; pending runs excluded, no arbitrary sensitive-data guarantee."
     },
     "delivery": {
-      "state": "publication-verified",
-      "issue": 34,
-      "pr": 35,
-      "source_head": "f12a37e873561fbd3de3ccdd30883b9f41c2a4c3",
-      "merge_commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
-      "qa_review": 5457333341,
-      "security_review": 5457288321,
-      "premerge_engineering": 37784630740,
-      "premerge_security": 37783960574,
-      "premerge_source_ci": 37783960792
+      "issue": 19,
+      "pr": 24,
+      "head": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
+      "base": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
+      "merge": "57cfe88bd9dac249d6949a470afc357e835060f9",
+      "tree": "a66b831197084b4e75d867fe63bb179accfe4cab",
+      "state": "installed; live cutover and publication pending",
+      "ci": {
+        "run": 37797446857,
+        "status": "in_progress",
+        "jobs": [
+          {
+            "id": 113380478263,
+            "name": "Build x86_64-unknown-linux-gnu",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "id": 113380478299,
+            "name": "Build aarch64-apple-darwin",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "id": 113380478398,
+            "name": "Build x86_64-unknown-linux-musl",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "id": 113380478578,
+            "name": "Build x86_64-apple-darwin",
+            "status": "in_progress",
+            "conclusion": null
+          },
+          {
+            "id": 113380478699,
+            "name": "validate",
+            "status": "completed",
+            "conclusion": "success"
+          }
+        ]
+      },
+      "security": {
+        "run": 37797446878,
+        "jobs": [
+          {
+            "id": 113380477369,
+            "name": "actions-logs",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "id": 113380477672,
+            "name": "source-history",
+            "status": "completed",
+            "conclusion": "success"
+          }
+        ]
+      },
+      "organization": {
+        "run": 37797447008,
+        "jobs": [
+          {
+            "id": 113380483852,
+            "name": "organization",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "id": 113380554838,
+            "name": "agent-qa-review",
+            "status": "completed",
+            "conclusion": "skipped"
+          }
+        ]
+      },
+      "source_branch_cleanup": {
+        "mode": "native merge deletion",
+        "observed_absent": true,
+        "preserved_parents": [
+          "c348081a0024dc70552c5ba1b2eda0000f9eb177",
+          "6951b58bbc5e578f3fdfe97190b17006ccfa347e"
+        ]
+      },
+      "publication": "not yet verified",
+      "live_cutover": false
     },
     "cleanup": {
       "issue": 34,
@@ -680,7 +757,17 @@
       "pr": 24,
       "policy_commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
       "prompt_path": "engineering/worker-prompt.md",
-      "state": "pending; after successful default CI/publication"
+      "prompt_sha": "78077a9657bd361b1478d5ec4508fe9ef2340954",
+      "task_id": "6ac54c387af0819184713674c48b3845",
+      "state": "pending successful default CI/publication; no live Task mutation"
+    },
+    "execution_boundary": {
+      "kind": "real external CI/publication wait",
+      "capacity_failure": false,
+      "issue_completed": false,
+      "single_worker": true,
+      "notes_activated": false,
+      "legacy_deleted": false
     }
   },
   "attempts": {
