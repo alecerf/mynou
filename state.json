@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 464,
+  "generation": 465,
   "lease": {
     "id": "wake11-security-control-ref-corrected-review-20261008T032912Z",
     "worker": "codex-hourly-20261008T032912Z",
     "role": "security",
     "issue": 19,
     "acquired_at": "2026-10-08T03:52:58Z",
-    "heartbeat_at": "2026-10-08T03:52:58Z",
-    "expires_at": "2026-10-08T04:37:58Z",
+    "heartbeat_at": "2026-10-08T03:54:41Z",
+    "expires_at": "2026-10-08T04:39:41Z",
     "branch": "work/control-ref-adapter",
     "commit": "e44bfc7e8319d1be7b0200bfa838d132ffe51efc",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T03:52:49Z",
+    "at": "2026-10-08T03:54:41Z",
     "issue": 19,
-    "role": "quality",
+    "role": "security",
     "branch": "work/control-ref-adapter",
     "commit": "e44bfc7e8319d1be7b0200bfa838d132ffe51efc",
     "pr": 24,
-    "summary": "Corrected source e44bfc7e8319d1be7b0200bfa838d132ffe51efc pushed to existing PR24. Security findings5451103861 now have explicit default-branch and branch-only legacy-alias guards plus two no-I/O CI regressions (13 new scenarios total). Current canonical lease stays on control/engineering. CI/re-review pending; no local validation.",
-    "next_action": "Fresh separate Security complete-diff review at e44bfc7/base d647, then QA reviews exact acceptance and actual source CI.",
+    "summary": "Security independently re-read all ten corrected native patches at e44bfc7/base d647. Actual prior findings are addressed by default-branch and legacy-namespace guards and CI regressions. Preparatory adapter security is satisfactory: strict ref/object binding, one configured authority, original sole-parent force:false arbitration, QA ancestry and protected cleanup. Live migration remains unimplemented; draft must not merge as completed Issue19. Native package CI still running; no full green CI claim.",
+    "next_action": "QA acquires its own exact-head/base lease, reads the entire actual diff and actual logs, and records unfinished cutover acceptance before delivery.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -1138,7 +1138,7 @@
       ]
     },
     "control_storage_security_review": {
-      "head": "21fca94bb56dc0cdb0dcbf50e134284d54c91f14",
+      "head": "e44bfc7e8319d1be7b0200bfa838d132ffe51efc",
       "base": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "paths": [
         ".github/engineering.json",
@@ -1152,16 +1152,24 @@
         "engineering/qa.py",
         "engineering/tests/test_control_refs.py"
       ],
-      "verdict": "rejected",
-      "findings": [
-        "engineering/github.py: control_reference accepts the repository default branch as control storage. A configuration mistake can let state-only control commits replace the product tree on trunk. Reject any heads authority equal to the configured default branch before native I/O and add CI coverage.",
-        "engineering/github.py: the legacy control_branch alias accepts a fully qualified notes ref. Legacy branch-only workers interpret that value differently. Restrict the legacy alias to branch references; require explicit control_ref for notes and test fail-closed validation."
+      "verdict": "passed",
+      "scope": "Preparatory adapter only; not an authorization to activate or merge unfinished migration",
+      "prior_rejected_review": 5451103861,
+      "corrected_findings": [
+        "default authority rejected before I/O",
+        "notes forbidden in branch-only legacy alias"
       ],
-      "ci_snapshot": {
-        "run": 37724396168,
-        "status": "in_progress"
+      "ci": {
+        "run": 37724667203,
+        "package": "in_progress",
+        "validate": "success",
+        "organization_run": 37724667230
       },
-      "live_migration": false
+      "remaining_issue_acceptance": [
+        "actual supported hourly-worker notes writes",
+        "fail-closed interrupted legacy cutover",
+        "reviewed admission/task reconciliation"
+      ]
     },
     "control_storage_corrections": {
       "review_id": 5451103861,
