@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 666,
+  "generation": 667,
   "lease": {
     "id": "codex-hourly-20261008123500Z-quality-1791463362000",
     "worker": "codex-hourly-20261008123500Z",
     "role": "quality",
     "issue": 19,
     "acquired_at": "2026-10-08T12:42:42Z",
-    "heartbeat_at": "2026-10-08T12:52:29Z",
-    "expires_at": "2026-10-08T13:37:29Z",
+    "heartbeat_at": "2026-10-08T12:56:51Z",
+    "expires_at": "2026-10-08T13:41:51Z",
     "branch": "work/control-ref-adapter",
-    "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
+    "commit": "fb6f67139b4a756d4533efd15cb7553423d4204e",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T12:52:29Z",
+    "at": "2026-10-08T12:56:51Z",
     "issue": 19,
     "role": "quality",
     "branch": "work/control-ref-adapter",
-    "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
+    "commit": "fb6f67139b4a756d4533efd15cb7553423d4204e",
     "pr": 24,
-    "summary": "Quality19 integrated original preserved reference adapter with current default source and drafted fixed schema2 legacy-fence/notes resolver, typed activation/recovery/retirement commands and scoped installed-merge gate checks. No source has been published yet; adding CI-only race/interruption/retirement coverage and admission/docs. The current actual live authority is still unchanged control/engineering, not the proposal.",
-    "next_action": "Commit/push complete bounded implementation to existing PR24 with default source integrated; inspect actual CI, then separate complete-diff Security and QA if time permits.",
+    "summary": "Published original19-path implementation on existing PR24, integrating preserved053 source history and currentdefaultced via original two-parent source commitfb6f67139b4a756d4533efd15cb7553423d4204e. Proposed fixed fence/activation/expired-fence recovery, canonical resolver, scoped retirement with actual task attestation boundary, admission/docs and original16 migration/installed-review scenarios. No live migration/task/deletion occurred, no local checks ran. CI not yet inspected; installation needs separate complete-diff Security/QA.",
+    "next_action": "Inspect actual source CI and full remote diff atnewhead/baseced; then sequential Security and QA. Keep PR24 draft until findings corrected and required jobs genuinely green.",
     "publication": {
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "state": "published",
@@ -189,12 +189,12 @@
       "issue": 19,
       "pr": 24,
       "branch": "work/control-ref-adapter",
-      "source": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
+      "source": "fb6f67139b4a756d4533efd15cb7553423d4204e",
       "pr_reported_base": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "current_default": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "authority": "refs/heads/control/engineering",
       "candidate": "refs/notes/mynou-engineering",
-      "state": "Ready to resume preserved draft; unfinished-cutover QA rejection remains outstanding",
+      "state": "Complete proposed cutover implementation pushed; CI and full-diff reviews pending",
       "security_review": 5451459825,
       "qa_review": 5451528384,
       "old_source_ci": 37728256136,
@@ -205,8 +205,10 @@
       "cutover": "No candidate staging, legacy fence, activation or task change. refs/heads/control/engineering remains sole live authority.",
       "native_handoff": 6059470579,
       "preserved_pr_handoff": 6059470835,
-      "retirement_intent": "Client expects control/engineering deleted only after verified replacement, preserved history, recoverability, actual task reconciliation and safely reviewed retirement.",
-      "design": "Fixed legacy schema2 fence -> notes creation from fence ancestry -> verified task reconciliation -> explicit Quality retirement; no second acquirable authority."
+      "retirement_intent": "Delete legacy only after actual notes proof/history/task reconciliation; reviewed implementation now proposed",
+      "design": "Fixed legacy schema2 fence -> notes creation from fence ancestry -> verified task reconciliation -> explicit Quality retirement; no second acquirable authority.",
+      "proposal_tree": "639c541373c14d4a9145dde3dc21fb60a9496d84",
+      "live_cutover": "Not performed; legacy soleauthority unchanged"
     },
     "control_bridge_design": {
       "state": "fixed scoped transport implemented/published/actually proved",
@@ -396,16 +398,6 @@
       "native_pr_handoff": 6059470317,
       "parent_handoff": 6059470579,
       "preserved_pr_handoff": 6059470835
-    },
-    "previous_checkpoint": {
-      "at": "2026-10-08T12:42:33Z",
-      "issue": 19,
-      "role": "security",
-      "branch": "work/control-ref-adapter",
-      "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
-      "pr": 24,
-      "summary": "Security analysis: use a fixed, schema-distinct legacy fence containing the complete prior state; legacy schema1 workers fail closed and sibling CAS loses. Create notes only after fencing, with the fence as sole parent so all review/control history survives. Admission resolves exactly one authority, rejects rollback/foreign refs, and interrupted fence recovery requires native Issue/branch/PR/CI evidence before a new Master lease. Typed commands must use reviewed default source, actual source/default gates, freshness/identity/CAS guards. Retirement needs actual notes proof and trusted recorded native task reconciliation, not assumed scheduling support.",
-      "next_action": "Release Security; Quality integrates preserved adapter with currentdefault and implements bounded original migration/resolver/commands/CI regression coverage. Review complete actual diff later; this analysis is not a passed source review."
     }
   },
   "attempts": {
