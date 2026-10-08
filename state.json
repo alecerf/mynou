@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 370,
+  "generation": 371,
   "lease": {
     "id": "wake8-triage-release-retry-20261008T004200Z",
     "worker": "codex-hourly-20261008T003520Z",
     "role": "triage",
     "issue": 18,
     "acquired_at": "2026-10-08T00:42:13Z",
-    "heartbeat_at": "2026-10-08T00:42:13Z",
-    "expires_at": "2026-10-08T01:27:13Z",
+    "heartbeat_at": "2026-10-08T00:43:45Z",
+    "expires_at": "2026-10-08T01:28:45Z",
     "branch": "trunk",
     "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
     "pr": 21
   },
   "checkpoint": {
-    "at": "2026-10-08T00:42:06Z",
+    "at": "2026-10-08T00:43:45Z",
     "issue": 18,
-    "role": "master",
+    "role": "triage",
     "branch": "trunk",
     "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
     "pr": 21,
-    "summary": "Recovered exact-default CI37704415292 failure: validate/four builds/package SUCCESS; release113076409833 failed the package private/repository-link guard. No v0.22.17 release404; actual v0.22.16 immutable11asset baseline unchanged. Native logs do not identify guard phase or partial tags. No permission/visibility mutation or shipping claim.",
-    "next_action": "Triage: reopen #18 and execute at most one same-source release-only retry while retained checked artifacts remain; preserve existing tags. On repeated failure change approach to sanitized metadata/stage diagnostics, not another unchanged retry.",
+    "summary": "Issue18 reopened for actual failed registry delivery. Six default jobs passed; only release failed private/repository-link guard. Checked same-source internal image/release artifacts are unexpired. Recorded exactly one release-only retry intent, not actual success; old immutable v0.22.16 assets verified unchanged. Partial package/tag state remains unknown and is preserved.",
+    "next_action": "Submit one native rerun for failed release113076409833, then checkpoint actual accepted/native attempt. Stop for CI wait; recurrence requires changed diagnostic approach, no unchanged rerun.",
     "publication": {
       "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
       "state": "ci-failed",
@@ -95,7 +95,18 @@
       "failure": "GHCR package must be private and linked to this repository",
       "failure_phase": "unresolved before-push versus after-push check; captured successful command output is not in native logs",
       "registry_partial_state": "unknown; preserve existing source/version tags",
-      "previous_assets_unchanged": true
+      "previous_assets_unchanged": true,
+      "retry": {
+        "state": "intent",
+        "job_id": 113076409833,
+        "run_id": 37704415292,
+        "observed_attempt": 1,
+        "scope": "failed release job only",
+        "source": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
+        "unchanged_retry_limit": 1,
+        "reason": "Allow already checked exact-source image tags/package association to settle without rebuilding; association lag is not proven",
+        "next_on_same_failure": "No second unchanged retry. Sanitized stage/package visibility/repository diagnostics through source/CI and Security/QA; preserve any existing images/version."
+      }
     },
     "publication_baseline": {
       "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
