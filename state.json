@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 645,
+  "generation": 646,
   "lease": {
     "id": "codex-hourly-20261008112927Z-security-1791459262000",
     "worker": "codex-hourly-20261008112927Z",
     "role": "security",
     "issue": 32,
     "acquired_at": "2026-10-08T11:34:22Z",
-    "heartbeat_at": "2026-10-08T11:43:45Z",
-    "expires_at": "2026-10-08T12:28:45Z",
+    "heartbeat_at": "2026-10-08T11:43:50Z",
+    "expires_at": "2026-10-08T12:28:50Z",
     "branch": "trunk",
     "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
     "pr": 33
   },
   "checkpoint": {
-    "at": "2026-10-08T11:43:45Z",
+    "at": "2026-10-08T11:43:50Z",
     "issue": 32,
     "role": "security",
     "branch": "trunk",
     "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
     "pr": 33,
-    "summary": "Security read actual failed default audit job113277735964 after connected retrieval recovered: preserved report schema1/statuserror/error_typeHTTPFailure/http_status502. This is an incomplete audit, not clean log evidence. Actual source-history113277735502 passed over4897 objects with0 recognized findings/0 gaps. Immutable v23/tag/sourcecedd and CI release private-package proof match; no source or release changes. A single retry of only the failed read-only audit job is justified by the observed upstream502.",
-    "next_action": "Retry only nativejob113277735964 in run37767226110 once under current ownership. Persist acceptance/run attempt; while it executes finish current exact-source publication evidence. If pending at the next ready transition, release for the external wait; do not busy-poll or repeat rerun. Red audit remains authoritative until actual success.",
+    "summary": "Security confirmed native single-job rerun request for failedaudit113277735964 was accepted. Only original read-only Security audit is retried; sourcecedd, publishedv23 and source-historyproof unchanged. Original default reportHTTPFailure502 is preserved. Acceptance is not successful scan evidence.",
+    "next_action": "Inspect actual native attempt2 and finish exact-source defaultpublication log evidence; no repeated rerun, no busy-poll, no live control/notes write while security remains unverified. Stop for a real external wait with durable outcome.",
     "publication": {
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "state": "immutable-release-observed-security-recovery-pending",
@@ -311,9 +311,12 @@
       "failed_attempt": 1,
       "error_type": "HTTPFailure",
       "http_status": 502,
-      "state": "single-job-rerun-intent",
+      "state": "single-job-rerun-accepted",
       "failed_report": "Native113277735964 log: schema1/statuserror/HTTPFailure/502; preserved redacted artifact11544822063",
-      "read_boundary": "First connected log fetch internal error; artifact storage fallback network read failed; subsequent connected native failed log read succeeded."
+      "read_boundary": "First connected log fetch internal error; artifact storage fallback network read failed; subsequent connected native failed log read succeeded.",
+      "accepted_response": {
+        "success": true
+      }
     }
   },
   "attempts": {
