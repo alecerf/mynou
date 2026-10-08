@@ -1,49 +1,46 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 578,
+  "generation": 579,
   "lease": {
     "id": "codex-hourly-20261008082654Z-quality-20261008084148",
     "worker": "codex-hourly-20261008082654Z",
     "role": "quality",
     "issue": 28,
     "acquired_at": "2026-10-08T08:41:48Z",
-    "heartbeat_at": "2026-10-08T08:44:33Z",
-    "expires_at": "2026-10-08T09:29:33Z",
-    "branch": "work/public-source-private-package",
-    "commit": "b028b1dd058842d7ebc551d4f822519d9d4d1e85",
+    "heartbeat_at": "2026-10-08T08:44:39Z",
+    "expires_at": "2026-10-08T09:29:39Z",
+    "branch": "trunk",
+    "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
     "pr": 29
   },
   "checkpoint": {
-    "at": "2026-10-08T08:44:33Z",
+    "at": "2026-10-08T08:44:39Z",
     "issue": 28,
     "role": "quality",
-    "branch": "work/public-source-private-package",
-    "commit": "b028b1dd058842d7ebc551d4f822519d9d4d1e85",
+    "branch": "trunk",
+    "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
     "pr": 29,
-    "summary": "OwnedQuality verified correctivePR29 exactb028b1dd/base04e994, nativeintegrationtrue, emptythreads and all10actualobjectivejobs green: source37750720668 sixjobs, Security37750720672 twojobs, latestEngineering37751441590 organization113225612101 andQA113225673187. Gateactual log validates QA5453951428/b43c9662 andSecurity5453915524/386098b2. Currentdefault04failedpublication isthiscorrection's explicitcause, notunrelatedwork. Authoritativeowned deliverymaymergebyexpectedsource; no defaultpublication success yet.",
-    "next_action": "Mergeonlyexactb028b1dd correctivePR29, inspectnewdefault/nativeCI andpublication. Persistnewexactsource andpendingCI, no duplicate dispatch ifpushstarts; keepfullrealpackage/immutable0.22.21 verification pending andpreservemigration24.",
+    "summary": "CorrectivePR29 actuallymerged todefaultcafac339b3e24954fc8a802d97fe3cfb793c05d6 after currentall10objectivejobs anddistinctSecurity5453915524/QA5453951428. Originalb028b1dd preservedbymerge; fresh0.22.21 source. Failed04/v20history remainsrecorded, neverclaimedpublished. NeedactualnewdefaultCI/privatepackage/digest/immutablefour-assetreleaseproof beforepublicationacceptance; no manualpublication orpackagevisibility change.",
+    "next_action": "Recovernewdefault nativeCI; dispatchonlyifabsent withdurableintent/fences. Verifyactualprivatepackage/releasewhenready, retainpendingproof andhandoff ifwaiting. Inspectnativebranchdeletion/Issue28 status; preserve19/PR24.",
     "publication": {
-      "commit": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
-      "state": "ci-failed",
-      "at": "2026-10-08T08:26:54Z",
-      "run_id": 37745425271,
-      "status": "completed",
-      "conclusion": "failure",
-      "failed_job": 113206816150,
-      "error": "Publication requires the exact private repository",
-      "release_lookup": "v0.22.20 HTTP404",
-      "recovery_issue": 28
+      "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
+      "state": "awaiting-native-ci-observation",
+      "at": "2026-10-08T08:44:39Z",
+      "version": "0.22.21",
+      "recovery_issue": 28,
+      "supersedes_failed_source": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
+      "supersedes_failed_run": 37745425271
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T08:33:03Z",
+      "at": "2026-10-08T08:44:33Z",
       "issue": 28,
       "role": "quality",
       "branch": "work/public-source-private-package",
-      "commit": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
-      "pr": null,
-      "summary": "Quality prepared the minimal source-visibility repair for Issue28: exact native identity and booleanprivate metadata, independent source/package visibility proof, positive public/private and negative malformed/foreign/public-package CI regressions, truthful release copy and fresh0.22.21. Created the one recovery branch at04e99496318; no source checks/builds/publication ran locally.",
-      "next_action": "Commit these six original source edits against the exact remote parent and open one linkedPR; checkpoint actual remote source/PR, release for complete-diff Security then freshCI-bound QA."
+      "commit": "b028b1dd058842d7ebc551d4f822519d9d4d1e85",
+      "pr": 29,
+      "summary": "OwnedQuality verified correctivePR29 exactb028b1dd/base04e994, nativeintegrationtrue, emptythreads and all10actualobjectivejobs green: source37750720668 sixjobs, Security37750720672 twojobs, latestEngineering37751441590 organization113225612101 andQA113225673187. Gateactual log validates QA5453951428/b43c9662 andSecurity5453915524/386098b2. Currentdefault04failedpublication isthiscorrection's explicitcause, notunrelatedwork. Authoritativeowned deliverymaymergebyexpectedsource; no defaultpublication success yet.",
+      "next_action": "Mergeonlyexactb028b1dd correctivePR29, inspectnewdefault/nativeCI andpublication. Persistnewexactsource andpendingCI, no duplicate dispatch ifpushstarts; keepfullrealpackage/immutable0.22.21 verification pending andpreservemigration24."
     },
     "recovery": {
       "pr": 26,
@@ -90,17 +87,15 @@
       "limitations": "Selected provider/private-key patterns and completed snapshot only; no arbitrary sensitive-data guarantee."
     },
     "delivery": {
-      "state": "merged-source-publication-failed",
-      "pr": 26,
-      "source_head": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
-      "merge_commit": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
-      "merged_at": "2026-10-08T07:45:30Z",
-      "qa_review": 5453360050,
-      "security_review": 5453084901,
-      "premerge_engineering": 37745176435,
-      "premerge_security": 37742148708,
-      "premerge_source_ci": 37742148752,
-      "branch_cleanup": "native deletion verified; work/control-ref-adapter preserved"
+      "state": "corrective-merged-awaiting-publication",
+      "pr": 29,
+      "source_head": "b028b1dd058842d7ebc551d4f822519d9d4d1e85",
+      "merge_commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
+      "qa_review": 5453951428,
+      "security_review": 5453915524,
+      "premerge_engineering": 37751441590,
+      "premerge_security": 37750720672,
+      "premerge_source_ci": 37750720668
     },
     "cleanup": {
       "issues": [
@@ -123,7 +118,7 @@
       "tree": "a7d42c893c83cd87b1fcdb59766f5b1dfdcbefe6",
       "parent": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
       "version": "0.22.21",
-      "state": "corrective-gates-green-before-merge",
+      "state": "corrective-merged-awaiting-actions-publication",
       "source_ci": 37750720668,
       "security_audit": 37750720672,
       "organization": 37750720597,
@@ -132,7 +127,8 @@
       "qa_review": 5453951428,
       "qa_checkpoint": "b43c9662c5b34a0f4d952adebb2c706444b704f9",
       "engineering": 37751441590,
-      "gate_job": 113225673187
+      "gate_job": 113225673187,
+      "merge_commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6"
     }
   },
   "attempts": {
