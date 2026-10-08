@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 553,
+  "generation": 554,
   "lease": {
     "id": "codex-hourly-20261008T073509Z-qa-20261008074031",
     "worker": "codex-hourly-20261008T073509Z",
     "role": "qa",
     "issue": 27,
     "acquired_at": "2026-10-08T07:40:31Z",
-    "heartbeat_at": "2026-10-08T07:40:31Z",
-    "expires_at": "2026-10-08T08:25:31Z",
+    "heartbeat_at": "2026-10-08T07:43:06Z",
+    "expires_at": "2026-10-08T08:28:06Z",
     "branch": "work/publication-handoff-recovery",
     "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
     "pr": 26
   },
   "checkpoint": {
-    "at": "2026-10-08T07:40:25Z",
+    "at": "2026-10-08T07:43:06Z",
     "issue": 27,
-    "role": "master",
+    "role": "qa",
     "branch": "work/publication-handoff-recovery",
     "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
     "pr": 26,
-    "summary": "Recovered preserved PR26 at99138218/base d647 and open Issues25/27 from native handoffs after the old scheduler overwrote the latest checkpoint. SourceCI37742148752 and Security37742148708 succeeded; native Security5453084901 exact head. Current QA absent; latest Engineering37742698403 failed waiting for QA. No merge or new publication.",
-    "next_action": "Acquire exact-head/base QA and independently review all12 native patches, required source/audit logs, Security lease ancestry and threads; submit only actual acceptance. Preserve migration PR24/Issue19.",
+    "summary": "Distinct QA completed the actual12-path PR26 diff and surrounding lease/publication/gate code, current native source/audit/organization logs, Security5453084901 compact lease/time/ancestry and empty review threads. All required source jobs and both audit jobs succeeded.864 Rust/22 infrastructure/64 organization cases; synthetic ready/Plex, container1001:1001 cleanup and3 checksums confirmed. No unresolved finding; detector/native-permission limits remain explicit. Current machine gate failed solely awaiting this current QA record; no merge/published0.22.20 inferred.",
+    "next_action": "Submit this exact-head/base complete-diff native QA COMMENT, checkpoint and release; then delivery may advance only after a fresh actual agent-qa-review success and unchanged native head/base/threads.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "ci-passed",
@@ -53,14 +53,46 @@
       "security_checkpoint": "6e02750960c6683c6c04bcd26306942b09c16b5d"
     },
     "pending_qa": {
-      "state": "incomplete",
-      "head_sha": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253"
+      "state": "review-completed-awaiting-native-record",
+      "head_sha": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
+      "base_sha": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+      "reviewed_paths": [
+        ".github/engineering.json",
+        ".github/workflows/ci.yml",
+        ".github/workflows/security-audit.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "SECURITY.md",
+        "engineering/README.md",
+        "engineering/delivery.py",
+        "engineering/lease.py",
+        "engineering/secret_audit.py",
+        "engineering/tests/test_organization.py",
+        "engineering/tests/test_secret_audit.py"
+      ],
+      "source_ci": 37742148752,
+      "organization": 37742698403,
+      "security_audit": 37742148708
     },
     "preserved_work": {
       "issue": 19,
       "pr": 24,
       "branch": "work/control-ref-adapter",
       "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c"
+    },
+    "public_security": {
+      "git_objects": 4560,
+      "completed_attempt_archives": 531,
+      "log_members": 1800,
+      "recognized_findings": 0,
+      "coverage_gaps": 0,
+      "excluded_pending_runs": [
+        37742148752,
+        37742148717,
+        37742148708
+      ],
+      "native_scanning_admin": "403 Resource not accessible by integration; no enabled native setting claimed",
+      "limitations": "Selected provider/private-key patterns and completed snapshot only; no arbitrary sensitive-data guarantee."
     }
   },
   "attempts": {
