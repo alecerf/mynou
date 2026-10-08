@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 509,
+  "generation": 510,
   "lease": {
     "id": "wake12-qa-compact-review-20261008T042605Z",
     "worker": "codex-hourly-20261008T042605Z",
     "role": "qa",
     "issue": 25,
     "acquired_at": "2026-10-08T04:58:56Z",
-    "heartbeat_at": "2026-10-08T05:00:29Z",
-    "expires_at": "2026-10-08T05:45:29Z",
+    "heartbeat_at": "2026-10-08T05:01:29Z",
+    "expires_at": "2026-10-08T05:46:29Z",
     "branch": "work/publication-handoff-recovery",
     "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
     "pr": 26
   },
   "checkpoint": {
-    "at": "2026-10-08T05:00:29Z",
+    "at": "2026-10-08T05:01:29Z",
     "issue": 25,
     "role": "qa",
     "branch": "work/publication-handoff-recovery",
     "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
     "pr": 26,
-    "summary": "Complete-diff QA confirms the source repair and its successful native tests, but rejects delivery while required latest Engineering checks cannot start because of GitHub account payments/spending. This compact valid historical binding supersedes the earlier oversized checkpoint; do not merge or infer released0.22.20.",
-    "next_action": "Capacity pause: restore GitHub Actions account readiness; then recoverPR26 at9fb3/base d647, rerun only required failed Engineering jobs, refresh actual QA and gates and merge onlyallgreen. Actions alone publishes0.22.20 afterward. Preserve nativeIssue19/PR24 migration, reuseexistingbranches.",
+    "summary": "Bounded recovery wake fixed recurring handoff-loss source in preserved PR24 and isolated live repair Issue25/PR26 at9fb3e6dc. SourceCI37729200692 actually passed six required jobs,864 Rust/22 infra/57 organization tests and runtime/container cleanup; no local checks. Final required Engineering jobs cannotstart because native GitHub account payment/spending annotations. Fresh compact Security5451648764 passes static diff; QA5451664028 rejects account-blocked delivery. No merge/new release/Done. Full history remains remote, current checkpoint compact and all partial branches preserved.",
+    "next_action": "External capacity wait: client resolves GitHub Actions payments/spending capacity. Next supported wake recoversPR26 unchanged9fb3/base d647; rerun only failed required Engineering checks after capacity changes, refresh exact-head/base QA to actualallgreen and merge by expectedSHA. CI alone publishes0.22.20. Then safecleanup/Issue19 unblock and supported migrationwriter/fence work on preservedPR24. Never endlessly retry account-blocked runs or mark capacity loss as work failure.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -281,11 +281,13 @@
       "version": "0.22.20",
       "validation": "CI pending",
       "local_checks": false,
-      "state": "blocked-on-actions-account",
+      "state": "paused-external-actions-account",
       "ci_run": 37729200692,
-      "security_review": 5451569156,
-      "qa_review": 5451595483,
-      "merge": false
+      "security_review": 5451648764,
+      "qa_review": 5451664028,
+      "merge": false,
+      "qa_verdict": "rejected",
+      "publication": "not started"
     },
     "urgent_repair_ci": {
       "run_id": 37729200692,
@@ -381,7 +383,9 @@
       "action": "Compact current checkpoint; supersede oversized historical records with new scoped records, never fake valid gate.",
       "new_security_review": 5451648764,
       "new_security_checkpoint": "617692df4dad3ca49439be33c7ce3432785c52c7",
-      "state": "current state compact; newQA binding supersedes oversized prior"
+      "state": "compact14KiB index; old full state preserved in native commit history",
+      "new_qa_review": 5451664028,
+      "new_qa_checkpoint": "f7796bd13397abb8d701033a62fa7ce2f466a1dc"
     },
     "next_managed_work": {
       "issue": 19,
@@ -418,9 +422,15 @@
     "urgent_repair_qa": {
       "head": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
       "base": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+      "review": 5451664028,
+      "lease_checkpoint": "f7796bd13397abb8d701033a62fa7ce2f466a1dc",
       "verdict": "rejected",
-      "reason": "Required hosted jobs blocked by GitHub billing/spending",
-      "supersedes": 5451595483
+      "reason": "Required final Engineering jobs cannot start because of account payments/spending"
+    },
+    "retrospective": {
+      "finding": "Accumulating full duplicated review records made control history snapshots exceed64KiB; native gate cannot read those bindings.",
+      "correction": "Compact history index and native review pointers; renewed compact Security/QA role-bound reviews, old invalidbindings superseded.",
+      "next": "Keep checkpoint evidence concise and source-bound; full reviews/logs remain native. CI-only bounded-size regression/documentation after hosted capacity restoration if needed."
     }
   },
   "attempts": {
