@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 595,
+  "generation": 596,
   "lease": {
     "id": "codex-hourly-20261008093523Z-quality-1791452643000",
     "worker": "codex-hourly-20261008093523Z",
     "role": "quality",
     "issue": 30,
     "acquired_at": "2026-10-08T09:44:03Z",
-    "heartbeat_at": "2026-10-08T09:44:03Z",
-    "expires_at": "2026-10-08T10:29:03Z",
+    "heartbeat_at": "2026-10-08T09:55:29Z",
+    "expires_at": "2026-10-08T10:40:29Z",
     "branch": "work/native-control-commands",
-    "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
-    "pr": null
+    "commit": "681d0f7e4f8905688005b2f60ce71442fba76e7e",
+    "pr": 31
   },
   "checkpoint": {
-    "at": "2026-10-08T09:43:56Z",
-    "issue": 19,
-    "role": "master",
-    "branch": "work/control-ref-adapter",
-    "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
-    "pr": 24,
-    "summary": "Created distinct prerequisiteIssue30 after nativeopenbacklog inspection (no duplicate). Native19→30 blocked_by write/refetch verified; old25/28 remainclosed. Design-only scoped bridge removes scheduled-ref write boundary through default-only deterministic Actions, not notesactivation. PreservedPR24/053 remainsdraft and rejected untilfullcutover. Currentcafac publicationverified.",
-    "next_action": "ReleaseMaster; acquireQualityIssue30 atcafac, implement strict default-only comment commands and original CIregressions in onePR. Preserve19/24; proveactualtransport onlyafterreviewedmerge.",
+    "at": "2026-10-08T09:55:29Z",
+    "issue": 30,
+    "role": "quality",
+    "branch": "work/native-control-commands",
+    "commit": "681d0f7e4f8905688005b2f60ce71442fba76e7e",
+    "pr": 31,
+    "summary": "Original std-only comment transport source pushed at681d0f7e4f8905688005b2f60ce71442fba76e7e (soleparentcafac/tree75e8692d466c8fa139aa0824e4f0d8034a02ea4d); draftPR31 linksIssue30. Nine paths add strict native authentication/schema, existing lease/native recovery commands, inertnotesprobe, CI trust/recovery cases, transport docs andfresh0.22.22. No localvalidation, default activation, taskupdate ornoteswrite occurred.",
+    "next_action": "ReleaseQuality; separateSecurity complete-diff review at681d0f7/basecafac; inspect actualCI. Then QA under own exactsourcelease only when meaningful. Preserve19/24 and requirepostmerge nativecomment/defaulttransport proof beforeIssue30Done.",
     "publication": {
       "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
       "state": "published",
@@ -77,14 +77,14 @@
       "security_audit_run": 37751867517
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T08:55:08Z",
-      "issue": 28,
-      "role": "quality",
-      "branch": "trunk",
-      "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
-      "pr": 29,
-      "summary": "Verified immutablev0.22.21/defaultcafac publication andactualprivateimageproof; nativeIssue28 closed+Done,19 blockers25/28 bothclosed andstatusReady, recoverybranch nativeabsent, migrationPR24/053fb1preserved. Nativehandoffs28/PR29 retainfullproof andcompact publicationcheckpoint. One currentdelivery iscomplete, with truthful selected-security-pattern limits; no localchecks orsecondworker.",
-      "next_action": "ReleaseQuality; acquireMaster for highest-priority readyuserIssue19/PR24 recovery whileboundedwake time remains. Preserveactualpubproof; inspectupdateddefault, priorQAfindings andrealavailablegeneral-ref writer/fence capabilities before anymigration."
+      "at": "2026-10-08T09:43:56Z",
+      "issue": 19,
+      "role": "master",
+      "branch": "work/control-ref-adapter",
+      "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
+      "pr": 24,
+      "summary": "Created distinct prerequisiteIssue30 after nativeopenbacklog inspection (no duplicate). Native19→30 blocked_by write/refetch verified; old25/28 remainclosed. Design-only scoped bridge removes scheduled-ref write boundary through default-only deterministic Actions, not notesactivation. PreservedPR24/053 remainsdraft and rejected untilfullcutover. Currentcafac publicationverified.",
+      "next_action": "ReleaseMaster; acquireQualityIssue30 atcafac, implement strict default-only comment commands and original CIregressions in onePR. Preserve19/24; proveactualtransport onlyafterreviewedmerge."
     },
     "recovery": {
       "pr": 26,
@@ -205,10 +205,15 @@
     },
     "control_bridge": {
       "issue": 30,
-      "state": "ready",
-      "parent_issue": 19,
-      "design_checkpoint": "343e67c53ce0d0fe1a1358f8b757f732e07d9fe4",
-      "canonical_ref": "refs/heads/control/engineering"
+      "pr": 31,
+      "branch": "work/native-control-commands",
+      "head": "681d0f7e4f8905688005b2f60ce71442fba76e7e",
+      "base": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
+      "tree": "75e8692d466c8fa139aa0824e4f0d8034a02ea4d",
+      "state": "draft-source-pushed",
+      "canonical_ref": "refs/heads/control/engineering",
+      "live_proof": "not run; privileged workflow not on default",
+      "parent_issue": 19
     }
   },
   "attempts": {
