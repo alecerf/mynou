@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 627,
-  "lease": null,
+  "generation": 628,
+  "lease": {
+    "id": "codex-hourly-20261008103416Z-qa-1791456743000",
+    "worker": "codex-hourly-20261008103416Z",
+    "role": "qa",
+    "issue": 32,
+    "acquired_at": "2026-10-08T10:52:23Z",
+    "heartbeat_at": "2026-10-08T10:52:23Z",
+    "expires_at": "2026-10-08T11:37:23Z",
+    "branch": "work/native-comment-identity",
+    "commit": "2053b30d99dfaddf59e1f4fb7d16df57dc376cb9",
+    "pr": 33
+  },
   "checkpoint": {
     "at": "2026-10-08T10:52:14Z",
     "issue": 32,
