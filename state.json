@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 470,
+  "generation": 471,
   "lease": {
     "id": "wake11-master-control-ref-boundary-20261008T032912Z",
     "worker": "codex-hourly-20261008T032912Z",
     "role": "master",
     "issue": 19,
     "acquired_at": "2026-10-08T03:58:18Z",
-    "heartbeat_at": "2026-10-08T03:58:18Z",
-    "expires_at": "2026-10-08T04:43:18Z",
+    "heartbeat_at": "2026-10-08T04:02:40Z",
+    "expires_at": "2026-10-08T04:47:40Z",
     "branch": "work/control-ref-adapter",
     "commit": "e44bfc7e8319d1be7b0200bfa838d132ffe51efc",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T03:58:08Z",
+    "at": "2026-10-08T04:02:40Z",
     "issue": 19,
-    "role": "qa",
+    "role": "master",
     "branch": "work/control-ref-adapter",
     "commit": "e44bfc7e8319d1be7b0200bfa838d132ffe51efc",
     "pr": 24,
-    "summary": "Independent QA read every native PR24 patch, actual six successful source CI jobs/logs, 864 Rust tests/63 harnesses, 66 organization checks including all13 new ref scenarios, both macOS/static demos and package private cleanup/checksums. Security provenance is exact-head scoped and in control ancestry; prior findings are fixed. Reject full delivery because legacy fence/cutover/recovery, actual hourly-worker notes writes and task/admission reconciliation are unfinished. Keep draft/unmerged; CI green is not completed migration.",
-    "next_action": "Release QA; Master/Triage records the exact connected-writer execution boundary and preserves same PR24/branch/head. Implement and prove a safe cutover only through supported APIs; no repeated CI or duplicate work.",
+    "summary": "Bounded wake recovered and verified v0.22.19 publication, then preserved native Issue19/PR24's preparatory adapter at e44bfc7/base d647. Actual source CI37724667203 passed all six required jobs, 864 Rust tests and66 organization checks including13 new scenarios. Independent Security corrected two findings; independent QA5451151152 rejects unfinished live cutover. Exact boundary: connected writes are branch-named with no verified general-ref writer; no live migration/task change/green QA gate is claimed. Preserve draft, current authority and useful source.",
+    "next_action": "Triage a supported direct non-branch writer for hourly execution. Reuse PR24/branch; implement fail-closed legacy fencing and restart-safe cutover, then fresh Security/QA at the final exact head/base before activation. Do not rerun successful CI or repeat an unchanged unsupported route.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -793,7 +793,11 @@
     "wake": {
       "started_at": "2026-10-08T03:29:12Z",
       "deadline": "2026-10-08T04:09:12.000Z",
-      "checkpoint_reserve": "2026-10-08T04:04:12.000Z"
+      "reserve": "2026-10-08T04:04:12.000Z",
+      "stop_reason": "Supported writer/cutover boundary; not quota failure",
+      "all_work_remote": true,
+      "no_local_validation": true,
+      "no_extra_worker": true
     },
     "recovery_plan": {
       "version": "0.22.19",
@@ -1366,6 +1370,44 @@
         "ancestry": "ahead",
         "scope": "preparatory adapter only"
       }
+    },
+    "control_storage_boundary": {
+      "issue": 19,
+      "pr": 24,
+      "branch": "work/control-ref-adapter",
+      "commit": "e44bfc7e8319d1be7b0200bfa838d132ffe51efc",
+      "base": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+      "tree": "e8c5494ea70ab86c5a8f2ede5a7e740889869378",
+      "canonical_ref": "refs/heads/control/engineering",
+      "candidate_ref": "refs/notes/mynou-engineering",
+      "state": "blocked on unverified supported writer/cutover; useful source preserved",
+      "actual_tools": [
+        "github_fetch can read Git reference resources",
+        "github_create_branch and github_update_ref expose branch-named writes",
+        "No generic arbitrary-ref create/update or native workflow-dispatch callable was exposed in the inspected tool set"
+      ],
+      "unclaimed": [
+        "actual custom-reference write support",
+        "GitHub platform denial of notes",
+        "live notes migration",
+        "live task change",
+        "green agent-qa-review",
+        "permission or identity independence"
+      ],
+      "next": "Triage a supported direct non-branch writer for hourly execution. Reuse PR24/branch; implement fail-closed legacy fencing and restart-safe cutover, then fresh Security/QA at the final exact head/base before activation. Do not rerun successful CI or repeat an unchanged unsupported route.",
+      "qa_review_id": 5451151152,
+      "qa_checkpoint": "61ad3e9f24a612fe7bfff7da29549f4663f3b51b",
+      "security_review_id": 5451128647,
+      "security_checkpoint": "ae8b58d53a3cede63358ef6f03ee40b6ac915f1c",
+      "task_reconciliation": {
+        "required": false,
+        "reason": "worker-prompt and live policy unchanged; migration has not been activated"
+      },
+      "release": "v0.22.19 remains immutable and published"
+    },
+    "control_storage_qa_native": {
+      "success": true,
+      "review_id": 5451151152
     }
   },
   "attempts": {
