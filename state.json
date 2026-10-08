@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 665,
+  "generation": 666,
   "lease": {
     "id": "codex-hourly-20261008123500Z-quality-1791463362000",
     "worker": "codex-hourly-20261008123500Z",
     "role": "quality",
     "issue": 19,
     "acquired_at": "2026-10-08T12:42:42Z",
-    "heartbeat_at": "2026-10-08T12:42:42Z",
-    "expires_at": "2026-10-08T13:27:42Z",
+    "heartbeat_at": "2026-10-08T12:52:29Z",
+    "expires_at": "2026-10-08T13:37:29Z",
     "branch": "work/control-ref-adapter",
     "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T12:42:33Z",
+    "at": "2026-10-08T12:52:29Z",
     "issue": 19,
-    "role": "security",
+    "role": "quality",
     "branch": "work/control-ref-adapter",
     "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
     "pr": 24,
-    "summary": "Security analysis: use a fixed, schema-distinct legacy fence containing the complete prior state; legacy schema1 workers fail closed and sibling CAS loses. Create notes only after fencing, with the fence as sole parent so all review/control history survives. Admission resolves exactly one authority, rejects rollback/foreign refs, and interrupted fence recovery requires native Issue/branch/PR/CI evidence before a new Master lease. Typed commands must use reviewed default source, actual source/default gates, freshness/identity/CAS guards. Retirement needs actual notes proof and trusted recorded native task reconciliation, not assumed scheduling support.",
-    "next_action": "Release Security; Quality integrates preserved adapter with currentdefault and implements bounded original migration/resolver/commands/CI regression coverage. Review complete actual diff later; this analysis is not a passed source review.",
+    "summary": "Quality19 integrated original preserved reference adapter with current default source and drafted fixed schema2 legacy-fence/notes resolver, typed activation/recovery/retirement commands and scoped installed-merge gate checks. No source has been published yet; adding CI-only race/interruption/retirement coverage and admission/docs. The current actual live authority is still unchanged control/engineering, not the proposal.",
+    "next_action": "Commit/push complete bounded implementation to existing PR24 with default source integrated; inspect actual CI, then separate complete-diff Security and QA if time permits.",
     "publication": {
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "state": "published",
@@ -398,14 +398,14 @@
       "preserved_pr_handoff": 6059470835
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T12:39:58Z",
+      "at": "2026-10-08T12:42:33Z",
       "issue": 19,
-      "role": "master",
+      "role": "security",
       "branch": "work/control-ref-adapter",
       "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
       "pr": 24,
-      "summary": "Master19 selected preserved PR24/source053. All native prerequisites closed; no publication/task recovery remains. Actual QA5451528384 rejects missing recoverable cutover. Design needs a schema-distinct legacy fence, fixed notes activation preserving its ancestry, scoped trusted-default migration commands, and task/live-proof verification before explicit old-branch retirement.",
-      "next_action": "Release Master; acquire Security19 for migration threat analysis, then Quality implementation."
+      "summary": "Security analysis: use a fixed, schema-distinct legacy fence containing the complete prior state; legacy schema1 workers fail closed and sibling CAS loses. Create notes only after fencing, with the fence as sole parent so all review/control history survives. Admission resolves exactly one authority, rejects rollback/foreign refs, and interrupted fence recovery requires native Issue/branch/PR/CI evidence before a new Master lease. Typed commands must use reviewed default source, actual source/default gates, freshness/identity/CAS guards. Retirement needs actual notes proof and trusted recorded native task reconciliation, not assumed scheduling support.",
+      "next_action": "Release Security; Quality integrates preserved adapter with currentdefault and implements bounded original migration/resolver/commands/CI regression coverage. Review complete actual diff later; this analysis is not a passed source review."
     }
   },
   "attempts": {
