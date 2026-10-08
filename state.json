@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 372,
-  "lease": {
-    "id": "wake8-triage-release-retry-20261008T004200Z",
-    "worker": "codex-hourly-20261008T003520Z",
-    "role": "triage",
-    "issue": 18,
-    "acquired_at": "2026-10-08T00:42:13Z",
-    "heartbeat_at": "2026-10-08T00:44:26Z",
-    "expires_at": "2026-10-08T01:29:26Z",
-    "branch": "trunk",
-    "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
-    "pr": 21
-  },
+  "generation": 373,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-08T00:44:26Z",
     "issue": 18,
