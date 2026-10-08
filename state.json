@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 742,
-  "lease": {
-    "id": "codex-continuous-20261008143128Z-triage-1791471596000",
-    "worker": "codex-continuous-20261008143128Z",
-    "role": "triage",
-    "issue": 19,
-    "acquired_at": "2026-10-08T14:59:56Z",
-    "heartbeat_at": "2026-10-08T15:02:30Z",
-    "expires_at": "2026-10-08T15:47:30Z",
-    "branch": "trunk",
-    "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
-    "pr": 24
-  },
+  "generation": 743,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-08T15:02:30Z",
     "issue": 19,
