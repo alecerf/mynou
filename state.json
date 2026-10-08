@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 491,
+  "generation": 492,
   "lease": {
     "id": "wake12-quality-urgent-repair-20261008T042605Z",
     "worker": "codex-hourly-20261008T042605Z",
     "role": "quality",
     "issue": 25,
     "acquired_at": "2026-10-08T04:47:40Z",
-    "heartbeat_at": "2026-10-08T04:47:40Z",
-    "expires_at": "2026-10-08T05:32:40Z",
+    "heartbeat_at": "2026-10-08T04:48:33Z",
+    "expires_at": "2026-10-08T05:33:33Z",
     "branch": "work/publication-handoff-recovery",
-    "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
-    "pr": null
+    "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
+    "pr": 26
   },
   "checkpoint": {
-    "at": "2026-10-08T04:47:33Z",
-    "issue": 19,
-    "role": "master",
-    "branch": "work/control-ref-adapter",
-    "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
-    "pr": 24,
-    "summary": "QA5451528384 rejects unfinished Issue19 cutover; preserve draft PR24 at053fb1f1. Created distinct native reliability Issue#25 for recurring scheduler handoff loss, with bounded acceptance and P1/high risk. This directly blocks durable recovery and can ship independently without closing or discarding migration work.",
-    "next_action": "Quality: isolate the durability repair onto unchanged defaultd647, patch version0.22.20, one linked repair PR; no adapter/cutover/task changes.",
+    "at": "2026-10-08T04:48:33Z",
+    "issue": 25,
+    "role": "quality",
+    "branch": "work/publication-handoff-recovery",
+    "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
+    "pr": 26,
+    "summary": "Pushed isolated live-scheduler repair9fb3e6dc on work/publication-handoff-recovery and opened linked draft PR26 for native Issue25. Six changed files: idempotent native-success recovery, durable evidence/bounded handoff, four original regression scenarios, runbook and paired Cargo version0.22.20; no migration adapter, privileged workflow, task or product functionality changed. CI alone is pending. Issue19/PR24/source053 remain preserved.",
+    "next_action": "Security: review allsix actual PR26 file patches at9fb3e6dc/base d647; then independent QA against actual CI and native acceptance. Merge only fresh objective gates; Actions alone publishes.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -1071,10 +1071,11 @@
     },
     "next_managed_work": {
       "issue": 19,
-      "origin": "user",
-      "intent": "Replace branch-backed engineering control storage; packages are a suggestion.",
-      "native_status": "inbox",
-      "existing_comments": 0
+      "pr": 24,
+      "branch": "work/control-ref-adapter",
+      "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
+      "state": "blocked",
+      "qa_review": 5451528384
     },
     "control_storage": {
       "issue": 19,
@@ -1551,7 +1552,14 @@
       "preserved_issue": 19,
       "preserved_pr": 24,
       "preserved_branch": "work/control-ref-adapter",
-      "preserved_commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c"
+      "preserved_commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
+      "branch": "work/publication-handoff-recovery",
+      "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
+      "tree": "3d343a49b1df72a96c38333d9d3871d6b80f43f9",
+      "pr": 26,
+      "version": "0.22.20",
+      "validation": "CI pending",
+      "local_checks": false
     }
   },
   "attempts": {
