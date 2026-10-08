@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 734,
+  "generation": 735,
   "lease": {
     "id": "codex-continuous-20261008143128Z-security-1791471085000",
     "worker": "codex-continuous-20261008143128Z",
     "role": "security",
     "issue": 19,
     "acquired_at": "2026-10-08T14:51:25Z",
-    "heartbeat_at": "2026-10-08T14:51:25Z",
-    "expires_at": "2026-10-08T15:36:25Z",
+    "heartbeat_at": "2026-10-08T14:54:56Z",
+    "expires_at": "2026-10-08T15:39:56Z",
     "branch": "work/control-ref-adapter",
     "commit": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T14:50:29Z",
+    "at": "2026-10-08T14:54:56Z",
     "issue": 19,
-    "role": "quality",
+    "role": "security",
     "branch": "work/control-ref-adapter",
     "commit": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
     "pr": 24,
-    "summary": "Pushed original source 6951b58: owned fenced checkpoint/release, parent-bound released/expired recovery and eleven CI-only regressions. Integration preserves b849 and published continuous default c348; v24 notes retained and new unpublished v25 proposed. No local checks, live fence, notes activation or Task changes.",
-    "next_action": "Record native implementation handoff; release Quality19, acquire exact-head Security19, inspect complete actual PR diff and current CI; independent QA after Security and actual checks.",
+    "summary": "Security19 reviewed the complete native 20-path PR24 diff at 6951b58/base c348. Fixed namespaces, sole-parent/non-force arbitration, owned fenced lifecycle and historical release proof preserve one authority. Trusted unchanged native commands/Task attestation are source scoped; retirement records intent and honest REST deletion boundary. Actual security jobs and validation passed; no unresolved code findings.",
+    "next_action": "Post exact-head Security COMMENT; release and reacquire independent QA19 for acceptance, prior rejection correction, complete diff and actual remaining builds/package/gate.",
     "publication": {
       "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
       "state": "published",
@@ -545,6 +545,60 @@
       ],
       "qa_finding": 5457079884,
       "stage": "remote source persisted; fresh CI/Security/QA required"
+    },
+    "security_review19": {
+      "head": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
+      "base": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
+      "reviewed_paths": [
+        ".agents/skills/mynou-quality/SKILL.md",
+        ".github/engineering.json",
+        "AGENTS.md",
+        "Cargo.lock",
+        "Cargo.toml",
+        "docs/releases/0.22.25.md",
+        "engineering/README.md",
+        "engineering/command-transport.md",
+        "engineering/commands.py",
+        "engineering/control-storage.md",
+        "engineering/control.py",
+        "engineering/delivery.py",
+        "engineering/github.py",
+        "engineering/lease.py",
+        "engineering/migration.py",
+        "engineering/policy.py",
+        "engineering/qa.py",
+        "engineering/tests/test_control_refs.py",
+        "engineering/tests/test_migration.py",
+        "engineering/worker-prompt.md"
+      ],
+      "source_history": {
+        "run": 37795700335,
+        "job": 113374467290,
+        "objects": 5270,
+        "finding_count": 0,
+        "coverage_gaps": []
+      },
+      "actions_logs": {
+        "run": 37795700335,
+        "job": 113374466812,
+        "archives": 702,
+        "members": 2196,
+        "finding_count": 0,
+        "coverage_gaps": [],
+        "scope": "completed visible workflow attempts at inventory; pending runs excluded"
+      },
+      "validate": {
+        "run": 37795700353,
+        "job": 113374474184,
+        "rust": {
+          "passed": 864,
+          "failed": 0,
+          "harnesses": 63
+        },
+        "infra": 24,
+        "organization": 132
+      },
+      "live_cutover": false
     }
   },
   "attempts": {
