@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 674,
-  "lease": null,
+  "generation": 675,
+  "lease": {
+    "id": "codex-hourly-20261008123500Z-security-1791464696000",
+    "worker": "codex-hourly-20261008123500Z",
+    "role": "security",
+    "issue": 19,
+    "acquired_at": "2026-10-08T13:04:56Z",
+    "heartbeat_at": "2026-10-08T13:04:56Z",
+    "expires_at": "2026-10-08T13:49:56Z",
+    "branch": "work/control-ref-adapter",
+    "commit": "b8493cad2c475c39e48f1eb7acb10e678e6c0832",
+    "pr": 24
+  },
   "checkpoint": {
     "at": "2026-10-08T13:04:14Z",
     "issue": 19,
