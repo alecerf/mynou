@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 557,
+  "generation": 558,
   "lease": {
     "id": "codex-hourly-20261008T073509Z-quality-20261008074338",
     "worker": "codex-hourly-20261008T073509Z",
     "role": "quality",
     "issue": 27,
     "acquired_at": "2026-10-08T07:43:38Z",
-    "heartbeat_at": "2026-10-08T07:43:38Z",
-    "expires_at": "2026-10-08T08:28:38Z",
+    "heartbeat_at": "2026-10-08T07:45:26Z",
+    "expires_at": "2026-10-08T08:30:26Z",
     "branch": "work/publication-handoff-recovery",
     "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
     "pr": 26
   },
   "checkpoint": {
-    "at": "2026-10-08T07:43:32Z",
+    "at": "2026-10-08T07:45:26Z",
     "issue": 27,
-    "role": "qa",
+    "role": "quality",
     "branch": "work/publication-handoff-recovery",
     "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
     "pr": 26,
-    "summary": "Actual complete-diff QA submitted native COMMENT5453360050 at exact PR26 head99138218/base d647, bound to compact owned checkpointada689672573ceb4f098922b60bac969a821604f. Source6jobs, organization64cases and Security2jobs passed; native Security5453084901 provenance verified. No unresolved finding or merge/publication claim. Prior machine gate failed awaiting QA; require fresh actual gate before delivery.",
-    "next_action": "Release QA; acquire Quality delivery, inspect fresh review-triggered Engineering checks and all configured current-source jobs/head/base/threads. Merge only with real green objective proof; recover default CI publication and safe cleanup.",
+    "summary": "Owned Quality delivery verified exact PR26 head99138218/base d647, managed Issues25/27 and empty reviewthreads. All configured objective gates actually green: source37742148752 sixjobs, Security37742148708 twojobs, newestEngineering37745176435 organization113204841751 and agent113204891739. Gate actual log validates QA5453360050/ada689672573ceb4f098922b60bac969a821604f and Security5453084901/6e027509. Default base unchanged. Ready to merge by expected source; no publication yet.",
+    "next_action": "Merge preserved PR26 by exact expected99138218 only; inspect new default source and native CI, dispatch trusted defaultCI only if absent, persist intent first. Actions alone publishes0.22.20; cleanup Issues25/27 and unblock19 only with actual merge evidence.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "ci-passed",
@@ -53,11 +53,13 @@
       "security_checkpoint": "6e02750960c6683c6c04bcd26306942b09c16b5d"
     },
     "pending_qa": {
-      "state": "native-review-submitted-awaiting-machine-gate",
+      "state": "machine-gate-passed",
       "head_sha": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
       "base_sha": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "review_id": 5453360050,
-      "lease_checkpoint": "ada689672573ceb4f098922b60bac969a821604f"
+      "lease_checkpoint": "ada689672573ceb4f098922b60bac969a821604f",
+      "run_id": 37745176435,
+      "gate_job": 113204891739
     },
     "preserved_work": {
       "issue": 19,
@@ -78,6 +80,14 @@
       ],
       "native_scanning_admin": "403 Resource not accessible by integration; no enabled native setting claimed",
       "limitations": "Selected provider/private-key patterns and completed snapshot only; no arbitrary sensitive-data guarantee."
+    },
+    "delivery": {
+      "state": "gates-verified-before-merge",
+      "source_ci": 37742148752,
+      "security_audit": 37742148708,
+      "engineering": 37745176435,
+      "qa_review": 5453360050,
+      "security_review": 5453084901
     }
   },
   "attempts": {
