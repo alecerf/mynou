@@ -1,90 +1,45 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 605,
+  "generation": 606,
   "lease": {
     "id": "codex-hourly-20261008093523Z-quality-1791453771000",
     "worker": "codex-hourly-20261008093523Z",
     "role": "quality",
     "issue": 30,
     "acquired_at": "2026-10-08T10:02:51Z",
-    "heartbeat_at": "2026-10-08T10:06:14Z",
-    "expires_at": "2026-10-08T10:51:14Z",
-    "branch": "work/native-control-commands",
-    "commit": "681d0f7e4f8905688005b2f60ce71442fba76e7e",
+    "heartbeat_at": "2026-10-08T10:08:29Z",
+    "expires_at": "2026-10-08T10:53:29Z",
+    "branch": "trunk",
+    "commit": "7193547206a9e954bea44e9570716b23e4e660b2",
     "pr": 31
   },
   "checkpoint": {
-    "at": "2026-10-08T10:06:14Z",
+    "at": "2026-10-08T10:08:29Z",
     "issue": 30,
     "role": "quality",
-    "branch": "work/native-control-commands",
-    "commit": "681d0f7e4f8905688005b2f60ce71442fba76e7e",
+    "branch": "trunk",
+    "commit": "7193547206a9e954bea44e9570716b23e4e660b2",
     "pr": 31,
-    "summary": "PR31 ready; actualEngineering37760978551 organization113257026999 andagent-qa-review113257088037 bothsuccess, nativegate logvalidated source681d0f7/basecafac andactualSecurity5454852597/QA5454891252 provenance. RequiredsourceCI37759939764 all6green; Security37759939760 bothgreen; nativeCodeQL37759937006green; threads empty. FreshPRhead/base/default unchanged; Quality owns delivery. No livebackend/sourcepublication inferred.",
-    "next_action": "Exacthead author merge underQuality, then immediately keepIssue30openReview untilactualdefaultCIpublication+connectedcomment canonicalcontrol/notes proof. Persistmergeremotesource andremainingproof; maintainnative19blocked; no directrelease/upload.",
+    "summary": "PR31 merged byauthor withfreshsource/base andallobjectivegatesgreen: source681d0f7/basecafac, Security5454852597, QA5454891252, Engineering37760978551/gate113257088037. Exactdefaultmerge7193547206a9e954bea44e9570716b23e4e660b2. Issue30 explicitlyreopenedReview forrealpostmergeCIpublication andconnectedcomment/control+inertnotes proof; native19 remainsblocked byopen30, PR24/053 preserved. CurrentdefaultCI37761256529 isin_progress; no v0.22.22release/probe/cutover/taskchange certified.",
+    "next_action": "Recoveryfirst inspect719defaultCI/security/Engineering andimmutablev0.22.22/privatepackage proof; fix actualreds underappropriate role. Then Quality at719Issue30 executesone actualconnectedcomment checkpoint/controlproof andfixedinertnotes create+nonforceupdate via revieweddefaultAction, verifiesnative receipts/ref/parents andpreserves safeevidence. Keep30openReview/19blocked untilallproofdone; thenclose30+cleanupmergedbranch safely andresume19/PR24. Refresh preserved053 against719; safelegacyfence/interruptedcutover +reviewedpolicy/taskreconciliation beforecanonicalnotesactivation. No busy-poll/secondworker.",
     "publication": {
-      "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
-      "state": "published",
-      "at": "2026-10-08T08:49:26Z",
-      "version": "0.22.21",
-      "run_id": 37751867488,
-      "status": "completed",
-      "conclusion": "success",
-      "release_id": 406617913,
-      "immutable": true,
-      "tag_commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
-      "assets": [
-        {
-          "id": 621269215,
-          "name": "mynou-v0.22.21-linux-x86_64",
-          "size": 4891488,
-          "digest": "sha256:09b21bc988d90c7dcd43116e1e0f5927b09ea7f281996d789b09336556674157"
-        },
-        {
-          "id": 621269212,
-          "name": "mynou-v0.22.21-macos-arm64",
-          "size": 3729088,
-          "digest": "sha256:64a5ba4825c83124e2270ef2de112f9826b9b09bdc2119d21d6c5b9460cb1731"
-        },
-        {
-          "id": 621269218,
-          "name": "mynou-v0.22.21-macos-x86_64",
-          "size": 4508464,
-          "digest": "sha256:bf2eacf3a4217169dfa9d52b06ac7315ba9e9802d2fc8a9c3e1d9148425abaf1"
-        },
-        {
-          "id": 621269216,
-          "name": "SHA256SUMS",
-          "size": 281,
-          "digest": "sha256:cb6f41638e734dc30241c5bb1b9e37752c523f65ea4c61638a5bfd01ff917001"
-        }
-      ],
-      "registry_proof": {
-        "binary_sha256": "09b21bc988d90c7dcd43116e1e0f5927b09ea7f281996d789b09336556674157",
-        "image": "ghcr.io/alecerf/mynou@sha256:9ba8e1bdd13e465a0a2e9285abe4547da14c140f6ff0784a18c32fea97b81aee",
-        "package_id": 15695108,
-        "repository": "alecerf/mynou",
-        "repository_association": "reported-match",
-        "repository_id": 1403318143,
-        "repository_visibility": "public",
-        "source": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
-        "verification_cleanup": "completed",
-        "verification_user": "1001:1001",
-        "version": "0.22.21",
-        "visibility": "private"
-      },
-      "security_audit_run": 37751867517
+      "commit": "7193547206a9e954bea44e9570716b23e4e660b2",
+      "state": "native-default-ci-pending",
+      "version": "0.22.22",
+      "run_id": 37761256529,
+      "status": "in_progress",
+      "conclusion": null
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T09:43:56Z",
-      "issue": 19,
-      "role": "master",
-      "branch": "work/control-ref-adapter",
-      "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
-      "pr": 24,
-      "summary": "Created distinct prerequisiteIssue30 after nativeopenbacklog inspection (no duplicate). Native19→30 blocked_by write/refetch verified; old25/28 remainclosed. Design-only scoped bridge removes scheduled-ref write boundary through default-only deterministic Actions, not notesactivation. PreservedPR24/053 remainsdraft and rejected untilfullcutover. Currentcafac publicationverified.",
-      "next_action": "ReleaseMaster; acquireQualityIssue30 atcafac, implement strict default-only comment commands and original CIregressions in onePR. Preserve19/24; proveactualtransport onlyafterreviewedmerge."
+      "at": "2026-10-08T10:06:14Z",
+      "issue": 30,
+      "role": "quality",
+      "branch": "work/native-control-commands",
+      "commit": "681d0f7e4f8905688005b2f60ce71442fba76e7e",
+      "pr": 31,
+      "summary": "PR31 ready; actualEngineering37760978551 organization113257026999 andagent-qa-review113257088037 bothsuccess, nativegate logvalidated source681d0f7/basecafac andactualSecurity5454852597/QA5454891252 provenance. RequiredsourceCI37759939764 all6green; Security37759939760 bothgreen; nativeCodeQL37759937006green; threads empty. FreshPRhead/base/default unchanged; Quality owns delivery. No livebackend/sourcepublication inferred.",
+      "next_action": "Exacthead author merge underQuality, then immediately keepIssue30openReview untilactualdefaultCIpublication+connectedcomment canonicalcontrol/notes proof. Persistmergeremotesource andremainingproof; maintainnative19blocked; no directrelease/upload."
     },
     "recovery": {
       "pr": 26,
@@ -131,27 +86,24 @@
       "native_scanning_admin": "Prior HTTP403 integration denial remains documented; no repeated request or enabled native-setting claim."
     },
     "delivery": {
-      "state": "publication-verified",
-      "pr": 29,
-      "source_head": "b028b1dd058842d7ebc551d4f822519d9d4d1e85",
-      "merge_commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
-      "qa_review": 5453951428,
-      "security_review": 5453915524,
-      "premerge_engineering": 37751441590,
-      "premerge_security": 37750720672,
-      "premerge_source_ci": 37750720668
+      "state": "merged-awaiting-publication-and-transport-proof",
+      "issue": 30,
+      "pr": 31,
+      "source_head": "681d0f7e4f8905688005b2f60ce71442fba76e7e",
+      "merge_commit": "7193547206a9e954bea44e9570716b23e4e660b2",
+      "qa_review": 5454891252,
+      "security_review": 5454852597,
+      "premerge_engineering": 37760978551,
+      "premerge_security": 37759939760,
+      "premerge_source_ci": 37759939764
     },
     "cleanup": {
-      "issues": [
-        25,
-        27,
-        28
-      ],
-      "status": "Nativecompletedclosure+Done",
-      "merged_branch": "work/public-source-private-package",
-      "branch_result": "native deletion verified",
+      "issue": 30,
+      "state": "open/Review intentionally pending actual transport/publication acceptance",
       "dependency_issue": 19,
-      "dependency_status": "Ready; native25/28 bothclosed",
+      "dependency_state": "blocked by nativeopen30",
+      "merged_branch": "work/native-control-commands",
+      "branch_result": "not yet established; inspect native",
       "preserved_pr": 24,
       "preserved_commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c"
     },
@@ -210,9 +162,9 @@
       "head": "681d0f7e4f8905688005b2f60ce71442fba76e7e",
       "base": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
       "tree": "75e8692d466c8fa139aa0824e4f0d8034a02ea4d",
-      "state": "all-premerge-gates-green",
+      "state": "merged-awaiting-publication-and-live-proof",
       "canonical_ref": "refs/heads/control/engineering",
-      "live_proof": "not run; privileged workflow not on default",
+      "live_proof": "not executed; no canonical activation",
       "parent_issue": 19,
       "engineering": 37759939738,
       "source_ci": 37759939764,
@@ -223,7 +175,64 @@
       "codeql_run": 37759937006,
       "qa_review": 5454891252,
       "gate_run": 37760978551,
-      "gate_job": 113257088037
+      "gate_job": 113257088037,
+      "merge_commit": "7193547206a9e954bea44e9570716b23e4e660b2",
+      "default_ci": 37761256529,
+      "default_engineering": 37761256671,
+      "default_security": 37761256575
+    },
+    "previous_publication": {
+      "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
+      "state": "published",
+      "at": "2026-10-08T08:49:26Z",
+      "version": "0.22.21",
+      "run_id": 37751867488,
+      "status": "completed",
+      "conclusion": "success",
+      "release_id": 406617913,
+      "immutable": true,
+      "tag_commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
+      "assets": [
+        {
+          "id": 621269215,
+          "name": "mynou-v0.22.21-linux-x86_64",
+          "size": 4891488,
+          "digest": "sha256:09b21bc988d90c7dcd43116e1e0f5927b09ea7f281996d789b09336556674157"
+        },
+        {
+          "id": 621269212,
+          "name": "mynou-v0.22.21-macos-arm64",
+          "size": 3729088,
+          "digest": "sha256:64a5ba4825c83124e2270ef2de112f9826b9b09bdc2119d21d6c5b9460cb1731"
+        },
+        {
+          "id": 621269218,
+          "name": "mynou-v0.22.21-macos-x86_64",
+          "size": 4508464,
+          "digest": "sha256:bf2eacf3a4217169dfa9d52b06ac7315ba9e9802d2fc8a9c3e1d9148425abaf1"
+        },
+        {
+          "id": 621269216,
+          "name": "SHA256SUMS",
+          "size": 281,
+          "digest": "sha256:cb6f41638e734dc30241c5bb1b9e37752c523f65ea4c61638a5bfd01ff917001"
+        }
+      ],
+      "registry_proof": {
+        "binary_sha256": "09b21bc988d90c7dcd43116e1e0f5927b09ea7f281996d789b09336556674157",
+        "image": "ghcr.io/alecerf/mynou@sha256:9ba8e1bdd13e465a0a2e9285abe4547da14c140f6ff0784a18c32fea97b81aee",
+        "package_id": 15695108,
+        "repository": "alecerf/mynou",
+        "repository_association": "reported-match",
+        "repository_id": 1403318143,
+        "repository_visibility": "public",
+        "source": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
+        "verification_cleanup": "completed",
+        "verification_user": "1001:1001",
+        "version": "0.22.21",
+        "visibility": "private"
+      },
+      "security_audit_run": 37751867517
     }
   },
   "attempts": {
