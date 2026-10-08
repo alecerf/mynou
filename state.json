@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 777,
+  "generation": 778,
   "lease": {
     "id": "comment-6065316082",
     "worker": "codex-product-20261008T1637Z",
     "role": "master",
     "issue": 38,
     "acquired_at": "2026-10-08T17:22:16Z",
-    "heartbeat_at": "2026-10-08T17:22:16Z",
-    "expires_at": "2026-10-08T18:07:16Z",
+    "heartbeat_at": "2026-10-08T17:26:21Z",
+    "expires_at": "2026-10-08T18:11:21Z",
     "branch": "trunk",
     "commit": "d67becbd5a09ff51bdd8e2a3d43a9f44ef849f74",
     "pr": null
   },
   "checkpoint": {
-    "at": "2026-10-08T17:19:23Z",
-    "issue": 36,
+    "at": "2026-10-08T17:26:21Z",
+    "issue": 38,
     "role": "master",
-    "branch": "work/36-par2-available-rows",
-    "commit": "65530f4f432a1b0af6ba71457c5ded574b91e728",
-    "pr": 37,
-    "summary": "PR37 mergedd67becb with actual reviewed head65530f4/base57 and native green source/audit/QA gates; merged defaultCI37814772739 has validate and all4builds successful, package queued; Security37814772776 bothjobs successful, no v0.22.26 release yet. Master created client ProductOwner capability Issue38 (P1), plus evidence-based product Issues39 streaming(P1Ready),40 automaticrepair(P2NeedsTriage),41 first-runUX(P2Ready); actual native handoff6065244132. Temporarily restored merged source branch binds this lease only.",
-    "next_action": "Release this Master phase; acquire Quality36 at trunk exactmerged d67becbd5a09ff51bdd8e2a3d43a9f44ef849f74/PR37. Verify merged parent/source preservation/no other active PR/lease and delete temporary source branch. Inspect actual Actions publication/close36 after proof; release before Master38 implements persistent ProductOwner and useful backlog policy separately.",
+    "branch": "trunk",
+    "commit": "d67becbd5a09ff51bdd8e2a3d43a9f44ef849f74",
+    "pr": null,
+    "summary": "Master38 recovered actual prior product delivery:PR37 mergedd67becb; immutablev0.22.26/release407086571 at17:20:17Z; native exacttag and all7jobs defaultCI37814772739 successful, defaultSecurity37814772776 bothjobs success; fourassets622491454/455/453/456, actual source reviews/gate preserved. Native36closed/Done and handoff recorded. ConfiguredVM GitHub admin API actually works (no secret outputs), enabling safe branch/dependency/role-label administration missing in connector wrappers. NativeProductOwner38 and product39/40/41 live.",
+    "next_action": "Release Master38; acquire Quality38 at trunk d67becb/PRnull. Perform original native branch audit under exact ownership, preserve merged parents and delete only temporary merged work/36-par2-available-rows after no valid lease/PR/openIssue references it; set real #40->#39 native dependency. Checkpoint/release, then Master38 implements modular ProductOwner/catalog/triage planning policy via reviewed separatePR.",
     "publication": {
       "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
       "state": "published",
@@ -498,14 +498,14 @@
       "publication_pr_handoff": 6062225589
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T16:41:59Z",
+      "at": "2026-10-08T17:19:23Z",
       "issue": 36,
       "role": "master",
-      "branch": "trunk",
-      "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
-      "pr": null,
-      "summary": "User product continuation recorded as nativeIssue36. Proposed v0.22.26 selects independent available PAR2 parity rows; original implementation currently requires0..missing_count. Exact acceptance/riskhigh in Issue36. Default57cfe88/v0.22.25 actual CI/security/organization green; Issue19 cutover complete, sole notes5ad history preserved. New work/36-par2-available-rows branches original default57, no code edits or PR yet.",
-      "next_action": "Confirm Master checkpoint, release, then acquire Rust36 at work/36-par2-available-rows57cfe88. Implement deterministic bounded independent row selection and exact-exponent inversion/residuals, original CI-only edge fixtures, focused English docs and proposed0.22.26. Open one linked PR, actualCI, distinct Security and complete-diff QA before gated merge/Actions publication."
+      "branch": "work/36-par2-available-rows",
+      "commit": "65530f4f432a1b0af6ba71457c5ded574b91e728",
+      "pr": 37,
+      "summary": "PR37 mergedd67becb with actual reviewed head65530f4/base57 and native green source/audit/QA gates; merged defaultCI37814772739 has validate and all4builds successful, package queued; Security37814772776 bothjobs successful, no v0.22.26 release yet. Master created client ProductOwner capability Issue38 (P1), plus evidence-based product Issues39 streaming(P1Ready),40 automaticrepair(P2NeedsTriage),41 first-runUX(P2Ready); actual native handoff6065244132. Temporarily restored merged source branch binds this lease only.",
+      "next_action": "Release this Master phase; acquire Quality36 at trunk exactmerged d67becbd5a09ff51bdd8e2a3d43a9f44ef849f74/PR37. Verify merged parent/source preservation/no other active PR/lease and delete temporary source branch. Inspect actual Actions publication/close36 after proof; release before Master38 implements persistent ProductOwner and useful backlog policy separately."
     },
     "task_reconciliation": {
       "issue": 19,
@@ -702,7 +702,7 @@
       "task_receipt": 6063044134,
       "task_id": "6ac54c387af0819184713674c48b3845",
       "fence_sha": "5c305bfbee1e0225dcd8a35cdbb8cb491a084f11",
-      "transport_comment_id": 6065267320,
+      "transport_comment_id": 6065384896,
       "retirement": "confirmed",
       "notes_proof_sha": "96e3439dbc1800f708aab0c5680211f105176e14"
     }
