@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 679,
+  "generation": 680,
   "lease": {
     "id": "codex-hourly-20261008123500Z-qa-1791464873000",
     "worker": "codex-hourly-20261008123500Z",
     "role": "qa",
     "issue": 19,
     "acquired_at": "2026-10-08T13:07:53Z",
-    "heartbeat_at": "2026-10-08T13:09:50Z",
-    "expires_at": "2026-10-08T13:54:50Z",
+    "heartbeat_at": "2026-10-08T13:12:00Z",
+    "expires_at": "2026-10-08T13:57:00Z",
     "branch": "work/control-ref-adapter",
     "commit": "b8493cad2c475c39e48f1eb7acb10e678e6c0832",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T13:09:50Z",
+    "at": "2026-10-08T13:12:00Z",
     "issue": 19,
     "role": "qa",
     "branch": "work/control-ref-adapter",
     "commit": "b8493cad2c475c39e48f1eb7acb10e678e6c0832",
     "pr": 24,
-    "summary": "Distinct QA19 at exactb8493cad2c475c39e48f1eb7acb10e678e6c0832/baseced independently challenged all19 actual native changedpaths and corrections, accepted Security5457051939/historical1bc82b0deebb86d69901be1eb7ab15864551282e, inspected currentCI and real logs. Rejection: schema2 Pending blocks normal checkpoint/release, while recover-fence only accepts expired heldlease. A bounded wake stopping afterfence cannot renew/release/resume its lease safely through supportedcommands. Add owned fenced checkpoint/release and evidence-based resume of releasedfence before installation. SourceCI lateststillhadMacIntel pending; no greengate/merge.",
-    "next_action": "Nextwake recovercurrentPR24/sourceb849 first, then Quality19 implement bounded owned-fence checkpoint/release/resume with native preservation and race/heartbeat/interruption CIcases. RefreshwholeSecurity/QA atnewhead/base and waitonlyactualCI; actualTaskreconciliation must precedefence. No newIssue, duplicatebranch orlivecutover.",
+    "summary": "Wake12:35–13:10UTC: resumed Issue19/PR24 and preserved053 history; original integrationfb6f67139b4a756d4533efd15cb7553423d4204e plus correctionb8493cad2c475c39e48f1eb7acb10e678e6c0832/baseced0fe652469fa6916831e0fb09cccc1a8784f79. Currentbranch work/control-ref-adapter,treee010e0deeb7d191c0d9b708a42b1a69364f3c79a. Separate Security5456964286 rejected3gaps; corrected complete-diffSecurity5457051939 passed under1bc82b0deebb86d69901be1eb7ab15864551282e. SeparateQA5457079884 at7daccc75db37d11a023a4faf42d830f4ffceb8b1 rejects missing ownedfenced checkpoint/release/resume. ActualCI117org,864Rust/0failed; source-history5052objects andcompleted-log audit656archives/2222members0recognized findings/gaps withinselectedscope. LastCI37781499542 stillhadMacIntel/pendingpackage. No greengate/merge/publication/liveactivation/taskupdate/branchdeletion; no localchecks/additionalworker. Nativehandoffs: Issue19=6060622945, PR24=6060623320. Final checkpoint and release now.",
+    "next_action": "Nextwake admission/recovery first. Reuse PR24/work/control-ref-adapter/b8493cad2c475c39e48f1eb7acb10e678e6c0832; Quality19 fixes QA5457079884: exact-head owned schema2 checkpoint/renew/release and evidence-based resume of released/expiredfence, preservingfullhistory/oneauthority. Add originalCI cases for boundedstop betweenfence/activation,15-minuteheartbeat,ownershiploss/races andresumption; no localchecks. Refresh fullSecurity/QA atnewhead/base, require actualallCI/gategreen beforeinstallation. Afterreviewedmerge/defaultCI, reconcileactualexistinghourlyTask beforefence, actualnotescheckpoint proof, Qualityretirement andclose19. Currentcontrol/engineering remains soleauthority; no duplicateIssue/branch orrelease mutation.",
     "publication": {
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "state": "published",
@@ -89,21 +89,21 @@
       "security_checkpoint": "6e02750960c6683c6c04bcd26306942b09c16b5d"
     },
     "pending_qa": {
-      "state": "machine-gate-passed",
-      "head_sha": "2053b30d99dfaddf59e1f4fb7d16df57dc376cb9",
-      "base_sha": "7193547206a9e954bea44e9570716b23e4e660b2",
-      "review_id": 5455490361,
-      "lease_checkpoint": "9bea1de466fcae019205272341ce679fd5a56279",
-      "security_review": 5455447204,
-      "security_checkpoint": "0066100ef2f08255950a447ed51eccdb7bc4f9d8",
-      "run_id": 37766901214,
-      "gate_job": 113276714409
+      "state": "rejected",
+      "issue": 19,
+      "pr": 24,
+      "head_sha": "b8493cad2c475c39e48f1eb7acb10e678e6c0832",
+      "base_sha": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
+      "review_id": 5457079884,
+      "lease_checkpoint": "7daccc75db37d11a023a4faf42d830f4ffceb8b1",
+      "security_review": 5457051939,
+      "security_checkpoint": "1bc82b0deebb86d69901be1eb7ab15864551282e"
     },
     "preserved_work": {
       "issue": 19,
       "pr": 24,
       "branch": "work/control-ref-adapter",
-      "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c"
+      "commit": "b8493cad2c475c39e48f1eb7acb10e678e6c0832"
     },
     "public_security": {
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
@@ -190,21 +190,21 @@
       "pr": 24,
       "branch": "work/control-ref-adapter",
       "source": "b8493cad2c475c39e48f1eb7acb10e678e6c0832",
-      "pr_reported_base": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+      "pr_reported_base": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "current_default": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "authority": "refs/heads/control/engineering",
       "candidate": "refs/notes/mynou-engineering",
-      "state": "QA rejects bounded fenced-lease lifecycle gap; preserve corrected proposal and current CI",
+      "state": "Draft preserved; QA rejected fenced lease renewal/checkpoint/release/resume gap",
       "security_review": 5457051939,
-      "qa_review": 5451528384,
+      "qa_review": 5457079884,
       "old_source_ci": 37728256136,
       "old_organization_ci": 37728256161,
       "proposal": "Trusted native comment/default Action canonical checkpoint and fixed inert notes create/update are now actually proved atv23. Reviewed migration staging/fencing/activation commands remain to implement.",
-      "scheduler_capabilities": "automations_peek and automations_update tools exposed; native task not looked up or modified this wake.",
+      "scheduler_capabilities": "Live task not inspected/changed; reviewed workerprompt proposal unmerged, so reconciliation is not yet eligible.",
       "boundary": "Connected branch-named writes remain scoped; fixed inert notes namespace verified through reviewed Actions. No general migration writer or live activation is claimed.",
-      "cutover": "No candidate staging, legacy fence, activation or task change. refs/heads/control/engineering remains sole live authority.",
-      "native_handoff": 6059470579,
-      "preserved_pr_handoff": 6059470835,
+      "cutover": "No legacyfence, notes activation, task update orbranchdeletion. Explicit retirement intent conditioned on actualproof and actualTaskresponse.",
+      "native_handoff": 6060622945,
+      "preserved_pr_handoff": 6060623320,
       "retirement_intent": "Delete legacy only after actual notes proof/history/task reconciliation; reviewed implementation now proposed",
       "design": "Fixed legacy schema2 fence -> notes creation from fence ancestry -> verified task reconciliation -> explicit Quality retirement; no second acquirable authority.",
       "proposal_tree": "e010e0deeb7d191c0d9b708a42b1a69364f3c79a",
@@ -214,7 +214,18 @@
       "security_checkpoint": "1bc82b0deebb86d69901be1eb7ab15864551282e",
       "qa_findings": [
         "After schema2 fence, checkpoint/release use control.read_state and throwPending; recovery rejects lease:null. Explicit renewal, durable release and safe evidence-based resume must cover deliberate boundedstop, not just expired-worker death."
-      ]
+      ],
+      "qa_checkpoint": "7daccc75db37d11a023a4faf42d830f4ffceb8b1",
+      "source_ci": 37781499542,
+      "organization_ci": 37781499531,
+      "security_ci": 37781499585,
+      "source_tree": "e010e0deeb7d191c0d9b708a42b1a69364f3c79a",
+      "source_history": {
+        "original_preserved": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
+        "integration": "fb6f67139b4a756d4533efd15cb7553423d4204e",
+        "integration_default": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
+        "correction": "b8493cad2c475c39e48f1eb7acb10e678e6c0832"
+      }
     },
     "control_bridge_design": {
       "state": "fixed scoped transport implemented/published/actually proved",
@@ -405,15 +416,25 @@
       "parent_handoff": 6059470579,
       "preserved_pr_handoff": 6059470835
     },
-    "previous_checkpoint": {
-      "at": "2026-10-08T13:07:43Z",
-      "issue": 19,
-      "role": "security",
-      "branch": "work/control-ref-adapter",
-      "commit": "b8493cad2c475c39e48f1eb7acb10e678e6c0832",
-      "pr": 24,
-      "summary": "Separate corrected Security inspection atb8493cad2c475c39e48f1eb7acb10e678e6c0832/baseced covered all19 native paths: unchanged13 complete patches verified against reviewedsource and allsix native corrections inspected. Rejected5456964286 findings corrected: prematureclosure recoveredunderlease, exactdefault+openIssue retirementguards, actualtaskattestation beforefence. ActualCI organization113325448294 succeeded117 scenarios and source-history113325467675 succeeded. No livecutover/taskproof is inferred; required productCI/Actions-log audit stillpending.",
-      "next_action": "Release Security and acquire distinct QA at exactcorrectedhead/base. Inspect acceptance, complete diff, actualCI and any remaining bounded-wake/recovery gaps; preserve draft until objectivegatesgreen."
+    "proposal_ci": {
+      "source": "b8493cad2c475c39e48f1eb7acb10e678e6c0832",
+      "base": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
+      "validate_job": 113325449454,
+      "rust_passed": 864,
+      "rust_failed": 0,
+      "organization_job": 113325448294,
+      "organization_passed": 117,
+      "security_run": 37781499585,
+      "history_job": 113325467675,
+      "actions_job": 113325467683,
+      "git_objects": 5052,
+      "completed_archives": 656,
+      "log_members": 2222,
+      "recognized_findings": 0,
+      "coverage_gaps": 0,
+      "limits": "Selected provider/private-key patterns and completed inventory snapshot only; pending audit/source/Engineering/CodeQL runs excluded; no arbitrary sensitive-data guarantee.",
+      "source_run": 37781499542,
+      "state": "Partial native success; lastMacIntel build inprogress and package unobserved. No greengate/merge/publishedv24 claim."
     }
   },
   "attempts": {
