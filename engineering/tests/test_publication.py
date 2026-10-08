@@ -17,7 +17,8 @@ import delivery
 import lease
 import publication
 from github import APIError
-from test_organization import AT, BASE, HEAD, Native, PublicationScenarios, held, pr
+import test_organization as fixtures
+from test_organization import AT, BASE, HEAD, Native, held, pr
 from test_product_planning import PLAN, anchor
 
 
@@ -28,7 +29,7 @@ def archive(proof, name="mynou-image.json"):
     return stream.getvalue()
 
 
-class Published(PublicationScenarios.Publication):
+class Published(fixtures.PublicationScenarios.Publication):
     """Synthetic native metadata, not claims of real verification or publication."""
     def __init__(self):
         super().__init__()

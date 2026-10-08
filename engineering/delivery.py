@@ -379,11 +379,18 @@ def run(api, sweep=False):
             proof = qa.evaluate(api, candidate["number"], include_gate=True)
             current = api.rest("GET", f"pulls/{candidate['number']}")
             lease.owned(read_state(api)[1], identity, lease.now())
-            if current["mergeable"] is not True or proof["base"] != default or api.ref(api.cfg["default_branch"]) != proof["base"]:
+            if (current["mergeable"] is not True or current.get("state") != "open" or current.get("draft") is not False
+                    or current["head"]["sha"] != proof["head"] or current["head"]["ref"] != candidate["head"]["ref"]
+                    or (current["head"].get("repo") or {}).get("full_name") != api.repo
+                    or current["base"]["ref"] != api.cfg["default_branch"] or current["base"]["sha"] != proof["base"]
+                    or managed["number"] not in qa.linked_issues(current.get("body"))
+                    or proof["base"] != default or api.ref(api.cfg["default_branch"]) != proof["base"]):
                 raise ValueError("PR integration or base changed; revalidate before merge")
             merged = api.rest("PUT", f"pulls/{candidate['number']}/merge", {"sha": proof["head"], "merge_method": "merge"})
             if not merged.get("merged"):
                 raise ValueError("GitHub did not confirm the merge")
+            if api.ref(api.cfg["default_branch"]) != merged["sha"]:
+                raise ValueError("Native merge confirmed but default changed; preserve the PR and triage before publication")
             head, held = read_state(api)
             held = lease.checkpoint(held, lease.now(), identity,
                 f"PR #{candidate['number']} merged at {merged['sha']}; exact QA/CI gates passed.",

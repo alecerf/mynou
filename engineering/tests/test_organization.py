@@ -765,6 +765,59 @@ class PublicationScenarios(unittest.TestCase):
             self.execute(native)
             self.assertFalse(native.dispatches)
 
+    def test_fresh_reviewed_pr_identity_change_blocks_merge_and_releases_ownership(self):
+        class Race(self.Publication):
+            def __init__(self):
+                super().__init__()
+                self.current_pr = pr()
+                self.default = BASE
+                self.issues[0] = issue(status="review")
+                self.merges = []
+            def rest(self, method, path, value=None):
+                if method == "PUT" and path == "pulls/3/merge":
+                    self.merges.append(value)
+                    raise AssertionError("Unreviewed native identity must not merge")
+                return super().rest(method, path, value)
+        for change in ["head", "ref", "repository", "base", "target", "issue", "state", "draft"]:
+            native = Race()
+            def changed_review(api, number, include_gate=False):
+                if change == "head": api.current_pr["head"]["sha"] = "f" * 40
+                elif change == "ref": api.current_pr["head"]["ref"] = "work/other"
+                elif change == "repository": api.current_pr["head"]["repo"]["full_name"] = "other/repo"
+                elif change == "base": api.current_pr["base"]["sha"] = HEAD
+                elif change == "target": api.current_pr["base"]["ref"] = "other"
+                elif change == "issue": api.current_pr["body"] = "Closes #2"
+                elif change == "state": api.current_pr["state"] = "closed"
+                else: api.current_pr["draft"] = True
+                return {"issues": [1], "head": HEAD, "base": BASE}
+            with self.subTest(change=change), patch.object(qa, "evaluate", side_effect=changed_review):
+                result = self.execute(native)
+            self.assertEqual(result["action"], "idle-or-blocked")
+            self.assertFalse(native.merges)
+            self.assertFalse(native.dispatches)
+            self.assertIsNone(native.current_state["lease"])
+            self.assertEqual(native.current_state["checkpoint"]["issue"], 1)
+
+    def test_confirmed_merge_with_changed_default_never_dispatches_other_source(self):
+        class Race(self.Publication):
+            def __init__(self):
+                super().__init__()
+                self.current_pr = pr()
+                self.default = BASE
+                self.issues[0] = issue(status="review")
+            def rest(self, method, path, value=None):
+                if method == "PUT" and path == "pulls/3/merge":
+                    self.default = "f" * 40
+                    return {"merged": True, "sha": "e" * 40}
+                return super().rest(method, path, value)
+        native = Race()
+        with patch.object(qa, "evaluate", return_value={"issues": [1], "head": HEAD, "base": BASE}):
+            result = self.execute(native)
+        self.assertEqual(result["action"], "idle-or-blocked")
+        self.assertIn("default changed", result["results"][0]["blocked"])
+        self.assertFalse(native.dispatches)
+        self.assertIsNone(native.current_state["lease"])
+
 
 class AtomicCAS(unittest.TestCase):
     def test_competing_writer_cannot_overwrite_a_new_lease_without_force(self):
