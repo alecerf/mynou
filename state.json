@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 482,
+  "generation": 483,
   "lease": {
     "id": "wake12-security-recovery-20261008T042605Z",
     "worker": "codex-hourly-20261008T042605Z",
     "role": "security",
     "issue": 19,
     "acquired_at": "2026-10-08T04:36:32Z",
-    "heartbeat_at": "2026-10-08T04:36:32Z",
-    "expires_at": "2026-10-08T05:21:32Z",
+    "heartbeat_at": "2026-10-08T04:38:26Z",
+    "expires_at": "2026-10-08T05:23:26Z",
     "branch": "work/control-ref-adapter",
     "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T04:36:25Z",
+    "at": "2026-10-08T04:38:26Z",
     "issue": 19,
-    "role": "quality",
+    "role": "security",
     "branch": "work/control-ref-adapter",
     "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
     "pr": 24,
-    "summary": "Pushed original fix053fb1f1 to existing PR24: terminal published/default-CI recovery no longer rewrites active work; necessary checkpoints retain source-bound evidence and one bounded prior-work handoff. Added four CI-only regression scenarios. No local checks ran. Current VM administration authenticated200 with admin/push, but this is not proof of scheduled-web non-branch writing or live cutover.",
-    "next_action": "Security: inspect complete actual PR24 diff at053fb1f1/base d647, including preserved metadata provenance and terminal CI recovery; then exact-head/base QA using actual Actions. Keep draft while Issue19's cutover criteria remain unfinished.",
+    "summary": "Complete-diff Security review passes the preparatory reference adapter and recovery-preservation fix. Native CI success remains mandatory, and this does not certify an unimplemented live cutover or a scheduled-web general-ref writer.",
+    "next_action": "QA: independently inspect all11 actual PR patches, native acceptance and new CI logs at053fb1f1/base d647. Reject final delivery while live cutover/hourly writer criteria remain incomplete; do not treat preparatory Security pass as activation.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -1443,6 +1443,41 @@
       "scheduled_web_general_ref_write": "not proved",
       "live_cutover": "not activated",
       "secrets_exposed": false
+    },
+    "recovery_overwrite_security": {
+      "schema": 1,
+      "role": "security",
+      "head_sha": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
+      "base_sha": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+      "verdict": "passed",
+      "summary": "Complete-diff Security review passes the preparatory reference adapter and recovery-preservation fix. Native CI success remains mandatory, and this does not certify an unimplemented live cutover or a scheduled-web general-ref writer.",
+      "reviewed_paths": [
+        ".github/engineering.json",
+        "engineering/README.md",
+        "engineering/control-storage.md",
+        "engineering/control.py",
+        "engineering/delivery.py",
+        "engineering/github.py",
+        "engineering/lease.py",
+        "engineering/policy.py",
+        "engineering/qa.py",
+        "engineering/tests/test_control_refs.py",
+        "engineering/tests/test_organization.py"
+      ],
+      "acceptance": [
+        "One canonical authority remains refs/heads/control/engineering; malformed/default-branch/tag/conflicting/prefix reference requests fail closed.",
+        "Atomic control writes retain exact observed commits, sole-parent ancestry and force:false; rejected or uncertain ownership does not retry blindly.",
+        "Retained metadata is source-bound historical evidence; native exact-head/base reviews, scoped historical leases, actual CI and unresolved-thread checks continue to govern merge.",
+        "A recorded published release alone cannot hide native CI failures or authorize unrelated delivery; terminal success does not overwrite active handoffs.",
+        "The prior-work handoff is bounded and nonrecursive; no credential, runtime dependency, product code, workflow privilege or immutable release mutation was introduced."
+      ],
+      "evidence": [
+        "Inspected all11 native PR24 file patches at053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c againstd647be6edfd6e892474b2602bbc9047ad4047c2f.",
+        "Native Engineering checks37728256161 organization113151250036 success; actual log read. agent-qa-review113151290396 is skipped because draft, not green.",
+        "Native sourceCI37728256136 all4 build jobs success; validate still in progress at04:37:42Z. No local checks ran.",
+        "Fresh pinned control.py and qa.py show scheduling uses managed native Issues/attempts and reviews use actual source-bound native proof, not retained checkpoint metadata."
+      ],
+      "findings": []
     }
   },
   "attempts": {
