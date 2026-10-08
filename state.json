@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 773,
+  "generation": 774,
   "lease": {
     "id": "comment-6065128681",
     "worker": "codex-product-20261008T1637Z",
     "role": "master",
     "issue": 36,
     "acquired_at": "2026-10-08T17:11:22Z",
-    "heartbeat_at": "2026-10-08T17:11:22Z",
-    "expires_at": "2026-10-08T17:56:22Z",
+    "heartbeat_at": "2026-10-08T17:14:57Z",
+    "expires_at": "2026-10-08T17:59:57Z",
     "branch": "work/36-par2-available-rows",
     "commit": "65530f4f432a1b0af6ba71457c5ded574b91e728",
     "pr": 37
   },
   "checkpoint": {
-    "at": "2026-10-08T17:09:34Z",
+    "at": "2026-10-08T17:14:57Z",
     "issue": 36,
-    "role": "qa",
+    "role": "master",
     "branch": "work/36-par2-available-rows",
     "commit": "65530f4f432a1b0af6ba71457c5ded574b91e728",
     "pr": 37,
-    "summary": "Independent QA36 inspected complete actual9-path PR37 diff at65530f4/base57cfe88 and Issue acceptance. Normalized rank selection, exact exponent inverse/residuals, m0/8/budget/cancellation, corruption and private reopen boundaries accepted; original polynomial oracle retained. CI37813613977 all6 required validate/build/package jobs succeeded:875 Rust tests/63harnesses,24 scheduler and132 organization checks; package synthetic demo successful. Separate Security5460245549 checkpoint4b04dcf; both native audit jobs succeeded. No local checks, no formal approval or publication claim.",
-    "next_action": "Confirm QA checkpoint and submit exact-head/base passed native COMMENT with all9 paths and actual evidence. Release QA; require fresh agent-qa-review green before delivery. Master must seed concrete Product Owner/backlog follow-up and preserve current publication recovery before unrelated implementation.",
+    "summary": "PR37 actually merged atd67becbd5a09ff51bdd8e2a3d43a9f44ef849f74 after all objective native checks green:CI37813613977,Security37813613918,Engineering37814484982 gate113440029803; CodeQL; Security5460245549/QA5460284106 exact65530f4/base57. Native delete-on-merge removed source branch before checkpoint6065152359, transport37814778949 failed; canonical ownership unchanged. Restored already-merged exactsource65530f4 temporarily to bind this checkpoint. Default Actions publication pending, not failed/complete.",
+    "next_action": "Intake user Product Owner/growth scope and small real backlog. Preserve default d67becb CI37814772739/publication and native cleanup before unrelated implementation. After this phase release, reacquire delivery/recovery on trunk merged source; delete restored merged branch only after no lease references it. Avoid future merge from uncheckpointed auto-deleted branch lease.",
     "publication": {
       "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
       "state": "published",
@@ -702,7 +702,7 @@
       "task_receipt": 6063044134,
       "task_id": "6ac54c387af0819184713674c48b3845",
       "fence_sha": "5c305bfbee1e0225dcd8a35cdbb8cb491a084f11",
-      "transport_comment_id": 6065097257,
+      "transport_comment_id": 6065190849,
       "retirement": "confirmed",
       "notes_proof_sha": "96e3439dbc1800f708aab0c5680211f105176e14"
     }
