@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 757,
+  "generation": 758,
   "lease": {
     "id": "comment-6063261719",
     "worker": "codex-resume-20261008T151223Z",
     "role": "quality",
     "issue": 19,
     "acquired_at": "2026-10-08T15:26:57Z",
-    "heartbeat_at": "2026-10-08T15:29:13Z",
-    "expires_at": "2026-10-08T16:14:13Z",
+    "heartbeat_at": "2026-10-08T15:33:24Z",
+    "expires_at": "2026-10-08T16:18:24Z",
     "branch": "trunk",
     "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T15:29:13Z",
+    "at": "2026-10-08T15:33:24Z",
     "issue": 19,
     "role": "quality",
     "branch": "trunk",
     "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
     "pr": 24,
-    "summary": "Legacy control branch retired; notes remains sole durable authority with all historical proof.",
-    "next_action": "Finish native Issue19 acceptance/cleanup and resume managed work.",
+    "summary": "Issue19 delivered/closed Done; PR24 merged trunk57cfe88bd9dac249d6949a470afc357e835060f9, v0.22.25 actual immutable publication406963891/CI37797446857. Guarded retirement6063301706/run37801066190/job113393116862/receipt6063318234: notes9404057/gen757 retired-confirmed, prepared-parentff8219b. Legacy matching refs empty; only branch trunk. Native compare preserves held QA c9d769 ancestry. Actual hourly Task78077a9 prompt/ID/cadence/timezone verified, attestation6063044134. Acceptance handoffs Issue6063368802/PR6063369145; prerequisites25/28/30 and PAR2 roadmap2 completed. Fresh native open Issues/PRs empty. Canonical migration phase/current checkpoint governs; earlier source/time-bound auxiliary records are historical, not pending requests.",
+    "next_action": "Confirm this real post-retirement canonical notes checkpoint and release Qualitycomment-6063261719; verify lease-null. Then idle: no executable native user work or bounded evidence-based defect remains from this delivery. Existing hourly Task remains best-effort recovery. Next wake must resolve installed config/fixed refs, verify historical fence ancestry and canonical notes lease before domain; do not recreate legacy or repeat delivered cutover/publication/task updates.",
     "publication": {
       "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
       "state": "published",
@@ -702,7 +702,7 @@
       "task_receipt": 6063044134,
       "task_id": "6ac54c387af0819184713674c48b3845",
       "fence_sha": "5c305bfbee1e0225dcd8a35cdbb8cb491a084f11",
-      "transport_comment_id": 6063207203,
+      "transport_comment_id": 6063394668,
       "retirement": "confirmed",
       "notes_proof_sha": "96e3439dbc1800f708aab0c5680211f105176e14"
     }
