@@ -51,7 +51,7 @@ Authenticate to GHCR with package read access and run \`docker pull $MYNOU_CONTA
 
 For macOS, follow the [native macOS guide]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/macos.md). No Apple Developer signature or notarization is supplied. Configure Plex and media sources before synchronization. [Protocol and format limits]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/limits.md) remain explicit.
 
-Source commit: \`$GITHUB_SHA\`. This repository is private; downloads require an authorized GitHub account.
+Source commit: \`$GITHUB_SHA\`. Release downloads follow repository access settings; the container package remains private.
 
 See the [release roadmap]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/roadmap.md) for implemented milestones and remaining feature gaps.
 EOF
