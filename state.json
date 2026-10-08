@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 712,
+  "generation": 713,
   "lease": {
     "id": "codex-continuous-policy-20261008131744Z-quality-1791466496000",
     "worker": "codex-continuous-policy-20261008131744Z",
     "role": "quality",
     "issue": 34,
     "acquired_at": "2026-10-08T13:34:56Z",
-    "heartbeat_at": "2026-10-08T13:37:31Z",
-    "expires_at": "2026-10-08T14:22:31Z",
+    "heartbeat_at": "2026-10-08T13:37:37Z",
+    "expires_at": "2026-10-08T14:22:37Z",
     "branch": "trunk",
     "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
     "pr": 35
   },
   "checkpoint": {
-    "at": "2026-10-08T13:37:31Z",
+    "at": "2026-10-08T13:37:37Z",
     "issue": 34,
     "role": "quality",
     "branch": "trunk",
     "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
     "pr": 35,
-    "summary": "PR35/c348 installed and actual hourlyTask nowcontinuous; nativeupdateaccepted+lookupconfirmed. SeparateSecurity/QA andpremergeallgatesgreen,864Rust24infra88org. Mergedsourcebranch safelyremoved natively. ActualdefaultCI37785002953 stillMacIntel113337367137inprogress; no v24releasevisible. Source/logaudit selectedscope clean; Issue19/PR24/b849 preserved. Stopping for realexternalCIwait, not40-minute cap.",
-    "next_action": "Recoveryfirst: samec348 defaultCI37785002953/publication. Inspectactualfinishedjobs/release/privatepackage; fixonly realfailure, close34/Done afterevidence. Taskreconciliationdone—do not repeat. Then resume19/24/b849 QA5457079884; integratecontinuousdefault andfutureunpublishedversion. Currentcontrolbranchremainssoleauthority.",
+    "summary": "Continuouspolicy andactualhourlyTask shipped atc348; finalnativeIssue34handoff6061104406/PR35handoff6061104765 recordsactualpremerge CI/reviews, nativeTaskresponse, publicaudit scope andpendingdefaultMacIntel/publication. Lastreadytransitioncomplete; realCIwait. Remotecheckpointcf7f462bf0daa19dbb0afd429732f42349cb93e8, no loss/discard/duplicateworker.",
+    "next_action": "Nextsupportedwake recoveractualdefaultCI37785002953/publication atc348 beforeunrelatedwork; complete34onlyafteractualproof. HourlyTaskalreadyreconciled. Preserve19/24/b849 finding andcontinuouspolicy whileplanningnewversion. No infinite/runtime/quota-reset guarantee.",
     "publication": {
       "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
       "version": "0.22.24",
@@ -465,7 +465,10 @@
       "default_organization": 37785003106,
       "outcome": "Continuous useful execution installed; actual hourly Task prompt accepted/confirmed, unchanged cadence and timezone",
       "publication_state": "pending",
-      "preserved_issue19_handoff": 6061055541
+      "preserved_issue19_handoff": 6061055541,
+      "final_checkpoint": "cf7f462bf0daa19dbb0afd429732f42349cb93e8",
+      "final_issue_handoff": 6061104406,
+      "final_pr_handoff": 6061104765
     },
     "previous_checkpoint": {
       "at": "2026-10-08T13:31:11Z",
