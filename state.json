@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 804,
-  "lease": {
-    "id": "comment-6066778547",
-    "worker": "codex-product-20261008T1637Z",
-    "role": "ux",
-    "issue": 41,
-    "acquired_at": "2026-10-08T18:48:51Z",
-    "heartbeat_at": "2026-10-08T18:53:24Z",
-    "expires_at": "2026-10-08T19:38:24Z",
-    "branch": "trunk",
-    "commit": "5fb6bcb46b80926b212e5bce0fccbf42addcfcbe",
-    "pr": null
-  },
+  "generation": 805,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-08T18:53:24Z",
     "issue": 41,
