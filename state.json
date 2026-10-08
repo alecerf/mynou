@@ -1,43 +1,51 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 821,
-  "lease": {
-    "id": "f13d5e1a-067a-4c70-a1ab-81f2fad360ba",
-    "worker": "github-actions-delivery",
-    "role": "triage",
-    "issue": 41,
-    "acquired_at": "2026-10-08T19:44:37Z",
-    "heartbeat_at": "2026-10-08T19:45:25Z",
-    "expires_at": "2026-10-08T20:30:25Z",
-    "branch": "work/41-guided-setup",
-    "commit": "46a6b67a6ce3de468f2304e7847d6da04203d056",
-    "pr": 47
-  },
+  "generation": 822,
+  "lease": null,
   "checkpoint": {
-    "at": "2026-10-08T19:45:25Z",
+    "at": "2026-10-08T20:43:18Z",
     "issue": 41,
     "role": "triage",
     "branch": "work/41-guided-setup",
     "commit": "46a6b67a6ce3de468f2304e7847d6da04203d056",
     "pr": 47,
     "summary": "Default-source CI transition: accepted at 46a6b67a6ce3de468f2304e7847d6da04203d056; native evidence {'commit': '46a6b67a6ce3de468f2304e7847d6da04203d056', 'state': 'accepted', 'at': '2026-10-08T19:45:25Z'}. No release publication is inferred.",
-    "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases.",
+    "next_action": "Recovered expired capacity lease; inspect preserved work before selecting new work.",
     "publication": {
       "commit": "46a6b67a6ce3de468f2304e7847d6da04203d056",
       "state": "accepted",
       "at": "2026-10-08T19:45:25Z"
     },
     "recovery": {
-      "pr": 26,
-      "issue": 27,
-      "branch": "work/publication-handoff-recovery",
-      "head_sha": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
-      "base_sha": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
-      "prior_checkpoint": "c2ca489916a90f369af95d5a8ef67919347fc84d",
-      "native_handoff": 6054817023,
-      "security_review": 5453084901,
-      "security_checkpoint": "6e02750960c6683c6c04bcd26306942b09c16b5d"
+      "issue": true,
+      "branch": true,
+      "pr": true,
+      "ci": true,
+      "commit_preserved": true,
+      "issue_state": "closed",
+      "branch_head": "edbc8edcf05341d1a3d0b7125f06dde408481d42",
+      "default_head": "46a6b67a6ce3de468f2304e7847d6da04203d056",
+      "preservation": "exact native merged default commit and source parent, preserved on trunk",
+      "prs": [
+        {
+          "number": 47,
+          "state": "closed",
+          "head": "edbc8edcf05341d1a3d0b7125f06dde408481d42",
+          "merge_commit": "46a6b67a6ce3de468f2304e7847d6da04203d056",
+          "merged_at": "2026-10-08T19:44:59Z"
+        }
+      ],
+      "runs": [
+        {
+          "id": 37834316581,
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "release_id": 407208110,
+      "release_published_at": "2026-10-08T19:51:44Z",
+      "execution_boundary": "Native command6068525880/run37840276392 failed; existing guard compared the already-merged lease commit with its old source branch. Original lease.recover used with the actual preserved default-merge evidence; no source branch changed, forced ref, replacement store or fabricated success."
     },
     "pending_qa": {
       "state": "resolved by exact-head passed QA5458620861",
