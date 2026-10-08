@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 505,
+  "generation": 506,
   "lease": {
     "id": "wake12-security-compact-review-20261008T042605Z",
     "worker": "codex-hourly-20261008T042605Z",
     "role": "security",
     "issue": 25,
     "acquired_at": "2026-10-08T04:58:44Z",
-    "heartbeat_at": "2026-10-08T04:58:44Z",
-    "expires_at": "2026-10-08T05:43:44Z",
+    "heartbeat_at": "2026-10-08T04:58:49Z",
+    "expires_at": "2026-10-08T05:43:49Z",
     "branch": "work/publication-handoff-recovery",
     "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
     "pr": 26
   },
   "checkpoint": {
-    "at": "2026-10-08T04:58:38Z",
+    "at": "2026-10-08T04:58:49Z",
     "issue": 25,
-    "role": "quality",
+    "role": "security",
     "branch": "work/publication-handoff-recovery",
     "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
     "pr": 26,
-    "summary": "Delivery remains blocked by actual GitHub Actions account billing/spending annotation; no runner started for mandatory final jobs. Live checkpoint compacted to14KiB at21fdfec3, all full evidence preserved in prior control30075a5e. SourceCI remains successful; no merge/publication or retry. Supersede oversized historical review bindings under compact exact-role leases.",
-    "next_action": "Security then QA: use compact current state at unchanged9fb3e6dc/base d647, inspect complete native diff, record actual gates and block QA while required latest Engineering jobs are red. Final remote handoff and release before stopping.",
+    "summary": "Fresh complete-diff Security passes unchanged isolated scheduler repair at a compact scoped historical lease. Current native source CI is successful; final Engineering jobs are blocked by GitHub account billing/spending, and no merge or QA gate is authorized.",
+    "next_action": "QA: inspect exact native six-file diff and actual failed final Engineering gates; reject delivery until restoredcapacity and fresh required checks allgreen. Record compact provenance, then release and stop.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -404,6 +404,13 @@
       "worker": "codex-hourly-20261008T042605Z",
       "local_checks": false,
       "subagents": false
+    },
+    "urgent_repair_security": {
+      "head": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
+      "base": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+      "verdict": "passed",
+      "supersedes": 5451569156,
+      "scope": "static complete diff; final account-blocked gates not certified"
     }
   },
   "attempts": {
