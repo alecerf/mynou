@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 448,
-  "lease": {
-    "id": "wake11-master-control-storage-20261008T032912Z",
-    "worker": "codex-hourly-20261008T032912Z",
-    "role": "master",
-    "issue": 19,
-    "acquired_at": "2026-10-08T03:35:59Z",
-    "heartbeat_at": "2026-10-08T03:41:26Z",
-    "expires_at": "2026-10-08T04:26:26Z",
-    "branch": "trunk",
-    "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
-    "pr": null
-  },
+  "generation": 449,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-08T03:41:26Z",
     "issue": 19,
