@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 682,
+  "generation": 683,
   "lease": {
     "id": "codex-continuous-policy-20261008131744Z-master-1791465509000",
     "worker": "codex-continuous-policy-20261008131744Z",
     "role": "master",
     "issue": 19,
     "acquired_at": "2026-10-08T13:18:29Z",
-    "heartbeat_at": "2026-10-08T13:18:29Z",
-    "expires_at": "2026-10-08T14:03:29Z",
+    "heartbeat_at": "2026-10-08T13:19:43Z",
+    "expires_at": "2026-10-08T14:04:43Z",
     "branch": "work/control-ref-adapter",
     "commit": "b8493cad2c475c39e48f1eb7acb10e678e6c0832",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T13:12:00Z",
+    "at": "2026-10-08T13:19:43Z",
     "issue": 19,
-    "role": "qa",
+    "role": "master",
     "branch": "work/control-ref-adapter",
     "commit": "b8493cad2c475c39e48f1eb7acb10e678e6c0832",
     "pr": 24,
-    "summary": "Wake12:35–13:10UTC: resumed Issue19/PR24 and preserved053 history; original integrationfb6f67139b4a756d4533efd15cb7553423d4204e plus correctionb8493cad2c475c39e48f1eb7acb10e678e6c0832/baseced0fe652469fa6916831e0fb09cccc1a8784f79. Currentbranch work/control-ref-adapter,treee010e0deeb7d191c0d9b708a42b1a69364f3c79a. Separate Security5456964286 rejected3gaps; corrected complete-diffSecurity5457051939 passed under1bc82b0deebb86d69901be1eb7ab15864551282e. SeparateQA5457079884 at7daccc75db37d11a023a4faf42d830f4ffceb8b1 rejects missing ownedfenced checkpoint/release/resume. ActualCI117org,864Rust/0failed; source-history5052objects andcompleted-log audit656archives/2222members0recognized findings/gaps withinselectedscope. LastCI37781499542 stillhadMacIntel/pendingpackage. No greengate/merge/publication/liveactivation/taskupdate/branchdeletion; no localchecks/additionalworker. Nativehandoffs: Issue19=6060622945, PR24=6060623320. Final checkpoint and release now.",
-    "next_action": "Nextwake admission/recovery first. Reuse PR24/work/control-ref-adapter/b8493cad2c475c39e48f1eb7acb10e678e6c0832; Quality19 fixes QA5457079884: exact-head owned schema2 checkpoint/renew/release and evidence-based resume of released/expiredfence, preservingfullhistory/oneauthority. Add originalCI cases for boundedstop betweenfence/activation,15-minuteheartbeat,ownershiploss/races andresumption; no localchecks. Refresh fullSecurity/QA atnewhead/base, require actualallCI/gategreen beforeinstallation. Afterreviewedmerge/defaultCI, reconcileactualexistinghourlyTask beforefence, actualnotescheckpoint proof, Qualityretirement andclose19. Currentcontrol/engineering remains soleauthority; no duplicateIssue/branch orrelease mutation.",
+    "summary": "Recovery inspected native Issue19, preserved draftPR24/b849 and QA5457079884; source/securityCI are completed. Existing hourly Task6ac54c387af0819184713674c48b3845 is enabled and still bounded. New explicit user instruction removes artificial40-minute cap; prepare scoped reviewed policy before touching live prompt. No migration or retirement yet.",
+    "next_action": "Create one managed user policy Issue/PR; preserve PR24 and QA finding. Replace deadline with useful continuous execution, serial leases/checkpoints/15-minute renewal, realwait/idle/capacity stop and hourly recovery. ActualCI/Security/QA, then reconcile existing Task after merge.",
     "publication": {
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "state": "published",
@@ -435,6 +435,16 @@
       "limits": "Selected provider/private-key patterns and completed inventory snapshot only; pending audit/source/Engineering/CodeQL runs excluded; no arbitrary sensitive-data guarantee.",
       "source_run": 37781499542,
       "state": "Partial native success; lastMacIntel build inprogress and package unobserved. No greengate/merge/publishedv24 claim."
+    },
+    "execution_policy_request": {
+      "state": "triaged",
+      "requested": "remove artificial40-minute deadline; retain hourly recovery",
+      "task_id": "6ac54c387af0819184713674c48b3845",
+      "cadence": "hourly",
+      "enabled": true,
+      "preserved_issue": 19,
+      "preserved_pr": 24,
+      "preserved_source": "b8493cad2c475c39e48f1eb7acb10e678e6c0832"
     }
   },
   "attempts": {
