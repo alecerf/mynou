@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 425,
+  "generation": 426,
   "lease": {
     "id": "wake10-security-cleanup-review-20261008T024100Z",
     "worker": "codex-hourly-20261008T023108Z",
     "role": "security",
     "issue": 18,
     "acquired_at": "2026-10-08T02:41:41Z",
-    "heartbeat_at": "2026-10-08T02:41:41Z",
-    "expires_at": "2026-10-08T03:26:41Z",
+    "heartbeat_at": "2026-10-08T02:43:31Z",
+    "expires_at": "2026-10-08T03:28:31Z",
     "branch": "work/container-demo-cleanup",
     "commit": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
     "pr": 23
   },
   "checkpoint": {
-    "at": "2026-10-08T02:41:34Z",
+    "at": "2026-10-08T02:43:31Z",
     "issue": 18,
-    "role": "quality",
+    "role": "security",
     "branch": "work/container-demo-cleanup",
     "commit": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
     "pr": 23,
-    "summary": "Original13-path cleanup correction committed remotely and draft PR23 links existing Issue18. Shared private nonroot verification is exercised by PR CI; production1000 factory check preserved, post-cleanup proof ordering and four regressions added. Required CI not yet observed; no tests or publication success claimed.",
-    "next_action": "Release Quality and acquire Security at exact new head/base for complete native diff review; then QA after actual required source CI is green.",
+    "summary": "Security completed actual thirteen-path PR23 diff review: no blocking findings. Private nonroot runner-owned verification and post-cleanup proof ordering preserve production1000 CI/runtime and all source/package/privacy gates. Required source CI/independent QA/default19 publication remain separate.",
+    "next_action": "Submit exact-head/base native Security COMMENT; release and acquire QA to challenge complete diff and actual source CI, then gate/merge only when objectively green.",
     "publication": {
       "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
       "state": "ci-failed",
@@ -870,6 +870,46 @@
         "Overwriting existing17/18 version or source images"
       ],
       "logical_review_pending": true
+    },
+    "cleanup_security_review": {
+      "schema": 1,
+      "role": "security",
+      "head_sha": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
+      "base_sha": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "verdict": "passed",
+      "summary": "Complete thirteen-path Security review found no blocking concerns. Verification uses a private runner-owned synthetic mount with explicit nonroot UID/GID, retains configured-user1000 validation and all image/source/privacy/collision guards, and emits proof only after successful cleanup. Actual source CI and independent QA remain prerequisites; no new release success claimed.",
+      "reviewed_paths": [
+        ".github/scripts/publish_container.py",
+        ".github/scripts/test_publication.py",
+        ".github/workflows/ci.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "README.md",
+        "compose.yaml",
+        "docs/ci.md",
+        "docs/deployment.md",
+        "docs/macos.md",
+        "docs/next-release.md",
+        "docs/releases/0.22.19.md",
+        "docs/validation.md"
+      ],
+      "acceptance": [
+        "Reviewed every actual changed path, full publisher/source/package guards, workflow permissions, regression cases, version/manifests and English installation/recovery/release documentation.",
+        "Shared synthetic demo rejects root UID/GID, mounts only a fresh private0700 runner-owned directory, retains readonly root/network none/cap-drop ALL/no-new-privileges and removes the tree before returning.",
+        "New readonly CLI accepts only exact local Mynou version tags, performs no GHCR lookup/login/push or publication output and is reused by PR package CI with unchanged read-only permissions.",
+        "Configured-user1000 package demonstration and inspected production1000:1000 image policy remain separate mandatory gates; verification-only UID override does not change product or installation defaults.",
+        "Publication JSON/GITHUB_OUTPUT/stdout are emitted after both demo and credential TemporaryDirectory contexts close successfully. Cleanup errors still fail visibly; no privileged cleanup, ignored errors or exposed credentials.",
+        "Default-only exact private repository/package identity, OCI labels/source/runtime, conflicting-tag refusal, pulled digest/executable SHA, immutable prior releases and std-only product constraints remain unchanged.",
+        "New19 source/version avoids replacement of actually observed17/18 images. Meaningful CI cases challenge mount removal/ownership, root identity, cleanup failure without proof and readonly image selector."
+      ],
+      "evidence": [
+        "Native PR23 exact headf3483b9c6ba772285db18ebc7fc276cc768ad00a/baseebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114; complete13-path native diff and current publisher/workflow inspected.",
+        "Actual prior defaultCI37715379732 release113111514725 verified private package15695108/repo1403318143/image991a217cd046c00697b975bff35b4bc23d4f7a85f0b4d14b90cd904684c7cf68/binary1c6ddb01eeeecfc480e43a5cd9d776802d5a2ffa6c7a524058d27a9940bbd80e then failed host cleanup; native18 release404.",
+        "Native immutable16 release406222389 and all11asset IDs/names/sizes/digests match preserved baseline. No image or release overwrite performed.",
+        "SourceCI37719111412 was inprogress when admitted; Engineering37719111541 succeeded while draft. New source tests/cleanup/default19 publication are not inferred from source or prior18 proof.",
+        "Separate Security planning checkpoint4f60b57f52c712c69840aff8b1daaf331bcac019 rejected root/sudo/ignored-cleanup/permission changes; this later scoped Security phase inspected the actual implementation."
+      ],
+      "findings": []
     }
   },
   "attempts": {
