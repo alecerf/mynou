@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 447,
+  "generation": 448,
   "lease": {
     "id": "wake11-master-control-storage-20261008T032912Z",
     "worker": "codex-hourly-20261008T032912Z",
     "role": "master",
     "issue": 19,
     "acquired_at": "2026-10-08T03:35:59Z",
-    "heartbeat_at": "2026-10-08T03:35:59Z",
-    "expires_at": "2026-10-08T04:20:59Z",
+    "heartbeat_at": "2026-10-08T03:41:26Z",
+    "expires_at": "2026-10-08T04:26:26Z",
     "branch": "trunk",
     "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
     "pr": null
   },
   "checkpoint": {
-    "at": "2026-10-08T03:35:47Z",
-    "issue": 18,
+    "at": "2026-10-08T03:41:26Z",
+    "issue": 19,
     "role": "master",
     "branch": "trunk",
     "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
-    "pr": 23,
-    "summary": "Verified actual default CI 37719852082: all seven jobs succeeded, 864 Rust tests/63 harnesses, private pulled GHCR runtime/binary/cleanup proof, and immutable native v0.22.19 release with three binaries and SHA256SUMS. Baseline v0.22.16's 11 asset identities/sizes/digests are unchanged. Issue18 Done/closed, PR23 merged, branch404, no blocking dependencies or open PRs.",
-    "next_action": "Acquire Master for native user Issue19, scope a safe replacement for branch-backed engineering control without weakening atomic serialization, and continue ready transitions within the same wake.",
+    "pr": null,
+    "summary": "Triaged native user Issue19: branch-independent control is a high-risk organizational storage change. Use an explicit non-branch Git reference to preserve sole-parent/non-force arbitration and historical QA ancestry. First prepare namespace-aware administration without activating a new live lease. Full cutover requires actual non-branch worker writes and a fail-closed legacy-worker fence; neither is fabricated.",
+    "next_action": "Acquire Security for bounded cutover/adapter threat analysis, then Quality for original adapter/source/tests in the same linked draft PR. No product version bump or live task change yet.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -695,7 +695,7 @@
       "gate_conclusion": "success",
       "publication_verified": false
     },
-    "previous_assets_verified_at": "2026-10-08T03:36:00Z",
+    "previous_assets_verified_at": "2026-10-08T03:35:47Z",
     "previous_failed_publication": {
       "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
       "state": "ci-failed",
@@ -1075,6 +1075,20 @@
       "intent": "Replace branch-backed engineering control storage; packages are a suggestion.",
       "native_status": "inbox",
       "existing_comments": 0
+    },
+    "control_storage": {
+      "issue": 19,
+      "current_ref": "refs/heads/control/engineering",
+      "candidate_ref": "refs/notes/mynou-engineering",
+      "phase": "adapter preparation; live migration not activated",
+      "known_boundary": "Connected reference write wrappers are branch-named; non-branch write behavior and actual scheduled-worker access are unverified.",
+      "requirements": [
+        "atomic non-force single-parent CAS",
+        "one canonical lease",
+        "legacy worker fence before activation",
+        "preserve historical QA/source and checkpoint commits",
+        "no release mutation"
+      ]
     }
   },
   "attempts": {
