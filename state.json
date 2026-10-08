@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 589,
+  "generation": 590,
   "lease": {
     "id": "codex-hourly-20261008093523Z-security-1791452461000",
     "worker": "codex-hourly-20261008093523Z",
     "role": "security",
     "issue": 19,
     "acquired_at": "2026-10-08T09:41:01Z",
-    "heartbeat_at": "2026-10-08T09:41:01Z",
-    "expires_at": "2026-10-08T10:26:01Z",
+    "heartbeat_at": "2026-10-08T09:42:29Z",
+    "expires_at": "2026-10-08T10:27:29Z",
     "branch": "work/control-ref-adapter",
     "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T09:40:54Z",
+    "at": "2026-10-08T09:42:29Z",
     "issue": 19,
-    "role": "master",
+    "role": "security",
     "branch": "work/control-ref-adapter",
     "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
     "pr": 24,
-    "summary": "Recovered native Issue19/PR24 at053fb1, all blockers25/28 closed and verified cafac v0.22.21 publication terminal. Existing complete-diff QA5451528384 remains rejected for missing live writer/fence/task cutover. No source/authority/task change. Select authenticated default-only comment bridge design under separate Security role; preserve existing draft.",
-    "next_action": "ReleaseMaster; acquireSecurity19/24 for narrow native comment control transport threat model and concrete bounded implementation contract.",
+    "summary": "Security design: scheduled GitData writes are branch-scoped; native trusted comments/default-only Actions are verified. Use a separate bounded prerequisite for a control-command bridge, not an unreviewed PR-code executor. Fixed repository/managed Issue, native author and actor re-fetch, exact bounded JSON and expected controlSHA, existing lease transitions/native recovery, sole-parent force:false writes, no raw hostile text/secret output, no replay/blind retry. Action is deterministic, not a second AI. Live notes cutover remains rejected and canonicalbranch stays unchanged.",
+    "next_action": "ReleaseSecurity; Master create one distinct managed prerequisite linked as Issue19 blocker with narrow bridge acceptance and onePR. Quality implement only from current cafac; then freshSecurity/QA/CI and actual default transport proof before PR24migration.",
     "publication": {
       "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
       "state": "published",
@@ -195,6 +195,13 @@
       "scheduler_capabilities": "automations_peek and automations_update tools exposed; native task not looked up or modified this wake.",
       "boundary": "No verified arbitrary-ref writer through scheduled-web connected write wrappers; local VM REST administration alone does not prove scheduled access.",
       "cutover": "No staging/fence/activation/task change. Current branch remains sole canonical live authority."
+    },
+    "control_bridge_design": {
+      "state": "design-only",
+      "transport": "native issue_comment to trusted-default Actions",
+      "authority": "refs/heads/control/engineering",
+      "nonbranch_cutover": "not activated",
+      "scope": "bounded authenticated control commands; expected-head single-parent arbitration; independent reviews remain native"
     }
   },
   "attempts": {
