@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 690,
-  "lease": null,
+  "generation": 691,
+  "lease": {
+    "id": "codex-continuous-policy-20261008131744Z-security-1791465816000",
+    "worker": "codex-continuous-policy-20261008131744Z",
+    "role": "security",
+    "issue": 34,
+    "acquired_at": "2026-10-08T13:23:36Z",
+    "heartbeat_at": "2026-10-08T13:23:36Z",
+    "expires_at": "2026-10-08T14:08:36Z",
+    "branch": "work/continuous-engineering",
+    "commit": "f12a37e873561fbd3de3ccdd30883b9f41c2a4c3",
+    "pr": 35
+  },
   "checkpoint": {
     "at": "2026-10-08T13:23:24Z",
     "issue": 34,
