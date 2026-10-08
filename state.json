@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 737,
+  "generation": 738,
   "lease": {
     "id": "codex-continuous-20261008143128Z-qa-1791471307000",
     "worker": "codex-continuous-20261008143128Z",
     "role": "qa",
     "issue": 19,
     "acquired_at": "2026-10-08T14:55:07Z",
-    "heartbeat_at": "2026-10-08T14:55:07Z",
-    "expires_at": "2026-10-08T15:40:07Z",
+    "heartbeat_at": "2026-10-08T14:59:43Z",
+    "expires_at": "2026-10-08T15:44:43Z",
     "branch": "work/control-ref-adapter",
     "commit": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T14:54:56Z",
+    "at": "2026-10-08T14:59:43Z",
     "issue": 19,
-    "role": "security",
+    "role": "qa",
     "branch": "work/control-ref-adapter",
     "commit": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
     "pr": 24,
-    "summary": "Security19 reviewed the complete native 20-path PR24 diff at 6951b58/base c348. Fixed namespaces, sole-parent/non-force arbitration, owned fenced lifecycle and historical release proof preserve one authority. Trusted unchanged native commands/Task attestation are source scoped; retirement records intent and honest REST deletion boundary. Actual security jobs and validation passed; no unresolved code findings.",
-    "next_action": "Post exact-head Security COMMENT; release and reacquire independent QA19 for acceptance, prior rejection correction, complete diff and actual remaining builds/package/gate.",
+    "summary": "Independent QA19 completed all 20 actual native PR24 diff paths at 6951b58/base c348, checked Issue19 acceptance and previous rejection5457079884. Owned schema2 renewal/release and parent-proven resume correct the gap; installation and live proof remain distinct. Actual six source CI jobs, organization132 and both security jobs passed; 864 Rust/0 failed,24 infra; CodeQL green and no native threads. No remaining proposed-source findings; gate still awaits this review.",
+    "next_action": "Submit exact-head QA COMMENT, hand off actual evidence and release; sequential delivery role verifies fresh machine gate and all source/head/base/thread/ownership checks before merge, then default publication and live cutover.",
     "publication": {
       "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
       "state": "published",
@@ -598,6 +598,58 @@
         "infra": 24,
         "organization": 132
       },
+      "live_cutover": false
+    },
+    "qa_review19": {
+      "head": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
+      "base": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
+      "reviewed_paths": [
+        ".agents/skills/mynou-quality/SKILL.md",
+        ".github/engineering.json",
+        "AGENTS.md",
+        "Cargo.lock",
+        "Cargo.toml",
+        "docs/releases/0.22.25.md",
+        "engineering/README.md",
+        "engineering/command-transport.md",
+        "engineering/commands.py",
+        "engineering/control-storage.md",
+        "engineering/control.py",
+        "engineering/delivery.py",
+        "engineering/github.py",
+        "engineering/lease.py",
+        "engineering/migration.py",
+        "engineering/policy.py",
+        "engineering/qa.py",
+        "engineering/tests/test_control_refs.py",
+        "engineering/tests/test_migration.py",
+        "engineering/worker-prompt.md"
+      ],
+      "prior_finding": 5457079884,
+      "security_review": 5458546217,
+      "security_checkpoint": "82a42ddfc02fb77f140e513e9723ec0be5d2e781",
+      "ci": {
+        "run": 37795700353,
+        "jobs": [
+          113374473812,
+          113374474184,
+          113374474326,
+          113374474362,
+          113374474616,
+          113375893776
+        ],
+        "validate": {
+          "passed": 864,
+          "failed": 0,
+          "harnesses": 63
+        },
+        "infra": 24,
+        "organization": 132
+      },
+      "security_run": 37795700335,
+      "organization_job": 113377539104,
+      "threads": 0,
+      "gate": "pending review; not claimed green",
       "live_cutover": false
     }
   },
