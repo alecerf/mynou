@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 770,
+  "generation": 771,
   "lease": {
     "id": "comment-6065071222",
     "worker": "codex-product-20261008T1637Z",
     "role": "qa",
     "issue": 36,
     "acquired_at": "2026-10-08T17:08:00Z",
-    "heartbeat_at": "2026-10-08T17:08:00Z",
-    "expires_at": "2026-10-08T17:53:00Z",
+    "heartbeat_at": "2026-10-08T17:09:34Z",
+    "expires_at": "2026-10-08T17:54:34Z",
     "branch": "work/36-par2-available-rows",
     "commit": "65530f4f432a1b0af6ba71457c5ded574b91e728",
     "pr": 37
   },
   "checkpoint": {
-    "at": "2026-10-08T17:06:13Z",
+    "at": "2026-10-08T17:09:34Z",
     "issue": 36,
-    "role": "security",
+    "role": "qa",
     "branch": "work/36-par2-available-rows",
     "commit": "65530f4f432a1b0af6ba71457c5ded574b91e728",
     "pr": 37,
-    "summary": "Security36 reviewed every actual PR37 path at head65530f4/base57cfe88: validated<=8 normalized basis, aggregate caps and candidate precharge; selected exponent/header identity, source SHA before/after, slice/prefix/file checks, cancellation, immutable inputs and existing private owner binding preserved. Source-history113436473218 passed:3098 reachable objects,0 recognized findings,0 gaps. Connected Actions-log read unavailable while job pending; no audit/CI green or publication claim.",
-    "next_action": "Post truthful exact-head/base native Security code-review record at this lease checkpoint; release, acquire QA36, inspect actual diff/acceptance and await every actual required source/audit job before QA pass. Preserve client Product Owner/backlog direction separately.",
+    "summary": "Independent QA36 inspected complete actual9-path PR37 diff at65530f4/base57cfe88 and Issue acceptance. Normalized rank selection, exact exponent inverse/residuals, m0/8/budget/cancellation, corruption and private reopen boundaries accepted; original polynomial oracle retained. CI37813613977 all6 required validate/build/package jobs succeeded:875 Rust tests/63harnesses,24 scheduler and132 organization checks; package synthetic demo successful. Separate Security5460245549 checkpoint4b04dcf; both native audit jobs succeeded. No local checks, no formal approval or publication claim.",
+    "next_action": "Confirm QA checkpoint and submit exact-head/base passed native COMMENT with all9 paths and actual evidence. Release QA; require fresh agent-qa-review green before delivery. Master must seed concrete Product Owner/backlog follow-up and preserve current publication recovery before unrelated implementation.",
     "publication": {
       "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
       "state": "published",
@@ -702,7 +702,7 @@
       "task_receipt": 6063044134,
       "task_id": "6ac54c387af0819184713674c48b3845",
       "fence_sha": "5c305bfbee1e0225dcd8a35cdbb8cb491a084f11",
-      "transport_comment_id": 6065041058,
+      "transport_comment_id": 6065097257,
       "retirement": "confirmed",
       "notes_proof_sha": "96e3439dbc1800f708aab0c5680211f105176e14"
     }
