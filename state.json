@@ -1,45 +1,47 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 558,
+  "generation": 559,
   "lease": {
     "id": "codex-hourly-20261008T073509Z-quality-20261008074338",
     "worker": "codex-hourly-20261008T073509Z",
     "role": "quality",
     "issue": 27,
     "acquired_at": "2026-10-08T07:43:38Z",
-    "heartbeat_at": "2026-10-08T07:45:26Z",
-    "expires_at": "2026-10-08T08:30:26Z",
-    "branch": "work/publication-handoff-recovery",
-    "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
+    "heartbeat_at": "2026-10-08T07:47:00Z",
+    "expires_at": "2026-10-08T08:32:00Z",
+    "branch": "trunk",
+    "commit": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
     "pr": 26
   },
   "checkpoint": {
-    "at": "2026-10-08T07:45:26Z",
+    "at": "2026-10-08T07:47:00Z",
     "issue": 27,
     "role": "quality",
-    "branch": "work/publication-handoff-recovery",
-    "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
+    "branch": "trunk",
+    "commit": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
     "pr": 26,
-    "summary": "Owned Quality delivery verified exact PR26 head99138218/base d647, managed Issues25/27 and empty reviewthreads. All configured objective gates actually green: source37742148752 sixjobs, Security37742148708 twojobs, newestEngineering37745176435 organization113204841751 and agent113204891739. Gate actual log validates QA5453360050/ada689672573ceb4f098922b60bac969a821604f and Security5453084901/6e027509. Default base unchanged. Ready to merge by expected source; no publication yet.",
-    "next_action": "Merge preserved PR26 by exact expected99138218 only; inspect new default source and native CI, dispatch trusted defaultCI only if absent, persist intent first. Actions alone publishes0.22.20; cleanup Issues25/27 and unblock19 only with actual merge evidence.",
+    "summary": "PR26 actually merged at07:45:30Z to default04e99496318f5cf31f4d8634209cb6956aa3c6ef after fresh green head/base-bound QA/Security and all configured9CI jobs. Original991source preserved by merge; native branch deletion verified. Linked Issues25/27 closed by merge. Push-triggered defaultCI37745425271 and Security37745425165 are in progress; Engineering37745425177 passed. No dispatch necessary and no release claim. Safe status/dependency cleanup remains before stopping for actual publication wait.",
+    "next_action": "Repair linked Issue status Done and completed dependency metadata for preserved19/PR24, retain exact source/reviews. Checkpoint actual pending native publication, hand off and release. Next wake recovers this exact defaultCI/release before unrelated work.",
     "publication": {
-      "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
-      "state": "ci-passed",
-      "at": "2026-10-08T07:30:02Z",
-      "run_id": 37719852082,
-      "status": "completed",
-      "conclusion": "success"
+      "commit": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
+      "state": "pending",
+      "at": "2026-10-08T07:45:32Z",
+      "run_id": 37745425271,
+      "event": "push",
+      "status": "in_progress",
+      "conclusion": null,
+      "security_audit_run": 37745425165
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T07:30:02Z",
-      "issue": 18,
-      "role": "triage",
-      "branch": "trunk",
-      "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
-      "pr": 23,
-      "summary": "Default-source CI transition: ci-passed at d647be6edfd6e892474b2602bbc9047ad4047c2f; native evidence {'commit': 'd647be6edfd6e892474b2602bbc9047ad4047c2f', 'state': 'ci-passed', 'at': '2026-10-08T07:30:02Z', 'run_id': 37719852082, 'status': 'completed', 'conclusion': 'success'}. No release publication is inferred.",
-      "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases."
+      "at": "2026-10-08T07:45:26Z",
+      "issue": 27,
+      "role": "quality",
+      "branch": "work/publication-handoff-recovery",
+      "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
+      "pr": 26,
+      "summary": "Owned Quality delivery verified exact PR26 head99138218/base d647, managed Issues25/27 and empty reviewthreads. All configured objective gates actually green: source37742148752 sixjobs, Security37742148708 twojobs, newestEngineering37745176435 organization113204841751 and agent113204891739. Gate actual log validates QA5453360050/ada689672573ceb4f098922b60bac969a821604f and Security5453084901/6e027509. Default base unchanged. Ready to merge by expected source; no publication yet.",
+      "next_action": "Merge preserved PR26 by exact expected99138218 only; inspect new default source and native CI, dispatch trusted defaultCI only if absent, persist intent first. Actions alone publishes0.22.20; cleanup Issues25/27 and unblock19 only with actual merge evidence."
     },
     "recovery": {
       "pr": 26,
@@ -82,12 +84,17 @@
       "limitations": "Selected provider/private-key patterns and completed snapshot only; no arbitrary sensitive-data guarantee."
     },
     "delivery": {
-      "state": "gates-verified-before-merge",
-      "source_ci": 37742148752,
-      "security_audit": 37742148708,
-      "engineering": 37745176435,
+      "state": "merged-awaiting-actions-publication",
+      "pr": 26,
+      "source_head": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
+      "merge_commit": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
+      "merged_at": "2026-10-08T07:45:30Z",
       "qa_review": 5453360050,
-      "security_review": 5453084901
+      "security_review": 5453084901,
+      "premerge_engineering": 37745176435,
+      "premerge_security": 37742148708,
+      "premerge_source_ci": 37742148752,
+      "branch_cleanup": "native deletion verified; work/control-ref-adapter preserved"
     }
   },
   "attempts": {
