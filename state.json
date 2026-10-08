@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 722,
+  "generation": 723,
   "lease": {
     "id": "codex-continuous-20261008143128Z-quality-1791469975000",
     "worker": "codex-continuous-20261008143128Z",
     "role": "quality",
     "issue": 34,
     "acquired_at": "2026-10-08T14:32:55Z",
-    "heartbeat_at": "2026-10-08T14:34:59Z",
-    "expires_at": "2026-10-08T15:19:59Z",
+    "heartbeat_at": "2026-10-08T14:35:12Z",
+    "expires_at": "2026-10-08T15:20:12Z",
     "branch": "trunk",
     "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
     "pr": 35
   },
   "checkpoint": {
-    "at": "2026-10-08T14:34:59Z",
+    "at": "2026-10-08T14:35:12Z",
     "issue": 34,
     "role": "quality",
     "branch": "trunk",
     "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
     "pr": 35,
-    "summary": "Quality34 verified immutablev0.22.24 release406870757 atc348; native tagexact, all7defaultCIjobs success andactualbuild/package/releaselogs read. PrivateGHCR source/version/binaryhash/cleanup proof actual. One package-logread toolfailure recovered bysingle readretry; no CI rerun. Taskalreadyreconciled, uniquePR24 preserved. Readyclose34.",
-    "next_action": "Close native34Done withactualpublicationhandoff, releaseQuality thenMaster19 resumeQA5457079884 onb849. Preservec348continuouspolicy/fulloriginalhistory anduseunpublishedv25.",
+    "summary": "Quality34 closed actualnativeIssueDone after immutablev24/defaultCI/privateimage proof; nativehandoffs6062224986/6062225589 preserveevidence. LiveTaskcontinuousalreadyreconciled, no repeat. PR24/b849 remainsunique anddraft, no legacybranchretirement.",
+    "next_action": "Master19 afterrelease: nativeIssue/reviews/source recovery; Quality19 fixesfencedrenew/checkpoint/release/resume withCI-onlycases andcurrentdefaultcontinuousintegration. DistinctSecurity/QA thenactualCI/gate merge beforelivecutover.",
     "publication": {
       "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
       "state": "published",
@@ -129,32 +129,10 @@
       "premerge_source_ci": 37783960792
     },
     "cleanup": {
-      "issue": 30,
-      "state": "closed/Done after actual publication and connected canonical/inert-notes proof",
-      "pr": 31,
-      "corrective_pr": 33,
-      "parent_issue": 19,
-      "parent_state": "open/Ready; native blockers25,28,30 allclosed",
-      "preserved_pr": 24,
-      "preserved_branch": "work/control-ref-adapter",
-      "preserved_commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
-      "branch_cleanup": "Previously verified automatic merged-branch removal; no manual deletion this wake.",
-      "native_blockers": [
-        {
-          "issue": 25,
-          "state": "closed"
-        },
-        {
-          "issue": 28,
-          "state": "closed"
-        },
-        {
-          "issue": 30,
-          "state": "closed"
-        }
-      ],
-      "native_parent_status": "Ready",
-      "native_handoff": 6059470579
+      "issue": 34,
+      "pr": 35,
+      "state": "closed/Done",
+      "branch_cleanup": "Verified native automatic deletion; preserved unique PR24"
     },
     "release_recovery": {
       "issue": 28,
@@ -514,7 +492,9 @@
       "final_checkpoint": "cf7f462bf0daa19dbb0afd429732f42349cb93e8",
       "final_issue_handoff": 6061104406,
       "final_pr_handoff": 6061104765,
-      "release_id": 406870757
+      "release_id": 406870757,
+      "publication_issue_handoff": 6062224986,
+      "publication_pr_handoff": 6062225589
     },
     "previous_checkpoint": {
       "at": "2026-10-08T13:31:11Z",
