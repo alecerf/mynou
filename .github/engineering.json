@@ -46,5 +46,14 @@
     "scheduled_tasks_tool": true,
     "quota_introspection": false,
     "guaranteed_quota_reset_wake": false
+  },
+  "control_commands": {
+    "issue": 30,
+    "issue_id": 5759498447,
+    "repository_id": 1403318143,
+    "trusted_actors": {
+      "alecerf": 22006964
+    },
+    "max_age_seconds": 300
   }
 }
