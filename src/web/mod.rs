@@ -6,6 +6,7 @@ mod notification_views;
 mod requester_views;
 mod series_views;
 mod session;
+mod setup_views;
 mod usenet_views;
 mod views;
 
@@ -245,6 +246,10 @@ impl Web {
             "/ui" => {
                 query.only(&[])?;
                 views::dashboard(engine, &session)?
+            }
+            "/ui/setup" => {
+                query.only(&[])?;
+                setup_views::page(engine, &session)?
             }
             "/ui/requesters" => {
                 query.only(&[])?;

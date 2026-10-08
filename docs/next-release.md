@@ -1,27 +1,31 @@
-# Current work — proposed 0.22.27 product ownership
+# Current work — proposed 0.22.28 private guided setup
 
-Actions published immutable v0.22.26 at
-`d67becbd5a09ff51bdd8e2a3d43a9f44ef849f74` after all seven jobs in
-[CI37814772739](https://github.com/alecerf/mynou/actions/runs/37814772739)
-succeeded, including 875 Rust tests. Native Issue36/PR37 retain separate
-Security/QA, four executable/checksum assets, private GHCR digest and branch
-cleanup evidence. Earlier immutable releases remain preserved.
+Actions actually published immutable v0.22.27 at
+`5fb6bcb46b80926b212e5bce0fccbf42addcfcbe` in complete successful
+[CI37824292805](https://github.com/alecerf/mynou/actions/runs/37824292805).
+Release407145259 was published2026-10-08T18:32:46Z with the exact tag,
+three executable assets/SHA256SUMS and source-bound private GHCR proof.
+Issue38/PR43 retain separate Security/QA, accepted gate and cleanup evidence.
 
-Client [Issue38](https://github.com/alecerf/mynou/issues/38) installs a distinct
-modular Product Owner in the existing one-worker engineering organization.
-It uses the standing native Issue42 and a small deterministic planning trigger;
-Master retains execution, Triage verifies readiness and UX designs the experience.
-Current native proposals cover media-sized recovery (#39), ownership-bound automatic
-Usenet repair (#40, blocked by39, Needs Triage) and guided private setup (#41).
-The Product role keeps this queue useful without inventing failures or busywork.
-See [scope](releases/0.22.27.md) and [runbook](../engineering/README.md).
+The first Product review on native Issue42 maintains three unblocked Ready
+product increments: #41 guided setup (P1), #39 media-sized PAR2 (P2) and #45
+bounded live progress (P2). #40 remains Needs Triage and actually blocked by39;
+#46 proposes native Usenet upgrades with prerequisites still to triage.
+#44 records the actual structured-publication rearm gap; fix it after41.
+These are native proposal/priority decisions, not delivered features or dates.
 
-Finish current source through actual CI, distinct Security/full-diff QA, objective
-merge and Actions publication before unrelated implementation. Then review the
-known product opportunities under a Product lease and choose the highest-value
-executable item. English, safe Rust std, zero Cargo dependencies, frequent remote
-checkpoints, native recovery and no local validation/manual publication remain
-required. Hourly scheduling is unchanged and remains best-effort.
+[Issue41](https://github.com/alecerf/mynou/issues/41) now proposes a private
+server-rendered Setup page using existing configuration, browser sessions and
+guarded source/Usenet diagnostics. Static missing/attention/configured/optional
+states, matching native routes and first-request guidance expose no raw paths,
+endpoints, credential names/values or upstream responses. GET has no network,
+disk, acquisition or notification side effects. Configuration presence is not
+verified connectivity or permissions. See [scope](releases/0.22.28.md).
+
+Complete original CI fixtures, distinct exact-head Security/full-diff QA,
+objective merge and default Actions publication before claiming this new release.
+No local validation/manual publication, concurrency or runtime dependencies.
+The existing hourly recovery remains unchanged and best-effort.
 
 ## Earlier PAR2 work and publication history
 

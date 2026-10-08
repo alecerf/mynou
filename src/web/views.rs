@@ -83,7 +83,7 @@ pub fn dashboard(engine: &Arc<Engine>, session: &Session) -> Result<String> {
     } else {
         body.push_str("<p>Plex is not connected. Configure the integration to enable watchlist synchronization.</p>");
     }
-    body.push_str("</section>");
+    body.push_str("</section><section class=panel><h2>Get started or check your setup</h2><p>See what is configured, what needs attention and how to try your first request.</p><a href=/ui/setup>Check setup</a></section>");
     for key in ["last_sync_error", "last_upgrade_error", "last_series_error"] {
         if let Some(text) = status.get(key).and_then(Value::as_str) {
             body.push_str(&format!("<p class=notice role=alert>{}</p>", display(text)));
@@ -841,6 +841,7 @@ pub(super) fn frame(title: &str, active: &str, session: Option<&Session>, body: 
         html.push_str("<nav aria-label=Main>");
         for (path, label) in [
             ("/ui", "Overview"),
+            ("/ui/setup", "Setup"),
             ("/ui/jobs", "Jobs"),
             ("/ui/library", "Library"),
             ("/ui/series", "Series"),

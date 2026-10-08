@@ -65,6 +65,13 @@ cd mynou-docker &&
   docker compose exec mynou /mynou doctor --config /config/mynou.json
 ```
 
+After sign-in, open **Setup** at `/ui/setup` for a private configuration
+checklist and links to existing reviewed source/Usenet diagnostics. It reports
+loaded settings without exposing paths, credential names or values, and opening
+it performs no connection or write test. Edit private configuration/environment
+outside the browser and recreate the service after changes. See
+[guided setup](web.md#private-guided-setup).
+
 The installation contains `compose.yaml`, `mynou.json`, a private `.env`,
 `data/` and `library/movies/` and `library/series/`. Data stores requests,
 torrents and downloads; media mounts separately. The image stays read-only,

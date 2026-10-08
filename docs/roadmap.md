@@ -5,28 +5,41 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current organization increment: proposed 0.22.27
+## Current product increment: proposed 0.22.28
 
-Client Issue38 gives a modular Product Owner responsibility for useful,
-evidence-based product growth. A bounded native planning Issue/trigger maintains
-a small actionable queue after recovery and higher-priority work, with separate
-Security/full-diff QA and immutable Actions delivery. See
-[scope](releases/0.22.27.md) and the [runbook](../engineering/README.md).
+[Issue41](https://github.com/alecerf/mynou/issues/41) adds private, actionable
+first-run setup guidance in the existing authenticated browser. It reuses
+configuration and guarded diagnostics, keeps GET nonacquiring/read-only and
+distinguishes loaded settings from actual connection/write verification.
+See [scope](releases/0.22.28.md) and [browser guidance](web.md#private-guided-setup).
 
-## Next product opportunities
+## Published organization increment: 0.22.27
 
-- [Issue39](https://github.com/alecerf/mynou/issues/39): file-backed, bounded
-  media-sized PAR2 recovery; old memory-mode limits and integrity remain intact.
-- [Issue40](https://github.com/alecerf/mynou/issues/40): ownership-bound automatic
-  repair before safe Usenet import. It is natively blocked by39 and still needs
-  prerequisite triage; no automatic queue/library adoption is claimed.
-- [Issue41](https://github.com/alecerf/mynou/issues/41): private, actionable guided
-  first-run diagnostics using existing authenticated browser management.
+Actions published immutable v0.22.27 at
+`5fb6bcb46b80926b212e5bce0fccbf42addcfcbe` after all seven jobs in
+CI37824292805 passed. Client Issue38/PR43 delivered the ninth Product role and
+native planning Issue42; its first actual review prioritizes useful consumer work.
+A discovered structured-publication rearm defect is recorded in #44 rather than
+hidden. Native review/publication evidence lives in the linked Issues/PR.
 
-These are real native backlog scopes, not delivered features or fixed dates.
-Product/Master may change ordinary priority using evidence. Native acceptance,
-dependencies and metadata are authoritative; do not split every internal primitive
-into a ceremonial release.
+## Native next product opportunities
+
+- [Issue41](https://github.com/alecerf/mynou/issues/41), P1: guided private setup.
+- [Issue39](https://github.com/alecerf/mynou/issues/39), P2: bounded file-backed
+  media-sized PAR2 recovery, preserving old memory-mode limits and integrity.
+- [Issue40](https://github.com/alecerf/mynou/issues/40), Needs Triage: automatic
+  ownership-bound Usenet repair, actually blocked by39.
+- [Issue45](https://github.com/alecerf/mynou/issues/45), P2: bounded optional live
+  progress that preserves browser controls and privacy.
+- [Issue46](https://github.com/alecerf/mynou/issues/46), Needs Triage: native
+  Usenet upgrades for ordinary owned movies/episodes.
+- [Issue44](https://github.com/alecerf/mynou/issues/44): verified publication
+  reconciliation for automatic Product rearming, after consumer setup.
+
+These are actual native backlog scopes/decisions, not delivered capabilities,
+fixed dates or parity claims. Native metadata and prerequisites remain authoritative.
+Product/Master can choose ordinary priorities; do not split internal primitives
+into ceremonial releases or create work to fill a count.
 
 ## Published product increment: 0.22.26
 
