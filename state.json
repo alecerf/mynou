@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 654,
+  "generation": 655,
   "lease": {
     "id": "codex-hourly-20261008112927Z-quality-1791460198000",
     "worker": "codex-hourly-20261008112927Z",
     "role": "quality",
     "issue": 30,
     "acquired_at": "2026-10-08T11:49:58Z",
-    "heartbeat_at": "2026-10-08T12:02:36Z",
-    "expires_at": "2026-10-08T12:47:36Z",
+    "heartbeat_at": "2026-10-08T12:05:40Z",
+    "expires_at": "2026-10-08T12:50:40Z",
     "branch": "trunk",
     "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
     "pr": null
   },
   "checkpoint": {
-    "at": "2026-10-08T12:02:36Z",
+    "at": "2026-10-08T12:05:40Z",
     "issue": 30,
     "role": "quality",
     "branch": "trunk",
     "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
     "pr": null,
-    "summary": "Quality30 completed actual connected checkpoint and fixed inert notes create/update proof at revieweddefaultcedd. Checkpoint6059254996/run37772952404/job113296751243/receipt6059258638 advancedgen650→651 withsoleparent7e1→86041aa andsameownedlease. Notescreate6059292608/run37773211984/job113297617566/receipt6059296655 produced432ede9; update6059349914/run37773605895/job113298910178/receipt6059353404 produced2fd5287 soleparent432ede9. Bothnotes trees onlyinert probe.json; canonicalhead stayed unchanged byeachprobe. v23/defaultCI/security verified. No backend activation, source/task/protection change orlocalchecks.",
-    "next_action": "Close30/Done with actual native proof; refresh19 native blockers and Ready metadata, preserving draft24/source053 and unresolved livecutoverQA. Persist exactpublication/security/control/notes evidence andnativehandoffs, release beforedeadline. Nextwake mustreuse24 for reviewed fail-closed/interruption-recoverable migration and actualtask reconciliation; probe-only proof is not arbitrary control activation.",
+    "summary": "Completed recovery delivery at defaultced0fe652469fa6916831e0fb09cccc1a8784f79: immutablev23/privatepackage andactualdefaultCI verified; preservedHTTP502 audit failure recovered in37767226110 attempt2 withactual627 archives/2334 members/0 recognized findings/gaps. Actual nativecontrolcheckpoint andfixed inertnotes create/update proved withreceipts/soleparents/ownedlease/unchangedcanonical probes. Closed30/Done; native19 blockers25/28/30 allclosed,19 nowReady withactualsource53/proof/remainingmigration documented. Draft24 remainspreserved/unmerged. No code/task/protection changes orlocalchecks. Enddomainwork forreserved checkpoints.",
+    "next_action": "Next wake acquire Master19 aftercanonical admission and recover draftPR24/work/control-ref-adapter head053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c againstdefaultcedd andactualpriorQA rejection. Reuse existingwork; design/implement reviewedtyped staging/fence/activation andinterruption recovery usingproven defaultAction transport. Fixedprobe proof doesnot authorize arbitrarywriter/activatecandidate. Refresh source/baseCI/Security/QA beforemerge, reconcileactualexistingtask onlyafterreviewedpolicymerge. Currentcanonicalbranch remainsauthority; stop this40-minute wake afterhandoff/release.",
     "publication": {
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "state": "published",
@@ -146,16 +146,16 @@
       "default_ci": 37767226158
     },
     "cleanup": {
-      "issue": 32,
-      "state": "native-closed and Done after objective-gated source merge",
-      "merged_branch": "work/native-comment-identity",
-      "branch_result": "Native matching-ref list empty after merge; no manual deletion",
-      "parent_issue": 30,
-      "parent_state": "open/Review; native blocker32 closed, actual publication/transport proof pending",
-      "dependency_issue": 19,
-      "dependency_state": "Blocked by native open30",
+      "issue": 30,
+      "state": "closed/Done after actual publication and connected canonical/inert-notes proof",
+      "pr": 31,
+      "corrective_pr": 33,
+      "parent_issue": 19,
+      "parent_state": "open/Ready; native blockers25,28,30 allclosed",
       "preserved_pr": 24,
-      "preserved_commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c"
+      "preserved_branch": "work/control-ref-adapter",
+      "preserved_commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
+      "branch_cleanup": "Previously verified automatic merged-branch removal; no manual deletion this wake."
     },
     "release_recovery": {
       "issue": 28,
@@ -185,25 +185,25 @@
       "branch": "work/control-ref-adapter",
       "source": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
       "pr_reported_base": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
-      "current_default": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
+      "current_default": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "authority": "refs/heads/control/engineering",
       "candidate": "refs/notes/mynou-engineering",
-      "state": "preparatory-draft; actual QA rejection outstanding",
+      "state": "Ready to resume preserved draft; unfinished-cutover QA rejection remains outstanding",
       "security_review": 5451459825,
       "qa_review": 5451528384,
       "old_source_ci": 37728256136,
       "old_organization_ci": 37728256161,
-      "proposal": "Authenticated native Issue-comment to trusted-default deterministic Actions bridge for general-ref lease commands; not implemented or proved.",
+      "proposal": "Trusted native comment/default Action canonical checkpoint and fixed inert notes create/update are now actually proved atv23. Reviewed migration staging/fencing/activation commands remain to implement.",
       "scheduler_capabilities": "automations_peek and automations_update tools exposed; native task not looked up or modified this wake.",
-      "boundary": "No verified arbitrary-ref writer through scheduled-web connected write wrappers; local VM REST administration alone does not prove scheduled access.",
-      "cutover": "No staging/fence/activation/task change. Current branch remains sole canonical live authority."
+      "boundary": "Connected branch-named writes remain scoped; fixed inert notes namespace verified through reviewed Actions. No general migration writer or live activation is claimed.",
+      "cutover": "No candidate staging, legacy fence, activation or task change. refs/heads/control/engineering remains sole live authority."
     },
     "control_bridge_design": {
-      "state": "design-only",
+      "state": "fixed scoped transport implemented/published/actually proved",
       "transport": "native issue_comment to trusted-default Actions",
       "authority": "refs/heads/control/engineering",
       "nonbranch_cutover": "not activated",
-      "scope": "bounded authenticated control commands; expected-head single-parent arbitration; independent reviews remain native"
+      "scope": "Scoped canonical commands and fixed inert notes probe; original single-parent/non-force arbitration and independent source review preserved."
     },
     "control_bridge": {
       "issue": 30,
