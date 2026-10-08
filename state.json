@@ -1,119 +1,52 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 405,
+  "generation": 406,
   "lease": {
     "id": "wake9-master-delivery-registry-20261008T015700Z",
     "worker": "codex-hourly-20261008T012904Z",
     "role": "master",
     "issue": 18,
     "acquired_at": "2026-10-08T01:54:07Z",
-    "heartbeat_at": "2026-10-08T01:56:09Z",
-    "expires_at": "2026-10-08T02:41:09Z",
-    "branch": "work/registry-recovery",
-    "commit": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
+    "heartbeat_at": "2026-10-08T01:57:33Z",
+    "expires_at": "2026-10-08T02:42:33Z",
+    "branch": "trunk",
+    "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
     "pr": 22
   },
   "checkpoint": {
-    "at": "2026-10-08T01:56:09Z",
+    "at": "2026-10-08T01:57:33Z",
     "issue": 18,
     "role": "master",
-    "branch": "work/registry-recovery",
-    "commit": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
+    "branch": "trunk",
+    "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
     "pr": 22,
-    "summary": "Every native objective PR22 gate is green at exact head/base. Current QA5450500096/Security5450457499 and ancestry-backed lease proof passed actual agent-qa-review113110225198; source integration clean, native threads empty, immutable16 assets unchanged.",
-    "next_action": "Author-self-merge the corrective PR22 with expected head; verify exact native merge source/tree, then serial cleanup and actual default18 CI/publication recovery.",
+    "summary": "PR22 merged at ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114 with exact reviewed parents/tree after every objective gate green. Native push CI37715379732 is running; native auto-deletion removed the merged branch. Issue18 auto-closed by merge but actual publication acceptance remains pending.",
+    "next_action": "Release Master; Quality reopens Issue18 for actual default publication, records automatic branch cleanup and native immutable-release/CI evidence, then checkpoints/releases for the external CI wait.",
     "publication": {
-      "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
-      "state": "ci-failed",
-      "at": "2026-10-08T01:30:18Z",
+      "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "state": "ci-pending",
+      "at": "2026-10-08T01:56:48Z",
       "branch": "trunk",
-      "run_id": 37704415292,
+      "run_id": 37715379732,
       "event": "push",
-      "attempt": 2,
-      "status": "completed",
-      "conclusion": "failure",
-      "url": "https://github.com/alecerf/mynou/actions/runs/37704415292",
-      "tag": "v0.22.17",
+      "attempt": 1,
+      "status": "in_progress",
+      "conclusion": null,
+      "url": "https://github.com/alecerf/mynou/actions/runs/37715379732",
+      "tag": "v0.22.18",
       "release_observed": false,
-      "release_lookup_response": 404,
       "registry_observed": false,
       "registry_image": "ghcr.io/alecerf/mynou",
-      "registry_version_tag": "0.22.17",
-      "registry_source_tag": "sha-551e82d2c4158b9af2080081bbac3e1d18c949ea",
+      "registry_version_tag": "0.22.18",
+      "registry_source_tag": "sha-ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
       "expected_asset_count": 4,
       "manual_dispatch": false,
-      "default_ref_verified": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
-      "engineering_run_id": 37704415222,
+      "default_ref_verified": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "engineering_run_id": 37715379741,
       "engineering_conclusion": "success",
       "publication_not_inferred": true,
-      "failed_job": 113091080992,
-      "failure": "GHCR package must be private and linked to this repository",
-      "failure_phase": "unresolved before-push versus after-push check; captured successful command output is not in native logs",
-      "registry_partial_state": "unknown; first attempt may have pushed source/version tags; preserve existing",
-      "previous_assets_unchanged": true,
-      "previous_jobs": [
-        {
-          "id": 113091080992,
-          "name": "release",
-          "status": "completed",
-          "conclusion": "failure"
-        },
-        {
-          "id": 113091081210,
-          "name": "validate",
-          "status": "completed",
-          "conclusion": "success"
-        },
-        {
-          "id": 113091081866,
-          "name": "Build aarch64-apple-darwin",
-          "status": "completed",
-          "conclusion": "success"
-        },
-        {
-          "id": 113091107134,
-          "name": "Build x86_64-unknown-linux-musl",
-          "status": "completed",
-          "conclusion": "success"
-        },
-        {
-          "id": 113091119231,
-          "name": "Build x86_64-apple-darwin",
-          "status": "completed",
-          "conclusion": "success"
-        },
-        {
-          "id": 113091124218,
-          "name": "package",
-          "status": "completed",
-          "conclusion": "success"
-        },
-        {
-          "id": 113091126250,
-          "name": "Build x86_64-unknown-linux-gnu",
-          "status": "completed",
-          "conclusion": "success"
-        }
-      ],
-      "previous_conclusion": "failure",
-      "retry": {
-        "state": "completed",
-        "job_id": 113076409833,
-        "run_id": 37704415292,
-        "original_attempt": 1,
-        "native_attempt_observed": 2,
-        "native_status": "completed",
-        "native_response": {
-          "success": true
-        },
-        "accepted_at": "2026-10-08T00:44:25Z",
-        "scope": "failed release job only",
-        "source": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
-        "unchanged_retry_limit": 1,
-        "next_on_same_failure": "Do not rerun this unchanged approach again. Read actual failed log, add sanitized visibility/repository/stage diagnostics through reviewed source/CI if needed; preserve partial source/version images and releases.",
-        "conclusion": "failure"
-      }
+      "previous_assets_unchanged": true
     },
     "publication_baseline": {
       "commit": "8a0ada56baa24b566e306af75768b90ed08b55ca",
@@ -495,19 +428,14 @@
       "tree": "8092f713a3d3dcd5cb6bb2ff5d7939689452a02b"
     },
     "cleanup": {
-      "issue": 18,
-      "pr": 21,
-      "issue_state": "closed",
-      "state_reason": "completed",
-      "closed_at": "2026-10-07T23:49:25Z",
-      "merged_at": "2026-10-07T23:49:24Z",
-      "merged_branch": "work/registry-releases",
-      "branch_absent": true,
-      "branch_ref_response": 404,
-      "open_prs": 0,
-      "native_blocked_by": [],
-      "native_blocking": [],
-      "manual_branch_deletion": false
+      "pr": 22,
+      "branch": "work/registry-recovery",
+      "branch_head": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
+      "branch_lookup": 404,
+      "native_auto_deleted": true,
+      "open_prs": [],
+      "issue_auto_closed": true,
+      "publication_acceptance_pending": true
     },
     "recovery": {
       "issue18_reopened": true,
@@ -725,13 +653,112 @@
       "gate_job": 113110225198,
       "gate_conclusion": "success",
       "ci": 37714490728,
-      "mergeable": true,
-      "threads_unresolved": 0,
+      "merged": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "merge_tree": "59fa9612be0dbc8bb27ba6872d86bf8a624c3e8e",
+      "parents": [
+        "551e82d2c4158b9af2080081bbac3e1d18c949ea",
+        "1cbe42828fe1bf594cd6458796eefa65c3a0096d"
+      ],
+      "merged_at": "2026-10-08T01:56:13Z",
       "earlier_release_unchanged": true,
       "publication_verified": false,
-      "correction_for_failed_default": 5.51e+84
+      "correction_for_failed_default": "551e82d2c4158b9af2080081bbac3e1d18c949ea"
     },
-    "previous_assets_verified_at": "2026-10-08T01:55:25Z"
+    "previous_assets_verified_at": "2026-10-08T01:55:25Z",
+    "previous_failed_publication": {
+      "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
+      "state": "ci-failed",
+      "at": "2026-10-08T01:30:18Z",
+      "branch": "trunk",
+      "run_id": 37704415292,
+      "event": "push",
+      "attempt": 2,
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://github.com/alecerf/mynou/actions/runs/37704415292",
+      "tag": "v0.22.17",
+      "release_observed": false,
+      "release_lookup_response": 404,
+      "registry_observed": true,
+      "registry_image": "ghcr.io/alecerf/mynou",
+      "registry_version_tag": "0.22.17",
+      "registry_source_tag": "sha-551e82d2c4158b9af2080081bbac3e1d18c949ea",
+      "expected_asset_count": 4,
+      "manual_dispatch": false,
+      "default_ref_verified": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
+      "engineering_run_id": 37704415222,
+      "engineering_conclusion": "success",
+      "publication_not_inferred": true,
+      "failed_job": 113091080992,
+      "failure": "GHCR package must be private and linked to this repository",
+      "failure_phase": "unresolved before-push versus after-push check; captured successful command output is not in native logs",
+      "registry_partial_state": "Actual read-only diagnostic confirmed private partial17/source tags at675ef89d1bed913973e7682e9633e8fb3b229eecc5d98dc8a132f1b49af2040c; preserved by fresh18 source/version.",
+      "previous_assets_unchanged": true,
+      "previous_jobs": [
+        {
+          "id": 113091080992,
+          "name": "release",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "id": 113091081210,
+          "name": "validate",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113091081866,
+          "name": "Build aarch64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113091107134,
+          "name": "Build x86_64-unknown-linux-musl",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113091119231,
+          "name": "Build x86_64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113091124218,
+          "name": "package",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113091126250,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "previous_conclusion": "failure",
+      "retry": {
+        "state": "completed",
+        "job_id": 113076409833,
+        "run_id": 37704415292,
+        "original_attempt": 1,
+        "native_attempt_observed": 2,
+        "native_status": "completed",
+        "native_response": {
+          "success": true
+        },
+        "accepted_at": "2026-10-08T00:44:25Z",
+        "scope": "failed release job only",
+        "source": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
+        "unchanged_retry_limit": 1,
+        "next_on_same_failure": "Do not rerun this unchanged approach again. Read actual failed log, add sanitized visibility/repository/stage diagnostics through reviewed source/CI if needed; preserve partial source/version images and releases.",
+        "conclusion": "failure"
+      },
+      "corrective_pr": 22,
+      "corrective_merge": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114"
+    }
   },
   "attempts": {
     "18": {
