@@ -1,35 +1,35 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 638,
+  "generation": 639,
   "lease": {
     "id": "e9f37a83-4f3d-4459-9967-87be7c092e29",
     "worker": "github-actions-publication-recovery",
     "role": "triage",
     "issue": 32,
     "acquired_at": "2026-10-08T11:04:53Z",
-    "heartbeat_at": "2026-10-08T11:04:53Z",
-    "expires_at": "2026-10-08T11:49:53Z",
+    "heartbeat_at": "2026-10-08T11:04:56Z",
+    "expires_at": "2026-10-08T11:49:56Z",
     "branch": "trunk",
     "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
     "pr": 33
   },
   "checkpoint": {
-    "at": "2026-10-08T11:04:36Z",
+    "at": "2026-10-08T11:04:56Z",
     "issue": 32,
-    "role": "quality",
+    "role": "triage",
     "branch": "trunk",
     "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
     "pr": 33,
-    "summary": "Delivered PR33 source correction at defaultced0fe652469fa6916831e0fb09cccc1a8784f79 with actual Security5455447204, QA5455490361, six source CI jobs, both audit jobs, three CodeQL analyses and machine QA gate113276714409 green. Issue32 closed/Done; automatic branch deletion verified. Native final handoffs: Issue32=6058451679, PR33=6058451961, Issue30=6058452222, Issue19=6058452479. Default CI37767226158 publication is an actual external wait; last observed11:01:12Z in_progress, not verified published. Issue30 open/Review;19/24/053 preserved; no live corrected proof or activation, no local checks.",
-    "next_action": "Recovery first: inspect exact-default CI37767226158/security37767226110/engineering37767226188/CodeQL37767225919 and immutable v0.22.23 publication atced0fe652469fa6916831e0fb09cccc1a8784f79. Verify tag/source/assets/private-package proof and cleanup. Then acquire separate Quality30 lease at trunk/currentdefault, pr:null; fresh native expected-head checkpoint command, followed by fixed inert notes create/update only if successful. Preserve failed37764921208; keep30 open until actual proof, thenresume19/24. Release and stop for the external wait; no repeated polling/new worker.",
+    "summary": "Default-source CI transition: ci-passed at ced0fe652469fa6916831e0fb09cccc1a8784f79; native evidence {'commit': 'ced0fe652469fa6916831e0fb09cccc1a8784f79', 'state': 'ci-passed', 'at': '2026-10-08T11:04:56Z', 'run_id': 37767226158, 'status': 'completed', 'conclusion': 'success'}. No release publication is inferred.",
+    "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases.",
     "publication": {
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
-      "state": "native-default-ci-in-progress",
-      "version": "0.22.23",
+      "state": "ci-passed",
+      "at": "2026-10-08T11:04:56Z",
       "run_id": 37767226158,
-      "status": "in_progress",
-      "conclusion": null
+      "status": "completed",
+      "conclusion": "success"
     },
     "previous_checkpoint": {
       "at": "2026-10-08T11:00:25Z",
