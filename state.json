@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 544,
+  "generation": 545,
   "lease": {
     "id": "wake15-qa-public-security-20261008T064648Z",
     "worker": "codex-capacity-recovery-20261008T064648Z",
     "role": "qa",
     "issue": 27,
     "acquired_at": "2026-10-08T07:20:56Z",
-    "heartbeat_at": "2026-10-08T07:20:56Z",
-    "expires_at": "2026-10-08T08:05:56Z",
+    "heartbeat_at": "2026-10-08T07:22:49Z",
+    "expires_at": "2026-10-08T08:07:49Z",
     "branch": "work/publication-handoff-recovery",
     "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
     "pr": 26
   },
   "checkpoint": {
-    "at": "2026-10-08T07:20:48Z",
+    "at": "2026-10-08T07:22:49Z",
     "issue": 27,
-    "role": "security",
+    "role": "qa",
     "branch": "work/publication-handoff-recovery",
     "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
     "pr": 26,
-    "summary": "Native complete-diff Security COMMENT 5453084901 passes PR #26 at new exact 99138218a1f6e8689ac9fb31bfbcb79c4a5ae253/base d647be6edfd6e892474b2602bbc9047ad4047c2f, historical scoped lease 6e02750960c6683c6c04bcd26306942b09c16b5d. Full 12 patches and actual bounded audit evidence reviewed; zero recognized patterns in4560 Git objects/531 archives/1800 logs, no missing coverage, explicit running-snapshot/native-permission limits. Fresh native source CI 37742148752 now has all six required jobs successful, release appropriately skipped on PR. No QA or merged/released new source is inferred.",
-    "next_action": "Release Security and acquire separate exact-head QA. Inspect the complete actual 12-path diff, acceptance for #25/#27, all native CI results/logs, valid Security scope and unresolved threads. Record truthful QA if satisfactory and release before the final-five-minute reserve; leave final gate/delivery for supported recovery if it is not immediately ready within the wake budget.",
+    "summary": "Wake reserve reached with public-security audit and separate Security complete, but new-source QA incomplete. Exact pending PR #26 is 99138218a1f6e8689ac9fb31bfbcb79c4a5ae253 on work/publication-handoff-recovery, base d647be6edfd6e892474b2602bbc9047ad4047c2f. Source CI37742148752 all six required jobs and Security audit37742148708 both jobs actually succeeded:864 Rust/22 infra/64 organization cases,4560 Git objects and531 archives/1800 logs with zero recognized-pattern findings/gaps. Scoped full12-path Security5453084901 at6e02750960c6683c6c04bcd26306942b09c16b5d passed; native secret administration remains403. QA acquired exact-source lease and read10 of12 actual patches, current PR and empty threads; auditor/test patches plus full new-source runtime/build log verification and current review validation remain. No QA acceptance, all-green final gate, merge, release or Done is fabricated. Preserve #19/PR24 and old immutable releases.",
+    "next_action": "Next supported wake recovers this same PR and pending native gates first. Acquire its own QA lease, reread the entire12-path diff including auditor/tests, inspect all six source-job logs and two audit logs, validate Security5453084901 against historical compact lease/ancestry and exact head/base. Finish truthful QA, then new native Engineering gate; delivery role merges only after every required gate is actuallygreen. Actions alone publishes0.22.20, followed by safe closure/cleanup and #19 unblock. Owner-only native scanning/push-protection remains a documented missing-permission boundary, not an enabled feature.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -279,9 +279,9 @@
       "tree": "a55badee1ea852a7f6b7c2a785deeecd41d79b19",
       "pr": 26,
       "version": "0.22.20",
-      "validation": "New-source CI pending",
+      "validation": "New source CI and Security audit succeeded; exact-source QA/final machine gate pending",
       "local_checks": false,
-      "state": "public-security-ci-pending",
+      "state": "public-security-qa-incomplete",
       "ci_run": 37729200692,
       "security_review": 5451648764,
       "qa_review": 5452774635,
@@ -410,7 +410,8 @@
       "max_active_agents": 1,
       "worker": "codex-capacity-recovery-20261008T064648Z",
       "local_checks": false,
-      "subagents": false
+      "subagents": false,
+      "stop_reason": "single wake reserve; complete remaining QA on durable recovery"
     },
     "urgent_repair_security": {
       "head": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
@@ -516,10 +517,11 @@
       "origin": "user",
       "priority": "p1",
       "risk": "high",
-      "state": "ci-audit-passed-pending-logical-review",
+      "state": "audit-and-Security-passed-pending-complete-QA",
       "scope": "Public source/history and existing Actions logs",
       "blocked_delivery_pr": 26,
-      "linked_pr": 26
+      "linked_pr": 26,
+      "native_permission_boundary": true
     },
     "public_security_analysis": {
       "issue": 27,
@@ -658,6 +660,30 @@
           "conclusion": "skipped"
         }
       ]
+    },
+    "public_security_qa_progress": {
+      "head": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
+      "base": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+      "state": "incomplete",
+      "reviewed_paths": [
+        ".github/engineering.json",
+        ".github/workflows/ci.yml",
+        ".github/workflows/security-audit.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "SECURITY.md",
+        "engineering/README.md",
+        "engineering/delivery.py",
+        "engineering/lease.py",
+        "engineering/tests/test_organization.py"
+      ],
+      "remaining_paths": [
+        "engineering/secret_audit.py",
+        "engineering/tests/test_secret_audit.py"
+      ],
+      "review_threads": 0,
+      "no_native_qa_acceptance": true,
+      "next": "Fresh own-lease complete diff and all native logs; do not infer prior-phase review as QA"
     }
   },
   "attempts": {
