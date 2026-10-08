@@ -11,7 +11,7 @@ have not been verified.
 Open [GitHub Releases](https://github.com/alecerf/mynou/releases) while signed
 in with an account authorized for this private repository. Choose a published
 release containing your architecture's executable and `SHA256SUMS`.
-From 0.22.17 one manifest replaces the individual checksum files; use the
+From 0.22.18 one manifest replaces the individual checksum files; use the
 matching published version. The recorded v0.22.16 release remains unchanged.
 Use **About This Mac** to identify Apple Silicon or Intel; `uname -m` in a
 Terminal running under Rosetta can report Intel on an Apple Silicon machine.
@@ -20,9 +20,9 @@ For Apple Silicon, after downloading both files into Downloads:
 
 ```sh
 cd "$HOME/Downloads" &&
-  awk '$2 == "mynou-v0.22.17-macos-arm64"' SHA256SUMS | shasum -a 256 -c - &&
+  awk '$2 == "mynou-v0.22.18-macos-arm64"' SHA256SUMS | shasum -a 256 -c - &&
   mkdir -p "$HOME/.local/bin" &&
-  install -m 755 mynou-v0.22.17-macos-arm64 "$HOME/.local/bin/mynou" &&
+  install -m 755 mynou-v0.22.18-macos-arm64 "$HOME/.local/bin/mynou" &&
   "$HOME/.local/bin/mynou" demo --dir "$HOME/mynou-demo"
 ```
 

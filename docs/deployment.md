@@ -3,7 +3,7 @@
 For standalone Apple Silicon or Intel deployment without Docker, use the
 [native macOS installation guide](macos.md).
 
-Registry delivery begins with 0.22.17. Use a published release whose notes include
+Registry delivery begins with 0.22.18. Use a published release whose notes include
 a verified `ghcr.io/alecerf/mynou@sha256:...` reference; source versions and PR
 checks do not establish publication. Earlier immutable releases retain their
 image archives and original installation instructions.
@@ -29,7 +29,7 @@ token; no Docker Hub account or new repository secret is needed.
 
 Copy the exact digest from the published release notes into `MYNOU_IMAGE`.
 A digest identifies immutable content even when an authorized writer changes a
-registry tag. The version tag `ghcr.io/alecerf/mynou:0.22.17` is convenient for
+registry tag. The version tag `ghcr.io/alecerf/mynou:0.22.18` is convenient for
 discovery, but a digest pin is recommended for installations:
 
 ```sh
@@ -71,7 +71,7 @@ torrents and downloads; media mounts separately. The image stays read-only,
 capabilities are removed and the container uses an unprivileged user.
 
 For a deliberate local source build, clone the repository and use its source
-`compose.yaml`, or build `mynou:0.22.17` and set `MYNOU_IMAGE` to that local
+`compose.yaml`, or build `mynou:0.22.18` and set `MYNOU_IMAGE` to that local
 tag. CI alone publishes release packages. GitHub's native source downloads
 contain sources and need a build; no bundled executable ZIP is maintained.
 

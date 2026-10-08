@@ -1,4 +1,4 @@
-# Mynou 0.22.17 — Rust, standard library only
+# Mynou 0.22.18 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -213,7 +213,7 @@ required to run the standalone macOS executable.
 ## Install with Docker
 
 The final `scratch` image contains the static binary and TLS trust data. It runs
-as user 1000 and contains no shell or shared library. From 0.22.17, Actions
+as user 1000 and contains no shell or shared library. From 0.22.18, Actions
 publishes it to private `ghcr.io/alecerf/mynou` and records a verified digest
 in the release notes. Use an actually published version; PR checks do not
 establish registry availability.
@@ -445,7 +445,7 @@ from that validated commit, and publishes:
 The checked Linux amd64 image is a private GitHub Container Registry package,
 published before the release with source/version labels and a verified digest.
 No custom source ZIP, image archive or duplicate checksum assets are published
-from 0.22.17. GitHub's native source downloads and earlier immutable releases
+from 0.22.18. GitHub's native source downloads and earlier immutable releases
 remain available. Registry tags are not server-immutable; pin the recorded digest.
 
 No Docker Hub account or manual artifact upload is needed. The

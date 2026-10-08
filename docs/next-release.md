@@ -1,24 +1,31 @@
-# Current product work — proposed 0.22.17 private registry delivery
+# Current product work — proposed 0.22.18 registry recovery
 
-Actions published immutable v0.22.16 at
-`8a0ada56baa24b566e306af75768b90ed08b55ca` in
-[run 37696923958](https://github.com/alecerf/mynou/actions/runs/37696923958):
-all seven jobs succeeded, 864 Rust tests across 64 harnesses, four scheduler checks,
-53 organization checks and eleven bot assets. Both native macOS demos reached
-ready imports with Plex confirmation. Release406222389/tag and source match;
-the seven v0.22.15 asset IDs/names/sizes/digests remain unchanged. Issue #17 /
-PR #20 retain independent review and source/Issue/branch cleanup evidence.
+Actual last published release is immutable v0.22.16 at
+`8a0ada56baa24b566e306af75768b90ed08b55ca`, release406222389, in
+[run37696923958](https://github.com/alecerf/mynou/actions/runs/37696923958).
+All seven jobs,864 Rust tests/64 harnesses,4 scheduler tests,53 organization checks
+and eleven bot assets passed. The unchanged baseline is preserved in native
+Issue #18 and control handoffs.
 
-User [Issue #18](https://github.com/alecerf/mynou/issues/18) moves checked Docker
-images to private GHCR and removes unused release archives/duplicate checksums.
-One linked PR must preserve all validation/native/container gates, private package
-permissions, conflicting-tag refusal, checked digest pulls and immutable prior
-releases. See [scope](releases/0.22.17.md). Actual default publication remains
-required before claiming registry availability.
+Merged PR #21 default `551e82d2c4158b9af2080081bbac3e1d18c949ea`
+passed validate/four native builds/package, but release failed in
+[CI37704415292](https://github.com/alecerf/mynou/actions/runs/37704415292) attempts1/2.
+The actual read-only PR22 probe113105507230 confirmed private package identity and
+two partial0.22.17 tags at one digest, with optional repository metadata absent.
+No immutable0.22.17 release, pulled runtime/binary proof or UI linkage is claimed.
 
-User #19 (control storage) remains independent backlog work. Prioritize executable
-user requests over the next PAR2 integration scope. Keep serial leases, safe Rust
-std and truthful recovery. No local validation or manual publication.
+[Issue #18](https://github.com/alecerf/mynou/issues/18) /
+[recovery PR #22](https://github.com/alecerf/mynou/pull/22) correct this assumption
+with exact private source-repository name/ID, private owner/name/type/stable
+package-ID checks and the original strong image identity/collision/digest/binary/
+demo gates. Reported foreign repository links remain rejected; absent metadata
+is recorded unverified. New0.22.18 source preserves partial0.22.17 tags.
+See [scope](releases/0.22.18.md). Actual required CI, new exact-head/base Security,
+independent QA and later default immutable four-asset publication remain required.
+
+User #19 (control storage) remains separate backlog work. Finish actual delivery
+before unrelated work. Keep one whole-wake deadline, serial role leases and
+durable native handoffs. No local checks or manual publication.
 
 ## Earlier PAR2 work and publication history
 

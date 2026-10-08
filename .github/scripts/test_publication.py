@@ -12,7 +12,12 @@ from publish_container import CommandError, Publisher
 SOURCE = "a" * 40
 ENV = {"GITHUB_REPOSITORY": "alecerf/mynou", "GITHUB_SHA": SOURCE,
        "GITHUB_REF": "refs/heads/trunk", "GITHUB_EVENT_NAME": "push",
-       "GITHUB_ACTOR": "alecerf", "GH_TOKEN": "fixture-only"}
+       "GITHUB_ACTOR": "alecerf", "GH_TOKEN": "fixture-only",
+       "GITHUB_REPOSITORY_ID": "1403318143"}
+REPOSITORY = {"id": 1403318143, "full_name": "alecerf/mynou", "private": True}
+PACKAGE = {"id": 42, "name": "mynou", "package_type": "container",
+           "owner": {"login": "alecerf"}, "visibility": "private",
+           "repository": {"id": 1403318143, "full_name": "alecerf/mynou"}}
 LABELS = {"org.opencontainers.image.source": "https://github.com/alecerf/mynou",
           "org.opencontainers.image.revision": SOURCE,
           "org.opencontainers.image.version": "0.22.17"}
@@ -31,7 +36,7 @@ class Registry:
     def __call__(self, args, input=None):
         self.calls.append((args, input))
         if args[0] == "gh":
-            return json.dumps({"visibility": "private", "repository": {"full_name": "alecerf/mynou"}})
+            return json.dumps(REPOSITORY if args[-1] == "/repos/alecerf/mynou" else PACKAGE)
         if args[1:3] == ["manifest", "inspect"]:
             if args[3] not in self.tags:
                 raise CommandError(args, "manifest unknown")
@@ -62,7 +67,8 @@ class PublicationTests(unittest.TestCase):
         for changes in ({"GITHUB_EVENT_NAME": "pull_request"},
                         {"GITHUB_REF": "refs/heads/work/request"},
                         {"GITHUB_REPOSITORY": "other/repository"},
-                        {"GITHUB_SHA": "not-a-source"}):
+                        {"GITHUB_SHA": "not-a-source"},
+                        {"GITHUB_REPOSITORY_ID": "0"}):
             with self.subTest(changes=changes), patch.dict(os.environ, changes):
                 with self.assertRaises(ValueError):
                     Publisher("0.22.17", lambda *args: self.fail("Command ran"))
@@ -73,6 +79,63 @@ class PublicationTests(unittest.TestCase):
             publisher = Publisher("0.22.17", lambda args: json.dumps(package))
             with self.assertRaises(ValueError):
                 publisher.private_package(allow_missing=True)
+
+
+    def test_omitted_container_association_needs_exact_private_package_identity(self):
+        package = {key: value for key, value in PACKAGE.items() if key != "repository"}
+        publisher = Publisher("0.22.17", lambda args: json.dumps(package))
+        publisher.private_package()
+        self.assertEqual(publisher.package_id, 42)
+        self.assertEqual(publisher.package_association, "not_exposed")
+        for changes in ({"visibility": "public"}, {"visibility": "internal"},
+                        {"name": "other"}, {"package_type": "npm"},
+                        {"owner": {"login": "other"}}, {"id": True}, {"id": 0}):
+            with self.subTest(changes=changes):
+                bad = dict(package, **changes)
+                with self.assertRaises(ValueError):
+                    Publisher("0.22.17", lambda args: json.dumps(bad)).private_package()
+
+    def test_reported_conflicting_repository_is_still_rejected(self):
+        for linked in ({"full_name": "other/repo"}, {},
+                       {"full_name": "alecerf/mynou", "id": 7},
+                       {"full_name": "alecerf/mynou", "id": True}, "not-an-object"):
+            with self.subTest(linked=linked), self.assertRaises(ValueError):
+                package = dict(PACKAGE, repository=linked)
+                Publisher("0.22.17", lambda args: json.dumps(package)).private_package()
+        publisher = Publisher("0.22.17", lambda args: json.dumps(PACKAGE))
+        publisher.private_package()
+        self.assertEqual(publisher.package_association, "reported-match")
+
+    def test_wrong_or_public_source_repository_blocks_every_docker_command(self):
+        for changes in ({"id": 7}, {"id": True}, {"full_name": "other/repo"},
+                        {"private": False}):
+            registry = Registry()
+            def native(args, input=None):
+                if args[-1] == "/repos/alecerf/mynou":
+                    return json.dumps(dict(REPOSITORY, **changes))
+                return registry(args, input=input)
+            with self.subTest(changes=changes), tempfile.TemporaryDirectory() as directory:
+                with self.assertRaises(ValueError):
+                    root = Path(directory)
+                    Publisher("0.22.17", native).publish(root / "archive", root / "binary", root)
+            self.assertFalse(any(args[0] == "docker" for args, _ in registry.calls))
+
+    def test_replaced_package_id_blocks_publication_proof(self):
+        registry = Registry()
+        reads = 0
+        def native(args, input=None):
+            nonlocal reads
+            if args[-1] == "/users/alecerf/packages/container/mynou":
+                reads += 1
+                return json.dumps(dict(PACKAGE, id=42 if reads == 1 else 43))
+            return registry(args, input=input)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / "binary"
+            binary.write_bytes(b"checked")
+            with self.assertRaisesRegex(ValueError, "Package identity changed"):
+                Publisher("0.22.17", native).publish(root / "archive", binary, root)
+        self.assertFalse(any(args[1] == "create" for args, _ in registry.calls))
 
     def test_only_actual_package_404_allows_first_publication(self):
         def missing(args):

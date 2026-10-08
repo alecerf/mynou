@@ -67,12 +67,13 @@ checks remain required. Published versions stay immutable.
 Only the default-branch release job has `packages: write`, alongside its existing
 release permission. It uses the ephemeral repository token, private temporary
 Docker credentials and the same-run checked image. The original Python std
-publisher rejects public/unlinked packages, permission/network lookup failures,
+publisher verifies the exact private repository and private package identity, rejecting reported conflicting repository metadata, permission/network lookup failures,
 source/version collisions and mismatched image labels. Existing exact tags are
 reused without pushes. It re-pulls the recorded digest, compares the executable
 and repeats the isolated container demo before publishing the immutable release.
 GHCR tags have no server CAS; deployments pin the recorded content digest.
-Ten CI-only publication regressions cover authorization, absence/denial,
+CI-only publication regressions cover authorization, absence/denial, exact private
+repository/package identity, reported foreign links, identity replacement,
 collisions, retry reuse, pulled-byte corruption and demonstration failure.
 Private-package permission and registry availability require actual default CI;
 PR mock checks alone do not establish publication.
@@ -251,3 +252,32 @@ The v0.22.9 run completed 62 harnesses with 791 Rust tests in 97.770 seconds.
 Its RAR format target took 0.114 seconds; the manifest records every observed
 target duration from that completed run. Expanded native admission fixtures retain
 preceding weights until their own passing measurements. All gates remain enabled.
+
+## Registry publication recovery
+
+[Default CI37704415292](https://github.com/alecerf/mynou/actions/runs/37704415292)
+attempts1/2 failed the assumed repository-link field. A bounded read-only PR probe
+([run37713788379](https://github.com/alecerf/mynou/actions/runs/37713788379),
+job113105507230) observed a private correctly named/owned container package, one
+complete version page and both `0.22.17`/`sha-551e82d2c4158b9af2080081bbac3e1d18c949ea`
+tags at digest `sha256:675ef89d1bed913973e7682e9633e8fb3b229eecc5d98dc8a132f1b49af2040c`.
+Its native metadata had no repository fields. This is not proof of an unlinked
+package, public visibility, denied access or a complete published release.
+
+From proposed0.22.18 the publisher checks the private native source repository
+name/ID against GitHub's exact workflow repository name/ID. It requires the
+private native package owner/name/type and a stable positive package ID before
+and after writes. Reported foreign or malformed repository metadata still blocks
+publication. An omitted optional association is recorded as `not_exposed`, not
+claimed as a server/UI link. Scoped-token authorization and the original pulled
+source/revision/version/runtime/digest/binary/demo checks remain mandatory.
+The [REST package reference](https://docs.github.com/en/rest/packages/packages#get-a-package-for-a-user)
+does not guarantee repository fields for granular container packages;
+[GraphQL](https://docs.github.com/en/packages/learn-github-packages/introduction-to-github-packages#managing-packages)
+does not support that registry. No unsupported lookup or visibility change is used.
+
+The temporary PR probe and its one-off helper are retired after retaining their
+actual CI proof. New source uses0.22.18; existing0.22.17 source/version images and
+all earlier immutable releases remain unchanged. Actual default private package,
+verified content digest and immutable four-asset release are required to finish
+Issue #18. No repeated unchanged rerun, local validation or manual publication.
