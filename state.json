@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 385,
+  "generation": 386,
   "lease": {
     "id": "wake9-quality-diagnostics-20261008T013100Z",
     "worker": "codex-hourly-20261008T012904Z",
     "role": "quality",
     "issue": 18,
     "acquired_at": "2026-10-08T01:31:11Z",
-    "heartbeat_at": "2026-10-08T01:36:30Z",
-    "expires_at": "2026-10-08T02:21:30Z",
+    "heartbeat_at": "2026-10-08T01:37:15Z",
+    "expires_at": "2026-10-08T02:22:15Z",
     "branch": "work/registry-recovery",
-    "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
-    "pr": null
+    "commit": "0356649d2b8364c2ec4061f080d28de9b842cfb9",
+    "pr": 22
   },
   "checkpoint": {
-    "at": "2026-10-08T01:36:30Z",
+    "at": "2026-10-08T01:37:15Z",
     "issue": 18,
     "role": "quality",
     "branch": "work/registry-recovery",
-    "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
-    "pr": null,
-    "summary": "Prepared original read-only metadata inspector,5 meaningful CI regression cases, a temporary same-repository packages-read PR probe and English recovery docs. Strict publisher remains unchanged; no local checks. Four source paths ready for remote original commit and a draft linked recovery PR; diagnosis is not Issue18 completion.",
-    "next_action": "Create one remote work/registry-recovery branch at551e82d2 and original four-path commit; open draft PR linked #18, then independent Security full-diff review while Actions probes actual metadata.",
+    "commit": "0356649d2b8364c2ec4061f080d28de9b842cfb9",
+    "pr": 22,
+    "summary": "Original four-path diagnostic source committed remotely0356649d/tree4dc673fb on preserved work/registry-recovery; draft linked PR22 opened. Read-only fixed package/version GET probe (same-repository branch, packagesread only),5 meaningful CI regressions and English docs; default publisher unchanged. Actual default attempt2 failure retained; diagnosis alone cannot merge/complete #18. No local checks.",
+    "next_action": "Security: actual complete four-path diff review at0356649d/551e82d2 under own exact lease. Inspect actual PR CI registry-inspection output when available, not poll; use evidence for supported correction and retire temporary probe before ready.",
     "publication": {
       "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
       "state": "ci-failed",
@@ -545,6 +545,21 @@
       ],
       "local_checks": false,
       "subagents": false
+    },
+    "recovery_source": {
+      "base": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
+      "head": "0356649d2b8364c2ec4061f080d28de9b842cfb9",
+      "tree": "4dc673fb89282b2f20badb34a7def2b9153d0d66",
+      "branch": "work/registry-recovery",
+      "pr": 22,
+      "stage": "read-only diagnosis; publisher guard unchanged",
+      "paths": [
+        ".github/scripts/inspect_package.py",
+        ".github/scripts/test_package_inspection.py",
+        ".github/workflows/ci.yml",
+        "docs/ci.md"
+      ],
+      "diagnosis_not_completion": true
     }
   },
   "attempts": {
