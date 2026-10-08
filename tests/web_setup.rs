@@ -66,7 +66,10 @@ fn empty_installation_gives_missing_and_optional_states_without_writes() {
     state(&page.body, "catalog", "optional");
     state(&page.body, "plex", "optional");
     assert!(page.body.contains("Both are currently disabled"));
-    assert!(page.body.contains("Connections, credentials and folder access have not been tested"));
+    assert!(
+        page.body
+            .contains("Connections, credentials and folder access have not been tested")
+    );
     assert_eq!(files(&directory.0), before);
     assert!(server.engine.store.lock().unwrap().list().is_empty());
     page.no_secrets();
@@ -127,7 +130,10 @@ fn malformed_optional_settings_and_missing_authentication_stay_private() {
         indexer.url.as_str(),
         directory.0.to_str().unwrap(),
     ] {
-        assert!(!page.body.contains(forbidden), "Private setup input was rendered");
+        assert!(
+            !page.body.contains(forbidden),
+            "Private setup input was rendered"
+        );
     }
     page.no_secrets();
     assert_eq!(indexer.calls.load(Ordering::Acquire), 0);
@@ -142,7 +148,11 @@ fn setup_rejects_query_actions_and_post_actions_without_side_effects() {
     let server = Server::open(cfg);
     let browser = Browser::login(&server);
     let before = files(&directory.0);
-    for query in ["?probe=yes", "?apply=yes", "?token=setup-fixture-query-value"] {
+    for query in [
+        "?probe=yes",
+        "?apply=yes",
+        "?token=setup-fixture-query-value",
+    ] {
         let page = browser.get(&server, &format!("/ui/setup{query}"));
         assert_eq!(page.status, 400);
         page.no_secrets();
@@ -204,7 +214,10 @@ fn newznab_source_requires_its_native_usenet_route_even_with_torrents_enabled() 
     assert_eq!(page.status, 200);
     state(&page.body, "sources", "configured");
     state(&page.body, "downloads", "attention");
-    assert!(page.body.contains("do not match an enabled native download route"));
+    assert!(
+        page.body
+            .contains("do not match an enabled native download route")
+    );
     assert!(page.body.contains("href=\"/ui/usenet\""));
     assert_eq!(indexer.calls.load(Ordering::Acquire), 0);
     assert_eq!(files(&directory.0), before);

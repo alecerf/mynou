@@ -283,19 +283,13 @@ mod tests {
 
     #[test]
     fn trimmed_credential_presence_is_not_authentication() {
-        assert_eq!(
-            credential_value(Some(" fixture-value ")),
-            State::Configured
-        );
+        assert_eq!(credential_value(Some(" fixture-value ")), State::Configured);
     }
 
     #[test]
     fn required_credentials_preserve_missing_and_invalid_states() {
         assert_eq!(together(State::Configured, State::Missing), State::Missing);
-        assert_eq!(
-            together(State::Missing, State::Attention),
-            State::Attention
-        );
+        assert_eq!(together(State::Missing, State::Attention), State::Attention);
         assert_eq!(
             together(State::Configured, State::Configured),
             State::Configured
