@@ -1,35 +1,80 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 721,
+  "generation": 722,
   "lease": {
     "id": "codex-continuous-20261008143128Z-quality-1791469975000",
     "worker": "codex-continuous-20261008143128Z",
     "role": "quality",
     "issue": 34,
     "acquired_at": "2026-10-08T14:32:55Z",
-    "heartbeat_at": "2026-10-08T14:32:55Z",
-    "expires_at": "2026-10-08T15:17:55Z",
+    "heartbeat_at": "2026-10-08T14:34:59Z",
+    "expires_at": "2026-10-08T15:19:59Z",
     "branch": "trunk",
     "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
     "pr": 35
   },
   "checkpoint": {
-    "at": "2026-10-08T14:32:44Z",
+    "at": "2026-10-08T14:34:59Z",
     "issue": 34,
-    "role": "master",
+    "role": "quality",
     "branch": "trunk",
     "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
     "pr": 35,
-    "summary": "Master recovery: actual defaultCI37785002953 completed/success atc348; nativebot immutablev0.22.24 release nowexists. ExistingTaskreconciliation alreadycomplete incontrol. Preserve nativeIssue19/draftPR24 partialb849 andQA5457079884; currentdefault iscontinuouspolicy c348, no cap. Need actualpublicationlog/privatepackageproof andQualityclosure before resuming19.",
-    "next_action": "Quality34 inspect actualrelease/package/joblogs andexactsource/assets, confirmbranchcleanup, close34/Done; thenMaster triage19→Quality fixesfenced renewablelifecycle onpreservedbranch, preservingnewcontinuouspolicy/history andusingunpublishedv25.",
+    "summary": "Quality34 verified immutablev0.22.24 release406870757 atc348; native tagexact, all7defaultCIjobs success andactualbuild/package/releaselogs read. PrivateGHCR source/version/binaryhash/cleanup proof actual. One package-logread toolfailure recovered bysingle readretry; no CI rerun. Taskalreadyreconciled, uniquePR24 preserved. Readyclose34.",
+    "next_action": "Close native34Done withactualpublicationhandoff, releaseQuality thenMaster19 resumeQA5457079884 onb849. Preservec348continuouspolicy/fulloriginalhistory anduseunpublishedv25.",
     "publication": {
       "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
-      "state": "ci-passed",
-      "at": "2026-10-08T13:39:01Z",
+      "state": "published",
+      "version": "0.22.24",
+      "at": "2026-10-08T13:38:43Z",
+      "release_id": 406870757,
+      "immutable": true,
+      "tag_commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
       "run_id": 37785002953,
       "status": "completed",
-      "conclusion": "success"
+      "conclusion": "success",
+      "assets": [
+        {
+          "id": 621942087,
+          "name": "mynou-v0.22.24-linux-x86_64",
+          "size": 4891488,
+          "digest": "sha256:55ef27c649e40aa9e907696f7fce72bf1d7887a893b58011b062a2fffa8d73e7"
+        },
+        {
+          "id": 621942086,
+          "name": "mynou-v0.22.24-macos-arm64",
+          "size": 3729104,
+          "digest": "sha256:44a42a69d97474903af49ebc879c32f5ff7a67fa57dd3f1ce7d6d7309852dc4d"
+        },
+        {
+          "id": 621942088,
+          "name": "mynou-v0.22.24-macos-x86_64",
+          "size": 4508464,
+          "digest": "sha256:3d9062db019a49617f3f7781f072213e46da8ae2684533bec3b1ffe4ebb988f7"
+        },
+        {
+          "id": 621942089,
+          "name": "SHA256SUMS",
+          "size": 281,
+          "digest": "sha256:b82a05d95c6095fedea12eb25ab52bee995f2585f40424da245eb910559ca463"
+        }
+      ],
+      "registry_proof": {
+        "binary_sha256": "55ef27c649e40aa9e907696f7fce72bf1d7887a893b58011b062a2fffa8d73e7",
+        "image": "ghcr.io/alecerf/mynou@sha256:82f5bca4636f4f0f70e7865ad7feecc8760cacd5a1daadee89f6b0cc050d99ec",
+        "package_id": 15695108,
+        "repository": "alecerf/mynou",
+        "repository_association": "reported-match",
+        "repository_id": 1403318143,
+        "repository_visibility": "public",
+        "source": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
+        "verification_cleanup": "completed",
+        "verification_user": "1001:1001",
+        "version": "0.22.24",
+        "visibility": "private"
+      },
+      "security_audit_run": 37785003097
     },
     "recovery": {
       "pr": 26,
@@ -72,7 +117,7 @@
       "limitations": "Selected recognized credential patterns and completed inventory snapshot only; pending runs excluded, no arbitrary sensitive-data guarantee."
     },
     "delivery": {
-      "state": "merged-awaiting-default-publication",
+      "state": "publication-verified",
       "issue": 34,
       "pr": 35,
       "source_head": "f12a37e873561fbd3de3ccdd30883b9f41c2a4c3",
@@ -386,7 +431,7 @@
       "state": "Partial native success; lastMacIntel build inprogress and package unobserved. No greengate/merge/publishedv24 claim."
     },
     "execution_policy_request": {
-      "state": "policy-and-live-task-shipped-publication-pending",
+      "state": "delivery-complete",
       "issue": 34,
       "branch": "work/continuous-engineering",
       "base": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
@@ -464,11 +509,12 @@
       "default_security": 37785003097,
       "default_organization": 37785003106,
       "outcome": "Continuous useful execution installed; actual hourly Task prompt accepted/confirmed, unchanged cadence and timezone",
-      "publication_state": "pending",
+      "publication_state": "published",
       "preserved_issue19_handoff": 6061055541,
       "final_checkpoint": "cf7f462bf0daa19dbb0afd429732f42349cb93e8",
       "final_issue_handoff": 6061104406,
-      "final_pr_handoff": 6061104765
+      "final_pr_handoff": 6061104765,
+      "release_id": 406870757
     },
     "previous_checkpoint": {
       "at": "2026-10-08T13:31:11Z",
