@@ -1,4 +1,4 @@
-# Mynou 0.22.26 — Rust, standard library only
+# Mynou 0.22.27 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -169,13 +169,23 @@ demo checks before CI may package or publish them. See the
 [macOS installation guide](docs/macos.md) and [release scope](docs/releases/0.22.16.md).
 Publication and macOS success require actual completed Actions evidence.
 
-Proposed 0.22.26 extends [bounded PAR2 recovery](docs/par2.md) to select independent
-available parity rows, including nonzero/nonconsecutive exponents. Exact selected
-coefficients, source/packet/final integrity, aggregate bounds and private owner
-binding remain required. This source proposal awaits CI/Security/QA and
-Actions publication; it does not add automatic repair admission or volume merging.
-The current immutable release is
-[v0.22.25](https://github.com/alecerf/mynou/releases/tag/v0.22.25).
+Actions published [v0.22.26](https://github.com/alecerf/mynou/releases/tag/v0.22.26)
+from `d67becbd5a09ff51bdd8e2a3d43a9f44ef849f74` after all seven jobs in
+run37814772739 passed, including 875 Rust tests. [Bounded PAR2 recovery](docs/par2.md)
+selects independent available rows, including nonzero/nonconsecutive exponents;
+exact coefficients, source/packet/final integrity, aggregate bounds and private
+owner binding remain required. Automatic repair admission and volume merging
+are not added. Native Issue36/PR37 retain release/review/image evidence.
+
+Proposed 0.22.27 gives the [Product Owner](.agents/skills/mynou-product/SKILL.md)
+a small evidence-based native product backlog and a recovery-first planning
+trigger. [Issue39](https://github.com/alecerf/mynou/issues/39),
+[Issue40](https://github.com/alecerf/mynou/issues/40) and
+[Issue41](https://github.com/alecerf/mynou/issues/41) track media-sized recovery,
+safe automatic Usenet repair and guided setup. They are proposals, not delivered
+capabilities. This organization change requires actual CI and separate Security/QA
+before merge and immutable Actions publication; see the
+[engineering runbook](engineering/README.md) and [scope](docs/releases/0.22.27.md).
 
 ## Autonomous engineering
 

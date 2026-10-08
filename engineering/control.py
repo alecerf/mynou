@@ -43,7 +43,40 @@ def handoff(api, previous, checkpoint, control_sha):
     api.rest("POST", f"issues/{previous['issue']}/comments", {"body": body})
 
 
-def select(state, issues, at):
+def product_planning(state, issues, policy, at):
+    """Select one native planning review after new evidence, never every wake."""
+    if not policy:
+        return None
+    anchor = next((i for i in issues if i["number"] == policy["issue"]), None)
+    if anchor is None:
+        return None
+    count = sum(
+        i["number"] != anchor["number"]
+        and "status:ready" in labels(i)
+        and bool(labels(i) & {"origin:agent", "origin:ux", "origin:reliability"})
+        and bool(labels(i) & {"enhancement", "bug", "accessibility"})
+        and i.get("issue_dependencies_summary", {}).get("blocked_by") == 0
+        for i in issues
+    )
+    if count >= policy["ready_minimum"]:
+        return None
+    armed = bool(labels(anchor) & {"status:ready", "status:needs-triage"})
+    if not armed and "status:blocked" in labels(anchor):
+        published = state["checkpoint"].get("publication", {})
+        if published.get("state") == "published":
+            try:
+                published_at = lease.time(published.get("at"))
+                armed = lease.time(anchor.get("updated_at")) < published_at <= at
+            except (ValueError, TypeError):
+                armed = False
+    if not armed:
+        return None
+    return {"action": "plan-product", "issue": anchor["number"], "role": "product",
+        "ready_product_items": count,
+        "instruction": "Acquire one Product lease on the configured planning Issue; review known evidence, maintain bounded native proposals, checkpoint and return the Issue to Blocked. Do not invent work."}
+
+
+def select(state, issues, at, planning=None):
     if lease.valid(state, at):
         return {"action": "busy", "lease": state["lease"], "instruction": "Do no engineering work; exit without polling."}
     if state["lease"] is not None:
@@ -55,9 +88,16 @@ def select(state, issues, at):
     circuit = [i for i in managed if state["attempts"].get(str(i["number"]), {}).get("unchanged", 0) >= 3]
     if circuit:
         return {"action": "triage", "issue": min(circuit, key=lambda i: i["number"])["number"], "instruction": "Circuit breaker requires a changed approach; never repeat unchanged implementation."}
-    ready = [i for i in managed if "status:blocked" not in labels(i)]
+    planned = product_planning(state, managed, planning, at)
+    ready = [i for i in managed if "status:blocked" not in labels(i)
+        and (not planning or i["number"] != planning["issue"])]
+    if planned and not any(
+        "origin:user" in labels(i) or "priority:p0" in labels(i)
+        or bool(labels(i) & {"origin:security", "risk:critical"}) for i in ready
+    ):
+        return planned
     if not ready:
-        return {"action": "idle", "instruction": "No executable valuable backlog. Do not invent work or repeatedly rescan."}
+        return {"action": "idle", "instruction": "No executable valuable backlog or new planning evidence. Do not invent work or repeatedly rescan."}
     def priority(issue):
         names = labels(issue)
         p = next((n for n in range(4) if f"priority:p{n}" in names), 2)
@@ -163,7 +203,7 @@ def main():
     if args.command == "wake":
         # Admission happens before any backlog/domain investigation.
         issues = [] if state["lease"] is not None else api.pages("issues?state=open&labels=agent-work")
-        action = select(state, issues, at)
+        action = select(state, issues, at, api.cfg.get("product_planning"))
         if action["action"] == "idle":
             import qa
             prs = api.pages("pulls?state=open")

@@ -1,7 +1,8 @@
 # Mynou engineering organization
 
 The user supplies product intent. The Master owns management, priorities,
-specialist selection, delivery and useful proactive improvements. Ordinary
+specialist selection, delivery and useful proactive improvements. Product owns
+bounded discovery and native feature/bug backlog under the catalog/runbook. Ordinary
 engineering decisions, Issues, PRs, review, merge and cleanup need no user
 intervention. Escalate only product-defining, destructive, sensitive or costly
 decisions that cannot responsibly be inferred.

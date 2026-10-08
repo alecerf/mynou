@@ -1,7 +1,7 @@
 # Mynou autonomous engineering
 
 The client supplies intent; the Master owns normal engineering management and
-delivery. Eight logical specialists live in `.agents/skills` and are registered
+delivery. Nine logical specialists live in `.agents/skills` and are registered
 in `roles.json`. They run sequentially in one worker, with **MAX_ACTIVE_AGENTS = 1**.
 CI can execute deterministic processes concurrently; no second AI engineering
 worker may run. Role changes require a durable checkpoint, release and new lease.
@@ -54,14 +54,12 @@ create a parallel backlog database.
 
 Bootstrap [Issue #1 / PR #3](https://github.com/alecerf/mynou/issues/1) and
 PAR2 inspection [Issue #2 / PR #4](https://github.com/alecerf/mynou/issues/2)
-are complete. The verified product release is v0.22.11 at
-`57b15534158b0eb40d4f13450d51fdf33c7d81bb`: all five jobs in run 37579093331,
-822 Rust tests across 63 harnesses, four scheduler checks and seven bot assets.
-Native Issue/PR handoffs retain the exact review, publication and cleanup proof.
-Release-trigger recovery is [Issue #5](https://github.com/alecerf/mynou/issues/5);
-it natively blocks the next bounded PAR2 recovery stage, Issue #6. Read live
-Issues/control state for current priorities rather than inferring them from this
-historical release record. Infrastructure changes do not retag published assets.
+are complete. Actions published immutable v0.22.26 at
+`d67becbd5a09ff51bdd8e2a3d43a9f44ef849f74`: all seven jobs in run37814772739
+passed, with 875 Rust tests across 63 harnesses. Issue36/PR37 retain exact
+Security/QA, four-asset release/private-image and safe branch cleanup evidence.
+Read live Issues/control for current priorities. Historical releases remain
+preserved; infrastructure changes never retag published assets.
 
 ## Work and roles
 
@@ -90,6 +88,42 @@ UX or maintenance work. Use prior CI, warnings, review findings and incremental
 signals; avoid full rescans on each wake. Idle is valid. Three identical progress
 fingerprints for the same approach release the lease and return to Triage. Record
 a revised approach before retrying; do not burn quota on unchanged failures.
+
+## Continuous product planning
+
+Product owns evidence-based opportunity discovery, value and bounded acceptance;
+Master chooses execution, Triage verifies readiness and UX designs the experience.
+The configured native [planning Issue42](https://github.com/alecerf/mynou/issues/42)
+is a standing work item, not a parallel backlog or another worker. Features/bugs
+have their own meaningful native Issues and linked PRs.
+
+After recovery/publication/cleanup and higher-priority user/critical work,
+`control.py wake` can return `plan-product` when fewer than three unblocked Ready
+agent-proposed product increments remain. Ready counts use actual native
+dependency summaries; missing evidence does not count as unblocked.
+A publication recorded as actually published and newer than Issue42's native
+updated_at rearms planning. Ready/Needs Triage may explicitly rearm it for new
+evidence. Recovery, stale leases, rejected/incomplete delivery and the
+three-attempt circuit breaker always precede a new planning phase.
+
+Acquire Product on this Issue at the actual remote default. Inspect known recent
+evidence and open/relevant closed Issues first, without expensive full rescans.
+Create/update useful proposals with user problem/outcome, current-code/support/CI
+evidence, bounded release acceptance, impact/effort/priority/risk/origin and minimum
+role sequence. Bugs require actual failure evidence; unknown prerequisites stay
+Needs Triage and actual native blockers are preserved. Keep at most five Ready
+agent proposals. Counts never justify invented work or capping client requests.
+
+Record exact reviewed source/publication, proposal/dependency decisions and next
+action in its native comment/canonical checkpoint; set the standing Issue back to
+Blocked, then release. Its native update suppresses unchanged hourly reanalysis.
+An interrupted In Progress review is recovered rather than mistaken for completion.
+If no useful proposal exists, record that outcome and idle until new evidence.
+Never create a replacement planning Issue merely because a read failed.
+The initial product backlog is Issue39 (media-sized PAR2 recovery), Issue40
+(ownership-bound automatic Usenet repair, natively blocked by39, Needs Triage)
+and Issue41 (private guided first-run diagnostics). These are proposals, not
+delivered capabilities. Current native metadata takes precedence over this snapshot.
 
 ## Operational commands
 
@@ -215,6 +249,13 @@ metadata and one concise previous-work handoff, without nesting full checkpoints
 Retained evidence describes its recorded source; it never certifies a new head or
 substitutes for native CI and exact-head/base reviews.
 
+Before merge or deletion, checkpoint the current phase. Manual delivery should
+hold a default-source lease, or keep its leased source ref until release. Native
+merge deletion can remove the branch required by a strict connector checkpoint;
+never weaken the source/ownership guard to hide that failure. Preserve the
+already-merged commit/history, finish the phase, then bind the next role to the
+actual default. Record default CI/publication honestly before unrelated work.
+
 After merge, native closing keywords and existing `delete_branch_on_merge` help.
 Cleanup sets Issue status Done, unblocks completed native dependencies and audits
 branches. Every delivery wake also repairs interrupted blocked-dependency metadata
@@ -266,14 +307,21 @@ Another authorized worker can use this protocol later without changing the backl
 Inherited in-worker model routing is fixed; available child-model overrides cannot
 be used concurrently under the one-worker invariant. No routing switch is claimed.
 
-Observed GitHub limits on 2026-10-06: native Project creation, repository settings,
-branch-protection admin and secret-scanning admin are integration-denied. Private
-rulesets return an explicit GitHub Pro/public-repository requirement; the repository
-remains private. Code scanning is not enabled. Native Task/Bug/Feature types are
-listed, but REST/GraphQL assignment reads back null. Use labels honestly. Native
-auto-merge remains disabled; merge queue is unnecessary with serialized delivery.
-Software gates cannot provide server-enforced protection from an out-of-band
-administrator's direct push. No protection was weakened.
+Historical integration observations on 2026-10-06 denied native Project creation,
+repository settings, branch-protection admin and secret-scanning admin; private
+rulesets required another plan and native type assignment read back null.
+The repository subsequently became public. On2026-10-08 the configured
+administrative API actually reported admin/maintain/push permissions; role-label
+and native dependency writes succeeded. Those are observed capabilities, not a
+claim that Projects, branch rules or secret-scanning administration were installed.
+CodeQL native runs/checks are visible. Reassess a capability only when the actual
+permission/environment change or work justifies it; do not repeat old denied
+attempts on every wake. Labels remain the operational issue-type fallback.
+
+Native auto-merge was not configured; the existing trusted automatic merger uses
+objective gates. Merge queue is unnecessary with serialized delivery. Software
+gates do not prove server protection from an out-of-band administrator's direct
+push. No security protection was weakened.
 
 `project-blueprint.json` and `project.py` are an optional native Project adapter,
 not an installed Project. Instantiate fields/views only when actual permission
@@ -292,15 +340,15 @@ scenario coverage are recorded in [validation.md](validation.md).
 [The strict comment transport](command-transport.md) lets a scheduled web worker
 request lease administration through reviewed default Actions using the connected
 GitHub comment API. It retains canonical Git state and the existing single-parent,
-non-force arbitration. Installation does not activate notes or reconcile the
-hourly task; actual post-merge proof and Issue #19 cutover remain distinct steps.
+non-force arbitration. Installation alone did not activate notes or reconcile the
+hourly task; actual post-merge proof and Issue #19 cutover were distinct steps.
 
 ## Reviewed notes cutover
 
 [Canonical control and retirement](control-storage.md) defines schema2 fencing,
 the renewable sole nested owner, deliberately released/expired native recovery,
 notes authority and verified old-branch retirement. Installation and live
-activation are separate acceptance stages. Issue19 remains In Progress until
-actual notes proof, existing-task reconciliation and retirement. Read the
-resolved authority; never infer it from absence or initialize empty state.
+activation are separate acceptance stages. Issue19 is complete with native notes
+proof, existing-task reconciliation and legacy retirement preserved in history.
+Read the resolved authority; never infer it from absence or initialize empty state.
 Only an actual supported Task response proves the live prompt changed.

@@ -13,6 +13,20 @@ sequence, checkpoint and release between roles. Do not invoke every specialist.
 Own native Issues, dependencies and PRs. Use Projects only with actual write
 access; native Issue labels are the operational fallback.
 
+After verified delivery and before idle, inspect the small Ready product queue.
+Use the registered Product role and configured standing planning Issue when the
+queue has fewer than three unblocked agent-proposed product increments and new
+evidence permits a review. Keep at most five Ready agent proposals; do not invent
+work to fill a count. Native Issue updates record the last review; user/critical
+work and existing recovery preempt it. Product owns value/discovery/scope, Triage
+owns delivery readiness and UX owns design. Follow the Product Skill and runbook.
+
+Before merge/deletion, persist the current phase checkpoint. Bind manual delivery
+to the actual default source or preserve a leased source ref until release;
+native branch deletion can otherwise remove a strict checkpoint's source scope.
+After merge, record the actual remote default/PR and publication state. Never
+silently weaken ownership/source guards to make a stale checkpoint succeed.
+
 Choose reversible ordinary engineering and UX decisions. Escalate only genuinely
 product-defining, destructive, sensitive or costly uncertainty, with the smallest
 question and consequence. Continue useful work without an artificial wake deadline.

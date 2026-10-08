@@ -5,21 +5,40 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current product increment: proposed 0.22.26
+## Current organization increment: proposed 0.22.27
 
-Issue #36 extends bounded PAR2 recovery to choose independent available parity
-rows rather than requiring exponents starting at zero. Exact selected exponents,
-global Main-order ownership, all integrity checks and existing aggregate limits
-remain required. Selection work is charged before payload/output allocations.
-Source/fixture/documentation changes require actual CI, separately leased Security,
-complete-diff QA and objective delivery before Actions publication.
+Client Issue38 gives a modular Product Owner responsibility for useful,
+evidence-based product growth. A bounded native planning Issue/trigger maintains
+a small actionable queue after recovery and higher-priority work, with separate
+Security/full-diff QA and immutable Actions delivery. See
+[scope](releases/0.22.27.md) and the [runbook](../engineering/README.md).
 
-Actions published immutable v0.22.25 at
-`57cfe88bd9dac249d6949a470afc357e835060f9` after all seven jobs in
-[CI37797446857](https://github.com/alecerf/mynou/actions/runs/37797446857)
-succeeded. Four native executable/checksum assets and the private GHCR image
-were verified; native Issue #19 records publication and completed control
-migration. Earlier immutable releases remain preserved.
+## Next product opportunities
+
+- [Issue39](https://github.com/alecerf/mynou/issues/39): file-backed, bounded
+  media-sized PAR2 recovery; old memory-mode limits and integrity remain intact.
+- [Issue40](https://github.com/alecerf/mynou/issues/40): ownership-bound automatic
+  repair before safe Usenet import. It is natively blocked by39 and still needs
+  prerequisite triage; no automatic queue/library adoption is claimed.
+- [Issue41](https://github.com/alecerf/mynou/issues/41): private, actionable guided
+  first-run diagnostics using existing authenticated browser management.
+
+These are real native backlog scopes, not delivered features or fixed dates.
+Product/Master may change ordinary priority using evidence. Native acceptance,
+dependencies and metadata are authoritative; do not split every internal primitive
+into a ceremonial release.
+
+## Published product increment: 0.22.26
+
+Bounded recovery chooses independent available parity rows, including shifted
+and nonconsecutive exponents. Exact selected coefficients, global Main-order
+ownership, integrity and original aggregate limits remain required.
+Actions published immutable v0.22.26 at
+`d67becbd5a09ff51bdd8e2a3d43a9f44ef849f74` after all seven jobs in
+[CI37814772739](https://github.com/alecerf/mynou/actions/runs/37814772739)
+succeeded, including 875 Rust tests. Native Issue36/PR37 retain separate
+Security/QA, four executable/checksum assets, private GHCR digest and branch
+cleanup evidence. Earlier immutable releases remain preserved.
 
 ## Published PAR2 persistence foundation: 0.22.15
 
