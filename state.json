@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 479,
+  "generation": 480,
   "lease": {
     "id": "wake12-quality-recovery-20261008T042605Z",
     "worker": "codex-hourly-20261008T042605Z",
     "role": "quality",
     "issue": 19,
     "acquired_at": "2026-10-08T04:32:33Z",
-    "heartbeat_at": "2026-10-08T04:32:33Z",
-    "expires_at": "2026-10-08T05:17:33Z",
+    "heartbeat_at": "2026-10-08T04:36:25Z",
+    "expires_at": "2026-10-08T05:21:25Z",
     "branch": "work/control-ref-adapter",
-    "commit": "e44bfc7e8319d1be7b0200bfa838d132ffe51efc",
+    "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T04:32:26Z",
+    "at": "2026-10-08T04:36:25Z",
     "issue": 19,
-    "role": "master",
+    "role": "quality",
     "branch": "work/control-ref-adapter",
-    "commit": "e44bfc7e8319d1be7b0200bfa838d132ffe51efc",
+    "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
     "pr": 24,
-    "summary": "Recovered the full native Issue19/PR24 checkpoint from control history5db8cd0 after hourly mechanical CI recovery overwrote it. Native v0.22.19 remains immutable/published at d647; PR24 draft e44 has successful source CI but logical QA rejects incomplete cutover. Found exact recurring cause: published same-source CI is treated as unfinished, then checkpoint_publication replaces all active-work metadata. Preserve adapter and fix this recovery-loss path in the same linked PR before any migration.",
-    "next_action": "Quality: make terminal publication recovery idempotent and preserve useful work through required CI checkpoints; add CI-only regression cases, then distinct Security and complete-diff QA. Live non-branch activation remains blocked until actual hourly writer and safe cutover are proved.",
+    "summary": "Pushed original fix053fb1f1 to existing PR24: terminal published/default-CI recovery no longer rewrites active work; necessary checkpoints retain source-bound evidence and one bounded prior-work handoff. Added four CI-only regression scenarios. No local checks ran. Current VM administration authenticated200 with admin/push, but this is not proof of scheduled-web non-branch writing or live cutover.",
+    "next_action": "Security: inspect complete actual PR24 diff at053fb1f1/base d647, including preserved metadata provenance and terminal CI recovery; then exact-head/base QA using actual Actions. Keep draft while Issue19's cutover criteria remain unfinished.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -1415,6 +1415,34 @@
       "preserved_checkpoint": "5db8cd0adfc08384c5b37980c385478986c59dc3",
       "cause": "recover_publication does not regard same-source published evidence as terminal; checkpoint_publication erases current-work metadata",
       "next": "Fix in PR24; no repeated unsupported cutover."
+    },
+    "recovery_overwrite_fix": {
+      "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
+      "tree": "ed147c34b960d0c51ad4814544e297b285f3560d",
+      "parent": "e44bfc7e8319d1be7b0200bfa838d132ffe51efc",
+      "regressions": 4,
+      "validation": "CI only, pending",
+      "paths": [
+        "engineering/delivery.py",
+        "engineering/lease.py",
+        "engineering/tests/test_organization.py",
+        "engineering/README.md"
+      ]
+    },
+    "administration_boundary": {
+      "observed_at": "2026-10-08T04:32:26Z",
+      "runtime": "current cloud VM",
+      "repository_read_status": 200,
+      "permissions": {
+        "admin": true,
+        "maintain": true,
+        "push": true,
+        "triage": true,
+        "pull": true
+      },
+      "scheduled_web_general_ref_write": "not proved",
+      "live_cutover": "not activated",
+      "secrets_exposed": false
     }
   },
   "attempts": {
