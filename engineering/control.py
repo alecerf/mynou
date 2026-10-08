@@ -64,7 +64,7 @@ def select(state, issues, at):
     if attempt.get("unchanged", 0) >= 3:
         return {"action": "triage", "issue": chosen["number"], "instruction": "Circuit breaker requires a changed approach before implementation resumes."}
     return {"action": "triage" if not labels(chosen) & {"status:ready"} else "work",
-        "issue": chosen["number"], "instruction": "Acquire one role lease and execute one bounded transition."}
+        "issue": chosen["number"], "instruction": "Acquire one role lease; continue ready transitions under execution_mode, checkpointing and releasing between roles."}
 
 
 def recover_native(api, state, at):

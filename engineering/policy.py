@@ -10,12 +10,20 @@ ROOT = Path(__file__).resolve().parent.parent
 TOKEN = re.compile(rb"(?<![A-Za-z0-9])(?:gh[psoru]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{60,255}|sk-(?:proj-)?[A-Za-z0-9_-]{40,255})(?![A-Za-z0-9])")
 
 
+def check_execution(cfg):
+    """Validate policy without confusing continuous work with a permanent lease."""
+    assert cfg["execution_mode"] == "continuous"
+    assert "slice_minutes" not in cfg, "An artificial wake deadline is obsolete"
+    assert cfg["max_active_agents"] == 1
+    assert cfg["lease_minutes"] == 45
+    assert type(cfg["heartbeat_minutes"]) is int and 1 <= cfg["heartbeat_minutes"] <= 15
+    assert cfg["no_progress_limit"] == 3
+
+
 def check(root=ROOT):
     cfg = json.loads((root / ".github/engineering.json").read_text())
-    assert cfg["schema"] == 1 and cfg["max_active_agents"] == 1
-    assert cfg["lease_minutes"] == 45 and cfg["heartbeat_minutes"] <= 15
-    assert cfg["no_progress_limit"] == 3
-    assert type(cfg["slice_minutes"]) is int and 1 <= cfg["slice_minutes"] <= 40
+    assert cfg["schema"] == 1
+    check_execution(cfg)
     catalog = json.loads((root / "engineering/roles.json").read_text())["roles"]
     assert {"master", "triage", "rust", "web", "ux", "security", "qa", "quality"}.issubset(catalog)
     for role, path in catalog.items():

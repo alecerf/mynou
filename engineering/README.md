@@ -20,20 +20,25 @@ worker may run. Role changes require a durable checkpoint, release and new lease
    native control-branch history; never replace it with an empty lock.
 3. Read the selected Issue acceptance and only relevant Skills/code/logs. Acquire
    one role and execute. While the next transition is immediately executable and
-   time remains, checkpoint/release and acquire its role in the same worker.
+   this execution has capacity, checkpoint/release and acquire its role in the same worker.
    Do not end a wake merely because a role finished. Recover the current delivery
    before unrelated work. Use existing branches/PRs rather than duplicating them.
    Master handles missing metadata or new intent.
-4. Commit meaningful progress; push it remotely before ending a slice. Checkpoint
-   the exact remote commit, PR, concise outcome, checks and next action. Release
-   before another role or intentional stop. Renew through checkpoint at least
-   every 15 minutes. Use `slice_minutes` from configuration (currently 40 minutes)
-   as one deadline for the entire wake; switching roles never resets it. Reserve
-   the final five minutes for remote checkpoint and release. Stop earlier for
-   idle, capacity/ownership loss or a real external wait; do not busy-poll or
-   launch another wake/worker to evade the bound. Unexpected worker death leaves
-   commits recoverable and the unchanged 45-minute lease expires. Quota loss is
-   paused capacity, never failed work.
+4. Use `execution_mode: continuous`: there is no application-imposed wake
+   deadline. Finish ready transitions of the current item, then select the next
+   highest-priority executable legitimate work item in this same worker.
+   Recovery/publication waits still precede unrelated work; continuous does not
+   mean inventing work, busy polling or holding a lease while waiting.
+5. Commit and push meaningful progress throughout execution. Checkpoint the exact
+   remote commit, PR, concise outcome, actual checks and next action at least every
+   15 minutes and at role/work boundaries; checkpoint renews the unchanged
+   45-minute lease. Release before another role or intentional stop. Stop for idle,
+   a real external wait, capacity/platform termination or ownership loss. Do not
+   launch another wake/worker to evade platform limits. Save progress proactively,
+   because a platform interruption may prevent a final handoff. Unexpected worker
+   death leaves remote commits/checkpoints recoverable; the lease expires and the
+   next supported wake recovers first. Quota loss is paused capacity, never failed
+   work. No infinite execution or exact quota boundary can be guaranteed.
 
 Native backlog: [managed Issues](https://github.com/alecerf/mynou/issues?q=is%3Aopen+label%3Aagent-work).
 [Current work](https://github.com/alecerf/mynou/issues?q=is%3Aopen+label%3Aagent-work+label%3Astatus%3Ain-progress)
@@ -218,11 +223,14 @@ repeat branch-health sweeps: these run daily at 03:47 UTC or on explicit dispatc
 
 ## Scheduling, capacity and real limitations
 
-ChatGPT Scheduled Tasks can wake a bounded recovery-first Master through the
-connected GitHub app. Hourly is the platform's highest supported task frequency;
-the existing enabled task keeps that cadence. Each wake spends its configured
-budget on successive ready transitions, with separate serial role leases and a
-single deadline, rather than one role per hour. The mechanical GitHub fallback
+ChatGPT Scheduled Tasks can wake a recovery-first Master through the connected
+GitHub app. Hourly is the platform's highest supported task frequency; the existing
+enabled task keeps that cadence as a recovery trigger. Execution continues useful
+ready work without a fixed 40-minute stop, with separate serial role leases and
+15-minute checkpoints. A platform execution still has finite, uncontrolled limits;
+removing the application deadline does not guarantee continuous background compute.
+A scheduled wake that encounters any valid lease exits quietly, even if it is this
+worker's lease. The mechanical GitHub fallback
 also runs hourly, with event-triggered delivery retained and a daily health sweep.
 It does not execute an AI worker. Start every wake with admission;
 exit if busy. Web scheduled tasks have connected tools, not a durable local

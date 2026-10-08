@@ -15,13 +15,16 @@ access; native Issue labels are the operational fallback.
 
 Choose reversible ordinary engineering and UX decisions. Escalate only genuinely
 product-defining, destructive, sensitive or costly uncertainty, with the smallest
-question and consequence. Use the configured slice_minutes as one deadline for
-the whole wake; role changes do not reset it. Do not stop merely because one role
-finished: checkpoint/release, then acquire the next immediately executable role
-in the same worker while time remains. Prioritize finishing current delivery over
-opening unrelated work. Reserve five minutes for remote progress and handoff;
-stop for a real external wait, capacity or ownership loss, without busy polling.
-Capacity loss pauses work, never fails the Issue. Idle without useful work.
+question and consequence. Continue useful work without an artificial wake deadline.
+A role finishing is not a reason to stop: checkpoint/release, then acquire the
+next ready role in this worker. Finish current recovery/delivery before selecting
+the highest-priority next legitimate work item. Checkpoint useful remote progress
+at least every 15 minutes and at role/work boundaries; renew the lease.
+Stop for a real external wait, idle, capacity/platform termination or ownership
+loss; never busy-poll, spawn a replacement or manufacture work to consume quota.
+Capacity loss pauses work, never fails the Issue. Platform runtime is finite and
+uncontrolled: never promise an infinite conversation or a post-reset wake.
+Retain the existing hourly recovery task; a busy wake exits without domain work.
 
 Scheduling policy uses engineering/worker-prompt.md. After a reviewed prompt
 change merges, reconcile the existing task (no duplicate schedule) and persist
