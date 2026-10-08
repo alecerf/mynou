@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 457,
+  "generation": 458,
   "lease": {
     "id": "wake11-security-control-ref-review-20261008T032912Z",
     "worker": "codex-hourly-20261008T032912Z",
     "role": "security",
     "issue": 19,
     "acquired_at": "2026-10-08T03:48:20Z",
-    "heartbeat_at": "2026-10-08T03:48:20Z",
-    "expires_at": "2026-10-08T04:33:20Z",
+    "heartbeat_at": "2026-10-08T03:49:45Z",
+    "expires_at": "2026-10-08T04:34:45Z",
     "branch": "work/control-ref-adapter",
     "commit": "21fca94bb56dc0cdb0dcbf50e134284d54c91f14",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T03:48:12Z",
+    "at": "2026-10-08T03:49:45Z",
     "issue": 19,
-    "role": "quality",
+    "role": "security",
     "branch": "work/control-ref-adapter",
     "commit": "21fca94bb56dc0cdb0dcbf50e134284d54c91f14",
     "pr": 24,
-    "summary": "Original adapter source 21fca94bb56dc0cdb0dcbf50e134284d54c91f14 pushed on work/control-ref-adapter, linked draft PR24/base d647be6edfd6e892474b2602bbc9047ad4047c2f. Ten paths prepare canonical branch/notes control, native response identity, non-force CAS, review ancestry and cleanup guards with 11 CI-only regression scenarios. No live migration, task update, release mutation or local validation. CI/review still pending.",
-    "next_action": "Separate Security lease at exact PR24 head/base: inspect the complete diff and actual source CI; then QA independently reviews and preserves any unfinished acceptance. Draft must not merge before actual non-branch access and safe cutover are implemented.",
+    "summary": "Security independently inspected all ten native PR24 changed-file patches at 21fca94/base d647. Reject preparatory adapter until control configuration cannot target the product default branch and legacy branch aliases cannot identify notes references. Current live authority remains unchanged; draft migration is not complete. Source CI is still running, not certified.",
+    "next_action": "Release Security and acquire Quality at the exact head to fix these two concrete validation findings with CI-only regressions; re-review the full corrected diff.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -1129,6 +1129,32 @@
       "live_migration": false,
       "release_unchanged": "v0.22.19",
       "next": "Complete-diff Security, CI evidence, distinct QA; then implement verified cutover without duplicate PR."
+    },
+    "control_storage_security_review": {
+      "head": "21fca94bb56dc0cdb0dcbf50e134284d54c91f14",
+      "base": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+      "paths": [
+        ".github/engineering.json",
+        "engineering/README.md",
+        "engineering/control-storage.md",
+        "engineering/control.py",
+        "engineering/delivery.py",
+        "engineering/github.py",
+        "engineering/lease.py",
+        "engineering/policy.py",
+        "engineering/qa.py",
+        "engineering/tests/test_control_refs.py"
+      ],
+      "verdict": "rejected",
+      "findings": [
+        "engineering/github.py: control_reference accepts the repository default branch as control storage. A configuration mistake can let state-only control commits replace the product tree on trunk. Reject any heads authority equal to the configured default branch before native I/O and add CI coverage.",
+        "engineering/github.py: the legacy control_branch alias accepts a fully qualified notes ref. Legacy branch-only workers interpret that value differently. Restrict the legacy alias to branch references; require explicit control_ref for notes and test fail-closed validation."
+      ],
+      "ci_snapshot": {
+        "run": 37724396168,
+        "status": "in_progress"
+      },
+      "live_migration": false
     }
   },
   "attempts": {
