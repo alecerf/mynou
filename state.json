@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 586,
+  "generation": 587,
   "lease": {
     "id": "codex-hourly-20261008093523Z-master-1791452417000",
     "worker": "codex-hourly-20261008093523Z",
     "role": "master",
     "issue": 19,
     "acquired_at": "2026-10-08T09:40:17Z",
-    "heartbeat_at": "2026-10-08T09:40:17Z",
-    "expires_at": "2026-10-08T10:25:17Z",
+    "heartbeat_at": "2026-10-08T09:40:54Z",
+    "expires_at": "2026-10-08T10:25:54Z",
     "branch": "work/control-ref-adapter",
     "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T09:03:58Z",
+    "at": "2026-10-08T09:40:54Z",
     "issue": 19,
     "role": "master",
     "branch": "work/control-ref-adapter",
     "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
     "pr": 24,
-    "summary": "Master recovered highest-readyuserIssue19 and preserved draftPR24/branchwork/control-ref-adapter at053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c. ActualoldCI37728256136 succeeded, but QA5451528384 rejects missinglivewriter/fence/interruption/taskcutover; nativePR reportsbased647 while verifieddefaultnowcafac/v0.22.21. Connectedwrite wrappers stillbranch-named; VMREST succeededfornative19→28dependency, notschedulednoteswrite proof. Taskpeek/update toolsareexposed, no lookup/update/duplicate made. Changedproposal: investigatedefaultActions nativecomment transportforarbitrary-ref administration withexistingverifiedcomments/default-onlywrite mechanisms; unimplemented/unproved. No migrationactivation/sourcechange or rerungreenoldCI.",
-    "next_action": "Nextwake recover19/PR24, preserve053branch and refreshit againstcafac carryingpublicsource-release/security/durability repairs andfreshversion. MinimumSecurity-design→Qualityimplementation for a narrow authenticated default-Actions control-command bridge if supported: bounded commands, exactcanonicalref/expectedSHA/role/owner, replay/circuit checks, soleparentnonforce CAS, no PRcode/write-token execution or secondAI. Proveactualnativecomment→CI arbitrary-ref writes beforecutover. Implement staging/failclosedlegacy fence/restart checks; freshcompleteSecurity/QA/CI; onlythenreconcileexistingtask viaactualpeek/update, neverduplicate. Staycanonicalbranch untilallproved.",
+    "summary": "Recovered native Issue19/PR24 at053fb1, all blockers25/28 closed and verified cafac v0.22.21 publication terminal. Existing complete-diff QA5451528384 remains rejected for missing live writer/fence/task cutover. No source/authority/task change. Select authenticated default-only comment bridge design under separate Security role; preserve existing draft.",
+    "next_action": "ReleaseMaster; acquireSecurity19/24 for narrow native comment control transport threat model and concrete bounded implementation contract.",
     "publication": {
       "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
       "state": "published",
@@ -131,7 +131,7 @@
       "native_scanning_admin": "Prior HTTP403 integration denial remains documented; no repeated request or enabled native-setting claim."
     },
     "delivery": {
-      "state": "corrective-merged-awaiting-publication",
+      "state": "publication-verified",
       "pr": 29,
       "source_head": "b028b1dd058842d7ebc551d4f822519d9d4d1e85",
       "merge_commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
