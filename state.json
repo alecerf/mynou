@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 382,
-  "lease": null,
+  "generation": 383,
+  "lease": {
+    "id": "wake9-quality-diagnostics-20261008T013100Z",
+    "worker": "codex-hourly-20261008T012904Z",
+    "role": "quality",
+    "issue": 18,
+    "acquired_at": "2026-10-08T01:31:11Z",
+    "heartbeat_at": "2026-10-08T01:31:11Z",
+    "expires_at": "2026-10-08T02:16:11Z",
+    "branch": "trunk",
+    "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
+    "pr": 21
+  },
   "checkpoint": {
     "at": "2026-10-08T01:31:04Z",
     "issue": 18,
