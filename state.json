@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 431,
+  "generation": 432,
   "lease": {
     "id": "wake10-master-cleanup-delivery-20261008T024700Z",
     "worker": "codex-hourly-20261008T023108Z",
     "role": "master",
     "issue": 18,
     "acquired_at": "2026-10-08T02:47:18Z",
-    "heartbeat_at": "2026-10-08T02:47:18Z",
-    "expires_at": "2026-10-08T03:32:18Z",
+    "heartbeat_at": "2026-10-08T02:48:43Z",
+    "expires_at": "2026-10-08T03:33:43Z",
     "branch": "work/container-demo-cleanup",
     "commit": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
     "pr": 23
   },
   "checkpoint": {
-    "at": "2026-10-08T02:47:10Z",
+    "at": "2026-10-08T02:48:43Z",
     "issue": 18,
-    "role": "qa",
+    "role": "master",
     "branch": "work/container-demo-cleanup",
     "commit": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
     "pr": 23,
-    "summary": "Independent logical QA reviewed all thirteen current paths; every required exact-source CI job passed. Actual shared nonroot1001:1001 Docker demo completed cleanup; preserved default1000demo,864Rust/22infra/53organization tests and all native/package gates passed. No blocking QA findings; machine gate/default19 publication pending.",
-    "next_action": "Submit native exact-head/base QA COMMENT; release and acquire Master, finalize ready PR23 and native Issue labels, verify actual machine gate/source fences and merge only when allgreen.",
+    "summary": "PR23 exact-source CI and independent QA5450786129/Security5450767410 are actually green. Real shared nonroot1001:1001 Docker cleanup completed, production1000 gate retained. Final PR description/Issue18 labels updated; objective gate and default19 publication pending.",
+    "next_action": "Mark PR23 ready; inspect actual fresh organization/agent-qa-review and all native required jobs, source/base integration and conversations; merge corrective PR only with every objective gategreen.",
     "publication": {
       "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
       "state": "ci-failed",
@@ -327,14 +327,15 @@
     "qa": {
       "schema": 1,
       "role": "qa",
-      "head_sha": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
-      "base_sha": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
-      "lease_checkpoint": "2043869e5ceb33db505ff758b48811cb9d77f219",
+      "head_sha": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
+      "base_sha": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "lease_checkpoint": "d7274428db7398300d3057e9ef03ca1e1dd4adaa",
       "verdict": "passed",
-      "summary": "Independent logical QA reviewed the complete twelve-path correction after all required source CI jobs passed. Explicit private source/package identity checks replace an absent optional metadata assumption while collision, privacy, digest, binary and runtime guards remain. No blocking findings; actual default publication is still required to finish Issue18.",
+      "summary": "Independent logical QA inspected all thirteen actual diff paths and source/runtime/output boundaries after every required source CI job passed. The real shared Docker demo completed cleanup as nonroot1001:1001 while configured-user1000 coverage remained. Failure regressions and all product gates passed; no blocking findings. Default19 publication remains required for Issue18.",
       "reviewed_paths": [
         ".github/scripts/publish_container.py",
         ".github/scripts/test_publication.py",
+        ".github/workflows/ci.yml",
         "Cargo.lock",
         "Cargo.toml",
         "README.md",
@@ -343,25 +344,26 @@
         "docs/deployment.md",
         "docs/macos.md",
         "docs/next-release.md",
-        "docs/releases/0.22.18.md",
+        "docs/releases/0.22.19.md",
         "docs/validation.md"
       ],
       "acceptance": [
-        "Reviewed all twelve current native diff paths and the full publisher flow, meaningful CI-only regressions, version/manifests/Compose and English installation/recovery documentation.",
-        "Trusted workflow repository ID/name, private native repository and strict private package owner/name/type/stable positive ID are verified; public, foreign, malformed or substituted identities fail closed.",
-        "Reported conflicting association remains rejected. Omitted optional metadata is explicitly not_exposed and is never claimed to prove UI linkage; actual partial17 tags remain preserved by fresh18 source/version.",
-        "Original same-run checked image, nonroot runtime/OCI source identity, preflight collision refusal, exact-tag retry reuse, re-pulled content digest, executable SHA and isolated demo checks are preserved.",
-        "Temporary diagnostic permission/job/helper are absent from final diff; workflow equals base. Safe Rust std, zero Cargo dependencies, no product source code/dependency changes or manual publication.",
-        "All required Mynou CI and Engineering organization jobs passed at exact head. Release was correctly skipped on PR; machine QA gate and later default publication remain distinct pending delivery transitions."
+        "Complete native current diff, Issue18 acceptance/recovery evidence, full publisher flow, workflow permissions, meaningful regression behavior and all English version/deployment/recovery docs reviewed independently.",
+        "Real PR package CI executed the identical shared verification cleanup path with private runner-owned bind mount and nonroot1001:1001: ready, Plex confirmed and cleanup completed.",
+        "Production image1000:1000 inspection and configured-user1000 package runtime demonstration retained; readonly root/network none/cap-drop/no-new-privileges remain mandatory.",
+        "Temporary demo and credential workspaces close successfully before publication JSON/GITHUB_OUTPUT/stdout. The actual CI cleanup-error regression left both proof and existing Actions output unchanged.",
+        "Actual root refusal, private mount removal/ownership and readonly local-image-selector regression cases passed. Prior package/source/private identity, collision, retry, pulled-byte and failed-demo cases still pass.",
+        "All required source CI jobs green; safe Rust std and zero Cargo dependencies retained. New19 source/version preserves actual17/18images and earlier immutable assets.",
+        "No actual default19 publication or immutable release inferred from PR. Private prior18image proof and its later failed cleanup are represented separately; meaningful change has distinct scope-bound Security and QA phases."
       ],
       "evidence": [
-        "Native PR22 open draft exact head1cbe42828fe1bf594cd6458796eefa65c3a0096d/base551e82d2c4158b9af2080081bbac3e1d18c949ea,12changed files; native review threads empty.",
-        "Mynou CI37714490728 completed SUCCESS at exact head: validate113107741065, four native builds113107740929/113107741059/113107741149/113107741209, package113108584149 all SUCCESS; release113108694770 SKIPPED.",
-        "Actual validate log:18 infrastructure tests including all four new private context/package substitution cases,53 organization tests,63Rust harnesses,864passed/0failed in99.845s; dependency graph/formatting/Clippy/source syntax steps all SUCCESS.",
-        "Actual ARM64/Intel macOS logs prove native Mach-O architecture and ready/Plex-confirmed standalone demos; Linux musl demo also ready/Plex-confirmed.",
-        "Actual package log proves checked readonly network-none/cap-drop/no-new-privileges container demo ready/Plex-confirmed and SHA256SUMS verifies all three0.22.18 executables.",
-        "Engineering37714490697 organization113107740865 SUCCESS at same source; agent-qa-review correctly SKIPPED while draft. Actual complete-diff Security COMMENT5450457499 bound to historical Security lease3f203a1c02bf5aacadfc914e98dce5512c1de876.",
-        "Read-only diagnostic37713788379/job113105507230 retained actual private partial17 image digest675ef89d1bed913973e7682e9633e8fb3b229eecc5d98dc8a132f1b49af2040c and absent metadata. No default18/private registry/release publication success claimed."
+        "Native PR23 exact sourcef3483b9c6ba772285db18ebc7fc276cc768ad00a/baseebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114,13files,empty native review threads.",
+        "Mynou CI37719111412 exact source completedSUCCESS: validate113122402761, four builds113122402899/113122402945/113122403003/113122403023 and package113123185960 allSUCCESS. PR release113123364690 correctlySKIPPED.",
+        "Actual validate log:22infrastructure tests including all4new cleanup/root/output/selector cases,53organization tests and63Rust harnesses;864passed/0failed in103.080s. Dependency graph,formatting,Clippy and script syntax stepsSUCCESS.",
+        "Actual package log02:45:13Z: cleanup=completed,plex_scan_confirmed=true,state=ready,user=1001:1001 after shared --verify-demo. Separate default1000container demo reachedready/Plextrue. All3v19 executable checksumsOK.",
+        "Native ARM64/Intel macOS logs prove Mach-O arm64/x86_64 and ready/Plex-confirmed standalone demos. Linux musl demo also ready/Plex-confirmed; nativeGNU target succeeded.",
+        "Latest Engineering37719273585 organization113122923470SUCCESS; QA gate113122967344SKIPPED whiledraft. Actual Security5450767410 uses historical7fe67496ee6f38473324d5372c0a545594a2224d heldSecurity lease for the same Issue18/PR23/source within acquisition/expiration.",
+        "Immutable16release406222389 all11native assets match preserved baseline. Prior18default37715379732 verified private image991a217cd046c00697b975bff35b4bc23d4f7a85f0b4d14b90cd904684c7cf68 then failed cleanup; native18release404. No overwrite/manual publication/local validation."
       ],
       "findings": []
     },
@@ -372,14 +374,15 @@
     "security": {
       "schema": 1,
       "role": "security",
-      "head_sha": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
-      "base_sha": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
-      "lease_checkpoint": "3f203a1c02bf5aacadfc914e98dce5512c1de876",
+      "head_sha": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
+      "base_sha": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "lease_checkpoint": "7fe67496ee6f38473324d5372c0a545594a2224d",
       "verdict": "passed",
-      "summary": "Complete corrected diff replaces a missing optional association assumption with supported explicit private source-repository and package identity/provenance checks. Reported conflicting links still fail; omitted UI linkage is recorded unverified. New source/version preserves actual partial17images and earlier immutable assets. No blocking Security findings; required CI/QA and later actual default publication remain prerequisites.",
+      "summary": "Complete thirteen-path Security review found no blocking concerns. Verification uses a private runner-owned synthetic mount with explicit nonroot UID/GID, retains configured-user1000 validation and all image/source/privacy/collision guards, and emits proof only after successful cleanup. Actual source CI and independent QA remain prerequisites; no new release success claimed.",
       "reviewed_paths": [
         ".github/scripts/publish_container.py",
         ".github/scripts/test_publication.py",
+        ".github/workflows/ci.yml",
         "Cargo.lock",
         "Cargo.toml",
         "README.md",
@@ -388,23 +391,24 @@
         "docs/deployment.md",
         "docs/macos.md",
         "docs/next-release.md",
-        "docs/releases/0.22.18.md",
+        "docs/releases/0.22.19.md",
         "docs/validation.md"
       ],
       "acceptance": [
-        "Actual twelve-path diff reviewed, including all metadata failure/identity paths, regression changes, manifests, Compose and English installation/recovery/release docs.",
-        "Exact trusted default name/ref/event/source plus bounded numeric GITHUB_REPOSITORY_ID are required. Native private repository ID/full_name must match before any Docker operation.",
-        "Private package owner/name/container type/positive ID are mandatory; same package ID required after pushes. Reported wrong/malformed repository full_name or ID remains a hard failure; missing field is explicitly not_exposed.",
-        "All preflight source/version collisions, private stdin credentials, same-run checked image, OCI source/revision/version/nonroot runtime, digest pull, executable SHA and isolated demo gates remain unchanged.",
-        "Actual diagnostic proof identifies partial0.22.17 images;0.22.18 avoids their replacement. Original privacy checks and objective gates stay; temporary package-read PR job/helper retired from final source.",
-        "No unsupported GraphQL granular-registry lookup, UI linkage claim, visibility mutation, deletion, token output or product dependency added. New meaningful CI regressions challenge private context/package substitution and omitted/conflicting metadata."
+        "Reviewed every actual changed path, full publisher/source/package guards, workflow permissions, regression cases, version/manifests and English installation/recovery/release documentation.",
+        "Shared synthetic demo rejects root UID/GID, mounts only a fresh private0700 runner-owned directory, retains readonly root/network none/cap-drop ALL/no-new-privileges and removes the tree before returning.",
+        "New readonly CLI accepts only exact local Mynou version tags, performs no GHCR lookup/login/push or publication output and is reused by PR package CI with unchanged read-only permissions.",
+        "Configured-user1000 package demonstration and inspected production1000:1000 image policy remain separate mandatory gates; verification-only UID override does not change product or installation defaults.",
+        "Publication JSON/GITHUB_OUTPUT/stdout are emitted after both demo and credential TemporaryDirectory contexts close successfully. Cleanup errors still fail visibly; no privileged cleanup, ignored errors or exposed credentials.",
+        "Default-only exact private repository/package identity, OCI labels/source/runtime, conflicting-tag refusal, pulled digest/executable SHA, immutable prior releases and std-only product constraints remain unchanged.",
+        "New19 source/version avoids replacement of actually observed17/18 images. Meaningful CI cases challenge mount removal/ownership, root identity, cleanup failure without proof and readonly image selector."
       ],
       "evidence": [
-        "Native complete PR22 twelve-path diff at1cbe42828fe1bf594cd6458796eefa65c3a0096d/551e82d2c4158b9af2080081bbac3e1d18c949ea.",
-        "Actual read-only registry-inspection113105507230 inCI37713788379 succeeded with contentsread/packagesread: private expectedpackage,1completeversionpage, both17/source tags same675ef89d1bed913973e7682e9633e8fb3b229eecc5d98dc8a132f1b49af2040c digest, no repository metadata; publication_verified=false.",
-        "Original diagnostic CI37713788379 all six required validate/four-build/package jobs succeeded; PR release correctly skipped. Corrective CI37714490728 remains inprogress and Engineering37714490697 succeeded while draft; no new tests or publication success inferred.",
-        "Native Issue18 acceptance now documents the supported identity/provenance proof and its unverified UI association boundary. Exact private source repo ID1403318143 is established by native repository metadata.",
-        "Official GitHub Packages documentation: optional REST package repository metadata; granular Container registry has no supported GraphQL Packages API. Actual observed output, not API invention, drove the correction."
+        "Native PR23 exact headf3483b9c6ba772285db18ebc7fc276cc768ad00a/baseebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114; complete13-path native diff and current publisher/workflow inspected.",
+        "Actual prior defaultCI37715379732 release113111514725 verified private package15695108/repo1403318143/image991a217cd046c00697b975bff35b4bc23d4f7a85f0b4d14b90cd904684c7cf68/binary1c6ddb01eeeecfc480e43a5cd9d776802d5a2ffa6c7a524058d27a9940bbd80e then failed host cleanup; native18 release404.",
+        "Native immutable16 release406222389 and all11asset IDs/names/sizes/digests match preserved baseline. No image or release overwrite performed.",
+        "SourceCI37719111412 was inprogress when admitted; Engineering37719111541 succeeded while draft. New source tests/cleanup/default19 publication are not inferred from source or prior18 proof.",
+        "Separate Security planning checkpoint4f60b57f52c712c69840aff8b1daaf331bcac019 rejected root/sudo/ignored-cleanup/permission changes; this later scoped Security phase inspected the actual implementation."
       ],
       "findings": []
     },
@@ -698,30 +702,20 @@
     },
     "qa_native": {
       "success": true,
-      "review_id": 5450500096
+      "review_id": 5450786129
     },
     "security_native": {
       "success": true,
-      "review_id": 5450457499
+      "review_id": 5450767410
     },
     "delivery": {
-      "pr": 22,
-      "head": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
-      "base": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
-      "gate_run": 37715269759,
-      "gate_job": 113110225198,
-      "gate_conclusion": "success",
-      "ci": 37714490728,
-      "merged": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
-      "merge_tree": "59fa9612be0dbc8bb27ba6872d86bf8a624c3e8e",
-      "parents": [
-        "551e82d2c4158b9af2080081bbac3e1d18c949ea",
-        "1cbe42828fe1bf594cd6458796eefa65c3a0096d"
-      ],
-      "merged_at": "2026-10-08T01:56:13Z",
-      "earlier_release_unchanged": true,
-      "publication_verified": false,
-      "correction_for_failed_default": "551e82d2c4158b9af2080081bbac3e1d18c949ea"
+      "pr": 23,
+      "head": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
+      "base": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "ci": 37719111412,
+      "qa_review_id": 5450786129,
+      "security_review_id": 5450767410,
+      "publication_verified": false
     },
     "previous_assets_verified_at": "2026-10-08T01:55:25Z",
     "previous_failed_publication": {
