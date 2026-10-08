@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 422,
+  "generation": 423,
   "lease": {
     "id": "wake10-quality-cleanup-fix-20261008T023800Z",
     "worker": "codex-hourly-20261008T023108Z",
     "role": "quality",
     "issue": 18,
     "acquired_at": "2026-10-08T02:37:42Z",
-    "heartbeat_at": "2026-10-08T02:41:25Z",
-    "expires_at": "2026-10-08T03:26:25Z",
+    "heartbeat_at": "2026-10-08T02:41:34Z",
+    "expires_at": "2026-10-08T03:26:34Z",
     "branch": "work/container-demo-cleanup",
-    "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
-    "pr": null
+    "commit": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
+    "pr": 23
   },
   "checkpoint": {
-    "at": "2026-10-08T02:41:25Z",
+    "at": "2026-10-08T02:41:34Z",
     "issue": 18,
     "role": "quality",
     "branch": "work/container-demo-cleanup",
-    "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
-    "pr": null,
-    "summary": "Quality implementing bounded19 cleanup correction with shared private nonroot runner-owned demo, preserved configured1000 package gate, truthful post-cleanup output and four meaningful CI regressions. Existing native branches only trunk/control; no active PR or partial work to discard.",
-    "next_action": "Create original source commit and one draft PR linked to Issue18; let CI execute actual shared cleanup, then separate complete-diff Security and independent QA.",
+    "commit": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
+    "pr": 23,
+    "summary": "Original13-path cleanup correction committed remotely and draft PR23 links existing Issue18. Shared private nonroot verification is exercised by PR CI; production1000 factory check preserved, post-cleanup proof ordering and four regressions added. Required CI not yet observed; no tests or publication success claimed.",
+    "next_action": "Release Quality and acquire Security at exact new head/base for complete native diff review; then QA after actual required source CI is green.",
     "publication": {
       "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
       "state": "ci-failed",
@@ -521,8 +521,9 @@
     "recovery_source": {
       "branch": "work/container-demo-cleanup",
       "base": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
-      "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
-      "pr": null,
+      "commit": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
+      "tree": "a81965e2829d3bec4051a9c17d69ca2b10c7d26f",
+      "pr": 23,
       "issue": 18,
       "version": "0.22.19",
       "preserved_previous_pr": 22
