@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 695,
+  "generation": 696,
   "lease": {
     "id": "codex-continuous-policy-20261008131744Z-qa-1791465923000",
     "worker": "codex-continuous-policy-20261008131744Z",
     "role": "qa",
     "issue": 34,
     "acquired_at": "2026-10-08T13:25:23Z",
-    "heartbeat_at": "2026-10-08T13:25:23Z",
-    "expires_at": "2026-10-08T14:10:23Z",
+    "heartbeat_at": "2026-10-08T13:27:27Z",
+    "expires_at": "2026-10-08T14:12:27Z",
     "branch": "work/continuous-engineering",
     "commit": "f12a37e873561fbd3de3ccdd30883b9f41c2a4c3",
     "pr": 35
   },
   "checkpoint": {
-    "at": "2026-10-08T13:25:13Z",
+    "at": "2026-10-08T13:27:27Z",
     "issue": 34,
-    "role": "security",
+    "role": "qa",
     "branch": "work/continuous-engineering",
     "commit": "f12a37e873561fbd3de3ccdd30883b9f41c2a4c3",
     "pr": 35,
-    "summary": "Actual separate Securityreview5457288321 passed complete11-path exactsource/base underce4db06ac9fb945f9c8c5957c59343384359922a; CIpending is not green, liveTaskunchanged. Originalpolicycommit and Issue19migrationwork preserved.",
-    "next_action": "Distinct QA34 at exacthead/base reads fullnative diff, acceptance and actualrequiredCI logs. Stop/handoff for a realCIwait; no fakepass or busy polling.",
+    "summary": "QA34 independently read all11 actualnativepaths, nativeacceptance and Security5457288321; actualorganization113333827464 log88passed including4new continuousowner scenarios; source-history113333827732 log5122objects/0recognizedfindings/gaps inselectedscope. No codefinding identified; remaining requiredCI and QA objective gate stillawaitnativeevidence. LiveTaskunchanged.",
+    "next_action": "Inspectactual remainingCI results/logs once ready; QApassonly allrequiredCIgreen, thenfreshgate/freshdefault/head delivery. After reviewedmerge, actualexistingTaskpromptonlyupdate; persistresponse and preserve hourlyschedule/timezone and migration19.",
     "publication": {
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "state": "published",
@@ -463,7 +463,12 @@
       "source": "f12a37e873561fbd3de3ccdd30883b9f41c2a4c3",
       "tree": "5c450890a2b6bedf8d8d64fd99a0cd38d89ff6d6",
       "security_review": 5457288321,
-      "security_checkpoint": "ce4db06ac9fb945f9c8c5957c59343384359922a"
+      "security_checkpoint": "ce4db06ac9fb945f9c8c5957c59343384359922a",
+      "qa_state": "complete-diff-reviewed-awaiting-required-ci",
+      "organization_job": 113333827464,
+      "organization_passed": 88,
+      "history_job": 113333827732,
+      "git_objects": 5122
     },
     "previous_checkpoint": {
       "at": "2026-10-08T13:23:15Z",
