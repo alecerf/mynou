@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 409,
-  "lease": {
-    "id": "wake9-quality-cleanup-registry-20261008T015700Z",
-    "worker": "codex-hourly-20261008T012904Z",
-    "role": "quality",
-    "issue": 18,
-    "acquired_at": "2026-10-08T01:57:39Z",
-    "heartbeat_at": "2026-10-08T01:58:35Z",
-    "expires_at": "2026-10-08T02:43:35Z",
-    "branch": "trunk",
-    "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
-    "pr": 22
-  },
+  "generation": 410,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-08T01:58:35Z",
     "issue": 18,
