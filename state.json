@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 867,
+  "generation": 868,
   "lease": {
     "id": "codex-recovery-20261008T222604Z-master-920555b2-5aef-4325-955d-26d044030914",
     "worker": "codex-recovery-20261008T222604Z",
     "role": "master",
     "issue": 50,
     "acquired_at": "2026-10-08T22:44:24Z",
-    "heartbeat_at": "2026-10-08T22:45:52Z",
-    "expires_at": "2026-10-08T23:30:52Z",
+    "heartbeat_at": "2026-10-08T22:47:03Z",
+    "expires_at": "2026-10-08T23:32:03Z",
     "branch": "trunk",
-    "commit": "f34d827e47835da589eb8333199e88e035dcb410",
-    "pr": null
+    "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
+    "pr": 51
   },
   "checkpoint": {
-    "at": "2026-10-08T22:45:52Z",
+    "at": "2026-10-08T22:47:03Z",
     "issue": 50,
     "role": "master",
     "branch": "trunk",
-    "commit": "f34d827e47835da589eb8333199e88e035dcb410",
-    "pr": null,
-    "summary": "Master50 pre-merge fences hold: PR51 open/ready at original head80b0d3eb17ce6df583643060b5cce990f53dd1ef/basef34d827e47835da589eb8333199e88e035dcb410, native default unchanged, sole source parent f34d/tree5e0e9a39a490ff10020a1d5d6a87c38c48376c35, zero unresolved threads. Actual objective gate113578227157/run37855290440 completed success and accepted native QA5463751243/Security5463717433. All latest configured required CI/build/package/organization/source-history/actions-logs and actual CodeQL success; older superseded gates cancelled truthfully, no approval identity fabricated. No local checks; merge/publication not yet claimed.",
-    "next_action": "Expected-head merge PR51 at80b0d3eb17ce6df583643060b5cce990f53dd1ef without bypass, then bind this default-scope lease/checkpoint to actual native merge commit and PR51. Preserve44/49 and source branches until actual current-default Actions publication/receipt and safe cleanup; stop/release at a real external wait.",
+    "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
+    "pr": 51,
+    "summary": "PR51 actually merged2026-10-08T22:46:14Z at current native trunk b11d88d5e9dd67d45980ba6c85716811dd6d3101/tree5e0e9a39a490ff10020a1d5d6a87c38c48376c35, exact parents f34d827e47835da589eb8333199e88e035dcb410 and original80b0d3eb17ce6df583643060b5cce990f53dd1ef. Source Security5463717433/QA5463751243 and objective gate113578227157/run37855290440 passed, all required current source checks green. Actual defaultCI37855541518 and Security37855541483 in progress; defaultEngineering37855541574 success, native delivery37855562502 in progress. This is an external Actions publication wait, not quota failure/completion. No v0.22.30release/private-proof/reconciliation claim; old v0.22.29/PR49/source branch preserved. Native50 stays open with44blocked; Safari48 remains next after recovery. No local checks or CI dispatch duplication.",
+    "next_action": "Release this exact default-bound Master lease for native Actions publication/reconciliation. On the next recovery wake inspect actual CI37855541518, immutable current-default v0.22.30release/source-run-attempt receipt/private proof and durable checkpoint; recover actual failures safely without repeating unchanged attempts. Then complete50/44 and safe merged-branch cleanup under Quality before Triage of user Safari48. No busy-poll or replacement worker.",
     "publication": {
       "commit": "f34d827e47835da589eb8333199e88e035dcb410",
       "state": "publication-unverified",
@@ -473,14 +473,14 @@
       "publication_pr_handoff": 6062225589
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T22:43:22Z",
+      "at": "2026-10-08T22:45:52Z",
       "issue": 50,
-      "role": "qa",
-      "branch": "work/50-canonical-rest",
-      "commit": "80b0d3eb17ce6df583643060b5cce990f53dd1ef",
-      "pr": 51,
-      "summary": "QA independently reviewed all 8 current native PR51 paths at head80b0d3eb17ce6df583643060b5cce990f53dd1ef/basef34d827e47835da589eb8333199e88e035dcb410. Canonical empty-root correction preserves child/query/payload transport; bounded HTTP diagnostics exclude raw exceptions/secrets and retain fail-closed recovery/ownership release. All required source CI37854519506 jobs green: validate887Rust/0fail/64harnesses,24scheduler and168organization tests,4platform builds/package; the3new regressions passed through real REST/request and safe failure paths. Security5463717433 passed. Audit37854519524 completed success:3198reachableobjects/0selected-pattern findings/gaps and1039visible completed attempts/2933logmembers/0findings/gaps at inventory; live runs excluded as reported. CodeQL37854516493 success,0reviewthreads. No source finding; no local checks, source merge, live proof reconciliation orv0.22.30publication claimed.",
-      "next_action": "Submit exact-head/base native QA COMMENT passed anchored to this QA checkpoint; release QA, acquire Master on trunk, verify latest objective QA gate and all current required checks before expected-head merge. Recover actual Actions publication; preserve44/49 until verified receipt and cleanup."
+      "role": "master",
+      "branch": "trunk",
+      "commit": "f34d827e47835da589eb8333199e88e035dcb410",
+      "pr": null,
+      "summary": "Master50 pre-merge fences hold: PR51 open/ready at original head80b0d3eb17ce6df583643060b5cce990f53dd1ef/basef34d827e47835da589eb8333199e88e035dcb410, native default unchanged, sole source parent f34d/tree5e0e9a39a490ff10020a1d5d6a87c38c48376c35, zero unresolved threads. Actual objective gate113578227157/run37855290440 completed success and accepted native QA5463751243/Security5463717433. All latest configured required CI/build/package/organization/source-history/actions-logs and actual CodeQL success; older superseded gates cancelled truthfully, no approval identity fabricated. No local checks; merge/publication not yet claimed.",
+      "next_action": "Expected-head merge PR51 at80b0d3eb17ce6df583643060b5cce990f53dd1ef without bypass, then bind this default-scope lease/checkpoint to actual native merge commit and PR51. Preserve44/49 and source branches until actual current-default Actions publication/receipt and safe cleanup; stop/release at a real external wait."
     },
     "task_reconciliation": {
       "issue": 19,
