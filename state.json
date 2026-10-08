@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 658,
+  "generation": 659,
   "lease": {
     "id": "codex-hourly-20261008123500Z-master-1791462960000",
     "worker": "codex-hourly-20261008123500Z",
     "role": "master",
     "issue": 19,
     "acquired_at": "2026-10-08T12:36:00Z",
-    "last_checkpoint": "2026-10-08T12:36:00Z",
-    "expires_at": "2026-10-08T13:21:00Z",
+    "expires_at": "2026-10-08T13:22:20Z",
     "branch": "work/control-ref-adapter",
     "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
-    "pr": 24
+    "pr": 24,
+    "heartbeat_at": "2026-10-08T12:37:20Z"
   },
   "checkpoint": {
-    "at": "2026-10-08T12:06:59Z",
-    "issue": 30,
-    "role": "quality",
-    "branch": "trunk",
-    "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
-    "pr": null,
-    "summary": "Wake completed before its40-minute deadline. Verified immutable v0.22.23 release406732310 at defaultced0fe652469fa6916831e0fb09cccc1a8784f79, native CI and private-image/binary proof. Recovered default audit HTTP502 via accepted retry; actual attempt2 succeeded with selected-scope0findings/gaps. Proved actual canonical checkpoint plus inert notes create/update. Issue30 closed/Done and19 Ready after allnative blockers closed. Preserved draft24/source053; no livebackend/task cutover. Final native handoffs:30=6059470061,31=6059470317,19=6059470579,24=6059470835. No local checks oradditionalworker. Release now.",
-    "next_action": "Fresh admission and recovery first; next bounded work is Master19 on existing draftPR24/work/control-ref-adapter/source053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c versus defaultced0fe652469fa6916831e0fb09cccc1a8784f79. Inspect actual unresolved cutoverQA and integrate the nowproven scoped Action transport with reviewed staging, fail-closed legacy fencing andinterruption recovery. RefreshCI/Security/complete-diffQA beforemerge; reconcile actualexistingtask afterreviewedpolicymerge. Currentcontrol/engineering remains soleauthority; inertprobe isnotlivecontrol. Do not duplicateissues/branches orrepublish immutable releases.",
+    "at": "2026-10-08T12:37:20Z",
+    "issue": 19,
+    "role": "master",
+    "branch": "work/control-ref-adapter",
+    "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
+    "pr": 24,
+    "summary": "Recovery confirms default ced0fe652469fa6916831e0fb09cccc1a8784f79 publication/security complete and only managed Issue19 executable. Preserved PR24 at053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c remains draft with explicit unfinished-cutover QA rejection5451528384. Exact repository lease heartbeat_at shape corrected in this owned administration checkpoint; no other lease or source changed.",
+    "next_action": "Sequential Security analysis of bounded recoverable migration and explicit legacy branch retirement; then Quality implementation on existing PR24.",
     "publication": {
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "state": "published",
@@ -76,16 +76,6 @@
       },
       "security_audit_run": 37767226110,
       "security_audit_attempt": 2
-    },
-    "previous_checkpoint": {
-      "at": "2026-10-08T11:49:49Z",
-      "issue": 32,
-      "role": "security",
-      "branch": "trunk",
-      "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
-      "pr": 33,
-      "summary": "Security recovery verified native attempt2 of37767226110 completed/success. Actual logs report627 completed attempt archives/2334 members,0 recognized findings/0 gaps; current audit run is explicitly pending/excluded in its inventory. Source-history4897 fetched objects/0 findings/0 gaps. Original attempt1 HTTPFailure502 preserved; single-job rerun accepted, no source/release mutation. Immutable bot release406732310/v23, tag/defaultcedd, four native asset digests and CI private-package/digest/binary proof match. Actual default CI logs864Rust/0failed,24infra,84org, fourtargets andsynthetic demos/containercleanupgreen. No arbitrary sensitive-data guarantee.",
-      "next_action": "Checkpoint/release Security; Quality30 at trunk/sourcecedd with pr:null can issue a fresh exact-control-head native checkpoint command, then fixed inert notes create/update proof only after real success. Keep30 open and19/24/source053 preserved until actualproof. No new source change or fake review needed; original31/33 separate reviews remain recorded."
     },
     "recovery": {
       "pr": 26,
@@ -404,6 +394,16 @@
       "native_pr_handoff": 6059470317,
       "parent_handoff": 6059470579,
       "preserved_pr_handoff": 6059470835
+    },
+    "previous_checkpoint": {
+      "at": "2026-10-08T12:06:59Z",
+      "issue": 30,
+      "role": "quality",
+      "branch": "trunk",
+      "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
+      "pr": null,
+      "summary": "Wake completed before its40-minute deadline. Verified immutable v0.22.23 release406732310 at defaultced0fe652469fa6916831e0fb09cccc1a8784f79, native CI and private-image/binary proof. Recovered default audit HTTP502 via accepted retry; actual attempt2 succeeded with selected-scope0findings/gaps. Proved actual canonical checkpoint plus inert notes create/update. Issue30 closed/Done and19 Ready after allnative blockers closed. Preserved draft24/source053; no livebackend/task cutover. Final native handoffs:30=6059470061,31=6059470317,19=6059470579,24=6059470835. No local checks oradditionalworker. Release now.",
+      "next_action": "Fresh admission and recovery first; next bounded work is Master19 on existing draftPR24/work/control-ref-adapter/source053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c versus defaultced0fe652469fa6916831e0fb09cccc1a8784f79. Inspect actual unresolved cutoverQA and integrate the nowproven scoped Action transport with reviewed staging, fail-closed legacy fencing andinterruption recovery. RefreshCI/Security/complete-diffQA beforemerge; reconcile actualexistingtask afterreviewedpolicymerge. Currentcontrol/engineering remains soleauthority; inertprobe isnotlivecontrol. Do not duplicateissues/branches orrepublish immutable releases."
     }
   },
   "attempts": {
