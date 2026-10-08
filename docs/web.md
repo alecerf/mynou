@@ -11,11 +11,41 @@ screen layout, visible keyboard focus, labelled fields, table headers and a
 skip-to-content link. Browser and assistive-technology interoperability has not
 been independently reviewed.
 
+## Private guided setup
+
+Open **Setup** from authenticated navigation or **Check setup** on Overview.
+The checklist describes loaded folder settings, active sources and their required
+authentication, an enabled matching torrent/Usenet route, optional catalog
+credentials and Plex settings. Missing credentials, malformed addresses, disabled
+sources and incompatible source/route settings receive fixed actionable states.
+
+**Configured** describes settings and credential presence. It does not establish
+successful authentication, provider connectivity, writable/private storage or a
+working personal installation. Folder paths, source labels/addresses, credential
+names/values and upstream error bodies are excluded from this projection.
+
+Opening Setup performs no network request, disk write, synchronization,
+acquisition or notification. Existing **Indexers** and **Usenet** links lead to
+their bounded reviewed diagnostics, with unchanged expiry, session, CSRF/origin
+and provider rules. Applying a Usenet connection probe requests no articles.
+This page adds no Plex network probe or configuration-writing endpoint.
+
+Edit the installation's private configuration/environment outside the browser;
+recreate a generated Docker service after changes. The linked deployment guide
+and `mynou doctor --config mynou.json` explain the installed configuration.
+Then preview a request on Search and separately choose whether to record it.
+Follow the real outcome in Jobs; required Plex confirmation uses the exact import.
+
+The existing no-script rendering, navigation, security headers and responsive
+panels remain in use. Original HTTP/state/privacy fixtures run only in CI;
+browser/assistive-technology interoperability is not claimed without actual evidence.
+
 ## Everyday operations
 
 | Page | Operations |
 | --- | --- |
 | Overview | Request/transfer counts, integration errors, Plex watchlist synchronization |
+| Setup | Private configuration checklist, missing/invalid states, existing reviewed diagnostics and first-request guidance |
 | Jobs | Title/identifier and state filters, progress, details, recent history, cancel and retry |
 | Library | Current owned imports, monitoring, missing files/baselines, pending upgrades |
 | Search | Preview movie/episode selection with reasons; record movie, episode, series or file requests |

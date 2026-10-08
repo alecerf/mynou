@@ -1,4 +1,4 @@
-# Mynou 0.22.27 — Rust, standard library only
+# Mynou 0.22.28 — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -10,6 +10,12 @@ The BitTorrent client, media parsers, HTTP/TLS stack, JSON/bencode formats, and
 durable journal belong to the project. SQLite, ffprobe, Go, qBittorrent, Radarr,
 and Sonarr are not required. Plex, TMDB, and your chosen sources are configurable
 network integrations.
+
+[Guided setup](docs/web.md#private-guided-setup) adds an authenticated browser
+checklist for folders, sources, native download routes, catalog and Plex.
+Fixed configuration states and links to existing guarded diagnostics help you
+reach a first request while keeping private settings out of the page.
+This source proposes 0.22.28; native Actions and release history determine publication.
 
 Explicit [episode numbering](docs/numbering.md) separates source/catalog labels
 from retained library identities. Preview and apply choices through CLI/API/browser;
