@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 427,
-  "lease": null,
+  "generation": 428,
+  "lease": {
+    "id": "wake10-qa-cleanup-review-20261008T024400Z",
+    "worker": "codex-hourly-20261008T023108Z",
+    "role": "qa",
+    "issue": 18,
+    "acquired_at": "2026-10-08T02:43:38Z",
+    "heartbeat_at": "2026-10-08T02:43:38Z",
+    "expires_at": "2026-10-08T03:28:38Z",
+    "branch": "work/container-demo-cleanup",
+    "commit": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
+    "pr": 23
+  },
   "checkpoint": {
     "at": "2026-10-08T02:43:31Z",
     "issue": 18,
