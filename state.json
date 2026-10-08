@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 488,
+  "generation": 489,
   "lease": {
     "id": "wake12-master-urgent-repair-20261008T042605Z",
     "worker": "codex-hourly-20261008T042605Z",
     "role": "master",
     "issue": 19,
     "acquired_at": "2026-10-08T04:45:49Z",
-    "heartbeat_at": "2026-10-08T04:45:49Z",
-    "expires_at": "2026-10-08T05:30:49Z",
+    "heartbeat_at": "2026-10-08T04:47:33Z",
+    "expires_at": "2026-10-08T05:32:33Z",
     "branch": "work/control-ref-adapter",
     "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T04:45:42Z",
+    "at": "2026-10-08T04:47:33Z",
     "issue": 19,
-    "role": "qa",
+    "role": "master",
     "branch": "work/control-ref-adapter",
     "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
     "pr": 24,
-    "summary": "Complete-diff QA inspected all11 PR24 paths and actual sourceCI37728256136: six required jobs green,864 Rust/63 harnesses/91.288s,22 infra and70 organization tests; all4 new recovery scenarios pass, runtime/package evidence read. Security5451459825 exact053/base d647 and historicallease2eac ancestry verified. Reject whole Issue19 delivery: branchless hourly writer, legacy fence, restart-safe cutover and policy/task reconciliation remain unfinished; draft QA gate is skipped.",
-    "next_action": "Master: isolate the concrete handoff-loss bug into a distinct urgent reliability repair for the live scheduler, preserving Issue19/PR24/branch and all migration work. Do not certify or merge incomplete migration.",
+    "summary": "QA5451528384 rejects unfinished Issue19 cutover; preserve draft PR24 at053fb1f1. Created distinct native reliability Issue#25 for recurring scheduler handoff loss, with bounded acceptance and P1/high risk. This directly blocks durable recovery and can ship independently without closing or discarding migration work.",
+    "next_action": "Quality: isolate the durability repair onto unchanged defaultd647, patch version0.22.20, one linked repair PR; no adapter/cutover/task changes.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -1542,6 +1542,16 @@
       "head": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
       "base": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "security_native_review": 5451459825
+    },
+    "urgent_repair": {
+      "issue": 25,
+      "origin": "reliability",
+      "priority": "p1",
+      "reason": "Repeated loss of active remote recovery state",
+      "preserved_issue": 19,
+      "preserved_pr": 24,
+      "preserved_branch": "work/control-ref-adapter",
+      "preserved_commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c"
     }
   },
   "attempts": {
