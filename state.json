@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 649,
+  "generation": 650,
   "lease": {
     "id": "codex-hourly-20261008112927Z-quality-1791460198000",
     "worker": "codex-hourly-20261008112927Z",
     "role": "quality",
     "issue": 30,
     "acquired_at": "2026-10-08T11:49:58Z",
-    "heartbeat_at": "2026-10-08T11:49:58Z",
-    "expires_at": "2026-10-08T12:34:58Z",
+    "heartbeat_at": "2026-10-08T11:52:21Z",
+    "expires_at": "2026-10-08T12:37:21Z",
     "branch": "trunk",
     "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
     "pr": null
   },
   "checkpoint": {
-    "at": "2026-10-08T11:49:49Z",
-    "issue": 32,
-    "role": "security",
+    "at": "2026-10-08T11:52:21Z",
+    "issue": 30,
+    "role": "quality",
     "branch": "trunk",
     "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
-    "pr": 33,
-    "summary": "Security recovery verified native attempt2 of37767226110 completed/success. Actual logs report627 completed attempt archives/2334 members,0 recognized findings/0 gaps; current audit run is explicitly pending/excluded in its inventory. Source-history4897 fetched objects/0 findings/0 gaps. Original attempt1 HTTPFailure502 preserved; single-job rerun accepted, no source/release mutation. Immutable bot release406732310/v23, tag/defaultcedd, four native asset digests and CI private-package/digest/binary proof match. Actual default CI logs864Rust/0failed,24infra,84org, fourtargets andsynthetic demos/containercleanupgreen. No arbitrary sensitive-data guarantee.",
-    "next_action": "Checkpoint/release Security; Quality30 at trunk/sourcecedd with pr:null can issue a fresh exact-control-head native checkpoint command, then fixed inert notes create/update proof only after real success. Keep30 open and19/24/source053 preserved until actualproof. No new source change or fake review needed; original31/33 separate reviews remain recorded.",
+    "pr": null,
+    "summary": "Quality30 owns exact current defaultced0fe652469fa6916831e0fb09cccc1a8784f79 ontrunk withpr:null. Actual immutablev23/private-registry proof and defaultnativeCI verified; Security37767226110 attempt2 passed, originalHTTP502 preserved. Prepare a strict fresh connected checkpoint command under this owned lease and exact current canonicalhead. This is an operational proof request, not success evidence or notes activation; Issue30 remains open.",
+    "next_action": "Read native command/actual defaultAction/receipt andcanonical ref/state before adopting any result. Require same held worker/lease, soleparent expectedhead, generation+1 and scoped source/checkpoint. If successful, fixed inert notes create/update proof; otherwise preserve exact failure/queue boundary and stop without blind retry.",
     "publication": {
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "state": "published",
@@ -78,14 +78,14 @@
       "security_audit_attempt": 2
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T11:34:14Z",
+      "at": "2026-10-08T11:49:49Z",
       "issue": 32,
-      "role": "master",
+      "role": "security",
       "branch": "trunk",
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "pr": 33,
-      "summary": "Recovery confirmed immutable bot release406732310/v0.22.23 published11:04:39Z at exact default/tagced0fe652469fa6916831e0fb09cccc1a8784f79 with four native assets. Default CI37767226158 seven jobs succeeded; Engineering37767226188 succeeded and CodeQL37767225919 succeeded. Actual default Security37767226110 failed: source-history113277735502 passed, actions-logs113277735964 failed. Cause and registry proof not yet inspected; no clean-security or live-transport claim. Recover this actual red before Issue30 proof.",
-      "next_action": "Release Master; Security32 inspect actual failed audit log113277735964 and native run evidence safely, preserving any real finding without secret values. Choose a bounded correction or justified deterministic retry; do not retag published v23. Registry/release log proof and source-bound CI remain to verify before30 live proof."
+      "summary": "Security recovery verified native attempt2 of37767226110 completed/success. Actual logs report627 completed attempt archives/2334 members,0 recognized findings/0 gaps; current audit run is explicitly pending/excluded in its inventory. Source-history4897 fetched objects/0 findings/0 gaps. Original attempt1 HTTPFailure502 preserved; single-job rerun accepted, no source/release mutation. Immutable bot release406732310/v23, tag/defaultcedd, four native asset digests and CI private-package/digest/binary proof match. Actual default CI logs864Rust/0failed,24infra,84org, fourtargets andsynthetic demos/containercleanupgreen. No arbitrary sensitive-data guarantee.",
+      "next_action": "Checkpoint/release Security; Quality30 at trunk/sourcecedd with pr:null can issue a fresh exact-control-head native checkpoint command, then fixed inert notes create/update proof only after real success. Keep30 open and19/24/source053 preserved until actualproof. No new source change or fake review needed; original31/33 separate reviews remain recorded."
     },
     "recovery": {
       "pr": 26,
@@ -212,9 +212,9 @@
       "head": "681d0f7e4f8905688005b2f60ce71442fba76e7e",
       "base": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
       "tree": "75e8692d466c8fa139aa0824e4f0d8034a02ea4d",
-      "state": "v22 publication verified; corrective PR33 merged, v23 publication and fresh live proof pending",
+      "state": "v23 publication/default-security verified; fresh live command intent",
       "canonical_ref": "refs/heads/control/engineering",
-      "live_proof": "not passed; no notes write; failure preserved",
+      "live_proof": "pending actual connected native command/default execution/receipt",
       "parent_issue": 19,
       "engineering": 37759939738,
       "source_ci": 37759939764,
@@ -340,6 +340,14 @@
       "run_attempt": 2,
       "recovered_job": 113293528821,
       "source_history_job": 113293530156
+    },
+    "live_transport": {
+      "issue": 30,
+      "source": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
+      "worker": "codex-hourly-20261008112927Z",
+      "lease": "codex-hourly-20261008112927Z-quality-1791460198000",
+      "state": "fresh-checkpoint-command-intent",
+      "notes_activation": false
     }
   },
   "attempts": {
