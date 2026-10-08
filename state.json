@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 456,
-  "lease": null,
+  "generation": 457,
+  "lease": {
+    "id": "wake11-security-control-ref-review-20261008T032912Z",
+    "worker": "codex-hourly-20261008T032912Z",
+    "role": "security",
+    "issue": 19,
+    "acquired_at": "2026-10-08T03:48:20Z",
+    "heartbeat_at": "2026-10-08T03:48:20Z",
+    "expires_at": "2026-10-08T04:33:20Z",
+    "branch": "work/control-ref-adapter",
+    "commit": "21fca94bb56dc0cdb0dcbf50e134284d54c91f14",
+    "pr": 24
+  },
   "checkpoint": {
     "at": "2026-10-08T03:48:12Z",
     "issue": 19,
