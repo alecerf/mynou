@@ -1,90 +1,42 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 633,
+  "generation": 634,
   "lease": {
     "id": "codex-hourly-20261008103416Z-quality-1791456988000",
     "worker": "codex-hourly-20261008103416Z",
     "role": "quality",
     "issue": 32,
     "acquired_at": "2026-10-08T10:56:28Z",
-    "heartbeat_at": "2026-10-08T11:00:25Z",
-    "expires_at": "2026-10-08T11:45:25Z",
-    "branch": "work/native-comment-identity",
-    "commit": "2053b30d99dfaddf59e1f4fb7d16df57dc376cb9",
+    "heartbeat_at": "2026-10-08T11:00:33Z",
+    "expires_at": "2026-10-08T11:45:33Z",
+    "branch": "trunk",
+    "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
     "pr": 33
   },
   "checkpoint": {
-    "at": "2026-10-08T11:00:25Z",
+    "at": "2026-10-08T11:00:33Z",
     "issue": 32,
     "role": "quality",
-    "branch": "work/native-comment-identity",
-    "commit": "2053b30d99dfaddf59e1f4fb7d16df57dc376cb9",
+    "branch": "trunk",
+    "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
     "pr": 33,
-    "summary": "Quality verifiedactualreadyEngineering37766901214 organization113276664372 andagent-qa-review113276714409 completed/success. Nativegate log binds2053b30/base719,Issue32,QA5455490361 cp9bea1de/Security5455447204 cp0066100 andactualrequiredCI37766166661/37766901214/37766166766. AllCodeQLgreen; nativePRready/clean/currenthead/base/default unchanged; reviewsactualCOMMENT, threadsempty. Objectivegatesgreen; exactheadmerge next.",
-    "next_action": "Author-selfmergePR33 with expected2053b30, immediately persistactualmerge/default and CIpublicationpending. OnlyCI publishesimmutablev23; recoverdefaultCI/publication before30actualliveproof or19cutover.",
+    "summary": "NativeexactheadmergePR33 succeeded: mergeced0fe652469fa6916831e0fb09cccc1a8784f79; original2053b30/base719 preserved with actualSecurity5455447204/QA5455490361 andmachinegate37766901214/113276714409. Correctedsource ondefault; v23publicationnotyetverified, no directtags/release/upload. v22 immutableproof retained. RecoverdefaultCI beforeactual30liveproof;19/24/053 preserved, canonicalbranchstillauthority.",
+    "next_action": "Inspect actualnewdefaultCI/security/engineering/immutablev23publication andsafeautobranchcleanup; onlythen30actualnewdefaultcontrol/notesproof. Ifpendingexternalwait, checkpoint exactrun/source+nativehandoffs and release.",
     "publication": {
-      "commit": "7193547206a9e954bea44e9570716b23e4e660b2",
-      "state": "published",
-      "at": "2026-10-08T10:11:31Z",
-      "version": "0.22.22",
-      "run_id": 37761256529,
-      "status": "completed",
-      "conclusion": "success",
-      "release_id": 406690100,
-      "immutable": true,
-      "tag_commit": "7193547206a9e954bea44e9570716b23e4e660b2",
-      "assets": [
-        {
-          "id": 621454683,
-          "name": "mynou-v0.22.22-linux-x86_64",
-          "size": 4891488,
-          "digest": "sha256:fd29311efe9a713a50401ca9aa9d885e94fa95e1c7098367a7e6efa807aecf26"
-        },
-        {
-          "id": 621454678,
-          "name": "mynou-v0.22.22-macos-arm64",
-          "size": 3729072,
-          "digest": "sha256:92af20e5417ae0eb35fea183a4a6e05fff2e810ea12108559a7d536ede2cf708"
-        },
-        {
-          "id": 621454682,
-          "name": "mynou-v0.22.22-macos-x86_64",
-          "size": 4508464,
-          "digest": "sha256:7b09013747345434dfb97e116dd9883c4400fc390957825257de592bea99a909"
-        },
-        {
-          "id": 621454679,
-          "name": "SHA256SUMS",
-          "size": 281,
-          "digest": "sha256:820391bdc2f0c0137ee9456e30d9cd6245898100529763b0c1f330c979525e15"
-        }
-      ],
-      "registry_proof": {
-        "binary_sha256": "fd29311efe9a713a50401ca9aa9d885e94fa95e1c7098367a7e6efa807aecf26",
-        "image": "ghcr.io/alecerf/mynou@sha256:d3a8129236f2c42c2c0d411548b20b20b98c9cc3981edd6f9c5f92077ff69cac",
-        "package_id": 15695108,
-        "repository": "alecerf/mynou",
-        "repository_association": "reported-match",
-        "repository_id": 1403318143,
-        "repository_visibility": "public",
-        "source": "7193547206a9e954bea44e9570716b23e4e660b2",
-        "verification_cleanup": "completed",
-        "verification_user": "1001:1001",
-        "version": "0.22.22",
-        "visibility": "private"
-      },
-      "security_audit_run": 37761256575
+      "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
+      "state": "pending-native-default-ci",
+      "version": "0.22.23"
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T10:44:53Z",
-      "issue": 30,
-      "role": "master",
-      "branch": "trunk",
-      "commit": "7193547206a9e954bea44e9570716b23e4e660b2",
-      "pr": 31,
-      "summary": "Master created distinct bounded recoveryBug32 after openbacklog check; native30→32 blocked_by POST/refetch verified, with19→30 stillopen. Actual failedcommand6058054220/run37764921208/job113270103787/control162ed unchanged preserved. Correct immutable authorfield binding and separate failurediagnostics; do not claim original operand/rootcause proven by shared error. Publishedv22/PR31 anddraft24/053 retained. No source/policy/protection/taskchange.",
-      "next_action": "ReleaseMaster; Quality32 implement narrowauthor-projection/diagnostic repair plusoriginalmetadata-shape andidentity spoof CI coverage at719 inonePR/freshv23; separateSecurity+QA after actual CI. Then verify publication andactualnewdefaultcomment/notes proof beforeclosing30/unblocking19."
+      "at": "2026-10-08T11:00:25Z",
+      "issue": 32,
+      "role": "quality",
+      "branch": "work/native-comment-identity",
+      "commit": "2053b30d99dfaddf59e1f4fb7d16df57dc376cb9",
+      "pr": 33,
+      "summary": "Quality verifiedactualreadyEngineering37766901214 organization113276664372 andagent-qa-review113276714409 completed/success. Nativegate log binds2053b30/base719,Issue32,QA5455490361 cp9bea1de/Security5455447204 cp0066100 andactualrequiredCI37766166661/37766901214/37766166766. AllCodeQLgreen; nativePRready/clean/currenthead/base/default unchanged; reviewsactualCOMMENT, threadsempty. Objectivegatesgreen; exactheadmerge next.",
+      "next_action": "Author-selfmergePR33 with expected2053b30, immediately persistactualmerge/default and CIpublicationpending. OnlyCI publishesimmutablev23; recoverdefaultCI/publication before30actualliveproof or19cutover."
     },
     "recovery": {
       "pr": 26,
@@ -297,9 +249,13 @@
       "branch": "work/native-comment-identity",
       "source": "2053b30d99dfaddf59e1f4fb7d16df57dc376cb9",
       "base": "7193547206a9e954bea44e9570716b23e4e660b2",
-      "tree": "0d764bb6ffb329b7de3c5599cea58d72c0ad5c90",
+      "merge_commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
+      "state": "merged-publication-pending",
       "parent_issue": 30,
-      "state": "draft-ci-and-reviews-pending",
+      "qa_review": 5455490361,
+      "security_review": 5455447204,
+      "gate_run": 37766901214,
+      "gate_job": 113276714409,
       "failed_run": 37764921208,
       "failed_command": 6058054220,
       "failed_code": "edited-or-replaced-comment"
