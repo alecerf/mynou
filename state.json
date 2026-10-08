@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 389,
+  "generation": 390,
   "lease": {
     "id": "wake9-security-probe-20261008T013740Z",
     "worker": "codex-hourly-20261008T012904Z",
     "role": "security",
     "issue": 18,
     "acquired_at": "2026-10-08T01:37:23Z",
-    "heartbeat_at": "2026-10-08T01:38:03Z",
-    "expires_at": "2026-10-08T02:23:03Z",
+    "heartbeat_at": "2026-10-08T01:40:32Z",
+    "expires_at": "2026-10-08T02:25:32Z",
     "branch": "work/registry-recovery",
     "commit": "0356649d2b8364c2ec4061f080d28de9b842cfb9",
     "pr": 22
   },
   "checkpoint": {
-    "at": "2026-10-08T01:38:03Z",
+    "at": "2026-10-08T01:40:32Z",
     "issue": 18,
     "role": "security",
     "branch": "work/registry-recovery",
     "commit": "0356649d2b8364c2ec4061f080d28de9b842cfb9",
     "pr": 22,
-    "summary": "Security completed independent four-path diagnostic diff review at0356649d/551e82d2. Same-repository packagesread probe only, fixed bounded GETs and filtered output preserve secrets and strict publisher/image/release guards. No blocking Security findings in diagnosis scope; actual CI and full Issue18 recovery acceptance remain pending. Source-only review, no local tests.",
-    "next_action": "Inspect actual native PR22 CI/probe output once available; if it identifies a supported correction return sequentially to Quality on same branch/PR. Diagnosis alone stays draft and unmerged.",
+    "summary": "Actual read-only CI113105507230 passed: private correct owner/type/name package, one complete version page,0.22.17 andsha-551e tags bothdigest675ef89d1bed913973e7682e9633e8fb3b229eecc5d98dc8a132f1b49af2040c. Native repository metadata is absent, not proven unlinked. Preserve partial images; no repeated retry. Security recommends supported native repository/package identity + unchanged strong image provenance/privacy gates, explicit unverified UI linkage and new0.22.18 source.",
+    "next_action": "Quality: correct same PR22 with private exact-source repoID/context, private owner/type/name/stable packageID, fail reported foreign links, record omitted association unverified, retain all collision/digest/bytes/demo gates. Move new source to0.22.18 preserving actual17tags; retire temporary PR probe. Then fresh complete Security and independent QA.",
     "publication": {
       "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
       "state": "ci-failed",
@@ -566,7 +566,7 @@
       "role": "security",
       "head_sha": "0356649d2b8364c2ec4061f080d28de9b842cfb9",
       "base_sha": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
-      "lease_checkpoint": "",
+      "lease_checkpoint": "8c43ccda2ed4dad94dcd5c3a75832f422c62a5f9",
       "verdict": "passed",
       "summary": "Complete diagnostic diff is a narrow read-only probe, not publication recovery completion. Same-repository branch gating, contents/package read only, fixed GETs, bounded parsing and allowlisted metadata protect credentials and partial registry state. Strict default publisher and immutable source/version guards remain untouched; actual CI and later corrective head need fresh review.",
       "reviewed_paths": [
@@ -587,7 +587,60 @@
         "Actual default CI37704415292 attempt2 release113091080992 failed the unchanged guard; new PR CI evidence has not yet been inspected.",
         "Five meaningful CI-only inspection regression sources cover safe output/partial tags, missing metadata/full pages, scopes/forks, denied/hidden404 and malformed/oversized inputs. These are source-reviewed, not locally executed."
       ],
-      "findings": []
+      "findings": [],
+      "native_review": {
+        "success": true,
+        "review_id": 5450400942
+      }
+    },
+    "registry_diagnosis": {
+      "run_id": 37713788379,
+      "job_id": 113105507230,
+      "head": "0356649d2b8364c2ec4061f080d28de9b842cfb9",
+      "base": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
+      "conclusion": "success",
+      "actual_permissions": {
+        "contents": "read",
+        "packages": "read"
+      },
+      "proof": {
+        "image": "ghcr.io/alecerf/mynou",
+        "listed_versions": 1,
+        "observed_tags": [
+          {
+            "digest": "sha256:675ef89d1bed913973e7682e9633e8fb3b229eecc5d98dc8a132f1b49af2040c",
+            "tag": "0.22.17"
+          },
+          {
+            "digest": "sha256:675ef89d1bed913973e7682e9633e8fb3b229eecc5d98dc8a132f1b49af2040c",
+            "tag": "sha-551e82d2c4158b9af2080081bbac3e1d18c949ea"
+          }
+        ],
+        "package_identity_matches": true,
+        "publication_verified": false,
+        "repository_fields": {
+          "full_name": false,
+          "id": false,
+          "name": false,
+          "owner": false
+        },
+        "repository_metadata": "missing",
+        "versions_complete": true,
+        "visibility": "private"
+      },
+      "package_association_not_verified": true
+    },
+    "corrective_decision": {
+      "scope": "Replace undocumented/missing association assumption with supported explicit identity and provenance checks; preserve strict privacy and reported conflicting repository rejection.",
+      "required": [
+        "Verify native private source repository full_name/id against GITHUB_REPOSITORY and GITHUB_REPOSITORY_ID before publication",
+        "Verify native package owner/name/type/private visibility and stable positive package ID across publication",
+        "Keep reported conflicting repository metadata a hard rejection; absent metadata is recorded unverified, never described as associated",
+        "Keep exact source/revision/version/runtime/digest/binary/demo checks and refuse all source/version image collisions",
+        "Advance new source to0.22.18 because actual 0.22.17 image tags already exist; preserve their actual digest675ef89d... and prior immutable releases",
+        "Remove temporary PR probe in same recovery PR after evidence; keep bounded read-only helper/regressions as reusable diagnosis",
+        "Separate full corrected Security/QA; actual required CI and later default private publication needed"
+      ]
     }
   },
   "attempts": {
