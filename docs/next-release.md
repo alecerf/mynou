@@ -1,24 +1,28 @@
-# Current work — proposed 0.22.29 verified publication recovery
+# Current work — proposed 0.22.30 canonical publication transport
 
-Actions actually published immutable v0.22.28 at
-`46a6b67a6ce3de468f2304e7847d6da04203d056` in complete successful
-[CI37834316581](https://github.com/alecerf/mynou/actions/runs/37834316581).
-Release407208110 was published2026-10-08T19:51:44Z with the exact tag,
-four named/digested assets and actual source-bound private image/nonroot/cleanup
-proof. Issue41/PR47 retain separate Security/QA, accepted gate and cleanup evidence.
-Its read-only private Setup page is shipped; configuration presence remains
-distinct from verified connectivity or permissions.
+Actions actually published immutable v0.22.29 at
+`f34d827e47835da589eb8333199e88e035dcb410` in complete successful
+[CI37848363526](https://github.com/alecerf/mynou/actions/runs/37848363526).
+Release407287872 was published2026-10-08T21:43:58Z with the exact tag,
+four named/digested assets and source/run/attempt receipt11580497515.
+This does not claim successful durable reconciliation: native delivery37848823832
+and37851366061 rejected evidence, and Issue44 remains unfinished.
 
-[Issue44](https://github.com/alecerf/mynou/issues/44) repairs the verified native
-publication signal consumed by Product planning. It also repairs directly blocking
-legacy default-merge recovery and releases delivery at the external publication
-wait within the existing request ceiling. See [scope](releases/0.22.29.md).
-New source requires actual CI, distinct Security/full-diff QA and Actions-only
-publication. No new product feature or local verification is claimed here.
+[Issue50](https://github.com/alecerf/mynou/issues/50) fixes the actual transport
+blocker. The repository-root client requested a trailing-slash endpoint that
+GitHub returns as404; the canonical endpoint succeeds. Original CI scenarios
+exercise the real REST client rather than overriding it. Safe failure checkpoints
+retain only a bounded HTTP code, never response bodies, credentials or signed URLs.
+See [scope](releases/0.22.30.md). Native44 is actually blocked by50; PR49 and its
+original source remain preserved. No local checks or new publication are claimed.
 
-Native39 and45 remain bounded media-sized PAR2 and live-progress proposals;
-40 is actually blocked by39 and46 requires triage. Product42 maintains useful
-native proposals after recovered delivery; native metadata overrides this snapshot.
+After exact-head/base Security/full-diff QA and every objective gate, Actions
+alone publishes the correction. Verify actual current-default receipt, immutable
+release/private image and durable published timestamp before cleanup and new work.
+Native user Safari login report48 is next to triage after recovery;39/45 remain
+bounded product proposals,40 is blocked by39 and46 still needs triage.
+Product42 rearms from actual verified publication, not a merge or proposed version.
+The hourly recovery trigger and single-worker execution remain unchanged.
 
 ## Earlier guided setup scope
 

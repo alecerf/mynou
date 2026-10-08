@@ -1,5 +1,6 @@
 """Original bounded artifact transport and credential boundaries; CI only."""
 import io
+import json
 import os
 from pathlib import Path
 import sys
@@ -16,6 +17,41 @@ class ArtifactTransport(unittest.TestCase):
     def client(self):
         with patch.dict(os.environ, {"GH_TOKEN": "original-opaque-fixture-credential"}):
             return GitHub(CFG)
+
+    def test_repository_identity_uses_the_canonical_native_route(self):
+        client = self.client()
+        identity = {"id": 200, "full_name": "original/mynou", "private": False}
+        requests = []
+        class Opener:
+            def open(self, request, timeout):
+                requests.append(request)
+                if request.full_url != "https://api.github.com/repos/original/mynou":
+                    raise urllib.error.HTTPError(request.full_url, 404, "Original native route fixture", {}, None)
+                return io.BytesIO(json.dumps(identity).encode())
+        client.opener = Opener()
+        self.assertEqual(client.rest("GET", ""), identity)
+        self.assertEqual(client.calls, 1)
+        self.assertEqual(requests[0].get_header("Authorization"), "Bearer original-opaque-fixture-credential")
+
+    def test_child_queries_and_write_payloads_retain_the_native_transport_contract(self):
+        client = self.client()
+        requests = []
+        routes = {
+            "https://api.github.com/repos/original/mynou/actions/runs/40/jobs?filter=latest": "GET",
+            "https://api.github.com/repos/original/mynou/issues/1/comments": "POST",
+        }
+        class Opener:
+            def open(self, request, timeout):
+                requests.append(request)
+                if routes.get(request.full_url) != request.get_method():
+                    raise urllib.error.HTTPError(request.full_url, 404, "Original native route fixture", {}, None)
+                return io.BytesIO(b'{"accepted": true}')
+        client.opener = Opener()
+        self.assertEqual(client.rest("GET", "actions/runs/40/jobs?filter=latest"), {"accepted": True})
+        payload = {"body": "Original offline native comment fixture"}
+        self.assertEqual(client.rest("POST", "issues/1/comments", payload), {"accepted": True})
+        self.assertEqual(json.loads(requests[1].data), payload)
+        self.assertEqual(client.calls, 2)
 
     def test_signed_storage_receives_no_github_auth_and_both_requests_count(self):
         destination = "https://original.blob.core.windows.net/proof?synthetic=signature"

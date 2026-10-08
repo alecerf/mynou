@@ -205,6 +205,23 @@ class PublicationEvidence(unittest.TestCase):
         self.assertEqual(native.current_state["checkpoint"]["publication"]["state"], "publication-unverified")
         self.assertFalse(native.dispatches)
 
+    def test_recovery_records_only_safe_http_boundaries_and_releases_ownership(self):
+        cases = [(APIError(404), "HTTP 404"), (APIError(503), "HTTP 503"),
+            (APIError("private synthetic response"), "evidence unavailable/conflicting"),
+            (RuntimeError("private synthetic signed URL"), "evidence unavailable/conflicting")]
+        for error, boundary in cases:
+            native = Published()
+            with self.subTest(boundary=boundary), patch.object(delivery, "read_state", side_effect=native.read), patch.object(delivery, "save", side_effect=native.save), patch.object(lease, "now", return_value=AT), patch.object(delivery.publication_evidence, "verified", side_effect=error):
+                with self.assertRaises(ValueError):
+                    delivery.recover_publication(native, native.control_head, native.current_state, [native.current_pr])
+            detail = native.current_state["checkpoint"]["publication"]
+            self.assertEqual(detail["state"], "publication-unverified")
+            self.assertIn(boundary, detail["error"])
+            self.assertNotIn("private synthetic", detail["error"])
+            self.assertNotIn("synthetic", detail["error"])
+            self.assertIsNone(native.current_state["lease"])
+            self.assertFalse(native.dispatches)
+
 
 class MergePreservation(unittest.TestCase):
     MERGE = "e" * 40

@@ -116,9 +116,12 @@ def recover_publication(api, head, state, prs):
             if complete:
                 try:
                     detail = publication_evidence.verified(api, current, run)
-                except (APIError, RuntimeError, ValueError, KeyError, TypeError):
+                except (APIError, RuntimeError, ValueError, KeyError, TypeError) as error:
+                    boundary = "evidence unavailable/conflicting"
+                    if isinstance(error, APIError) and type(error.status) is int and 100 <= error.status <= 599:
+                        boundary = "HTTP " + str(error.status)
                     checkpoint_publication(api, identity, current, "publication-unverified", run,
-                        "Native immutable release or source-bound private proof is unavailable/conflicting")
+                        "Native immutable release or source-bound private proof is unverified; boundary: " + boundary)
                     raise ValueError("Publication evidence is unverified; preserve native runs/release and recover before new delivery") from None
                 fresh = default_ci_run(api, current)
                 h, s = read_state(api)

@@ -176,7 +176,8 @@ class GitHub:
         return raw
 
     def rest(self, method, path, value=None):
-        return self.request(method, "/repos/" + self.repo + "/" + path, value)
+        root = "/repos/" + self.repo
+        return self.request(method, root if path == "" else root + "/" + path, value)
 
     def pages(self, path, key=None):
         result = []
