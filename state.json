@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 537,
+  "generation": 538,
   "lease": {
     "id": "wake15-quality-public-security-20261008T064648Z",
     "worker": "codex-capacity-recovery-20261008T064648Z",
     "role": "quality",
     "issue": 27,
     "acquired_at": "2026-10-08T07:06:39Z",
-    "heartbeat_at": "2026-10-08T07:14:54Z",
-    "expires_at": "2026-10-08T07:59:54Z",
+    "heartbeat_at": "2026-10-08T07:17:10Z",
+    "expires_at": "2026-10-08T08:02:10Z",
     "branch": "work/publication-handoff-recovery",
     "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
     "pr": 26
   },
   "checkpoint": {
-    "at": "2026-10-08T07:14:54Z",
+    "at": "2026-10-08T07:17:10Z",
     "issue": 27,
     "role": "quality",
     "branch": "work/publication-handoff-recovery",
     "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
     "pr": 26,
-    "summary": "Original security implementation is pushed on preserved PR #26 at 99138218a1f6e8689ac9fb31bfbcb79c4a5ae253 (tree a55badee1ea852a7f6b7c2a785deeecd41d79b19, sole parent 9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a). It retains the scheduler repair and adds original std-only CI history/log audit, redacted bounded output, seven regressions, required read-only Security jobs and safe public disclosure guidance. No local validation or absence-of-exposure claim. Prior Security/QA and green checks apply only to old 9fb3e6dc and are invalid for this new source. CI outcomes are pending; native secret protection administration remains integration-denied.",
-    "next_action": "Link Issue #27 to existing PR #26, inspect actual CI-only source/history and Actions-log audit output plus all required jobs. Fix actual CI failures through new original commits without local checks. Once satisfactory, release implementation and use distinct exact-head/base complete-diff Security then QA; merge only after every objective gate actually passes. Preserve Issue #19 / PR #24 and immutable releases.",
+    "summary": "Security audit CI 37742148708 at 99138218a1f6e8689ac9fb31bfbcb79c4a5ae253 actually succeeded: source-history 113195095006 scanned 4560 reachable Git objects; actions-logs 113195095306 inventoried 529 runs, examined/scanned 531 completed-attempt archives and 1800 members. Both redacted reports show zero recognized-pattern findings and no coverage gaps; three running workflows are explicitly excluded from the completed snapshot. Native source validate and organization checks already succeeded; macOS builds/package are still pending. No arbitrary-sensitive-data all-clear, current QA, merge or release is claimed. Original source retains prior repair; Issue #27 shares preserved PR #26 with #25.",
+    "next_action": "Release implementation and acquire a distinct Security lease at new exact PR #26 head/base. Inspect every changed path and CI audit evidence, trust/token redirect boundaries, redaction, resource bounds, reporting and native missing-permission limits. Record truthful Security acceptance or findings; then release for complete-diff QA only once all required CI jobs are actually green. Remain within this wake's single deadline and reserve.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -516,7 +516,7 @@
       "origin": "user",
       "priority": "p1",
       "risk": "high",
-      "state": "implementation-prepared",
+      "state": "ci-audit-passed-pending-logical-review",
       "scope": "Public source/history and existing Actions logs",
       "blocked_delivery_pr": 26,
       "linked_pr": 26
@@ -561,6 +561,29 @@
         ".github/workflows/ci.yml",
         ".github/engineering.json"
       ],
+      "local_validation": false
+    },
+    "public_security_audit": {
+      "issue": 27,
+      "pr": 26,
+      "head": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
+      "run": 37742148708,
+      "history_job": 113195095006,
+      "logs_job": 113195095306,
+      "git_objects": 4560,
+      "runs_enumerated": 529,
+      "attempt_archives": 531,
+      "log_members": 1800,
+      "pattern_findings": 0,
+      "coverage_gaps": 0,
+      "unexecuted_attempts": 0,
+      "pending_runs": [
+        37742148752,
+        37742148717,
+        37742148708
+      ],
+      "scope": "Selected provider token formats/private-key markers, fetched reachable refs and completed accessible attempts at inventory time",
+      "native_secret_admin_http": 403,
       "local_validation": false
     }
   },
