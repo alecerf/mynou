@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 390,
-  "lease": {
-    "id": "wake9-security-probe-20261008T013740Z",
-    "worker": "codex-hourly-20261008T012904Z",
-    "role": "security",
-    "issue": 18,
-    "acquired_at": "2026-10-08T01:37:23Z",
-    "heartbeat_at": "2026-10-08T01:40:32Z",
-    "expires_at": "2026-10-08T02:25:32Z",
-    "branch": "work/registry-recovery",
-    "commit": "0356649d2b8364c2ec4061f080d28de9b842cfb9",
-    "pr": 22
-  },
+  "generation": 391,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-08T01:40:32Z",
     "issue": 18,
