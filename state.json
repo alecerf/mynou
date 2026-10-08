@@ -1,33 +1,35 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 710,
+  "generation": 711,
   "lease": {
     "id": "codex-continuous-policy-20261008131744Z-quality-1791466496000",
     "worker": "codex-continuous-policy-20261008131744Z",
     "role": "quality",
     "issue": 34,
     "acquired_at": "2026-10-08T13:34:56Z",
-    "heartbeat_at": "2026-10-08T13:34:56Z",
-    "expires_at": "2026-10-08T14:19:56Z",
+    "heartbeat_at": "2026-10-08T13:36:23Z",
+    "expires_at": "2026-10-08T14:21:23Z",
     "branch": "trunk",
     "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
     "pr": 35
   },
   "checkpoint": {
-    "at": "2026-10-08T13:34:47Z",
+    "at": "2026-10-08T13:36:23Z",
     "issue": 34,
-    "role": "master",
+    "role": "quality",
     "branch": "trunk",
     "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
     "pr": 35,
-    "summary": "Master34 actualTaskreconciliationcomplete: acceptedupdate+freshnativepeek, continuousreviewedpromptblob0704f5a50fd8da1a375133188425765f43c14251 atc348. Existingenabledhourlyschedule/timezone retained. NativeIssuehandoff6061031567/PRhandoff6061031909 durable. Publicationv24stillpendingCI; no reset/runtime guarantee.",
-    "next_action": "Quality34 inspectactualdefaultCI/publication and safelyverify automaticmergedbranchcleanup, preserve draftPR24/b849 andusefutureunpublishedversion. Ifrealexternalwait, checkpoint and release withnativehandoff; no busy polling.",
+    "summary": "Quality34 verified native automatic removal of mergedwork/continuous-engineering; onlytrunk,control/engineering andpreservedwork/control-ref-adapter remain. Actualdefault validate113337367626/logs:864Rust0failed,24infra88org; defaultorganization113337367952 andsource/logaudit green. LivecontinuousTaskacceptedandconfirmed. DefaultMacIntel/package/publication werepending lastinspection.",
+    "next_action": "RefreshactualdefaultCI/publication once beforehandoff. Ifpending, releaseforrealexternalwait; mechanicalActions andexistinghourlyTaskrecover c348/v24 thencloseIssue34. Preserve Issue19/PR24/b849 andQA5457079884; futuremigrationintegratescontinuouspolicy/newversion.",
     "publication": {
       "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
       "version": "0.22.24",
-      "state": "merged-awaiting-native-default-ci",
-      "pr": 35
+      "state": "ci-pending",
+      "pr": 35,
+      "run_id": 37785002953,
+      "status": "in_progress"
     },
     "recovery": {
       "pr": 26,
@@ -461,7 +463,11 @@
       "policy_commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
       "prompt_sha": "0704f5a50fd8da1a375133188425765f43c14251",
       "issue_handoff": 6061031567,
-      "pr_handoff": 6061031909
+      "pr_handoff": 6061031909,
+      "branch_cleanup": "Native automatic merged-branch removal verified; no manual deletions",
+      "default_ci": 37785002953,
+      "default_security": 37785003097,
+      "default_organization": 37785003106
     },
     "previous_checkpoint": {
       "at": "2026-10-08T13:31:11Z",
