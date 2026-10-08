@@ -330,7 +330,10 @@ fn available_rows_retain_global_main_order_with_reversed_multifile_inputs() {
 fn available_shifted_rows_recover_eight_erasures_across_two_files() {
     let exponents: Vec<_> = (19..27).collect();
     let source = Fixture::multi_recovery_exponents(
-        &[("one.bin", b"abcdefghijklmnop"), ("two.bin", b"ABCDEFGHIJKLMNOP")],
+        &[
+            ("one.bin", b"abcdefghijklmnop"),
+            ("two.bin", b"ABCDEFGHIJKLMNOP"),
+        ],
         2,
         4,
         &exponents,
@@ -357,12 +360,8 @@ fn available_rows_support_the_highest_accepted_exponent_and_initial_cancellation
     let source = Fixture::recovery_exponents(b"abcd", 4, &[65534]).bytes();
     let set = read(&source).unwrap();
     assert_eq!(
-        set.recover_single(
-            &mut Cursor::new(&source),
-            b"",
-            RecoveryLimits::default(),
-        )
-        .unwrap(),
+        set.recover_single(&mut Cursor::new(&source), b"", RecoveryLimits::default(),)
+            .unwrap(),
         b"abcd"
     );
     let mut reader = Cursor::new(&source);
@@ -390,12 +389,8 @@ fn row_selection_is_exponent_ordered_and_does_not_certify_unused_parity() {
         let source = ordered.bytes();
         let set = read(&source).unwrap();
         assert_eq!(
-            set.recover_single(
-                &mut Cursor::new(&source),
-                b"",
-                RecoveryLimits::default(),
-            )
-            .unwrap(),
+            set.recover_single(&mut Cursor::new(&source), b"", RecoveryLimits::default(),)
+                .unwrap(),
             b"abcdefgh"
         );
     }
@@ -409,11 +404,7 @@ fn corrupt_selected_nonzero_parity_fails_integrity_without_basis_retries() {
     assert!(
         read(&source)
             .unwrap()
-            .recover_single(
-                &mut Cursor::new(&source),
-                b"",
-                RecoveryLimits::default(),
-            )
+            .recover_single(&mut Cursor::new(&source), b"", RecoveryLimits::default(),)
             .unwrap_err()
             .contains("integrity")
     );
