@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 554,
+  "generation": 555,
   "lease": {
     "id": "codex-hourly-20261008T073509Z-qa-20261008074031",
     "worker": "codex-hourly-20261008T073509Z",
     "role": "qa",
     "issue": 27,
     "acquired_at": "2026-10-08T07:40:31Z",
-    "heartbeat_at": "2026-10-08T07:43:06Z",
-    "expires_at": "2026-10-08T08:28:06Z",
+    "heartbeat_at": "2026-10-08T07:43:32Z",
+    "expires_at": "2026-10-08T08:28:32Z",
     "branch": "work/publication-handoff-recovery",
     "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
     "pr": 26
   },
   "checkpoint": {
-    "at": "2026-10-08T07:43:06Z",
+    "at": "2026-10-08T07:43:32Z",
     "issue": 27,
     "role": "qa",
     "branch": "work/publication-handoff-recovery",
     "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
     "pr": 26,
-    "summary": "Distinct QA completed the actual12-path PR26 diff and surrounding lease/publication/gate code, current native source/audit/organization logs, Security5453084901 compact lease/time/ancestry and empty review threads. All required source jobs and both audit jobs succeeded.864 Rust/22 infrastructure/64 organization cases; synthetic ready/Plex, container1001:1001 cleanup and3 checksums confirmed. No unresolved finding; detector/native-permission limits remain explicit. Current machine gate failed solely awaiting this current QA record; no merge/published0.22.20 inferred.",
-    "next_action": "Submit this exact-head/base complete-diff native QA COMMENT, checkpoint and release; then delivery may advance only after a fresh actual agent-qa-review success and unchanged native head/base/threads.",
+    "summary": "Actual complete-diff QA submitted native COMMENT5453360050 at exact PR26 head99138218/base d647, bound to compact owned checkpointada689672573ceb4f098922b60bac969a821604f. Source6jobs, organization64cases and Security2jobs passed; native Security5453084901 provenance verified. No unresolved finding or merge/publication claim. Prior machine gate failed awaiting QA; require fresh actual gate before delivery.",
+    "next_action": "Release QA; acquire Quality delivery, inspect fresh review-triggered Engineering checks and all configured current-source jobs/head/base/threads. Merge only with real green objective proof; recover default CI publication and safe cleanup.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "ci-passed",
@@ -53,26 +53,11 @@
       "security_checkpoint": "6e02750960c6683c6c04bcd26306942b09c16b5d"
     },
     "pending_qa": {
-      "state": "review-completed-awaiting-native-record",
+      "state": "native-review-submitted-awaiting-machine-gate",
       "head_sha": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
       "base_sha": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
-      "reviewed_paths": [
-        ".github/engineering.json",
-        ".github/workflows/ci.yml",
-        ".github/workflows/security-audit.yml",
-        "Cargo.lock",
-        "Cargo.toml",
-        "SECURITY.md",
-        "engineering/README.md",
-        "engineering/delivery.py",
-        "engineering/lease.py",
-        "engineering/secret_audit.py",
-        "engineering/tests/test_organization.py",
-        "engineering/tests/test_secret_audit.py"
-      ],
-      "source_ci": 37742148752,
-      "organization": 37742698403,
-      "security_audit": 37742148708
+      "review_id": 5453360050,
+      "lease_checkpoint": "ada689672573ceb4f098922b60bac969a821604f"
     },
     "preserved_work": {
       "issue": 19,
