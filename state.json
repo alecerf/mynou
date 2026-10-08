@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 601,
+  "generation": 602,
   "lease": {
     "id": "codex-hourly-20261008093523Z-qa-1791453595000",
     "worker": "codex-hourly-20261008093523Z",
     "role": "qa",
     "issue": 30,
     "acquired_at": "2026-10-08T09:59:55Z",
-    "heartbeat_at": "2026-10-08T09:59:55Z",
-    "expires_at": "2026-10-08T10:44:55Z",
+    "heartbeat_at": "2026-10-08T10:02:42Z",
+    "expires_at": "2026-10-08T10:47:42Z",
     "branch": "work/native-control-commands",
     "commit": "681d0f7e4f8905688005b2f60ce71442fba76e7e",
     "pr": 31
   },
   "checkpoint": {
-    "at": "2026-10-08T09:59:46Z",
+    "at": "2026-10-08T10:02:42Z",
     "issue": 30,
-    "role": "security",
+    "role": "qa",
     "branch": "work/native-control-commands",
     "commit": "681d0f7e4f8905688005b2f60ce71442fba76e7e",
     "pr": 31,
-    "summary": "Separate Security complete-diff review inspected all9 actual nativePR31 paths at681d0f7/basecafac, including bounded nativeactor/mailbox/created-comment authentication, exactschema/sourcebinding, native recovery, currentphase release guard, no-rawinputlogs, inertfixednotesprobe withbefore/after ownership andsoleparentforce:false writes, trusteddefault-only workflow/readpermissions andCI cases. ActualEngineering37759939738 organization113253625087 passed81 scenarios; Security37759939760 bothjobs passed. Sourcevalidate113253625103 actualgreen; remainingpackage/platform gates not certified yet. Livebackend stillnotexecuted.",
-    "next_action": "Submit exacthead/base nativeSecurity record with this heldlease checkpoint; releaseSecurity and acquireQA for independent complete-diff scrutiny, actual acceptance/evidence and refreshednativeCI. No migrationactivation/taskchange.",
+    "summary": "Independent logical QA read Issue30 acceptance and all9 actual nativePR31 diffpaths at681d0f7/basecafac; challenged authorization/replay/owner/currentcheckpoint/source/receipt-loss/native-recovery/circuitbreaker/notes-marker/default-code trust. ActualMynouCI37759939764 all6requiredjobs passed, release skipped; logs864Rust/0failed49.980s,24infrastructure,81organization, static+Macready/Plex andnonroot1001:1001 cleanupcomplete/3checksums. SeparateSecurity5454852597 heldhistorical39eb scope/submission/ancestry verified. CodeQLdynamic37759937006 actualgreen; threads empty. Source install accepted, actualpostmerge transport proof pending, no notesactivation/taskchange.",
+    "next_action": "Submit exacthead/base actualQA record; releaseQA/acquireQuality for readyPR/nativegate and exacthead gated merge. Keep Issue30 acceptance open/review aftermerge untilactualCIpublication andconnectedcomment/defaultcontrol+notes proof;19 staysblocked.",
     "publication": {
       "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
       "state": "published",
@@ -98,13 +98,9 @@
       "security_checkpoint": "6e02750960c6683c6c04bcd26306942b09c16b5d"
     },
     "pending_qa": {
-      "state": "machine-gate-passed",
-      "head_sha": "b028b1dd058842d7ebc551d4f822519d9d4d1e85",
-      "base_sha": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
-      "review_id": 5453951428,
-      "lease_checkpoint": "b43c9662c5b34a0f4d952adebb2c706444b704f9",
-      "run_id": 37751441590,
-      "gate_job": 113225673187
+      "state": "reviewed; machine gate not yet green",
+      "head_sha": "681d0f7e4f8905688005b2f60ce71442fba76e7e",
+      "base_sha": "cafac339b3e24954fc8a802d97fe3cfb793c05d6"
     },
     "preserved_work": {
       "issue": 19,
@@ -210,13 +206,17 @@
       "head": "681d0f7e4f8905688005b2f60ce71442fba76e7e",
       "base": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
       "tree": "75e8692d466c8fa139aa0824e4f0d8034a02ea4d",
-      "state": "security-reviewed-source; draft; live proof pending",
+      "state": "qa-reviewed-source; needs machine gate and live proof",
       "canonical_ref": "refs/heads/control/engineering",
       "live_proof": "not run; privileged workflow not on default",
       "parent_issue": 19,
       "engineering": 37759939738,
       "source_ci": 37759939764,
-      "security_audit": 37759939760
+      "security_audit": 37759939760,
+      "security_review": 5454852597,
+      "security_checkpoint": "39eb9d1bb93c0bd7c1cb613e0ce069fb1380fb52",
+      "qa_checkpoint": null,
+      "codeql_run": 37759937006
     }
   },
   "attempts": {
