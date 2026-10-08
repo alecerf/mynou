@@ -1,34 +1,34 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 646,
+  "generation": 647,
   "lease": {
     "id": "codex-hourly-20261008112927Z-security-1791459262000",
     "worker": "codex-hourly-20261008112927Z",
     "role": "security",
     "issue": 32,
     "acquired_at": "2026-10-08T11:34:22Z",
-    "heartbeat_at": "2026-10-08T11:43:50Z",
-    "expires_at": "2026-10-08T12:28:50Z",
+    "heartbeat_at": "2026-10-08T11:49:49Z",
+    "expires_at": "2026-10-08T12:34:49Z",
     "branch": "trunk",
     "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
     "pr": 33
   },
   "checkpoint": {
-    "at": "2026-10-08T11:43:50Z",
+    "at": "2026-10-08T11:49:49Z",
     "issue": 32,
     "role": "security",
     "branch": "trunk",
     "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
     "pr": 33,
-    "summary": "Security confirmed native single-job rerun request for failedaudit113277735964 was accepted. Only original read-only Security audit is retried; sourcecedd, publishedv23 and source-historyproof unchanged. Original default reportHTTPFailure502 is preserved. Acceptance is not successful scan evidence.",
-    "next_action": "Inspect actual native attempt2 and finish exact-source defaultpublication log evidence; no repeated rerun, no busy-poll, no live control/notes write while security remains unverified. Stop for a real external wait with durable outcome.",
+    "summary": "Security recovery verified native attempt2 of37767226110 completed/success. Actual logs report627 completed attempt archives/2334 members,0 recognized findings/0 gaps; current audit run is explicitly pending/excluded in its inventory. Source-history4897 fetched objects/0 findings/0 gaps. Original attempt1 HTTPFailure502 preserved; single-job rerun accepted, no source/release mutation. Immutable bot release406732310/v23, tag/defaultcedd, four native asset digests and CI private-package/digest/binary proof match. Actual default CI logs864Rust/0failed,24infra,84org, fourtargets andsynthetic demos/containercleanupgreen. No arbitrary sensitive-data guarantee.",
+    "next_action": "Checkpoint/release Security; Quality30 at trunk/sourcecedd with pr:null can issue a fresh exact-control-head native checkpoint command, then fixed inert notes create/update proof only after real success. Keep30 open and19/24/source053 preserved until actualproof. No new source change or fake review needed; original31/33 separate reviews remain recorded.",
     "publication": {
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
-      "state": "immutable-release-observed-security-recovery-pending",
+      "state": "published",
       "version": "0.22.23",
-      "release_id": 406732310,
       "at": "2026-10-08T11:04:39Z",
+      "release_id": 406732310,
       "immutable": true,
       "tag_commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "run_id": 37767226158,
@@ -59,7 +59,23 @@
           "size": 281,
           "digest": "sha256:37826cc9047566f7a7618247fb912364ac87352b204337ea8cbcce3e63fbac2b"
         }
-      ]
+      ],
+      "registry_proof": {
+        "binary_sha256": "05c8929d7a15d914eb5316608adab8d6ee20b43567eeba6c1a30697fe390a79e",
+        "image": "ghcr.io/alecerf/mynou@sha256:a9d1b49b6cbfea68949d2ed215ce0932f85c40933bca960c08b0d0d513b1f07e",
+        "package_id": 15695108,
+        "repository": "alecerf/mynou",
+        "repository_association": "reported-match",
+        "repository_id": 1403318143,
+        "repository_visibility": "public",
+        "source": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
+        "verification_cleanup": "completed",
+        "verification_user": "1001:1001",
+        "version": "0.22.23",
+        "visibility": "private"
+      },
+      "security_audit_run": 37767226110,
+      "security_audit_attempt": 2
     },
     "previous_checkpoint": {
       "at": "2026-10-08T11:34:14Z",
@@ -100,16 +116,20 @@
       "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c"
     },
     "public_security": {
-      "commit": "2053b30d99dfaddf59e1f4fb7d16df57dc376cb9",
-      "run_id": 37766166766,
-      "history_job": 113274250441,
-      "logs_job": 113274250779,
-      "git_objects": 4861,
-      "completed_attempt_archives": 598,
-      "log_members": 2282,
+      "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
+      "run_id": 37767226110,
+      "run_attempt": 2,
+      "history_job": 113293530156,
+      "logs_job": 113293528821,
+      "git_objects": 4897,
+      "completed_attempt_archives": 627,
+      "log_members": 2334,
       "recognized_findings": 0,
       "coverage_gaps": 0,
-      "limitations": "Selected provider/private-key patterns and completed premerge snapshot only; no arbitrary sensitive-data guarantee. New default audit37767226110 was queued at11:01:12Z and is not asserted green.",
+      "excluded_pending_runs": [
+        "actions-run:37767226110"
+      ],
+      "limitations": "Selected provider/private-key patterns and completed inventory snapshot only; no arbitrary sensitive-data guarantee.",
       "native_scanning_admin": "Prior integration403; no enabled-setting claim or unchanged retry."
     },
     "delivery": {
@@ -283,7 +303,7 @@
       "source": "2053b30d99dfaddf59e1f4fb7d16df57dc376cb9",
       "base": "7193547206a9e954bea44e9570716b23e4e660b2",
       "merge_commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
-      "state": "immutable-v23-observed-default-audit-red",
+      "state": "immutable-v23-and-default-security-verified",
       "parent_issue": 30,
       "qa_review": 5455490361,
       "qa_checkpoint": "9bea1de466fcae019205272341ce679fd5a56279",
@@ -311,12 +331,15 @@
       "failed_attempt": 1,
       "error_type": "HTTPFailure",
       "http_status": 502,
-      "state": "single-job-rerun-accepted",
+      "state": "native-attempt2-success-actual-log-evidence",
       "failed_report": "Native113277735964 log: schema1/statuserror/HTTPFailure/502; preserved redacted artifact11544822063",
       "read_boundary": "First connected log fetch internal error; artifact storage fallback network read failed; subsequent connected native failed log read succeeded.",
       "accepted_response": {
         "success": true
-      }
+      },
+      "run_attempt": 2,
+      "recovered_job": 113293528821,
+      "source_history_job": 113293530156
     }
   },
   "attempts": {
