@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 752,
+  "generation": 753,
   "lease": {
     "id": "codex-resume-20261008T151223Z-master-1791472370000",
     "worker": "codex-resume-20261008T151223Z",
     "role": "master",
     "issue": 19,
     "acquired_at": "2026-10-08T15:12:50Z",
-    "heartbeat_at": "2026-10-08T15:23:42Z",
-    "expires_at": "2026-10-08T16:08:42Z",
+    "heartbeat_at": "2026-10-08T15:24:40Z",
+    "expires_at": "2026-10-08T16:09:40Z",
     "branch": "trunk",
     "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T15:23:42Z",
+    "at": "2026-10-08T15:24:40Z",
     "issue": 19,
     "role": "master",
     "branch": "trunk",
     "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
     "pr": 24,
-    "summary": "Fixed notes activated with the complete legacy fence/control/review ancestry.",
-    "next_action": "Prove actual notes lease commands, reconcile the existing native task, then Quality may retire legacy.",
+    "summary": "Live notes activation verified: command6063182620/run37800361894/receipt6063192660, sole parent fence5c305bf; trunk57cfe88/PR24/v0.22.25 actual publication. Native existing Task re-read: enabled hourly, exact installed prompt78077a9, unchanged ID/schedule/timezone; attestation6063044134. This is the first real canonical notes checkpoint; legacy remains fenced until distinct Quality proves and retires it.",
+    "next_action": "Confirm this native checkpoint command/receipt/run, exact sole parent and preserved history; release Master, acquire Quality19 at trunk57cfe88/PR24, request guarded retirement with actual notes proof and Task receipt6063044134, then confirm native absence and close Issue19.",
     "publication": {
       "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
       "state": "published",
@@ -701,7 +701,8 @@
       "origin_sha": "31b56ab74f5d230a10a99a4daf2a478b392d1978",
       "task_receipt": 6063044134,
       "task_id": "6ac54c387af0819184713674c48b3845",
-      "fence_sha": "5c305bfbee1e0225dcd8a35cdbb8cb491a084f11"
+      "fence_sha": "5c305bfbee1e0225dcd8a35cdbb8cb491a084f11",
+      "transport_comment_id": 6063207203
     }
   },
   "attempts": {
