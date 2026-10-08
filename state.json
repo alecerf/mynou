@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 521,
-  "lease": null,
+  "generation": 522,
+  "lease": {
+    "id": "wake15-qa-capacity-review-20261008T064648Z",
+    "worker": "codex-capacity-recovery-20261008T064648Z",
+    "role": "qa",
+    "issue": 25,
+    "acquired_at": "2026-10-08T06:49:38Z",
+    "heartbeat_at": "2026-10-08T06:49:38Z",
+    "expires_at": "2026-10-08T07:34:38Z",
+    "branch": "work/publication-handoff-recovery",
+    "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
+    "pr": 26
+  },
   "checkpoint": {
     "at": "2026-10-08T06:49:30Z",
     "issue": 25,
