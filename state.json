@@ -1,32 +1,32 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 820,
+  "generation": 821,
   "lease": {
     "id": "f13d5e1a-067a-4c70-a1ab-81f2fad360ba",
     "worker": "github-actions-delivery",
     "role": "triage",
     "issue": 41,
     "acquired_at": "2026-10-08T19:44:37Z",
-    "heartbeat_at": "2026-10-08T19:45:13Z",
-    "expires_at": "2026-10-08T20:30:13Z",
+    "heartbeat_at": "2026-10-08T19:45:25Z",
+    "expires_at": "2026-10-08T20:30:25Z",
     "branch": "work/41-guided-setup",
     "commit": "46a6b67a6ce3de468f2304e7847d6da04203d056",
     "pr": 47
   },
   "checkpoint": {
-    "at": "2026-10-08T19:45:13Z",
+    "at": "2026-10-08T19:45:25Z",
     "issue": 41,
     "role": "triage",
     "branch": "work/41-guided-setup",
     "commit": "46a6b67a6ce3de468f2304e7847d6da04203d056",
     "pr": 47,
-    "summary": "Default-source CI transition: dispatching at 46a6b67a6ce3de468f2304e7847d6da04203d056; native evidence {'commit': '46a6b67a6ce3de468f2304e7847d6da04203d056', 'state': 'dispatching', 'at': '2026-10-08T19:45:13Z'}. No release publication is inferred.",
+    "summary": "Default-source CI transition: accepted at 46a6b67a6ce3de468f2304e7847d6da04203d056; native evidence {'commit': '46a6b67a6ce3de468f2304e7847d6da04203d056', 'state': 'accepted', 'at': '2026-10-08T19:45:25Z'}. No release publication is inferred.",
     "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases.",
     "publication": {
       "commit": "46a6b67a6ce3de468f2304e7847d6da04203d056",
-      "state": "dispatching",
-      "at": "2026-10-08T19:45:13Z"
+      "state": "accepted",
+      "at": "2026-10-08T19:45:25Z"
     },
     "recovery": {
       "pr": 26,
