@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 580,
+  "generation": 581,
   "lease": {
     "id": "codex-hourly-20261008082654Z-quality-20261008084148",
     "worker": "codex-hourly-20261008082654Z",
     "role": "quality",
     "issue": 28,
     "acquired_at": "2026-10-08T08:41:48Z",
-    "heartbeat_at": "2026-10-08T08:54:58Z",
-    "expires_at": "2026-10-08T09:39:58Z",
+    "heartbeat_at": "2026-10-08T08:55:08Z",
+    "expires_at": "2026-10-08T09:40:08Z",
     "branch": "trunk",
     "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
     "pr": 29
   },
   "checkpoint": {
-    "at": "2026-10-08T08:54:58Z",
+    "at": "2026-10-08T08:55:08Z",
     "issue": 28,
     "role": "quality",
     "branch": "trunk",
     "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
     "pr": 29,
-    "summary": "Actualv0.22.21 publication verified atcafac339b3e24954fc8a802d97fe3cfb793c05d6: defaultCI37751867488 all7jobssuccess/864Rust49.408s/24infra64org; nativeimmutable406617913 botrelease published08:49:26Z, exactcommittag andfourassets/digests. Release113228328578 actualproofprivatepackage15695108/publicrepo1403318143/reported-match, image9ba8e1bd..., checkedLinux09b21bc... matchesreleaseasset, nonroot1001:1001cleanupcompleted. DefaultSecurity4702objects/560archives2102members0recognizedfindings/gaps; pending-snapshotlimits explicit. Close28/Done, reconcile19 nativeclosedblockers, preservePR24 before nextrole.",
-    "next_action": "Finish native28 closure/Done and19 dependency-readiness repair, recordactual release handoff and releaseQuality. Whilewakebudgetremains, acquireMaster for preserved19/PR24 recovery; no unrelatedfeatures, newworker, localchecks orduplicate scheduling.",
+    "summary": "Verified immutablev0.22.21/defaultcafac publication andactualprivateimageproof; nativeIssue28 closed+Done,19 blockers25/28 bothclosed andstatusReady, recoverybranch nativeabsent, migrationPR24/053fb1preserved. Nativehandoffs28/PR29 retainfullproof andcompact publicationcheckpoint. One currentdelivery iscomplete, with truthful selected-security-pattern limits; no localchecks orsecondworker.",
+    "next_action": "ReleaseQuality; acquireMaster for highest-priority readyuserIssue19/PR24 recovery whileboundedwake time remains. Preserveactualpubproof; inspectupdateddefault, priorQAfindings andrealavailablegeneral-ref writer/fence capabilities before anymigration.",
     "publication": {
       "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
       "state": "published",
@@ -144,13 +144,14 @@
     "cleanup": {
       "issues": [
         25,
-        27
+        27,
+        28
       ],
-      "status": "Done; native completed closure",
-      "merged_branch": "work/publication-handoff-recovery",
+      "status": "Nativecompletedclosure+Done",
+      "merged_branch": "work/public-source-private-package",
       "branch_result": "native deletion verified",
       "dependency_issue": 19,
-      "dependency_status": "Ready; closed native25 retained",
+      "dependency_status": "Ready; native25/28 bothclosed",
       "preserved_pr": 24,
       "preserved_commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c"
     },
