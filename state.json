@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 404,
+  "generation": 405,
   "lease": {
     "id": "wake9-master-delivery-registry-20261008T015700Z",
     "worker": "codex-hourly-20261008T012904Z",
     "role": "master",
     "issue": 18,
     "acquired_at": "2026-10-08T01:54:07Z",
-    "heartbeat_at": "2026-10-08T01:54:48Z",
-    "expires_at": "2026-10-08T02:39:48Z",
+    "heartbeat_at": "2026-10-08T01:56:09Z",
+    "expires_at": "2026-10-08T02:41:09Z",
     "branch": "work/registry-recovery",
     "commit": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
     "pr": 22
   },
   "checkpoint": {
-    "at": "2026-10-08T01:54:48Z",
+    "at": "2026-10-08T01:56:09Z",
     "issue": 18,
     "role": "master",
     "branch": "work/registry-recovery",
     "commit": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
     "pr": 22,
-    "summary": "Corrected twelve-path PR22 has green exact-source CI and actual logically independent QA5450500096/Security5450457499. PR description and Issue18 labels updated for delivery; machine QA gate and default publication pending.",
-    "next_action": "Mark PR22 ready; verify fresh organization/agent-qa-review plus all required native check runs, source fences and conversations; author merge only when every gate is green.",
+    "summary": "Every native objective PR22 gate is green at exact head/base. Current QA5450500096/Security5450457499 and ancestry-backed lease proof passed actual agent-qa-review113110225198; source integration clean, native threads empty, immutable16 assets unchanged.",
+    "next_action": "Author-self-merge the corrective PR22 with expected head; verify exact native merge source/tree, then serial cleanup and actual default18 CI/publication recovery.",
     "publication": {
       "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
       "state": "ci-failed",
@@ -718,10 +718,20 @@
       "review_id": 5450457499
     },
     "delivery": {
-      "pr_ready_requested": true,
+      "pr": 22,
+      "head": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
+      "base": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
+      "gate_run": 37715269759,
+      "gate_job": 113110225198,
+      "gate_conclusion": "success",
+      "ci": 37714490728,
+      "mergeable": true,
+      "threads_unresolved": 0,
+      "earlier_release_unchanged": true,
       "publication_verified": false,
-      "partial17_preserved": true
-    }
+      "correction_for_failed_default": 5.51e+84
+    },
+    "previous_assets_verified_at": "2026-10-08T01:55:25Z"
   },
   "attempts": {
     "18": {
