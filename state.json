@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 827,
+  "generation": 828,
   "lease": {
     "id": "codex-recovery-20261008T204807Z-quality-173a1b79-b9a4-4123-ae90-5affd9f227aa",
     "worker": "codex-recovery-20261008T204807Z",
     "role": "quality",
     "issue": 44,
     "acquired_at": "2026-10-08T21:02:26Z",
-    "heartbeat_at": "2026-10-08T21:02:26Z",
-    "expires_at": "2026-10-08T21:47:26Z",
+    "heartbeat_at": "2026-10-08T21:15:34Z",
+    "expires_at": "2026-10-08T22:00:34Z",
     "branch": "work/44-publication-recovery",
-    "commit": "46a6b67a6ce3de468f2304e7847d6da04203d056",
-    "pr": null
+    "commit": "2ffb9a6a892ffa96e25871706aac228663b24a2a",
+    "pr": 49
   },
   "checkpoint": {
-    "at": "2026-10-08T21:01:54Z",
+    "at": "2026-10-08T21:15:34Z",
     "issue": 44,
-    "role": "master",
-    "branch": "trunk",
-    "commit": "46a6b67a6ce3de468f2304e7847d6da04203d056",
-    "pr": null,
-    "summary": "Master44 planned the actual publication/recovery defect repair; native scope and evidence updated in Issue44, handoff6068978866. Shipped41 is Closed/Done with immutable v0.22.28 recorded. Created original source branch work/44-publication-recovery at current default46a6b67a6ce3de468f2304e7847d6da04203d056; no new repair source, tests or green gates claimed. Existing migration resolver already uses bounded native compare; preserve it. Quality will verify safe merged41 cleanup and implement verified publication reconciliation, exact merged-lease preservation, default-bound delivery and release at publication waits without increasing request ceiling.",
-    "next_action": "Release Master; acquire Quality44 on work/44-publication-recovery at46a6b67a6ce3de468f2304e7847d6da04203d056. Finish fresh branch audit, then original bounded source, CI-only checks, distinct Security/QA.",
+    "role": "quality",
+    "branch": "work/44-publication-recovery",
+    "commit": "2ffb9a6a892ffa96e25871706aac228663b24a2a",
+    "pr": 49,
+    "summary": "Quality44 original repair remotely committed2ffb9a6a892ffa96e25871706aac228663b24a2a/tree478f4f67e5972d2ac6dd54ea20a5cc7b629b5dca on work/44-publication-recovery, linked draft PR.13 paths add verified native immutable publication/private receipt, credential-safe bounded archive transport, legacy merged-source preservation, default-bound single-gate delivery and release at publication waits; cleanup precedes new merges. Proposedv0.22.29 is unvalidated/unpublished. Original source/transport/Product recovery scenarios authored for CI only; no local checks. Native41 branch safely deleted after complete fresh PR/Issue/comment/head/owner audit6069011949; connected ref404 confirms absence and default/source commits preserved. Shipped v0.22.28 evidence retained.",
+    "next_action": "Inspect actual draft PR/source CI findings once available, fix reds through remote commits. Distinct Security and complete-diff QA at exact final head/base under separately acquired leases; objective gates before merge, default Actions publication before completion. Do not claim new CI/QA/publication success.",
     "publication": {
       "commit": "46a6b67a6ce3de468f2304e7847d6da04203d056",
       "state": "published",
@@ -524,14 +524,14 @@
       "publication_pr_handoff": 6062225589
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T20:43:18Z",
-      "issue": 41,
-      "role": "triage",
-      "branch": "work/41-guided-setup",
+      "at": "2026-10-08T21:01:54Z",
+      "issue": 44,
+      "role": "master",
+      "branch": "trunk",
       "commit": "46a6b67a6ce3de468f2304e7847d6da04203d056",
-      "pr": 47,
-      "summary": "Default-source CI transition: accepted at 46a6b67a6ce3de468f2304e7847d6da04203d056; native evidence {'commit': '46a6b67a6ce3de468f2304e7847d6da04203d056', 'state': 'accepted', 'at': '2026-10-08T19:45:25Z'}. No release publication is inferred.",
-      "next_action": "Recovered expired capacity lease; inspect preserved work before selecting new work."
+      "pr": null,
+      "summary": "Master44 planned the actual publication/recovery defect repair; native scope and evidence updated in Issue44, handoff6068978866. Shipped41 is Closed/Done with immutable v0.22.28 recorded. Created original source branch work/44-publication-recovery at current default46a6b67a6ce3de468f2304e7847d6da04203d056; no new repair source, tests or green gates claimed. Existing migration resolver already uses bounded native compare; preserve it. Quality will verify safe merged41 cleanup and implement verified publication reconciliation, exact merged-lease preservation, default-bound delivery and release at publication waits without increasing request ceiling.",
+      "next_action": "Release Master; acquire Quality44 on work/44-publication-recovery at46a6b67a6ce3de468f2304e7847d6da04203d056. Finish fresh branch audit, then original bounded source, CI-only checks, distinct Security/QA."
     },
     "task_reconciliation": {
       "issue": 19,
