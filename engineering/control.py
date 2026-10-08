@@ -4,7 +4,7 @@ import json
 import sys
 import uuid
 
-from github import APIError, GitHub, ROOT
+from github import APIError, GitHub, ROOT, control_reference
 import lease
 
 
@@ -20,13 +20,13 @@ def label_update(api, number, family, value):
 
 def read_state(api):
     cfg = api.cfg
-    head = api.ref(cfg["control_branch"])
+    head = api.ref(control_reference(cfg))
     return head, lease.validate(api.file(cfg["state_path"], head))
 
 
 def save(api, expected, value, message):
     lease.validate(value)
-    return api.cas_file(api.cfg["control_branch"], expected, api.cfg["state_path"], value, message)
+    return api.cas_file(control_reference(api.cfg), expected, api.cfg["state_path"], value, message)
 
 
 def handoff(api, previous, checkpoint, control_sha):

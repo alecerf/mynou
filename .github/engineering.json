@@ -42,5 +42,6 @@
     "scheduled_tasks_tool": true,
     "quota_introspection": false,
     "guaranteed_quota_reset_wake": false
-  }
+  },
+  "control_ref": "refs/heads/control/engineering"
 }

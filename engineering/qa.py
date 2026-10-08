@@ -4,6 +4,7 @@ import re
 import time as waiting
 
 import lease
+from github import control_reference
 
 RECORD = re.compile(r"```json\s*\n(.*?)\n```", re.S)
 KEYS = {"schema", "role", "head_sha", "base_sha", "lease_checkpoint", "verdict",
@@ -116,7 +117,7 @@ def review_proof(api, cfg, role, reviews, pr, paths, issues):
     scope(value, paths)
     state = api.file(cfg["state_path"], value["lease_checkpoint"])
     historical_lease(state, review, value, role, pr, issues)
-    control = api.ref(cfg["control_branch"])
+    control = api.ref(control_reference(cfg))
     ancestry = api.rest("GET", f"compare/{value['lease_checkpoint']}...{control}")
     if ancestry["status"] not in ("ahead", "identical"):
         raise ValueError("Review lease is not part of durable control history")

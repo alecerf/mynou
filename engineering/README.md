@@ -53,6 +53,11 @@ it natively blocks the next bounded PAR2 recovery stage, Issue #6. Read live
 Issues/control state for current priorities rather than inferring them from this
 historical release record. Infrastructure changes do not retag published assets.
 
+The [control-storage adapter](control-storage.md) prepares explicit branch/notes
+reference handling for Issue #19. Its current `control_ref` and legacy
+`control_branch` identify the same live branch. It does not activate a second
+authority or prove that scheduled workers can write non-branch references.
+
 ## Work and roles
 
 Each meaningful Issue carries one label per managed family: `status:`,

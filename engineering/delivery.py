@@ -3,7 +3,7 @@ import uuid
 from datetime import timedelta
 from urllib.parse import quote
 
-from github import APIError
+from github import APIError, control_reference, reference
 from control import labels, label_update, read_state, recover_native, save
 import lease
 import qa
@@ -118,7 +118,8 @@ def recover_publication(api, head, state, prs):
 
 
 def branch_decision(name, head, cfg, comparison, open_prs, open_issues, held, merged_prs=(), protected=False):
-    if protected or name == cfg["default_branch"] or name.startswith("control/") or name.startswith("release/"):
+    authority = reference(control_reference(cfg))
+    if protected or name == cfg["default_branch"] or authority == "refs/heads/" + name or name.startswith("control/") or name.startswith("release/"):
         return False, "protected or durable branch"
     if held is not None and held["branch"] == name:
         return False, "execution lease references branch"
