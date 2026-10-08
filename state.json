@@ -1,27 +1,27 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 606,
+  "generation": 607,
   "lease": {
     "id": "codex-hourly-20261008093523Z-quality-1791453771000",
     "worker": "codex-hourly-20261008093523Z",
     "role": "quality",
     "issue": 30,
     "acquired_at": "2026-10-08T10:02:51Z",
-    "heartbeat_at": "2026-10-08T10:08:29Z",
-    "expires_at": "2026-10-08T10:53:29Z",
+    "heartbeat_at": "2026-10-08T10:09:39Z",
+    "expires_at": "2026-10-08T10:54:39Z",
     "branch": "trunk",
     "commit": "7193547206a9e954bea44e9570716b23e4e660b2",
     "pr": 31
   },
   "checkpoint": {
-    "at": "2026-10-08T10:08:29Z",
+    "at": "2026-10-08T10:09:39Z",
     "issue": 30,
     "role": "quality",
     "branch": "trunk",
     "commit": "7193547206a9e954bea44e9570716b23e4e660b2",
     "pr": 31,
-    "summary": "PR31 merged byauthor withfreshsource/base andallobjectivegatesgreen: source681d0f7/basecafac, Security5454852597, QA5454891252, Engineering37760978551/gate113257088037. Exactdefaultmerge7193547206a9e954bea44e9570716b23e4e660b2. Issue30 explicitlyreopenedReview forrealpostmergeCIpublication andconnectedcomment/control+inertnotes proof; native19 remainsblocked byopen30, PR24/053 preserved. CurrentdefaultCI37761256529 isin_progress; no v0.22.22release/probe/cutover/taskchange certified.",
+    "summary": "Bounded wake delivered PR31 trusteddefault transport install at7193547206a9e954bea44e9570716b23e4e660b2 after allpremergeobjectivegates andseparateSecurity/QA. Original681d0f7 sourcepreserved merged; nativebranch GET404 confirmsautomaticcleanup, nowleasebranchtrunk. ActualdefaultCI37761256529 inprogress; defaultEngineering37761256671/Security37761256575 success. NativeIssue30/PR31/parent19 handoffs posted withexactevidence andremainingproof. 30openReview/19nativeblocked;24/053 preserved; no liveprobe/cutover/taskupdate orclaimedv22pub. RealCIwait; checkpoint/releasebeforestop.",
     "next_action": "Recoveryfirst inspect719defaultCI/security/Engineering andimmutablev0.22.22/privatepackage proof; fix actualreds underappropriate role. Then Quality at719Issue30 executesone actualconnectedcomment checkpoint/controlproof andfixedinertnotes create+nonforceupdate via revieweddefaultAction, verifiesnative receipts/ref/parents andpreserves safeevidence. Keep30openReview/19blocked untilallproofdone; thenclose30+cleanupmergedbranch safely andresume19/PR24. Refresh preserved053 against719; safelegacyfence/interruptedcutover +reviewedpolicy/taskreconciliation beforecanonicalnotesactivation. No busy-poll/secondworker.",
     "publication": {
       "commit": "7193547206a9e954bea44e9570716b23e4e660b2",
@@ -103,7 +103,7 @@
       "dependency_issue": 19,
       "dependency_state": "blocked by nativeopen30",
       "merged_branch": "work/native-control-commands",
-      "branch_result": "not yet established; inspect native",
+      "branch_result": "Native ref GET404 verified after merge; no manual deletion, usefulsource preserved inmergedPR31/default719",
       "preserved_pr": 24,
       "preserved_commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c"
     },
@@ -179,7 +179,10 @@
       "merge_commit": "7193547206a9e954bea44e9570716b23e4e660b2",
       "default_ci": 37761256529,
       "default_engineering": 37761256671,
-      "default_security": 37761256575
+      "default_security": 37761256575,
+      "native_issue_handoff": 6057565905,
+      "native_pr_handoff": 6057566180,
+      "parent_handoff": 6057566462
     },
     "previous_publication": {
       "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
