@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 592,
+  "generation": 593,
   "lease": {
     "id": "codex-hourly-20261008093523Z-master-1791452556000",
     "worker": "codex-hourly-20261008093523Z",
     "role": "master",
     "issue": 19,
     "acquired_at": "2026-10-08T09:42:36Z",
-    "heartbeat_at": "2026-10-08T09:42:36Z",
-    "expires_at": "2026-10-08T10:27:36Z",
+    "heartbeat_at": "2026-10-08T09:43:56Z",
+    "expires_at": "2026-10-08T10:28:56Z",
     "branch": "work/control-ref-adapter",
     "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T09:42:29Z",
+    "at": "2026-10-08T09:43:56Z",
     "issue": 19,
-    "role": "security",
+    "role": "master",
     "branch": "work/control-ref-adapter",
     "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
     "pr": 24,
-    "summary": "Security design: scheduled GitData writes are branch-scoped; native trusted comments/default-only Actions are verified. Use a separate bounded prerequisite for a control-command bridge, not an unreviewed PR-code executor. Fixed repository/managed Issue, native author and actor re-fetch, exact bounded JSON and expected controlSHA, existing lease transitions/native recovery, sole-parent force:false writes, no raw hostile text/secret output, no replay/blind retry. Action is deterministic, not a second AI. Live notes cutover remains rejected and canonicalbranch stays unchanged.",
-    "next_action": "ReleaseSecurity; Master create one distinct managed prerequisite linked as Issue19 blocker with narrow bridge acceptance and onePR. Quality implement only from current cafac; then freshSecurity/QA/CI and actual default transport proof before PR24migration.",
+    "summary": "Created distinct prerequisiteIssue30 after nativeopenbacklog inspection (no duplicate). Native19→30 blocked_by write/refetch verified; old25/28 remainclosed. Design-only scoped bridge removes scheduled-ref write boundary through default-only deterministic Actions, not notesactivation. PreservedPR24/053 remainsdraft and rejected untilfullcutover. Currentcafac publicationverified.",
+    "next_action": "ReleaseMaster; acquireQualityIssue30 atcafac, implement strict default-only comment commands and original CIregressions in onePR. Preserve19/24; proveactualtransport onlyafterreviewedmerge.",
     "publication": {
       "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
       "state": "published",
@@ -202,6 +202,13 @@
       "authority": "refs/heads/control/engineering",
       "nonbranch_cutover": "not activated",
       "scope": "bounded authenticated control commands; expected-head single-parent arbitration; independent reviews remain native"
+    },
+    "control_bridge": {
+      "issue": 30,
+      "state": "ready",
+      "parent_issue": 19,
+      "design_checkpoint": "343e67c53ce0d0fe1a1358f8b757f732e07d9fe4",
+      "canonical_ref": "refs/heads/control/engineering"
     }
   },
   "attempts": {
