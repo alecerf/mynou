@@ -1,4 +1,4 @@
-"""Pure serialized lease transitions; only the control branch stores live state."""
+"""Pure serialized lease transitions; only canonical Git control holds live state."""
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import re

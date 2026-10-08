@@ -23,12 +23,68 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise APIError(code)
 
 
+def reference(value):
+    """Normalize only branch/notes references; never admit release tag writes."""
+    if not isinstance(value, str) or not 1 <= len(value) <= 200:
+        raise ValueError("Invalid Git reference")
+    full = value if value.startswith("refs/") else "refs/heads/" + value
+    if not full.startswith(("refs/heads/", "refs/notes/")):
+        raise ValueError("Only branch or notes references are supported")
+    tail = full.split("/", 2)[2]
+    if not re.fullmatch(r"[A-Za-z0-9_/-][A-Za-z0-9_./-]{0,159}", tail) or ".." in tail:
+        raise ValueError("Invalid Git reference name")
+    if any(not part or part.startswith(".") or part.endswith((".", ".lock")) for part in tail.split("/")):
+        raise ValueError("Invalid Git reference component")
+    return full
+
+
+def control_reference(cfg):
+    """One configured authority; legacy workers must see the same branch."""
+    legacy = None
+    if "control_branch" in cfg:
+        legacy = cfg["control_branch"]
+        if not reference(legacy).startswith("refs/heads/"):
+            raise ValueError("Legacy control_branch must identify a branch")
+    if "control_ref" in cfg:
+        current = cfg["control_ref"]
+        if not isinstance(current, str) or not current.startswith("refs/"):
+            raise ValueError("control_ref must be fully qualified")
+        full = reference(current)
+        if legacy is not None and reference(legacy) != full:
+            raise ValueError("Control branch and reference identify different authorities")
+    elif legacy is not None:
+        current, full = legacy, reference(legacy)
+    else:
+        raise ValueError("A canonical control reference is required")
+    if "default_branch" in cfg:
+        default = reference(cfg["default_branch"])
+        if not default.startswith("refs/heads/"):
+            raise ValueError("Default branch must identify a branch")
+        if full == default:
+            raise ValueError("Product default branch cannot store engineering control")
+    return current
+
+
+def ref_commit(value, expected_ref):
+    """Reject prefix matches, annotated tags and malformed native ref objects."""
+    if not isinstance(value, dict) or value.get("ref") != expected_ref:
+        raise ValueError("GitHub returned a different or ambiguous reference")
+    obj = value.get("object")
+    if not isinstance(obj, dict) or obj.get("type") != "commit":
+        raise ValueError("Control reference must point directly to a commit")
+    sha = obj.get("sha")
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise ValueError("GitHub reference lacks an exact commit identity")
+    return sha
+
+
 def config():
     value = json.loads((ROOT / ".github/engineering.json").read_text())
     if value.get("schema") != 1 or value.get("max_active_agents") != 1:
         raise ValueError("Unsupported organization schema or concurrency")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", value["repository"]):
         raise ValueError("Invalid GitHub repository")
+    control_reference(value)
     return value
 
 
@@ -97,13 +153,18 @@ class GitHub:
             raise ValueError("Control file exceeds 64 KiB")
         return json.loads(raw)
 
-    def ref(self, branch):
-        return self.rest("GET", "git/ref/heads/" + urllib.parse.quote(branch, safe="/"))["object"]["sha"]
+    def ref(self, location):
+        full = reference(location)
+        path = urllib.parse.quote(full.removeprefix("refs/"), safe="/")
+        return ref_commit(self.rest("GET", "git/ref/" + path), full)
 
-    def cas_file(self, branch, expected, path, value, message):
+    def cas_file(self, location, expected, path, value, message):
         # A sibling commit cannot replace a concurrently advanced ref without force.
         # GitHub's non-force fast-forward update is the atomic arbitration point.
-        if self.ref(branch) != expected:
+        full = reference(location)
+        if not isinstance(expected, str) or not re.fullmatch(r"[0-9a-f]{40}", expected):
+            raise ValueError("CAS requires an exact observed commit")
+        if self.ref(location) != expected:
             raise RuntimeError("Execution lease changed; stop and reconstruct state")
         content = json.dumps(value, indent=2) + "\n"
         if len(content.encode()) > 64 * 1024:
@@ -111,11 +172,16 @@ class GitHub:
         tree = self.rest("POST", "git/trees", {"tree": [
             {"path": path, "mode": "100644", "type": "blob", "content": content}]})
         commit = self.rest("POST", "git/commits", {"message": message, "tree": tree["sha"], "parents": [expected]})
+        sha = commit.get("sha")
+        if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+            raise ValueError("Created control commit lacks an exact identity")
         try:
-            self.rest("PATCH", "git/refs/heads/" + urllib.parse.quote(branch, safe="/"),
-                {"sha": commit["sha"], "force": False})
+            updated = self.rest("PATCH", "git/refs/" + urllib.parse.quote(full.removeprefix("refs/"), safe="/"),
+                {"sha": sha, "force": False})
         except APIError as error:
             if error.status in (409, 422):
                 raise RuntimeError("Execution lease CAS lost; stop without force or blind retry") from None
             raise
-        return commit["sha"]
+        if ref_commit(updated, full) != sha:
+            raise RuntimeError("Control update response disagrees; stop and reconstruct remote state")
+        return sha

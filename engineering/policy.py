@@ -6,6 +6,8 @@ import re
 import subprocess
 import tomllib
 
+from github import control_reference
+
 ROOT = Path(__file__).resolve().parent.parent
 TOKEN = re.compile(rb"(?<![A-Za-z0-9])(?:gh[psoru]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{60,255}|sk-(?:proj-)?[A-Za-z0-9_-]{40,255})(?![A-Za-z0-9])")
 
@@ -24,6 +26,9 @@ def check(root=ROOT):
     cfg = json.loads((root / ".github/engineering.json").read_text())
     assert cfg["schema"] == 1
     check_execution(cfg)
+    control_reference(cfg)
+    from migration import settings
+    settings(cfg)
     catalog = json.loads((root / "engineering/roles.json").read_text())["roles"]
     assert {"master", "triage", "rust", "web", "ux", "security", "qa", "quality"}.issubset(catalog)
     for role, path in catalog.items():

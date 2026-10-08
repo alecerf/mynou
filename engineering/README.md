@@ -8,8 +8,10 @@ worker may run. Role changes require a durable checkpoint, release and new lease
 
 ## Resume without conversation history
 
-1. Read AGENTS.md, this runbook and `.github/engineering.json`. Inspect GitHub
-   `control/engineering:state.json` before investigating or editing anything.
+1. Read configuration only to locate canonical control; inspect its native ref
+   and state under [control-storage.md](control-storage.md) before investigation.
+   Then read AGENTS.md and this runbook. Before migration, use
+   `control/engineering:state.json`; a reviewed schema2 fence routes to notes.
    `python3 engineering/control.py wake` performs that admission check. It is
    administration, not local project validation. A valid lease means exit without
    domain work, polling or spawning another worker.
@@ -17,7 +19,10 @@ worker may run. Role changes require a durable checkpoint, release and new lease
    it refuses to reclaim unpreserved commits. Read the recovered checkpoint and
    relevant PR/Issue comments, including findings. Finish valid interrupted work
    before unrelated work. Malformed state fails closed: preserve it and inspect
-   native control-branch history; never replace it with an empty lock.
+   native canonical-control history; never replace it with an empty lock.
+   An unactivated schema2 fence exits busy for a valid nested owner. Its owner
+   uses `checkpoint-fence`/`release-fence`; a later admitted worker uses
+   `recover-fence` after deliberate release or expiry and native preservation.
 3. Read the selected Issue acceptance and only relevant Skills/code/logs. Acquire
    one role and execute. While the next transition is immediately executable and
    this execution has capacity, checkpoint/release and acquire its role in the same worker.
@@ -43,7 +48,7 @@ worker may run. Role changes require a durable checkpoint, release and new lease
 Native backlog: [managed Issues](https://github.com/alecerf/mynou/issues?q=is%3Aopen+label%3Aagent-work).
 [Current work](https://github.com/alecerf/mynou/issues?q=is%3Aopen+label%3Aagent-work+label%3Astatus%3Ain-progress)
 and [blocked work](https://github.com/alecerf/mynou/issues?q=is%3Aopen+label%3Aagent-work+label%3Astatus%3Ablocked)
-are native filtered views. Native Issues/PRs represent work; the control branch
+are native filtered views. Native Issues/PRs represent work; the canonical Git ref
 contains only execution lease, checkpoint and bounded attempt history. Do not
 create a parallel backlog database.
 
@@ -125,9 +130,12 @@ python3 engineering/source.py --local-base LOCAL_BASE --remote-base REMOTE_BASE 
 
 Remote and local commit IDs can differ while trees match. Preserve the mapping
 in the Issue/PR checkpoint. Prefer normal Git transport when actually available.
-With only connector tools, read the control ref/file, create its replacement tree
-and commit with that exact parent, then use `github_update_ref` with expected SHA
-and force false. This is the same protocol; no local execution is required.
+With only connector tools, read canonical control before requesting an update.
+The connected branch-scoped updater can use the exact-parent non-force protocol
+while legacy schema1 is authoritative. It cannot be treated as a notes updater.
+For notes and a fenced snapshot, use the reviewed authenticated native-comment
+transport, inspect its actual receipt/ref and stop honestly if it is unavailable.
+No local execution is required.
 
 ## Reviews and objective delivery
 
@@ -286,3 +294,13 @@ request lease administration through reviewed default Actions using the connecte
 GitHub comment API. It retains canonical Git state and the existing single-parent,
 non-force arbitration. Installation does not activate notes or reconcile the
 hourly task; actual post-merge proof and Issue #19 cutover remain distinct steps.
+
+## Reviewed notes cutover
+
+[Canonical control and retirement](control-storage.md) defines schema2 fencing,
+the renewable sole nested owner, deliberately released/expired native recovery,
+notes authority and verified old-branch retirement. Installation and live
+activation are separate acceptance stages. Issue19 remains In Progress until
+actual notes proof, existing-task reconciliation and retirement. Read the
+resolved authority; never infer it from absence or initialize empty state.
+Only an actual supported Task response proves the live prompt changed.

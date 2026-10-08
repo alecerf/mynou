@@ -9,6 +9,7 @@ import sys
 import control
 from github import APIError, GitHub, ROOT
 import lease
+import migration
 
 MARKER = "<!-- mynou-control-command:v1 -->"
 RECEIPT = "<!-- mynou-control-receipt:v1 -->"
@@ -23,6 +24,12 @@ COMMANDS = {
     "recover": set(),
     "attempt": {"worker", "lease", "approach", "fingerprint"},
     "probe-notes": {"worker", "lease", "expected_probe_sha"},
+    "fence-control": {"worker", "lease", "task_receipt_id"},
+    "activate-control": {"worker", "lease"},
+    "checkpoint-fence": {"worker", "lease", "summary", "next_action"},
+    "release-fence": {"worker", "lease"},
+    "recover-fence": {"worker"},
+    "retire-control": {"worker", "lease", "notes_proof_sha", "task_receipt_id"},
 }
 
 
@@ -75,7 +82,7 @@ def payload(body):
     require(sha(value["expected_sha"]), "invalid-expected-sha")
     args = value["args"]
     exact_keys(args, COMMANDS[command])
-    if command not in {"acquire", "recover"}:
+    if command not in {"acquire", "recover", "recover-fence"}:
         require(identity(args["lease"]), "invalid-lease-identity")
     if "worker" in args:
         require(identity(args["worker"]), "invalid-worker-identity")
@@ -86,10 +93,16 @@ def payload(body):
     if command == "checkpoint":
         require(sha(args["commit"]) and (args["pr"] is None or integer(args["pr"])), "invalid-source-scope")
         require(all(isinstance(args[k], str) and 1 <= len(args[k]) <= 2000 for k in ["summary", "next_action"]), "invalid-checkpoint-text")
+    if command == "checkpoint-fence":
+        require(all(isinstance(args[k], str) and 1 <= len(args[k]) <= 2000 for k in ["summary", "next_action"]), "invalid-checkpoint-text")
     if command == "attempt":
         require(all(isinstance(args[k], str) and 1 <= len(args[k]) <= 256 for k in ["approach", "fingerprint"]), "invalid-attempt-text")
     if command == "probe-notes":
         require(args["expected_probe_sha"] is None or sha(args["expected_probe_sha"]), "invalid-probe-sha")
+    if command == "fence-control":
+        require(integer(args["task_receipt_id"]), "invalid-task-receipt")
+    if command == "retire-control":
+        require(sha(args["notes_proof_sha"]) and integer(args["task_receipt_id"]), "invalid-retirement-proof")
     return value
 
 
@@ -174,7 +187,11 @@ def transition(api, state, value, at, comment_id):
     require(held["worker"] == args["worker"], "wrong-lease-worker")
     if command == "checkpoint":
         source_scope(api, held["branch"], args["commit"], args["pr"] or held["pr"], held["issue"])
-        return lease.checkpoint(state, at, args["lease"], args["summary"], args["next_action"], args["commit"], args["pr"])
+        result = lease.checkpoint(state, at, args["lease"], args["summary"], args["next_action"], args["commit"], args["pr"])
+        plan = result["checkpoint"].get("control_migration", {})
+        if plan.get("phase") in {"active", "retired"}:
+            plan["transport_comment_id"] = comment_id
+        return result
     if command == "release":
         cp = state["checkpoint"]
         require(all(cp.get(k) == held[k] for k in ["issue", "role", "branch", "commit", "pr"])
@@ -226,6 +243,20 @@ def probe_notes(api, value, at, comment_id):
 
 def execute(api, event, at, actor, triggering_actor):
     comment_id, value = authenticate(api, event, at, actor, triggering_actor)
+    args = value["args"]
+    handlers = {
+        "fence-control": lambda: migration.fence(api, value["expected_sha"], args["worker"], args["lease"], args["task_receipt_id"]),
+        "activate-control": lambda: migration.activate(api, value["expected_sha"], args["worker"], args["lease"]),
+        "checkpoint-fence": lambda: migration.checkpoint_fence(api, value["expected_sha"], args["worker"], args["lease"], args["summary"], args["next_action"]),
+        "release-fence": lambda: migration.release_fence(api, value["expected_sha"], args["worker"], args["lease"]),
+        "recover-fence": lambda: migration.recover_fence(api, value["expected_sha"], args["worker"], comment_id),
+        "retire-control": lambda: migration.retire(api, value["expected_sha"], args["worker"], args["lease"], args["notes_proof_sha"], args["task_receipt_id"]),
+    }
+    if value["command"] in handlers:
+        result = {"schema": 1, "command_id": comment_id, "command": value["command"], **handlers[value["command"]]()}
+        api.rest("POST", f"issues/{api.cfg['control_commands']['issue']}/comments",
+            {"body": RECEIPT + "\n" + FENCE + "json\n" + json.dumps(result, indent=2) + "\n" + FENCE})
+        return result
     # Admission before any domain work: exact native head, never an Issue pointer.
     head, state = control.read_state(api)
     require(head == value["expected_sha"], "stale-expected-head")

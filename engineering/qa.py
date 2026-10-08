@@ -4,6 +4,7 @@ import re
 import time as waiting
 
 import lease
+from github import control_reference
 
 RECORD = re.compile(r"```json\s*\n(.*?)\n```", re.S)
 KEYS = {"schema", "role", "head_sha", "base_sha", "lease_checkpoint", "verdict",
@@ -116,18 +117,32 @@ def review_proof(api, cfg, role, reviews, pr, paths, issues):
     scope(value, paths)
     state = api.file(cfg["state_path"], value["lease_checkpoint"])
     historical_lease(state, review, value, role, pr, issues)
-    control = api.ref(cfg["control_branch"])
+    import migration
+    if migration.settings(cfg) is None:
+        control = api.ref(control_reference(cfg))
+    else:
+        try:
+            control = migration.resolve(api)[1]
+        except migration.Pending as pending:
+            control = pending.head  # Native fenced history still preserves scoped review commits.
     ancestry = api.rest("GET", f"compare/{value['lease_checkpoint']}...{control}")
     if ancestry["status"] not in ("ahead", "identical"):
         raise ValueError("Review lease is not part of durable control history")
     return {"review_id": review["id"], "role": role, "lease_checkpoint": value["lease_checkpoint"]}
 
 
-def evaluate(api, pr_number, cfg=None, include_gate=False):
+def evaluate(api, pr_number, cfg=None, include_gate=False, allow_merged=False):
     cfg = cfg or api.cfg
     pr = api.rest("GET", f"pulls/{pr_number}")
-    if pr["state"] != "open" or pr["draft"] or pr["base"]["ref"] != cfg["default_branch"]:
-        raise ValueError("Only a ready open PR against the default branch can pass")
+    merged = allow_merged and pr["state"] == "closed" and bool(pr.get("merged_at"))
+    if (pr["state"] != "open" and not merged) or pr["draft"] or pr["base"]["ref"] != cfg["default_branch"]:
+        raise ValueError("Only a ready open PR, or explicitly scoped installed merge, can pass")
+    if allow_merged:
+        if not merged or api.ref(cfg["default_branch"]) != pr.get("merge_commit_sha"):
+            raise ValueError("Installed migration proof requires the exact current default merge")
+        native = api.rest("GET", "git/commits/" + pr["merge_commit_sha"])
+        if native.get("sha") != pr["merge_commit_sha"] or [p.get("sha") for p in native.get("parents", [])] != [pr["base"]["sha"], pr["head"]["sha"]]:
+            raise ValueError("Installed migration does not preserve the exact reviewed head/base")
     if pr["head"]["repo"]["full_name"] != cfg["repository"]:
         raise ValueError("External fork delivery requires explicit trusted review of its boundary")
     issues = linked_issues(pr.get("body"))
@@ -155,7 +170,8 @@ def evaluate(api, pr_number, cfg=None, include_gate=False):
         raise ValueError("Unresolved review conversations block delivery")
     evidence = ci_ready(api, cfg, pr["head"]["sha"], include_gate)
     return {"pr": pr_number, "head": pr["head"]["sha"], "base": pr["base"]["sha"],
-        "issues": issues, "reviews": proof, "ci": evidence}
+        "issues": issues, "reviews": proof, "ci": evidence,
+        **({"merge": pr["merge_commit_sha"]} if allow_merged else {})}
 
 
 def wait_for_review(api, pr_number, seconds):

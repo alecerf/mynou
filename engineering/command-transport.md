@@ -61,3 +61,27 @@ Regression scenarios run only in CI. Independent Security/QA inspect the
 complete source diff. Closing Issue #30 also requires actual post-merge
 connected-comment/default-run/control-and-notes proof; pre-merge fixtures
 alone are not a live-backend capability claim.
+
+## Fixed migration commands
+
+Issue19 adds these exact argument sets:
+
+- fence-control: worker, lease, native task_receipt_id.
+- activate-control: worker, lease.
+- checkpoint-fence: worker, lease, summary, next_action.
+- release-fence: worker, lease; an owned phase checkpoint is mandatory.
+- recover-fence: worker; native preservation is required after release or expiry.
+- retire-control: worker, lease, exact notes_proof_sha, native task_receipt_id.
+
+The existing schema1 envelope and exact expected_sha remain mandatory. Fenced
+checkpoint/release preserve schema2 and the exact installed Master19/PR24 scope.
+They cannot change the source or select a ref. Another wake exits on a valid
+nested lease; the admitted owner renews at least every 15 minutes and releases
+before stopping. A released fence carries a native-parent-bound historical owner
+handoff, not another live lease. Recovery inspects native work before acquiring
+the next owner; no forced expiry wait is needed after deliberate release.
+
+All commands use reviewed fixed legacy/notes refs; no caller selects a path,
+script or arbitrary authority. See [cutover and interruption
+recovery](control-storage.md). A queued command is not proof of success.
+Actual receipts, Actions and ref/history must be inspected.

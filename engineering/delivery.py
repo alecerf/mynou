@@ -3,10 +3,11 @@ import uuid
 from datetime import timedelta
 from urllib.parse import quote
 
-from github import APIError
+from github import APIError, control_reference, reference
 from control import labels, label_update, read_state, recover_native, save
 import lease
 import qa
+import migration
 
 
 DISPATCH_VISIBILITY_GRACE = timedelta(minutes=5)
@@ -121,7 +122,8 @@ def recover_publication(api, head, state, prs):
 
 
 def branch_decision(name, head, cfg, comparison, open_prs, open_issues, held, merged_prs=(), protected=False):
-    if protected or name == cfg["default_branch"] or name.startswith("control/") or name.startswith("release/"):
+    authority = reference(control_reference(cfg))
+    if protected or name == cfg["default_branch"] or authority == "refs/heads/" + name or name.startswith("control/") or name.startswith("release/"):
         return False, "protected or durable branch"
     if held is not None and held["branch"] == name:
         return False, "execution lease references branch"
@@ -182,12 +184,17 @@ def cleanup_branch(api, name, expected, held):
 def cleanup_pr(api, pr):
     if not pr.get("merged_at"):
         raise ValueError("Unmerged PR cannot be cleaned up as delivered")
+    pending_cutover = migration.settings(api.cfg) is not None and pr["number"] == 24 and read_state(api)[1]["checkpoint"].get("control_migration", {}).get("phase") != "retired"
     for number in qa.linked_issues(pr.get("body")):
         issue = api.rest("GET", f"issues/{number}")
         if "agent-work" not in labels(issue):
             raise ValueError("Cleanup requires a managed linked Issue")
-        api.rest("PATCH", f"issues/{number}", {"state": "closed", "state_reason": "completed"})
-        label_update(api, number, "status", "done")
+        if pending_cutover and number == 19:
+            api.rest("PATCH", f"issues/{number}", {"state": "open", "state_reason": "reopened"})
+            label_update(api, number, "status", "in-progress")
+        else:
+            api.rest("PATCH", f"issues/{number}", {"state": "closed", "state_reason": "completed"})
+            label_update(api, number, "status", "done")
     # Repair dependencies before optional branch work can fail. Later wakes also
     # reconcile independently of whether this parent's status is already Done.
     held = read_state(api)[1]["lease"]
@@ -238,8 +245,49 @@ def recover_dependencies(api, head, state):
     return None
 
 
+def recover_cutover_metadata(api, head, state, pr, issues):
+    """Repair old merger/closing-keyword completion without inventing cutover."""
+    affected = [i for i in issues if i["number"] == 19]
+    if len(affected) != 1:
+        raise ValueError("Cutover recovery requires its native linked Issue19")
+    issue = affected[0]
+    if issue["state"] == "open" and "status:in-progress" in labels(issue):
+        return {"action": "cutover-pending", "issue": 19, "pr": 24,
+            "instruction": "Master must finish actual task/notes/retirement proof; merge is not completion."}
+    identity = str(uuid.uuid4())
+    current = api.ref(api.cfg["default_branch"])
+    owned = lease.acquire(state, lease.now(), identity, "github-actions-cutover-recovery",
+        "quality", 19, api.cfg["default_branch"], current, 24)
+    save(api, head, owned, "Recover unfinished cutover metadata")
+    try:
+        lease.owned(read_state(api)[1], identity, lease.now())
+        api.rest("PATCH", "issues/19", {"state": "open", "state_reason": "reopened"})
+        label_update(api, 19, "status", "in-progress")
+        h, s = read_state(api)
+        s = lease.checkpoint(s, lease.now(), identity,
+            "Installed PR24 is preserved; repaired prematurely closed/Done Issue19.",
+            "Master: reconcile existing Task from reviewed prompt before fencing; prove notes and retire legacy.")
+        s["checkpoint"]["pending_task_reconciliation"] = {"issue": 19, "pr": 24,
+            "policy_commit": current, "prompt_path": "engineering/worker-prompt.md", "state": "pending"}
+        save(api, h, s, "Checkpoint resumed native cutover work")
+        return {"action": "cutover-metadata-recovered", "issue": 19, "pr": 24}
+    finally:
+        h, s = read_state(api)
+        if lease.valid(s, lease.now()) and s["lease"]["id"] == identity:
+            if s["checkpoint"].get("role") != "quality" or s["checkpoint"].get("issue") != 19 or s["checkpoint"].get("at") is None or lease.time(s["checkpoint"]["at"]) < lease.time(s["lease"]["acquired_at"]):
+                s = lease.checkpoint(s, lease.now(), identity,
+                    "Cutover metadata recovery interrupted; source and native work preserved.",
+                    "Recover Issue19 reopening/status and pending task reconciliation before unrelated work.")
+                h = save(api, h, s, "Preserve interrupted cutover metadata recovery")
+            save(api, h, lease.release(s, lease.now(), identity), "Release cutover metadata recovery")
+
+
 def run(api, sweep=False):
-    head, state = read_state(api)
+    try:
+        head, state = read_state(api)
+    except migration.Pending as pending:
+        return {"action": "busy" if lease.valid(pending.state, lease.now()) else "recover-fence",
+            "control_sha": pending.head, "instruction": "Preserve the migration; no domain work until activation/recovery."}
     at = lease.now()
     if lease.valid(state, at):
         return {"action": "busy", "instruction": "Mechanical delivery waits for the current engineering role to release."}
@@ -301,6 +349,8 @@ def run(api, sweep=False):
     # Recover cleanup after a worker disappeared immediately following merge.
     for pr in [p for p in prs if p.get("merged_at") and qa.linked_issues(p.get("body"))][:10]:
         issues = [api.rest("GET", f"issues/{n}") for n in qa.linked_issues(pr.get("body"))]
+        if migration.settings(api.cfg) is not None and pr["number"] == 24 and state["checkpoint"].get("control_migration", {}).get("phase") != "retired":
+            return recover_cutover_metadata(api, head, state, pr, issues)
         unfinished = any("agent-work" in labels(i) and "status:done" not in labels(i) for i in issues)
         if unfinished:
             identity = str(uuid.uuid4())

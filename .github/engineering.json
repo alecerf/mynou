@@ -55,5 +55,13 @@
     },
     "max_age_seconds": 300
   },
+  "control_ref": "refs/heads/control/engineering",
+  "control_migration": {
+    "mode": "fenced-notes-v1",
+    "legacy_ref": "refs/heads/control/engineering",
+    "target_ref": "refs/notes/mynou-engineering",
+    "issue": 19,
+    "pr": 24
+  },
   "execution_mode": "continuous"
 }

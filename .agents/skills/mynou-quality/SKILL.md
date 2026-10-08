@@ -23,3 +23,8 @@ dependencies and remove only safe merged branches. Preserve cleanup failures for
 recovery without erasing delivered results. Encode recurring friction in the
 smallest useful reviewed Skill/tool/fixture/handoff. Retire obsolete instructions
 and overlapping roles without weakening concurrency, recovery, secrets or QA.
+
+Explicit Issue19 legacy retirement follows engineering/control-storage.md after
+verified notes/history proof and actual existing-task reconciliation. A fenced,
+retired legacy ref is not the live control branch; preserve its ancestry in notes.
+Normal cleanup must never apply this exception to another control reference.
