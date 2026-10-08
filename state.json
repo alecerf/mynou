@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 678,
+  "generation": 679,
   "lease": {
     "id": "codex-hourly-20261008123500Z-qa-1791464873000",
     "worker": "codex-hourly-20261008123500Z",
     "role": "qa",
     "issue": 19,
     "acquired_at": "2026-10-08T13:07:53Z",
-    "heartbeat_at": "2026-10-08T13:07:53Z",
-    "expires_at": "2026-10-08T13:52:53Z",
+    "heartbeat_at": "2026-10-08T13:09:50Z",
+    "expires_at": "2026-10-08T13:54:50Z",
     "branch": "work/control-ref-adapter",
     "commit": "b8493cad2c475c39e48f1eb7acb10e678e6c0832",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T13:07:43Z",
+    "at": "2026-10-08T13:09:50Z",
     "issue": 19,
-    "role": "security",
+    "role": "qa",
     "branch": "work/control-ref-adapter",
     "commit": "b8493cad2c475c39e48f1eb7acb10e678e6c0832",
     "pr": 24,
-    "summary": "Separate corrected Security inspection atb8493cad2c475c39e48f1eb7acb10e678e6c0832/baseced covered all19 native paths: unchanged13 complete patches verified against reviewedsource and allsix native corrections inspected. Rejected5456964286 findings corrected: prematureclosure recoveredunderlease, exactdefault+openIssue retirementguards, actualtaskattestation beforefence. ActualCI organization113325448294 succeeded117 scenarios and source-history113325467675 succeeded. No livecutover/taskproof is inferred; required productCI/Actions-log audit stillpending.",
-    "next_action": "Release Security and acquire distinct QA at exactcorrectedhead/base. Inspect acceptance, complete diff, actualCI and any remaining bounded-wake/recovery gaps; preserve draft until objectivegatesgreen.",
+    "summary": "Distinct QA19 at exactb8493cad2c475c39e48f1eb7acb10e678e6c0832/baseced independently challenged all19 actual native changedpaths and corrections, accepted Security5457051939/historical1bc82b0deebb86d69901be1eb7ab15864551282e, inspected currentCI and real logs. Rejection: schema2 Pending blocks normal checkpoint/release, while recover-fence only accepts expired heldlease. A bounded wake stopping afterfence cannot renew/release/resume its lease safely through supportedcommands. Add owned fenced checkpoint/release and evidence-based resume of releasedfence before installation. SourceCI lateststillhadMacIntel pending; no greengate/merge.",
+    "next_action": "Nextwake recovercurrentPR24/sourceb849 first, then Quality19 implement bounded owned-fence checkpoint/release/resume with native preservation and race/heartbeat/interruption CIcases. RefreshwholeSecurity/QA atnewhead/base and waitonlyactualCI; actualTaskreconciliation must precedefence. No newIssue, duplicatebranch orlivecutover.",
     "publication": {
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "state": "published",
@@ -194,8 +194,8 @@
       "current_default": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "authority": "refs/heads/control/engineering",
       "candidate": "refs/notes/mynou-engineering",
-      "state": "Corrected Security code review complete; logical QA and full actual CI pending",
-      "security_review": 5451459825,
+      "state": "QA rejects bounded fenced-lease lifecycle gap; preserve corrected proposal and current CI",
+      "security_review": 5457051939,
       "qa_review": 5451528384,
       "old_source_ci": 37728256136,
       "old_organization_ci": 37728256161,
@@ -211,7 +211,10 @@
       "live_cutover": "Not performed; legacy soleauthority unchanged",
       "rejected_security": 5456964286,
       "rejection_checkpoint": "079d5345daafdd794f1753485a295034fa38a44d",
-      "security_checkpoint": null
+      "security_checkpoint": "1bc82b0deebb86d69901be1eb7ab15864551282e",
+      "qa_findings": [
+        "After schema2 fence, checkpoint/release use control.read_state and throwPending; recovery rejects lease:null. Explicit renewal, durable release and safe evidence-based resume must cover deliberate boundedstop, not just expired-worker death."
+      ]
     },
     "control_bridge_design": {
       "state": "fixed scoped transport implemented/published/actually proved",
@@ -403,14 +406,14 @@
       "preserved_pr_handoff": 6059470835
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T13:04:14Z",
+      "at": "2026-10-08T13:07:43Z",
       "issue": 19,
-      "role": "quality",
+      "role": "security",
       "branch": "work/control-ref-adapter",
       "commit": "b8493cad2c475c39e48f1eb7acb10e678e6c0832",
       "pr": 24,
-      "summary": "Fixed rejected Security5456964286 findings in remoteb8493cad2c475c39e48f1eb7acb10e678e6c0832: recover premature nativeIssue19 completion under one mechanical Qualitylease; record pending actual task reconciliation; require actual Task attestation before fence; audit other open Issue refs and repeat default-source fence before retirement. Added4 original CI regressions, preserved total19paths and originalsourcehistory. No live migration/task/retirement. Actual newCI/reviews pending.",
-      "next_action": "Separate Security must reread complete corrected19-path diff and actualCI; QA must review under its own exact-head/base lease. Preserve draft until objectivegatesgreen; install thenactualtask/notes/retirement proof."
+      "summary": "Separate corrected Security inspection atb8493cad2c475c39e48f1eb7acb10e678e6c0832/baseced covered all19 native paths: unchanged13 complete patches verified against reviewedsource and allsix native corrections inspected. Rejected5456964286 findings corrected: prematureclosure recoveredunderlease, exactdefault+openIssue retirementguards, actualtaskattestation beforefence. ActualCI organization113325448294 succeeded117 scenarios and source-history113325467675 succeeded. No livecutover/taskproof is inferred; required productCI/Actions-log audit stillpending.",
+      "next_action": "Release Security and acquire distinct QA at exactcorrectedhead/base. Inspect acceptance, complete diff, actualCI and any remaining bounded-wake/recovery gaps; preserve draft until objectivegatesgreen."
     }
   },
   "attempts": {
