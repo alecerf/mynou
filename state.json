@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 424,
-  "lease": null,
+  "generation": 425,
+  "lease": {
+    "id": "wake10-security-cleanup-review-20261008T024100Z",
+    "worker": "codex-hourly-20261008T023108Z",
+    "role": "security",
+    "issue": 18,
+    "acquired_at": "2026-10-08T02:41:41Z",
+    "heartbeat_at": "2026-10-08T02:41:41Z",
+    "expires_at": "2026-10-08T03:26:41Z",
+    "branch": "work/container-demo-cleanup",
+    "commit": "f3483b9c6ba772285db18ebc7fc276cc768ad00a",
+    "pr": 23
+  },
   "checkpoint": {
     "at": "2026-10-08T02:41:34Z",
     "issue": 18,
