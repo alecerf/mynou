@@ -24,6 +24,10 @@
     ],
     "Engineering checks": [
       "organization"
+    ],
+    "Security audit": [
+      "source-history",
+      "actions-logs"
     ]
   },
   "observed_capabilities": {

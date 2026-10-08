@@ -194,7 +194,13 @@ failed dispatch remains visible in Actions and recoverable on a later wake.
 GitHub offers branch-ref dispatch, without an expected-SHA condition: default-head
 fences before and after detect external-writer races, fail closed and require
 Triage rather than certifying a different commit. Ordinary workers must inspect
-this pending publication evidence before starting unrelated product work.
+this pending publication evidence before starting unrelated product work. A same-source published
+record is terminal only while the latest eligible native default CI is successful;
+repeated mechanical wakes then leave the active-work checkpoint unchanged. Actual
+CI failures still preempt delivery. Necessary checkpoint updates retain source-bound
+metadata and one concise previous-work handoff, without nesting full checkpoints.
+Retained evidence describes its recorded source; it never certifies a new head or
+substitutes for native CI and exact-head/base reviews.
 
 After merge, native closing keywords and existing `delete_branch_on_merge` help.
 Cleanup sets Issue status Done, unblocks completed native dependencies and audits
