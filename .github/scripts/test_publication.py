@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from publish_container import CommandError, Publisher
+from publish_container import CommandError, Publisher, main, verify_demo
 
 
 SOURCE = "a" * 40
@@ -211,6 +211,67 @@ class PublicationTests(unittest.TestCase):
         self.assertIn("--network", run)
         self.assertIn("none", run)
         self.assertIn("no-new-privileges:true", run)
+
+    def test_private_demo_cleanup_uses_the_nonroot_mount_owner(self):
+        mounts = []
+        def native(args):
+            self.assertEqual(args[args.index("--user") + 1],
+                             f"{os.geteuid()}:{os.getegid()}")
+            self.assertIn("--read-only", args)
+            self.assertIn("none", args)
+            self.assertIn("ALL", args)
+            self.assertIn("no-new-privileges:true", args)
+            mount = args[args.index("--mount") + 1]
+            directory = Path(mount.removeprefix("type=bind,src=").removesuffix(",dst=/data"))
+            mounts.append(directory)
+            self.assertEqual(directory.stat().st_mode & 0o777, 0o700)
+            seeder = directory / "demo" / "seeder"
+            seeder.mkdir(mode=0o700, parents=True)
+            (seeder / "synthetic").write_bytes(b"fixture-only")
+            return json.dumps({"job": {"state": "ready"}, "plex_scan_confirmed": True})
+        with tempfile.TemporaryDirectory() as parent:
+            with patch.dict(os.environ, {"RUNNER_TEMP": parent}):
+                proof = verify_demo("mynou:0.22.17", native)
+            self.assertEqual(proof["cleanup"], "completed")
+            self.assertEqual(proof["state"], "ready")
+            self.assertTrue(proof["plex_scan_confirmed"])
+            self.assertFalse(mounts[0].exists())
+            self.assertEqual(list(Path(parent).iterdir()), [])
+
+    def test_root_verification_identity_never_runs_a_command(self):
+        for uid, gid in ((0, 1001), (1001, 0)):
+            with self.subTest(uid=uid, gid=gid), patch("os.geteuid", return_value=uid):
+                with patch("os.getegid", return_value=gid), self.assertRaises(ValueError):
+                    verify_demo("mynou:0.22.17", lambda *args: self.fail("Command ran"))
+
+    def test_cleanup_failure_never_announces_publication(self):
+        real_temporary = tempfile.TemporaryDirectory
+        class FailedCleanup:
+            def __init__(self, **kwargs):
+                self.directory = real_temporary(**kwargs)
+            def __enter__(self):
+                return self.directory.__enter__()
+            def __exit__(self, *args):
+                self.directory.__exit__(*args)
+                raise PermissionError("fixture cleanup failed")
+        with real_temporary() as parent:
+            output = Path(parent) / "output"
+            output.write_text("existing\n")
+            with patch.dict(os.environ, {"RUNNER_TEMP": parent, "GITHUB_OUTPUT": str(output)}):
+                with patch("sys.argv", ["publish_container.py", "archive", "0.22.17", "binary"]):
+                    with patch("publish_container.Publisher") as publisher:
+                        publisher.return_value.publish.return_value = {"image": "fixture-image"}
+                        with patch("publish_container.tempfile.TemporaryDirectory", FailedCleanup):
+                            with self.assertRaises(PermissionError):
+                                main()
+            self.assertEqual(output.read_text(), "existing\n")
+            self.assertFalse((Path(parent) / "mynou-image.json").exists())
+
+    def test_readonly_demo_mode_rejects_remote_images(self):
+        with patch("sys.argv", ["publish_container.py", "--verify-demo", "ghcr.io/alecerf/mynou:0.22.17"]):
+            with patch("publish_container.verify_demo", side_effect=AssertionError("Command ran")):
+                with self.assertRaises(ValueError):
+                    main()
 
     def test_changed_pulled_binary_blocks_release_proof(self):
         with self.assertRaises(ValueError):
