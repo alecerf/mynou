@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 434,
-  "lease": {
-    "id": "wake10-master-cleanup-delivery-20261008T024700Z",
-    "worker": "codex-hourly-20261008T023108Z",
-    "role": "master",
-    "issue": 18,
-    "acquired_at": "2026-10-08T02:47:18Z",
-    "heartbeat_at": "2026-10-08T02:53:22Z",
-    "expires_at": "2026-10-08T03:38:22Z",
-    "branch": "trunk",
-    "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
-    "pr": 23
-  },
+  "generation": 435,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-08T02:53:22Z",
     "issue": 18,
