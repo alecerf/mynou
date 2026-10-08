@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 369,
+  "generation": 370,
   "lease": {
     "id": "wake8-triage-release-retry-20261008T004200Z",
     "worker": "codex-hourly-20261008T003520Z",
@@ -506,5 +506,12 @@
       "manual_branch_deletion": false
     }
   },
-  "attempts": {}
+  "attempts": {
+    "18": {
+      "approach": "One exact-source release-only retry after possible asynchronous package association; change to sanitized phase/metadata diagnostics on recurrence",
+      "fingerprint": "551e82d2c4158b9af2080081bbac3e1d18c949ea:37704415292:attempt1:113076409833:package-private-or-link-guard:v17-release404",
+      "unchanged": 1,
+      "at": "2026-10-08T00:43:42Z"
+    }
+  }
 }
