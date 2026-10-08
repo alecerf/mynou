@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 460,
+  "generation": 461,
   "lease": {
     "id": "wake11-quality-control-ref-corrections-20261008T032912Z",
     "worker": "codex-hourly-20261008T032912Z",
     "role": "quality",
     "issue": 19,
     "acquired_at": "2026-10-08T03:49:55Z",
-    "heartbeat_at": "2026-10-08T03:49:55Z",
-    "expires_at": "2026-10-08T04:34:55Z",
+    "heartbeat_at": "2026-10-08T03:50:52Z",
+    "expires_at": "2026-10-08T04:35:52Z",
     "branch": "work/control-ref-adapter",
     "commit": "21fca94bb56dc0cdb0dcbf50e134284d54c91f14",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T03:49:45Z",
+    "at": "2026-10-08T03:50:52Z",
     "issue": 19,
-    "role": "security",
+    "role": "quality",
     "branch": "work/control-ref-adapter",
     "commit": "21fca94bb56dc0cdb0dcbf50e134284d54c91f14",
     "pr": 24,
-    "summary": "Security independently inspected all ten native PR24 changed-file patches at 21fca94/base d647. Reject preparatory adapter until control configuration cannot target the product default branch and legacy branch aliases cannot identify notes references. Current live authority remains unchanged; draft migration is not complete. Source CI is still running, not certified.",
-    "next_action": "Release Security and acquire Quality at the exact head to fix these two concrete validation findings with CI-only regressions; re-review the full corrected diff.",
+    "summary": "Quality correcting actual Security review5451103861: configuration now rejects product default as control authority and forbids notes in legacy control_branch even when aliases agree. Added CI-only no-native-I/O regressions for both cases. No live migration or local validation.",
+    "next_action": "Push the bounded correction commit, then release for fresh exact-head complete-diff Security and QA.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -1155,6 +1155,14 @@
         "status": "in_progress"
       },
       "live_migration": false
+    },
+    "control_storage_corrections": {
+      "review_id": 5451103861,
+      "findings_addressed": [
+        "default branch cannot be engineering state tree",
+        "legacy branch-only namespace required"
+      ],
+      "tests": "Two original regression scenarios authored; execution pending CI"
     }
   },
   "attempts": {
