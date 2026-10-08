@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 536,
+  "generation": 537,
   "lease": {
     "id": "wake15-quality-public-security-20261008T064648Z",
     "worker": "codex-capacity-recovery-20261008T064648Z",
     "role": "quality",
     "issue": 27,
     "acquired_at": "2026-10-08T07:06:39Z",
-    "heartbeat_at": "2026-10-08T07:13:36Z",
-    "expires_at": "2026-10-08T07:58:36Z",
+    "heartbeat_at": "2026-10-08T07:14:54Z",
+    "expires_at": "2026-10-08T07:59:54Z",
     "branch": "work/publication-handoff-recovery",
-    "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
+    "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
     "pr": 26
   },
   "checkpoint": {
-    "at": "2026-10-08T07:13:36Z",
+    "at": "2026-10-08T07:14:54Z",
     "issue": 27,
     "role": "quality",
     "branch": "work/publication-handoff-recovery",
-    "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
+    "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
     "pr": 26,
-    "summary": "Original public-security source changes are prepared for preserved PR #26: selected credential/private-key detection across reachable Git objects and completed Actions-attempt log archives, bounded downloads/ZIP expansion, strict HTTPS storage redirects without forwarding the GitHub token, redacted reports and seven meaningful CI-only regressions. Public-safe SECURITY.md replaces private-Issue guidance. Proposed read-only Security audit jobs become required, and main validation also audits full fetched history. No local scans/tests/builds, detected credential finding or green new-source checks are claimed.",
-    "next_action": "Create one original source commit with sole parent 9fb3e6dc and advance preserved PR #26 branch by expected SHA, force false. Link #27 alongside #25; CI alone performs full source/history and completed-log scans. Inspect actual redacted outcomes and all checks, then distinct complete-diff Security and QA at new exact head/base. Hold delivery until current audit findings/gaps are resolved.",
+    "summary": "Original security implementation is pushed on preserved PR #26 at 99138218a1f6e8689ac9fb31bfbcb79c4a5ae253 (tree a55badee1ea852a7f6b7c2a785deeecd41d79b19, sole parent 9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a). It retains the scheduler repair and adds original std-only CI history/log audit, redacted bounded output, seven regressions, required read-only Security jobs and safe public disclosure guidance. No local validation or absence-of-exposure claim. Prior Security/QA and green checks apply only to old 9fb3e6dc and are invalid for this new source. CI outcomes are pending; native secret protection administration remains integration-denied.",
+    "next_action": "Link Issue #27 to existing PR #26, inspect actual CI-only source/history and Actions-log audit output plus all required jobs. Fix actual CI failures through new original commits without local checks. Once satisfactory, release implementation and use distinct exact-head/base complete-diff Security then QA; merge only after every objective gate actually passes. Preserve Issue #19 / PR #24 and immutable releases.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -275,18 +275,18 @@
       "preserved_branch": "work/control-ref-adapter",
       "preserved_commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c",
       "branch": "work/publication-handoff-recovery",
-      "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
-      "tree": "3d343a49b1df72a96c38333d9d3871d6b80f43f9",
+      "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
+      "tree": "a55badee1ea852a7f6b7c2a785deeecd41d79b19",
       "pr": 26,
       "version": "0.22.20",
-      "validation": "Required source CI and organization succeeded; new QA recorded, final machine gate pending",
+      "validation": "New-source CI pending",
       "local_checks": false,
-      "state": "awaiting-objective-qa-gate",
+      "state": "public-security-ci-pending",
       "ci_run": 37729200692,
       "security_review": 5451648764,
       "qa_review": 5452774635,
       "merge": false,
-      "qa_verdict": "passed",
+      "qa_verdict": "invalidated-by-source-change",
       "publication": "not started"
     },
     "urgent_repair_ci": {
@@ -535,6 +535,23 @@
       "reuse_pr": 26
     },
     "public_security_source_plan": {
+      "parent": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
+      "files": [
+        "engineering/secret_audit.py",
+        "engineering/tests/test_secret_audit.py",
+        ".github/workflows/security-audit.yml",
+        "SECURITY.md",
+        ".github/workflows/ci.yml",
+        ".github/engineering.json"
+      ],
+      "local_validation": false
+    },
+    "public_security_implementation": {
+      "issue": 27,
+      "pr": 26,
+      "branch": "work/publication-handoff-recovery",
+      "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
+      "tree": "a55badee1ea852a7f6b7c2a785deeecd41d79b19",
       "parent": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
       "files": [
         "engineering/secret_audit.py",
