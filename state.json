@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 555,
-  "lease": {
-    "id": "codex-hourly-20261008T073509Z-qa-20261008074031",
-    "worker": "codex-hourly-20261008T073509Z",
-    "role": "qa",
-    "issue": 27,
-    "acquired_at": "2026-10-08T07:40:31Z",
-    "heartbeat_at": "2026-10-08T07:43:32Z",
-    "expires_at": "2026-10-08T08:28:32Z",
-    "branch": "work/publication-handoff-recovery",
-    "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
-    "pr": 26
-  },
+  "generation": 556,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-08T07:43:32Z",
     "issue": 27,
