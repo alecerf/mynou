@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 541,
+  "generation": 542,
   "lease": {
     "id": "wake15-security-complete-review-20261008T064648Z",
     "worker": "codex-capacity-recovery-20261008T064648Z",
     "role": "security",
     "issue": 27,
     "acquired_at": "2026-10-08T07:17:18Z",
-    "heartbeat_at": "2026-10-08T07:19:07Z",
-    "expires_at": "2026-10-08T08:04:07Z",
+    "heartbeat_at": "2026-10-08T07:20:48Z",
+    "expires_at": "2026-10-08T08:05:48Z",
     "branch": "work/publication-handoff-recovery",
     "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
     "pr": 26
   },
   "checkpoint": {
-    "at": "2026-10-08T07:19:07Z",
+    "at": "2026-10-08T07:20:48Z",
     "issue": 27,
     "role": "security",
     "branch": "work/publication-handoff-recovery",
     "commit": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
     "pr": 26,
-    "summary": "Distinct Security reviewed every actual 12-file PR #26 patch at 99138218a1f6e8689ac9fb31bfbcb79c4a5ae253/base d647be6edfd6e892474b2602bbc9047ad4047c2f, including the complete added auditor. Read-only permissions, no write-token PR execution, strict HTTPS storage redirects with a fresh unauthenticated request, redacted errors/findings, bounded Git/HTTP/ZIP parsing, truthful missing/pending coverage and provider-pattern limits pass static Security. Native Security audit 37742148708 passed 4560 Git objects and 531 archives/1800 logs with zero recognized findings/gaps. Main validate passed 864 Rust tests and 22 infra/64 organization cases, including seven audit regressions; remaining platform/package and fresh QA still gate delivery. Native secret protection remains permission-denied, not claimed enabled.",
-    "next_action": "Post scoped complete-diff Security COMMENT with actual bounded audit evidence and limitations, then checkpoint/release. Fresh QA must separately inspect all 12 actual patches, native audit coverage, complete required CI and this historical Security lease before accepting. Do not merge or publish based on audit regex alone or old-source proof.",
+    "summary": "Native complete-diff Security COMMENT 5453084901 passes PR #26 at new exact 99138218a1f6e8689ac9fb31bfbcb79c4a5ae253/base d647be6edfd6e892474b2602bbc9047ad4047c2f, historical scoped lease 6e02750960c6683c6c04bcd26306942b09c16b5d. Full 12 patches and actual bounded audit evidence reviewed; zero recognized patterns in4560 Git objects/531 archives/1800 logs, no missing coverage, explicit running-snapshot/native-permission limits. Fresh native source CI 37742148752 now has all six required jobs successful, release appropriately skipped on PR. No QA or merged/released new source is inferred.",
+    "next_action": "Release Security and acquire separate exact-head QA. Inspect the complete actual 12-path diff, acceptance for #25/#27, all native CI results/logs, valid Security scope and unresolved threads. Record truthful QA if satisfactory and release before the final-five-minute reserve; leave final gate/delivery for supported recovery if it is not immediately ready within the wake budget.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -607,7 +607,57 @@
       "audit_run": 37742148708,
       "recognized_pattern_findings": 0,
       "native_admin_http": 403,
-      "scope": "Static complete diff and bounded provider/private-key audit; no arbitrary sensitive-data absence claim"
+      "scope": "Static complete diff and bounded provider/private-key audit; no arbitrary sensitive-data absence claim",
+      "review": 5453084901,
+      "lease_checkpoint": "6e02750960c6683c6c04bcd26306942b09c16b5d"
+    },
+    "public_security_source_ci": {
+      "run": 37742148752,
+      "head": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
+      "jobs": [
+        {
+          "id": 113195094903,
+          "name": "validate",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113195095208,
+          "name": "Build x86_64-unknown-linux-musl",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113195095225,
+          "name": "Build aarch64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113195095261,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113195095328,
+          "name": "Build x86_64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113196399257,
+          "name": "package",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113196611532,
+          "name": "release",
+          "status": "completed",
+          "conclusion": "skipped"
+        }
+      ]
     }
   },
   "attempts": {
