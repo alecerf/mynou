@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 523,
+  "generation": 524,
   "lease": {
     "id": "wake15-qa-capacity-review-20261008T064648Z",
     "worker": "codex-capacity-recovery-20261008T064648Z",
     "role": "qa",
     "issue": 25,
     "acquired_at": "2026-10-08T06:49:38Z",
-    "heartbeat_at": "2026-10-08T06:52:08Z",
-    "expires_at": "2026-10-08T07:37:08Z",
+    "heartbeat_at": "2026-10-08T06:53:33Z",
+    "expires_at": "2026-10-08T07:38:33Z",
     "branch": "work/publication-handoff-recovery",
     "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
     "pr": 26
   },
   "checkpoint": {
-    "at": "2026-10-08T06:52:08Z",
+    "at": "2026-10-08T06:53:33Z",
     "issue": 25,
     "role": "qa",
     "branch": "work/publication-handoff-recovery",
     "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
     "pr": 26,
-    "summary": "Distinct QA under an exact PR #26 lease inspected every actual six-file patch and delivery/lease context at 9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a/base d647be6edfd6e892474b2602bbc9047ad4047c2f. Native public-capacity rerun 37730229376 attempt 2 organization job 113187382812 now succeeded on a real runner with 57 scenarios and all four new regressions. Source CI 37729200692 still has all six required jobs green; all six job logs reread, including Rust/infrastructure checks, synthetic ready/Plex demos, nonroot cleanup and three checksums. Security review 5451648764 has valid scoped compact historical lease 617692df4dad3ca49439be33c7ce3432785c52c7, source/base match, valid submission time and native ancestry. No review threads. QA source acceptance passes; actual agent-qa-review is still in progress, not certified green.",
-    "next_action": "Post the truthful scoped QA COMMENT superseding prior capacity rejection 5451664028. Release QA; reacquire delivery role only after fresh native objective gates are green. Merge by exact expected SHA when every gate, source/base and findings remain valid; otherwise preserve a genuine CI wait. Actions alone publishes the new version.",
+    "summary": "Distinct complete-diff QA passed exact PR #26 head/base after restored real runner execution. Native QA COMMENT review 5452774635 at scoped historical checkpoint a5569d329892782bb08931a689e8ecaec9c2de1b supersedes prior capacity rejection 5451664028. All six required source CI jobs and recovered organization 113187382812 succeeded; complete native diff, code context and job logs inspected. Security 5451648764 is valid for unchanged source/base, with compact historical lease/ancestry and no unresolved threads. Actual machine QA gate is not yet certified; no merge/release/local validation.",
+    "next_action": "Release QA and acquire Quality for delivery recovery. Read fresh source/base, required checks and native reviews; inspect every gate outcome and unresolved threads. Merge only after objective success, then preserve exact remote merge/default source and recover Actions-owned publication and native cleanup. If a real CI wait remains, checkpoint/release instead of polling.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -279,14 +279,14 @@
       "tree": "3d343a49b1df72a96c38333d9d3871d6b80f43f9",
       "pr": 26,
       "version": "0.22.20",
-      "validation": "Source CI succeeded; final Engineering rerun intended",
+      "validation": "Required source CI and organization succeeded; new QA recorded, final machine gate pending",
       "local_checks": false,
-      "state": "recovering-actions-after-public-visibility",
+      "state": "awaiting-objective-qa-gate",
       "ci_run": 37729200692,
       "security_review": 5451648764,
-      "qa_review": 5451664028,
+      "qa_review": 5452774635,
       "merge": false,
-      "qa_verdict": "rejected",
+      "qa_verdict": "passed",
       "publication": "not started"
     },
     "urgent_repair_ci": {
@@ -422,10 +422,10 @@
     "urgent_repair_qa": {
       "head": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
       "base": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
-      "review": 5451664028,
-      "lease_checkpoint": "f7796bd13397abb8d701033a62fa7ce2f466a1dc",
-      "verdict": "rejected",
-      "reason": "Required final Engineering jobs cannot start because of account payments/spending"
+      "review": 5452774635,
+      "lease_checkpoint": "a5569d329892782bb08931a689e8ecaec9c2de1b",
+      "verdict": "passed",
+      "supersedes": 5451664028
     },
     "retrospective": {
       "finding": "Accumulating full duplicated review records made control history snapshots exceed64KiB; native gate cannot read those bindings.",
@@ -468,7 +468,10 @@
       "required_checks_green": false,
       "rerun_response": {
         "success": true
-      }
+      },
+      "actual_runner": 1000001175,
+      "organization_job": 113187382812,
+      "organization": "success"
     },
     "qa_review_phase": {
       "head": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
