@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 393,
+  "generation": 394,
   "lease": {
     "id": "wake9-quality-registry-correction-20261008T014100Z",
     "worker": "codex-hourly-20261008T012904Z",
     "role": "quality",
     "issue": 18,
     "acquired_at": "2026-10-08T01:40:39Z",
-    "heartbeat_at": "2026-10-08T01:45:07Z",
-    "expires_at": "2026-10-08T02:30:07Z",
+    "heartbeat_at": "2026-10-08T01:45:13Z",
+    "expires_at": "2026-10-08T02:30:13Z",
     "branch": "work/registry-recovery",
-    "commit": "0356649d2b8364c2ec4061f080d28de9b842cfb9",
+    "commit": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
     "pr": 22
   },
   "checkpoint": {
-    "at": "2026-10-08T01:45:07Z",
+    "at": "2026-10-08T01:45:13Z",
     "issue": 18,
     "role": "quality",
     "branch": "work/registry-recovery",
-    "commit": "0356649d2b8364c2ec4061f080d28de9b842cfb9",
+    "commit": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
     "pr": 22,
-    "summary": "Original corrective source prepared after actual diagnostic CI succeeded. Private exact native repository name/ID before Docker; private owner/name/type/stable positive packageID before/after writes; reported foreign links still rejected, omitted field recorded not_exposed. All image/digest/bytes/demo/collision gates unchanged. New0.22.18 avoids actual17tag replacement; temporary probe/helper/tests removed. English current-version docs and release scope updated; no local validation.",
-    "next_action": "Commit correction on exact preserved0356649d parent of PR22, then separate full Security/QA on new exact head/base and actual new CI. Default publication must later prove repository/package IDs, private state, source/digest/binary/demo, four immutable bot assets and unchanged17/16 baseline.",
+    "summary": "Corrective0.22.18 source committed remotely on existing draftPR22, preserving original diagnostic0356649d in ancestry. Temporary read-only probe/helper retired. Supported exact private source-repository ID/context and private owner/name/type/stable packageID replace missing-field assumption; reported conflicting links still block. Original collision/digest/image/bytes/demo guards retained. No local check or publication; actual CI/Security/QA pending.",
+    "next_action": "Acquire Security exact final PR head/base551e82d2, inspect actual complete native diff and new CI before independent QA; only all real objective gates may permit merge. Older17image digest and immutable16 assets preserved.",
     "publication": {
       "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
       "state": "ci-failed",
@@ -548,18 +548,21 @@
     },
     "recovery_source": {
       "base": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
-      "head": "0356649d2b8364c2ec4061f080d28de9b842cfb9",
-      "tree": "4dc673fb89282b2f20badb34a7def2b9153d0d66",
+      "head": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
+      "tree": "59fa9612be0dbc8bb27ba6872d86bf8a624c3e8e",
       "branch": "work/registry-recovery",
       "pr": 22,
-      "stage": "read-only diagnosis; publisher guard unchanged",
+      "stage": "supported private identity/provenance correction",
       "paths": [
         ".github/scripts/inspect_package.py",
         ".github/scripts/test_package_inspection.py",
         ".github/workflows/ci.yml",
         "docs/ci.md"
       ],
-      "diagnosis_not_completion": true
+      "diagnosis_not_completion": true,
+      "version": "0.22.18",
+      "prior_diagnostic_head": "0356649d2b8364c2ec4061f080d28de9b842cfb9",
+      "temporary_probe_retired": true
     },
     "diagnostic_security": {
       "schema": 1,
