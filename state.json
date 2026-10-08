@@ -1,44 +1,39 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 562,
+  "generation": 563,
   "lease": {
     "id": "codex-hourly-20261008082654Z-master-20261008082813",
     "worker": "codex-hourly-20261008082654Z",
     "role": "master",
     "issue": 27,
     "acquired_at": "2026-10-08T08:28:13Z",
-    "heartbeat_at": "2026-10-08T08:28:13Z",
-    "expires_at": "2026-10-08T09:13:13Z",
+    "heartbeat_at": "2026-10-08T08:30:44Z",
+    "expires_at": "2026-10-08T09:15:44Z",
     "branch": "trunk",
     "commit": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
     "pr": 26
   },
   "checkpoint": {
-    "at": "2026-10-08T07:49:36Z",
+    "at": "2026-10-08T08:30:44Z",
     "issue": 27,
-    "role": "quality",
+    "role": "master",
     "branch": "trunk",
     "commit": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
     "pr": 26,
-    "summary": "Delivered mergedPR26/default04e99496318 after real Security5453084901, distinct QA5453360050 and green required source/audit/Engineering gates. Issues25/27 closed+Done; native mergedbranch absent; closed25 dependency repairs19 toReady while PR24/053fb1 staysdraft/preserved. DefaultSecurity37745425165 passed4626Git objects and542completed-attempt archives/1966members,0recognized patterns/gaps; pending workflows explicitly excluded. DefaultCI37745425271 remainsinprogress: validate and3builds passed,MacIntel pending. No release claim or duplicate dispatch. Stop for realActions publication wait.",
-    "next_action": "Next wake admission, recover exact default04e99496318 CI37745425271 first. Read actual remaining platform/package/release logs, native immutablev0.22.20/assets and registry evidence; fix actualred through reviewed source if needed. Then resume preserved19/PR24 without losing source or treating unfinishedcutover asaccepted. Native scanning admin403 remains documented.",
+    "summary": "Recovered actual defaultCI37745425271 failure at04e99496318: six build/package jobs passed; release113206816150 rejected now-public native repository at the obsolete private-source guard, before publication. Nativev0.22.20 lookup404. Created meaningful recoveryIssue28 with exact acceptance; no repeatedCI, source mutation or release claim. Container package privacy/identity/tag/digest/runtime gates must remain intact.",
+    "next_action": "Release Master and acquire Quality on the current exact remote default to implement the smallest guarded repository-visibility adaptation, source/package visibility proof, release copy correction and CI-only regressions in one linkedPR. Separate Security/QA; preserve19/PR24.",
     "publication": {
       "commit": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
-      "state": "pending",
-      "at": "2026-10-08T07:48:30Z",
+      "state": "ci-failed",
+      "at": "2026-10-08T08:26:54Z",
       "run_id": 37745425271,
-      "event": "push",
-      "status": "in_progress",
-      "conclusion": null,
-      "completed_jobs": [
-        113205638097,
-        113205638459,
-        113205638503,
-        113205638507
-      ],
-      "pending_job": 113205638287,
-      "security_audit_run": 37745425165
+      "status": "completed",
+      "conclusion": "failure",
+      "failed_job": 113206816150,
+      "error": "Publication requires the exact private repository",
+      "release_lookup": "v0.22.20 HTTP404",
+      "recovery_issue": 28
     },
     "previous_checkpoint": {
       "at": "2026-10-08T07:45:26Z",
@@ -95,7 +90,7 @@
       "limitations": "Selected provider/private-key patterns and completed snapshot only; no arbitrary sensitive-data guarantee."
     },
     "delivery": {
-      "state": "merged-awaiting-actions-publication",
+      "state": "merged-source-publication-failed",
       "pr": 26,
       "source_head": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
       "merge_commit": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
@@ -119,6 +114,10 @@
       "dependency_status": "Ready; closed native25 retained",
       "preserved_pr": 24,
       "preserved_commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c"
+    },
+    "release_recovery": {
+      "issue": 28,
+      "approach": "Accept exact public source identity while retaining private package and every publication trust gate; distinguish source/package visibility; CI-only regressions."
     }
   },
   "attempts": {
