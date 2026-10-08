@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 725,
+  "generation": 726,
   "lease": {
     "id": "codex-continuous-20261008143128Z-master-1791470121000",
     "worker": "codex-continuous-20261008143128Z",
     "role": "master",
     "issue": 19,
     "acquired_at": "2026-10-08T14:35:21Z",
-    "heartbeat_at": "2026-10-08T14:35:21Z",
-    "expires_at": "2026-10-08T15:20:21Z",
+    "heartbeat_at": "2026-10-08T14:36:35Z",
+    "expires_at": "2026-10-08T15:21:35Z",
     "branch": "work/control-ref-adapter",
     "commit": "b8493cad2c475c39e48f1eb7acb10e678e6c0832",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T14:35:12Z",
-    "issue": 34,
-    "role": "quality",
-    "branch": "trunk",
-    "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
-    "pr": 35,
-    "summary": "Quality34 closed actualnativeIssueDone after immutablev24/defaultCI/privateimage proof; nativehandoffs6062224986/6062225589 preserveevidence. LiveTaskcontinuousalreadyreconciled, no repeat. PR24/b849 remainsunique anddraft, no legacybranchretirement.",
-    "next_action": "Master19 afterrelease: nativeIssue/reviews/source recovery; Quality19 fixesfencedrenew/checkpoint/release/resume withCI-onlycases andcurrentdefaultcontinuousintegration. DistinctSecurity/QA thenactualCI/gate merge beforelivecutover.",
+    "at": "2026-10-08T14:36:35Z",
+    "issue": 19,
+    "role": "master",
+    "branch": "work/control-ref-adapter",
+    "commit": "b8493cad2c475c39e48f1eb7acb10e678e6c0832",
+    "pr": 24,
+    "summary": "Master19 recovery verifiedactualopenIssue/draftPR24/b849 andQA5457079884; nativeblockers25,28,30closed. v24/defaultcontinuouspolicy c348 publicationnowverifiedand34closed. Minimumsequence Quality19 fixesnestedfencedlease lifecycle thenSecurity19/QA19, CIonly. Preservefullb849+c348history inoriginalPR andunpublishedv25.",
+    "next_action": "Quality19: exact-head owned fencedcheckpoint/renew/release; released/expirednative-preservationresume, nosecondauthority. OriginalCI scenarios forrenewal/winner races/stop/resume; integrate currentcontinuouspolicywithoutrollingbackpublishedv24. FullSecurity/QA andactualgreengates before installation/livecutover.",
     "publication": {
       "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
       "state": "published",
@@ -497,14 +497,14 @@
       "publication_pr_handoff": 6062225589
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T13:31:11Z",
+      "at": "2026-10-08T14:35:12Z",
       "issue": 34,
-      "role": "triage",
-      "branch": "work/continuous-engineering",
-      "commit": "f12a37e873561fbd3de3ccdd30883b9f41c2a4c3",
+      "role": "quality",
+      "branch": "trunk",
+      "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
       "pr": 35,
-      "summary": "Actual objectiveagent-QAgate113336598456 inEngineering37784630740 succeeded; logbinds Security5457288321/QA5457333341 historicalleases and exactf12a/basecedd. Allrequiredsource/security/org gates actualgreen; freshPR/default/head/threads verified. Oldscheduled13:30wake busyadmission consumed no newworker; originalexecution continues. No localchecks.",
-      "next_action": "OwnedTriage merge exactheadPR35 only; confirmremote default/merge. Checkpoint/release, thenMaster34 reconcile actualexisting Taskprompt only to reviewedmerge, retain hourlyschedule/timezone, persist native response before stopping."
+      "summary": "Quality34 closed actualnativeIssueDone after immutablev24/defaultCI/privateimage proof; nativehandoffs6062224986/6062225589 preserveevidence. LiveTaskcontinuousalreadyreconciled, no repeat. PR24/b849 remainsunique anddraft, no legacybranchretirement.",
+      "next_action": "Master19 afterrelease: nativeIssue/reviews/source recovery; Quality19 fixesfencedrenew/checkpoint/release/resume withCI-onlycases andcurrentdefaultcontinuousintegration. DistinctSecurity/QA thenactualCI/gate merge beforelivecutover."
     },
     "task_reconciliation": {
       "issue": 34,
