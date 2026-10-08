@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 449,
-  "lease": null,
+  "generation": 450,
+  "lease": {
+    "id": "wake11-security-control-storage-plan-20261008T032912Z",
+    "worker": "codex-hourly-20261008T032912Z",
+    "role": "security",
+    "issue": 19,
+    "acquired_at": "2026-10-08T03:41:35Z",
+    "heartbeat_at": "2026-10-08T03:41:35Z",
+    "expires_at": "2026-10-08T04:26:35Z",
+    "branch": "trunk",
+    "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+    "pr": null
+  },
   "checkpoint": {
     "at": "2026-10-08T03:41:26Z",
     "issue": 19,
