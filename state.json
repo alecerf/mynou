@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 421,
+  "generation": 422,
   "lease": {
     "id": "wake10-quality-cleanup-fix-20261008T023800Z",
     "worker": "codex-hourly-20261008T023108Z",
     "role": "quality",
     "issue": 18,
     "acquired_at": "2026-10-08T02:37:42Z",
-    "heartbeat_at": "2026-10-08T02:37:42Z",
-    "expires_at": "2026-10-08T03:22:42Z",
-    "branch": "trunk",
+    "heartbeat_at": "2026-10-08T02:41:25Z",
+    "expires_at": "2026-10-08T03:26:25Z",
+    "branch": "work/container-demo-cleanup",
     "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
-    "pr": 22
+    "pr": null
   },
   "checkpoint": {
-    "at": "2026-10-08T02:37:36Z",
+    "at": "2026-10-08T02:41:25Z",
     "issue": 18,
-    "role": "security",
-    "branch": "trunk",
+    "role": "quality",
+    "branch": "work/container-demo-cleanup",
     "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
-    "pr": 22,
-    "summary": "Security planning: the supported private registry checks actually passed; the failure is host cleanup of a synthetic bind-mounted tree created by configured nonroot container UID1000. Approved bounded runner-identity cleanup verification without root/sudo, world-writable new mounts, ignored errors or registry permission changes.",
-    "next_action": "Quality implements one linked corrective PR for18: shared private0700 nonroot runner-UID/GID demo helper reused by PR package CI and publisher; retain configured1000 factory demo/image policy; delay proof/output until successful context cleanup; add failure/ownership regressions; fresh19 preserves observed17/18tags.",
+    "pr": null,
+    "summary": "Quality implementing bounded19 cleanup correction with shared private nonroot runner-owned demo, preserved configured1000 package gate, truthful post-cleanup output and four meaningful CI regressions. Existing native branches only trunk/control; no active PR or partial work to discard.",
+    "next_action": "Create original source commit and one draft PR linked to Issue18; let CI execute actual shared cleanup, then separate complete-diff Security and independent QA.",
     "publication": {
       "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
       "state": "ci-failed",
@@ -519,13 +519,13 @@
       "subagents": false
     },
     "recovery_source": {
-      "branch": "work/registry-recovery",
-      "commit": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
-      "base": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
-      "tree": "59fa9612be0dbc8bb27ba6872d86bf8a624c3e8e",
-      "pr": 22,
+      "branch": "work/container-demo-cleanup",
+      "base": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "commit": "ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114",
+      "pr": null,
       "issue": 18,
-      "version": "0.22.18"
+      "version": "0.22.19",
+      "preserved_previous_pr": 22
     },
     "diagnostic_security": {
       "schema": 1,
