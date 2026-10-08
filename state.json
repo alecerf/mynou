@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 454,
+  "generation": 455,
   "lease": {
     "id": "wake11-quality-control-ref-adapter-20261008T032912Z",
     "worker": "codex-hourly-20261008T032912Z",
     "role": "quality",
     "issue": 19,
     "acquired_at": "2026-10-08T03:43:19Z",
-    "heartbeat_at": "2026-10-08T03:47:21Z",
-    "expires_at": "2026-10-08T04:32:21Z",
+    "heartbeat_at": "2026-10-08T03:48:12Z",
+    "expires_at": "2026-10-08T04:33:12Z",
     "branch": "work/control-ref-adapter",
-    "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
-    "pr": null
+    "commit": "21fca94bb56dc0cdb0dcbf50e134284d54c91f14",
+    "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T03:47:21Z",
+    "at": "2026-10-08T03:48:12Z",
     "issue": 19,
     "role": "quality",
     "branch": "work/control-ref-adapter",
-    "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
-    "pr": null,
-    "summary": "Quality prepared original source edits for explicit control_ref handling, branch/notes namespace and native commit response checks, single-parent/non-force CAS, QA canonical ancestry, protected control-branch cleanup and CI-only regressions. Current authority remains refs/heads/control/engineering with consistent legacy alias. No tests/lint/builds/validation were run locally; live migration and task changes are not claimed.",
-    "next_action": "Push the original source tree and linked draft PR19, preserve exact source/head/base, then switch to Security for complete-diff inspection while CI executes.",
+    "commit": "21fca94bb56dc0cdb0dcbf50e134284d54c91f14",
+    "pr": 24,
+    "summary": "Original adapter source 21fca94bb56dc0cdb0dcbf50e134284d54c91f14 pushed on work/control-ref-adapter, linked draft PR24/base d647be6edfd6e892474b2602bbc9047ad4047c2f. Ten paths prepare canonical branch/notes control, native response identity, non-force CAS, review ancestry and cleanup guards with 11 CI-only regression scenarios. No live migration, task update, release mutation or local validation. CI/review still pending.",
+    "next_action": "Separate Security lease at exact PR24 head/base: inspect the complete diff and actual source CI; then QA independently reviews and preserves any unfinished acceptance. Draft must not merge before actual non-branch access and safe cutover are implemented.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -1108,6 +1108,11 @@
       "review": "Design analysis only; no implementation review or green gate claimed"
     },
     "control_storage_implementation": {
+      "branch": "work/control-ref-adapter",
+      "commit": "21fca94bb56dc0cdb0dcbf50e134284d54c91f14",
+      "base": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+      "tree": "bafd8d932ece9181e0ad2af110aacc31886cd737",
+      "pr": 24,
       "paths": [
         "engineering/github.py",
         "engineering/control.py",
@@ -1120,10 +1125,10 @@
         "engineering/README.md",
         "engineering/delivery.py"
       ],
-      "state": "source edits prepared; not yet pushed",
+      "state": "pushed linked draft; source CI pending",
       "live_migration": false,
-      "checks": "CI not yet run",
-      "publication_unchanged": "v0.22.19 remains published and immutable"
+      "release_unchanged": "v0.22.19",
+      "next": "Complete-diff Security, CI evidence, distinct QA; then implement verified cutover without duplicate PR."
     }
   },
   "attempts": {
