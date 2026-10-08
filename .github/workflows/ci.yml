@@ -12,6 +12,24 @@ concurrency:
 env:
   PYTHONDONTWRITEBYTECODE: '1'
 jobs:
+  registry-inspection:
+    # A temporary same-repository recovery probe; never publish from PR code.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'work/registry-recovery'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Inspect bounded native package metadata without registry writes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MYNOU_DIAGNOSTIC_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          MYNOU_DIAGNOSTIC_SOURCE: ${{ github.event.pull_request.base.sha }}
+        run: python3 .github/scripts/inspect_package.py
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 20

@@ -251,3 +251,23 @@ The v0.22.9 run completed 62 harnesses with 791 Rust tests in 97.770 seconds.
 Its RAR format target took 0.114 seconds; the manifest records every observed
 target duration from that completed run. Expanded native admission fixtures retain
 preceding weights until their own passing measurements. All gates remain enabled.
+
+## Registry publication recovery
+
+A failed private/repository-link guard is not proof that a package is public,
+unlinked or inaccessible. Preserve partial source/version tags and inspect
+native metadata before changing authorization. After the first identical
+release-only retry fails, change the diagnostic approach.
+
+The temporary `registry-inspection` job runs only on same-repository PRs from
+`work/registry-recovery`. Its ephemeral token has only contents/package read.
+The original Python std inspector makes two fixed GET requests, bounds response
+sizes and lists at most 100 versions. It emits only allowed visibility states,
+repository-field presence and matching current-version/base-source tag digests;
+arbitrary descriptions, owner details, unrelated tags and errors are excluded.
+A hidden 404, permission denial or outage fails explicitly. A full first page
+cannot prove tag absence. Inspection is not publication, repository association,
+test success or approval; the strict default-only publisher remains unchanged.
+Use the actual log to choose the correction, then retire the temporary workflow
+probe in the same linked recovery PR. Never merge diagnosis alone as completion
+of Issue #18. Existing images/releases and all objective gates remain protected.
