@@ -1,35 +1,80 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 612,
+  "generation": 613,
   "lease": {
     "id": "codex-hourly-20261008103416Z-master-1791455768000",
     "worker": "codex-hourly-20261008103416Z",
     "role": "master",
     "issue": 30,
     "acquired_at": "2026-10-08T10:36:08Z",
-    "heartbeat_at": "2026-10-08T10:36:08Z",
-    "expires_at": "2026-10-08T11:21:08Z",
+    "heartbeat_at": "2026-10-08T10:39:18Z",
+    "expires_at": "2026-10-08T11:24:18Z",
     "branch": "trunk",
     "commit": "7193547206a9e954bea44e9570716b23e4e660b2",
     "pr": 31
   },
   "checkpoint": {
-    "at": "2026-10-08T10:11:50Z",
+    "at": "2026-10-08T10:39:18Z",
     "issue": 30,
-    "role": "triage",
+    "role": "master",
     "branch": "trunk",
     "commit": "7193547206a9e954bea44e9570716b23e4e660b2",
     "pr": 31,
-    "summary": "Default-source CI transition: ci-passed at 7193547206a9e954bea44e9570716b23e4e660b2; native evidence {'commit': '7193547206a9e954bea44e9570716b23e4e660b2', 'state': 'ci-passed', 'at': '2026-10-08T10:11:50Z', 'run_id': 37761256529, 'status': 'completed', 'conclusion': 'success'}. No release publication is inferred.",
-    "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases.",
+    "summary": "Recovered native Issue30/PR31 and verified immutable bot v0.22.22 release406690100/tag7193547206a9e954bea44e9570716b23e4e660b2. Actual defaultCI37761256529 all7success; logs864Rust/0failed47.387s,24infrastructure,81organization; syntheticnative demos/package1001:1001 cleanupcomplete. Actual registry proof15695108 private/publicsource719, digestd3a812..., binaryfd29311 matchingnativeasset; 4immutable nativeassets. DefaultSecurity37761256575 all2success:4798objects,584completedattemptarchives/2132members,0selectedpatterns/gaps; pending snapshot exclusions explicit. Bridge actualnative transport unproved. No localchecks/taskchange.",
+    "next_action": "ReleaseMaster, acquireQuality30/31 at719 for actual connected-comment checkpoint and fixed inertnotes create/nonforce update via trusteddefaultAction. Verify native receipts/control/probe commits; stop on ownership loss or realwait, never infer ownership from queued request. Keep30Review/19nativeblocked until proof.",
     "publication": {
       "commit": "7193547206a9e954bea44e9570716b23e4e660b2",
-      "state": "ci-passed",
-      "at": "2026-10-08T10:11:50Z",
+      "state": "published",
+      "at": "2026-10-08T10:11:31Z",
+      "version": "0.22.22",
       "run_id": 37761256529,
       "status": "completed",
-      "conclusion": "success"
+      "conclusion": "success",
+      "release_id": 406690100,
+      "immutable": true,
+      "tag_commit": "7193547206a9e954bea44e9570716b23e4e660b2",
+      "assets": [
+        {
+          "id": 621454683,
+          "name": "mynou-v0.22.22-linux-x86_64",
+          "size": 4891488,
+          "digest": "sha256:fd29311efe9a713a50401ca9aa9d885e94fa95e1c7098367a7e6efa807aecf26"
+        },
+        {
+          "id": 621454678,
+          "name": "mynou-v0.22.22-macos-arm64",
+          "size": 3729072,
+          "digest": "sha256:92af20e5417ae0eb35fea183a4a6e05fff2e810ea12108559a7d536ede2cf708"
+        },
+        {
+          "id": 621454682,
+          "name": "mynou-v0.22.22-macos-x86_64",
+          "size": 4508464,
+          "digest": "sha256:7b09013747345434dfb97e116dd9883c4400fc390957825257de592bea99a909"
+        },
+        {
+          "id": 621454679,
+          "name": "SHA256SUMS",
+          "size": 281,
+          "digest": "sha256:820391bdc2f0c0137ee9456e30d9cd6245898100529763b0c1f330c979525e15"
+        }
+      ],
+      "registry_proof": {
+        "binary_sha256": "fd29311efe9a713a50401ca9aa9d885e94fa95e1c7098367a7e6efa807aecf26",
+        "image": "ghcr.io/alecerf/mynou@sha256:d3a8129236f2c42c2c0d411548b20b20b98c9cc3981edd6f9c5f92077ff69cac",
+        "package_id": 15695108,
+        "repository": "alecerf/mynou",
+        "repository_association": "reported-match",
+        "repository_id": 1403318143,
+        "repository_visibility": "public",
+        "source": "7193547206a9e954bea44e9570716b23e4e660b2",
+        "verification_cleanup": "completed",
+        "verification_user": "1001:1001",
+        "version": "0.22.22",
+        "visibility": "private"
+      },
+      "security_audit_run": 37761256575
     },
     "previous_checkpoint": {
       "at": "2026-10-08T10:06:14Z",
@@ -68,25 +113,26 @@
       "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c"
     },
     "public_security": {
-      "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
-      "run_id": 37751867517,
-      "history_job": 113226798654,
-      "logs_job": 113226798537,
-      "git_objects": 4702,
-      "completed_attempt_archives": 560,
-      "log_members": 2102,
+      "commit": "7193547206a9e954bea44e9570716b23e4e660b2",
+      "run_id": 37761256575,
+      "history_job": 113257935896,
+      "logs_job": 113257936261,
+      "git_objects": 4798,
+      "completed_attempt_archives": 584,
+      "log_members": 2132,
       "recognized_findings": 0,
       "coverage_gaps": 0,
       "excluded_pending_runs": [
-        37751867517,
-        37751867490,
-        37751867488
+        "actions-run:37761256671",
+        "actions-run:37761256575",
+        "actions-run:37761256529",
+        "actions-run:37761256450"
       ],
       "limitations": "Selected provider/private-key patterns and completed snapshot only; no arbitrary sensitive-data guarantee.",
-      "native_scanning_admin": "Prior HTTP403 integration denial remains documented; no repeated request or enabled native-setting claim."
+      "native_scanning_admin": "Prior integration403; no enabled-setting claim or unchanged retry."
     },
     "delivery": {
-      "state": "merged-awaiting-publication-and-transport-proof",
+      "state": "published-awaiting-transport-proof",
       "issue": 30,
       "pr": 31,
       "source_head": "681d0f7e4f8905688005b2f60ce71442fba76e7e",
@@ -162,7 +208,7 @@
       "head": "681d0f7e4f8905688005b2f60ce71442fba76e7e",
       "base": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
       "tree": "75e8692d466c8fa139aa0824e4f0d8034a02ea4d",
-      "state": "merged-awaiting-publication-and-live-proof",
+      "state": "publication-verified; live transport proof pending",
       "canonical_ref": "refs/heads/control/engineering",
       "live_proof": "not executed; no canonical activation",
       "parent_issue": 19,
@@ -182,7 +228,8 @@
       "default_security": 37761256575,
       "native_issue_handoff": 6057565905,
       "native_pr_handoff": 6057566180,
-      "parent_handoff": 6057566462
+      "parent_handoff": 6057566462,
+      "release_id": 406690100
     },
     "previous_publication": {
       "commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
