@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 766,
-  "lease": null,
+  "generation": 767,
+  "lease": {
+    "id": "comment-6065010478",
+    "worker": "codex-product-20261008T1637Z",
+    "role": "security",
+    "issue": 36,
+    "acquired_at": "2026-10-08T17:04:27Z",
+    "heartbeat_at": "2026-10-08T17:04:27Z",
+    "expires_at": "2026-10-08T17:49:27Z",
+    "branch": "work/36-par2-available-rows",
+    "commit": "65530f4f432a1b0af6ba71457c5ded574b91e728",
+    "pr": 37
+  },
   "checkpoint": {
     "at": "2026-10-08T17:03:41Z",
     "issue": 36,
