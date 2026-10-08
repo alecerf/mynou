@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 622,
+  "generation": 623,
   "lease": {
     "id": "codex-hourly-20261008103416Z-quality-1791456300000",
     "worker": "codex-hourly-20261008103416Z",
     "role": "quality",
     "issue": 32,
     "acquired_at": "2026-10-08T10:45:00Z",
-    "heartbeat_at": "2026-10-08T10:45:00Z",
-    "expires_at": "2026-10-08T11:30:00Z",
+    "heartbeat_at": "2026-10-08T10:51:04Z",
+    "expires_at": "2026-10-08T11:36:04Z",
     "branch": "work/native-comment-identity",
-    "commit": "7193547206a9e954bea44e9570716b23e4e660b2",
-    "pr": null
+    "commit": "2053b30d99dfaddf59e1f4fb7d16df57dc376cb9",
+    "pr": 33
   },
   "checkpoint": {
-    "at": "2026-10-08T10:44:53Z",
-    "issue": 30,
-    "role": "master",
-    "branch": "trunk",
-    "commit": "7193547206a9e954bea44e9570716b23e4e660b2",
-    "pr": 31,
-    "summary": "Master created distinct bounded recoveryBug32 after openbacklog check; native30→32 blocked_by POST/refetch verified, with19→30 stillopen. Actual failedcommand6058054220/run37764921208/job113270103787/control162ed unchanged preserved. Correct immutable authorfield binding and separate failurediagnostics; do not claim original operand/rootcause proven by shared error. Publishedv22/PR31 anddraft24/053 retained. No source/policy/protection/taskchange.",
-    "next_action": "ReleaseMaster; Quality32 implement narrowauthor-projection/diagnostic repair plusoriginalmetadata-shape andidentity spoof CI coverage at719 inonePR/freshv23; separateSecurity+QA after actual CI. Then verify publication andactualnewdefaultcomment/notes proof beforeclosing30/unblocking19.",
+    "at": "2026-10-08T10:51:04Z",
+    "issue": 32,
+    "role": "quality",
+    "branch": "work/native-comment-identity",
+    "commit": "2053b30d99dfaddf59e1f4fb7d16df57dc376cb9",
+    "pr": 33,
+    "summary": "Quality32 committed original five-file repair2053b30/tree0d764bb soleparent719 towork/native-comment-identity; one draftPR33 linkedCloses32. Native author is trustedlogin/numericID/User, optionalprofilemetadata maydiffer; distinct safe edit/body/time codes plusthree original CI regression scenarios. No localchecks; actualCI pending. Originalfailedlive37764921208/control162ed preserved, v22 immutablepublicationverified, 30/19 blocked and24/053 preserved.",
+    "next_action": "ReleaseQuality; acquireSecurity32 atPR33 exacthead2053b30/base719 for complete actual5-file diff and trust-boundary review; then distinctQA after requirednativeCIgreen. Currentrepair doesnot certify actualliveproof ornotesactivation.",
     "publication": {
       "commit": "7193547206a9e954bea44e9570716b23e4e660b2",
       "state": "published",
@@ -77,14 +77,14 @@
       "security_audit_run": 37761256575
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T10:06:14Z",
+      "at": "2026-10-08T10:44:53Z",
       "issue": 30,
-      "role": "quality",
-      "branch": "work/native-control-commands",
-      "commit": "681d0f7e4f8905688005b2f60ce71442fba76e7e",
+      "role": "master",
+      "branch": "trunk",
+      "commit": "7193547206a9e954bea44e9570716b23e4e660b2",
       "pr": 31,
-      "summary": "PR31 ready; actualEngineering37760978551 organization113257026999 andagent-qa-review113257088037 bothsuccess, nativegate logvalidated source681d0f7/basecafac andactualSecurity5454852597/QA5454891252 provenance. RequiredsourceCI37759939764 all6green; Security37759939760 bothgreen; nativeCodeQL37759937006green; threads empty. FreshPRhead/base/default unchanged; Quality owns delivery. No livebackend/sourcepublication inferred.",
-      "next_action": "Exacthead author merge underQuality, then immediately keepIssue30openReview untilactualdefaultCIpublication+connectedcomment canonicalcontrol/notes proof. Persistmergeremotesource andremainingproof; maintainnative19blocked; no directrelease/upload."
+      "summary": "Master created distinct bounded recoveryBug32 after openbacklog check; native30→32 blocked_by POST/refetch verified, with19→30 stillopen. Actual failedcommand6058054220/run37764921208/job113270103787/control162ed unchanged preserved. Correct immutable authorfield binding and separate failurediagnostics; do not claim original operand/rootcause proven by shared error. Publishedv22/PR31 anddraft24/053 retained. No source/policy/protection/taskchange.",
+      "next_action": "ReleaseMaster; Quality32 implement narrowauthor-projection/diagnostic repair plusoriginalmetadata-shape andidentity spoof CI coverage at719 inonePR/freshv23; separateSecurity+QA after actual CI. Then verify publication andactualnewdefaultcomment/notes proof beforeclosing30/unblocking19."
     },
     "recovery": {
       "pr": 26,
@@ -291,12 +291,16 @@
     },
     "control_bridge_recovery": {
       "issue": 32,
-      "source_base": "7193547206a9e954bea44e9570716b23e4e660b2",
+      "pr": 33,
+      "branch": "work/native-comment-identity",
+      "source": "2053b30d99dfaddf59e1f4fb7d16df57dc376cb9",
+      "base": "7193547206a9e954bea44e9570716b23e4e660b2",
+      "tree": "0d764bb6ffb329b7de3c5599cea58d72c0ad5c90",
       "parent_issue": 30,
+      "state": "draft-ci-and-reviews-pending",
       "failed_run": 37764921208,
       "failed_command": 6058054220,
-      "failed_code": "edited-or-replaced-comment",
-      "state": "native-blocker-ready"
+      "failed_code": "edited-or-replaced-comment"
     }
   },
   "attempts": {
