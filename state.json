@@ -1,35 +1,35 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 715,
+  "generation": 716,
   "lease": {
     "id": "92c57647-bf1f-4a16-957c-9515a5a11ab0",
     "worker": "github-actions-publication-recovery",
     "role": "triage",
     "issue": 34,
     "acquired_at": "2026-10-08T13:38:57Z",
-    "heartbeat_at": "2026-10-08T13:38:57Z",
-    "expires_at": "2026-10-08T14:23:57Z",
+    "heartbeat_at": "2026-10-08T13:39:01Z",
+    "expires_at": "2026-10-08T14:24:01Z",
     "branch": "trunk",
     "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
     "pr": 35
   },
   "checkpoint": {
-    "at": "2026-10-08T13:37:37Z",
+    "at": "2026-10-08T13:39:01Z",
     "issue": 34,
-    "role": "quality",
+    "role": "triage",
     "branch": "trunk",
     "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
     "pr": 35,
-    "summary": "Continuouspolicy andactualhourlyTask shipped atc348; finalnativeIssue34handoff6061104406/PR35handoff6061104765 recordsactualpremerge CI/reviews, nativeTaskresponse, publicaudit scope andpendingdefaultMacIntel/publication. Lastreadytransitioncomplete; realCIwait. Remotecheckpointcf7f462bf0daa19dbb0afd429732f42349cb93e8, no loss/discard/duplicateworker.",
-    "next_action": "Nextsupportedwake recoveractualdefaultCI37785002953/publication atc348 beforeunrelatedwork; complete34onlyafteractualproof. HourlyTaskalreadyreconciled. Preserve19/24/b849 finding andcontinuouspolicy whileplanningnewversion. No infinite/runtime/quota-reset guarantee.",
+    "summary": "Default-source CI transition: ci-passed at c348081a0024dc70552c5ba1b2eda0000f9eb177; native evidence {'commit': 'c348081a0024dc70552c5ba1b2eda0000f9eb177', 'state': 'ci-passed', 'at': '2026-10-08T13:39:01Z', 'run_id': 37785002953, 'status': 'completed', 'conclusion': 'success'}. No release publication is inferred.",
+    "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases.",
     "publication": {
       "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
-      "version": "0.22.24",
-      "state": "ci-pending",
-      "pr": 35,
+      "state": "ci-passed",
+      "at": "2026-10-08T13:39:01Z",
       "run_id": 37785002953,
-      "status": "in_progress"
+      "status": "completed",
+      "conclusion": "success"
     },
     "recovery": {
       "pr": 26,
