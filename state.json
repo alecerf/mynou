@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 498,
+  "generation": 499,
   "lease": {
     "id": "wake12-qa-urgent-repair-20261008T042605Z",
     "worker": "codex-hourly-20261008T042605Z",
     "role": "qa",
     "issue": 25,
     "acquired_at": "2026-10-08T04:50:13Z",
-    "heartbeat_at": "2026-10-08T04:51:48Z",
-    "expires_at": "2026-10-08T05:36:48Z",
+    "heartbeat_at": "2026-10-08T04:52:58Z",
+    "expires_at": "2026-10-08T05:37:58Z",
     "branch": "work/publication-handoff-recovery",
     "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
     "pr": 26
   },
   "checkpoint": {
-    "at": "2026-10-08T04:51:48Z",
+    "at": "2026-10-08T04:52:58Z",
     "issue": 25,
     "role": "qa",
     "branch": "work/publication-handoff-recovery",
     "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
     "pr": 26,
-    "summary": "QA independently inspected allsix PR26 patches and full lease-source implementation against Issue25 acceptance; native Security5451569156 exact head/base, submitted duringheldlease523ab402, control ancestry ahead and no unresolved threads verified. Actual57 organization regressions pass. GNU/macOSARM/musl logs confirm0.22.20 builds and synthetic ready/Plex demos; remaining source validation/Intel/package are not yet certified.",
-    "next_action": "Finish QA against actual sourceCI37729200692 logs when complete; PR can be ready because implementation is finished, but no QA pass, merge, release or Done until every objective gate is actually green.",
+    "summary": "Independent complete-diff QA passes the isolated scheduler handoff-preservation repair. Native CI validates fresh0.22.20 source, allsix required jobs, current organization regressions and runtime/container checks. Issue19/PR24 remain preserved and unfinished; the repair does not certify migration.",
+    "next_action": "Quality delivery: await fresh actual agent-qa-review and organization success after this native review; recheck exacthead/base, all required CI and review ancestry, then merge by expectedSHA, restore nativeIssue/branch hygiene and checkpoint default-source publication for CI.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -1613,6 +1613,90 @@
       "organization_run": 37729200769,
       "source_ci": 37729200692,
       "state": "reviewed-code-awaiting-native-required-jobs"
+    },
+    "urgent_repair_qa": {
+      "schema": 1,
+      "role": "qa",
+      "head_sha": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
+      "base_sha": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+      "verdict": "passed",
+      "summary": "Independent complete-diff QA passes the isolated scheduler handoff-preservation repair. Native CI validates fresh0.22.20 source, allsix required jobs, current organization regressions and runtime/container checks. Issue19/PR24 remain preserved and unfinished; the repair does not certify migration.",
+      "reviewed_paths": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "engineering/README.md",
+        "engineering/delivery.py",
+        "engineering/lease.py",
+        "engineering/tests/test_organization.py"
+      ],
+      "acceptance": [
+        "Reviewed allsix actual PR26 patches and native Issue25 acceptance independently after implementation and Security released; no shortcuts or unresolved findings.",
+        "Repeated terminal published/ci-passed wakes preserve unrelated active work without state writes/dispatch; published records cannot hide native failures; real CI-only regressions passed.",
+        "Necessary checkpoints keep exact current owned scope, independently copied evidence and a nonrecursive bounded previous-work handoff; native gates remain authoritative.",
+        "Required actual source CI jobs are allgreen, synthetic ready/Plex demonstrations and nonroot container cleanup/checksums verified. Cargo version0.22.20 matches lock, zero dependencies/no unsafe or runtime helper introduced.",
+        "Verified native Security5451569156 exacthead/base and scoped historicallease523ab402d5f4e6a77c1dac85fd0c8ead55727d73 with valid submission and ancestry; no unresolved review threads.",
+        "Old immutable published artifacts remain unchanged; Actions alone will publish default source after merge. Issue19/PR24 and native dependency remain preserved."
+      ],
+      "evidence": [
+        "Native current PR26 ready head9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a/base d647be6edfd6e892474b2602bbc9047ad4047c2f, complete six-file diff reviewed.",
+        "Mynou CI37729200692 validate113154236119,4 builds113154236326/352/448/521 andpackage113155003258 all success; release113155126479 correctly skipped on PR.",
+        "Read allsix native job logs; validation includes actualRust all-target summary,22 infrastructure/57 organization cases and the four new recovery regressions; platform demo ready/Plextrue, container1001:1001 cleanupcompleted and threechecksumsOK.",
+        "Engineering organization113154236595 in37729200769 succeeded with57cases; fresh agent-qa-review must still becomeactuallygreen before merge.",
+        "Native COMMENT Security5451569156 submitted04:50:09Z within exact scopedlease04:48:43Z→05:35:05Z; ancestryahead and empty review threads verified."
+      ],
+      "findings": []
+    },
+    "urgent_repair_ci": {
+      "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
+      "run_id": 37729200692,
+      "jobs": [
+        {
+          "id": 113154236119,
+          "name": "validate",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113154236326,
+          "name": "Build x86_64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113154236352,
+          "name": "Build x86_64-unknown-linux-musl",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113154236448,
+          "name": "Build aarch64-apple-darwin",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113154236521,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113155003258,
+          "name": "package",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 113155126479,
+          "name": "release",
+          "status": "completed",
+          "conclusion": "skipped"
+        }
+      ],
+      "organization_cases": 57,
+      "infra_cases": 22,
+      "regressions": 4,
+      "local_checks": false
     }
   },
   "attempts": {
