@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 494,
+  "generation": 495,
   "lease": {
     "id": "wake12-security-urgent-repair-20261008T042605Z",
     "worker": "codex-hourly-20261008T042605Z",
     "role": "security",
     "issue": 25,
     "acquired_at": "2026-10-08T04:48:43Z",
-    "heartbeat_at": "2026-10-08T04:48:43Z",
-    "expires_at": "2026-10-08T05:33:43Z",
+    "heartbeat_at": "2026-10-08T04:50:05Z",
+    "expires_at": "2026-10-08T05:35:05Z",
     "branch": "work/publication-handoff-recovery",
     "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
     "pr": 26
   },
   "checkpoint": {
-    "at": "2026-10-08T04:48:33Z",
+    "at": "2026-10-08T04:50:05Z",
     "issue": 25,
-    "role": "quality",
+    "role": "security",
     "branch": "work/publication-handoff-recovery",
     "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
     "pr": 26,
-    "summary": "Pushed isolated live-scheduler repair9fb3e6dc on work/publication-handoff-recovery and opened linked draft PR26 for native Issue25. Six changed files: idempotent native-success recovery, durable evidence/bounded handoff, four original regression scenarios, runbook and paired Cargo version0.22.20; no migration adapter, privileged workflow, task or product functionality changed. CI alone is pending. Issue19/PR24/source053 remain preserved.",
-    "next_action": "Security: review allsix actual PR26 file patches at9fb3e6dc/base d647; then independent QA against actual CI and native acceptance. Merge only fresh objective gates; Actions alone publishes.",
+    "summary": "Complete-diff Security review passes the isolated live-scheduler durability repair. Terminal success still requires fresh exact-source native CI; preserved metadata cannot grant ownership or certify reviews. CI and fresh QA remain mandatory before merge.",
+    "next_action": "QA: independently inspect allsix PR26 paths and native Issue25 acceptance. Read current sourceCI37729200692 and organization57 logs. Pass only when all actual required jobs succeed; mark ready and refresh real agent-qa-review gate before delivery.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -1560,6 +1560,41 @@
       "version": "0.22.20",
       "validation": "CI pending",
       "local_checks": false
+    },
+    "urgent_repair_security": {
+      "schema": 1,
+      "role": "security",
+      "head_sha": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
+      "base_sha": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+      "verdict": "passed",
+      "summary": "Complete-diff Security review passes the isolated live-scheduler durability repair. Terminal success still requires fresh exact-source native CI; preserved metadata cannot grant ownership or certify reviews. CI and fresh QA remain mandatory before merge.",
+      "reviewed_paths": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "engineering/README.md",
+        "engineering/delivery.py",
+        "engineering/lease.py",
+        "engineering/tests/test_organization.py"
+      ],
+      "acceptance": [
+        "Allsix actual file patches inspected; no non-branch activation, workflow privilege, task, secret, dependency or product-functionality change.",
+        "Current lease/source headers always replace historical headers; immutable/deep-copied evidence and one nonrecursive prior handoff are retained. No old checkpoint field bypasses native Issue/attempt selection or exact-head/base review validation.",
+        "A published record cannot substitute for a native successful run; wrong-source, pending and failed native CI retain existing fail-closed recovery/dispatch behavior.",
+        "Patch version0.22.20 is paired consistently in Cargo metadata; Actions alone can publish new validated source, and prior immutable tags/assets remain untouched.",
+        "Single worker, owned role transitions, 45-minute expiry and CAS arbitration are unchanged."
+      ],
+      "evidence": [
+        "Native PR26 complete six-path patch at9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a/base d647be6edfd6e892474b2602bbc9047ad4047c2f inspected under separate Security lease.",
+        "Engineering37729200769 organization113154236595 success; actual log reports57 organization scenarios and each of four new regressions passed.",
+        "Native sourceCI37729200692 at04:49:26Z still pending: GNU and macOSARM builds succeeded; other required jobs not yet complete. No successful source CI/QA gate or local validation is inferred.",
+        "Current default source control.py/qa.py reviewed in this wake: scheduling uses native Issues and attempts; merge proof uses exact native records, scoped historical leases, ancestry, CI and unresolved threads."
+      ],
+      "findings": []
+    },
+    "native_dependency": {
+      "blocked": 19,
+      "blocked_by": 25,
+      "requested_under": "security-owned administrative fence"
     }
   },
   "attempts": {
