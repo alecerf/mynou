@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 713,
-  "lease": {
-    "id": "codex-continuous-policy-20261008131744Z-quality-1791466496000",
-    "worker": "codex-continuous-policy-20261008131744Z",
-    "role": "quality",
-    "issue": 34,
-    "acquired_at": "2026-10-08T13:34:56Z",
-    "heartbeat_at": "2026-10-08T13:37:37Z",
-    "expires_at": "2026-10-08T14:22:37Z",
-    "branch": "trunk",
-    "commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
-    "pr": 35
-  },
+  "generation": 714,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-08T13:37:37Z",
     "issue": 34,
