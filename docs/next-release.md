@@ -1,31 +1,32 @@
-# Current product work — proposed 0.22.18 registry recovery
+# Current product work — proposed 0.22.19 container cleanup
 
-Actual last published release is immutable v0.22.16 at
-`8a0ada56baa24b566e306af75768b90ed08b55ca`, release406222389, in
-[run37696923958](https://github.com/alecerf/mynou/actions/runs/37696923958).
-All seven jobs,864 Rust tests/64 harnesses,4 scheduler tests,53 organization checks
-and eleven bot assets passed. The unchanged baseline is preserved in native
-Issue #18 and control handoffs.
+The last confirmed immutable release remains v0.22.16 at
+`8a0ada56baa24b566e306af75768b90ed08b55ca`, release 406222389, from
+[CI 37696923958](https://github.com/alecerf/mynou/actions/runs/37696923958).
+Its eleven native asset IDs, names, sizes and digests remain unchanged.
 
-Merged PR #21 default `551e82d2c4158b9af2080081bbac3e1d18c949ea`
-passed validate/four native builds/package, but release failed in
-[CI37704415292](https://github.com/alecerf/mynou/actions/runs/37704415292) attempts1/2.
-The actual read-only PR22 probe113105507230 confirmed private package identity and
-two partial0.22.17 tags at one digest, with optional repository metadata absent.
-No immutable0.22.17 release, pulled runtime/binary proof or UI linkage is claimed.
+Merged PR #22 at `ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114` corrected
+optional container association metadata. Default
+[CI 37715379732](https://github.com/alecerf/mynou/actions/runs/37715379732)
+passed all six validate/build/package jobs. Its release job 113111514725
+verified a private image at digest
+`sha256:991a217cd046c00697b975bff35b4bc23d4f7a85f0b4d14b90cd904684c7cf68`,
+package ID 15695108 and source repository ID 1403318143, then failed host
+cleanup of the synthetic container-owned seeder tree. No immutable v0.22.18
+release exists; UI linkage remains unverified.
 
-[Issue #18](https://github.com/alecerf/mynou/issues/18) /
-[recovery PR #22](https://github.com/alecerf/mynou/pull/22) correct this assumption
-with exact private source-repository name/ID, private owner/name/type/stable
-package-ID checks and the original strong image identity/collision/digest/binary/
-demo gates. Reported foreign repository links remain rejected; absent metadata
-is recorded unverified. New0.22.18 source preserves partial0.22.17 tags.
-See [scope](releases/0.22.18.md). Actual required CI, new exact-head/base Security,
-independent QA and later default immutable four-asset publication remain required.
+User [Issue #18](https://github.com/alecerf/mynou/issues/18) now requires the
+bounded cleanup correction: match verification-only bind-mount UID/GID to the
+nonroot runner, use private temporary directories, share the actual cleanup
+path with read-only PR package CI and emit publication proof only after cleanup.
+Retain the configured-user 1000 package demo and all private/source/collision/
+digest/binary/runtime gates. New 0.22.19 source preserves the observed 0.22.17
+and 0.22.18 images. See [scope](releases/0.22.19.md).
 
-User #19 (control storage) remains separate backlog work. Finish actual delivery
-before unrelated work. Keep one whole-wake deadline, serial role leases and
-durable native handoffs. No local checks or manual publication.
+Finish complete-diff Security, independent QA, all objective gates and actual
+default immutable four-asset publication before unrelated user #19 work.
+Use the existing native Issue and one corrective PR, serial leases and durable
+handoffs. No local validation, manual publication or unchanged rerun.
 
 ## Earlier PAR2 work and publication history
 

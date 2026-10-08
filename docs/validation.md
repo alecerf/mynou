@@ -145,7 +145,7 @@ Release automation depends on successful validation on `trunk`. It reads
 `Cargo.toml`, creates the version tag and GitHub release for the validated commit
 if that version is new, and publishes:
 
-From 0.22.18, releases contain only these four assets:
+From 0.22.19, releases contain only these four assets:
 
 | Asset | Contents |
 | --- | --- |
@@ -163,10 +163,10 @@ source downloads contain source code and require a build.
 
 Download your executable and `SHA256SUMS` from the same published release.
 Select its exact filename from the manifest so other architectures need not
-be downloaded. For example, after downloading the 0.22.18 Apple Silicon binary:
+be downloaded. For example, after downloading the 0.22.19 Apple Silicon binary:
 
 ```sh
-awk '$2 == "mynou-v0.22.18-macos-arm64"' SHA256SUMS | shasum -a 256 -c -
+awk '$2 == "mynou-v0.22.19-macos-arm64"' SHA256SUMS | shasum -a 256 -c -
 ```
 
 Use `sha256sum -c -` on Linux. A missing or incorrect selected entry fails

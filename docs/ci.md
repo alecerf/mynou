@@ -281,3 +281,32 @@ actual CI proof. New source uses0.22.18; existing0.22.17 source/version images a
 all earlier immutable releases remain unchanged. Actual default private package,
 verified content digest and immutable four-asset release are required to finish
 Issue #18. No repeated unchanged rerun, local validation or manual publication.
+
+## Container verification cleanup
+
+Default [CI 37715379732](https://github.com/alecerf/mynou/actions/runs/37715379732)
+at `ebc0a6fe1098b5cfb8d3e7c60e0b902b61a09114` passed all six validation,
+native build and package jobs. Release job 113111514725 verified the private
+package ID 15695108, source repository ID 1403318143, pulled executable SHA
+and isolated demonstration at image digest
+`sha256:991a217cd046c00697b975bff35b4bc23d4f7a85f0b4d14b90cd904684c7cf68`.
+It then failed removing the synthetic bind-mounted tree owned by the container's
+configured UID 1000. GitHub release v0.22.18 was absent; image verification was
+not a successful release. The existing 0.22.17 and 0.22.18 images are preserved.
+
+The shared CI-only verification helper runs with the nonroot runner's effective
+UID/GID against its own private temporary mount, retaining read-only root,
+network isolation, dropped capabilities and no new privileges. It refuses root
+UID/GID and reports completion only after removing synthetic files. Package CI
+exercises this exact cleanup path on PRs without publication permissions, in
+addition to the unchanged configured-user 1000 demonstration. Image inspection
+still requires the production `1000:1000` policy; this verification-only UID
+override does not change image or installation defaults.
+
+Publication proof and Actions output are written only after demo and credential
+workspaces have been cleaned successfully. CI regression cases cover private
+mount ownership/removal, root refusal, cleanup failure without announcement and
+the read-only local-image selector. No privileged cleanup or ignored errors.
+Fresh 0.22.19 source/version avoids replacing the already observed images.
+Actual green default CI, private digest verification and the immutable four-asset
+release remain required to complete Issue #18; PR checks alone do not publish.

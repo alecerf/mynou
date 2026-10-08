@@ -26,6 +26,29 @@ def file_digest(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def verify_demo(image, run=command):
+    # Match the private bind mount's owner without giving the container root.
+    uid, gid = os.geteuid(), os.getegid()
+    if uid <= 0 or gid <= 0:
+        raise ValueError("Container verification requires a nonroot runner identity")
+    user = f"{uid}:{gid}"
+    with tempfile.TemporaryDirectory(prefix="mynou-demo-", dir=os.environ["RUNNER_TEMP"]) as directory:
+        result = json.loads(run([
+            "docker", "run", "--rm", "--user", user,
+            "--network", "none", "--read-only", "--cap-drop", "ALL",
+            "--security-opt", "no-new-privileges:true",
+            "--mount", "type=bind,src=" + directory + ",dst=/data",
+            image, "demo", "--dir", "/data/demo",
+        ]))
+        if (not isinstance(result, dict) or not isinstance(result.get("job"), dict)
+                or result["job"].get("state") != "ready"
+                or result.get("plex_scan_confirmed") is not True):
+            raise ValueError("Container verification demonstration failed")
+    # Return only after the runner-owned synthetic workspace was removed.
+    return {"user": user, "state": "ready", "plex_scan_confirmed": True,
+            "cleanup": "completed"}
+
+
 class Publisher:
     def __init__(self, version, run=command):
         self.version = version
@@ -166,25 +189,21 @@ class Publisher:
             self.run(["docker", "rm", container])
         if file_digest(copied) != file_digest(binary):
             raise ValueError("Published executable differs from the checked binary")
-        demo = root / "demo"
-        demo.mkdir(mode=0o777)
-        demo.chmod(0o777)
-        result = json.loads(self.run([
-            "docker", "run", "--rm", "--network", "none", "--read-only",
-            "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
-            "--mount", "type=bind,src=" + str(demo) + ",dst=/data",
-            pinned, "demo", "--dir", "/data/demo",
-        ]))
-        if result.get("job", {}).get("state") != "ready" or result.get("plex_scan_confirmed") is not True:
-            raise ValueError("Published container demonstration failed")
+        demo = verify_demo(pinned, self.run)
         return {"image": pinned, "version": self.version, "source": self.source,
                 "visibility": "private", "binary_sha256": file_digest(binary),
                 "repository": self.repo, "repository_id": self.repository_id,
-                "package_id": self.package_id, "repository_association": self.package_association}
+                "package_id": self.package_id, "repository_association": self.package_association,
+                "verification_user": demo["user"], "verification_cleanup": demo["cleanup"]}
 
 
 def main():
     import sys
+    if len(sys.argv) == 3 and sys.argv[1] == "--verify-demo":
+        if not re.fullmatch(r"mynou:[0-9]+\.[0-9]+\.[0-9]+", sys.argv[2]):
+            raise ValueError("Read-only verification requires an exact local Mynou version")
+        print(json.dumps(verify_demo(sys.argv[2]), sort_keys=True))
+        return
     if len(sys.argv) != 4:
         raise ValueError("Usage: publish_container.py IMAGE_TAR_GZ VERSION CHECKED_BINARY")
     publisher = Publisher(sys.argv[2])
@@ -195,10 +214,11 @@ def main():
         config.mkdir(mode=0o700)
         os.environ["DOCKER_CONFIG"] = str(config)
         proof = publisher.publish(sys.argv[1], Path(sys.argv[3]), root)
-        Path(os.environ["RUNNER_TEMP"], "mynou-image.json").write_text(json.dumps(proof) + "\n")
-        with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-            output.write("image_ref=" + proof["image"] + "\n")
-        print(json.dumps(proof, sort_keys=True))
+    # Successful image verification alone is not successful workspace cleanup.
+    Path(os.environ["RUNNER_TEMP"], "mynou-image.json").write_text(json.dumps(proof) + "\n")
+    with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+        output.write("image_ref=" + proof["image"] + "\n")
+    print(json.dumps(proof, sort_keys=True))
 
 
 if __name__ == "__main__":

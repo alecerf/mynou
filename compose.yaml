@@ -1,6 +1,6 @@
 services:
   mynou:
-    image: mynou:0.22.18
+    image: mynou:0.22.19
     build:
       context: .
     user: "${MYNOU_UID:-1000}:${MYNOU_GID:-1000}"

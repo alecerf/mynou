@@ -234,6 +234,8 @@ jobs:
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true \
             --mount "type=bind,src=$RUNNER_TEMP/mynou-container-demo,dst=/data" \
             "mynou:$VERSION" demo --dir /data/demo
+          # Exercise the publication cleanup path with read-only PR permissions.
+          python3 .github/scripts/publish_container.py --verify-demo "mynou:$VERSION"
           docker save "mynou:$VERSION" | gzip -n > "$RUNNER_TEMP/mynou-image.tar.gz"
       - name: Package the validated release
         env:
