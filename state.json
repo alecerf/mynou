@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 566,
+  "generation": 567,
   "lease": {
     "id": "codex-hourly-20261008082654Z-quality-20261008083052",
     "worker": "codex-hourly-20261008082654Z",
     "role": "quality",
     "issue": 28,
     "acquired_at": "2026-10-08T08:30:52Z",
-    "heartbeat_at": "2026-10-08T08:33:03Z",
-    "expires_at": "2026-10-08T09:18:03Z",
+    "heartbeat_at": "2026-10-08T08:35:12Z",
+    "expires_at": "2026-10-08T09:20:12Z",
     "branch": "work/public-source-private-package",
-    "commit": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
-    "pr": null
+    "commit": "b028b1dd058842d7ebc551d4f822519d9d4d1e85",
+    "pr": 29
   },
   "checkpoint": {
-    "at": "2026-10-08T08:33:03Z",
+    "at": "2026-10-08T08:35:12Z",
     "issue": 28,
     "role": "quality",
     "branch": "work/public-source-private-package",
-    "commit": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
-    "pr": null,
-    "summary": "Quality prepared the minimal source-visibility repair for Issue28: exact native identity and booleanprivate metadata, independent source/package visibility proof, positive public/private and negative malformed/foreign/public-package CI regressions, truthful release copy and fresh0.22.21. Created the one recovery branch at04e99496318; no source checks/builds/publication ran locally.",
-    "next_action": "Commit these six original source edits against the exact remote parent and open one linkedPR; checkpoint actual remote source/PR, release for complete-diff Security then freshCI-bound QA.",
+    "commit": "b028b1dd058842d7ebc551d4f822519d9d4d1e85",
+    "pr": 29,
+    "summary": "Quality committed six original source changes asb028b1dd058842d7ebc551d4f822519d9d4d1e85/treea7d42c893c83cd87b1fcdb59766f5b1dfdcbefe6, sole parent04e99496318; preserved filemodes, nonforce expected-parent source update. ReadyPR29 closes recoveryIssue28. Exact native source identity/public-private boolean, strict private package and existingtrustgates retained; new proof/copy/regressions/fresh0.22.21. Actual CI now owns checks; no localvalidation.",
+    "next_action": "Release Quality and acquire exact-head/base Security for full six-file diff. Review all privileged publication boundaries and CI-onlyregressions, record actual result. Then fresh greenCI-bound independentQA and gatedcorrective delivery; no oldrelease success claim.",
     "publication": {
       "commit": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
       "state": "ci-failed",
@@ -36,14 +36,14 @@
       "recovery_issue": 28
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T08:30:44Z",
-      "issue": 27,
-      "role": "master",
-      "branch": "trunk",
+      "at": "2026-10-08T08:33:03Z",
+      "issue": 28,
+      "role": "quality",
+      "branch": "work/public-source-private-package",
       "commit": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
-      "pr": 26,
-      "summary": "Recovered actual defaultCI37745425271 failure at04e99496318: six build/package jobs passed; release113206816150 rejected now-public native repository at the obsolete private-source guard, before publication. Nativev0.22.20 lookup404. Created meaningful recoveryIssue28 with exact acceptance; no repeatedCI, source mutation or release claim. Container package privacy/identity/tag/digest/runtime gates must remain intact.",
-      "next_action": "Release Master and acquire Quality on the current exact remote default to implement the smallest guarded repository-visibility adaptation, source/package visibility proof, release copy correction and CI-only regressions in one linkedPR. Separate Security/QA; preserve19/PR24."
+      "pr": null,
+      "summary": "Quality prepared the minimal source-visibility repair for Issue28: exact native identity and booleanprivate metadata, independent source/package visibility proof, positive public/private and negative malformed/foreign/public-package CI regressions, truthful release copy and fresh0.22.21. Created the one recovery branch at04e99496318; no source checks/builds/publication ran locally.",
+      "next_action": "Commit these six original source edits against the exact remote parent and open one linkedPR; checkpoint actual remote source/PR, release for complete-diff Security then freshCI-bound QA."
     },
     "recovery": {
       "pr": 26,
@@ -57,13 +57,9 @@
       "security_checkpoint": "6e02750960c6683c6c04bcd26306942b09c16b5d"
     },
     "pending_qa": {
-      "state": "machine-gate-passed",
-      "head_sha": "99138218a1f6e8689ac9fb31bfbcb79c4a5ae253",
-      "base_sha": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
-      "review_id": 5453360050,
-      "lease_checkpoint": "ada689672573ceb4f098922b60bac969a821604f",
-      "run_id": 37745176435,
-      "gate_job": 113204891739
+      "state": "not-reviewed-current-recovery-source",
+      "head_sha": "b028b1dd058842d7ebc551d4f822519d9d4d1e85",
+      "base_sha": "04e99496318f5cf31f4d8634209cb6956aa3c6ef"
     },
     "preserved_work": {
       "issue": 19,
@@ -117,7 +113,13 @@
     },
     "release_recovery": {
       "issue": 28,
-      "approach": "Accept exact public source identity while retaining private package and every publication trust gate; distinguish source/package visibility; CI-only regressions."
+      "pr": 29,
+      "branch": "work/public-source-private-package",
+      "source": "b028b1dd058842d7ebc551d4f822519d9d4d1e85",
+      "tree": "a7d42c893c83cd87b1fcdb59766f5b1dfdcbefe6",
+      "parent": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
+      "version": "0.22.21",
+      "state": "source-committed-awaiting-ci-security-qa"
     }
   },
   "attempts": {
