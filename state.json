@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 496,
-  "lease": null,
+  "generation": 497,
+  "lease": {
+    "id": "wake12-qa-urgent-repair-20261008T042605Z",
+    "worker": "codex-hourly-20261008T042605Z",
+    "role": "qa",
+    "issue": 25,
+    "acquired_at": "2026-10-08T04:50:13Z",
+    "heartbeat_at": "2026-10-08T04:50:13Z",
+    "expires_at": "2026-10-08T05:35:13Z",
+    "branch": "work/publication-handoff-recovery",
+    "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
+    "pr": 26
+  },
   "checkpoint": {
     "at": "2026-10-08T04:50:05Z",
     "issue": 25,
