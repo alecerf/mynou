@@ -8,7 +8,9 @@ does not migrate it, delete it, publish a release or change the hourly task.
 
 `control_ref` names a fully qualified reference. An existing `control_branch`
 alias may remain only when both identify exactly the same reference. Legacy
-configuration without `control_ref` remains readable. Missing, malformed or
+configuration without `control_ref` remains readable. The legacy alias accepts
+branches only, and the product default branch cannot store control state.
+Missing, malformed or
 conflicting configuration fails before any storage request. There is no fallback
 to another state store after a missing reference, API denial or transport failure.
 
@@ -29,6 +31,7 @@ their own scoped lease and the canonical control ancestry. Moving a pointer must
 not replace commit-bound review history with editable Issue or package content.
 
 CI-only scenarios exercise namespace/response confusion, authority ambiguity,
+default-branch refusal, branch-only legacy aliases,
 missing-reference refusal, stale expected heads, notes-reference races and
 historical review ancestry. Fixture responses are not evidence of live GitHub
 notes-write access. No local tests, lint, builds or validation are authorized.

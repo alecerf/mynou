@@ -70,6 +70,29 @@ class ReferenceScenarios(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 control_reference(value)
 
+    def test_product_default_cannot_become_the_control_state_tree(self):
+        for cfg in [dict(CFG, control_branch="trunk"),
+                    dict(CFG, control_branch="trunk", control_ref="refs/heads/trunk")]:
+            api = RefAPI()
+            api.cfg = cfg
+            with self.subTest(cfg=cfg), self.assertRaises(ValueError):
+                control.read_state(api)
+            self.assertEqual(api.calls, [])
+        api = RefAPI("refs/heads/trunk")
+        with self.assertRaises(ValueError):
+            control.read_state(api)
+        self.assertEqual(api.calls, [])
+
+    def test_legacy_branch_alias_cannot_activate_notes_even_when_aliases_agree(self):
+        for explicit in [False, True]:
+            api = RefAPI()
+            api.cfg["control_branch"] = NOTES
+            if not explicit:
+                api.cfg.pop("control_ref")
+            with self.subTest(explicit=explicit), self.assertRaises(ValueError):
+                control.read_state(api)
+            self.assertEqual(api.calls, [])
+
     def test_reference_validation_blocks_tags_traversal_and_request_confusion(self):
         invalid = ["", None, "refs/tags/v0.22.19", "refs/pull/24/head", "../state",
             "refs/notes/../state", "refs/notes/.private", "refs/notes/x.lock/y",

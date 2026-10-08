@@ -39,18 +39,29 @@ def reference(value):
 
 
 def control_reference(cfg):
-    """One configured authority; a legacy alias must identify the same ref."""
-    if "control_ref" not in cfg:
-        if "control_branch" not in cfg:
-            raise ValueError("A canonical control reference is required")
-        reference(cfg["control_branch"])
-        return cfg["control_branch"]
-    current = cfg["control_ref"]
-    if not isinstance(current, str) or not current.startswith("refs/"):
-        raise ValueError("control_ref must be fully qualified")
-    full = reference(current)
-    if "control_branch" in cfg and reference(cfg["control_branch"]) != full:
-        raise ValueError("Control branch and reference identify different authorities")
+    """One configured authority; legacy workers must see the same branch."""
+    legacy = None
+    if "control_branch" in cfg:
+        legacy = cfg["control_branch"]
+        if not reference(legacy).startswith("refs/heads/"):
+            raise ValueError("Legacy control_branch must identify a branch")
+    if "control_ref" in cfg:
+        current = cfg["control_ref"]
+        if not isinstance(current, str) or not current.startswith("refs/"):
+            raise ValueError("control_ref must be fully qualified")
+        full = reference(current)
+        if legacy is not None and reference(legacy) != full:
+            raise ValueError("Control branch and reference identify different authorities")
+    elif legacy is not None:
+        current, full = legacy, reference(legacy)
+    else:
+        raise ValueError("A canonical control reference is required")
+    if "default_branch" in cfg:
+        default = reference(cfg["default_branch"])
+        if not default.startswith("refs/heads/"):
+            raise ValueError("Default branch must identify a branch")
+        if full == default:
+            raise ValueError("Product default branch cannot store engineering control")
     return current
 
 
