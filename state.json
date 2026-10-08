@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 635,
+  "generation": 636,
   "lease": {
     "id": "codex-hourly-20261008103416Z-quality-1791456988000",
     "worker": "codex-hourly-20261008103416Z",
     "role": "quality",
     "issue": 32,
     "acquired_at": "2026-10-08T10:56:28Z",
-    "heartbeat_at": "2026-10-08T11:02:32Z",
-    "expires_at": "2026-10-08T11:47:32Z",
+    "heartbeat_at": "2026-10-08T11:04:36Z",
+    "expires_at": "2026-10-08T11:49:36Z",
     "branch": "trunk",
     "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
     "pr": 33
   },
   "checkpoint": {
-    "at": "2026-10-08T11:02:32Z",
+    "at": "2026-10-08T11:04:36Z",
     "issue": 32,
     "role": "quality",
     "branch": "trunk",
     "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
     "pr": 33,
-    "summary": "PR #33 merged at ced0fe652469fa6916831e0fb09cccc1a8784f79 after actual Security5455447204, QA5455490361, required source CI and machine gate37766901214/job113276714409. Issue32 native-closed and labeledDone; merged branch ref list empty, no manual deletion. Issue30 remains open/Review; its native blocker32 is closed. Issue19/draft24/source053 preserved. Actual default CI37767226158 is in progress; Security37767226110 queued, Engineering37767226188 succeeded, CodeQL37767225919 in progress. v23 is not yet verified published; no live corrected proof or notes activation. No local checks.",
-    "next_action": "Next wake recover exact-default CI37767226158, Security37767226110, Engineering37767226188 and immutable v0.22.23/tag/assets/private-package proof atced0fe652469fa6916831e0fb09cccc1a8784f79 first. Then Quality30 at trunk/currentdefault with pr:null can issue a fresh exact-head native checkpoint command and, if successful, inert notes create/update proof. Keep30 open until actual proof; only then unblock19/24. Stop this wake for the external CI/publication wait; release before stopping.",
+    "summary": "Delivered PR33 source correction at defaultced0fe652469fa6916831e0fb09cccc1a8784f79 with actual Security5455447204, QA5455490361, six source CI jobs, both audit jobs, three CodeQL analyses and machine QA gate113276714409 green. Issue32 closed/Done; automatic branch deletion verified. Native final handoffs: Issue32=6058451679, PR33=6058451961, Issue30=6058452222, Issue19=6058452479. Default CI37767226158 publication is an actual external wait; last observed11:01:12Z in_progress, not verified published. Issue30 open/Review;19/24/053 preserved; no live corrected proof or activation, no local checks.",
+    "next_action": "Recovery first: inspect exact-default CI37767226158/security37767226110/engineering37767226188/CodeQL37767225919 and immutable v0.22.23 publication atced0fe652469fa6916831e0fb09cccc1a8784f79. Verify tag/source/assets/private-package proof and cleanup. Then acquire separate Quality30 lease at trunk/currentdefault, pr:null; fresh native expected-head checkpoint command, followed by fixed inert notes create/update only if successful. Preserve failed37764921208; keep30 open until actual proof, thenresume19/24. Release and stop for the external wait; no repeated polling/new worker.",
     "publication": {
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "state": "native-default-ci-in-progress",
@@ -70,35 +70,30 @@
       "commit": "053fb1f1de1a3e37b4e1c595d7a00246bdbcbd2c"
     },
     "public_security": {
-      "commit": "7193547206a9e954bea44e9570716b23e4e660b2",
-      "run_id": 37761256575,
-      "history_job": 113257935896,
-      "logs_job": 113257936261,
-      "git_objects": 4798,
-      "completed_attempt_archives": 584,
-      "log_members": 2132,
+      "commit": "2053b30d99dfaddf59e1f4fb7d16df57dc376cb9",
+      "run_id": 37766166766,
+      "history_job": 113274250441,
+      "logs_job": 113274250779,
+      "git_objects": 4861,
+      "completed_attempt_archives": 598,
+      "log_members": 2282,
       "recognized_findings": 0,
       "coverage_gaps": 0,
-      "excluded_pending_runs": [
-        "actions-run:37761256671",
-        "actions-run:37761256575",
-        "actions-run:37761256529",
-        "actions-run:37761256450"
-      ],
-      "limitations": "Selected provider/private-key patterns and completed snapshot only; no arbitrary sensitive-data guarantee.",
+      "limitations": "Selected provider/private-key patterns and completed premerge snapshot only; no arbitrary sensitive-data guarantee. New default audit37767226110 was queued at11:01:12Z and is not asserted green.",
       "native_scanning_admin": "Prior integration403; no enabled-setting claim or unchanged retry."
     },
     "delivery": {
-      "state": "published-awaiting-transport-proof",
-      "issue": 30,
-      "pr": 31,
-      "source_head": "681d0f7e4f8905688005b2f60ce71442fba76e7e",
-      "merge_commit": "7193547206a9e954bea44e9570716b23e4e660b2",
-      "qa_review": 5454891252,
-      "security_review": 5454852597,
-      "premerge_engineering": 37760978551,
-      "premerge_security": 37759939760,
-      "premerge_source_ci": 37759939764
+      "state": "merged-awaiting-default-publication",
+      "issue": 32,
+      "pr": 33,
+      "source_head": "2053b30d99dfaddf59e1f4fb7d16df57dc376cb9",
+      "merge_commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
+      "qa_review": 5455490361,
+      "security_review": 5455447204,
+      "premerge_engineering": 37766901214,
+      "premerge_security": 37766166766,
+      "premerge_source_ci": 37766166661,
+      "default_ci": 37767226158
     },
     "cleanup": {
       "issue": 32,
@@ -273,8 +268,10 @@
       "failed_run": 37764921208,
       "failed_command": 6058054220,
       "failed_code": "edited-or-replaced-comment",
-      "native_issue_handoff": 6058366057,
-      "native_pr_handoff": 6058366362
+      "native_issue_handoff": 6058451679,
+      "native_pr_handoff": 6058451961,
+      "parent_handoff": 6058452222,
+      "migration_handoff": 6058452479
     }
   },
   "attempts": {
