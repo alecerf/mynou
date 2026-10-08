@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 669,
+  "generation": 670,
   "lease": {
     "id": "codex-hourly-20261008123500Z-security-1791464268000",
     "worker": "codex-hourly-20261008123500Z",
     "role": "security",
     "issue": 19,
     "acquired_at": "2026-10-08T12:57:48Z",
-    "heartbeat_at": "2026-10-08T12:57:48Z",
-    "expires_at": "2026-10-08T13:42:48Z",
+    "heartbeat_at": "2026-10-08T13:01:17Z",
+    "expires_at": "2026-10-08T13:46:17Z",
     "branch": "work/control-ref-adapter",
     "commit": "fb6f67139b4a756d4533efd15cb7553423d4204e",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T12:56:51Z",
+    "at": "2026-10-08T13:01:17Z",
     "issue": 19,
-    "role": "quality",
+    "role": "security",
     "branch": "work/control-ref-adapter",
     "commit": "fb6f67139b4a756d4533efd15cb7553423d4204e",
     "pr": 24,
-    "summary": "Published original19-path implementation on existing PR24, integrating preserved053 source history and currentdefaultced via original two-parent source commitfb6f67139b4a756d4533efd15cb7553423d4204e. Proposed fixed fence/activation/expired-fence recovery, canonical resolver, scoped retirement with actual task attestation boundary, admission/docs and original16 migration/installed-review scenarios. No live migration/task/deletion occurred, no local checks ran. CI not yet inspected; installation needs separate complete-diff Security/QA.",
-    "next_action": "Inspect actual source CI and full remote diff atnewhead/baseced; then sequential Security and QA. Keep PR24 draft until findings corrected and required jobs genuinely green.",
+    "summary": "Separate Security reviewed all19 actual PR24 paths atfb6f67139b4a756d4533efd15cb7553423d4204e/baseced0fe652469fa6916831e0fb09cccc1a8784f79. CI organization113322306009 passed113 scenarios; source-history113322305714 scanned5024objects with0recognized findings/0gaps. Rejection: merged cutover recovery returns before reopening automaticallyclosed Issue19; retirement needs a fresh default-source fence and open-Issue reference audit; reconcile actual hourly admission task before fencing so interrupted scheduled recovery has updated instructions. CI product/security logs still pending; no actual migration performed.",
+    "next_action": "Record rejected native Security review; release and reacquire Quality to fix all findings with original CI regressions.",
     "publication": {
       "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
       "state": "published",
@@ -398,6 +398,16 @@
       "native_pr_handoff": 6059470317,
       "parent_handoff": 6059470579,
       "preserved_pr_handoff": 6059470835
+    },
+    "previous_checkpoint": {
+      "at": "2026-10-08T12:56:51Z",
+      "issue": 19,
+      "role": "quality",
+      "branch": "work/control-ref-adapter",
+      "commit": "fb6f67139b4a756d4533efd15cb7553423d4204e",
+      "pr": 24,
+      "summary": "Published original19-path implementation on existing PR24, integrating preserved053 source history and currentdefaultced via original two-parent source commitfb6f67139b4a756d4533efd15cb7553423d4204e. Proposed fixed fence/activation/expired-fence recovery, canonical resolver, scoped retirement with actual task attestation boundary, admission/docs and original16 migration/installed-review scenarios. No live migration/task/deletion occurred, no local checks ran. CI not yet inspected; installation needs separate complete-diff Security/QA.",
+      "next_action": "Inspect actual source CI and full remote diff atnewhead/baseced; then sequential Security and QA. Keep PR24 draft until findings corrected and required jobs genuinely green."
     }
   },
   "attempts": {
