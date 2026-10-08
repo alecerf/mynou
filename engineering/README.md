@@ -249,6 +249,33 @@ metadata and one concise previous-work handoff, without nesting full checkpoints
 Retained evidence describes its recorded source; it never certifies a new head or
 substitutes for native CI and exact-head/base reviews.
 
+The publication reconciler verifies the exact current default/version/tag,
+all native build/package/release jobs, the published immutable non-draft release
+and its four named, nonempty, digested assets. Release CI preserves the existing
+allowlisted `mynou-image.json` as a small artifact bound to source, run and attempt,
+after image verification/cleanup and release publication succeed. Recovery reads
+its native repository/source identity and SHA256 digest; archive and expanded
+proof are bounded, never extracted, and only the known private-image fields enter
+control. Signed storage receives no GitHub credential. No raw logs are parsed or
+copied into handoffs. The actual release publication time rearms Product once.
+
+An unchanged actually published source remains terminal only while its latest
+eligible default CI is successful. `ci-passed` alone is insufficient. Missing,
+expired, conflicting or unavailable proof is explicitly unverified and blocks
+unrelated delivery; receipts are retained for 90 days and verified control history
+survives their expiration. Historical manually verified source-bound records
+remain terminal; an unrecorded older release without a receipt needs deliberate
+native evidence recovery, not a fabricated receipt or replacement control store.
+
+Mechanical delivery owns the actual default source, evaluates complete fresh
+QA/CI gates once under its lease and merges only their exact head/base. It records
+dispatch, then releases at the external publication wait before expensive cleanup.
+Post-publication cleanup uses a separate Quality/default-source lease and precedes
+new merges. The 150-request ceiling remains. Legacy interrupted delivery with a
+merge commit on the former source branch is recoverable only with the exact linked
+native merged PR, same repository/default, preserved source parent and current
+default ancestry. No foreign/unpreserved merge or arbitrary API error is accepted.
+
 Before merge or deletion, checkpoint the current phase. Manual delivery should
 hold a default-source lease, or keep its leased source ref until release. Native
 merge deletion can remove the branch required by a strict connector checkpoint;
@@ -352,3 +379,4 @@ activation are separate acceptance stages. Issue19 is complete with native notes
 proof, existing-task reconciliation and legacy retirement preserved in history.
 Read the resolved authority; never infer it from absence or initialize empty state.
 Only an actual supported Task response proves the live prompt changed.
+

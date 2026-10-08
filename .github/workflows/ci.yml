@@ -306,3 +306,11 @@ jobs:
           VERSION: ${{ needs.package.outputs.version }}
           MYNOU_CONTAINER_REF: ${{ steps.container.outputs.image_ref }}
         run: bash .github/scripts/publish-release.sh "$RUNNER_TEMP/mynou-release" "$VERSION"
+      - name: Preserve source-bound private publication proof
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: mynou-publication-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/mynou-image.json
+          if-no-files-found: error
+          retention-days: 90
+

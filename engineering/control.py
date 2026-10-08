@@ -125,12 +125,26 @@ def recovery_evidence(api, held):
     ancestry = api.rest("GET", f"compare/{held['commit']}...{head}")
     merged = [p for p in relevant if p.get("merged_at") and p["head"]["sha"] == held["commit"]
         and p["head"]["ref"] == held["branch"] and p["base"]["ref"] == api.cfg["default_branch"]]
+    default_merge = []
     if ancestry["status"] not in ("ahead", "identical") and not merged:
+        import qa
+        parents = {p["sha"] for p in preserved.get("parents", [])}
+        default_merge = [p for p in relevant if p["number"] == held["pr"] and p.get("merged_at")
+            and p.get("merge_commit_sha") == held["commit"] and p["base"]["ref"] == api.cfg["default_branch"]
+            and (p["head"].get("repo") or {}).get("full_name") == api.repo
+            and p["head"]["ref"] == held["branch"] and p["head"]["sha"] in parents
+            and held["issue"] in qa.linked_issues(p.get("body"))]
+        if default_merge:
+            default = api.ref(api.cfg["default_branch"])
+            comparison = api.rest("GET", f"compare/{held['commit']}...{default}")
+            if comparison["status"] not in ("ahead", "identical"):
+                default_merge = []
+    if ancestry["status"] not in ("ahead", "identical") and not merged and not default_merge:
         raise ValueError("Interrupted commit is not preserved on the branch/default or an exact merged PR; preserve useful work first")
     runs = api.pages("actions/runs?head_sha=" + head, "workflow_runs")
     evidence = {"issue": True, "branch": True, "pr": True, "ci": True, "commit_preserved": preserved["sha"] == held["commit"],
         "issue_state": issue["state"], "branch_head": head,
-        "preservation": "exact native merged PR head" if merged else "branch/default ancestry",
+        "preservation": "exact native default merge and source parent" if default_merge else "exact native merged PR head" if merged else "branch/default ancestry",
         "prs": [{"number": p["number"], "state": p["state"], "head": p["head"]["sha"], "merged_at": p.get("merged_at")} for p in relevant],
         "runs": [{"id": r["id"], "status": r["status"], "conclusion": r["conclusion"]} for r in runs[:10]]}
     return evidence
@@ -261,3 +275,4 @@ if __name__ == "__main__":
     except (APIError, ValueError, RuntimeError, KeyError, TypeError) as error:
         print("Engineering command stopped: " + str(error), file=sys.stderr)
         sys.exit(1)
+

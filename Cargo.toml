@@ -1,6 +1,6 @@
 [package]
 name = "mynou"
-version = "0.22.28"
+version = "0.22.29"
 edition = "2024"
 rust-version = "1.99"
 description = "Media library automation in Rust, using the standard library only"
@@ -27,3 +27,4 @@ unsafe_code = "forbid"
 dbg_macro = "deny"
 todo = "deny"
 unimplemented = "deny"
+
