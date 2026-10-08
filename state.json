@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 497,
+  "generation": 498,
   "lease": {
     "id": "wake12-qa-urgent-repair-20261008T042605Z",
     "worker": "codex-hourly-20261008T042605Z",
     "role": "qa",
     "issue": 25,
     "acquired_at": "2026-10-08T04:50:13Z",
-    "heartbeat_at": "2026-10-08T04:50:13Z",
-    "expires_at": "2026-10-08T05:35:13Z",
+    "heartbeat_at": "2026-10-08T04:51:48Z",
+    "expires_at": "2026-10-08T05:36:48Z",
     "branch": "work/publication-handoff-recovery",
     "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
     "pr": 26
   },
   "checkpoint": {
-    "at": "2026-10-08T04:50:05Z",
+    "at": "2026-10-08T04:51:48Z",
     "issue": 25,
-    "role": "security",
+    "role": "qa",
     "branch": "work/publication-handoff-recovery",
     "commit": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
     "pr": 26,
-    "summary": "Complete-diff Security review passes the isolated live-scheduler durability repair. Terminal success still requires fresh exact-source native CI; preserved metadata cannot grant ownership or certify reviews. CI and fresh QA remain mandatory before merge.",
-    "next_action": "QA: independently inspect allsix PR26 paths and native Issue25 acceptance. Read current sourceCI37729200692 and organization57 logs. Pass only when all actual required jobs succeed; mark ready and refresh real agent-qa-review gate before delivery.",
+    "summary": "QA independently inspected allsix PR26 patches and full lease-source implementation against Issue25 acceptance; native Security5451569156 exact head/base, submitted duringheldlease523ab402, control ancestry ahead and no unresolved threads verified. Actual57 organization regressions pass. GNU/macOSARM/musl logs confirm0.22.20 builds and synthetic ready/Plex demos; remaining source validation/Intel/package are not yet certified.",
+    "next_action": "Finish QA against actual sourceCI37729200692 logs when complete; PR can be ready because implementation is finished, but no QA pass, merge, release or Done until every objective gate is actually green.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -1594,7 +1594,25 @@
     "native_dependency": {
       "blocked": 19,
       "blocked_by": 25,
-      "requested_under": "security-owned administrative fence"
+      "http_status": 201,
+      "read_back": "Issue25 open blocker confirmed2026-10-08T04:51:15Z"
+    },
+    "urgent_repair_qa_pending": {
+      "head": "9fb3e6dc25cc824ebcef2ff3775968fd5ebd7f2a",
+      "base": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
+      "paths": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "engineering/README.md",
+        "engineering/delivery.py",
+        "engineering/lease.py",
+        "engineering/tests/test_organization.py"
+      ],
+      "security_review": 5451569156,
+      "security_lease": "523ab402d5f4e6a77c1dac85fd0c8ead55727d73",
+      "organization_run": 37729200769,
+      "source_ci": 37729200692,
+      "state": "reviewed-code-awaiting-native-required-jobs"
     }
   },
   "attempts": {
