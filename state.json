@@ -1,32 +1,32 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 377,
+  "generation": 378,
   "lease": {
     "id": "ee6c45bc-9239-4ad2-b989-af8931301a0e",
     "worker": "github-actions-publication-recovery",
     "role": "triage",
     "issue": 18,
     "acquired_at": "2026-10-08T00:45:05Z",
-    "heartbeat_at": "2026-10-08T00:45:05Z",
-    "expires_at": "2026-10-08T01:30:05Z",
+    "heartbeat_at": "2026-10-08T00:45:08Z",
+    "expires_at": "2026-10-08T01:30:08Z",
     "branch": "trunk",
     "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
     "pr": 21
   },
   "checkpoint": {
-    "at": "2026-10-08T00:44:48Z",
+    "at": "2026-10-08T00:45:08Z",
     "issue": 18,
     "role": "triage",
     "branch": "trunk",
     "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
     "pr": 21,
-    "summary": "Default-source CI transition: ci-failed at 551e82d2c4158b9af2080081bbac3e1d18c949ea; native evidence {'commit': '551e82d2c4158b9af2080081bbac3e1d18c949ea', 'state': 'ci-failed', 'at': '2026-10-08T00:44:48Z', 'run_id': 37704415292, 'status': 'completed', 'conclusion': 'failure'}. No release publication is inferred.",
+    "summary": "Default-source CI transition: ci-failed at 551e82d2c4158b9af2080081bbac3e1d18c949ea; native evidence {'commit': '551e82d2c4158b9af2080081bbac3e1d18c949ea', 'state': 'ci-failed', 'at': '2026-10-08T00:45:08Z', 'run_id': 37704415292, 'status': 'completed', 'conclusion': 'failure'}. No release publication is inferred.",
     "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases.",
     "publication": {
       "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
       "state": "ci-failed",
-      "at": "2026-10-08T00:44:48Z",
+      "at": "2026-10-08T00:45:08Z",
       "run_id": 37704415292,
       "status": "completed",
       "conclusion": "failure"
