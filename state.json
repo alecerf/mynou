@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 400,
+  "generation": 401,
   "lease": {
     "id": "wake9-qa-registry-correction-20261008T014700Z",
     "worker": "codex-hourly-20261008T012904Z",
     "role": "qa",
     "issue": 18,
     "acquired_at": "2026-10-08T01:47:28Z",
-    "heartbeat_at": "2026-10-08T01:47:28Z",
-    "expires_at": "2026-10-08T02:32:28Z",
+    "heartbeat_at": "2026-10-08T01:54:00Z",
+    "expires_at": "2026-10-08T02:39:00Z",
     "branch": "work/registry-recovery",
     "commit": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
     "pr": 22
   },
   "checkpoint": {
-    "at": "2026-10-08T01:47:20Z",
+    "at": "2026-10-08T01:54:00Z",
     "issue": 18,
-    "role": "security",
+    "role": "qa",
     "branch": "work/registry-recovery",
     "commit": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
     "pr": 22,
-    "summary": "Separate complete12-path exact-head Security review recorded natively for corrected1cbe4282/551e82d2; no findings. Actual new required CI and independent QA pending; repository association omission explicitly unverified. Actual old17 private tags and prior16 release proof preserved.",
-    "next_action": "Independent QA: complete-diff acceptance and actual CI/log review at exact currenthead/base. Maintain draft while checks pending; no assertion of shipping from PR tests.",
+    "summary": "Independent logical QA completed the actual twelve-path correction; all required exact-source PR CI passed. Security review5450457499 passed. Machine gate/merge and actual default18 publication remain pending.",
+    "next_action": "Record exact-head/base QA COMMENT; release QA, acquire Master, finalize PR22/mark ready and observe objective gate before merge.",
     "publication": {
       "commit": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
       "state": "ci-failed",
@@ -637,6 +637,93 @@
         "Remove temporary PR probe in same recovery PR after evidence; keep bounded read-only helper/regressions as reusable diagnosis",
         "Separate full corrected Security/QA; actual required CI and later default private publication needed"
       ]
+    },
+    "qa_review_pending": {
+      "schema": 1,
+      "role": "qa",
+      "head_sha": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
+      "base_sha": "551e82d2c4158b9af2080081bbac3e1d18c949ea",
+      "verdict": "passed",
+      "summary": "Independent logical QA reviewed the complete twelve-path correction after all required source CI jobs passed. Explicit private source/package identity checks replace an absent optional metadata assumption while collision, privacy, digest, binary and runtime guards remain. No blocking findings; actual default publication is still required to finish Issue18.",
+      "reviewed_paths": [
+        ".github/scripts/publish_container.py",
+        ".github/scripts/test_publication.py",
+        "Cargo.lock",
+        "Cargo.toml",
+        "README.md",
+        "compose.yaml",
+        "docs/ci.md",
+        "docs/deployment.md",
+        "docs/macos.md",
+        "docs/next-release.md",
+        "docs/releases/0.22.18.md",
+        "docs/validation.md"
+      ],
+      "acceptance": [
+        "Reviewed all twelve current native diff paths and the full publisher flow, meaningful CI-only regressions, version/manifests/Compose and English installation/recovery documentation.",
+        "Trusted workflow repository ID/name, private native repository and strict private package owner/name/type/stable positive ID are verified; public, foreign, malformed or substituted identities fail closed.",
+        "Reported conflicting association remains rejected. Omitted optional metadata is explicitly not_exposed and is never claimed to prove UI linkage; actual partial17 tags remain preserved by fresh18 source/version.",
+        "Original same-run checked image, nonroot runtime/OCI source identity, preflight collision refusal, exact-tag retry reuse, re-pulled content digest, executable SHA and isolated demo checks are preserved.",
+        "Temporary diagnostic permission/job/helper are absent from final diff; workflow equals base. Safe Rust std, zero Cargo dependencies, no product source code/dependency changes or manual publication.",
+        "All required Mynou CI and Engineering organization jobs passed at exact head. Release was correctly skipped on PR; machine QA gate and later default publication remain distinct pending delivery transitions."
+      ],
+      "evidence": [
+        "Native PR22 open draft exact head1cbe42828fe1bf594cd6458796eefa65c3a0096d/base551e82d2c4158b9af2080081bbac3e1d18c949ea,12changed files; native review threads empty.",
+        "Mynou CI37714490728 completed SUCCESS at exact head: validate113107741065, four native builds113107740929/113107741059/113107741149/113107741209, package113108584149 all SUCCESS; release113108694770 SKIPPED.",
+        "Actual validate log:18 infrastructure tests including all four new private context/package substitution cases,53 organization tests,63Rust harnesses,864passed/0failed in99.845s; dependency graph/formatting/Clippy/source syntax steps all SUCCESS.",
+        "Actual ARM64/Intel macOS logs prove native Mach-O architecture and ready/Plex-confirmed standalone demos; Linux musl demo also ready/Plex-confirmed.",
+        "Actual package log proves checked readonly network-none/cap-drop/no-new-privileges container demo ready/Plex-confirmed and SHA256SUMS verifies all three0.22.18 executables.",
+        "Engineering37714490697 organization113107740865 SUCCESS at same source; agent-qa-review correctly SKIPPED while draft. Actual complete-diff Security COMMENT5450457499 bound to historical Security lease3f203a1c02bf5aacadfc914e98dce5512c1de876.",
+        "Read-only diagnostic37713788379/job113105507230 retained actual private partial17 image digest675ef89d1bed913973e7682e9633e8fb3b229eecc5d98dc8a132f1b49af2040c and absent metadata. No default18/private registry/release publication success claimed."
+      ],
+      "findings": []
+    },
+    "qa_ci": {
+      "run": 37714490728,
+      "engineering": 37714490697,
+      "jobs": [
+        {
+          "id": 113107740929,
+          "name": "Build aarch64-apple-darwin",
+          "conclusion": "success"
+        },
+        {
+          "id": 113107741059,
+          "name": "Build x86_64-unknown-linux-musl",
+          "conclusion": "success"
+        },
+        {
+          "id": 113107741065,
+          "name": "validate",
+          "conclusion": "success"
+        },
+        {
+          "id": 113107741149,
+          "name": "Build x86_64-unknown-linux-gnu",
+          "conclusion": "success"
+        },
+        {
+          "id": 113107741209,
+          "name": "Build x86_64-apple-darwin",
+          "conclusion": "success"
+        },
+        {
+          "id": 113108584149,
+          "name": "package",
+          "conclusion": "success"
+        },
+        {
+          "id": 113108694770,
+          "name": "release",
+          "conclusion": "skipped"
+        }
+      ],
+      "rust_passed": 864,
+      "harnesses": 63,
+      "rust_seconds": 99.845,
+      "infrastructure_tests": 18,
+      "organization_tests": 53,
+      "publication": false
     }
   },
   "attempts": {
