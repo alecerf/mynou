@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 402,
-  "lease": null,
+  "generation": 403,
+  "lease": {
+    "id": "wake9-master-delivery-registry-20261008T015700Z",
+    "worker": "codex-hourly-20261008T012904Z",
+    "role": "master",
+    "issue": 18,
+    "acquired_at": "2026-10-08T01:54:07Z",
+    "heartbeat_at": "2026-10-08T01:54:07Z",
+    "expires_at": "2026-10-08T02:39:07Z",
+    "branch": "work/registry-recovery",
+    "commit": "1cbe42828fe1bf594cd6458796eefa65c3a0096d",
+    "pr": 22
+  },
   "checkpoint": {
     "at": "2026-10-08T01:54:00Z",
     "issue": 18,
