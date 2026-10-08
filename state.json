@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 461,
+  "generation": 462,
   "lease": {
     "id": "wake11-quality-control-ref-corrections-20261008T032912Z",
     "worker": "codex-hourly-20261008T032912Z",
     "role": "quality",
     "issue": 19,
     "acquired_at": "2026-10-08T03:49:55Z",
-    "heartbeat_at": "2026-10-08T03:50:52Z",
-    "expires_at": "2026-10-08T04:35:52Z",
+    "heartbeat_at": "2026-10-08T03:52:49Z",
+    "expires_at": "2026-10-08T04:37:49Z",
     "branch": "work/control-ref-adapter",
-    "commit": "21fca94bb56dc0cdb0dcbf50e134284d54c91f14",
+    "commit": "e44bfc7e8319d1be7b0200bfa838d132ffe51efc",
     "pr": 24
   },
   "checkpoint": {
-    "at": "2026-10-08T03:50:52Z",
+    "at": "2026-10-08T03:52:49Z",
     "issue": 19,
     "role": "quality",
     "branch": "work/control-ref-adapter",
-    "commit": "21fca94bb56dc0cdb0dcbf50e134284d54c91f14",
+    "commit": "e44bfc7e8319d1be7b0200bfa838d132ffe51efc",
     "pr": 24,
-    "summary": "Quality correcting actual Security review5451103861: configuration now rejects product default as control authority and forbids notes in legacy control_branch even when aliases agree. Added CI-only no-native-I/O regressions for both cases. No live migration or local validation.",
-    "next_action": "Push the bounded correction commit, then release for fresh exact-head complete-diff Security and QA.",
+    "summary": "Corrected source e44bfc7e8319d1be7b0200bfa838d132ffe51efc pushed to existing PR24. Security findings5451103861 now have explicit default-branch and branch-only legacy-alias guards plus two no-I/O CI regressions (13 new scenarios total). Current canonical lease stays on control/engineering. CI/re-review pending; no local validation.",
+    "next_action": "Fresh separate Security complete-diff review at e44bfc7/base d647, then QA reviews exact acceptance and actual source CI.",
     "publication": {
       "commit": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
       "state": "published",
@@ -1109,9 +1109,9 @@
     },
     "control_storage_implementation": {
       "branch": "work/control-ref-adapter",
-      "commit": "21fca94bb56dc0cdb0dcbf50e134284d54c91f14",
+      "commit": "e44bfc7e8319d1be7b0200bfa838d132ffe51efc",
       "base": "d647be6edfd6e892474b2602bbc9047ad4047c2f",
-      "tree": "bafd8d932ece9181e0ad2af110aacc31886cd737",
+      "tree": "e8c5494ea70ab86c5a8f2ede5a7e740889869378",
       "pr": 24,
       "paths": [
         "engineering/github.py",
@@ -1125,10 +1125,17 @@
         "engineering/README.md",
         "engineering/delivery.py"
       ],
-      "state": "pushed linked draft; source CI pending",
+      "state": "corrective commit pushed; CI pending",
       "live_migration": false,
-      "release_unchanged": "v0.22.19",
-      "next": "Complete-diff Security, CI evidence, distinct QA; then implement verified cutover without duplicate PR."
+      "checks": "None run locally; CI alone",
+      "source_commits": [
+        "21fca94bb56dc0cdb0dcbf50e134284d54c91f14",
+        "e44bfc7e8319d1be7b0200bfa838d132ffe51efc"
+      ],
+      "unresolved": [
+        "actual scheduled-worker non-branch writes",
+        "legacy-worker fail-closed migration"
+      ]
     },
     "control_storage_security_review": {
       "head": "21fca94bb56dc0cdb0dcbf50e134284d54c91f14",
