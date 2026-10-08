@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 619,
+  "generation": 620,
   "lease": {
     "id": "codex-hourly-20261008103416Z-master-1791456226000",
     "worker": "codex-hourly-20261008103416Z",
     "role": "master",
     "issue": 30,
     "acquired_at": "2026-10-08T10:43:46Z",
-    "heartbeat_at": "2026-10-08T10:43:46Z",
-    "expires_at": "2026-10-08T11:28:46Z",
+    "heartbeat_at": "2026-10-08T10:44:53Z",
+    "expires_at": "2026-10-08T11:29:53Z",
     "branch": "trunk",
     "commit": "7193547206a9e954bea44e9570716b23e4e660b2",
     "pr": 31
   },
   "checkpoint": {
-    "at": "2026-10-08T10:43:40Z",
+    "at": "2026-10-08T10:44:53Z",
     "issue": 30,
-    "role": "quality",
+    "role": "master",
     "branch": "trunk",
     "commit": "7193547206a9e954bea44e9570716b23e4e660b2",
     "pr": 31,
-    "summary": "Actual live connectedcomment6058054220 triggered default Authenticatedengineeringcontrol37764921208/job113270103787 and failedclosed with edited-or-replaced-comment beforewrite. Nativecanonical162edcb5c7a685b0e653084f5c4636c69c9c4bf0/generation616 stayedunchanged; Quality owns lease; no noteswrite. Command author nativealecerf22006964/OWNER unchangedtimestamps verified. Sourceguard compares fullwebhook/REST user dictionaries plusbody/timestamps underonecode; suspected shape-sensitiveidentityguard requires boundedrepair anddistinct diagnostics, not claimedprovedrootcause. v22actualpublished/privateimageverified.",
-    "next_action": "ReleaseQuality; Master create distinct bounded recoveryBug for rejected live transport, nativelyblock30 andpreserve31/19/24. Qualityfix stableauthoridentityprojection withunchangedbody/timeguards, CIregressionmetadata-shape differences andsanitizedseparateddiagnostics; separateSecurity/QA/currentCI andreviewedmerge beforefreshliveproof.",
+    "summary": "Master created distinct bounded recoveryBug32 after openbacklog check; native30→32 blocked_by POST/refetch verified, with19→30 stillopen. Actual failedcommand6058054220/run37764921208/job113270103787/control162ed unchanged preserved. Correct immutable authorfield binding and separate failurediagnostics; do not claim original operand/rootcause proven by shared error. Publishedv22/PR31 anddraft24/053 retained. No source/policy/protection/taskchange.",
+    "next_action": "ReleaseMaster; Quality32 implement narrowauthor-projection/diagnostic repair plusoriginalmetadata-shape andidentity spoof CI coverage at719 inonePR/freshv23; separateSecurity+QA after actual CI. Then verify publication andactualnewdefaultcomment/notes proof beforeclosing30/unblocking19.",
     "publication": {
       "commit": "7193547206a9e954bea44e9570716b23e4e660b2",
       "state": "published",
@@ -288,6 +288,15 @@
         "visibility": "private"
       },
       "security_audit_run": 37751867517
+    },
+    "control_bridge_recovery": {
+      "issue": 32,
+      "source_base": "7193547206a9e954bea44e9570716b23e4e660b2",
+      "parent_issue": 30,
+      "failed_run": 37764921208,
+      "failed_command": 6058054220,
+      "failed_code": "edited-or-replaced-comment",
+      "state": "native-blocker-ready"
     }
   },
   "attempts": {
