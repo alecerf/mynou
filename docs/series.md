@@ -87,8 +87,9 @@ Changing settings during a refresh discards that refresh's result, so a late
 result never requests episodes under an earlier policy.
 
 A refresh is rejected, and the last accepted plan kept with an error, when the
-catalog shows duplicate numbering, reuses an episode ID, or moves a known ID to
-another number without an explicit [numbering decision](#episode-numbering).
+catalog shows duplicate numbering, reuses an episode ID, puts a different ID at
+a known number, or moves a known ID to another number without an explicit
+[numbering decision](#episode-numbering).
 Background failures appear in `status.last_series_error` and on the series
 record. Diagnostics never include URLs or credentials.
 

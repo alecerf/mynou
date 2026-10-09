@@ -257,8 +257,9 @@ history.
   dismiss. This never creates download work.
 - **`grab`** routes announced torrents to requests that are already waiting.
   Add a `magnet_template` to the source, with `{xt}` exactly once, for example
-  `magnet:?xt={xt}&tr=https%3A%2F%2Ftracker.example.test%2Fannounce`. Downloads
-  must be enabled. While an enabled grab rule exists, queued movie and episode
+  `magnet:?xt={xt}&tr=https%3A%2F%2Ftracker.example.test%2Fannounce`. `{xt}`
+  becomes `urn:btih:` with the 40-character hash, or `urn:btmh:1220` with the
+  64-character v2 hash. Downloads must be enabled. While an enabled grab rule exists, queued movie and episode
   jobs with a catalog ID and the same profile wait for an announcement instead
   of searching. Explicit
   `--url` or `--path` requests, running acquisitions, upgrades, packs and shared

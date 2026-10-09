@@ -32,8 +32,9 @@ Add an optional `requesters` section to `mynou.json`:
   underscores, for accounts and destinations alike.
 - Before every poll, Mynou checks that the token in `token_env` (uppercase
   letters, digits and underscores) belongs to the numeric `expected_user_id`.
-  User IDs must be unique. Rotating a token keeps the binding; binding a
-  different user needs a new alias, and retired aliases stay reserved.
+  User IDs must be unique. Rotating the token's value keeps the binding;
+  changing the user ID, the variable name or the URLs needs a new alias, and
+  retired aliases stay reserved.
 - `identity_url` (default `https://plex.tv/api/v2/user`) and `watchlist_url`
   (default `https://discover.provider.plex.tv/library/sections/watchlist/all`)
   are optional.

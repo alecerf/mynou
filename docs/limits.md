@@ -161,8 +161,8 @@ IRC announcements:
   seconds. Idle timeout is 30 to 600 seconds. Server error text is not echoed.
 - SASL supports only `PLAIN`, without SASLprep or Unicode normalization.
   Capability negotiation accepts 16 lines, 64 capabilities and 4,096 bytes;
-  credential values have 1 to 256 bytes; encoded chunks have at most 400 bytes
-  and a response at most three chunks.
+  credential values have 1 to 256 bytes; the encoded response has at most
+  1,028 bytes, sent in at most three chunks of 400 bytes.
 - NickServ accounts have 1 to 64 ASCII letters, digits, hyphens or
   underscores; success and the 1 to 8 failure notices have at most 256 bytes;
   passwords have 1 to 256 printable non-space ASCII characters. Only the
@@ -340,6 +340,7 @@ IRC announcements:
 - Automatic anime-order or episode-range inference, splitting or cutting
   videos, automatic search for shared groups, and renaming or deleting library
   files.
+- Scheduling episodes by premiere time or time zone.
 - Requester self-service sign-in.
 - Full parity with Radarr, Sonarr, Pulsarr, qBittorrent, qui, autobrr or
   Prowlarr.

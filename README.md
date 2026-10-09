@@ -72,8 +72,9 @@ and open **Setup**, which lists what is still missing.
 
 ## Essential configuration
 
-Plex and TMDB start disabled. Edit the generated `mynou.json`, keep secrets in
-the environment, and restart the service after each change:
+Plex and TMDB start disabled. Edit the generated `mynou.json`, put secrets in
+the service's environment (Docker loads them from `.env`) and restart the
+service after each change:
 
 | What | Settings in `mynou.json` | Secret |
 | --- | --- | --- |
