@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 1068,
-  "lease": {
-    "id": "codex-recovery-20261009T112800Z-quality-7908b215-6fb4-48f8-a7f3-a4511158129c",
-    "worker": "codex-recovery-20261009T112800Z",
-    "role": "quality",
-    "issue": 54,
-    "acquired_at": "2026-10-09T11:38:13Z",
-    "heartbeat_at": "2026-10-09T12:10:39Z",
-    "expires_at": "2026-10-09T12:55:39Z",
-    "branch": "work/54-security-log-coverage",
-    "commit": "def96b52107afd71ba94da12a9443c6b22fc4fd2",
-    "pr": 64
-  },
+  "generation": 1069,
+  "lease": null,
   "checkpoint": {
     "publication": {
       "commit": "02a536f2c75e454094c7cb28d85ec2771c7404f0",
