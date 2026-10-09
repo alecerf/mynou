@@ -180,11 +180,11 @@ fn native_forms_without_origin_can_sign_in_act_and_sign_out() {
     page.no_secrets();
     let csrf = web_support::csrf(&page.body);
     assert!(csrf != challenge.csrf);
-    let job = server
-        .engine
-        .submit(movie("Native Form Fixture"))
-        .unwrap_or_else(|_| panic!("Fixture job submission failed"))
-        .remove(0);
+    // Submission failures can carry private configuration; never format them.
+    let job = match server.engine.submit(movie("Native Form Fixture")) {
+        Ok(mut jobs) if !jobs.is_empty() => jobs.remove(0),
+        _ => panic!("Fixture job submission failed or returned no jobs"),
+    };
     let referring_jobs = format!("{origin}/ui/jobs?state=queued");
     let action = server.call(
         "POST",
