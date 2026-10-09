@@ -1,27 +1,76 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 1115,
+  "generation": 1116,
   "lease": {
     "id": "codex-recovery-20261009T131600Z-master-4aa63608-7350-4a9b-8235-a670fd8df937",
     "worker": "codex-recovery-20261009T131600Z",
     "role": "master",
     "issue": 62,
     "acquired_at": "2026-10-09T13:32:28Z",
-    "heartbeat_at": "2026-10-09T13:37:41Z",
-    "expires_at": "2026-10-09T14:22:41Z",
+    "heartbeat_at": "2026-10-09T13:47:15Z",
+    "expires_at": "2026-10-09T14:32:15Z",
     "branch": "trunk",
     "commit": "6946ef76db0fc13b1fd887f6ee3d5304d5b1fbd2",
     "pr": 69
   },
   "checkpoint": {
     "publication": {
-      "commit": "a10a610bdab87810220555915c193b1eff2f1dd3",
-      "state": "ci-failed",
-      "at": "2026-10-09T13:30:52Z",
-      "run_id": 37930552053,
+      "commit": "6946ef76db0fc13b1fd887f6ee3d5304d5b1fbd2",
+      "state": "published",
+      "version": "0.22.33",
+      "at": "2026-10-09T13:38:31Z",
+      "release_id": 407951663,
+      "immutable": true,
+      "tag_commit": "6946ef76db0fc13b1fd887f6ee3d5304d5b1fbd2",
+      "run_id": 37937994405,
+      "run_attempt": 1,
       "status": "completed",
-      "conclusion": "failure"
+      "conclusion": "success",
+      "assets": [
+        {
+          "id": 625081675,
+          "name": "mynou-v0.22.33-linux-x86_64",
+          "size": 4899680,
+          "digest": "sha256:db11b129a777146956a35682b6a1589afa7ed521d4714c9307967fdec1b9ef10"
+        },
+        {
+          "id": 625081669,
+          "name": "mynou-v0.22.33-macos-arm64",
+          "size": 3745456,
+          "digest": "sha256:23de3079f06ab4b107694da311be2225b4f77d6bef994e88265bd722f08f7759"
+        },
+        {
+          "id": 625081678,
+          "name": "mynou-v0.22.33-macos-x86_64",
+          "size": 4516680,
+          "digest": "sha256:c0c6cffdfa39d557f0e0c2cbaa495a5bc5a568c4322386ac97d84b4e3cb4053d"
+        },
+        {
+          "id": 625081676,
+          "name": "SHA256SUMS",
+          "size": 281,
+          "digest": "sha256:6c6c36bee9dc67c127fa2b71d2f81d4ebf25a264f2260ec94c541398d8205f72"
+        }
+      ],
+      "registry_proof": {
+        "image": "ghcr.io/alecerf/mynou@sha256:cc6d38727602353c2de146262162847952b5cfdfbe4c3f9f4c4166d008dcd966",
+        "version": "0.22.33",
+        "source": "6946ef76db0fc13b1fd887f6ee3d5304d5b1fbd2",
+        "visibility": "private",
+        "binary_sha256": "db11b129a777146956a35682b6a1589afa7ed521d4714c9307967fdec1b9ef10",
+        "repository": "alecerf/mynou",
+        "repository_id": 1403318143,
+        "repository_visibility": "public",
+        "package_id": 15695108,
+        "repository_association": "reported-match",
+        "verification_user": "1001:1001",
+        "verification_cleanup": "completed"
+      },
+      "proof_artifact": {
+        "id": 11620225529,
+        "digest": "sha256:d8825737df5057ca4e85bcab37ce87b4266b8011c8edff02e27b7f552c5cf622"
+      }
     },
     "pending_qa": {
       "state": "resolved by exact-head passed QA5458620861",
@@ -637,7 +686,7 @@
     "branch": "trunk",
     "commit": "6946ef76db0fc13b1fd887f6ee3d5304d5b1fbd2",
     "pr": 69,
-    "summary": "Guarded expected-head mergePR69 succeeded afteractualobjectiveQA gate113843500435 anddistinctSecurity5470676493/QA5470712427. Actualdefault6946ef76db0fc13b1fd887f6ee3d5304d5b1fbd2 hasparents[a10a610,3c077539],tree3617351f01d670480bee01bb2a809764b2c81c69 matchesreviewed source. ActualdefaultCI/othernative runs inspected; publication remainsunverified untilrelease/privateproof succeeds. Version33 diagnostic safe, no permissions/secret exposures/local validation.",
+    "summary": "PR #69 was genuinely reviewed in distinct Security #5470676493 and QA #5470712427 exact-head/base leases, then merged only after native agent-qa-review #113843500435 succeeded. Exact default 6946ef76db0fc13b1fd887f6ee3d5304d5b1fbd2 CI #37937994405 attempt1 and all seven build/validate/package/release jobs succeeded. Native immutable release #407951663 v0.22.33 published at 2026-10-09T13:38:31Z has the four nonempty SHA256-bound assets and exact source tag. Native proof artifact #11620225529 ZIP digest/size/inventory was inspected as GitHub administration; proof identifies private ghcr.io/alecerf/mynou@sha256:cc6d38727602353c2de146262162847952b5cfdfbe4c3f9f4c4166d008dcd966, source/version/repository/binary match, UID1001:1001 and completed cleanup. Publication is actually verified. Post-merge Security audit #37937994372 attempt1 failed AuditError after15 requests with4657 remaining; one targeted failed actions-logs retry requested, no builds/publisher rerun. Old 403 cause remains unproven; package permissions were not changed.",
     "previous_checkpoint": {
       "at": "2026-10-09T13:35:50Z",
       "issue": 62,
@@ -648,8 +697,8 @@
       "summary": "PR69 ready athead3c077/basea10 with actual distinctSecurity5470676493/checkpoint3fbee andQA5470712427/checkpoint647164. All objectiveheadgatesgreen: Mynou37934310069 sixrequiredjobs, Security37934309962attempt3 bothjobs, CodeQL37934305358, freshEngineering37937592417 organization113843444301 +agent-qa-review113843500435. CurrentMaster62 leaseondefaulta10 protectsmanualfix-forwarddelivery; source/lease/base freshguards requiredbeforeexpectedheadmerge. No33publicationclaimed.",
       "next_action": "GuardedmanualmergePR69 onlyifcurrentdefault/basea10,head3c077,ownedlease andeveryobjectivegate stillgreen. Inspectactualmergedcommit/parents anddefaultCI;CIalonepublishesimmutable33. KeepIssue62InProgress/reopenifnativeclosingpremature. Readonlyfixed diagnostic ifdefaultreleasefails; recoverexactpublicationproof beforeclosing/branchcleanup/unrelatedwork."
     },
-    "at": "2026-10-09T13:37:41Z",
-    "next_action": "Observeexisting exactdefaultM69CI once furtherreadyrecovery/cleanup metadata is handled; donotdispatchduplicate CI orclaimpublication. Ifreleasefails inspectonlyallowlistedfixed HTTPdiagnostic/status,choose boundedcorrection undertriage. IfCIpasses recoveractualimmutablefourassetrelease/sourceboundprivateproof,completeIssue62/54/61acceptance andsafecleanup. Preservealluniqueproduct branches.",
+    "at": "2026-10-09T13:47:15Z",
+    "next_action": "Finish the single pending post-merge actions-log audit retry without native comments during inventory, record actual coverage and source-history/CodeQL evidence. Close #62 after verified publication and objective gates; then inspect #54/#61 acceptance and truthful post-install review/repair receipts before cleanup. Preserve all unique product branches and shared-identity review history.",
     "recovery": {
       "issue": true,
       "branch": true,
