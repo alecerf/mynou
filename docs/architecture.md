@@ -53,11 +53,11 @@ when the configuration filename is relative. `integrations` converts
 network responses into requests, catalog plans and sources. `engine` orchestrates transitions
 without holding the journal lock during a transfer or import.
 
-`requesters` stores versioned account policies, per-account cursors, approvals,
-quota reservations and compatible canonical demand in a private checked atomic
+`requesters` stores versioned account policies, per-account cursors, admission
+reservations and compatible canonical demand in a private checked atomic
 snapshot. Network identity/watchlist/catalog I/O stays outside requester and job
 locks. Locks proceed requester-then-job. Admission synchronizes requester
-provenance and quota before recording a job with immutable captured behavior in
+provenance and reservations before recording a job with immutable captured behavior in
 format 4. A reserved admission without a linked job recovers by media identity;
 ready files and earlier numbering/shared-group lineage retain their ownership.
 Startup validates both stores before native transfers begin. Notifications record
