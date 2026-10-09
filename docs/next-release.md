@@ -1,28 +1,31 @@
-# Current work — proposed 0.22.30 canonical publication transport
+# Current work — proposed 0.22.31 native browser form compatibility
 
-Actions actually published immutable v0.22.29 at
-`f34d827e47835da589eb8333199e88e035dcb410` in complete successful
-[CI37848363526](https://github.com/alecerf/mynou/actions/runs/37848363526).
-Release407287872 was published2026-10-08T21:43:58Z with the exact tag,
-four named/digested assets and source/run/attempt receipt11580497515.
-This does not claim successful durable reconciliation: native delivery37848823832
-and37851366061 rejected evidence, and Issue44 remains unfinished.
+Actions actually published immutable [v0.22.30](https://github.com/alecerf/mynou/releases/tag/v0.22.30)
+at `b11d88d5e9dd67d45980ba6c85716811dd6d3101` in successful seven-job
+[CI37855541518](https://github.com/alecerf/mynou/actions/runs/37855541518).
+Release407323363 was published2026-10-08T22:50:07Z. The actual source/run/attempt
+receipt11583648415, private image verification and publication timestamp were
+recorded at canonical `ba4917ab979190f2b031a887173ac2da1082305a`.
+Issues44/50 are closed with review, publication, dependency and branch-absence
+evidence. The later release-of-lease failure remains separately Needs Triage52;
+no failed run is presented as successful and the immutable release is preserved.
 
-[Issue50](https://github.com/alecerf/mynou/issues/50) fixes the actual transport
-blocker. The repository-root client requested a trailing-slash endpoint that
-GitHub returns as404; the canonical endpoint succeeds. Original CI scenarios
-exercise the real REST client rather than overriding it. Safe failure checkpoints
-retain only a bounded HTTP code, never response bodies, credentials or signed URLs.
-See [scope](releases/0.22.30.md). Native44 is actually blocked by50; PR49 and its
-original source remain preserved. No local checks or new publication are claimed.
+[User Issue48](https://github.com/alecerf/mynou/issues/48) reports Safari API-key
+sign-in failing at the browser-origin check. The proposed server-side correction
+allows a strictly validated same-origin Referer only when Origin is absent.
+Browser responses use a same-origin referrer policy; credentials and private paths
+are not sent cross-origin. Present invalid/null/foreign Origin, missing provenance,
+CSRF/token/cookie failures, cross-site metadata and authenticated scheme/port
+changes remain rejected. No JavaScript or dependency is added.
+See [scope](releases/0.22.31.md) and [browser security](web.md).
 
-After exact-head/base Security/full-diff QA and every objective gate, Actions
-alone publishes the correction. Verify actual current-default receipt, immutable
-release/private image and durable published timestamp before cleanup and new work.
-Native user Safari login report48 is next to triage after recovery;39/45 remain
-bounded product proposals,40 is blocked by39 and46 still needs triage.
-Product42 rearms from actual verified publication, not a merge or proposed version.
-The hourly recovery trigger and single-worker execution remain unchanged.
+Original native HTTP/state/privacy regressions run only in CI. They cover the
+header variant, not an unperformed Safari/browser matrix or personal installation.
+Complete distinct exact-head/base Security/full-diff QA, every objective gate and
+Actions-only immutable publication before claiming the new release.
+After user work, Product42 can rearm from actual publication;39/45 remain bounded
+product proposals,40 is natively blocked by39 and46 still needs triage.
+The existing hourly recovery and single-worker policy remain unchanged.
 
 ## Earlier guided setup scope
 

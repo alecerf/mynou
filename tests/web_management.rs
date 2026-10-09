@@ -26,7 +26,7 @@ fn browser_sign_in_sign_out_and_api_authentication_are_separate() {
     assert_eq!(page.status, 200);
     assert!(page.headers["content-type"].starts_with("text/html"));
     assert_eq!(page.headers["cache-control"], "no-store");
-    assert_eq!(page.headers["referrer-policy"], "no-referrer");
+    assert_eq!(page.headers["referrer-policy"], "same-origin");
     assert!(page.headers["content-security-policy"].contains("default-src 'none'"));
     assert_eq!(
         server
@@ -97,7 +97,7 @@ fn browser_sign_in_accepts_the_apis_byte_based_unicode_token_policy() {
 }
 
 #[test]
-fn login_rejects_wrong_token_missing_origin_and_login_csrf() {
+fn login_rejects_wrong_token_missing_provenance_and_login_csrf() {
     let directory = Directory::new();
     let server = server(&directory);
     let browser = Browser::challenge(&server);
@@ -148,6 +148,268 @@ fn login_rejects_wrong_token_missing_origin_and_login_csrf() {
         403
     );
     assert_eq!(browser.get(&server, "/ui/jobs").status, 303);
+}
+
+#[test]
+fn native_forms_without_origin_can_sign_in_act_and_sign_out() {
+    let directory = Directory::new();
+    let server = server(&directory);
+    let challenge = Browser::challenge(&server);
+    let origin = server.origin();
+    let referring_login = format!("{origin}/ui/login");
+    let login = server.call(
+        "POST",
+        "/ui/login",
+        &[
+            ("Cookie", &challenge.cookie),
+            ("Referer", &referring_login),
+            ("Content-Type", "application/x-www-form-urlencoded"),
+        ],
+        &fields(&[("csrf", &challenge.csrf), ("token", TOKEN)]),
+    );
+    assert_eq!(login.status, 303);
+    assert_eq!(login.headers["location"], "/ui");
+    login.no_secrets();
+    let cookie = login.headers["set-cookie"].split(';').next().unwrap();
+    assert_ne!(cookie, challenge.cookie);
+    assert_eq!(challenge.get(&server, "/ui/jobs").status, 303);
+    let page = server.call("GET", "/ui/jobs", &[("Cookie", cookie)], "");
+    assert_eq!(page.status, 200);
+    assert_eq!(page.headers["referrer-policy"], "same-origin");
+    page.no_secrets();
+    let csrf = web_support::csrf(&page.body);
+    assert_ne!(csrf, challenge.csrf);
+    let job = server
+        .engine
+        .submit(movie("Native Form Fixture"))
+        .unwrap()
+        .remove(0);
+    let referring_jobs = format!("{origin}/ui/jobs?state=queued");
+    let action = server.call(
+        "POST",
+        "/ui/jobs/action",
+        &[
+            ("Cookie", cookie),
+            ("Referer", &referring_jobs),
+            ("Sec-Fetch-Site", "same-origin"),
+            ("Content-Type", "application/x-www-form-urlencoded"),
+        ],
+        &fields(&[("csrf", &csrf), ("action", "cancel"), ("id", &job.id)]),
+    );
+    assert_eq!(action.status, 303);
+    action.no_secrets();
+    assert_eq!(
+        lock(&server.engine.store).unwrap().get(&job.id).unwrap().state,
+        "cancelled"
+    );
+    assert_eq!(
+        server
+            .call("GET", "/api/jobs", &[("Cookie", cookie)], "")
+            .status,
+        401
+    );
+    let logout = server.call(
+        "POST",
+        "/ui/logout",
+        &[
+            ("Cookie", cookie),
+            ("Referer", &referring_jobs),
+            ("Content-Type", "application/x-www-form-urlencoded"),
+        ],
+        &fields(&[("csrf", &csrf)]),
+    );
+    assert_eq!(logout.status, 303);
+    assert!(logout.headers["set-cookie"].contains("Max-Age=0"));
+    assert_eq!(
+        server
+            .call("GET", "/ui/jobs", &[("Cookie", cookie)], "")
+            .status,
+        303
+    );
+}
+
+#[test]
+fn native_form_referrers_cannot_repair_rejected_origins_or_cross_site_metadata() {
+    let directory = Directory::new();
+    let server = server(&directory);
+    let challenge = Browser::challenge(&server);
+    let good = format!("{}/ui/login", server.origin());
+    let userinfo = format!("http://user@{}/ui/login", server.authority);
+    let fragment = format!("{good}#fragment");
+    let combined = format!("{good}, http://attacker.invalid/ui/login");
+    let relative = format!("//{}/ui/login", server.authority);
+    let invalid_origin = format!("{}/ui/login", server.origin());
+    let values = fields(&[("csrf", &challenge.csrf), ("token", TOKEN)]);
+    for extra in [
+        vec![("Sec-Fetch-Site", "same-origin")],
+        vec![("Referer", "http://attacker.invalid/ui/login")],
+        vec![("Referer", "http://127.0.0.1:1/ui/login")],
+        vec![("Referer", "file:///ui/login")],
+        vec![("Referer", userinfo.as_str())],
+        vec![("Referer", fragment.as_str())],
+        vec![("Referer", combined.as_str())],
+        vec![("Referer", relative.as_str())],
+        vec![("Origin", "null"), ("Referer", good.as_str())],
+        vec![("Origin", ""), ("Referer", good.as_str())],
+        vec![
+            ("Origin", "http://attacker.invalid"),
+            ("Referer", good.as_str()),
+        ],
+        vec![
+            ("Origin", invalid_origin.as_str()),
+            ("Referer", good.as_str()),
+        ],
+        vec![("Referer", good.as_str()), ("Sec-Fetch-Site", "cross-site")],
+        vec![("Referer", good.as_str()), ("Sec-Fetch-Site", "same-site")],
+    ] {
+        let mut headers = vec![
+            ("Cookie", challenge.cookie.as_str()),
+            ("Content-Type", "application/x-www-form-urlencoded"),
+        ];
+        headers.extend(extra);
+        let response = server.call("POST", "/ui/login", &headers, &values);
+        assert_eq!(response.status, 403);
+        response.no_secrets();
+    }
+    assert_eq!(challenge.get(&server, "/ui/jobs").status, 303);
+    assert!(lock(&server.engine.store).unwrap().list().is_empty());
+}
+
+#[test]
+fn referring_address_login_still_requires_token_cookie_and_csrf() {
+    let directory = Directory::new();
+    let server = server(&directory);
+    let challenge = Browser::challenge(&server);
+    let referer = format!("{}/ui/login", server.origin());
+    let headers = [
+        ("Cookie", challenge.cookie.as_str()),
+        ("Referer", referer.as_str()),
+        ("Content-Type", "application/x-www-form-urlencoded"),
+    ];
+    for (csrf, token, expected) in [
+        (challenge.csrf.as_str(), "wrong-token", 401),
+        ("wrong-csrf", TOKEN, 403),
+    ] {
+        let response = server.call(
+            "POST",
+            "/ui/login",
+            &headers,
+            &fields(&[("csrf", csrf), ("token", token)]),
+        );
+        assert_eq!(response.status, expected);
+        response.no_secrets();
+    }
+    let values = fields(&[("csrf", &challenge.csrf), ("token", TOKEN)]);
+    let missing_cookie = server.call("POST", "/ui/login", &headers[1..], &values);
+    assert_eq!(missing_cookie.status, 403);
+    missing_cookie.no_secrets();
+    let mut duplicate = headers.to_vec();
+    duplicate.push(("Referer", &referer));
+    assert_eq!(
+        server.call("POST", "/ui/login", &duplicate, &values).status,
+        400
+    );
+    assert_eq!(challenge.get(&server, "/ui/jobs").status, 303);
+}
+
+#[test]
+fn referring_address_actions_remain_bound_to_the_https_session_origin() {
+    let directory = Directory::new();
+    let server = server(&directory);
+    let challenge = Browser::challenge(&server);
+    let referer = format!("https://{}/ui/login", server.authority);
+    let login = server.call(
+        "POST",
+        "/ui/login",
+        &[
+            ("Cookie", &challenge.cookie),
+            ("Referer", &referer),
+            ("Content-Type", "application/x-www-form-urlencoded"),
+        ],
+        &fields(&[("csrf", &challenge.csrf), ("token", TOKEN)]),
+    );
+    assert_eq!(login.status, 303);
+    assert!(login.headers["set-cookie"].contains("; Secure"));
+    assert!(login.headers["set-cookie"].contains("HttpOnly; SameSite=Strict"));
+    let cookie = login.headers["set-cookie"].split(';').next().unwrap();
+    let page = server.call("GET", "/ui", &[("Cookie", cookie)], "");
+    let csrf = web_support::csrf(&page.body);
+    let valid = format!("https://{}/ui", server.authority);
+    let downgraded = format!("{}/ui", server.origin());
+    let values = fields(&[("csrf", &csrf)]);
+    for referring_address in [downgraded.as_str(), "https://127.0.0.1:1/ui"] {
+        let response = server.call(
+            "POST",
+            "/ui/logout",
+            &[
+                ("Cookie", cookie),
+                ("Referer", referring_address),
+                ("Content-Type", "application/x-www-form-urlencoded"),
+            ],
+            &values,
+        );
+        assert_eq!(response.status, 403);
+        response.no_secrets();
+    }
+    let headers = [
+        ("Cookie", cookie),
+        ("Referer", valid.as_str()),
+        ("Content-Type", "application/x-www-form-urlencoded"),
+    ];
+    assert_eq!(
+        server
+            .call(
+                "POST",
+                "/ui/logout",
+                &headers,
+                &fields(&[("csrf", "wrong")])
+            )
+            .status,
+        403
+    );
+    assert_eq!(
+        server.call("GET", "/ui", &[("Cookie", cookie)], "").status,
+        200
+    );
+    assert_eq!(
+        server.call("POST", "/ui/logout", &headers, &values).status,
+        303
+    );
+}
+
+#[test]
+fn native_form_referrers_normalize_default_ports_case_and_ipv6_authorities() {
+    let directory = Directory::new();
+    let server = server(&directory);
+    for (host, referer, secure) in [
+        ("browser.invalid:80", "http://browser.invalid/ui/login", false),
+        ("BROWSER.invalid", "http://browser.invalid:80/ui/login", false),
+        (
+            "browser.invalid:443",
+            "https://browser.invalid/ui/login",
+            true,
+        ),
+        ("[::1]:443", "https://[::1]/ui/login", true),
+    ] {
+        let page = server.call("GET", "/ui/login", &[("Host", host)], "");
+        assert_eq!(page.status, 200);
+        let challenge = page.headers["set-cookie"].split(';').next().unwrap();
+        let csrf = web_support::csrf(&page.body);
+        let login = server.call(
+            "POST",
+            "/ui/login",
+            &[
+                ("Host", host),
+                ("Cookie", challenge),
+                ("Referer", referer),
+                ("Content-Type", "application/x-www-form-urlencoded"),
+            ],
+            &fields(&[("csrf", &csrf), ("token", TOKEN)]),
+        );
+        assert_eq!(login.status, 303);
+        assert_eq!(login.headers["set-cookie"].contains("; Secure"), secure);
+        login.no_secrets();
+    }
 }
 
 #[test]
