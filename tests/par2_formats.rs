@@ -4,6 +4,7 @@ mod library_support;
 
 use archive_support::{hex, reference_crc};
 use library_support::Directory;
+use mynou::par2::{StreamingLimits, StreamingPlan};
 use mynou::{
     crypto::{Md5, md5, sha256},
     json::{self, Value},
@@ -19,7 +20,6 @@ use std::{
     process::Command,
     sync::atomic::{AtomicBool, Ordering},
 };
-use mynou::par2::{StreamingLimits, StreamingPlan};
 
 const MAIN: [u8; 16] = *b"PAR 2.0\0Main\0\0\0\0";
 const DESCRIPTION: [u8; 16] = *b"PAR 2.0\0FileDesc";
@@ -195,9 +195,16 @@ fn reference_multiply(left: u16, right: u16) -> u16 {
 // Spec constant for input slice N: 2^n for the Nth n coprime to 65535.
 fn input_constant(index: usize) -> u16 {
     fn gcd(left: u32, right: u32) -> u32 {
-        if right == 0 { left } else { gcd(right, left % right) }
+        if right == 0 {
+            left
+        } else {
+            gcd(right, left % right)
+        }
     }
-    let n = (1u32..).filter(|n| gcd(*n, 65_535) == 1).nth(index).unwrap();
+    let n = (1u32..)
+        .filter(|n| gcd(*n, 65_535) == 1)
+        .nth(index)
+        .unwrap();
     reference_power(2, n)
 }
 
@@ -2524,7 +2531,10 @@ fn synthetic(length: usize) -> Vec<u8> {
 
 fn small_streaming() -> (Vec<u8>, Vec<u8>) {
     let original = synthetic(40 * 1024 + 13);
-    (Fixture::recovery_exponents(&original, 4096, &[3, 7, 11]).bytes(), original)
+    (
+        Fixture::recovery_exponents(&original, 4096, &[3, 7, 11]).bytes(),
+        original,
+    )
 }
 
 #[test]
@@ -2533,8 +2543,12 @@ fn streaming_recovers_over_sixteen_mebibytes_under_a_tight_memory_budget() {
     let source = Fixture::recovery_exponents(&original, 65_536, &[1, 3, 5]).bytes();
     let set = read(&source).unwrap();
     assert!(
-        set.recover_single(&mut Cursor::new(&source), &original, RecoveryLimits::default())
-            .is_err()
+        set.recover_single(
+            &mut Cursor::new(&source),
+            &original,
+            RecoveryLimits::default()
+        )
+        .is_err()
     );
     let mut damaged = original[..271 * 65_536 + 7].to_vec();
     damaged[3 * 65_536 + 9] ^= 0x5a;
@@ -2613,9 +2627,33 @@ fn streaming_rejects_rank_limits_cancellation_and_changed_inputs_without_output(
     };
     let live = AtomicBool::new(true);
     let defaults = StreamingLimits::default();
-    assert!(run(&source, &damaged, StreamingLimits { max_missing_slices: 1, ..defaults }, &live));
-    assert!(run(&source, &damaged, StreamingLimits { max_field_operations: 10, ..defaults }, &live));
-    assert!(run(&source, &damaged, StreamingLimits { max_working_bytes: 530 * 1024, ..defaults }, &live));
+    assert!(run(
+        &source,
+        &damaged,
+        StreamingLimits {
+            max_missing_slices: 1,
+            ..defaults
+        },
+        &live
+    ));
+    assert!(run(
+        &source,
+        &damaged,
+        StreamingLimits {
+            max_field_operations: 10,
+            ..defaults
+        },
+        &live
+    ));
+    assert!(run(
+        &source,
+        &damaged,
+        StreamingLimits {
+            max_working_bytes: 530 * 1024,
+            ..defaults
+        },
+        &live
+    ));
     assert!(run(&source, &damaged, defaults, &AtomicBool::new(false)));
     let mut altered = source.clone();
     altered[10] ^= 1;
@@ -2637,7 +2675,14 @@ fn streaming_rejects_rank_limits_cancellation_and_changed_inputs_without_output(
             .is_err()
     );
     assert_eq!(fs::read_dir(&dir.0).unwrap().count(), 0);
-    assert!(StreamingLimits { max_file_bytes: (1 << 30) + 1, ..defaults }.validate().is_err());
+    assert!(
+        StreamingLimits {
+            max_file_bytes: (1 << 30) + 1,
+            ..defaults
+        }
+        .validate()
+        .is_err()
+    );
 }
 
 #[test]
@@ -2650,7 +2695,11 @@ fn streaming_never_overwrites_and_rejects_unsafe_plans() {
         set.recover_single_to_file(
             &mut Cursor::new(&source),
             &mut Cursor::new(&original),
-            &StreamingPlan { directory: &dir.0, file_name: name, owner },
+            &StreamingPlan {
+                directory: &dir.0,
+                file_name: name,
+                owner,
+            },
             StreamingLimits::default(),
         )
     };
