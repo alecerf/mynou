@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 919,
+  "generation": 920,
   "lease": {
     "id": "codex-recovery-20261009T002551Z-triage-48c32cab-dcb2-4eb4-821f-d055b3b413bc",
     "worker": "codex-recovery-20261009T002551Z",
@@ -790,6 +790,12 @@
       "fingerprint": "ced0fe652469fa6916831e0fb09cccc1a8784f79:37767226110:HTTP502",
       "unchanged": 1,
       "at": "2026-10-08T11:43:45Z"
+    },
+    "48": {
+      "approach": "Triage switches unwrap-family fixture diagnostics to explicit Result matching",
+      "fingerprint": "PR53/head5014877:892tests pass; CodeQL113621268688/high alert182 at submission183-186; callback ignored Err but scanner still red",
+      "unchanged": 1,
+      "at": "2026-10-09T01:21:21Z"
     }
   }
 }
