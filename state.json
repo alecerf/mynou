@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 946,
-  "lease": null,
+  "generation": 947,
+  "lease": {
+    "id": "codex-recovery-20261009T022916Z-rust-d129eab6-fc2b-4d63-956d-e78fc55bc1e2",
+    "worker": "codex-recovery-20261009T022916Z",
+    "role": "rust",
+    "issue": 48,
+    "acquired_at": "2026-10-09T02:49:03Z",
+    "heartbeat_at": "2026-10-09T02:49:03Z",
+    "expires_at": "2026-10-09T03:34:03Z",
+    "branch": "work/48-safari-origin",
+    "commit": "5c4b41d84766806a38d230a7efc18f84f486cb7e",
+    "pr": 53
+  },
   "checkpoint": {
     "at": "2026-10-09T02:47:51Z",
     "issue": 48,
