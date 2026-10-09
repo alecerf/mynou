@@ -78,8 +78,9 @@ Rejections send the turn back to you: fix, push, answer the findings and post
    `.agents/`, `.github/`, `src/crypto`, `src/tls` or `src/pki`, or the Issue is
    `risk:high` or `risk:critical` (the board shows `security_required`). After a
    QA approval, post `/wait security`; Security records its own verdict.
-5. When every required verdict approves the head and checks are green, merge;
-   if CI is still running, post `/wait ci`. Then `/unassign` the PR.
+5. When every required verdict approves the head and checks are green, merge
+   and close the Issue; if CI is still running, post `/wait ci`. Then
+   `/unassign` the PR.
 
 A distinct review pass re-reads the whole diff. Prefer another agent when one is
 available; never fabricate a review, an identity or a GitHub approval.
@@ -92,8 +93,10 @@ available; never fabricate a review, an identity or a GitHub approval.
 - every check on the head is green (`ci: success` on the board);
 - no review conversation is unresolved.
 
-Merging closes the Issue and deletes the branch. If the head moved, a new verdict
-is needed. A red `trunk` blocks further merges until a fix-forward PR lands.
+Merging deletes the branch, but GitHub does not close the Issue in this
+repository: close it yourself (`gh issue close <issue> --reason completed`) with
+a comment linking the merge. If the head moved, a new verdict is needed. A red
+`trunk` blocks further merges until a fix-forward PR lands.
 
 ## Releases
 

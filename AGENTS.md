@@ -32,7 +32,7 @@ product-defining, destructive, sensitive or costly decisions.
   `AGENTS.md`, `engineering/`, `.agents/`, `.github/`, crypto/TLS/PKI or
   high-risk Issues also need Security. Never fabricate a review or approval.
 - Merge (merge commit, `--match-head-commit`) only when every required verdict
-  approves the current head and all checks are green.
+  approves the current head and all checks are green; then close the Issue.
 - Product code is Rust std only: **zero Cargo dependencies** of any kind, no
   `unsafe`, FFI, copied third-party code, external runtime helpers or Go
   fallback. Tooling uses Python std and GitHub, as existing CI does.
