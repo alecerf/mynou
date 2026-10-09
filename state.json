@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 981,
+  "generation": 982,
   "lease": {
     "id": "codex-recovery-20261009T043040Z-master-db147e42-0346-4bf1-a59e-e2221b254a28",
     "worker": "codex-recovery-20261009T043040Z",
     "role": "master",
     "issue": 52,
     "acquired_at": "2026-10-09T04:36:17Z",
-    "heartbeat_at": "2026-10-09T04:36:17Z",
-    "expires_at": "2026-10-09T05:21:17Z",
+    "heartbeat_at": "2026-10-09T04:37:21Z",
+    "expires_at": "2026-10-09T05:22:21Z",
     "branch": "trunk",
     "commit": "adb8808d91e0f87017c7cad0ae9d787a7448feee",
     "pr": null
   },
   "checkpoint": {
-    "at": "2026-10-09T04:35:45Z",
-    "issue": 48,
-    "role": "quality",
+    "at": "2026-10-09T04:37:21Z",
+    "issue": 52,
+    "role": "master",
     "branch": "trunk",
     "commit": "adb8808d91e0f87017c7cad0ae9d787a7448feee",
-    "pr": 53,
-    "summary": "Quality completed actual delivery cleanup for48/PR53 under separate default-source lease. Verified default/tagadb8808, immutable release407471331v0.22.31/all4digestedassets and native CI37879166856(all7jobs successful); current source-bound unexpired receipt11593488474/digest527fda49 matches preserved historical private-image proof. Actual native original parentsb11d88/9d950508 and tree37e0e95f preserved. Native merged sourcebranchwork/48-safari-origin actually404; zero openPRs, zero48blockers/dependents. No deletion request or unique-work loss. Issue48 actuallyclosedcompleted/Done/roleQuality via nativeupdate; Issue/PRhandoffs record exactsource/verification/limits. Current Securityaudit/CodeQL/Engineering allsuccess; taskreconciliationnull. No localchecks or invented Safari engine/secret guarantee. Publicationrecord/history retained.",
-    "next_action": "Release Quality and immediately reacquire Master at actual default for outstanding native recovery/backlog. Existing ReliabilityIssue52 preserves interrupted post-publication ownership failure; inspect native issue/action evidence and priority before selecting change. No openPR source awaits review. If higher-priority work absent, check nativeReady queue/standingProduct42 readiness and known39/40/45/46/54 proposals; preserve dependencies and bounded evidence-based scope. Do not duplicateIssues or bypass gates; new product changes need separate exact-source Security/QA and CI.",
+    "pr": null,
+    "summary": "Master completed outstanding48publication/Quality cleanup and selected unblocked managedReliability52 next. Native openPRsnone, taskreconciliationnull, latest eligible defaultCI/publicationverifiedv0.22.31 atadb8808; no P0/P1 userwork remains. Native backlog54/52/46/45/40/39P2,42standingProductP3;52 is evidence-based actual publication lease-release failure/run37855933264/job113579979334 that delayed capacity after successfulv0.22.30. Currentv31mechanicalrun37879580416 succeeds and leasewasfree; historical failure is not claimed reproduced/fixed.52nativeblockersnone; metadataInProgress/Triage, originalbounded acceptance preserved. No newIssue/feature, localcheck, root-causeguess or unsupportedcapability.",
+    "next_action": "Release Master then immediately acquireTriage52 atactualdefaultadb8808/trunk/prnull. Inspect preserved native failing run/control chain and original exact-source release/read_state/save path; establish boundary before choosing smallest correction. Consider response-cache/stale ownership only as hypothesis until actual evidence. Preserve failclosed single-parent/nonforce arbitration/no blindretry/requestceiling150. If correction warranted use one linkedPR and original CI-onlyregression plus distinctSecurity/QA; otherwise truthfullytriage evidence. After bounded52delivery recoverpublication/cleanup then rearm Product42 nativeReady queue withactualnewrelease evidence, retaining39/40/45/46native dependencies.",
     "publication": {
       "commit": "adb8808d91e0f87017c7cad0ae9d787a7448feee",
       "state": "published",
@@ -563,14 +563,14 @@
       "publication_pr_handoff": 6062225589
     },
     "previous_checkpoint": {
-      "at": "2026-10-09T03:24:39Z",
+      "at": "2026-10-09T04:35:45Z",
       "issue": 48,
-      "role": "master",
+      "role": "quality",
       "branch": "trunk",
-      "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
-      "pr": null,
-      "summary": "Master delivery at default b11d88/trunk under owned lease; native PR53 open/exact head9d950508/baseb11d88, source branch unchanged. Complete QA5465370272 at70abb409 and Security5465258420 ata27e9502 actually accepted by successful machine gate113654081278/run37878990285; native proof binds exact head/base and both held checkpoints. Latest required organization113654044292, validate113648214684, all4builds/package113648876816, audits113648214569/113648214437 and finalCodeQL113648376949/3analyses all completed success. All3 native conversations actually resolved by scanner bot. No fabricated self-approval, scan guarantee or local checks. Older timed-out/cancelled QA runs remain preserved but latest actual gate is green. Native rulesets list empty, branch protection endpoint unavailable/not configured response preserved; no protections changed. PR description updated with actual verification.",
-      "next_action": "Re-confirm owned canonical lease and actual exact PR head/base then merge original PR53 using expected source SHA and normal merge. Confirm merged native parents/tree/default/Issue48 and persist actual new default. Actions alone publishes v0.22.31; recover existing/default CI or dispatch only if actually missing, then verify immutable release and publication proof before safe cleanup/new work."
+      "commit": "adb8808d91e0f87017c7cad0ae9d787a7448feee",
+      "pr": 53,
+      "summary": "Quality completed actual delivery cleanup for48/PR53 under separate default-source lease. Verified default/tagadb8808, immutable release407471331v0.22.31/all4digestedassets and native CI37879166856(all7jobs successful); current source-bound unexpired receipt11593488474/digest527fda49 matches preserved historical private-image proof. Actual native original parentsb11d88/9d950508 and tree37e0e95f preserved. Native merged sourcebranchwork/48-safari-origin actually404; zero openPRs, zero48blockers/dependents. No deletion request or unique-work loss. Issue48 actuallyclosedcompleted/Done/roleQuality via nativeupdate; Issue/PRhandoffs record exactsource/verification/limits. Current Securityaudit/CodeQL/Engineering allsuccess; taskreconciliationnull. No localchecks or invented Safari engine/secret guarantee. Publicationrecord/history retained.",
+      "next_action": "Release Quality and immediately reacquire Master at actual default for outstanding native recovery/backlog. Existing ReliabilityIssue52 preserves interrupted post-publication ownership failure; inspect native issue/action evidence and priority before selecting change. No openPR source awaits review. If higher-priority work absent, check nativeReady queue/standingProduct42 readiness and known39/40/45/46/54 proposals; preserve dependencies and bounded evidence-based scope. Do not duplicateIssues or bypass gates; new product changes need separate exact-source Security/QA and CI."
     },
     "task_reconciliation": {
       "issue": 19,
