@@ -347,6 +347,34 @@ impl Engine {
         Ok((record, submitted))
     }
 
+    /// Export the complete chosen window as iCalendar text; never a partial page.
+    pub fn episode_calendar_ics(&self, query: &CalendarQuery) -> Result<String> {
+        query.validate()?;
+        let records = lock(&self.series_store)?.list();
+        let entries = window(&records, query);
+        if entries.len() > super::ical::MAX_EVENTS {
+            return Err(format!(
+                "This window has {} known episode dates, above the {} that one file can hold; narrow the dates or choose one series",
+                entries.len(),
+                super::ical::MAX_EVENTS
+            ));
+        }
+        let events: Vec<_> = entries
+            .iter()
+            .filter_map(|(record, episode)| {
+                Some(super::ical::Event {
+                    series_id: &record.id,
+                    series_title: &record.plan.request.title,
+                    season: episode.season,
+                    episode: episode.episode,
+                    episode_title: &episode.title,
+                    air_date: episode.air_date.as_deref()?,
+                })
+            })
+            .collect();
+        super::ical::render(&events)
+    }
+
     pub fn episode_calendar(&self, query: &CalendarQuery) -> Result<Value> {
         query.validate()?;
         let records = lock(&self.series_store)?.list();
@@ -362,29 +390,7 @@ impl Engine {
             }
         }
         // Sort borrowed catalog rows, then construct public JSON only for the requested page.
-        let mut entries = Vec::new();
-        for record in &records {
-            if query.series_id.as_ref().is_some_and(|id| id != &record.id) {
-                continue;
-            }
-            for episode in &record.plan.episodes {
-                if episode
-                    .air_date
-                    .as_ref()
-                    .is_some_and(|date| date >= &query.from && date <= &query.to)
-                {
-                    entries.push((record, episode));
-                }
-            }
-        }
-        entries.sort_by(|(a, x), (b, y)| {
-            (&x.air_date, &a.id, x.season, x.episode).cmp(&(
-                &y.air_date,
-                &b.id,
-                y.season,
-                y.episode,
-            ))
-        });
+        let entries = window(&records, query);
         let total = entries.len();
         let today = date::today();
         let page = entries
@@ -440,6 +446,32 @@ impl Engine {
         value.insert("episodes", Value::Array(page));
         Ok(value)
     }
+}
+
+/// Sorted known-dated episodes inside the query window and series scope.
+fn window<'a>(
+    records: &'a [Record],
+    query: &CalendarQuery,
+) -> Vec<(&'a Record, &'a super::Episode)> {
+    let mut entries = Vec::new();
+    for record in records {
+        if query.series_id.as_ref().is_some_and(|id| id != &record.id) {
+            continue;
+        }
+        for episode in &record.plan.episodes {
+            if episode
+                .air_date
+                .as_ref()
+                .is_some_and(|date| date >= &query.from && date <= &query.to)
+            {
+                entries.push((record, episode));
+            }
+        }
+    }
+    entries.sort_by(|(a, x), (b, y)| {
+        (&x.air_date, &a.id, x.season, x.episode).cmp(&(&y.air_date, &b.id, y.season, y.episode))
+    });
+    entries
 }
 
 #[derive(Clone, Debug)]
