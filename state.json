@@ -1,72 +1,72 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 972,
+  "generation": 973,
   "lease": {
     "id": "f188d2a9-c60c-4c53-b26f-2b453d1928e1",
     "worker": "github-actions-publication-recovery",
     "role": "triage",
     "issue": 48,
     "acquired_at": "2026-10-09T03:30:30Z",
-    "heartbeat_at": "2026-10-09T03:30:30Z",
-    "expires_at": "2026-10-09T04:15:30Z",
+    "heartbeat_at": "2026-10-09T03:30:37Z",
+    "expires_at": "2026-10-09T04:15:37Z",
     "branch": "trunk",
     "commit": "adb8808d91e0f87017c7cad0ae9d787a7448feee",
     "pr": 53
   },
   "checkpoint": {
-    "at": "2026-10-09T03:29:45Z",
+    "at": "2026-10-09T03:30:37Z",
     "issue": 48,
-    "role": "master",
+    "role": "triage",
     "branch": "trunk",
     "commit": "adb8808d91e0f87017c7cad0ae9d787a7448feee",
     "pr": 53,
-    "summary": "Recovery-only Master wake admitted from free notes9a474dce/gen968 after verified historical schema2 fence and complete210 sole-parent descendants; legacy control branch actually404. Native PR53 merged and defaultadb8808d91e0f87017c7cad0ae9d787a7448feee unchanged. Actual default push CI37879166856 attempt1 remains in_progress: validate113654612867 and all4targetbuilds113654612722/873/888/929 completed success; package113655600751 in_progress, release not yet present. Engineeringorganization113654612953, source-history113654612843, actions-logs113654612641 and3CodeQLanalyses completed success; final CodeQL check not yet observed, so no final scan success assumed. Native v0.22.31 release endpoint actually404. Issue48 actually open/statusreview; pending task reconciliation remainsnull. No duplicate dispatch, new Issue, unrelated work, local checks, publication claim or costly log rescan. Previous immutablev0.22.30 proof and accepted Security/QA53 preserved. Real external wait; do not busy-poll.",
-    "next_action": "Next admitted wake first inspect actual CI37879166856/defaultadb8808: recover any real failed validate/build/package/release/security check, otherwise wait without polling. Once complete, verify Actions-owned immutablev0.22.31/tag/fourdigestedassets/native private-image receipt before marking published. Then separate Quality/default lease cleans native Issue48/PR53 and verifies already absent sourcebranch; preserve original parents/tree/reviews. Recover publication/cleanup and pending task reconciliation before selecting next bounded managed work. Hourly trigger best-effort; quota loss pauses rather than fails/completes work.",
+    "summary": "Actions publication verified: v0.22.31 at adb8808d91e0f87017c7cad0ae9d787a7448feee; immutable release407471331, native run37879166856 and private source-bound proof.",
+    "next_action": "Finish native Issue/dependency/branch cleanup; then resume preserved work or Product planning.",
     "publication": {
-      "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
+      "commit": "adb8808d91e0f87017c7cad0ae9d787a7448feee",
       "state": "published",
-      "version": "0.22.30",
-      "at": "2026-10-08T22:50:07Z",
-      "release_id": 407323363,
+      "version": "0.22.31",
+      "at": "2026-10-09T03:30:15Z",
+      "release_id": 407471331,
       "immutable": true,
-      "tag_commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
-      "run_id": 37855541518,
+      "tag_commit": "adb8808d91e0f87017c7cad0ae9d787a7448feee",
+      "run_id": 37879166856,
       "run_attempt": 1,
       "status": "completed",
       "conclusion": "success",
       "assets": [
         {
-          "id": 623220133,
-          "name": "mynou-v0.22.30-linux-x86_64",
+          "id": 623778694,
+          "name": "mynou-v0.22.31-linux-x86_64",
           "size": 4899680,
-          "digest": "sha256:dd396da7adba5099c402423d130331cf423c386e4bc3057f8833b28e69cc7421"
+          "digest": "sha256:374d81d941f8c868ccbd204de96aad53f5de945305c022980a1ae4af1bcb1124"
         },
         {
-          "id": 623220137,
-          "name": "mynou-v0.22.30-macos-arm64",
+          "id": 623778691,
+          "name": "mynou-v0.22.31-macos-arm64",
           "size": 3745600,
-          "digest": "sha256:32a7e47a7b8a2822864aead8c8e625aaa2b9365c128e682e9c0cfc3e1b45d076"
+          "digest": "sha256:2743ba8c3b35eee247243922fbff69d17b2463b4380f0288d9d73be91ef61ed6"
         },
         {
-          "id": 623220138,
-          "name": "mynou-v0.22.30-macos-x86_64",
-          "size": 4516672,
-          "digest": "sha256:3163e64e49c83e05fda5d561a0c16cdbc5828bf0afc4d023baaedd5dfaa5ee0a"
+          "id": 623778693,
+          "name": "mynou-v0.22.31-macos-x86_64",
+          "size": 4516536,
+          "digest": "sha256:3962c42d2452cf597f0af8e2ac94f88a8b1f9234c4690f3e8d8c421f416cf33d"
         },
         {
-          "id": 623220136,
+          "id": 623778690,
           "name": "SHA256SUMS",
           "size": 281,
-          "digest": "sha256:0fd58547bf31c97c4982c7f28dce7d30aa2b4264271aaaeb0087a0797a5ae5fc"
+          "digest": "sha256:6cf93005d4020bdf6ac8a1be8e5a8f8ebf99ade6df73ada2d1a71fe907398f4a"
         }
       ],
       "registry_proof": {
-        "image": "ghcr.io/alecerf/mynou@sha256:854d3703cd6b242eb269e65d454c2b1c1a1f1e536468428c73a88c5334335621",
-        "version": "0.22.30",
-        "source": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
+        "image": "ghcr.io/alecerf/mynou@sha256:94ad850a59bb30e14a06e47eb11f50f10cf96a4bb228d46b3d400de0ee35c68e",
+        "version": "0.22.31",
+        "source": "adb8808d91e0f87017c7cad0ae9d787a7448feee",
         "visibility": "private",
-        "binary_sha256": "dd396da7adba5099c402423d130331cf423c386e4bc3057f8833b28e69cc7421",
+        "binary_sha256": "374d81d941f8c868ccbd204de96aad53f5de945305c022980a1ae4af1bcb1124",
         "repository": "alecerf/mynou",
         "repository_id": 1403318143,
         "repository_visibility": "public",
@@ -76,8 +76,8 @@
         "verification_cleanup": "completed"
       },
       "proof_artifact": {
-        "id": 11583648415,
-        "digest": "sha256:2bdc96263e1bf61294263b73f0f6b4cfe9d6d8819526899e0c0e7f73b6ecb879"
+        "id": 11593488474,
+        "digest": "sha256:527fda49236cc7ad5f238930f56e58bb3c7e5758e9175fca8c28ee1605147ede"
       }
     },
     "recovery": {
