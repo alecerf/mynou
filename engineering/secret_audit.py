@@ -8,14 +8,19 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+from threading import Lock
 import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
 
+from log_coverage import Coverage, MAX_ENTRIES, run_identity
+
 MAX_OBJECT = 8 * 1024 * 1024
 MAX_ARCHIVE = 64 * 1024 * 1024
 MAX_EXPANDED = 128 * 1024 * 1024
+MAX_API_REQUESTS = 2500
+API_RESERVE = 200
 RULES = {
     "github-token": rb"(?<![A-Za-z0-9])(?:gh[psoru]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{60,255})(?![A-Za-z0-9])",
     "openai-token": rb"(?<![A-Za-z0-9])sk-(?:proj-)?[A-Za-z0-9_-]{40,255}(?![A-Za-z0-9])",
@@ -43,6 +48,63 @@ class HTTPFailure(AuditError):
         self.status = status
 
 
+class BudgetFailure(AuditError):
+    pass
+
+
+def rate_metadata(headers):
+    """Only bounded numeric provider counters and a fixed resource name."""
+    result = {}
+    for header, key in [
+            ("X-RateLimit-Limit", "limit"), ("X-RateLimit-Remaining", "remaining"),
+            ("X-RateLimit-Used", "used"), ("X-RateLimit-Reset", "reset_epoch"),
+            ("Retry-After", "retry_after_seconds")]:
+        value = headers.get(header, "")
+        if isinstance(value, str) and re.fullmatch(r"[0-9]{1,18}", value):
+            result[key] = int(value)
+    if headers.get("X-RateLimit-Resource") in ("core", "search", "graphql"):
+        result["resource"] = headers["X-RateLimit-Resource"]
+    return result
+
+
+class RequestBudget:
+    def __init__(self):
+        self.lock = Lock()
+        self.calls = 0
+        self.rate = {}
+
+    def require(self, minimum=1):
+        with self.lock:
+            remaining = self.rate.get("remaining")
+            if (type(minimum) is not int or minimum < 0
+                    or self.calls + minimum > MAX_API_REQUESTS
+                    or (remaining is not None and remaining - minimum < API_RESERVE)):
+                raise BudgetFailure("Observed request capacity is insufficient")
+
+    def begin(self):
+        # One reservation under the lock, including deterministic I/O threads.
+        with self.lock:
+            remaining = self.rate.get("remaining")
+            if (self.calls >= MAX_API_REQUESTS
+                    or (remaining is not None and remaining <= API_RESERVE)):
+                raise BudgetFailure("Request budget exhausted")
+            self.calls += 1
+            if remaining is not None:
+                self.rate["remaining"] = remaining - 1
+
+    def observe(self, headers):
+        value = rate_metadata(headers)
+        with self.lock:
+            if "remaining" in value and "remaining" in self.rate:
+                value["remaining"] = min(value["remaining"], self.rate["remaining"])
+            self.rate.update(value)
+
+    def evidence(self):
+        with self.lock:
+            return {"requests": self.calls, "request_limit": MAX_API_REQUESTS,
+                    "reserve": API_RESERVE, "observed_rate": dict(self.rate)}
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -64,20 +126,28 @@ class API:
     def __init__(self, repository, token):
         if not re.fullmatch(r"[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+", repository):
             raise AuditError("Invalid repository")
+        self.repository = repository
         self.base = "https://api.github.com/repos/" + repository
         self.token = token
         self.client = urllib.request.build_opener(NoRedirect())
+        self.budget = RequestBudget()
 
-    def get(self, path, archive=False):
+    def get(self, path, archive=False, limit=None):
+        self.budget.begin()
         headers = {"Accept": "application/vnd.github+json",
+                   "Cache-Control": "no-cache", "User-Agent": "mynou-secret-audit",
                    "X-GitHub-Api-Version": "2022-11-28",
                    "Authorization": "Bearer " + self.token}
         request = urllib.request.Request(self.base + path, headers=headers)
-        limit = MAX_ARCHIVE if archive else 8 * 1024 * 1024
+        limit = limit if limit is not None else (MAX_ARCHIVE if archive else 8 * 1024 * 1024)
+        if type(limit) is not int or not 0 < limit <= MAX_ARCHIVE:
+            raise AuditError("Invalid response bound")
         try:
             with self.client.open(request, timeout=30) as response:
+                self.budget.observe(response.headers)
                 data = response.read(limit + 1)
         except urllib.error.HTTPError as error:
+            self.budget.observe(error.headers)
             if not archive or error.code != 302:
                 raise HTTPFailure(error.code) from None
             # A signed storage request receives no GitHub Authorization header.
@@ -179,42 +249,85 @@ def audit_attempt(api, item):
     return {"state": "scanned", "location": identity, "members": members, "findings": found}
 
 
-def actions_logs(api):
+def actions_logs(api, coverage=None):
     runs = list(api.pages("/actions/runs", "workflow_runs"))
-    attempts, pending = [], []
+    attempts, pending, seen = [], [], set()
+    bindings = {}
     for run in runs:
-        if run["status"] != "completed":
-            pending.append("actions-run:" + str(run["id"]))
-            continue
+        run_id = run["id"]
+        if type(run_id) is not int or not 0 < run_id < 2 ** 63 or run_id in seen:
+            raise AuditError("Invalid or duplicate run inventory")
+        seen.add(run_id)
         number = run.get("run_attempt", 1)
         if type(number) is not int or not 1 <= number <= 100:
             raise AuditError("Invalid attempt inventory")
-        attempts.extend((run["id"], a) for a in range(1, number + 1))
-    found, unavailable = [], []
+        if coverage is not None:
+            bindings[run_id] = run_identity(run)
+        completed = number
+        if run["status"] != "completed":
+            pending.append("actions-run:" + str(run_id))
+            completed -= 1
+        if len(attempts) + completed > MAX_ENTRIES:
+            raise AuditError("Attempt inventory exceeds receipt bound")
+        attempts.extend((run_id, a) for a in range(1, completed + 1))
+    if len(attempts) > MAX_ENTRIES:
+        raise AuditError("Attempt inventory exceeds receipt bound")
+    if coverage is not None:
+        coverage.load()
+    reused, uncovered = [], []
+    for run_id, attempt in attempts:
+        row = coverage.covered(bindings[run_id], attempt) if coverage is not None else None
+        if row is None:
+            uncovered.append((run_id, attempt))
+        else:
+            reused.append(row)
+    api.budget.require(len(uncovered))
+    found, unavailable, entries = [], [], list(reused)
     counts = {"scanned": 0, "no-runner-execution": 0}
     members = 0
-    # These are deterministic CI I/O threads, never additional AI workers.
+    # Deterministic CI I/O, never additional AI workers. Only four submissions
+    # exist at once; a failure cannot drain a large queued archive inventory.
     with ThreadPoolExecutor(max_workers=4) as pool:
-        for result in pool.map(lambda item: audit_attempt(api, item), attempts):
-            if result["state"] == "unavailable":
-                unavailable.append(result["location"])
-            else:
+        for start in range(0, len(uncovered), 4):
+            results = list(pool.map(lambda item: audit_attempt(api, item),
+                                    uncovered[start:start + 4]))
+            for item, result in zip(uncovered[start:start + 4], results):
+                if result["state"] == "unavailable":
+                    unavailable.append(result["location"])
+                    continue
                 counts[result["state"]] += 1
                 members += result.get("members", 0)
                 found.extend(result.get("findings", []))
-    return {"scope": "all completed visible workflow attempts at inventory time",
-            "runs_enumerated": len(runs), "attempts_examined": len(attempts),
-            "archives_scanned": counts["scanned"], "members_scanned": members,
-            "attempts_without_execution": counts["no-runner-execution"],
-            "pending_runs": pending, "coverage_gaps": unavailable,
-            "findings": found[:100], "finding_count": len(found)}
+                if coverage is not None:
+                    run_id, attempt = item
+                    entries.append({**bindings[run_id], "attempt": attempt,
+                                    "state": result["state"],
+                                    "members": result.get("members", 0)})
+    report = {"scope": "all completed visible workflow attempts at inventory time",
+              "runs_enumerated": len(runs), "attempts_examined": len(attempts),
+              "archives_scanned": counts["scanned"],
+              "archives_reused": sum(row["state"] == "scanned" for row in reused),
+              "attempts_reused": len(reused), "members_scanned": members,
+              "members_reused": sum(row["members"] for row in reused),
+              "attempts_without_execution": counts["no-runner-execution"]
+                  + sum(row["state"] == "no-runner-execution" for row in reused),
+              "pending_runs": pending, "coverage_gaps": unavailable,
+              "findings": found[:100], "finding_count": len(found)}
+    if coverage is not None:
+        entries.sort(key=lambda row: (row["run_id"], row["attempt"]))
+        report["coverage"] = coverage.receipt(entries)
+        report["baseline"] = coverage.baseline
+        report["full_sweep"] = coverage.full
+    return report
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("scope", choices=["history", "logs"])
     parser.add_argument("--output", required=True)
+    parser.add_argument("--full", action="store_true")
     args = parser.parse_args()
+    api = None
     try:
         if args.scope == "history":
             report = git_history()
@@ -222,18 +335,23 @@ def main():
             token = os.environ.get("GH_TOKEN", "")
             if not token:
                 raise AuditError("Missing Actions read credential")
-            report = actions_logs(API(os.environ.get("GITHUB_REPOSITORY", ""), token))
-        report["schema"] = 1
+            api = API(os.environ.get("GITHUB_REPOSITORY", ""), token)
+            full = args.full or os.environ.get("MYNOU_FULL_LOG_AUDIT") == "true"
+            report = actions_logs(api, Coverage(api, full=full))
+            report["api_budget"] = api.budget.evidence()
+        report["schema"] = 2 if args.scope == "logs" else 1
         report["status"] = ("findings" if report["finding_count"] else
                             "incomplete" if report["coverage_gaps"] else "passed")
         Path(args.output).write_text(json.dumps(report, indent=2) + "\n")
-        print(json.dumps(report))
+        print(json.dumps({key: value for key, value in report.items() if key != "coverage"}))
         return 0 if report["status"] == "passed" else 1
     except Exception as error:
         # Do not print exception messages/URLs/bodies or raw downloaded contents.
         report = {"schema": 1, "status": "error", "error_type": type(error).__name__}
         if isinstance(error, HTTPFailure):
             report["http_status"] = error.status
+        if api is not None:
+            report["api_budget"] = api.budget.evidence()
         Path(args.output).write_text(json.dumps(report) + "\n")
         print(json.dumps(report))
         return 1

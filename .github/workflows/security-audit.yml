@@ -4,6 +4,11 @@ on:
   push:
     branches: [trunk]
   workflow_dispatch:
+    inputs:
+      full_log_audit:
+        description: Rebuild completed-log coverage with an actual full scan
+        type: boolean
+        default: false
   schedule:
     - cron: '23 3 * * 1'
 permissions:
@@ -31,7 +36,7 @@ jobs:
         with:
           name: security-source-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/source-audit.json
-          retention-days: 7
+          retention-days: 14
           if-no-files-found: error
   actions-logs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
@@ -44,6 +49,7 @@ jobs:
       - name: Audit completed Actions attempt logs without publishing raw logs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MYNOU_FULL_LOG_AUDIT: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full_log_audit) }}
         run: python3 engineering/secret_audit.py logs --output "$RUNNER_TEMP/actions-audit.json"
       - name: Preserve redacted log coverage
         if: always()
@@ -51,5 +57,5 @@ jobs:
         with:
           name: security-actions-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/actions-audit.json
-          retention-days: 7
+          retention-days: 14
           if-no-files-found: error
