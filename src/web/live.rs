@@ -14,7 +14,13 @@ use std::{collections::BTreeSet, sync::OnceLock};
 pub(super) const SCRIPT: &str = include_str!("live.js");
 pub(super) const MAX_REPLY: usize = 48 * 1024;
 const JOB_STATES: &[&str] = &[
-    "queued", "processing", "downloading", "scanning", "staged", "ready", "failed",
+    "queued",
+    "processing",
+    "downloading",
+    "scanning",
+    "staged",
+    "ready",
+    "failed",
     "cancelled",
 ];
 pub(super) fn integrity() -> &'static str {

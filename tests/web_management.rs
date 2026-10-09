@@ -983,8 +983,16 @@ fn sessions_end_on_restart_and_pages_offer_native_keyboard_navigation() {
         assert!(response.body.contains("Skip to content"));
         assert!(response.body.contains("<main id=main>"));
         if route == "/ui/jobs" {
-            assert!(response.body.contains("<script defer src=/ui/live.js integrity="));
-            assert!(response.body.contains("data-live-toggle aria-pressed=false disabled"));
+            assert!(
+                response
+                    .body
+                    .contains("<script defer src=/ui/live.js integrity=")
+            );
+            assert!(
+                response
+                    .body
+                    .contains("data-live-toggle aria-pressed=false disabled")
+            );
         } else {
             assert!(!response.body.contains("<script"));
         }
