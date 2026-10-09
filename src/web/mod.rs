@@ -2,6 +2,7 @@
 mod forms;
 mod indexer_views;
 mod irc_views;
+mod live;
 mod notification_views;
 mod requester_views;
 mod series_views;
@@ -78,10 +79,11 @@ impl Response {
             _ => "Error",
         };
         let mut head = format!(
-            "HTTP/1.1 {} {reason}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: same-origin\r\nContent-Security-Policy: default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'\r\nX-Frame-Options: DENY\r\n",
+            "HTTP/1.1 {} {reason}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: same-origin\r\nContent-Security-Policy: default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; script-src '{}'; script-src-attr 'none'; connect-src 'self'\r\nX-Frame-Options: DENY\r\n",
             self.status,
             self.content_type,
-            self.body.len()
+            self.body.len(),
+            live::integrity()
         );
         if let Some(location) = self.location {
             head.push_str(&format!("Location: {location}\r\n"));
@@ -131,13 +133,22 @@ impl Web {
             headers,
             body,
         } = request;
-        let authority = authority(headers)?;
         let (path, query) = target.split_once('?').unwrap_or((target, ""));
+        if path.starts_with("/ui/live/") {
+            return Ok(self.live(engine, method, path, query, headers));
+        }
+        let authority = authority(headers)?;
         if matches!(path, "/ui/login" | "/" | "/ui/") && !query.is_empty() {
             return Err("This page does not accept query parameters".into());
         }
         if !matches!(method, "GET" | "POST") {
             return Ok(failure(405, "Use a browser link or form", None));
+        }
+        if method == "GET" && path == "/ui/live.js" && query.is_empty() {
+            return Ok(Response {
+                content_type: "text/javascript; charset=utf-8",
+                ..Response::html(200, live::SCRIPT.to_owned())
+            });
         }
         if method == "GET" && path == "/ui/style.css" && query.is_empty() {
             return Ok(Response {
@@ -311,6 +322,50 @@ impl Web {
             }
         };
         Ok(Response::html(200, page))
+    }
+
+    fn live(
+        &self,
+        engine: &Engine,
+        method: &str,
+        path: &str,
+        query: &str,
+        headers: &BTreeMap<String, String>,
+    ) -> Response {
+        if method != "GET" {
+            return live::error(405, "method");
+        }
+        let kind = match path {
+            "/ui/live/jobs" => "jobs",
+            "/ui/live/transfers" => "transfers",
+            _ => return live::error(404, "not_found"),
+        };
+        let Ok(authority) = authority(headers) else {
+            return live::error(403, "origin");
+        };
+        let Ok(id) = cookie_id(headers) else {
+            return live::error(401, "authentication");
+        };
+        let Ok(mut sessions) = lock(&self.sessions) else {
+            return live::error(503, "unavailable");
+        };
+        let Some(session) = sessions
+            .get(&id, &authority)
+            .filter(|session| session.origin.is_some())
+        else {
+            return live::error(401, "authentication");
+        };
+        drop(sessions);
+        let Ok(origin) = same_origin(headers, &authority) else {
+            return live::error(403, "origin");
+        };
+        if session.origin.as_deref() != Some(&origin) {
+            return live::error(403, "origin");
+        }
+        let Ok(ids) = live::ids(query, kind == "transfers") else {
+            return live::error(400, "query");
+        };
+        live::snapshot(engine, kind, &ids).unwrap_or_else(|_| live::error(503, "unavailable"))
     }
 
     fn redirect(
