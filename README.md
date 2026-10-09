@@ -1,4 +1,4 @@
-# Mynou 0.22.28 — Rust, standard library only
+# Mynou — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -15,7 +15,10 @@ network integrations.
 checklist for folders, sources, native download routes, catalog and Plex.
 Fixed configuration states and links to existing guarded diagnostics help you
 reach a first request while keeping private settings out of the page.
-This source proposes 0.22.28; native Actions and release history determine publication.
+Optional [live progress](docs/web.md#live-progress) updates the displayed Jobs and
+Transfers without replacing filters, selected rows or unfinished forms. Enable or
+pause updates on each page; ordinary page refresh remains available.
+This source proposes 0.22.33; native Actions and release history determine publication.
 
 Explicit [episode numbering](docs/numbering.md) separates source/catalog labels
 from retained library identities. Preview and apply choices through CLI/API/browser;

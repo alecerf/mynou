@@ -373,6 +373,10 @@ impl Engine {
         Ok(value)
     }
 
+    pub(crate) fn transfer_progress(&self, ids: &[String]) -> Result<Value> {
+        self.native_client()?.transfer_progress(ids)
+    }
+
     pub fn transfers(&self) -> Result<Value> {
         let snapshots = self.native_client()?.transfers()?;
         let jobs = lock(&self.store)?.list();

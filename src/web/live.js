@@ -71,8 +71,8 @@
                 if (!states.includes(entry.state) || !Number.isFinite(entry.progress) ||
                     entry.progress < 0 || entry.progress > 1) throw new Error("Invalid live state");
                 for (const key of counters) {
-                    if (native ? !/^(0|[1-9][0-9]{0,15})$/.test(entry[key]) ||
-                        typeof entry[key] !== "string"
+                    if (native ? typeof entry[key] !== "string" || !/^(0|[1-9][0-9]{0,19})$/.test(entry[key]) ||
+                        (entry[key].length === 20 && entry[key] > "18446744073709551615")
                         : !Number.isSafeInteger(entry[key]) || entry[key] < 0) {
                         throw new Error("Invalid live counter");
                     }

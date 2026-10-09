@@ -5,11 +5,45 @@ Docker installation. The browser interface shares the existing HTTP listener.
 Sign in with `MYNOU_API_TOKEN` from the installation's private `.env`.
 
 All pages are rendered by Rust. Forms work without JavaScript, external fonts,
-CDNs, browser packages, or a build pipeline for frontend dependencies. Refresh
-the page to see the latest progress. The embedded stylesheet includes a narrow
+CDNs, browser packages, or a build pipeline for frontend dependencies. Jobs and
+Transfers offer optional live progress; Refresh page works on every platform. The embedded stylesheet includes a narrow
 screen layout, visible keyboard focus, labelled fields, table headers and a
 skip-to-content link. Browser and assistive-technology interoperability has not
 been independently reviewed.
+
+## Live progress
+
+Jobs and Transfers lists and details have **Enable live updates**, **Pause updates**
+and **Refresh page** controls. Updates start paused on each page and do not persist
+a preference. Without a supported JavaScript platform, use Refresh page.
+
+While enabled and visible, the page checks its displayed identifiers every ten
+seconds, with one request at a time and an eight-second request deadline. Hiding
+or leaving the page cancels the request; stale responses cannot update the page.
+At most 50 identifiers and 48 KiB per reply are accepted. Transfer counters remain
+exact decimal strings, including values larger than JavaScript's safe integer range.
+
+Only state, progress, attempts and transfer byte/seeding counters change. Filters,
+pagination, selected rows, keyboard focus and unfinished policy forms remain in
+place. Refresh to see new rows, messages, file information or newly available
+controls. A missing entry remains visible as **Unavailable**.
+Freshness records the last complete accepted response; it is not an ETA or speed.
+A quiet status announces changes to live-update mode, not each byte count.
+
+Authentication failure stops updates and offers **Sign in again**. Other failures
+pause updates until **Retry live updates** or Refresh page; there is no automatic
+retry loop. Signing in, signing out and changing settings still use native forms.
+
+The browser-only read routes require the existing signed-in session and its exact
+HTTP/HTTPS origin, established by Origin or strict same-origin Referer. They do
+not accept API Bearer authentication, consume action messages, renew sessions or
+perform acquisitions. Replies omit titles, paths, source addresses, policies,
+credentials, CSRF tokens and diagnostics. They retain no-store, nosniff and
+anti-framing protection. The original embedded script is pinned by its exact
+SHA-256 content in both CSP and script integrity; inline scripts, handlers,
+evaluation and third-party scripts remain disabled. Only same-origin connections
+are permitted. CI checks original HTTP/session/privacy and browser-state fixtures
+without npm packages; real browser/assistive-technology review remains unclaimed.
 
 ## Private guided setup
 
@@ -141,8 +175,9 @@ No user-supplied return URL is accepted. Browser responses prevent caching,
 cross-origin referrer propagation and framing. `Referrer-Policy: same-origin`
 retains the referring address only within Mynou so native forms can use the
 fallback; private addresses and paths are not sent to other origins. A content
-security policy disables scripts
-and restricts styles/forms to the same origin. Dynamic display labels are
+security policy allows only the content-pinned live-progress script,
+disables inline handlers and restricts styles, forms and connections to the same
+origin. Dynamic display labels are
 escaped, bounded and subject to the public report credential redaction rules.
 
 Generated Docker installations publish management on loopback. For remote
@@ -158,7 +193,7 @@ This interface has the privileges of the shared API token. It does not add
 individual users, approval policies or quotas. API requests still require
 `Authorization: Bearer …`; browser cookies never authenticate `/api` routes,
 and a Bearer header does not sign a browser session in. Configuration editing,
-notifications, WebSocket updates and personal-installation validation remain
+notifications configuration, WebSocket streaming and personal-installation validation remain
 outside this release.
 
 [Docker installation](deployment.md) · [Explicit limits](limits.md) ·

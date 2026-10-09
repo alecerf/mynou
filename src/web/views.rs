@@ -884,7 +884,7 @@ pub(super) fn frame(title: &str, active: &str, session: Option<&Session>, body: 
         html.push_str("</ul></section>");
     }
     html.push_str(body);
-    if body.contains("data-live=") {
+    if matches!(active, "/ui/jobs" | "/ui/transfers") && body.contains("data-live=") {
         html.push_str(&format!(
             "<script defer src=/ui/live.js integrity=\"{}\"></script>",
             super::live::integrity()

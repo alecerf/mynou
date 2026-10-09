@@ -2,7 +2,6 @@
 use super::{
     Response,
     forms::{Form, valid_id},
-    views::{array, text},
 };
 use crate::{
     Result,
@@ -18,11 +17,6 @@ const JOB_STATES: &[&str] = &[
     "queued", "processing", "downloading", "scanning", "staged", "ready", "failed",
     "cancelled",
 ];
-const TRANSFER_STATES: &[&str] = &[
-    "queued", "downloading", "paused", "ready", "selected_ready", "failed",
-    "seed_limited",
-];
-
 pub(super) fn integrity() -> &'static str {
     static INTEGRITY: OnceLock<String> = OnceLock::new();
     INTEGRITY.get_or_init(|| {
@@ -102,32 +96,11 @@ pub(super) fn snapshot(engine: &Engine, kind: &str, ids: &[String]) -> Result<Re
             entries.push(entry);
         }
     } else {
-        let transfers = engine.transfers()?;
-        for id in ids {
-            let mut entry = identity(id);
-            if let Some(transfer) = array(&transfers).iter().find(|value| text(value, "id") == id) {
-                entry.insert("state", state(text(transfer, "status"), TRANSFER_STATES)?);
-                entry.insert(
-                    "progress",
-                    progress(transfer.get("progress").and_then(Value::as_f64).unwrap_or(0.0)),
-                );
-                for key in [
-                    "downloaded_bytes",
-                    "uploaded_bytes",
-                    "verified_bytes",
-                    "seed_elapsed_secs",
-                ] {
-                    let count = transfer
-                        .get(key)
-                        .and_then(Value::as_u64)
-                        .ok_or("Transfer counter is unavailable")?;
-                    entry.insert(key, count.to_string());
-                }
-            } else {
-                entry.insert("missing", true);
-            }
-            entries.push(entry);
-        }
+        entries = engine
+            .transfer_progress(ids)?
+            .as_array()
+            .ok_or("Transfer progress is unavailable")?
+            .to_vec();
     }
     let mut value = Value::object();
     value.insert("kind", kind);
