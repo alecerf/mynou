@@ -28,12 +28,12 @@ const BAD_REQUEST: &[u8] =
 
 /// Reads one request head from an accepted loopback connection and returns its path.
 ///
-/// macOS and BSD give an accepted socket the listener's `O_NONBLOCK` flag, while
-/// Linux does not, so a read could fail with `WouldBlock` before the client's
-/// bytes arrived. Reads here are blocking and bounded by a per-read timeout, a
-/// total deadline and 16 KiB; `None` means the head never completed.
+/// On macOS an accepted socket keeps the listener's `O_NONBLOCK` flag, so a read
+/// could fail with `WouldBlock` before the client's bytes arrived. Reads here
+/// are blocking and bounded by a per-read timeout, a total deadline and 16 KiB;
+/// `None` means the head never completed or the socket could not be configured.
 fn read_request(stream: &mut TcpStream, deadline: Instant) -> Option<String> {
-    stream.set_nonblocking(false).ok()?;
+    crate::net::blocking(stream).ok()?;
     stream.set_read_timeout(Some(Duration::from_secs(1))).ok()?;
     let mut request = Vec::new();
     let mut byte = [0];

@@ -33,10 +33,10 @@ impl Url {
 
 /// Puts a stream accepted from a non-blocking listener back into blocking mode.
 ///
-/// macOS and the BSDs give an accepted socket the listener's `O_NONBLOCK` flag;
-/// Linux does not. Reads and writes rely on timeouts and deadlines, so they
-/// must block: otherwise they fail with `WouldBlock`, or spin, before the
-/// peer's bytes arrive.
+/// On macOS an accepted socket keeps the listener's `O_NONBLOCK` flag; Linux
+/// and the BSDs (where std accepts with `accept4`) do not. Reads and writes
+/// rely on timeouts and deadlines, so they must block: otherwise they fail
+/// with `WouldBlock`, or spin, before the peer's bytes arrive.
 pub(crate) fn blocking(stream: &TcpStream) -> Result<()> {
     stream
         .set_nonblocking(false)

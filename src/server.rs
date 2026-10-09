@@ -855,7 +855,7 @@ mod tests {
             }
         });
         let (mut c, _) = listener.accept().unwrap();
-        // macOS and the BSDs give accepted sockets the listener's O_NONBLOCK flag.
+        // Reproduce macOS: the accepted socket keeps the listener's O_NONBLOCK.
         c.set_nonblocking(true).unwrap();
         let request = read_request(&mut c).unwrap();
         writer.join().unwrap();
