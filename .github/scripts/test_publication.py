@@ -186,6 +186,72 @@ class PublicationTests(unittest.TestCase):
             with self.subTest(response=response), self.assertRaises(RuntimeError):
                 Publisher("0.22.17", failed).private_package(allow_missing=True)
 
+    def test_api_denials_report_only_the_exact_numeric_status(self):
+        hostile = "ghp_" + "Z" * 36
+        for status in (401, 403, 404, 429, 502):
+            def denied(args):
+                raise CommandError(args, f"gh: denied {hostile} (HTTP {status})\n")
+            publisher = Publisher("0.22.17", denied)
+            for operation, message in (
+                    (publisher.repository_context, "Cannot verify the publishing repository"),
+                    (publisher.private_package, "Cannot verify private package identity")):
+                with self.subTest(status=status, operation=message):
+                    with self.assertRaises(RuntimeError) as caught:
+                        operation()
+                    self.assertEqual(str(caught.exception), message + f" [HTTP {status}]")
+                    self.assertNotIn(hostile, str(caught.exception))
+
+    def test_untrusted_or_ambiguous_status_never_establishes_package_absence(self):
+        hostile = "ghp_" + "Z" * 36
+        replies = (
+            "HTTP 404", '{"message":"HTTP 404"}',
+            "gh: denied (HTTP 4040)", "gh: denied (HTTP 600)",
+            "gh: denied (HTTP -1)", "gh: denied (HTTP 000)",
+            "gh: unavailable (HTTP 403)\ngh: unavailable (HTTP 404)\n",
+            "gh: unavailable (HTTP 404)\ngh: unavailable (HTTP 404)\n",
+            hostile, "gh: " + "x" * 65_536 + " (HTTP 404)",
+        )
+        for reply in replies:
+            def failed(args):
+                raise CommandError(args, reply)
+            with self.subTest(case=replies.index(reply)):
+                publisher = Publisher("0.22.17", failed)
+                with self.assertRaises(RuntimeError) as caught:
+                    publisher.private_package(allow_missing=True)
+                self.assertEqual(str(caught.exception),
+                                 "Cannot verify private package identity [HTTP status unavailable]")
+                self.assertNotIn(hostile, str(caught.exception))
+
+    def test_non_api_command_stderr_cannot_authorize_an_absent_package(self):
+        error = CommandError(["docker", "pull", "synthetic"], "gh: denied (HTTP 404)")
+        self.assertIsNone(error.http_status)
+        self.assertEqual(error.api_detail(), " [HTTP status unavailable]")
+
+    def test_package_denial_blocks_every_docker_command_and_publication(self):
+        registry = Registry()
+        def denied(args, input=None):
+            if args[-1] == "/users/alecerf/packages/container/mynou":
+                raise CommandError(args, "gh: Resource not accessible (HTTP 403)\n")
+            return registry(args, input=input)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaises(RuntimeError) as caught:
+                Publisher("0.22.17", denied).publish(root / "archive", root / "binary", root)
+        self.assertEqual(str(caught.exception), "Cannot verify private package identity [HTTP 403]")
+        self.assertFalse(any(args[0] == "docker" for args, _ in registry.calls))
+
+    def test_repository_api_limit_blocks_publication_before_package_or_docker(self):
+        calls = []
+        def exhausted(args):
+            calls.append(args)
+            raise CommandError(args, "gh: API rate limit exceeded (HTTP 429)\n")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaises(RuntimeError) as caught:
+                Publisher("0.22.17", exhausted).publish(root / "archive", root / "binary", root)
+        self.assertEqual(str(caught.exception), "Cannot verify the publishing repository [HTTP 429]")
+        self.assertEqual(calls, [["gh", "api", "--method", "GET", "/repos/alecerf/mynou"]])
+
     def test_registry_outages_and_denials_do_not_become_missing_tags(self):
         for response in ("unauthorized", "denied", "connection timed out"):
             def failed(args):
