@@ -1,72 +1,72 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 1001,
+  "generation": 1002,
   "lease": {
     "id": "24983261-0a33-4d50-9ef3-6cbea3f3562d",
     "worker": "github-actions-publication-recovery",
     "role": "triage",
     "issue": 52,
     "acquired_at": "2026-10-09T06:56:52Z",
-    "heartbeat_at": "2026-10-09T06:56:52Z",
-    "expires_at": "2026-10-09T07:41:52Z",
+    "heartbeat_at": "2026-10-09T06:57:03Z",
+    "expires_at": "2026-10-09T07:42:03Z",
     "branch": "trunk",
     "commit": "97c8efcbb97a74716e21791b5d4cf1578f85c28d",
     "pr": 55
   },
   "checkpoint": {
-    "at": "2026-10-09T06:54:23Z",
+    "at": "2026-10-09T06:57:03Z",
     "issue": 52,
-    "role": "master",
+    "role": "triage",
     "branch": "trunk",
     "commit": "97c8efcbb97a74716e21791b5d4cf1578f85c28d",
     "pr": 55,
-    "summary": "ActualMaster52delivery: PR55merged2026-10-09T06:52:16Z atnative default97c8efcbb97a74716e21791b5d4cf1578f85c28d, originalparents[adb8808,2603afca] andtreedeca142e04655115ed0563e1f39819d4e1548814 confirmed. NativeIssue52 actuallyremainsOPEN/statusReview (corrects erroneous auto-closed wording inpriorCPP e4e5ed47; do not inferIssueclosure fromPRmerge). Mergedsourcebranchactually404; originalworkpreservedontrunkparents. ActualsourceCI/audits/CodeQL andSecurity5466717842/Q\u04105466756179 pluslatestQA113706296585green beforeexpected-Hnormalmerge. Nativepush defaultCI37895820331/security37895820293/dynamicCodeQL37895819888 wereinprogress; Engineering37895820305success/delivery37895840162success. Actionsalonepublicationv0.22.32 pending; actualimmutablev0.22.31 retainednotrelabelled. No localchecks/manualrelease/providerrootcauseclaim.",
-    "next_action": "Recover exactdefault97c8efcbb97a74716e21791b5d4cf1578f85c28d/PR55 publication beforeunrelatedwork. ExistingnativepushCI37895820331 needs completion; neverduplicateCI/manualtagrelease. Recordactualimmutablev0.22.32 only after exacttag/source/fourdigestedassets/run/attempt private-image receiptverified. Then distinctQuality52 nativeIssueclosure/Done/dependencies/branchabsence; issueisnotyetDone. Product42/highestboundedbacklogafterdeliverycleanup. Checkpointnativehandoff/release atrealCIwait; hourlybest-effort/noresetAPI/wakeguarantee.",
+    "summary": "Actions publication verified: v0.22.32 at 97c8efcbb97a74716e21791b5d4cf1578f85c28d; immutable release407617414, native run37895820331 and private source-bound proof.",
+    "next_action": "Finish native Issue/dependency/branch cleanup; then resume preserved work or Product planning.",
     "publication": {
-      "commit": "adb8808d91e0f87017c7cad0ae9d787a7448feee",
+      "commit": "97c8efcbb97a74716e21791b5d4cf1578f85c28d",
       "state": "published",
-      "version": "0.22.31",
-      "at": "2026-10-09T03:30:15Z",
-      "release_id": 407471331,
+      "version": "0.22.32",
+      "at": "2026-10-09T06:56:34Z",
+      "release_id": 407617414,
       "immutable": true,
-      "tag_commit": "adb8808d91e0f87017c7cad0ae9d787a7448feee",
-      "run_id": 37879166856,
+      "tag_commit": "97c8efcbb97a74716e21791b5d4cf1578f85c28d",
+      "run_id": 37895820331,
       "run_attempt": 1,
       "status": "completed",
       "conclusion": "success",
       "assets": [
         {
-          "id": 623778694,
-          "name": "mynou-v0.22.31-linux-x86_64",
+          "id": 624170919,
+          "name": "mynou-v0.22.32-linux-x86_64",
           "size": 4899680,
-          "digest": "sha256:374d81d941f8c868ccbd204de96aad53f5de945305c022980a1ae4af1bcb1124"
+          "digest": "sha256:66535c8f81843316cf4f546c168156dabe7ce0888c4039a6417eb86380644682"
         },
         {
-          "id": 623778691,
-          "name": "mynou-v0.22.31-macos-arm64",
+          "id": 624170914,
+          "name": "mynou-v0.22.32-macos-arm64",
           "size": 3745600,
-          "digest": "sha256:2743ba8c3b35eee247243922fbff69d17b2463b4380f0288d9d73be91ef61ed6"
+          "digest": "sha256:86f15dc56dfa1d6ca8ecdbf937734bc3bcac8f456da106b055d44c352cf3c594"
         },
         {
-          "id": 623778693,
-          "name": "mynou-v0.22.31-macos-x86_64",
-          "size": 4516536,
-          "digest": "sha256:3962c42d2452cf597f0af8e2ac94f88a8b1f9234c4690f3e8d8c421f416cf33d"
+          "id": 624170920,
+          "name": "mynou-v0.22.32-macos-x86_64",
+          "size": 4516672,
+          "digest": "sha256:c397d22fc422ea9bfe267b58978790b5d2a14e5e53211b7a13145d9efa606011"
         },
         {
-          "id": 623778690,
+          "id": 624170913,
           "name": "SHA256SUMS",
           "size": 281,
-          "digest": "sha256:6cf93005d4020bdf6ac8a1be8e5a8f8ebf99ade6df73ada2d1a71fe907398f4a"
+          "digest": "sha256:bdb6fe748033f9057dbee53f987f07cdeacd51a87054aab194a2ee0de18e8d59"
         }
       ],
       "registry_proof": {
-        "image": "ghcr.io/alecerf/mynou@sha256:94ad850a59bb30e14a06e47eb11f50f10cf96a4bb228d46b3d400de0ee35c68e",
-        "version": "0.22.31",
-        "source": "adb8808d91e0f87017c7cad0ae9d787a7448feee",
+        "image": "ghcr.io/alecerf/mynou@sha256:d8894fda5a65d5aa1d01578102b56f0a6d2210db371309877cc9e374938bb03e",
+        "version": "0.22.32",
+        "source": "97c8efcbb97a74716e21791b5d4cf1578f85c28d",
         "visibility": "private",
-        "binary_sha256": "374d81d941f8c868ccbd204de96aad53f5de945305c022980a1ae4af1bcb1124",
+        "binary_sha256": "66535c8f81843316cf4f546c168156dabe7ce0888c4039a6417eb86380644682",
         "repository": "alecerf/mynou",
         "repository_id": 1403318143,
         "repository_visibility": "public",
@@ -76,8 +76,8 @@
         "verification_cleanup": "completed"
       },
       "proof_artifact": {
-        "id": 11593488474,
-        "digest": "sha256:527fda49236cc7ad5f238930f56e58bb3c7e5758e9175fca8c28ee1605147ede"
+        "id": 11600417547,
+        "digest": "sha256:3d031008b20a37db4b8b1fdc5276a7f0f8d57b0e4bf20d049aad38d37531cb95"
       }
     },
     "recovery": {
