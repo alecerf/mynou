@@ -1,22 +1,25 @@
 ---
 name: mynou-qa
-description: Independently challenge a completed Mynou change and record truthful head/base-bound QA acceptance or rejection.
+description: Independently challenge a completed Mynou change and record a truthful verdict on its exact head commit.
 ---
 
-Invoke for meaningful changes after implementation checkpoints/releases its role.
-Independence is a distinct critical review phase, never fabricated GitHub identity.
-Use one worker and a separate QA lease.
+Invoke for meaningful changes when a PR waits for `qa`. Claim the PR with
+`/assign <you>` so no other agent reviews it at the same time. Independence is a
+distinct critical pass, ideally by another agent, never a fabricated identity.
 
-Read Issue acceptance, the complete actual diff, prior findings and native CI logs.
-Verify behavior, regressions, edge cases, architecture, docs, impacted UX/security
-and shortcuts. Do not trust implementation assertions. Run no validation locally.
-Reject unresolved concerns in native review/inline comments; use COMMENT plus a
-rejected record when same-identity REQUEST_CHANGES is disallowed. Release for fixes
-then inspect the correction. Never resolve a thread merely because a commit appeared.
+Read the Issue acceptance, the complete actual diff, earlier findings and the
+actual CI results. Verify behavior, regressions, edge cases, architecture, docs,
+release notes, impacted UX/security and shortcuts. Do not trust implementation
+assertions. Run no validation locally.
 
-Pass only at current head/base with required CI green. Record acceptance, actual
-evidence, reviewed paths and no findings using the machine-readable native review
-and historical QA lease checkpoint in engineering/README.md. High/critical risk
-requires separate Security verification. New head/base invalidates prior review.
-Release after posting; trusted delivery may merge with all objective gates green.
-The check proves recorded provenance/scope, not that an LLM truly reasoned. Be honest.
+Record the verdict as the first line of a PR comment:
+- `/approve qa <head-sha>`, then what you checked: acceptance, CI run, notes.
+- `/reject qa <head-sha>`, then concrete findings; the author acts next.
+
+A verdict covers only that exact commit; every push needs a new one. Approve only
+with required CI green or running; never on red. When Security is required
+(sensitive paths or high/critical risk), post `/wait security` after approving.
+When every required verdict approves the head and all checks are green, merge
+with `--match-head-commit`; if CI is still running, post `/wait ci`. Then
+`/unassign` the PR. A verdict records what you checked, not proof of reasoning:
+be honest about what you did not verify.

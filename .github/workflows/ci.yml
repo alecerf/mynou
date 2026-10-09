@@ -9,7 +9,7 @@ permissions:
 concurrency:
   group: mynou-${{ github.workflow }}-${{ github.ref }}
   # A newer PR head supersedes its older validation. Default-branch runs, which
-  # publish releases, are never cancelled.
+  # can publish a release, are never cancelled.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   PYTHONDONTWRITEBYTECODE: '1'
@@ -22,6 +22,7 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: '0'
     outputs:
       version: ${{ steps.metadata.outputs.version }}
+      publish: ${{ steps.publication.outputs.publish }}
     steps:
       # Security audit's source-history job scans every reachable object.
       - uses: actions/checkout@v7.0.1
@@ -55,6 +56,25 @@ jobs:
           print("version=" + packages[0]["version"])
           GRAPH
           cargo tree --all-features --target all --edges all --offline --locked
+      - name: Decide whether this default-branch commit publishes a release
+        id: publication
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/trunk'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          # Trunk integrates validated work. Only a version that a release PR
+          # introduced, and that has no tag yet, is published.
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" > /dev/null 2> "$RUNNER_TEMP/tag-lookup.txt"; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "v$VERSION is already published; this commit is validated without a release." >> "$GITHUB_STEP_SUMMARY"
+          elif grep -q 'HTTP 404' "$RUNNER_TEMP/tag-lookup.txt"; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "v$VERSION has no tag; this run publishes it once every check passes." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Cannot determine whether v$VERSION is published." >&2
+            exit 1
+          fi
       - name: Check formatting
         run: cargo fmt --all --check
       - name: Run Clippy
@@ -63,7 +83,7 @@ jobs:
         run: bash -n .github/scripts/publish-release.sh
       - name: Check the CI test scheduler
         run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
-      - name: Verify engineering policy and serialized recovery scenarios
+      - name: Verify engineering policy, coordination and release-policy scenarios
         run: |
           python3 engineering/policy.py
           python3 -m unittest discover -s engineering/tests -p 'test_*.py' -v
@@ -205,6 +225,7 @@ jobs:
     timeout-minutes: 15
     outputs:
       version: ${{ needs.validate.outputs.version }}
+      publish: ${{ needs.validate.outputs.publish }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -245,7 +266,7 @@ jobs:
           # Exercise the publication cleanup path with read-only PR permissions.
           python3 .github/scripts/publish_container.py --verify-demo "mynou:$VERSION"
       - name: Save the checked image for default publication
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/trunk'
+        if: needs.validate.outputs.publish == 'true'
         env:
           VERSION: ${{ needs.validate.outputs.version }}
         run: docker save "mynou:$VERSION" | gzip -n > "$RUNNER_TEMP/mynou-image.tar.gz"
@@ -264,7 +285,7 @@ jobs:
           done
           (cd "$RUNNER_TEMP/mynou-release" && sha256sum mynou-* > SHA256SUMS && sha256sum -c SHA256SUMS)
       - name: Preserve checked image for default publication
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/trunk'
+        if: needs.validate.outputs.publish == 'true'
         uses: actions/upload-artifact@v7.0.1
         with:
           name: mynou-container-${{ github.sha }}
@@ -280,7 +301,8 @@ jobs:
           retention-days: 7
   release:
     needs: package
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/trunk'
+    # Only a merged release PR introduces an unpublished version.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/trunk' && needs.package.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
