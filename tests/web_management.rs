@@ -171,14 +171,15 @@ fn native_forms_without_origin_can_sign_in_act_and_sign_out() {
     assert_eq!(login.headers["location"], "/ui");
     login.no_secrets();
     let cookie = login.headers["set-cookie"].split(';').next().unwrap();
-    assert_ne!(cookie, challenge.cookie);
+    // Failed rotation diagnostics must not print either credential.
+    assert!(cookie != challenge.cookie.as_str());
     assert_eq!(challenge.get(&server, "/ui/jobs").status, 303);
     let page = server.call("GET", "/ui/jobs", &[("Cookie", cookie)], "");
     assert_eq!(page.status, 200);
     assert_eq!(page.headers["referrer-policy"], "same-origin");
     page.no_secrets();
     let csrf = web_support::csrf(&page.body);
-    assert_ne!(csrf, challenge.csrf);
+    assert!(csrf != challenge.csrf);
     let job = server
         .engine
         .submit(movie("Native Form Fixture"))
@@ -309,10 +310,11 @@ fn referring_address_login_still_requires_token_cookie_and_csrf() {
     missing_cookie.no_secrets();
     let mut duplicate = headers.to_vec();
     duplicate.push(("Referer", &referer));
-    assert_eq!(
-        server.call("POST", "/ui/login", &duplicate, &values).status,
-        400
-    );
+    // Duplicate provenance is rejected before form-body parsing. Keeping this
+    // malformed request body empty avoids a TCP reset from unread body bytes.
+    let response = server.call("POST", "/ui/login", &duplicate, "");
+    assert_eq!(response.status, 400);
+    response.no_secrets();
     assert_eq!(challenge.get(&server, "/ui/jobs").status, 303);
 }
 
