@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 876,
+  "generation": 877,
   "lease": {
     "id": "codex-recovery-20261009T002551Z-quality-dda00542-9938-4fbd-a65d-9cc7b542b3ed",
     "worker": "codex-recovery-20261009T002551Z",
     "role": "quality",
     "issue": 44,
     "acquired_at": "2026-10-09T00:33:13Z",
-    "heartbeat_at": "2026-10-09T00:33:13Z",
-    "expires_at": "2026-10-09T01:18:13Z",
+    "heartbeat_at": "2026-10-09T00:34:00Z",
+    "expires_at": "2026-10-09T01:19:00Z",
     "branch": "trunk",
     "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
     "pr": null
   },
   "checkpoint": {
-    "at": "2026-10-09T00:32:03Z",
-    "issue": 50,
+    "at": "2026-10-09T00:34:00Z",
+    "issue": 44,
     "role": "quality",
     "branch": "trunk",
     "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
-    "pr": 51,
-    "summary": "Quality50 reclaimed only after expired native publication lease and Issue/PR/default/source-parent/CI preservation were inspected. Actual default b11d88d5e9dd67d45980ba6c85716811dd6d3101/PR51 has all7 CI37855541518 jobs successful; immutable release407323363/v0.22.30 published2026-10-08T22:50:07Z at exact tag with4named positive digested assets. Actual source-bound private image/nonroot1001:1001/cleanup proof matches release binary. Native canonical published checkpoint ba4917ab979190f2b031a887173ac2da1082305a retains proofartifact11583648415 and actual publication time; no republish/local checks. Both work/50-canonical-rest and work/44-publication-recovery freshly404, source parents preserved on trunk. Delivery37855933264 failed at exact safe boundary 'Execution authority changed; stop and reconstruct state' after successful publication; failure preserved, not represented as green.",
-    "next_action": "Close50/Done with actual publication and safe native branch-absence evidence, persist post-publication release mismatch as a bounded lower-priority Triage finding without weakeningCAS. ReleaseQuality50; acquire Quality44 at currentdefault (PR49 historical), verify closed native blocker50, finish44/Done. Then release and acquireTriage48 before Product planning/new agent features.",
+    "pr": null,
+    "summary": "Quality44 final cleanup: originalPR49/source1644b2fc41f5850221a3f42a8fe31f984d659263 remains an ancestor of currentdefault b11d88d5e9dd67d45980ba6c85716811dd6d3101; historical native Security/QA and objective source gates retained. Native blocker50 closed/Done, actualblocked_by list has no open blocker. Immutablev29 preserved; currentv30 release407323363/CI37855541518/all7jobs/actualprivate proof were verified and canonical published receipt/time recorded atba4917ab979190f2b031a887173ac2da1082305a. Both merged workbranches native404, no blinddeletion.44acceptance now met: current native publication persisted, actualpublicationtime newer thanstandingProduct42updated_at, unchanged-source terminal/fail-closed policy retained. Post-record releaseCAS failure separatelyNeedsTriage52, no source/guard change here.",
+    "next_action": "Close44/Done with native review/publication/dependency/branch preservation evidence, then releaseQuality44 and acquireTriage48 at exactcurrentdefault. User Safari login report outranks newProduct planning and lower-priority reliability52; no local reproduction/checks, inspect code/evidence and define CI-only acceptance.",
     "publication": {
       "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
       "state": "published",
@@ -563,14 +563,14 @@
       "publication_pr_handoff": 6062225589
     },
     "previous_checkpoint": {
-      "at": "2026-10-08T22:45:52Z",
+      "at": "2026-10-09T00:32:03Z",
       "issue": 50,
-      "role": "master",
+      "role": "quality",
       "branch": "trunk",
-      "commit": "f34d827e47835da589eb8333199e88e035dcb410",
-      "pr": null,
-      "summary": "Master50 pre-merge fences hold: PR51 open/ready at original head80b0d3eb17ce6df583643060b5cce990f53dd1ef/basef34d827e47835da589eb8333199e88e035dcb410, native default unchanged, sole source parent f34d/tree5e0e9a39a490ff10020a1d5d6a87c38c48376c35, zero unresolved threads. Actual objective gate113578227157/run37855290440 completed success and accepted native QA5463751243/Security5463717433. All latest configured required CI/build/package/organization/source-history/actions-logs and actual CodeQL success; older superseded gates cancelled truthfully, no approval identity fabricated. No local checks; merge/publication not yet claimed.",
-      "next_action": "Expected-head merge PR51 at80b0d3eb17ce6df583643060b5cce990f53dd1ef without bypass, then bind this default-scope lease/checkpoint to actual native merge commit and PR51. Preserve44/49 and source branches until actual current-default Actions publication/receipt and safe cleanup; stop/release at a real external wait."
+      "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
+      "pr": 51,
+      "summary": "Quality50 reclaimed only after expired native publication lease and Issue/PR/default/source-parent/CI preservation were inspected. Actual default b11d88d5e9dd67d45980ba6c85716811dd6d3101/PR51 has all7 CI37855541518 jobs successful; immutable release407323363/v0.22.30 published2026-10-08T22:50:07Z at exact tag with4named positive digested assets. Actual source-bound private image/nonroot1001:1001/cleanup proof matches release binary. Native canonical published checkpoint ba4917ab979190f2b031a887173ac2da1082305a retains proofartifact11583648415 and actual publication time; no republish/local checks. Both work/50-canonical-rest and work/44-publication-recovery freshly404, source parents preserved on trunk. Delivery37855933264 failed at exact safe boundary 'Execution authority changed; stop and reconstruct state' after successful publication; failure preserved, not represented as green.",
+      "next_action": "Close50/Done with actual publication and safe native branch-absence evidence, persist post-publication release mismatch as a bounded lower-priority Triage finding without weakeningCAS. ReleaseQuality50; acquire Quality44 at currentdefault (PR49 historical), verify closed native blocker50, finish44/Done. Then release and acquireTriage48 before Product planning/new agent features."
     },
     "task_reconciliation": {
       "issue": 19,
