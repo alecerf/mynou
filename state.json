@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 1102,
-  "lease": {
-    "id": "codex-recovery-20261009T131600Z-master-340d65a4-9b6e-4dd7-be5f-576619ffb37a",
-    "worker": "codex-recovery-20261009T131600Z",
-    "role": "master",
-    "issue": 62,
-    "acquired_at": "2026-10-09T13:17:45Z",
-    "heartbeat_at": "2026-10-09T13:22:21Z",
-    "expires_at": "2026-10-09T14:07:21Z",
-    "branch": "trunk",
-    "commit": "a10a610bdab87810220555915c193b1eff2f1dd3",
-    "pr": 68
-  },
+  "generation": 1103,
+  "lease": null,
   "checkpoint": {
     "publication": {
       "commit": "a10a610bdab87810220555915c193b1eff2f1dd3",
