@@ -228,9 +228,11 @@ Before native startup, recovery validates both directions between intents and
 requester origins. A durable origin completes a prepared intent; an intent whose
 origin was not written aborts without replay. Committed/aborted decisions remain
 terminal. Canonical request and source numbering remain stored in both proof and
-demand. New semantics require requester format 2 and IRC format 3; older snapshots
-remain readable when they contain no new semantics. Earlier binaries cannot read
-these new formats safely. Preserve private backups before a downgrade.
+demand. New semantics require requester format 2 and IRC format 3; older IRC
+history remains readable when it contains no new semantics. Requester snapshots
+saved by earlier versions hold removed notification records and no longer open.
+Earlier binaries cannot read these new formats safely. Preserve private backups
+before a downgrade.
 
 ## Explicit release claims
 

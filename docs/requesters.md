@@ -189,7 +189,9 @@ requester-created unfinished work without other approved/operator interests;
 ready bytes remain in place.
 
 Credential values and endpoint URLs are absent from reports. Requester
-self-service login remains later work.
+self-service login remains later work. Notification preferences and recorded
+notification outcomes were removed without migration: a `requesters.bin` saved by
+an earlier version still holds them, and this version refuses to open it.
 
 ## Reviewed IRC origins in 0.20.6
 
@@ -207,6 +209,8 @@ an unadmitted policy through the existing reviewed controls. The canonical reque
 and retained source numbering stay frozen in the intent and demand.
 
 Requester format 2 and IRC format 3 prevent older binaries from silently removing
-explicit origins. Earlier checked formats remain readable when they contain no
-new semantics. Back up private storage before downgrading; preserve the library
-and downloads. See [IRC requests](irc.md#reviewed-requester-demand-in-0206).
+explicit origins. IRC history formats 1–3 remain readable when they contain no new
+semantics; IRC format 4 and requester snapshots saved by earlier versions are not,
+because they hold removed notification records. Back up private storage before
+downgrading; preserve the library and downloads. See
+[IRC requests](irc.md#reviewed-requester-demand-in-0206).
