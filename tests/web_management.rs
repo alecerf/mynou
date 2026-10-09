@@ -186,7 +186,10 @@ fn native_forms_without_origin_can_sign_in_act_and_sign_out() {
         .submit(movie("Native Form Fixture"))
         .ok()
         .and_then(|jobs| jobs.into_iter().next());
-    assert!(job.is_some(), "Fixture job submission failed or returned no jobs");
+    assert!(
+        job.is_some(),
+        "Fixture job submission failed or returned no jobs"
+    );
     let Some(job) = job else {
         return;
     };
