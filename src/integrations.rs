@@ -2282,12 +2282,30 @@ mod tests {
     #[test]
     fn captured_newznab_urls_drop_only_the_api_key() {
         for (url, expected) in [
-            ("https://i.example/get?id=1&apikey=secret", "https://i.example/get?id=1"),
-            ("https://i.example/get?apikey=secret&id=1", "https://i.example/get?id=1"),
-            ("https://i.example/get?ApiKey=secret", "https://i.example/get"),
-            ("https://i.example/get?id=1&apikey", "https://i.example/get?id=1"),
-            ("https://i.example/get?id=1&apikeys=2", "https://i.example/get?id=1&apikeys=2"),
-            ("https://i.example/get?id=1&apikey=s#part", "https://i.example/get?id=1#part"),
+            (
+                "https://i.example/get?id=1&apikey=secret",
+                "https://i.example/get?id=1",
+            ),
+            (
+                "https://i.example/get?apikey=secret&id=1",
+                "https://i.example/get?id=1",
+            ),
+            (
+                "https://i.example/get?ApiKey=secret",
+                "https://i.example/get",
+            ),
+            (
+                "https://i.example/get?id=1&apikey",
+                "https://i.example/get?id=1",
+            ),
+            (
+                "https://i.example/get?id=1&apikeys=2",
+                "https://i.example/get?id=1&apikeys=2",
+            ),
+            (
+                "https://i.example/get?id=1&apikey=s#part",
+                "https://i.example/get?id=1#part",
+            ),
             ("https://i.example/get", "https://i.example/get"),
         ] {
             assert_eq!(without_api_key(url), expected);
