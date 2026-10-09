@@ -406,6 +406,22 @@ class TeamSafetyRegressions(unittest.TestCase):
                 if outcome == "recovered":
                     self.assertEqual(note["recovery"]["branch_head"], SOURCE)
 
+
+    def test_full_or_unconfigured_team_wake_skips_native_backlog_reads(self):
+        full = start(start(team(2), 1, ["area:web"]), 2, ["area:docs"])
+        for configured in [True, False]:
+            native = TeamNative()
+            if not configured:
+                del native.cfg["team"]
+            with patch.object(control, "GitHub", return_value=native), \
+                    patch.object(control, "read_state", return_value=(HEAD, full)), \
+                    patch.object(sys, "argv", ["control.py", "wake"]), \
+                    patch.object(lease, "now", return_value=AT), patch.object(native, "pages") as pages, \
+                    patch("builtins.print") as output:
+                control.main()
+            pages.assert_not_called()
+            self.assertIn('"action": "no-capacity"' if configured else '"action": "blocked"', output.call_args.args[0])
+
     def test_branch_audit_and_fresh_delete_fence_preserve_worker_branch(self):
         native = TeamNative()
         base = lease.acquire(team(), AT, "d1", "delivery", "quality", 7, "trunk", SOURCE)
@@ -429,7 +445,7 @@ class TeamSafetyRegressions(unittest.TestCase):
                 return {"id": 1}
             raise AssertionError((method, path))
         with patch.object(native, "pages", side_effect=pages), patch.object(native, "rest", side_effect=rest) as calls, \
-                patch.object(delivery, "read_state", side_effect=[(HEAD, base), (HEAD, base), (HEAD, late)]), \
+                patch.object(delivery, "read_state", side_effect=[(HEAD, base), (HEAD, late)]), \
                 patch.object(lease, "now", return_value=AT):
             with self.assertRaisesRegex(ValueError, "protects this branch"):
                 delivery.cleanup_branch(native, target, SOURCE, base["lease"])

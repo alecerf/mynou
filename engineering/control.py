@@ -126,6 +126,9 @@ def select_team(state, issues, at, planning=None):
         return {"action": "recover", "issue": items[0]["issue"], "capacity": 0,
             "valid_workers": len(running), "assignments": items,
             "instruction": "Inspect and preserve the listed expired execution records before assigning unrelated work."}
+    if len(running) >= state["max_active_agents"]:
+        return {"action": "no-capacity", "capacity": 0, "valid_workers": len(running),
+            "assignments": [], "instruction": "Worker cap reached; exit without backlog work or polling."}
     serial = state["lease"]
     taken = {w["issue"] for w in state["workers"].values()}
     if serial is not None:
@@ -322,8 +325,13 @@ def main():
         return
     if args.command == "wake":
         # Admission happens before any backlog/domain investigation.
+        if lease.is_team(state) and (team_cap(api.cfg) is None or state["max_active_agents"] > team_cap(api.cfg)):
+            print(json.dumps({"action": "blocked", "control_sha": head,
+                "instruction": "Team configuration is missing or inconsistent; preserve state and stop without domain work."}))
+            return
         busy = lease.valid(state, at) if not lease.is_team(state) else (
             any(w["exclusive"] for w in lease.live(state, at))
+            or len(lease.live(state, at)) >= state["max_active_agents"]
             or state["lease"] is not None and state["lease"]["role"] not in {"quality", "triage"})
         issues = [] if busy or state["lease"] is not None and not lease.is_team(state) or lease.expired(state, at) else api.pages("issues?state=open&labels=agent-work")
         action = select(state, issues, at, api.cfg.get("product_planning"))

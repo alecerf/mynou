@@ -201,10 +201,11 @@ def cleanup_branch(api, name, expected, held):
             return {"branch": name, "result": "preserved: open Issue comment references branch"}
     default = api.ref(cfg["default_branch"])
     comparison = api.rest("GET", f"compare/{expected}...{default}")
+    audit_state = read_state(api)[1]
     allowed, reason = branch_decision(name, expected, cfg, comparison["status"],
         [p for p in prs if p["state"] == "open"], issue_refs, held,
         [p for p in prs if p.get("merged_at")], source["protected"],
-        read_state(api)[1].get("workers", {}).values())
+        audit_state.get("workers", {}).values())
     if not allowed:
         return {"branch": name, "result": "preserved: " + reason}
     # No live API offers an expected-SHA conditional ref deletion. Preserve a
@@ -212,7 +213,7 @@ def cleanup_branch(api, name, expected, held):
     # serialized delivery lease. Native delete_branch_on_merge is preferred.
     if held is None or held["role"] not in ("quality", "triage"):
         raise ValueError("Branch deletion requires an owned Quality/Triage lease")
-    lease.owned(read_state(api)[1], held["id"], lease.now())
+    lease.owned(audit_state, held["id"], lease.now())
     api.rest("POST", f"issues/{held['issue']}/comments", {"body":
         f"<!-- mynou-branch-audit:v1 -->\nBranch `{name}` at `{expected}` is eligible for cleanup: {reason}. "
         f"Default `{default}`, native PRs, open Issue bodies/comments and execution ownership were inspected. "
