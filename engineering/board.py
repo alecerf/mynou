@@ -1,4 +1,4 @@
-"""Read-only board: free work, claims, whose turn each PR is and release cadence.
+"""Read-only board: free work, claims, PR turns, ghost branches and release cadence.
 
 Run `python3 engineering/board.py --agent <name>` at the start of a session.
 It never writes; agents post their own comment commands."""
@@ -61,10 +61,13 @@ def board(api, now, agent=None):
         # A PR waiting for review, CI, merge or the owner is not implementation work.
         if entry is None or entry["waiting_for"] == "author":
             work.append(item)
+    open_heads = {pull["head"].get("ref") for pull, _ in pulls.values()}
+    claimed = {c["issue"] for c in claims if not c["owner"]["lapsed"]}
+    ghosts = protocol.ghosts(api.pages("branches"), cfg["default_branch"], open_heads, claimed)
     open_releases = [i["number"] for i in issues if "release" in protocol.labels(i)]
     planning = cfg["product_planning"]
     result = {"at": protocol.stamp(now), "agent": agent, "work": work, "claims": claims,
-              "pull_requests": [entry for _, entry in pulls.values()],
+              "pull_requests": [entry for _, entry in pulls.values()], "ghost_branches": ghosts,
               "release": releases.status(api, now, open_releases),
               "product_planning": {"issue": planning["issue"],
                                    "ready_proposals": protocol.ready_proposals(issues, planning["issue"]),

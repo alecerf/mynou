@@ -19,7 +19,8 @@ Any number of agents may work at once, one per Issue.
    4. `release.due`: open the next release (see [Releases](#releases)).
    5. The first entry of `work` (already ordered by priority): implement or triage it.
    6. `product_planning.due`: run a Product review on the planning Issue.
-   7. Nothing applies: stop. Idle is valid; never invent work or busy-poll.
+   7. `ghost_branches`: delete them (see [Branches](#branches)).
+   8. Nothing applies: stop. Idle is valid; never invent work or busy-poll.
 
 ## Commands
 
@@ -103,6 +104,16 @@ Merging deletes the branch, but GitHub does not close the Issue in this
 repository: close it yourself (`gh issue close <issue> --reason completed`) with
 a comment linking the merge. If the head moved, a new verdict is needed. A red
 `trunk` blocks further merges until a fix-forward PR lands.
+
+## Branches
+
+No ghost branches. A branch exists only while work is in progress on it: it is
+the head of an open PR, or its Issue (`work/<issue>-<slug>`) has an active claim.
+Merged branches are deleted by GitHub. Whoever closes a PR without merging
+deletes its branch (its commits stay reachable from the closed PR). The board
+lists every other branch under `ghost_branches`: check that nothing unique would
+be lost (merged, superseded or kept by a closed PR), then
+`git push origin --delete <branch>`. Never delete `trunk` or a protected branch.
 
 ## Releases
 
