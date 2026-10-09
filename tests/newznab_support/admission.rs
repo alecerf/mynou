@@ -1097,3 +1097,46 @@ fn removing_the_requester_demand_cancels_a_pending_native_upgrade_and_keeps_the_
     assert!(p.requests.lock().unwrap().is_empty());
     assert!(only_feed_requests(&h));
 }
+
+fn contains_bytes(directory: &Path, needle: &[u8]) -> bool {
+    fs::read_dir(directory).unwrap().any(|entry| {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            contains_bytes(&path, needle)
+        } else {
+            let bytes = fs::read(&path).unwrap_or_default();
+            bytes.windows(needle.len()).any(|w| w == needle)
+        }
+    })
+}
+#[test]
+fn a_configured_api_key_keeps_the_feed_key_out_of_job_records() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let h = Http::open();
+    *h.document.lock().unwrap() = (200, usenet_support::source(1, 2));
+    let mut v = value(&p, &h);
+    // Any variable that is always set serves as the configured key.
+    let s = source(&mut v);
+    s.insert("api_key_env", "PATH");
+    s.get_mut("usenet")
+        .unwrap()
+        .insert("maximum_bytes", 1_048_576_u32);
+    v.get_mut("usenet")
+        .unwrap()
+        .get_mut("downloads")
+        .unwrap()
+        .insert("enabled", true);
+    let c = config::from_json(&v, &d.0).unwrap();
+    let engine = Engine::open(c).unwrap();
+    let id = engine.submit(movie()).unwrap().remove(0).id;
+    assert!(engine.tick().unwrap());
+    let prepared = retained(&engine, &id);
+    let url = prepared.acquisition_url.as_deref().unwrap();
+    assert!(url.contains("/get?id=original"));
+    assert!(!url.contains(PRIVATE_KEY) && !url.contains("apikey"));
+    // The document request carries the configured key instead of the feed's.
+    let document = h.calls.lock().unwrap().last().unwrap().0.clone();
+    assert!(document.contains("apikey=") && !document.contains(PRIVATE_KEY));
+    assert!(!contains_bytes(&d.0, PRIVATE_KEY.as_bytes()));
+}

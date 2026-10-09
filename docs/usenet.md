@@ -326,8 +326,11 @@ RSS accepts at most 4096 items per source within the original XML bounds. A vali
 item needs one bounded title and one same-origin NZB enclosure with MIME type
 `application/x-nzb` or `application/x-nzb+xml`. Size comes from a positive bounded
 enclosure length or a correctly namespaced Newznab size attribute; simultaneous
-claims must match. Known size/password attributes require the standard Newznab
-namespace. Duplicate/conflicting claims, unsafe references and malformed items
+claims must match. When `api_key_env` is configured, the indexer's `apikey`
+parameter is removed from captured NZB links before they are saved in job records,
+and the current key is added again when the NZB is fetched; without a configured
+key the link is kept as the indexer sent it. Known size/password attributes
+require the standard Newznab namespace. Duplicate/conflicting claims, unsafe references and malformed items
 are omitted; an invalid document or oversized inventory fails the source.
 Only explicit zero/one password flags are supported. There is no gzip expansion,
 redirect following, cross-origin enclosure fetch or magnet interpretation.

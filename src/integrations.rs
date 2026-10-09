@@ -1709,6 +1709,42 @@ pub fn select_acquisition(
     selected_acquisition(search_candidates_before(config, request, deadline)?)
 }
 
+/// Captured document URLs are persisted in job records, so the indexer's API
+/// key is left out whenever one is configured; `newznab_document_url` adds the
+/// current key back when the document is fetched.
+pub(crate) fn newznab_capture_url(source: &Source, url: &str) -> Result<String> {
+    Ok(match optional_secret(&source.api_key_env)? {
+        Some(_) => without_api_key(url),
+        None => url.to_owned(),
+    })
+}
+
+fn without_api_key(url: &str) -> String {
+    let (base, fragment) = url
+        .split_once('#')
+        .map_or((url, None), |(b, f)| (b, Some(f)));
+    let Some((path, query)) = base.split_once('?') else {
+        return url.to_owned();
+    };
+    let kept: Vec<&str> = query
+        .split('&')
+        .filter(|pair| {
+            let name = pair.split_once('=').map_or(*pair, |(name, _)| name);
+            !name.eq_ignore_ascii_case("apikey")
+        })
+        .collect();
+    let mut result = path.to_owned();
+    if !kept.is_empty() {
+        result.push('?');
+        result.push_str(&kept.join("&"));
+    }
+    if let Some(fragment) = fragment {
+        result.push('#');
+        result.push_str(fragment);
+    }
+    result
+}
+
 pub(crate) fn newznab_document_url(source: &Source, url: &str) -> Result<String> {
     let path = net::parse_url(url)?.path;
     let has_key = path
@@ -2241,6 +2277,21 @@ mod tests {
         assert!(!release_matches(&request, "Cafe.Night.S02E03-E04.1080p"));
         assert!(!release_matches(&request, "Cafe.Night.S02E03.S03E01.1080p"));
         assert!(!release_matches(&request, "Cafe.Night.Another.Show.S02E03"));
+    }
+
+    #[test]
+    fn captured_newznab_urls_drop_only_the_api_key() {
+        for (url, expected) in [
+            ("https://i.example/get?id=1&apikey=secret", "https://i.example/get?id=1"),
+            ("https://i.example/get?apikey=secret&id=1", "https://i.example/get?id=1"),
+            ("https://i.example/get?ApiKey=secret", "https://i.example/get"),
+            ("https://i.example/get?id=1&apikey", "https://i.example/get?id=1"),
+            ("https://i.example/get?id=1&apikeys=2", "https://i.example/get?id=1&apikeys=2"),
+            ("https://i.example/get?id=1&apikey=s#part", "https://i.example/get?id=1#part"),
+            ("https://i.example/get", "https://i.example/get"),
+        ] {
+            assert_eq!(without_api_key(url), expected);
+        }
     }
 
     #[test]

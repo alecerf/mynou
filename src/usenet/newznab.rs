@@ -229,6 +229,7 @@ fn item(
             .ok_or("Newznab: missing download reference")?,
         &source.url,
     )?;
+    let url = crate::integrations::newznab_capture_url(source, &url)?;
     let mut advertised = enclosure.attrs.get("length").map(|s| size(s)).transpose()?;
     let mut size_attr = false;
     let mut password = None;
