@@ -199,7 +199,11 @@ fn native_forms_without_origin_can_sign_in_act_and_sign_out() {
     assert_eq!(action.status, 303);
     action.no_secrets();
     assert_eq!(
-        lock(&server.engine.store).unwrap().get(&job.id).unwrap().state,
+        lock(&server.engine.store)
+            .unwrap()
+            .get(&job.id)
+            .unwrap()
+            .state,
         "cancelled"
     );
     assert_eq!(
@@ -382,8 +386,16 @@ fn native_form_referrers_normalize_default_ports_case_and_ipv6_authorities() {
     let directory = Directory::new();
     let server = server(&directory);
     for (host, referer, secure) in [
-        ("browser.invalid:80", "http://browser.invalid/ui/login", false),
-        ("BROWSER.invalid", "http://browser.invalid:80/ui/login", false),
+        (
+            "browser.invalid:80",
+            "http://browser.invalid/ui/login",
+            false,
+        ),
+        (
+            "BROWSER.invalid",
+            "http://browser.invalid:80/ui/login",
+            false,
+        ),
         (
             "browser.invalid:443",
             "https://browser.invalid/ui/login",
