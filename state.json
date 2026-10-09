@@ -1,15 +1,15 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 1082,
+  "generation": 1083,
   "lease": {
     "id": "codex-recovery-20261009T123500Z-qa-e64dad15-4562-49a8-96e2-d8f948dc4e1f",
     "worker": "codex-recovery-20261009T123500Z",
     "role": "qa",
     "issue": 62,
     "acquired_at": "2026-10-09T12:57:43Z",
-    "heartbeat_at": "2026-10-09T12:57:43Z",
-    "expires_at": "2026-10-09T13:42:43Z",
+    "heartbeat_at": "2026-10-09T12:59:25Z",
+    "expires_at": "2026-10-09T13:44:25Z",
     "branch": "trunk",
     "commit": "a10a610bdab87810220555915c193b1eff2f1dd3",
     "pr": 68
@@ -633,11 +633,11 @@
       "notes_proof_sha": "96e3439dbc1800f708aab0c5680211f105176e14"
     },
     "issue": 62,
-    "role": "security",
+    "role": "qa",
     "branch": "trunk",
     "commit": "a10a610bdab87810220555915c193b1eff2f1dd3",
     "pr": 68,
-    "summary": "Post-installation Security inspected all14 B-to-a10 paths and recorded actual COMMENT review on merged PR68; no retroactive approval. No introduced trust-boundary weakening found; objective acceptance remains blocked by incomplete log coverage/publication. After observed12:44 API reset one read-only audit retry was accepted, attempt2 job113828734402 inprogress. Client confirmed package Actions access already granted. Exact package HTTP status remains unknown in Actions; need safe numeric-only CI diagnostic, not a third unchanged publisher rerun.",
+    "summary": "Distinct post-installation QA reviewed all14 a10/B changed paths, Issue62 acceptance and actual native checks/logs; actual PR68 COMMENT records rejection/incomplete acceptance. Publication failed twice, audit rerun pending, no33release. Findings: CI fixed diagnostic hides exact package HTTP status; add numeric-only reporting/CI cases. Release33notes omit actually installed PR64 audit scope. Security review5470310336 is postinstallation, not retroactive premerge gate.",
     "previous_checkpoint": {
       "at": "2026-10-09T12:18:17Z",
       "issue": 54,
@@ -648,8 +648,8 @@
       "summary": "Pushed def96b52107afd71ba94da12a9443c6b22fc4fd2 on work/54-security-log-coverage, draftPR64/base02a536f2c75e454094c7cb28d85ec2771c7404f0. CI37928325176:200 engineering+24 scheduler+892Rust tests/all4 builds/package passed; source-history113812570664 passed. Logs113812570283HTTP403 onfirstGET limit5000/used5000/remaining0. Security actual all6-path review5469886689 atcheckpointc092230bc9ce7992c712bf7cadf90e0238347a3d rejectsdelivery pendingobjectivecoverage; noQA/green gate claimed. Native54/64 recoveryhandoffs persisted;54Blocked. Bug67 recordsbothsubsequentmacpasses withoutrootcauseclaim. Claude62/63/65/66 and57 arepreserved.",
       "next_action": "Real external APIcapacity wait: release now. Next admitted wake recovers62/defaultpublication and PR64 exactsource/CI. Afteractual GitHubcapacity returns, retryonlyfailed readonlyaudit; preserve missingcoverage/redstatus. Initialmatchingdefaultreceipt requiresactualcompletefullcoverage, thenfreshSecurity anddistinctcomplete-diffQA, currentbase/versionreconciliation andeverygatebeforemerge. Do notpoll/expose secrets/redo unchangedhistory/markIssuefailed orDone."
     },
-    "at": "2026-10-09T12:57:24Z",
-    "next_action": "Release Security; acquire a distinct QA62 lease for installed-source acceptance review, then Master/Quality implement the minimal package HTTP-status diagnostic on one recovery PR if still needed. Preserve Claude native handoff6081068413, unpublished33, current/default exactsource and unique product branches.",
+    "at": "2026-10-09T12:59:25Z",
+    "next_action": "Release QA, acquire Master62 then Quality62 on one new preserved recovery branch from a10. Add only safe numeric package/repository HTTP diagnostics and original CI regressions; reconcile33notes with installed54scope. No permissions/secret exposure or third unchanged publisher retry. Recover audit once material work is checkpointed.",
     "recovery": {
       "issue": true,
       "branch": true,
