@@ -1,28 +1,17 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 904,
-  "lease": {
-    "id": "db01b3c5-ea06-4fc0-ab10-3d6d5f18179e",
-    "worker": "github-actions-delivery",
-    "role": "triage",
+  "generation": 906,
+  "lease": null,
+  "checkpoint": {
+    "at": "2026-10-09T01:06:53Z",
     "issue": 48,
-    "acquired_at": "2026-10-09T01:06:46Z",
-    "heartbeat_at": "2026-10-09T01:06:46Z",
-    "expires_at": "2026-10-09T01:51:46Z",
+    "role": "triage",
     "branch": "trunk",
     "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
-    "pr": 53
-  },
-  "checkpoint": {
-    "at": "2026-10-09T01:05:58Z",
-    "issue": 48,
-    "role": "security",
-    "branch": "work/48-safari-origin",
-    "commit": "797a83deda489ef1f85a5095019ed9920deef1f7",
     "pr": 53,
-    "summary": "Security reviewed complete 8-path PR53 diff at797a83deda489ef1f85a5095019ed9920deef1f7/baseb11d88d5e9dd67d45980ba6c85716811dd6d3101 and prior review5464594250. Boolean cookie/CSRF assertions avoid value logging; duplicate-header empty-body fixture retains strict400/no-secret rejection. Primary Origin remains authoritative, fallback strictly HTTP(S)/same host/effective port, cross-site metadata and absent/ambiguous provenance rejected; session/token/CSRF/HTTPS/API isolation and no-cross-origin referrer policy retained. Validate113618744309/CI37867836973 passes892 Rust tests/64 harnesses plus24 scheduler/168 organization; all five journeys pass. Both Securityaudit37867836977 jobs pass (3222 source objects; completed-log scope separately recorded). Rust CodeQL113618740286, final MacIntel build and package pending; neutral aggregate is not clean Rust scan. No remaining source security finding; CI gates still required.",
-    "next_action": "Record actual exact-head Security COMMENT and release. Acquire QA at unchanged head/base for independent complete-diff/acceptance review and all actual current native jobs, including final Rust CodeQL. No merge before objective gates really succeed; stop/checkpoint/release for a real remaining CI wait.",
+    "summary": "PR #53 delivery did not complete; actual source and objective gates require recovery.",
+    "next_action": "Inspect the native PR/gates and preserved source before another delivery attempt.",
     "publication": {
       "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
       "state": "published",
@@ -563,14 +552,14 @@
       "publication_pr_handoff": 6062225589
     },
     "previous_checkpoint": {
-      "at": "2026-10-09T00:53:10Z",
+      "at": "2026-10-09T01:05:58Z",
       "issue": 48,
-      "role": "triage",
-      "branch": "trunk",
-      "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
+      "role": "security",
+      "branch": "work/48-safari-origin",
+      "commit": "797a83deda489ef1f85a5095019ed9920deef1f7",
       "pr": 53,
-      "summary": "PR #53 delivery did not complete; actual source and objective gates require recovery.",
-      "next_action": "Inspect the native PR/gates and preserved source before another delivery attempt."
+      "summary": "Security reviewed complete 8-path PR53 diff at797a83deda489ef1f85a5095019ed9920deef1f7/baseb11d88d5e9dd67d45980ba6c85716811dd6d3101 and prior review5464594250. Boolean cookie/CSRF assertions avoid value logging; duplicate-header empty-body fixture retains strict400/no-secret rejection. Primary Origin remains authoritative, fallback strictly HTTP(S)/same host/effective port, cross-site metadata and absent/ambiguous provenance rejected; session/token/CSRF/HTTPS/API isolation and no-cross-origin referrer policy retained. Validate113618744309/CI37867836973 passes892 Rust tests/64 harnesses plus24 scheduler/168 organization; all five journeys pass. Both Securityaudit37867836977 jobs pass (3222 source objects; completed-log scope separately recorded). Rust CodeQL113618740286, final MacIntel build and package pending; neutral aggregate is not clean Rust scan. No remaining source security finding; CI gates still required.",
+      "next_action": "Record actual exact-head Security COMMENT and release. Acquire QA at unchanged head/base for independent complete-diff/acceptance review and all actual current native jobs, including final Rust CodeQL. No merge before objective gates really succeed; stop/checkpoint/release for a real remaining CI wait."
     },
     "task_reconciliation": {
       "issue": 19,
