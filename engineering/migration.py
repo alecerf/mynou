@@ -92,6 +92,42 @@ def resolve(api):
     return TARGET, notes_head, state
 
 
+def repair_checkpoint(api, expected, worker):
+    """Restore durable records that a pre-fix stale recovery replaced.
+
+    Admits only that exact shape: retired legacy, an exact notes head whose sole
+    parent passes full active admission, one recovery transition that released
+    the parent's expired lease and kept no durable record. Every other field of
+    the recovered state is preserved; the write is the usual sole-parent CAS.
+    """
+    if settings(api.cfg) is None or optional_ref(api, LEGACY) is not None:
+        raise ValueError("Checkpoint repair applies only to retired notes authority")
+    head = api.ref(TARGET)
+    if head != expected:
+        raise ValueError("Notes authority changed; refresh before repair")
+    path = api.cfg["state_path"]
+    broken = lease.validate(api.file(path, head))
+    native = api.rest("GET", "git/commits/" + head)
+    parents = [p.get("sha") for p in native.get("parents", [])]
+    if native.get("sha") != head or len(parents) != 1 or not lease.SHA.fullmatch(parents[0] or ""):
+        raise ValueError("Repair requires a sole-parent native notes commit")
+    prior = active(api, parents[0], api.file(path, parents[0]), None)
+    recovered = broken["checkpoint"]
+    if (broken["lease"] is not None or prior["lease"] is None or lease.durable(recovered)
+            or "recovery" not in recovered or broken["generation"] != prior["generation"] + 1
+            or broken["attempts"] != prior["attempts"] or lease.time(prior["lease"]["expires_at"]) > lease.time(recovered["at"])
+            or any(recovered.get(k) != prior["lease"][k] for k in ["issue", "role", "branch", "commit", "pr"])):
+        raise ValueError("Notes head is not a recovery that dropped durable checkpoint records")
+    value = deepcopy(broken)
+    value["generation"] += 1
+    value["checkpoint"] = {**lease.durable(prior["checkpoint"]), **recovered}
+    active(api, head, value, None)
+    if api.ref(TARGET) != head:
+        raise ValueError("Notes authority changed during repair")
+    sha = api.cas_file(TARGET, head, path, value, f"Restore durable checkpoint records ({worker})")
+    return {"control_sha": sha, "lease_id": None}
+
+
 def owned(api, expected, worker, identity, role):
     location, head, state = resolve(api)
     held = lease.owned(state, identity, lease.now())

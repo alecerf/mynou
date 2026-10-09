@@ -481,6 +481,53 @@ class CutoverScenarios(unittest.TestCase):
         self.assertTrue(api.ancestor(fence, result["control_sha"]))
         self.assertEqual(api.file("state.json", result["control_sha"])["checkpoint"]["control_migration"]["phase"], "retired")
 
+    def retired_with_expired_work(self):
+        api, fence, proof = self.retirement_ready()
+        result = migration.retire(api, proof, "one-worker", "quality-owner", proof, 202)
+        head, state = result["control_sha"], api.file("state.json", result["control_sha"])
+        if state["lease"] is not None:
+            state = lease.release(state, AT, state["lease"]["id"])
+            head = api.cas_file(migration.TARGET, head, "state.json", state, "Release retirement")
+        state = lease.acquire(state, AT, "work-owner", "one-worker", "quality", 54, "work/54-scope", SOURCE)
+        head = api.cas_file(migration.TARGET, head, "state.json", state, "Acquire other work")
+        return api, head, state
+
+    def test_recovery_on_another_branch_keeps_durable_migration_records(self):
+        api, head, state = self.retired_with_expired_work()
+        evidence = {"issue": True, "branch": True, "pr": True, "ci": True, "commit_preserved": True}
+        recovered = lease.recover(state, AT + timedelta(hours=1), evidence)
+        self.assertEqual(recovered["checkpoint"]["branch"], "work/54-scope")
+        self.assertEqual(recovered["checkpoint"]["control_migration"], state["checkpoint"]["control_migration"])
+        head = api.cas_file(migration.TARGET, head, "state.json", recovered, "Recover")
+        self.assertEqual(migration.resolve(api)[:2], (migration.TARGET, head))
+
+    def test_repair_restores_only_records_dropped_by_prior_recovery(self):
+        api, head, state = self.retired_with_expired_work()
+        with self.assertRaises(ValueError):
+            migration.repair_checkpoint(api, head, "one-worker")
+        broken = deepcopy(state)
+        broken["generation"] += 1
+        broken["lease"] = None
+        broken["checkpoint"] = {key: state["lease"][key] for key in ["issue", "role", "branch", "commit", "pr"]}
+        broken["checkpoint"].update(at=lease.stamp(AT + timedelta(hours=1)), summary="Interrupted",
+            next_action="Recovered", recovery={"issue": True})
+        broken_head = api.cas_file(migration.TARGET, head, "state.json", broken, "Recover interrupted delivery lease")
+        with self.assertRaises(ValueError):
+            migration.resolve(api)
+        with self.assertRaises(ValueError):
+            migration.repair_checkpoint(api, head, "one-worker")
+        result = migration.repair_checkpoint(api, broken_head, "one-worker")
+        location, repaired_head, repaired = migration.resolve(api)
+        self.assertEqual((location, repaired_head), (migration.TARGET, result["control_sha"]))
+        self.assertEqual(api.commits[repaired_head]["parents"], [{"sha": broken_head}])
+        self.assertEqual(repaired["checkpoint"]["control_migration"], state["checkpoint"]["control_migration"])
+        for key in ["issue", "branch", "summary", "next_action", "recovery"]:
+            self.assertEqual(repaired["checkpoint"][key], broken["checkpoint"][key])
+        self.assertIsNone(repaired["lease"])
+        self.assertEqual(repaired["generation"], broken["generation"] + 1)
+        with self.assertRaises(ValueError):
+            migration.repair_checkpoint(api, repaired_head, "one-worker")
+
     def test_task_attestation_wrong_source_edit_actor_or_enabled_blocks_deletion(self):
         for kind in ["source", "edit", "actor", "disabled"]:
             api, _, proof = self.retirement_ready()

@@ -32,6 +32,7 @@ COMMANDS = {
     "checkpoint-fence": {"worker", "lease", "summary", "next_action"},
     "release-fence": {"worker", "lease"},
     "recover-fence": {"worker"},
+    "repair-checkpoint": {"worker"},
     "retire-control": {"worker", "lease", "notes_proof_sha", "task_receipt_id"},
 }
 
@@ -86,7 +87,7 @@ def payload(body):
     require(sha(value["expected_sha"]), "invalid-expected-sha")
     args = value["args"]
     exact_keys(args, COMMANDS[command])
-    if command not in {"acquire", "recover", "recover-fence"}:
+    if command not in {"acquire", "recover", "recover-fence", "repair-checkpoint"}:
         require(identity(args["lease"]), "invalid-lease-identity")
     if "worker" in args:
         require(identity(args["worker"]), "invalid-worker-identity")
@@ -254,6 +255,7 @@ def execute(api, event, at, actor, triggering_actor):
         "checkpoint-fence": lambda: migration.checkpoint_fence(api, value["expected_sha"], args["worker"], args["lease"], args["summary"], args["next_action"]),
         "release-fence": lambda: migration.release_fence(api, value["expected_sha"], args["worker"], args["lease"]),
         "recover-fence": lambda: migration.recover_fence(api, value["expected_sha"], args["worker"], comment_id),
+        "repair-checkpoint": lambda: migration.repair_checkpoint(api, value["expected_sha"], args["worker"]),
         "retire-control": lambda: migration.retire(api, value["expected_sha"], args["worker"], args["lease"], args["notes_proof_sha"], args["task_receipt_id"]),
     }
     if value["command"] in handlers:
