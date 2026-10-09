@@ -365,7 +365,7 @@ fn rar_descriptor_preflight_precedes_main_journal_tail_and_permission_repair() {
 }
 
 #[test]
-fn requester_approval_captured_route_and_exact_plex_path_gate_rar_import() {
+fn requester_opt_in_captured_route_and_exact_plex_path_gate_rar_import() {
     let d = Directory::new();
     let p = Provider::open();
     let h = Http::open();
@@ -391,20 +391,14 @@ fn requester_approval_captured_route_and_exact_plex_path_gate_rar_import() {
         accounts::container(vec![old]),
     );
     let engine = Engine::open(c.clone()).unwrap();
-    let mut policy = accounts::policy(&engine, "alice");
-    policy.enabled = true;
-    policy.destination = "family".into();
-    accounts::apply(&engine, "alice", accounts::policy_query(policy));
     engine.sync_requesters().unwrap();
     assert!(!engine.tick().unwrap());
     assert_eq!(h.count(), 0);
     assert!(p.requests.lock().unwrap().is_empty());
-    let demand = accounts::demand(&engine, "alice");
-    accounts::apply(
-        &engine,
-        "alice",
-        accounts::demand_query("approve", accounts::id(&demand)),
-    );
+    let mut policy = accounts::policy(&engine, "alice");
+    policy.enabled = true;
+    policy.destination = "family".into();
+    accounts::apply(&engine, "alice", accounts::policy_query(policy));
     let admitted = accounts::job(&engine, "alice");
     let mut policy = accounts::policy(&engine, "alice");
     policy.destination = "default".into();

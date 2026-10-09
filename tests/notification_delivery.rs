@@ -471,7 +471,7 @@ fn requester_preferences_filter_durable_delivery_without_affecting_admission() {
             max_attempts: 2,
         });
         let e = Engine::open(cfg.clone()).unwrap();
-        requester_support::enable(&e, "alice", false);
+        requester_support::enable(&e, "alice");
         let mut p = requester_support::policy(&e, "alice");
         p.notifications = preference.into();
         requester_support::apply(&e, "alice", requester_support::policy_query(p));

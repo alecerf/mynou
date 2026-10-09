@@ -240,7 +240,6 @@ fn public_demand(d: &Demand) -> Value {
     v.insert("id", d.id.clone());
     v.insert("account_id", d.account_id.clone());
     v.insert("state", d.state.clone());
-    v.insert("approved", d.approved);
     v.insert("job_id", d.job_id.clone().map_or(Value::Null, Value::from));
     v
 }
@@ -346,9 +345,7 @@ impl Engine {
         }
         let demand_id = Demand::identity(account_id, &canonical);
         let existing = ledger.state.demands.get(&demand_id);
-        if existing.is_some_and(|d| {
-            d.request != canonical || matches!(d.state.as_str(), "removed" | "rejected")
-        }) {
+        if existing.is_some_and(|d| d.request != canonical || d.state == "removed") {
             return Err(
                 "IRC: retained demand differs from the claim or is a removal tombstone".into(),
             );
@@ -397,7 +394,6 @@ impl Engine {
                     .collect(),
             ),
         );
-        guard.insert("day", (now / 86_400).to_string());
         let plan_id = super::digest(json::stringify(&guard).as_bytes());
         let mut report = Value::object();
         report.insert("action", "request");
@@ -411,13 +407,6 @@ impl Engine {
         report.insert("profile", capture.profile_name.clone());
         report.insert("destination", capture.destination.clone());
         report.insert("new_demand", existing.is_none());
-        report.insert(
-            "approval_required",
-            existing.map_or(
-                !account.policy.enabled || account.policy.approval_required,
-                |d| !d.approved,
-            ),
-        );
         report.insert("acquisition_started", false);
         if Instant::now() >= deadline || self.stopped.load(Ordering::Acquire) {
             return Err("IRC: request review expired or stopped".into());
@@ -425,7 +414,7 @@ impl Engine {
         if !query.apply {
             return Ok(report);
         }
-        if query.plan_id.as_deref() != Some(&plan_id) || store::now() / 86_400 != now / 86_400 {
+        if query.plan_id.as_deref() != Some(&plan_id) {
             return Err("IRC: request review is stale; preview again".into());
         }
 
@@ -467,16 +456,15 @@ impl Engine {
                     request: canonical,
                     revision: account.revision,
                     capture,
-                    approved: account.policy.enabled && !account.policy.approval_required,
                     state: "pending".into(),
                     job_id: None,
-                    charged_at: None,
+                    admitted_at: None,
                     outcome: String::new(),
                 },
             );
             next.notify(&demand_id, "pending", at)?;
         }
-        // The canonical origin is durable before ordinary quotas can reserve a job.
+        // The canonical origin is durable before ordinary admission can reserve a job.
         ledger.save(next)?;
         let mut committed = irc.state.clone();
         let row = committed

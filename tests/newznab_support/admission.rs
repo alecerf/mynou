@@ -506,7 +506,7 @@ fn requester_removal_revokes_native_article_permission_before_returning() {
     c.requesters = a.config(&d.0).requesters;
     a.watchlist("alice", vec![accounts::movie(42, "Fixture Movie")]);
     let engine = Engine::open(c).unwrap();
-    accounts::enable(&engine, "alice", false);
+    accounts::enable(&engine, "alice");
     engine.sync_requesters().unwrap();
     let job = accounts::job(&engine, "alice");
     engine.tick().unwrap();
@@ -548,84 +548,6 @@ fn requester_removal_revokes_native_article_permission_before_returning() {
     );
     assert!(engine.retry(&job.id).is_err());
     drop(workers);
-}
-
-#[test]
-fn active_and_daily_requester_quotas_withhold_other_usenet_acquisitions() {
-    for (active, daily) in [(1, 2), (2, 1)] {
-        let d = Directory::new();
-        let p = Provider::open();
-        let h = Http::open();
-        let a = accounts::Accounts::open();
-        let mut c = configured(&d, &p, &h);
-        c.requesters = a.config(&d.0).requesters;
-        a.watchlist(
-            "alice",
-            vec![
-                accounts::movie(42, "Fixture Movie"),
-                accounts::movie(43, "Other Fixture"),
-            ],
-        );
-        let engine = Engine::open(c).unwrap();
-        let mut policy = accounts::policy(&engine, "alice");
-        policy.enabled = true;
-        policy.max_active = active;
-        policy.max_daily = daily;
-        accounts::apply(&engine, "alice", accounts::policy_query(policy));
-        engine.sync_requesters().unwrap();
-        let demands = accounts::demands(&engine, "alice");
-        let first = demands
-            .iter()
-            .find(|d| {
-                d.get("request")
-                    .unwrap()
-                    .get("title")
-                    .and_then(Value::as_str)
-                    == Some("Fixture Movie")
-            })
-            .unwrap();
-        let second = demands
-            .iter()
-            .find(|d| {
-                d.get("request")
-                    .unwrap()
-                    .get("title")
-                    .and_then(Value::as_str)
-                    == Some("Other Fixture")
-            })
-            .unwrap();
-        accounts::apply(
-            &engine,
-            "alice",
-            accounts::demand_query("approve", accounts::id(first)),
-        );
-        accounts::apply(
-            &engine,
-            "alice",
-            accounts::demand_query("approve", accounts::id(second)),
-        );
-        let second = accounts::demands(&engine, "alice")
-            .into_iter()
-            .find(|d| accounts::id(d) == accounts::id(second))
-            .unwrap();
-        assert_eq!(second.get("state").and_then(Value::as_str), Some("quota"));
-        assert_eq!(second.get("job_id"), Some(&Value::Null));
-        assert_eq!(lock(&engine.store).unwrap().list().len(), 1);
-        engine.tick().unwrap();
-        assert_eq!(h.count(), 2);
-        assert_eq!(
-            engine
-                .usenet_queue()
-                .unwrap()
-                .get("records")
-                .unwrap()
-                .as_array()
-                .unwrap()
-                .len(),
-            1
-        );
-        assert!(p.requests.lock().unwrap().is_empty());
-    }
 }
 
 #[test]
@@ -700,7 +622,7 @@ fn source_absolute_numbering_preserves_the_canonical_episode_destination() {
 }
 
 #[test]
-fn requester_approval_captured_route_and_exact_plex_confirmation_gate_native_usenet() {
+fn requester_opt_in_captured_route_and_exact_plex_confirmation_gate_native_usenet() {
     let d = Directory::new();
     let p = Provider::open();
     let h = Http::open();
@@ -726,21 +648,14 @@ fn requester_approval_captured_route_and_exact_plex_confirmation_gate_native_use
         accounts::container(vec![old]),
     );
     let engine = Engine::open(c.clone()).unwrap();
-    let mut policy = accounts::policy(&engine, "alice");
-    policy.enabled = true;
-    policy.destination = "family".into();
-    policy.max_active = 1;
-    accounts::apply(&engine, "alice", accounts::policy_query(policy));
     engine.sync_requesters().unwrap();
     assert!(!engine.tick().unwrap());
     assert_eq!(h.count(), 0);
     assert!(p.requests.lock().unwrap().is_empty());
-    let demand = accounts::demand(&engine, "alice");
-    accounts::apply(
-        &engine,
-        "alice",
-        accounts::demand_query("approve", accounts::id(&demand)),
-    );
+    let mut policy = accounts::policy(&engine, "alice");
+    policy.enabled = true;
+    policy.destination = "family".into();
+    accounts::apply(&engine, "alice", accounts::policy_query(policy));
     let admitted = accounts::job(&engine, "alice");
     let id = admitted.id.clone();
     let mut policy = accounts::policy(&engine, "alice");
@@ -1076,7 +991,7 @@ fn removing_the_requester_demand_cancels_a_pending_native_upgrade_and_keeps_the_
     let mut c = upgrade_config(&d, &p, &h, true);
     c.requesters = a.config(&d.0).requesters;
     let engine = Engine::open(c).unwrap();
-    accounts::enable(&engine, "alice", false);
+    accounts::enable(&engine, "alice");
     engine.sync_requesters().unwrap();
     let admitted = accounts::job(&engine, "alice");
     let parent = accounts::ready(&engine, &admitted.id);

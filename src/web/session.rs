@@ -929,7 +929,7 @@ mod tests {
         );
         assert!(
             sessions
-                .requester_preview(&session.id, "alice", "approve", &"b".repeat(64))
+                .requester_preview(&session.id, "alice", "retry", &"b".repeat(64))
                 .is_err()
         );
         assert!(

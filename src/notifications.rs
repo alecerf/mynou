@@ -221,9 +221,7 @@ impl Signal {
                 "ready",
                 "failed",
                 "cancelled",
-                "quota",
                 "conflict",
-                "rejected",
                 "removed",
             ][..],
             "irc" => &[

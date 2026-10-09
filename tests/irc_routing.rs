@@ -378,7 +378,7 @@ fn cancellation_or_review_during_metadata_inspection_fences_the_admission() {
 }
 
 #[test]
-fn requester_approval_quotas_and_removal_are_never_bypassed_by_irc() {
+fn requester_opt_in_and_removal_are_never_bypassed_by_irc() {
     let dir = Directory::new();
     let accounts = requester_support::Accounts::open();
     let mut cfg = accounts.config(&dir.0);
@@ -393,43 +393,21 @@ fn requester_approval_quotas_and_removal_are_never_bypassed_by_irc() {
         ],
     );
     let engine = Engine::open(cfg.clone()).unwrap();
-    let mut policy = requester_support::policy(&engine, "alice");
-    policy.enabled = true;
-    policy.max_daily = 1;
-    policy.max_active = 1;
-    requester_support::apply(&engine, "alice", requester_support::policy_query(policy));
     engine.sync_requesters().unwrap();
     receive(&engine, &"1".repeat(40), 7);
     receive(&engine, &"2".repeat(40), 8);
     assert!(!routing(&engine.irc_route_pending().unwrap()));
     assert!(lock(&engine.store).unwrap().list().is_empty());
-    for d in requester_support::demands(&engine, "alice") {
-        requester_support::apply(
-            &engine,
-            "alice",
-            requester_support::demand_query("approve", requester_support::id(&d)),
-        );
-    }
+    requester_support::enable(&engine, "alice");
     let jobs = lock(&engine.store).unwrap().list();
-    assert_eq!(jobs.len(), 1);
-    assert!(
-        requester_support::demands(&engine, "alice")
-            .iter()
-            .any(|d| d.get("state").and_then(Value::as_str) == Some("quota"))
-    );
+    assert_eq!(jobs.len(), 2);
     assert!(!engine.tick().unwrap());
     accounts.watchlist("alice", Vec::new());
     engine.sync_requesters().unwrap();
-    assert_eq!(job(&engine, &jobs[0].id).state, "cancelled");
+    for admitted in &jobs {
+        assert_eq!(job(&engine, &admitted.id).state, "cancelled");
+    }
     assert!(!routing(&engine.irc_route_pending().unwrap()));
-    assert_eq!(
-        engine
-            .requester("alice", 0, 20)
-            .unwrap()
-            .get("daily")
-            .and_then(Value::as_u64),
-        Some(1)
-    );
     assert!(engine.transfers().unwrap().as_array().unwrap().is_empty());
 }
 
@@ -652,7 +630,7 @@ fn forged_origin_changes_and_silent_format_downgrades_fail_before_downloads_star
 }
 
 #[test]
-fn approved_requester_routes_keep_their_capture_and_charge_through_import_and_restart() {
+fn admitted_requester_routes_keep_their_capture_through_import_and_restart() {
     let dir = Directory::new();
     let torrent = movie(&dir, "Fixture.Movie.2024.1080p.mp4");
     let seed = Seeder::open(&dir.0.join("seed"), &[&torrent]);
@@ -666,9 +644,7 @@ fn approved_requester_routes_keep_their_capture_and_charge_through_import_and_re
     let engine = Engine::open(cfg.clone()).unwrap();
     let mut policy = requester_support::policy(&engine, "alice");
     policy.enabled = true;
-    policy.approval_required = false;
     policy.destination = "family".into();
-    policy.max_daily = 1;
     requester_support::apply(&engine, "alice", requester_support::policy_query(policy));
     engine.sync_requesters().unwrap();
     let admitted = requester_support::job(&engine, "alice");
@@ -698,18 +674,10 @@ fn approved_requester_routes_keep_their_capture_and_charge_through_import_and_re
         fs::read(&ready.imports[0]).unwrap(),
         include_bytes!("../examples/demo.mp4")
     );
-    assert_eq!(
-        engine
-            .requester("alice", 0, 20)
-            .unwrap()
-            .get("daily")
-            .and_then(Value::as_u64),
-        Some(1)
-    );
 }
 
 #[test]
-fn requester_removal_during_metadata_work_preserves_the_charge_and_prevents_a_transfer() {
+fn requester_removal_during_metadata_work_prevents_a_transfer() {
     let dir = Directory::new();
     let torrent = movie(&dir, "Fixture.Movie.2024.1080p.mp4");
     let seed = Seeder::open(&dir.0.join("seed"), &[&torrent]);
@@ -722,7 +690,7 @@ fn requester_removal_during_metadata_work_preserves_the_charge_and_prevents_a_tr
     cfg.downloads_enabled = true;
     accounts.watchlist("alice", vec![requester_support::movie(7, "Fixture Movie")]);
     let engine = Engine::open(cfg).unwrap();
-    requester_support::enable(&engine, "alice", false);
+    requester_support::enable(&engine, "alice");
     engine.sync_requesters().unwrap();
     let admitted = requester_support::job(&engine, "alice");
     let row = receive(&engine, &torrent.id, 7);
@@ -742,12 +710,10 @@ fn requester_removal_during_metadata_work_preserves_the_charge_and_prevents_a_tr
     );
     no_candidate_work(&engine, &admitted.id);
     assert_eq!(
-        engine
-            .requester("alice", 0, 20)
-            .unwrap()
-            .get("daily")
-            .and_then(Value::as_u64),
-        Some(1)
+        requester_support::demand(&engine, "alice")
+            .get("state")
+            .and_then(Value::as_str),
+        Some("removed")
     );
 }
 
@@ -852,7 +818,6 @@ fn existing_plex_media_fulfills_waiting_jobs_before_or_during_irc_selection() {
         let engine = Engine::open(cfg).unwrap();
         let mut policy = requester_support::policy(&engine, "alice");
         policy.enabled = true;
-        policy.approval_required = false;
         policy.destination = "family".into();
         requester_support::apply(&engine, "alice", requester_support::policy_query(policy));
         engine.sync_requesters().unwrap();
