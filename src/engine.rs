@@ -24,7 +24,6 @@ pub struct Engine {
     pub(crate) series_store: Mutex<crate::series::SeriesStore>,
     pub(crate) series_refresh_lock: Mutex<()>,
     downloads: Option<Client>,
-    pub(crate) usenet_queue: Option<crate::usenet::queue::Client>,
     pub(crate) sync_lock: Mutex<()>,
     pub(crate) requester_store: Mutex<crate::requesters::RequesterStore>,
     pub(crate) irc_store: Mutex<crate::irc::AnnouncementStore>,
@@ -59,54 +58,18 @@ impl Engine {
 
     /// Loads existing storage without creating, repairing, or changing its permissions.
     pub fn open_for_preview(config: Config) -> Result<Arc<Self>> {
-        let queue = Self::prepare_usenet(&config, false, true)?;
         let store = Store::open_read_only(&config.store_dir)?;
-        Self::from_store(config, store, queue, false, true)
+        Self::from_store(config, store, false, true)
     }
 
     fn open_with_downloads(config: Config, start_downloads: bool) -> Result<Arc<Self>> {
-        let queue = Self::prepare_usenet(&config, start_downloads, false)?;
-        if !config.store_dir.exists()
-            && let Some(client) = &queue
-            && crate::usenet::archive::namespace_present(&client.private_root()?.join("archives"))?
-        {
-            return Err(
-                "Usenet admission: retained archive namespace has no library journal".into(),
-            );
-        }
-        if !config.store_dir.exists()
-            && queue
-                .as_ref()
-                .is_some_and(|c| c.retained_owned().is_ok_and(|r| !r.is_empty()))
-        {
-            return Err("Usenet admission: retained preparation has no library journal".into());
-        }
         let store = Store::prepare(&config.store_dir)?;
-        Self::from_store(config, store, queue, start_downloads, false)
-    }
-
-    fn prepare_usenet(
-        config: &Config,
-        start_downloads: bool,
-        read_only: bool,
-    ) -> Result<Option<crate::usenet::queue::Client>> {
-        config
-            .usenet
-            .downloads
-            .as_ref()
-            .map(|d| {
-                crate::usenet::queue::Client::prepare(
-                    &config.usenet,
-                    read_only || !start_downloads || !d.enabled,
-                )
-            })
-            .transpose()
+        Self::from_store(config, store, start_downloads, false)
     }
 
     fn from_store(
         config: Config,
         mut store: Store,
-        usenet_queue: Option<crate::usenet::queue::Client>,
         start_downloads: bool,
         read_only: bool,
     ) -> Result<Arc<Self>> {
@@ -126,7 +89,6 @@ impl Engine {
             crate::irc::admission::recovered_state(&irc_store.state, &requester_store.state)?;
         let irc_recovered = crate::irc::routing::recovered_state(&irc_admitted, &store)?;
         let irc_recovery_changed = irc_recovered != irc_store.state;
-        crate::usenet::admission::validate_storage(&store, usenet_queue.as_ref())?;
         if !read_only {
             store.initialize()?;
         }
@@ -142,9 +104,6 @@ impl Engine {
                 &mut store,
                 &config,
             )?;
-        }
-        if let Some(client) = &usenet_queue {
-            client.initialize()?;
         }
         let downloads = if start_downloads && config.downloads_enabled {
             let client =
@@ -186,7 +145,6 @@ impl Engine {
             series_store: Mutex::new(series_store),
             series_refresh_lock: Mutex::new(()),
             downloads,
-            usenet_queue,
             sync_lock: Mutex::new(()),
             requester_store: Mutex::new(requester_store),
             irc_store: Mutex::new(irc_store),
@@ -277,7 +235,6 @@ impl Engine {
             });
             (job, shared)
         };
-        self.hold_usenet_job(&job)?;
         let transfer_id = job.download_id.as_deref().or_else(|| {
             job.shared_file
                 .as_ref()
@@ -296,13 +253,6 @@ impl Engine {
         self.requester_retry_allowed(id)?;
         let mut store = lock(&self.store)?;
         let previous = store.get(id).ok_or("Unknown job")?;
-        if previous.usenet_origin.is_some() {
-            if !matches!(previous.state.as_str(), "failed" | "cancelled") {
-                return Err("Only a failed or cancelled job can be retried".into());
-            }
-            self.retry_usenet_job(&previous)?;
-            return store.retry(id);
-        }
         let job = store.retry(id)?;
         if job.irc_origin.is_some() {
             drop(store);
@@ -517,24 +467,6 @@ impl Engine {
         crate::irc::client::start(self, &mut handles);
         crate::irc::routing::start(self, &mut handles);
         crate::notifications::delivery::start(self, &mut handles);
-        if let Some(client) = &self.usenet_queue {
-            for _ in 0..client.worker_count() {
-                let engine = self.clone();
-                let client = client.clone();
-                handles.push(thread::spawn(move || {
-                    while !engine.stopped.load(Ordering::Acquire) {
-                        match client.tick() {
-                            Ok(true) => {}
-                            Ok(false) => engine.wait(200),
-                            Err(error) => {
-                                eprintln!("mynou: {error}");
-                                engine.wait(1000);
-                            }
-                        }
-                    }
-                }));
-            }
-        }
         if self.config.catalog.enabled {
             let engine = self.clone();
             handles.push(thread::spawn(move || {
@@ -623,20 +555,13 @@ impl Engine {
             job.attempts = job.attempts.saturating_add(1);
             job.last_error = Some(error);
             job.state = "failed".into();
-            job.next_attempt_at =
-                if job.usenet_origin.is_none() && job.attempts < self.config.max_attempts {
-                    store::now().saturating_add((1_u64 << job.attempts.min(10)).min(900))
-                } else {
-                    0
-                };
+            job.next_attempt_at = if job.attempts < self.config.max_attempts {
+                store::now().saturating_add((1_u64 << job.attempts.min(10)).min(900))
+            } else {
+                0
+            };
         }
         store.update(job.clone())?;
-        if !matches!(
-            job.state.as_str(),
-            "processing" | "downloading" | "importing"
-        ) {
-            self.hold_usenet_job(&job)?;
-        }
         if !matches!(job.state.as_str(), "ready" | "failed" | "cancelled") {
             store.release_lease(&job.id, &lease)?;
         }
@@ -646,13 +571,10 @@ impl Engine {
     }
 
     pub(crate) fn pause_unwanted_transfers(&self, store: &Store) -> Result<()> {
-        let jobs = store.list();
-        for job in jobs.iter().filter(|j| j.state == "cancelled") {
-            self.hold_usenet_job(job)?;
-        }
         let Some(client) = &self.downloads else {
             return Ok(());
         };
+        let jobs = store.list();
         let active: std::collections::BTreeSet<_> = jobs
             .iter()
             .filter(|j| j.state != "cancelled")
@@ -687,17 +609,7 @@ impl Engine {
         job: &Job,
         active: &AtomicBool,
     ) -> Result<std::path::PathBuf> {
-        if job.usenet_origin.is_some() && job.upgrade_parent.is_some() {
-            organizer::import_private_versioned_file_cancellable(
-                source,
-                root,
-                &job.request,
-                &job.id,
-                active,
-            )
-        } else if job.usenet_origin.is_some() {
-            organizer::import_private_file_cancellable(source, root, &job.request, active)
-        } else if let Some(file) = &job.shared_file {
+        if let Some(file) = &job.shared_file {
             organizer::import_shared_file_cancellable(source, root, file, active)
         } else if job.upgrade_parent.is_some() {
             organizer::import_versioned_file_cancellable(
@@ -753,21 +665,6 @@ impl Engine {
             job.next_attempt_at = store::now().saturating_add(60);
             return Ok(());
         }
-        if job.files.is_empty()
-            && job.imports.is_empty()
-            && job.acquisition_url.is_none()
-            && job.request.source_path.is_none()
-            && job.request.source_url.is_none()
-            && job.irc_origin.is_none()
-        {
-            self.select_native_acquisition(job)?;
-        }
-        if job.usenet_origin.is_some()
-            && job.imports.is_empty()
-            && !self.advance_usenet(job, active)?
-        {
-            return Ok(());
-        }
         // Resume a confirmed import after interruption without copying it again.
         if !job.imports.is_empty() {
             if job.shared_file.is_some() {
@@ -788,7 +685,6 @@ impl Engine {
                 let available = if job.upgrade_parent.is_some()
                     || job.shared_file.is_some()
                     || job.requester.is_some()
-                    || job.usenet_origin.is_some()
                 {
                     integrations::available_import(&config, &job.request, &job.imports)?
                 } else {
@@ -997,9 +893,6 @@ impl Engine {
                 return Err("Mapped torrent file differs from the retained verified path".into());
             }
         }
-        if job.usenet_origin.is_some() {
-            self.require_usenet_lease(job)?;
-        }
         // Group ownership serializes claims. Organizer compares existing bytes and
         // publishes one destination, including recovery after a pre-journal crash.
         job.state = "importing".into();
@@ -1093,9 +986,6 @@ pub struct Workers {
 impl Drop for Workers {
     fn drop(&mut self) {
         self.engine.stopped.store(true, Ordering::Release);
-        if let Some(client) = &self.engine.usenet_queue {
-            client.stop();
-        }
         for h in self.handles.drain(..) {
             let _ = h.join();
         }
@@ -1116,8 +1006,6 @@ impl Heartbeat {
         let handle = thread::spawn(move || {
             let period = Duration::from_secs((engine.config.lease_duration_secs / 3).max(1));
             let mut last = std::time::Instant::now();
-            let owner_period = period.min(Duration::from_secs(5));
-            let mut owner_last = std::time::Instant::now();
             while !d.load(Ordering::Acquire) {
                 thread::sleep(Duration::from_millis(100));
                 if engine.stopped.load(Ordering::Acquire) {
@@ -1127,7 +1015,7 @@ impl Heartbeat {
                 let valid = (|| -> Result<()> {
                     let ledger = lock(&engine.requester_store)?;
                     let mut s = lock(&engine.store)?;
-                    let mut j = s.get(&id).ok_or("Missing job")?;
+                    let j = s.get(&id).ok_or("Missing job")?;
                     if j.lease_id.as_deref() != Some(&lease)
                         || j.lease_until <= store::now()
                         || !crate::requesters::engine::interest(&ledger.state, &j, &engine.config)
@@ -1135,20 +1023,8 @@ impl Heartbeat {
                         return Err("Lease or approved demand lost".into());
                     }
                     if last.elapsed() >= period {
-                        j =
-                            s.renew(&id, &lease, store::now(), engine.config.lease_duration_secs)?;
+                        s.renew(&id, &lease, store::now(), engine.config.lease_duration_secs)?;
                         last = std::time::Instant::now();
-                    }
-                    drop(s);
-                    drop(ledger);
-                    if j.usenet_origin
-                        .as_ref()
-                        .is_some_and(|o| o.transfer_id.is_some())
-                        && j.imports.is_empty()
-                        && owner_last.elapsed() >= owner_period
-                    {
-                        engine.authorize_usenet_job(&j)?;
-                        owner_last = std::time::Instant::now();
                     }
                     Ok(())
                 })();
@@ -1186,9 +1062,6 @@ pub fn public_job(job: &Job) -> Value {
         map.remove("lease_id");
         map.remove("lease_until");
         map.remove("acquisition_url");
-        if let Some(origin) = &job.usenet_origin {
-            map.insert("usenet_origin".into(), origin.public_json());
-        }
         if let Some(origin) = &job.irc_origin {
             map.insert("irc_origin".into(), origin.public_json());
         }

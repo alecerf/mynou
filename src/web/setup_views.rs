@@ -152,11 +152,8 @@ pub(super) fn page(engine: &Arc<Engine>, session: &Session) -> Result<String> {
     let report = engine.indexers()?;
     let rows = array(report.get("sources").unwrap_or(&Value::Null));
     let torrent = cfg.downloads_enabled;
-    let usenet = cfg.usenet.downloads.as_ref().is_some_and(|d| d.enabled);
-    let usenet_source = cfg.sources.iter().any(|s| s.options.newznab.is_some());
     let mut enabled = 0_usize;
     let mut configured = 0_usize;
-    let mut compatible = 0_usize;
     let mut missing = false;
     for (source, row) in cfg.sources.iter().zip(rows) {
         if row.get("enabled").and_then(Value::as_bool) != Some(true) {
@@ -167,11 +164,6 @@ pub(super) fn page(engine: &Arc<Engine>, session: &Session) -> Result<String> {
         missing |= state == State::Missing;
         if state == State::Configured {
             configured += 1;
-            if source.options.newznab.is_some() {
-                compatible += usize::from(usenet);
-            } else {
-                compatible += usize::from(torrent);
-            }
         }
     }
     let sources = if cfg.sources.is_empty() {
@@ -185,12 +177,10 @@ pub(super) fn page(engine: &Arc<Engine>, session: &Session) -> Result<String> {
     } else {
         State::Attention
     };
-    let downloads = if !torrent && !usenet {
-        State::Missing
-    } else if configured > 0 && compatible == 0 {
-        State::Attention
-    } else {
+    let downloads = if torrent {
         State::Configured
+    } else {
+        State::Missing
     };
     let folders = if cfg.store_dir.is_absolute()
         && cfg.movies_root.is_absolute()
@@ -228,20 +218,12 @@ pub(super) fn page(engine: &Arc<Engine>, session: &Session) -> Result<String> {
         "downloads",
         "3. Native downloads",
         downloads,
-        if !torrent && !usenet {
-            "Enable downloads for torrents or usenet.downloads for Newznab sources. Both are currently disabled. No external downloader is required."
-        } else if configured > 0 && compatible == 0 {
-            "Your configured sources do not match an enabled native download route. Torrent sources need downloads enabled; Newznab sources need usenet.downloads enabled and a configured provider."
-        } else if usenet {
-            "A native download route is enabled. Review Usenet greeting and authentication before a first request; the existing guarded probe never reads articles. Source and download format limits still apply."
-        } else {
+        if torrent {
             "Native torrent downloads are enabled. Review source diagnostics, then preview a request. A configured route does not verify peer connectivity or guarantee a matching release."
-        },
-        if usenet || usenet_source {
-            ("/ui/usenet", "Review Usenet connection")
         } else {
-            ("/ui/transfers", "Open native transfers")
+            "Enable downloads for torrents. They are currently disabled. No external downloader is required."
         },
+        ("/ui/transfers", "Open native transfers"),
     );
     card(
         &mut body,
@@ -259,7 +241,7 @@ pub(super) fn page(engine: &Arc<Engine>, session: &Session) -> Result<String> {
         "Plex is optional for direct requests, and required for watchlist automation and confirmed Plex availability. Enable plex, set its addresses and library section IDs, and supply a valid private token. Keep library mounts or path mappings consistent. No Plex connection is tested here.",
         ("#configuration", "Configure Plex privately"),
     );
-    body.push_str("</section><section class=panel id=configuration><h2>Where to change settings</h2><p>Edit the installation's mynou.json and private .env outside the browser. Keep credentials in the environment, not source control or screenshots. After changing a generated Docker installation, recreate its service so it loads the new configuration and environment, then return here.</p><p>Read the <a href=\"https://github.com/alecerf/mynou/blob/trunk/docs/deployment.md\" target=_blank rel=\"noopener noreferrer\">deployment guide (opens a new tab)</a> for mounts, Plex, catalog and sources. Run <code>mynou doctor --config mynou.json</code> to check your installed configuration. This page does not edit it.</p></section><section class=panel><h2>Try your first request</h2><ol><li>Review source diagnostics and, for Usenet, its explicit connection probe.</li><li>Preview a movie or episode on Search. A preview contacts sources but records no request and downloads no media.</li><li>Choose Record request only when you want acquisition. Follow it in Jobs; Ready confirms the captured import and any required exact Plex path.</li></ol><div class=actions><a class=button href=/ui/search>Preview a request</a><a href=/ui/jobs>Follow requests in Jobs</a></div></section>");
+    body.push_str("</section><section class=panel id=configuration><h2>Where to change settings</h2><p>Edit the installation's mynou.json and private .env outside the browser. Keep credentials in the environment, not source control or screenshots. After changing a generated Docker installation, recreate its service so it loads the new configuration and environment, then return here.</p><p>Read the <a href=\"https://github.com/alecerf/mynou/blob/trunk/docs/deployment.md\" target=_blank rel=\"noopener noreferrer\">deployment guide (opens a new tab)</a> for mounts, Plex, catalog and sources. Run <code>mynou doctor --config mynou.json</code> to check your installed configuration. This page does not edit it.</p></section><section class=panel><h2>Try your first request</h2><ol><li>Review source diagnostics.</li><li>Preview a movie or episode on Search. A preview contacts sources but records no request and downloads no media.</li><li>Choose Record request only when you want acquisition. Follow it in Jobs; Ready confirms the captured import and any required exact Plex path.</li></ol><div class=actions><a class=button href=/ui/search>Preview a request</a><a href=/ui/jobs>Follow requests in Jobs</a></div></section>");
     Ok(frame("Set up Mynou", "/ui/setup", Some(session), &body))
 }
 
