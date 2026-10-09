@@ -1,15 +1,15 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 1097,
+  "generation": 1098,
   "lease": {
     "id": "bc11bded-1c56-4f21-b3ba-d52ceb59529d",
     "worker": "github-actions-publication-recovery",
     "role": "triage",
     "issue": 62,
     "acquired_at": "2026-10-09T13:10:56Z",
-    "heartbeat_at": "2026-10-09T13:10:56Z",
-    "expires_at": "2026-10-09T13:55:56Z",
+    "heartbeat_at": "2026-10-09T13:11:05Z",
+    "expires_at": "2026-10-09T13:56:05Z",
     "branch": "trunk",
     "commit": "a10a610bdab87810220555915c193b1eff2f1dd3",
     "pr": 68
@@ -18,7 +18,7 @@
     "publication": {
       "commit": "a10a610bdab87810220555915c193b1eff2f1dd3",
       "state": "ci-failed",
-      "at": "2026-10-09T13:09:12Z",
+      "at": "2026-10-09T13:11:05Z",
       "run_id": 37930552053,
       "status": "completed",
       "conclusion": "failure"
@@ -637,7 +637,7 @@
     "branch": "trunk",
     "commit": "a10a610bdab87810220555915c193b1eff2f1dd3",
     "pr": 68,
-    "summary": "Default-source CI transition: ci-failed at a10a610bdab87810220555915c193b1eff2f1dd3; native evidence {'commit': 'a10a610bdab87810220555915c193b1eff2f1dd3', 'state': 'ci-failed', 'at': '2026-10-09T13:09:12Z', 'run_id': 37930552053, 'status': 'completed', 'conclusion': 'failure'}. No release publication is inferred.",
+    "summary": "Default-source CI transition: ci-failed at a10a610bdab87810220555915c193b1eff2f1dd3; native evidence {'commit': 'a10a610bdab87810220555915c193b1eff2f1dd3', 'state': 'ci-failed', 'at': '2026-10-09T13:11:05Z', 'run_id': 37930552053, 'status': 'completed', 'conclusion': 'failure'}. No release publication is inferred.",
     "previous_checkpoint": {
       "at": "2026-10-09T13:08:38Z",
       "issue": 62,
@@ -648,7 +648,7 @@
       "summary": "Complete3-path source Security review forPR69/head3c077/basea10 recorded rejected pending actual required log audit. MainPRCI all6 requiredjobs passed; original5new publication regression cases included. Source-history passed. InitialPRlogs failedAuditError after15 requests/remaining3501, noHTTPcause claimed. Default audit37930552079attempt2 actually passed1477archives/4771members/0selectedfindings/gaps, native compatible receipt11617447257. One targetedPRaudit retryaccepted afterreceiptavailable.",
       "next_action": "Read targeted PR audit completion once another ready logical phase is completed; do notpoll orfabricategreen. Release Security, acquire QA62 atsameexactPRhead/base; independently challenge complete3-path diff, redaction, strictabsence andpublication context. Actual audit failure blockspass/merge. Ifno immediatelyready transitionsremain, persistnativehandoff/releaseatrealCIwait."
     },
-    "at": "2026-10-09T13:09:12Z",
+    "at": "2026-10-09T13:11:05Z",
     "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases.",
     "recovery": {
       "issue": true,
