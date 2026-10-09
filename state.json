@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 1070,
+  "generation": 1071,
   "lease": {
     "id": "codex-recovery-20261009T112800Z-security-9d6b55d7-38ee-490a-ad12-910f3910d8b4",
     "worker": "codex-recovery-20261009T112800Z",
@@ -738,6 +738,12 @@
       "fingerprint": "PR53/5c4b41d:892tests+4builds+package+audits pass; final CodeQL113642614564 high183 at static panic185; new boolean-only diagnostic strategy",
       "unchanged": 1,
       "at": "2026-10-09T02:46:46Z"
+    },
+    "54": {
+      "approach": "Bootstrap matching-policy native completed-attempt receipts with bounded observed API capacity",
+      "fingerprint": "def96b52107afd71ba94da12a9443c6b22fc4fd2:Security37928325183:HTTP403:requests1:core-limit5000-remaining0:CI200+892+4builds+package",
+      "unchanged": 1,
+      "at": "2026-10-09T12:16:44Z"
     }
   }
 }
