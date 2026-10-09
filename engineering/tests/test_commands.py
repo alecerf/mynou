@@ -247,6 +247,13 @@ class TransportCases(unittest.TestCase):
             self.run_command(native, event)
         self.assertEqual(len(native.writes), 1)
 
+    def test_failure_diagnostic_is_a_class_and_status_never_message_text(self):
+        self.assertEqual(commands.detail(APIError(403)), " [APIError HTTP 403]")
+        hostile = "ghp_" + "Z" * 36
+        for error in [ValueError(hostile), RuntimeError(hostile), KeyError(hostile)]:
+            self.assertNotIn(hostile, commands.detail(error))
+        self.assertEqual(commands.detail(ValueError("x")), " [ValueError]")
+
     def test_recovery_delegates_native_inspection_and_never_accepts_input_evidence(self):
         native, _ = self.held()
         at = AT + timedelta(hours=1)

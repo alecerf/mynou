@@ -9,6 +9,28 @@ reviewed `enable-team` transition. See [scope](releases/0.22.37.md). Versions
 until CI, distinct exact-head/base Security/QA and Actions publication complete.
 No local validation.
 
+## Earlier proposed 0.22.33 default-source CI fix-forward
+
+Actions published immutable [v0.22.32](https://github.com/alecerf/mynou/releases/tag/v0.22.32)
+at `97c8efcbb97a74716e21791b5d4cf1578f85c28d` (release 407617414, run 37895820331).
+Two later engineering-only merges, PR59 and PR60 (`02a536f2c75e454094c7cb28d85ec2771c7404f0`),
+kept version 0.22.32. Actions publishes an immutable release for every push to the
+default branch and the registry refuses a second image for a published version, so
+the `release` job failed in [run 37920787776](https://github.com/alecerf/mynou/actions/runs/37920787776).
+Every other job passed, and mechanical delivery recorded the failed default CI.
+
+[Issue62](https://github.com/alecerf/mynou/issues/62) fixes forward. This source
+proposes 0.22.33 with no product code change since 0.22.32. Delivery also treats a
+recorded `ci-failed` commit as superseded only when its own native run completed
+without success and the commit is a strict ancestor of the current default head.
+Pending, unknown or unverified records, unrelated heads and a missing or unfinished
+run still stop delivery, and the new head still needs its own CI and publication proof.
+See [scope](releases/0.22.33.md). This version remains proposed until actual CI,
+distinct exact-head/base Security/full-diff QA, every objective gate and Actions-only
+immutable publication are complete. No local validation.
+
+## Earlier: 0.22.32 fresh engineering authority reads
+
 ## Earlier proposed 0.22.32 scope
 
 Fresh engineering authority reads (proposed 0.22.32):

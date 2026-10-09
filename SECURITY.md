@@ -11,8 +11,26 @@ The Security audit workflow checks all reachable fetched Git objects and all
 completed visible Actions attempts. Reports contain rule names and object/run
 locations only; matched values, previews, raw filenames, signed log URLs and raw
 archives are never published. Missing executed logs fail as coverage gaps; attempts
-with no runner execution are reported separately. Running workflows are explicitly
-outside the completed-attempt snapshot and are covered by subsequent audits.
+with no runner execution are reported separately. A pending rerun's earlier completed
+attempts remain in scope; its current incomplete attempt is recorded as pending.
+
+Routine audits reuse redacted completed-attempt evidence only from a successful
+native default-branch Security audit in this repository, with exact scanner and
+workflow bytes, default ancestry, successful required jobs and one unexpired,
+attempt-bound artifact. The native ZIP digest, producer and every current
+run/attempt/source/workflow/repository identity must match. PR/fork artifacts,
+old aggregate reports, changed identities and missing or conflicting applicable
+receipts cannot certify coverage. New attempts are scanned; lost executed logs
+remain gaps. Reports distinguish newly downloaded archives from reused coverage.
+
+The first compatible receipt requires a full scan. Weekly scheduled audits and
+the manual `full_log_audit` option rebuild it; routine runs only download uncovered
+archives after re-enumerating native history. An observed GitHub request reserve
+and a hard request bound stop insufficient-capacity work without queued request
+storms. Failure remains visible and blocks delivery. This does not inspect Codex
+quota or guarantee a provider reset/wake. Receipts remain native artifacts for
+14 days; raw archives are never uploaded. Detailed attempt metadata stays in the
+redacted artifact while logs print aggregate coverage and safe numeric counters.
 
 The original Python standard-library detector recognizes selected provider token
 formats and private-key markers. It cannot prove the absence of every custom

@@ -189,8 +189,9 @@ def transition(api, state, value, at, comment_id):
         issue = api.rest("GET", f"issues/{args['issue']}")
         require(issue.get("number") == args["issue"] and issue.get("state") == "open"
             and "agent-work" in control.labels(issue) and "pull_request" not in issue, "unmanaged-work-issue")
-        blockers = api.pages(f"issues/{args['issue']}/dependencies/blocked_by")
-        require(args["role"] in {"master", "triage"} or not any(i["state"] == "open" for i in blockers), "open-native-blocker")
+        if args["role"] not in {"master", "triage"}:
+            blockers = api.pages(f"issues/{args['issue']}/dependencies/blocked_by")
+            require(not any(i["state"] == "open" for i in blockers), "open-native-blocker")
         source_scope(api, args["branch"], args["commit"], args["pr"], args["issue"])
         if team:
             # Areas are read server-side from the Issue labels, never from the command.
@@ -317,6 +318,12 @@ def execute(api, event, at, actor, triggering_actor):
     return result
 
 
+def detail(error):
+    """Fixed diagnostic only: exception class and numeric HTTP status, never message text."""
+    status = getattr(error, "status", None)
+    return " [" + type(error).__name__ + (f" HTTP {status}" if type(status) is int else "") + "]"
+
+
 def main():
     require(os.environ.get("GITHUB_EVENT_NAME") == "issue_comment", "wrong-event-kind")
     path = Path(os.environ["GITHUB_EVENT_PATH"])
@@ -332,6 +339,6 @@ if __name__ == "__main__":
     except Rejected as error:
         print("Control command rejected: " + str(error), file=sys.stderr)
         sys.exit(1)
-    except (APIError, ValueError, RuntimeError, KeyError, TypeError, OSError, RecursionError):
-        print("Control command stopped; inspect canonical Git state and native run before another attempt.", file=sys.stderr)
+    except (APIError, ValueError, RuntimeError, KeyError, TypeError, OSError, RecursionError) as error:
+        print("Control command stopped; inspect canonical Git state and native run before another attempt." + detail(error), file=sys.stderr)
         sys.exit(1)

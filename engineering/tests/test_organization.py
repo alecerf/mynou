@@ -631,6 +631,60 @@ class PublicationScenarios(unittest.TestCase):
             self.assertFalse(native.writes)
             self.assertFalse(native.dispatches)
 
+    def failed_ancestor(self, recorded="ci-failed", conclusion="failure", status="completed", ancestry="ahead", run=True):
+        native = self.Publication()
+        native.ancestry = ancestry
+        native.current_state["checkpoint"] = {"publication": {"commit": BASE, "state": recorded, "run_id": 39}}
+        if run:
+            native.runs = [dict(self.native_run(status=status, conclusion=conclusion), id=39, head_sha=BASE)]
+        return native
+
+    def test_failed_ancestor_is_superseded_by_the_fix_forward_head(self):
+        native = self.failed_ancestor()
+        result = self.execute(native)
+        self.assertEqual(result["action"], "publication-recovery")
+        self.assertEqual(len(native.dispatches), 1)
+        self.assertEqual(native.dispatches[0][1]["commit"], HEAD)
+        self.assertEqual(native.current_state["checkpoint"]["publication"]["commit"], HEAD)
+        self.assertIsNone(native.current_state["lease"])
+
+    def test_failed_ancestor_with_any_non_success_conclusion_is_superseded(self):
+        for conclusion in ["failure", "cancelled", "timed_out"]:
+            native = self.failed_ancestor(conclusion=conclusion)
+            with self.subTest(conclusion=conclusion):
+                self.assertEqual(self.execute(native)["action"], "publication-recovery")
+                self.assertEqual(native.current_state["checkpoint"]["publication"]["commit"], HEAD)
+
+    def test_superseding_never_certifies_the_new_head_without_its_own_ci(self):
+        native = self.failed_ancestor()
+        native.runs.append(dict(self.native_run(conclusion="failure"), id=41))
+        with self.assertRaises(ValueError):
+            self.execute(native)
+        self.assertEqual(native.current_state["checkpoint"]["publication"]["state"], "ci-failed")
+        self.assertEqual(native.current_state["checkpoint"]["publication"]["run_id"], 41)
+        self.assertFalse(native.dispatches)
+
+    def test_only_a_terminal_failed_strict_ancestor_is_superseded(self):
+        cases = {
+            "diverged": self.failed_ancestor(ancestry="diverged"),
+            "behind": self.failed_ancestor(ancestry="behind"),
+            "no native run": self.failed_ancestor(run=False),
+            "run still pending": self.failed_ancestor(status="in_progress", conclusion=None),
+            "pending record": self.failed_ancestor(recorded="ci-pending"),
+            "dispatching record": self.failed_ancestor(recorded="dispatching"),
+            "accepted record": self.failed_ancestor(recorded="accepted"),
+            "unknown record": self.failed_ancestor(recorded="unknown"),
+            "unverified record": self.failed_ancestor(recorded="publication-unverified"),
+            "rejected dispatch record": self.failed_ancestor(recorded="failed"),
+            "head changed record": self.failed_ancestor(recorded="head-changed"),
+        }
+        for name, native in cases.items():
+            with self.subTest(case=name):
+                with self.assertRaises(ValueError):
+                    self.execute(native)
+                self.assertFalse(native.dispatches)
+                self.assertEqual(native.current_state["checkpoint"]["publication"]["commit"], BASE)
+
     def test_published_record_cannot_hide_native_ci_failure(self):
         native = self.Publication()
         native.current_state["checkpoint"] = {"publication":
