@@ -3,7 +3,10 @@ import io
 import json
 from pathlib import Path
 import sys
+import tempfile
+from threading import Lock
 import unittest
+from unittest.mock import patch
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -71,6 +74,112 @@ class SecretAuditTests(unittest.TestCase):
                 return iter([{"runner_id": 0, "steps": []}])
         self.assertEqual(audit.audit_attempt(Fake(), (1, 1))["state"], "no-runner-execution")
 
+
+
+class RequestBudgetTests(unittest.TestCase):
+    def test_only_allowlisted_provider_counters_are_emitted(self):
+        hostile = "ghp_" + "Z" * 36
+        observed = audit.rate_metadata({
+            "X-RateLimit-Limit": "1000", "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Used": "1000", "X-RateLimit-Reset": "1791547200",
+            "Retry-After": "60", "X-RateLimit-Resource": "core",
+            "Authorization": hostile, "Location": "https://example.invalid/" + hostile,
+            "X-Request-Id": hostile,
+        })
+        self.assertEqual(observed, {"limit": 1000, "remaining": 0, "used": 1000,
+                                   "reset_epoch": 1791547200,
+                                   "retry_after_seconds": 60, "resource": "core"})
+        self.assertNotIn(hostile, json.dumps(observed))
+        self.assertNotIn("Location", observed)
+
+    def test_hostile_numeric_or_resource_headers_are_omitted(self):
+        self.assertEqual(audit.rate_metadata({
+            "X-RateLimit-Remaining": "-1", "X-RateLimit-Limit": "9" * 100,
+            "X-RateLimit-Used": "1" + chr(10) + "credential", "X-RateLimit-Reset": "nan",
+            "Retry-After": "tomorrow", "X-RateLimit-Resource": "user-controlled",
+        }), {})
+
+    def test_preflight_preserves_observed_reserve_without_an_api_call(self):
+        budget = audit.RequestBudget()
+        budget.observe({"X-RateLimit-Remaining": "1000"})
+        with self.assertRaises(audit.BudgetFailure):
+            budget.require(1260)
+        self.assertEqual(budget.evidence()["requests"], 0)
+        self.assertEqual(budget.evidence()["observed_rate"]["remaining"], 1000)
+        budget.require(800)
+
+    def test_concurrent_reservations_cannot_cross_the_reserve(self):
+        budget = audit.RequestBudget()
+        budget.observe({"X-RateLimit-Remaining": str(audit.API_RESERVE + 4)})
+        with audit.ThreadPoolExecutor(max_workers=4) as pool:
+            list(pool.map(lambda _: budget.begin(), range(4)))
+        self.assertEqual(budget.evidence()["requests"], 4)
+        with self.assertRaises(audit.BudgetFailure):
+            budget.begin()
+        self.assertEqual(budget.evidence()["observed_rate"]["remaining"], audit.API_RESERVE)
+
+    def test_out_of_order_headers_do_not_restore_consumed_capacity(self):
+        budget = audit.RequestBudget()
+        budget.observe({"X-RateLimit-Remaining": "500"})
+        budget.begin()
+        budget.observe({"X-RateLimit-Remaining": "510"})
+        self.assertEqual(budget.evidence()["observed_rate"]["remaining"], 499)
+        budget.observe({"X-RateLimit-Remaining": "300"})
+        self.assertEqual(budget.evidence()["observed_rate"]["remaining"], 300)
+
+    def test_missing_headers_still_have_a_hard_request_ceiling(self):
+        budget = audit.RequestBudget()
+        with patch.object(audit, "MAX_API_REQUESTS", 2):
+            budget.begin()
+            budget.begin()
+            with self.assertRaises(audit.BudgetFailure):
+                budget.begin()
+        self.assertEqual(budget.evidence()["requests"], 2)
+
+    def test_first_failed_batch_never_submits_the_remaining_inventory(self):
+        class Fake:
+            def __init__(self):
+                self.budget = audit.RequestBudget()
+                self.calls = []
+                self.lock = Lock()
+            def pages(self, path, key):
+                return iter([{"id": n, "status": "completed", "run_attempt": 1}
+                             for n in range(1, 21)])
+            def get(self, path, archive=False):
+                with self.lock:
+                    self.calls.append(path)
+                raise audit.HTTPFailure(403)
+        api = Fake()
+        with self.assertRaises(audit.HTTPFailure):
+            audit.actions_logs(api)
+        self.assertGreater(len(api.calls), 0)
+        self.assertLessEqual(len(api.calls), 4)
+
+    def test_safe_capacity_error_is_written_without_raw_exception_data(self):
+        class Fake:
+            def __init__(self, repository, token):
+                self.budget = audit.RequestBudget()
+            def pages(self, path, key):
+                self.budget.begin()
+                self.budget.observe({"X-RateLimit-Limit": "1000",
+                                     "X-RateLimit-Remaining": "0"})
+                raise audit.HTTPFailure(403)
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "audit.json"
+            stdout = io.StringIO()
+            with patch.object(audit, "API", Fake), patch.object(
+                    sys, "argv", ["audit", "logs", "--output", str(output)]), patch.dict(
+                    audit.os.environ, {"GH_TOKEN": "synthetic-only",
+                                       "GITHUB_REPOSITORY": "owner/repository"}), patch(
+                    "sys.stdout", stdout):
+                self.assertEqual(audit.main(), 1)
+            result = json.loads(output.read_text())
+            self.assertEqual(result["status"], "error")
+            self.assertEqual(result["http_status"], 403)
+            self.assertEqual(result["api_budget"]["requests"], 1)
+            self.assertEqual(result["api_budget"]["observed_rate"]["remaining"], 0)
+            self.assertNotIn("synthetic-only", stdout.getvalue())
+            self.assertNotIn("owner/repository", stdout.getvalue())
 
 if __name__ == "__main__":
     unittest.main()
