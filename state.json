@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 997,
+  "generation": 998,
   "lease": {
     "id": "codex-recovery-20261009T062636Z-master-909bd704-6809-4080-b501-4b107f9cf2e4",
     "worker": "codex-recovery-20261009T062636Z",
     "role": "master",
     "issue": 52,
     "acquired_at": "2026-10-09T06:50:32Z",
-    "heartbeat_at": "2026-10-09T06:51:45Z",
-    "expires_at": "2026-10-09T07:36:45Z",
+    "heartbeat_at": "2026-10-09T06:53:16Z",
+    "expires_at": "2026-10-09T07:38:16Z",
     "branch": "trunk",
-    "commit": "adb8808d91e0f87017c7cad0ae9d787a7448feee",
-    "pr": null
+    "commit": "97c8efcbb97a74716e21791b5d4cf1578f85c28d",
+    "pr": 55
   },
   "checkpoint": {
-    "at": "2026-10-09T06:51:45Z",
+    "at": "2026-10-09T06:53:16Z",
     "issue": 52,
     "role": "master",
     "branch": "trunk",
-    "commit": "adb8808d91e0f87017c7cad0ae9d787a7448feee",
-    "pr": null,
-    "summary": "Master52 atactualdefaultadb8808/prnull verifiedPR55open/nonDraft/mergeable exactH2603afca/baseadb8808, sharedidentity nativeSecurity5466717842/Q\u04105466756179 with exactheldcheckpoints/all6paths,0threads. LatestnativeEngineering37895579953/organization113706251537/agent-qa-review113706296585 completedSUCCESS; earliermissingreviewfailure/cancel preserved. SourceCI37894355689/all6requiredjobs, Security37894355686/bothjobs, dynamic37894354391/3analyses/finalCodeQL113702311466 actualgreen. No localchecks. Soleparentoriginalsource/tree preserved; no merge/releaseyet. Manualmerge isunderdefaultleaseprnull so nativeworkbranchdeletion cannot invalidateheldsource. Actualv31publication retained.",
-    "next_action": "Freshownership/default/head/base/allgates checked; performnormalmerge PR55 expectedH2603afca onlywhileheld. Confirmnative defaultmerge parents[adb8808,2603afca] and treedeca142e04655115ed0563e1f39819d4e1548814, exactmergedPR/time/Issue/branch state. Immediatelycheckpointactualtrunkmerge/PR55 with pendingActions-onlypublication. Readnative defaultCI/security/Engineering/release proof once; stop/release at realexternalwait (no busypoll/duplicateCI/manualtagrelease). Whenactualimmutablev32andprivateproof verified, recordpublication thenQualitycleanup/Product42. No arbitrarysecrets/providerconsistency claim.",
+    "commit": "97c8efcbb97a74716e21791b5d4cf1578f85c28d",
+    "pr": 55,
+    "summary": "Master52 mergedPR55 via nativeexpected-Hnormalmerge onlyafteralllatestobjectivechecksactuallygreen inclQA113706296585/Engineering37895579953 and actualSecurity5466717842/Q\u04105466756179. Native default97c8efcbb97a74716e21791b5d4cf1578f85c28d confirmed; parents[adb8808d91e0f87017c7cad0ae9d787a7448feee,2603afca9906d89941a5ce3d8f0e40a8d7ae7713], exactoriginaltreedeca142e04655115ed0563e1f39819d4e1548814. Source/security/full-diffQA/CIevidence preserved inIssue52/PR55. NativeIssue52auto-closedcompleted but managedstatusnotyetDone; sourceworkbranchabsence read preserved. Sourceversionv0.22.32 merged; Actions-onlydefaultpublication remains pending, actualimmutablev31retainednotrelabelled. No localchecks/manualrelease/providerrootcauseclaim.",
+    "next_action": "Recover onlythis actualmergeddefault/PR55 delivery first. Native exactdefaultCI/security/Engineering/CodeQL runs are externalwaits; no duplicateworkflow/manualtag/release ornewproductwork. On successfulActions-ownedv0.22.32 verifyimmutabletag/source/fournameddigestedassets and exactrun/attempt private-image receipt; recordactualpublication. Qualitycleanupclosed52/Done/dependencies/nativebranchabsence with originalsourceparents preserved, then standingProduct42/highestboundednextbacklog. Checkpointhandoff/releasebeforewait; hourlyrecoverybest-effort/noquotaresetAPI.",
     "publication": {
       "commit": "adb8808d91e0f87017c7cad0ae9d787a7448feee",
       "state": "published",
@@ -563,14 +563,14 @@
       "publication_pr_handoff": 6062225589
     },
     "previous_checkpoint": {
-      "at": "2026-10-09T06:49:04Z",
+      "at": "2026-10-09T06:51:45Z",
       "issue": 52,
-      "role": "qa",
-      "branch": "work/52-fresh-authority",
-      "commit": "2603afca9906d89941a5ce3d8f0e40a8d7ae7713",
-      "pr": 55,
-      "summary": "Distinct QA52 independently reviewed actualcomplete6pathPR55diff/currentIssue52/Triage/nativeSecurity5466717842 atH2603afca9906d89941a5ce3d8f0e40a8d7ae7713/baseadb8808d91e0f87017c7cad0ae9d787a7448feee. Examined actualHTTP/control.save/lease/fixture guards: GETonlyno-cache, checkpoints/publication preserved, changedheads/otherowner rejected,409/422/CASwinner noforce/retry, ignoredrevalidation failclosed; fixture is offline notproviderreproduction. Cargo0deps/unsafeForbid; Englishversiondocs truthfullyproposedv32/nativev31. ActualCI37894355689 allrequiredjobs success; validate113702177340 rawlog892Rust/0fail/64harnesses,Python24+173/all5cases; macOS/native/static/containerpackagingstepssuccess. Security37894355686 bothauditssuccess, selectedrecognized0/gaps0/3252objects/1200archives/3174members; CodeQLanalyses/final113702311466success. Freshorganization113705081286success; actualPRthreadsnone. No localchecks/nofindings/nomergereleaseclaim. Older missing-reviewgatefailure preserved; currentgate awaitsrealQA.",
-      "next_action": "Post native exactH/base passedQA COMMENT boundto this heldQAcheckpoint, refreshconcisePR/Issuehandoffs. Releaseconfirmfree and immediatelyacquireMaster52 atactualtrunkadb8808/prnull. Verify newestagent-qa-review/currentallrequiredchecks/head/base/reviews/threadsgreen, otherwise truthfulcheckpointreleaseonexternalwait. Onlyaftergreen normalmerge expectedH; retainoriginalparents/tree. Actionsalonepublishesv0.22.32; recoverpublication thenQualitysafebranch/Issuecleanup beforeProduct42/backlog. No fabricatedidentity/providerrootcause/green/publication."
+      "role": "master",
+      "branch": "trunk",
+      "commit": "adb8808d91e0f87017c7cad0ae9d787a7448feee",
+      "pr": null,
+      "summary": "Master52 atactualdefaultadb8808/prnull verifiedPR55open/nonDraft/mergeable exactH2603afca/baseadb8808, sharedidentity nativeSecurity5466717842/Q\u04105466756179 with exactheldcheckpoints/all6paths,0threads. LatestnativeEngineering37895579953/organization113706251537/agent-qa-review113706296585 completedSUCCESS; earliermissingreviewfailure/cancel preserved. SourceCI37894355689/all6requiredjobs, Security37894355686/bothjobs, dynamic37894354391/3analyses/finalCodeQL113702311466 actualgreen. No localchecks. Soleparentoriginalsource/tree preserved; no merge/releaseyet. Manualmerge isunderdefaultleaseprnull so nativeworkbranchdeletion cannot invalidateheldsource. Actualv31publication retained.",
+      "next_action": "Freshownership/default/head/base/allgates checked; performnormalmerge PR55 expectedH2603afca onlywhileheld. Confirmnative defaultmerge parents[adb8808,2603afca] and treedeca142e04655115ed0563e1f39819d4e1548814, exactmergedPR/time/Issue/branch state. Immediatelycheckpointactualtrunkmerge/PR55 with pendingActions-onlypublication. Readnative defaultCI/security/Engineering/release proof once; stop/release at realexternalwait (no busypoll/duplicateCI/manualtagrelease). Whenactualimmutablev32andprivateproof verified, recordpublication thenQualitycleanup/Product42. No arbitrarysecrets/providerconsistency claim."
     },
     "task_reconciliation": {
       "issue": 19,
