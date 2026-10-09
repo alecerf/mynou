@@ -11,7 +11,7 @@ use crate::{
     store::{private_options, reject_symlinks, sync_directory},
 };
 use std::{
-    fs::{self, File},
+    fs,
     io::{ErrorKind, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::atomic::AtomicBool,
