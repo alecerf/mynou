@@ -54,7 +54,7 @@ Open **Setup** from authenticated navigation or **Check setup** on Overview.
 The checklist describes loaded folder settings, active sources and their required
 authentication, enabled native torrent downloads, optional catalog
 credentials and Plex settings. Missing credentials, malformed addresses, disabled
-sources and incompatible source/route settings receive fixed actionable states.
+sources and disabled downloads receive fixed actionable states.
 
 **Configured** describes settings and credential presence. It does not establish
 successful authentication, provider connectivity, writable/private storage or a
