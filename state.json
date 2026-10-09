@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 943,
+  "generation": 944,
   "lease": {
     "id": "codex-recovery-20261009T022916Z-triage-725b5b71-1d96-4b04-a037-aeb44f3e9b76",
     "worker": "codex-recovery-20261009T022916Z",
@@ -792,10 +792,10 @@
       "at": "2026-10-08T11:43:45Z"
     },
     "48": {
-      "approach": "Triage switches unwrap-family fixture diagnostics to explicit Result matching",
-      "fingerprint": "PR53/head5014877:892tests pass; CodeQL113621268688/high alert182 at submission183-186; callback ignored Err but scanner still red",
+      "approach": "Discard private submission Err, extract optional successful job, assert only Boolean presence before destructuring",
+      "fingerprint": "PR53/5c4b41d:892tests+4builds+package+audits pass; final CodeQL113642614564 high183 at static panic185; new boolean-only diagnostic strategy",
       "unchanged": 1,
-      "at": "2026-10-09T01:21:21Z"
+      "at": "2026-10-09T02:46:46Z"
     }
   }
 }
