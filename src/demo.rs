@@ -12,7 +12,7 @@ use std::{
     collections::BTreeMap,
     fs,
     io::{Read, Write},
-    net::TcpListener,
+    net::{TcpListener, TcpStream},
     path::Path,
     sync::{
         Arc,
@@ -21,6 +21,34 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+
+// Never answer an incomplete request with an empty success.
+const BAD_REQUEST: &[u8] =
+    b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+
+/// Reads one request head from an accepted loopback connection and returns its path.
+///
+/// macOS and BSD give an accepted socket the listener's `O_NONBLOCK` flag, while
+/// Linux does not, so a read could fail with `WouldBlock` before the client's
+/// bytes arrived. Reads here are blocking and bounded by a per-read timeout, a
+/// total deadline and 16 KiB; `None` means the head never completed.
+fn read_request(stream: &mut TcpStream, deadline: Instant) -> Option<String> {
+    stream.set_nonblocking(false).ok()?;
+    stream.set_read_timeout(Some(Duration::from_secs(1))).ok()?;
+    let mut request = Vec::new();
+    let mut byte = [0];
+    while request.len() < 16_384 && !request.ends_with(b"\r\n\r\n") {
+        if Instant::now() > deadline || stream.read_exact(&mut byte).is_err() {
+            return None;
+        }
+        request.push(byte[0]);
+    }
+    if !request.ends_with(b"\r\n\r\n") {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&request);
+    text.split_whitespace().nth(1).map(str::to_owned)
+}
 
 pub fn run(directory: &Path) -> Result<Value> {
     if directory.exists() {
@@ -85,18 +113,12 @@ pub fn run(directory: &Path) -> Result<Value> {
         while !stop.load(Ordering::Acquire) {
             match listener.accept() {
                 Ok((mut stream, _)) => {
-                    let _ = stream.set_read_timeout(Some(Duration::from_secs(1)));
                     let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
-                    let mut request = Vec::new();
-                    let mut b = [0];
-                    while request.len() < 16_384 && !request.ends_with(b"\r\n\r\n") {
-                        if stream.read_exact(&mut b).is_err() {
-                            break;
-                        }
-                        request.push(b[0]);
-                    }
-                    let text = String::from_utf8_lossy(&request);
-                    let path = text.split_whitespace().nth(1).unwrap_or("");
+                    let deadline = Instant::now() + Duration::from_secs(5);
+                    let Some(path) = read_request(&mut stream, deadline) else {
+                        let _ = stream.write_all(BAD_REQUEST);
+                        continue;
+                    };
                     let body = if path.starts_with("/watchlist") {
                         json::parse(r#"{"MediaContainer":{"Metadata":[{"type":"movie","title":"Mynou Demo","year":2026}]}}"#).unwrap_or(Value::Null)
                     } else if path.starts_with("/indexer") {
@@ -188,4 +210,53 @@ pub fn run(directory: &Path) -> Result<Value> {
     stopped.store(true, Ordering::Release);
     let _ = stub.join();
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_request;
+    use std::{
+        io::Write,
+        net::{TcpListener, TcpStream},
+        thread,
+        time::{Duration, Instant},
+    };
+
+    fn deadline() -> Instant {
+        Instant::now() + Duration::from_secs(5)
+    }
+
+    #[test]
+    fn fragmented_request_on_an_inherited_nonblocking_stream_is_read_completely() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let client = thread::spawn(move || {
+            let mut stream = TcpStream::connect(address).unwrap();
+            for part in ["GET /all", " HTTP/1.1\r\nHost: demo\r\n", "\r\n"] {
+                thread::sleep(Duration::from_millis(50));
+                stream.write_all(part.as_bytes()).unwrap();
+            }
+        });
+        let (mut stream, _) = listener.accept().unwrap();
+        // Reproduce macOS: the accepted socket keeps the listener's O_NONBLOCK.
+        stream.set_nonblocking(true).unwrap();
+        let path = read_request(&mut stream, deadline());
+        client.join().unwrap();
+        assert_eq!(path.as_deref(), Some("/all"));
+    }
+
+    #[test]
+    fn incomplete_requests_are_never_parsed() {
+        for request in ["", "GET /watchlist HTTP/1.1\r\n"] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let client = thread::spawn(move || {
+                let mut stream = TcpStream::connect(address).unwrap();
+                stream.write_all(request.as_bytes()).unwrap();
+            });
+            let (mut stream, _) = listener.accept().unwrap();
+            client.join().unwrap();
+            assert_eq!(read_request(&mut stream, deadline()), None);
+        }
+    }
 }
