@@ -10,17 +10,20 @@ on:
         type: boolean
         default: false
   schedule:
-    - cron: '23 3 * * 1'
+    # Hourly incremental log audit; it also keeps the coverage receipt fresh.
+    - cron: '41 * * * *'
 permissions:
   contents: read
   actions: read
 concurrency:
-  group: mynou-security-${{ github.event.pull_request.number || github.ref }}
+  # Only a newer pull request head supersedes an audit; default runs never cancel.
+  group: mynou-security-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 env:
   PYTHONDONTWRITEBYTECODE: '1'
 jobs:
   source-history:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -39,9 +42,15 @@ jobs:
           retention-days: 14
           if-no-files-found: error
   actions-logs:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # Log coverage is repository-wide history, not a property of one pull request:
+    # it runs on the default branch, hourly and on dispatch, never as a PR gate.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    # Serialized audits chain their receipts; a queued audit is never cancelled.
+    concurrency:
+      group: mynou-actions-log-audit
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -49,7 +58,7 @@ jobs:
       - name: Audit completed Actions attempt logs without publishing raw logs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MYNOU_FULL_LOG_AUDIT: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full_log_audit) }}
+          MYNOU_FULL_LOG_AUDIT: ${{ github.event_name == 'workflow_dispatch' && inputs.full_log_audit }}
         run: python3 engineering/secret_audit.py logs --output "$RUNNER_TEMP/actions-audit.json"
       - name: Preserve redacted log coverage
         if: always()

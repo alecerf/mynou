@@ -74,6 +74,26 @@ class SecretAuditTests(unittest.TestCase):
                 return iter([{"runner_id": 0, "steps": []}])
         self.assertEqual(audit.audit_attempt(Fake(), (1, 1))["state"], "no-runner-execution")
 
+    def test_retention_deleted_logs_are_expired_not_a_gap(self):
+        class Fake:
+            def get(self, path, archive=False):
+                raise audit.HTTPFailure(410)
+            def pages(self, path, key):
+                return iter([{"runner_id": 1, "steps": [{"status": "completed"}]}])
+        self.assertEqual(audit.audit_attempt(Fake(), (1, 3)),
+                         {"state": "expired", "location": "actions-run:1/attempt:3"})
+
+    def test_inventory_ignores_runs_repeated_by_shifted_pages(self):
+        class Fake:
+            def pages(self, path, key):
+                return iter([{"id": 3}, {"id": 2}, {"id": 2}, {"id": 1}])
+        self.assertEqual([run["id"] for run in audit.inventory(Fake(), None)], [3, 2, 1])
+        class Hostile:
+            def pages(self, path, key):
+                return iter([{"id": True}])
+        with self.assertRaises(audit.AuditError):
+            audit.inventory(Hostile(), None)
+
 
 
 class RequestBudgetTests(unittest.TestCase):
@@ -127,6 +147,16 @@ class RequestBudgetTests(unittest.TestCase):
         budget.observe({"X-RateLimit-Remaining": "300"})
         self.assertEqual(budget.evidence()["observed_rate"]["remaining"], 300)
 
+    def test_capacity_is_the_tighter_of_ceiling_and_observed_reserve(self):
+        budget = audit.RequestBudget()
+        self.assertEqual(budget.capacity(), audit.MAX_API_REQUESTS)
+        budget.begin()
+        self.assertEqual(budget.capacity(), audit.MAX_API_REQUESTS - 1)
+        budget.observe({"X-RateLimit-Remaining": str(audit.API_RESERVE + 7)})
+        self.assertEqual(budget.capacity(), 7)
+        budget.observe({"X-RateLimit-Remaining": "0"})
+        self.assertEqual(budget.capacity(), 0)
+
     def test_missing_headers_still_have_a_hard_request_ceiling(self):
         budget = audit.RequestBudget()
         with patch.object(audit, "MAX_API_REQUESTS", 2):
@@ -159,7 +189,8 @@ class RequestBudgetTests(unittest.TestCase):
         class Fake:
             def __init__(self, repository, token):
                 self.budget = audit.RequestBudget()
-            def pages(self, path, key):
+            def get(self, path, archive=False, limit=None):
+                # The first native request (receipt discovery) is refused.
                 self.budget.begin()
                 self.budget.observe({"X-RateLimit-Limit": "1000",
                                      "X-RateLimit-Remaining": "0"})

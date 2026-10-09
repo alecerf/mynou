@@ -1,6 +1,7 @@
 """CI-only redacted audit of reachable Git objects and completed Actions logs."""
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 import io
 import json
 import os
@@ -14,13 +15,20 @@ import urllib.parse
 import urllib.request
 import zipfile
 
-from log_coverage import Coverage, MAX_ENTRIES, run_identity
+from log_coverage import Coverage, MAX_ENTRIES, instant, moment, run_identity
 
 MAX_OBJECT = 8 * 1024 * 1024
 MAX_ARCHIVE = 64 * 1024 * 1024
 MAX_EXPANDED = 128 * 1024 * 1024
 MAX_API_REQUESTS = 2500
 API_RESERVE = 200
+# A bootstrap lists every run; routine audits stop at their window.
+MAX_PAGES = 1000
+# Archives downloaded per run. A larger backlog continues in the next audit.
+MAX_SCANS = 1000
+# Bump whenever scanning semantics change (what is read or how rules apply), so
+# earlier receipts stop authorizing reuse. Editing RULES changes the policy too.
+SCANNER_VERSION = 1
 RULES = {
     "github-token": rb"(?<![A-Za-z0-9])(?:gh[psoru]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{60,255})(?![A-Za-z0-9])",
     "openai-token": rb"(?<![A-Za-z0-9])sk-(?:proj-)?[A-Za-z0-9_-]{40,255}(?![A-Za-z0-9])",
@@ -72,6 +80,15 @@ class RequestBudget:
         self.lock = Lock()
         self.calls = 0
         self.rate = {}
+
+    def capacity(self):
+        """Requests still available before the hard ceiling or observed reserve."""
+        with self.lock:
+            spare = MAX_API_REQUESTS - self.calls
+            remaining = self.rate.get("remaining")
+            if remaining is not None:
+                spare = min(spare, remaining - API_RESERVE)
+            return max(0, spare)
 
     def require(self, minimum=1):
         with self.lock:
@@ -164,7 +181,7 @@ class API:
 
     def pages(self, path, key):
         separator = "&" if "?" in path else "?"
-        for page in range(1, 101):
+        for page in range(1, MAX_PAGES + 1):
             value = self.get(path + separator + "per_page=100&page=" + str(page))
             rows = value[key]
             yield from rows
@@ -244,20 +261,46 @@ def audit_attempt(api, item):
         jobs = list(api.pages(path + "/jobs", "jobs"))
         if not any(j.get("runner_id") or j.get("steps") for j in jobs):
             return {"state": "no-runner-execution", "location": identity}
+        if error.status == 410:
+            # Retention deleted these logs: nothing remains to expose or scan.
+            return {"state": "expired", "location": identity}
         return {"state": "unavailable", "location": identity, "http": error.status}
     members, found = scan_archive(data, identity)
     return {"state": "scanned", "location": identity, "members": members, "findings": found}
 
 
-def actions_logs(api, coverage=None):
-    runs = list(api.pages("/actions/runs", "workflow_runs"))
-    attempts, pending, seen = [], [], set()
-    bindings = {}
+def inventory(api, since):
+    """Newest-first runs created at or after since; every visible run without it."""
+    runs, seen, older = [], set(), 0
+    for run in api.pages("/actions/runs", "workflow_runs"):
+        run_id = run.get("id")
+        if type(run_id) is not int or not 0 < run_id < 2 ** 63:
+            raise AuditError("Invalid run inventory")
+        if since is not None and moment(run.get("created_at")) < since:
+            older += 1
+            # Runs arrive newest first: a full page of older runs ends the window.
+            if older >= 100:
+                break
+            continue
+        older = 0
+        if run_id in seen:
+            # Runs created during listing shift later pages, so a page can repeat
+            # a run that an earlier page returned. Keep the earlier observation.
+            continue
+        seen.add(run_id)
+        runs.append(run)
+    return runs
+
+
+def actions_logs(api, coverage=None, now=None):
+    now = now or datetime.now(timezone.utc)
+    if coverage is not None:
+        coverage.load()
+    since, deep = coverage.scope(now) if coverage is not None else (None, True)
+    runs = inventory(api, since)
+    attempts, pending, bindings, idle = [], [], {}, set()
     for run in runs:
         run_id = run["id"]
-        if type(run_id) is not int or not 0 < run_id < 2 ** 63 or run_id in seen:
-            raise AuditError("Invalid or duplicate run inventory")
-        seen.add(run_id)
         number = run.get("run_attempt", 1)
         if type(number) is not int or not 1 <= number <= 100:
             raise AuditError("Invalid attempt inventory")
@@ -267,31 +310,43 @@ def actions_logs(api, coverage=None):
         if run["status"] != "completed":
             pending.append("actions-run:" + str(run_id))
             completed -= 1
+        elif run.get("conclusion") == "skipped":
+            # Every job of the latest attempt was skipped: no runner wrote a log.
+            idle.add((run_id, number))
         if len(attempts) + completed > MAX_ENTRIES:
             raise AuditError("Attempt inventory exceeds receipt bound")
         attempts.extend((run_id, a) for a in range(1, completed + 1))
-    if len(attempts) > MAX_ENTRIES:
-        raise AuditError("Attempt inventory exceeds receipt bound")
-    if coverage is not None:
-        coverage.load()
-    reused, uncovered = [], []
-    for run_id, attempt in attempts:
-        row = coverage.covered(bindings[run_id], attempt) if coverage is not None else None
-        if row is None:
-            uncovered.append((run_id, attempt))
-        else:
+    reused, uncovered, skipped = [], [], []
+    for item in attempts:
+        row = coverage.covered(bindings[item[0]], item[1]) if coverage is not None else None
+        if row is not None:
             reused.append(row)
-    api.budget.require(len(uncovered))
+        elif item in idle:
+            skipped.append(item)
+        else:
+            uncovered.append(item)
+    # Newest attempts first. A bounded batch leaves the rest to the next audit, so
+    # no backlog can exceed one run's request ceiling or the observed reserve.
+    uncovered.sort(reverse=True)
+    batch = min(len(uncovered), MAX_SCANS, api.budget.capacity() // 2)
+    if uncovered and not batch:
+        raise BudgetFailure("Observed request capacity is insufficient")
+    selected, deferred = uncovered[:batch], uncovered[batch:]
+    api.budget.require(len(selected))
     found, unavailable, entries = [], [], list(reused)
-    counts = {"scanned": 0, "no-runner-execution": 0}
+    counts = {"scanned": 0, "no-runner-execution": len(skipped), "expired": 0}
     members = 0
+    if coverage is not None:
+        entries.extend({**bindings[run_id], "attempt": attempt,
+                        "state": "no-runner-execution", "members": 0}
+                       for run_id, attempt in skipped)
     # Deterministic CI I/O, never additional AI workers. Only four submissions
     # exist at once; a failure cannot drain a large queued archive inventory.
     with ThreadPoolExecutor(max_workers=4) as pool:
-        for start in range(0, len(uncovered), 4):
+        for start in range(0, len(selected), 4):
             results = list(pool.map(lambda item: audit_attempt(api, item),
-                                    uncovered[start:start + 4]))
-            for item, result in zip(uncovered[start:start + 4], results):
+                                    selected[start:start + 4]))
+            for item, result in zip(selected[start:start + 4], results):
                 if result["state"] == "unavailable":
                     unavailable.append(result["location"])
                     continue
@@ -303,19 +358,24 @@ def actions_logs(api, coverage=None):
                     entries.append({**bindings[run_id], "attempt": attempt,
                                     "state": result["state"],
                                     "members": result.get("members", 0)})
-    report = {"scope": "all completed visible workflow attempts at inventory time",
+    report = {"scope": "completed visible workflow attempts in the audited window",
+              "inventory_at": instant(now),
+              "since": None if since is None else instant(since), "deep": deep,
               "runs_enumerated": len(runs), "attempts_examined": len(attempts),
-              "archives_scanned": counts["scanned"],
-              "archives_reused": sum(row["state"] == "scanned" for row in reused),
-              "attempts_reused": len(reused), "members_scanned": members,
-              "members_reused": sum(row["members"] for row in reused),
-              "attempts_without_execution": counts["no-runner-execution"]
-                  + sum(row["state"] == "no-runner-execution" for row in reused),
-              "pending_runs": pending, "coverage_gaps": unavailable,
-              "findings": found[:100], "finding_count": len(found)}
+              "archives_scanned": counts["scanned"], "attempts_reused": len(reused),
+              "attempts_without_execution": counts["no-runner-execution"],
+              "attempts_expired": counts["expired"], "attempts_deferred": len(deferred),
+              "members_scanned": members, "pending_runs": pending,
+              "coverage_gaps": unavailable, "findings": found[:100],
+              "finding_count": len(found)}
     if coverage is not None:
+        carried = coverage.carried({run["id"] for run in runs}, deep)
+        entries.extend(carried)
         entries.sort(key=lambda row: (row["run_id"], row["attempt"]))
-        report["coverage"] = coverage.receipt(entries)
+        report["attempts_carried"] = len(carried)
+        report["attempts_recorded"] = len(entries)
+        report["coverage"] = coverage.receipt(entries, now, since, deep,
+                                              not deferred and not unavailable)
         report["baseline"] = coverage.baseline
         report["full_sweep"] = coverage.full
     return report
@@ -339,12 +399,17 @@ def main():
             full = args.full or os.environ.get("MYNOU_FULL_LOG_AUDIT") == "true"
             report = actions_logs(api, Coverage(api, full=full))
             report["api_budget"] = api.budget.evidence()
-        report["schema"] = 2 if args.scope == "logs" else 1
+        report["schema"] = 3 if args.scope == "logs" else 1
         report["status"] = ("findings" if report["finding_count"] else
-                            "incomplete" if report["coverage_gaps"] else "passed")
-        Path(args.output).write_text(json.dumps(report, indent=2) + "\n")
+                            "incomplete" if report["coverage_gaps"] else
+                            "partial" if report.get("attempts_deferred") else "passed")
+        # Compact JSON keeps a month of attempt receipts far below the bound.
+        Path(args.output).write_text(json.dumps(report, separators=(",", ":")) + "\n")
         print(json.dumps({key: value for key, value in report.items() if key != "coverage"}))
-        return 0 if report["status"] == "passed" else 1
+        if report["status"] == "partial":
+            print("::notice title=Actions log audit::" + str(report["attempts_deferred"])
+                  + " uncovered attempts continue in the next audit")
+        return 0 if report["status"] in ("passed", "partial") else 1
     except Exception as error:
         # Do not print exception messages/URLs/bodies or raw downloaded contents.
         report = {"schema": 1, "status": "error", "error_type": type(error).__name__}
