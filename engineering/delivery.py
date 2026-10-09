@@ -83,13 +83,28 @@ def dispatch_default_ci(api, identity, commit):
     return checkpoint_publication(api, identity, commit, "accepted")
 
 
+def failed_ancestor_superseded(api, previous, run, current):
+    """A failed default CI can only be resolved by fixing forward.
+
+    Only a recorded ci-failed commit whose own native run completed without
+    success, and which is a strict ancestor of the current default head, is
+    superseded. Pending, unknown or unverified records and unrelated heads stay
+    fail-closed; the new head still needs its own CI and publication proof."""
+    if previous.get("state") != "ci-failed" or run is None:
+        return False
+    if run["status"] != "completed" or run.get("conclusion") == "success":
+        return False
+    return api.rest("GET", f"compare/{previous['commit']}...{current}").get("status") == "ahead"
+
+
 def recover_publication(api, head, state, prs):
     current = api.ref(api.cfg["default_branch"])
     previous = state["checkpoint"].get("publication", {})
     if previous.get("commit") and previous["commit"] != current and previous.get("state") != "ci-passed":
         run = default_ci_run(api, previous["commit"])
         if run is None or run["status"] != "completed" or run.get("conclusion") != "success":
-            raise ValueError("Unfinished exact-source publication has a changed default head; return to Triage")
+            if not failed_ancestor_superseded(api, previous, run, current):
+                raise ValueError("Unfinished exact-source publication has a changed default head; return to Triage")
     for pr in prs[:20]:
         if not pr.get("merged_at") or pr.get("merge_commit_sha") != current or pr["base"]["ref"] != api.cfg["default_branch"]:
             continue
