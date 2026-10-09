@@ -146,3 +146,12 @@ GitHub REST offers no expected-SHA conditional deletion. Fresh exact-head and
 ownership checks plus preserved notes intent are the strongest supported guard;
 out-of-band administrators do not share the lease. No stronger guarantee is
 claimed. All tests, scans and validation execute only in CI.
+
+## Schema 3 worker table (opt-in)
+
+After the reviewed `enable-team` transition, `state.json` is schema 3: the same
+fields plus `workers` (lease id -> worker lease with `areas`, `exclusive` and its
+own `checkpoint`), at most 16 entries, one per Issue, and `max_active_agents`
+2-8. The serial `lease` stays the singleton delivery/migration lease. Every write
+is the unchanged sole-parent non-force CAS on the canonical ref. Schema-1
+tooling fails closed on schema 3 rather than overwriting it.

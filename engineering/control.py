@@ -4,9 +4,14 @@ import json
 import sys
 import uuid
 
-from github import APIError, GitHub, ROOT, control_reference
+from github import APIError, GitHub, ROOT, control_reference, team_policy
 import lease
 import migration
+
+
+def team_cap(cfg):
+    policy = team_policy(cfg)
+    return None if policy is None else policy["max_active_agents"]
 
 
 def labels(issue):
@@ -76,7 +81,73 @@ def product_planning(state, issues, policy, at):
         "instruction": "Acquire one Product lease on the configured planning Issue; review known evidence, maintain bounded native proposals, checkpoint and return the Issue to Blocked. Do not invent work."}
 
 
+def priority(issue):
+    names = labels(issue)
+    p = next((n for n in range(4) if f"priority:p{n}" in names), 2)
+    return p, "origin:user" not in names, issue["number"]
+
+
+def select_team(state, issues, at, planning=None):
+    """Assign Issues up to capacity; drain when the next priority is exclusive."""
+    items = []
+    if state["lease"] is not None and not lease.valid(state, at):
+        items.append({"action": "recover", "issue": state["lease"]["issue"], "serial": True})
+    for held in sorted(lease.expired(state, at), key=lambda w: w["issue"]):
+        items.append({"action": "recover", "issue": held["issue"], "lease": held["id"]})
+    running = lease.live(state, at)
+    taken = {w["issue"] for w in state["workers"].values()}
+    managed = [i for i in issues if i.get("state") == "open" and "pull_request" not in i
+        and "agent-work" in labels(i) and i["number"] not in taken]
+    queue = [("recover", i) for i in sorted(managed, key=lambda i: i["number"])
+        if labels(i) & {"status:in-progress", "status:review"}]
+    queue += [("triage", i) for i in sorted(managed, key=lambda i: i["number"])
+        if state["attempts"].get(str(i["number"]), {}).get("unchanged", 0) >= 3
+        and not labels(i) & {"status:in-progress", "status:review"}]
+    planned = product_planning(state, managed, planning, at)
+    ready = [i for i in managed if "status:blocked" not in labels(i)
+        and not labels(i) & {"status:in-progress", "status:review"}
+        and state["attempts"].get(str(i["number"]), {}).get("unchanged", 0) < 3
+        and (not planning or i["number"] != planning["issue"])]
+    if planned and not any("origin:user" in labels(i) or "priority:p0" in labels(i)
+            or bool(labels(i) & {"origin:security", "risk:critical"}) for i in ready):
+        anchor = next(i for i in managed if i["number"] == planned["issue"])
+        queue.append(("plan-product", anchor))
+    queue += [("triage" if "status:ready" not in labels(i) else "work", i) for i in sorted(ready, key=priority)]
+    assignments, used = [], {a for w in running for a in w["areas"]}
+    free = slots = state["max_active_agents"] - len(running)
+    blocked = any(w["exclusive"] for w in running)
+    for action, issue in queue:
+        try:
+            areas, exclusive = lease.scope(labels(issue))
+        except ValueError:
+            continue  # Malformed area labels fail closed for that Issue only.
+        if blocked or free <= 0:
+            break
+        if exclusive:
+            # Never starve exclusive work by starting lower-priority parallel work.
+            if not running and not assignments:
+                assignments.append({"action": action, "issue": issue["number"], "areas": areas, "exclusive": True})
+            break
+        if used & set(areas):
+            continue
+        assignments.append({"action": action, "issue": issue["number"], "areas": areas, "exclusive": False})
+        used |= set(areas)
+        free -= 1
+    items += assignments
+    head = {"capacity": max(slots, 0), "valid_workers": len(running), "assignments": items}
+    if items:
+        return dict(head, action=items[0]["action"], issue=items[0]["issue"],
+            instruction="Recover listed expired leases first, then acquire one Issue lease per assignment; the server re-checks areas and capacity.")
+    if blocked or running and not queue:
+        return dict(head, action="busy", instruction="Do no unrelated work; an exclusive or running worker owns the team.")
+    if not queue:
+        return dict(head, action="idle", instruction="No executable valuable backlog or new planning evidence. Do not invent work or repeatedly rescan.")
+    return dict(head, action="no-capacity", instruction="Worker cap reached or areas overlap; wait for a release without polling.")
+
+
 def select(state, issues, at, planning=None):
+    if lease.is_team(state):
+        return select_team(state, issues, at, planning)
     if lease.valid(state, at):
         return {"action": "busy", "lease": state["lease"], "instruction": "Do no engineering work; exit without polling."}
     if state["lease"] is not None:
@@ -98,10 +169,6 @@ def select(state, issues, at, planning=None):
         return planned
     if not ready:
         return {"action": "idle", "instruction": "No executable valuable backlog or new planning evidence. Do not invent work or repeatedly rescan."}
-    def priority(issue):
-        names = labels(issue)
-        p = next((n for n in range(4) if f"priority:p{n}" in names), 2)
-        return p, "origin:user" not in names, issue["number"]
     chosen = min(ready, key=priority)
     attempt = state["attempts"].get(str(chosen["number"]), {})
     if attempt.get("unchanged", 0) >= 3:
@@ -150,7 +217,12 @@ def recovery_evidence(api, held):
     return evidence
 
 
-def recover_native(api, state, at):
+def recover_native(api, state, at, identity=None):
+    if identity is not None:
+        held = state.get("workers", {}).get(identity)
+        if held is None or lease.time(held["expires_at"]) > at:
+            raise ValueError("No expired worker lease to recover")
+        return lease.recover_worker(state, at, identity, recovery_evidence(api, held))
     held = state["lease"]
     if held is None or lease.valid(state, at):
         raise ValueError("No expired lease to recover")
@@ -206,7 +278,7 @@ def main():
     at = lease.now()
     if args.command == "branch-cleanup":
         import delivery
-        held = lease.owned(state, args.lease, at)
+        held = lease.holder(state, args.lease, at)
         if held["role"] not in ("quality", "triage") or not args.branch or not args.commit:
             raise ValueError("Cleanup requires Quality/Triage ownership and an exact branch head")
         print(json.dumps(delivery.cleanup_branch(api, args.branch, args.commit, held), indent=2))
@@ -216,7 +288,7 @@ def main():
         return
     if args.command == "wake":
         # Admission happens before any backlog/domain investigation.
-        issues = [] if state["lease"] is not None else api.pages("issues?state=open&labels=agent-work")
+        issues = [] if state["lease"] is not None and not lease.is_team(state) else api.pages("issues?state=open&labels=agent-work")
         action = select(state, issues, at, api.cfg.get("product_planning"))
         if action["action"] == "idle":
             import qa
@@ -240,30 +312,40 @@ def main():
             raise ValueError("Open native dependencies block implementation")
         api.rest("GET", "git/commits/" + args.commit)
         identity = str(uuid.uuid4())
-        value = lease.acquire(state, at, identity, args.worker, args.role, args.issue, args.branch, args.commit, args.pr)
-    elif args.command == "checkpoint":
-        if args.commit:
-            api.rest("GET", "git/commits/" + args.commit)
-        value = lease.checkpoint(state, at, identity, args.summary, args.next, args.commit, args.pr)
-    elif args.command == "release":
-        previous = lease.owned(state, identity, at)
-        if any(state["checkpoint"].get(key) != previous[key] for key in ["issue", "role", "branch", "commit"]) or lease.time(state["checkpoint"].get("at")) < lease.time(previous["acquired_at"]):
-            raise ValueError("Checkpoint this work before releasing its lease")
-        value = lease.release(state, at, identity)
+        if lease.is_team(state):
+            if team_cap(api.cfg) is None or state["max_active_agents"] > team_cap(api.cfg):
+                raise ValueError("Team mode is not enabled by reviewed configuration")
+            value = lease.acquire_worker(state, at, identity, args.worker, args.role, args.issue,
+                args.branch, args.commit, args.pr, sorted(labels(issue)))
+        else:
+            value = lease.acquire(state, at, identity, args.worker, args.role, args.issue, args.branch, args.commit, args.pr)
     elif args.command == "recover":
-        value = recover_native(api, state, at)
+        value = recover_native(api, state, at, identity)
     else:
-        value = lease.attempt(state, at, identity, args.approach, args.fingerprint)
+        worker = identity is not None and identity in state.get("workers", {})
+        if args.command == "checkpoint":
+            if args.commit:
+                api.rest("GET", "git/commits/" + args.commit)
+            value = (lease.checkpoint_worker if worker else lease.checkpoint)(state, at, identity, args.summary, args.next, args.commit, args.pr)
+        elif args.command == "release":
+            previous = lease.holder(state, identity, at)
+            record = previous["checkpoint"] if worker else state["checkpoint"]
+            if record is None or any(record.get(key) != previous[key] for key in ["issue", "role", "branch", "commit"]) or lease.time(record.get("at")) < lease.time(previous["acquired_at"]):
+                raise ValueError("Checkpoint this work before releasing its lease")
+            value = (lease.release_worker if worker else lease.release)(state, at, identity)
+        else:
+            previous = lease.holder(state, identity, at)
+            value = (lease.attempt_worker if worker else lease.attempt)(state, at, identity, args.approach, args.fingerprint)
     sha = save(api, head, value, "Engineering " + args.command)
     # A label failure never pretends the already durable lease transition failed.
     try:
         if args.command == "acquire":
             label_update(api, args.issue, "role", args.role if args.role in roles else "master")
             label_update(api, args.issue, "status", "review" if args.role == "qa" else "in-progress")
-        elif args.command == "attempt" and value["lease"] is None:
-            label_update(api, state["lease"]["issue"], "status", "blocked")
+        elif args.command == "attempt" and (previous["id"] not in value.get("workers", {}) if worker else value["lease"] is None):
+            label_update(api, previous["issue"], "status", "blocked")
         if args.command == "release":
-            handoff(api, state["lease"], value["checkpoint"], sha)
+            handoff(api, previous, record, sha)
     except (APIError, RuntimeError, ValueError):
         print("Native metadata/handoff update incomplete; lease/checkpoint is durable. Recover metadata on the next CI, scheduled or worker wake.", file=sys.stderr)
     print(json.dumps({"control_sha": sha, "lease_id": identity, "state": value}, indent=2))

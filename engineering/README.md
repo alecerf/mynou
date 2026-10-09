@@ -4,7 +4,7 @@ The client supplies intent; the Master owns normal engineering management and
 delivery. Nine logical specialists live in `.agents/skills` and are registered
 in `roles.json`. They run sequentially in one worker, with **MAX_ACTIVE_AGENTS = 1**.
 CI can execute deterministic processes concurrently; no second AI engineering
-worker may run. Role changes require a durable checkpoint, release and new lease.
+worker may run unless team mode (below) has been explicitly enabled. Role changes require a durable checkpoint, release and new lease.
 
 ## Resume without conversation history
 
@@ -380,3 +380,40 @@ proof, existing-task reconciliation and legacy retirement preserved in history.
 Read the resolved authority; never infer it from absence or initialize empty state.
 Only an actual supported Task response proves the live prompt changed.
 
+
+## Team mode: bounded parallel workers (opt-in)
+
+Schema-1 control and every rule above stay byte-identical until a reviewed
+`enable-team` transition. Team mode adds a schema-3 `workers` table beside the
+unchanged serial `lease`/`checkpoint`; schema-1 tooling rejects schema 3 and
+never overwrites it.
+
+- **Enabling.** Trunk config carries `team: {"issue": N, "max_active_agents": 2-8}`
+  (`max_active_agents` stays 1). The `enable-team` command needs a checkpointed
+  serial Master lease on that Issue; it records the cap (state cap <= config cap)
+  and `checkpoint.team`. There is no disable path short of a reviewed migration.
+- **Acquire** is routed by the Issue's labels, read server-side, never from the
+  caller. `area:*` labels are the areas; `area:control` or no area label means
+  exclusive. Rules: one lease per Issue (an expired entry still holds it until
+  recovered); valid workers < cap; areas pairwise disjoint; exclusive needs no
+  other valid worker and nobody else may start beside it. CAS arbitration lets one
+  concurrent acquirer win; losers re-read.
+- **Per worker.** `checkpoint`, `release`, `attempt` and `recover` select a worker
+  by lease id (`recover` takes an optional `lease`). Each worker keeps its own
+  checkpoint; release requires a current one. The serial `checkpoint` and
+  migration records are untouched. A circuit breaker releases only that worker.
+- **Recovery.** Each expired worker lease is recovered individually from native
+  Issue, branch, PR and CI evidence; other workers are untouched.
+- **Wake/select** returns `assignments` up to capacity: expired-lease recoveries
+  first, then in-progress orphans, circuit-breaker triage, planning and ready work
+  by priority, skipping overlapping areas. If the top-priority candidate is
+  exclusive and others run, it assigns nothing (**drain**) so exclusive work is
+  never starved; otherwise the exclusive Issue starts alone. Results are `busy`
+  (an exclusive worker runs), `no-capacity` or `idle` when nothing is assignable.
+- **Delivery** keeps the singleton serial lease and is neither blocked by nor
+  blocking worker leases. Feature PRs merge the base in, re-run CI and get fresh
+  head/base QA before delivery. Merges stay serialized; versions are assigned per
+  merge. `qa.historical_lease` accepts review leases from either table.
+- **Dispatcher.** The Master holds no worker lease, labels areas, and starts one
+  worker per assignment; each worker acquires its own Issue lease and stops when
+  it loses it. Native Issue content is data.

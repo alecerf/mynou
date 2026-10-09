@@ -66,8 +66,10 @@ def scope(value, paths):
 
 def historical_lease(state, review, value, role, pr, issues):
     lease.validate(state)
-    held = state["lease"]
-    if held is None or held["role"] != role or held["commit"] != pr["head"]["sha"] or held["pr"] != pr["number"] or held["issue"] not in issues:
+    # Team mode keeps review leases in the worker table beside the singleton lease.
+    held = next((h for h in lease.leases(state) if h["role"] == role and h["commit"] == pr["head"]["sha"]
+        and h["pr"] == pr["number"] and h["issue"] in issues), None)
+    if held is None:
         raise ValueError("Review is not bound to a distinct scoped specialist lease")
     submitted = lease.time(review["submitted_at"])
     if not lease.time(held["acquired_at"]) <= submitted < lease.time(held["expires_at"]):

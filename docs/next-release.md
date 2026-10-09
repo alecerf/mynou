@@ -1,4 +1,17 @@
-# Current work — proposed 0.22.32 fresh engineering authority reads
+# Current work — proposed 0.22.37 opt-in parallel engineering team
+
+[Issue 58](https://github.com/alecerf/mynou/issues/58) adds a bounded, opt-in team
+model: per-worker leases with server-read `area:*` labels, a capacity cap,
+exclusive `area:control` work that drains the team, individual expired-lease
+recovery and a singleton delivery lease. Schema-1 behavior is unchanged until the
+reviewed `enable-team` transition. See [scope](releases/0.22.37.md). Versions
+0.22.33-0.22.36 are reserved by other in-flight work; this source stays proposed
+until CI, distinct exact-head/base Security/QA and Actions publication complete.
+No local validation.
+
+## Earlier proposed 0.22.32 scope
+
+Fresh engineering authority reads (proposed 0.22.32):
 
 Actions actually published immutable [v0.22.31](https://github.com/alecerf/mynou/releases/tag/v0.22.31)
 at `adb8808d91e0f87017c7cad0ae9d787a7448feee` in successful seven-job

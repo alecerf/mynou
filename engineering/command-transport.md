@@ -94,3 +94,11 @@ All commands use reviewed fixed legacy/notes refs; no caller selects a path,
 script or arbitrary authority. See [cutover and interruption
 recovery](control-storage.md). A queued command is not proof of success.
 Actual receipts, Actions and ref/history must be inspected.
+
+## Team commands
+
+`enable-team` takes `worker` and `lease` and is accepted only once, from schema 1,
+with a checkpointed Master lease on the configured team Issue. In schema 3,
+`acquire` creates a worker lease (areas come from server-read Issue labels);
+`checkpoint`, `release` and `attempt` select a worker lease by `lease`; `recover`
+may carry `{"lease": id}` for one expired worker. Schema-1 argument sets stay exact.

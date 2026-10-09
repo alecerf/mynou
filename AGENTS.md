@@ -10,6 +10,11 @@ decisions that cannot responsibly be inferred.
 - **MAX_ACTIVE_AGENTS = 1.** Use one worker with sequential specialist roles.
   Never launch a child/cloud/CLI worker while the current worker is active.
   CI processes are deterministic machinery, not engineering agents.
+- **Team mode** (opt-in, schema 3; see the runbook) lifts that cap only after the
+  reviewed `enable-team` transition and the config `team` bound. Then one lease
+  per Issue, valid workers below the cap, pairwise-disjoint `area:*` labels read
+  server-side; `area:control` or no area is exclusive and drains the team.
+  Delivery stays one singleton lease; merges stay serialized. Lose a lease, stop.
 - GitHub is durable memory. Acquire the renewable canonical Git-ref lease
   before engineering work; use configuration and `engineering/control-storage.md`. Checkpoint to pushed commits and Issues/PRs; release
   before another role. Stop immediately if ownership or renewal is lost.

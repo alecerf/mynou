@@ -7,7 +7,7 @@ import re
 import sys
 
 import control
-from github import APIError, GitHub, ROOT
+from github import APIError, GitHub, ROOT, team_policy
 import lease
 import migration
 
@@ -34,7 +34,10 @@ COMMANDS = {
     "recover-fence": {"worker"},
     "repair-checkpoint": {"worker"},
     "retire-control": {"worker", "lease", "notes_proof_sha", "task_receipt_id"},
+    "enable-team": {"worker", "lease"},
 }
+# Team mode selects a worker lease by id; the schema-1 argument sets stay exact.
+VARIANTS = {"recover": {"lease"}}
 
 
 class Rejected(ValueError):
@@ -86,8 +89,8 @@ def payload(body):
     require(isinstance(command, str) and command in COMMANDS, "unsupported-command")
     require(sha(value["expected_sha"]), "invalid-expected-sha")
     args = value["args"]
-    exact_keys(args, COMMANDS[command])
-    if command not in {"acquire", "recover", "recover-fence", "repair-checkpoint"}:
+    exact_keys(args, VARIANTS[command] if command in VARIANTS and isinstance(args, dict) and "lease" in args else COMMANDS[command])
+    if command not in {"acquire", "recover", "recover-fence", "repair-checkpoint"} or "lease" in args:
         require(identity(args["lease"]), "invalid-lease-identity")
     if "worker" in args:
         require(identity(args["worker"]), "invalid-worker-identity")
@@ -174,9 +177,10 @@ def source_scope(api, execution_branch, commit, pr_number, issue_number):
 def transition(api, state, value, at, comment_id):
     args, command = value["args"], value["command"]
     if command == "recover":
-        return control.recover_native(api, state, at)
+        return control.recover_native(api, state, at, args.get("lease"))
+    team = lease.is_team(state)
     if command == "acquire":
-        require(state["lease"] is None, "lease-not-free")
+        require(team or state["lease"] is None, "lease-not-free")
         roles = json.loads((ROOT / "engineering/roles.json").read_text())["roles"]
         require(args["role"] in roles, "unregistered-role")
         require(args["role"] not in {"qa", "security"} or args["pr"] is not None, "review-requires-pr")
@@ -186,10 +190,31 @@ def transition(api, state, value, at, comment_id):
         blockers = api.pages(f"issues/{args['issue']}/dependencies/blocked_by")
         require(args["role"] in {"master", "triage"} or not any(i["state"] == "open" for i in blockers), "open-native-blocker")
         source_scope(api, args["branch"], args["commit"], args["pr"], args["issue"])
+        if team:
+            # Areas are read server-side from the Issue labels, never from the command.
+            cap = control.team_cap(api.cfg)
+            require(cap is not None and state["max_active_agents"] <= cap, "team-not-enabled")
+            return lease.acquire_worker(state, at, f"comment-{comment_id}", args["worker"], args["role"],
+                args["issue"], args["branch"], args["commit"], args["pr"], sorted(control.labels(issue)))
         return lease.acquire(state, at, f"comment-{comment_id}", args["worker"], args["role"],
             args["issue"], args["branch"], args["commit"], args["pr"])
-    held = lease.owned(state, args["lease"], at)
+    if command == "enable-team":
+        policy = team_policy(api.cfg)
+        require(policy is not None and not team, "team-not-enableable")
+        held = lease.owned(state, args["lease"], at)
+        require(held["worker"] == args["worker"], "wrong-lease-worker")
+        return lease.enable_team(state, at, args["lease"], policy["issue"], policy["max_active_agents"])
+    worker = team and args["lease"] in state["workers"]
+    held = lease.owned_worker(state, args["lease"], at) if worker else lease.owned(state, args["lease"], at)
     require(held["worker"] == args["worker"], "wrong-lease-worker")
+    if worker:
+        if command == "checkpoint":
+            source_scope(api, held["branch"], args["commit"], args["pr"] or held["pr"], held["issue"])
+            return lease.checkpoint_worker(state, at, args["lease"], args["summary"], args["next_action"], args["commit"], args["pr"])
+        if command == "release":
+            return lease.release_worker(state, at, args["lease"])
+        require(command == "attempt", "probe-role-forbidden")
+        return lease.attempt_worker(state, at, args["lease"], args["approach"], args["fingerprint"])
     if command == "checkpoint":
         source_scope(api, held["branch"], args["commit"], args["pr"] or held["pr"], held["issue"])
         result = lease.checkpoint(state, at, args["lease"], args["summary"], args["next_action"], args["commit"], args["pr"])
@@ -276,12 +301,14 @@ def execute(api, event, at, actor, triggering_actor):
         fresh_head, fresh = control.read_state(api)
         require(fresh_head == head, "ownership-head-changed")
         if value["command"] not in {"acquire", "recover"}:
-            lease.owned(fresh, value["args"]["lease"], lease.now())
+            lease.holder(fresh, value["args"]["lease"], lease.now())
         sha_result = control.save(api, head, next_state, f"Control comment {comment_id}: {value['command']}")
         actual_head, actual_state = control.read_state(api)
         require(actual_head == sha_result and actual_state == next_state, "control-write-unconfirmed")
         result = {"schema": 1, "command_id": comment_id, "command": value["command"],
             "control_sha": sha_result, "lease_id": None if next_state["lease"] is None else next_state["lease"]["id"]}
+        if value["command"] == "acquire" and f"comment-{comment_id}" in next_state.get("workers", {}):
+            result["lease_id"] = f"comment-{comment_id}"
     # Receipt loss never rolls back committed progress. Read Git before retrying.
     api.rest("POST", f"issues/{api.cfg['control_commands']['issue']}/comments",
         {"body": RECEIPT + "\n" + FENCE + "json\n" + json.dumps(result, indent=2) + "\n" + FENCE})

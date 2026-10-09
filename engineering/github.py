@@ -97,10 +97,23 @@ def ref_commit(value, expected_ref):
     return sha
 
 
+def team_policy(cfg):
+    """Opt-in parallel team bound. `max_active_agents` stays the serial default of 1."""
+    value = cfg.get("team")
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) != {"issue", "max_active_agents"} \
+            or type(value["issue"]) is not int or value["issue"] < 1 \
+            or type(value["max_active_agents"]) is not int or not 2 <= value["max_active_agents"] <= 8:
+        raise ValueError("Invalid team policy; it needs the reviewed Issue and a cap of 2-8")
+    return value
+
+
 def config():
     value = json.loads((ROOT / ".github/engineering.json").read_text())
     if value.get("schema") != 1 or value.get("max_active_agents") != 1:
         raise ValueError("Unsupported organization schema or concurrency")
+    team_policy(value)
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", value["repository"]):
         raise ValueError("Invalid GitHub repository")
     control_reference(value)

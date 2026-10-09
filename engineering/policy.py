@@ -6,7 +6,7 @@ import re
 import subprocess
 import tomllib
 
-from github import control_reference
+from github import control_reference, team_policy
 
 ROOT = Path(__file__).resolve().parent.parent
 TOKEN = re.compile(rb"(?<![A-Za-z0-9])(?:gh[psoru]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{60,255}|sk-(?:proj-)?[A-Za-z0-9_-]{40,255})(?![A-Za-z0-9])")
@@ -20,6 +20,8 @@ def check_execution(cfg):
     assert cfg["lease_minutes"] == 45
     assert type(cfg["heartbeat_minutes"]) is int and 1 <= cfg["heartbeat_minutes"] <= 15
     assert cfg["no_progress_limit"] == 3
+    team = team_policy(cfg)
+    assert team is None or team["max_active_agents"] <= 8
 
 
 def check_product(cfg, catalog):
@@ -50,6 +52,7 @@ def check(root=ROOT):
     assert len(instructions.splitlines()) <= 65
     assert "MAX_ACTIVE_AGENTS = 1" in instructions and "No local tests" in instructions
     assert "zero Cargo dependencies" in instructions and "CI" in instructions
+    assert "Team mode" in instructions and "area:control" in instructions
     cargo = tomllib.loads((root / "Cargo.toml").read_text())
     assert not any(cargo.get(k) for k in ["dependencies", "dev-dependencies", "build-dependencies"])
     for target in cargo.get("target", {}).values():
