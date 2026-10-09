@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 882,
+  "generation": 883,
   "lease": {
     "id": "codex-recovery-20261009T002551Z-rust-89274b3e-e459-4e3a-8bc2-bc93bb175710",
     "worker": "codex-recovery-20261009T002551Z",
     "role": "rust",
     "issue": 48,
     "acquired_at": "2026-10-09T00:38:56Z",
-    "heartbeat_at": "2026-10-09T00:38:56Z",
-    "expires_at": "2026-10-09T01:23:56Z",
+    "heartbeat_at": "2026-10-09T00:46:31Z",
+    "expires_at": "2026-10-09T01:31:31Z",
     "branch": "work/48-safari-origin",
-    "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
-    "pr": null
+    "commit": "e54416056cee089fa92e588089515a34cd5fa019",
+    "pr": 53
   },
   "checkpoint": {
-    "at": "2026-10-09T00:37:40Z",
+    "at": "2026-10-09T00:46:31Z",
     "issue": 48,
-    "role": "triage",
-    "branch": "trunk",
-    "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
-    "pr": null,
-    "summary": "Triage48 selected highest-priority native user Safari/API-key login report after44/50actualpublication/cleanup. Exactdefault b11d88d5e9dd67d45980ba6c85716811dd6d3101: same_origin unconditionally requiresOrigin andbrowserresponses no-referrer remove fallback; nativeHTMLforms/noJS, Host/session/CSRF/binding andstrictrequestparser inspected. Native48acceptance records absent-Origin-only validatedHTTP/HTTPSsame-originReferer plus same-originresponsepolicy; null/presentinvalidOrigin mustreject, crosssite metadata/CSRF/APIisolation/HTTPSschemeportremain. OriginalCI-only HTTPstateprivacy cases planned; no localchecks or actualSafari/platformreproduction claimed. Riskhigh/P1/originUser/Ready; lower-priority52unrelated.",
-    "next_action": "ReleaseTriage48, create/reuse work/48-safari-origin from exactcurrentremote defaultunderRust48lease. Implement bounded nativeform-origin fallback andsame-originpolicy, originalCI regression cases, English docs/proposedv0.22.31, one linkedPR48. FreshCI then distinctSecurity/full-diffQA at exacthead/base andallgates; Actions-onlyrelease. Preserveactualpubv30controlrecord.",
+    "role": "rust",
+    "branch": "work/48-safari-origin",
+    "commit": "e54416056cee089fa92e588089515a34cd5fa019",
+    "pr": 53,
+    "summary": "Rust48 persisted original source e54416056cee089fa92e588089515a34cd5fa019/tree6a2ef03858d58f7e7cd340abd3209e6e980def40 onwork/48-safari-origin, soleparent/defaultbase b11d88d5e9dd67d45980ba6c85716811dd6d3101, one linkedPR53. Eight paths proposev0.22.31: absent-Origin-only boundedHTTP/HTTPSReferer parsed withnormalizedauthority; presentinvalidOrigin/crosssite metadata stayrejecting. Browserpolicy same-origin permitsfallbackwithoutcrossoriginpropagation; session/CSRF/token/cookie/API/CSPunchanged. Five original real-listener CI regression journeys cover login/action/logout,hostileprovenance,credentialgates,HTTPSorigin/defaultport/IPv6; setupheaderassert and Englishdocsupdated. Native searchfoundall3no-referrer referencesaddressed. No localchecks, browserengineexecution orgreenCI/merge/publication claim.",
+    "next_action": "Inspect actual PR sourceCI; fix source/format failures throughcommits underRust, not localchecks. Onceimplementationready, releaseRust and acquire exact-head/base Security53 forcompleteactualdiff review; then separateQAonlywithrequiredactualCIgreen. Everyobjectivegate beforeMastermerge; Actionsalonepublishv31. Preserve actualv30publication/source andseparateNeedsTriage52.",
     "publication": {
       "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
       "state": "published",
@@ -563,14 +563,14 @@
       "publication_pr_handoff": 6062225589
     },
     "previous_checkpoint": {
-      "at": "2026-10-09T00:34:00Z",
-      "issue": 44,
-      "role": "quality",
+      "at": "2026-10-09T00:37:40Z",
+      "issue": 48,
+      "role": "triage",
       "branch": "trunk",
       "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
       "pr": null,
-      "summary": "Quality44 final cleanup: originalPR49/source1644b2fc41f5850221a3f42a8fe31f984d659263 remains an ancestor of currentdefault b11d88d5e9dd67d45980ba6c85716811dd6d3101; historical native Security/QA and objective source gates retained. Native blocker50 closed/Done, actualblocked_by list has no open blocker. Immutablev29 preserved; currentv30 release407323363/CI37855541518/all7jobs/actualprivate proof were verified and canonical published receipt/time recorded atba4917ab979190f2b031a887173ac2da1082305a. Both merged workbranches native404, no blinddeletion.44acceptance now met: current native publication persisted, actualpublicationtime newer thanstandingProduct42updated_at, unchanged-source terminal/fail-closed policy retained. Post-record releaseCAS failure separatelyNeedsTriage52, no source/guard change here.",
-      "next_action": "Close44/Done with native review/publication/dependency/branch preservation evidence, then releaseQuality44 and acquireTriage48 at exactcurrentdefault. User Safari login report outranks newProduct planning and lower-priority reliability52; no local reproduction/checks, inspect code/evidence and define CI-only acceptance."
+      "summary": "Triage48 selected highest-priority native user Safari/API-key login report after44/50actualpublication/cleanup. Exactdefault b11d88d5e9dd67d45980ba6c85716811dd6d3101: same_origin unconditionally requiresOrigin andbrowserresponses no-referrer remove fallback; nativeHTMLforms/noJS, Host/session/CSRF/binding andstrictrequestparser inspected. Native48acceptance records absent-Origin-only validatedHTTP/HTTPSsame-originReferer plus same-originresponsepolicy; null/presentinvalidOrigin mustreject, crosssite metadata/CSRF/APIisolation/HTTPSschemeportremain. OriginalCI-only HTTPstateprivacy cases planned; no localchecks or actualSafari/platformreproduction claimed. Riskhigh/P1/originUser/Ready; lower-priority52unrelated.",
+      "next_action": "ReleaseTriage48, create/reuse work/48-safari-origin from exactcurrentremote defaultunderRust48lease. Implement bounded nativeform-origin fallback andsame-originpolicy, originalCI regression cases, English docs/proposedv0.22.31, one linkedPR48. FreshCI then distinctSecurity/full-diffQA at exacthead/base andallgates; Actions-onlyrelease. Preserveactualpubv30controlrecord."
     },
     "task_reconciliation": {
       "issue": 19,
