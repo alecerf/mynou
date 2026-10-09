@@ -347,34 +347,6 @@ impl Engine {
         Ok((record, submitted))
     }
 
-    /// Export the complete chosen window as iCalendar text; never a partial page.
-    pub fn episode_calendar_ics(&self, query: &CalendarQuery) -> Result<String> {
-        query.validate()?;
-        let records = lock(&self.series_store)?.list();
-        let entries = window(&records, query);
-        if entries.len() > super::ical::MAX_EVENTS {
-            return Err(format!(
-                "This window has {} known episode dates, above the {} that one file can hold; narrow the dates or choose one series",
-                entries.len(),
-                super::ical::MAX_EVENTS
-            ));
-        }
-        let events: Vec<_> = entries
-            .iter()
-            .filter_map(|(record, episode)| {
-                Some(super::ical::Event {
-                    series_id: &record.id,
-                    series_title: &record.plan.request.title,
-                    season: episode.season,
-                    episode: episode.episode,
-                    episode_title: &episode.title,
-                    air_date: episode.air_date.as_deref()?,
-                })
-            })
-            .collect();
-        super::ical::render(&events)
-    }
-
     pub fn episode_calendar(&self, query: &CalendarQuery) -> Result<Value> {
         query.validate()?;
         let records = lock(&self.series_store)?.list();

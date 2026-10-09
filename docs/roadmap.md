@@ -14,10 +14,8 @@ Visibility, authentication and failure stop or pause requests. It ships with the
 next weekly release; see [the unreleased note](releases/unreleased/45.md) and
 [live progress](web.md#live-progress).
 
-Since [v0.22.34](https://github.com/alecerf/mynou/releases/tag/v0.22.34), `trunk`
-also carries private iCalendar export (#56) and removes Usenet, PAR2 and
-archive processing (#113). Guided setup #41 and the original immutable releases
-remain preserved.
+Since [v0.22.34](https://github.com/alecerf/mynou/releases/tag/v0.22.34), guided
+setup #41 and the original immutable releases remain preserved.
 
 ## Published organization increment: 0.22.27
 
