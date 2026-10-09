@@ -8,6 +8,7 @@ product-defining, destructive, sensitive or costly decisions.
 
 - Work is an open Issue labeled `agent-work`. It has one branch,
   `work/<issue>-<slug>`, and one PR whose body says `Closes #<issue>`.
+  No ghost branches: delete any branch without an open PR or active claim.
 - Any number of agents may run at once; one agent owns one Issue at a time.
   Pick a unique lowercase agent name per session, such as `codex-3f2a`.
 - Coordinate with comments. A command is the first line of a comment from a
@@ -22,7 +23,7 @@ product-defining, destructive, sensitive or costly decisions.
     `/approve <qa|security> <head-sha>` and `/reject <qa|security> <head-sha>`
     (findings below) judge that exact commit; a new push needs a new verdict.
 - Start with `python3 engineering/board.py --agent <you>`. It lists free work,
-  claims, whose turn each PR is and whether a release is due. It never writes.
+  claims, PR turns, ghost branches and whether a release is due. It never writes.
 
 ## Delivery
 

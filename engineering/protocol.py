@@ -15,6 +15,8 @@ PATTERNS = (
 SENSITIVE = ("AGENTS.md", "engineering/", ".agents/", ".github/", "src/crypto", "src/tls", "src/pki")
 CLOSING = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#([1-9][0-9]*)\b", re.I)
 CLEAN = ("success", "skipped", "neutral")
+# `work/<issue>-<slug>`, or an older `<prefix>/<slug>-<issue>` name.
+ISSUE_BRANCH = re.compile(r"work/([1-9][0-9]*)-.+|.+-([1-9][0-9]*)")
 # Some connectors defang slash commands with middle dots or zero-width
 # characters (for example "·/·a·pprove"); from a trusted account they keep
 # their meaning.
@@ -132,6 +134,20 @@ def rank(issue):
     names = labels(issue)
     priority = next((n for n in range(4) if f"priority:p{n}" in names), 2)
     return priority, "origin:user" not in names, issue["number"]
+
+
+def ghosts(branches, default, open_heads, claimed):
+    """Branches without work in progress: no open PR and no active Issue claim."""
+    found = []
+    for branch in branches:
+        name = branch["name"]
+        if name == default or branch.get("protected") or name in open_heads:
+            continue
+        match = ISSUE_BRANCH.fullmatch(name)
+        if match and int(match[1] or match[2]) in claimed:
+            continue
+        found.append({"branch": name, "head": branch["commit"]["sha"]})
+    return found
 
 
 def blocked(issue):
