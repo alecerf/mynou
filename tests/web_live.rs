@@ -1,5 +1,4 @@
 //! Real native listener/session/projection fixtures; run by CI only.
-#[allow(dead_code)]
 mod library_support;
 #[allow(dead_code)]
 mod transfer_support;
