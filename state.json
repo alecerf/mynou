@@ -1,17 +1,17 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 1067,
+  "generation": 1068,
   "lease": {
     "id": "codex-recovery-20261009T112800Z-quality-7908b215-6fb4-48f8-a7f3-a4511158129c",
     "worker": "codex-recovery-20261009T112800Z",
     "role": "quality",
     "issue": 54,
     "acquired_at": "2026-10-09T11:38:13Z",
-    "heartbeat_at": "2026-10-09T11:58:04Z",
-    "expires_at": "2026-10-09T12:43:04Z",
+    "heartbeat_at": "2026-10-09T12:10:39Z",
+    "expires_at": "2026-10-09T12:55:39Z",
     "branch": "work/54-security-log-coverage",
-    "commit": "21ee66394e77c86d8069172bf1b2704f9e67cd73",
+    "commit": "def96b52107afd71ba94da12a9443c6b22fc4fd2",
     "pr": 64
   },
   "checkpoint": {
@@ -635,9 +635,9 @@
     "issue": 54,
     "role": "quality",
     "branch": "work/54-security-log-coverage",
-    "commit": "21ee66394e77c86d8069172bf1b2704f9e67cd73",
+    "commit": "def96b52107afd71ba94da12a9443c6b22fc4fd2",
     "pr": 64,
-    "summary": "PR64 draft source 21ee66394e77c86d8069172bf1b2704f9e67cd73 implements bounded redacted API counters and fail-fast audit batches. Security run37925654008 passed 1367 archives/3973 members/zero selected-pattern findings; actual core limit5000/remaining363 after1381 requests. CI validate/GNU/musl/ARM passed; Intel demo missing MediaContainer, one job retry accepted 11:53:15Z, Bug67 preserves evidence. Receipt reuse remains incomplete. User authorizes external Claude/Codex parallel; Claude owns62/PR63 publication0.22.33; Codex remains serial and does not edit that scope.",
+    "summary": "PR64 now includes original native default-source receipt reuse, exact policy/producer/attempt/digest/job/ancestry gates, new/rerun coverage, explicit full sweeps, fail-fast budgets and CI-only provenance scenarios. No local checks. Previous C validate/all4 builds/package succeeded on attempt2; selected-pattern source/log audit1367 archives passed at C. New source CI not yet verified. Correction: PR63 is Claude's calendar feature, not publication; Issue62 reserves0.22.33 and Claude owns its publication scope; also PR65 PAR2 and PR66 parallel leases are preserved.",
     "previous_checkpoint": {
       "at": "2026-10-09T11:37:54Z",
       "issue": 54,
@@ -648,8 +648,8 @@
       "summary": "Triage54 recovers interruption and rebinds original preserved empty work/54-security-log-coverage by actual non-force fast-forward to currentdefault02a536f2c75e454094c7cb28d85ec2771c7404f0. Audit source/workflow remain original full-history implementation. Current default Security actions-logs113787933986 HTTP403; installed control61 admitted, publication fails old version32 source-identityguard. Existing native Security54 design retained. First original diagnostic/budget/batched-stop commit with CI-only regression provides real safe provider evidence, then complete trusted receipt reuse in samePR without assuming provider/reset capacity. No localchecks/falsegreen/overwrites/duplicatedIssue.",
       "next_action": "ReleaseTriage54; acquireQuality54 at work/54-security-log-coverage/current02 sourcePRnull. Commit bounded safe API evidence/stop-on-failure original fixtures and one linked draftPR, then complete sustainable verified coverage reuse with actual CI data; release/reacquire Security/QA exacthead/base beforeobjective merge."
     },
-    "at": "2026-10-09T11:58:04Z",
-    "next_action": "Implement bounded authenticated default-source audit receipts in PR64 without weakening coverage; preserve Claude62 publication and Bug67. Distinct exact-head/base Security and QA remain required. Inspect actual retry CI once useful, then checkpoint and release at real provider/CI wait.",
+    "at": "2026-10-09T12:10:39Z",
+    "next_action": "Read actual new-source CI and complete-diff Security under a separate exact-head/base lease, then QA. Do not fabricate audit reuse before a matching default receipt exists; first receipt requires actual full CI coverage. Keep Bug67/mac failure evidence and do not replay unchanged failures or edit Claude-owned publication/control branches.",
     "recovery": {
       "issue": true,
       "branch": true,
