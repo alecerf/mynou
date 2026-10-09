@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 1130,
-  "lease": {
-    "id": "codex-recovery-20261009T131600Z-triage-d7422465-b068-46d6-a207-36c92fd2cbf9",
-    "worker": "codex-recovery-20261009T131600Z",
-    "role": "triage",
-    "issue": 58,
-    "acquired_at": "2026-10-09T14:14:08Z",
-    "heartbeat_at": "2026-10-09T14:28:00Z",
-    "expires_at": "2026-10-09T15:13:00Z",
-    "branch": "claude/team-leases-58",
-    "commit": "12a124fafd33db3fe6b9f5b5bdd6550fe007f5ff",
-    "pr": 66
-  },
+  "generation": 1131,
+  "lease": null,
   "checkpoint": {
     "publication": {
       "commit": "6946ef76db0fc13b1fd887f6ee3d5304d5b1fbd2",
