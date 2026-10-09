@@ -18,12 +18,11 @@ HEAD = "a" * 40
 
 
 def manifest(version="0.22.34", lto="thin"):
-    return {"package": {"name": "mynou", "version": version}, "profile": {"release": {"lto": lto}}}
+    return f'[package]\nname = "mynou"\nversion = "{version}"\n\n[profile.release]\nlto = "{lto}"\n'
 
 
 def toml(version="0.22.34", lto="thin"):
-    text = f'[package]\nname = "mynou"\nversion = "{version}"\n\n[profile.release]\nlto = "{lto}"\n'
-    return {"encoding": "base64", "content": base64.b64encode(text.encode()).decode()}
+    return {"encoding": "base64", "content": base64.b64encode(manifest(version, lto).encode()).decode()}
 
 
 def release_files(version="0.23.0"):
@@ -87,10 +86,19 @@ class ReleasePullRequests(unittest.TestCase):
         self.assertIn("Nothing shipped changed since v0.22.34", errors[0])
         self.assertEqual(self.check(shipped_change=False, labels={"release", "release-now"}), [])
 
+    def test_the_package_version_is_read_from_the_package_table_only(self):
+        other = '[package]\nname = "mynou"\nversion = "0.22.34"\n\n[lib]\nversion = "9.9.9"\n'
+        self.assertEqual(releases.version(other), (0, 22, 34))
+        self.assertEqual(releases.unversioned(other), releases.unversioned(other.replace("0.22.34", "0.23.0")))
+
     def test_malformed_versions_fail_closed(self):
-        for version in ["0.23", "v0.23.0", "0.23.0-rc1", "01.2.3", None]:
+        for version in ["0.23", "v0.23.0", "0.23.0-rc1", "01.2.3"]:
             with self.subTest(version=version), self.assertRaises(ValueError):
-                releases.version({"package": {"version": version}})
+                releases.version(manifest(version))
+        for text in ['[package]\nname = "mynou"\n', '[lib]\nversion = "0.22.34"\n',
+                     '[package]\nversion = 0.22\n', '[package]\nversion = "0.22.34" # pinned\n']:
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                releases.version(text)
 
 
 class Cadence(unittest.TestCase):
