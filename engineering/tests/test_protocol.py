@@ -39,6 +39,15 @@ class Commands(unittest.TestCase):
             with self.subTest(body=body):
                 self.assertIsNone(protocol.parse(body))
 
+    def test_defanged_commands_from_trusted_accounts_keep_their_meaning(self):
+        self.assertEqual(protocol.parse("\u00b7/\u00b7a\u00b7pprove qa " + HEAD + "\nSummary"), ("approve", "qa", HEAD))
+        self.assertEqual(protocol.parse("\u200b/assign codex-1\ufeff"), ("assign", "codex-1"))
+        self.assertIsNone(protocol.parse("\u00b7\u200b"))
+        self.assertEqual(protocol.verdicts([comment("\u00b7/\u00b7a\u00b7pprove qa " + HEAD, 1)], ACTORS, HEAD),
+                         {"qa": "approve"})
+        untrusted = comment("\u00b7/\u00b7a\u00b7pprove qa " + HEAD, 1, login="someone", user_id=9)
+        self.assertEqual(protocol.verdicts([untrusted], ACTORS, HEAD), {})
+
     def test_only_trusted_accounts_issue_commands(self):
         comments = [comment("/assign intruder", 0, login="someone", user_id=9),
                     comment("/assign spoofed", 1, login="owner", user_id=8),
@@ -82,6 +91,14 @@ class PullRequestTurns(unittest.TestCase):
         self.assertEqual(self.turn([comment("/wait security", 1), comment("/wait user", 2)]), "user")
         self.assertEqual(self.turn([comment("/wait qa", 1), comment("/reject qa " + HEAD, 2)]), "author")
         self.assertEqual(self.turn([comment("/reject qa " + OLD, 1)]), "qa")
+
+    def test_wait_ci_settles_once_checks_complete(self):
+        comments = [comment("/wait ci", 1)]
+        self.assertEqual(protocol.turn(comments, ACTORS, HEAD, False, False), "ci")
+        self.assertEqual(protocol.turn(comments, ACTORS, HEAD, False, False, "pending"), "ci")
+        self.assertEqual(protocol.turn(comments, ACTORS, HEAD, False, False, "success"), "qa")
+        self.assertEqual(protocol.turn(comments, ACTORS, HEAD, True, False, "success"), "author")
+        self.assertEqual(protocol.turn(comments, ACTORS, HEAD, False, False, "failure"), "author")
 
     def test_merge_needs_every_required_approval_of_the_current_head(self):
         self.assertEqual(self.turn([comment("/approve qa " + HEAD, 1)]), "merge")

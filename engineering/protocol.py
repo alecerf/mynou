@@ -15,6 +15,10 @@ PATTERNS = (
 SENSITIVE = ("AGENTS.md", "engineering/", ".agents/", ".github/", "src/crypto", "src/tls", "src/pki")
 CLOSING = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#([1-9][0-9]*)\b", re.I)
 CLEAN = ("success", "skipped", "neutral")
+# Some connectors defang slash commands with middle dots or zero-width
+# characters (for example "·/·a·pprove"); from a trusted account they keep
+# their meaning.
+DEFANG = dict.fromkeys(map(ord, "\u00b7\u200b\u200c\u200d\u2060\ufeff"))
 
 
 def instant(value):
@@ -34,9 +38,12 @@ def labels(item):
 
 def parse(body):
     """Return the command on a comment's first line, or None for ordinary text."""
-    if not isinstance(body, str) or not body.strip():
+    if not isinstance(body, str):
         return None
-    first = body.strip().splitlines()[0].strip()
+    text = body.translate(DEFANG).strip()
+    if not text:
+        return None
+    first = text.splitlines()[0].strip()
     for pattern, build in PATTERNS:
         match = pattern.fullmatch(first)
         if match:
@@ -81,8 +88,11 @@ def verdicts(comments, actors, head):
     return found
 
 
-def turn(comments, actors, head, draft, security_required):
-    """Who acts next on a PR; `merge` once every required verdict approves the head."""
+def turn(comments, actors, head, draft, security_required, ci=None):
+    """Who acts next on a PR; `merge` once every required verdict approves the head.
+
+    `/wait ci` settles once CI completes: a failure or a draft goes back to the
+    author, a ready PR with green checks to QA."""
     found = verdicts(comments, actors, head)
     if found.get("qa") == "approve" and (not security_required or found.get("security") == "approve"):
         return "merge"
@@ -92,6 +102,8 @@ def turn(comments, actors, head, draft, security_required):
             who = command[1]
         elif command[0] == "reject" and command[2] == head:
             who = "author"
+    if who == "ci" and ci in ("success", "failure"):
+        who = "qa" if ci == "success" and not draft else "author"
     return who
 
 
