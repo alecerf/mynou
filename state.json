@@ -1,85 +1,27 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 1053,
-  "lease": {
-    "id": "codex-recovery-20261009T092646Z-quality-1a652012-bd4f-41ee-8ab7-8c7c50b62b8c",
-    "worker": "codex-recovery-20261009T092646Z",
-    "role": "quality",
+  "generation": 1054,
+  "lease": null,
+  "checkpoint": {
     "issue": 54,
-    "acquired_at": "2026-10-09T09:47:42Z",
-    "heartbeat_at": "2026-10-09T09:47:42Z",
-    "expires_at": "2026-10-09T10:32:42Z",
+    "role": "quality",
     "branch": "work/54-security-log-coverage",
     "commit": "97c8efcbb97a74716e21791b5d4cf1578f85c28d",
-    "pr": null
-  },
-  "checkpoint": {
-    "at": "2026-10-09T09:47:26Z",
-    "issue": 54,
-    "role": "quality",
-    "branch": "trunk",
-    "commit": "97c8efcbb97a74716e21791b5d4cf1578f85c28d",
     "pr": null,
-    "summary": "Quality54 setup preserves actual default97c8efcbb97a74716e21791b5d4cf1578f85c28d and creates only original work/54-security-log-coverage at exact same native commit. No code change or validation. Separate Security54 design is recorded natively; PR57/work45 preserved.",
-    "next_action": "Release default-source setup lease and acquire Quality54 at work/54-security-log-coverage/M to implement trusted bounded coverage reuse and CI-only original regressions, then one linked PR and separate complete Security/QA.",
-    "publication": {
+    "summary": "Interrupted before a phase checkpoint; inspect the preserved lease source, Issue, PR and native history.",
+    "previous_checkpoint": {
+      "at": "2026-10-09T09:47:26Z",
+      "issue": 54,
+      "role": "quality",
+      "branch": "trunk",
       "commit": "97c8efcbb97a74716e21791b5d4cf1578f85c28d",
-      "state": "published",
-      "version": "0.22.32",
-      "at": "2026-10-09T06:56:34Z",
-      "release_id": 407617414,
-      "immutable": true,
-      "tag_commit": "97c8efcbb97a74716e21791b5d4cf1578f85c28d",
-      "run_id": 37895820331,
-      "run_attempt": 1,
-      "status": "completed",
-      "conclusion": "success",
-      "assets": [
-        {
-          "id": 624170919,
-          "name": "mynou-v0.22.32-linux-x86_64",
-          "size": 4899680,
-          "digest": "sha256:66535c8f81843316cf4f546c168156dabe7ce0888c4039a6417eb86380644682"
-        },
-        {
-          "id": 624170914,
-          "name": "mynou-v0.22.32-macos-arm64",
-          "size": 3745600,
-          "digest": "sha256:86f15dc56dfa1d6ca8ecdbf937734bc3bcac8f456da106b055d44c352cf3c594"
-        },
-        {
-          "id": 624170920,
-          "name": "mynou-v0.22.32-macos-x86_64",
-          "size": 4516672,
-          "digest": "sha256:c397d22fc422ea9bfe267b58978790b5d2a14e5e53211b7a13145d9efa606011"
-        },
-        {
-          "id": 624170913,
-          "name": "SHA256SUMS",
-          "size": 281,
-          "digest": "sha256:bdb6fe748033f9057dbee53f987f07cdeacd51a87054aab194a2ee0de18e8d59"
-        }
-      ],
-      "registry_proof": {
-        "image": "ghcr.io/alecerf/mynou@sha256:d8894fda5a65d5aa1d01578102b56f0a6d2210db371309877cc9e374938bb03e",
-        "version": "0.22.32",
-        "source": "97c8efcbb97a74716e21791b5d4cf1578f85c28d",
-        "visibility": "private",
-        "binary_sha256": "66535c8f81843316cf4f546c168156dabe7ce0888c4039a6417eb86380644682",
-        "repository": "alecerf/mynou",
-        "repository_id": 1403318143,
-        "repository_visibility": "public",
-        "package_id": 15695108,
-        "repository_association": "reported-match",
-        "verification_user": "1001:1001",
-        "verification_cleanup": "completed"
-      },
-      "proof_artifact": {
-        "id": 11600417547,
-        "digest": "sha256:3d031008b20a37db4b8b1fdc5276a7f0f8d57b0e4bf20d049aad38d37531cb95"
-      }
+      "pr": null,
+      "summary": "Quality54 setup preserves actual default97c8efcbb97a74716e21791b5d4cf1578f85c28d and creates only original work/54-security-log-coverage at exact same native commit. No code change or validation. Separate Security54 design is recorded natively; PR57/work45 preserved.",
+      "next_action": "Release default-source setup lease and acquire Quality54 at work/54-security-log-coverage/M to implement trusted bounded coverage reuse and CI-only original regressions, then one linked PR and separate complete Security/QA."
     },
+    "at": "2026-10-09T10:43:19Z",
+    "next_action": "Recovered expired capacity lease; inspect preserved work before selecting new work.",
     "recovery": {
       "issue": true,
       "branch": true,
@@ -87,689 +29,61 @@
       "ci": true,
       "commit_preserved": true,
       "issue_state": "open",
-      "branch_head": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
-      "default_head": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
-      "preservation": "actual native default merge and original source parent remain reachable on trunk; immutable publication checkpoint preserved",
-      "prs": [
-        {
-          "number": 51,
-          "state": "closed",
-          "head": "80b0d3eb17ce6df583643060b5cce990f53dd1ef",
-          "merge_commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
-          "merged_at": "2026-10-08T22:46:14Z"
-        }
-      ],
+      "branch_head": "97c8efcbb97a74716e21791b5d4cf1578f85c28d",
+      "preservation": "branch/default ancestry",
+      "prs": [],
       "runs": [
         {
-          "id": 37855933264,
+          "id": 37918788416,
           "status": "completed",
           "conclusion": "failure"
         },
         {
-          "id": 37855680308,
+          "id": 37918788402,
           "status": "completed",
           "conclusion": "skipped"
         },
         {
-          "id": 37855680224,
+          "id": 37913368258,
           "status": "completed",
           "conclusion": "skipped"
         },
         {
-          "id": 37855678349,
+          "id": 37913368292,
           "status": "completed",
           "conclusion": "skipped"
         },
         {
-          "id": 37855678437,
+          "id": 37912719158,
           "status": "completed",
           "conclusion": "skipped"
         },
         {
-          "id": 37855676759,
+          "id": 37912719156,
           "status": "completed",
           "conclusion": "skipped"
         },
         {
-          "id": 37855676744,
+          "id": 37912413032,
           "status": "completed",
           "conclusion": "skipped"
         },
         {
-          "id": 37855562502,
+          "id": 37912413119,
           "status": "completed",
-          "conclusion": "success"
+          "conclusion": "skipped"
         },
         {
-          "id": 37855541574,
+          "id": 37910342784,
           "status": "completed",
-          "conclusion": "success"
+          "conclusion": "failure"
         },
         {
-          "id": 37855541483,
+          "id": 37909501527,
           "status": "completed",
-          "conclusion": "success"
+          "conclusion": "failure"
         }
       ]
-    },
-    "pending_qa": {
-      "state": "resolved by exact-head passed QA5458620861",
-      "issue": 19,
-      "pr": 24,
-      "head_sha": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
-      "base_sha": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
-      "review_id": 5458620861,
-      "lease_checkpoint": "c9d769f4077625254fe9bb8551c458e53631a3e0"
-    },
-    "preserved_work": {
-      "issue": 19,
-      "pr": 24,
-      "branch": "work/control-ref-adapter",
-      "commit": "b8493cad2c475c39e48f1eb7acb10e678e6c0832"
-    },
-    "public_security": {
-      "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
-      "run_id": 37797446878,
-      "history_job": 113380477672,
-      "logs_job": 113380477369,
-      "git_objects": 5303,
-      "completed_attempt_archives": 722,
-      "log_members": 2411,
-      "recognized_findings": 0,
-      "coverage_gaps": 0,
-      "limitations": "Selected recognized credential patterns and completed inventory snapshot only; pending runs excluded, no arbitrary sensitive-data guarantee."
-    },
-    "delivery": {
-      "issue": 19,
-      "pr": 24,
-      "head": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
-      "base": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
-      "merge": "57cfe88bd9dac249d6949a470afc357e835060f9",
-      "tree": "a66b831197084b4e75d867fe63bb179accfe4cab",
-      "state": "installed and published; live cutover pending",
-      "ci": {
-        "run": 37797446857,
-        "status": "completed",
-        "conclusion": "success"
-      },
-      "security": {
-        "run": 37797446878,
-        "status": "completed",
-        "conclusion": "success"
-      },
-      "organization": {
-        "run": 37797447008,
-        "jobs": [
-          {
-            "id": 113380483852,
-            "name": "organization",
-            "status": "completed",
-            "conclusion": "success"
-          },
-          {
-            "id": 113380554838,
-            "name": "agent-qa-review",
-            "status": "completed",
-            "conclusion": "skipped"
-          }
-        ]
-      },
-      "source_branch_cleanup": {
-        "mode": "native merge deletion",
-        "observed_absent": true,
-        "preserved_parents": [
-          "c348081a0024dc70552c5ba1b2eda0000f9eb177",
-          "6951b58bbc5e578f3fdfe97190b17006ccfa347e"
-        ]
-      },
-      "publication": "verified immutable v0.22.25",
-      "live_cutover": false
-    },
-    "cleanup": {
-      "issue": 34,
-      "pr": 35,
-      "state": "closed/Done",
-      "branch_cleanup": "Verified native automatic deletion; preserved unique PR24"
-    },
-    "release_recovery": {
-      "issue": 28,
-      "pr": 29,
-      "branch": "work/public-source-private-package",
-      "source": "b028b1dd058842d7ebc551d4f822519d9d4d1e85",
-      "tree": "a7d42c893c83cd87b1fcdb59766f5b1dfdcbefe6",
-      "parent": "04e99496318f5cf31f4d8634209cb6956aa3c6ef",
-      "version": "0.22.21",
-      "state": "publication-verified",
-      "source_ci": 37750720668,
-      "security_audit": 37750720672,
-      "organization": 37750720597,
-      "security_review": 5453915524,
-      "security_checkpoint": "386098b2c9dbcc03882576199af1c98868d41c38",
-      "qa_review": 5453951428,
-      "qa_checkpoint": "b43c9662c5b34a0f4d952adebb2c706444b704f9",
-      "engineering": 37751441590,
-      "gate_job": 113225673187,
-      "merge_commit": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
-      "release_id": 406617913,
-      "default_ci": 37751867488
-    },
-    "control_storage": {
-      "issue": 19,
-      "pr": 24,
-      "current_default": "57cfe88bd9dac249d6949a470afc357e835060f9",
-      "authority": "refs/heads/control/engineering",
-      "candidate": "refs/notes/mynou-engineering",
-      "state": "reviewed code installed/published; actual existing Task reconciled; live fence pending",
-      "source": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
-      "security_review": 5458546217,
-      "qa_review": 5458620861,
-      "task_receipt": 6063044134
-    },
-    "control_bridge_design": {
-      "state": "fixed scoped transport implemented/published/actually proved",
-      "transport": "native issue_comment to trusted-default Actions",
-      "authority": "refs/heads/control/engineering",
-      "nonbranch_cutover": "not activated",
-      "scope": "Scoped canonical commands and fixed inert notes probe; original single-parent/non-force arbitration and independent source review preserved."
-    },
-    "control_bridge": {
-      "issue": 30,
-      "pr": 31,
-      "branch": "work/native-control-commands",
-      "head": "681d0f7e4f8905688005b2f60ce71442fba76e7e",
-      "base": "cafac339b3e24954fc8a802d97fe3cfb793c05d6",
-      "tree": "75e8692d466c8fa139aa0824e4f0d8034a02ea4d",
-      "state": "published and actual connected control/notes transport proved",
-      "canonical_ref": "refs/heads/control/engineering",
-      "live_proof": "Native checkpoint plus fixed inert notes creation and sole-parent update succeeded atcedd; no candidate activation",
-      "parent_issue": 19,
-      "engineering": 37759939738,
-      "source_ci": 37759939764,
-      "security_audit": 37759939760,
-      "security_review": 5454852597,
-      "security_checkpoint": "39eb9d1bb93c0bd7c1cb613e0ce069fb1380fb52",
-      "qa_checkpoint": "9e3a60ac5c89422e9c5783c72062a58a3d2fbc07",
-      "codeql_run": 37759937006,
-      "qa_review": 5454891252,
-      "gate_run": 37760978551,
-      "gate_job": 113257088037,
-      "merge_commit": "7193547206a9e954bea44e9570716b23e4e660b2",
-      "default_ci": 37761256529,
-      "default_engineering": 37761256671,
-      "default_security": 37761256575,
-      "native_issue_handoff": 6057565905,
-      "native_pr_handoff": 6057566180,
-      "parent_handoff": 6057566462,
-      "release_id": 406690100,
-      "failed_live_command": 6058054220,
-      "failed_run": 37764921208,
-      "failed_job": 113270103787,
-      "failed_code": "edited-or-replaced-comment",
-      "unchanged_control": "162edcb5c7a685b0e653084f5c4636c69c9c4bf0",
-      "corrective_issue": 32,
-      "corrective_pr": 33,
-      "corrective_merge": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
-      "corrective_default_ci": 37767226158,
-      "proof_commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
-      "proof_checkpoint_command": 6059254996,
-      "proof_notes_create": 6059292608,
-      "proof_notes_update": 6059349914
-    },
-    "previous_publication": {
-      "commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
-      "state": "published",
-      "version": "0.22.25",
-      "at": "2026-10-08T15:07:45Z",
-      "release_id": 406963891,
-      "immutable": true,
-      "tag_commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
-      "run_id": 37797446857,
-      "status": "completed",
-      "conclusion": "success",
-      "assets": [
-        {
-          "id": 622162047,
-          "name": "mynou-v0.22.25-linux-x86_64",
-          "size": 4891488,
-          "digest": "sha256:7d5b54e29a0837cc486cb50ebef50900d652f1e9dc5ab09a469ea5f8d4af3fda"
-        },
-        {
-          "id": 622162053,
-          "name": "mynou-v0.22.25-macos-arm64",
-          "size": 3729072,
-          "digest": "sha256:df06158bee143e3ae988f4420ac48c4270496a586fa39884b238722430f04fe1"
-        },
-        {
-          "id": 622162055,
-          "name": "mynou-v0.22.25-macos-x86_64",
-          "size": 4508464,
-          "digest": "sha256:54fbf6212f571878e73fc4d8e2be3880d86e6893ada7b23034c95ac501454787"
-        },
-        {
-          "id": 622162050,
-          "name": "SHA256SUMS",
-          "size": 281,
-          "digest": "sha256:80531032933dae61b0ac84cfeb9ebf5da959caafe27a5ada2839a9eb637683bc"
-        }
-      ],
-      "registry_proof": {
-        "binary_sha256": "7d5b54e29a0837cc486cb50ebef50900d652f1e9dc5ab09a469ea5f8d4af3fda",
-        "image": "ghcr.io/alecerf/mynou@sha256:f5dfc1a329c35e980fe31ee31be0e0a631fc232efa8772fbe5a161121132c6e6",
-        "package_id": 15695108,
-        "repository": "alecerf/mynou",
-        "repository_association": "reported-match",
-        "repository_id": 1403318143,
-        "repository_visibility": "public",
-        "source": "57cfe88bd9dac249d6949a470afc357e835060f9",
-        "verification_cleanup": "completed",
-        "verification_user": "1001:1001",
-        "version": "0.22.25",
-        "visibility": "private"
-      },
-      "security_audit_run": 37797446878
-    },
-    "control_bridge_recovery": {
-      "issue": 32,
-      "pr": 33,
-      "source": "2053b30d99dfaddf59e1f4fb7d16df57dc376cb9",
-      "base": "7193547206a9e954bea44e9570716b23e4e660b2",
-      "merge_commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
-      "state": "published-fix-and-actual-live-proof-complete",
-      "parent_issue": 30,
-      "qa_review": 5455490361,
-      "qa_checkpoint": "9bea1de466fcae019205272341ce679fd5a56279",
-      "security_review": 5455447204,
-      "security_checkpoint": "0066100ef2f08255950a447ed51eccdb7bc4f9d8",
-      "gate_run": 37766901214,
-      "gate_job": 113276714409,
-      "default_ci": 37767226158,
-      "default_security": 37767226110,
-      "default_engineering": 37767226188,
-      "default_codeql": 37767225919,
-      "failed_run": 37764921208,
-      "failed_command": 6058054220,
-      "failed_code": "edited-or-replaced-comment",
-      "native_issue_handoff": 6058451679,
-      "native_pr_handoff": 6058451961,
-      "parent_handoff": 6058452222,
-      "migration_handoff": 6058452479
-    },
-    "security_recovery": {
-      "issue": 32,
-      "commit": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
-      "run_id": 37767226110,
-      "failed_job": 113277735964,
-      "failed_attempt": 1,
-      "error_type": "HTTPFailure",
-      "http_status": 502,
-      "state": "native-attempt2-success-actual-log-evidence",
-      "failed_report": "Native113277735964 log: schema1/statuserror/HTTPFailure/502; preserved redacted artifact11544822063",
-      "read_boundary": "First connected log fetch internal error; artifact storage fallback network read failed; subsequent connected native failed log read succeeded.",
-      "accepted_response": {
-        "success": true
-      },
-      "run_attempt": 2,
-      "recovered_job": 113293528821,
-      "source_history_job": 113293530156
-    },
-    "live_transport": {
-      "issue": 30,
-      "source": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
-      "worker": "codex-hourly-20261008112927Z",
-      "lease": "codex-hourly-20261008112927Z-quality-1791460198000",
-      "state": "actual-canonical-and-inert-notes-create-update-proved",
-      "command_id": 6059254996,
-      "run_id": 37772952404,
-      "job_id": 113296751243,
-      "receipt_id": 6059258638,
-      "expected_control": "7e1fcca698a39fec531002bcd3f3fe80c56397db",
-      "control_commit": "86041aa351dd249b9e6eaf4ce88dfdca6e5e3237",
-      "generation_before": 650,
-      "generation_after": 651,
-      "notes_activation": false,
-      "notes_create": {
-        "command_id": 6059292608,
-        "run_id": 37773211984,
-        "job_id": 113297617566,
-        "receipt_id": 6059296655,
-        "control_sha": "7f723d97729a88608d8c7182cf6c1559dad1ada1",
-        "probe_sha": "432ede9c62475397ef93cb6a1b5f089d0f556988",
-        "inert_tree": true,
-        "sole_parent": "7f723d97729a88608d8c7182cf6c1559dad1ada1"
-      },
-      "notes_update": {
-        "command_id": 6059349914,
-        "run_id": 37773605895,
-        "job_id": 113298910178,
-        "receipt_id": 6059353404,
-        "control_sha": "56dfe37d533022bff1b90c8094d77fcc3e8895a4",
-        "probe_sha": "2fd52872f55d4c0e59648d8d1eb3efe5f06a63d3",
-        "sole_parent": "432ede9c62475397ef93cb6a1b5f089d0f556988",
-        "inert_tree": true,
-        "canonical_unchanged": true
-      },
-      "closed_issue": 30,
-      "native_issue_handoff": 6059470061,
-      "native_pr_handoff": 6059470317,
-      "parent_handoff": 6059470579,
-      "preserved_pr_handoff": 6059470835
-    },
-    "proposal_ci": {
-      "source": "b8493cad2c475c39e48f1eb7acb10e678e6c0832",
-      "base": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
-      "validate_job": 113325449454,
-      "rust_passed": 864,
-      "rust_failed": 0,
-      "organization_job": 113325448294,
-      "organization_passed": 117,
-      "security_run": 37781499585,
-      "history_job": 113325467675,
-      "actions_job": 113325467683,
-      "git_objects": 5052,
-      "completed_archives": 656,
-      "log_members": 2222,
-      "recognized_findings": 0,
-      "coverage_gaps": 0,
-      "limits": "Selected provider/private-key patterns and completed inventory snapshot only; pending audit/source/Engineering/CodeQL runs excluded; no arbitrary sensitive-data guarantee.",
-      "source_run": 37781499542,
-      "state": "Partial native success; lastMacIntel build inprogress and package unobserved. No greengate/merge/publishedv24 claim."
-    },
-    "execution_policy_request": {
-      "state": "delivery-complete",
-      "issue": 34,
-      "branch": "work/continuous-engineering",
-      "base": "ced0fe652469fa6916831e0fb09cccc1a8784f79",
-      "task_id": "6ac54c387af0819184713674c48b3845",
-      "cadence": "hourly",
-      "preserved_issue": 19,
-      "preserved_pr": 24,
-      "preserved_source": "b8493cad2c475c39e48f1eb7acb10e678e6c0832",
-      "edited_paths": [
-        ".github/engineering.json",
-        "AGENTS.md",
-        ".agents/skills/mynou-master/SKILL.md",
-        "engineering/README.md",
-        "engineering/worker-prompt.md",
-        "engineering/control.py",
-        "engineering/policy.py",
-        "Cargo.toml",
-        "Cargo.lock",
-        "docs/releases/0.22.24.md",
-        "engineering/tests/test_execution_policy.py"
-      ],
-      "pr": 35,
-      "source": "f12a37e873561fbd3de3ccdd30883b9f41c2a4c3",
-      "tree": "5c450890a2b6bedf8d8d64fd99a0cd38d89ff6d6",
-      "security_review": 5457288321,
-      "security_checkpoint": "ce4db06ac9fb945f9c8c5957c59343384359922a",
-      "qa_state": "accepted-awaiting-native-record",
-      "organization_job": 113333827464,
-      "organization_passed": 88,
-      "history_job": 113333827732,
-      "git_objects": 5122,
-      "required_source_ci": 37783960792,
-      "security_ci": 37783960574,
-      "organization_ci": 37784200022,
-      "evidence": [
-        {
-          "name": "validate",
-          "id": 113333828449
-        },
-        {
-          "name": "gnu",
-          "id": 113333828776
-        },
-        {
-          "name": "musl",
-          "id": 113333828799
-        },
-        {
-          "name": "macos-arm",
-          "id": 113333828872
-        },
-        {
-          "name": "macos-intel",
-          "id": 113333828899
-        },
-        {
-          "name": "package",
-          "id": 113335226201
-        },
-        {
-          "name": "actions-logs",
-          "id": 113333827935
-        }
-      ],
-      "qa_review": 5457333341,
-      "qa_checkpoint": "b3f1361ab1dc919cd72db416849375c6c7412b5f",
-      "gate_run": 37784630740,
-      "gate_job": 113336598456,
-      "policy_commit": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
-      "prompt_sha": "0704f5a50fd8da1a375133188425765f43c14251",
-      "issue_handoff": 6061031567,
-      "pr_handoff": 6061031909,
-      "branch_cleanup": "Verified native deletion of merged work/continuous-engineering",
-      "default_ci": 37785002953,
-      "default_security": 37785003097,
-      "default_organization": 37785003106,
-      "outcome": "Continuous useful execution installed; actual hourly Task prompt accepted/confirmed, unchanged cadence and timezone",
-      "publication_state": "published",
-      "preserved_issue19_handoff": 6061055541,
-      "final_checkpoint": "cf7f462bf0daa19dbb0afd429732f42349cb93e8",
-      "final_issue_handoff": 6061104406,
-      "final_pr_handoff": 6061104765,
-      "release_id": 406870757,
-      "publication_issue_handoff": 6062224986,
-      "publication_pr_handoff": 6062225589
-    },
-    "previous_checkpoint": {
-      "at": "2026-10-09T09:36:35Z",
-      "issue": 45,
-      "role": "triage",
-      "branch": "work/45-live-progress",
-      "commit": "c2110ed1ae643db0e6d435835a1e66f126eb148e",
-      "pr": 57,
-      "summary": "Recovery confirms PR57 at c2110ed1ae643db0e6d435835a1e66f126eb148e / work/45-live-progress, base97c8efcbb97a74716e21791b5d4cf1578f85c28d remains open and unmerged. MynouCI37906810934 all required product jobs succeed; Security37906810950 attempt2/actions-logs113746169479 fails HTTP403; latest Engineering37909229366 QA gate fails after actual rejection5468033170. Default trunk unchanged. No unchanged retry. Original auditor re-downloads every completed historical archive each run, ~1260 prior archives, existing Issue54 holds actual recurring API-capacity evidence. Useful partial source/formatter branch and prior reviews preserved. Transition to Triage54 to scope fail-closed trusted completed-attempt coverage reuse and safe provider-budget diagnostics, not weaken checks.",
-      "next_action": "Release Triage45 then acquire Triage54 on actual default97c8efcbb97a74716e21791b5d4cf1578f85c28d; record bounded acceptance and Security design before implementation. Keep45 blocked pending current native log evidence and exact-head/base accepting QA."
-    },
-    "task_reconciliation": {
-      "issue": 19,
-      "pr": 24,
-      "task_id": "6ac54c387af0819184713674c48b3845",
-      "prompt_path": "engineering/worker-prompt.md",
-      "policy_commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
-      "prompt_sha": "78077a9657bd361b1478d5ec4508fe9ef2340954",
-      "state": "reconciled",
-      "actual_response": {
-        "success": true,
-        "automation_id": "6ac54c387af0819184713674c48b3845",
-        "message": "Automation updated.",
-        "automation": {
-          "id": "6ac54c387af0819184713674c48b3845",
-          "title": "Mynou engineering",
-          "is_enabled": true,
-          "schedule": "BEGIN:VEVENT\nDTSTART:20261006T193000\nRRULE:FREQ=HOURLY;INTERVAL=1\nEND:VEVENT",
-          "default_timezone": "America/Los_Angeles",
-          "updated_at": "2026-10-08T15:15:14.187510+00:00"
-        }
-      },
-      "response_digest": "8e5f4b7f68cac070115940c03c7e704a5024d157ba7cc9b1b45077d354733c8f",
-      "native_lookup_confirmed": true,
-      "cadence": "hourly",
-      "attestation_id": 6063044134
-    },
-    "pending_source_edits": null,
-    "source_fix19": {
-      "head": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
-      "tree": "a66b831197084b4e75d867fe63bb179accfe4cab",
-      "branch": "work/control-ref-adapter",
-      "pr": 24,
-      "base": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
-      "parents": [
-        "b8493cad2c475c39e48f1eb7acb10e678e6c0832",
-        "c348081a0024dc70552c5ba1b2eda0000f9eb177"
-      ],
-      "qa_finding": 5457079884,
-      "stage": "remote source persisted; fresh CI/Security/QA required"
-    },
-    "security_review19": {
-      "head": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
-      "base": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
-      "reviewed_paths": [
-        ".agents/skills/mynou-quality/SKILL.md",
-        ".github/engineering.json",
-        "AGENTS.md",
-        "Cargo.lock",
-        "Cargo.toml",
-        "docs/releases/0.22.25.md",
-        "engineering/README.md",
-        "engineering/command-transport.md",
-        "engineering/commands.py",
-        "engineering/control-storage.md",
-        "engineering/control.py",
-        "engineering/delivery.py",
-        "engineering/github.py",
-        "engineering/lease.py",
-        "engineering/migration.py",
-        "engineering/policy.py",
-        "engineering/qa.py",
-        "engineering/tests/test_control_refs.py",
-        "engineering/tests/test_migration.py",
-        "engineering/worker-prompt.md"
-      ],
-      "source_history": {
-        "run": 37795700335,
-        "job": 113374467290,
-        "objects": 5270,
-        "finding_count": 0,
-        "coverage_gaps": []
-      },
-      "actions_logs": {
-        "run": 37795700335,
-        "job": 113374466812,
-        "archives": 702,
-        "members": 2196,
-        "finding_count": 0,
-        "coverage_gaps": [],
-        "scope": "completed visible workflow attempts at inventory; pending runs excluded"
-      },
-      "validate": {
-        "run": 37795700353,
-        "job": 113374474184,
-        "rust": {
-          "passed": 864,
-          "failed": 0,
-          "harnesses": 63
-        },
-        "infra": 24,
-        "organization": 132
-      },
-      "live_cutover": false
-    },
-    "qa_review19": {
-      "head": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
-      "base": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
-      "reviewed_paths": [
-        ".agents/skills/mynou-quality/SKILL.md",
-        ".github/engineering.json",
-        "AGENTS.md",
-        "Cargo.lock",
-        "Cargo.toml",
-        "docs/releases/0.22.25.md",
-        "engineering/README.md",
-        "engineering/command-transport.md",
-        "engineering/commands.py",
-        "engineering/control-storage.md",
-        "engineering/control.py",
-        "engineering/delivery.py",
-        "engineering/github.py",
-        "engineering/lease.py",
-        "engineering/migration.py",
-        "engineering/policy.py",
-        "engineering/qa.py",
-        "engineering/tests/test_control_refs.py",
-        "engineering/tests/test_migration.py",
-        "engineering/worker-prompt.md"
-      ],
-      "prior_finding": 5457079884,
-      "security_review": 5458546217,
-      "security_checkpoint": "82a42ddfc02fb77f140e513e9723ec0be5d2e781",
-      "ci": {
-        "run": 37795700353,
-        "jobs": [
-          113374473812,
-          113374474184,
-          113374474326,
-          113374474362,
-          113374474616,
-          113375893776
-        ],
-        "validate": {
-          "passed": 864,
-          "failed": 0,
-          "harnesses": 63
-        },
-        "infra": 24,
-        "organization": 132
-      },
-      "security_run": 37795700335,
-      "organization_job": 113377539104,
-      "threads": 0,
-      "gate": "pending review; not claimed green",
-      "live_cutover": false
-    },
-    "installation19": {
-      "state": "installed; live cutover pending",
-      "pr": 24,
-      "head": "6951b58bbc5e578f3fdfe97190b17006ccfa347e",
-      "base": "c348081a0024dc70552c5ba1b2eda0000f9eb177",
-      "merge": "57cfe88bd9dac249d6949a470afc357e835060f9",
-      "tree": "a66b831197084b4e75d867fe63bb179accfe4cab",
-      "parents": [
-        "c348081a0024dc70552c5ba1b2eda0000f9eb177",
-        "6951b58bbc5e578f3fdfe97190b17006ccfa347e"
-      ],
-      "security_review": 5458546217,
-      "qa_review": 5458620861,
-      "gate": {
-        "run": 37797158291,
-        "job": 113379571824,
-        "conclusion": "success"
-      },
-      "source_ci": 37795700353,
-      "security_ci": 37795700335,
-      "version": "0.22.25",
-      "live_cutover": false
-    },
-    "pending_task_reconciliation": null,
-    "execution_boundary": {
-      "kind": "task recovered; next ready fixed fence request",
-      "single_worker": true,
-      "notes_activated": false,
-      "legacy_deleted": false
-    },
-    "live_cutover19": {
-      "stage": "fence-request intent",
-      "policy_commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
-      "task_receipt": 6063044134,
-      "worker": "codex-resume-20261008T151223Z",
-      "lease": "codex-resume-20261008T151223Z-master-1791472370000",
-      "legacy_ref": "refs/heads/control/engineering",
-      "target_ref": "refs/notes/mynou-engineering",
-      "actual_activation": false
-    },
-    "control_migration": {
-      "phase": "retired",
-      "legacy_ref": "refs/heads/control/engineering",
-      "target_ref": "refs/notes/mynou-engineering",
-      "policy_commit": "57cfe88bd9dac249d6949a470afc357e835060f9",
-      "origin_sha": "31b56ab74f5d230a10a99a4daf2a478b392d1978",
-      "task_receipt": 6063044134,
-      "task_id": "6ac54c387af0819184713674c48b3845",
-      "fence_sha": "5c305bfbee1e0225dcd8a35cdbb8cb491a084f11",
-      "transport_comment_id": 6067681133,
-      "retirement": "confirmed",
-      "notes_proof_sha": "96e3439dbc1800f708aab0c5680211f105176e14"
     }
   },
   "attempts": {
