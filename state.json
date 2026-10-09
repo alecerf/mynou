@@ -1,15 +1,15 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 1116,
+  "generation": 1117,
   "lease": {
     "id": "codex-recovery-20261009T131600Z-master-4aa63608-7350-4a9b-8235-a670fd8df937",
     "worker": "codex-recovery-20261009T131600Z",
     "role": "master",
     "issue": 62,
     "acquired_at": "2026-10-09T13:32:28Z",
-    "heartbeat_at": "2026-10-09T13:47:15Z",
-    "expires_at": "2026-10-09T14:32:15Z",
+    "heartbeat_at": "2026-10-09T13:51:08Z",
+    "expires_at": "2026-10-09T14:36:08Z",
     "branch": "trunk",
     "commit": "6946ef76db0fc13b1fd887f6ee3d5304d5b1fbd2",
     "pr": 69
@@ -686,7 +686,7 @@
     "branch": "trunk",
     "commit": "6946ef76db0fc13b1fd887f6ee3d5304d5b1fbd2",
     "pr": 69,
-    "summary": "PR #69 was genuinely reviewed in distinct Security #5470676493 and QA #5470712427 exact-head/base leases, then merged only after native agent-qa-review #113843500435 succeeded. Exact default 6946ef76db0fc13b1fd887f6ee3d5304d5b1fbd2 CI #37937994405 attempt1 and all seven build/validate/package/release jobs succeeded. Native immutable release #407951663 v0.22.33 published at 2026-10-09T13:38:31Z has the four nonempty SHA256-bound assets and exact source tag. Native proof artifact #11620225529 ZIP digest/size/inventory was inspected as GitHub administration; proof identifies private ghcr.io/alecerf/mynou@sha256:cc6d38727602353c2de146262162847952b5cfdfbe4c3f9f4c4166d008dcd966, source/version/repository/binary match, UID1001:1001 and completed cleanup. Publication is actually verified. Post-merge Security audit #37937994372 attempt1 failed AuditError after15 requests with4657 remaining; one targeted failed actions-logs retry requested, no builds/publisher rerun. Old 403 cause remains unproven; package permissions were not changed.",
+    "summary": "Publication fix is shipped and verified: default6946ef76db0fc13b1fd887f6ee3d5304d5b1fbd2, immutable nativev0.22.33 release407951663, CI37937994405/all7jobs success, exact-tag/four assets and source-bound privateimage artifact11620225529 proven. Post-merge Security37937994372 attempt2/actions113848643851/source113848646143 succeeded:1501runs/1514attempts,37new+1477reusedarchives,582new+4771reusedmembers,0recognizedfindings/0gaps,64requests;source3480objects;CodeQL37937993886 success. Branchwork/62-publication-http-status is genuinely404 after native merge deletion. #62 remainsopen only for truthful final recovery review/handoff and cleanup. Owner PR60/64/68 premergeQA was bypassed; old post-install rejection findings now have actual publication/coverage evidence, not retroactive approval.",
     "previous_checkpoint": {
       "at": "2026-10-09T13:35:50Z",
       "issue": 62,
@@ -697,8 +697,8 @@
       "summary": "PR69 ready athead3c077/basea10 with actual distinctSecurity5470676493/checkpoint3fbee andQA5470712427/checkpoint647164. All objectiveheadgatesgreen: Mynou37934310069 sixrequiredjobs, Security37934309962attempt3 bothjobs, CodeQL37934305358, freshEngineering37937592417 organization113843444301 +agent-qa-review113843500435. CurrentMaster62 leaseondefaulta10 protectsmanualfix-forwarddelivery; source/lease/base freshguards requiredbeforeexpectedheadmerge. No33publicationclaimed.",
       "next_action": "GuardedmanualmergePR69 onlyifcurrentdefault/basea10,head3c077,ownedlease andeveryobjectivegate stillgreen. Inspectactualmergedcommit/parents anddefaultCI;CIalonepublishesimmutable33. KeepIssue62InProgress/reopenifnativeclosingpremature. Readonlyfixed diagnostic ifdefaultreleasefails; recoverexactpublicationproof beforeclosing/branchcleanup/unrelatedwork."
     },
-    "at": "2026-10-09T13:47:15Z",
-    "next_action": "Finish the single pending post-merge actions-log audit retry without native comments during inventory, record actual coverage and source-history/CodeQL evidence. Close #62 after verified publication and objective gates; then inspect #54/#61 acceptance and truthful post-install review/repair receipts before cleanup. Preserve all unique product branches and shared-identity review history.",
+    "at": "2026-10-09T13:51:08Z",
+    "next_action": "ReleaseMaster then separateSecurity andQA recovery review of installed PR60/64/68 plus reviewedPR69, exact defaultM69 and preserved native base0a15a0a156722938091168630da3eb77f077de47. Inspect complete cumulative diff and original repair/supersession/receipt tests plusactualCI/proof; record explicitly post-install review without fabricating owner premerge gates. Close62/54/61 only after their real acceptance, originalrepair receipt/readback and separateQA are verified; preserve product branches.",
     "recovery": {
       "issue": true,
       "branch": true,
