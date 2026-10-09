@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 918,
-  "lease": null,
+  "generation": 919,
+  "lease": {
+    "id": "codex-recovery-20261009T002551Z-triage-48c32cab-dcb2-4eb4-821f-d055b3b413bc",
+    "worker": "codex-recovery-20261009T002551Z",
+    "role": "triage",
+    "issue": 48,
+    "acquired_at": "2026-10-09T01:19:11Z",
+    "heartbeat_at": "2026-10-09T01:19:11Z",
+    "expires_at": "2026-10-09T02:04:11Z",
+    "branch": "work/48-safari-origin",
+    "commit": "50148774244a2b869044b83890a42cdca7950401",
+    "pr": 53
+  },
   "checkpoint": {
     "at": "2026-10-09T01:18:24Z",
     "issue": 48,
