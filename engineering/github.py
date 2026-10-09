@@ -10,6 +10,10 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parent.parent
 MAX_RESPONSE = 4 * 1024 * 1024
+# Content-addressed reads whose answer can never change: one fetch per process.
+IMMUTABLE = re.compile(r"/repos/[^/]+/[^/]+/(?:git/commits/[0-9a-f]{40}"
+                       r"|compare/[0-9a-f]{40}\.\.\.[0-9a-f]{40}"
+                       r"|contents/[^?#]+\?ref=[0-9a-f]{40})")
 
 
 class APIError(RuntimeError):
@@ -129,6 +133,7 @@ class GitHub:
             raise ValueError("An authorized GitHub token is unavailable")
         self.opener = urllib.request.build_opener(NoRedirect())
         self.calls = 0
+        self.immutable = {}
 
     def consume_request(self):
         self.calls += 1
@@ -138,6 +143,11 @@ class GitHub:
     def request(self, method, path, value=None):
         if not path.startswith("/") or path.startswith("//"):
             raise ValueError("GitHub paths must be absolute API paths")
+        # Refs, PRs, runs and other mutable state are always re-read; only
+        # commit-addressed objects are reused, as fresh copies.
+        cacheable = method == "GET" and IMMUTABLE.fullmatch(path) is not None
+        if cacheable and path in self.immutable:
+            return json.loads(self.immutable[path])
         self.consume_request()
         data = None if value is None else json.dumps(value).encode()
         request = urllib.request.Request("https://api.github.com" + path, data=data, method=method,
@@ -158,6 +168,8 @@ class GitHub:
             raise RuntimeError("GitHub transport unavailable; preserve state and retry later") from None
         if len(raw) > MAX_RESPONSE:
             raise ValueError("GitHub response exceeds the bounded size")
+        if cacheable and raw:
+            self.immutable[path] = raw
         return json.loads(raw) if raw else None
 
     def publication_archive(self, artifact_id):

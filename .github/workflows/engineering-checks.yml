@@ -31,7 +31,13 @@ jobs:
         run: python3 -m unittest discover -s engineering/tests -p 'test_*.py' -v
   agent-qa-review:
     needs: organization
-    if: github.event.pull_request && !github.event.pull_request.draft
+    # A new head never already carries its own review records. Evaluate when a
+    # review changes, or when a ready/reopened open PR may already be reviewed.
+    if: >-
+      github.event.pull_request && !github.event.pull_request.draft &&
+      github.event.pull_request.state == 'open' &&
+      (github.event_name == 'pull_request_review' ||
+       github.event.action == 'ready_for_review' || github.event.action == 'reopened')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

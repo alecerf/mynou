@@ -53,6 +53,26 @@ class ArtifactTransport(unittest.TestCase):
         self.assertEqual(json.loads(requests[1].data), payload)
         self.assertEqual(client.calls, 2)
 
+    def test_commit_addressed_reads_are_fetched_once_but_refs_are_always_reread(self):
+        client = self.client()
+        requests = []
+        class Opener:
+            def open(self, request, timeout):
+                requests.append(request.full_url)
+                return io.BytesIO(json.dumps({"sha": "a" * 40}).encode())
+        client.opener = Opener()
+        first = client.rest("GET", "git/commits/" + "a" * 40)
+        first["sha"] = "mutated by a caller"
+        self.assertEqual(client.rest("GET", "git/commits/" + "a" * 40), {"sha": "a" * 40})
+        for path in ["compare/" + "a" * 40 + "..." + "b" * 40,
+                     "contents/state.json?ref=" + "a" * 40,
+                     "git/ref/notes/mynou-engineering", "contents/state.json?ref=trunk"]:
+            client.rest("GET", path)
+            client.rest("GET", path)
+        # Commit, comparison and content-at-commit once; mutable refs every time.
+        self.assertEqual(len(requests), 7)
+        self.assertEqual(client.calls, 7)
+
     def test_signed_storage_receives_no_github_auth_and_both_requests_count(self):
         destination = "https://original.blob.core.windows.net/proof?synthetic=signature"
         client = self.client()

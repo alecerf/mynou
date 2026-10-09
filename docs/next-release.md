@@ -1,11 +1,11 @@
-# Current work — proposed 0.22.34 opt-in engineering worker leases
+# Current work — proposed 0.22.37 opt-in engineering worker leases
 
 [Issue58](https://github.com/alecerf/mynou/issues/58) prepares a bounded optional
 team model with server-read Issue scopes, exclusive control/delivery fences,
 durable per-Issue handoffs and exact installed-source activation gates.
-See [scope](releases/0.22.34.md). Live configuration/control remain serial and
-no worker is launched. Version34 is proposed for the next merge after verified
-v0.22.33; final assignment depends on actual native release/default state.
+See [scope](releases/0.22.37.md). Live configuration/control remain serial and
+no worker is launched. Version37 is proposed; 0.22.34 is published and 0.22.35-0.22.36/0.22.38
+are reserved by other PRs. Final assignment depends on actual native release/default state.
 Distinct Security/QA, CI and Actions-owned publication remain required.
 No local validation.
 
