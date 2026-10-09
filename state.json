@@ -1,28 +1,17 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 959,
-  "lease": {
-    "id": "c366e6d4-d8b4-4156-a610-302ace5d2000",
-    "worker": "github-actions-delivery",
-    "role": "triage",
+  "generation": 961,
+  "lease": null,
+  "checkpoint": {
+    "at": "2026-10-09T03:08:00Z",
     "issue": 48,
-    "acquired_at": "2026-10-09T03:07:51Z",
-    "heartbeat_at": "2026-10-09T03:07:51Z",
-    "expires_at": "2026-10-09T03:52:51Z",
+    "role": "triage",
     "branch": "trunk",
     "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
-    "pr": 53
-  },
-  "checkpoint": {
-    "at": "2026-10-09T03:04:43Z",
-    "issue": 48,
-    "role": "security",
-    "branch": "work/48-safari-origin",
-    "commit": "9d950508cd02fdb24ff31b4fb6134c0bd179b9ba",
     "pr": 53,
-    "summary": "Security ACCEPTS complete actual eight-path PR53 diff at9d950508cd02fdb24ff31b4fb6134c0bd179b9ba/baseb11d88d5e9dd67d45980ba6c85716811dd6d3101. Final formatting follows actual CI diff; private Result Err dropped before unconditional Boolean-presence assertion; both error/empty success fail and all real behavior/state/privacy checks remain. Present Origin authoritative; absent-only bounded same-origin Referer, metadata rejection, Host/session scheme-port, HTTPS cookie, token/CSRF/rotation/API isolation preserved. Actual CI37877139648 validate113648214684:892Rust/64harnesses plus24scheduler/168organization passed,5 new journeys green; all4builds/package113648876816 succeeded. source-history113648214569 scanned3239objects; actions-logs113648214437 scanned1165archives/3378members,0 selected-pattern findings/gaps, pending excluded. Native FINAL CodeQL113648376949 success/0new alerts and all3analyses includingRust113648209624 succeeded. Native181/182/183 conversations all resolved by GitHub bot. No local checks or real Safari engine run claimed. Source review finding-free; distinct QA and objective agent gate remain required before merge, no release claimed.",
-    "next_action": "Submit trusted native exact-head/base mynou-security record bound to this held Security checkpoint, persist handoff, release. Acquire distinct QA at same actual source/base; inspect complete actual diff, Issue acceptance, prior rejections/corrections and all current native checks/logs. Only after satisfactory independent logical QA with every required job green record mynou-qa, then owned Master/default-source delivery and actual gate; Actions alone publishes immutable0.22.31. No formal self-approval or skipped review.",
+    "summary": "PR #53 delivery did not complete; actual source and objective gates require recovery.",
+    "next_action": "Inspect the native PR/gates and preserved source before another delivery attempt.",
     "publication": {
       "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
       "state": "published",
@@ -563,14 +552,14 @@
       "publication_pr_handoff": 6062225589
     },
     "previous_checkpoint": {
-      "at": "2026-10-09T02:12:55Z",
+      "at": "2026-10-09T03:04:43Z",
       "issue": 48,
-      "role": "triage",
-      "branch": "trunk",
-      "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
+      "role": "security",
+      "branch": "work/48-safari-origin",
+      "commit": "9d950508cd02fdb24ff31b4fb6134c0bd179b9ba",
       "pr": 53,
-      "summary": "PR #53 delivery did not complete; actual source and objective gates require recovery.",
-      "next_action": "Inspect the native PR/gates and preserved source before another delivery attempt."
+      "summary": "Security ACCEPTS complete actual eight-path PR53 diff at9d950508cd02fdb24ff31b4fb6134c0bd179b9ba/baseb11d88d5e9dd67d45980ba6c85716811dd6d3101. Final formatting follows actual CI diff; private Result Err dropped before unconditional Boolean-presence assertion; both error/empty success fail and all real behavior/state/privacy checks remain. Present Origin authoritative; absent-only bounded same-origin Referer, metadata rejection, Host/session scheme-port, HTTPS cookie, token/CSRF/rotation/API isolation preserved. Actual CI37877139648 validate113648214684:892Rust/64harnesses plus24scheduler/168organization passed,5 new journeys green; all4builds/package113648876816 succeeded. source-history113648214569 scanned3239objects; actions-logs113648214437 scanned1165archives/3378members,0 selected-pattern findings/gaps, pending excluded. Native FINAL CodeQL113648376949 success/0new alerts and all3analyses includingRust113648209624 succeeded. Native181/182/183 conversations all resolved by GitHub bot. No local checks or real Safari engine run claimed. Source review finding-free; distinct QA and objective agent gate remain required before merge, no release claimed.",
+      "next_action": "Submit trusted native exact-head/base mynou-security record bound to this held Security checkpoint, persist handoff, release. Acquire distinct QA at same actual source/base; inspect complete actual diff, Issue acceptance, prior rejections/corrections and all current native checks/logs. Only after satisfactory independent logical QA with every required job green record mynou-qa, then owned Master/default-source delivery and actual gate; Actions alone publishes immutable0.22.31. No formal self-approval or skipped review."
     },
     "task_reconciliation": {
       "issue": 19,
