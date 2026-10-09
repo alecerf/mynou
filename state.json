@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 1105,
-  "lease": {
-    "id": "codex-recovery-20261009T131600Z-security-22d3eae9-ec1a-48df-ae34-d56b87458103",
-    "worker": "codex-recovery-20261009T131600Z",
-    "role": "security",
-    "issue": 62,
-    "acquired_at": "2026-10-09T13:22:40Z",
-    "heartbeat_at": "2026-10-09T13:25:43Z",
-    "expires_at": "2026-10-09T14:10:43Z",
-    "branch": "work/62-publication-http-status",
-    "commit": "3c077539c3409b2e295a2c79de6ee5059af49202",
-    "pr": 69
-  },
+  "generation": 1106,
+  "lease": null,
   "checkpoint": {
     "publication": {
       "commit": "a10a610bdab87810220555915c193b1eff2f1dd3",
