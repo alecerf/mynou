@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 1042,
-  "lease": {
-    "id": "codex-recovery-20261009T092646Z-triage-60ccd99a-0061-4314-ae31-0bb3d065998c",
-    "worker": "codex-recovery-20261009T092646Z",
-    "role": "triage",
-    "issue": 45,
-    "acquired_at": "2026-10-09T09:34:38Z",
-    "heartbeat_at": "2026-10-09T09:36:35Z",
-    "expires_at": "2026-10-09T10:21:35Z",
-    "branch": "work/45-live-progress",
-    "commit": "c2110ed1ae643db0e6d435835a1e66f126eb148e",
-    "pr": 57
-  },
+  "generation": 1043,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-09T09:36:35Z",
     "issue": 45,
