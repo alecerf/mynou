@@ -7,6 +7,9 @@ import lease
 from github import control_reference
 
 RECORD = re.compile(r"```json\s*\n(.*?)\n```", re.S)
+# Only these gate failures can clear while the gate job waits.
+CI_PENDING = ("Required CI workflow is missing", "Required CI job is not green")
+GATE_WORKFLOW = "Engineering checks"
 KEYS = {"schema", "role", "head_sha", "base_sha", "lease_checkpoint", "verdict",
     "summary", "reviewed_paths", "acceptance", "evidence", "findings"}
 
@@ -174,13 +177,38 @@ def evaluate(api, pr_number, cfg=None, include_gate=False, allow_merged=False):
         **({"merge": pr["merge_commit_sha"]} if allow_merged else {})}
 
 
+def running(api, cfg, head):
+    """Required workflows, other than this gate's own, still without a finished run."""
+    runs = api.pages("actions/runs?head_sha=" + head, "workflow_runs")
+    pending = []
+    for workflow in cfg["required_workflows"]:
+        if workflow == GATE_WORKFLOW:
+            continue
+        matching = [r for r in runs if r["name"] == workflow and r["head_sha"] == head]
+        latest = max(matching, key=lambda r: (r["created_at"], r["id"], r.get("run_attempt", 1)), default=None)
+        if latest is None or latest["status"] != "completed":
+            pending.append(workflow)
+    return pending
+
+
 def wait_for_review(api, pr_number, seconds):
+    """Evaluate the gate; wait, one cheap query per poll, only while CI still runs.
+
+    Review, scope, state, ownership and budget failures cannot change while this
+    job waits; a later review or push starts a fresh gate run instead."""
     deadline = waiting.monotonic() + min(max(seconds, 0), 600)
     while True:
         try:
             return evaluate(api, pr_number)
         except ValueError as error:
-            if waiting.monotonic() >= deadline:
+            if not str(error).startswith(CI_PENDING):
                 raise
-            print("QA gate waiting: " + str(error), flush=True)
-            waiting.sleep(min(30, max(0, deadline - waiting.monotonic())))
+            head = api.rest("GET", f"pulls/{pr_number}")["head"]["sha"]
+            if not running(api, api.cfg, head):
+                raise
+            print("QA gate waiting for CI: " + str(error), flush=True)
+        while running(api, api.cfg, head):
+            remaining = deadline - waiting.monotonic()
+            if remaining <= 0:
+                raise ValueError("Required CI is still running at the QA gate deadline")
+            waiting.sleep(min(30, remaining))
