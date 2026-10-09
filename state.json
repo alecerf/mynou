@@ -1,15 +1,15 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 1110,
+  "generation": 1111,
   "lease": {
     "id": "66158bad-24ad-4a5b-b5ef-b3445489348b",
     "worker": "github-actions-publication-recovery",
     "role": "triage",
     "issue": 62,
     "acquired_at": "2026-10-09T13:30:46Z",
-    "heartbeat_at": "2026-10-09T13:30:46Z",
-    "expires_at": "2026-10-09T14:15:46Z",
+    "heartbeat_at": "2026-10-09T13:30:52Z",
+    "expires_at": "2026-10-09T14:15:52Z",
     "branch": "trunk",
     "commit": "a10a610bdab87810220555915c193b1eff2f1dd3",
     "pr": 68
@@ -18,7 +18,7 @@
     "publication": {
       "commit": "a10a610bdab87810220555915c193b1eff2f1dd3",
       "state": "ci-failed",
-      "at": "2026-10-09T13:11:05Z",
+      "at": "2026-10-09T13:30:52Z",
       "run_id": 37930552053,
       "status": "completed",
       "conclusion": "failure"
@@ -633,23 +633,23 @@
       "notes_proof_sha": "96e3439dbc1800f708aab0c5680211f105176e14"
     },
     "issue": 62,
-    "role": "qa",
-    "branch": "work/62-publication-http-status",
-    "commit": "3c077539c3409b2e295a2c79de6ee5059af49202",
-    "pr": 69,
-    "summary": "Distinct QA62 challenged completeactual3-pathPR69 diff athead3c077/basea10: no product/Cargo/permissionschanges; bounded status only, unknown/ambiguous/nonAPI404failclosed, metadata failuresstopallDocker; actual5newcasespassedCI29+205. PriorSecurityrejection addressed by actualauditattempt3green andfreshSecuritypassedreview5470676493/checkpoint3fbee; CodeQL/mainCI/organizationgreen, actualthreads inspected. Diagnostic incrementacceptable;Issue62stillrequiresactualdefaultpublication aftermerge.",
+    "role": "triage",
+    "branch": "trunk",
+    "commit": "a10a610bdab87810220555915c193b1eff2f1dd3",
+    "pr": 68,
+    "summary": "Default-source CI transition: ci-failed at a10a610bdab87810220555915c193b1eff2f1dd3; native evidence {'commit': 'a10a610bdab87810220555915c193b1eff2f1dd3', 'state': 'ci-failed', 'at': '2026-10-09T13:30:52Z', 'run_id': 37930552053, 'status': 'completed', 'conclusion': 'failure'}. No release publication is inferred.",
     "previous_checkpoint": {
-      "at": "2026-10-09T13:22:21Z",
+      "at": "2026-10-09T13:30:17Z",
       "issue": 62,
-      "role": "master",
-      "branch": "trunk",
-      "commit": "a10a610bdab87810220555915c193b1eff2f1dd3",
-      "pr": 68,
-      "summary": "Recovery preservedPR69/head3c077/work62/basea10; main6requiredCIjobs andCodeQLpassed. Both exacthead logaudit attempts failedAuditError after15 inventoryrequests, withavailable capacity (attempt2remaining4830), beforecoverage metadata. Fresh native15-page inventory1481unique validruns/no duplicates. Changed bounded approach: one targetedretry whilewithholding newreview/handoff workflow triggers during enumeration. No actualrootcause orActions packageHTTPstatus claimed;no33publication.",
-      "next_action": "ReleaseMaster;acquireSecurity62 onPR69 exacthead3c077/basea10. Retryfailedreadonlyauditjob113833866728 once inquiescent interval;post noreview/handoff untilactualcompletion. Ifthirdfailure,changeapproach/addfixed enumCI diagnostic ratherthanrepeat. Onactualpass completefreshSecurityrecord,distinctcomplete-diffQA,objectivegate andguardedfix-forwardmerge/release."
+      "role": "qa",
+      "branch": "work/62-publication-http-status",
+      "commit": "3c077539c3409b2e295a2c79de6ee5059af49202",
+      "pr": 69,
+      "summary": "Distinct QA62 challenged completeactual3-pathPR69 diff athead3c077/basea10: no product/Cargo/permissionschanges; bounded status only, unknown/ambiguous/nonAPI404failclosed, metadata failuresstopallDocker; actual5newcasespassedCI29+205. PriorSecurityrejection addressed by actualauditattempt3green andfreshSecuritypassedreview5470676493/checkpoint3fbee; CodeQL/mainCI/organizationgreen, actualthreads inspected. Diagnostic incrementacceptable;Issue62stillrequiresactualdefaultpublication aftermerge.",
+      "next_action": "Submit truthfulhead/basebound QApassedrecord withthis exactheldcheckpoint, thenrelease/reacquireMaster62 defaulta10 forguardeddelivery. MarkPR69ready, waitforactualagent-qa-review green, refreshonlymutating guards, mergeexpectedhead3c077 ifeveryobjectivegategreen. CIalonepublishes0.22.33; finalacceptance requiresactualprivateimage/releaseproof, notQAforunperformedpublication."
     },
-    "at": "2026-10-09T13:30:17Z",
-    "next_action": "Submit truthfulhead/basebound QApassedrecord withthis exactheldcheckpoint, thenrelease/reacquireMaster62 defaulta10 forguardeddelivery. MarkPR69ready, waitforactualagent-qa-review green, refreshonlymutating guards, mergeexpectedhead3c077 ifeveryobjectivegategreen. CIalonepublishes0.22.33; finalacceptance requiresactualprivateimage/releaseproof, notQAforunperformedpublication.",
+    "at": "2026-10-09T13:30:52Z",
+    "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases.",
     "recovery": {
       "issue": true,
       "branch": true,
