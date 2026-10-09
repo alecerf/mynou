@@ -10,22 +10,24 @@ commits. GitHub Actions alone creates tags/releases/assets.
 ```mermaid
 flowchart LR
     Commit --> Validate[Graph, format, Clippy and all tests]
-    Commit --> Native[Native release build]
     Commit --> Static[Static release build and demo]
     Commit --> Mac[macOS arm64 and x86_64 builds and demos]
     Validate --> Package[Docker demo, binaries and checksums]
-    Native --> Package
     Static --> Package
     Mac --> Package
     Package --> Release[CI publication]
 ```
 
-Validation and four build targets run concurrently on separate runners. The
-build matrix retains native GNU and static musl coverage and adds native Apple
-Silicon and Intel builds on standard `macos-26` and `macos-26-intel` runners.
-macOS binaries must have the exact target architecture and pass the local
-acquisition/import/Plex demo on their native runner. No larger paid runner is
-selected. Packaging waits for validation and every build to succeed for the
+Validation and three build targets run concurrently on separate runners: the
+static musl Linux release and both macOS releases, i.e. exactly the published
+executables. Validation already compiles, lints and tests the host GNU target, so
+an unpublished GNU release build is not repeated. Both macOS builds use standard
+Apple Silicon `macos-26` runners; the Intel executable is cross-compiled there and
+its demo runs under Rosetta 2. In run 37938314568 the `macos-26-intel` release
+build took 229 seconds and the Apple Silicon one 100 seconds; the Intel build was
+the critical path of every source-changing PR. macOS binaries must have the exact
+target architecture and pass the local acquisition/import/Plex demo. No larger
+paid runner is selected. Packaging waits for validation and every build to succeed for the
 same workflow commit; publication waits for successful packaging.
 PR runs validate/build/package but cannot publish.
 
@@ -36,13 +38,14 @@ The checked image is retained for one day as a source-SHA-scoped Actions artifac
 then published to private GHCR only by the successful default release job. `.github/engineering.json` requires both Mac
 build job names in addition to the original Linux/package/organization gates.
 
-Runs use a noncancelling workflow concurrency group. Complete publication for a
-release before pushing its successor; this also preserves runs created from the
-earlier workflow definition. Prepare at most one following scope after successful
-validation/build/package, and inspect every required job before pushing it. PR runs
-also retain their current execution. This policy was added after a queued
-publication was cancelled during GitHub's runner-assignment incident. It changes
-queue ordering, not the graph/test/build/package/publication gates.
+Default-branch runs use a noncancelling workflow concurrency group. Complete
+publication for a release before pushing its successor; this also preserves runs
+created from the earlier workflow definition. Prepare at most one following scope
+after successful validation/build/package, and inspect every required job before
+pushing it. This policy was added after a queued publication was cancelled during
+GitHub's runner-assignment incident. A newer pull request head cancels its PR's
+older run, whose results no gate can use. This changes queue ordering, not the
+graph/test/build/package/publication gates.
 
 If a historical publication lost its default-branch head and GitHub rejects
 release creation because its workflow differs from trunk, retain its exact
@@ -129,8 +132,9 @@ library supplies orchestration; Mynou retains zero Cargo/runtime dependencies.
 ## Caches
 
 The workflow uses the official `actions/cache` 6.1.0 restore/save actions.
-Only successful push jobs on `trunk` save caches; PR runs can restore existing
-eligible caches. A cache miss always performs the normal build.
+Only successful default-branch jobs on `trunk`, including the CI that delivery
+dispatches after a token merge, save caches; PR runs can restore existing eligible
+caches. A cache miss always performs the normal build.
 
 - The test cache is scoped by OS, architecture, repository, Rust version and an
   exact fingerprint of manifests, Cargo configuration/build script, every

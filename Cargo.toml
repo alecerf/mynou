@@ -1,6 +1,6 @@
 [package]
 name = "mynou"
-version = "0.22.33"
+version = "0.22.34"
 edition = "2024"
 rust-version = "1.99"
 description = "Media library automation in Rust, using the standard library only"

@@ -8,7 +8,9 @@ permissions:
   contents: read
 concurrency:
   group: mynou-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  # A newer PR head supersedes its older validation. Default-branch runs, which
+  # publish releases, are never cancelled.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   PYTHONDONTWRITEBYTECODE: '1'
 jobs:
@@ -21,12 +23,10 @@ jobs:
     outputs:
       version: ${{ steps.metadata.outputs.version }}
     steps:
+      # Security audit's source-history job scans every reachable object.
       - uses: actions/checkout@v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
-      - name: Audit reachable source history for credential patterns
-        run: python3 engineering/secret_audit.py history --output "$RUNNER_TEMP/source-audit.json"
       - name: Install Rust 1.99.0
         run: |
           rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
@@ -81,7 +81,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
       - name: Save successful compiled test harnesses
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/trunk' && steps.cache.outputs.cache-hit != 'true'
+        if: success() && github.event_name != 'pull_request' && github.ref == 'refs/heads/trunk' && steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6.1.0
         with:
           path: |
@@ -99,15 +99,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
-            runner: ubuntu-latest
           - target: x86_64-unknown-linux-musl
             runner: ubuntu-latest
           - target: aarch64-apple-darwin
             runner: macos-26
             arch: arm64
+          # Cross-compiled on Apple Silicon, which builds release code far faster
+          # than the Intel runner; Rosetta 2 runs its demonstration.
           - target: x86_64-apple-darwin
-            runner: macos-26-intel
+            runner: macos-26
             arch: x86_64
     steps:
       - uses: actions/checkout@v7.0.1
@@ -158,6 +158,9 @@ jobs:
           otool -hv "$binary"
           otool -L "$binary"
           shasum -a 256 "$binary"
+      - name: Provide Rosetta 2 for the Intel demonstration
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: arch -x86_64 /usr/bin/true 2>/dev/null || sudo softwareupdate --install-rosetta --agree-to-license
       - name: Run the standalone demonstration
         if: matrix.target == 'x86_64-unknown-linux-musl' || runner.os == 'macOS'
         env:
@@ -190,7 +193,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
       - name: Save exact release binaries
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/trunk' && steps.cache.outputs.cache-hit != 'true'
+        if: success() && github.event_name != 'pull_request' && github.ref == 'refs/heads/trunk' && steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6.1.0
         with:
           path: |
@@ -241,7 +244,11 @@ jobs:
             "mynou:$VERSION" demo --dir /data/demo
           # Exercise the publication cleanup path with read-only PR permissions.
           python3 .github/scripts/publish_container.py --verify-demo "mynou:$VERSION"
-          docker save "mynou:$VERSION" | gzip -n > "$RUNNER_TEMP/mynou-image.tar.gz"
+      - name: Save the checked image for default publication
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/trunk'
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: docker save "mynou:$VERSION" | gzip -n > "$RUNNER_TEMP/mynou-image.tar.gz"
       - name: Package the validated release
         env:
           VERSION: ${{ needs.validate.outputs.version }}
