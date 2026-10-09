@@ -2725,6 +2725,7 @@ fn serve_peer(
     peer_id: &[u8; 20],
     policy: &PolicyRuntime,
 ) -> Result<()> {
+    crate::net::blocking(&stream)?;
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
         .map_err(|_| "Could not configure TCP")?;

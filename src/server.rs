@@ -67,6 +67,7 @@ impl Api {
                     }));
                 }
                 Ok((mut stream, _)) => {
+                    let _ = crate::net::blocking(&stream);
                     let _ = stream.set_write_timeout(Some(Duration::from_millis(100)));
                     let _ = respond(&mut stream, 503, error("API busy"));
                 }
@@ -95,6 +96,7 @@ struct HttpRequest {
     body: Vec<u8>,
 }
 fn read_request(stream: &mut TcpStream) -> Result<HttpRequest> {
+    crate::net::blocking(stream)?;
     stream
         .set_read_timeout(Some(Duration::from_secs(5)))
         .map_err(|e| e.to_string())?;
@@ -836,5 +838,27 @@ mod tests {
             assert!(parse(raw).is_err());
         }
         assert!(parse(b"GET /healthz HTTP/1.1\r\nHost: localhost\r\n\r\n").is_ok());
+    }
+    #[test]
+    fn fragmented_request_on_an_inherited_nonblocking_stream_is_read() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let writer = thread::spawn(move || {
+            let mut c = TcpStream::connect(addr).unwrap();
+            for part in [
+                "POST / HTTP/1.1\r\nHost: x\r\n",
+                "Content-Length: 2\r\n\r\n",
+                "{}",
+            ] {
+                thread::sleep(Duration::from_millis(50));
+                c.write_all(part.as_bytes()).unwrap();
+            }
+        });
+        let (mut c, _) = listener.accept().unwrap();
+        // Reproduce macOS: the accepted socket keeps the listener's O_NONBLOCK.
+        c.set_nonblocking(true).unwrap();
+        let request = read_request(&mut c).unwrap();
+        writer.join().unwrap();
+        assert_eq!(request.body, b"{}");
     }
 }
