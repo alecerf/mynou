@@ -1,45 +1,40 @@
-# Install Mynou with Docker
+# Install and run Mynou with Docker
 
-For standalone Apple Silicon or Intel deployment without Docker, use the
-[native macOS installation guide](macos.md).
+The Docker image is Linux amd64 and contains only the static Mynou executable
+and TLS certificate data: no shell, library or external program. The host needs
+Docker and its Compose plugin, nothing else. Apple Silicon hosts need amd64
+emulation; for a native install without Docker, follow the
+[macOS guide](macos.md).
 
-Registry delivery begins with 0.22.19. Use a published release whose notes include
-a verified `ghcr.io/alecerf/mynou@sha256:...` reference; source versions and PR
-checks do not establish publication. Earlier immutable releases retain their
-image archives and original installation instructions.
-
-The Linux amd64 image is `scratch`: one static Rust executable and TLS CA PEM
-data. It invokes no external programs. Docker builds use Rust 1.99.0, but the
-host needs only Docker and its Compose plugin. Apple Silicon Docker requires
-Linux amd64 emulation; this release does not claim a native Linux arm64 image.
+Images are published to the private `ghcr.io/alecerf/mynou` package from
+release 0.22.19 on. Use a published release whose notes give a verified
+`ghcr.io/alecerf/mynou@sha256:...` reference; a version in the sources or a
+pull request check does not mean an image exists. Earlier releases keep their
+own installation instructions.
 
 ## Authenticate and pull
 
-The repository and GHCR package remain private. Use an account authorized for the
-package and a GitHub personal access token (classic) with `read:packages`.
-Authenticate interactively so the token is not recorded in shell history:
+The repository and the package are private. Use an account allowed to read the
+package and a GitHub personal access token (classic) with `read:packages`. Log
+in interactively so the token stays out of your shell history, and let Docker's
+credential helper keep it:
 
 ```sh
 docker login ghcr.io
 ```
 
-Use Docker's credential helper for retained credentials. Do not place the token
-in Mynou configuration, Issues or release notes. CI uses its ephemeral repository
-token; no Docker Hub account or new repository secret is needed.
-
-Copy the exact digest from the published release notes into `MYNOU_IMAGE`.
-A digest identifies immutable content even when an authorized writer changes a
-registry tag. The version tag `ghcr.io/alecerf/mynou:0.22.19` is convenient for
-discovery, but a digest pin is recommended for installations:
+Never put this token in Mynou's configuration, an Issue or release notes. Copy
+the digest from the release notes: unlike a tag such as
+`ghcr.io/alecerf/mynou:0.22.19`, a digest always names the same image.
 
 ```sh
 MYNOU_IMAGE='ghcr.io/alecerf/mynou@sha256:REPLACE_WITH_RELEASE_DIGEST'
 docker pull "$MYNOU_IMAGE"
 ```
 
-## Prepare an installation
+## Create the installation
 
-After a successful pull, use that image in a new owned directory:
+Run `setup-docker` from the image in a directory you own:
 
 ```sh
 docker run --rm --network none --read-only --cap-drop ALL \
@@ -51,11 +46,13 @@ docker run --rm --network none --read-only --cap-drop ALL \
     "$(id -u)" "$(id -g)" "$MYNOU_IMAGE" >> mynou-docker/.env
 ```
 
-`setup-docker` refuses an existing installation directory and creates private
-configuration and an API token. Its Compose template uses the executable's own
-version; `MYNOU_IMAGE` in the private `.env` retains your digest override.
-Run as an ordinary account that owns the configuration, data and library.
-Existing custom UID/GID settings and all mounts remain supported.
+`setup-docker` refuses an existing directory. It creates `compose.yaml`,
+`mynou.json`, a private `.env` holding a random API token, `data/`,
+`library/movies/` and `library/series/`. `data/` holds the request journal,
+torrent state and downloads; the library is mounted separately. The Compose
+file uses the image's own version unless `MYNOU_IMAGE` in `.env` overrides it,
+runs the container read-only, without capabilities, as your user. Run Mynou as
+an ordinary account that owns the configuration, data and library.
 
 ```sh
 cd mynou-docker &&
@@ -65,74 +62,92 @@ cd mynou-docker &&
   docker compose exec mynou /mynou doctor --config /config/mynou.json
 ```
 
-After sign-in, open **Setup** at `/ui/setup` for a private configuration
-checklist and links to existing reviewed source/Usenet diagnostics. It reports
-loaded settings without exposing paths, credential names or values, and opening
-it performs no connection or write test. Edit private configuration/environment
-outside the browser and recreate the service after changes. See
-[guided setup](web.md#private-guided-setup).
+Then open **http://127.0.0.1:8787/ui**, sign in with `MYNOU_API_TOKEN` from
+`.env` and open **Setup** for a checklist of what is still missing (see the
+[browser guide](web.md#guided-setup)).
 
-The installation contains `compose.yaml`, `mynou.json`, a private `.env`,
-`data/` and `library/movies/` and `library/series/`. Data stores requests,
-torrents and downloads; media mounts separately. The image stays read-only,
-capabilities are removed and the container uses an unprivileged user.
+To build the image yourself instead, clone the repository and use its own
+`compose.yaml`, or build a local tag and set `MYNOU_IMAGE` to it. GitHub's
+source downloads contain sources only.
 
-For a deliberate local source build, clone the repository and use its source
-`compose.yaml`, or build `mynou:0.22.19` and set `MYNOU_IMAGE` to that local
-tag. CI alone publishes release packages. GitHub's native source downloads
-contain sources and need a build; no bundled executable ZIP is maintained.
+## Configure Mynou
 
-## Upgrade safely
+Settings live in `mynou.json`; secrets live in `.env`, which Compose passes to
+the container as environment variables. Configuration paths are paths inside
+the container. Relative paths resolve against the configuration file's
+directory. Unknown fields are rejected, and `mynou doctor` reports whether the
+file is valid. After any change, recreate the service:
 
-Read the new published release, back up configuration and retained data, then
-pull its recorded digest. Stop the service before replacing its running image,
-set `MYNOU_IMAGE` in the installation's private `.env`, and run
-`docker compose up -d`. Keep existing configuration, journals, downloads and
-library mounts. Roll back by restoring the previous digest and compatible data;
-do not delete earlier image versions or user data automatically.
-
-CI checks pre-existing version/source tags and refuses a conflicting image.
-Interrupted publication reuses the exact checked image, re-pulls its digest,
-compares the executable and runs the isolated demonstration before announcing
-a release. GitHub's registry does not provide tag compare-and-swap or enforce
-this policy against outside writers; the recorded content digest is authoritative.
-
-## Connect your existing Plex server
-
-Edit `mynou.json` to enable `plex.enabled`, set `plex.url`, provide movie/series
-section IDs, and, if needed, set `plex.watchlist_url`.
-`http://host.docker.internal:32400` addresses the Docker host. For Plex in another
-container, you can use a shared Docker network and its DNS name instead.
-
-Set `MYNOU_PLEX_TOKEN` in `.env`. For TMDB, enable `catalog.enabled` and provide
-`MYNOU_TMDB_TOKEN` or `MYNOU_TMDB_API_KEY`. Each `indexers` entry describes an
-`rss`, `json`, or `torznab` source, its URL, and the variable name holding any API
-key. Mynou makes these requests itself; the installation starts no additional
-media manager.
-
-Mount the same directories in Plex and Mynou. For example, mount the host
-`./library` directory at `/library` in both containers: movies are then in
-`/library/movies` and series in `/library/series`. Configuration paths are paths
-as seen inside the Mynou container. They resolve to absolute roots relative to
-the configuration location, even if `--config` uses a relative filename.
-
-If Plex mounts the same host directory at `/media` instead, add this field inside
-its existing `plex` configuration object:
-
-```json
-{
-  "path_mappings": [
-    {"mynou_prefix": "/library", "plex_prefix": "/media"}
-  ]
-}
+```sh
+docker compose up -d --force-recreate
 ```
 
-Upgrade confirmation requires Plex to report the new imported file in
-`Part.file`. Mappings match complete lexical path components and use the longest
-matching prefix; without a mapping, paths must match exactly. They translate
-confirmation paths, not mounts or files. See [library monitoring](library.md).
+| Setting | Generated value | Purpose |
+| --- | --- | --- |
+| `library.movies_root`, `library.series_root` | `/library/movies`, `/library/series` | Where imports go |
+| `downloads` | enabled, `/data/downloads`, `/data/torrents`, port 6881, seeding, DHT and PEX on | BitTorrent client; see [transfers](transfers.md) |
+| `store_dir` | `/data/jobs` | Request journal and snapshots |
+| `listen` | `0.0.0.0:8787` (`127.0.0.1:8787` outside Docker) | API and browser listener |
+| `api_token_env` | `MYNOU_API_TOKEN` | Variable holding the API token |
+| `workers` | `2` (1 to 32) | Requests processed at the same time |
+| `max_attempts` | `10` (up to 1,000) | Automatic retries of a failed request, with growing delays |
+| `minimum_seeders` | `1` | Candidates with fewer seeders are rejected |
+| `poll_interval_ms`, `lease_duration_secs` | `500`, `60` | Worker polling interval and lease length |
+| `plex` | disabled | [Connect Plex](#connect-plex) |
+| `catalog` | disabled | TMDB catalog, required for series |
+| `indexers` | none | [Sources](sources.md) to search |
+| `selection` | unrestricted | [Release selection](selection.md) |
+| `monitoring` | disabled | [Library upgrades](library.md#background-monitoring) |
+| `series_packs` | disabled | [Automatic packs](packs.md#prefer-packs-during-monitoring) |
+| `irc`, `requesters` | absent | [IRC announcements](sources.md#irc-announcements), [requester accounts](requesters.md) |
 
-After changing secrets or configuration:
+Each integration names the environment variable that holds its secret; put the
+values in `.env`:
+
+| Variable | Used for |
+| --- | --- |
+| `MYNOU_API_TOKEN` | API and browser sign-in (generated) |
+| `MYNOU_PLEX_TOKEN` | Plex server and its watchlist |
+| `MYNOU_TMDB_TOKEN` or `MYNOU_TMDB_API_KEY` | TMDB catalog |
+| `MYNOU_INDEXER_API_KEY` | Default API key variable for sources |
+
+Enable the catalog with `catalog.enabled`, and describe each source as shown in
+[sources](sources.md). Mynou talks to these services itself; the installation
+runs no other media manager. Then check a search:
+
+```sh
+docker compose exec mynou /mynou search --title "Example Movie" --year 2026 \
+  --config /config/mynou.json
+```
+
+## Connect Plex
+
+Set `plex.enabled`, `plex.url` and the movie and series section IDs
+(`plex.movies_section`, `plex.series_section`), and put the token in
+`MYNOU_PLEX_TOKEN`. `http://host.docker.internal:32400` reaches Plex on the
+Docker host; for Plex in another container, use a shared Docker network and its
+name. `plex.watchlist_url` only needs changing for a different watchlist
+service.
+
+Mount the same host folders in Plex and Mynou. If both see the host's
+`./library` as `/library`, movies are in `/library/movies` and series in
+`/library/series`. If Plex mounts it as `/media` instead, add a mapping inside
+the `plex` object:
+
+```json
+"path_mappings": [
+  {"mynou_prefix": "/library", "plex_prefix": "/media"}
+]
+```
+
+After an import, Mynou asks Plex to scan and waits until Plex lists the title.
+Upgrades, shared videos and requester imports need more: Plex must report the
+exact imported path in `Part.file`. Mappings translate those paths for
+comparison only: they do not move files or change mounts. They match whole
+path components (`/library` does not match `/library-extra`), the longest
+prefix wins, and without a mapping the paths must be identical.
+
+After changing the configuration, recreate the service and synchronize:
 
 ```sh
 docker compose up -d --force-recreate
@@ -140,165 +155,18 @@ docker compose exec mynou /mynou sync --config /config/mynou.json
 docker compose exec mynou /mynou jobs --config /config/mynou.json
 ```
 
-## Configure selection before automatic acquisition
+## Everyday use
 
-The optional `selection` object defines named movie and episode profiles. Follow
-the [selection guide](selection.md) to restrict resolution, source, codec or
-language markers and configure required/blocked terms or scores. Existing
-configuration files without this object keep unrestricted selection.
+The browser and the API share `127.0.0.1:8787`. `/healthz` and `/readyz` report
+health; `/api` routes need `Authorization: Bearer` with the API token. The
+container health check runs the Mynou binary itself. For remote access, put a
+TLS reverse proxy in front and keep the plain listener private; see
+[remote access](web.md#sign-in-sessions-and-remote-access).
 
-Restart the service after changing its configuration, then preview a request:
+Port 6881/TCP accepts BitTorrent peers; whether peers can reach it depends on
+your firewall and router. DHT and UDP trackers use outgoing connections only.
 
-```sh
-docker compose up -d --force-recreate
-docker compose exec mynou /mynou search --title "Example Movie" --year 2026 \
-  --config /config/mynou.json
-docker compose exec mynou /mynou search --title "Example Series" --kind episode \
-  --season 1 --episode 2 --config /config/mynou.json
-```
-
-The report shows accepted/rejected candidates and the proposed winner. It omits
-acquisition URLs and credentials, and creates no download or journal request.
-The preview still contacts your configured sources. Release-title markers do
-not verify actual tracks.
-
-## Configure series monitoring
-
-With TMDB and sources enabled, open **Series** in the browser or use the running
-container to create a durable series plan:
-
-```sh
-docker compose exec mynou /mynou track-series --title "Example Series" \
-  --year 2026 --tmdb-id 123 --future-only --config /config/mynou.json
-docker compose exec mynou /mynou series --config /config/mynou.json
-docker compose exec mynou /mynou calendar --config /config/mynou.json
-```
-
-A monitored record checks for newly aired missing episodes while the service
-runs. This is independent from owned-library upgrade monitoring below. Plex show
-watchlist entries also create series records. Their monitoring survives watchlist
-removal; disable it explicitly in Series settings. Keep the complete data mount
-in backups, including the request journal and private `series.json`. See the
-[series guide](series.md) for unknown dates/identities, specials, refresh limits
-and opt-in season-pack preference. Set `"series_packs": { "enabled": true }`
-in `mynou.json` to try mapped packs before individual jobs during monitored
-tracking and refresh; this defaults to false.
-
-## Choose an explicit season pack
-
-Use `track-series --unmonitored` to save a new catalog scope before automatic
-individual acquisition, then use **Acquire a mapped pack** in browser series
-details. The CLI also supports `series-pack ID --url … --mapping FILE`. Mapping
-paths name files inside the torrent, including its top-level directory; they do
-not name the download mount or torrent hash prefix. New mapped native transfers
-acquire selected file interests and required boundary pieces, while jobs import
-their exact verified video files. Earlier full transfers keep that policy.
-See the [pack guide](packs.md) for the JSON format and CLI/API operations.
-
-For automatic numbered-file mapping, use **Preview season packs** in series
-details or the running container's CLI:
-
-```sh
-docker compose exec mynou /mynou series-pack-search ID --season 1 \
-  --config /config/mynou.json
-```
-
-Preview contacts sources and authenticates metadata without payload downloads
-or jobs. Review the resolved mapping before guarded apply. See
-[automatic packs](automatic-packs.md) for discovery bounds and identity checks.
-
-Pack jobs add a persistent file-mapping field. Retain all data mounts and avoid
-downgrading installations containing mapped jobs to older binaries.
-
-## Configure library monitoring
-
-Background monitoring is disabled by default, including for existing
-configurations. Add a top-level `monitoring` object to enable it deliberately:
-
-```json
-{
-  "monitoring": {
-    "enabled": true,
-    "interval_secs": 3600,
-    "max_checks": 32
-  }
-}
-```
-
-The interval must be 60–86,400 seconds and the check limit 1–256 entries per
-pass. Configure profile cutoffs before enabling unattended upgrades. A cutoff
-is optional and follows resolution preference order. Restart after configuration
-changes, then inspect the current owned library and preview an upgrade pass:
-
-```sh
-docker compose up -d --force-recreate
-docker compose exec mynou /mynou library --config /config/mynou.json
-docker compose exec mynou /mynou upgrades --config /config/mynou.json
-```
-
-Use `upgrades --apply` for an explicit apply pass even when background monitoring
-is disabled. Manual passes ignore the polling interval; background passes honor
-it, with timestamps persisted even on failed searches. Use `monitor ID` or
-`unmonitor ID` to control an individual current entry. Earlier or explicit
-imports without a recorded release baseline remain
-ineligible until `baseline ID --release-title TITLE` supplies a matching release
-name for present, safe owned files with declared video streams. Plex files
-that Mynou skipped rather than imported are not adopted automatically.
-
-An upgrade keeps old imports and downloads and uses a unique filename for the
-replacement. Failed or canceled replacements leave the earlier ready entry
-current. A same-media manual request cannot become ready while an upgrade is
-pending; cancel that pending upgrade if you choose the manual alternative.
-Promotion preserves the parent's current monitoring choice. Plan disk space for
-retained versions; no automatic cleanup is included.
-The [library guide](library.md) covers baseline claims, preview/apply behavior,
-cutoffs and the authenticated API.
-
-## Configure peer concurrency and transfer limits
-
-Inside the existing `downloads` object, `max_active` bounds active transfers and
-`max_peers` bounds outgoing peer workers per transfer. `max_peers` defaults to
-`4`, including when omitted by an older configuration, and accepts integers
-`1` through `8`. Set it to `1` for a single-peer baseline. Global worker and
-per-transfer resource bounds can lower the effective peer count. Restart the
-service after changing it; see [parallel transfer bounds](transfers.md#parallel-peer-transfers).
-
-Optional policy fields live directly inside the existing `downloads` object:
-
-```json
-{
-  "download_limit_bps": 0,
-  "upload_limit_bps": 0,
-  "seed_ratio_milli": null,
-  "seed_time_secs": null
-}
-```
-
-The values above are the defaults, including for older configuration files.
-Download/upload limits count global content payload bytes per second; `0` means
-unlimited. A non-null ratio of `1000` represents 1.0, and the time limit is in
-seconds. Global rate limits remain mandatory for every transfer; ratio/time
-values are seeding defaults that a complete per-transfer policy can replace.
-Rate buckets allow a bounded 16 KiB burst. These policies keep imported library
-files and downloaded sources. Restart the service after changing configuration.
-See [transfer controls](transfers.md) for bounds, durable counters, pause/resume, queue priorities and policy behavior.
-
-## Ports and management
-
-Browser management and the API share `127.0.0.1:8787`. Open
-**http://127.0.0.1:8787/ui** and sign in with `MYNOU_API_TOKEN` from `.env`.
-The browser uses separate expiring session cookies and protected forms. For
-remote access, use a TLS proxy that preserves Host/Origin and keeps the plain
-listener private; see the [browser deployment guide](web.md#sign-in-and-deployment).
-`/healthz` and `/readyz` describe service health; `/api` operations require the
-`MYNOU_API_TOKEN` Bearer token. The healthcheck uses the Mynou binary itself.
-
-Port 6881/TCP accepts BitTorrent peers. DHT and UDP trackers make outgoing
-requests using ephemeral sockets; no inbound UDP port is published. The DHT
-client is not a complete DHT server, and the engine does not implement uTP.
-Inbound TCP access depends on your firewall and router.
-
-Manage requests with the container CLI:
+Run any CLI command inside the container:
 
 ```sh
 docker compose exec mynou /mynou submit --title "Movie" --year 2026 \
@@ -309,36 +177,30 @@ docker compose exec mynou /mynou retry ID --config /config/mynou.json
 docker compose exec mynou /mynou cancel ID --config /config/mynou.json
 ```
 
-For a local source, mount its directory and pass its container path with `--path`.
-Canceling a request does not delete files or cancel other requests that might
-share the torrent.
-
-## Back up and update
-
-Keep `mynou.json`, `.env`, `data`, and the library directories. For a consistent
-backup, stop the service before copying its data. The journal synchronizes
-confirmed transactions. After an abrupt interruption, an incomplete final write
-is recovered at the next writable service start. Offline library listing and
-upgrade previews do not create files, change permissions or repair storage;
-fresh storage returns no entries and an interrupted tail asks for explicit writable recovery.
-
-Authenticated `POST /api/shutdown` lets the service finish its workers. The
-standard library does not provide the portable Unix SIGTERM handler this project
-would need. A forced container stop therefore relies on durable recovery rather
-than application-level graceful shutdown.
-
-For an update, download and load the new CI-published image or rebuild from its
-sources, change the image version in your installation's `compose.yaml`, then
-recreate the container. Preserve configuration and data. Keep old Go/SQLite data
-in another directory: it is not the Rust persistence format and is not imported
-automatically.
+For a local file, mount its folder and pass the container path with `--path`.
+Cancelling a request never deletes files or cancels other requests sharing the
+torrent.
 
 ## TLS trust and proxies
 
-HTTPS connections use the native TLS client. You can replace the image's trust
-bundle with a read-only mounted PEM file and `MYNOU_CA_FILE`. Add a private CA to
-that bundle for an internal service. There is no certificate-validation bypass.
+HTTPS uses Mynou's own TLS client and the image's certificate bundle. To trust a
+private certificate authority, mount a PEM bundle read-only and point
+`MYNOU_CA_FILE` at it. Certificate validation cannot be disabled. If your
+network needs a proxy, set `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` for the
+service; local management commands bypass it.
 
-Provide `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` to the service if your network
-requires them. Local management commands bypass the proxy. See
-[protocol limits](limits.md) for supported variants.
+## Back up and upgrade
+
+Keep `mynou.json`, `.env`, `data/` and the library folders. For a consistent
+backup, stop the service before copying `data/`. The journal confirms each
+transaction on disk, and an interrupted final write is recovered at the next
+start. `POST /api/shutdown` lets running work finish; `docker compose stop`
+instead relies on that recovery.
+
+To upgrade, read the new release notes, back up, then pull the new digest, set
+it as `MYNOU_IMAGE` in `.env` and recreate the service. Keep the configuration,
+journal, downloads and library. To roll back, restore the previous digest with
+compatible data: some versions change storage formats that older versions
+refuse (see [limits](limits.md#persistence-and-platform)). Never delete older
+images or user data automatically. Data from the former Go release (SQLite) is
+not imported: keep it in a separate folder.

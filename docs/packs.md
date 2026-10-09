@@ -174,4 +174,5 @@ episode keeps the binding and the file; retry reuses them. A later review of the
 same file can request any subset of the recorded episodes, but a group cannot be
 extended, reassigned or partly replaced, and it cannot take an episode that
 already has another request. Shared episodes cannot be remapped, given a
-baseline or upgraded individually: see [shared-group upgrades](library.md#upgrade-a-shared-group).
+baseline or upgraded individually: see
+[shared-group upgrades](library.md#upgrade-a-shared-group).

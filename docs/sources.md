@@ -146,7 +146,7 @@ after any change.
   value keeps the binding; any other change needs a new ID, and retired IDs stay
   reserved.
 
-### Authentication
+### SASL and NickServ
 
 A source can require SASL PLAIN or NickServ identification, not both. Neither
 has an unauthenticated fallback: a failure closes the connection, and every

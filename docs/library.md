@@ -147,8 +147,9 @@ Plex sees the library under another path, configure
 
 ## Upgrade a shared group
 
-Episodes that share one video ([shared videos](packs.md#one-video-for-several-episodes))
-cannot be upgraded or given a baseline individually; upgrade reports show
+Episodes that share one video
+([shared videos](packs.md#one-video-for-several-episodes)) cannot be upgraded
+or given a baseline individually; upgrade reports show
 `shared_group_upgrade_required` and scans never search these groups. Instead,
 review the whole group with `library-group`, using any owner's job ID. Every
 owner must be ready and current, and the operation always covers the complete
