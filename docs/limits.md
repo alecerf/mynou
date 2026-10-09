@@ -439,3 +439,20 @@ Read/write/hash chunks are at most 64 KiB. No existing-file overwrite, automatic
 queue/library admission, live permission inference or hostile atomic snapshot is
 provided. Incomplete staging remains unpublished; post-rename synchronization
 uncertainty requires checked reopen. See [support](par2.md).
+
+## Not supported
+
+- Advanced torrent transports and networking: uTP, WebRTC/WebTorrent, webseeds,
+  automatic NAT traversal (UPnP/NAT-PMP) and a complete persistent DHT table.
+- Broad tracker and provider coverage, changing authentication schemes and a
+  comprehensive adapter catalog.
+- Cross-seeding and further bulk automation.
+- Full parity with Radarr, Sonarr, Pulsarr, qBittorrent, qui, autobrr or
+  Prowlarr.
+- Mature administration across multiple installations and operating systems.
+- An independent review of the original cryptographic and protocol code.
+
+"Zero dependencies" describes how Mynou is built. It does not guarantee
+completeness, security, optimal performance or compatibility. CI fixtures use
+synthetic media and local services: they do not establish compatibility with
+your Plex installation or public-swarm throughput.
