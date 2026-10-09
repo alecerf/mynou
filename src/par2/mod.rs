@@ -3,9 +3,11 @@
 pub mod gf16;
 mod parser;
 mod recovery;
+mod streaming;
 mod verification;
 
 pub use recovery::{MultiRecoveryLimits, RecoveredFile, RecoveryInput, RecoveryLimits};
+pub use streaming::{StreamedRecovery, StreamingLimits, StreamingPlan};
 pub use verification::{
     FileVerification, Verification, verify_directory, verify_directory_cancellable,
 };
