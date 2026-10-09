@@ -926,6 +926,12 @@ impl Store {
         }
     }
 
+    pub(crate) fn job_progress(&self, id: &str) -> Option<(&str, f64, u32)> {
+        self.jobs
+            .get(id)
+            .map(|job| (job.state.as_str(), job.progress, job.attempts))
+    }
+
     pub fn get(&self, id: &str) -> Option<Job> {
         self.jobs.get(id).cloned()
     }

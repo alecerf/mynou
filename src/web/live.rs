@@ -95,10 +95,10 @@ pub(super) fn snapshot(engine: &Engine, kind: &str, ids: &[String]) -> Result<Re
         let store = lock(&engine.store)?;
         for id in ids {
             let mut entry = identity(id);
-            if let Some(job) = store.get(id) {
-                entry.insert("state", state(&job.state, JOB_STATES)?);
-                entry.insert("progress", progress(job.progress));
-                entry.insert("attempts", job.attempts);
+            if let Some((status, completion, attempts)) = store.job_progress(id) {
+                entry.insert("state", state(status, JOB_STATES)?);
+                entry.insert("progress", progress(completion));
+                entry.insert("attempts", attempts);
             } else {
                 entry.insert("missing", true);
             }
