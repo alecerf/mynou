@@ -509,17 +509,23 @@ fn verified_piece_bytes(meta: &Meta, index: usize) -> u64 {
         .sum()
 }
 
+fn seed_clock_snapshot(job: &Job) -> (u64, Duration) {
+    if let Some((started, base)) = job.seed_clock {
+        let elapsed = started.elapsed().saturating_add(job.seed_partial);
+        (
+            base.saturating_add(elapsed.as_secs()),
+            Duration::from_nanos(u64::from(elapsed.subsec_nanos())),
+        )
+    } else {
+        (job.control.seed_elapsed_secs, job.seed_partial)
+    }
+}
 fn clock_control(job: &Job) -> (TorrentControl, Duration) {
     let mut control = job.control.clone();
     control.downloaded_bytes = job.counters.downloaded.load(Ordering::Relaxed);
     control.uploaded_bytes = job.counters.uploaded.load(Ordering::Relaxed);
-    let partial = if let Some((started, base)) = job.seed_clock {
-        let elapsed = started.elapsed().saturating_add(job.seed_partial);
-        control.seed_elapsed_secs = base.saturating_add(elapsed.as_secs());
-        Duration::from_nanos(u64::from(elapsed.subsec_nanos()))
-    } else {
-        job.seed_partial
-    };
+    let (seconds, partial) = seed_clock_snapshot(job);
+    control.seed_elapsed_secs = seconds;
     (control, partial)
 }
 fn snapshot_control(job: &Job) -> TorrentControl {
@@ -718,6 +724,24 @@ fn apply_seed_limits(job: &mut Job, config: &DownloadConfig, defaults: &Transfer
     }
 }
 
+fn transfer_state(job: &Job) -> &'static str {
+    if job.paused || job.control.user_paused {
+        "paused"
+    } else if job.failed {
+        "failed"
+    } else if job.status.ready && job.control.seed_limited {
+        "seed_limited"
+    } else if job.status.ready {
+        "ready"
+    } else if job.status.selected_ready {
+        "selected_ready"
+    } else if job.running {
+        "downloading"
+    } else {
+        "queued"
+    }
+}
+
 fn transfer_value(
     job: &Job,
     queue_position: usize,
@@ -730,24 +754,7 @@ fn transfer_value(
     value.insert("selected_ready", job.status.selected_ready);
     value.insert("running", job.running);
     value.insert("paused", job.paused || job.control.user_paused);
-    value.insert(
-        "status",
-        if job.paused || job.control.user_paused {
-            "paused"
-        } else if job.failed {
-            "failed"
-        } else if job.status.ready && job.control.seed_limited {
-            "seed_limited"
-        } else if job.status.ready {
-            "ready"
-        } else if job.status.selected_ready {
-            "selected_ready"
-        } else if job.running {
-            "downloading"
-        } else {
-            "queued"
-        },
-    );
+    value.insert("status", transfer_state(job));
     value.insert("failed", job.failed);
     value.insert("queue_position", Json::Number(queue_position as f64));
     value.insert("progress", Json::Number(job.status.progress));
@@ -1496,6 +1503,51 @@ impl Client {
             &self.config,
         ))
     }
+    /// A bounded read-only projection: no file, policy, source or request snapshots.
+    pub(crate) fn transfer_progress(&self, ids: &[String]) -> Result<crate::json::Value> {
+        use crate::json::Value as Json;
+        if ids.is_empty() || ids.len() > 50 {
+            return Err("Transfer progress scope exceeds the limit".into());
+        }
+        let jobs = self
+            .jobs
+            .lock()
+            .map_err(|_| "BitTorrent state lock is poisoned")?;
+        let mut entries = Vec::with_capacity(ids.len());
+        for id in ids {
+            let mut entry = Json::object();
+            entry.insert("id", id.as_str());
+            if let Some(job) = jobs.get(id) {
+                entry.insert("state", transfer_state(job));
+                entry.insert(
+                    "progress",
+                    Json::Number(if job.status.progress.is_finite() {
+                        job.status.progress.clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    }),
+                );
+                entry.insert(
+                    "downloaded_bytes",
+                    job.counters.downloaded.load(Ordering::Relaxed).to_string(),
+                );
+                entry.insert(
+                    "uploaded_bytes",
+                    job.counters.uploaded.load(Ordering::Relaxed).to_string(),
+                );
+                entry.insert(
+                    "verified_bytes",
+                    job.counters.verified.load(Ordering::Relaxed).to_string(),
+                );
+                entry.insert("seed_elapsed_secs", seed_clock_snapshot(job).0.to_string());
+            } else {
+                entry.insert("missing", true);
+            }
+            entries.push(entry);
+        }
+        Ok(Json::Array(entries))
+    }
+
     pub fn transfers(&self) -> Result<crate::json::Value> {
         let jobs = self
             .jobs

@@ -964,7 +964,7 @@ fn library_forms_monitor_record_baseline_and_preview_upgrades_with_file_retentio
 }
 
 #[test]
-fn sessions_end_on_restart_and_pages_offer_keyboard_navigation_without_scripts() {
+fn sessions_end_on_restart_and_pages_offer_native_keyboard_navigation() {
     let directory = Directory::new();
     let mut cfg = config::from_json(&configuration(None, "{}"), &directory.0).unwrap();
     let server = Server::open(cfg.clone());
@@ -982,7 +982,16 @@ fn sessions_end_on_restart_and_pages_offer_keyboard_navigation_without_scripts()
         assert!(response.body.contains("<html lang=en>"));
         assert!(response.body.contains("Skip to content"));
         assert!(response.body.contains("<main id=main>"));
-        assert!(!response.body.contains("<script"));
+        if route == "/ui/jobs" {
+            assert!(
+                response
+                    .body
+                    .contains("<script defer src=/ui/live.js integrity=")
+            );
+            assert!(response.body.contains("data-live-toggle disabled"));
+        } else {
+            assert!(!response.body.contains("<script"));
+        }
         assert!(response.body.contains("href=/ui/style.css"));
         response.no_secrets();
     }

@@ -234,8 +234,19 @@ files and range inference remain later work. See
 [shared-file ownership](shared-files.md) and [group upgrades](group-upgrades.md).
 
 The browser interface uses a shared operator token, original server-rendered
-pages and native forms, with page refreshes rather than live streaming. It has
-bounded pagination and bulk job/library/transfer/series controls. It does not edit
+pages and native forms. Optional Jobs/Transfers list/detail progress uses explicit
+page-only enable/pause controls, visible-only ten-second polling, one request at
+a time, an eight-second deadline, at most 50 displayed identifiers and 48 KiB
+per reply. It changes known progress nodes only; filters, selected rows and
+unfinished forms remain in place. Freshness follows complete accepted replies;
+missing rows remain Unavailable. Authentication stops updates; other failures
+require explicit retry or refresh. No preference persistence, row insertion,
+streaming, ETA or bandwidth estimation is added. Manual refresh remains available.
+The first-party asset has exact CSP/SRI content pinning; status routes require the
+browser session and exact origin, disclose no private source metadata and do not
+consume flash messages or renew sessions. Browser/assistive-technology
+interoperability has not been independently verified. See [live progress](web.md#live-progress).
+The UI retains bounded pagination and bulk job/library/transfer/series controls. It does not edit
 configuration or adopt a complete existing Plex library. Plex requester policies
 provide reviewed approvals, quotas and routing with recorded notification outcomes;
 requester self-service remains later work. Explicit native HTTP notification routes

@@ -15,6 +15,9 @@ network integrations.
 checklist for folders, sources, native download routes, catalog and Plex.
 Fixed configuration states and links to existing guarded diagnostics help you
 reach a first request while keeping private settings out of the page.
+Optional [live progress](docs/web.md#live-progress) updates the displayed Jobs and
+Transfers without replacing filters, selected rows or unfinished forms. Enable or
+pause updates on each page; ordinary page refresh remains available.
 
 Explicit [episode numbering](docs/numbering.md) separates source/catalog labels
 from retained library identities. Preview and apply choices through CLI/API/browser;

@@ -5,13 +5,19 @@ entire media-management stack at once. Every stage keeps Rust std only, no Cargo
 dependencies, English project text, and CI-only validation. GitHub Actions
 publishes a release only after its checks pass for the exact source commit.
 
-## Current product increment: proposed 0.22.28
+## Current product increment: live progress, unreleased
 
-[Issue41](https://github.com/alecerf/mynou/issues/41) adds private, actionable
-first-run setup guidance in the existing authenticated browser. It reuses
-configuration and guarded diagnostics, keeps GET nonacquiring/read-only and
-distinguishes loaded settings from actual connection/write verification.
-See [scope](releases/0.22.28.md) and [browser guidance](web.md#private-guided-setup).
+[Issue45](https://github.com/alecerf/mynou/issues/45) adds opt-in live Jobs and
+Transfers progress on existing lists and details. Only displayed identifiers are
+read; filters, selected rows, focus and unfinished forms stay in place.
+Visibility, authentication and failure stop or pause requests. It ships with the
+next weekly release; see [the unreleased note](releases/unreleased/45.md) and
+[live progress](web.md#live-progress).
+
+Since [v0.22.34](https://github.com/alecerf/mynou/releases/tag/v0.22.34), `trunk`
+also carries private iCalendar export (#56) and media-sized PAR2 recovery (#39);
+automatic Usenet repair #40 awaits triage. Guided setup #41 and the original
+immutable releases remain preserved.
 
 ## Published organization increment: 0.22.27
 

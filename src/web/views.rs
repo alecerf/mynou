@@ -1,4 +1,4 @@
-//! Escaped semantic HTML. No scripts, third-party assets or client-side state.
+//! Escaped semantic HTML with an optional content-pinned progress enhancement.
 use super::{
     forms::{Form, decimal, encode},
     session::Session,
@@ -105,13 +105,14 @@ pub fn jobs(engine: &Arc<Engine>, session: &Session, query: &Form) -> Result<Str
     let mut body = String::from(
         "<p class=lead>Follow each request through search, download and library import.</p><a class=button href=/ui/search>New request</a>",
     );
+    body.push_str(&live_controls("jobs"));
     body.push_str(&browse.filter("/ui/jobs", JOB_STATES));
     body.push_str(&form("/ui/jobs/action", session));
     body.push_str("<div class=table-wrap><table><caption>Requests</caption><thead><tr><th scope=col>Select</th><th scope=col>Title</th><th scope=col>State</th><th scope=col>Progress</th><th scope=col>Attempts</th></tr></thead><tbody>");
     for job in jobs.iter().skip(offset).take(PAGE_SIZE) {
-        body.push_str(&format!("<tr><td>{}</td><td><a href=\"/ui/jobs/{}\">{}</a><small>{} · {}</small></td><td>{}</td><td>{}</td><td>{}</td></tr>",
-            checkbox(&job.id), e(&job.id), display(&job.request.title), display(&job.request.kind), job.request.year,
-            badge(&job.state), progress(job.progress), job.attempts));
+        body.push_str(&format!("<tr data-live-id=\"{}\"><td>{}</td><td><a href=\"/ui/jobs/{}\">{}</a><small>{} · {}</small></td><td>{}</td><td>{}</td><td data-live-field=attempts>{}</td></tr>",
+            e(&job.id), checkbox(&job.id), e(&job.id), display(&job.request.title), display(&job.request.kind), job.request.year,
+            live_badge(&job.state), progress(job.progress), job.attempts));
     }
     body.push_str("</tbody></table></div>");
     body.push_str(&bulk_controls(&[
@@ -358,9 +359,11 @@ pub fn job(engine: &Arc<Engine>, session: &Session, query: &Form, id: &str) -> R
     };
     let value = public_job(&job);
     let mut body = format!(
-        "<p class=lead>{}</p><section class=panel><h2>Request details</h2><dl><dt>State</dt><dd>{}</dd><dt>Progress</dt><dd>{}</dd><dt>Content type</dt><dd>{}</dd><dt>Year</dt><dd>{}</dd><dt>Season / episode</dt><dd>{} / {}</dd><dt>Attempts</dt><dd>{}</dd><dt>Source</dt><dd>{}</dd></dl>",
+        "<p class=lead>{}</p>{}<section class=panel><h2>Request details</h2><dl data-live-id=\"{}\"><dt>State</dt><dd>{}</dd><dt>Progress</dt><dd>{}</dd><dt>Content type</dt><dd>{}</dd><dt>Year</dt><dd>{}</dd><dt>Season / episode</dt><dd>{} / {}</dd><dt>Attempts</dt><dd data-live-field=attempts>{}</dd><dt>Source</dt><dd>{}</dd></dl>",
         display(&job.request.title),
-        badge(&job.state),
+        live_controls("jobs"),
+        e(id),
+        live_badge(&job.state),
         progress(job.progress),
         display(&job.request.kind),
         job.request.year,
@@ -568,13 +571,14 @@ pub fn transfers(engine: &Arc<Engine>, session: &Session, query: &Form) -> Resul
     let mut body = String::from(
         "<p class=lead>Manage the native download queue. Pause, resume and prioritize transfers while retaining files.</p>",
     );
+    body.push_str(&live_controls("transfers"));
     body.push_str(&browse.filter("/ui/transfers", TRANSFER_STATES));
     body.push_str(&form("/ui/transfers/action", session));
     body.push_str("<div class=table-wrap><table><caption>Native transfers</caption><thead><tr><th scope=col>Select</th><th scope=col>Transfer</th><th scope=col>State</th><th scope=col>Progress</th><th scope=col>Priority</th><th scope=col>Downloaded / uploaded</th></tr></thead><tbody>");
     for entry in entries.iter().skip(offset).take(PAGE_SIZE) {
         let id = text(entry, "id");
-        body.push_str(&format!("<tr><td>{}</td><td><a href=\"/ui/transfers/{}\">{}</a><small><code>{}</code></small></td><td>{}</td><td>{}</td><td>{}</td><td>{} / {} bytes</td></tr>",
-            checkbox(id), e(id), display(&transfer_name(entry)), e(id), badge(text(entry, "status")), progress(entry.get("progress").and_then(Value::as_f64).unwrap_or(0.0)),
+        body.push_str(&format!("<tr data-live-id=\"{}\"><td>{}</td><td><a href=\"/ui/transfers/{}\">{}</a><small><code>{}</code></small></td><td>{}</td><td>{}</td><td>{}</td><td><span data-live-field=downloaded_bytes>{}</span> / <span data-live-field=uploaded_bytes>{}</span> bytes</td></tr>",
+            e(id), checkbox(id), e(id), display(&transfer_name(entry)), e(id), live_badge(text(entry, "status")), progress(entry.get("progress").and_then(Value::as_f64).unwrap_or(0.0)),
             scalar(entry, "priority"), scalar(entry, "downloaded_bytes"), scalar(entry, "uploaded_bytes")));
     }
     body.push_str("</tbody></table></div>");
@@ -592,10 +596,12 @@ pub fn transfer(engine: &Arc<Engine>, session: &Session, query: &Form, id: &str)
     let requested = requested_page(query, "page")?;
     let value = engine.transfer(id)?;
     let mut body = format!(
-        "<p class=lead>{}</p><section class=panel><h2>Transfer details</h2><dl><dt>Identifier</dt><dd><code>{}</code></dd><dt>State</dt><dd>{}</dd><dt>Progress</dt><dd>{}</dd><dt>Downloaded</dt><dd>{} bytes</dd><dt>Uploaded</dt><dd>{} bytes</dd><dt>Verified payload</dt><dd>{} bytes</dd><dt>Seeding availability</dt><dd>{} seconds</dd></dl><p>{}</p>",
+        "<p class=lead>{}</p>{}<section class=panel><h2>Transfer details</h2><dl data-live-id=\"{}\"><dt>Identifier</dt><dd><code>{}</code></dd><dt>State</dt><dd>{}</dd><dt>Progress</dt><dd>{}</dd><dt>Downloaded</dt><dd><span data-live-field=downloaded_bytes>{}</span> bytes</dd><dt>Uploaded</dt><dd><span data-live-field=uploaded_bytes>{}</span> bytes</dd><dt>Verified payload</dt><dd><span data-live-field=verified_bytes>{}</span> bytes</dd><dt>Seeding availability</dt><dd><span data-live-field=seed_elapsed_secs>{}</span> seconds</dd></dl><p>{}</p>",
         display(&transfer_name(&value)),
+        live_controls("transfers"),
         e(id),
-        badge(text(&value, "status")),
+        e(id),
+        live_badge(text(&value, "status")),
         progress(value.get("progress").and_then(Value::as_f64).unwrap_or(0.0)),
         scalar(&value, "downloaded_bytes"),
         scalar(&value, "uploaded_bytes"),
@@ -878,6 +884,12 @@ pub(super) fn frame(title: &str, active: &str, session: Option<&Session>, body: 
         html.push_str("</ul></section>");
     }
     html.push_str(body);
+    if matches!(active, "/ui/jobs" | "/ui/transfers") && body.contains("data-live=") {
+        html.push_str(&format!(
+            "<script defer src=/ui/live.js integrity=\"{}\"></script>",
+            super::live::integrity()
+        ));
+    }
     html.push_str(&format!(
         "</main><footer>Mynou {} · <a href=/ui>Refresh overview</a></footer></body></html>",
         env!("CARGO_PKG_VERSION")
@@ -922,6 +934,17 @@ fn upgrade_buttons(session: &Session) -> String {
         form("/ui/upgrades", session)
     )
 }
+fn live_controls(kind: &str) -> String {
+    format!(
+        "<section class=\"panel live-controls\" data-live={kind} aria-label=\"Live updates\"><div class=actions><button type=button data-live-toggle disabled>Enable live updates</button><a class=button href=\"\" data-live-refresh>Refresh page</a><a href=/ui/login data-live-sign-in hidden>Sign in again</a></div><p data-live-status role=status aria-live=polite>Live updates paused. JavaScript is optional; use Refresh page.</p><p class=muted data-live-freshness>Showing the page as loaded.</p><p class=muted>Updates change state and progress only. Refresh page for new or removed rows, filter changes, messages or controls.</p><noscript><p>Use Refresh page to see current progress.</p></noscript></section>"
+    )
+}
+fn live_badge(state: &str) -> String {
+    format!(
+        "<span class=badge data-live-field=state>{}</span>",
+        display(&state.replace('_', " "))
+    )
+}
 fn progress(number: f64) -> String {
     let number = if number.is_finite() {
         number.clamp(0.0, 1.0) * 100.0
@@ -929,7 +952,7 @@ fn progress(number: f64) -> String {
         0.0
     };
     format!(
-        "<progress max=100 value={number:.1} aria-label=\"{number:.1}% complete\">{number:.1}%</progress><small>{number:.1}%</small>"
+        "<span data-live-field=progress><progress max=100 value={number:.1} aria-label=\"{number:.1}% complete\">{number:.1}%</progress><small>{number:.1}%</small></span>"
     )
 }
 pub(super) fn badge(state: &str) -> String {

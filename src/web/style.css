@@ -69,3 +69,8 @@ footer { border-top: 1px solid var(--line); color: var(--muted); padding: 1.5rem
 .skip:focus { top: 1rem; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 @media (max-width: 760px) { header { gap: 1rem; } header nav { order: 3; flex-basis: 100%; gap: 1rem; } .grid, .fields { grid-template-columns: 1fr; } .fields .wide { grid-column: auto; } .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } dl { grid-template-columns: 1fr; gap: .2rem; } dd { margin-bottom: .7rem; } main { padding-top: 1.5rem; } }
+
+.live-controls .actions { margin-top: 0; }
+.live-controls p { margin-bottom: 0; }
+[hidden] { display: none !important; }
+button:disabled { cursor: default; opacity: .65; }
