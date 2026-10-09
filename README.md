@@ -1,4 +1,4 @@
-# Mynou 0.22.28 — Rust, standard library only
+# Mynou — Rust, standard library only
 
 Mynou automates a media library: a Plex request or local submission becomes a
 search, verified torrent download, media import, and confirmed Plex update.
@@ -15,7 +15,6 @@ network integrations.
 checklist for folders, sources, native download routes, catalog and Plex.
 Fixed configuration states and links to existing guarded diagnostics help you
 reach a first request while keeping private settings out of the page.
-This source proposes 0.22.28; native Actions and release history determine publication.
 
 Explicit [episode numbering](docs/numbering.md) separates source/catalog labels
 from retained library identities. Preview and apply choices through CLI/API/browser;
@@ -195,11 +194,11 @@ before merge and immutable Actions publication; see the
 
 ## Autonomous engineering
 
-The [engineering organization](engineering/README.md) owns intent, native GitHub
-backlog, sequential specialist roles, CI, logical review, delivery and recovery.
-Only one engineering worker may execute at once. Bootstrap
-[Issue #1](https://github.com/alecerf/mynou/issues/1) is complete; active product
-work and recovery are tracked by native Issues and the GitHub control checkpoint.
+Agents build Mynou from native GitHub Issues: one Issue, one branch and one PR
+each, coordinated by `/assign` and `/wait` comments, reviewed by a distinct QA
+pass and validated by Actions. Merging does not release: a release PR publishes
+the accumulated changes at most weekly. See the
+[engineering runbook](engineering/README.md) and [next release](docs/next-release.md).
 
 ## Try it
 
