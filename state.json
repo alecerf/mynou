@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 987,
+  "generation": 988,
   "lease": {
     "id": "codex-recovery-20261009T062636Z-quality-a4913bbd-a0c7-441c-a94e-4b1d5b52bd6e",
     "worker": "codex-recovery-20261009T062636Z",
     "role": "quality",
     "issue": 52,
     "acquired_at": "2026-10-09T06:28:25Z",
-    "heartbeat_at": "2026-10-09T06:28:25Z",
-    "expires_at": "2026-10-09T07:13:25Z",
+    "heartbeat_at": "2026-10-09T06:35:53Z",
+    "expires_at": "2026-10-09T07:20:53Z",
     "branch": "work/52-fresh-authority",
-    "commit": "adb8808d91e0f87017c7cad0ae9d787a7448feee",
-    "pr": null
+    "commit": "2603afca9906d89941a5ce3d8f0e40a8d7ae7713",
+    "pr": 55
   },
   "checkpoint": {
-    "at": "2026-10-09T04:43:27Z",
+    "at": "2026-10-09T06:35:53Z",
     "issue": 52,
-    "role": "triage",
-    "branch": "trunk",
-    "commit": "adb8808d91e0f87017c7cad0ae9d787a7448feee",
-    "pr": null,
-    "summary": "Triage52 actual job113579979334(22:50:15\u201335) fails control.save head-vs-expected guard. Nativeba4917/g871 retains same recovery owner/publication; first sole-parent child3c33bb at00:28:55, no committed competing advance in failed-job window. Native current/original github.py/delivery.py identical. GETtransport has no cache revalidation; inconsistent mutable-ref read observations are established boundary, specific HTTP/providercache cause unproven and currentv31recovery succeeded. Choose bounded Cache-Control:no-cache for native authenticated RESTGETs; preserve strictCAS/ownership/requestbudget150/no retries/no secretoutput. NativeIssue52comment records original CI-only cached-ref fixture acceptance, realownership/CAS rejection and limits. Created sole branchwork/52-fresh-authority atactualdefaultadb8808 only after verified404; no source/PR yet.",
-    "next_action": "ReleaseTriage and immediately acquireQuality52 on work/52-fresh-authority atadb8808/prnull. Implement only GETrevalidation plus original CI-only checkpoint/publication/release cache fixture and real head/owner/CAS-loss regressions; no tests/lint/builds/validation locally. Original single-parent sourcecommit linkedonePR, version0.22.32/docsaccurate. Separate Security and independent exacthead/basefull-diffQA after actualCI, all objectivegates before normalmerge/Actionsimmutablepublication. Providerconsistency notguaranteed; changedauthority stillfailclosed. Preserve48v31deliveryand52historicalfailure.",
+    "role": "quality",
+    "branch": "work/52-fresh-authority",
+    "commit": "2603afca9906d89941a5ce3d8f0e40a8d7ae7713",
+    "pr": 55,
+    "summary": "Quality52 implemented original bounded GET Cache-Control:no-cache mitigation and five CI-only HTTP/control/lease cache/ownership regressions. Native original source2603afca9906d89941a5ce3d8f0e40a8d7ae7713 pushed once/nonforce onwork/52-fresh-authority, soleparentadb8808, treedeca142e04655115ed0563e1f39819d4e1548814 verified. Linked PR55 created once; sixpaths GitHubtransport/test/Cargov0.22.32/currentdocs/releaseproposal. ProductsafeRuststd/zeroDeps/unsafeForbid untouched; no localtests/lint/builds/binaries/validation. NativeIssue52 metadataQuality/InProgress. Cached-reference fixture includes preservation ofactualcheckpoint/publication, changedhead/owner/nativeCAS409/422 rejection and ignored-directivefailclosed; no nativeproviderreproduction/consistencypromise. CI/Security/QA/CodeQL/gate pending; sourceversionnotrelease. Prior48immutablev31actualpublication/cleanup retained.",
+    "next_action": "ReleaseQuality and immediately acquire Security52 at exactsource2603afca/PR55/baseadb8808 under its own lease. Read actualcomplete six-pathdiff, native52acceptance/priorTriage and actualCI/CodeQL/securityjobs. Inspect unchangedcredentials/path/no-redirect/budget/expectedhead/soleparent/nonforce guards and fakefixtureprivacy/no actualnetwork. Perform useful source review while currentCI progresses; only postpassedmachineSecurityrecord after actualrequiredverification, otherwise truthfulcheckpoint/release at realwait. Then distinct exacthead/basefull-diffQA and machinegategreen before Master normalmerge/Actionsimmutable0.22.32; preservepartialsource and no duplicateruns.",
     "publication": {
       "commit": "adb8808d91e0f87017c7cad0ae9d787a7448feee",
       "state": "published",
@@ -563,14 +563,14 @@
       "publication_pr_handoff": 6062225589
     },
     "previous_checkpoint": {
-      "at": "2026-10-09T04:35:45Z",
-      "issue": 48,
-      "role": "quality",
+      "at": "2026-10-09T04:43:27Z",
+      "issue": 52,
+      "role": "triage",
       "branch": "trunk",
       "commit": "adb8808d91e0f87017c7cad0ae9d787a7448feee",
-      "pr": 53,
-      "summary": "Quality completed actual delivery cleanup for48/PR53 under separate default-source lease. Verified default/tagadb8808, immutable release407471331v0.22.31/all4digestedassets and native CI37879166856(all7jobs successful); current source-bound unexpired receipt11593488474/digest527fda49 matches preserved historical private-image proof. Actual native original parentsb11d88/9d950508 and tree37e0e95f preserved. Native merged sourcebranchwork/48-safari-origin actually404; zero openPRs, zero48blockers/dependents. No deletion request or unique-work loss. Issue48 actuallyclosedcompleted/Done/roleQuality via nativeupdate; Issue/PRhandoffs record exactsource/verification/limits. Current Securityaudit/CodeQL/Engineering allsuccess; taskreconciliationnull. No localchecks or invented Safari engine/secret guarantee. Publicationrecord/history retained.",
-      "next_action": "Release Quality and immediately reacquire Master at actual default for outstanding native recovery/backlog. Existing ReliabilityIssue52 preserves interrupted post-publication ownership failure; inspect native issue/action evidence and priority before selecting change. No openPR source awaits review. If higher-priority work absent, check nativeReady queue/standingProduct42 readiness and known39/40/45/46/54 proposals; preserve dependencies and bounded evidence-based scope. Do not duplicateIssues or bypass gates; new product changes need separate exact-source Security/QA and CI."
+      "pr": null,
+      "summary": "Triage52 actual job113579979334(22:50:15\u201335) fails control.save head-vs-expected guard. Nativeba4917/g871 retains same recovery owner/publication; first sole-parent child3c33bb at00:28:55, no committed competing advance in failed-job window. Native current/original github.py/delivery.py identical. GETtransport has no cache revalidation; inconsistent mutable-ref read observations are established boundary, specific HTTP/providercache cause unproven and currentv31recovery succeeded. Choose bounded Cache-Control:no-cache for native authenticated RESTGETs; preserve strictCAS/ownership/requestbudget150/no retries/no secretoutput. NativeIssue52comment records original CI-only cached-ref fixture acceptance, realownership/CAS rejection and limits. Created sole branchwork/52-fresh-authority atactualdefaultadb8808 only after verified404; no source/PR yet.",
+      "next_action": "ReleaseTriage and immediately acquireQuality52 on work/52-fresh-authority atadb8808/prnull. Implement only GETrevalidation plus original CI-only checkpoint/publication/release cache fixture and real head/owner/CAS-loss regressions; no tests/lint/builds/validation locally. Original single-parent sourcecommit linkedonePR, version0.22.32/docsaccurate. Separate Security and independent exacthead/basefull-diffQA after actualCI, all objectivegates before normalmerge/Actionsimmutablepublication. Providerconsistency notguaranteed; changedauthority stillfailclosed. Preserve48v31deliveryand52historicalfailure."
     },
     "task_reconciliation": {
       "issue": 19,
