@@ -45,6 +45,7 @@ pub(crate) struct Response {
     content_type: &'static str,
     location: Option<String>,
     cookie: Option<String>,
+    allow: &'static str,
 }
 
 impl Response {
@@ -55,6 +56,7 @@ impl Response {
             content_type: "text/html; charset=utf-8",
             location: None,
             cookie: None,
+            allow: "GET, POST",
         }
     }
 
@@ -92,7 +94,7 @@ impl Response {
             head.push_str(&format!("Set-Cookie: {cookie}\r\n"));
         }
         if self.status == 405 {
-            head.push_str("Allow: GET, POST\r\n");
+            head.push_str(&format!("Allow: {}\r\n", self.allow));
         }
         head.push_str("\r\n");
         stream

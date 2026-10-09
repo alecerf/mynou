@@ -28,6 +28,7 @@ fn assert_json(reply: &Reply, status: u16) {
     assert_eq!(reply.headers["cache-control"], "no-store");
     assert_eq!(reply.headers["x-content-type-options"], "nosniff");
     assert_eq!(reply.headers["x-frame-options"], "DENY");
+    assert!(reply.headers["content-security-policy"].contains("frame-ancestors 'none'"));
     assert!(reply.headers["content-type"].starts_with("application/json"));
     assert!(!reply.headers.contains_key("location"));
     assert!(!reply.headers.contains_key("set-cookie"));
@@ -90,10 +91,8 @@ fn live_routes_require_a_signed_in_exact_origin_browser_session() {
         200,
     );
     assert_json(&live(&server, &browser, &route), 200);
-    assert_eq!(
-        server
-            .call("GET", "/api/jobs", &[("Cookie", &browser.cookie)], "")
-            .status,
+    assert_json(
+        &server.call("GET", "/api/jobs", &[("Cookie", &browser.cookie)], ""),
         401,
     );
     browser.post(&server, "/ui/logout", &[]);
@@ -153,15 +152,14 @@ fn live_queries_bound_identifiers_and_reject_ambiguity_without_mutations() {
         404,
     );
     for method in ["POST", "PUT", "DELETE"] {
-        assert_json(
-            &server.call(
-                method,
-                &format!("/ui/live/jobs?ids={id}"),
-                &[("Cookie", &browser.cookie)],
-                "",
-            ),
-            405,
+        let reply = server.call(
+            method,
+            &format!("/ui/live/jobs?ids={id}"),
+            &[("Cookie", &browser.cookie)],
+            "",
         );
+        assert_json(&reply, 405);
+        assert_eq!(reply.headers["allow"], "GET");
     }
     assert_eq!(files(&directory.0), before);
 }

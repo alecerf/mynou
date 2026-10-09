@@ -55,7 +55,10 @@ pub(super) fn integrity() -> &'static str {
 pub(super) fn error(status: u16, code: &str) -> Response {
     let mut value = Value::object();
     value.insert("error", code);
-    response(status, value)
+    Response {
+        allow: "GET",
+        ..response(status, value)
+    }
 }
 
 fn response(status: u16, value: Value) -> Response {
