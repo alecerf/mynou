@@ -1,15 +1,15 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 1132,
+  "generation": 1133,
   "lease": {
     "id": "codex-recovery-20261009T131600Z-security-2092ee0b-c424-49b4-bc5e-80068b51ca76",
     "worker": "codex-recovery-20261009T131600Z",
     "role": "security",
     "issue": 58,
     "acquired_at": "2026-10-09T14:30:27Z",
-    "heartbeat_at": "2026-10-09T14:30:27Z",
-    "expires_at": "2026-10-09T15:15:27Z",
+    "heartbeat_at": "2026-10-09T14:43:15Z",
+    "expires_at": "2026-10-09T15:28:15Z",
     "branch": "claude/team-leases-58",
     "commit": "12a124fafd33db3fe6b9f5b5bdd6550fe007f5ff",
     "pr": 66
@@ -682,11 +682,11 @@
       "notes_proof_sha": "96e3439dbc1800f708aab0c5680211f105176e14"
     },
     "issue": 58,
-    "role": "triage",
+    "role": "security",
     "branch": "claude/team-leases-58",
     "commit": "12a124fafd33db3fe6b9f5b5bdd6550fe007f5ff",
     "pr": 66,
-    "summary": "Triage58 source guard correctly stopped before any mutation when an external writer advancedPR66. Canonicalnotes b7ffe325/ownTriage58 lease remainedunchanged; nativefreshbranch/PR now12a124fafd33db3fe6b9f5b5bdd6550fe007f5ff, actualbase/currentpublisheddefault6946ef76, draft/mergeabletrue/unstable. Native66c6990...12a124 ancestry isAhead withmergebase66c6990 andoriginalsource preserved; these externaloriginalcommits are notthisworker'simplementation. ReadactualnewsourceCI statuses, no CI/reviewsuccess inferred. Earlier66/B review is invalidated. Preservepublished33/proof/closed62/54/61 andalluniqueproductwork. Scope remainsopt-in only withliveMAX1/no activation/spawn; currentSourceConflict wasresolvedexternally, nowSecuritymustinspectactualnew17path/nativebase ratherthan stale originalpatches.",
+    "summary": "Reviewed the complete 17-path Issue58/PR66 diff at base6946ef76db0fc13b1fd887f6ee3d5304d5b1fbd2/head12a124fafd33db3fe6b9f5b5bdd6550fe007f5ff. Security blockers: singleton delivery bypasses exclusive control work; current cleanup omits worker-held branches; worker release/recovery/breaker removes latest handoff; team prompt/dispatcher admission contradicts supported one-worker execution. CI37944055610 builds/package and CodeQL37944046859 succeed; Security37944055846 actions-logs113865583998 is actual AuditError after16 requests/rem4829, cause unproven. No passing review or activation.",
     "previous_checkpoint": {
       "at": "2026-10-09T14:13:47Z",
       "issue": 62,
@@ -697,8 +697,8 @@
       "summary": "Delivery/cleanup complete for62/54/61: native readbacks show allthree closedCompleted/statusDone, handoffs6082564647/6082565639/6082566511 andPR69delivery6082567371. Verified actualM69 immutablev0.22.33/privateproof/current7-jobCI/Security/CodeQL and truthful post-installSecurity5471049196/QA5471117900; primarypremergegates preserved. Nativeblocking lists for62/54/61 all empty, no readiness blocker invented. Sourcebrancheswork/62-publication-http-status andwork/54-security-log-coverage genuinely404 with native delete_branch_on_merge enabled; nodeletion API needed. Preserveunique PR57 c2110ed/formatter302498, PR63 latest7fcc6ca, PR65 latestf0e6826 andPR66 66c6990. CurrentReadyagent productincrements39/46/56 =3, so no ceremonial Productbacklog expansion. Highestpriority executableexisting manageduserwork58/P1 hasdraftPR66; existinguser-directed single-worker wake remains absolute throughout this worker and no child/cloud/CLI agent is launched.",
       "next_action": "ReleaseQuality62 andacquireTriage58 on preservedclaude/team-leases-58@66c6990cd7d8d91297efffed329e78057f868b9a/PR66. RecoveractualIssue/branch/base/CI andcritically scopeopt-in team capability against currentstrict single-worker execution and originaluserauthorization. Keepactivation disabled inthiswake; do notinvent unsupportedworkerlaunch/scheduling APIs or weaken security/recovery/QA. Existingcalendar63 native ready/CIclaim andPAR2/liveprogresswork remainpreserved forpriority recovery."
     },
-    "at": "2026-10-09T14:28:00Z",
-    "next_action": "ReleaseTriage58 after nativehandoff; reacquireSecurity58 atfresh12a124/nativebase6946ef76. Inspectcompletecurrentdiff plusactualnewCI andcritical rootdelivery/control-worker exclusion, durableworkerhandoffs, enabled-team promptadmission andtruthfultrigger support. No unchangedold403rerun, fakegreen or lostpartialsource. Keepteamconfig/activation disabled andthisoneworker serial.",
+    "at": "2026-10-09T14:43:15Z",
+    "next_action": "Submit exact-head/base rejected Security review, release, then acquire Quality58 for bounded corrections on preserved original branch. Keep schema1/config max1, no worker launch or team activation.",
     "recovery": {
       "issue": true,
       "branch": true,
