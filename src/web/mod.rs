@@ -46,7 +46,6 @@ pub(crate) struct Response {
     location: Option<String>,
     cookie: Option<String>,
     allow: &'static str,
-    attachment: Option<&'static str>,
 }
 
 impl Response {
@@ -58,7 +57,6 @@ impl Response {
             location: None,
             cookie: None,
             allow: "GET, POST",
-            attachment: None,
         }
     }
 
@@ -91,11 +89,6 @@ impl Response {
         );
         if let Some(location) = self.location {
             head.push_str(&format!("Location: {location}\r\n"));
-        }
-        if let Some(name) = self.attachment {
-            head.push_str(&format!(
-                "Content-Disposition: attachment; filename=\"{name}\"\r\n"
-            ));
         }
         if let Some(cookie) = self.cookie {
             head.push_str(&format!("Set-Cookie: {cookie}\r\n"));
@@ -262,13 +255,6 @@ impl Web {
         };
         let query = Form::parse(query.as_bytes())?;
         session.messages = lock(&self.sessions)?.take_messages(&session.id);
-        if path == "/ui/calendar.ics" {
-            return Ok(Response {
-                content_type: "text/calendar; charset=utf-8",
-                attachment: Some("mynou-episode-dates.ics"),
-                ..Response::html(200, series_views::calendar_export(engine, &query)?)
-            });
-        }
         let page = match path {
             "/ui" => {
                 query.only(&[])?;

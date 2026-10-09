@@ -309,14 +309,6 @@ pub fn pack_search(session: &Session, id: &str, report: &crate::json::Value) -> 
     frame("Season-pack search", "/ui/series", Some(session), &body)
 }
 
-pub fn calendar_export(engine: &Arc<Engine>, fields: &Form) -> Result<String> {
-    fields.only(&["from", "to", "series_id"])?;
-    let mut query = CalendarQuery::new(Some(fields.value("from")?), Some(fields.value("to")?))?;
-    let id = fields.value("series_id")?;
-    query.series_id = (!id.is_empty()).then(|| id.to_owned());
-    engine.episode_calendar_ics(&query)
-}
-
 pub fn calendar(engine: &Arc<Engine>, session: &Session, fields: &Form) -> Result<String> {
     fields.only(&["from", "to", "series_id", "page"])?;
     let page = page_number(fields)?;
@@ -354,22 +346,6 @@ pub fn calendar(engine: &Arc<Engine>, session: &Session, fields: &Form) -> Resul
         .get("total")
         .and_then(crate::json::Value::as_u64)
         .unwrap_or(0) as usize;
-    body.push_str("<section class=panel><h2>Export to your calendar</h2>");
-    if total == 0 {
-        body.push_str(
-            "<p class=muted>No known dates in this window, so there is nothing to export.</p>",
-        );
-    } else if total > 200 {
-        body.push_str(&format!("<p class=muted>This window has {total} known dates; one file holds at most 200. Narrow the dates or choose one series to export.</p>"));
-    } else {
-        body.push_str(&format!(
-            "<p><a href=\"/ui/calendar.ics?from={}&amp;to={}&amp;series_id={}\" download>Download all {total} dates as an .ics file</a></p>",
-            encode(&query.from),
-            encode(&query.to),
-            encode(id)
-        ));
-    }
-    body.push_str("<p class=muted>The file is a private download of known dates in this window, not a subscription. Events are all-day UTC catalog dates that may change; a later export keeps the same event identities. Unknown dates are not included. Compatibility with specific calendar apps is not claimed.</p></section>");
     body.push_str(&format!(
         "<nav class=pager aria-label=Pagination><span>{total} episodes · Page {page}</span>"
     ));
