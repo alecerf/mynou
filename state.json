@@ -1,76 +1,27 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 1056,
+  "generation": 1057,
   "lease": {
     "id": "bbe0a6f3-0f86-48f8-87c7-4291943f3724",
     "worker": "github-actions-publication-recovery",
     "role": "triage",
     "issue": 61,
     "acquired_at": "2026-10-09T11:00:12Z",
-    "heartbeat_at": "2026-10-09T11:00:12Z",
-    "expires_at": "2026-10-09T11:45:12Z",
+    "heartbeat_at": "2026-10-09T11:00:22Z",
+    "expires_at": "2026-10-09T11:45:22Z",
     "branch": "trunk",
     "commit": "02a536f2c75e454094c7cb28d85ec2771c7404f0",
     "pr": 60
   },
   "checkpoint": {
     "publication": {
-      "commit": "97c8efcbb97a74716e21791b5d4cf1578f85c28d",
-      "state": "published",
-      "version": "0.22.32",
-      "at": "2026-10-09T06:56:34Z",
-      "release_id": 407617414,
-      "immutable": true,
-      "tag_commit": "97c8efcbb97a74716e21791b5d4cf1578f85c28d",
-      "run_id": 37895820331,
-      "run_attempt": 1,
+      "commit": "02a536f2c75e454094c7cb28d85ec2771c7404f0",
+      "state": "ci-failed",
+      "at": "2026-10-09T11:00:22Z",
+      "run_id": 37920787776,
       "status": "completed",
-      "conclusion": "success",
-      "assets": [
-        {
-          "id": 624170919,
-          "name": "mynou-v0.22.32-linux-x86_64",
-          "size": 4899680,
-          "digest": "sha256:66535c8f81843316cf4f546c168156dabe7ce0888c4039a6417eb86380644682"
-        },
-        {
-          "id": 624170914,
-          "name": "mynou-v0.22.32-macos-arm64",
-          "size": 3745600,
-          "digest": "sha256:86f15dc56dfa1d6ca8ecdbf937734bc3bcac8f456da106b055d44c352cf3c594"
-        },
-        {
-          "id": 624170920,
-          "name": "mynou-v0.22.32-macos-x86_64",
-          "size": 4516672,
-          "digest": "sha256:c397d22fc422ea9bfe267b58978790b5d2a14e5e53211b7a13145d9efa606011"
-        },
-        {
-          "id": 624170913,
-          "name": "SHA256SUMS",
-          "size": 281,
-          "digest": "sha256:bdb6fe748033f9057dbee53f987f07cdeacd51a87054aab194a2ee0de18e8d59"
-        }
-      ],
-      "registry_proof": {
-        "image": "ghcr.io/alecerf/mynou@sha256:d8894fda5a65d5aa1d01578102b56f0a6d2210db371309877cc9e374938bb03e",
-        "version": "0.22.32",
-        "source": "97c8efcbb97a74716e21791b5d4cf1578f85c28d",
-        "visibility": "private",
-        "binary_sha256": "66535c8f81843316cf4f546c168156dabe7ce0888c4039a6417eb86380644682",
-        "repository": "alecerf/mynou",
-        "repository_id": 1403318143,
-        "repository_visibility": "public",
-        "package_id": 15695108,
-        "repository_association": "reported-match",
-        "verification_user": "1001:1001",
-        "verification_cleanup": "completed"
-      },
-      "proof_artifact": {
-        "id": 11600417547,
-        "digest": "sha256:3d031008b20a37db4b8b1fdc5276a7f0f8d57b0e4bf20d049aad38d37531cb95"
-      }
+      "conclusion": "failure"
     },
     "pending_qa": {
       "state": "resolved by exact-head passed QA5458620861",
@@ -681,24 +632,24 @@
       "retirement": "confirmed",
       "notes_proof_sha": "96e3439dbc1800f708aab0c5680211f105176e14"
     },
-    "issue": 54,
-    "role": "quality",
-    "branch": "work/54-security-log-coverage",
-    "commit": "97c8efcbb97a74716e21791b5d4cf1578f85c28d",
-    "pr": null,
-    "summary": "Interrupted before a phase checkpoint; inspect the preserved lease source, Issue, PR and native history.",
+    "issue": 61,
+    "role": "triage",
+    "branch": "trunk",
+    "commit": "02a536f2c75e454094c7cb28d85ec2771c7404f0",
+    "pr": 60,
+    "summary": "Default-source CI transition: ci-failed at 02a536f2c75e454094c7cb28d85ec2771c7404f0; native evidence {'commit': '02a536f2c75e454094c7cb28d85ec2771c7404f0', 'state': 'ci-failed', 'at': '2026-10-09T11:00:22Z', 'run_id': 37920787776, 'status': 'completed', 'conclusion': 'failure'}. No release publication is inferred.",
     "previous_checkpoint": {
-      "at": "2026-10-09T09:47:26Z",
+      "at": "2026-10-09T10:43:19Z",
       "issue": 54,
       "role": "quality",
-      "branch": "trunk",
+      "branch": "work/54-security-log-coverage",
       "commit": "97c8efcbb97a74716e21791b5d4cf1578f85c28d",
       "pr": null,
-      "summary": "Quality54 setup preserves actual default97c8efcbb97a74716e21791b5d4cf1578f85c28d and creates only original work/54-security-log-coverage at exact same native commit. No code change or validation. Separate Security54 design is recorded natively; PR57/work45 preserved.",
-      "next_action": "Release default-source setup lease and acquire Quality54 at work/54-security-log-coverage/M to implement trusted bounded coverage reuse and CI-only original regressions, then one linked PR and separate complete Security/QA."
+      "summary": "Interrupted before a phase checkpoint; inspect the preserved lease source, Issue, PR and native history.",
+      "next_action": "Recovered expired capacity lease; inspect preserved work before selecting new work."
     },
-    "at": "2026-10-09T10:43:19Z",
-    "next_action": "Recovered expired capacity lease; inspect preserved work before selecting new work.",
+    "at": "2026-10-09T11:00:22Z",
+    "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases.",
     "recovery": {
       "issue": true,
       "branch": true,
