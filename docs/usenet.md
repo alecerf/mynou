@@ -432,10 +432,27 @@ job projections contain aliases/progress identities, with no owner/provider
 bindings, article IDs or NZB contents. Library job cancel/retry controls own these
 transfers in the CLI, authenticated API and browser.
 
-Automatic RAR/ZIP extraction, PAR2 repair, multi-file packs and Usenet upgrade acquisitions
-are not enabled in this increment. The legacy torrent-oriented search/upgrade
-selector continues to reject a selected Usenet candidate. It cannot send an NZB
-to the torrent client. Changed source/provider/profile bindings withhold new
+Automatic RAR/ZIP extraction, PAR2 repair and multi-file packs are not enabled in
+this increment. The torrent download selector still rejects a selected Usenet
+candidate and cannot send an NZB to the torrent client.
+
+### Usenet upgrades in 0.22.38
+
+`mynou upgrades` can replace an ordinary single owned movie or episode through the
+best Newznab candidate when that candidate passes the current profile and improves
+rank (or the baseline is now rejected), the cutoff is not reached, and its source
+differs from the parent. Shared groups, packs, IRC, ZIP/RAR/PAR2 and implicit
+provider fallback are excluded. Preview is nonacquiring: it reports
+`upgrade_available`, or `usenet_unavailable` when native downloads are disabled
+or the captured provider policy is unavailable. Apply creates at most one pending
+child that captures the selected source, profile and provider binding in the
+creating journal frame (`MYNOJ06`/`MYNOS06`, no new format). A duplicate apply
+returns the same child. Older binaries reject such a record rather than
+misreading it. The ordinary lease, current-requester approval, document and
+attempt budgets, cancellation, explicit retry and no-overwrite versioned import
+(`[mynou-<jobid>]`) apply; the parent stays current until the new path is
+confirmed in Plex. CI-only loopback fixtures for the end-to-end flow remain
+follow-up work. Changed source/provider/profile bindings withhold new
 authorization; no fallback to another provider is implicit. All new fixtures use
 original local media and loopback Newznab, NNTP and Plex. The complete 0.22.6 run passed; see [validation evidence](validation.md#recorded-0226-ci-evidence).
 
@@ -446,5 +463,5 @@ one media entry in one ZIP/NZB file. Raw bytes cannot bypass library gates.
 Stored RAR5 formats passed v0.22.9 CI with 791 Rust tests. Active v0.22.10 adds
 [opt-in stored RAR5 library admission](archives.md#native-stored-rar5-admission-in-02210),
 with explicit format and separate private descriptor/journal versions, awaiting
-its own CI. Compressed RAR, PAR2, multi-file packs and Usenet upgrades remain
+its own CI. Compressed RAR, PAR2 and multi-file packs remain
 subsequent increments.

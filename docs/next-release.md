@@ -1,4 +1,10 @@
-# Current work — proposed 0.22.33 default-source CI fix-forward
+# Current work — proposed 0.22.38 native Usenet upgrades
+
+[Issue46](https://github.com/alecerf/mynou/issues/46): see [scope](releases/0.22.38.md).
+Proposed until actual CI, distinct Security/full-diff QA and Actions-only publication
+are complete. No local validation.
+
+## Earlier: 0.22.33
 
 Actions published immutable [v0.22.32](https://github.com/alecerf/mynou/releases/tag/v0.22.32)
 at `97c8efcbb97a74716e21791b5d4cf1578f85c28d` (release 407617414, run 37895820331).
