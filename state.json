@@ -1,15 +1,15 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 1059,
+  "generation": 1060,
   "lease": {
     "id": "codex-recovery-20261009T112800Z-triage-def54fd4-08f3-4447-b52c-178f842e46d0",
     "worker": "codex-recovery-20261009T112800Z",
     "role": "triage",
     "issue": 61,
     "acquired_at": "2026-10-09T11:30:26Z",
-    "heartbeat_at": "2026-10-09T11:30:26Z",
-    "expires_at": "2026-10-09T12:15:26Z",
+    "heartbeat_at": "2026-10-09T11:34:33Z",
+    "expires_at": "2026-10-09T12:19:33Z",
     "branch": "trunk",
     "commit": "02a536f2c75e454094c7cb28d85ec2771c7404f0",
     "pr": 60
@@ -637,7 +637,7 @@
     "branch": "trunk",
     "commit": "02a536f2c75e454094c7cb28d85ec2771c7404f0",
     "pr": 60,
-    "summary": "Default-source CI transition: ci-failed at 02a536f2c75e454094c7cb28d85ec2771c7404f0; native evidence {'commit': '02a536f2c75e454094c7cb28d85ec2771c7404f0', 'state': 'ci-failed', 'at': '2026-10-09T11:00:22Z', 'run_id': 37920787776, 'status': 'completed', 'conclusion': 'failure'}. No release publication is inferred.",
+    "summary": "Triage61 actual default02a536f2c75e454094c7cb28d85ec2771c7404f0/mergedPR60 is admitted with restored durable notes records and verified sole-parent repair/fence ancestry. DefaultCI37920787776 validates/builds/packages but release113788581397 fails Image identity or runtime policy differs from validated source: source still0.22.32 already immutable at older commit. No overwrite/retry/publication. Current Security37920787820 logs113787933986 HTTP403, source-historypass. Existing54 scopes demonstrated repeated audit capacity failure and next-version release recovery. Previous partial54/feature57 preserved. Native owner bypass of pre-merge60 reviews is recorded honestly, not retrospectively certified.",
     "previous_checkpoint": {
       "at": "2026-10-09T10:43:19Z",
       "issue": 54,
@@ -648,8 +648,8 @@
       "summary": "Interrupted before a phase checkpoint; inspect the preserved lease source, Issue, PR and native history.",
       "next_action": "Recovered expired capacity lease; inspect preserved work before selecting new work."
     },
-    "at": "2026-10-09T11:00:22Z",
-    "next_action": "Inspect exact-source native CI before unrelated delivery; recover dispatch or fix actual failed CI. Actions alone publishes immutable releases.",
+    "at": "2026-10-09T11:34:33Z",
+    "next_action": "ReleaseTriage61; acquireTriage54 on preserved work/54-security-log-coverage, rebind by verified fast-forward to actual default02a536... and implement existing Security54 design underQuality. One linked PR54, proposed0.22.33 for corrected immutable publication; distinct complete-diff Security/QA and all actual gates beforemerge. Keep61 open pending actualpublication/retrospectiveproof.",
     "recovery": {
       "issue": true,
       "branch": true,
