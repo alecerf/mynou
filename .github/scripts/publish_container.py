@@ -12,6 +12,18 @@ class CommandError(RuntimeError):
     def __init__(self, args, stderr):
         super().__init__("Command failed: " + args[0] + " " + args[1])
         self.stderr = stderr
+        self.http_status = None
+        if args[:2] == ["gh", "api"] and isinstance(stderr, str) and len(stderr) <= 65_536:
+            statuses = re.findall(r"^gh: [^\r\n]* \(HTTP ([1-5][0-9]{2})\)$",
+                                  stderr, flags=re.MULTILINE)
+            if len(statuses) == 1:
+                self.http_status = int(statuses[0])
+
+    def api_detail(self):
+        # Never echo captured stderr, bodies, paths, headers or credentials.
+        if self.http_status is None:
+            return " [HTTP status unavailable]"
+        return f" [HTTP {self.http_status}]"
 
 
 def command(args, input=None):
@@ -86,8 +98,8 @@ class Publisher:
     def repository_context(self):
         try:
             repository = self.api_object("/repos/" + self.repo)
-        except CommandError:
-            raise RuntimeError("Cannot verify the publishing repository") from None
+        except CommandError as error:
+            raise RuntimeError("Cannot verify the publishing repository" + error.api_detail()) from None
         if (repository.get("full_name") != self.repo
                 or type(repository.get("id")) is not int
                 or repository["id"] != self.repository_id
@@ -99,9 +111,9 @@ class Publisher:
         try:
             package = self.api_object(self.package_path)
         except CommandError as error:
-            if allow_missing and re.search(r"\bHTTP 404\b", error.stderr):
+            if allow_missing and error.http_status == 404:
                 return
-            raise RuntimeError("Cannot verify private package identity") from None
+            raise RuntimeError("Cannot verify private package identity" + error.api_detail()) from None
         owner = package.get("owner")
         identity = package.get("id")
         if (package.get("visibility") != "private"
