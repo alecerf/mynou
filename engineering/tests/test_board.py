@@ -52,7 +52,7 @@ class Repository:
             56: [note("Looks useful", 60, 3)],
             71: [],
             65: [note("/wait qa", 20, 4), note("/assign claude-qa", 15, 5)],
-            57: [],
+            57: [note("/wait ci", 30, 6)],
         }
 
     def rest(self, method, path, value=None):
@@ -98,6 +98,7 @@ class Board(unittest.TestCase):
         self.assertEqual((pulls[65]["waiting_for"], pulls[65]["ci"], pulls[65]["security_required"]),
                          ("qa", "success", True))
         self.assertEqual(pulls[65]["owner"]["agent"], "claude-qa")
+        # `/wait ci` on the draft settles back to its author once CI has failed.
         self.assertEqual((pulls[57]["waiting_for"], pulls[57]["ci"]), ("author", "failure"))
         # A shipped change is a week old, but release Issue #71 is already open.
         self.assertEqual(result["release"]["latest"], "v0.22.34")
