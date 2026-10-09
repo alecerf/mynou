@@ -1,70 +1,19 @@
 {
-  "schema": 1,
+  "schema": 2,
   "repository": "alecerf/mynou",
   "default_branch": "trunk",
-  "control_branch": "control/engineering",
-  "state_path": "state.json",
-  "max_active_agents": 1,
-  "lease_minutes": 45,
-  "heartbeat_minutes": 15,
-  "no_progress_limit": 3,
-  "trusted_reviewers": [
-    "alecerf"
-  ],
-  "project": null,
-  "required_workflows": {
-    "Mynou CI": [
-      "validate",
-      "Build x86_64-unknown-linux-musl",
-      "Build aarch64-apple-darwin",
-      "Build x86_64-apple-darwin",
-      "package"
-    ],
-    "Engineering checks": [
-      "organization"
-    ],
-    "Security audit": [
-      "source-history"
-    ]
+  "trusted_actors": {
+    "alecerf": 22006964
   },
-  "observed_capabilities": {
-    "observed_at": "2026-10-06",
-    "issues": true,
-    "native_dependencies": true,
-    "issue_type_assignment": false,
-    "projects_write": false,
-    "rulesets": false,
-    "branch_protection_admin": false,
-    "auto_merge_configuration": false,
-    "code_scanning": false,
-    "secret_scanning_admin": false,
-    "git_https_push": false,
-    "git_data_api_write": true,
-    "scheduled_tasks_tool": true,
-    "quota_introspection": false,
-    "guaranteed_quota_reset_wake": false
+  "claim_ttl_minutes": 120,
+  "release_policy": {
+    "minimum_interval_days": 7,
+    "urgent_label": "release-now"
   },
-  "control_commands": {
-    "issue": 30,
-    "issue_id": 5759498447,
-    "repository_id": 1403318143,
-    "trusted_actors": {
-      "alecerf": 22006964
-    },
-    "max_age_seconds": 300
-  },
-  "control_ref": "refs/heads/control/engineering",
-  "control_migration": {
-    "mode": "fenced-notes-v1",
-    "legacy_ref": "refs/heads/control/engineering",
-    "target_ref": "refs/notes/mynou-engineering",
-    "issue": 19,
-    "pr": 24
-  },
-  "execution_mode": "continuous",
   "product_planning": {
     "issue": 42,
     "ready_minimum": 3,
-    "ready_maximum": 5
+    "ready_maximum": 5,
+    "review_interval_hours": 24
   }
 }

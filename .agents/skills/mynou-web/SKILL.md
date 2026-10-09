@@ -16,5 +16,6 @@ injection and secret storage; authorization remains server-side.
 Make bounded commits and original regression fixtures. Tests, lint, runtime and
 browser checks belong in CI. Use browser automation only when actually available;
 never claim screenshots, accessibility or browser behavior verification otherwise.
-Use the lease, Issue/PR and truthful CI evidence. Handoff to QA; record adjacent
-improvements without aesthetic rewrites or unnecessary dependencies.
+Work under your Issue claim with truthful CI evidence, then hand over with
+`/wait qa`; record adjacent improvements without aesthetic rewrites or
+unnecessary dependencies.

@@ -15,7 +15,7 @@ flowchart LR
     Validate --> Package[Docker demo, binaries and checksums]
     Static --> Package
     Mac --> Package
-    Package --> Release[CI publication]
+    Package --> Release[Publication of a new version only]
 ```
 
 Validation and three build targets run concurrently on separate runners: the
@@ -29,22 +29,24 @@ the critical path of every source-changing PR. macOS binaries must have the exac
 target architecture and pass the local acquisition/import/Plex demo. No larger
 paid runner is selected. Packaging waits for validation and every build to succeed for the
 same workflow commit; publication waits for successful packaging.
-PR runs validate/build/package but cannot publish.
+PR runs validate/build/package but cannot publish. On `trunk`, publication runs
+only when `Cargo.toml` carries a version without a `v<version>` tag, which only a
+merged release PR introduces; every other `trunk` commit is validated without a
+release. The [release process](../engineering/README.md#releases) sets the weekly
+cadence and the `Release policy` check that enforces it.
 
 Same-run macOS artifacts include the target and exact source SHA in their names.
 Packaging checks byte-for-byte preservation, executable modes and release
 checksums. The three executables and one manifest are the only release assets.
 The checked image is retained for one day as a source-SHA-scoped Actions artifact,
-then published to private GHCR only by the successful default release job. `.github/engineering.json` requires both Mac
-build job names in addition to the original Linux/package/organization gates.
+then published to private GHCR only by the successful default release job. Every
+check on a PR head, including both Mac builds, must be green before merge.
 
-Default-branch runs use a noncancelling workflow concurrency group. Complete
-publication for a release before pushing its successor; this also preserves runs
-created from the earlier workflow definition. Prepare at most one following scope
-after successful validation/build/package, and inspect every required job before
-pushing it. This policy was added after a queued publication was cancelled during
+Default-branch runs use a noncancelling workflow concurrency group, so a later
+merge never cancels a release run. Let a release publish before merging the next
+change; this policy was added after a queued publication was cancelled during
 GitHub's runner-assignment incident. A newer pull request head cancels its PR's
-older run, whose results no gate can use. This changes queue ordering, not the
+older run, whose results no review can use. This changes queue ordering, not the
 graph/test/build/package/publication gates.
 
 If a historical publication lost its default-branch head and GitHub rejects
@@ -132,8 +134,8 @@ library supplies orchestration; Mynou retains zero Cargo/runtime dependencies.
 ## Caches
 
 The workflow uses the official `actions/cache` 6.1.0 restore/save actions.
-Only successful default-branch jobs on `trunk`, including the CI that delivery
-dispatches after a token merge, save caches; PR runs can restore existing eligible
+Only successful default-branch jobs on `trunk`, including dispatched runs, save
+caches; PR runs can restore existing eligible
 caches. A cache miss always performs the normal build.
 
 - The test cache is scoped by OS, architecture, repository, Rust version and an
