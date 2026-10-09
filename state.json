@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 1008,
+  "generation": 1009,
   "lease": {
     "id": "codex-recovery-20261009T072837Z-product-18c803bc-5fd3-4d28-9f1d-18c44ce88e09",
     "worker": "codex-recovery-20261009T072837Z",
     "role": "product",
     "issue": 42,
     "acquired_at": "2026-10-09T07:35:55Z",
-    "heartbeat_at": "2026-10-09T07:35:55Z",
-    "expires_at": "2026-10-09T08:20:55Z",
+    "heartbeat_at": "2026-10-09T07:44:22Z",
+    "expires_at": "2026-10-09T08:29:22Z",
     "branch": "trunk",
     "commit": "97c8efcbb97a74716e21791b5d4cf1578f85c28d",
     "pr": null
   },
   "checkpoint": {
-    "at": "2026-10-09T07:35:12Z",
-    "issue": 52,
-    "role": "quality",
+    "at": "2026-10-09T07:44:22Z",
+    "issue": 42,
+    "role": "product",
     "branch": "trunk",
     "commit": "97c8efcbb97a74716e21791b5d4cf1578f85c28d",
-    "pr": 55,
-    "summary": "Quality52 finishedactualnativecleanup ofdeliveredimmutablev0.22.32/default97c8efcbb97a74716e21791b5d4cf1578f85c28d/PR55. Issue52 confirmedclosedCompleted/Done/Quality; handoffs6076557026/6076557184 record actualrelease407617414/06:56:34Z/CI37895820331 attempt1 all7green, exacttag/fourdigestedassets/nonexpiredsource-run-attempt receipt11600417547 matchingpublication/privateimage proof. Defaultaudit/Engineering/CodeQLsuccess. Blocker/dependents52empty/openPRsnone/sourcebranchactual404; originalsource2603afca/priordefaultadb8808 remain native mergeparents/exacttreedeca142e. No deletion orunique-workloss/manualrelease/localchecks. Historicalcachecauseunproven. Ephemeralnativeadmin nowpaginated exactfence compare100/page up to5000 withcompletecount/samebase/soleparents/exactend/owner/nonforce guards unchanged; fixes upcoming250defaulttruncation administrativeboundary, no product change.",
-    "next_action": "ReleaseQualityconfirmfree thenimmediatelyacquire registeredProduct42 atactualpublisheddefault97c8efcbb97a74716e21791b5d4cf1578f85c28d/prnull. FollowminProductSkill: inspectcurrentnativebacklog/dependencies/recentdeliveredsource/evidence and standinganchor updated_at; ifnewpublication/smallReadyqueuepermitplanning propose boundedlegitimateproductincrements only (max5Ready). No missingbugclaim/duplicateIssue/ceremonialspecialists. Finishplanninghandoff thenhighestpriorityexecutablemanagedwork withsequentialroles; publication/cleanupalreadycomplete. No modelroute/quotareset/wakeguarantee.",
+    "pr": null,
+    "summary": "Product42 atactuallypublishedv0.22.32/default97c8efcbb97a74716e21791b5d4cf1578f85c28d completedboundednew-evidencereview afteractual52cleanup. NativeanchorlastreviewOct8/newpublicationOct9 triggersplanning; currentReady39/45confirmedno blockers. Inspectednativeopen/relevantclosed41, actualdocs/HTML-JSONcalendar/JobTransferviews and date/query200row367daycontracts; existingfilters/calendar/bulk notduplicated. Creatednative56 P3/Ready/medium/UX privateiCalendarexport <=200datedrows/2MiB/all-day/stableIDs/readonly/session/privacy/CI-only; nativeproposalconfirmedunblocked. ThreeReadyagentproductincrements39/45/56 belowcap5. Native40 actualblocker39retained;40/46NeedsTriage. Native45handoff6076690252 prioritizesboundedliveJobs/Transfers nextP2consumerfeedback beforelarger39; currentdefaultsecurity/CIgreen,54historicalcapacity evidence preservedwithoutfalseactiveoutage/blocker. Planninghandoff6076690442; README/currentroadmap staleproposed28 capturedforrelevantnextPR. No implementation/localchecks/newrole/schedule/parityclaim.",
+    "next_action": "Setstanding42 backBlocked/roleProduct torecordcompletedreview/rearmonlynewpublication/evidence; releaseconfirmfree thenimmediatelyacquireUX45 atactualdefault97c8efcbb97a74716e21791b5d4cf1578f85c28d/prnull. Defineboundedopt-inliveJobs/Transfers lists/activeDetails withvisiblefreshness/pause/manualfallback, oneinflight>=5s/hiddenabort/backoff/authstop, noform/focus/selectionreplacement or byte-bytescreenreaderchatter. PreserveSSR/accessibility/session/origin/CSRF/CSP/read-only/noSecrets; Securityanalysisifneeded thenWeboriginalsource/onePR/v33/actualCI/Security/full-diffQA/objectivegates/Actionspublication. Keep39/40/46/54/56nativework intact; no silentfrontendrewrite.",
     "publication": {
       "commit": "97c8efcbb97a74716e21791b5d4cf1578f85c28d",
       "state": "published",
@@ -563,14 +563,14 @@
       "publication_pr_handoff": 6062225589
     },
     "previous_checkpoint": {
-      "at": "2026-10-09T06:51:45Z",
+      "at": "2026-10-09T07:35:12Z",
       "issue": 52,
-      "role": "master",
+      "role": "quality",
       "branch": "trunk",
-      "commit": "adb8808d91e0f87017c7cad0ae9d787a7448feee",
-      "pr": null,
-      "summary": "Master52 atactualdefaultadb8808/prnull verifiedPR55open/nonDraft/mergeable exactH2603afca/baseadb8808, sharedidentity nativeSecurity5466717842/Q\u04105466756179 with exactheldcheckpoints/all6paths,0threads. LatestnativeEngineering37895579953/organization113706251537/agent-qa-review113706296585 completedSUCCESS; earliermissingreviewfailure/cancel preserved. SourceCI37894355689/all6requiredjobs, Security37894355686/bothjobs, dynamic37894354391/3analyses/finalCodeQL113702311466 actualgreen. No localchecks. Soleparentoriginalsource/tree preserved; no merge/releaseyet. Manualmerge isunderdefaultleaseprnull so nativeworkbranchdeletion cannot invalidateheldsource. Actualv31publication retained.",
-      "next_action": "Freshownership/default/head/base/allgates checked; performnormalmerge PR55 expectedH2603afca onlywhileheld. Confirmnative defaultmerge parents[adb8808,2603afca] and treedeca142e04655115ed0563e1f39819d4e1548814, exactmergedPR/time/Issue/branch state. Immediatelycheckpointactualtrunkmerge/PR55 with pendingActions-onlypublication. Readnative defaultCI/security/Engineering/release proof once; stop/release at realexternalwait (no busypoll/duplicateCI/manualtagrelease). Whenactualimmutablev32andprivateproof verified, recordpublication thenQualitycleanup/Product42. No arbitrarysecrets/providerconsistency claim."
+      "commit": "97c8efcbb97a74716e21791b5d4cf1578f85c28d",
+      "pr": 55,
+      "summary": "Quality52 finishedactualnativecleanup ofdeliveredimmutablev0.22.32/default97c8efcbb97a74716e21791b5d4cf1578f85c28d/PR55. Issue52 confirmedclosedCompleted/Done/Quality; handoffs6076557026/6076557184 record actualrelease407617414/06:56:34Z/CI37895820331 attempt1 all7green, exacttag/fourdigestedassets/nonexpiredsource-run-attempt receipt11600417547 matchingpublication/privateimage proof. Defaultaudit/Engineering/CodeQLsuccess. Blocker/dependents52empty/openPRsnone/sourcebranchactual404; originalsource2603afca/priordefaultadb8808 remain native mergeparents/exacttreedeca142e. No deletion orunique-workloss/manualrelease/localchecks. Historicalcachecauseunproven. Ephemeralnativeadmin nowpaginated exactfence compare100/page up to5000 withcompletecount/samebase/soleparents/exactend/owner/nonforce guards unchanged; fixes upcoming250defaulttruncation administrativeboundary, no product change.",
+      "next_action": "ReleaseQualityconfirmfree thenimmediatelyacquire registeredProduct42 atactualpublisheddefault97c8efcbb97a74716e21791b5d4cf1578f85c28d/prnull. FollowminProductSkill: inspectcurrentnativebacklog/dependencies/recentdeliveredsource/evidence and standinganchor updated_at; ifnewpublication/smallReadyqueuepermitplanning propose boundedlegitimateproductincrements only (max5Ready). No missingbugclaim/duplicateIssue/ceremonialspecialists. Finishplanninghandoff thenhighestpriorityexecutablemanagedwork withsequentialroles; publication/cleanupalreadycomplete. No modelroute/quotareset/wakeguarantee."
     },
     "task_reconciliation": {
       "issue": 19,
