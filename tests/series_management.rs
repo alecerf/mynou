@@ -217,14 +217,22 @@ fn browser_calendar_export_is_authenticated_bounded_private_and_read_only() {
     browser.post(
         &server,
         "/ui/series/track",
-        &[("kind", "series"), ("title", "Fixture Series"), ("tmdb_id", "42"), ("future_only", "true")],
+        &[
+            ("kind", "series"),
+            ("title", "Fixture Series"),
+            ("tmdb_id", "42"),
+            ("future_only", "true"),
+        ],
     );
     let id = id(&server.engine.series().unwrap().as_array().unwrap()[0]);
     let route = format!("/ui/calendar.ics?from={today}&to={today}&series_id={id}");
     let anonymous = server.call("GET", &route, &[], "");
     assert_eq!(anonymous.status, 303);
     assert_eq!(anonymous.headers["location"], "/ui/login");
-    let page = browser.get(&server, &format!("/ui/calendar?from={today}&to={today}&series_id={id}"));
+    let page = browser.get(
+        &server,
+        &format!("/ui/calendar?from={today}&to={today}&series_id={id}"),
+    );
     assert!(page.body.contains("/ui/calendar.ics?from="));
     let before = json::stringify(&server.engine.series().unwrap());
     let file = browser.get(&server, &route);
@@ -235,7 +243,10 @@ fn browser_calendar_export_is_authenticated_bounded_private_and_read_only() {
     assert_eq!(file.headers["x-content-type-options"], "nosniff");
     assert!(file.body.starts_with("BEGIN:VCALENDAR\r\n"));
     assert_eq!(file.body.matches("BEGIN:VEVENT").count(), 2);
-    assert!(file.body.contains(&format!("UID:{id}-s0001e0001@mynou.invalid")));
+    assert!(
+        file.body
+            .contains(&format!("UID:{id}-s0001e0001@mynou.invalid"))
+    );
     assert!(file.body.contains("Comma\\, semi\\; back\\\\slash"));
     assert!(!file.body.contains("Unknown date"));
     file.no_secrets();

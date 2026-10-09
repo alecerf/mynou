@@ -6,6 +6,9 @@ pub const MAX_BYTES: usize = 2 * 1024 * 1024;
 /// Largest number of events in one file; matches the calendar query row limit.
 pub const MAX_EVENTS: usize = 200;
 const LINE_OCTETS: usize = 75;
+const TOO_LARGE: &str = "The calendar file would exceed 2 MiB; narrow the dates or choose one series";
+const NO_EVENTS: &str =
+    "No known episode dates match these filters, so there is nothing to export";
 
 /// One known dated episode, already restricted to the requested window and scope.
 pub struct Event<'a> {
@@ -23,7 +26,7 @@ pub fn escape_text(text: &str) -> String {
     for character in text.chars() {
         match character {
             '\\' => result.push_str("\\\\"),
-            ';' => result.push_str("\;"),
+            ';' => result.push_str("\\;"),
             ',' => result.push_str("\\,"),
             '\n' => result.push_str("\\n"),
             '\r' => {}
@@ -59,7 +62,7 @@ fn compact(date_text: &str) -> Result<String> {
 fn push(output: &mut String, line: &str) -> Result<()> {
     output.push_str(&fold(line));
     if output.len() > MAX_BYTES {
-        return Err("The calendar file would exceed 2 MiB; narrow the dates or choose one series".into());
+        return Err(TOO_LARGE.into());
     }
     Ok(())
 }
@@ -67,7 +70,7 @@ fn push(output: &mut String, line: &str) -> Result<()> {
 /// Render events as a calendar. Fails for no events, too many events or oversized output.
 pub fn render(events: &[Event<'_>]) -> Result<String> {
     if events.is_empty() {
-        return Err("No known episode dates match these filters, so there is nothing to export".into());
+        return Err(NO_EVENTS.into());
     }
     if events.len() > MAX_EVENTS {
         return Err(format!(
@@ -108,7 +111,9 @@ pub fn render(events: &[Event<'_>]) -> Result<String> {
             format!("SUMMARY:{}", escape_text(&summary)),
             format!(
                 "DESCRIPTION:{}",
-                escape_text("Known catalog air date (UTC day, not a premiere time). It may change.")
+                escape_text(
+                    "Known catalog air date (UTC day, not a premiere time). It may change."
+                )
             ),
             "TRANSP:TRANSPARENT".to_owned(),
             "END:VEVENT".to_owned(),
@@ -137,7 +142,7 @@ mod tests {
 
     #[test]
     fn escapes_separators_and_newlines() {
-        assert_eq!(escape_text("a,b;c\\d\r\ne\u{7}"), "a\\,b\;c\\\\d\\ne ");
+        assert_eq!(escape_text("a,b;c\\d\r\ne\u{7}"), "a\\,b\\;c\\\\d\\ne ");
     }
 
     #[test]
@@ -164,7 +169,8 @@ mod tests {
 
     #[test]
     fn injection_like_titles_cannot_add_properties() {
-        let text = render(&[event("X\r\nEND:VEVENT\r\nATTENDEE:evil;,", "2024-01-01")]).unwrap();
+        let text =
+            render(&[event("X\r\nEND:VEVENT\r\nATTENDEE:evil;,", "2024-01-01")]).unwrap();
         assert_eq!(text.matches("BEGIN:VEVENT").count(), 1);
         assert!(!text.contains("\r\nATTENDEE"));
     }
@@ -172,7 +178,9 @@ mod tests {
     #[test]
     fn rejects_empty_oversized_and_invalid_input() {
         assert!(render(&[]).is_err());
-        let many: Vec<_> = (0..=MAX_EVENTS).map(|_| event("Show", "2024-01-01")).collect();
+        let many: Vec<_> = (0..=MAX_EVENTS)
+            .map(|_| event("Show", "2024-01-01"))
+            .collect();
         assert!(render(&many).is_err());
         assert!(render(&[event("Show", "2024-02-30")]).is_err());
         assert!(render(&[event("Show", "9999-12-31")]).is_err());

@@ -356,7 +356,9 @@ pub fn calendar(engine: &Arc<Engine>, session: &Session, fields: &Form) -> Resul
         .unwrap_or(0) as usize;
     body.push_str("<section class=panel><h2>Export to your calendar</h2>");
     if total == 0 {
-        body.push_str("<p class=muted>No known dates in this window, so there is nothing to export.</p>");
+        body.push_str(
+            "<p class=muted>No known dates in this window, so there is nothing to export.</p>",
+        );
     } else if total > 200 {
         body.push_str(&format!("<p class=muted>This window has {total} known dates; one file holds at most 200. Narrow the dates or choose one series to export.</p>"));
     } else {
