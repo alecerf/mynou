@@ -991,7 +991,7 @@ fn sessions_end_on_restart_and_pages_offer_native_keyboard_navigation() {
             assert!(
                 response
                     .body
-                    .contains("data-live-toggle aria-pressed=false disabled")
+                    .contains("data-live-toggle disabled")
             );
         } else {
             assert!(!response.body.contains("<script"));

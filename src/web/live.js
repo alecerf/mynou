@@ -19,7 +19,8 @@
 
     const states = native
         ? ["queued", "downloading", "paused", "ready", "selected_ready", "failed", "seed_limited"]
-        : ["queued", "processing", "downloading", "scanning", "staged", "ready", "failed", "cancelled"];
+        : ["queued", "processing", "downloading", "scanning", "importing", "imported", "staged", "ready",
+            "failed", "cancelled"];
     const counters = native
         ? ["downloaded_bytes", "uploaded_bytes", "verified_bytes", "seed_elapsed_secs"]
         : ["attempts"];
@@ -45,12 +46,14 @@
         if (flight) flight.controller.abort();
     }
     function stop(message, retry = false, authentication = false) {
+        // Disabling the focused toggle would drop keyboard focus; move it to sign-in.
+        const focused = document.activeElement === button;
         enabled = false;
         interrupt();
         button.textContent = retry ? "Retry live updates" : "Enable live updates";
-        button.setAttribute("aria-pressed", "false");
         button.disabled = authentication;
         signIn.hidden = !authentication;
+        if (authentication && focused) signIn.focus();
         announce(message);
     }
     function schedule(delay) {
@@ -172,7 +175,6 @@
         enabled = true;
         epoch += 1;
         button.textContent = "Pause updates";
-        button.setAttribute("aria-pressed", "true");
         signIn.hidden = true;
         announce(document.hidden ? "Live updates paused while this page is hidden." : "Checking for live updates.");
         schedule(0);

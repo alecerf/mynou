@@ -18,6 +18,8 @@ const JOB_STATES: &[&str] = &[
     "processing",
     "downloading",
     "scanning",
+    "importing",
+    "imported",
     "staged",
     "ready",
     "failed",

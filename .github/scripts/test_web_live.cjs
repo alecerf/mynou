@@ -7,7 +7,7 @@ const vm = require("node:vm");
 const source = fs.readFileSync("src/web/live.js", "utf8");
 
 class Element {
-    constructor(text = "") {
+    constructor(text = "", owner = null) {
         this.textContent = text;
         this.dataset = {};
         this.hidden = false;
@@ -15,6 +15,14 @@ class Element {
         this.attributes = {};
         this.children = new Map();
         this.events = new Map();
+        this.ownerDocument = owner;
+    }
+    // Focus moves are observable, so assertions on activeElement can fail.
+    focus() { if (this.ownerDocument) this.ownerDocument.activeElement = this; }
+    blur() {
+        if (this.ownerDocument && this.ownerDocument.activeElement === this) {
+            this.ownerDocument.activeElement = this.ownerDocument.body;
+        }
     }
     querySelector(selector) { return this.children.get(selector) || null; }
     setAttribute(name, value) { this.attributes[name] = value; }
@@ -27,13 +35,27 @@ class Element {
 
 function fixture({ kind = "jobs", count = 1, supported = true } = {}) {
     const native = kind === "transfers";
-    const root = new Element();
+    // Edited form controls are reachable through every query a script could use.
+    const controls = [];
+    const isControl = selector => /input|select|textarea|form/.test(selector);
+    const document = {
+        hidden: false,
+        events: new Map(),
+        querySelector: selector => selector === "[data-live]" ? root
+            : isControl(selector) ? controls[0] || null : null,
+        querySelectorAll: selector => selector === "[data-live-id]" ? rows
+            : isControl(selector) ? controls : [],
+        addEventListener(name, fn) { this.events.set(name, fn); }
+    };
+    const element = text => new Element(text, document);
+    document.body = element();
+    const root = element();
     root.dataset.live = kind;
-    const button = new Element("Enable live updates");
+    const button = element("Enable live updates");
     button.disabled = true;
-    const status = new Element("Use Refresh page.");
-    const freshness = new Element("Showing the page as loaded.");
-    const signIn = new Element();
+    const status = element("Use Refresh page.");
+    const freshness = element("Showing the page as loaded.");
+    const signIn = element();
     signIn.hidden = true;
     root.children = new Map([
         ["[data-live-toggle]", button], ["[data-live-status]", status],
@@ -52,18 +74,18 @@ function fixture({ kind = "jobs", count = 1, supported = true } = {}) {
             : ["attempts"]) {
             row.children.set('[data-live-field="' + key + '"]', new Element("0"));
         }
-        row.checkbox = { checked: true };
-        row.policy = { value: "unfinished custom limit" };
+        row.checkbox = element();
+        row.checkbox.checked = true;
+        row.policy = element();
+        row.policy.value = "unfinished custom limit";
+        row.children.set('input[type="checkbox"]', row.checkbox);
+        row.children.set("input", row.policy);
+        row.children.set("select", row.policy);
+        controls.push(row.checkbox, row.policy);
         return row;
     });
-    const document = {
-        hidden: false,
-        activeElement: rows[0]?.policy,
-        events: new Map(),
-        querySelector: selector => selector === "[data-live]" ? root : null,
-        querySelectorAll: selector => selector === "[data-live-id]" ? rows : [],
-        addEventListener(name, fn) { this.events.set(name, fn); }
-    };
+    // The user is editing a field when updates arrive.
+    document.activeElement = rows[0]?.policy || document.body;
     const window = { events: new Map(), addEventListener(name, fn) { this.events.set(name, fn); } };
     let clock = 0;
     let next = 0;
@@ -204,18 +226,31 @@ test("missing rows remain present with a fixed unavailable state", async () => {
 });
 
 for (const code of [401, 403]) {
-    test("authentication " + code + " stops updates and offers ordinary sign-in", async () => {
+    test("authentication " + code + " stops updates and moves toggle focus to sign-in", async () => {
         const f = fixture();
+        f.button.focus();
         enable(f);
         f.requests[0].resolve(response({}, code));
         await settle();
         assert.equal(f.button.disabled, true);
         assert.equal(f.signIn.hidden, false);
+        assert.equal(f.document.activeElement, f.signIn);
         assert.match(f.status.textContent, /Sign in again/);
         f.advance(60000);
         assert.equal(f.requests.length, 1);
     });
 }
+
+test("authentication failure leaves focus in an edited field untouched", async () => {
+    const f = fixture();
+    const focused = f.document.activeElement;
+    enable(f);
+    f.requests[0].resolve(response({}, 401));
+    await settle();
+    assert.equal(f.signIn.hidden, false);
+    assert.equal(f.document.activeElement, focused);
+    assert.equal(f.rows[0].policy.value, "unfinished custom limit");
+});
 
 test("transient failure pauses until the user explicitly retries", async () => {
     const f = fixture();
@@ -278,7 +313,19 @@ test("unsigned 64-bit transfer counters are displayed exactly without floating p
     enable(invalid);
     invalid.requests[0].resolve(response(invalid.data({ uploaded_bytes: "18446744073709551616" })));
     await settle();
+    assert.equal(invalid.button.textContent, "Retry live updates");
     assert.equal(invalid.freshness.textContent, "Showing the page as loaded.");
+});
+
+test("import states are accepted while a job is copied into the library", async () => {
+    for (const state of ["importing", "imported"]) {
+        const f = fixture();
+        enable(f);
+        f.requests[0].resolve(response(f.data({ state })));
+        await settle();
+        assert.equal(f.rows[0].querySelector('[data-live-field="state"]').textContent, state);
+        assert.equal(f.button.textContent, "Pause updates");
+    }
 });
 
 test("unsupported platforms or excessive scope retain the disabled manual fallback", () => {

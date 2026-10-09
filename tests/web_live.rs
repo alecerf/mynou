@@ -252,6 +252,35 @@ fn job_projection_is_narrow_fresh_read_only_and_does_not_consume_flash_messages(
 }
 
 #[test]
+fn import_states_keep_live_job_updates_running() {
+    let directory = Directory::new();
+    let server = server(&directory);
+    let job = server
+        .engine
+        .submit(movie("Import progress"))
+        .unwrap()
+        .remove(0);
+    let browser = Browser::login(&server);
+    let route = format!("/ui/live/jobs?ids={}", job.id);
+    // The engine stores both states while it copies and confirms an import.
+    for state in ["importing", "imported"] {
+        let mut import_snapshot = job.clone();
+        import_snapshot.state = state.into();
+        import_snapshot.progress = 1.0;
+        lock(&server.engine.store)
+            .unwrap()
+            .update(import_snapshot)
+            .unwrap();
+        let reply = live(&server, &browser, &route);
+        assert_json(&reply, 200);
+        let value = json::parse(&reply.body).unwrap();
+        let entry = &value.get("entries").unwrap().as_array().unwrap()[0];
+        assert_eq!(entry.get("state").unwrap().as_str(), Some(state));
+        assert_eq!(entry.get("progress").unwrap().as_f64(), Some(1.0));
+    }
+}
+
+#[test]
 fn transfer_projection_uses_exact_decimal_counters_and_retains_native_controls() {
     let scratch = Scratch::new();
     let torrent = Torrent::single(&scratch.0, "private-name.bin", payload(BLOCK, 94));
@@ -348,7 +377,7 @@ fn live_asset_is_content_pinned_and_only_progress_pages_opt_in() {
     assert!(!policy.contains("unsafe-eval"));
     assert!(
         page.body
-            .contains("data-live-toggle aria-pressed=false disabled")
+            .contains("data-live-toggle disabled")
     );
     assert!(page.body.contains("href=\"\" data-live-refresh"));
     assert!(page.body.contains("name=q"));

@@ -936,7 +936,7 @@ fn upgrade_buttons(session: &Session) -> String {
 }
 fn live_controls(kind: &str) -> String {
     format!(
-        "<section class=\"panel live-controls\" data-live={kind} aria-label=\"Live updates\"><div class=actions><button type=button data-live-toggle aria-pressed=false disabled>Enable live updates</button><a class=button href=\"\" data-live-refresh>Refresh page</a><a href=/ui/login data-live-sign-in hidden>Sign in again</a></div><p data-live-status role=status aria-live=polite>Live updates paused. JavaScript is optional; use Refresh page.</p><p class=muted data-live-freshness>Showing the page as loaded.</p><p class=muted>Updates change progress only. Refresh page for new rows, messages or controls.</p><noscript><p>Use Refresh page to see current progress.</p></noscript></section>"
+        "<section class=\"panel live-controls\" data-live={kind} aria-label=\"Live updates\"><div class=actions><button type=button data-live-toggle disabled>Enable live updates</button><a class=button href=\"\" data-live-refresh>Refresh page</a><a href=/ui/login data-live-sign-in hidden>Sign in again</a></div><p data-live-status role=status aria-live=polite>Live updates paused. JavaScript is optional; use Refresh page.</p><p class=muted data-live-freshness>Showing the page as loaded.</p><p class=muted>Updates change state and progress only. Refresh page for new or removed rows, filter changes, messages or controls.</p><noscript><p>Use Refresh page to see current progress.</p></noscript></section>"
     )
 }
 fn live_badge(state: &str) -> String {

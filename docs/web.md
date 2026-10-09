@@ -25,12 +25,15 @@ exact decimal strings, including values larger than JavaScript's safe integer ra
 
 Only state, progress, attempts and transfer byte/seeding counters change. Filters,
 pagination, selected rows, keyboard focus and unfinished policy forms remain in
-place. Refresh to see new rows, messages, file information or newly available
-controls. A missing entry remains visible as **Unavailable**.
+place. Refresh to see new or removed rows, filter changes, messages, file
+information or newly available controls. A missing entry remains visible as **Unavailable**.
 Freshness records the last complete accepted response; it is not an ETA or speed.
 A quiet status announces changes to live-update mode, not each byte count.
 
-Authentication failure stops updates and offers **Sign in again**. Other failures
+Authentication failure stops updates and offers **Sign in again**; when the
+toggle had keyboard focus, focus moves to that link. A browser setting that strips
+the same-origin Referer prevents the origin check and also shows Sign in again;
+use Refresh page there. Other failures
 pause updates until **Retry live updates** or Refresh page; there is no automatic
 retry loop. Signing in, signing out and changing settings still use native forms.
 
