@@ -1,17 +1,17 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 1137,
+  "generation": 1138,
   "lease": {
     "id": "codex-recovery-20261009T131600Z-quality-4b3baf66-9370-4edb-a181-12f081c5f5f6",
     "worker": "codex-recovery-20261009T131600Z",
     "role": "quality",
     "issue": 58,
     "acquired_at": "2026-10-09T14:45:24Z",
-    "heartbeat_at": "2026-10-09T15:08:01Z",
-    "expires_at": "2026-10-09T15:53:01Z",
+    "heartbeat_at": "2026-10-09T15:20:23Z",
+    "expires_at": "2026-10-09T16:05:23Z",
     "branch": "claude/team-leases-58",
-    "commit": "f86593f716b32c23d7f4ef14b610bb7ddfad7dc6",
+    "commit": "7ef0dd8eb6471d3fd7ca890d59716b57e7a62f2d",
     "pr": 66
   },
   "checkpoint": {
@@ -684,9 +684,9 @@
     "issue": 58,
     "role": "quality",
     "branch": "claude/team-leases-58",
-    "commit": "f86593f716b32c23d7f4ef14b610bb7ddfad7dc6",
+    "commit": "7ef0dd8eb6471d3fd7ca890d59716b57e7a62f2d",
     "pr": 66,
-    "summary": "Committed original Security58 corrections as f86593f716b32c23d7f4ef14b610bb7ddfad7dc6 (sole parent12a124fafd33db3fe6b9f5b5bdd6550fe007f5ff, treef0dadbb8df37fb70a67873d0a3499aeebd7f4768) on claude/team-leases-58/PR66; native branch and PR readbacks agree. Added exclusive/stale delivery fences, worker branch guards, durable handoffs, exact installed-source activation gates, honest prompt/docs and original CI-only regression cases. Proposed version34 preserves pending product35/36. Configuration/live schema stay1/MAX1. Actual new CI and separate Security/QA remain pending; no local checks/activation/worker launch.",
+    "summary": "Quality corrections committed as7ef0dd8eb6471d3fd7ca890d59716b57e7a62f2d, sole parentf86593f716b32c23d7f4ef14b610bb7ddfad7dc6, tree0be81be4f53419f3d2b6eef05579763f8a98645c; native branch/PR agree and actual M69-base diff has18 complete paths. Fixed CI37948931645/Engineering37948931770 cleanup ownership race failure by reusing the audited state and retaining the final fresh owner/worker fence, avoiding an extra API read; added cap/config admission regression. Four f865 builds passed; f865 audit actions-logs remains actual AuditError16requests/rem4975, cause unproven. Latest CI pending. No local checks, activation or worker launch.",
     "previous_checkpoint": {
       "at": "2026-10-09T14:13:47Z",
       "issue": 62,
@@ -697,8 +697,8 @@
       "summary": "Delivery/cleanup complete for62/54/61: native readbacks show allthree closedCompleted/statusDone, handoffs6082564647/6082565639/6082566511 andPR69delivery6082567371. Verified actualM69 immutablev0.22.33/privateproof/current7-jobCI/Security/CodeQL and truthful post-installSecurity5471049196/QA5471117900; primarypremergegates preserved. Nativeblocking lists for62/54/61 all empty, no readiness blocker invented. Sourcebrancheswork/62-publication-http-status andwork/54-security-log-coverage genuinely404 with native delete_branch_on_merge enabled; nodeletion API needed. Preserveunique PR57 c2110ed/formatter302498, PR63 latest7fcc6ca, PR65 latestf0e6826 andPR66 66c6990. CurrentReadyagent productincrements39/46/56 =3, so no ceremonial Productbacklog expansion. Highestpriority executableexisting manageduserwork58/P1 hasdraftPR66; existinguser-directed single-worker wake remains absolute throughout this worker and no child/cloud/CLI agent is launched.",
       "next_action": "ReleaseQuality62 andacquireTriage58 on preservedclaude/team-leases-58@66c6990cd7d8d91297efffed329e78057f868b9a/PR66. RecoveractualIssue/branch/base/CI andcritically scopeopt-in team capability against currentstrict single-worker execution and originaluserauthorization. Keepactivation disabled inthiswake; do notinvent unsupportedworkerlaunch/scheduling APIs or weaken security/recovery/QA. Existingcalendar63 native ready/CIclaim andPAR2/liveprogresswork remainpreserved forpriority recovery."
     },
-    "at": "2026-10-09T15:08:01Z",
-    "next_action": "Finish admission/recovery edge-case inspection on this source, then checkpoint/release Quality and acquire exact-head Security; inspect native new CI once ready and complete independent QA before any merge.",
+    "at": "2026-10-09T15:20:23Z",
+    "next_action": "Quality release, then acquire separate Security58 at exact7ef0dd8eb6471d3fd7ca890d59716b57e7a62f2d/base6946ef76db0fc13b1fd887f6ee3d5304d5b1fbd2, review all18 actual changed paths and verify prior findings. Obtain actual latest CI; QA follows only after satisfactory evidence.",
     "recovery": {
       "issue": true,
       "branch": true,
