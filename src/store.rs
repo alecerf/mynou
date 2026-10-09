@@ -42,6 +42,9 @@ fn rar_format(job: &Job) -> bool {
         .is_some_and(|o| o.rar_limits.is_some())
 }
 
+/// Builds a Usenet selection from a newly created upgrade child before it is journaled.
+pub type OriginCapture<'a> = &'a dyn Fn(&Job) -> Result<crate::usenet::admission::Origin>;
+
 mod groups;
 mod irc;
 pub use groups::SharedUpgrade;
@@ -1036,7 +1039,7 @@ impl Store {
         parent_id: &str,
         request: Request,
         release: RecordedRelease,
-        capture: &dyn Fn(&Job) -> Result<crate::usenet::admission::Origin>,
+        capture: OriginCapture<'_>,
     ) -> Result<Job> {
         self.submit_upgrade_with(parent_id, request, release, Some(capture))
     }
@@ -1046,7 +1049,7 @@ impl Store {
         parent_id: &str,
         request: Request,
         release: RecordedRelease,
-        capture: Option<&dyn Fn(&Job) -> Result<crate::usenet::admission::Origin>>,
+        capture: Option<OriginCapture<'_>>,
     ) -> Result<Job> {
         request.validate()?;
         release.validate()?;
