@@ -14,6 +14,8 @@ import urllib.parse
 import urllib.request
 import zipfile
 
+from log_coverage import Coverage, MAX_ENTRIES, run_identity
+
 MAX_OBJECT = 8 * 1024 * 1024
 MAX_ARCHIVE = 64 * 1024 * 1024
 MAX_EXPANDED = 128 * 1024 * 1024
@@ -124,19 +126,22 @@ class API:
     def __init__(self, repository, token):
         if not re.fullmatch(r"[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+", repository):
             raise AuditError("Invalid repository")
+        self.repository = repository
         self.base = "https://api.github.com/repos/" + repository
         self.token = token
         self.client = urllib.request.build_opener(NoRedirect())
         self.budget = RequestBudget()
 
-    def get(self, path, archive=False):
+    def get(self, path, archive=False, limit=None):
         self.budget.begin()
         headers = {"Accept": "application/vnd.github+json",
                    "Cache-Control": "no-cache", "User-Agent": "mynou-secret-audit",
                    "X-GitHub-Api-Version": "2022-11-28",
                    "Authorization": "Bearer " + self.token}
         request = urllib.request.Request(self.base + path, headers=headers)
-        limit = MAX_ARCHIVE if archive else 8 * 1024 * 1024
+        limit = limit if limit is not None else (MAX_ARCHIVE if archive else 8 * 1024 * 1024)
+        if type(limit) is not int or not 0 < limit <= MAX_ARCHIVE:
+            raise AuditError("Invalid response bound")
         try:
             with self.client.open(request, timeout=30) as response:
                 self.budget.observe(response.headers)
@@ -244,47 +249,83 @@ def audit_attempt(api, item):
     return {"state": "scanned", "location": identity, "members": members, "findings": found}
 
 
-def actions_logs(api):
+def actions_logs(api, coverage=None):
     runs = list(api.pages("/actions/runs", "workflow_runs"))
-    attempts, pending = [], []
+    attempts, pending, seen = [], [], set()
+    bindings = {}
     for run in runs:
-        if run["status"] != "completed":
-            pending.append("actions-run:" + str(run["id"]))
-            continue
+        run_id = run["id"]
+        if type(run_id) is not int or not 0 < run_id < 2 ** 63 or run_id in seen:
+            raise AuditError("Invalid or duplicate run inventory")
+        seen.add(run_id)
         number = run.get("run_attempt", 1)
         if type(number) is not int or not 1 <= number <= 100:
             raise AuditError("Invalid attempt inventory")
-        attempts.extend((run["id"], a) for a in range(1, number + 1))
-    api.budget.require(len(attempts))
-    found, unavailable = [], []
+        if coverage is not None:
+            bindings[run_id] = run_identity(run)
+        completed = number
+        if run["status"] != "completed":
+            pending.append("actions-run:" + str(run_id))
+            completed -= 1
+        if len(attempts) + completed > MAX_ENTRIES:
+            raise AuditError("Attempt inventory exceeds receipt bound")
+        attempts.extend((run_id, a) for a in range(1, completed + 1))
+    if len(attempts) > MAX_ENTRIES:
+        raise AuditError("Attempt inventory exceeds receipt bound")
+    if coverage is not None:
+        coverage.load()
+    reused, uncovered = [], []
+    for run_id, attempt in attempts:
+        row = coverage.covered(bindings[run_id], attempt) if coverage is not None else None
+        if row is None:
+            uncovered.append((run_id, attempt))
+        else:
+            reused.append(row)
+    api.budget.require(len(uncovered))
+    found, unavailable, entries = [], [], list(reused)
     counts = {"scanned": 0, "no-runner-execution": 0}
     members = 0
-    # These are deterministic CI I/O threads, never additional AI workers.
+    # Deterministic CI I/O, never additional AI workers. Only four submissions
+    # exist at once; a failure cannot drain a large queued archive inventory.
     with ThreadPoolExecutor(max_workers=4) as pool:
-        # Submit only one bounded batch. An exception never leaves a queue
-        # draining hundreds of further credentialed requests after failure.
-        for start in range(0, len(attempts), 4):
-            batch = attempts[start:start + 4]
-            results = list(pool.map(lambda item: audit_attempt(api, item), batch))
-            for result in results:
+        for start in range(0, len(uncovered), 4):
+            results = list(pool.map(lambda item: audit_attempt(api, item),
+                                    uncovered[start:start + 4]))
+            for item, result in zip(uncovered[start:start + 4], results):
                 if result["state"] == "unavailable":
                     unavailable.append(result["location"])
-                else:
-                    counts[result["state"]] += 1
-                    members += result.get("members", 0)
-                    found.extend(result.get("findings", []))
-    return {"scope": "all completed visible workflow attempts at inventory time",
-            "runs_enumerated": len(runs), "attempts_examined": len(attempts),
-            "archives_scanned": counts["scanned"], "members_scanned": members,
-            "attempts_without_execution": counts["no-runner-execution"],
-            "pending_runs": pending, "coverage_gaps": unavailable,
-            "findings": found[:100], "finding_count": len(found)}
+                    continue
+                counts[result["state"]] += 1
+                members += result.get("members", 0)
+                found.extend(result.get("findings", []))
+                if coverage is not None:
+                    run_id, attempt = item
+                    entries.append({**bindings[run_id], "attempt": attempt,
+                                    "state": result["state"],
+                                    "members": result.get("members", 0)})
+    report = {"scope": "all completed visible workflow attempts at inventory time",
+              "runs_enumerated": len(runs), "attempts_examined": len(attempts),
+              "archives_scanned": counts["scanned"],
+              "archives_reused": sum(row["state"] == "scanned" for row in reused),
+              "attempts_reused": len(reused), "members_scanned": members,
+              "members_reused": sum(row["members"] for row in reused),
+              "attempts_without_execution": counts["no-runner-execution"]
+                  + sum(row["state"] == "no-runner-execution" for row in reused),
+              "pending_runs": pending, "coverage_gaps": unavailable,
+              "findings": found[:100], "finding_count": len(found)}
+    if coverage is not None:
+        entries.sort(key=lambda row: (row["run_id"], row["attempt"]))
+        report["coverage"] = coverage.receipt(entries)
+        report["baseline"] = coverage.baseline
+        report["full_sweep"] = coverage.full
+    return report
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("scope", choices=["history", "logs"])
     parser.add_argument("--output", required=True)
+    parser.add_argument("--full", action="store_true")
     args = parser.parse_args()
     api = None
     try:
@@ -295,13 +336,14 @@ def main():
             if not token:
                 raise AuditError("Missing Actions read credential")
             api = API(os.environ.get("GITHUB_REPOSITORY", ""), token)
-            report = actions_logs(api)
+            full = args.full or os.environ.get("MYNOU_FULL_LOG_AUDIT") == "true"
+            report = actions_logs(api, Coverage(api, full=full))
             report["api_budget"] = api.budget.evidence()
-        report["schema"] = 1
+        report["schema"] = 2 if args.scope == "logs" else 1
         report["status"] = ("findings" if report["finding_count"] else
                             "incomplete" if report["coverage_gaps"] else "passed")
         Path(args.output).write_text(json.dumps(report, indent=2) + "\n")
-        print(json.dumps(report))
+        print(json.dumps({key: value for key, value in report.items() if key != "coverage"}))
         return 0 if report["status"] == "passed" else 1
     except Exception as error:
         # Do not print exception messages/URLs/bodies or raw downloaded contents.
