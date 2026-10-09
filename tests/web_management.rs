@@ -183,7 +183,7 @@ fn native_forms_without_origin_can_sign_in_act_and_sign_out() {
     let job = server
         .engine
         .submit(movie("Native Form Fixture"))
-        .unwrap()
+        .unwrap_or_else(|_| panic!("Fixture job submission failed"))
         .remove(0);
     let referring_jobs = format!("{origin}/ui/jobs?state=queued");
     let action = server.call(
