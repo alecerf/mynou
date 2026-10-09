@@ -27,8 +27,8 @@ Actual CI37668451522 passed all five jobs, 858 Rust tests and seven immutable
 assets at `7910156c6cce0f74a9ab530b289c3734750bc994`; native comment6045313189
 retains exact publication proof. Proposed 0.22.15 under Issue #15 now persists
 verified owner-bound recovery in new private workspaces and checks reopening.
-This grants no existing-file repair or queue/library admission. See
-[support](par2.md) and [release contract](releases/0.22.15.md).
+This grants no existing-file repair or queue/library admission. See the
+[release contract](releases/0.22.15.md).
 This document is product context, not live execution or verification state.
 
 GitHub Actions published v0.22.12 at `d0c37f773b45b8948eb8c5b67a55e89f64ddbe10`

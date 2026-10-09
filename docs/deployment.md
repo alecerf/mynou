@@ -66,7 +66,7 @@ cd mynou-docker &&
 ```
 
 After sign-in, open **Setup** at `/ui/setup` for a private configuration
-checklist and links to existing reviewed source/Usenet diagnostics. It reports
+checklist and links to existing reviewed source diagnostics. It reports
 loaded settings without exposing paths, credential names or values, and opening
 it performs no connection or write test. Edit private configuration/environment
 outside the browser and recreate the service after changes. See

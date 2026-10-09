@@ -105,85 +105,16 @@ health views expose fixed diagnostics. v0.21.0 passed all five jobs in run
 v0.21.1 also passed all five jobs with 628 Rust tests and seven CI-published assets.
 Checked source policy and guarded controls retain pauses through restart.
 
-[Native Usenet formats](docs/usenet.md) begin in 0.22.0 with read-only NZB
-inspection, original yEnc decoding and mandatory part/whole-file CRC checks.
-Multipart assembly rejects missing, overlapping or conflicting ranges. This
-format scope passed all five jobs with 639 Rust tests and seven published assets.
-The 0.22.1 scope adds original bounded NNTP/TLS authentication, exact article
-body transport and reviewed non-acquiring probes through CLI/API/browser paths.
-v0.22.1 passed all five jobs with 652 Rust tests and seven published assets.
-v0.22.2 passed all five jobs with 663 Rust tests across 57 harnesses and seven
-published assets. Checked private receipts support recoverable streamed output.
-v0.22.3 passed all five jobs with 680 Rust tests across 58 harnesses and seven
-published assets. Its durable native staging queue retains verified receipts and
-article attempt budgets. v0.22.4 passed all five jobs with 693 Rust tests across
-59 harnesses and seven published assets. v0.22.5 passed all five jobs with 712
-Rust tests across 60 harnesses and seven published assets. Held owner bindings,
-nonpersistent permission and revocation protect private verified output.
-v0.22.6 connects Newznab and native Usenet to approved canonical
-movie/episode jobs, captured quality/destinations, identity and size checks,
-atomic imports and exact Plex confirmation. All five jobs passed with 729 Rust
-tests and seven bot-published assets. Only
-single-file direct-media NZBs are supported in this increment; archive/PAR2,
-packs remain later stages; Usenet upgrades of owned movies and episodes follow in a later release (see [Usenet upgrades](docs/usenet.md#usenet-upgrades)). See [Newznab configuration](docs/usenet.md#native-newznab-discovery-in-0224),
-[held ownership](docs/usenet.md#held-library-ownership-in-0225) and
-[library admission](docs/usenet.md#native-library-admission-in-0226).
-
-v0.22.7 passed all five jobs with 750 Rust tests and seven bot-published assets,
-providing [bounded ZIP and streaming DEFLATE](docs/archives.md) and read-only
-`zip-inspect`. v0.22.8 passed all five jobs with 773 Rust tests and seven assets, adding opt-in
-ownership-bound ZIP library admission for one media entry with the existing
-requester, identity, import and Plex gates. v0.22.9 passed all five jobs with 791 Rust tests, adding original bounded RAR5
-stored-file formats and read-only `rar-inspect`. v0.22.10 passed all five jobs with
-804 Rust tests, adding opt-in stored RAR5 library admission with captured format/limits
-and the existing private ownership/import/Plex gates.
-
-0.22.11 adds [native PAR2 inspection](docs/par2.md) through `par2-inspect FILE`: bounded
-core packets, verified metadata identity and read-only JSON reports. Content
-verification and repair are not performed by this inspector.
-0.22.12 delivered a bounded [single-file recovery library API](docs/par2.md): original
-GF(2^16) arithmetic, up to eight erased slices, immutable protected input and
-fully verified caller-owned output. Its Actions release and native review evidence
-are recorded in Issue #6 / PR #8.
-Actions published v0.22.13 multi-file memory recovery at
-`6085368588c8077af53d15bc4f07d752e670e445`, with all five jobs green in
-[run 37648617664](https://github.com/alecerf/mynou/actions/runs/37648617664),
-846 Rust tests and seven immutable bot assets. Exact File IDs, one global
-coefficient map and aggregate bounds govern the memory-only engine.
-
-Proposed 0.22.14 adds read-only `par2-verify FILE --root DIRECTORY` and a library
-verification report. It identifies damaged/missing protected slices and checks
-whole-file integrity without reconstruction, writes or ownership/library authority.
-Clean verification exits zero; damage prints JSON and exits nonzero. See
-[verification support](docs/par2.md) and [release scope](docs/releases/0.22.14.md).
-Actions published v0.22.14 at `7910156c6cce0f74a9ab530b289c3734750bc994`:
-all five jobs in run 37668451522 passed, with 858 Rust tests and seven immutable
-assets. Issue #13 / PR #14 retain actual publication and review evidence.
-
-Actions published v0.22.15 at `4cf7580fd4e3d8c3e8f6a71260629d2ae76d41b8`:
-all five jobs in run 37684129315 passed, including 864 Rust tests across 64
-harnesses. Seven immutable bot-owned assets and the prior release were verified.
-
-0.22.15 adds an owner-bound private PAR2 recovery workspace library API.
-Verified memory reconstruction is persisted in a new private directory and
-checked against exact owner/source/policy and complete integrity on reopening.
-It does not overwrite existing files or activate queue/library admission. See
-[workspace support](docs/par2.md) and [release scope](docs/releases/0.22.15.md).
-Separate Security, independent QA and Actions establish actual delivery.
+Releases 0.22.0 to 0.22.26 also added native Usenet acquisition, ZIP and RAR5
+extraction, and PAR2 verification and recovery. These features were later
+removed so Mynou focuses on torrents; their [release notes](docs/releases/) and
+Git history keep the delivery evidence.
 
 Proposed 0.22.16 adds native macOS executables for Apple Silicon and Intel.
 Both architectures must pass native build, architecture and acquisition/import
 demo checks before CI may package or publish them. See the
 [macOS installation guide](docs/macos.md) and [release scope](docs/releases/0.22.16.md).
 Publication and macOS success require actual completed Actions evidence.
-
-Actions published [v0.22.26](https://github.com/alecerf/mynou/releases/tag/v0.22.26)
-from `d67becbd5a09ff51bdd8e2a3d43a9f44ef849f74` after all seven jobs in
-run37814772739 passed, including 875 Rust tests. [Bounded PAR2 recovery](docs/par2.md)
-selects independent available rows, including nonzero/nonconsecutive exponents;
-exact coefficients, source/packet/final integrity, aggregate bounds and private
-owner binding remain required. Automatic repair admission and volume merging
-are not added. Native Issue36/PR37 retain release/review/image evidence.
 
 Proposed 0.22.27 gives the [Product Owner](.agents/skills/mynou-product/SKILL.md)
 a small evidence-based native product backlog and a recovery-first planning
@@ -358,8 +289,7 @@ parallel peer bounds, bandwidth limits and seeding policies. Use
 
 Mynou remains an early integrated implementation. Explicit numbering, shared
 multi-episode ownership and requester policies are supported as described above.
-Automatic PAR2 repair admission, compressed RAR, Usenet packs/upgrades,
-verified cross-seeding and broader consumer onboarding remain product work.
+Verified cross-seeding and broader consumer onboarding remain product work.
 The [release roadmap](docs/roadmap.md) separates the next stages; current native
 Issues hold the prioritized backlog.
 
