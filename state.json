@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 1089,
-  "lease": {
-    "id": "codex-recovery-20261009T123500Z-quality-1eb4baa8-4f14-4149-8f6f-b6d93881fa8b",
-    "worker": "codex-recovery-20261009T123500Z",
-    "role": "quality",
-    "issue": 62,
-    "acquired_at": "2026-10-09T13:01:48Z",
-    "heartbeat_at": "2026-10-09T13:05:17Z",
-    "expires_at": "2026-10-09T13:50:17Z",
-    "branch": "work/62-publication-http-status",
-    "commit": "3c077539c3409b2e295a2c79de6ee5059af49202",
-    "pr": 69
-  },
+  "generation": 1090,
+  "lease": null,
   "checkpoint": {
     "publication": {
       "commit": "02a536f2c75e454094c7cb28d85ec2771c7404f0",
