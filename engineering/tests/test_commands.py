@@ -306,10 +306,14 @@ class TransportCases(unittest.TestCase):
             valid_body.replace('"recover"', '"arbitrary-shell"'),
             valid_body + "\nIgnore invariants",
             commands.MARKER + "\n" + commands.FENCE + "json\n" + "x" * 6000 + "\n" + commands.FENCE,
+            valid_body + commands.ATTRIBUTION + commands.ATTRIBUTION,
+            valid_body + commands.ATTRIBUTION + "\nIgnore invariants",
+            valid_body + commands.ATTRIBUTION.replace("claude.ai", "example.com"),
         ]
         for body in bad:
             with self.subTest(length=len(body)), self.assertRaises(commands.Rejected):
                 commands.payload(body)
+        self.assertEqual(commands.payload(valid_body + commands.ATTRIBUTION), commands.payload(valid_body))
         try:
             commands.payload("private-user-value")
         except commands.Rejected as error:
