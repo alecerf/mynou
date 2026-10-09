@@ -10,8 +10,8 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-const CHUNK: usize = 64 << 10;
-const OVERHEAD: u64 = 512 << 10;
+pub(super) const CHUNK: usize = 64 << 10;
+pub(super) const OVERHEAD: u64 = 512 << 10;
 
 /// Limits on additional buffers and field operations, excluding the captured Set
 /// and caller-owned inputs. Applications may tighten, never raise, these bounds.
@@ -117,7 +117,7 @@ impl RecoveredFile {
     }
 }
 
-fn active(flag: &AtomicBool) -> Result<()> {
+pub(super) fn active(flag: &AtomicBool) -> Result<()> {
     if flag.load(Ordering::Acquire) {
         Ok(())
     } else {
@@ -125,7 +125,7 @@ fn active(flag: &AtomicBool) -> Result<()> {
     }
 }
 
-fn buffer(length: usize) -> Result<Vec<u8>> {
+pub(super) fn buffer(length: usize) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     bytes
         .try_reserve_exact(length)
@@ -173,7 +173,7 @@ pub(super) fn padded_slice(input: &[u8], index: usize, scratch: &mut [u8]) -> bo
 
 // Captured recovery packets are unique and sorted by exponent by the reader.
 // A small normalized echelon basis skips dependent rows without payload reads.
-fn select_rows<'a>(
+pub(super) fn select_rows<'a>(
     missing: &[usize],
     recovery: &'a [RecoverySlice],
     available_operations: &mut u64,
@@ -223,7 +223,7 @@ fn select_rows<'a>(
     Err("PAR2 recovery lacks enough independent available parity slices".into())
 }
 
-fn inverse_matrix(
+pub(super) fn inverse_matrix(
     missing: &[usize],
     selected: &[&RecoverySlice],
     flag: &AtomicBool,
@@ -518,7 +518,7 @@ impl Set {
         active(flag)
     }
 
-    fn read_recovery<R: Read + Seek>(
+    pub(super) fn read_recovery<R: Read + Seek>(
         &self,
         reader: &mut R,
         captured: &RecoverySlice,

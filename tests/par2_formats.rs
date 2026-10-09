@@ -19,6 +19,7 @@ use std::{
     process::Command,
     sync::atomic::{AtomicBool, Ordering},
 };
+use mynou::par2::{StreamingLimits, StreamingPlan};
 
 const MAIN: [u8; 16] = *b"PAR 2.0\0Main\0\0\0\0";
 const DESCRIPTION: [u8; 16] = *b"PAR 2.0\0FileDesc";
@@ -93,7 +94,6 @@ impl Fixture {
         fixture.packets.retain(|(kind, _)| *kind != RECOVERY);
         // Published primitive constants; parity uses the independent polynomial
         // long-division oracle below, never the production field implementation.
-        let constants = [2u16, 4, 16, 128, 256, 2048, 8192, 16384, 4107, 32856, 17132];
         for &exponent in exponents {
             let mut parity = vec![0u8; slice_bytes];
             for (index, slice) in files
@@ -104,7 +104,7 @@ impl Fixture {
             {
                 let mut padded = slice.to_vec();
                 padded.resize(slice_bytes, 0);
-                let factor = reference_power(constants[index], exponent);
+                let factor = reference_power(input_constant(index), exponent);
                 for (target, source) in parity
                     .as_chunks_mut::<2>()
                     .0
@@ -190,6 +190,15 @@ fn reference_multiply(left: u16, right: u16) -> u16 {
         }
     }
     product as u16
+}
+
+// Spec constant for input slice N: 2^n for the Nth n coprime to 65535.
+fn input_constant(index: usize) -> u16 {
+    fn gcd(left: u32, right: u32) -> u32 {
+        if right == 0 { left } else { gcd(right, left % right) }
+    }
+    let n = (1u32..).filter(|n| gcd(*n, 65_535) == 1).nth(index).unwrap();
+    reference_power(2, n)
 }
 
 fn reference_power(mut value: u16, mut exponent: u32) -> u16 {
@@ -2490,4 +2499,210 @@ fn private_recovery_rejects_links_and_nonprivate_modes_without_touching_foreign_
         )
         .is_err()
     );
+}
+
+fn private_dir() -> Directory {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = Directory::new();
+    fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o700)).unwrap();
+    dir
+}
+
+fn stream<'a>(dir: &'a Directory, name: &'a str) -> StreamingPlan<'a> {
+    StreamingPlan {
+        directory: &dir.0,
+        file_name: name,
+        owner: b"synthetic-owner",
+    }
+}
+
+fn synthetic(length: usize) -> Vec<u8> {
+    (0..length)
+        .map(|i| (i.wrapping_mul(31) ^ (i >> 7) ^ (i >> 13)) as u8)
+        .collect()
+}
+
+fn small_streaming() -> (Vec<u8>, Vec<u8>) {
+    let original = synthetic(40 * 1024 + 13);
+    (Fixture::recovery_exponents(&original, 4096, &[3, 7, 11]).bytes(), original)
+}
+
+#[test]
+fn streaming_recovers_over_sixteen_mebibytes_under_a_tight_memory_budget() {
+    let original = synthetic((17 << 20) + 5);
+    let source = Fixture::recovery_exponents(&original, 65_536, &[1, 3, 5]).bytes();
+    let set = read(&source).unwrap();
+    assert!(
+        set.recover_single(&mut Cursor::new(&source), &original, RecoveryLimits::default())
+            .is_err()
+    );
+    let mut damaged = original[..271 * 65_536 + 7].to_vec();
+    damaged[3 * 65_536 + 9] ^= 0x5a;
+    let dir = private_dir();
+    let limits = StreamingLimits {
+        max_working_bytes: 4 << 20,
+        ..StreamingLimits::default()
+    };
+    let flag = AtomicBool::new(true);
+    let done = set
+        .recover_single_to_file_cancellable(
+            &mut Cursor::new(&source),
+            &mut Cursor::new(&damaged),
+            &stream(&dir, "Recovered.bin"),
+            limits,
+            &flag,
+        )
+        .unwrap();
+    assert_eq!(done.bytes(), original.len() as u64);
+    assert_eq!(fs::read(done.path()).unwrap(), original);
+    assert!(!dir.0.join("Recovered.bin.partial").exists());
+    done.verify(&set, &flag).unwrap();
+    fs::write(done.path(), b"tampered").unwrap();
+    assert!(done.verify(&set, &flag).is_err());
+}
+
+#[test]
+fn streaming_recovers_missing_truncated_and_clean_input_with_nonzero_rows() {
+    let (source, original) = small_streaming();
+    let set = read(&source).unwrap();
+    let mut damaged = original.clone();
+    damaged[5000] ^= 1;
+    for (name, input) in [
+        ("missing.bin", Vec::new()),
+        ("short.bin", original[..5 * 4096 + 10].to_vec()),
+        ("damaged.bin", damaged),
+        ("clean.bin", original.clone()),
+    ] {
+        let dir = private_dir();
+        let limits = StreamingLimits {
+            max_missing_slices: 8,
+            ..StreamingLimits::default()
+        };
+        let result = set.recover_single_to_file(
+            &mut Cursor::new(&source),
+            &mut Cursor::new(&input),
+            &stream(&dir, name),
+            limits,
+        );
+        if name == "missing.bin" {
+            assert!(result.is_err(), "11 erasures exceed the eight-slice bound");
+            assert_eq!(fs::read_dir(&dir.0).unwrap().count(), 0);
+            continue;
+        }
+        let done = result.unwrap();
+        assert_eq!(fs::read(done.path()).unwrap(), original);
+    }
+}
+
+#[test]
+fn streaming_rejects_rank_limits_cancellation_and_changed_inputs_without_output() {
+    let (source, original) = small_streaming();
+    let set = read(&source).unwrap();
+    let damaged = original[..6 * 4096 + 100].to_vec();
+    let run = |source: &[u8], input: &[u8], limits: StreamingLimits, flag: &AtomicBool| {
+        let dir = private_dir();
+        let result = set.recover_single_to_file_cancellable(
+            &mut Cursor::new(source),
+            &mut Cursor::new(input),
+            &stream(&dir, "out.bin"),
+            limits,
+            flag,
+        );
+        assert_eq!(fs::read_dir(&dir.0).unwrap().count(), 0, "{result:?}");
+        result.is_err()
+    };
+    let live = AtomicBool::new(true);
+    let defaults = StreamingLimits::default();
+    assert!(run(&source, &damaged, StreamingLimits { max_missing_slices: 1, ..defaults }, &live));
+    assert!(run(&source, &damaged, StreamingLimits { max_field_operations: 10, ..defaults }, &live));
+    assert!(run(&source, &damaged, StreamingLimits { max_working_bytes: 530 * 1024, ..defaults }, &live));
+    assert!(run(&source, &damaged, defaults, &AtomicBool::new(false)));
+    let mut altered = source.clone();
+    altered[10] ^= 1;
+    assert!(run(&altered, &damaged, defaults, &live));
+    let mut longer = original.clone();
+    longer.push(0);
+    assert!(run(&source, &longer, defaults, &live));
+    let thin = Fixture::recovery_exponents(&original, 4096, &[3]).bytes();
+    let thin_set = read(&thin).unwrap();
+    let dir = private_dir();
+    assert!(
+        thin_set
+            .recover_single_to_file(
+                &mut Cursor::new(&thin),
+                &mut Cursor::new(&damaged),
+                &stream(&dir, "out.bin"),
+                defaults,
+            )
+            .is_err()
+    );
+    assert_eq!(fs::read_dir(&dir.0).unwrap().count(), 0);
+    assert!(StreamingLimits { max_file_bytes: (1 << 30) + 1, ..defaults }.validate().is_err());
+}
+
+#[test]
+fn streaming_never_overwrites_and_rejects_unsafe_plans() {
+    let (source, original) = small_streaming();
+    let set = read(&source).unwrap();
+    let dir = private_dir();
+    fs::write(dir.0.join("exists.bin"), b"keep").unwrap();
+    let attempt = |name: &str, owner: &[u8]| {
+        set.recover_single_to_file(
+            &mut Cursor::new(&source),
+            &mut Cursor::new(&original),
+            &StreamingPlan { directory: &dir.0, file_name: name, owner },
+            StreamingLimits::default(),
+        )
+    };
+    assert!(attempt("exists.bin", b"o").is_err());
+    assert_eq!(fs::read(dir.0.join("exists.bin")).unwrap(), b"keep");
+    fs::write(dir.0.join("busy.bin.partial"), b"stale").unwrap();
+    assert!(attempt("busy.bin", b"o").is_err());
+    assert_eq!(fs::read(dir.0.join("busy.bin.partial")).unwrap(), b"stale");
+    for name in ["", ".hidden", "a/b", "..", "x.partial", "sp ace"] {
+        assert!(attempt(name, b"o").is_err(), "{name}");
+    }
+    assert!(attempt("ok.bin", b"").is_err());
+    assert!(attempt("ok.bin", &[1u8; 257]).is_err());
+    let open = Directory::new();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&open.0, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    assert!(
+        set.recover_single_to_file(
+            &mut Cursor::new(&source),
+            &mut Cursor::new(&original),
+            &stream(&open, "ok.bin"),
+            StreamingLimits::default(),
+        )
+        .is_err()
+    );
+    let done = attempt("ok.bin", b"o").unwrap();
+    let other = attempt("ok2.bin", b"p").unwrap();
+    assert_ne!(done.policy_sha256(), other.policy_sha256());
+    assert_eq!(done.input_sha256(), &sha256(&original));
+}
+
+#[test]
+fn streaming_corrupt_parity_leaves_no_partial_or_final_output() {
+    let original = synthetic(40 * 1024);
+    let mut fixture = Fixture::recovery_exponents(&original, 4096, &[3, 7]);
+    fixture
+        .packets
+        .iter_mut()
+        .find(|packet| packet.0 == RECOVERY)
+        .unwrap()
+        .1[10] ^= 1;
+    let source = fixture.bytes();
+    let set = read(&source).unwrap();
+    let dir = private_dir();
+    let result = set.recover_single_to_file(
+        &mut Cursor::new(&source),
+        &mut Cursor::new(&original[..4096]),
+        &stream(&dir, "out.bin"),
+        StreamingLimits::default(),
+    );
+    assert!(result.is_err());
+    assert_eq!(fs::read_dir(&dir.0).unwrap().count(), 0);
 }
