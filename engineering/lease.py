@@ -112,12 +112,23 @@ def release(state, at, identity):
     return validate(result)
 
 
+PHASE_KEYS = frozenset(["at", "issue", "role", "branch", "commit", "pr", "summary", "next_action",
+    "previous_checkpoint", "recovery", "circuit_breaker"])
+
+
+def durable(checkpoint):
+    """Source-bound records (migration, publication, ...) that outlive one phase."""
+    return {key: value for key, value in checkpoint.items() if key not in PHASE_KEYS}
+
+
 def interruption(state, held, at, next_action):
     """Bind an interrupted phase even if it died before its first checkpoint."""
     old = state["checkpoint"]
     keys = ["issue", "role", "branch", "commit", "pr"]
     same = all(old.get(key) == held[key] for key in keys) and old.get("at") is not None and time(old["at"]) >= time(held["acquired_at"])
-    result = dict(old) if same else dict((key, held[key]) for key in keys)
+    # A new phase record keeps durable records, as checkpoint() does; dropping
+    # them would remove the canonical migration proof and fail closed forever.
+    result = dict(old) if same else {**durable(old), **{key: held[key] for key in keys}}
     if not same:
         result["summary"] = "Interrupted before a phase checkpoint; inspect the preserved lease source, Issue, PR and native history."
         if old:

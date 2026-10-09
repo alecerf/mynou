@@ -77,6 +77,10 @@ Issue19 adds these exact argument sets:
 - release-fence: worker, lease; an owned phase checkpoint is mandatory.
 - recover-fence: worker; native preservation is required after release or expiry.
 - retire-control: worker, lease, exact notes_proof_sha, native task_receipt_id.
+- repair-checkpoint: worker. Restores durable checkpoint records (migration,
+  publication, ...) that a stale recovery before the interruption fix replaced.
+  It admits only a retired-notes head whose sole parent passes full admission
+  and whose own state is exactly that recovery; everything else is preserved.
 
 The existing schema1 envelope and exact expected_sha remain mandatory. Fenced
 checkpoint/release preserve schema2 and the exact installed Master19/PR24 scope.
