@@ -1,19 +1,8 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 1024,
-  "lease": {
-    "id": "codex-recovery-20261009T072837Z-web-eafee5e2-4d71-42ab-b6dd-d0cc290df7d3",
-    "worker": "codex-recovery-20261009T072837Z",
-    "role": "web",
-    "issue": 45,
-    "acquired_at": "2026-10-09T08:29:18Z",
-    "heartbeat_at": "2026-10-09T08:32:27Z",
-    "expires_at": "2026-10-09T09:17:27Z",
-    "branch": "work/45-live-progress",
-    "commit": "b7ac9b8ead9f272c28e32c4e579e03ac8eac284a",
-    "pr": 57
-  },
+  "generation": 1025,
+  "lease": null,
   "checkpoint": {
     "at": "2026-10-09T08:32:27Z",
     "issue": 45,
