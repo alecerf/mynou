@@ -1,222 +1,115 @@
-# Browser management
+# Browser interface
 
-Open **http://127.0.0.1:8787/ui** after starting the service or its generated
-Docker installation. The browser interface shares the existing HTTP listener.
-Sign in with `MYNOU_API_TOKEN` from the installation's private `.env`.
+Open **http://127.0.0.1:8787/ui** after starting the service and sign in with
+`MYNOU_API_TOKEN` from the installation's private `.env`. The interface shares
+the API's listener and has the same privileges as the API token: there are no
+individual users.
 
-All pages are rendered by Rust. Forms work without JavaScript, external fonts,
-CDNs, browser packages, or a build pipeline for frontend dependencies. Jobs and
-Transfers offer optional live progress; Refresh page works on every platform. The embedded stylesheet includes a narrow
-screen layout, visible keyboard focus, labelled fields, table headers and a
-skip-to-content link. Browser and assistive-technology interoperability has not
-been independently reviewed.
+Pages are rendered by Mynou itself and work without JavaScript, external fonts,
+CDNs or frontend packages. They include a narrow-screen layout, visible keyboard
+focus, labelled fields, table headers and a skip-to-content link. Browser and
+assistive-technology compatibility has not been independently reviewed.
+
+## Pages
+
+| Page | What you can do |
+| --- | --- |
+| Overview | Request and transfer counts, integration errors, Plex watchlist synchronization |
+| Setup | Configuration checklist and first-request guidance (see below) |
+| Jobs | Filter by title, ID or state; progress, details, history, cancel and retry |
+| Library | Owned imports, monitoring, missing files or baselines, pending upgrades |
+| Search | Preview movie or episode selection with reasons; record a movie, episode, series or file request |
+| Series | Track series, monitoring, specials, earliest date, episode exclusions, catalog refresh, mapped and automatic packs, numbering and shared videos |
+| Calendar | Known episode dates by window and series, with monitoring and request states |
+| Transfers | Queue, pause and resume, queue and file priorities, file selection, counters and seeding policies |
+| Requesters | Plex requester accounts, polls, demand and reviewed controls |
+| Announcements | IRC source health, rules, history and reviews |
+| Indexers | Source health and reviewed controls |
+
+A search preview contacts your sources but records nothing; recording the
+request runs automatic selection later, so the displayed candidate is not
+reserved. An explicit URL or server path skips automatic selection and is
+cleared from the form after preview. Paths refer to files the service can see
+(container paths in Docker); the browser does not upload files. Applying
+upgrades runs a fresh search rather than replaying the preview.
+
+Actions that need a careful check (shared videos, group upgrades, numbering,
+requester, indexer and announcement controls) work in two steps: a preview,
+then an apply form that carries only the reviewed guard. One pending review is
+kept per session for ten minutes; a new review replaces it, and sign-out or a
+restart discards it.
+
+The guides describe each operation: [selection](selection.md),
+[library](library.md), [series](series.md), [packs](packs.md),
+[transfers](transfers.md), [requesters](requesters.md) and
+[sources](sources.md).
+
+## Guided setup
+
+**Setup** (or **Check setup** on Overview) lists the loaded folder settings,
+active sources and their authentication, the download route, optional catalog
+credentials and Plex settings. Missing credentials, malformed addresses,
+disabled sources and incompatible settings get a fixed explanation and a fix.
+"Configured" means a setting and its credential are present; it does not prove
+that authentication, connectivity or storage work. The page never shows paths,
+source addresses, credential names or values, or upstream errors, and opening it
+performs no network request or write.
+
+Mynou does not edit its configuration from the browser. Change `mynou.json` and
+`.env` on the host, recreate a Docker service (or restart the service) and run
+`mynou doctor`; see [deployment](deployment.md). Then preview a request on
+**Search**, record it when ready and follow it in **Jobs**.
 
 ## Live progress
 
-Jobs and Transfers lists and details have **Enable live updates**, **Pause updates**
-and **Refresh page** controls. Updates start paused on each page and do not persist
-a preference. Without a supported JavaScript platform, use Refresh page.
+Jobs and Transfers lists and details have **Enable live updates**, **Pause
+updates** and **Refresh page** controls. Updates start paused on every page and
+the choice is not remembered. While enabled and visible, the page asks for its
+displayed rows every ten seconds, one request at a time.
 
-While enabled and visible, the page checks its displayed identifiers every ten
-seconds, with one request at a time and an eight-second request deadline. Hiding
-or leaving the page cancels the request; stale responses cannot update the page.
-At most 50 identifiers and 48 KiB per reply are accepted. Transfer counters remain
-exact decimal strings, including values larger than JavaScript's safe integer range.
+Only state, progress, attempts and transfer counters change in place; filters,
+pagination, selected rows, focus and unfinished forms stay as they are. Refresh
+the page to see new or removed rows, messages and new controls. A row that
+disappears shows **Unavailable**. The freshness time is the last complete
+update, not an estimate of speed or remaining time.
 
-Only state, progress, attempts and transfer byte/seeding counters change. Filters,
-pagination, selected rows, keyboard focus and unfinished policy forms remain in
-place. Refresh to see new or removed rows, filter changes, messages, file
-information or newly available controls. A missing entry remains visible as **Unavailable**.
-Freshness records the last complete accepted response; it is not an ETA or speed.
-A quiet status announces changes to live-update mode, not each byte count.
+If the session expires, updates stop and **Sign in again** appears. A browser
+that strips the same-origin `Referer` also shows it; use **Refresh page** there.
+Other failures pause updates until **Retry live updates** or a page refresh;
+there is no automatic retry loop.
 
-Authentication failure stops updates and offers **Sign in again**; when the
-toggle had keyboard focus, focus moves to that link. A browser setting that strips
-the same-origin Referer prevents the origin check and also shows Sign in again;
-use Refresh page there. Other failures
-pause updates until **Retry live updates** or Refresh page; there is no automatic
-retry loop. Signing in, signing out and changing settings still use native forms.
+## Bulk changes and lists
 
-The browser-only read routes require the existing signed-in session and its exact
-HTTP/HTTPS origin, established by Origin or strict same-origin Referer. They do
-not accept API Bearer authentication, consume action messages, renew sessions or
-perform acquisitions. Replies omit titles, paths, source addresses, policies,
-credentials, CSRF tokens and diagnostics. They retain no-store, nosniff and
-anti-framing protection. The original embedded script is pinned by its exact
-SHA-256 content in both CSP and script integrity; inline scripts, handlers,
-evaluation and third-party scripts remain disabled. Only same-origin connections
-are permitted. CI checks original HTTP/session/privacy and browser-state fixtures
-without npm packages; real browser/assistive-technology review remains unclaimed.
+Select up to 32 entries on a page: jobs support cancel and retry, library
+entries and series support monitor and unmonitor, and transfers support pause
+and resume. Every entry is checked before anything changes, then each one is
+handled on its own, so an invalid entry does not block the others. The next page
+reports each result; a bulk change is not one transaction. Cancelling keeps
+downloads and imports.
 
-## Private guided setup
+Lists show 50 rows per page. File lists, event histories and episode plans are
+paginated too, and filters stay attached to page links.
 
-Open **Setup** from authenticated navigation or **Check setup** on Overview.
-The checklist describes loaded folder settings, active sources and their required
-authentication, an enabled matching torrent/Usenet route, optional catalog
-credentials and Plex settings. Missing credentials, malformed addresses, disabled
-sources and incompatible source/route settings receive fixed actionable states.
+## Sign-in, sessions and remote access
 
-**Configured** describes settings and credential presence. It does not establish
-successful authentication, provider connectivity, writable/private storage or a
-working personal installation. Folder paths, source labels/addresses, credential
-names/values and upstream error bodies are excluded from this projection.
+The token is sent once in a form body and never becomes a URL, cookie, page
+value or stored session value. Sign-in creates new random session and form
+tokens; cookies are `HttpOnly`, `SameSite=Strict`, scoped to `/ui` and `Secure`
+over HTTPS. Sessions live in memory and end eight hours after sign-in, at
+sign-out or when the service restarts. Browser cookies never authenticate `/api`
+routes, and an API Bearer header never signs a browser in.
 
-Opening Setup performs no network request, disk write, synchronization,
-acquisition or notification. Existing **Indexers** and **Usenet** links lead to
-their bounded reviewed diagnostics, with unchanged expiry, session, CSRF/origin
-and provider rules. Applying a Usenet connection probe requests no articles.
-This page adds no Plex network probe or configuration-writing endpoint.
+Every action requires the session cookie, its form token and a same-origin
+request. `Origin` decides when present; otherwise an absolute same-origin
+`Referer` must match the host and port. A session stays bound to the host, port
+and scheme used at sign-in. Forwarded host or protocol headers are ignored.
+Responses forbid caching and framing and send `Referrer-Policy: same-origin`.
+The content security policy allows only same-origin styles, forms and
+connections and the content-pinned live-progress script; inline scripts and
+handlers are blocked. Displayed labels are escaped, bounded and redacted.
 
-Edit the installation's private configuration/environment outside the browser;
-recreate a generated Docker service after changes. The linked deployment guide
-and `mynou doctor --config mynou.json` explain the installed configuration.
-Then preview a request on Search and separately choose whether to record it.
-Follow the real outcome in Jobs; required Plex confirmation uses the exact import.
-
-The existing no-script rendering, navigation, security headers and responsive
-panels remain in use. Original HTTP/state/privacy fixtures run only in CI;
-browser/assistive-technology interoperability is not claimed without actual evidence.
-
-## Everyday operations
-
-| Page | Operations |
-| --- | --- |
-| Overview | Request/transfer counts, integration errors, Plex watchlist synchronization |
-| Setup | Private configuration checklist, missing/invalid states, existing reviewed diagnostics and first-request guidance |
-| Jobs | Title/identifier and state filters, progress, details, recent history, cancel and retry |
-| Library | Current owned imports, monitoring, missing files/baselines, pending upgrades |
-| Search | Preview movie/episode selection with reasons; record movie, episode, series or file requests |
-| Series | Track scopes with optional acquisition, monitoring/specials, earliest air date, episode choices, catalog refresh, explicit mapped packs, guarded automatic pack previews, reviewed numbering choices and shared video ownership |
-| Calendar | Filter known episode dates by window and series, inspect monitoring and request states |
-| Transfers | Native queue, durable pause/resume, queue/file priorities, payload counters and seeding policies |
-
-Search previews contact configured sources without recording jobs. They retain
-the entered title and numeric identity in the form. Recording the request runs
-automatic selection later; the displayed candidate is not reserved. Series
-requests now retain a catalog plan and monitoring record, even when no episode
-has aired. See [series monitoring](series.md) for acquisition rules and limits.
-Automatic previews support movies and individual episodes. An explicit URL or server path bypasses
-automatic source selection, and that source input is cleared after preview.
-Source paths refer to files visible to the service, including container mounts;
-this page does not upload a file from the browser.
-
-Owned job details expose monitoring controls and, for an import missing one, a
-one-time matching release baseline. Preview upgrades before choosing **Apply
-available upgrades**. Apply performs a fresh search pass; it does not apply an
-immutable preview snapshot. Upgrades retain earlier imports until a replacement
-is ready and retain old files afterward. See [library behavior](library.md).
-
-Transfer pauses affect every request sharing that torrent. File priorities
-order required pieces. File details distinguish selected and verified paths;
-**Include file** and **Download all files** expand retained interests without
-clearing a user pause. A partial transfer cannot seed. Rates use bytes per second,
-and zero means unlimited. A ratio of `1000` means 1:1; blank ratio/time fields
-mean no local seeding cap. Saving a policy replaces seeding defaults in full.
-Restoring defaults removes the override. Global bandwidth caps always remain
-mandatory. See [transfer controls](transfers.md).
-
-Pack forms accept an exact file path for each catalog episode in a JSON array.
-Create an unmonitored series scope when choosing a pack before individual
-automatic acquisition. Existing requests are reused, and missing paths never
-fall back to another video. Job details show mappings protected from worker changes. New native pack transfers need only their mapped files and necessary verified
-boundary pieces. Earlier full transfers keep their acquisition policy. See [pack operations](packs.md) for format, validation
-and storage-version limits.
-
-Series details also provide **Preview season packs**. A resolved report displays
-catalog episodes, exact file mappings and bounded metadata decisions; its
-**Acquire resolved pack** form carries both scope and candidate guards. Apply
-searches again and rejects changed catalog/request scopes, source hashes or
-mappings. Preview records no jobs and requests no torrent payload. On-demand
-acquisition does not enable background monitoring. See
-[automatic packs](automatic-packs.md) for filename rules, bounds and persistence.
-
-## Bulk changes and bounds
-
-Select at most 32 entries on one page. Jobs support cancel/retry, library entries
-and series records support monitor/unmonitor, and transfers support pause/resume.
-All identifiers, duplicates and the requested operation are checked before changes start. Each
-valid identifier is then handled independently. An unknown or ineligible entry
-does not prevent other entries from succeeding. The following page reports each
-result and the count of successful actions. A bulk change is not an atomic
-transaction. Cancellation retains downloaded sources and library imports.
-
-Lists contain at most 50 rows per page. Detail file and event lists are also
-paginated, including series episode plans. Calendar windows contain at most
-367 days and use catalog dates against UTC, with no invented dates for undated
-episodes. Filters remain attached to pagination links. Search/upgrade reports
-keep the existing source/report bounds. Browser forms accept at most 64 fields,
-65,536 encoded bytes and 8,192 decoded bytes per field; source input is therefore
-smaller than the API's maximum. Malformed escapes, invalid UTF-8, unexpected
-fields, duplicate scalar fields, controls and invalid numbers are rejected.
-
-## Sign-in and deployment
-
-The API token is submitted in a POST body. It never becomes a URL, cookie, HTML
-value, browser storage entry, or session-store value. Browser authentication uses
-independently generated 256-bit session and form tokens. Successful sign-in
-rotates both, preventing the anonymous sign-in cookie from becoming an
-authenticated session. Cookies are `HttpOnly`, `SameSite=Strict` and scoped to
-`/ui`. HTTPS sign-in adds `Secure` to the authenticated cookie.
-
-Sessions live only in memory and expire eight hours after sign-in; page reads do
-not extend that deadline. Sign-out removes the session, and service restart ends
-all sessions. Anonymous sign-in challenges expire after ten minutes and are
-removed after five incorrect token attempts. At most 128 sessions/challenges
-exist; new anonymous challenges can evict an older anonymous challenge, but do
-not evict authenticated sessions.
-
-Every form action requires its session cookie, matching form token, and validated
-same-origin provenance. `Origin` is authoritative when present. If a native form
-omits it, as some Safari submissions do, an absolute HTTP/HTTPS `Referer` must
-match the requested host and effective port. Empty, null, malformed or foreign
-Origin values never fall back to Referer; missing both headers is rejected.
-Cross-site fetch metadata is rejected and cannot establish an origin by itself.
-Sessions are
-bound to the requested host/port; authenticated actions remain bound to the
-HTTP/HTTPS origin used at sign-in. Forwarded-host/protocol headers are not used.
-No user-supplied return URL is accepted. Browser responses prevent caching,
-cross-origin referrer propagation and framing. `Referrer-Policy: same-origin`
-retains the referring address only within Mynou so native forms can use the
-fallback; private addresses and paths are not sent to other origins. A content
-security policy allows only the content-pinned live-progress script,
-disables inline handlers and restricts styles, forms and connections to the same
-origin. Dynamic display labels are
-escaped, bounded and subject to the public report credential redaction rules.
-
-Generated Docker installations publish management on loopback. For remote
-browser access, use a TLS reverse proxy that preserves the browser's **Host** and
-**Origin** (or the browser's same-origin **Referer** when Origin is absent), forwards
-`/ui` without rewriting its prefix, and keeps the plain HTTP
-listener private. Sign in through the HTTPS address to obtain a Secure session
-cookie. The anonymous challenge is not an authenticated cookie and does not
-have Secure before the POST establishes the browser origin. Changing address
-or scheme requires a new sign-in.
-
-This interface has the privileges of the shared API token. It does not add
-individual users, approval policies or quotas. API requests still require
-`Authorization: Bearer …`; browser cookies never authenticate `/api` routes,
-and a Bearer header does not sign a browser session in. Configuration editing,
-notifications configuration, WebSocket streaming and personal-installation validation remain
-outside this release.
-
-[Docker installation](deployment.md) · [Explicit limits](limits.md) ·
-[CI validation](validation.md) · [Release roadmap](roadmap.md)
-
-Episode numbering in series details previews catalog/source choices before the
-guarded **Save reviewed numbering** action. See [numbering](numbering.md) for
-identity preservation, larger CLI/API decisions and exact bounds.
-
-**One video for multiple episodes** previews authenticated metadata and the full
-canonical owner range before **Record reviewed shared ownership**. Source
-credentials stay server-side in one ten-minute review per session. Group import
-and exact Plex path confirmation are shared; each episode retains its own job
-state. Individual remapping and upgrades are blocked for shared owners. See
-[shared files](shared-files.md) for reuse, cancellation and persistence rules.
-
-Current shared-owner job pages expose **Preview whole-group baseline** and
-**Preview whole-group replacement**. Review the complete scope, release and exact
-authenticated path before **Record reviewed whole-group decision**. One private
-ten-minute review is retained per session across shared-file and group actions.
-The apply form contains only owner/guard/CSRF fields. Staged replacement owners
-wait for the remaining confirmations; cancel/retry affects their entire group.
-See [group upgrades](group-upgrades.md).
+Generated Docker installations publish the interface on loopback only. For
+remote access, put a TLS reverse proxy in front that keeps the browser's `Host`
+and `Origin` (or same-origin `Referer`), forwards `/ui` without rewriting it and
+keeps the plain HTTP listener private. Sign in through the HTTPS address to get
+a `Secure` cookie; changing the address or scheme requires a new sign-in.

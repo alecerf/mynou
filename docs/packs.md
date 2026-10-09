@@ -1,173 +1,177 @@
-# Explicit pack acquisition and file mappings
+# Season packs and shared videos
 
-Acquire several catalog episodes from one torrent by choosing an exact video
-path for each episode. Mynou records ordinary episode jobs with durable file
-mappings. The native torrent client deduplicates their common content identity,
-verifies the required pieces and selected file roots, then imports each mapped file under its catalog
-season/episode name. New pack transfers retain the union of their mapped files, acquiring required
-boundary bytes without scheduling unrelated pieces. Unmapped files are not
-analyzed or imported by these mapped jobs.
+A season pack is one torrent containing several episodes. Mynou can acquire a
+pack in three ways, all built on a tracked [series](series.md) plan:
 
-This is an explicit operator choice. Review the torrent's files and their
-contents before assigning them to episodes. Hash verification establishes the
-downloaded bytes' torrent identity, not the correctness of your content mapping.
-Absolute/anime-style filenames such as `Pack/001.mp4` can be mapped without
-guessing their relationship to catalog numbering.
+- **Explicit mapping**: you name the exact file for each episode.
+- **Automatic search**: Mynou finds a pack and maps its numbered files itself.
+- **Shared video**: one video file contains several consecutive episodes.
 
-For release-title ranking, metadata-only discovery and guarded automatic
-numbered-file mappings, see [automatic season packs](automatic-packs.md), added
-in 0.15. This guide describes the explicit mapping operation.
+In every case Mynou records one ordinary episode job per episode. The jobs share
+one native transfer that downloads only the selected files (plus the boundary
+pieces they need, see [transfers](transfers.md#selective-acquisition)), and each
+job imports exactly its own file. Hash verification proves the bytes belong to
+the torrent; it cannot prove that a file shows the episode you assigned. Review
+the files before mapping them.
 
-## Choose the catalog and files
+Packs work while series monitoring is off. To choose a pack before Mynou
+requests individual episodes, track the series with `--unmonitored` (or
+**Save without automatic episode acquisition** in the browser). Existing
+requests for an episode, in any state, are always reused rather than replaced.
+Pack jobs have no release baseline, so [library upgrades](library.md) need an
+explicit baseline first.
 
-Enable TMDB and track a series. To retain its plan before choosing an acquisition,
-create it without automatic monitoring:
+## Map files explicitly
 
-```sh
-mynou track-series --title "Example Series" --year 2026 --tmdb-id 123 \
-  --unmonitored --config ./mynou.json
-```
-
-The browser's Track series form has **Save without automatic episode acquisition**.
-`POST /api/series` accepts `enabled: false`; its default remains true. Reusing an
-existing series scope preserves its prior monitoring policy. Ordinary Plex series
-requests retain their existing automatic monitoring behavior.
-
-Create a local mapping file containing an array:
+Create a mapping file with the exact path of each episode's file:
 
 ```json
 [
-  { "season": 1, "episode": 1, "file_path": "Example.Pack/001.mp4" },
-  { "season": 1, "episode": 2, "file_path": "Example.Pack/002.mp4" }
+  {"season": 1, "episode": 1, "file_path": "Example.Pack/001.mp4"},
+  {"season": 1, "episode": 2, "file_path": "Example.Pack/002.mp4"}
 ]
 ```
 
-Paths are exact and case-sensitive relative to the native torrent content root,
-including its top-level directory when present. They exclude the data directory
-and torrent hash prefix. Use the paths shown in transfer file details or in the
-torrent's metadata. Single-file torrents use their complete filename.
-
-Submit the pack to the running service:
+Paths are case-sensitive and relative to the torrent's content root, including
+its top-level folder; they never include the download directory or a hash
+prefix. Single-file torrents use the file name. Use the paths shown in transfer
+details or in the torrent metadata. Absolute or anime-style names such as
+`Pack/001.mp4` work because you choose the mapping.
 
 ```sh
 mynou series-pack ID --url 'magnet:?xt=urn:btih:...' \
   --mapping ./episodes.json --config ./mynou.json
 ```
 
-The source can be a supported magnet, HTTP/HTTPS torrent URL or server-visible
-`.torrent` path, as for existing explicit torrent requests. The mapping file is
-read on the CLI host, with a 1 MiB read limit. Torrent paths refer to the service's
-filesystem. Native torrent/source parsing happens during the ordinary acquisition
-job, not while recording the mapping; an unreachable or unsupported source can
-therefore create a job that subsequently fails with an explicit diagnostic.
+The source can be a magnet, an HTTP or HTTPS torrent URL or a `.torrent` path
+visible to the service. The torrent is only read when the job runs, so an
+unreachable source creates jobs that then fail with a clear error. In the
+browser, open the series and use **Acquire a mapped pack**. The API equivalent
+is `POST /api/series/ID/packs` with `{"source_url": "...", "episodes": [...]}`;
+the response contains `series_id`, `submitted`, `reused` and the public `jobs`.
 
-In the browser, open a series and expand **Acquire a mapped pack**. Enter its
-source and the same JSON array, then inspect the resulting jobs. Job details
-display the retained mapped file and link to the shared native transfer once its
-identity is known. The source is cleared after submission and omitted from public
-reports. The existing session, origin and form-token checks apply.
+Each mapped episode must exist in the accepted plan with a catalog ID and an
+air date on or before today (UTC); future, undated and unidentified episodes
+are refused. Specials must already be in the plan. A mapping can include
+episodes excluded from monitoring or before the earliest monitored date, and it
+does not enable monitoring. Two episodes cannot map to the same file (use a
+[shared video](#one-video-for-several-episodes) for that). A missing,
+audio-only or malformed file makes its job fail; Mynou never picks another
+video instead. The whole submission is checked before the first job is
+recorded, but jobs are saved one by one: after an interruption, submitting the
+same mapping again reuses the recorded jobs and adds the rest.
 
-The Bearer API operation is `POST /api/series/ID/packs`:
+### Correct a wrong mapping
 
-```json
-{
-  "source_url": "https://source.example/season.torrent",
-  "episodes": [
-    { "season": 1, "episode": 1, "file_path": "Example.Pack/001.mp4" },
-    { "season": 1, "episode": 2, "file_path": "Example.Pack/002.mp4" }
-  ]
-}
+Let the job fail or cancel it before anything is imported, then remap it:
+
+```sh
+mynou pack-remap JOB_ID --file-path Pack/corrected.mp4 --config ./mynou.json
 ```
 
-The response contains `series_id`, `submitted`, `reused` and public `jobs`.
-Acquisition URLs are replaced by the existing configured-source label.
+The API equivalent is `POST /api/jobs/JOB_ID/pack-mapping` with
+`{"file_path": "Pack/corrected.mp4"}`; the browser offers **Correct mapping and
+retry** in job details. The job must be `failed` or `cancelled`, without an
+active lease or a confirmed import, and the new file must not belong to another
+episode of the same pack. Mynou records the correction, resets attempts and
+requeues the job, reusing bytes that were already verified.
 
-## Validation and acquisition
+## Search for a pack automatically
 
-A submission contains 1–64 unique episode numbers and distinct file paths.
-Every episode must exist in the accepted series plan, have a nonzero catalog
-identity and a valid air date on or before today's UTC date. Future, undated and
-unidentified episodes cannot be submitted through this operation. Catalog
-specials must first exist in the retained plan, with explicit catalog-specials
-settings during planning.
+```sh
+mynou series-pack-search ID --season 1 --config ./mynou.json
+mynou series-pack-search ID --season 1 --apply \
+  --scope-id SCOPE_ID --candidate-id CANDIDATE_ID --config ./mynou.json
+```
 
-Explicit pack acquisition can choose episodes excluded from automatic monitoring
-or outside its earliest monitored date. It does not enable series monitoring.
-Existing requests for the same resolved media identity are reused in every
-state, including failed and cancelled jobs; the response says how many. It does
-not replace an existing individual-episode acquisition, reopen a cancelled job
-or create an upgrade of a ready import. Use existing retry controls deliberately.
-Track an unmonitored new scope before choosing a pack when you want to avoid
-automatic individual requests.
+The preview searches your sources, ranks pack titles under the episode profile
+and inspects the best candidates' metadata, without downloading payload,
+recording jobs or creating a transfer. It stops at the first candidate whose
+files cover every requested episode. The report shows title assessments,
+`requested_episodes`, `metadata_decisions`, `scope_id` and, when a candidate
+resolves, `selected_candidate_id`, `torrent_id` and the file `mapping`. It never
+includes acquisition URLs. When the service is stopped, the preview opens
+existing storage read-only.
 
-Paths contain at most 4,096 bytes, 32 normal slash-separated components and 255
-bytes per component. Empty, absolute, dot, parent, backslash, colon and control
-components are rejected. Supported video extensions are MP4/M4V/MOV, MKV/WebM and
-AVI. The path must select exactly one file from authenticated native metadata,
-then pass the required piece/file-root checks before import.
-An absent mapped file produces an error; another video is never chosen as a
-fallback. An audio-only or malformed mapped file also fails media analysis.
-Two episodes cannot map to the same physical file in this release.
+To acquire, copy both guards from the preview. Apply searches and inspects again
+and refuses a changed catalog, monitoring choice, missing-episode set, ranking,
+torrent hash or mapping; guards are checks, not reservations. `--apply`
+without guards acquires whatever currently resolves. An empty scope returns
+`scope_empty: true` without contacting sources. Applying needs the running
+service. The API equivalent is `POST /api/series/ID/pack-search` with
+`{"season": 1}`, plus `"apply": true`, `"scope_id"` and `"candidate_id"` to
+acquire; the response then adds `submission`. In the browser, use **Preview
+season packs** and **Acquire resolved pack** in series details.
 
-The entire syntax, catalog scope, duplicate constraints, source-key conflicts
-and remaining request capacity are checked before recording the first new job.
-No network I/O occurs while series/request locks protect that decision. New jobs
-are separate synchronized request commits. An I/O failure or interruption can
-leave a confirmed partial batch; a repeat submission reuses those jobs and can
-record the rest. Workers cannot change mapping or source identities.
-Individual episode cancellation and retries use the existing shared-transfer
-rules; a durable native transfer pause affects every job using that torrent.
+What qualifies:
 
-New native pack transfers acquire their retained mapped paths and overlapping
-pieces. v1 boundary bytes can populate unselected neighbor files; v2/hybrid
-selected file roots remain mandatory. Only a whole verified torrent can seed.
-Existing full acquisitions retain their policy, including transfers created by
-0.13 or an ordinary full-torrent request. Cancellation retains file interests
-and never deletes source bytes. See [selective acquisition](transfers.md#selective-acquisition-in-0140). Only each job's selected verified path is
-retained in its file list, avoiding repeated whole-pack file lists in the request
-journal. Imports keep source bytes and never overwrite different existing media.
-With Plex enabled, the normal episode scan/confirmation pipeline applies.
-These explicit acquisitions have no inferred release baseline; existing library
-upgrade eligibility still requires a deliberate matching baseline.
+- **Episodes**: at most 64 missing episodes of one season, each with a catalog
+  ID and an air date on or before today and after any earliest monitored date.
+  Excluded episodes and disabled specials are skipped; season zero needs
+  `include_specials`. Any existing job for an episode, even failed or cancelled,
+  excludes it.
+- **Titles**: the pack title starts with the series title, optionally its
+  year, then `S01` or `Season 1`. Other titles, years, seasons and individual
+  episode markers are rejected. The minimum seed count and the episode profile
+  apply before any metadata is inspected.
+- **Files**: each requested episode needs one non-empty video whose name has
+  exactly one `S01E02` or `1x02` marker (any series name in it must match). MP4,
+  M4V, MOV, MKV, WebM and AVI files count; padding, non-video files, `sample` or
+  `trailer` files and `samples`, `trailers` or `extras` folders are ignored.
+  Duplicates, other seasons, ambiguous markers and absolute numbers are
+  rejected; use an explicit mapping in those cases.
 
-## Correct a failed mapping
+### Prefer packs during monitoring
 
-If a selected path is wrong, first let its request fail or cancel it before an
-import is recorded. Use `pack-remap JOB_ID --file-path Pack/corrected.mp4`,
-`POST /api/jobs/JOB_ID/pack-mapping` with `{ "file_path": "Pack/corrected.mp4" }`,
-or **Correct mapping and retry** in browser job details.
+```json
+"series_packs": {"enabled": true}
+```
 
-The action requires a mapped request in `failed` or `cancelled` state, no active
-lease and no confirmed imports. It validates the new relative path and rejects
-a file already mapped to another episode of the same known pack/series. It then
-records the corrected mapping, clears the stale file list, resets attempts and
-requeues that existing request. The catalog identity and private source remain
-unchanged. Existing native pause/control policy still applies, and previously
-verified torrent bytes can be reused. Workers cannot perform this correction.
-Ready, importing, claimed and already imported requests cannot be remapped.
+With this option (off by default), monitored tracking and refreshes try mapped
+packs before individual episode jobs. A pass looks at up to four missing
+seasons in order and never applies a pack larger than its remaining 64-job
+allowance; unresolved seasons fall back to individual episodes. Unmonitored
+records do no background pack search. Packs never retry existing jobs, unpause
+transfers or change specials, dates or exclusions. Use a manual preview to see
+why a season fell back.
 
-## Persistence and remaining scope
+## One video for several episodes
 
-The optional job `pack_file` field persists through journal/snapshot recovery.
-Mynou 0.13 loads earlier jobs with no mapping as ordinary requests. Keep complete
-request, torrent and series data in backups. Earlier binaries do not understand
-pack mappings: do not downgrade an installation containing these jobs to 0.12
-or earlier. Their older readers may ignore the mapping and use older selection
-behavior.
+Some releases put consecutive episodes in one file. A shared video binds one
+file to 2 to 64 consecutive episodes of one season. Each episode keeps its own
+job and Plex check, and all of them share one library file. Every episode needs
+a catalog ID and an air date in the past. Create `shared.json` with library
+(canonical) numbers, as shown in series details:
 
-Browser source and mapping fields each accept at most 8,192 decoded bytes, so
-browser payloads can reach a smaller practical episode/path limit than the API.
-The API retains its 1 MiB body limit. JSON fields and types are strict, and
-unknown fields are rejected. Public mapped-path labels are bounded, redacted and
-escaped in HTML; actual acquisition still uses the private retained path.
+```json
+{"file_path": "Pack/combined.mp4", "season": 1, "episodes": [1, 2]}
+```
 
-Automatic season-pack search/ranking and strict numbered-file mapping are
-available through the [automatic pack flow](automatic-packs.md). Selection
-contraction and automatic anime/range inference remain later work. Explicit
-[numbering choices](numbering.md) and dedicated [shared-file ownership](shared-files.md)
-are available; this ordinary pack action still requires different files per
-episode. These focused features do not establish complete Sonarr parity. Mynou preserves
-Rust std only, zero Cargo dependencies and CI-only validation.
+Preview, then apply with a running service:
 
-[Series monitoring](series.md) · [Transfer controls](transfers.md) ·
-[Library upgrades](library.md) · [Release roadmap](roadmap.md)
+```sh
+mynou series-shared-file SERIES_ID \
+  --url 'magnet:?xt=urn:btih:TORRENT_HASH' --mapping shared.json \
+  --config ./mynou.json
+mynou series-shared-file SERIES_ID \
+  --url 'magnet:?xt=urn:btih:TORRENT_HASH' --mapping shared.json \
+  --apply --plan-id REVIEWED_PLAN_ID --config ./mynou.json
+```
+
+The preview authenticates the metadata and requires exactly one non-empty video
+at that path; it downloads no payload and records no jobs. Review `binding`,
+`group_id`, `new_owners` and `plan_id` before applying. The API equivalent is
+`POST /api/series/SERIES_ID/shared-file` with `source_url`, `file_path`,
+`season`, `episodes` and, to apply, `"apply": true` and `"plan_id"`. The
+browser offers **One video for multiple episodes**, **Preview shared file** and
+**Record reviewed shared ownership** in series details.
+
+The file is imported once, under a name that covers the whole range, for
+example `Example Series/Season 01/Example Series - S01E01-E02 [mynou-GROUP_ID].mp4`,
+and keeps that destination even if the library root changes later. With Plex,
+each episode is ready when Plex reports that exact path for it. Cancelling one
+episode keeps the binding and the file; retry reuses them. A later review of the
+same file can request any subset of the recorded episodes, but a group cannot be
+extended, reassigned or partly replaced, and it cannot take an episode that
+already has another request. Shared episodes cannot be remapped, given a
+baseline or upgraded individually: see [shared-group upgrades](library.md#upgrade-a-shared-group).

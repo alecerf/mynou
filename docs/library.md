@@ -1,17 +1,13 @@
-# Library monitoring and controlled upgrades
+# Library monitoring and upgrades
 
-Shared multi-episode imports use [group ownership](shared-files.md). Individual
-baselines and upgrades remain blocked for individual shared owners. Use the
-[coordinated group operation](group-upgrades.md) in 0.18 to review a complete
-baseline or replacement. General upgrade scans report `shared_group_upgrade_required`
-and do not search shared groups automatically. Earlier imports remain current
-until every replacement owner is confirmed. The individual rules below apply to
-ordinary single-episode and movie imports.
+Mynou keeps a view of the imports it owns and can replace one with a better
+release. A replacement becomes current only after its download, import and
+required Plex confirmation complete; until then the earlier import stays
+current. Earlier files and downloads always stay on disk.
 
-Mynou 0.8.0 adds a view of its own ready imports, per-entry monitoring, quality
-cutoffs, and upgrade requests. A replacement becomes current only after its
-download, import and required Plex confirmation complete. The earlier ready
-request and its files remain available while the replacement is pending.
+Single movies and episodes use the commands below. Episodes that share one
+video file are upgraded as a whole group; see
+[shared groups](#upgrade-a-shared-group).
 
 ## Inspect the owned library
 
@@ -19,216 +15,198 @@ request and its files remain available while the replacement is pending.
 mynou library --config ./mynou.json
 ```
 
-The authenticated equivalent is `GET /api/library`. This view covers current
-ready imports owned by Mynou. It is not an inventory of every file in Plex or a
-scan of arbitrary existing library directories. Each entry includes its job ID,
-media identity, recorded release, monitoring state, whether a baseline is
-required, whether imported files are present, and any pending upgrade job ID.
-A request skipped because Plex already has the title does not establish an owned
-import or a release baseline.
+The API equivalent is `GET /api/library`. The view lists current ready imports
+owned by Mynou: job ID, media identity, recorded release, monitoring state,
+whether a baseline is required, whether the imported files are present and any
+pending upgrade. It is not an inventory of Plex or a scan of existing library
+folders. A request skipped because Plex already had the title does not create an
+owned import.
 
-When the service is stopped, offline `library` and upgrade previews open the
-journal read-only. They do not create its directory/files, change permissions,
-compact data or repair an interrupted write. A fresh store produces an empty
-view. An incomplete journal tail reports that explicit writable recovery is
-required; starting the service permits its normal recovery before previewing
-again. Read-only access still excludes a concurrent journal writer.
+When the service is stopped, `library` and upgrade previews open the journal
+read-only: they create nothing and repair nothing. After an interrupted write,
+they report that writable recovery is required; start the service once, then
+preview again.
 
-New automatic acquisitions record the selected release title and profile.
-Earlier jobs and explicit local/URL submissions can lack this baseline. They
-remain usable, but upgrade checks cannot safely infer a previous release from a
-filename or the presence of a Plex title.
+## Record a missing baseline
 
-If you know the release title for such an owned import, set it explicitly:
+An upgrade compares a candidate with the release title recorded when the import
+was acquired. Automatic acquisitions record it; explicit `--url` or `--path`
+submissions and older jobs may not have one. Mynou never guesses it from a file
+name. If you know the release, record it once:
 
 ```sh
 mynou baseline ID --release-title "Example.Movie.2026.720p.WEB-DL.H264.English" \
   --config ./mynou.json
 ```
 
-The authenticated equivalent is `POST /api/library/ID/baseline`:
-
-```json
-{"release_title": "Example.Movie.2026.720p.WEB-DL.H264.English"}
-```
-
-Use the current entry's job ID from the library view. A baseline is an explicit
-release-name claim supplied by you. This operation fills a missing baseline; it
-does not overwrite an existing recorded baseline. The title must identify the
-same movie or episode, contain 1–2,048 bytes without control characters, and
-refer to a current owned import whose files are present, safe and have declared
-video streams. The older release may fall outside today's profile restrictions.
-These checks do not prove actual audio tracks, decoded video quality, or the
-file's provenance.
+The API equivalent is `POST /api/library/ID/baseline` with
+`{"release_title": "..."}`. Use the current entry's job ID. The title must
+identify the same movie or episode, and the import must be present, safe and
+contain a declared video stream. A baseline only fills a missing value; it never
+replaces a recorded one. It is your claim, not proof of the file's tracks or
+quality, and it may fall outside today's profile.
 
 ## Preview and apply upgrades
 
 ```sh
 mynou upgrades --config ./mynou.json
 mynou upgrades --apply --config ./mynou.json
+mynou monitor ID --config ./mynou.json
+mynou unmonitor ID --config ./mynou.json
 ```
 
-`upgrades` previews decisions for monitored entries. It contacts configured
-indexers but does not write the journal, update check timestamps, queue a
-replacement, or start a download. `--apply` explicitly permits those journal
-changes and queues eligible replacements; it does not wait for every transfer
-to complete. Manual preview and apply passes ignore the background polling
-interval, so you can check again immediately after changing a profile.
+`upgrades` previews decisions for monitored entries. It contacts your sources
+but writes nothing, queues nothing and does not change check times. `--apply`
+records the decisions and queues the replacements without waiting for them.
+Manual passes ignore the polling interval, so you can check again right after
+changing a profile. The API equivalents are `POST /api/upgrades` with
+`{"apply": false}` (the default) or `{"apply": true}`, and
+`POST /api/library/ID/monitor` with `{"enabled": true}`.
 
-The authenticated equivalent is `POST /api/upgrades`:
+Both the baseline and the candidates are judged with the **current** profile
+for that movie or episode:
 
-```json
-{"apply": false}
-```
+- If the current profile rejects the baseline, any accepted candidate can
+  replace it, even with a lower raw rank. Changing a required language is one
+  example of such a deliberate policy change.
+- If the baseline is still accepted, the candidate needs a strictly better
+  custom score or ordered resolution, source, codec or language preference.
+  More seeds or a different name alone are not an improvement.
+- A reached [cutoff](#quality-cutoffs) stops further upgrades.
 
-Omitting `apply` defaults to `false`. Set it to `true` to apply decisions. Search
-and upgrade reports omit acquisition URLs and credentials.
+Reports include `apply`, `checked`, `queued`, `entries`, `limited` and `skipped`
+(with `unmonitored`, `baseline_required` and `unsupported_kind` counts). Only
+eligible entries count toward the check limit; `limited: true` means the pass
+ran out of budget before covering every entry. Each entry explains its outcome,
+such as a reached cutoff, missing files, an unavailable search, a pending
+upgrade, no improvement or a queued replacement. Reports never include
+acquisition URLs or credentials.
 
-Both the recorded baseline and new candidates are assessed with the **current
-configured profile** for that movie or episode. Eligibility comes first. If the
-baseline no longer passes the current profile, an accepted candidate can replace
-it even when its raw rank is lower. For example, changing the required language
-can permit an accepted English release to replace a previously accepted French
-baseline. This is an explicit policy change.
+An applied upgrade is a child request, deduplicated by replacement. A failed or
+cancelled child leaves the earlier entry current. Once the child is ready it
+becomes the current entry: use its ID from then on. It inherits the parent's
+monitoring choice at that moment. While an upgrade is pending, another manual
+request for the same movie or episode cannot become ready; cancel the pending
+upgrade first if you prefer the manual request.
 
-If the baseline still passes the current profile, the candidate needs a strict
-improvement in custom score or ordered resolution/source/codec/language
-preferences. More seeds alone, or a different tie-breaking name, do not make an
-equal-quality release an upgrade. The profile name recorded at acquisition is
-historical context; changing the configuration changes subsequent comparisons.
+## Background monitoring
 
-Reports include `apply`, `checked`, `queued`, `entries`, `limited` and `skipped`.
-The skipped counts identify `unmonitored`, `baseline_required` and
-`unsupported_kind` entries. Only eligible movie/episode entries consume the
-configured check limit. `limited: true` means the pass did not cover every
-eligible entry within its bounded work budget. Individual entries explain
-outcomes such as a reached cutoff, missing imports, unavailable search, an
-existing pending upgrade, no improvement, or a queued replacement.
-
-A search/upgrade pass has a 90-second work budget covering indexer HTTP/socket
-operations and processing checks. Synchronous standard-library DNS resolution
-can block beyond that deadline; a result arriving after it is rejected. The
-budget is therefore not a strict wall-clock guarantee when DNS stalls.
-
-Requests for the same replacement are deduplicated. A pending child does not
-take over the library view. A failed or canceled child leaves the earlier ready
-entry current. After a child is ready, it becomes the current entry and its ID
-is the one to use for later monitoring and management. An unrelated manual
-request for the same movie or episode cannot become ready while an upgrade is
-pending; cancel that pending upgrade first if you want the manual request to
-complete instead.
-
-## Monitoring policy
-
-Add the optional top-level `monitoring` object to `mynou.json`:
+Monitoring is off by default. To let the service check monitored imports and
+queue upgrades on its own, add a top-level `monitoring` object:
 
 ```json
 {
   "monitoring": {
-    "enabled": false,
+    "enabled": true,
     "interval_secs": 3600,
     "max_checks": 32
   }
 }
 ```
 
-These are the defaults, including for older configurations with no `monitoring`
-object. `enabled: true` permits the running service to check monitored imports
-and queue upgrades in the background. Manual `upgrades --apply` remains an
-explicit action when background monitoring is disabled.
+`interval_secs` accepts 60 to 86,400 and `max_checks` (entries per pass) 1 to
+256; the values shown are the defaults. Configure profile cutoffs before
+enabling unattended upgrades, and restart the service after the change. Entries
+due the longest are checked first. Applied checks record their time even when
+the search fails, which spaces out retries; previews record nothing. Entries
+without a baseline stay ineligible, and enabling monitoring never adopts
+unrelated Plex files.
 
-`interval_secs` must be between 60 and 86,400. `max_checks` must be between 1
-and 256 and bounds eligible entries checked in a pass. Background checks honor
-the per-entry polling interval. Due entries are considered by oldest check time
-so a repeatedly failing or low-ID entry does not monopolize the schedule.
-Applied checks persist timestamps even when source search fails, providing
-background backoff. Previews do not persist timestamps or change scheduling.
-
-Change monitoring for an individual current entry:
-
-```sh
-mynou monitor ID --config ./mynou.json
-mynou unmonitor ID --config ./mynou.json
-```
-
-The authenticated equivalent is `POST /api/library/ID/monitor`:
-
-```json
-{"enabled": true}
-```
-
-An entry without a recorded baseline is ineligible for automatic upgrades even
-when monitoring is enabled. Enabling global monitoring does not invent that
-baseline for older jobs or adopt unrelated Plex files. If an upgrade is already
-in progress, promotion inherits the parent's current monitoring choice rather
-than restoring the choice recorded when the child was queued.
+This setting only concerns upgrades of existing imports. Acquiring newly aired
+episodes is controlled by [series monitoring](series.md).
 
 ## Quality cutoffs
 
-A profile can stop further upgrades when an accepted baseline reaches its
-configured cutoff:
+A profile can stop upgrades once an accepted baseline is good enough:
 
 ```json
-{
-  "selection": {
-    "movie_profile": "hd",
-    "episode_profile": "hd",
-    "profiles": {
-      "hd": {
-        "resolutions": [1080, 720],
-        "cutoff_resolution": 1080,
-        "sources": ["web-dl", "bluray", "webrip"],
-        "codecs": ["h265", "h264"],
-        "languages": ["en"]
-      }
-    }
-  }
+"hd": {
+  "resolutions": [1080, 720],
+  "cutoff_resolution": 1080,
+  "sources": ["web-dl", "bluray", "webrip"]
 }
 ```
 
-`cutoff_resolution` defaults to `null`, meaning no cutoff. A non-null value must
-be one of the supported resolutions and appear in that profile's `resolutions`
-list. The list's preference order defines the cutoff: a baseline at the cutoff
-or an earlier position has reached it. This is not a numeric "at least this
-many pixels" comparison. For example, `[720, 1080]` with cutoff `1080` treats
-`720` as already preferred enough to stop. Reaching a cutoff stops later source,
-codec and custom-score upgrades too.
-
-See [selection profiles](selection.md) for marker interpretation, required and
-blocked terms, custom scores, and unknown attributes. Release-title markers
-remain claims rather than verified decoded-media characteristics.
+`cutoff_resolution` defaults to `null` (no cutoff). It must appear in the
+profile's `resolutions` list, and the list order defines it: a baseline at the
+cutoff's position or earlier has reached it. It is not a pixel threshold, so
+`[720, 1080]` with cutoff `1080` also stops at 720p. A reached cutoff stops
+source, codec and score upgrades too. Initial selection is unaffected.
 
 ## Import and Plex confirmation
 
-Upgrade imports use a distinct filename with a `[mynou-32hexjobid]` suffix. They
-do not overwrite the earlier import. Original library files and downloaded
-sources remain on disk; there is no automatic cleanup. Plex can therefore
-temporarily or permanently expose multiple versions until you remove old files
-deliberately.
+An upgrade imports beside the earlier file under a distinct name ending in
+`[mynou-<job id>]`; it never overwrites. Old imports and downloads are kept and
+there is no automatic cleanup, so Plex may show several versions until you
+remove old files yourself. Plan disk space accordingly.
 
-When Plex is enabled, confirming that the title already exists is insufficient
-for an upgrade. Plex must report the **new imported path** in a `Part.file`
-field before the child becomes ready. If Plex sees the shared directory under a
-different path, configure `plex.path_mappings`:
+With Plex enabled, the upgrade is ready only when a fresh Plex response reports
+the **new** path in `Part.file`; an existing matching title is not enough. If
+Plex sees the library under another path, configure
+[path mappings](deployment.md#connect-plex).
+
+## Upgrade a shared group
+
+Episodes that share one video ([shared videos](packs.md#one-video-for-several-episodes))
+cannot be upgraded or given a baseline individually; upgrade reports show
+`shared_group_upgrade_required` and scans never search these groups. Instead,
+review the whole group with `library-group`, using any owner's job ID. Every
+owner must be ready and current, and the operation always covers the complete
+recorded range.
+
+To record a missing baseline for the whole group, create `baseline.json`:
+
+```json
+{"action": "baseline", "release_title": "Example.Series.S01.720p.WEB-DL"}
+```
+
+To replace the video, create `replacement.json`:
 
 ```json
 {
-  "plex": {
-    "path_mappings": [
-      {"mynou_prefix": "/library", "plex_prefix": "/media"}
-    ]
-  }
+  "action": "replace",
+  "release_title": "Example.Series.S01E01-E02.1080p.WEB-DL",
+  "source_url": "magnet:?xt=urn:btih:REPLACEMENT_TORRENT_HASH",
+  "file_path": "Example/shared.mp4"
 }
 ```
 
-This maps `/library/movies/Example.mp4` to `/media/movies/Example.mp4` for
-confirmation. Prefixes match complete lexical path components; `/library` does
-not match `/library-extra`. The longest matching prefix wins. With no mapping,
-Plex must report the same path seen by Mynou. Mapping translates paths for
-comparison; it does not move files or configure container mounts. Even when
-`--config` uses a relative filename, configured library roots resolve to absolute
-paths before importing and comparing Plex paths.
+Preview, then apply the reviewed plan with a running service:
 
-Back up configuration, the journal, downloads and library before changing
-versions. Existing Go/SQLite data is still a separate format. See
-[Docker deployment](deployment.md) and [limits](limits.md).
+```sh
+mynou library-group OWNER_ID --mapping replacement.json --config ./mynou.json
+mynou library-group OWNER_ID --mapping replacement.json --apply \
+  --plan-id REVIEWED_PLAN_ID --config ./mynou.json
+```
+
+A replacement requires every owner to be monitored and a consistent group
+baseline, and follows the same quality rules as single upgrades. Empty
+preference lists give no rank, so name ordered resolutions, sources, codecs,
+languages or scores to define an improvement. The release title must start
+with the series title (and optional matching year) and describe the whole
+range or its season, for example `S01E01-E02`, `S01E01E02`, `S01E01-S01E02` or,
+for absolute numbering, `13-14`. Mixed or non-consecutive labels are rejected.
+The URL and the authenticated torrent hash must differ from the current group,
+and the metadata must contain exactly one non-empty video at `file_path`.
+
+Preview authenticates the torrent metadata without downloading payload or
+recording jobs. Apply authenticates it again and checks that nothing changed:
+owners, monitoring, release, source, hash, path and import files. Otherwise
+run a new preview. The API equivalent is `POST /api/library/OWNER_ID/group` with
+the same fields, plus `"apply": true` and `"plan_id"` to apply. In the browser,
+open a shared owner's job page and use **Preview whole-group baseline** or
+**Preview whole-group replacement**, then **Record reviewed whole-group
+decision**.
+
+The new video downloads, imports once and must be confirmed in Plex for every
+owner. Confirmed owners wait in the `staged` state; the last confirmation
+promotes the whole group at once, so the old group stays current until then.
+Without Plex, verified imports promote the group directly. Disabling monitoring
+on any owner stops new work and blocks promotion until re-enabled.
+`cancel CHILD_ID` cancels the whole replacement (including staged owners) and
+keeps all files. `retry CHILD_ID` retries the whole group when every parent is
+still current and monitored and no other replacement holds it. A promoted group
+cannot be cancelled. To try a different candidate after an exhausted failure,
+cancel the replacement first. Reviewing the same candidate again reuses its
+recorded jobs, including cancelled ones, without resetting them; retry is
+always a separate, explicit action.

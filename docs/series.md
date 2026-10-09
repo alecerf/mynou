@@ -1,18 +1,17 @@
-# Series monitoring and episode calendar
+# Series, calendar and episode numbering
 
-Track a series once to retain its catalog plan and monitoring choices. Mynou
-checks for newly aired episodes while the service runs, then records ordinary
-episode jobs. Those jobs use the existing selection, torrent, import and Plex
-confirmation pipeline. Future and unresolved episodes stay in the plan.
+Follow a series once and Mynou keeps its TMDB episode plan. While the service
+runs, it requests newly aired episodes as ordinary episode jobs, which use the
+usual selection, download, import and Plex confirmation. Future and unresolved
+episodes stay in the plan and in the calendar.
 
-Enable `catalog.enabled` and configure TMDB credentials before tracking a new
-series. Configure your sources and episode selection profile before enabling
-unattended acquisition. Plex watchlist synchronization can create series
-records, but Plex is optional for manual tracking.
+Before tracking a series, enable the catalog (`catalog.enabled` with a TMDB
+token or API key) and configure your sources and episode profile. Plex
+watchlists can create series records, but Plex is optional for manual tracking.
 
 ## Track and manage
 
-The following commands use the running service and its API token:
+These commands need the running service:
 
 ```sh
 mynou track-series --title "Example Series" --year 2026 --tmdb-id 123 \
@@ -28,169 +27,167 @@ mynou calendar --from 2026-10-01 --to 2026-10-31 --series-id ID \
   --config ./mynou.json
 ```
 
-Replace `ID` with the series record's 32-character identifier. It differs from
-job and native transfer identifiers. `--tmdb-id` is optional when title/year
-resolve unambiguously; supply it when the catalog has several matches.
-`--season N` restricts a record to that regular season. An omitted or zero season
-means all seasons. `--episode N` can narrow the selected scope further.
+`ID` is the series record's 32-character identifier, distinct from job and
+transfer IDs. `--tmdb-id` is optional when the title and year identify one
+series. `--season N` limits the record to one regular season (omitted or `0`
+means all seasons) and `--episode N` narrows it further.
 
-New records monitor all known dated regular episodes by default.
-`--unmonitored` (API `enabled: false`) retains a new plan without queuing aired
-episodes; the browser offers the same choice before explicit pack acquisition.
-`--future-only` sets the
-earliest monitored air date to today's UTC date, including episodes dated today.
-`--include-specials` opts into catalog season zero. Tracking the same resolved
-series and scope reuses the existing record and preserves its settings rather
-than reenabling an explicitly disabled record. Settings changes mark a record
-due for the next background pass; `series-refresh` checks it immediately.
+New records monitor all known dated regular episodes. Options:
 
-`submit --kind series` and Plex show watchlist entries also create durable
-monitoring records. The existing submit API still returns an episode-job array,
-which can be empty when nothing has aired. `track-series` returns the series
-record and a `submitted` count instead. Only `submit` retains its existing offline
-management fallback; the dedicated series/calendar mutation commands require a
-running service. `series-numbering` also supports read-only offline preview; its
-apply action requires the service. See [numbering](numbering.md).
+- `--unmonitored` keeps the plan without requesting anything, for example
+  before choosing [numbering](#episode-numbering) or a
+  [season pack](packs.md). The browser offers the same choice.
+- `--future-only` starts monitoring at today's UTC date, including today.
+- `--include-specials` adds catalog season zero.
 
-The browser has **Series** and **Calendar** pages. Track a series, inspect its
-catalog plan, change monitoring/specials/earliest-date settings, exclude or
-include individual episodes, and refresh the catalog. Bulk monitor/unmonitor
-uses the existing 32-entry limit and reports an independent outcome per entry.
-Episode rows show unknown dates and missing catalog identities explicitly.
-See [browser management](web.md) for sign-in and form protections.
+Tracking the same series and scope again reuses the existing record and keeps
+its settings; it does not re-enable a record you disabled. A settings change
+makes the record due for the next background pass; `series-refresh` checks it
+immediately. `submit --kind series` and Plex show watchlist entries also create
+series records. Removing a show from the Plex watchlist does not stop its
+monitoring: unmonitor it explicitly. Monitoring controls never cancel requests
+or delete files.
 
-## Acquisition rules
+The browser's **Series** and **Calendar** pages offer the same operations:
+tracking, plan details, monitoring, specials and earliest date, per-episode
+exclusions, refresh and bulk monitor/unmonitor.
 
-Automatic submission requires all of the following:
+## Which episodes are requested
 
-- The series record is monitored and the episode is not explicitly excluded.
-- A special has its series-level `include_specials` option enabled.
-- The catalog provides a valid air date on or after the configured earliest
-  monitored date, and on or before today's UTC date.
-- The catalog episode has a stable nonzero TMDB episode identifier, and its
-  season/episode numbering is unambiguous in the accepted plan.
-- No request already represents the same resolved series/season/episode.
+An episode is requested automatically only when:
 
-The date is a catalog day interpreted against UTC. It is not an exact premiere
-time or a guarantee that a release is already available. A future episode never
-queues early. Missing or invalid air dates become `null` and remain unresolved.
-An episode without a catalog identifier stays visible but requires mapping
-before automatic acquisition; its dated calendar row uses `mapping_required`.
+- the record is monitored and the episode is not excluded;
+- a special (season zero) has `include_specials` enabled;
+- its catalog air date is on or after the earliest monitored date and on or
+  before today's UTC date;
+- it has a stable TMDB episode ID and unambiguous numbering in the plan;
+- no request for the same series, season and episode exists in any state,
+  including failed and cancelled.
 
-Deduplication checks every existing request state, including ready, failed and
-cancelled jobs. An excluded or disabled record does not cancel existing work.
-Enabling monitoring does not retry a failed job or reopen a cancelled one; use
-the existing job controls deliberately. Overlapping all-series/season records
-can show the same episode in both calendar scopes, while acquisition deduplicates
-their shared media identity. Their monitoring settings are independent.
+Air dates are catalog days compared with UTC, not premiere times, and they do
+not mean a release exists yet. Episodes without a date stay unresolved; dated
+episodes without a catalog ID show `mapping_required`. Enabling monitoring
+never retries a failed job or reopens a cancelled one: use the job controls.
+Overlapping records (a whole series and one of its seasons) can both show an
+episode, but only one request is created. This is separate from library
+[upgrade monitoring](library.md#background-monitoring).
 
-Removing a show from Plex's watchlist does not unmonitor the retained series
-record. Use Series settings or `series-unmonitor` to stop future automatic
-requests. These controls retain requests, downloads and library imports. Series
-monitoring controls missing episodes; the separate `monitoring.enabled` setting
-controls upgrades of existing owned imports. Neither replaces the other.
+Set `"series_packs": {"enabled": true}` to try a season pack before individual
+episodes during monitored tracking and refresh; see
+[automatic packs](packs.md#prefer-packs-during-monitoring).
 
-## Refresh, failure and persistence
+## Refresh and failures
 
-Optional `"series_packs": { "enabled": true }` tries automatically mapped
-season packs before queuing individual episodes during monitored tracking and
-refresh. It defaults to false, including for older configurations. The combined
-batch remains bounded to 64 submissions; at most four seasons are considered
-within the existing shared catalog/search deadline. Packs exceeding the remaining
-allowance are skipped, and unresolved candidates fall back to individual jobs.
-Unmonitored scopes perform no background pack lookup. An on-demand
-`series-pack-search` preview/apply can use those scopes without enabling monitoring.
-See [automatic packs](automatic-packs.md) for strict identity rules and guards.
+With the catalog enabled, the service checks due records every minute and
+refreshes at most four per pass, oldest first. A successful record is due again
+after one hour; a remaining backlog brings it back after one minute; a failed
+catalog refresh keeps the previous plan and retries after five minutes. A
+manual refresh can inspect a disabled record but still respects its policy.
+Changing settings during a refresh discards that refresh's result, so a late
+result never requests episodes under an earlier policy.
 
-With the catalog enabled, the service checks due monitored records every minute.
-A pass refreshes at most four records, oldest due time first, within a shared
-90-second HTTP/processing budget. A successful record is due again in one hour.
-Each acquisition batch records at most 64 missing aired episodes; remaining
-backlog schedules the record for another pass after one minute. A failed catalog
-refresh retains the previous plan and schedules retry after five minutes.
-Manual refresh uses its own 90-second budget and may inspect a disabled record;
-it still respects the disabled acquisition policy.
+A refresh is rejected, and the last accepted plan kept with an error, when the
+catalog shows duplicate numbering, reuses an episode ID, or moves a known ID to
+another number without an explicit [numbering decision](#episode-numbering).
+Background failures appear in `status.last_series_error` and on the series
+record. Diagnostics never include URLs or credentials.
 
-Series refresh bypasses the legacy one-hour catalog response cache. Individual
-HTTP requests have at most 20 seconds, reduced to the remaining pass budget.
-Standard-library synchronous DNS can exceed that budget, so it is not a strict
-wall-clock guarantee; late results are rejected. Only one refresh pass runs at
-a time. Fresh network responses do not hold the request or series storage lock.
-Changing settings while a refresh is running invalidates its captured revision;
-the late result cannot enqueue episodes under the earlier policy.
+## Calendar and API
 
-Duplicate numbering, reused catalog identifiers, a changed known identifier at
-the same number, or a known identifier moving to a different number reject a
-refresh. The last accepted plan remains available and shows an error. These
-checks compare against the retained plan, not a complete historical numbering
-archive. This release has no manual alternate-number mapping editor. Correcting
-the catalog can unblock the normal mapping; explicit alternate/anime mappings
-are a following stage. URLs and credentials are redacted from public diagnostics.
-Background failures appear in `status.last_series_error`; each catalog failure
-also persists on its series record.
+All routes need the Bearer token:
 
-`series.json` is a private SHA-256-verified snapshot in `store_dir`, under the
-request store's single-owner directory lock. Writes use a private temporary
-file, file synchronization, atomic rename and directory synchronization before
-confirming the new in-memory state. Corruption, unsupported schemas and linked
-snapshots are rejected. A directory-sync failure blocks further series changes
-until reopening storage. A checksum detects corruption; it is not authentication
-against someone who can rewrite the file and checksum.
-
-Series and request persistence are separate commits, not one transaction across
-both files. A crash or capacity failure can leave a confirmed partial episode
-batch. Already recorded jobs remain; subsequent refresh deduplicates them before
-continuing. Retain both stores in backups. Temporary files left by interruption
-are ignored as snapshots. Existing installations with no series snapshot open
-with no tracked records; earlier jobs are not silently adopted as series records.
-Read-only engine views load existing data without creating a snapshot or changing
-its permissions, and reject series mutations.
-
-## API and calendar
-
-All API operations require the existing Bearer token:
-
-| Method and route | Body / result |
+| Route | Purpose |
 | --- | --- |
-| `GET /api/series` | Array of bounded summaries, including episode/undated/unmapped counts |
-| `POST /api/series` | `{ "request": { "kind": "series", "title": "Example Series", "year": 2026, "tmdb_id": 123 }, "include_specials": false, "future_only": false }`; returns record and submission count |
-| `GET /api/series/ID` | Record, accepted episode plan and effective monitoring choices |
-| `POST /api/series/ID/monitor` | Any of `enabled`, `include_specials` and `start_date`; date is `YYYY-MM-DD`, or `null` to clear it |
-| `POST /api/series/ID/episodes` | `{ "season": 1, "episode": 2, "enabled": false }`; episode must exist in the plan |
-| `POST /api/series/ID/packs` | Explicit torrent source and 1–64 file-to-episode mappings; see [pack acquisition](packs.md) |
-| `POST /api/series/ID/pack-search` | Season-pack preview or guarded apply; see [automatic packs](automatic-packs.md) |
-| `POST /api/series/ID/refresh` | Empty body or `{}`; fresh catalog check and bounded submission |
-| `POST /api/series/ID/numbering` | Read-only comparison or guarded explicit numbering apply; see [numbering](numbering.md) |
-| `GET /api/calendar` | Dated episodes with monitoring choices and matching job identifiers/states |
+| `GET /api/series` | Summaries with episode, undated and unmapped counts |
+| `POST /api/series` | Track: `{"request": {"kind": "series", "title": "Example Series", "year": 2026, "tmdb_id": 123}, "include_specials": false, "future_only": false}`; add `"enabled": false` to keep it unmonitored |
+| `GET /api/series/ID` | Record, accepted plan and monitoring choices |
+| `POST /api/series/ID/monitor` | Any of `enabled`, `include_specials` and `start_date` (`YYYY-MM-DD` or `null`) |
+| `POST /api/series/ID/episodes` | `{"season": 1, "episode": 2, "enabled": false}` for an episode in the plan |
+| `POST /api/series/ID/refresh` | Empty body or `{}`: fresh catalog check and bounded submission |
+| `POST /api/series/ID/numbering` | Numbering preview or apply (below) |
+| `POST /api/series/ID/packs`, `/pack-search`, `/shared-file` | [Season packs and shared videos](packs.md) |
+| `GET /api/calendar` | Dated episodes with monitoring choices and matching jobs |
 
-Unknown fields, invalid types and invalid scopes are rejected before mutation.
-Calendar query fields are `from`, `to`, `series_id`, `offset` and `limit`, each at
-most once. They use literal ASCII dates/identifiers/numbers, without percent
-encoding. Defaults are today through 30 days later, offset zero and limit 50.
-The date window is inclusive, ordered and at most 367 days; dates support years
-1800–9999. Limit is 1–200 and offset is 0–20,000. Unknown valid series IDs return
-an empty calendar. A read changes no monitoring or request state.
+Calendar queries accept `from`, `to`, `series_id`, `offset` and `limit`, each at
+most once, as literal ASCII values. The default window is today through 30 days
+later, with offset 0 and limit 50. Rows are sorted by date, record, season and
+episode. A row's state comes from an existing job (ready first when several
+versions exist), otherwise `mapping_required`, `unmonitored`, `missing` (aired
+and monitored) or `scheduled` (future and monitored). Undated episodes appear in
+series details, never on an invented day. Reading the calendar changes nothing.
 
-Rows sort by date, series-record ID, season and episode. An existing job supplies
-its state, preferring ready when several versions share the media identity.
-Otherwise the state is `mapping_required`, `unmonitored`, `missing` for an aired
-monitored episode, or `scheduled` for a future monitored episode. Undated episodes
-remain in series details rather than appearing under an invented calendar day.
+## Episode numbering
 
-## Bounds and next stage
+Each episode has three labels: the library number Mynou keeps, the current
+catalog number and the number your source uses. Mynou ties them to the
+episode's catalog ID, so library numbers, request keys, exclusions and import
+paths stay fixed when the catalog or source numbering changes.
 
-Storage accepts at most 128 tracked scopes, 2,000 episodes in one plan, 20,000
-episodes across records and an 8 MiB serialized snapshot. Catalog planning accepts
-at most 100 selected seasons and 1,000 episodes per season. Input/catalog limits
-can fail before storage limits. There is no automatic record eviction or deletion.
+For example, catalog ID `11001` first belongs to library `S01E01`. If the
+catalog moves it to `S01E10` and your source calls it `013`, a numbering
+decision can keep `S01E01`, accept catalog `S01E10` and search source absolute
+`13`. New requests import as `S01E01`; existing requests keep the source label
+captured when they were created, through retries and upgrades.
 
-Episode requests search individual numbered episodes by default. Explicit
-[pack acquisition](packs.md) and [automatic packs](automatic-packs.md) import
-selected verified files from a shared native transfer; new mapped transfers
-acquire only selected interests and required boundary pieces. Explicit
-[numbering choices](numbering.md) retain catalog identities and capture source
-labels for future jobs. Multi-episode videos, automatic alternate/anime-order
-inference, calendar feeds, time-zone premiere scheduling, adoption of an existing
-Plex library and multi-user request policies remain future work. See the
-[roadmap](roadmap.md) for the following releases and [limits](limits.md) for the
-rest of the supported surface.
+Preview the current comparison (this works offline, read-only):
+
+```sh
+mynou series-numbering SERIES_ID --config ./mynou.json
+```
+
+The report shows each known ID's `canonical`, `catalog` and `source` labels,
+`issues`, `resolved` and a `plan_id`. To change labels, write `numbering.json`
+with only a `changes` array:
+
+```json
+{
+  "changes": [
+    {
+      "catalog_id": 11001,
+      "catalog": {"season": 1, "episode": 10},
+      "source": {"absolute": 13}
+    },
+    {
+      "catalog_id": 11002,
+      "catalog": {"season": 1, "episode": 11},
+      "source": {"season": 2, "episode": 3}
+    }
+  ]
+}
+```
+
+`catalog` must match the episode's current catalog labels. `source` is either
+`season` plus `episode` or `absolute` alone, and must not duplicate another
+episode's label. Unchanged episodes keep their accepted values, by default the
+original library number. To restore a source label, choose the original
+season and episode explicitly. Then preview and apply with a running service:
+
+```sh
+mynou series-numbering SERIES_ID --mapping numbering.json --config ./mynou.json
+mynou series-numbering SERIES_ID --mapping numbering.json --apply \
+  --plan-id PLAN_ID_FROM_PREVIEW --config ./mynou.json
+```
+
+Apply fetches the catalog again and refuses changed metadata, settings or
+choices; unresolved proposals are never saved. It records labels and the
+accepted plan but creates no requests: monitoring or a refresh then requests
+aired episodes as usual. The API equivalent is
+`POST /api/series/SERIES_ID/numbering` with `changes`, plus `"apply": true` and
+`"plan_id"` to apply. Series details in the browser provide **Episode
+numbering** and **Save reviewed numbering**; use the CLI or API for decisions
+larger than a browser field.
+
+With a saved source label, searches send that season and episode (JSON and
+Torznab), or add the padded absolute number to the search term (JSON also
+receives `absolute`; Torznab then omits season and episode). Release titles must
+contain exactly that single `SxxExx` or `NxNN` label, or for absolute labels a
+single number right after the series title and optional year, such as
+`Example Series 013 1080p`. Absolute titles without a saved choice, chained
+labels, ranges and conflicting labels do not match. In a multi-file torrent,
+exactly one file name must match the saved label. `search` and `submit` also
+accept `--source-numbering JSON` (API `source_numbering`) for one explicit
+episode request without changing a series.
+
+Imports and Plex confirmation use the library numbers: configure Plex's episode
+order to match them. A replacement catalog ID can never take a retained number,
+even after the earlier ID disappears.

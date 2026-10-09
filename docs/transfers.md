@@ -1,17 +1,17 @@
-# Native transfers and controls
+# Torrent transfers
 
-Mynou 0.9.0 adds controls for its native BitTorrent engine: durable user
-pause/resume, queue priority, per-file piece priority, payload bandwidth limits,
-and persistent accounting with ratio/time seeding policies. These operations
-retain downloads and library imports. They do not invoke another torrent
-client or add dependencies.
+Mynou downloads and seeds with its own BitTorrent engine. This guide covers
+peer concurrency, transfer controls, selective downloads for packs, bandwidth
+limits and seeding policies. None of these controls deletes downloads or
+library imports. Protocol support and bounds are listed in
+[limits](limits.md#bittorrent).
 
-Mynou 0.10.0 adds bounded parallel TCP peer transfers. The same controls,
-verification and shared-transfer behavior apply across the cooperating peers.
+Several requests can share one transfer (the same torrent). Transfer controls
+use the native transfer ID, 40 or 64 hexadecimal characters, which differs from
+request (job) IDs, and they affect every request using that transfer. Transfer
+commands need the running service.
 
-## Parallel peer transfers
-
-Configure peer concurrency in the existing `downloads` object:
+## Peers and concurrency
 
 ```json
 {
@@ -22,230 +22,99 @@ Configure peer concurrency in the existing `downloads` object:
 }
 ```
 
-Merge these fields with the rest of your configuration. `max_active` limits
-active transfers. `max_peers` defaults to `4`, including when absent from an
-older configuration, and accepts integers `1` through `8`. Values of zero,
-fractions, booleans and numeric strings are rejected. Restart after changes.
-Set `max_peers` to `1` for a single-peer baseline.
+`max_active` (1 to 64, default 2) limits active transfers. `max_peers` (1 to 8,
+default 4) limits outgoing peer connections per transfer; set it to 1 for a
+single-peer baseline. Restart the service after a change. The peer count is a
+ceiling, not a promise: a transfer needs reachable peers that have the pieces it
+needs, and global worker and memory budgets can lower it further.
 
-The peer setting is a ceiling, not a promised connection count. A transfer
-needs known, reachable peers that advertise needed pieces. Global worker and
-per-transfer resource bounds can further reduce concurrency. It does not add
-new peer transports, guarantee faster public downloads or bypass bandwidth caps.
+Each transfer has one coordinator that gives every in-flight piece to a single
+peer, verifies returned data before writing it, and hands failed or corrupt
+pieces to another peer. Corrupt peers are set aside for the rest of that
+download. Readiness still requires final v1, v2 or hybrid verification. Known
+peers start while discovery continues. A magnet's metadata must be
+authenticated before payload transfer starts and before its private flag is
+known.
 
-The connection allocation is `min(max_peers, max(1, 64 / max_active))`, using
-integer division. With configuration's maximum of 64 active transfers, this
-bounds outgoing payload workers to 64 across all active transfers. Direct Rust
-library callers can select up to 128 active transfers; their minimum one-peer
-allocation permits up to 128 workers. Incoming seeding handlers have a separate
-32-connection bound.
-
-Concurrency is also reduced using a 128 MiB per-transfer estimate for worker
-metadata clones, one piece buffer per worker and a protocol buffer allowance.
-At least one worker remains possible for a large torrent. This estimate is not
-a hard process RAM limit: canonical metadata, parsers, allocator overhead,
-journal data and operating-system socket buffers also consume memory. A worker
-receives no new piece until the coordinator accepts its previous result.
-
-Known peers connect alongside discovery after metadata authentication. New
-parallel TCP connections have a one-second attempt timeout; standard-library
-connects can observe cancellation only after that attempt returns. Established
-socket operations poll cancellation every 100 ms. Idle peers rotate after two
-seconds, and corrupt peers are quarantined for the current download generation.
-Tracker jobs rotate fairly, and shared tracker/seeding-DHT capacity alternates
-between task kinds when both are eligible.
-
-The coordinator gives each in-flight piece one owner. It verifies returned data
-before writing and publishing the piece; disconnects and invalid pieces return
-work for another peer. No duplicate endgame requests are issued. Final v1/v2 or
-hybrid verification still decides readiness. A file-priority change affects
-subsequent piece selection without taking a piece away from its active owner.
-Only the retained selection is required for selected-file availability;
-whole-torrent readiness still requires every piece and applicable file root.
-
-Discovery proceeds alongside usable known peers rather than postponing them
-until every lookup finishes. Discovery retains bounded peer results and
-private-torrent restrictions. A magnet still needs authenticated metadata before
-parallel payload work and before its private flag can be known. The privacy
-limits in [protocol support](limits.md#bittorrent) continue to apply.
-
-## Inspect transfers
-
-Transfer commands require the running `serve` service:
+## Inspect, pause and prioritize
 
 ```sh
 mynou torrents --config ./mynou.json
 mynou torrent ID --config ./mynou.json
-```
-
-Use the native transfer ID from this list, not a request/job ID. Native IDs are
-40 or 64 hexadecimal characters; request IDs are a different identity. Requests
-can share one transfer, so a transfer-level control affects every request that
-references it. These commands do not start a second torrent service.
-
-The authenticated API equivalents are `GET /api/transfers` and
-`GET /api/transfers/ID`.
-
-## Pause and resume
-
-```sh
 mynou pause ID --config ./mynou.json
 mynou resume ID --config ./mynou.json
-```
-
-The authenticated API accepts `POST /api/transfers/ID/pause` and
-`POST /api/transfers/ID/resume`, each with an empty JSON object `{}`.
-
-A user pause is durable and distinct from an internal retryable interruption.
-Restart, request retries and repeated acquisition checks do not undo it. Resume
-is an explicit user operation. Pausing the shared transfer affects all requests
-using it; canceling one request does not imply permission to delete its shared
-download or undo a user pause.
-
-Parallel verified writes share the control mutex with pause. A pause waits for
-the current disk write, then prevents the retired generation from committing
-more pieces. The coordinator cancels and joins its workers before exiting or
-publishing readiness. Blocking filesystem operations depend on the operating
-system and have no strict wall-clock interruption guarantee.
-
-Pause/resume retains downloaded pieces, source files and imports. Resuming still
-requires normal verification and does not make unverified bytes ready. Pausing
-a ready transfer controls its torrent activity, not availability of an already
-imported file in Plex.
-
-## Queue priority
-
-```sh
 mynou torrent-priority ID --priority 100 --config ./mynou.json
-```
-
-The authenticated equivalent is `POST /api/transfers/ID/priority`:
-
-```json
-{"priority": 100}
-```
-
-Priority is an integer from `-1000` through `1000`. Higher-priority waiting
-transfers start first. Equal priorities use first-in, first-out order. Queue
-selection is nonpreemptive: raising a waiting transfer's priority does not evict
-another already active transfer. Concurrency remains bounded by the configured
-download capacity. Priority and user pause state survive restart.
-
-## Per-file priority
-
-```sh
 mynou file-priority ID --file 0 --priority high --config ./mynou.json
 ```
 
-The authenticated equivalent is `POST /api/transfers/ID/files`:
-
-```json
-{"index": 0, "priority": "high"}
-```
-
-Use the `index` returned for that file by the transfer's listing. This is the
-original zero-based index in the torrent metadata, not the row number in the
-visible list. Padding entries are filtered out, so listed indices can have gaps.
-Indices must be below 100,000 and identify a real, non-padding file; padding
-indices are rejected. The allowed priorities are `low`, `normal` and `high`.
-They influence piece ordering within a transfer. A v1 piece overlapping several
-files uses the highest priority of its intersecting non-padding files.
-
-There is no `skip` priority. Priorities order the required pieces; they do not
-remove a file interest. Ordinary acquisitions still require all files. Since
-0.14.0, mapped pack acquisitions can retain a smaller selection, with independent
-verified availability. Piece verification remains mandatory, including pieces
-crossing file boundaries. See the selection rules below.
-
-## Selective acquisition in 0.14.0
-
-New mapped pack jobs record exact file interests before magnet metadata discovery
-can start payload work. Requests sharing a native torrent retain the union of
-their paths. An ordinary acquisition or **Download all files** expands that union
-to the whole torrent. Existing transfers with full acquisition, including those
-restored from 0.13, remain full. Selection never contracts and cancellation does
-not remove interests or delete bytes. A cancelled request can therefore retain
-work; it cannot discard another request's required pieces.
-
-Inspect `GET /api/transfers/ID` or `mynou torrent ID`. The report distinguishes:
-
-| Field | Meaning |
+| CLI | API (Bearer token) |
 | --- | --- |
-| `file_selection` | `null` requires all files; an array retains exact relative paths |
-| `selected_ready` | The entire retained selection has passed verification and synchronization |
-| `ready` | Every torrent piece and applicable file root has passed full verification |
-| `files[].selected` | This path belongs to the retained selection |
-| `files[].verified` | This path has been published as available after verification and synchronization |
-| `progress` | Fraction of required pieces verified, rather than a whole-torrent percentage for a partial selection |
+| `torrents`, `torrent ID` | `GET /api/transfers`, `GET /api/transfers/ID` |
+| `pause ID`, `resume ID` | `POST /api/transfers/ID/pause`, `POST /api/transfers/ID/resume` with `{}` |
+| `torrent-priority ID --priority N` | `POST /api/transfers/ID/priority` with `{"priority": 100}` |
+| `file-priority ID --file N --priority P` | `POST /api/transfers/ID/files` with `{"index": 0, "priority": "high"}` |
+| `torrent-select ID --selection JSON` | `POST /api/transfers/ID/selection` |
+| `torrent-policy ID --policy JSON` | `POST /api/transfers/ID/policy` |
 
-A completed partial selection has status `selected_ready`, `progress: 1` and
-`ready: false`. Mapped episode imports may then proceed. An expansion resets
-selection readiness and rechecks the expanded set; already published files can
-remain available during that work. Restart publishes no availability until it
-rehashes retained bytes. Persisted counters alone cannot establish verification.
-The Rust `DownloadStatus` also exposes `available_files` separately from its full
-metadata `files` list.
+- **Pause** is durable: restarts, request retries and repeated checks never undo
+  it; only `resume` does. A pause waits for the current disk write. Pausing a
+  ready transfer stops torrent activity, not Plex access to imported files.
+  Cancelling one request never deletes a shared download or lifts a pause.
+- **Queue priority** is an integer from -1000 to 1000. Higher priorities start
+  first and equal priorities keep first-in, first-out order. Raising a waiting
+  transfer never stops an active one.
+- **File priority** is `low`, `normal` or `high` and only orders the pieces that
+  are needed; there is no `skip`. Use the `index` from the transfer listing: it
+  is the original metadata index, so padding files leave gaps. A v1 piece shared
+  by several files takes the highest of their priorities.
 
-Expand by the original non-padding metadata indices:
+The browser's **Transfers** page offers the same controls.
+
+## Selective acquisition
+
+Ordinary requests download every file. Mapped [season packs](packs.md) record
+the exact files they need before payload starts, and requests sharing a
+transfer keep the union of their files. Selections only grow: an ordinary
+request for the same torrent, **Download all files** or `torrent-select`
+expands them, and cancellation never removes interests or bytes.
 
 ```sh
 mynou torrent-select ID --selection '{"indices":[0,2]}' --config ./mynou.json
 mynou torrent-select ID --selection '{"all":true}' --config ./mynou.json
 ```
 
-The authenticated API accepts the same JSON at
-`POST /api/transfers/ID/selection`. Choose exactly one of `indices` or `all`.
-An index update contains 1–1,024 distinct integers below 100,000 and requires
-authenticated metadata. Unknown and padding indices are rejected before changes.
-`all` must be `true`. Invalid types, duplicates, unknown fields and mixed updates
-are rejected. Browser transfer details provide **Include file** and
-**Download all files** with the existing session, origin and form-token guards.
-These actions preserve user pause, queue priority and transfer policy. Resume
-deliberately when a transfer is paused.
+Choose exactly one of `indices` (original non-padding metadata indices) or
+`all: true`. Expansion keeps the pause, priority and policy; resume explicitly
+if the transfer is paused. In the browser, transfer details provide **Include
+file** and **Download all files**.
 
-Native path interests have a 1 MiB aggregate limit, at most 1,024 distinct paths,
-4,096 bytes per path, 65 normal components and 255 bytes per component. Pack
-input retains its stricter video-path and 64-episode limits. Exact paths must
-exist in authenticated torrent metadata and must not identify padding. A missing
-magnet path fails after metadata authentication before payload requests. A valid
-explicit correction can discard only old interests proven absent by metadata;
-all real shared interests remain. Ordinary request retry rules remain separate.
+`torrent ID` distinguishes the states:
 
-For v1, the engine downloads complete hash-verified pieces overlapping selected
-files. It must also keep any bytes those pieces contribute to neighboring files.
-Those neighbors have metadata-sized confined files; untouched ranges are zero
-filled and may be sparse when the filesystem supports it. An unrelated file
-without required boundary bytes is not created. Apparent file size can therefore
-exceed downloaded or verified bytes. File existence and size are insufficient
-evidence of availability. Padding bytes are verified as zero and no padding file
-is created. A selected empty file needs no payload piece but still synchronizes.
+| Field | Meaning |
+| --- | --- |
+| `file_selection` | `null` means all files; otherwise the retained relative paths |
+| `selected_ready` | Every selected file is verified and synchronized |
+| `ready` | Every piece of the whole torrent is verified |
+| `files[].selected` | The file is part of the selection |
+| `files[].verified` | The file is verified and available |
+| `progress` | Share of the required pieces that are verified |
 
-For v2, selected files require authenticated piece proofs or layers and matching
-complete file roots. Hybrid selection satisfies both the overlapping v1 hashes
-and selected v2 roots. Synchronized authenticated layers support offline recovery
-of a completed selection; a crash before their persistence can require additional
-proof requests or reacquisition. Selection expansion retires the old generation;
-its workers cannot commit later bytes or publish stale readiness. A one-peer
-selective transfer uses the same coordinator with one worker; the earlier
-sequential one-peer path remains available for full acquisitions.
+A finished partial selection shows `selected_ready`, `progress: 1` and
+`ready: false`; its episode imports can proceed. After a restart nothing is
+available until the retained bytes are hashed again.
 
-Partial torrents advertise an empty bitfield, serve no payload, do not accumulate
-seeding availability time and never announce a tracker `completed` event. They
-report whole-torrent bytes left and stop an already started tracker session when
-their selection completes. Full verified torrents retain normal seeding rules,
-including when earlier bytes on disk complete the rest of a selected torrent.
-Partial seeding, selection contraction, automatic pack choice and multi-episode
-physical files remain later work.
+For v1 torrents, Mynou downloads every whole piece that overlaps a selected
+file and keeps the bytes those pieces hold for neighboring files. Neighbors
+are created at their full size (sparse where the filesystem allows), so a file's
+size is not proof that it was downloaded. For v2 and hybrid torrents, selected
+files also need their authenticated file roots. A partial transfer does not
+seed: it advertises no pieces, uploads nothing, counts no seeding time and never
+sends a tracker `completed` event. Once every piece is verified, normal seeding
+rules apply.
 
-Do not downgrade native storage written by 0.14 to 0.13 or earlier. Older strict
-control readers reject the new selection field; missing fields from genuine
-earlier records retain full acquisition. Keep request, series and native state
-together in backups.
+## Bandwidth and seeding
 
-## Configure global rates and default seeding policy
-
-Policy fields live directly in the existing `downloads` object in
-`mynou.json`; there is no additional policy nesting:
+Global limits and default seeding policy live in the `downloads` object:
 
 ```json
 {
@@ -258,92 +127,36 @@ Policy fields live directly in the existing `downloads` object in
 }
 ```
 
-Merge these fields with your existing download configuration. These are the
-defaults, including when an older configuration omits them:
-
 | Field | Default | Accepted values |
 | --- | --- | --- |
-| `download_limit_bps` | `0` | Integer 0–1,073,741,824 content bytes per second |
-| `upload_limit_bps` | `0` | Integer 0–1,073,741,824 content bytes per second |
-| `seed_ratio_milli` | `null` | `null` or integer 1–1,000,000; `1000` represents ratio 1.0 |
-| `seed_time_secs` | `null` | `null` or integer 1–315,360,000 seconds |
+| `download_limit_bps` | `0` (unlimited) | Integer 0 to 1,073,741,824 payload bytes per second |
+| `upload_limit_bps` | `0` (unlimited) | Integer 0 to 1,073,741,824 payload bytes per second |
+| `seed_ratio_milli` | `null` (no limit) | `null` or 1 to 1,000,000; `1000` means ratio 1.0 |
+| `seed_time_secs` | `null` (no limit) | `null` or 1 to 315,360,000 seconds |
 
-Rate `0` means unlimited. Seeding `null` means no limit of that kind. Numeric
-strings, booleans, negative numbers and fractions are rejected. Restart the
-service after changing configuration.
+Numeric strings, booleans, negative numbers and fractions are rejected. Restart
+after changing them. Rate limits apply to all transfers together and count
+torrent payload only: protocol, tracker and other traffic is not included. They
+always apply, even under a per-transfer policy.
 
-Download and upload caps apply across transfers to content payload bytes.
-Protocol messages, tracker traffic and other network overhead are outside these
-counters and caps, so they are not a cap on all interface traffic. Additional
-per-transfer caps cannot bypass the global bandwidth cap. Each aggregate rate
-bucket permits a bounded 16 KiB burst; the configured rate is not an
-instantaneous, burst-free limit. Download rate gating occurs before issuing
-payload block requests.
-
-Configured ratio/time fields provide the default seeding policy for transfers
-without a local override. Unlike global bandwidth caps, these seeding defaults
-can be replaced by a complete per-transfer policy.
-
-## Override a transfer policy
+To override the seeding defaults or add tighter rates for one transfer:
 
 ```sh
-mynou torrent-policy ID --policy '{"upload_limit_bps": 1048576}' \
-  --config ./mynou.json
+mynou torrent-policy ID --policy '{"upload_limit_bps": 1048576}' --config ./mynou.json
 mynou torrent-policy ID --policy 'null' --config ./mynou.json
 ```
 
-The authenticated equivalent is `POST /api/transfers/ID/policy`:
+The API body is `{"policy": {...}}` or `{"policy": null}`. A policy is a
+**complete replacement**, not a patch: omitted rates become `0` and omitted
+seeding fields become `null`. The example above therefore removes the default
+ratio and time limits for that transfer; include them to keep them. `null`
+removes the override and restores the configured defaults.
 
-```json
-{"policy": {"upload_limit_bps": 1048576}}
-```
-
-The policy object is a **complete override**, not a field-by-field patch.
-Omitted rate fields become `0` and omitted/null seeding fields become `null`.
-An override containing only `upload_limit_bps` therefore removes configured
-default ratio/time caps for that transfer. Include the desired seeding fields
-explicitly when you want to retain them.
-
-Global download/upload rates remain enforced, plus any local rate limits. Local
-ratio/time fields replace the configured default seeding caps. `{"policy": null}`
-clears the whole override and restores those configured defaults. The override
-uses the same bounded field values. Policy changes retain imported files and
-downloaded sources.
-
-## Accounting and retention
-
-Payload counters and seeding elapsed time are persisted across clean restart.
-Updates are coalesced on a one-second interval and flushed on clean shutdown.
-An abrupt crash can lose the latest unflushed increments; the counters do not
-claim exact crash durability. They also do not measure protocol overhead or
-establish public-tracker accounting equivalence.
-
-The ratio denominator is the completed verified torrent's non-padding payload
-size, not the downloaded-byte counter. For example, ratio `1000` permits an
-upload budget equal to that payload size even when restart recovery found all
-its pieces already on disk. The integer budget is rounded upward from
-`payload_size * seed_ratio_milli / 1000`. Padding is excluded.
-
-Upload reservations bound concurrently served blocks. The engine sends whole
-protocol blocks and stops before accepting a block that would exceed the
-remaining ratio budget. It can therefore stop below the nominal ratio when the
-remaining allowance is smaller than a peer's requested block.
-
-Seeding elapsed time counts online availability while a transfer is verified,
-ready, seeding-enabled, unpaused and not limited by its seeding policy. Idle
-availability counts; it is not summed per-peer transmission time. Offline time,
-user/internal pauses and time after a seeding limit is reached do not count.
-
-Earlier transfers without accounting records start their persisted download,
-upload and elapsed totals at zero; past activity is not reconstructed or
-invented. Their migrated queue ordering is deterministic and then persisted.
-
-Ratio/time policies control seeding activity while retaining data. Reaching a
-limit does not delete a downloaded file, remove an import or revoke Plex
-availability. This release adds no automatic cleanup.
-
-uTP/WebTorrent, webseeds, automatic NAT traversal and a complete persistent DHT
-table remain outside this release. Selection contraction, partial seeding and
-automatic cleanup remain unimplemented. Browser controls are described in [web management](web.md).
-See [limits](limits.md),
-[library monitoring](library.md) and the [roadmap](roadmap.md).
+The ratio is measured against the torrent's verified payload size (padding
+excluded), not against downloaded bytes, so a torrent found complete on disk
+still gets its full upload budget. Mynou sends whole blocks and stops before a
+block that would exceed the budget, so seeding can end slightly below the
+ratio. Seeding time counts time online while ready, enabled, unpaused and not
+yet limited, including idle time. Counters and seeding time survive a clean
+restart; transfers created before accounting existed start at zero. Reaching a
+limit stops seeding only: files, imports and Plex availability stay.
