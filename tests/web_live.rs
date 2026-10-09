@@ -375,10 +375,7 @@ fn live_asset_is_content_pinned_and_only_progress_pages_opt_in() {
     assert!(policy.contains("connect-src 'self'"));
     assert!(!policy.contains("unsafe-inline"));
     assert!(!policy.contains("unsafe-eval"));
-    assert!(
-        page.body
-            .contains("data-live-toggle disabled")
-    );
+    assert!(page.body.contains("data-live-toggle disabled"));
     assert!(page.body.contains("href=\"\" data-live-refresh"));
     assert!(page.body.contains("name=q"));
     assert!(page.body.contains("value=\"keep-filter\""));
