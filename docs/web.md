@@ -33,11 +33,11 @@ cleared from the form after preview. Paths refer to files the service can see
 (container paths in Docker); the browser does not upload files. Applying
 upgrades runs a fresh search rather than replaying the preview.
 
-Actions that need a careful check (shared videos, group upgrades, numbering,
-requester, indexer and announcement controls) work in two steps: a preview,
-then an apply form that carries only the reviewed guard. One pending review is
-kept per session for ten minutes; a new review replaces it, and sign-out or a
-restart discards it.
+Shared videos, group upgrades and requester, indexer and announcement controls
+work in two steps: a preview, then an apply form that carries only the reviewed
+guard. The session keeps one pending review for ten minutes; a new review of any
+kind replaces it, and sign-out or a restart discards it. Episode numbering also
+asks for a preview before **Save reviewed numbering**.
 
 The guides describe each operation: [selection](selection.md),
 [library](library.md), [series](series.md), [packs](packs.md),
