@@ -224,7 +224,8 @@ fn browser_calendar_export_is_authenticated_bounded_private_and_read_only() {
             ("future_only", "true"),
         ],
     );
-    let id = id(&server.engine.series().unwrap().as_array().unwrap()[0]);
+    let records = server.engine.series().unwrap();
+    let id = id(&records.as_array().unwrap()[0]);
     let route = format!("/ui/calendar.ics?from={today}&to={today}&series_id={id}");
     let anonymous = server.call("GET", &route, &[], "");
     assert_eq!(anonymous.status, 303);
