@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 965,
+  "generation": 966,
   "lease": {
     "id": "codex-recovery-20261009T022916Z-master-933cc472-de67-44de-ac3d-a5731eae8de1",
     "worker": "codex-recovery-20261009T022916Z",
     "role": "master",
     "issue": 48,
     "acquired_at": "2026-10-09T03:23:11Z",
-    "heartbeat_at": "2026-10-09T03:23:11Z",
-    "expires_at": "2026-10-09T04:08:11Z",
+    "heartbeat_at": "2026-10-09T03:24:39Z",
+    "expires_at": "2026-10-09T04:09:39Z",
     "branch": "trunk",
     "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
     "pr": null
   },
   "checkpoint": {
-    "at": "2026-10-09T03:15:31Z",
+    "at": "2026-10-09T03:24:39Z",
     "issue": 48,
-    "role": "qa",
-    "branch": "work/48-safari-origin",
-    "commit": "9d950508cd02fdb24ff31b4fb6134c0bd179b9ba",
-    "pr": 53,
-    "summary": "Distinct logical QA ACCEPTS complete actual eight-path PR53 diff at9d950508cd02fdb24ff31b4fb6134c0bd179b9ba/baseb11d88. Re-read native48 acceptance, actual full diff, current Security5465258420/checkpointa27e9502 and prior rejections5465136468/5464684661. Challenged missing-job shortcut: unconditional assert!(job.is_some()) fails Err/empty success before let-Some return, so no silent success; no private Result/Err diagnostics. Verified all5 real native HTTP/state/privacy journeys cover absent-Origin login/action/logout, authoritative invalid/foreign Origin, malformed/foreign Referer/metadata, token/cookie/CSRF, rotation, API separation, HTTPS scheme-port and defaultport/hostcase/IPv6. Current validate113648214684 logs show892Rust/64harnesses zero failures,24scheduler/168org; all4builds/package113648876816 and audits113648214569/113648214437 green. Actual final CodeQL113648376949/3analyses green; actual3native conversations resolved. Full scope/version/docs English std-only/no dependencies/unsafe/FFI/helper; no actual Safari engine or arbitrary-secret guarantee. No new findings. agent-qa gate still pending review, no green/merge/release fabricated.",
-    "next_action": "Post truthful exact-head/base native mynou-qa record bound to this held QA checkpoint, handoff and release. Acquire Master on actual default b11d88/trunk/Issue48 with pr:null before delivery to tolerate native source-branch deletion. Refresh every actual objective gate, exact current PR head/base and resolved conversations; merge only after real agent-qa-review green, otherwise checkpoint/release at external wait. Native same-identity COMMENT is logical review, not formal self-approval. Actions alone publishes immutable0.22.31; recover actual default CI/receipt/publication/cleanup before new work.",
+    "role": "master",
+    "branch": "trunk",
+    "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
+    "pr": null,
+    "summary": "Master delivery at default b11d88/trunk under owned lease; native PR53 open/exact head9d950508/baseb11d88, source branch unchanged. Complete QA5465370272 at70abb409 and Security5465258420 ata27e9502 actually accepted by successful machine gate113654081278/run37878990285; native proof binds exact head/base and both held checkpoints. Latest required organization113654044292, validate113648214684, all4builds/package113648876816, audits113648214569/113648214437 and finalCodeQL113648376949/3analyses all completed success. All3 native conversations actually resolved by scanner bot. No fabricated self-approval, scan guarantee or local checks. Older timed-out/cancelled QA runs remain preserved but latest actual gate is green. Native rulesets list empty, branch protection endpoint unavailable/not configured response preserved; no protections changed. PR description updated with actual verification.",
+    "next_action": "Re-confirm owned canonical lease and actual exact PR head/base then merge original PR53 using expected source SHA and normal merge. Confirm merged native parents/tree/default/Issue48 and persist actual new default. Actions alone publishes v0.22.31; recover existing/default CI or dispatch only if actually missing, then verify immutable release and publication proof before safe cleanup/new work.",
     "publication": {
       "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
       "state": "published",
@@ -563,14 +563,14 @@
       "publication_pr_handoff": 6062225589
     },
     "previous_checkpoint": {
-      "at": "2026-10-09T03:08:00Z",
+      "at": "2026-10-09T03:15:31Z",
       "issue": 48,
-      "role": "triage",
-      "branch": "trunk",
-      "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
+      "role": "qa",
+      "branch": "work/48-safari-origin",
+      "commit": "9d950508cd02fdb24ff31b4fb6134c0bd179b9ba",
       "pr": 53,
-      "summary": "PR #53 delivery did not complete; actual source and objective gates require recovery.",
-      "next_action": "Inspect the native PR/gates and preserved source before another delivery attempt."
+      "summary": "Distinct logical QA ACCEPTS complete actual eight-path PR53 diff at9d950508cd02fdb24ff31b4fb6134c0bd179b9ba/baseb11d88. Re-read native48 acceptance, actual full diff, current Security5465258420/checkpointa27e9502 and prior rejections5465136468/5464684661. Challenged missing-job shortcut: unconditional assert!(job.is_some()) fails Err/empty success before let-Some return, so no silent success; no private Result/Err diagnostics. Verified all5 real native HTTP/state/privacy journeys cover absent-Origin login/action/logout, authoritative invalid/foreign Origin, malformed/foreign Referer/metadata, token/cookie/CSRF, rotation, API separation, HTTPS scheme-port and defaultport/hostcase/IPv6. Current validate113648214684 logs show892Rust/64harnesses zero failures,24scheduler/168org; all4builds/package113648876816 and audits113648214569/113648214437 green. Actual final CodeQL113648376949/3analyses green; actual3native conversations resolved. Full scope/version/docs English std-only/no dependencies/unsafe/FFI/helper; no actual Safari engine or arbitrary-secret guarantee. No new findings. agent-qa gate still pending review, no green/merge/release fabricated.",
+      "next_action": "Post truthful exact-head/base native mynou-qa record bound to this held QA checkpoint, handoff and release. Acquire Master on actual default b11d88/trunk/Issue48 with pr:null before delivery to tolerate native source-branch deletion. Refresh every actual objective gate, exact current PR head/base and resolved conversations; merge only after real agent-qa-review green, otherwise checkpoint/release at external wait. Native same-identity COMMENT is logical review, not formal self-approval. Actions alone publishes immutable0.22.31; recover actual default CI/receipt/publication/cleanup before new work."
     },
     "task_reconciliation": {
       "issue": 19,
