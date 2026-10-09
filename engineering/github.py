@@ -131,6 +131,10 @@ class GitHub:
             headers={"Authorization": "Bearer " + self.token, "Accept": "application/vnd.github+json",
                 "X-GitHub-Api-Version": "2022-11-28", "Content-Type": "application/json",
                 "User-Agent": "mynou-engineering"})
+        # Revalidate authority and gate observations after writes. A real head
+        # mismatch still fails closed; this directive does not retry an API call.
+        if method == "GET":
+            request.add_header("Cache-Control", "no-cache")
         try:
             with self.opener.open(request, timeout=30) as response:
                 raw = response.read(MAX_RESPONSE + 1)
