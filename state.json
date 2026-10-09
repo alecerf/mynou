@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 958,
-  "lease": null,
+  "generation": 959,
+  "lease": {
+    "id": "c366e6d4-d8b4-4156-a610-302ace5d2000",
+    "worker": "github-actions-delivery",
+    "role": "triage",
+    "issue": 48,
+    "acquired_at": "2026-10-09T03:07:51Z",
+    "heartbeat_at": "2026-10-09T03:07:51Z",
+    "expires_at": "2026-10-09T03:52:51Z",
+    "branch": "trunk",
+    "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
+    "pr": 53
+  },
   "checkpoint": {
     "at": "2026-10-09T03:04:43Z",
     "issue": 48,
