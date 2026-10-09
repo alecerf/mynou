@@ -1,28 +1,28 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 935,
+  "generation": 936,
   "lease": {
     "id": "codex-recovery-20261009T022916Z-master-4f6b14f4-9c72-4fae-b22f-7d7c3af08ddc",
     "worker": "codex-recovery-20261009T022916Z",
     "role": "master",
     "issue": 48,
     "acquired_at": "2026-10-09T02:31:23Z",
-    "heartbeat_at": "2026-10-09T02:31:23Z",
-    "expires_at": "2026-10-09T03:16:23Z",
+    "heartbeat_at": "2026-10-09T02:32:49Z",
+    "expires_at": "2026-10-09T03:17:49Z",
     "branch": "work/48-safari-origin",
     "commit": "82fafa06796f4fa3532b5241540701db384ef415",
     "pr": 53
   },
   "checkpoint": {
-    "at": "2026-10-09T02:12:55Z",
+    "at": "2026-10-09T02:32:49Z",
     "issue": 48,
-    "role": "triage",
-    "branch": "trunk",
-    "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
+    "role": "master",
+    "branch": "work/48-safari-origin",
+    "commit": "82fafa06796f4fa3532b5241540701db384ef415",
     "pr": 53,
-    "summary": "PR #53 delivery did not complete; actual source and objective gates require recovery.",
-    "next_action": "Inspect the native PR/gates and preserved source before another delivery attempt.",
+    "summary": "Master recovery preserved native Issue48/PR53/work/48-safari-origin at82fafa06796f4fa3532b5241540701db384ef415/baseb11d88d5e9dd67d45980ba6c85716811dd6d3101. Canonical notes free atf1d915 with complete historical sole-parent fence ancestry. Actual latest source CI37869630556 succeeded, four builds/package green; source-history113624480342 green. Remaining failed jobs: Rust CodeQL113624470349 upload installation API limit, actions-logs113624480204 HTTP403. Both still attempt1, no later retry or actual clean Rust scan. Native current review5464785413 is paused, not passed; gate113628323913 correctly failed without current Security/QA. Default still actual publishedv0.22.30, pending task reconciliation absent. Record retry intent before mutation: rerun only Rust CodeQL first, preserve green jobs, avoid simultaneous heavy log audit. Audit retries follow current final Rust result/capacity evidence; no source, scanner or gate weakened.",
+    "next_action": "Submit one native retry of failed Rust CodeQL113624470349; retain actual response/run attempt. Checkpoint/release Master, acquire exact-source Security and complete actual eight-path source review while CI executes. Re-read native result at a useful phase boundary; no busy polling. Then retry failed actions audit only when ready, or preserve blocker/release for external wait. Current Security/QA/merge remain unperformed.",
     "publication": {
       "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
       "state": "published",
@@ -563,14 +563,14 @@
       "publication_pr_handoff": 6062225589
     },
     "previous_checkpoint": {
-      "at": "2026-10-09T01:34:58Z",
+      "at": "2026-10-09T02:12:55Z",
       "issue": 48,
-      "role": "security",
-      "branch": "work/48-safari-origin",
-      "commit": "82fafa06796f4fa3532b5241540701db384ef415",
+      "role": "triage",
+      "branch": "trunk",
+      "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
       "pr": 53,
-      "summary": "Security reviewed complete actual8-path PR53 diff at82fafa06796f4fa3532b5241540701db384ef415/baseb11d88d5e9dd67d45980ba6c85716811dd6d3101. Explicit Result match discards Err/empty success into only static panic; provenance/auth/CSRF/HTTPS/API isolation and5regressionjourneys preserved. CI37869630556 validate113624479874 passed892Rust/64harnesses/24scheduler/168organization, all4builds and package113625159679 succeeded; release correctly skipped. source-history113624480342 passed. Securityaudit37869630624/actions-logs113624480204 FAILED HTTP403 at01:26:58Z; Rust CodeQL37869626784/job113624470349 FAILED upload with confirmed installation API rate limit at01:28:10Z. Final aggregate113624651838 neutral/missingRust, NOT a clean scan. Source finding182 thread last observed outdated/unresolved; not cleared. Current Security verification paused, no passed current-head record or QA/merge/release claimed. Native54 records bounded audit-capacity followup, distinct from52; no false native blocker. Priorv0.22.30/44/50 recovery remains completed.",
-      "next_action": "External GitHub API-capacity wait: checkpoint/release and stop without polling or immediate reruns. Next admitted recovery inspects exact existing PR53/source82fafa and latest native attempts; when provider capacity available retry ONLY failed actions-logs113624480204 and RustCodeQL113624470349, preserve green jobs and bounded attempts. Then actual final scan/audit+Security review/conversation verification, distinct full-diff QA, objective green gate and Master merge; CI alone publishes0.22.31. Do not fail/complete Issue48 or waive protections because capacity exhausted."
+      "summary": "PR #53 delivery did not complete; actual source and objective gates require recovery.",
+      "next_action": "Inspect the native PR/gates and preserved source before another delivery attempt."
     },
     "task_reconciliation": {
       "issue": 19,
