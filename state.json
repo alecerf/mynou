@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 915,
-  "lease": null,
+  "generation": 916,
+  "lease": {
+    "id": "codex-recovery-20261009T002551Z-qa-1ba8effa-af52-45da-bcc9-8027c0823bbe",
+    "worker": "codex-recovery-20261009T002551Z",
+    "role": "qa",
+    "issue": 48,
+    "acquired_at": "2026-10-09T01:15:24Z",
+    "heartbeat_at": "2026-10-09T01:15:24Z",
+    "expires_at": "2026-10-09T02:00:24Z",
+    "branch": "work/48-safari-origin",
+    "commit": "50148774244a2b869044b83890a42cdca7950401",
+    "pr": 53
+  },
   "checkpoint": {
     "at": "2026-10-09T01:14:30Z",
     "issue": 48,
