@@ -1,28 +1,17 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 886,
-  "lease": {
-    "id": "e6910cb4-8473-4115-bfa0-0d295f06f923",
-    "worker": "github-actions-delivery",
-    "role": "triage",
+  "generation": 888,
+  "lease": null,
+  "checkpoint": {
+    "at": "2026-10-09T00:50:07Z",
     "issue": 48,
-    "acquired_at": "2026-10-09T00:50:03Z",
-    "heartbeat_at": "2026-10-09T00:50:03Z",
-    "expires_at": "2026-10-09T01:35:03Z",
+    "role": "triage",
     "branch": "trunk",
     "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
-    "pr": 53
-  },
-  "checkpoint": {
-    "at": "2026-10-09T00:49:04Z",
-    "issue": 48,
-    "role": "rust",
-    "branch": "work/48-safari-origin",
-    "commit": "9a483859b47ef3fe60622f2b6de1aedd99c8f04e",
     "pr": 53,
-    "summary": "Rust48 final remote source9a483859b47ef3fe60622f2b6de1aedd99c8f04e/tree8dd1a9a2741e425ccdc3cc690e61e9337c224c4b onwork/48-safari-origin/PR53, base/currentdefault b11d88d5e9dd67d45980ba6c85716811dd6d3101. Original parent e54416056cee089fa92e588089515a34cd5fa019 preserves full8-path v0.22.31scope. Initial native validate113614260769/run37866470401 failed only at3formatter differences; exactCI feedback now committed, no failedrunhidden or localformatter/testsrun. Bound absentOrigin-onlysame-originReferer fallback, same-originresponsepolicy and5real-listener journey fixtures withcredential/CSRF/metadata/Origin/HTTPS/APIguards remain. Sourcehistory/orginitialsuccess, currentnewheadCIpending; noactualSafariRun/greenQAgate/merge/pubv31claim.",
-    "next_action": "ReleaseRust48 and acquireSecurity48 exacthead9a483859b47ef3fe60622f2b6de1aedd99c8f04e/PR53/baseb11d88d5e9dd67d45980ba6c85716811dd6d3101; inspectcompleteactual8-pathdiff andcurrentCI withoutbusy-poll. RecordonlyactualSecurityfindings/evidence. SeparateQA andallcurrentobjectivegatesbeforeexpectedheadmerge. AtrealCIwait checkpointnativePR/Issue and release; preservedv30pubrecord remainsauthoritative.",
+    "summary": "PR #53 delivery did not complete; actual source and objective gates require recovery.",
+    "next_action": "Inspect the native PR/gates and preserved source before another delivery attempt.",
     "publication": {
       "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
       "state": "published",
@@ -563,14 +552,14 @@
       "publication_pr_handoff": 6062225589
     },
     "previous_checkpoint": {
-      "at": "2026-10-09T00:37:40Z",
+      "at": "2026-10-09T00:49:04Z",
       "issue": 48,
-      "role": "triage",
-      "branch": "trunk",
-      "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
-      "pr": null,
-      "summary": "Triage48 selected highest-priority native user Safari/API-key login report after44/50actualpublication/cleanup. Exactdefault b11d88d5e9dd67d45980ba6c85716811dd6d3101: same_origin unconditionally requiresOrigin andbrowserresponses no-referrer remove fallback; nativeHTMLforms/noJS, Host/session/CSRF/binding andstrictrequestparser inspected. Native48acceptance records absent-Origin-only validatedHTTP/HTTPSsame-originReferer plus same-originresponsepolicy; null/presentinvalidOrigin mustreject, crosssite metadata/CSRF/APIisolation/HTTPSschemeportremain. OriginalCI-only HTTPstateprivacy cases planned; no localchecks or actualSafari/platformreproduction claimed. Riskhigh/P1/originUser/Ready; lower-priority52unrelated.",
-      "next_action": "ReleaseTriage48, create/reuse work/48-safari-origin from exactcurrentremote defaultunderRust48lease. Implement bounded nativeform-origin fallback andsame-originpolicy, originalCI regression cases, English docs/proposedv0.22.31, one linkedPR48. FreshCI then distinctSecurity/full-diffQA at exacthead/base andallgates; Actions-onlyrelease. Preserveactualpubv30controlrecord."
+      "role": "rust",
+      "branch": "work/48-safari-origin",
+      "commit": "9a483859b47ef3fe60622f2b6de1aedd99c8f04e",
+      "pr": 53,
+      "summary": "Rust48 final remote source9a483859b47ef3fe60622f2b6de1aedd99c8f04e/tree8dd1a9a2741e425ccdc3cc690e61e9337c224c4b onwork/48-safari-origin/PR53, base/currentdefault b11d88d5e9dd67d45980ba6c85716811dd6d3101. Original parent e54416056cee089fa92e588089515a34cd5fa019 preserves full8-path v0.22.31scope. Initial native validate113614260769/run37866470401 failed only at3formatter differences; exactCI feedback now committed, no failedrunhidden or localformatter/testsrun. Bound absentOrigin-onlysame-originReferer fallback, same-originresponsepolicy and5real-listener journey fixtures withcredential/CSRF/metadata/Origin/HTTPS/APIguards remain. Sourcehistory/orginitialsuccess, currentnewheadCIpending; noactualSafariRun/greenQAgate/merge/pubv31claim.",
+      "next_action": "ReleaseRust48 and acquireSecurity48 exacthead9a483859b47ef3fe60622f2b6de1aedd99c8f04e/PR53/baseb11d88d5e9dd67d45980ba6c85716811dd6d3101; inspectcompleteactual8-pathdiff andcurrentCI withoutbusy-poll. RecordonlyactualSecurityfindings/evidence. SeparateQA andallcurrentobjectivegatesbeforeexpectedheadmerge. AtrealCIwait checkpointnativePR/Issue and release; preservedv30pubrecord remainsauthoritative."
     },
     "task_reconciliation": {
       "issue": 19,
