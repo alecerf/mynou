@@ -177,7 +177,9 @@ def source_scope(api, execution_branch, commit, pr_number, issue_number):
 def transition(api, state, value, at, comment_id):
     args, command = value["args"], value["command"]
     if command == "recover":
-        return control.recover_native(api, state, at, args.get("lease"))
+        if "lease" in args:
+            return control.recover_native(api, state, at, args["lease"])
+        return control.recover_native(api, state, at)
     team = lease.is_team(state)
     if command == "acquire":
         require(team or state["lease"] is None, "lease-not-free")
