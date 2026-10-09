@@ -6,9 +6,9 @@ pub const MAX_BYTES: usize = 2 * 1024 * 1024;
 /// Largest number of events in one file; matches the calendar query row limit.
 pub const MAX_EVENTS: usize = 200;
 const LINE_OCTETS: usize = 75;
-const TOO_LARGE: &str = "The calendar file would exceed 2 MiB; narrow the dates or choose one series";
-const NO_EVENTS: &str =
-    "No known episode dates match these filters, so there is nothing to export";
+const TOO_LARGE: &str =
+    "The calendar file would exceed 2 MiB; narrow the dates or choose one series";
+const NO_EVENTS: &str = "No known episode dates match these filters, so there is nothing to export";
 
 /// One known dated episode, already restricted to the requested window and scope.
 pub struct Event<'a> {
@@ -169,8 +169,7 @@ mod tests {
 
     #[test]
     fn injection_like_titles_cannot_add_properties() {
-        let text =
-            render(&[event("X\r\nEND:VEVENT\r\nATTENDEE:evil;,", "2024-01-01")]).unwrap();
+        let text = render(&[event("X\r\nEND:VEVENT\r\nATTENDEE:evil;,", "2024-01-01")]).unwrap();
         assert_eq!(text.matches("BEGIN:VEVENT").count(), 1);
         assert!(!text.contains("\r\nATTENDEE"));
     }
