@@ -1,5 +1,6 @@
 //! Durable catalog plans and narrowly scoped monitoring controls.
 mod engine;
+mod ical;
 mod numbering;
 use crate::{
     Result,
