@@ -199,7 +199,10 @@ fn browser_requester_reviews_bind_session_identity_action_and_public_policy() {
         400
     );
     assert_eq!(
-        demand(&server.engine, "alice").get("state").unwrap().as_str(),
+        demand(&server.engine, "alice")
+            .get("state")
+            .unwrap()
+            .as_str(),
         Some("pending")
     );
     assert_eq!(
@@ -215,7 +218,10 @@ fn browser_requester_reviews_bind_session_identity_action_and_public_policy() {
         400
     );
     assert_eq!(
-        demand(&server.engine, "alice").get("state").unwrap().as_str(),
+        demand(&server.engine, "alice")
+            .get("state")
+            .unwrap()
+            .as_str(),
         Some("removed")
     );
     let csrf = web_support::fields(&[
@@ -290,7 +296,10 @@ fn logout_and_stale_policy_reviews_cannot_apply_requester_decisions() {
     );
     assert_eq!(expired.status, 403);
     assert_eq!(
-        demand(&server.engine, "alice").get("state").unwrap().as_str(),
+        demand(&server.engine, "alice")
+            .get("state")
+            .unwrap()
+            .as_str(),
         Some("pending")
     );
 }
