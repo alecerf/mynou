@@ -14,7 +14,6 @@ pub mod json;
 pub mod library;
 pub mod media;
 pub mod net;
-pub mod notifications;
 pub mod numbering;
 pub mod organizer;
 pub mod pack;

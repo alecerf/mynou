@@ -31,7 +31,6 @@ pub struct Engine {
     pub(crate) irc_runtime: Mutex<crate::irc::client::Runtime>,
     pub(crate) irc_route_runtime: Mutex<crate::irc::routing::Runtime>,
     pub(crate) irc_route_lock: Mutex<()>,
-    pub(crate) notification_lock: Mutex<()>,
     pub(crate) indexer_store: Mutex<crate::indexers::policy::SourceStore>,
     pub(crate) upgrade_lock: Mutex<()>,
     pub(crate) read_only: bool,
@@ -115,12 +114,8 @@ impl Engine {
         let series_store = crate::series::SeriesStore::open(&config.store_dir, read_only)?;
         let mut requester_store =
             crate::requesters::RequesterStore::open(&config.store_dir, &config, read_only)?;
-        let mut irc_store = crate::irc::AnnouncementStore::open(
-            &config.store_dir,
-            &config.irc,
-            &config.notifications,
-            read_only,
-        )?;
+        let mut irc_store =
+            crate::irc::AnnouncementStore::open(&config.store_dir, &config.irc, read_only)?;
         crate::requesters::engine::validate_storage(&requester_store.state, &store)?;
         let irc_admitted =
             crate::irc::admission::recovered_state(&irc_store.state, &requester_store.state)?;
@@ -193,7 +188,6 @@ impl Engine {
             irc_runtime: Mutex::new(irc_runtime),
             irc_route_runtime: Mutex::new(crate::irc::routing::Runtime::default()),
             irc_route_lock: Mutex::new(()),
-            notification_lock: Mutex::new(()),
             indexer_store: Mutex::new(indexer_store),
             upgrade_lock: Mutex::new(()),
             read_only,
@@ -516,7 +510,6 @@ impl Engine {
         let mut handles = Vec::new();
         crate::irc::client::start(self, &mut handles);
         crate::irc::routing::start(self, &mut handles);
-        crate::notifications::delivery::start(self, &mut handles);
         if let Some(client) = &self.usenet_queue {
             for _ in 0..client.worker_count() {
                 let engine = self.clone();

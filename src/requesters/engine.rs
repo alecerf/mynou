@@ -223,20 +223,6 @@ impl Engine {
                     .collect(),
             ),
         );
-        v.insert(
-            "notifications",
-            Value::Array(
-                ledger
-                    .state
-                    .notifications
-                    .iter()
-                    .filter(|n| n.get("account_id").and_then(Value::as_str) == Some(id))
-                    .rev()
-                    .take(100)
-                    .cloned()
-                    .collect(),
-            ),
-        );
         Ok(v)
     }
     pub fn requester_control(&self, id: &str, query: &ControlRequest) -> Result<Value> {
@@ -341,7 +327,7 @@ impl Engine {
                 _ => return Err("Requester: invalid action".into()),
             }
             let outcome = proposed.demands[demand_id].state.clone();
-            proposed.notify(demand_id, &outcome, store::now())?;
+            proposed.record_outcome(demand_id, &outcome)?;
         }
         let mut normalized = query.clone();
         normalized.apply = false;
@@ -525,7 +511,7 @@ impl Engine {
                     .get_mut(&id)
                     .ok_or("Requester: missing demand")?
                     .state = "conflict".into();
-                next.notify(&id, "conflict", now)?;
+                next.record_outcome(&id, "conflict")?;
                 continue;
             }
             let (active, daily) = limits[&d.account_id];
@@ -538,7 +524,7 @@ impl Engine {
                     .get_mut(&id)
                     .ok_or("Requester: missing demand")?
                     .state = "quota".into();
-                next.notify(&id, "quota", now)?;
+                next.record_outcome(&id, "quota")?;
                 continue;
             }
             if d.charged_at.is_none() {
@@ -557,7 +543,7 @@ impl Engine {
             demand.charged_at.get_or_insert(now);
             demand.state = "reserved".into();
             planned.insert(d.request.media_key(), d.capture.clone());
-            next.notify(&id, "reserved", now)?;
+            next.record_outcome(&id, "reserved")?;
             admitted.push((id, existing));
         }
         if next != ledger.state {
@@ -594,14 +580,13 @@ impl Engine {
                 "active"
             }
             .into();
-            next.notify(
+            next.record_outcome(
                 &id,
                 if matches!(job.state.as_str(), "ready" | "failed" | "cancelled") {
                     &job.state
                 } else {
                     "active"
                 },
-                now,
             )?;
         }
         for d in next.demands.values_mut() {
@@ -626,7 +611,7 @@ impl Engine {
             .collect();
         for (id, outcome) in outcomes {
             if matches!(outcome.as_str(), "ready" | "failed" | "cancelled") {
-                next.notify(&id, &outcome, now)?;
+                next.record_outcome(&id, &outcome)?;
             }
         }
         if next != ledger.state {
@@ -761,7 +746,7 @@ impl Engine {
                                     outcome: String::new(),
                                 },
                             );
-                            next.notify(&id, "pending", store::now())?;
+                            next.record_outcome(&id, "pending")?;
                         } else if let Some(d) = next.demands.get_mut(&id) {
                             d.origins.insert(origin);
                             if d.job_id.is_none()
@@ -802,7 +787,7 @@ impl Engine {
                             .ok_or("Requester: missing demand")?;
                         d.state = "removed".into();
                         d.approved = false;
-                        next.notify(&id, "removed", store::now())?;
+                        next.record_outcome(&id, "removed")?;
                     }
                     let current = next
                         .accounts

@@ -78,7 +78,6 @@ pub struct Config {
     pub sources: Vec<Source>,
     pub requesters: crate::requesters::Settings,
     pub irc: crate::irc::Settings,
-    pub notifications: crate::notifications::Settings,
     pub usenet: crate::usenet::Settings,
 }
 
@@ -363,7 +362,6 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             "indexers",
             "requesters",
             "irc",
-            "notifications",
             "usenet",
         ],
     )?;
@@ -497,8 +495,6 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
     }) {
         return Err("IRC: rule requester is not configured".into());
     }
-    let notifications =
-        crate::notifications::Settings::from_json(v.get("notifications"), &requesters, &irc)?;
     let config = Config {
         store_dir: path(&base, text(v, "store_dir", "state/jobs")?)?,
         listen,
@@ -548,7 +544,6 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         sources,
         requesters,
         irc,
-        notifications,
         usenet: crate::usenet::Settings::from_json_at(v.get("usenet"), &base)?,
     };
     for source in &config.sources {
