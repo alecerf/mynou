@@ -15,7 +15,7 @@ next weekly release; see [the unreleased note](releases/unreleased/45.md) and
 [live progress](web.md#live-progress).
 
 Since [v0.22.34](https://github.com/alecerf/mynou/releases/tag/v0.22.34), `trunk`
-also carries private iCalendar export (#56) and media-sized PAR2 recovery (#39);
+also carries media-sized PAR2 recovery (#39); #116 withdrew iCalendar export (#56);
 automatic Usenet repair #40 awaits triage. Guided setup #41 and the original
 immutable releases remain preserved.
 

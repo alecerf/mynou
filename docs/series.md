@@ -177,6 +177,13 @@ Otherwise the state is `mapping_required`, `unmonitored`, `missing` for an aired
 monitored episode, or `scheduled` for a future monitored episode. Undated episodes
 remain in series details rather than appearing under an invented calendar day.
 
+Mynou does not export calendar files or feeds. The unreleased iCalendar download
+was withdrawn by [Issue116](https://github.com/alecerf/mynou/issues/116): after
+sign-in, `GET /ui/calendar.ics` answers `410 Gone` with a short explanation
+instead of a file. It ignores the former `from`, `to` and `series_id` fields and
+reads or changes no series, request or library data. Use the Calendar page,
+`mynou calendar` or `GET /api/calendar` for known episode dates.
+
 ## Bounds and next stage
 
 Storage accepts at most 128 tracked scopes, 2,000 episodes in one plan, 20,000
@@ -190,7 +197,7 @@ selected verified files from a shared native transfer; new mapped transfers
 acquire only selected interests and required boundary pieces. Explicit
 [numbering choices](numbering.md) retain catalog identities and capture source
 labels for future jobs. Multi-episode videos, automatic alternate/anime-order
-inference, calendar feeds, time-zone premiere scheduling, adoption of an existing
+inference, time-zone premiere scheduling, adoption of an existing
 Plex library and multi-user request policies remain future work. See the
 [roadmap](roadmap.md) for the following releases and [limits](limits.md) for the
 rest of the supported surface.
