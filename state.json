@@ -1,28 +1,17 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 871,
-  "lease": {
-    "id": "8b3c5cf2-9f26-442b-b28e-1a61c4b5159e",
-    "worker": "github-actions-publication-recovery",
-    "role": "triage",
-    "issue": 50,
-    "acquired_at": "2026-10-08T22:50:21Z",
-    "heartbeat_at": "2026-10-08T22:50:28Z",
-    "expires_at": "2026-10-08T23:35:28Z",
-    "branch": "trunk",
-    "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
-    "pr": 51
-  },
+  "generation": 872,
+  "lease": null,
   "checkpoint": {
-    "at": "2026-10-08T22:50:28Z",
+    "at": "2026-10-09T00:28:51Z",
     "issue": 50,
     "role": "triage",
     "branch": "trunk",
     "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
     "pr": 51,
     "summary": "Actions publication verified: v0.22.30 at b11d88d5e9dd67d45980ba6c85716811dd6d3101; immutable release407323363, native run37855541518 and private source-bound proof.",
-    "next_action": "Finish native Issue/dependency/branch cleanup; then resume preserved work or Product planning.",
+    "next_action": "Recovered expired capacity lease; inspect preserved work before selecting new work.",
     "publication": {
       "commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
       "state": "published",
@@ -86,29 +75,71 @@
       "pr": true,
       "ci": true,
       "commit_preserved": true,
-      "issue_state": "closed",
-      "branch_head": "edbc8edcf05341d1a3d0b7125f06dde408481d42",
-      "default_head": "46a6b67a6ce3de468f2304e7847d6da04203d056",
-      "preservation": "exact native merged default commit and source parent, preserved on trunk",
+      "issue_state": "open",
+      "branch_head": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
+      "default_head": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
+      "preservation": "actual native default merge and original source parent remain reachable on trunk; immutable publication checkpoint preserved",
       "prs": [
         {
-          "number": 47,
+          "number": 51,
           "state": "closed",
-          "head": "edbc8edcf05341d1a3d0b7125f06dde408481d42",
-          "merge_commit": "46a6b67a6ce3de468f2304e7847d6da04203d056",
-          "merged_at": "2026-10-08T19:44:59Z"
+          "head": "80b0d3eb17ce6df583643060b5cce990f53dd1ef",
+          "merge_commit": "b11d88d5e9dd67d45980ba6c85716811dd6d3101",
+          "merged_at": "2026-10-08T22:46:14Z"
         }
       ],
       "runs": [
         {
-          "id": 37834316581,
+          "id": 37855933264,
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "id": 37855680308,
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 37855680224,
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 37855678349,
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 37855678437,
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 37855676759,
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 37855676744,
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "id": 37855562502,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 37855541574,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 37855541483,
           "status": "completed",
           "conclusion": "success"
         }
-      ],
-      "release_id": 407208110,
-      "release_published_at": "2026-10-08T19:51:44Z",
-      "execution_boundary": "Native command6068525880/run37840276392 failed; existing guard compared the already-merged lease commit with its old source branch. Original lease.recover used with the actual preserved default-merge evidence; no source branch changed, forced ref, replacement store or fabricated success."
+      ]
     },
     "pending_qa": {
       "state": "resolved by exact-head passed QA5458620861",
