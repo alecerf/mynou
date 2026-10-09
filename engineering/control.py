@@ -14,6 +14,33 @@ def team_cap(cfg):
     return None if policy is None else policy["max_active_agents"]
 
 
+def enable_team(api, state, at, identity, worker):
+    """Enable only the exact installed, independently reviewed and CI-verified source."""
+    policy = team_policy(api.cfg)
+    held = lease.owned(state, identity, at)
+    if policy is None or state["schema"] != 1 or held["role"] != "master" \
+            or held["worker"] != worker or held["issue"] != policy["issue"]:
+        raise ValueError("Team activation requires its configured serial Master owner")
+    current = api.ref(api.cfg["default_branch"])
+    if held["branch"] != api.cfg["default_branch"] or held["commit"] != current or held["pr"] is None:
+        raise ValueError("Team activation requires the exact installed default source and linked PR")
+    import qa
+    proof = qa.evaluate(api, held["pr"], include_gate=True, allow_merged=True)
+    if proof["merge"] != current or proof["issues"] != [policy["issue"]]:
+        raise ValueError("Team activation source is not the exact reviewed linked merge")
+    qa.ci_ready(api, api.cfg, current)
+    from delivery import default_ci_run
+    run = default_ci_run(api, current)
+    if run is None or run["status"] != "completed" or run.get("conclusion") != "success":
+        raise ValueError("Team activation requires successful exact-default CI/publication")
+    if api.ref(api.cfg["default_branch"]) != current:
+        raise ValueError("Installed source changed during team activation review")
+    result = lease.enable_team(state, at, identity, policy["issue"], policy["max_active_agents"])
+    result["checkpoint"]["team"].update(policy_commit=current, pr=held["pr"],
+        reviews=proof["reviews"], ci=proof["ci"], default_run=run["id"])
+    return result
+
+
 def labels(issue):
     return {v["name"] for v in issue.get("labels", [])}
 
@@ -95,7 +122,14 @@ def select_team(state, issues, at, planning=None):
     for held in sorted(lease.expired(state, at), key=lambda w: w["issue"]):
         items.append({"action": "recover", "issue": held["issue"], "lease": held["id"]})
     running = lease.live(state, at)
+    if items:
+        return {"action": "recover", "issue": items[0]["issue"], "capacity": 0,
+            "valid_workers": len(running), "assignments": items,
+            "instruction": "Inspect and preserve the listed expired execution records before assigning unrelated work."}
+    serial = state["lease"]
     taken = {w["issue"] for w in state["workers"].values()}
+    if serial is not None:
+        taken.add(serial["issue"])
     managed = [i for i in issues if i.get("state") == "open" and "pull_request" not in i
         and "agent-work" in labels(i) and i["number"] not in taken]
     queue = [("recover", i) for i in sorted(managed, key=lambda i: i["number"])
@@ -115,7 +149,7 @@ def select_team(state, issues, at, planning=None):
     queue += [("triage" if "status:ready" not in labels(i) else "work", i) for i in sorted(ready, key=priority)]
     assignments, used = [], {a for w in running for a in w["areas"]}
     free = slots = state["max_active_agents"] - len(running)
-    blocked = any(w["exclusive"] for w in running)
+    blocked = any(w["exclusive"] for w in running) or serial is not None and serial["role"] not in {"quality", "triage"}
     for action, issue in queue:
         try:
             areas, exclusive = lease.scope(labels(issue))
@@ -125,7 +159,7 @@ def select_team(state, issues, at, planning=None):
             break
         if exclusive:
             # Never starve exclusive work by starting lower-priority parallel work.
-            if not running and not assignments:
+            if serial is None and not running and not assignments:
                 assignments.append({"action": action, "issue": issue["number"], "areas": areas, "exclusive": True})
             break
         if used & set(areas):
@@ -278,7 +312,7 @@ def main():
     at = lease.now()
     if args.command == "branch-cleanup":
         import delivery
-        held = lease.holder(state, args.lease, at)
+        held = lease.owned(state, args.lease, at)
         if held["role"] not in ("quality", "triage") or not args.branch or not args.commit:
             raise ValueError("Cleanup requires Quality/Triage ownership and an exact branch head")
         print(json.dumps(delivery.cleanup_branch(api, args.branch, args.commit, held), indent=2))
@@ -288,7 +322,10 @@ def main():
         return
     if args.command == "wake":
         # Admission happens before any backlog/domain investigation.
-        issues = [] if state["lease"] is not None and not lease.is_team(state) else api.pages("issues?state=open&labels=agent-work")
+        busy = lease.valid(state, at) if not lease.is_team(state) else (
+            any(w["exclusive"] for w in lease.live(state, at))
+            or state["lease"] is not None and state["lease"]["role"] not in {"quality", "triage"})
+        issues = [] if busy or state["lease"] is not None and not lease.is_team(state) or lease.expired(state, at) else api.pages("issues?state=open&labels=agent-work")
         action = select(state, issues, at, api.cfg.get("product_planning"))
         if action["action"] == "idle":
             import qa

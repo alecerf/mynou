@@ -1,39 +1,29 @@
-# Current work — proposed 0.22.37 opt-in parallel engineering team
+# Current work — proposed 0.22.34 opt-in engineering worker leases
 
-[Issue 58](https://github.com/alecerf/mynou/issues/58) adds a bounded, opt-in team
-model: per-worker leases with server-read `area:*` labels, a capacity cap,
-exclusive `area:control` work that drains the team, individual expired-lease
-recovery and a singleton delivery lease. Schema-1 behavior is unchanged until the
-reviewed `enable-team` transition. See [scope](releases/0.22.37.md). Versions
-0.22.33-0.22.36 are reserved by other in-flight work; this source stays proposed
-until CI, distinct exact-head/base Security/QA and Actions publication complete.
+[Issue58](https://github.com/alecerf/mynou/issues/58) prepares a bounded optional
+team model with server-read Issue scopes, exclusive control/delivery fences,
+durable per-Issue handoffs and exact installed-source activation gates.
+See [scope](releases/0.22.34.md). Live configuration/control remain serial and
+no worker is launched. Version34 is proposed for the next merge after verified
+v0.22.33; final assignment depends on actual native release/default state.
+Distinct Security/QA, CI and Actions-owned publication remain required.
 No local validation.
 
-## Earlier proposed 0.22.33 default-source CI fix-forward
+## Delivered 0.22.33 publication and audit recovery
+
+Actions published immutable [v0.22.33](https://github.com/alecerf/mynou/releases/tag/v0.22.33)
+at `6946ef76db0fc13b1fd887f6ee3d5304d5b1fbd2` (release407951663,
+[CI37937994405](https://github.com/alecerf/mynou/actions/runs/37937994405), all seven
+jobs successful). Its source/run-bound receipt verifies the GHCR image remains
+private. Default Security audit37937994372 attempt2 and CodeQL37937993886 passed.
+[Release scope](releases/0.22.33.md) records the CI/publication corrections.
+These facts certify that source only, not this proposed release.
+
+## Earlier delivered 0.22.32 fresh engineering authority reads
 
 Actions published immutable [v0.22.32](https://github.com/alecerf/mynou/releases/tag/v0.22.32)
-at `97c8efcbb97a74716e21791b5d4cf1578f85c28d` (release 407617414, run 37895820331).
-Two later engineering-only merges, PR59 and PR60 (`02a536f2c75e454094c7cb28d85ec2771c7404f0`),
-kept version 0.22.32. Actions publishes an immutable release for every push to the
-default branch and the registry refuses a second image for a published version, so
-the `release` job failed in [run 37920787776](https://github.com/alecerf/mynou/actions/runs/37920787776).
-Every other job passed, and mechanical delivery recorded the failed default CI.
-
-[Issue62](https://github.com/alecerf/mynou/issues/62) fixes forward. This source
-proposes 0.22.33 with no product code change since 0.22.32. Delivery also treats a
-recorded `ci-failed` commit as superseded only when its own native run completed
-without success and the commit is a strict ancestor of the current default head.
-Pending, unknown or unverified records, unrelated heads and a missing or unfinished
-run still stop delivery, and the new head still needs its own CI and publication proof.
-See [scope](releases/0.22.33.md). This version remains proposed until actual CI,
-distinct exact-head/base Security/full-diff QA, every objective gate and Actions-only
-immutable publication are complete. No local validation.
-
-## Earlier: 0.22.32 fresh engineering authority reads
-
-## Earlier proposed 0.22.32 scope
-
-Fresh engineering authority reads (proposed 0.22.32):
+at `97c8efcbb97a74716e21791b5d4cf1578f85c28d`
+(release407617414, run37895820331).
 
 Actions actually published immutable [v0.22.31](https://github.com/alecerf/mynou/releases/tag/v0.22.31)
 at `adb8808d91e0f87017c7cad0ae9d787a7448feee` in successful seven-job

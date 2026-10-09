@@ -152,6 +152,12 @@ claimed. All tests, scans and validation execute only in CI.
 After the reviewed `enable-team` transition, `state.json` is schema 3: the same
 fields plus `workers` (lease id -> worker lease with `areas`, `exclusive` and its
 own `checkpoint`), at most 16 entries, one per Issue, and `max_active_agents`
-2-8. The serial `lease` stays the singleton delivery/migration lease. Every write
+2-8. The serial `lease` stays the singleton mechanical delivery/activation lease.
+Exclusive and expired worker records fence delivery; worker-linked Issues and
+every worker branch remain protected. Removal of a worker first retains one
+bounded latest source/next-action handoff per Issue in
+`checkpoint.worker_handoffs` (at most256 Issues), preserving the existing serial
+phase, migration and publication records. Actual recovery evidence remains with
+that handoff. Every write
 is the unchanged sole-parent non-force CAS on the canonical ref. Schema-1
 tooling fails closed on schema 3 rather than overwriting it.

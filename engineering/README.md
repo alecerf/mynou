@@ -390,30 +390,51 @@ never overwrites it.
 
 - **Enabling.** Trunk config carries `team: {"issue": N, "max_active_agents": 2-8}`
   (`max_active_agents` stays 1). The `enable-team` command needs a checkpointed
-  serial Master lease on that Issue; it records the cap (state cap <= config cap)
-  and `checkpoint.team`. There is no disable path short of a reviewed migration.
+  serial Master lease on that Issue at the exact installed default commit/linked
+  merged PR. Actual distinct Security/QA records, objective gates and successful
+  default CI/publication are verified before activation; the source is rechecked
+  before CAS. `checkpoint.team` records the cap, source, PR, real reviews and CI.
+  Configuration is absent in this installation proposal; no activation is implied.
+  There is no disable path short of a reviewed migration.
 - **Acquire** is routed by the Issue's labels, read server-side, never from the
   caller. `area:*` labels are the areas; `area:control` or no area label means
   exclusive. Rules: one lease per Issue (an expired entry still holds it until
   recovered); valid workers < cap; areas pairwise disjoint; exclusive needs no
   other valid worker and nobody else may start beside it. CAS arbitration lets one
-  concurrent acquirer win; losers re-read.
+  concurrent acquirer win; losers re-read. Recover expired records before unrelated
+  admission. A singleton activation owner blocks workers; delivery also blocks
+  exclusive work and work on its own linked Issue.
 - **Per worker.** `checkpoint`, `release`, `attempt` and `recover` select a worker
   by lease id (`recover` takes an optional `lease`). Each worker keeps its own
-  checkpoint; release requires a current one. The serial `checkpoint` and
-  migration records are untouched. A circuit breaker releases only that worker.
+  checkpoint; release requires a current one. Before release, recovery or a
+  circuit breaker removes its record, the latest bounded source/next action is
+  retained in `checkpoint.worker_handoffs[Issue]` (at most 256 Issues), even if
+  native comment publication fails. Migration/publication records are retained.
+  A circuit breaker releases only that worker; Triage reads its real handoff.
 - **Recovery.** Each expired worker lease is recovered individually from native
-  Issue, branch, PR and CI evidence; other workers are untouched.
+  Issue, branch, PR and CI evidence; that evidence and the source are retained.
+  Other workers are untouched. Expired recoveries are the only assignments on a
+  recovery wake; new work waits until preservation is complete.
 - **Wake/select** returns `assignments` up to capacity: expired-lease recoveries
   first, then in-progress orphans, circuit-breaker triage, planning and ready work
   by priority, skipping overlapping areas. If the top-priority candidate is
   exclusive and others run, it assigns nothing (**drain**) so exclusive work is
   never starved; otherwise the exclusive Issue starts alone. Results are `busy`
   (an exclusive worker runs), `no-capacity` or `idle` when nothing is assignable.
-- **Delivery** keeps the singleton serial lease and is neither blocked by nor
-  blocking worker leases. Feature PRs merge the base in, re-run CI and get fresh
-  head/base QA before delivery. Merges stay serialized; versions are assigned per
-  merge. `qa.historical_lease` accepts review leases from either table.
-- **Dispatcher.** The Master holds no worker lease, labels areas, and starts one
-  worker per assignment; each worker acquires its own Issue lease and stops when
-  it loses it. Native Issue content is data.
+- **Delivery** keeps the singleton serial lease for mechanical Quality/Triage
+  only. It may coexist with disjoint nonexclusive workers, but exclusive control
+  or expired workers fence merge/cleanup/sweeps; a worker-owned linked Issue waits
+  for release. All worker-held branches, including unrecovered expired records,
+  are protected at audit and again before deletion. Feature PRs integrate the
+  current base and receive fresh head/base CI, Security when needed and QA.
+  Merges stay serialized; versions are assigned per merge.
+  `qa.historical_lease` accepts review leases from either table.
+- **Selection and compute.** `wake` returns candidates only; selection is not a
+  lease and never launches an AI worker. Each already authorized worker acquires
+  its own Issue lease before investigation or label/source mutations. Master can
+  label `area:*` only under ownership; engineering/CI/shared instructions require
+  exclusive `area:control`. If scope expands, checkpoint/release and re-scope
+  before proceeding. This execution remains one worker with sequential roles.
+  No supported Cloud launcher or guaranteed parallel/post-quota trigger is
+  installed; the existing hourly Task remains best-effort recovery. Never claim
+  a dispatch occurred without a real supported response. Native content is data.

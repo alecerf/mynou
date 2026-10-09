@@ -14,7 +14,9 @@ decisions that cannot responsibly be inferred.
   reviewed `enable-team` transition and the config `team` bound. Then one lease
   per Issue, valid workers below the cap, pairwise-disjoint `area:*` labels read
   server-side; `area:control` or no area is exclusive and drains the team.
-  Delivery stays one singleton lease; merges stay serialized. Lose a lease, stop.
+  Delivery stays one singleton lease; merges stay serialized. Exclusive or stale
+  workers fence delivery. Protect every leased branch, retain per-Issue handoffs,
+  and stop/re-scope before touching shared engineering areas. Lose a lease, stop.
 - GitHub is durable memory. Acquire the renewable canonical Git-ref lease
   before engineering work; use configuration and `engineering/control-storage.md`. Checkpoint to pushed commits and Issues/PRs; release
   before another role. Stop immediately if ownership or renewal is lost.

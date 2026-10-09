@@ -9,6 +9,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import commands
 import control
+import delivery
 import github
 import lease
 import qa
@@ -74,10 +75,12 @@ class WorkerLeaseCases(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "cap"):
             start(state, 3, ["area:torrent"])
         later = AT + timedelta(minutes=46)
+        with self.assertRaisesRegex(ValueError, "expired"):
+            start(state, 3, ["area:torrent"], at=later, identity="w3")
+        state = lease.recover_worker(state, later, "w1", EVIDENCE)
+        state = lease.recover_worker(state, later, "w2", EVIDENCE)
         again = start(state, 3, ["area:torrent"], at=later, identity="w3")
-        self.assertEqual(len(again["workers"]), 3)
-        with self.assertRaisesRegex(ValueError, "already has"):
-            start(again, 1, ["area:other"], at=later, identity="x")
+        self.assertEqual(len(again["workers"]), 1)
 
     def test_checkpoint_release_and_wrong_owner(self):
         state = start(team(), 1, ["area:web"])
@@ -181,7 +184,7 @@ class SelectionCases(unittest.TestCase):
         later = AT + timedelta(minutes=50)
         action = control.select(state, [issue(1, "area:web"), issue(2, "area:docs")], later)
         self.assertEqual(action["assignments"][0], {"action": "recover", "issue": 1, "lease": "w1"})
-        self.assertEqual(self.numbers(action), [1, 2])
+        self.assertEqual(self.numbers(action), [1])
 
     def test_delivery_lease_does_not_block_assignment(self):
         state = lease.acquire(team(), AT, "d1", "delivery", "quality", 7, BRANCH, SOURCE)
@@ -259,21 +262,72 @@ class TeamCommandCases(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.run_command(native, native.event("recover", {"lease": "nobody"}))
 
-    def test_enable_team_requires_reviewed_config_and_master_lease(self):
+    def activation_owner(self):
         native = TeamNative()
-        held = lease.acquire(initial(), AT, "m1", "one", "master", 58, BRANCH, SOURCE)
-        native.state = lease.checkpoint(held, AT, "m1", "Reviewed", "Enable", SOURCE)
-        args = {"worker": "one", "lease": "m1"}
-        self.run_command(native, native.event("enable-team", args))
+        held = lease.acquire(initial(), AT, "m1", "one", "master", 58, "trunk", SOURCE, 6)
+        native.state = lease.checkpoint(held, AT, "m1", "Installed source checkpoint", "Verify real gates", SOURCE, 6)
+        native.pr.update(body="Closes #58", merged_at=lease.stamp(AT), merge_commit_sha=SOURCE)
+        return native, {"worker": "one", "lease": "m1"}
+
+    def activation_proof(self):
+        return {"merge": SOURCE, "issues": [58], "reviews": [{"role": "security", "review_id": 11},
+            {"role": "qa", "review_id": 12}], "ci": ["https://example.invalid/native-ci"]}
+
+    def test_enable_team_requires_reviewed_config_and_master_lease(self):
+        native, args = self.activation_owner()
+        with patch.object(qa, "evaluate", return_value=self.activation_proof()) as review, \
+                patch.object(qa, "ci_ready") as checks, \
+                patch.object(delivery, "default_ci_run", return_value={"id": 13, "status": "completed", "conclusion": "success"}):
+            self.run_command(native, native.event("enable-team", args))
+        review.assert_called_once_with(native, 6, include_gate=True, allow_merged=True)
+        checks.assert_called_once_with(native, native.cfg, SOURCE)
         self.assertEqual((native.state["schema"], native.state["max_active_agents"]), (3, 3))
+        self.assertEqual(native.state["checkpoint"]["team"]["policy_commit"], SOURCE)
+        self.assertEqual(native.state["checkpoint"]["team"]["reviews"], self.activation_proof()["reviews"])
         with self.assertRaises(commands.Rejected):
             self.run_command(native, native.event("enable-team", args))
-        unconfigured = TeamNative()
+        unconfigured, args = self.activation_owner()
         del unconfigured.cfg["team"]
-        unconfigured.state = lease.checkpoint(held, AT, "m1", "Reviewed", "Enable", SOURCE)
         with self.assertRaises(commands.Rejected):
             self.run_command(unconfigured, unconfigured.event("enable-team", args))
         self.assertEqual(unconfigured.state["schema"], 1)
+
+    def test_missing_reviews_pending_default_ci_and_wrong_source_cannot_enable(self):
+        for failure in ["review", "pending", "source", "issue", "merge"]:
+            with self.subTest(failure=failure):
+                native, args = self.activation_owner()
+                if failure == "source":
+                    native.state["lease"]["branch"] = BRANCH
+                proof = self.activation_proof()
+                if failure == "issue":
+                    proof["issues"] = [59]
+                if failure == "merge":
+                    proof["merge"] = "c" * 40
+                with patch.object(qa, "evaluate", side_effect=ValueError("Missing real review") if failure == "review" else None,
+                        return_value=proof), patch.object(qa, "ci_ready"), \
+                        patch.object(delivery, "default_ci_run", return_value={"id": 13,
+                            "status": "in_progress" if failure == "pending" else "completed", "conclusion": "success"}):
+                    with self.assertRaises(ValueError):
+                        self.run_command(native, native.event("enable-team", args))
+                self.assertFalse(native.writes)
+                self.assertEqual(native.state["schema"], 1)
+
+    def test_default_race_during_activation_preserves_serial_state(self):
+        native, args = self.activation_owner()
+        reads = 0
+        def source(location):
+            nonlocal reads
+            if location == "control/engineering":
+                return native.head
+            reads += 1
+            return SOURCE if reads == 1 else "c" * 40
+        with patch.object(native, "ref", side_effect=source), \
+                patch.object(qa, "evaluate", return_value=self.activation_proof()), patch.object(qa, "ci_ready"), \
+                patch.object(delivery, "default_ci_run", return_value={"id": 13, "status": "completed", "conclusion": "success"}):
+            with self.assertRaisesRegex(ValueError, "source changed"):
+                self.run_command(native, native.event("enable-team", args))
+        self.assertFalse(native.writes)
+        self.assertEqual(native.state["schema"], 1)
 
     def test_team_policy_bounds(self):
         self.assertIsNone(github.team_policy({}))
@@ -290,6 +344,96 @@ class TeamCommandCases(unittest.TestCase):
         self.assertIsNotNone(native.state["lease"])
         with self.assertRaisesRegex(commands.Rejected, "lease-not-free"):
             self.acquire(native, 7, "two")
+
+
+
+class TeamSafetyRegressions(unittest.TestCase):
+    def test_exclusive_control_and_singleton_delivery_fence_each_other(self):
+        exclusive = start(team(), 1, ["area:control"])
+        with self.assertRaisesRegex(ValueError, "Exclusive"):
+            lease.acquire(exclusive, AT, "d1", "delivery", "quality", 7, "trunk", SOURCE)
+        singleton = lease.acquire(team(), AT, "d1", "delivery", "quality", 7, "trunk", SOURCE)
+        with self.assertRaisesRegex(ValueError, "Singleton"):
+            start(singleton, 1, ["area:control"])
+        with self.assertRaisesRegex(ValueError, "Singleton"):
+            start(singleton, 7, ["area:web"])
+        allowed = start(singleton, 1, ["area:web"])
+        self.assertEqual(len(allowed["workers"]), 1)
+
+    def test_expired_workers_block_delivery_until_evidence_based_recovery(self):
+        state = start(team(), 1, ["area:web"])
+        later = AT + timedelta(minutes=46)
+        with self.assertRaisesRegex(ValueError, "expired"):
+            lease.acquire(state, later, "d1", "delivery", "quality", 7, "trunk", SOURCE)
+        recovered = lease.recover_worker(state, later, "w1", EVIDENCE)
+        held = lease.acquire(recovered, later, "d1", "delivery", "quality", 7, "trunk", SOURCE)
+        self.assertEqual(held["lease"]["id"], "d1")
+
+    def test_delivery_and_sweep_do_no_domain_reads_beside_exclusive_control(self):
+        state = start(team(), 1, ["area:control"])
+        native = TeamNative()
+        for sweep in [False, True]:
+            with patch.object(delivery, "read_state", return_value=(HEAD, state)), \
+                    patch.object(lease, "now", return_value=AT), patch.object(native, "pages") as pages:
+                self.assertEqual(delivery.run(native, sweep)["action"], "busy")
+                pages.assert_not_called()
+
+    def test_released_recovered_and_breaker_handoffs_preserve_source_and_durable_records(self):
+        durable = {"publication": {"commit": SOURCE, "state": "published"},
+            "control_migration": {"phase": "retired"}}
+        for outcome in ["released", "recovered", "circuit-breaker"]:
+            with self.subTest(outcome=outcome):
+                state = start(team(), 1, ["area:web"])
+                state["checkpoint"] = deepcopy(durable)
+                if outcome == "released":
+                    state = lease.checkpoint_worker(state, AT, "w1", "Work preserved", "Independent QA", SOURCE, 6)
+                    result = lease.release_worker(state, AT, "w1")
+                elif outcome == "recovered":
+                    result = lease.recover_worker(state, AT + timedelta(minutes=46), "w1",
+                        dict(EVIDENCE, branch_head=SOURCE, preservation="branch/default ancestry"))
+                else:
+                    for _ in range(3):
+                        state = lease.attempt_worker(state, AT, "w1", "same", "same")
+                    result = state
+                note = result["checkpoint"]["worker_handoffs"]["1"]
+                self.assertEqual(note["commit"], SOURCE)
+                self.assertEqual(note["branch"], BRANCH + "-1")
+                self.assertEqual(note["lease_id"], "w1")
+                self.assertEqual(note["outcome"], outcome)
+                self.assertNotIn("w1", result["workers"])
+                for key, value in durable.items():
+                    self.assertEqual(result["checkpoint"][key], value)
+                if outcome == "recovered":
+                    self.assertEqual(note["recovery"]["branch_head"], SOURCE)
+
+    def test_branch_audit_and_fresh_delete_fence_preserve_worker_branch(self):
+        native = TeamNative()
+        base = lease.acquire(team(), AT, "d1", "delivery", "quality", 7, "trunk", SOURCE)
+        target = BRANCH + "-2"
+        late = start(base, 2, ["area:web"])
+        cfg = native.cfg
+        allowed, reason = delivery.branch_decision(target, SOURCE, cfg, "identical", [], [],
+            base["lease"], workers=late["workers"].values())
+        self.assertFalse(allowed)
+        self.assertIn("lease", reason)
+        def pages(path, key=None):
+            if path == "branches":
+                return [{"name": target, "commit": {"sha": SOURCE}, "protected": False}]
+            if path in ["pulls?state=all", "issues?state=open"]:
+                return []
+            raise AssertionError(path)
+        def rest(method, path, value=None):
+            if method == "GET" and path.startswith("compare/"):
+                return {"status": "identical"}
+            if method == "POST" and path == "issues/7/comments":
+                return {"id": 1}
+            raise AssertionError((method, path))
+        with patch.object(native, "pages", side_effect=pages), patch.object(native, "rest", side_effect=rest) as calls, \
+                patch.object(delivery, "read_state", side_effect=[(HEAD, base), (HEAD, base), (HEAD, late)]), \
+                patch.object(lease, "now", return_value=AT):
+            with self.assertRaisesRegex(ValueError, "protects this branch"):
+                delivery.cleanup_branch(native, target, SOURCE, base["lease"])
+        self.assertFalse(any(call.args[0] == "DELETE" for call in calls.call_args_list))
 
 
 if __name__ == "__main__":

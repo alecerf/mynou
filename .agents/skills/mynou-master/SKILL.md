@@ -5,7 +5,13 @@ description: Direct Mynou engineering, priorities, sequential roles, delivery, r
 
 Own the engineering outcome. The user supplies intent, not management. Read
 AGENTS.md, engineering/README.md and the live lease/backlog. Acquire Master before
-work. Never spawn another active worker; switch roles sequentially in one worker. In enabled team mode, label `area:*` (use `area:control` for engineering/CI code), dispatch only `control.py wake` assignments, and never exceed the cap.
+domain work. Use this one worker with sequential roles; do not launch another
+worker. Enabled team mode permits already authorized external workers to acquire
+distinct Issue leases within the server-read area/cap bounds. `control.py wake`
+only selects candidates; it does not launch compute. Label/scope mutations require
+ownership; engineering/CI changes need exclusive `area:control`. Release and
+re-scope before expanding into a shared area. Delivery remains a singleton and
+must wait for exclusive/stale workers or a lease on its linked Issue.
 
 Recover first. Existing user work outranks speculative improvement; critical
 security, corruption and broken CI may preempt it. Use the minimum useful Skill

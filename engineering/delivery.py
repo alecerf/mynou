@@ -166,11 +166,11 @@ def recover_publication(api, head, state, prs):
     return None
 
 
-def branch_decision(name, head, cfg, comparison, open_prs, open_issues, held, merged_prs=(), protected=False):
+def branch_decision(name, head, cfg, comparison, open_prs, open_issues, held, merged_prs=(), protected=False, workers=()):
     authority = reference(control_reference(cfg))
     if protected or name == cfg["default_branch"] or authority == "refs/heads/" + name or name.startswith("control/") or name.startswith("release/"):
         return False, "protected or durable branch"
-    if held is not None and held["branch"] == name:
+    if held is not None and held["branch"] == name or any(w["branch"] == name for w in workers):
         return False, "execution lease references branch"
     if any(p["head"]["ref"] == name for p in open_prs):
         return False, "open PR references branch"
@@ -203,7 +203,8 @@ def cleanup_branch(api, name, expected, held):
     comparison = api.rest("GET", f"compare/{expected}...{default}")
     allowed, reason = branch_decision(name, expected, cfg, comparison["status"],
         [p for p in prs if p["state"] == "open"], issue_refs, held,
-        [p for p in prs if p.get("merged_at")], source["protected"])
+        [p for p in prs if p.get("merged_at")], source["protected"],
+        read_state(api)[1].get("workers", {}).values())
     if not allowed:
         return {"branch": name, "result": "preserved: " + reason}
     # No live API offers an expected-SHA conditional ref deletion. Preserve a
@@ -220,7 +221,8 @@ def cleanup_branch(api, name, expected, held):
     if api.ref(name) != expected:
         return {"branch": name, "result": "preserved: head changed before cleanup"}
     owner = lease.owned(current, held["id"], lease.now())
-    if owner["role"] not in ("quality", "triage") or owner["branch"] == name:
+    if owner["role"] not in ("quality", "triage") or owner["branch"] == name \
+            or any(w["branch"] == name for w in current.get("workers", {}).values()):
         raise ValueError("Current execution ownership protects this branch")
     api.rest("DELETE", "git/refs/heads/" + name)
     return {"branch": name, "head": expected, "result": "deleted", "reason": reason}
@@ -336,6 +338,13 @@ def run(api, sweep=False):
     at = lease.now()
     if lease.valid(state, at):
         return {"action": "busy", "instruction": "Mechanical delivery waits for the current engineering role to release."}
+    if lease.is_team(state):
+        stale = lease.expired(state, at)
+        if stale:
+            return {"action": "recovery-needed", "leases": [w["id"] for w in stale],
+                "instruction": "Recover expired workers from native preservation evidence before delivery or sweeps."}
+        if any(w["exclusive"] for w in lease.live(state, at)):
+            return {"action": "busy", "instruction": "Exclusive control work protects delivery, cleanup and sweeps."}
     if sweep:
         if state["lease"] is not None:
             return {"action": "recovery-needed", "issue": state["lease"]["issue"],
@@ -360,6 +369,8 @@ def run(api, sweep=False):
         managed = [i for i in issues if "agent-work" in labels(i)]
         unfinished = any("status:done" not in labels(i) for i in managed)
         if unfinished:
+            if any(w["issue"] in {i["number"] for i in managed} for w in state.get("workers", {}).values()):
+                continue  # Do not close a worker-owned Issue or delete its PR branch.
             identity = str(uuid.uuid4())
             default = api.ref(api.cfg["default_branch"])
             held = lease.acquire(state, lease.now(), identity, "github-actions-cleanup", "quality", managed[0]["number"],
@@ -385,7 +396,7 @@ def run(api, sweep=False):
             continue
         issues = [api.rest("GET", f"issues/{n}") for n in qa.linked_issues(candidate.get("body"))]
         managed = next((i for i in issues if i["state"] == "open" and "agent-work" in labels(i)), None)
-        if managed is None:
+        if managed is None or any(w["issue"] in {i["number"] for i in issues} for w in state.get("workers", {}).values()):
             continue
         default = api.ref(api.cfg["default_branch"])
         identity = str(uuid.uuid4())
@@ -444,12 +455,13 @@ def branch_audit(api):
     open_issues = [i for i in api.pages("issues?state=open") if "pull_request" not in i]
     default = api.ref(api.cfg["default_branch"])
     audit = []
+    workers = read_state(api)[1].get("workers", {}).values()
     for b in branches[:20]:
         if b["name"] == api.cfg["default_branch"] or b["name"].startswith("control/"):
             continue
         comparison = api.rest("GET", f"compare/{b['commit']['sha']}...{default}")
         candidate, reason = branch_decision(b["name"], b["commit"]["sha"], api.cfg, comparison["status"],
-            [p for p in prs if p["state"] == "open"], open_issues, None, prs, b["protected"])
+            [p for p in prs if p["state"] == "open"], open_issues, None, prs, b["protected"], workers)
         audit.append({"branch": b["name"], "head": b["commit"]["sha"], "candidate": candidate, "reason": reason})
     return {"action": "quality-audit", "branches": audit,
         "instruction": "Candidates require a complete fresh PR/Issue/comment/head audit and an owned Quality/Triage lease before cleanup."}

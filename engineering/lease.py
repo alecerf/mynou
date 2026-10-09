@@ -102,6 +102,11 @@ def validate(state):
             check_worker(key, value)
         if len({w["issue"] for w in workers.values()}) != len(workers):
             raise ValueError("One lease per Issue")
+        if held is not None and any(w["id"] == held["id"] or w["issue"] == held["issue"] for w in workers.values()):
+            raise ValueError("Serial and worker leases must have distinct identities and Issues")
+        handoffs = state["checkpoint"].get("worker_handoffs", {})
+        if not isinstance(handoffs, dict) or len(handoffs) > 256:
+            raise ValueError("Invalid or oversized worker handoffs")
     return state
 
 
@@ -120,6 +125,13 @@ def acquire(state, at, identity, worker, role, issue, execution_branch, commit, 
     validate(state)
     if state["lease"] is not None:
         raise ValueError("Existing lease requires release or explicit stale-work recovery")
+    if state["schema"] == 3:
+        if role not in {"quality", "triage"}:
+            raise ValueError("The singleton team lease is reserved for mechanical delivery")
+        if expired(state, at):
+            raise ValueError("Recover expired worker records before delivery")
+        if any(w["exclusive"] or w["issue"] == issue for w in live(state, at)):
+            raise ValueError("Exclusive work or an Issue worker blocks delivery")
     result = deepcopy(state)
     result["generation"] += 1
     result["lease"] = {"id": identity, "worker": worker, "role": role, "issue": issue,
@@ -252,6 +264,11 @@ def admissible(state, at, areas, exclusive, issue):
     """Return None when a worker may start, else the refusal reason."""
     if any(w["issue"] == issue for w in state["workers"].values()):
         return "Issue already has a worker lease; release or recover it first"
+    if expired(state, at) or state["lease"] is not None and not valid(state, at):
+        return "Recover expired execution records before unrelated admission"
+    serial = state["lease"]
+    if serial is not None and (exclusive or serial["issue"] == issue or serial["role"] not in {"quality", "triage"}):
+        return "Singleton delivery or activation must release before this work"
     running = live(state, at)
     if len(running) >= state["max_active_agents"]:
         return "No capacity: the worker cap is reached"
@@ -330,12 +347,29 @@ def checkpoint_worker(state, at, identity, summary, next_action, commit=None, pr
     return validate(result)
 
 
+def preserve_worker(result, held, at, outcome, evidence=None):
+    """Keep one bounded latest handoff per Issue before removing an execution record."""
+    handoffs = result["checkpoint"].setdefault("worker_handoffs", {})
+    key = str(held["issue"])
+    if key not in handoffs and len(handoffs) >= 256:
+        raise ValueError("Worker handoff capacity needs deliberate native-history maintenance")
+    note = held["checkpoint"]
+    if note is None:
+        note = {"at": stamp(at), **{k: held[k] for k in ["issue", "role", "branch", "commit", "pr"]},
+            "summary": "Interrupted before a phase checkpoint; original source and native work are preserved.",
+            "next_action": "Inspect native Issue, branch/commits, PR and CI before resuming."}
+    handoffs[key] = {**deepcopy(note), "lease_id": held["id"], "outcome": outcome, "recorded_at": stamp(at)}
+    if evidence is not None:
+        handoffs[key]["recovery"] = deepcopy(evidence)
+
+
 def release_worker(state, at, identity):
     held = owned_worker(state, identity, at)
     note = held["checkpoint"]
     if note is None or any(note[k] != held[k] for k in ["issue", "role", "branch", "commit", "pr"]) or time(note["at"]) < time(held["acquired_at"]):
         raise ValueError("Checkpoint this work before releasing its lease")
     result = deepcopy(state)
+    preserve_worker(result, held, at, "released")
     del result["workers"][identity]
     result["generation"] += 1
     return validate(result)
@@ -349,6 +383,7 @@ def recover_worker(state, at, identity, evidence):
     if not isinstance(evidence, dict) or not all(evidence.get(k) is True for k in ["issue", "branch", "pr", "ci", "commit_preserved"]):
         raise ValueError("Stale recovery requires native Issue, branch, PR, CI and preservation evidence")
     result = deepcopy(state)
+    preserve_worker(result, held, at, "recovered", evidence)
     del result["workers"][identity]
     result["generation"] += 1
     return validate(result)
@@ -365,7 +400,8 @@ def attempt_worker(state, at, identity, approach, fingerprint):
     result["attempts"][key] = {"approach": approach, "fingerprint": fingerprint, "unchanged": min(repeats, 3), "at": stamp(at)}
     result["generation"] += 1
     if repeats >= 3:
-        # The breaker record outlives the released worker; Triage reads attempts.
+        # The breaker and source-bound handoff survive even before the first checkpoint.
+        preserve_worker(result, held, at, "circuit-breaker")
         del result["workers"][identity]
         result["attempts"][key]["circuit_breaker"] = "Return to Triage with a changed approach."
     return validate(result)

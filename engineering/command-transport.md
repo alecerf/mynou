@@ -98,7 +98,16 @@ Actual receipts, Actions and ref/history must be inspected.
 ## Team commands
 
 `enable-team` takes `worker` and `lease` and is accepted only once, from schema 1,
-with a checkpointed Master lease on the configured team Issue. In schema 3,
+with a checkpointed Master lease on the configured team Issue at the exact
+installed default source/linked merged PR. Actual Security/QA records, objective
+gates and default CI/publication must pass; source is fenced again before CAS.
+Configuration and live state remain serial until that separate transition.
+In schema 3,
 `acquire` creates a worker lease (areas come from server-read Issue labels);
 `checkpoint`, `release` and `attempt` select a worker lease by `lease`; `recover`
 may carry `{"lease": id}` for one expired worker. Schema-1 argument sets stay exact.
+
+Worker release/recovery/breaker retains the latest bounded per-Issue handoff in
+canonical control before native receipt/comment publication. Read that handoff
+and actual native work after interruption; an accepted command is not a passing
+review, activated team or launched worker.

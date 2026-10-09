@@ -206,7 +206,7 @@ def transition(api, state, value, at, comment_id):
         require(policy is not None and not team, "team-not-enableable")
         held = lease.owned(state, args["lease"], at)
         require(held["worker"] == args["worker"], "wrong-lease-worker")
-        return lease.enable_team(state, at, args["lease"], policy["issue"], policy["max_active_agents"])
+        return control.enable_team(api, state, at, args["lease"], args["worker"])
     worker = team and args["lease"] in state["workers"]
     held = lease.owned_worker(state, args["lease"], at) if worker else lease.owned(state, args["lease"], at)
     require(held["worker"] == args["worker"], "wrong-lease-worker")
@@ -304,7 +304,9 @@ def execute(api, event, at, actor, triggering_actor):
         fresh_head, fresh = control.read_state(api)
         require(fresh_head == head, "ownership-head-changed")
         if value["command"] not in {"acquire", "recover"}:
-            lease.holder(fresh, value["args"]["lease"], lease.now())
+            owner = lease.holder(fresh, value["args"]["lease"], lease.now())
+            if value["command"] == "enable-team":
+                source_scope(api, owner["branch"], owner["commit"], owner["pr"], owner["issue"])
         sha_result = control.save(api, head, next_state, f"Control comment {comment_id}: {value['command']}")
         actual_head, actual_state = control.read_state(api)
         require(actual_head == sha_result and actual_state == next_state, "control-write-unconfirmed")
