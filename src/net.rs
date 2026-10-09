@@ -31,6 +31,18 @@ impl Url {
     }
 }
 
+/// Puts a stream accepted from a non-blocking listener back into blocking mode.
+///
+/// macOS and the BSDs give an accepted socket the listener's `O_NONBLOCK` flag;
+/// Linux does not. Reads and writes rely on timeouts and deadlines, so they
+/// must block: otherwise they fail with `WouldBlock`, or spin, before the
+/// peer's bytes arrive.
+pub(crate) fn blocking(stream: &TcpStream) -> Result<()> {
+    stream
+        .set_nonblocking(false)
+        .map_err(|e| format!("Cannot configure an accepted connection: {e}"))
+}
+
 pub fn parse_url(input: &str) -> Result<Url> {
     if input.len() > MAX_LINE || input.chars().any(|c| c.is_control()) {
         return Err("URL is too long or contains control characters".into());
@@ -830,6 +842,23 @@ mod tests {
     use std::io::Cursor;
     use std::net::TcpListener;
     use std::thread;
+
+    #[test]
+    fn accepted_streams_block_until_their_read_timeout() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let _client = TcpStream::connect(address).unwrap();
+        let (stream, _) = listener.accept().unwrap();
+        // Reproduce macOS: the accepted socket keeps the listener's O_NONBLOCK.
+        stream.set_nonblocking(true).unwrap();
+        blocking(&stream).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_millis(100)))
+            .unwrap();
+        let started = Instant::now();
+        assert!((&stream).read_exact(&mut [0]).is_err());
+        assert!(started.elapsed() >= Duration::from_millis(50));
+    }
 
     #[test]
     fn urls_are_explicit_and_bounded() {
