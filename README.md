@@ -18,7 +18,6 @@ reach a first request while keeping private settings out of the page.
 Optional [live progress](docs/web.md#live-progress) updates the displayed Jobs and
 Transfers without replacing filters, selected rows or unfinished forms. Enable or
 pause updates on each page; ordinary page refresh remains available.
-This source proposes 0.22.33; native Actions and release history determine publication.
 
 Explicit [episode numbering](docs/numbering.md) separates source/catalog labels
 from retained library identities. Preview and apply choices through CLI/API/browser;
@@ -198,11 +197,11 @@ before merge and immutable Actions publication; see the
 
 ## Autonomous engineering
 
-The [engineering organization](engineering/README.md) owns intent, native GitHub
-backlog, sequential specialist roles, CI, logical review, delivery and recovery.
-Only one engineering worker may execute at once. Bootstrap
-[Issue #1](https://github.com/alecerf/mynou/issues/1) is complete; active product
-work and recovery are tracked by native Issues and the GitHub control checkpoint.
+Agents build Mynou from native GitHub Issues: one Issue, one branch and one PR
+each, coordinated by `/assign` and `/wait` comments, reviewed by a distinct QA
+pass and validated by Actions. Merging does not release: a release PR publishes
+the accumulated changes at most weekly. See the
+[engineering runbook](engineering/README.md) and [next release](docs/next-release.md).
 
 ## Try it
 
