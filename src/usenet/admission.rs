@@ -180,7 +180,7 @@ impl Origin {
         }
         Ok(origin)
     }
-    pub(crate) fn capture(
+    pub fn capture(
         job: &Job,
         candidate_id: String,
         target: Target,

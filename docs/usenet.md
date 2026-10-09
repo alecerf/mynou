@@ -436,7 +436,7 @@ Automatic RAR/ZIP extraction, PAR2 repair and multi-file packs are not enabled i
 this increment. The torrent download selector still rejects a selected Usenet
 candidate and cannot send an NZB to the torrent client.
 
-### Usenet upgrades in 0.22.38
+### Usenet upgrades
 
 `mynou upgrades` can replace an ordinary single owned movie or episode through the
 best Newznab candidate when that candidate passes the current profile and improves
