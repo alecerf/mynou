@@ -460,16 +460,5 @@ terminator, repeated handshakes, shutdown and nonrenewable registration deadline
 NickServ fixtures exercise exact trusted account confirmation, premature/forged
 membership, failure invalidation, redaction, repeated handshakes, maximum command
 bounds, missing credentials, shutdown and the nonrenewable deadline.
-Broader provider adapters, new-demand actions, packs/upgrades, notification
-delivery and cross-seeding remain future increments.
-
-## Durable outcome delivery in 0.20.7
-
-Opt-in [notification routes](notifications.md) select a configured IRC source.
-First receipt, review decisions, committed requester admission, acquisition
-reservation/routing and aborted recovery enqueue fixed alias/ID/outcome events in
-the same checked history write. Duplicate receipts do not emit or rewrite events.
-Adding a route does not replay old decisions. Delivery leases and acknowledgments
-change only the outbox. Requester demand outcomes use that account's separate
-preference-filtered route. Raw messages, provider titles, magnets, paths, endpoint
-URLs and credentials never enter notification payloads or public delivery reports.
+Broader provider adapters, new-demand actions, packs/upgrades and cross-seeding
+remain future increments.

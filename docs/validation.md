@@ -107,7 +107,7 @@ and candidate-routing runs are recorded below.
 The 0.19 requester scenarios exercise explicit opt-in and approvals, compatible
 and conflicting accounts, quota/approval races, retries and UTC-day rollover,
 partial polls and identity mismatch, stale policy/session reviews, redaction,
-removals, notification deduplication and restart. Original local torrent/Plex
+removals and restart. Original local torrent/Plex
 fixtures check acquisition ordering, captured profile/destination behavior and
 exact path confirmation; existing routed Plex media requires no native download.
 Canonical demand retains captured source numbering. Missing or corrupt provenance

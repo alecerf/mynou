@@ -182,8 +182,7 @@ accounts retain interests and cursors. New accounts require explicit opt-in.
 Quotas count unique canonical requests per account and UTC-day admissions, with
 ready/cancelled initial acquisitions releasing active capacity. Library maintenance
 and explicit operator submissions remain separate from new requester admission.
-Notification preferences select bounded recorded outcomes, without external
-transport. Requester polling acquires aired episodes individually; optional
+Requester polling acquires aired episodes individually; optional
 operator season-pack automation retains its earlier rules. Removed/rejected
 requester demand remains a tombstone and is not silently revived. Ready imports
 stay present. New reuse of uncaptured operator work requires ready regular-file
@@ -248,9 +247,8 @@ consume flash messages or renew sessions. Browser/assistive-technology
 interoperability has not been independently verified. See [live progress](web.md#live-progress).
 The UI retains bounded pagination and bulk job/library/transfer/series controls. It does not edit
 configuration or adopt a complete existing Plex library. Plex requester policies
-provide reviewed approvals, quotas and routing with recorded notification outcomes;
-requester self-service remains later work. Explicit native HTTP notification routes
-passed complete 0.20.7 CI/publication; see notifications.md.
+provide reviewed approvals, quotas and routing; requester self-service remains
+later work.
 Indexer integrations support RSS/JSON/Torznab endpoints. Native Basic, Bearer and
 explicit single-cookie form authentication, bounded renewal, request intervals
 and redacted health passed complete v0.21.0 CI. Checked persistent source policy
@@ -271,8 +269,7 @@ provider messages. The 0.20.2 increment adds required SASL PLAIN with bounded ca
 and credentials; remote use requires verified TLS, and failure has no
 unauthenticated fallback. Only PLAIN is supported; credentials retain their
 UTF-8 bytes without SASLprep or Unicode normalization. IRC pack/upgrade actions
-and broader tracker text adapters,
-broader notification transports, cross-seeding and broader bulk automation remain later work.
+and broader tracker text adapters, cross-seeding and broader bulk automation remain later work.
 See [IRC behavior](irc.md) for protocol, deadlines and recovery. Complete
 validation/publication passed for v0.20.3; later commits require their own complete CI.
 The 0.20.4 NickServ increment requires exact configured sender/account notices
@@ -288,12 +285,7 @@ Title-only, missing/future catalog facts, ambiguous retained series and mismatch
 source labels stay unresolved. Aborted admission intents are terminal and never
 replayed. New origin semantics use requester snapshot format 2 and IRC format 3;
 old binaries cannot safely read those files. Complete v0.20.6 CI/publication passed
-with 585 Rust tests. Notification route/event semantics require requester format 3
-and IRC format 4. Delivery is at-least-once, limited to 32 routes and 1,024 events
-per store, eight attempts and eight events per dispatch. Only terminal events can
-be pruned; full live capacity rejects a new owning outcome rather than dropping
-work. No redirect or unbounded retry is permitted. HTTP calls have a five-second
-budget; synchronous DNS can exceed it. Receiver deduplication is required.
+with 585 Rust tests.
 
 The [roadmap](roadmap.md) separates these capabilities into future releases.
 
@@ -302,6 +294,13 @@ The [roadmap](roadmap.md) separates these capabilities into future releases.
 The Rust journal replaces SQLite and requires a single owner of its directory.
 Go-release files stay separate; no silent schema or torrent migration occurs.
 Preserve the library and downloads when changing versions.
+
+Outcome notifications were removed without migration. Requester snapshots
+(`requesters.bin`) saved by earlier versions hold notification records that this
+version rejects, so Mynou does not start while such a snapshot is present. IRC
+history saved in format 4 (written once an IRC notification route was
+configured) is rejected too, and a configuration with a `notifications` section
+fails to load.
 
 Offline library listing and upgrade previews use read-only storage. They do not
 create directories/files, change permissions, compact or repair the journal.
