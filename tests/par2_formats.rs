@@ -2532,7 +2532,7 @@ fn synthetic(length: usize) -> Vec<u8> {
 fn small_streaming() -> (Vec<u8>, Vec<u8>) {
     let original = synthetic(40 * 1024 + 13);
     (
-        Fixture::recovery_exponents(&original, 4096, &[3, 7, 11]).bytes(),
+        Fixture::recovery_exponents(&original, 4096, &[3, 7, 11, 13, 17, 19, 23, 29]).bytes(),
         original,
     )
 }
