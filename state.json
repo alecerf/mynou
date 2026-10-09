@@ -1,18 +1,18 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 1075,
+  "generation": 1076,
   "lease": {
     "id": "codex-recovery-20261009T123500Z-master-a046c5ba-dba4-45d5-a1e8-0bd48579aba4",
     "worker": "codex-recovery-20261009T123500Z",
     "role": "master",
     "issue": 62,
     "acquired_at": "2026-10-09T12:35:37Z",
-    "heartbeat_at": "2026-10-09T12:35:37Z",
-    "expires_at": "2026-10-09T13:20:37Z",
+    "heartbeat_at": "2026-10-09T12:43:26Z",
+    "expires_at": "2026-10-09T13:28:26Z",
     "branch": "trunk",
     "commit": "a10a610bdab87810220555915c193b1eff2f1dd3",
-    "pr": null
+    "pr": 68
   },
   "checkpoint": {
     "publication": {
@@ -632,24 +632,24 @@
       "retirement": "confirmed",
       "notes_proof_sha": "96e3439dbc1800f708aab0c5680211f105176e14"
     },
-    "issue": 54,
-    "role": "security",
-    "branch": "work/54-security-log-coverage",
-    "commit": "def96b52107afd71ba94da12a9443c6b22fc4fd2",
-    "pr": 64,
-    "summary": "Pushed def96b52107afd71ba94da12a9443c6b22fc4fd2 on work/54-security-log-coverage, draftPR64/base02a536f2c75e454094c7cb28d85ec2771c7404f0. CI37928325176:200 engineering+24 scheduler+892Rust tests/all4 builds/package passed; source-history113812570664 passed. Logs113812570283HTTP403 onfirstGET limit5000/used5000/remaining0. Security actual all6-path review5469886689 atcheckpointc092230bc9ce7992c712bf7cadf90e0238347a3d rejectsdelivery pendingobjectivecoverage; noQA/green gate claimed. Native54/64 recoveryhandoffs persisted;54Blocked. Bug67 recordsbothsubsequentmacpasses withoutrootcauseclaim. Claude62/63/65/66 and57 arepreserved.",
+    "issue": 62,
+    "role": "master",
+    "branch": "trunk",
+    "commit": "a10a610bdab87810220555915c193b1eff2f1dd3",
+    "pr": 68,
+    "summary": "Recovery finds owner merged64 atdfb727b2fed683b4b6e31e22d3e89cdfba87b8c0 and68 atcurrentdefaulta10a610bdab87810220555915c193b1eff2f1dd3. Notesadmission/sole-parent316commitfencehistory preserved; config/state remainMAX1. PriorSecurity64 rejection/noQA and PR68 noreviews areactual; do notfabricatepremerge gates. DefaultMynou37930552053 allvalidate/4builds/package passed butrelease113821566107 failed: Cannot verify private package identity. Security37930552079 sourcepassed/logs113819903328 firstGETHTTP403 limit5000/used5000/remaining0. Nativev33release404. Installedsource14paths includeaudit andfix-forward; actualpublication unresolved, no newsourceedit or unrelatedproductwork.",
     "previous_checkpoint": {
-      "at": "2026-10-09T11:37:54Z",
+      "at": "2026-10-09T12:18:17Z",
       "issue": 54,
-      "role": "triage",
+      "role": "security",
       "branch": "work/54-security-log-coverage",
-      "commit": "02a536f2c75e454094c7cb28d85ec2771c7404f0",
-      "pr": null,
-      "summary": "Triage54 recovers interruption and rebinds original preserved empty work/54-security-log-coverage by actual non-force fast-forward to currentdefault02a536f2c75e454094c7cb28d85ec2771c7404f0. Audit source/workflow remain original full-history implementation. Current default Security actions-logs113787933986 HTTP403; installed control61 admitted, publication fails old version32 source-identityguard. Existing native Security54 design retained. First original diagnostic/budget/batched-stop commit with CI-only regression provides real safe provider evidence, then complete trusted receipt reuse in samePR without assuming provider/reset capacity. No localchecks/falsegreen/overwrites/duplicatedIssue.",
-      "next_action": "ReleaseTriage54; acquireQuality54 at work/54-security-log-coverage/current02 sourcePRnull. Commit bounded safe API evidence/stop-on-failure original fixtures and one linked draftPR, then complete sustainable verified coverage reuse with actual CI data; release/reacquire Security/QA exacthead/base beforeobjective merge."
+      "commit": "def96b52107afd71ba94da12a9443c6b22fc4fd2",
+      "pr": 64,
+      "summary": "Pushed def96b52107afd71ba94da12a9443c6b22fc4fd2 on work/54-security-log-coverage, draftPR64/base02a536f2c75e454094c7cb28d85ec2771c7404f0. CI37928325176:200 engineering+24 scheduler+892Rust tests/all4 builds/package passed; source-history113812570664 passed. Logs113812570283HTTP403 onfirstGET limit5000/used5000/remaining0. Security actual all6-path review5469886689 atcheckpointc092230bc9ce7992c712bf7cadf90e0238347a3d rejectsdelivery pendingobjectivecoverage; noQA/green gate claimed. Native54/64 recoveryhandoffs persisted;54Blocked. Bug67 recordsbothsubsequentmacpasses withoutrootcauseclaim. Claude62/63/65/66 and57 arepreserved.",
+      "next_action": "Real external APIcapacity wait: release now. Next admitted wake recovers62/defaultpublication and PR64 exactsource/CI. Afteractual GitHubcapacity returns, retryonlyfailed readonlyaudit; preserve missingcoverage/redstatus. Initialmatchingdefaultreceipt requiresactualcompletefullcoverage, thenfreshSecurity anddistinctcomplete-diffQA, currentbase/versionreconciliation andeverygatebeforemerge. Do notpoll/expose secrets/redo unchangedhistory/markIssuefailed orDone."
     },
-    "at": "2026-10-09T12:18:17Z",
-    "next_action": "Real external APIcapacity wait: release now. Next admitted wake recovers62/defaultpublication and PR64 exactsource/CI. Afteractual GitHubcapacity returns, retryonlyfailed readonlyaudit; preserve missingcoverage/redstatus. Initialmatchingdefaultreceipt requiresactualcompletefullcoverage, thenfreshSecurity anddistinctcomplete-diffQA, currentbase/versionreconciliation andeverygatebeforemerge. Do notpoll/expose secrets/redo unchangedhistory/markIssuefailed orDone.",
+    "at": "2026-10-09T12:43:26Z",
+    "next_action": "ReleaseMaster; perform distinct installed-source Security review under an a10/default linked68 lease, then QA if useful. Post-install review cannotretroactivelysatisfypremergeformalchecks. Recover actualread-only audit/publisher failures onlyafterGitHubcapacity returns, no busy-poll/oldartifacttrust/falsepublication. Preserve source/Issues61,62 and64 ownermergeevidence.",
     "recovery": {
       "issue": true,
       "branch": true,
