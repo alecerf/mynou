@@ -229,6 +229,11 @@ impl Engine {
             .ok_or("Usenet admission: missing origin")?;
         origin.validate_job(job)?;
         origin.target.configured(&config)?;
+        // A tightened profile must stop the job before any document is fetched.
+        let (name, profile) = config.selection.profile(&job.request.kind)?;
+        if job.release.as_ref().is_none_or(|r| r.profile != name) || profile != &origin.profile {
+            return Err("Usenet admission: captured profile changed".into());
+        }
         let mut source = None;
         if origin.document.is_none() {
             let bytes = newznab::fetch_document(

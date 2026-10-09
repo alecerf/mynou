@@ -906,6 +906,11 @@ fn native_upgrade_previews_without_io_applies_once_and_replaces_beside_the_origi
     let engine = Engine::open(c.clone()).unwrap();
     let parent = owned_baseline(&engine, &d);
     let original = fs::read(&parent.imports[0]).unwrap();
+    let identity = {
+        use std::os::unix::fs::MetadataExt;
+        let m = fs::metadata(&parent.imports[0]).unwrap();
+        (m.dev(), m.ino())
+    };
 
     let preview = engine.check_upgrades(false).unwrap();
     assert_eq!(first_action(&preview), "upgrade_available");
@@ -937,6 +942,12 @@ fn native_upgrade_previews_without_io_applies_once_and_replaces_beside_the_origi
     );
     assert_eq!(upgrade_children(&engine, &parent.id).len(), 1);
 
+    // The snapshot format must carry the pending child across a compaction.
+    lock(&engine.store).unwrap().compact().unwrap();
+    assert_eq!(
+        &fs::read(c.store_dir.join("snapshot.bin")).unwrap()[..8],
+        b"MYNOUS06"
+    );
     drop(engine);
     let engine = Engine::open(c).unwrap();
     assert_eq!(retained(&engine, &child.id), child);
@@ -951,6 +962,11 @@ fn native_upgrade_previews_without_io_applies_once_and_replaces_beside_the_origi
     assert_eq!(fs::read(&ready.imports[0]).unwrap(), MEDIA);
     assert_ne!(ready.imports[0], parent.imports[0]);
     assert_eq!(fs::read(&parent.imports[0]).unwrap(), original);
+    {
+        use std::os::unix::fs::MetadataExt;
+        let m = fs::metadata(&parent.imports[0]).unwrap();
+        assert_eq!((m.dev(), m.ino()), identity, "parent inode was replaced");
+    }
     assert_eq!(
         library_support::library_ids(&engine),
         vec![child.id.clone()]
@@ -1008,6 +1024,76 @@ fn native_upgrade_cancellation_keeps_the_original_and_retry_is_explicit() {
     assert_eq!(retained(&engine, &child.id).state, "cancelled");
     engine.retry(&child.id).unwrap();
     assert_eq!(retained(&engine, &child.id).state, "queued");
+    assert!(p.requests.lock().unwrap().is_empty());
+    assert!(only_feed_requests(&h));
+}
+
+#[test]
+fn native_upgrade_with_a_tightened_profile_stops_before_any_document_fetch() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let h = Http::open();
+    articles(&p, &format!("{TITLE}.mp4"), 1);
+    let mut c = upgrade_config(&d, &p, &h, true);
+    let engine = Engine::open(c.clone()).unwrap();
+    let parent = owned_baseline(&engine, &d);
+    assert_eq!(queued_count(&engine.check_upgrades(true).unwrap()), 1);
+    let child = upgrade_children(&engine, &parent.id).remove(0);
+    drop(engine);
+    c.selection
+        .profiles
+        .get_mut("fixture")
+        .unwrap()
+        .blocked_terms = vec!["fixture".into()];
+    let engine = Engine::open(c).unwrap();
+    let workers = engine.start();
+    usenet_support::wait(|| retained(&engine, &child.id).last_error.is_some());
+    let job = retained(&engine, &child.id);
+    assert!(job.imports.is_empty() && job.files.is_empty());
+    assert!(job.usenet_origin.as_ref().unwrap().document.is_none());
+    assert!(p.requests.lock().unwrap().is_empty());
+    assert!(only_feed_requests(&h));
+    let kept = retained(&engine, &parent.id);
+    assert_eq!(
+        (kept.state.as_str(), &kept.imports),
+        ("ready", &parent.imports)
+    );
+    assert_eq!(
+        library_support::library_ids(&engine),
+        vec![parent.id.clone()]
+    );
+    drop(workers);
+}
+
+#[test]
+fn removing_the_requester_demand_cancels_a_pending_native_upgrade_and_keeps_the_original() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let h = Http::open();
+    let a = accounts::Accounts::open();
+    articles(&p, &format!("{TITLE}.mp4"), 1);
+    a.watchlist("alice", vec![accounts::movie(42, "Fixture Movie")]);
+    let mut c = upgrade_config(&d, &p, &h, true);
+    c.requesters = a.config(&d.0).requesters;
+    let engine = Engine::open(c).unwrap();
+    accounts::enable(&engine, "alice", false);
+    engine.sync_requesters().unwrap();
+    let admitted = accounts::job(&engine, "alice");
+    let parent = accounts::ready(&engine, &admitted.id);
+    engine.set_baseline(&parent.id, BASELINE_720).unwrap();
+    assert_eq!(queued_count(&engine.check_upgrades(true).unwrap()), 1);
+    let child = upgrade_children(&engine, &parent.id).remove(0);
+    assert_eq!(child.requester, parent.requester);
+    assert_eq!(child.state, "queued");
+    let demand = accounts::demand(&engine, "alice");
+    accounts::apply(
+        &engine,
+        "alice",
+        accounts::demand_query("remove", accounts::id(&demand)),
+    );
+    assert_eq!(retained(&engine, &child.id).state, "cancelled");
+    assert_eq!(retained(&engine, &parent.id).state, "ready");
+    assert!(fs::metadata(&parent.imports[0]).is_ok());
     assert!(p.requests.lock().unwrap().is_empty());
     assert!(only_feed_requests(&h));
 }

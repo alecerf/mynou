@@ -122,7 +122,7 @@ movie/episode jobs, captured quality/destinations, identity and size checks,
 atomic imports and exact Plex confirmation. All five jobs passed with 729 Rust
 tests and seven bot-published assets. Only
 single-file direct-media NZBs are supported in this increment; archive/PAR2,
-packs and Usenet upgrades remain later stages. See [Newznab configuration](docs/usenet.md#native-newznab-discovery-in-0224),
+packs remain later stages; Usenet upgrades of owned movies and episodes follow in a later release (see [Usenet upgrades](docs/usenet.md#usenet-upgrades)). See [Newznab configuration](docs/usenet.md#native-newznab-discovery-in-0224),
 [held ownership](docs/usenet.md#held-library-ownership-in-0225) and
 [library admission](docs/usenet.md#native-library-admission-in-0226).
 

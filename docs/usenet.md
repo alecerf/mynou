@@ -443,18 +443,26 @@ best Newznab candidate when that candidate passes the current profile and improv
 rank (or the baseline is now rejected), the cutoff is not reached, and its source
 differs from the parent. Shared groups, packs, IRC, ZIP/RAR/PAR2 and implicit
 provider fallback are excluded. Preview is nonacquiring: it reports
-`upgrade_available`, or `usenet_unavailable` when native downloads are disabled
-or the captured provider policy is unavailable. Apply creates at most one pending
-child that captures the selected source, profile and provider binding in the
-creating journal frame (`MYNOJ06`/`MYNOS06`, no new format). A duplicate apply
-returns the same child. Older binaries reject such a record rather than
-misreading it. The ordinary lease, current-requester approval, document and
-attempt budgets, cancellation, explicit retry and no-overwrite versioned import
-(`[mynou-<jobid>]`) apply; the parent stays current until the new path is
-confirmed in Plex. CI-only loopback fixtures for the end-to-end flow remain
-follow-up work. Changed source/provider/profile bindings withhold new
-authorization; no fallback to another provider is implicit. All new fixtures use
-original local media and loopback Newznab, NNTP and Plex. The complete 0.22.6 run passed; see [validation evidence](validation.md#recorded-0226-ci-evidence).
+`upgrade_available`, or `usenet_unavailable` when native downloads are not
+enabled in the configuration. Apply also reports `usenet_unavailable` when the
+service is not running native downloads or the captured provider policy is
+unavailable. An offline (read-only) apply therefore always answers
+`usenet_unavailable`.
+
+Apply creates at most one pending child that captures the selected source, profile
+and provider binding in the creating journal frame. It reuses the existing
+`MYNOUJ06`/`MYNOUS06` formats with no new format. A duplicate apply returns the
+same child; a cancelled or failed child is never revived by a later check and
+needs an explicit retry. Once such a record exists, Mynou versions before this one
+refuse to open the whole store rather than misread it, so back up state first.
+
+The ordinary lease, current-requester approval, captured document and attempt
+budgets, cancellation and no-overwrite versioned import (`[mynou-<jobid>]`) apply.
+The profile and provider are rechecked before any NZB is fetched and again before
+queue authorization. The parent stays current until the new path is imported and,
+when Plex is enabled, confirmed. Background monitoring queues these upgrades the
+same way as torrent upgrades. A failed child stops being pending, so a later check
+can queue a different top candidate.
 
 The v0.22.7 archive formats and v0.22.8 opt-in ZIP library admission passed
 complete CI, the latter with 773 Rust tests. The native ZIP path uses captured

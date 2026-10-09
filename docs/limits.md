@@ -342,8 +342,8 @@ staging, retained attempt budgets and at most two workers. Raw staging never
 admits a library job. The v0.22.4 typed Newznab discovery/document transport scope
 passed complete CI. The v0.22.5 held-owner interface passed all five jobs with 712 Rust tests.
 The v0.22.6 native canonical/requester library path passed complete CI with 729 Rust tests.
-It supports one direct-media file per NZB; archives/PAR2, packs and Usenet upgrades
-remain subsequent increments. Existing-journal recovery is deferred until joint
+It supports one direct-media file per NZB; archives/PAR2 and packs remain
+subsequent increments (Usenet upgrades follow in [a later release](usenet.md#usenet-upgrades)). Existing-journal recovery is deferred until joint
 ownership validation, while valid held preparations can be linked after restart.
 Metadata acceptance never proves downloaded content. Owner digests supplied to
 the library interface do not independently establish admission or approval.
@@ -355,7 +355,7 @@ The verified v0.22.8 opt-in library path supports one supported media entry in o
 ZIP/NZB file, captured source/entry/bounds, private restartable extraction and
 verified output proofs. It requires current permission, native media checks,
 independent-inode import and exact Plex confirmation, and passed all five jobs with 773 Rust tests.
-ZIP64, RAR, PAR2, multi-file packs and Usenet upgrades remain later increments.
+ZIP64, RAR, PAR2 and multi-file packs remain later increments.
 No external archive decoder or repair helper is invoked.
 
 Verified v0.22.9 adds a bounded stored RAR5 [format subset](archives.md#bounded-rar5-stored-formats-in-0229)
