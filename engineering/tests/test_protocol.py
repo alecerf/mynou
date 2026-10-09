@@ -138,6 +138,17 @@ class Backlog(unittest.TestCase):
                   issue(3)]
         self.assertEqual([i["number"] for i in sorted(issues, key=protocol.rank)], [6, 4, 3, 5])
 
+    def test_ghost_branches_have_no_open_pr_and_no_active_claim(self):
+        def branch(name, protected=False):
+            return {"name": name, "commit": {"sha": "f" * 40}, "protected": protected}
+        branches = [branch("trunk"), branch("work/45-live-progress"), branch("work/46-retry"),
+                    branch("claude/usenet-upgrade-46"), branch("claude/par2-media-39"),
+                    branch("format/45-live-progress"), branch("release/0.20.4", protected=True),
+                    branch("experiment")]
+        found = protocol.ghosts(branches, "trunk", {"work/45-live-progress"}, {46})
+        self.assertEqual([g["branch"] for g in found], ["claude/par2-media-39", "format/45-live-progress", "experiment"])
+        self.assertEqual(found[0], {"branch": "claude/par2-media-39", "head": "f" * 40})
+
     def test_blocked_by_label_or_open_dependency(self):
         self.assertTrue(protocol.blocked(issue(1, "status:blocked")))
         self.assertTrue(protocol.blocked(issue(1, "status:ready", blocked_by=1)))

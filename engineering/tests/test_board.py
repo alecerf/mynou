@@ -42,9 +42,9 @@ class Repository:
         ]
         self.pulls = [
             {"number": 65, "title": "PAR2", "body": "Closes #39", "draft": False, "updated_at": ago(5),
-             "head": {"sha": "a" * 40}},
+             "head": {"sha": "a" * 40, "ref": "claude/par2-media-39"}},
             {"number": 57, "title": "Progress", "body": "Closes #45", "draft": True, "updated_at": ago(600),
-             "head": {"sha": "c" * 40}},
+             "head": {"sha": "c" * 40, "ref": "work/45-live-progress"}},
         ]
         self.comments = {
             39: [note("/assign codex-1", 30, 1)],
@@ -73,6 +73,10 @@ class Repository:
             return self.pulls
         if path.startswith("issues/") and path.endswith("/comments"):
             return self.comments[int(path.split("/")[1])]
+        if path == "branches":
+            return [{"name": name, "commit": {"sha": "f" * 40}, "protected": False}
+                    for name in ["trunk", "claude/par2-media-39", "work/45-live-progress", "work/39-retry",
+                                 "work/46-retry", "format/45-live-progress"]]
         if path == "pulls/65/files":
             return [{"filename": "src/par2.rs"}]
         if path == "pulls/57/files":
@@ -107,6 +111,8 @@ class Board(unittest.TestCase):
         self.assertFalse(result["release"]["due"])
         self.assertEqual(result["product_planning"], {"issue": 42, "ready_proposals": 3, "due": False})
         self.assertEqual(result["mine"], {"issues": [39], "pull_requests": []})
+        # PR heads and #39 (actively claimed) keep their branches; #46's claim lapsed.
+        self.assertEqual([g["branch"] for g in result["ghost_branches"]], ["work/46-retry", "format/45-live-progress"])
 
     def test_a_low_backlog_and_no_open_release_make_both_due(self):
         repository = Repository()

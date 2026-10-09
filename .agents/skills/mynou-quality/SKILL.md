@@ -13,10 +13,11 @@ compiler warning alone does not justify removing a public API. Safe cleanup uses
 the normal Issue/PR/CI/QA flow; large changes go back to Triage. Never validate
 locally. Do not invent work to remain active.
 
-Merged branches are deleted by GitHub. Before deleting any other branch, freshly
-prove it is merged or identical to `trunk`, has no open PR, no open Issue reference
-and no active claim on its Issue. Never delete `trunk`, control/release or
-ambiguous branches or unique unmerged work. Age is not proof. Preserve useful work.
+No ghost branches (owner rule): a branch lives only while it heads an open PR or
+its Issue has an active claim. Delete the board's `ghost_branches` after checking
+that nothing unique would be lost: merged, superseded by the PR branch, or kept
+by a closed PR's refs. Rescue unique useful work into an Issue/PR first. Never
+delete `trunk` or a protected branch.
 
 After merge, check that the linked Issue closed, update status labels and unblock
 native dependencies. Encode recurring friction in the smallest useful reviewed
