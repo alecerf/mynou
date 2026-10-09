@@ -15,15 +15,28 @@ permissions:
   issues: write
   # GITHUB_TOKEN merge pushes do not trigger CI; native dispatch needs write.
   actions: write
-concurrency:
-  group: mynou-global-mechanical-delivery
-  cancel-in-progress: false
 jobs:
   delivery:
+    # Wake only when delivery can change: a passed PR gate run, a default-branch
+    # CI result, a trusted handoff, the schedule or a dispatch. Other completions
+    # (PR CI that the later gate waits for, failures, cancellations) skip here.
     if: >-
-      github.event_name != 'issue_comment' ||
-      (contains(github.event.comment.body, '<!-- mynou-transition:v1 -->') &&
-       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association))
+      (github.event_name == 'workflow_run' &&
+       ((github.event.workflow_run.name == 'Engineering checks' &&
+         github.event.workflow_run.conclusion == 'success' &&
+         (github.event.workflow_run.event == 'pull_request' ||
+          github.event.workflow_run.event == 'pull_request_review')) ||
+        (github.event.workflow_run.name == 'Mynou CI' &&
+         github.event.workflow_run.head_branch == 'trunk' &&
+         github.event.workflow_run.event != 'pull_request'))) ||
+      (github.event_name == 'issue_comment' &&
+       contains(github.event.comment.body, '<!-- mynou-transition:v1 -->') &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)) ||
+      github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # Job-level, so skipped wakes never displace a pending delivery or command.
+    concurrency:
+      group: mynou-global-mechanical-delivery
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

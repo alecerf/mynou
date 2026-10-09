@@ -206,14 +206,20 @@ dismissal/rejection blocks merge. Review threads are resolved only after actual
 verification, never merely on push. Same identity may review logically but cannot
 formally self-approve; no required approval count is configured.
 
-`agent-qa-review` becomes green only with these real records and CI. It may wait
-up to ten minutes, then fail visibly if review is missing. Review submission
-triggers a fresh inexpensive Engineering checks run; CI failures are fixed through
-commits and new review. During initial installation only, the new review-trigger
-workflow is not on default yet: rerun the QA job after posting the records.
+`agent-qa-review` becomes green only with these real records and CI. It runs when
+a review is submitted, edited or dismissed, and when an open PR becomes ready or
+is reopened; a pushed head never already carries its own records, so a push only
+re-runs `organization`. The gate waits up to ten minutes only while required CI
+is still running, polling one run listing at a time. Missing, rejected or
+mismatched reviews, closed PRs and completed red CI fail at once; a new review or
+push starts a fresh gate. CI failures are fixed through commits and new review.
 
-The trusted-default `Serialized engineering delivery` Action wakes on completed
-CI, trusted native Issue handoff comments, manual dispatch and an hourly fallback.
+The trusted-default `Serialized engineering delivery` Action wakes on a passed
+`Engineering checks` PR run, a default-branch `Mynou CI` result, trusted native
+Issue handoff comments, manual dispatch and an hourly fallback. Other workflow
+completions skip without a runner. Delivery and control commands share one
+job-level concurrency group, so a skipped comment run never displaces a queued
+command or delivery.
 `release` posts the handoff only after the control commit is durable. The orphan
 control branch contains no workflow; its push cannot invoke a workflow on trunk.
 GitHub-token comments do not recursively trigger Actions, so mechanical delivery

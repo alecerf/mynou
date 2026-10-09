@@ -7,9 +7,6 @@ permissions:
   issues: write
   pull-requests: read
   actions: read
-concurrency:
-  group: mynou-global-mechanical-delivery
-  cancel-in-progress: false
 jobs:
   control-command:
     if: >-
@@ -19,6 +16,11 @@ jobs:
       github.actor == 'alecerf' &&
       github.event.comment.user.id == 22006964 &&
       startsWith(github.event.comment.body, '<!-- mynou-control-command:v1 -->')
+    # Job-level, so comments elsewhere (skipped here) never displace a queued
+    # command; commands still serialize with mechanical delivery.
+    concurrency:
+      group: mynou-global-mechanical-delivery
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
