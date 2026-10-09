@@ -128,18 +128,27 @@ removed after five incorrect token attempts. At most 128 sessions/challenges
 exist; new anonymous challenges can evict an older anonymous challenge, but do
 not evict authenticated sessions.
 
-Every form action requires its session cookie, matching form token, and a
-same-origin `Origin` header. Cross-site fetch metadata is rejected. Sessions are
+Every form action requires its session cookie, matching form token, and validated
+same-origin provenance. `Origin` is authoritative when present. If a native form
+omits it, as some Safari submissions do, an absolute HTTP/HTTPS `Referer` must
+match the requested host and effective port. Empty, null, malformed or foreign
+Origin values never fall back to Referer; missing both headers is rejected.
+Cross-site fetch metadata is rejected and cannot establish an origin by itself.
+Sessions are
 bound to the requested host/port; authenticated actions remain bound to the
 HTTP/HTTPS origin used at sign-in. Forwarded-host/protocol headers are not used.
 No user-supplied return URL is accepted. Browser responses prevent caching,
-referrer propagation and framing; a content security policy disables scripts
+cross-origin referrer propagation and framing. `Referrer-Policy: same-origin`
+retains the referring address only within Mynou so native forms can use the
+fallback; private addresses and paths are not sent to other origins. A content
+security policy disables scripts
 and restricts styles/forms to the same origin. Dynamic display labels are
 escaped, bounded and subject to the public report credential redaction rules.
 
 Generated Docker installations publish management on loopback. For remote
 browser access, use a TLS reverse proxy that preserves the browser's **Host** and
-**Origin**, forwards `/ui` without rewriting its prefix, and keeps the plain HTTP
+**Origin** (or the browser's same-origin **Referer** when Origin is absent), forwards
+`/ui` without rewriting its prefix, and keeps the plain HTTP
 listener private. Sign in through the HTTPS address to obtain a Secure session
 cookie. The anonymous challenge is not an authenticated cookie and does not
 have Secure before the POST establishes the browser origin. Changing address

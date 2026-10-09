@@ -31,7 +31,7 @@ fn setup_requires_a_browser_session_and_preserves_security_headers() {
     assert_eq!(page.status, 200);
     page.no_secrets();
     assert_eq!(page.headers["cache-control"], "no-store");
-    assert_eq!(page.headers["referrer-policy"], "no-referrer");
+    assert_eq!(page.headers["referrer-policy"], "same-origin");
     assert_eq!(page.headers["x-frame-options"], "DENY");
     let csp = &page.headers["content-security-policy"];
     assert!(csp.contains("default-src 'none'"));

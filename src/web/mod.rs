@@ -78,7 +78,7 @@ impl Response {
             _ => "Error",
         };
         let mut head = format!(
-            "HTTP/1.1 {} {reason}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'\r\nX-Frame-Options: DENY\r\n",
+            "HTTP/1.1 {} {reason}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: same-origin\r\nContent-Security-Policy: default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'\r\nX-Frame-Options: DENY\r\n",
             self.status,
             self.content_type,
             self.body.len()
@@ -1099,14 +1099,23 @@ fn same_origin(headers: &BTreeMap<String, String>, authority: &str) -> Result<St
     {
         return Err("Open the form directly in Mynou before submitting it".into());
     }
-    let origin = headers
-        .get("origin")
-        .ok_or("The browser origin is required for form actions")?;
-    let (_, suffix) = origin.split_once("://").ok_or("Invalid browser origin")?;
-    if suffix.contains(['/', '?', '#']) {
-        return Err("Invalid browser origin".into());
-    }
-    let origin = parse_url(origin)?;
+    let origin = if let Some(origin) = headers.get("origin") {
+        let (_, suffix) = origin.split_once("://").ok_or("Invalid browser origin")?;
+        if suffix.contains(['/', '?', '#']) {
+            return Err("Invalid browser origin".into());
+        }
+        parse_url(origin)?
+    } else {
+        let referer = headers
+            .get("referer")
+            .ok_or("The browser origin or referring address is required for form actions")?;
+        // Native forms may omit Origin. Only an unambiguous same-origin URL
+        // supplies the fallback; fetch metadata or a rejected Origin cannot.
+        if referer.contains(['#', '\\', ',']) || referer.chars().any(char::is_whitespace) {
+            return Err("Invalid browser referring address".into());
+        }
+        parse_url(referer).map_err(|_| "Invalid browser referring address")?
+    };
     let expected = parse_url(&format!("{}://{authority}", origin.scheme))?;
     if origin.origin() != expected.origin() {
         return Err("The form must be submitted from the same browser address".into());
