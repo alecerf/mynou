@@ -841,3 +841,259 @@ fn protected_api_and_browser_keep_raw_controls_away_from_an_admitted_owner() {
     p.gate.store(false, Ordering::Release);
     drop(workers);
 }
+
+const BASELINE_720: &str = "Fixture.Movie.2024.720p.WEB-DL.x264";
+
+fn upgrade_config(d: &Directory, p: &Provider, h: &Http, native: bool) -> Config {
+    let mut v = value(p, h);
+    source(&mut v)
+        .get_mut("usenet")
+        .unwrap()
+        .insert("maximum_bytes", 1_048_576_u32);
+    v.get_mut("usenet")
+        .unwrap()
+        .get_mut("downloads")
+        .unwrap()
+        .insert("enabled", native);
+    v.insert("poll_interval_ms", 100_u32);
+    v.insert(
+        "selection",
+        json::parse(
+            r#"{"movie_profile":"fixture","episode_profile":"fixture","profiles":{"fixture":{"resolutions":[1080,720]}}}"#,
+        )
+        .unwrap(),
+    );
+    config::from_json(&v, &d.0).unwrap()
+}
+fn owned_baseline(engine: &Arc<Engine>, d: &Directory) -> Job {
+    let job = library_support::local_import(engine, &d.0, "Fixture Movie");
+    engine.set_baseline(&job.id, BASELINE_720).unwrap()
+}
+fn upgrade_children(engine: &Engine, parent: &str) -> Vec<Job> {
+    lock(&engine.store)
+        .unwrap()
+        .list()
+        .into_iter()
+        .filter(|job| job.upgrade_parent.as_deref() == Some(parent))
+        .collect()
+}
+fn first_action(report: &Value) -> String {
+    entries(report, "entries")[0]
+        .get("action")
+        .and_then(Value::as_str)
+        .unwrap()
+        .to_owned()
+}
+fn queued_count(report: &Value) -> u64 {
+    report.get("queued").and_then(Value::as_u64).unwrap()
+}
+fn only_feed_requests(h: &Http) -> bool {
+    h.calls
+        .lock()
+        .unwrap()
+        .iter()
+        .all(|(path, _)| path.starts_with("/api?"))
+}
+
+#[test]
+fn native_upgrade_previews_without_io_applies_once_and_replaces_beside_the_original() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let h = Http::open();
+    *h.document.lock().unwrap() = (200, usenet_support::source(1, 2));
+    articles(&p, &format!("{TITLE}.mp4"), 2);
+    let c = upgrade_config(&d, &p, &h, true);
+    let engine = Engine::open(c.clone()).unwrap();
+    let parent = owned_baseline(&engine, &d);
+    let original = fs::read(&parent.imports[0]).unwrap();
+    let identity = {
+        use std::os::unix::fs::MetadataExt;
+        let m = fs::metadata(&parent.imports[0]).unwrap();
+        (m.dev(), m.ino())
+    };
+
+    let preview = engine.check_upgrades(false).unwrap();
+    assert_eq!(first_action(&preview), "upgrade_available");
+    assert!(!json::stringify(&preview).contains(PRIVATE_KEY));
+    assert!(upgrade_children(&engine, &parent.id).is_empty());
+    assert!(p.requests.lock().unwrap().is_empty());
+    assert!(only_feed_requests(&h));
+
+    let applied = engine.check_upgrades(true).unwrap();
+    assert_eq!(queued_count(&applied), 1);
+    assert!(!json::stringify(&applied).contains(PRIVATE_KEY));
+    let children = upgrade_children(&engine, &parent.id);
+    assert_eq!(children.len(), 1);
+    let child = children[0].clone();
+    assert_eq!(child.state, "queued");
+    assert!(child.acquisition_url.is_some());
+    assert!(child.download_id.is_none());
+    let origin = child.usenet_origin.as_ref().unwrap();
+    assert!(origin.document.is_none() && origin.transfer_id.is_none());
+    let public = json::stringify(&mynou::engine::public_job(&child));
+    assert!(!public.contains(PRIVATE_KEY) && !public.contains("apikey="));
+    assert!(p.requests.lock().unwrap().is_empty());
+    assert!(only_feed_requests(&h));
+    // A duplicate apply neither creates a second child nor reaches a provider.
+    assert_eq!(
+        queued_count(&engine.check_upgrades(true).unwrap()),
+        0,
+        "duplicate apply must not queue another upgrade"
+    );
+    assert_eq!(upgrade_children(&engine, &parent.id).len(), 1);
+
+    // The snapshot format must carry the pending child across a compaction.
+    lock(&engine.store).unwrap().compact().unwrap();
+    assert_eq!(
+        &fs::read(c.store_dir.join("snapshot.bin")).unwrap()[..8],
+        b"MYNOUS06"
+    );
+    drop(engine);
+    let engine = Engine::open(c).unwrap();
+    assert_eq!(retained(&engine, &child.id), child);
+    assert_eq!(
+        library_support::library_ids(&engine),
+        vec![parent.id.clone()]
+    );
+    let workers = engine.start();
+    let ready = wait_state(&engine, &child.id, "ready");
+    assert_eq!(ready.release.as_ref().unwrap().title, TITLE);
+    assert!(ready.imports[0].contains(&format!("[mynou-{}]", child.id)));
+    assert_eq!(fs::read(&ready.imports[0]).unwrap(), MEDIA);
+    assert_ne!(ready.imports[0], parent.imports[0]);
+    assert_eq!(fs::read(&parent.imports[0]).unwrap(), original);
+    {
+        use std::os::unix::fs::MetadataExt;
+        let m = fs::metadata(&parent.imports[0]).unwrap();
+        assert_eq!((m.dev(), m.ino()), identity, "parent inode was replaced");
+    }
+    assert_eq!(
+        library_support::library_ids(&engine),
+        vec![child.id.clone()]
+    );
+    assert!(ready.download_id.is_none());
+    drop(workers);
+}
+
+#[test]
+fn native_upgrade_preview_reports_no_improvement_and_disabled_native_without_recording() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let h = Http::open();
+    h.replace(&rss(&item(BASELINE_720, "1024", "")));
+    let engine = Engine::open(upgrade_config(&d, &p, &h, true)).unwrap();
+    let parent = owned_baseline(&engine, &d);
+    let report = engine.check_upgrades(true).unwrap();
+    assert_eq!(first_action(&report), "no_improvement");
+    assert_eq!(queued_count(&report), 0);
+    assert!(upgrade_children(&engine, &parent.id).is_empty());
+    drop(engine);
+
+    let d = Directory::new();
+    let h = Http::open();
+    let engine = Engine::open(upgrade_config(&d, &p, &h, false)).unwrap();
+    let parent = owned_baseline(&engine, &d);
+    for apply in [false, true] {
+        let report = engine.check_upgrades(apply).unwrap();
+        assert_eq!(first_action(&report), "usenet_unavailable");
+        assert_eq!(queued_count(&report), 0);
+    }
+    assert!(upgrade_children(&engine, &parent.id).is_empty());
+    assert!(p.requests.lock().unwrap().is_empty());
+    assert!(only_feed_requests(&h));
+}
+
+#[test]
+fn native_upgrade_cancellation_keeps_the_original_and_retry_is_explicit() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let h = Http::open();
+    let engine = Engine::open(upgrade_config(&d, &p, &h, true)).unwrap();
+    let parent = owned_baseline(&engine, &d);
+    assert_eq!(queued_count(&engine.check_upgrades(true).unwrap()), 1);
+    let child = upgrade_children(&engine, &parent.id).remove(0);
+    engine.cancel(&child.id).unwrap();
+    assert_eq!(retained(&engine, &child.id).state, "cancelled");
+    assert_eq!(
+        library_support::library_ids(&engine),
+        vec![parent.id.clone()]
+    );
+    // Re-checking records no new child and never revives the cancelled one.
+    assert_eq!(queued_count(&engine.check_upgrades(true).unwrap()), 0);
+    assert_eq!(upgrade_children(&engine, &parent.id).len(), 1);
+    assert_eq!(retained(&engine, &child.id).state, "cancelled");
+    engine.retry(&child.id).unwrap();
+    assert_eq!(retained(&engine, &child.id).state, "queued");
+    assert!(p.requests.lock().unwrap().is_empty());
+    assert!(only_feed_requests(&h));
+}
+
+#[test]
+fn native_upgrade_with_a_tightened_profile_stops_before_any_document_fetch() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let h = Http::open();
+    articles(&p, &format!("{TITLE}.mp4"), 1);
+    let mut c = upgrade_config(&d, &p, &h, true);
+    let engine = Engine::open(c.clone()).unwrap();
+    let parent = owned_baseline(&engine, &d);
+    assert_eq!(queued_count(&engine.check_upgrades(true).unwrap()), 1);
+    let child = upgrade_children(&engine, &parent.id).remove(0);
+    drop(engine);
+    c.selection
+        .profiles
+        .get_mut("fixture")
+        .unwrap()
+        .blocked_terms = vec!["fixture".into()];
+    let engine = Engine::open(c).unwrap();
+    let workers = engine.start();
+    usenet_support::wait(|| retained(&engine, &child.id).last_error.is_some());
+    let job = retained(&engine, &child.id);
+    assert!(job.imports.is_empty() && job.files.is_empty());
+    assert!(job.usenet_origin.as_ref().unwrap().document.is_none());
+    assert!(p.requests.lock().unwrap().is_empty());
+    assert!(only_feed_requests(&h));
+    let kept = retained(&engine, &parent.id);
+    assert_eq!(
+        (kept.state.as_str(), &kept.imports),
+        ("ready", &parent.imports)
+    );
+    assert_eq!(
+        library_support::library_ids(&engine),
+        vec![parent.id.clone()]
+    );
+    drop(workers);
+}
+
+#[test]
+fn removing_the_requester_demand_cancels_a_pending_native_upgrade_and_keeps_the_original() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let h = Http::open();
+    let a = accounts::Accounts::open();
+    articles(&p, &format!("{TITLE}.mp4"), 1);
+    a.watchlist("alice", vec![accounts::movie(42, "Fixture Movie")]);
+    let mut c = upgrade_config(&d, &p, &h, true);
+    c.requesters = a.config(&d.0).requesters;
+    let engine = Engine::open(c).unwrap();
+    accounts::enable(&engine, "alice", false);
+    engine.sync_requesters().unwrap();
+    let admitted = accounts::job(&engine, "alice");
+    let parent = accounts::ready(&engine, &admitted.id);
+    engine.set_baseline(&parent.id, BASELINE_720).unwrap();
+    assert_eq!(queued_count(&engine.check_upgrades(true).unwrap()), 1);
+    let child = upgrade_children(&engine, &parent.id).remove(0);
+    assert_eq!(child.requester, parent.requester);
+    assert_eq!(child.state, "queued");
+    let demand = accounts::demand(&engine, "alice");
+    accounts::apply(
+        &engine,
+        "alice",
+        accounts::demand_query("remove", accounts::id(&demand)),
+    );
+    assert_eq!(retained(&engine, &child.id).state, "cancelled");
+    assert_eq!(retained(&engine, &parent.id).state, "ready");
+    assert!(fs::metadata(&parent.imports[0]).is_ok());
+    assert!(p.requests.lock().unwrap().is_empty());
+    assert!(only_feed_requests(&h));
+}

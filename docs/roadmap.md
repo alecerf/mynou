@@ -31,7 +31,7 @@ hidden. Native review/publication evidence lives in the linked Issues/PR.
   ownership-bound Usenet repair, actually blocked by39.
 - [Issue45](https://github.com/alecerf/mynou/issues/45), P2: bounded optional live
   progress that preserves browser controls and privacy.
-- [Issue46](https://github.com/alecerf/mynou/issues/46), Needs Triage: native
+- [Issue46](https://github.com/alecerf/mynou/issues/46), in review (PR74): native
   Usenet upgrades for ordinary owned movies/episodes.
 - [Issue44](https://github.com/alecerf/mynou/issues/44): verified publication
   reconciliation for automatic Product rearming, after consumer setup.

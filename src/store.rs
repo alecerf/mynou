@@ -42,6 +42,9 @@ fn rar_format(job: &Job) -> bool {
         .is_some_and(|o| o.rar_limits.is_some())
 }
 
+/// Builds a Usenet selection from a newly created upgrade child before it is journaled.
+pub type OriginCapture<'a> = &'a dyn Fn(&Job) -> Result<crate::usenet::admission::Origin>;
+
 mod groups;
 mod irc;
 pub use groups::SharedUpgrade;
@@ -1025,6 +1028,29 @@ impl Store {
         request: Request,
         release: RecordedRelease,
     ) -> Result<Job> {
+        self.submit_upgrade_with(parent_id, request, release, None)
+    }
+
+    /// Records one native Usenet child with its captured selection in the creating
+    /// frame. The request's private source is the selected Newznab document URL;
+    /// no NNTP, NZB or queue work occurs here.
+    pub fn submit_usenet_upgrade(
+        &mut self,
+        parent_id: &str,
+        request: Request,
+        release: RecordedRelease,
+        capture: OriginCapture<'_>,
+    ) -> Result<Job> {
+        self.submit_upgrade_with(parent_id, request, release, Some(capture))
+    }
+
+    fn submit_upgrade_with(
+        &mut self,
+        parent_id: &str,
+        request: Request,
+        release: RecordedRelease,
+        capture: Option<OriginCapture<'_>>,
+    ) -> Result<Job> {
         request.validate()?;
         release.validate()?;
         let parent = self
@@ -1085,7 +1111,7 @@ impl Store {
             return Err("storage capacity reached: 10,000 requests".to_owned());
         }
         let at = now();
-        let job = Job {
+        let mut job = Job {
             id: random_id()?,
             key,
             request,
@@ -1114,6 +1140,10 @@ impl Store {
             irc_origin: None,
             usenet_origin: None,
         };
+        if let Some(capture) = capture {
+            job.acquisition_url = job.request.source_url.clone();
+            job.usenet_origin = Some(capture(&job)?);
+        }
         self.commit(job.clone(), "library upgrade recorded")?;
         Ok(job)
     }
@@ -2002,7 +2032,21 @@ impl Store {
                 return Err("ready import provenance is immutable".to_owned());
             }
         } else {
-            if job.irc_origin.is_some() || job.usenet_origin.is_some() {
+            let usenet_child = job.usenet_origin.as_ref().is_some_and(|origin| {
+                job.upgrade_parent.is_some()
+                    && job.shared_upgrade.is_none()
+                    && job.state == "queued"
+                    && job.lease_id.is_none()
+                    && job.files.is_empty()
+                    && job.imports.is_empty()
+                    && job.download_id.is_none()
+                    && origin.document.is_none()
+                    && origin.transfer_id.is_none()
+                    && origin.archive.is_none()
+                    && origin.archive_limits.is_none()
+                    && origin.rar_limits.is_none()
+            });
+            if job.irc_origin.is_some() || job.usenet_origin.is_some() && !usenet_child {
                 return Err("Acquisition provenance requires a previously admitted job".into());
             }
             if self.by_key.contains_key(&job.key) {

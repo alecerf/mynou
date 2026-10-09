@@ -180,7 +180,7 @@ impl Origin {
         }
         Ok(origin)
     }
-    pub(crate) fn capture(
+    pub fn capture(
         job: &Job,
         candidate_id: String,
         target: Target,
@@ -256,8 +256,13 @@ impl Origin {
         if self.identity(job)? != self.binding
             || !matches!(job.request.kind.as_str(), "movie" | "episode")
             || job.request.source_path.is_some()
-            || job.request.source_url.is_some()
-            || job.upgrade_parent.is_some()
+            || job
+                .request
+                .source_url
+                .as_deref()
+                .map_or(job.upgrade_parent.is_some(), |source| {
+                    job.upgrade_parent.is_none() || source != url
+                })
             || job.pack_file.is_some()
             || job.pack_origin.is_some()
             || job.shared_file.is_some()

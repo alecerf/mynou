@@ -233,7 +233,7 @@ impl Engine {
             let mut request = job.request.clone();
             request.source_path = None;
             request.source_url = None;
-            let selected = match integrations::select_release_before(
+            let selected = match integrations::select_acquisition(
                 &config,
                 &request,
                 started + Duration::from_secs(90),
@@ -247,7 +247,7 @@ impl Engine {
             let title = integrations::report_text(&selected.title, 2_048);
             let mut item = entry(&job, "no_improvement");
             item.insert("current_assessment", baseline.to_json());
-            item.insert("candidate_id", selected.id);
+            item.insert("candidate_id", selected.id.clone());
             item.insert("candidate_title", title);
             item.insert("candidate_assessment", selected.assessment.to_json());
             if baseline.accepted && selected.assessment.rank <= baseline.rank {
@@ -261,6 +261,12 @@ impl Engine {
                 entries.push(item);
                 continue;
             }
+            let native = config.usenet.downloads.as_ref().is_some_and(|d| d.enabled);
+            if selected.usenet.is_some() && !native {
+                item.insert("action", "usenet_unavailable");
+                entries.push(item);
+                continue;
+            }
             if !apply {
                 item.insert("action", "upgrade_available");
                 entries.push(item);
@@ -271,9 +277,46 @@ impl Engine {
                 title: selected.title,
                 profile: selected.profile,
             };
+            let usenet = match selected.usenet {
+                Some(target) => {
+                    let captured = (|| -> Result<_> {
+                        if !self.native_usenet_enabled() {
+                            return Err("Native Usenet downloads are disabled or stopped".into());
+                        }
+                        target.configured(&config)?;
+                        let (_, profile) = config.selection.profile(&job.request.kind)?;
+                        Ok((target, profile.clone()))
+                    })();
+                    match captured {
+                        Ok(captured) => Some((captured, selected.id.clone())),
+                        Err(_) => {
+                            item.insert("action", "usenet_unavailable");
+                            entries.push(item);
+                            continue;
+                        }
+                    }
+                }
+                None => None,
+            };
             let mut store = lock(&self.store)?;
             let before = store.list().len();
-            match store.submit_upgrade(&job.id, request, release) {
+            let submitted = match usenet {
+                Some(((target, profile), candidate)) => {
+                    store.submit_usenet_upgrade(&job.id, request, release, &|child| {
+                        // Upgrades never opt into compressed archives in this increment.
+                        crate::usenet::admission::Origin::capture(
+                            child,
+                            candidate.clone(),
+                            target.clone(),
+                            profile.clone(),
+                            None,
+                            None,
+                        )
+                    })
+                }
+                None => store.submit_upgrade(&job.id, request, release),
+            };
+            match submitted {
                 Ok(child) => {
                     let created = store.list().len() > before;
                     queued += u32::from(created);

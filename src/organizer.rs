@@ -266,6 +266,20 @@ pub(crate) fn import_private_file_cancellable(
     import_destination(source, library, destination, active, true)
 }
 
+/// Publishes a checked private upgrade beside the existing media as an
+/// independent versioned inode; the revision is the 32-character job identifier.
+pub(crate) fn import_private_versioned_file_cancellable(
+    source: &Path,
+    library: &Path,
+    request: &Request,
+    revision: &str,
+    active: &AtomicBool,
+) -> Result<PathBuf> {
+    validate_revision(revision)?;
+    let destination = target(source, library, request, Some(revision))?;
+    import_destination(source, library, destination, active, true)
+}
+
 /// Imports an upgrade beside the existing media without changing its title or
 /// directory. The revision must be a 32-character hexadecimal job identifier.
 /// Reusing a revision is safe only when the destination contains identical bytes.
