@@ -261,3 +261,13 @@ fixtures cover shifted/nonconsecutive rows, rank deficiency, skipped dependencie
 global multi-file order, eight erasures, field-work bounds, corruption, cancellation
 and checked private reopening. Actual CI and separate Security/QA evidence belong
 to Issue #36 and its linked PR; this proposed scope is not publication evidence.
+
+## File-backed single-file recovery (0.22.35)
+
+`Set::recover_single_to_file` recovers one described file of up to 1 GiB
+(32768 slices, eight erasures, 1 MiB slices) into a new private file under an
+explicit `StreamingPlan` and `StreamingLimits`, without memory scaling with file
+size. It never overwrites a path, publishes only after full read-back verification
+and removes partial output on failure or cancellation. It grants no import or
+queue authority; see [release scope](releases/0.22.35.md). The in-memory APIs keep
+their 16 MiB limits.

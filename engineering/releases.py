@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 import json
 import re
 import sys
-import tomllib
 
 from github import APIError, GitHub
 from protocol import instant, labels as label_names, stamp
@@ -19,9 +18,26 @@ VERSION = re.compile(r"(?:0|[1-9][0-9]{0,5})\.(?:0|[1-9][0-9]{0,5})\.(?:0|[1-9][
 COMPARE_FILE_LIMIT = 300
 
 
+def version_line(manifest):
+    """Index and value of `version = "..."` in the [package] table of Cargo.toml.
+
+    A bounded line parser keeps this tooling on older Python versions without
+    tomllib; anything unexpected fails closed."""
+    table = None
+    for index, line in enumerate(manifest.splitlines()):
+        stripped = line.strip()
+        if stripped.startswith("["):
+            table = stripped
+        elif table == "[package]":
+            match = re.fullmatch(r'version\s*=\s*"([^"\\]*)"', stripped)
+            if match:
+                return index, match[1]
+    raise ValueError("Cargo.toml requires a package version")
+
+
 def version(manifest):
-    value = (manifest.get("package") or {}).get("version")
-    if not isinstance(value, str) or not VERSION.fullmatch(value):
+    value = version_line(manifest)[1]
+    if not VERSION.fullmatch(value):
         raise ValueError("Cargo.toml requires an exact x.y.z package version")
     return tuple(int(part) for part in value.split("."))
 
@@ -31,9 +47,10 @@ def name(number):
 
 
 def unversioned(manifest):
-    copy = dict(manifest)
-    copy["package"] = {k: v for k, v in (manifest.get("package") or {}).items() if k != "version"}
-    return copy
+    """Cargo.toml without its package version, to compare everything else."""
+    lines = manifest.splitlines()
+    del lines[version_line(manifest)[0]]
+    return lines
 
 
 def shipped(paths, truncated, released, current):
@@ -95,7 +112,7 @@ def manifest(api, ref):
     raw = base64.b64decode(value["content"])
     if len(raw) > 64 * 1024:
         raise ValueError("Cargo.toml exceeds its bound")
-    return tomllib.loads(raw.decode("utf-8"))
+    return raw.decode("utf-8")
 
 
 def latest_release(api):

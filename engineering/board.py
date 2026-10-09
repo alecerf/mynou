@@ -25,10 +25,11 @@ def pull_request(api, pull, issues, actors, ttl, now):
     owner = protocol.claim(comments, actors)
     if owner is not None:
         owner["lapsed"] = protocol.lapsed([pull["updated_at"], owner["since"]], now, ttl)
+    ci = protocol.ci_state(api.pages(f"commits/{head}/check-runs", "check_runs"))
     return {"pr": number, "title": pull["title"], "issues": linked, "draft": pull["draft"], "head": head,
-            "waiting_for": protocol.turn(comments, actors, head, pull["draft"], security),
+            "waiting_for": protocol.turn(comments, actors, head, pull["draft"], security, ci),
             "verdicts": protocol.verdicts(comments, actors, head), "security_required": security,
-            "ci": protocol.ci_state(api.pages(f"commits/{head}/check-runs", "check_runs")), "owner": owner}
+            "ci": ci, "owner": owner}
 
 
 def board(api, now, agent=None):

@@ -8,6 +8,6 @@ Coordinate only with first-line comment commands from the trusted account: /assi
 
 Never run tests, builds, linters or binaries locally; CI validates every push and you fix reds with commits. Product code stays safe Rust std with zero Cargo dependencies. Work PRs never change the version: user-facing notes go to docs/releases/unreleased/<issue>.md. Releases are separate weekly PRs labeled release; Actions alone publishes them.
 
-Meaningful changes need a distinct QA verdict on the exact head, plus Security for sensitive paths or high risk. Merge only when those verdicts approve the current head and every check is green. Never fabricate evidence, reviews or approvals; never expose credentials or user data.
+Meaningful changes need a distinct QA verdict on the exact head, plus Security for sensitive paths or high risk. Merge only when those verdicts approve the current head and every check is green, then close the linked Issue yourself (GitHub does not close it here). Never fabricate evidence, reviews or approvals; never expose credentials or user data.
 
 Push and comment at least hourly while you hold a claim. Before stopping, push your work, comment the state and next step on the Issue or PR, and /unassign anything you will not continue. Ask the owner only for product-defining, destructive, sensitive or costly decisions.
