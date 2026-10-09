@@ -1,8 +1,19 @@
 {
   "schema": 1,
   "max_active_agents": 1,
-  "generation": 992,
-  "lease": null,
+  "generation": 993,
+  "lease": {
+    "id": "codex-recovery-20261009T062636Z-qa-4e39153a-a2f0-41bc-989f-09cb1480ef84",
+    "worker": "codex-recovery-20261009T062636Z",
+    "role": "qa",
+    "issue": 52,
+    "acquired_at": "2026-10-09T06:46:48Z",
+    "heartbeat_at": "2026-10-09T06:46:48Z",
+    "expires_at": "2026-10-09T07:31:48Z",
+    "branch": "work/52-fresh-authority",
+    "commit": "2603afca9906d89941a5ce3d8f0e40a8d7ae7713",
+    "pr": 55
+  },
   "checkpoint": {
     "at": "2026-10-09T06:45:34Z",
     "issue": 52,
