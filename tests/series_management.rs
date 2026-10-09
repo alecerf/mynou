@@ -8,7 +8,7 @@ use mynou::{
     engine::lock,
     json::{self, Value},
 };
-use series_support::{Catalog, episode, episodes, id, request};
+use series_support::{Catalog, episode, id, request};
 use std::{
     fs,
     process::{Command, Stdio},
@@ -196,117 +196,6 @@ fn browser_series_calendar_forms_inherit_authentication_and_escape_catalog_title
             .status,
         303
     );
-}
-
-#[test]
-fn former_calendar_export_is_gone_while_calendar_listing_and_series_data_remain() {
-    let directory = Directory::new();
-    let today = date::today();
-    let future = "2200-01-01";
-    let catalog = Catalog::open(vec![
-        episode(1, 1, Some(&today), "Comma, semi; back\\slash <b>"),
-        episode(1, 2, None, "Unknown date"),
-        episode(1, 3, Some(future), "Future"),
-    ]);
-    let cfg = catalog.config(&directory.0);
-    let snapshot = cfg.store_dir.join("series.json");
-    let server = Server::open(cfg.clone());
-    let browser = Browser::login(&server);
-    let created = browser.post(
-        &server,
-        "/ui/series/track",
-        &[
-            ("kind", "series"),
-            ("title", "Fixture Series"),
-            ("tmdb_id", "42"),
-            ("future_only", "true"),
-        ],
-    );
-    assert_eq!(created.status, 303, "{}", created.body);
-    let records = server.engine.series().unwrap();
-    let id = id(&records.as_array().unwrap()[0]).to_owned();
-    let export = format!("/ui/calendar.ics?from={today}&to={today}&series_id={id}");
-    let anonymous = server.call("GET", &export, &[], "");
-    assert_eq!(anonymous.status, 303);
-    assert_eq!(anonymous.headers["location"], "/ui/login");
-    let record = server.engine.series_record(&id).unwrap();
-    let bytes = fs::read(&snapshot).unwrap();
-    let jobs = lock(&server.engine.store).unwrap().list().len();
-    assert_eq!(jobs, 1);
-    for route in [
-        export.as_str(),
-        "/ui/calendar.ics",
-        "/ui/calendar.ics?from=2024-02-30",
-        "/ui/calendar.ics?page=2",
-        "/ui/calendar.ics?from=2024-01-01&to=2026-01-01",
-    ] {
-        let reply = browser.get(&server, route);
-        assert_eq!(reply.status, 410, "{route}: {}", reply.body);
-        assert_eq!(reply.headers["content-type"], "text/html; charset=utf-8");
-        assert_eq!(reply.headers["cache-control"], "no-store");
-        assert!(!reply.headers.contains_key("content-disposition"));
-        assert!(
-            reply
-                .body
-                .contains("iCalendar (.ics) export is no longer available")
-        );
-        assert!(!reply.body.contains("BEGIN:VCALENDAR"));
-        reply.no_secrets();
-    }
-    assert_eq!(server.engine.series_record(&id).unwrap(), record);
-    assert_eq!(fs::read(&snapshot).unwrap(), bytes);
-    assert_eq!(lock(&server.engine.store).unwrap().list().len(), jobs);
-    let page = browser.get(
-        &server,
-        &format!("/ui/calendar?from={today}&to={today}&series_id={id}"),
-    );
-    assert_eq!(page.status, 200, "{}", page.body);
-    assert!(page.body.contains("S1 E1"));
-    assert!(page.body.contains("Comma, semi; back"));
-    assert!(!page.body.contains("calendar.ics"));
-    assert!(!page.body.contains("Export to your calendar"));
-    page.no_secrets();
-    let later = browser.get(
-        &server,
-        &format!("/ui/calendar?from={future}&to={future}&series_id={id}"),
-    );
-    assert_eq!(later.status, 200, "{}", later.body);
-    assert!(later.body.contains("<span class=badge>scheduled</span>"));
-    let aired = parse(&api(
-        &server,
-        "GET",
-        &format!("/api/calendar?from={today}&to={today}&series_id={id}"),
-        None,
-        true,
-    ));
-    assert_eq!(aired.get("total"), Some(&Value::Number(1.0)));
-    let row = &episodes(&aired)[0];
-    assert!(row.get("job_id").and_then(Value::as_str).is_some());
-    let route = format!("/api/calendar?from={future}&to={future}&series_id={id}");
-    let calendar = parse(&api(&server, "GET", &route, None, true));
-    assert_eq!(episodes(&calendar).len(), 1);
-    assert_eq!(
-        episodes(&calendar)[0].get("state"),
-        Some(&Value::String("scheduled".into()))
-    );
-    assert_eq!(episodes(&calendar)[0].get("job_id"), Some(&Value::Null));
-    let listed = parse(&api(&server, "GET", "/api/series", None, true));
-    assert_eq!(listed.as_array().unwrap().len(), 1);
-    assert_eq!(
-        listed.as_array().unwrap()[0].get("undated_count"),
-        Some(&Value::Number(1.0))
-    );
-    assert!(
-        browser
-            .get(&server, "/ui/series")
-            .body
-            .contains(&format!("/ui/series/{id}"))
-    );
-    drop(server);
-    let restarted = Server::open(cfg);
-    assert_eq!(restarted.engine.series_record(&id).unwrap(), record);
-    let reloaded = parse(&api(&restarted, "GET", &route, None, true));
-    assert_eq!(reloaded, calendar);
 }
 
 #[test]

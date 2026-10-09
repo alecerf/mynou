@@ -76,7 +76,6 @@ impl Response {
             403 => "Forbidden",
             404 => "Not Found",
             405 => "Method Not Allowed",
-            410 => "Gone",
             415 => "Unsupported Media Type",
             503 => "Service Unavailable",
             _ => "Error",
@@ -256,14 +255,6 @@ impl Web {
         };
         let query = Form::parse(query.as_bytes())?;
         session.messages = lock(&self.sessions)?.take_messages(&session.id);
-        if path == "/ui/calendar.ics" {
-            // Withdrawn iCalendar export: a documented answer with no file and no engine access.
-            return Ok(failure(
-                410,
-                "iCalendar (.ics) export is no longer available. The Calendar page still lists known episode dates.",
-                Some(&session),
-            ));
-        }
         let page = match path {
             "/ui" => {
                 query.only(&[])?;
