@@ -12,8 +12,7 @@ use crate::{
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs,
-    path::{Component, Path},
+    path::Path,
     sync::atomic::Ordering,
     time::{Duration, Instant},
 };
@@ -39,7 +38,9 @@ fn current_job(store: &Store, request: &Request) -> Option<Job> {
 }
 fn compatible(config: &crate::config::Config, demand: &Demand, job: &Job) -> Result<bool> {
     if let Some(p) = &job.requester {
-        return Ok(p.capture == demand.capture);
+        return Ok(p.capture == demand.capture
+            && (job.state != "ready"
+                || crate::organizer::check_retained_imports(job, config).is_ok()));
     }
     // Uncaptured work cannot promise a frozen profile or destination after restart.
     if job.state != "ready" || job.imports.is_empty() {
@@ -59,13 +60,11 @@ fn compatible(config: &crate::config::Config, demand: &Demand, job: &Job) -> Res
         &capture.series_root
     });
     Ok(capture == demand.capture
+        && crate::organizer::check_retained_imports(job, config).is_ok()
+        // Even a shared operator job must satisfy the new demand's destination.
         && job.imports.iter().all(|file| {
             let path = Path::new(file);
-            path.is_absolute()
-                && path.starts_with(root)
-                && !path.components().any(|c| c == Component::ParentDir)
-                && store::reject_symlinks(path).is_ok()
-                && fs::symlink_metadata(path).is_ok_and(|m| m.is_file())
+            path != root && path.starts_with(root)
         })
         && job.release.as_ref().map_or_else(
             || capture.profile == crate::selection::Profile::default(),
@@ -484,30 +483,31 @@ impl Engine {
                 },
             )?;
         }
+        let mut outcomes = Vec::new();
         for d in next.demands.values_mut() {
             if let Some(id) = &d.job_id
                 && let Some(job) = jobs.get(id)
                 && d.state != "removed"
-                && job.state == "ready"
             {
-                d.state = "ready".into();
+                let outcome = if job.state == "ready" {
+                    if compatible(&self.config, d, &job)? {
+                        "ready"
+                    } else {
+                        "conflict"
+                    }
+                } else {
+                    &job.state
+                };
+                if matches!(outcome, "ready" | "conflict") {
+                    d.state = outcome.into();
+                }
+                if matches!(outcome, "ready" | "conflict" | "failed" | "cancelled") {
+                    outcomes.push((d.id.clone(), outcome.to_owned()));
+                }
             }
         }
-        let outcomes: Vec<_> = next
-            .demands
-            .values()
-            .filter(|d| d.state != "removed")
-            .filter_map(|d| {
-                d.job_id
-                    .as_ref()
-                    .and_then(|id| jobs.get(id))
-                    .map(|j| (d.id.clone(), j.state))
-            })
-            .collect();
         for (id, outcome) in outcomes {
-            if matches!(outcome.as_str(), "ready" | "failed" | "cancelled") {
-                next.record_outcome(&id, &outcome)?;
-            }
+            next.record_outcome(&id, &outcome)?;
         }
         if next != ledger.state {
             ledger.save(next)?;

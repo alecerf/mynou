@@ -53,6 +53,17 @@ fn existing_plex_media_under_the_mapped_destination_needs_no_native_acquisition(
             .and_then(Value::as_str),
         Some("ready")
     );
+    enable(&engine, "bob");
+    let mut p = policy(&engine, "bob");
+    p.destination = "family".into();
+    apply(&engine, "bob", policy_query(p));
+    accounts.watchlist("bob", vec![movie(7, "Fixture Movie")]);
+    engine.sync_requesters().unwrap();
+    assert_eq!(job(&engine, "bob").id, fulfilled.id);
+    assert_eq!(
+        demand(&engine, "bob").get("state").and_then(Value::as_str),
+        Some("ready")
+    );
 }
 use transfer_support::{Seeder, Torrent};
 

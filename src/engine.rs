@@ -539,7 +539,12 @@ impl Engine {
         if current.lease_id.as_deref() != Some(&lease) || current.lease_until <= store::now() {
             return Ok(true);
         }
-        let result = result.and_then(|()| store.check_ready_promotion(&job));
+        let result = result.and_then(|()| {
+            if job.state == "ready" {
+                organizer::check_retained_imports(&job, &self.config)?;
+            }
+            store.check_ready_promotion(&job)
+        });
         if let Err(error) = result {
             job.attempts = job.attempts.saturating_add(1);
             job.last_error = Some(error);
@@ -668,16 +673,7 @@ impl Engine {
         }
         // Resume a confirmed import after interruption without copying it again.
         if !job.imports.is_empty() {
-            if job.shared_file.is_some() {
-                for path in &job.imports {
-                    store::reject_symlinks(Path::new(path))?;
-                    if !std::fs::symlink_metadata(path).is_ok_and(|m| m.is_file()) {
-                        return Err(
-                            "Recorded shared import is missing or is not a regular file".into()
-                        );
-                    }
-                }
-            }
+            organizer::check_retained_imports(job, &config)?;
             if config.plex.enabled {
                 if job.state != "scanning" {
                     integrations::refresh(&config, &job.request)?;

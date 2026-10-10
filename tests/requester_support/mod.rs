@@ -27,6 +27,7 @@ pub struct Accounts {
     pub calls: Arc<Mutex<Vec<String>>>,
     responses: Arc<Mutex<BTreeMap<String, (u16, Value)>>>,
     pub blocked: Arc<AtomicBool>,
+    pub remove_on_request: Arc<Mutex<Option<(String, PathBuf)>>>,
     stopped: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
@@ -48,6 +49,8 @@ impl Accounts {
         let calls = Arc::new(Mutex::new(Vec::new()));
         let blocked = Arc::new(AtomicBool::new(false));
         let stopped = Arc::new(AtomicBool::new(false));
+        let remove_on_request = Arc::new(Mutex::new(None::<(String, PathBuf)>));
+        let removal = remove_on_request.clone();
         let values = responses.clone();
         let requests = calls.clone();
         let delay = blocked.clone();
@@ -91,6 +94,12 @@ impl Accounts {
                     "Account token header missing"
                 );
                 requests.lock().unwrap().push(path.into());
+                let mut pending = removal.lock().unwrap();
+                if pending.as_ref().is_some_and(|(route, _)| route == path) {
+                    let (_, file) = pending.take().unwrap();
+                    fs::remove_file(file).unwrap();
+                }
+                drop(pending);
                 if path == "/alice/identity" {
                     let deadline = Instant::now() + Duration::from_secs(3);
                     while delay.load(Ordering::Acquire) && !stop.load(Ordering::Acquire) {
@@ -113,6 +122,7 @@ impl Accounts {
             calls,
             responses,
             blocked,
+            remove_on_request,
             stopped,
             thread: Some(thread),
         };
