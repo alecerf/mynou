@@ -751,6 +751,7 @@ fn write_within(stream: &mut TcpStream, data: &[u8], deadline: Instant) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
     fn parse(raw: &[u8]) -> Result<()> {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
@@ -824,15 +825,18 @@ mod tests {
     #[test]
     fn a_client_that_reads_a_few_bytes_at_a_time_is_dropped_at_the_deadline() {
         let (mut server, mut client) = loopback();
+        let done = Arc::new(AtomicBool::new(false));
+        let reading = done.clone();
         let reader = thread::spawn(move || {
             let mut byte = [0; 1];
-            while client.read(&mut byte).is_ok_and(|n| n > 0) {
+            while !reading.load(Ordering::Acquire) && client.read(&mut byte).is_ok_and(|n| n > 0) {
                 thread::sleep(Duration::from_millis(50));
             }
         });
         let started = Instant::now();
         let result = respond_within(&mut server, 200, large_value(), Duration::from_millis(400));
         let elapsed = started.elapsed();
+        done.store(true, Ordering::Release);
         drop(server);
         reader.join().unwrap();
         assert!(result.is_err());
