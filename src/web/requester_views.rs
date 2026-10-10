@@ -140,6 +140,9 @@ pub(super) fn detail(
             body.push_str(&form("/ui/requesters/control", session));
             body.push_str(&hidden("account_id", id));
             body.push_str(&hidden("demand_id", text(d, "id")));
+            if text(d, "state") == "held" {
+                body.push_str("<button name=action value=admit>Review admission</button>");
+            }
             if text(d, "state") != "removed" {
                 body.push_str("<button name=action value=remove>Review removal</button>");
             }

@@ -38,7 +38,7 @@ impl Engine {
             || matches!(current.state.as_str(), "ready" | "cancelled" | "failed")
         {
             return Err(
-                "Usenet admission: current processing lease or approved demand is absent".into(),
+                "Usenet admission: current processing lease or admitted demand is absent".into(),
             );
         }
         Ok(())
@@ -89,7 +89,7 @@ impl Engine {
             || !crate::requesters::engine::interest(&ledger.state, &current, &self.config)
             || matches!(current.state.as_str(), "ready" | "cancelled" | "failed")
         {
-            return Err("Usenet admission: publication lost its lease or approved demand".into());
+            return Err("Usenet admission: publication lost its lease or admitted demand".into());
         }
         job.usenet_origin
             .as_ref()
@@ -141,7 +141,7 @@ impl Engine {
             || !crate::requesters::engine::interest(&ledger.state, &current, &self.config)
             || matches!(current.state.as_str(), "ready" | "cancelled" | "failed")
         {
-            return Err("Usenet admission: authorization lost its lease or approved demand".into());
+            return Err("Usenet admission: authorization lost its lease or admitted demand".into());
         }
         let client = self
             .usenet_queue

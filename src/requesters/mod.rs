@@ -1,5 +1,6 @@
 //! Durable per-account demand and explicit acquisition policies.
 pub(crate) mod engine;
+mod legacy;
 mod persistence;
 
 use crate::{
@@ -566,7 +567,7 @@ impl Demand {
             || d.request.source_path.is_some()
             || d.request.source_url.is_some()
             || ![
-                "pending", "reserved", "active", "ready", "conflict", "removed",
+                "pending", "reserved", "active", "ready", "conflict", "held", "removed",
             ]
             .contains(&d.state.as_str())
             || ![
@@ -578,6 +579,7 @@ impl Demand {
                 "failed",
                 "cancelled",
                 "conflict",
+                "held",
                 "removed",
             ]
             .contains(&d.outcome.as_str())
@@ -587,6 +589,7 @@ impl Demand {
             || (matches!(d.state.as_str(), "reserved" | "active" | "ready")
                 && d.admitted_at.is_none())
             || (matches!(d.state.as_str(), "active" | "ready") && d.job_id.is_none())
+            || (d.state == "held" && (d.job_id.is_some() || d.admitted_at.is_some()))
         {
             return Err("Requester: inconsistent persistent demand".into());
         }
@@ -717,6 +720,8 @@ impl State {
         v
     }
     pub(crate) fn from_json(v: &Value) -> Result<Self> {
+        let migrated = legacy::migrate(v)?;
+        let v = &migrated;
         only(
             v,
             &[
@@ -791,7 +796,10 @@ impl State {
                     "ready",
                     "failed",
                     "cancelled",
+                    "quota",
                     "conflict",
+                    "held",
+                    "rejected",
                     "removed",
                 ]
                 .contains(&text(v, "outcome")?.as_str())
@@ -891,7 +899,7 @@ impl ControlRequest {
         Ok(q)
     }
     pub(crate) fn validate(&self) -> Result<()> {
-        if !["policy", "remove", "retry"].contains(&self.action.as_str())
+        if !["policy", "admit", "remove", "retry"].contains(&self.action.as_str())
             || (self.action == "policy") != self.policy.is_some()
             || (self.action == "policy") != self.demand_id.is_none()
             || self.demand_id.as_ref().is_some_and(|id| !valid_digest(id))

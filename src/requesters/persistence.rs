@@ -28,6 +28,7 @@ impl RequesterStore {
     pub(crate) fn open(directory: &Path, config: &Config, read_only: bool) -> Result<Self> {
         let path = directory.join("requesters.bin");
         reject_symlinks(&path)?;
+        let mut migrated = false;
         let state = match fs::symlink_metadata(&path) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => State::empty(),
             Err(_) => return Err("Requester: cannot inspect snapshot".into()),
@@ -63,10 +64,12 @@ impl RequesterStore {
                 {
                     return Err("Requester: corrupt or unsupported snapshot".into());
                 }
-                let state = State::from_json(&json::parse(
+                let raw = json::parse(
                     std::str::from_utf8(&bytes[16..bytes.len() - 32])
                         .map_err(|_| "Requester: snapshot is not UTF-8")?,
-                )?)?;
+                )?;
+                migrated = super::legacy::is_legacy(&raw);
+                let state = State::from_json(&raw)?;
                 if state
                     .demands
                     .values()
@@ -117,6 +120,7 @@ impl RequesterStore {
             store.state = next;
             store.dirty = true;
         }
+        store.dirty |= migrated;
         Ok(store)
     }
     pub(crate) fn initialize(&mut self) -> Result<()> {

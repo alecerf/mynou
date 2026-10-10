@@ -1,4 +1,4 @@
-//! Opt-in IRC claims, audit reviews, and routing to existing approved work.
+//! Opt-in IRC claims, audit reviews, and routing to existing admitted work.
 pub(crate) mod admission;
 pub(crate) mod client;
 mod engine;

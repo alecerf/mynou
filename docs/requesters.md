@@ -145,7 +145,8 @@ The Bearer-authenticated API exposes:
 Controls reject unknown fields, wrong account ownership and stale snapshots.
 Guards bind identity, policy, complete demand and jobs, and configured selection/
 destinations. Preview performs no acquisition or persistence. Removal changes
-only the selected account's interest. `retry` requires a retained admitted
+only the selected account's interest. `admit` moves held demand to pending under the
+current enabled policy. `retry` requires a retained admitted
 failed/cancelled acquisition. Removed records are tombstones; polls never
 silently revive them. Explicit operator submission can establish an independent
 interest, followed by a deliberate retry where needed.
@@ -174,9 +175,19 @@ ownership and promotion rules.
 
 A `requesters.bin` written before approvals and quotas were removed stores
 `approval_required`, `max_active` and `max_daily` in each account policy and
-`approved` and `charged_at` in each demand. This version rejects those fields,
-so it does not start while such a file exists, and earlier versions cannot read
-a snapshot written by this version. Back up private storage before upgrading.
+`approved` and `charged_at` in each demand. Startup migrates it with a checked,
+idempotent, bounded pass and rewrites the snapshot in the current format; the
+removed fields are validated, then dropped, and never grant authority. Reserved,
+active and ready demand keeps its job, shared ownership and ready media.
+Approved demand still waiting for admission stays pending. Rejected demand
+becomes a removal tombstone, and removed demand stays removed. Demand that was
+awaiting approval or blocked by a quota becomes `held`: it is never admitted by
+itself. Review `admit` to capture the current policy and admit a held request
+(the account must be enabled), or review `remove` to drop it; the decision is
+recorded in the notification outcomes. Held demand is not changed by later
+polls or policy edits. Corrupt or unknown records are still refused. Earlier
+versions cannot read a snapshot written by this version, so back up private
+storage before upgrading.
 
 Existing Plex media can satisfy demand without a native download when its path
 is below the captured, mapped root. Newly imported requester media needs exact
