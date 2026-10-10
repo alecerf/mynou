@@ -53,7 +53,7 @@ For macOS, follow the [native macOS guide]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY
 
 Source commit: \`$GITHUB_SHA\`. Release downloads follow repository access settings; the container package remains private.
 
-See the [release roadmap]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/roadmap.md) for implemented milestones and remaining feature gaps.
+See the [documentation]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/README.md#documentation) for guides, and the [limits]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$tag/docs/limits.md#not-supported) for features Mynou does not provide.
 EOF
 
 gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \

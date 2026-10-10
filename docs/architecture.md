@@ -1,240 +1,122 @@
-# Native Rust architecture
+# Architecture
 
-The original IRC receivers add a separate review inbox. Strict configuration,
-bounded protocol framing and verified TLS gate accepted sender/channel claims;
-the private checked snapshot records identities before reviews. Source I/O holds
-no storage lock. Pure filters and guarded audit decisions create no acquisition jobs.
-Required SASL PLAIN negotiates bounded capabilities under the same registration
-deadline and succeeds before channel membership. Credentials are transient;
-only credential variable names contribute to the source binding. Rejection
-invalidates the protocol state until a fresh connection.
-Explicit grab rules hold eligible admitted jobs for IRC selection. Metadata-only
-inspection authenticates the pinned torrent before a durable reservation and
-one journal transaction attach immutable origin, exact file and release/profile.
-Admission takes locks in IRC/requester/job order and rechecks demand after I/O.
-Checked recovery completes already committed origins and aborts uncommitted
-reservations; it never replays an intent into a new grab. Native imports require
-the retained hash and exact file, including authenticated hybrid aliases.
-See [IRC behavior](irc.md).
+This page is for contributors. It explains how Mynou is built and how a request
+moves through the code. User-facing behavior and bounds are in the guides and in
+[limits](limits.md).
+
+## Standard library only
+
+Mynou is safe Rust that uses only the standard library. `Cargo.toml` declares no
+dependencies, development dependencies or build dependencies, and `Cargo.lock`
+contains only `mynou`. There is no vendored or copied third-party code, no
+submodule, no FFI, no `unsafe` code and no generation step. CI checks the graph
+offline on every run (see [CI](validation.md#mynou-ci)).
+
+| Former component | Rust replacement |
+| --- | --- |
+| Go BitTorrent engine | `src/torrent.rs` and `src/torrent/` |
+| SQLite | Transaction journal and snapshots in `src/store.rs` |
+| ffprobe | Container parsers in `src/media.rs` and `src/media/` |
+| HTTP/TLS libraries | `src/net.rs`, `src/tls.rs` and `src/pki/` |
+| JSON, bencode and XML | Bounded parsers in `src/json.rs`, `src/bencode.rs` and `src/xml.rs` |
+| Hashing and cryptography | Native algorithms in `src/crypto/` |
+
+Rust and Cargo are build tools; Docker and Compose are deployment tools. At
+runtime Mynou uses only the standard library and the operating system for
+files, network, time and randomness. On Linux, security randomness comes from
+`/dev/urandom`. The container image holds the static binary and a CA bundle
+(trust data) and nothing else: no OpenSSL, ffprobe, curl, shell, SQL engine or
+torrent client. Plex, TMDB, indexers and IRC servers are network services that
+the user configures, not dependencies. GitHub Actions and its tools are
+development infrastructure; the application never invokes them.
+
+## Request flow
 
 ```text
-CLI / API / Browser       Plex watchlist
-    |                          |
-    +--------- Requests -------+
-                   |
-           Journal and snapshots
-                   |
-           Workers with leases
-                   |
-       TMDB + RSS / JSON / Torznab
-                   |
-       Release selection profiles
-                   |
-       Durable transfer queue and policy
-                   |
-       Native BitTorrent and verification
-                   |
-       Media metadata analysis
-                   |
-          Import without overwriting
-                   |
-       Plex scan and confirmation
-                   |
-       Current owned library entry
-                   |
-       Monitor + baseline + cutoff
-                   |
-         Controlled upgrade child
+CLI / API / browser   Plex watchlists   IRC announcements
+        |                    |                  |
+        +------------- Requests ----------------+
+                           |
+                  Journal and snapshots
+                           |
+                  Workers with leases
+                           |
+          TMDB catalog + RSS / JSON / Torznab sources
+                           |
+                Release selection profiles
+                           |
+           Durable transfer queue and policies
+                           |
+           Native BitTorrent and verification
+                           |
+                 Media metadata analysis
+                           |
+               Import without overwriting
+                           |
+                Plex scan and confirmation
+                           |
+       Owned library: monitoring, baselines, upgrades
 ```
 
-The components are independent of frameworks. `config` validates fields and
-resolves paths relative to the configuration file into absolute roots, including
-when the configuration filename is relative. `integrations` converts
-network responses into requests, catalog plans and sources. `engine` orchestrates transitions
-without holding the journal lock during a transfer or import.
+## Modules
 
-`requesters` stores versioned account policies, per-account cursors, admission
-reservations and compatible canonical demand in a private checked atomic
-snapshot. Network identity/watchlist/catalog I/O stays outside requester and job
-locks. Locks proceed requester-then-job. Admission synchronizes requester
-provenance and reservations before recording a job with immutable captured behavior in
-format 4. A reserved admission without a linked job recovers by media identity;
-ready files and earlier numbering/shared-group lineage retain their ownership.
-Startup validates both stores before native transfers begin. See
-[requester policies](requesters.md).
-
-`series` retains bounded catalog episode plans and monitoring revisions in a
-private verified snapshot under the request-store directory owner. A catalog
-refresh captures policy, fetches outside storage locks, verifies numbering and
-known episode identities, then rejects a result if its revision has changed.
-A bounded submission batch takes locks in series-then-request order and uses
-existing media identities to prevent duplicate episode jobs. Series and request
-persistence are separate commits, so confirmed partial batches remain recoverable
-through deduplication. Unknown dates and missing episode identities do not
-automatically acquire. A background worker refreshes due records; calendar
-reads sort bounded borrowed rows and serialize only the requested page. See
-[series monitoring](series.md) for exact budgets and supported mappings.
-
-`pack` prevalidates explicit catalog/file mappings and source-key conflicts
-before recording separate episode jobs. Each job retains its mapped
-path while the native client deduplicates their common torrent identity. Once
-the required pieces and selected file roots verify and synchronize, import
-retains and analyzes only the exact selected file. Whole-torrent readiness and
-seeding remain gated by complete payload verification. An absent selection cannot fall back to another video. Existing
-media identities are reused rather than automatically reopened. Source paths
-and mappings remain independent of series monitoring policy. See [packs](packs.md).
-
-`pack::automatic` captures an eligible missing-episode scope, separately assesses
-season titles under the episode profile and resolves bounded authenticated
-metadata outside storage locks. Preview uses no native transfer queue or payload
-requests. Catalog content, policy, UTC date and missing identities form the scope
-fingerprint; a resolved decision also binds torrent hash and exact mapped paths.
-Apply rechecks the scope under series-then-request locks and persists immutable
-origin provenance with each mapped job before workers can proceed. Native queue
-publication requires the source's authenticated hash to match that provenance.
-Pack title provenance does not establish individual upgrade baselines. Optional
-monitored pack preference shares catalog/search deadlines and the 64-job batch
-with ordinary fallback. See [automatic packs](automatic-packs.md).
-
-`selection` evaluates matched source candidates using the configured movie or
-episode profile. It extracts bounded release-title attributes, filters candidates
-and ranks accepted releases deterministically. Automatic acquisition and search
-previews share this decision path. Preview serialization exposes opaque IDs and
-assessments without acquisition URLs; a preview does not acquire the journal
-owner lock or create a job.
-
-`pack::shared` authenticates one explicitly selected video and binds its full
-consecutive canonical owner range. Guarded apply commits every new owner in one
-journal frame, with one immutable library destination. Group claims are
-serialized; native hash/path verification and atomic import reuse preserve that
-destination across restart and cancellation. Each owner confirms the exact Plex
-path separately. Media/physical ownership indexes are rebuilt from verified jobs.
-Shared owners remain outside individual baseline/upgrade logic. See
-[shared files](shared-files.md).
-
-`library::groups` reviews complete baselines and authenticated one-file
-replacements under the current episode profile. `store::groups` persists their
-immutable full parent set and per-owner lineage in format 3 transactions. Each
-replacement confirms its exact path and becomes staged; the final confirmation
-promotes the complete group in one synchronized frame. Staged jobs cannot hide
-old library tips or be claimed as ordinary work. Group cancellation/retry covers
-every child and monitoring choices fence claims/promotion. Memoized iterative
-root traversal keeps projection bounded across histories. See
-[group upgrades](group-upgrades.md).
-
-Ready imports form the owned-library view. Monitoring checks the current ready
-entry's recorded release title against source candidates under the current
-movie/episode profile. Profile acceptance is compared before rank: a baseline
-rejected by today's policy can be replaced by an accepted candidate, while an
-accepted baseline requires a strict improvement in custom score or ordered
-attribute preferences. Seeds alone cannot trigger an upgrade. Optional
-cutoffs follow resolution preference order. Global background checks are disabled
-by default, and entries without a baseline remain ineligible.
-
-An applied upgrade is a deduplicated child request. Its parent stays current
-until the child becomes ready; failed or canceled children cannot hide the
-parent. An unrelated same-media request cannot become ready while an upgrade is
-pending; cancel the pending upgrade before promoting the manual alternative.
-Promotion inherits the parent's current monitoring choice. Check timestamps and
-per-entry monitoring policy are durable. Bounded passes consider the oldest checks first. Background checks honor per-entry
-polling intervals; manual checks ignore them. Applied passes persist timestamps
-even after search failure for backoff. Preview passes contact indexers without
-journal writes or request submission. The 90-second search/pass budget covers
-HTTP/socket operations and processing checks. Standard-library synchronous DNS
-can stall beyond the deadline; late results are rejected.
-
-`store` synchronizes each transaction before confirming it. Records form a
-SHA-256-verified chain: an incomplete tail after interruption is recoverable,
-while corruption of a complete record is reported. A file lock prevents two
-owners of the same journal. Workers use leases and renew ownership during long
-operations. Offline library listing and upgrade previews use a read-only store:
-no directory/file creation, permission changes, compaction or tail repair. A
-fresh store returns no entries; an interrupted tail requires explicit writable
-recovery. Reader access excludes a concurrent writer.
-
-`torrent` retains verified identities and metadata, rechecks pieces after
-restart, validates file names and size limits, and then exposes a ready state.
-Bytes merely existing on disk do not make a torrent ready. A hybrid torrent must
-satisfy both v1 hashes and v2 roots before final publication.
-
-Parallel payload work uses one coordinator per active transfer and a bounded
-number of TCP peer workers. The coordinator owns piece claims, verified writes
-and completion. One peer owns an in-flight piece at a time; failed ownership
-returns the piece for another attempt. Only verified data can update readiness,
-and final torrent verification remains required. A file-priority change affects
-the next claim rather than canceling an already claimed piece.
-
-`downloads.max_peers` is a per-transfer ceiling with a default of four and a
-range of one through eight. Global worker and per-transfer resource bounds may
-reduce the effective count. Known usable peers can start while bounded discovery
-work proceeds. Private torrents retain their discovery restrictions; magnet
-metadata is authenticated before parallel payload acquisition. A retired
-coordinator joins all workers before exiting, and completion joins them before
-publishing readiness. Verified writes and metadata publication check generation
-ownership while holding the native control mutex; pause waits for an ongoing
-disk write. Result sends poll cancellation even when their bounded queue is full.
-Corrupt-peer classification remains available after a worker exits.
-
-Transfer controls belong to the native engine and use native transfer IDs, which
-are distinct from request IDs. Durable user pause state is separate from
-retryable internal interruptions; request retries cannot clear a user pause.
-Queue selection uses priority then FIFO without preempting active transfers.
-Per-file priority orders the required pieces. Durable native file interests
-form an additive union across mapped requests; ordinary acquisitions require all
-files. Selection expansion retires the old generation under the same verified
-write mutex. Missing paths never select another file. The coordinator authenticates
-v1 boundary pieces and selected v2 roots before publishing synchronized file
-availability, independently of whole-torrent readiness. Boundary neighbors retain
-required bytes in normal confined files, and restart rehashes them. Partial
-transfers advertise an empty bitfield and do not seed or announce completion.
-
-Global payload bandwidth limits cover shared download/upload activity.
-Per-transfer rate caps add restrictions without bypassing the global cap. Rate
-buckets allow a bounded 16 KiB burst. Local policy objects replace configured
-seeding defaults in full rather than patching omitted fields.
-Persisted payload counters and seeding elapsed time support ratio/time policies.
-The ratio budget uses verified non-padding payload size; whole-block reservations
-cannot exceed it. Elapsed time counts online seeding availability, including idle
-time, while ready, enabled, unpaused and not seed-limited. Accounting is coalesced
-on a one-second interval and flushed on clean shutdown;
-abrupt failure may lose unflushed increments. Policies retain all downloaded
-sources and imports. See [transfer controls](transfers.md).
-
-`media` finds metadata using buffered reads and file seeking. MP4 `mdat` blocks,
-Matroska clusters of known size, and WAV payloads are not loaded into memory.
-Individual metadata reads are limited to 8 MiB, total metadata to 64 MiB, and
-element count to 100,000. Counters, sizes, and parent boundaries are checked.
-
-`organizer` publishes media without overwriting an existing file. It prefers a
-hard link and uses a synchronized copy when filesystems differ. Sources remain
-intact, and symbolic links on controlled import paths are rejected. Upgrade
-imports add a unique job-ID suffix rather than overwriting the earlier version.
-Old imports and downloads remain; there is no automatic cleanup.
-
-With Plex enabled, an upgrade becomes ready only after a fresh response reports
-the new imported path in `Part.file`. Optional mappings translate Mynou's path
-prefix to Plex's, using whole lexical components and the longest matching
-prefix. A pre-existing matching title is insufficient for upgrade confirmation.
-Initial Plex skips do not create an owned import or invent a release baseline.
-
-`net`, `tls`, `pki`, and `crypto` implement HTTP/1.1, the TLS client, X.509
-validation, and the required primitives. Protocol errors are explicit; a failed
-negotiation never disables certificate validation. The API server uses HTTP on
-the local interface with a Bearer token. See [protocol limits](limits.md).
-
-`web` shares that listener and directly calls existing engine operations.
-Original Rust-rendered HTML and an embedded stylesheet provide native browser
-forms without JavaScript or third-party assets. Bounded in-memory sessions use
-random opaque cookies and independent form tokens, rotate after login and
-expire at an absolute deadline. Session locks never span engine/network work.
-Host/origin checks and strict form decoding precede mutations. Bulk identifiers
-are all prevalidated, then each engine operation reports its own outcome.
-Public labels are bounded/redacted and escaped before insertion into HTML;
-acquisition URLs and API tokens are not rendered. See [browser management](web.md).
-
-GitHub Actions validates changes and publishes releases. Build and release tools
-are separate from the runtime; the application never invokes them.
-
-[Selection policies](selection.md) · [Library monitoring](library.md) ·
-[Transfer controls](transfers.md) · [Series monitoring](series.md) ·
-[Release stages](roadmap.md)
+- `config` validates every field and resolves paths against the configuration
+  file into absolute roots, even when the configuration path is relative.
+- `engine` orchestrates request transitions. It never holds the journal lock
+  during a transfer or an import. Workers take leases and renew them during
+  long operations.
+- `store` synchronizes each transaction before confirming it. Records form a
+  SHA-256 chain: an incomplete tail after an interruption is recoverable, while
+  a corrupted complete record is reported. A file lock gives the journal a single
+  owner. Read-only opening (offline listings and previews) creates nothing,
+  changes no permissions and repairs nothing.
+- `integrations` turns Plex, TMDB and source responses into requests, catalog
+  plans and candidates. `indexers` keeps source policy, authentication sessions
+  and health. `selection` scores candidates against the movie or episode
+  profile; automatic acquisition and search previews share that code, and
+  previews never take the journal owner lock or create a job.
+- `irc` runs one receiver per source with strict framing and verified TLS, keeps
+  a checked announcement history, and routes hash-pinned candidates to existing
+  jobs. Source I/O holds no storage lock. Admission takes locks in IRC, requester,
+  job order and rechecks demand after network I/O; recovery completes committed
+  origins and aborts uncommitted reservations without replaying them.
+- `requesters` keeps Plex account bindings, policies, poll cursors and shared
+  canonical demand in a private checked snapshot. Network I/O stays outside
+  requester and job locks, which are taken in requester, job order. Startup
+  validates the requester snapshot against the journal before transfers start.
+- `series` keeps catalog plans and monitoring revisions in a private verified
+  snapshot under the journal directory owner. A refresh captures the policy,
+  fetches outside storage locks, verifies numbering and identities, and drops its
+  result if the revision changed meanwhile. Submission batches lock series, then
+  requests, and deduplicate by media identity. `numbering` holds explicit source
+  labels, kept separate from the fixed library numbers, and `series::numbering`
+  applies reviewed numbering decisions.
+- `pack` validates explicit file mappings before recording episode jobs that
+  share one torrent. `pack::automatic` searches season packs and maps files from
+  authenticated metadata without payload. `pack::shared` binds one video to a
+  range of episodes. `library` builds the owned-library view and upgrade
+  decisions; `library::groups` and `store::groups` handle whole-group baselines,
+  replacements and atomic promotion.
+- `torrent` verifies metadata and pieces, rechecks data after restart and only
+  then reports a transfer ready; bytes on disk are never enough. One coordinator
+  per transfer owns piece claims, verified writes and completion, and hands
+  pieces to a bounded set of peer workers. `torrent::control` holds durable
+  pause, priority, selection and policy state; `torrent::selection` holds file
+  interests for mapped packs.
+- `media` reads container metadata with buffered reads and seeks, skipping
+  payload such as MP4 `mdat`, Matroska clusters and WAV data. `organizer`
+  publishes imports without overwriting: a hard link when possible, otherwise a
+  synchronized copy; it rejects symbolic links on controlled paths.
+- `net`, `tls`, `pki` and `crypto` implement HTTP/1.1, the TLS 1.3 client, X.509
+  validation and the primitives they need. A failed negotiation never disables
+  certificate validation.
+- `server` serves the Bearer-token API and the health routes. `web` shares its
+  listener and calls engine operations directly. Pages are rendered in Rust with
+  an embedded stylesheet and work without JavaScript. The optional live-progress
+  script (`/ui/live.js`) is embedded and pinned by its SHA-256 digest in the
+  content security policy and in script integrity; it polls the session-only
+  `/ui/live/jobs` and `/ui/live/transfers` read routes. Sessions use random
+  opaque cookies and separate form tokens, and session locks never span engine or
+  network work.
+- `demo` runs the end-to-end demonstration with synthetic media, a loopback peer
+  and simulated Plex and indexer services.

@@ -1,418 +1,139 @@
-# Mynou — Rust, standard library only
+# Mynou
 
-Mynou automates a media library: a Plex request or local submission becomes a
-search, verified torrent download, media import, and confirmed Plex update.
-Its components use safe Rust with **zero Cargo dependencies**, including build
-and development dependencies. There is no bundled third-party code, FFI,
-`unsafe`, or external program invocation at runtime.
+Mynou automates a media library. A Plex watchlist entry, a followed series or a
+request you submit becomes a release search, a verified BitTorrent download, an
+import into your library and a confirmed Plex update.
 
-The BitTorrent client, media parsers, HTTP/TLS stack, JSON/bencode formats, and
-durable journal belong to the project. SQLite, ffprobe, Go, qBittorrent, Radarr,
-and Sonarr are not required. Plex, TMDB, and your chosen sources are configurable
-network integrations.
+Mynou is a single program written in safe Rust using only the standard library:
+no Cargo dependencies, no `unsafe` code and no external programs at runtime. Its
+BitTorrent client, media parsers, HTTP and TLS stack and storage journal are
+part of the project, so it needs no SQLite, ffprobe, qBittorrent, Radarr or
+Sonarr. Plex, TMDB and your indexers are network services you configure.
 
-[Guided setup](docs/web.md#private-guided-setup) adds an authenticated browser
-checklist for folders, sources, native download routes, catalog and Plex.
-Fixed configuration states and links to existing guarded diagnostics help you
-reach a first request while keeping private settings out of the page.
-Optional [live progress](docs/web.md#live-progress) updates the displayed Jobs and
-Transfers without replacing filters, selected rows or unfinished forms. Enable or
-pause updates on each page; ordinary page refresh remains available.
+## What it does
 
-Explicit [episode numbering](docs/numbering.md) separates source/catalog labels
-from retained library identities. Preview and apply choices through CLI/API/browser;
-existing jobs and imports keep their original numbers. Explicit
-[shared video ownership](docs/shared-files.md) now binds consecutive episodes to
-one authenticated torrent path and one Plex range file, with guarded preview/apply.
-Reviewed [group upgrades](docs/group-upgrades.md) record complete baselines and
-replacement lineage. Confirmed owners stage until one atomic promotion makes the
-whole replacement current; prior library files remain in place.
+- **Requests** from Plex watchlists (one or several accounts), the command
+  line, an HTTP API and a browser interface.
+- **Sources**: RSS, JSON and Torznab indexers, with optional authentication,
+  and opt-in IRC announcement channels.
+- **Release selection** with movie and episode profiles (resolution, source,
+  codec, language, terms and scores) and previews that explain every decision.
+- **BitTorrent**: v1, v2 and hybrid torrents, magnets, trackers, DHT and PEX,
+  parallel peers, pause and resume, priorities, bandwidth limits and seeding
+  policies.
+- **Series**: TMDB episode plans, automatic requests for newly aired episodes,
+  an episode calendar, explicit numbering, season packs and multi-episode
+  files.
+- **Library**: imports that never overwrite, Plex confirmation, and monitored
+  quality upgrades that keep earlier files.
+- **Media analysis** of MP4/MOV, Matroska/WebM, AVI, WAV/RF64, FLAC and MP3
+  metadata.
 
-[Plex requester policies](docs/requesters.md) add stable account bindings, explicit
-opt-in profiles and captured destinations. An enabled account admits its demand
-without manual approvals or per-account quotas.
-Compatible accounts share acquisition; removals retain
-other demand and ready media. CLI, API and browser controls require reviewed
-scope guards. Configurations without requester accounts retain single-account
-behavior. [v0.19.1](https://github.com/alecerf/mynou/releases/tag/v0.19.1) verifies
-destination and quality before new requester reuse of completed operator imports.
-CI published it after all five jobs passed with **490 Rust tests** and four
-scheduler checks. See the [release evidence](docs/validation.md#recorded-0191-ci-evidence).
-
-[IRC announcement reviews](docs/irc.md) add opt-in verified TLS receivers,
-sender/channel restrictions, deterministic filters, durable duplicate suppression,
-source health and guarded CLI/API/browser reviews. Explicit grab rules now route
-hash-pinned magnets to existing approved requests after metadata verification.
-Immutable origins retain exact files, profiles and physical ownership through
-retry/restart. CI published
-[v0.20.1](https://github.com/alecerf/mynou/releases/tag/v0.20.1) after all five jobs
-passed with **533 Rust tests** and four scheduler checks. See the
-[recorded evidence](docs/validation.md#recorded-0201-ci-evidence).
-
-Optional required SASL PLAIN authenticates IRC connections before channel
-membership. Bounded capability negotiation and credential chunks reject failed
-authentication without fallback. CI published
-[v0.20.2](https://github.com/alecerf/mynou/releases/tag/v0.20.2) after all five jobs
-passed with **543 Rust tests** and four scheduler checks. See
-[IRC authentication](docs/irc.md#required-sasl-plain-authentication) and the
-[release evidence](docs/validation.md#recorded-0202-ci-evidence).
-
-Configurable fixed-delimiter text announcements now share the same claim,
-filter and verified import path. IRC display formatting is bounded, links are
-excluded from fields, and text previews are available through the CLI/API.
-CI published [v0.20.3](https://github.com/alecerf/mynou/releases/tag/v0.20.3)
-after all five jobs passed with **551 Rust tests** and four scheduler checks.
-See the [recorded evidence](docs/validation.md#recorded-0203-ci-evidence).
-
-Required [NickServ identification](docs/irc.md#required-nickserv-identification-in-0204)
-now gates channel entry on exact trusted account confirmation. Failures close
-the connection; retries identify again and public health redacts credentials.
-CI published [v0.20.4](https://github.com/alecerf/mynou/releases/tag/v0.20.4)
-from its exact validated source after all five jobs passed in run 37362054311,
-attempt 4: 560 Rust tests across 50 harnesses and four scheduler checks.
-See the [recorded evidence](docs/validation.md#recorded-0204-ci-evidence).
-
-Optional [requester selectors](docs/irc.md#requester-selectors-in-0205) now bind
-IRC grabs to one account's compatible admitted demand, including shared work.
-Waiting and metadata admission recheck the same captured interest.
-CI published [v0.20.5](https://github.com/alecerf/mynou/releases/tag/v0.20.5)
-after all five jobs passed with 568 Rust tests across 51 harnesses and four
-scheduler checks. Exact source/tag/seven-asset evidence is recorded in
-[validation](docs/validation.md#recorded-0205-ci-evidence).
-
-[Reviewed IRC requests](docs/irc.md#reviewed-requester-demand-in-0206) now confirm
-fresh catalog and requester identities, then retain canonical demand under the
-existing opt-in, sharing and captured-route controls. Explicit origins
-survive empty watchlist polls; checked intent recovery prevents replay. CLI, API
-and browser controls require the reviewed guard. The 0.20.6 implementation and
-its original local-service fixtures passed all five jobs in run 37427693256:
-585 Rust tests across 52 harnesses and four scheduler checks. CI published
-[v0.20.6](https://github.com/alecerf/mynou/releases/tag/v0.20.6) from the exact
-validated source with seven assets; the prior release remained unchanged.
-
-v0.20.7 added native HTTP delivery of requester and IRC outcome notifications,
-which has since been removed. CI published v0.20.7 after all five jobs in run
-37429460979 passed: 602 Rust tests across 53 harnesses and four scheduler checks.
-The exact tag/seven assets were verified, preserving v0.20.6.
-
-[Native indexer authentication](docs/indexers.md) adds Basic, Bearer and an
-explicit single-cookie form adapter. Origin-bound in-memory sessions renew once
-on a 401. Disabled/rate-limited sources reject new fetches, and protected source
-health views expose fixed diagnostics. v0.21.0 passed all five jobs in run
-37431238845 with 616 Rust tests across 54 harnesses and seven CI-published assets.
-v0.21.1 also passed all five jobs with 628 Rust tests and seven CI-published assets.
-Checked source policy and guarded controls retain pauses through restart.
-
-Releases 0.22.0 to 0.22.26 also added native Usenet acquisition, ZIP and RAR5
-extraction, and PAR2 verification and recovery. These features were later
-removed so Mynou focuses on torrents; their [release notes](docs/releases/) and
-Git history keep the delivery evidence.
-
-Proposed 0.22.16 adds native macOS executables for Apple Silicon and Intel.
-Both architectures must pass native build, architecture and acquisition/import
-demo checks before CI may package or publish them. See the
-[macOS installation guide](docs/macos.md) and [release scope](docs/releases/0.22.16.md).
-Publication and macOS success require actual completed Actions evidence.
-
-Proposed 0.22.27 gives the [Product Owner](.agents/skills/mynou-product/SKILL.md)
-a small evidence-based native product backlog and a recovery-first planning
-trigger. [Issue39](https://github.com/alecerf/mynou/issues/39),
-[Issue40](https://github.com/alecerf/mynou/issues/40) and
-[Issue41](https://github.com/alecerf/mynou/issues/41) track media-sized recovery,
-safe automatic Usenet repair and guided setup. They are proposals, not delivered
-capabilities. This organization change requires actual CI and separate Security/QA
-before merge and immutable Actions publication; see the
-[engineering runbook](engineering/README.md) and [scope](docs/releases/0.22.27.md).
-
-## Autonomous engineering
-
-Agents build Mynou from native GitHub Issues: one Issue, one branch and one PR
-each, coordinated by `/assign` and `/wait` comments, reviewed by a distinct QA
-pass and validated by Actions. Merging does not release: a release PR publishes
-the accumulated changes at most weekly. See the
-[engineering runbook](engineering/README.md) and [next release](docs/next-release.md).
+Every feature has explicit bounds, listed in [limits](docs/limits.md).
 
 ## Try it
 
-GitHub Actions publishes validated releases in
-[alecerf/mynou](https://github.com/alecerf/mynou/releases). The source archive
-includes a static **Linux x86_64** binary:
+Each [release](https://github.com/alecerf/mynou/releases) provides
+`mynou-vVERSION-linux-x86_64` (static), `mynou-vVERSION-macos-arm64`,
+`mynou-vVERSION-macos-x86_64` and a `SHA256SUMS` manifest.
+[Verify](docs/validation.md#verify-release-assets) the file you downloaded,
+install it as `mynou` and run the demo:
 
 ```sh
-./bin/mynou analyze examples/demo.mp4 --json
-./bin/mynou demo --dir /tmp/mynou-demo
+install -m 755 mynou-vVERSION-linux-x86_64 "$HOME/.local/bin/mynou"
+mynou demo --dir /tmp/mynou-demo
 ```
 
-To build the sources with Rust **1.99.0**:
+The demo starts a local torrent peer and simulated Plex and indexer services,
+downloads synthetic media, analyzes and imports it, and confirms it in the
+simulated Plex. It needs no account or secret; the directory must not exist yet.
+`mynou analyze FILE --json` prints the metadata of any supported media file.
+
+To build from source, use Rust 1.99.0: `cargo build --release --offline --locked`.
+
+## Install
+
+- **macOS** (Apple Silicon or Intel, no Docker): follow the
+  [macOS guide](docs/macos.md).
+- **Docker** (Linux amd64 image in a private registry): follow the
+  [Docker guide](docs/deployment.md).
+
+## First start
 
 ```sh
-cargo build --release --offline --locked
-./target/release/mynou analyze examples/demo.mp4 --json
-./target/release/mynou demo --dir /tmp/mynou-demo
+mynou init --config ./mynou.json
+mynou doctor --config ./mynou.json
+mynou serve --config ./mynou.json
 ```
 
-The demo starts a local torrent peer and simulated Plex/indexer responses,
-downloads the included synthetic media, analyzes it, imports it, and confirms
-availability. It needs no Plex account, public source, or personal secret. The
-demo directory must not already exist.
+`init` creates `mynou.json` and a private `.env` holding a random API token.
+Open **http://127.0.0.1:8787/ui**, sign in with `MYNOU_API_TOKEN` from `.env`
+and open **Setup**, which lists what is still missing.
 
-## Install on macOS
+## Essential configuration
 
-Download the `macos-arm64` binary for Apple Silicon or `macos-x86_64` for Intel,
-together with `SHA256SUMS`, from the matching published GitHub release.
-Verify its selected manifest entry before installation.
-The [macOS guide](docs/macos.md) covers installation, native configuration,
-TLS trust and Apple's application security controls. Rust and Docker are not
-required to run the standalone macOS executable.
+Plex and TMDB start disabled. Edit the generated `mynou.json`, put secrets in
+the service's environment (Docker loads them from `.env`) and restart the
+service after each change:
 
-## Install with Docker
+| What | Settings in `mynou.json` | Secret |
+| --- | --- | --- |
+| Library folders | `library.movies_root`, `library.series_root` | |
+| Downloads | `downloads` (folders, port 6881, peers, limits) | |
+| Plex server and watchlist | `plex.enabled`, `plex.url`, `plex.movies_section`, `plex.series_section` | `MYNOU_PLEX_TOKEN` |
+| TMDB catalog, needed for series | `catalog.enabled` | `MYNOU_TMDB_TOKEN` or `MYNOU_TMDB_API_KEY` |
+| Sources to search | `indexers` | `MYNOU_INDEXER_API_KEY` or per source |
 
-The final `scratch` image contains the static binary and TLS trust data. It runs
-as user 1000 and contains no shell or shared library. From 0.22.19, Actions
-publishes it to private `ghcr.io/alecerf/mynou` and records a verified digest
-in the release notes. Use an actually published version; PR checks do not
-establish registry availability.
+Relative paths resolve against the configuration file. The
+[configuration reference](docs/deployment.md#configure-mynou) lists every
+setting.
 
-Authenticate with package read access, pull the release's digest and run its
-`setup-docker` command to create the installation. The generated Compose file
-uses the running version and accepts a `MYNOU_IMAGE` digest override.
-Follow the [Docker guide](docs/deployment.md) for authentication, setup and
-upgrades. Source builds remain available through `compose.yaml`.
-
-## Implemented features
-
-- Native MP4/MOV, Matroska/WebM, AVI, WAV/RF64, FLAC, and MP3 analysis: container,
-  title, date, size, declared duration, and video/audio tracks.
-- v1, v2, and hybrid torrents; `btih`/`btmh` magnets; peer metadata exchange;
-  SHA-1/SHA-256 Merkle verification; restart recovery; and verified-file seeding.
-- HTTP/HTTPS/UDP trackers, DHT, and PEX discovery, with private-torrent rules.
-  Peer data uses TCP.
-- Bounded parallel TCP peers share verified piece work within each transfer.
-  Corrupt peer data is rejected; completed pieces still pass normal hash and
-  final torrent verification before becoming ready.
-- Persistent requests, deduplication, worker leases, retries, cancellation,
-  imports without overwriting existing files, and preservation of source files.
-- Plex watchlists, TMDB enrichment, RSS/JSON/Torznab sources, Plex refresh and
-  availability confirmation, an authenticated local HTTP API, and management CLI.
-- Named movie and episode selection profiles: resolution, source, codec and
-  language preferences, required/blocked title terms, custom scores, and a
-  minimum score. CLI/API previews explain accepted and rejected candidates
-  without submitting a job or exposing acquisition URLs.
-- Owned library records, per-entry monitoring, resolution cutoffs and controlled
-  upgrades. Preview before applying; keep earlier imports current until the
-  replacement is ready, with optional Plex path mappings for confirmation.
-- Native transfer management: durable pause/resume, priority/FIFO scheduling,
-  per-file piece priorities, global payload bandwidth limits, persistent
-  counters and ratio/time seeding policies. Controls retain library files and
-  downloads. Per-file priorities order required pieces; mapped packs can acquire a
-  durable union of selected files without downloading unrelated pieces.
-- Durable series monitoring with retained TMDB episode plans, newly aired
-  episode acquisition, optional specials, earliest-air-date choices and
-  per-episode exclusions; a paginated episode calendar shares CLI/API/browser
-  controls. Unknown air dates or missing episode identities do not acquire
-  automatically.
-- Explicit season-pack acquisitions map exact video paths to catalog episodes.
-  Mapped jobs share one native verified torrent and import only their selected
-  files. New series can be saved without automatic acquisition while choosing a
-  pack. New native pack transfers acquire only their retained file interests and
-  necessary boundary pieces; partial availability remains distinct from complete
-  torrent readiness and seeding.
-- Automatic season-pack search ranks titles under the episode profile and
-  inspects authenticated metadata without payload downloads. Unique numbered
-  files must cover every eligible missing episode. CLI/API/browser previews and
-  guarded apply bind catalog scope, source hash and exact mappings. Optional
-  `series_packs.enabled` prefers packs during monitoring with individual fallback.
-- Explicit shared videos bind 2–64 consecutive canonical episodes to one
-  authenticated torrent path and one Plex range import. Guarded CLI/API/browser
-  preview/apply records all owners atomically; cancellation, retry and subset
-  requests preserve that ownership. Shared owners require group upgrades.
-- Whole-group baselines and shared-video replacements through CLI/API/browser.
-  Immutable lineage, staged exact Plex confirmations and atomic promotion retain
-  old library versions. Replacement cancellation/retry covers every owner;
-  monitoring changes fence claims and promotion.
-- Browser management at `/ui`: search/request forms, jobs/history, owned library
-  monitoring and upgrades, transfer controls, filters, pagination and bounded
-  bulk actions with individual results. Rust renders all pages without scripts
-  or frontend dependencies.
-
-Formats and protocols have explicit limits. Analysis does not decode pictures
-or sound and does not replace Plex transcoding. Older SQLite and Go state remain
-separate; this version does not migrate them implicitly. See the
-[supported formats and limits](docs/limits.md).
-
-## Release selection and upgrades
-
-Automatic acquisition can apply separate movie and episode profiles. An empty
-profile is unrestricted; existing configurations without `selection` retain
-that behavior. A configured profile filters candidates before ranking them by
-custom score, ordered preferences, and seed count.
-
-Preview a search before submitting it:
+## Everyday commands
 
 ```sh
 mynou search --title "Example Movie" --year 2026 --config ./mynou.json
-mynou search --title "Example Series" --kind episode --season 1 --episode 2 \
-  --config ./mynou.json
-```
-
-Searches contact configured sources. They do not start a download or change the
-request journal. Selection reads release-title markers, so it cannot verify
-actual audio tracks or image quality before downloading. `VOSTFR` does not prove
-French audio, and `MULTI` does not identify individual languages. See the
-[selection guide](docs/selection.md) for configuration and decision details.
-
-Inspect ready imports and preview upgrades:
-
-```sh
-mynou library --config ./mynou.json
-mynou upgrades --config ./mynou.json
-mynou upgrades --apply --config ./mynou.json
-mynou unmonitor ID --config ./mynou.json
-```
-
-Background monitoring defaults to disabled. An upgrade needs a recorded release
-baseline. Under the current profile, an accepted baseline requires a strict
-quality-rank improvement; a baseline rejected by an explicit profile change can
-be replaced by an accepted candidate. More seeds alone are insufficient.
-Earlier or explicitly submitted imports without a baseline need an explicit
-`baseline` command before becoming eligible. Cutoffs
-follow resolution preference order. Upgrades use distinct filenames and keep
-old files and downloads; there is no automatic cleanup. With Plex enabled, the
-new imported path must be confirmed before the replacement becomes current.
-See the [library guide](docs/library.md) for configuration and API operations.
-
-The [transfer guide](docs/transfers.md) explains native download controls,
-parallel peer bounds, bandwidth limits and seeding policies. Use
-`downloads.max_peers: 1` to retain a single-peer transfer baseline.
-
-Mynou remains an early integrated implementation. Explicit numbering, shared
-multi-episode ownership and requester policies are supported as described above.
-Verified cross-seeding and broader consumer onboarding remain product work.
-The [release roadmap](docs/roadmap.md) separates the next stages; current native
-Issues hold the prioritized backlog.
-
-## Follow a series
-
-With TMDB and sources configured, track a series and inspect its episode calendar:
-
-```sh
-mynou track-series --title "Example Series" --year 2026 --tmdb-id 123 \
-  --future-only --config ./mynou.json
-mynou series --config ./mynou.json
-mynou calendar --from 2026-10-01 --to 2026-10-31 --config ./mynou.json
-```
-
-The running service checks retained monitored plans for newly aired episodes.
-Plex show requests also create these records. The browser provides Series
-settings and Calendar pages. Existing requests prevent automatic duplicates,
-including failed and cancelled jobs; use job controls for deliberate retries.
-Removing a Plex watchlist entry does not disable its retained series monitoring.
-See the [series guide](docs/series.md) for acquisition rules, persistence, bounds
-and the independent owned-library upgrade policy.
-
-Choose one torrent for several episodes with `series-pack ID --url … --mapping
-FILE`, or use **Acquire a mapped pack** in browser series details.
-`track-series --unmonitored` retains a catalog plan before choosing a source.
-See the [pack guide](docs/packs.md) for mapping format, shared-transfer behavior
-and persistence. The [transfer guide](docs/transfers.md#selective-acquisition-in-0140)
-explains verified availability, boundary storage and selection expansion.
-
-Preview automatic mapping before choosing a source:
-
-```sh
-mynou series-pack-search ID --season 1 --config ./mynou.json
-mynou series-pack-search ID --season 1 --apply --scope-id SCOPE_ID \
-  --candidate-id CANDIDATE_ID --config ./mynou.json
-```
-
-Copy both guard values from a resolved preview. The browser offers the same
-preview/apply flow. Set `"series_packs": { "enabled": true }` to prefer mapped
-packs during monitored tracking and refresh; this defaults to false. See the
-[automatic pack guide](docs/automatic-packs.md) for eligibility, metadata-only
-discovery, bounds and stale-result checks. General numbering variants remain
-outside automatic mapping.
-
-## Open the browser interface
-
-After starting the service, open **http://127.0.0.1:8787/ui** and sign in with
-`MYNOU_API_TOKEN` from your installation's `.env`. Sessions expire after eight
-hours and end at sign-out or service restart. Browser cookies do not authenticate
-the Bearer API. Pages use native forms; refresh to see new progress.
-
-The [browser guide](docs/web.md) describes request/search/library/transfer
-and series/calendar operations, safe bulk changes and TLS reverse-proxy
-deployment for remote access.
-
-## Configuration and commands
-
-```sh
-./target/release/mynou init --config ./mynou.json
-./target/release/mynou serve --config ./mynou.json
-```
-
-`init` creates local configuration and a private `.env` with a random API token.
-Plex and TMDB start disabled. Configure their addresses, enable the integrations
-you need, and provide secrets in the service environment. The API token can also
-be read from the `.env` beside the configuration file.
-
-```sh
+mynou submit --title "Example Movie" --year 2026 --config ./mynou.json
 mynou submit --title "Local movie" --path ./movie.mp4 --config ./mynou.json
-mynou submit --title "Movie" --year 2026 --url 'magnet:?xt=urn:btih:...' --config ./mynou.json
 mynou sync --config ./mynou.json
 mynou jobs --config ./mynou.json
 mynou show ID --config ./mynou.json
 mynou events ID --config ./mynou.json
 mynou retry ID --config ./mynou.json
 mynou cancel ID --config ./mynou.json
+mynou track-series --title "Example Series" --year 2026 --config ./mynou.json
+mynou calendar --config ./mynou.json
+mynou library --config ./mynou.json
+mynou upgrades --config ./mynou.json
+mynou torrents --config ./mynou.json
 mynou status --config ./mynou.json
 ```
 
-Management commands use the API when the service is running; otherwise they
-open its local journal. Dedicated series/calendar commands and pack acquisition
-require a running service; `series-pack-search` previews have a read-only offline
-fallback. Commands do not start a second download service. For a local
-Docker submission, use a path visible inside the container.
+`search` previews the release Mynou would choose without recording anything.
+`submit` records a request: without `--url` or `--path`, Mynou searches your
+sources. `sync` reads Plex watchlists now. Commands use the API while the
+service runs and otherwise open the local journal; series, calendar and transfer
+commands need the running service. `mynou help` lists every command.
 
-## Development and releases
+## Documentation
 
-Validation runs **only in GitHub Actions**. Do not run tests or lint locally.
-Commit meaningful changes, push to the repository, and inspect the Actions run.
-Fix a failing run with another commit and push; proceed once required checks
-are green.
+For users and operators:
 
-CI checks the offline Cargo graph, formatting, Clippy, tests, release builds,
-and Docker behavior. The Cargo graph must contain exactly one package, `mynou`,
-with no dependencies. Network tests use local services.
+- [Install with Docker and configure Mynou](docs/deployment.md)
+- [Install on macOS](docs/macos.md)
+- [Browser interface](docs/web.md)
+- [Sources: indexers and IRC announcements](docs/sources.md)
+- [Release selection profiles](docs/selection.md)
+- [Series, calendar and episode numbering](docs/series.md)
+- [Season packs and shared videos](docs/packs.md)
+- [Library monitoring and upgrades](docs/library.md)
+- [Torrent transfers](docs/transfers.md)
+- [Plex requester accounts](docs/requesters.md)
+- [Supported formats and limits](docs/limits.md)
+- [Release notes](docs/releases/)
 
-All Cargo test harnesses run with bounded process/thread parallelism and retained
-per-target timings/logs. Linux native/static and macOS Apple Silicon/Intel builds run concurrently; Docker and
-packaging reuse the checked static artifacts. Every required job still gates
-publication. See [CI execution and caches](docs/ci.md) for exact behavior.
+For contributors:
 
-A successful run on `trunk` automatically publishes the version from
-`Cargo.toml` if it has not been released. CI creates the matching tag and release
-from that validated commit, and publishes:
-
-- `mynou-vVERSION-linux-x86_64`, the static binary;
-- `mynou-vVERSION-macos-arm64` and `mynou-vVERSION-macos-x86_64`, native macOS binaries;
-- `SHA256SUMS`, one manifest covering the three executables.
-
-The checked Linux amd64 image is a private GitHub Container Registry package,
-published before the release with source/version labels and a verified digest.
-No custom source ZIP, image archive or duplicate checksum assets are published
-from 0.22.19. GitHub's native source downloads and earlier immutable releases
-remain available. Registry tags are not server-immutable; pin the recorded digest.
-
-No Docker Hub account or manual artifact upload is needed. The
-[validation guide](docs/validation.md) distinguishes historical 0.6.0 results
-from current Actions runs. The [benchmark method](docs/performance.md) explains
-the recorded measurements. Neither dependency absence nor passing tests prove
-code perfection.
-
-[Architecture](docs/architecture.md) · [Docker installation](docs/deployment.md) ·
-[Dependencies](docs/dependencies.md) · [Formats and limits](docs/limits.md) ·
-[Release selection](docs/selection.md) · [Library upgrades](docs/library.md) ·
-[Transfer controls](docs/transfers.md) · [Series and calendar](docs/series.md) ·
-[Pack acquisition](docs/packs.md) · [Automatic packs](docs/automatic-packs.md) ·
-[Browser management](docs/web.md) · [Roadmap](docs/roadmap.md) ·
-[Performance](docs/performance.md) · [Validation](docs/validation.md)
+- [Architecture](docs/architecture.md)
+- [CI, releases and download verification](docs/validation.md)
+- Agents build Mynou through GitHub Issues and pull requests; see
+  [AGENTS.md](AGENTS.md) and the [engineering runbook](engineering/README.md).
