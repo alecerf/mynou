@@ -19,7 +19,6 @@ use std::{
 pub const MAX_ACCOUNTS: usize = 32;
 pub const MAX_DEMANDS: usize = 10_000;
 pub const MAX_POLL_ITEMS: usize = 512;
-pub const MAX_NOTIFICATIONS: usize = 1_000;
 
 pub fn page(query: &str) -> Result<(usize, usize)> {
     let mut offset = 0;
@@ -249,7 +248,6 @@ pub struct Policy {
     pub movie_profile: String,
     pub episode_profile: String,
     pub destination: String,
-    pub notifications: String,
 }
 impl Policy {
     pub(crate) fn initial(config: &Config) -> Self {
@@ -258,7 +256,6 @@ impl Policy {
             movie_profile: config.selection.movie_profile.clone(),
             episode_profile: config.selection.episode_profile.clone(),
             destination: "default".into(),
-            notifications: "decisions".into(),
         }
     }
     pub fn from_json(v: &Value) -> Result<Self> {
@@ -269,7 +266,6 @@ impl Policy {
                 "movie_profile",
                 "episode_profile",
                 "destination",
-                "notifications",
             ],
         )?;
         let policy = Self {
@@ -277,12 +273,10 @@ impl Policy {
             movie_profile: text(v, "movie_profile")?,
             episode_profile: text(v, "episode_profile")?,
             destination: text(v, "destination")?,
-            notifications: text(v, "notifications")?,
         };
         if !valid_id(&policy.destination)
             || !valid_profile(&policy.movie_profile)
             || !valid_profile(&policy.episode_profile)
-            || !["none", "decisions", "all"].contains(&policy.notifications.as_str())
         {
             return Err("Requester: invalid policy bounds or preferences".into());
         }
@@ -294,7 +288,6 @@ impl Policy {
         v.insert("movie_profile", self.movie_profile.clone());
         v.insert("episode_profile", self.episode_profile.clone());
         v.insert("destination", self.destination.clone());
-        v.insert("notifications", self.notifications.clone());
         v
     }
     pub(crate) fn validate_config(&self, config: &Config) -> Result<()> {
@@ -669,9 +662,6 @@ pub(crate) struct State {
     pub accounts: BTreeMap<String, Record>,
     pub demands: BTreeMap<String, Demand>,
     pub operator_jobs: BTreeSet<String>,
-    pub notifications: Vec<Value>,
-    pub notification_sequence: u64,
-    pub delivery: crate::notifications::DeliveryState,
 }
 impl State {
     pub(crate) fn empty() -> Self {
@@ -680,9 +670,6 @@ impl State {
             accounts: BTreeMap::new(),
             demands: BTreeMap::new(),
             operator_jobs: BTreeSet::new(),
-            notifications: Vec::new(),
-            notification_sequence: 0,
-            delivery: crate::notifications::DeliveryState::default(),
         }
     }
     pub(crate) fn to_json(&self) -> Value {
@@ -706,33 +693,12 @@ impl State {
                     .collect(),
             ),
         );
-        v.insert("notifications", Value::Array(self.notifications.clone()));
-        if !self.delivery.is_empty() {
-            v.insert("delivery", self.delivery.to_json());
-        }
-        v.insert(
-            "notification_sequence",
-            self.notification_sequence.to_string(),
-        );
         v
     }
     pub(crate) fn from_json(v: &Value) -> Result<Self> {
-        only(
-            v,
-            &[
-                "revision",
-                "accounts",
-                "demands",
-                "operator_jobs",
-                "notifications",
-                "notification_sequence",
-                "delivery",
-            ],
-        )?;
+        only(v, &["revision", "accounts", "demands", "operator_jobs"])?;
         let mut s = Self::empty();
         s.revision = integer(v, "revision")?;
-        s.notification_sequence = integer(v, "notification_sequence")?;
-        s.delivery = crate::notifications::DeliveryState::from_json(v.get("delivery"))?;
         let list = |key| {
             v.get(key)
                 .and_then(Value::as_array)
@@ -771,94 +737,15 @@ impl State {
         if s.operator_jobs.len() > MAX_DEMANDS {
             return Err("Requester: operator interest capacity reached".into());
         }
-        let mut previous = 0;
-        for v in list("notifications")? {
-            only(v, &["id", "account_id", "demand_id", "outcome", "at"])?;
-            let id = integer(v, "id")?;
-            let account = text(v, "account_id")?;
-            let demand = text(v, "demand_id")?;
-            if id <= previous
-                || id > s.notification_sequence
-                || !s
-                    .demands
-                    .get(&demand)
-                    .is_some_and(|d| d.account_id == account)
-                || !s.accounts.contains_key(&account)
-                || ![
-                    "pending",
-                    "reserved",
-                    "active",
-                    "ready",
-                    "failed",
-                    "cancelled",
-                    "conflict",
-                    "removed",
-                ]
-                .contains(&text(v, "outcome")?.as_str())
-            {
-                return Err("Requester: invalid notification outcome".into());
-            }
-            integer(v, "at")?;
-            previous = id;
-            s.notifications.push(v.clone());
-        }
-        if s.notifications.len() > MAX_NOTIFICATIONS {
-            return Err("Requester: notification capacity reached".into());
-        }
-        for r in s.delivery.routes.values() {
-            if r.kind != "requester" || !s.accounts.contains_key(&r.scope) {
-                return Err("Requester: unbound notification route".into());
-            }
-        }
-        for e in s.delivery.events.values() {
-            if e.signal.emission > s.notification_sequence
-                || !s
-                    .demands
-                    .get(&e.signal.subject)
-                    .is_some_and(|d| d.account_id == e.signal.scope)
-            {
-                return Err("Requester: unbound notification event".into());
-            }
-        }
         Ok(s)
     }
-    pub(crate) fn notify(&mut self, id: &str, outcome: &str, now: u64) -> Result<()> {
+    /// Records the latest local outcome of a demand.
+    pub(crate) fn record_outcome(&mut self, id: &str, outcome: &str) -> Result<()> {
         let d = self
             .demands
             .get_mut(id)
             .ok_or("Requester: unknown demand")?;
-        if d.outcome == outcome {
-            return Ok(());
-        }
         d.outcome = outcome.into();
-        let preference = &self.accounts[&d.account_id].policy.notifications;
-        if preference == "none"
-            || (preference == "decisions" && matches!(outcome, "reserved" | "active"))
-        {
-            return Ok(());
-        }
-        self.notification_sequence = self
-            .notification_sequence
-            .checked_add(1)
-            .ok_or("Requester: notification sequence overflow")?;
-        let mut v = Value::object();
-        v.insert("id", self.notification_sequence.to_string());
-        v.insert("account_id", d.account_id.clone());
-        v.insert("demand_id", d.id.clone());
-        v.insert("outcome", outcome);
-        v.insert("at", now.to_string());
-        self.delivery.enqueue(crate::notifications::Signal {
-            kind: "requester".into(),
-            scope: d.account_id.clone(),
-            subject: d.id.clone(),
-            emission: self.notification_sequence,
-            outcome: outcome.into(),
-            at: now,
-        })?;
-        self.notifications.push(v);
-        if self.notifications.len() > MAX_NOTIFICATIONS {
-            self.notifications.remove(0);
-        }
         Ok(())
     }
 }

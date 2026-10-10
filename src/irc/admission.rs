@@ -462,7 +462,7 @@ impl Engine {
                     outcome: String::new(),
                 },
             );
-            next.notify(&demand_id, "pending", at)?;
+            next.record_outcome(&demand_id, "pending")?;
         }
         // The canonical origin is durable before ordinary admission can reserve a job.
         ledger.save(next)?;

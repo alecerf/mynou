@@ -60,8 +60,8 @@ locks. Locks proceed requester-then-job. Admission synchronizes requester
 provenance and reservations before recording a job with immutable captured behavior in
 format 4. A reserved admission without a linked job recovers by media identity;
 ready files and earlier numbering/shared-group lineage retain their ownership.
-Startup validates both stores before native transfers begin. Notifications record
-bounded outcomes locally. See [requester policies](requesters.md).
+Startup validates both stores before native transfers begin. See
+[requester policies](requesters.md).
 
 `series` retains bounded catalog episode plans and monitoring revisions in a
 private verified snapshot under the request-store directory owner. A catalog

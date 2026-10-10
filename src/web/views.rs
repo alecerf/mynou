@@ -235,12 +235,11 @@ pub fn search(
                 ("accepted", "Accepted releases"),
                 ("rejected", "Rejected releases"),
             ] {
-                body.push_str(&format!("<h3>{label}</h3><div class=table-wrap><table><caption>{label}</caption><thead><tr><th scope=col>Release</th><th scope=col>Source</th><th scope=col>Type</th><th scope=col>Availability</th><th scope=col>Score</th><th scope=col>Decision</th></tr></thead><tbody>"));
+                body.push_str(&format!("<h3>{label}</h3><div class=table-wrap><table><caption>{label}</caption><thead><tr><th scope=col>Release</th><th scope=col>Source</th><th scope=col>Seeds</th><th scope=col>Score</th><th scope=col>Decision</th></tr></thead><tbody>"));
                 for candidate in report.get(key).map(array).unwrap_or_default() {
                     let selected = report.get("selected_candidate_id").and_then(Value::as_str)
                         == candidate.get("id").and_then(Value::as_str);
                     let assessment = candidate.get("assessment").unwrap_or(&Value::Null);
-                    let usenet = text(candidate, "transport") == "usenet";
                     let reasons = assessment
                         .get("reasons")
                         .map(array)
@@ -252,7 +251,7 @@ pub fn search(
                         .collect::<Vec<_>>()
                         .join("; ");
                     body.push_str(&format!(
-                        "<tr><td>{}{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+                        "<tr><td>{}{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
                         display(text(candidate, "title")),
                         if selected {
                             "<small>Automatically selected</small>"
@@ -260,12 +259,7 @@ pub fn search(
                             ""
                         },
                         display(text(candidate, "source")),
-                        if usenet { "Usenet" } else { "Torrent" },
-                        if usenet {
-                            format!("{} bytes advertised", scalar(candidate, "advertised_bytes"))
-                        } else {
-                            format!("{} seeders", scalar(candidate, "seeders"))
-                        },
+                        scalar(candidate, "seeders"),
                         assessment
                             .get("rank")
                             .map(|rank| scalar(rank, "custom_score"))
@@ -404,12 +398,7 @@ pub fn job(engine: &Arc<Engine>, session: &Session, query: &Form, id: &str) -> R
     if job.shared_upgrade.is_some() {
         body.push_str("<p>This replacement belongs to a complete shared group. Cancel or retry affects every replacement owner. Staged owners await the remaining Plex confirmations; the previous library group stays current.</p>");
     }
-    if let Some(origin) = &job.usenet_origin {
-        body.push_str("<p><a href=\"/ui/usenet\">Open native Usenet transfers</a>. Cancel and retry through this library job.</p>");
-        if let Some(id) = &origin.transfer_id {
-            body.push_str(&format!("<p>Usenet transfer: {}</p>", e(id)));
-        }
-    } else if let Some(id) = &job.download_id {
+    if let Some(id) = &job.download_id {
         body.push_str(&format!(
             "<p><a href=\"/ui/transfers/{}\">Open native transfer</a></p>",
             e(id)
@@ -856,9 +845,7 @@ pub(super) fn frame(title: &str, active: &str, session: Option<&Session>, body: 
             ("/ui/transfers", "Transfers"),
             ("/ui/requesters", "Requesters"),
             ("/ui/irc", "Announcements"),
-            ("/ui/notifications", "Notifications"),
             ("/ui/indexers", "Indexers"),
-            ("/ui/usenet", "Usenet"),
         ] {
             html.push_str(&format!(
                 "<a href={path}{}>{label}</a>",

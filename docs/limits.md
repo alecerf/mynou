@@ -182,8 +182,7 @@ accounts retain interests and cursors. New accounts require explicit opt-in;
 an enabled account admits demand without manual approvals or per-account quotas.
 Library maintenance and explicit operator submissions remain separate from new
 requester admission.
-Notification preferences select bounded recorded outcomes, without external
-transport. Requester polling acquires aired episodes individually; optional
+Requester polling acquires aired episodes individually; optional
 operator season-pack automation retains its earlier rules. Removed requester
 demand remains a tombstone and is not silently revived. Ready imports
 stay present. New reuse of uncaptured operator work requires ready regular-file
@@ -248,15 +247,14 @@ consume flash messages or renew sessions. Browser/assistive-technology
 interoperability has not been independently verified. See [live progress](web.md#live-progress).
 The UI retains bounded pagination and bulk job/library/transfer/series controls. It does not edit
 configuration or adopt a complete existing Plex library. Plex requester policies
-provide explicit opt-in and routing with recorded notification outcomes;
-requester self-service remains later work. Explicit native HTTP notification routes
-passed complete 0.20.7 CI/publication; see notifications.md.
+provide explicit opt-in and routing; requester self-service remains
+later work.
 Indexer integrations support RSS/JSON/Torznab endpoints. Native Basic, Bearer and
 explicit single-cookie form authentication, bounded renewal, request intervals
 and redacted health passed complete v0.21.0 CI. Checked persistent source policy
 and guarded controls passed complete v0.21.1 CI. Login
 redirects, CSRF/CAPTCHA/interactive flows, arbitrary cookie jars and a general
-tracker adapter catalog remain unsupported; Usenet follows later. Opt-in IRC reception
+tracker adapter catalog remain unsupported. Opt-in IRC reception
 supports an explicit strict JSON envelope and review rules, with eight sources,
 64 rules, 1,000 retained identities and an 8 MiB checked snapshot. Duplicates do
 not rewrite history; full history rejects new identities without pruning.
@@ -271,8 +269,7 @@ provider messages. The 0.20.2 increment adds required SASL PLAIN with bounded ca
 and credentials; remote use requires verified TLS, and failure has no
 unauthenticated fallback. Only PLAIN is supported; credentials retain their
 UTF-8 bytes without SASLprep or Unicode normalization. IRC pack/upgrade actions
-and broader tracker text adapters,
-broader notification transports, cross-seeding and broader bulk automation remain later work.
+and broader tracker text adapters, cross-seeding and broader bulk automation remain later work.
 See [IRC behavior](irc.md) for protocol, deadlines and recovery. Complete
 validation/publication passed for v0.20.3; later commits require their own complete CI.
 The 0.20.4 NickServ increment requires exact configured sender/account notices
@@ -288,12 +285,7 @@ Title-only, missing/future catalog facts, ambiguous retained series and mismatch
 source labels stay unresolved. Aborted admission intents are terminal and never
 replayed. New origin semantics use requester snapshot format 2 and IRC format 3;
 old binaries cannot safely read those files. Complete v0.20.6 CI/publication passed
-with 585 Rust tests. Notification route/event semantics require requester format 3
-and IRC format 4. Delivery is at-least-once, limited to 32 routes and 1,024 events
-per store, eight attempts and eight events per dispatch. Only terminal events can
-be pruned; full live capacity rejects a new owning outcome rather than dropping
-work. No redirect or unbounded retry is permitted. HTTP calls have a five-second
-budget; synchronous DNS can exceed it. Receiver deduplication is required.
+with 585 Rust tests.
 
 The [roadmap](roadmap.md) separates these capabilities into future releases.
 
@@ -302,6 +294,13 @@ The [roadmap](roadmap.md) separates these capabilities into future releases.
 The Rust journal replaces SQLite and requires a single owner of its directory.
 Go-release files stay separate; no silent schema or torrent migration occurs.
 Preserve the library and downloads when changing versions.
+
+Outcome notifications were removed without migration. Requester snapshots
+(`requesters.bin`) saved by earlier versions hold notification records that this
+version rejects, so Mynou does not start while such a snapshot is present. IRC
+history saved in format 4 (written once an IRC notification route was
+configured) is rejected too, and a configuration with a `notifications` section
+fails to load.
 
 Offline library listing and upgrade previews use read-only storage. They do not
 create directories/files, change permissions, compact or repair the journal.
@@ -329,113 +328,3 @@ require a system providing that source.
 Explicit alternate/absolute [numbering](numbering.md) is implemented in 0.16.
 Retained canonical identities cannot be reassigned; new jobs capture admitted
 source labels. Multi-episode physical ownership remains the next release stage.
-
-## Native Usenet format stage
-
-The original v0.22.0 NZB/yEnc implementation passed complete CI.
-NZB input is bounded UTF-8 XML without DTD expansion, at most 1,024 files and
-32,768 articles. Native yEnc requires part CRCs, exact ranges and a final complete
-CRC; decoded parts are at most 16 MiB and initial in-memory assembly at most
-64 MiB. CRC is accidental-corruption detection, not media identity. Later validated increments provide NNTP, Newznab and persistent acquisition.
-Archive extraction and PAR2 repair still require later increments. See [native Usenet stages](usenet.md) for the explicit contract.
-
-The original v0.22.1 NNTP/TLS stage passed complete CI. It uses
-verified implicit TLS, strict AUTHINFO/BODY identities, bounded CRLF/dot bodies,
-absolute budgets and one active operation per provider. Protected guarded probes
-never request articles or admit work. Health/attempt counters are ephemeral;
-Durable acquisition and Newznab have subsequent validated releases; archives
-and repair remain separate increments.
-
-The v0.22.2 workspace stage passed all five jobs. Checked private receipts and
-streamed assembly/recovery retain exact source/provider/size and output proofs.
-The v0.22.3 queue passed complete CI with 680 Rust tests. It adds reviewed private
-staging, retained attempt budgets and at most two workers. Raw staging never
-admits a library job. The v0.22.4 typed Newznab discovery/document transport scope
-passed complete CI. The v0.22.5 held-owner interface passed all five jobs with 712 Rust tests.
-The v0.22.6 native canonical/requester library path passed complete CI with 729 Rust tests.
-It supports one direct-media file per NZB; archives/PAR2 and packs remain
-subsequent increments (Usenet upgrades follow in [a later release](usenet.md#usenet-upgrades)). Existing-journal recovery is deferred until joint
-ownership validation, while valid held preparations can be linked after restart.
-Metadata acceptance never proves downloaded content. Owner digests supplied to
-the library interface do not independently establish admission or approval.
-
-The v0.22.7 ZIP/DEFLATE [format scope](archives.md) passed complete CI.
-It supports classic single-disk stored/DEFLATE entries within captured limits;
-inspection never verifies content and decoding never chooses output paths.
-The verified v0.22.8 opt-in library path supports one supported media entry in one
-ZIP/NZB file, captured source/entry/bounds, private restartable extraction and
-verified output proofs. It requires current permission, native media checks,
-independent-inode import and exact Plex confirmation, and passed all five jobs with 773 Rust tests.
-ZIP64, RAR, PAR2 and multi-file packs remain later increments.
-No external archive decoder or repair helper is invoked.
-
-Verified v0.22.9 adds a bounded stored RAR5 [format subset](archives.md#bounded-rar5-stored-formats-in-0229)
-with 2 MiB total headers, checked integers/CRCs, safe names/types and 64 KiB
-streaming. It passed all five jobs with 791 Rust tests; automatic admission follows.
-Compressed/solid/split/encrypted RAR, RAR4, service blocks and most extras are
-explicitly unsupported. No archive helper or crate is used.
-
-Active v0.22.10 admits one stored RAR5 media entry from one NZB file after explicit
-`usenet.downloads.rar` opt-in. It freezes format/limits/owner identity, uses private
-RAR descriptor 2 and journal 8, and keeps all native media/import/requester/Plex
-gates. It requires its own CI. Compressed RAR, PAR2 and multi-file acquisition
-remain separate stages. No implicit repair, cleanup or format fallback occurs.
-
-## Bounded PAR2 library recovery in 0.22.12
-
-The [single-file API](par2.md) accepts exactly one described recoverable
-file in a captured complete core set. Hard limits are 16 MiB of protected content,
-256 input slices, eight damaged/missing slices, 1 MiB per slice, 32 MiB additional
-working buffers and 134,217,728 field operations. Smaller `RecoveryLimits` are
-supported; the captured Set and caller-owned inputs are outside the buffer budget.
-Missing slices require consecutive recovery exponents beginning at zero.
-
-Recovery verifies captured source length/SHA-256 before/after, each used recovery
-header/packet/payload, zero-padded slice MD5/CRC32, full-file MD5 and first-16-KiB
-MD5. Cancellation is checked between bounded synchronous chunks; a blocking
-caller Read cannot be interrupted. Changed/corrupt/unsupported input fails closed.
-Successful output is a caller-owned Vec, never an implicit filesystem write,
-overwrite, ownership journal or permission to admit media. Existing Usenet and
-library protections remain required for subsequent integration.
-
-## Proposed aggregate PAR2 memory recovery in 0.22.13
-
-The [multi-file API](par2.md) accepts exactly one immutable input per captured
-recoverable File ID and returns verified caller-owned outputs in Main order.
-`MultiRecoveryLimits.max_files` defaults to eight and may be reduced.
-`MultiRecoveryLimits.recovery` applies the existing limits to the **whole set**:
-16 MiB combined content, 256 total slices, eight total erasures, 1 MiB slices,
-32 MiB additional memory and 134217728 field operations. Combined output, scratch,
-residuals and bounded table/mapping/matrix overhead count toward working memory.
-No per-file budget reset, implicit input omission or partial result is permitted.
-No filesystem write, ownership journal, acquisition or library permission is added.
-Final CI, separately leased Security/QA and immutable Actions publication remain
-required; this document is not verification evidence.
-
-## Proposed read-only PAR2 verification in 0.22.14
-
-`par2-verify FILE --root DIRECTORY` and exact-ID library reports diagnose protected
-content within eight files/16 MiB/256 slices/1 MiB slices, without recovery writes
-or admission. Source and protected bytes are revalidated; symbolic-link/type/path
-changes fail closed when observed. The directory adapter budgets internally read
-inputs plus 12 MiB conservative bounded path/metadata overhead; paths are at most
-8 KiB/128 components. Scratch must fit captured working limits. Cancellation is
-cooperative between 64 KiB read/hash chunks and cannot interrupt an OS call.
-No atomic filesystem snapshot, parity correctness, ownership or repair permission
-is promised. Missing zero-byte files are reported as absent. See [support](par2.md).
-
-## Proposed private PAR2 persistence in 0.22.15
-
-Only a new workspace below an existing caller-controlled private Unix directory
-is supported. Fixed File-ID outputs, an exclusive standard file lock and a
-separately tagged descriptor bind exact owner/source/inventory/resource policy.
-Descriptor JSON is at most 16 KiB and must fit before any writes. Combined
-protected content plus slice scratch and 1 MiB persistence overhead must fit the
-captured working limit. Borrowed captured Set/source and caller inputs are excluded;
-reconstruction buffers are dropped before bounded readback. Original aggregate
-recovery ceilings remain unchanged. Directory inventory inspects at most its eight
-outputs, owner and descriptor plus one rejecting extra entry, never a public scan.
-Read/write/hash chunks are at most 64 KiB. No existing-file overwrite, automatic
-queue/library admission, live permission inference or hostile atomic snapshot is
-provided. Incomplete staging remains unpublished; post-rename synchronization
-uncertainty requires checked reopen. See [support](par2.md).

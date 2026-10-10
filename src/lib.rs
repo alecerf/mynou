@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 
-pub mod archive;
 pub mod bencode;
 pub mod config;
 pub mod crypto;
@@ -14,11 +13,9 @@ pub mod json;
 pub mod library;
 pub mod media;
 pub mod net;
-pub mod notifications;
 pub mod numbering;
 pub mod organizer;
 pub mod pack;
-pub mod par2;
 pub mod pki;
 pub mod requesters;
 pub mod selection;
@@ -27,7 +24,6 @@ pub mod server;
 pub mod store;
 pub mod tls;
 pub mod torrent;
-pub mod usenet;
 mod web;
 mod xml;
 

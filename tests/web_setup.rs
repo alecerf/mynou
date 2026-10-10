@@ -65,7 +65,7 @@ fn empty_installation_gives_missing_and_optional_states_without_writes() {
     state(&page.body, "downloads", "missing");
     state(&page.body, "catalog", "optional");
     state(&page.body, "plex", "optional");
-    assert!(page.body.contains("Both are currently disabled"));
+    assert!(page.body.contains("They are currently disabled"));
     assert!(
         page.body
             .contains("Connections, credentials and folder access have not been tested")
@@ -180,45 +180,6 @@ fn disabled_sources_offer_review_without_starting_a_probe() {
     state(&page.body, "sources", "attention");
     assert!(page.body.contains("0 enabled"));
     assert!(page.body.contains("Review sources and diagnostics"));
-    assert_eq!(indexer.calls.load(Ordering::Acquire), 0);
-    assert_eq!(files(&directory.0), before);
-    page.no_secrets();
-}
-
-#[test]
-fn newznab_source_requires_its_native_usenet_route_even_with_torrents_enabled() {
-    let directory = Directory::new();
-    let indexer = Indexer::open(Value::Array(vec![]));
-    let mut value = configuration(Some(&indexer), "{}");
-    let Value::Array(sources) = value.get_mut("indexers").unwrap() else {
-        panic!("source fixture");
-    };
-    sources[0].insert("id", "setup-newznab");
-    sources[0].insert("kind", "newznab");
-    let mut policy = Value::object();
-    policy.insert("server_id", "setup-provider");
-    sources[0].insert("usenet", policy);
-    value.insert(
-        "usenet",
-        mynou::json::parse(
-            r#"{"servers":[{"id":"setup-provider","host":"127.0.0.1","port":1,"tls":false}]}"#,
-        )
-        .unwrap(),
-    );
-    let mut cfg = config::from_json(&value, &directory.0).unwrap();
-    cfg.downloads_enabled = true;
-    let server = Server::open(cfg);
-    let browser = Browser::login(&server);
-    let before = files(&directory.0);
-    let page = browser.get(&server, "/ui/setup");
-    assert_eq!(page.status, 200);
-    state(&page.body, "sources", "configured");
-    state(&page.body, "downloads", "attention");
-    assert!(
-        page.body
-            .contains("do not match an enabled native download route")
-    );
-    assert!(page.body.contains("href=\"/ui/usenet\""));
     assert_eq!(indexer.calls.load(Ordering::Acquire), 0);
     assert_eq!(files(&directory.0), before);
     page.no_secrets();

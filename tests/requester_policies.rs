@@ -507,62 +507,6 @@ fn demand_id_job(engine: &Engine, id: &str) -> String {
         .into()
 }
 #[test]
-fn notifications_respect_preferences_and_deduplicate_repeated_outcomes() {
-    let dir = Directory::new();
-    let accounts = Accounts::open();
-    for a in ["alice", "bob"] {
-        accounts.watchlist(a, vec![movie(7, "Fixture Movie")]);
-    }
-    let engine = Engine::open_for_management(accounts.config(&dir.0)).unwrap();
-    for (a, n) in [("alice", "none"), ("bob", "all")] {
-        let mut p = policy(&engine, a);
-        p.enabled = true;
-        p.notifications = n.into();
-        apply(&engine, a, policy_query(p));
-    }
-    engine.sync_requesters().unwrap();
-    let before = engine
-        .requester("bob", 0, 100)
-        .unwrap()
-        .get("notifications")
-        .unwrap()
-        .clone();
-    engine.sync_requesters().unwrap();
-    assert_eq!(
-        engine
-            .requester("bob", 0, 100)
-            .unwrap()
-            .get("notifications"),
-        Some(&before)
-    );
-    assert!(
-        engine
-            .requester("alice", 0, 100)
-            .unwrap()
-            .get("notifications")
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .is_empty()
-    );
-    let acquired = job(&engine, "bob");
-    ready(&engine, &acquired.id);
-    engine.sync_requesters().unwrap();
-    let outcomes = engine.requester("bob", 0, 100).unwrap();
-    assert_eq!(
-        outcomes
-            .get("notifications")
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|n| n.get("outcome").and_then(Value::as_str) == Some("ready"))
-            .count(),
-        1
-    );
-    no_credentials(&outcomes);
-}
-#[test]
 fn captured_destination_and_profile_cannot_be_rebound_through_job_updates() {
     let dir = Directory::new();
     let accounts = Accounts::open();

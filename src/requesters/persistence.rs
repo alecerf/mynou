@@ -14,7 +14,6 @@ use std::{
 };
 const MAGIC: &[u8; 8] = b"MYNOUR01";
 const IRC_MAGIC: &[u8; 8] = b"MYNOUR02";
-const DELIVERY_MAGIC: &[u8; 8] = b"MYNOUR03";
 const MAX_BYTES: usize = 16 * 1024 * 1024;
 
 pub(crate) struct RequesterStore {
@@ -51,9 +50,7 @@ impl RequesterStore {
                     .read_to_end(&mut bytes)
                     .map_err(|_| "Requester: cannot read snapshot")?;
                 if bytes.len() < 48
-                    || (&bytes[..8] != MAGIC
-                        && &bytes[..8] != IRC_MAGIC
-                        && &bytes[..8] != DELIVERY_MAGIC)
+                    || (&bytes[..8] != MAGIC && &bytes[..8] != IRC_MAGIC)
                     || u64::from_le_bytes(
                         bytes[8..16]
                             .try_into()
@@ -74,9 +71,6 @@ impl RequesterStore {
                     && &bytes[..8] == MAGIC
                 {
                     return Err("Requester: explicit IRC origins require snapshot format 2".into());
-                }
-                if !state.delivery.is_empty() && &bytes[..8] != DELIVERY_MAGIC {
-                    return Err("Requester: notification events require snapshot format 3".into());
                 }
                 state
             }
@@ -110,8 +104,6 @@ impl RequesterStore {
                 );
             }
         }
-        next.delivery
-            .configure(&config.notifications, "requester")?;
         State::from_json(&next.to_json())?;
         if next != store.state {
             store.state = next;
@@ -144,18 +136,12 @@ impl RequesterStore {
         if payload.len() > MAX_BYTES {
             return Err("Requester: snapshot exceeds 16 MiB".into());
         }
-        let mut bytes = Vec::with_capacity(payload.len() + 48);
-        bytes.extend_from_slice(if !state.delivery.is_empty() {
-            DELIVERY_MAGIC
-        } else if state
+        let irc = state
             .demands
             .values()
-            .any(|d| d.origins.iter().any(|o| o.starts_with("irc:")))
-        {
-            IRC_MAGIC
-        } else {
-            MAGIC
-        });
+            .any(|d| d.origins.iter().any(|o| o.starts_with("irc:")));
+        let mut bytes = Vec::with_capacity(payload.len() + 48);
+        bytes.extend_from_slice(if irc { IRC_MAGIC } else { MAGIC });
         bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
         bytes.extend_from_slice(&payload);
         bytes.extend_from_slice(&sha256(&bytes));

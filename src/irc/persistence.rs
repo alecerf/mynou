@@ -14,7 +14,6 @@ use std::{
 const MAGIC: &[u8; 8] = b"MYNOUI01";
 const ROUTE_MAGIC: &[u8; 8] = b"MYNOUI02";
 const ADMISSION_MAGIC: &[u8; 8] = b"MYNOUI03";
-const DELIVERY_MAGIC: &[u8; 8] = b"MYNOUI04";
 const MAX_BYTES: usize = 8 * 1024 * 1024;
 pub(crate) struct AnnouncementStore {
     pub state: State,
@@ -24,12 +23,7 @@ pub(crate) struct AnnouncementStore {
     dirty: bool,
 }
 impl AnnouncementStore {
-    pub(crate) fn open(
-        directory: &Path,
-        settings: &Settings,
-        notifications: &crate::notifications::Settings,
-        read_only: bool,
-    ) -> Result<Self> {
+    pub(crate) fn open(directory: &Path, settings: &Settings, read_only: bool) -> Result<Self> {
         let path = directory.join("announcements.bin");
         reject_symlinks(&path)?;
         let state = match fs::symlink_metadata(&path) {
@@ -59,8 +53,7 @@ impl AnnouncementStore {
                 if bytes.len() < 48
                     || (&bytes[..8] != MAGIC
                         && &bytes[..8] != ROUTE_MAGIC
-                        && &bytes[..8] != ADMISSION_MAGIC
-                        && &bytes[..8] != DELIVERY_MAGIC)
+                        && &bytes[..8] != ADMISSION_MAGIC)
                     || u64::from_le_bytes(
                         bytes[8..16]
                             .try_into()
@@ -82,9 +75,6 @@ impl AnnouncementStore {
                 {
                     return Err("IRC: requester admissions require history format 3".into());
                 }
-                if !state.delivery.is_empty() && &bytes[..8] != DELIVERY_MAGIC {
-                    return Err("IRC: notification events require history format 4".into());
-                }
                 state
             }
         };
@@ -101,7 +91,6 @@ impl AnnouncementStore {
                 next.bindings.insert(source.id.clone(), source.binding());
             }
         }
-        next.delivery.configure(notifications, "irc")?;
         State::from_json(&next.to_json())?;
         let dirty = next != state;
         Ok(Self {
@@ -132,52 +121,13 @@ impl AnnouncementStore {
             .revision
             .checked_add(1)
             .ok_or("IRC: history revision overflow")?;
-        for r in next.records.values() {
-            let outcome = if r.admission.as_ref().is_some_and(|a| a.phase == "aborted") {
-                "aborted"
-            } else if let Some(route) = &r.route {
-                match route.phase.as_str() {
-                    "reserved" => "reserved",
-                    "routed" => "routed",
-                    _ => "route_aborted",
-                }
-            } else {
-                &r.decision
-            };
-            let old = self.state.records.get(&r.id);
-            let previous = old.map(|r| {
-                if r.admission.as_ref().is_some_and(|a| a.phase == "aborted") {
-                    "aborted"
-                } else if let Some(route) = &r.route {
-                    match route.phase.as_str() {
-                        "reserved" => "reserved",
-                        "routed" => "routed",
-                        _ => "route_aborted",
-                    }
-                } else {
-                    &r.decision
-                }
-            });
-            if previous != Some(outcome) {
-                next.delivery.enqueue(crate::notifications::Signal {
-                    kind: "irc".into(),
-                    scope: r.source_id.clone(),
-                    subject: r.id.clone(),
-                    emission: r.revision,
-                    outcome: outcome.into(),
-                    at: crate::store::now().max(r.first_seen),
-                })?;
-            }
-        }
         State::from_json(&next.to_json())?;
         let payload = json::stringify(&next.to_json()).into_bytes();
         if payload.len() > MAX_BYTES {
             return Err("IRC: history exceeds 8 MiB".into());
         }
         let mut bytes = Vec::with_capacity(payload.len() + 48);
-        bytes.extend_from_slice(if !next.delivery.is_empty() {
-            DELIVERY_MAGIC
-        } else if next.records.values().any(|r| r.admission.is_some()) {
+        bytes.extend_from_slice(if next.records.values().any(|r| r.admission.is_some()) {
             ADMISSION_MAGIC
         } else if next.records.values().any(|r| r.route.is_some()) {
             ROUTE_MAGIC

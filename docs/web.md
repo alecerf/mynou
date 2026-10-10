@@ -52,9 +52,9 @@ without npm packages; real browser/assistive-technology review remains unclaimed
 
 Open **Setup** from authenticated navigation or **Check setup** on Overview.
 The checklist describes loaded folder settings, active sources and their required
-authentication, an enabled matching torrent/Usenet route, optional catalog
+authentication, enabled native torrent downloads, optional catalog
 credentials and Plex settings. Missing credentials, malformed addresses, disabled
-sources and incompatible source/route settings receive fixed actionable states.
+sources and disabled downloads receive fixed actionable states.
 
 **Configured** describes settings and credential presence. It does not establish
 successful authentication, provider connectivity, writable/private storage or a
@@ -62,9 +62,9 @@ working personal installation. Folder paths, source labels/addresses, credential
 names/values and upstream error bodies are excluded from this projection.
 
 Opening Setup performs no network request, disk write, synchronization,
-acquisition or notification. Existing **Indexers** and **Usenet** links lead to
-their bounded reviewed diagnostics, with unchanged expiry, session, CSRF/origin
-and provider rules. Applying a Usenet connection probe requests no articles.
+acquisition or notification. The existing **Indexers** link leads to its
+bounded reviewed diagnostics, with unchanged expiry, session, CSRF/origin and
+provider rules.
 This page adds no Plex network probe or configuration-writing endpoint.
 
 Edit the installation's private configuration/environment outside the browser;
@@ -196,8 +196,8 @@ This interface has the privileges of the shared API token. It does not add
 individual users. API requests still require
 `Authorization: Bearer …`; browser cookies never authenticate `/api` routes,
 and a Bearer header does not sign a browser session in. Configuration editing,
-notifications configuration, WebSocket streaming and personal-installation validation remain
-outside this release.
+WebSocket streaming and personal-installation validation remain outside this
+release.
 
 [Docker installation](deployment.md) · [Explicit limits](limits.md) ·
 [CI validation](validation.md) · [Release roadmap](roadmap.md)
