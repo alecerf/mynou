@@ -26,14 +26,13 @@ def toml(version="0.22.34", lto="thin"):
 
 
 def release_files(version="0.23.0"):
-    return {"Cargo.toml": "modified", "Cargo.lock": "modified", f"docs/releases/{version}.md": "added",
-            "docs/releases/unreleased/39.md": "removed"}
+    return {"Cargo.toml": "modified", "Cargo.lock": "modified", "docs/releases/unreleased.md": "removed"}
 
 
 class ReleasePullRequests(unittest.TestCase):
     def check(self, **overrides):
         values = dict(base=manifest(), head=manifest("0.23.0"), files=release_files(), labels={"release"},
-                      latest=LATEST, shipped_change=True, tag_exists=False, now=AT, policy=POLICY)
+                      latest=LATEST, shipped_change=True, tag_exists=False, now=AT, policy=POLICY, commits=1)
         values.update(overrides)
         return releases.check(**values)
 
@@ -47,7 +46,7 @@ class ReleasePullRequests(unittest.TestCase):
         errors = self.check(labels=set(), files={"src/lib.rs": "modified", "Cargo.toml": "modified"})
         self.assertEqual(len(errors), 1)
         self.assertIn("labeled `release`", errors[0])
-        self.assertIn("docs/releases/unreleased/", errors[0])
+        self.assertIn("docs/releases/unreleased.md", errors[0])
 
     def test_a_release_pr_bumps_the_version(self):
         self.assertEqual(self.check(head=manifest()), ["A PR labeled `release` must bump the package version."])
@@ -63,12 +62,15 @@ class ReleasePullRequests(unittest.TestCase):
         self.assertIn("nothing in Cargo.toml but the package version",
                       " ".join(self.check(head=manifest("0.23.0", lto="fat"))))
 
-    def test_a_release_pr_adds_its_notes_and_a_new_tag(self):
-        files = release_files()
-        files.pop("docs/releases/0.23.0.md")
-        self.assertIn("docs/releases/0.23.0.md", " ".join(self.check(files=files)))
-        files["docs/releases/0.23.0.md"] = "removed"
-        self.assertIn("docs/releases/0.23.0.md", " ".join(self.check(files=files)))
+    def test_a_release_pr_consumes_the_unreleased_notes_in_one_commit_with_a_new_tag(self):
+        for files in ({"Cargo.toml": "modified", "Cargo.lock": "modified"},
+                      dict(release_files(), **{"docs/releases/unreleased.md": "modified"}),
+                      dict(release_files(), **{"docs/releases/unreleased.md": "added"})):
+            self.assertIn("deletes docs/releases/unreleased.md", " ".join(self.check(files=files)))
+        # No per-version notes file may appear: the release ships the deleted notes.
+        extra = dict(release_files(), **{"docs/releases/0.23.0.md": "added"})
+        self.assertIn("docs/releases/0.23.0.md", " ".join(self.check(files=extra)))
+        self.assertIn("single commit", " ".join(self.check(commits=2)))
         self.assertIn("v0.23.0 already exists", " ".join(self.check(tag_exists=True)))
 
     def test_releases_are_weekly_unless_urgent(self):
@@ -129,7 +131,8 @@ class FakeAPI:
         if method != "GET":
             raise AssertionError("The release policy only reads")
         if path == "pulls/5":
-            return {"labels": [{"name": n} for n in self.labels], "base": {"sha": BASE}, "head": {"sha": HEAD}}
+            return {"labels": [{"name": n} for n in self.labels], "base": {"sha": BASE}, "head": {"sha": HEAD},
+                    "commits": 1}
         if path in ("contents/Cargo.toml?ref=" + BASE, "contents/Cargo.toml?ref=v0.22.34"):
             return toml()
         if path == "contents/Cargo.toml?ref=" + HEAD:
@@ -152,13 +155,13 @@ class ReleasePolicyCheck(unittest.TestCase):
     def test_the_check_reads_native_state_and_passes_a_compliant_release(self):
         api = FakeAPI([{"filename": "Cargo.toml", "status": "modified"},
                        {"filename": "Cargo.lock", "status": "modified"},
-                       {"filename": "docs/releases/0.23.0.md", "status": "added"}])
+                       {"filename": "docs/releases/unreleased.md", "status": "removed"}])
         self.assertEqual(releases.check_pr(api, 5, AT), [])
         self.assertIn("git/ref/tags/v0.23.0", api.paths)
 
     def test_renamed_product_code_is_caught_and_work_prs_skip_release_lookups(self):
         api = FakeAPI([{"filename": "Cargo.toml", "status": "modified"},
-                       {"filename": "docs/releases/0.23.0.md", "status": "renamed",
+                       {"filename": "docs/releases/unreleased.md", "status": "renamed",
                         "previous_filename": "src/old.rs"}])
         self.assertIn("src/old.rs", " ".join(releases.check_pr(api, 5, AT)))
         work = FakeAPI([{"filename": "src/par2.rs", "status": "modified"}], labels=(), head_version="0.22.34")
@@ -167,15 +170,18 @@ class ReleasePolicyCheck(unittest.TestCase):
 
 
 MERGED = "c" * 40
+PARENT = "d" * 40
 
 
 class TagAPI:
     """A merged release PR whose merge commit carries `merged_version`."""
     def __init__(self, merged_version="0.23.0", head_version="0.23.0", base_version="0.22.34", merged=True,
-                 labels=("release",), exists=False, relation="behind", commit=MERGED):
+                 labels=("release",), exists=False, relation="behind", commit=MERGED, parent_version="0.22.34",
+                 parents=(PARENT,), notes=True, latest=LATEST):
         self.cfg = {"release_policy": POLICY, "default_branch": "trunk"}
-        self.versions = {MERGED: merged_version, HEAD: head_version, BASE: base_version}
+        self.versions = {MERGED: merged_version, HEAD: head_version, BASE: base_version, PARENT: parent_version}
         self.merged, self.labels, self.exists, self.relation, self.commit = merged, labels, exists, relation, commit
+        self.parents, self.notes, self.latest = parents, notes, latest
         self.calls = []
 
     def rest(self, method, path, value=None):
@@ -187,6 +193,14 @@ class TagAPI:
                     "merge_commit_sha": self.commit, "base": {"sha": BASE}, "head": {"sha": HEAD}}
         if path.startswith("contents/Cargo.toml?ref="):
             return toml(self.versions[path.rsplit("=", 1)[1]])
+        if path == "git/commits/" + MERGED:
+            return {"parents": [{"sha": sha} for sha in self.parents]}
+        if path == "contents/docs/releases/unreleased.md?ref=" + PARENT:
+            if self.notes:
+                return {"type": "file"}
+            raise APIError(404)
+        if path == "releases/latest":
+            return {"tag_name": self.latest["tag"], "published_at": protocol.stamp(self.latest["published_at"])}
         if path == "git/ref/tags/v0.23.0":
             if self.exists:
                 return {"ref": "refs/tags/v0.23.0"}
@@ -216,7 +230,9 @@ class ReleaseTags(unittest.TestCase):
         refusals = [dict(merged=False), dict(labels=()), dict(commit=None), dict(commit="not-a-sha"),
                     dict(merged_version="0.23.1"), dict(head_version="0.22.34", merged_version="0.22.34"),
                     dict(base_version="0.23.0"), dict(exists=True), dict(relation="ahead"),
-                    dict(relation="diverged")]
+                    dict(relation="diverged"), dict(parents=()), dict(parents=(PARENT, "e" * 40)),
+                    dict(parent_version="0.23.0"), dict(notes=False),
+                    dict(latest=dict(LATEST, tag="v0.23.0")), dict(latest=dict(LATEST, tag="v1.0.0"))]
         for overrides in refusals:
             with self.subTest(overrides=overrides):
                 api = TagAPI(**overrides)

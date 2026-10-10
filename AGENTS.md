@@ -45,10 +45,10 @@ product-defining, destructive, sensitive or costly decisions.
 ## Releases
 
 - Merging to `trunk` does not release. Work PRs never change the version; they
-  add user-facing notes in `docs/releases/unreleased/<issue>.md`.
-- A release is its own Issue and PR labeled `release`. It only bumps the version
-  in `Cargo.toml`/`Cargo.lock` and turns the unreleased notes into
-  `docs/releases/<version>.md`. At most one release per week, and only when
+  append user-facing notes to `docs/releases/unreleased.md`.
+- A release is its own Issue and one-commit PR labeled `release`. It only bumps
+  the version in `Cargo.toml`/`Cargo.lock` and deletes the unreleased notes,
+  which ship in the release. At most one release per week, and only when
   shipped code changed. `release-now` is reserved for security fixes and explicit
   owner requests. The `Release policy` check enforces this.
 - Pushing `v<version>` (equal to `Cargo.toml`) makes Actions validate and publish.
