@@ -54,13 +54,15 @@ instead of container paths. Use ordinary folders you own rather than paths
 through symbolic links: imports never overwrite files and refuse symbolic links.
 
 Mynou reads only `MYNOU_API_TOKEN` from the `.env` file beside the
-configuration. Export the other secrets (Plex, TMDB, sources) in the shell that
-starts the service, for example by loading that file when its values contain no
-spaces or quotes:
+configuration. Export the other configured secrets (Plex, TMDB, sources) in the
+shell that starts the service, using your shell's quoting rules. Treat `.env`
+as data: sourcing it interprets its contents as shell code. For example, replace
+the placeholders below with shell-quoted values:
 
 ```sh
-set -a && . ./.env && set +a &&
-  "$HOME/.local/bin/mynou" serve --config ./mynou.json
+export MYNOU_PLEX_TOKEN='replace-with-your-Plex-token'
+export MYNOU_TMDB_TOKEN='replace-with-your-TMDB-token'
+"$HOME/.local/bin/mynou" serve --config ./mynou.json
 ```
 
 Open **http://127.0.0.1:8787/ui** and sign in with the API token. Run the
