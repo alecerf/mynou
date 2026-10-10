@@ -178,17 +178,17 @@ and expanded items per account, a 64-admission pass and a 16 MiB checked snapsho
 Each account shares a ten-second identity/watchlist/catalog budget within a
 90-second poll pass. Unattempted accounts keep their older attempt timestamp for
 subsequent priority. A poll advances only its own successful full snapshot; failed
-accounts retain interests and cursors. New accounts require explicit opt-in.
-Quotas count unique canonical requests per account and UTC-day admissions, with
-ready/cancelled initial acquisitions releasing active capacity. Library maintenance
-and explicit operator submissions remain separate from new requester admission.
+accounts retain interests and cursors. New accounts require explicit opt-in;
+an enabled account admits demand without manual approvals or per-account quotas.
+Library maintenance and explicit operator submissions remain separate from new
+requester admission.
 Requester polling acquires aired episodes individually; optional
-operator season-pack automation retains its earlier rules. Removed/rejected
-requester demand remains a tombstone and is not silently revived. Ready imports
+operator season-pack automation retains its earlier rules. Removed requester
+demand remains a tombstone and is not silently revived. Ready imports
 stay present. New reuse of uncaptured operator work requires ready regular-file
 imports beneath the selected destination and a compatible recorded quality
 baseline, or the unrestricted default profile when no baseline exists. Pending
-operator work stays an uncharged conflict. Complete CI and publication passed
+operator work stays an unadmitted conflict. Complete CI and publication passed
 for [v0.19.1](validation.md#recorded-0191-ci-evidence); later changes need their
 own completed run.
 
@@ -247,7 +247,7 @@ consume flash messages or renew sessions. Browser/assistive-technology
 interoperability has not been independently verified. See [live progress](web.md#live-progress).
 The UI retains bounded pagination and bulk job/library/transfer/series controls. It does not edit
 configuration or adopt a complete existing Plex library. Plex requester policies
-provide reviewed approvals, quotas and routing; requester self-service remains
+provide explicit opt-in and routing; requester self-service remains
 later work.
 Indexer integrations support RSS/JSON/Torznab endpoints. Native Basic, Bearer and
 explicit single-cookie form authentication, bounded renewal, request intervals
@@ -259,7 +259,7 @@ supports an explicit strict JSON envelope and review rules, with eight sources,
 64 rules, 1,000 retained identities and an 8 MiB checked snapshot. Duplicates do
 not rewrite history; full history rejects new identities without pruning.
 Acknowledgement and dismissal create no acquisition work. The 0.20.1 increment adds explicit grab rules
-and hash-pinned metadata verification for existing approved requests, immutable
+and hash-pinned metadata verification for existing admitted requests, immutable
 origins and exact file imports. Catalog claims must agree with admitted labels;
 this does not prove semantic media identity. Queued compatible jobs wait for
 IRC, with no unsolicited demand or implicit search fallback while the rule is
@@ -276,7 +276,7 @@ The 0.20.4 NickServ increment requires exact configured sender/account notices
 before membership. It supports the explicit IDENTIFY account/password command,
 with bounded ASCII credentials and no interactive fallback; complete validation
 and publication passed for that source with 560 Rust tests. The 0.20.5 selector
-increment binds grabs to one compatible approved requester and passed complete
+increment binds grabs to one compatible admitted requester and passed complete
 CI/publication with 568 Rust tests. The 0.20.6 implementation adds guarded new
 demand with fresh catalog/account confirmation, explicit persistent origins,
 approval/quotas and checked recovery. Request review uses a shared ten-second
@@ -326,5 +326,5 @@ recovery handles forced interruptions. Security functions using `/dev/urandom`
 require a system providing that source.
 
 Explicit alternate/absolute [numbering](numbering.md) is implemented in 0.16.
-Retained canonical identities cannot be reassigned; new jobs capture approved
+Retained canonical identities cannot be reassigned; new jobs capture admitted
 source labels. Multi-episode physical ownership remains the next release stage.

@@ -1,4 +1,4 @@
-//! Operator-only requester policy and approval pages.
+//! Operator-only requester policy and demand pages.
 use super::{
     forms::{Form, decimal},
     session::Session,
@@ -15,12 +15,12 @@ use std::sync::Arc;
 pub(super) fn list(engine: &Arc<Engine>, session: &Session) -> Result<String> {
     let report = engine.requesters()?;
     let mut body = String::from(
-        "<section class=panel><h1>Plex requesters</h1><p>Each account has its own policy, approvals and quota. Compatible requests share acquisition. Removing one account's demand retains other interests and imported media.</p>",
+        "<section class=panel><h1>Plex requesters</h1><p>Each account has its own policy. Compatible requests share acquisition. Removing one account's demand retains other interests and imported media.</p>",
     );
     body.push_str(&form("/ui/requesters/sync", session));
-    body.push_str("<button>Poll accounts</button></form><table><thead><tr><th>Account</th><th>Policy</th><th>Active</th><th>Today</th><th>Pending</th><th>Poll result</th></tr></thead><tbody>");
+    body.push_str("<button>Poll accounts</button></form><table><thead><tr><th>Account</th><th>Policy</th><th>Pending</th><th>Poll result</th></tr></thead><tbody>");
     for account in array(report.get("accounts").unwrap_or(&Value::Null)) {
-        body.push_str(&format!("<tr><td><a href=\"/ui/requesters/{}\">{}</a></td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",e(text(account,"id")),e(text(account,"id")),if account.get("policy").and_then(|p|p.get("enabled")).and_then(Value::as_bool)==Some(true){"Enabled"}else{"Disabled"},scalar(account,"active"),scalar(account,"daily"),scalar(account,"pending"),display(text(account,"last_error"))));
+        body.push_str(&format!("<tr><td><a href=\"/ui/requesters/{}\">{}</a></td><td>{}</td><td>{}</td><td>{}</td></tr>",e(text(account,"id")),e(text(account,"id")),if account.get("policy").and_then(|p|p.get("enabled")).and_then(Value::as_bool)==Some(true){"Enabled"}else{"Disabled"},scalar(account,"pending"),display(text(account,"last_error"))));
     }
     body.push_str("</tbody></table></section>");
     Ok(frame(
@@ -64,10 +64,8 @@ pub(super) fn detail(
     let report = engine.requester(id, offset, limit)?;
     let policy = Policy::from_json(report.get("policy").ok_or("Missing requester policy")?)?;
     let mut body = format!(
-        "<p><a href=/ui/requesters>All requesters</a></p><section class=panel><h1>Requester {}</h1><p>Active acquisitions: {}. Requests charged today (UTC): {}. Pending approvals: {}.</p><p>Watchlist cursor: {}. Last poll: {}. {}</p>",
+        "<p><a href=/ui/requesters>All requesters</a></p><section class=panel><h1>Requester {}</h1><p>Pending requests: {}.</p><p>Watchlist cursor: {}. Last poll: {}. {}</p>",
         e(id),
-        scalar(&report, "active"),
-        scalar(&report, "daily"),
         scalar(&report, "pending"),
         scalar(&report, "cursor"),
         scalar(&report, "polled_at"),
@@ -83,17 +81,6 @@ pub(super) fn detail(
             if policy.enabled { "yes" } else { "no" },
             ["no".into(), "yes".into()],
         ));
-        body.push_str(&select(
-            "approval_required",
-            "Require approval",
-            if policy.approval_required {
-                "yes"
-            } else {
-                "no"
-            },
-            ["yes".into(), "no".into()],
-        ));
-        body.push_str(&format!("<label>Maximum active requests<input type=number name=max_active min=1 max=64 value={}></label><label>Maximum requests per UTC day<input type=number name=max_daily min=1 max=1024 value={}></label>",policy.max_active,policy.max_daily));
         for (name, label, value) in [
             ("movie_profile", "Movie profile", &policy.movie_profile),
             (
@@ -122,7 +109,7 @@ pub(super) fn detail(
                     .map(|r| r.id.clone()),
             ),
         ));
-        body.push_str("<p>Edits apply to future admissions. Existing acquisition policies and daily charges remain captured.</p><button>Review policy</button></form>");
+        body.push_str("<p>Edits apply to future admissions. Existing acquisition policies remain captured.</p><button>Review policy</button></form>");
     } else {
         body.push_str(
             "<p>This account is no longer configured. Imported files remain available.</p>",
@@ -147,12 +134,7 @@ pub(super) fn detail(
             body.push_str(&form("/ui/requesters/control", session));
             body.push_str(&hidden("account_id", id));
             body.push_str(&hidden("demand_id", text(d, "id")));
-            if d.get("job_id").and_then(Value::as_str).is_none()
-                && matches!(text(d, "state"), "pending" | "quota" | "conflict")
-            {
-                body.push_str("<button name=action value=approve>Review approval</button><button name=action value=reject>Review rejection</button>");
-            }
-            if !matches!(text(d, "state"), "removed" | "rejected") {
+            if text(d, "state") != "removed" {
                 body.push_str("<button name=action value=remove>Review removal</button>");
             }
             if d.get("job_id").and_then(Value::as_str).is_some()
@@ -200,27 +182,19 @@ pub(super) fn query(form: &Form) -> Result<ControlRequest> {
             "account_id",
             "action",
             "enabled",
-            "approval_required",
-            "max_active",
-            "max_daily",
             "movie_profile",
             "episode_profile",
             "destination",
         ])?;
         let mut p = Value::object();
-        for key in ["enabled", "approval_required"] {
-            p.insert(
-                key,
-                match form.value(key)? {
-                    "yes" => true,
-                    "no" => false,
-                    _ => return Err("Choose yes or no for requester policy".into()),
-                },
-            );
-        }
-        for (key, max) in [("max_active", 64), ("max_daily", 1024)] {
-            p.insert(key, decimal(form.value(key)?, max, key)? as u32);
-        }
+        p.insert(
+            "enabled",
+            match form.value("enabled")? {
+                "yes" => true,
+                "no" => false,
+                _ => return Err("Choose yes or no for requester policy".into()),
+            },
+        );
         for key in ["movie_profile", "episode_profile", "destination"] {
             p.insert(key, form.value(key)?);
         }
@@ -233,12 +207,18 @@ pub(super) fn query(form: &Form) -> Result<ControlRequest> {
 }
 pub(super) fn review(session: &Session, id: &str, report: &Value) -> String {
     let mut body = format!(
-        "<section class=panel><h1>Review requester decision</h1><p>Account: {}. Action: {}.</p><p>Compatible demand may share acquisition. Quotas are checked before acquisition; removal retains other interests and imported media.</p>",
+        "<section class=panel><h1>Review requester decision</h1><p>Account: {}. Action: {}.</p><p>Compatible demand may share acquisition. Removal retains other interests and imported media.</p>",
         e(id),
         e(text(report, "action"))
     );
     if let Some(p) = report.get("policy") {
-        body.push_str(&format!("<p>Enabled: {}. Approval required: {}. Active limit: {}. Daily limit: {}.</p><p>Movie profile: {}. Episode profile: {}. Destination: {}.</p>",scalar(p,"enabled"),scalar(p,"approval_required"),scalar(p,"max_active"),scalar(p,"max_daily"),e(text(p,"movie_profile")),e(text(p,"episode_profile")),e(text(p,"destination"))));
+        body.push_str(&format!(
+            "<p>Enabled: {}.</p><p>Movie profile: {}. Episode profile: {}. Destination: {}.</p>",
+            scalar(p, "enabled"),
+            e(text(p, "movie_profile")),
+            e(text(p, "episode_profile")),
+            e(text(p, "destination"))
+        ));
     }
     if let Some(d) = report.get("demand") {
         body.push_str(&format!(

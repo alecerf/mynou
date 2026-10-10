@@ -471,7 +471,6 @@ fn selected_interest(
     let demand_id = crate::requesters::Demand::identity(id, &job.request);
     state.demands.get(&demand_id).is_some_and(|d| {
         &d.account_id == id
-            && d.approved
             && matches!(d.state.as_str(), "reserved" | "active" | "ready")
             && d.job_id.as_deref() == Some(job.id.as_str())
             && d.capture == provenance.capture
@@ -727,10 +726,10 @@ fn candidate(
     }
     let job = (*eligible[0]).clone();
     if !crate::requesters::engine::interest(requesters, &job, config) {
-        return Err("IRC: acquisition has no approved demand".into());
+        return Err("IRC: acquisition has no admitted demand".into());
     }
     if !selected_interest(config, rule, &job, requesters) {
-        return Err("IRC: selected requester has no compatible approved demand".into());
+        return Err("IRC: selected requester has no compatible admitted demand".into());
     }
     if rule.action == "request" {
         let a = r
@@ -806,8 +805,8 @@ impl Engine {
                 "IRC: waiting for one eligible admitted job without existing ownership" => {
                     "waiting_for_admitted_job"
                 }
-                "IRC: acquisition has no approved demand" => "approval_required",
-                "IRC: selected requester has no compatible approved demand" => "requester_mismatch",
+                "IRC: acquisition has no admitted demand" => "admission_required",
+                "IRC: selected requester has no compatible admitted demand" => "requester_mismatch",
                 "IRC: request acquisition has no committed origin" => "requester_mismatch",
                 "IRC: claim differs from the admitted canonical title or source labels" => {
                     "claim_mismatch"

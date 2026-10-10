@@ -193,7 +193,7 @@ have Secure before the POST establishes the browser origin. Changing address
 or scheme requires a new sign-in.
 
 This interface has the privileges of the shared API token. It does not add
-individual users, approval policies or quotas. API requests still require
+individual users. API requests still require
 `Authorization: Bearer …`; browser cookies never authenticate `/api` routes,
 and a Bearer header does not sign a browser session in. Configuration editing,
 WebSocket streaming and personal-installation validation remain outside this

@@ -227,10 +227,9 @@ pub fn apply(engine: &Engine, id: &str, mut q: ControlRequest) -> Value {
     q.plan_id = Some(preview.get("plan_id").unwrap().as_str().unwrap().into());
     engine.requester_control(id, &q).unwrap()
 }
-pub fn enable(engine: &Engine, id: &str, approval: bool) {
+pub fn enable(engine: &Engine, id: &str) {
     let mut p = policy(engine, id);
     p.enabled = true;
-    p.approval_required = approval;
     apply(engine, id, policy_query(p));
 }
 pub fn demands(engine: &Engine, id: &str) -> Vec<Value> {

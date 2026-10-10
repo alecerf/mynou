@@ -163,16 +163,16 @@ Example addition to a grab rule:
 {"requester":"alice"}
 ```
 
-The selected account must retain approved demand for that canonical identity
+The selected account must retain admitted demand for that canonical identity
 with the job's same captured profile and destination. Compatible demand can
 share a job originally created by another account. An operator job, an unrelated
-account, pending approval, quota-blocked demand or a conflicting route cannot
-stand in for that selection. Changing a selector makes pending claims/reviews
+account, unadmitted demand or a conflicting route cannot stand in for that
+selection. Changing a selector makes pending claims/reviews
 stale without reinterpreting their original evaluations.
 
 Waiting and final routing use the same selection predicate. Routing rechecks
 the selected interest after metadata I/O and immediately before reservation;
-removing a selected co-owner cannot borrow another account's approval. The other
+removing a selected co-owner cannot borrow another account's admission. The other
 account's job and ready media remain intact. Public source/API/browser reports
 show only the stable requester alias. Selection does not create new demand.
 Reviewed demand is a separate request action in the following increment.
@@ -209,19 +209,19 @@ Offline preview reads private state without writes. Apply requires the service.
 Pure irc-preview and acknowledgement/dismissal retain their existing behavior.
 
 The request guard binds the first claim, configuration, full requester/job scope,
-captured profile/route, retained numbering and UTC day. Apply rechecks this scope
-under series, IRC, requester and job locks. An IRC intent is written before the
-canonical explicit origin. Ordinary requester admission retains pending approval,
-quotas and compatible sharing; existing unready operator work cannot stand in for
-a captured request. Existing compatible demand retains its job and original
-capture. Removed/rejected identities remain tombstones.
+captured profile/route and retained numbering. Apply rechecks this scope under
+series, IRC, requester and job locks. An IRC intent is written before the
+canonical explicit origin. Ordinary requester admission retains the account
+opt-in and compatible sharing; existing unready operator work cannot stand in
+for a captured request. Existing compatible demand retains its job and original
+capture. Removed identities remain tombstones.
 
-Successful empty Plex polls preserve irc:SOURCE:ANNOUNCEMENT origins. Approved
+Successful empty Plex polls preserve irc:SOURCE:ANNOUNCEMENT origins. Admitted
 request work waits for a matching explicit-origin candidate; routing retains
 hash-authenticated metadata, exact file/profile/source labels and physical
-ownership before native publication. Required approval and exhausted quota
-cannot be bypassed. Approval can capture current policy through the ordinary
-reviewed requester controls. Identity/transport failures expose fixed errors,
+ownership before native publication. A disabled account cannot be bypassed. A
+reviewed requester policy change captures the current policy for unadmitted
+demand. Identity/transport failures expose fixed errors,
 and public admission reports contain stable aliases and demand status.
 
 Before native startup, recovery validates both directions between intents and
@@ -344,7 +344,7 @@ Strict guards bind original claim/evaluations, source binding, row revision,
 action and current rules/profiles. Duplicate or unrelated receipts do not
 invalidate a current review. Acknowledged/dismissed records are terminal;
 replay never revives them. Acknowledgement/dismissal change no job, requester
-quota or imported file. Request review uses the separate full-scope contract above.
+demand or imported file. Request review uses the separate full-scope contract above.
 
 ## Bounds, recovery and connections
 
@@ -381,7 +381,7 @@ An enabled grab rule holds otherwise untouched queued movie/episode jobs whose
 admitted profile agrees. Explicit local/URL requests, existing acquisitions,
 upgrades, packs/shared owners and jobs without catalog IDs retain their ordinary
 scheduling. Disabling the rule/source restores scheduling at the next due attempt. Review rules hold
-no jobs. No unsolicited announcement creates demand or consumes a new quota.
+no jobs. No unsolicited announcement creates demand.
 
 Plex availability remains active for held jobs, with negative checks deferred
 for 60 seconds. Routing also checks availability before choosing a torrent;
@@ -393,9 +393,9 @@ and metadata budget.
 Rules must have one current match and the original configuration fingerprint.
 Grab uses an unreviewed claim; request uses its committed reviewed demand.
 Canonical media identity, normalized title, year and exact source numbering must
-match one admitted job. A required approval or exhausted quota cannot be bypassed:
-Routing uses existing durable admission. Only an explicitly reviewed request
-action can create demand; ordinary requester machinery performs quota charging.
+match one admitted job. Routing uses existing durable admission and cannot
+bypass a disabled account. Only an explicitly reviewed request action can create
+demand; ordinary requester machinery performs admission.
 Claimed catalog IDs remain claims; agreement with admitted labels does not prove
 semantic catalog identity from torrent bytes.
 
@@ -403,7 +403,7 @@ Metadata-only discovery authenticates the pinned hash without payload or a
 native transfer queue. Exactly one nonempty supported video must have matching
 title/year and source labels. Multiple videos, episode ranges, packs, mismatched
 labels and ambiguous paths are rejected. Metadata supplies v1/v2 aliases for
-hybrid ownership checks. Admission rechecks the claim, job, approved interests,
+hybrid ownership checks. Admission rechecks the claim, job, admitted interests,
 captured profile and retained physical ownership after I/O and under the
 IRC/requester/job lock order.
 
@@ -416,7 +416,7 @@ search. Source/template/profile changes do not rebind existing origins.
 
 Public history exposes routing_outcome, candidate_routed and the associated job.
 Outcomes include routed, already_available, availability_unavailable,
-waiting_for_admitted_job, approval_required,
+waiting_for_admitted_job, admission_required,
 claim_mismatch, profile_mismatch, metadata_unavailable, metadata_rejected,
 admission_changed and admission_or_storage_rejected. Attempt outcomes are
 bounded in-memory observations; durable reservation phases are reserved, routed
@@ -454,7 +454,7 @@ Original CI uses synthetic loopback IRC services to exercise boundaries, trust,
 filtering, history limits/corruption, concurrent and stale reviews, restart,
 PING/PONG, reconnect and shutdown. No public IRC or torrents are contacted.
 Routing scenarios use original local metadata/payload peers and gates to cover
-exact imports, approval/quotas, frozen routes, source numbering, races, ambiguity,
+exact imports, opt-in and removal, frozen routes, source numbering, races, ambiguity,
 ownership, concurrent passes, corruption and both sides of an interrupted commit.
 SASL fixtures exercise strict configuration, capability/challenge boundaries,
 credential redaction, fragmented replies, the native CLI's exact 400-byte

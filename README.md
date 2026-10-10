@@ -29,7 +29,8 @@ replacement lineage. Confirmed owners stage until one atomic promotion makes the
 whole replacement current; prior library files remain in place.
 
 [Plex requester policies](docs/requesters.md) add stable account bindings, explicit
-opt-in profiles, durable approvals and quotas, and captured destinations.
+opt-in profiles and captured destinations. An enabled account admits its demand
+without manual approvals or per-account quotas.
 Compatible accounts share acquisition; removals retain
 other demand and ready media. CLI, API and browser controls require reviewed
 scope guards. Configurations without requester accounts retain single-account
@@ -72,7 +73,7 @@ attempt 4: 560 Rust tests across 50 harnesses and four scheduler checks.
 See the [recorded evidence](docs/validation.md#recorded-0204-ci-evidence).
 
 Optional [requester selectors](docs/irc.md#requester-selectors-in-0205) now bind
-IRC grabs to one account's compatible approved demand, including shared work.
+IRC grabs to one account's compatible admitted demand, including shared work.
 Waiting and metadata admission recheck the same captured interest.
 CI published [v0.20.5](https://github.com/alecerf/mynou/releases/tag/v0.20.5)
 after all five jobs passed with 568 Rust tests across 51 harnesses and four
@@ -81,7 +82,7 @@ scheduler checks. Exact source/tag/seven-asset evidence is recorded in
 
 [Reviewed IRC requests](docs/irc.md#reviewed-requester-demand-in-0206) now confirm
 fresh catalog and requester identities, then retain canonical demand under the
-existing approval, quota, sharing and captured-route controls. Explicit origins
+existing opt-in, sharing and captured-route controls. Explicit origins
 survive empty watchlist polls; checked intent recovery prevents replay. CLI, API
 and browser controls require the reviewed guard. The 0.20.6 implementation and
 its original local-service fixtures passed all five jobs in run 37427693256:
