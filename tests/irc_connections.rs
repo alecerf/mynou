@@ -306,6 +306,7 @@ fn malformed_then_valid(format: Option<Value>, malformed: &str, valid: &str, fra
     }
     let cfg = config::from_json(&v, &dir.0).unwrap();
     let batch = format!("{}{}PING :after-reject\r\n", wire(malformed), wire(valid));
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
     let peer = thread::spawn(move || {
         let mut stream = accept(&listener);
         registration(&mut stream, false);
@@ -321,11 +322,13 @@ fn malformed_then_valid(format: Option<Value>, malformed: &str, valid: &str, fra
         assert_eq!(line(&mut stream), "PONG :after-reject");
         send(&mut stream, "PING :still-open");
         assert_eq!(line(&mut stream), "PONG :still-open");
+        done_tx.send(()).unwrap();
         closed(&mut stream);
     });
     let engine = Engine::open(cfg).unwrap();
     let workers = engine.start();
     wait(|| received(&engine, 1));
+    done_rx.recv_timeout(Duration::from_secs(5)).unwrap();
     assert_eq!(rejected(&engine), "1");
     assert_eq!(attempts(&engine), "1");
     let report = engine.irc_sources().unwrap();
