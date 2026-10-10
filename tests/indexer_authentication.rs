@@ -943,7 +943,12 @@ fn protected_source_controls_bind_bearer_and_one_use_reviews() {
         ("Content-Type", "application/json"),
         ("Authorization", auth.as_str()),
     ];
-    let api = server.call("POST", &route, &headers, r#"{"action":"pause","extra":true}"#);
+    let api = server.call(
+        "POST",
+        &route,
+        &headers,
+        r#"{"action":"pause","extra":true}"#,
+    );
     assert_eq!(api.status, 400);
     let pause = r#"{"action":"pause"}"#;
     let preview = server.call("POST", &route, &headers, pause);
