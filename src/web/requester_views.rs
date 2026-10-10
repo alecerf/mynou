@@ -122,12 +122,6 @@ pub(super) fn detail(
                     .map(|r| r.id.clone()),
             ),
         ));
-        body.push_str(&select(
-            "notifications",
-            "Recorded notification outcomes",
-            &policy.notifications,
-            ["none".into(), "decisions".into(), "all".into()],
-        ));
         body.push_str("<p>Edits apply to future admissions. Existing acquisition policies and daily charges remain captured.</p><button>Review policy</button></form>");
     } else {
         body.push_str(
@@ -188,16 +182,7 @@ pub(super) fn detail(
             limit
         ));
     }
-    body.push_str("</section><section class=panel><h2>Notification outcomes</h2><p>These outcomes are recorded in Mynou. External delivery is a later integration.</p><ul>");
-    for n in array(report.get("notifications").unwrap_or(&Value::Null)) {
-        body.push_str(&format!(
-            "<li>{}: {} at {}</li>",
-            e(text(n, "demand_id")),
-            e(text(n, "outcome")),
-            scalar(n, "at")
-        ));
-    }
-    body.push_str("</ul></section>");
+    body.push_str("</section>");
     Ok(frame(
         "Requester details",
         "/ui/requesters",
@@ -221,7 +206,6 @@ pub(super) fn query(form: &Form) -> Result<ControlRequest> {
             "movie_profile",
             "episode_profile",
             "destination",
-            "notifications",
         ])?;
         let mut p = Value::object();
         for key in ["enabled", "approval_required"] {
@@ -237,12 +221,7 @@ pub(super) fn query(form: &Form) -> Result<ControlRequest> {
         for (key, max) in [("max_active", 64), ("max_daily", 1024)] {
             p.insert(key, decimal(form.value(key)?, max, key)? as u32);
         }
-        for key in [
-            "movie_profile",
-            "episode_profile",
-            "destination",
-            "notifications",
-        ] {
+        for key in ["movie_profile", "episode_profile", "destination"] {
             p.insert(key, form.value(key)?);
         }
         v.insert("policy", p);
@@ -259,7 +238,7 @@ pub(super) fn review(session: &Session, id: &str, report: &Value) -> String {
         e(text(report, "action"))
     );
     if let Some(p) = report.get("policy") {
-        body.push_str(&format!("<p>Enabled: {}. Approval required: {}. Active limit: {}. Daily limit: {}.</p><p>Movie profile: {}. Episode profile: {}. Destination: {}. Notifications: {}.</p>",scalar(p,"enabled"),scalar(p,"approval_required"),scalar(p,"max_active"),scalar(p,"max_daily"),e(text(p,"movie_profile")),e(text(p,"episode_profile")),e(text(p,"destination")),e(text(p,"notifications"))));
+        body.push_str(&format!("<p>Enabled: {}. Approval required: {}. Active limit: {}. Daily limit: {}.</p><p>Movie profile: {}. Episode profile: {}. Destination: {}.</p>",scalar(p,"enabled"),scalar(p,"approval_required"),scalar(p,"max_active"),scalar(p,"max_daily"),e(text(p,"movie_profile")),e(text(p,"episode_profile")),e(text(p,"destination"))));
     }
     if let Some(d) = report.get("demand") {
         body.push_str(&format!(

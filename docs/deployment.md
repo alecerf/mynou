@@ -14,8 +14,9 @@ own installation instructions.
 
 ## Authenticate and pull
 
-The repository and the package are private. Use an account allowed to read the
-package and a GitHub personal access token (classic) with `read:packages`. Log
+The repository is public; the container package is private. Use an account
+allowed to read the package and a GitHub personal access token (classic) with
+`read:packages`. Log
 in interactively so the token stays out of your shell history, and let Docker's
 credential helper keep it:
 

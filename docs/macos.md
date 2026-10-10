@@ -7,9 +7,8 @@ earlier macOS versions have not been verified.
 
 ## Download and verify
 
-Open [GitHub Releases](https://github.com/alecerf/mynou/releases) with an
-account allowed to read this private repository, and download your
-architecture's executable and `SHA256SUMS` from the same release (0.22.19 or
+Open [GitHub Releases](https://github.com/alecerf/mynou/releases) and download
+your architecture's executable and `SHA256SUMS` from the same release (0.22.19 or
 later). Use **About This Mac** to tell Apple Silicon from Intel: `uname -m` in a
 Terminal running under Rosetta can report Intel on Apple Silicon.
 

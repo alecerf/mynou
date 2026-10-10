@@ -125,3 +125,10 @@ Requester demand lives in a private, checksummed `requesters.bin` beside the
 journal. Startup checks it against the journal before any transfer starts, and
 an interruption between the two writes is recovered without a duplicate job.
 Bounds are listed in [limits](limits.md#plex-requester-accounts).
+
+Snapshots saved before the notification removal are rejected at startup; there
+is no migration. Removing `requesters.bin` alone does not restore startup while
+requester-provenance jobs or committed IRC admissions remain: they require
+their original durable demand and origin. No stored data is deleted
+automatically. Read the [release notes](releases/) and back up private storage
+before upgrading.

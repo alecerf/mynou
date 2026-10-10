@@ -1,4 +1,4 @@
-//! Original bounded UTF-8 XML shared by RSS/Torznab and NZB. No DTD expansion.
+//! Original bounded UTF-8 XML for RSS and Torznab feeds. No DTD expansion.
 use crate::Result;
 use std::collections::BTreeMap;
 const MAX_ITEMS: usize = 100_000;

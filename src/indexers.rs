@@ -58,7 +58,6 @@ pub struct Options {
     pub enabled: bool,
     pub min_interval_ms: u64,
     pub authentication: Authentication,
-    pub(crate) newznab: Option<crate::usenet::newznab::Options>,
     runtime: Arc<Mutex<Runtime>>,
 }
 impl std::fmt::Debug for Options {
@@ -81,7 +80,6 @@ impl Default for Options {
             enabled: true,
             min_interval_ms: 0,
             authentication: Authentication::None,
-            newznab: None,
             runtime: Arc::new(Mutex::new(Runtime::default())),
         }
     }
@@ -143,14 +141,6 @@ impl Options {
             enabled,
             min_interval_ms: integer(v, "min_interval_ms", 0, 60_000)?,
             ..Self::default()
-        };
-        options.newznab = match (v.get("kind").and_then(Value::as_str), v.get("usenet")) {
-            (Some("newznab"), Some(v)) => Some(crate::usenet::newznab::Options::parse(v)?),
-            (Some("newznab"), None) => {
-                return Err("Indexer: Newznab requires explicit Usenet settings".into());
-            }
-            (_, Some(_)) => return Err("Indexer: Usenet settings require the Newznab kind".into()),
-            (_, None) => None,
         };
         if let Some(auth) = v.get("authentication") {
             let method = text(auth, "method")?;

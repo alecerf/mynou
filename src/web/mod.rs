@@ -3,12 +3,10 @@ mod forms;
 mod indexer_views;
 mod irc_views;
 mod live;
-mod notification_views;
 mod requester_views;
 mod series_views;
 mod session;
 mod setup_views;
-mod usenet_views;
 mod views;
 
 use crate::{
@@ -269,15 +267,10 @@ impl Web {
                 requester_views::list(engine, &session)?
             }
             "/ui/irc" => irc_views::list(engine, &session, &query)?,
-            "/ui/usenet" => {
-                query.only(&[])?;
-                usenet_views::list(engine, &session)?
-            }
             "/ui/indexers" => {
                 query.only(&[])?;
                 indexer_views::list(engine, &session)
             }?,
-            "/ui/notifications" => notification_views::list(engine, &session, &query)?,
             "/ui/jobs" => views::jobs(engine, &session, &query)?,
             "/ui/library" => views::library(engine, &session, &query)?,
             "/ui/search" => {
@@ -388,70 +381,6 @@ impl Web {
         session: &Session,
     ) -> Result<Response> {
         match path {
-            "/ui/usenet/control" => {
-                form.only(&["csrf", "id", "action", "apply", "plan_id"])?;
-                let id = form.value("id")?;
-                let action = form.value("action")?;
-                if form.value("apply")? == "yes" {
-                    let q = lock(&self.sessions)?.usenet_queue_preview(
-                        &session.id,
-                        id,
-                        action,
-                        form.value("plan_id")?,
-                    )?;
-                    engine.usenet_queue_control(id, &q)?;
-                    lock(&self.sessions)?.clear_usenet_preview(&session.id);
-                    return self.redirect(
-                        session,
-                        "/ui/usenet",
-                        vec!["Reviewed Usenet control applied".into()],
-                    );
-                }
-                form.only(&["csrf", "id", "action"])?;
-                let mut q = crate::usenet::QueueControl {
-                    action: action.into(),
-                    apply: false,
-                    plan_id: None,
-                };
-                let report = engine.usenet_queue_control(id, &q)?;
-                q.apply = true;
-                q.plan_id = report
-                    .get("plan_id")
-                    .and_then(crate::json::Value::as_str)
-                    .map(str::to_owned);
-                lock(&self.sessions)?.save_usenet_queue_preview(&session.id, id, q)?;
-                Ok(Response::html(
-                    200,
-                    usenet_views::queue_review(session, &report),
-                ))
-            }
-            "/ui/usenet/probe" => {
-                form.only(&["csrf", "id", "apply", "plan_id"])?;
-                let id = form.value("id")?;
-                if form.value("apply")? == "yes" {
-                    let q = lock(&self.sessions)?.usenet_preview(
-                        &session.id,
-                        id,
-                        form.value("plan_id")?,
-                    )?;
-                    let report = engine.usenet_probe(id, &q)?;
-                    lock(&self.sessions)?.clear_usenet_preview(&session.id);
-                    return self.redirect(session,"/ui/usenet",vec![if report.get("probe_success").and_then(crate::json::Value::as_bool) == Some(true) {"Usenet connection probe succeeded".into()} else {"Usenet connection probe failed; inspect settings and server availability".into()}]);
-                }
-                form.only(&["csrf", "id"])?;
-                let mut q = crate::usenet::ProbeRequest {
-                    apply: false,
-                    plan_id: None,
-                };
-                let report = engine.usenet_probe(id, &q)?;
-                q.apply = true;
-                q.plan_id = report
-                    .get("plan_id")
-                    .and_then(crate::json::Value::as_str)
-                    .map(str::to_owned);
-                lock(&self.sessions)?.save_usenet_preview(&session.id, id, q)?;
-                Ok(Response::html(200, usenet_views::review(session, &report)))
-            }
             "/ui/indexers/control" => {
                 form.only(&["csrf", "id", "action", "apply", "plan_id"])?;
                 let id = form.value("id")?;
@@ -482,51 +411,6 @@ impl Web {
                     .map(str::to_owned);
                 lock(&self.sessions)?.save_indexer_preview(&session.id, id, q)?;
                 Ok(Response::html(200, indexer_views::review(session, &report)))
-            }
-            "/ui/notifications/dispatch" => {
-                form.only(&["csrf"])?;
-                engine.dispatch_notifications()?;
-                self.redirect(
-                    session,
-                    "/ui/notifications",
-                    vec!["Due notifications processed".into()],
-                )
-            }
-            "/ui/notifications/control" => {
-                form.only(&["csrf", "kind", "event_id", "action", "apply", "plan_id"])?;
-                if form.value("apply")? == "yes" {
-                    let q = lock(&self.sessions)?.notification_preview(
-                        &session.id,
-                        form.value("kind")?,
-                        form.value("event_id")?,
-                        form.value("action")?,
-                        form.value("plan_id")?,
-                    )?;
-                    engine.notification_control(&q)?;
-                    lock(&self.sessions)?.clear_notification_preview(&session.id);
-                    return self.redirect(
-                        session,
-                        "/ui/notifications",
-                        vec!["Reviewed notification decision recorded".into()],
-                    );
-                }
-                form.only(&["csrf", "kind", "event_id", "action"])?;
-                let mut v = crate::json::Value::object();
-                for k in ["kind", "event_id", "action"] {
-                    v.insert(k, form.value(k)?);
-                }
-                let mut q = crate::notifications::ControlRequest::from_json(&v)?;
-                let report = engine.notification_control(&q)?;
-                q.apply = true;
-                q.plan_id = report
-                    .get("plan_id")
-                    .and_then(crate::json::Value::as_str)
-                    .map(str::to_owned);
-                lock(&self.sessions)?.save_notification_preview(&session.id, q)?;
-                Ok(Response::html(
-                    200,
-                    notification_views::review(session, &report),
-                ))
             }
             "/ui/irc/control" => {
                 let id = form.value("id")?;
