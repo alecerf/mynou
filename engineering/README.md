@@ -53,6 +53,11 @@ with green checks goes to QA.
   push, edit) for `claim_ttl_minutes` (two hours). Push or comment at least
   hourly while you hold a claim. To take over a lapsed claim, post
   `/unassign <old>` with a one-line reason, then `/assign <you>`.
+- Blocked Issues (`status:blocked` or an open native dependency) are never free
+  work, but their claims stay on the board (`claims`, `mine`, flagged
+  `blocked`) and an active one still protects its branch. A lapsed blocked claim
+  shows `lapsed: true` and is taken over like any other; the board never
+  deletes a branch.
 - Keep your Issue claim until the PR merges. If you stop early, push your
   work, comment the state and next step, and `/unassign` yourself.
 

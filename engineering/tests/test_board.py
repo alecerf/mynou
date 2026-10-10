@@ -53,7 +53,11 @@ class Repository:
             71: [],
             65: [note("/wait qa", 20, 4), note("/assign claude-qa", 15, 5)],
             57: [note("/wait ci", 30, 6)],
+            45: [],
+            42: [],
         }
+        self.branches = ["trunk", "claude/par2-media-39", "work/45-live-progress", "work/39-retry",
+                         "work/46-retry", "format/45-live-progress"]
 
     def rest(self, method, path, value=None):
         if method != "GET":
@@ -74,9 +78,7 @@ class Repository:
         if path.startswith("issues/") and path.endswith("/comments"):
             return self.comments[int(path.split("/")[1])]
         if path == "branches":
-            return [{"name": name, "commit": {"sha": "f" * 40}, "protected": False}
-                    for name in ["trunk", "claude/par2-media-39", "work/45-live-progress", "work/39-retry",
-                                 "work/46-retry", "format/45-live-progress"]]
+            return [{"name": name, "commit": {"sha": "f" * 40}, "protected": False} for name in self.branches]
         if path == "pulls/65/files":
             return [{"filename": "src/par2.rs"}]
         if path == "pulls/57/files":
@@ -121,6 +123,57 @@ class Board(unittest.TestCase):
         self.assertTrue(result["release"]["due"])
         self.assertEqual(result["product_planning"], {"issue": 42, "ready_proposals": 2, "due": True})
         self.assertNotIn("mine", result)
+
+    def test_blocked_claims_stay_visible_and_protect_their_branches(self):
+        repository = Repository()
+        dependent = issue(81, "agent-work", "status:ready", "priority:p2")
+        dependent["issue_dependencies_summary"] = {"blocked_by": 1}
+        repository.issues += [
+            issue(80, "agent-work", "status:blocked", "priority:p2"),
+            dependent,
+            issue(82, "agent-work", "status:blocked", "priority:p2", updated=180),
+            issue(83, "agent-work", "status:blocked", "priority:p2"),
+        ]
+        repository.comments.update({
+            80: [note("/assign codex-1", 30, 10)],
+            81: [note("/assign codex-1", 45, 11)],
+            82: [note("/assign claude-2", 180, 12)],
+            83: [],
+        })
+        # #45 is blocked and its draft PR is open: claimed by codex-1, branch is a PR head.
+        repository.comments[45] = [note("/assign codex-1", 20, 13)]
+        repository.branches += ["work/80-wait", "work/81-dependency", "work/82-expired", "work/83-unclaimed"]
+        result = board.board(repository, AT, "codex-1")
+        blocked = {c["issue"]: c for c in result["claims"] if c["blocked"]}
+        # Ownership and lapse status are evaluated for blocked Issues too.
+        self.assertEqual(sorted(blocked), [45, 80, 81, 82])
+        self.assertEqual({n: (c["owner"]["agent"], c["owner"]["lapsed"]) for n, c in blocked.items()},
+                         {45: ("codex-1", False), 80: ("codex-1", False), 81: ("codex-1", False),
+                          82: ("claude-2", True)})
+        # Unblocked claims are still reported as not blocked.
+        self.assertFalse(next(c for c in result["claims"] if c["issue"] == 39)["blocked"])
+        # Blocked Issues, claimed or not, never become free work, even once their claim lapsed.
+        self.assertEqual([w["issue"] for w in result["work"]], [71, 46, 56])
+        # Active blocked claims stay in mine; #82 belongs to another agent.
+        self.assertEqual(result["mine"], {"issues": [39, 45, 80, 81], "pull_requests": []})
+        # Active blocked claims protect their branches; lapsed or unclaimed ones are ghosts,
+        # and the board only lists them.
+        self.assertEqual([g["branch"] for g in result["ghost_branches"]],
+                         ["work/46-retry", "format/45-live-progress", "work/82-expired", "work/83-unclaimed"])
+
+    def test_a_blocked_claim_protects_its_branch_only_while_active(self):
+        for minutes, ghost in ((30, []), (180, ["work/80-wait"])):
+            repository = Repository()
+            repository.issues.append(issue(80, "agent-work", "status:blocked", updated=minutes))
+            repository.comments[80] = [note("/assign codex-1", minutes, 10)]
+            repository.branches = ["trunk", "work/80-wait"]
+            result = board.board(repository, AT, "codex-1")
+            self.assertEqual([g["branch"] for g in result["ghost_branches"]], ghost)
+            # An expired claim stays visible, flagged for the documented explicit takeover.
+            self.assertEqual(result["mine"]["issues"], [39, 80])
+            claim = next(c for c in result["claims"] if c["issue"] == 80)
+            self.assertEqual((claim["blocked"], claim["owner"]["lapsed"]), (True, bool(ghost)))
+            self.assertNotIn(80, [w["issue"] for w in result["work"]])
 
 
 if __name__ == "__main__":
