@@ -57,16 +57,6 @@ jobs:
             echo "Tag $GITHUB_REF_NAME does not match the Cargo.toml version v$VERSION." >&2
             exit 1
           fi
-          # The tag sits on the release commit: it raised the version over its
-          # parent, whose unreleased notes become the release notes.
-          python3 - "$(git show "$GITHUB_SHA^:Cargo.toml")" "$VERSION" <<'RAISED'
-          import sys, tomllib
-          before = tomllib.loads(sys.argv[1])["package"]["version"]
-          parse = lambda text: tuple(int(part) for part in text.split("."))
-          if parse(before) >= parse(sys.argv[2]):
-              sys.exit("The tagged commit does not raise the version over its parent.")
-          RAISED
-          git show "$GITHUB_SHA^:docs/releases/unreleased.md" | python3 engineering/releases.py notes --tag "$GITHUB_REF_NAME" > /dev/null
           # Only a commit that reached trunk through a validated pull request may
           # be released: it must be trunk itself or one of its ancestors.
           relation=$(gh api "repos/$GITHUB_REPOSITORY/compare/trunk...$GITHUB_SHA" --jq .status)
@@ -74,6 +64,20 @@ jobs:
             identical|behind) ;;
             *) echo "Commit $GITHUB_SHA is not on trunk (compare status: $relation)." >&2; exit 1 ;;
           esac
+          # The tag sits on the release commit: it raised the version over its
+          # parent and over the latest release, and the parent's unreleased notes
+          # become the release changelog.
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2> /dev/null || true)
+          python3 - "$(git show "$GITHUB_SHA^:Cargo.toml")" "$VERSION" "$latest" <<'RAISED'
+          import sys, tomllib
+          before = tomllib.loads(sys.argv[1])["package"]["version"]
+          parse = lambda text: tuple(int(part) for part in text.lstrip("v").split("."))
+          if parse(before) >= parse(sys.argv[2]):
+              sys.exit("The tagged commit does not raise the version over its parent.")
+          if sys.argv[3] and parse(sys.argv[3]) >= parse(sys.argv[2]):
+              sys.exit("The version does not exceed the latest release " + sys.argv[3] + ".")
+          RAISED
+          git show "$GITHUB_SHA^:docs/releases/unreleased.md" | env -u GH_TOKEN python3 engineering/releases.py notes --tag "$GITHUB_REF_NAME" > /dev/null
           echo "v$VERSION is a trunk commit; this run publishes it once every check passes." >> "$GITHUB_STEP_SUMMARY"
           echo "publish=true" >> "$GITHUB_OUTPUT"
   validate:
