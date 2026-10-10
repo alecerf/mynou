@@ -601,13 +601,25 @@ impl Engine {
         if let Some(file) = &job.shared_file {
             organizer::import_shared_file_cancellable(source, root, file, active)
         } else if job.upgrade_parent.is_some() {
-            organizer::import_versioned_file_cancellable(
-                source,
-                root,
-                &job.request,
-                &job.id,
-                active,
-            )
+            if job.download_id.is_some() {
+                organizer::import_native_versioned_file_cancellable(
+                    source,
+                    root,
+                    &job.request,
+                    &job.id,
+                    active,
+                )
+            } else {
+                organizer::import_versioned_file_cancellable(
+                    source,
+                    root,
+                    &job.request,
+                    &job.id,
+                    active,
+                )
+            }
+        } else if job.download_id.is_some() {
+            organizer::import_native_file_cancellable(source, root, &job.request, active)
         } else {
             organizer::import_file_cancellable(source, root, &job.request, active)
         }

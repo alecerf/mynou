@@ -94,6 +94,12 @@ fn two_absolute_named_episodes_share_one_verified_pack_and_survive_restart() {
             include_bytes!("../examples/demo.mp4")
         );
         assert!(ready.imports[0].contains(&format!("S01E{:02}", n + 1)));
+        // The import must not give the native payload a second name: the
+        // client refuses to read a media file whose link count is not one.
+        assert_eq!(
+            std::os::unix::fs::MetadataExt::nlink(&fs::metadata(&ready.files[0]).unwrap()),
+            1
+        );
     }
     assert_eq!(engine.transfers().unwrap().as_array().unwrap().len(), 1);
     assert_eq!(

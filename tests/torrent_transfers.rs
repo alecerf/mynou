@@ -381,8 +381,14 @@ fn symlink_download_and_symlink_metadata_are_rejected() {
     client
         .ensure(source.to_str().expect("path"))
         .expect("queue");
-    thread::sleep(Duration::from_millis(100));
-    assert!(client.check(&id).is_err());
+    let started = Instant::now();
+    while client.check(&id).is_ok() {
+        assert!(
+            started.elapsed() < Duration::from_secs(15),
+            "The symlinked payload was not rejected"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
     assert_eq!(fs::read(&outside).expect("outside"), b"protected");
     drop(client);
     let state = root.join("state").join(format!("{id}.torrent"));

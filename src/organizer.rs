@@ -252,7 +252,19 @@ pub fn import_file_cancellable(
     request: &Request,
     active: &AtomicBool,
 ) -> Result<PathBuf> {
-    import_to_target(source, library, request, None, active)
+    import_to_target(source, library, request, None, active, false)
+}
+
+/// Imports a native torrent payload by copy. A hard link would give the payload
+/// a second name, and the native client rejects any media file whose link count
+/// is not one, so it could no longer seed or verify the download.
+pub(crate) fn import_native_file_cancellable(
+    source: &Path,
+    library: &Path,
+    request: &Request,
+    active: &AtomicBool,
+) -> Result<PathBuf> {
+    import_to_target(source, library, request, None, active, true)
 }
 
 /// Imports an upgrade beside the existing media without changing its title or
@@ -274,7 +286,18 @@ pub fn import_versioned_file_cancellable(
     revision: &str,
     active: &AtomicBool,
 ) -> Result<PathBuf> {
-    import_to_target(source, library, request, Some(revision), active)
+    import_to_target(source, library, request, Some(revision), active, false)
+}
+
+/// The upgrade counterpart of [`import_native_file_cancellable`].
+pub(crate) fn import_native_versioned_file_cancellable(
+    source: &Path,
+    library: &Path,
+    request: &Request,
+    revision: &str,
+    active: &AtomicBool,
+) -> Result<PathBuf> {
+    import_to_target(source, library, request, Some(revision), active, true)
 }
 
 fn import_to_target(
@@ -283,12 +306,13 @@ fn import_to_target(
     request: &Request,
     revision: Option<&str>,
     active: &AtomicBool,
+    copy_source: bool,
 ) -> Result<PathBuf> {
     if let Some(revision) = revision {
         validate_revision(revision)?;
     }
     let destination = target(source, library, request, revision)?;
-    import_destination(source, library, destination, active, false)
+    import_destination(source, library, destination, active, copy_source)
 }
 
 fn import_destination(
@@ -581,6 +605,41 @@ mod tests {
                 fs::metadata(&destination).unwrap().ino()
             );
         }
+    }
+
+    #[test]
+    fn native_payload_imports_copy_and_keep_the_payload_inode_private() {
+        use std::os::unix::fs::MetadataExt;
+        let directory = Directory::new();
+        let source = directory.0.join("payload.mkv");
+        fs::write(&source, b"payload bytes").unwrap();
+        let library = directory.0.join("library");
+        let active = AtomicBool::new(true);
+        let destination =
+            import_native_file_cancellable(&source, &library, &request(), &active).unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), b"payload bytes");
+        assert_eq!(fs::metadata(&source).unwrap().nlink(), 1);
+        assert_eq!(fs::metadata(&destination).unwrap().nlink(), 1);
+        assert_ne!(
+            fs::metadata(&source).unwrap().ino(),
+            fs::metadata(&destination).unwrap().ino()
+        );
+        assert_eq!(
+            import_native_file_cancellable(&source, &library, &request(), &active).unwrap(),
+            destination
+        );
+        let revision = "a".repeat(32);
+        let upgrade = import_native_versioned_file_cancellable(
+            &source,
+            &library,
+            &request(),
+            &revision,
+            &active,
+        )
+        .unwrap();
+        assert_eq!(fs::read(&upgrade).unwrap(), b"payload bytes");
+        assert_eq!(fs::metadata(&source).unwrap().nlink(), 1);
+        assert_eq!(fs::metadata(&upgrade).unwrap().nlink(), 1);
     }
 
     #[test]
