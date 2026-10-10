@@ -315,6 +315,29 @@ fn import_to_target(
     import_destination(source, library, destination, active, copy_source)
 }
 
+/// Removes `.mynou-*.tmp` regular files that an interrupted import left in
+/// `directory`. The caller holds the library import lock, so no live import can
+/// own one. Best effort: a failure here must not fail the import.
+#[cfg(unix)]
+fn remove_stale_temporaries(directory: &Path) {
+    let Ok(entries) = fs::read_dir(directory) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if !name.starts_with(".mynou-") || !name.ends_with(".tmp") {
+            continue;
+        }
+        let path = entry.path();
+        if fs::symlink_metadata(&path).is_ok_and(|metadata| metadata.is_file()) {
+            let _ = fs::remove_file(&path);
+        }
+    }
+}
+
 fn import_destination(
     source: &Path,
     library: &Path,
@@ -375,6 +398,7 @@ fn import_destination(
                 Err("library already contains a different file".to_owned())
             };
         }
+        remove_stale_temporaries(directory);
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -640,6 +664,39 @@ mod tests {
         assert_eq!(fs::read(&upgrade).unwrap(), b"payload bytes");
         assert_eq!(fs::metadata(&source).unwrap().nlink(), 1);
         assert_eq!(fs::metadata(&upgrade).unwrap().nlink(), 1);
+    }
+
+    #[test]
+    fn import_reclaims_stale_temporaries_and_keeps_everything_else() {
+        use std::os::unix::fs::symlink;
+        let directory = Directory::new();
+        let source = directory.0.join("payload.mkv");
+        fs::write(&source, b"payload bytes").unwrap();
+        let library = directory.0.join("library");
+        let destination_directory = target(&source, &library, &request(), None)
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        fs::create_dir_all(&destination_directory).unwrap();
+        let stale = destination_directory.join(".mynou-1-2-3.tmp");
+        let other_tmp = destination_directory.join("notes.tmp");
+        let other_hidden = destination_directory.join(".mynou-keep.txt");
+        let link = destination_directory.join(".mynou-9-9-9.tmp.link.tmp");
+        fs::write(&stale, vec![7_u8; 4096]).unwrap();
+        fs::write(&other_tmp, b"keep").unwrap();
+        fs::write(&other_hidden, b"keep").unwrap();
+        symlink(&source, &link).unwrap();
+        let active = AtomicBool::new(true);
+        let destination =
+            import_native_file_cancellable(&source, &library, &request(), &active).unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), b"payload bytes");
+        assert!(!stale.exists());
+        assert!(other_tmp.exists());
+        assert!(other_hidden.exists());
+        let link_type = fs::symlink_metadata(&link).unwrap().file_type();
+        assert!(link_type.is_symlink());
+        assert_eq!(fs::read(&source).unwrap(), b"payload bytes");
     }
 
     #[test]
