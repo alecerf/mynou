@@ -67,7 +67,11 @@ jobs:
           # The tag sits on the release commit: it raised the version over its
           # parent and over the latest release, and the parent's unreleased notes
           # become the release changelog.
-          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2> /dev/null || true)
+          # Only "no release yet" (HTTP 404) means there is no latest to exceed.
+          if ! latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2> "$RUNNER_TEMP/latest.txt"); then
+            latest=""
+            grep -q 'HTTP 404' "$RUNNER_TEMP/latest.txt" || { echo "Cannot read the latest release." >&2; exit 1; }
+          fi
           python3 - "$(git show "$GITHUB_SHA^:Cargo.toml")" "$VERSION" "$latest" <<'RAISED'
           import sys, tomllib
           before = tomllib.loads(sys.argv[1])["package"]["version"]

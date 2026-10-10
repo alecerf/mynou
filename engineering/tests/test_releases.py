@@ -128,7 +128,7 @@ class Cadence(unittest.TestCase):
 
 class FakeAPI:
     def __init__(self, files, labels=("release",), head_version="0.23.0", notes=NOTES):
-        self.cfg = {"release_policy": POLICY, "default_branch": "trunk"}
+        self.cfg = {"release_policy": POLICY, "default_branch": "trunk", "repository": "alecerf/mynou"}
         self.files, self.labels, self.head_version, self.notes = files, labels, head_version, notes
         self.paths = []
 
@@ -212,6 +212,18 @@ class Changelog(unittest.TestCase):
                       head_version="0.22.34", notes="## Added: A\n" + "x" * releases.NOTES_LIMIT)
         self.assertIn("exceeds its bound", " ".join(releases.check_pr(big, 5, AT)))
 
+    def test_a_changelog_that_would_not_fit_a_release_page_is_refused_before_a_tag_exists(self):
+        # About 88,000 raw characters, under the notes limit, but each short link grows by 58
+        # characters at render time, far past what a release page holds.
+        notes = "## Added: Dense\n" + ("[x](/d) " * 100 + "\n") * 110
+        self.assertLess(len(notes), releases.NOTES_LIMIT)
+        with self.assertRaises(ValueError) as error:
+            releases.changelog(notes, "alecerf/mynou", releases.LONGEST_TAG)
+        self.assertIn("too many for a release page", str(error.exception))
+        work = FakeAPI([{"filename": "docs/releases/unreleased.md", "status": "modified"}], labels=(),
+                       head_version="0.22.34", notes=notes)
+        self.assertIn("too many for a release page", " ".join(releases.check_pr(work, 5, AT)))
+
     def test_only_repository_root_links_are_rewritten(self):
         text = releases.changelog("## Added: A\nSee [x](https://example.org/a), [y](docs/y.md), [z](/docs/z.md).\n",
                                   "alecerf/mynou", "v1.2.3")
@@ -227,7 +239,7 @@ class TagAPI:
     def __init__(self, merged_version="0.23.0", head_version="0.23.0", base_version="0.22.34", merged=True,
                  labels=("release",), exists=False, relation="behind", commit=MERGED, parent_version="0.22.34",
                  parents=(PARENT,), notes=NOTES, latest=LATEST):
-        self.cfg = {"release_policy": POLICY, "default_branch": "trunk"}
+        self.cfg = {"release_policy": POLICY, "default_branch": "trunk", "repository": "alecerf/mynou"}
         self.versions = {MERGED: merged_version, HEAD: head_version, BASE: base_version, PARENT: parent_version}
         self.merged, self.labels, self.exists, self.relation, self.commit = merged, labels, exists, relation, commit
         self.parents, self.notes, self.latest = parents, notes, latest
