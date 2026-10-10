@@ -369,6 +369,7 @@ impl Peer {
             while !context.stopped.load(Ordering::Acquire) {
                 match listener.accept() {
                     Ok((stream, _)) => {
+                        stream.set_nonblocking(false).unwrap();
                         assert!(
                             workers.len() < 128,
                             "Synthetic peer connection bound exceeded"

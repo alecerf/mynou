@@ -105,11 +105,12 @@ repository: close it yourself (`gh issue close <issue> --reason completed`) with
 a comment linking the merge. If the head moved, a new verdict is needed. A red
 `trunk` blocks further merges until a fix-forward PR lands.
 
-`trunk` is protected (see [Branch protection](#branch-protection)), but not
-against administrators, and every agent is one: only this rule stops an agent
-from merging a red or unreviewed PR. Never use `--admin`, a direct push or
-auto-merge (`--auto`) to get past a red or pending check or a missing QA or
-Security verdict; GitHub cannot see those verdicts.
+`trunk` is protected (see [Branch protection](#branch-protection)), but its
+required checks do not bind administrators, and every agent is one: only this
+rule stops an agent from merging a red or unreviewed PR. Never use `--admin`, a
+direct push or auto-merge (`--auto`) to get past a red or pending check or a
+missing QA or Security verdict, unless the owner asks for it in their own
+session; GitHub cannot see those verdicts.
 
 ## Branches
 
@@ -129,9 +130,9 @@ yet, which only a merged release PR introduces. Actions alone tags and publishes
 published assets are immutable.
 
 - **Cadence:** at most one release per `minimum_interval_days` (seven), and only
-  when shipped inputs (`src/`, `examples/`, `Dockerfile`, `deploy-compose.yaml`,
-  Rust toolchain or build settings) changed since the latest release.
-  Engineering, CI and documentation changes are never released on their own.
+  when shipped inputs (`src/`, `examples/`, Rust toolchain or build settings)
+  changed since the latest release. Engineering, CI and documentation changes
+  are never released on their own.
 - **Urgent:** label the PR `release-now` for a security fix or an explicit owner
   request. It skips the weekly and shipped-change rules, nothing else.
 - **Cutting a release** when `release.due` (or on an owner request):
@@ -143,8 +144,8 @@ published assets are immutable.
      Use a minor version for new user-visible capability, a patch otherwise.
   3. Open the PR labeled `release`; QA checks the notes and the version. The
      `Release policy` check refuses anything else in the PR.
-  4. After merge, confirm that Actions published `v<version>` with its four
-     assets and its private image digest.
+  4. After merge, confirm that Actions published `v<version>` with its
+     executable and `SHA256SUMS`.
 - A failed publication is re-run from the failed job. Never retag or replace
   published assets; a burned version moves to the next patch in a new release PR.
 
@@ -168,18 +169,17 @@ mark release Issues and PRs. Native dependencies mark real blockers.
 
 | Workflow | Runs | Checks |
 | --- | --- | --- |
-| Mynou CI | PRs, `trunk` | Dependency graph, format, Clippy, all tests, release builds, demos, container; publishes on `trunk` only a new version |
+| Mynou CI | PRs, `trunk` | Dependency graph, format, Clippy, all tests, the macOS arm64 build and demo; publishes on `trunk` only a new version |
 | Engineering checks | PRs, `trunk` | Organization policy and tooling scenarios |
 | Release policy | PRs | Version changes only in a weekly release PR |
 | Security audit | PRs, `trunk`, hourly | Reachable Git objects and Actions logs |
 
 ### Branch protection
 
-`trunk` requires `validate`, `Build x86_64-unknown-linux-musl`,
-`Build aarch64-apple-darwin`, `Build x86_64-apple-darwin`, `package`,
+`trunk` requires `validate`, `Build aarch64-apple-darwin`, `package`,
 `organization`, `release-policy`, `source-history` and `CodeQL` to pass before a
 merge. `CodeQL` is the code scanning result (GitHub Advanced Security); the other
-eight are job names pinned to GitHub Actions. No review is required (every agent
+six are job names pinned to GitHub Actions. No review is required (every agent
 uses the same account, so an approval cannot exist) and branches need not be up
 to date. The settings refuse force pushes to `trunk` and its deletion.
 
@@ -188,17 +188,19 @@ purpose) and every agent is one. A blocked PR can be merged with `--admin`, a
 direct push is possible, and auto-merge (the `allow_auto_merge` setting is on)
 would merge on green required checks without any QA or Security verdict. That
 bypass is for an emergency: use it only on an explicit request from the owner in
-their own session. A required check also proves only that a PR's own workflows
-passed, so Security review of changes to `.github/` and `engineering/` is the
-control for that.
+their own session, since a comment on the shared account proves nothing. A
+required check also proves only that a PR's own workflows passed, so Security
+review of changes to `.github/` and `engineering/` is the control for that.
 
 The `release` job and `actions-logs` are not required: they are skipped on pull
 requests by design. The required list is a repository setting. A PR that renames
-or removes a required job stays blocked on the old name until the list is
-updated: update it in that change and say so in the PR, and QA and Security
-confirm the live list with `gh api repos/alecerf/mynou/branches/trunk/protection`.
-Any other change that loosens the protection (a check, its pinned app, code
-scanning, force pushes or deletion) needs the owner.
+a required job, or removes one together with the platform or feature it covered,
+stays blocked on the old name until the list is updated: update it in that
+change, say so in the PR, and let QA and Security confirm the live list with
+`gh api repos/alecerf/mynou/branches/trunk/protection`. Any other loosening needs
+the owner: dropping another check (in particular `source-history`,
+`release-policy` or `CodeQL`), changing a pinned app, disabling code scanning, or
+allowing force pushes or deletion.
 
 ## Recovery
 

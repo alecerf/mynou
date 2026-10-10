@@ -522,6 +522,40 @@ mod tests {
     }
 
     #[test]
+    fn shared_import_copies_payloads_larger_than_the_copy_buffer() {
+        let directory = Directory::new();
+        let source = directory.0.join("source.mp4");
+        let bytes: Vec<u8> = (0..=255).cycle().take(150_000).collect();
+        fs::write(&source, &bytes).unwrap();
+        let library = directory.0.join("library");
+        let mut file = crate::pack::SharedFile {
+            torrent_id: "b".repeat(40),
+            file_path: "Pack/large.mp4".into(),
+            tmdb_id: 43,
+            title: "Large Series".into(),
+            year: 2024,
+            season: 1,
+            first_episode: 1,
+            last_episode: 2,
+            import_path: String::new(),
+        };
+        file.import_path = shared_target(&library, &file)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .into();
+        let active = AtomicBool::new(true);
+        let destination =
+            import_shared_file_cancellable(&source, &library, &file, &active).unwrap();
+        assert_eq!(fs::read(&source).unwrap(), bytes);
+        assert_eq!(fs::read(&destination).unwrap(), bytes);
+        assert_eq!(
+            import_shared_file_cancellable(&source, &library, &file, &active).unwrap(),
+            destination
+        );
+    }
+
+    #[test]
     fn import_is_idempotent_and_never_overwrites_different_content() {
         let directory = Directory::new();
         let source = directory.0.join("source.mkv");
@@ -595,42 +629,6 @@ mod tests {
         assert!(error.contains("cancelled"), "{error}");
         assert!(!library.exists());
         assert_eq!(fs::read(source).unwrap(), b"intact source");
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn import_copies_between_filesystems_and_preserves_source() {
-        use std::os::unix::fs::MetadataExt;
-        if !Path::new("/dev/shm").is_dir() {
-            return;
-        }
-        let source_directory = Directory::new();
-        let library_directory = Directory(PathBuf::from(format!(
-            "/dev/shm/mynou-copy-{}-{}",
-            std::process::id(),
-            TEMPORARY.fetch_add(1, Ordering::Relaxed)
-        )));
-        fs::create_dir(&library_directory.0).unwrap();
-        if fs::metadata(&source_directory.0).unwrap().dev()
-            == fs::metadata(&library_directory.0).unwrap().dev()
-        {
-            return;
-        }
-        let source = source_directory.0.join("source.mp4");
-        let bytes: Vec<u8> = (0..=255).cycle().take(150_000).collect();
-        fs::write(&source, &bytes).unwrap();
-        let destination =
-            import_file(&source, &library_directory.0.join("library"), &request()).unwrap();
-        assert_eq!(fs::read(&source).unwrap(), bytes);
-        assert_eq!(fs::read(&destination).unwrap(), bytes);
-        assert_ne!(
-            fs::metadata(&source).unwrap().dev(),
-            fs::metadata(&destination).unwrap().dev()
-        );
-        assert_eq!(
-            import_file(&source, &library_directory.0.join("library"), &request()).unwrap(),
-            destination
-        );
     }
 
     #[cfg(unix)]

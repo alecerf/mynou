@@ -15,7 +15,8 @@ env:
   PYTHONDONTWRITEBYTECODE: '1'
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    # Mynou ships for macOS Apple Silicon only, so its checks run there too.
+    runs-on: macos-26
     timeout-minutes: 20
     env:
       CARGO_PROFILE_DEV_DEBUG: '0'
@@ -42,7 +43,7 @@ jobs:
             target/debug/mynou
             target/debug/mynou-ci-test-build.jsonl
             target/debug/mynou-ci-test-timings.json
-          key: ${{ runner.os }}-${{ runner.arch }}-${{ github.repository }}-rust-1.99-tests-v2-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'tests/**', 'examples/**', 'deploy-compose.yaml', '.github/workflows/ci.yml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ github.repository }}-rust-1.99-tests-v2-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'tests/**', 'examples/**', '.github/workflows/ci.yml') }}
       - name: Verify the dependency graph
         id: metadata
         run: |
@@ -85,8 +86,6 @@ jobs:
           node-version: '26.11.1'
       - name: Verify bounded live browser behavior without npm dependencies
         run: node --test .github/scripts/test_web_live.cjs
-      - name: Check release script syntax
-        run: bash -n .github/scripts/publish-release.sh
       - name: Check the CI test scheduler
         run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
       - name: Verify engineering policy, coordination and release-policy scenarios
@@ -97,7 +96,11 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         run: cargo test --all-targets --no-run --offline --locked --message-format=json-render-diagnostics > target/debug/mynou-ci-test-build.jsonl
       - name: Run all Rust test harnesses in parallel
-        run: python3 .github/scripts/parallel_tests.py target/debug/mynou-ci-test-build.jsonl --metadata "$RUNNER_TEMP/metadata.json" --output "$RUNNER_TEMP/mynou-test-results"
+        run: |
+          # macOS keeps its default temporary directory behind a symbolic link,
+          # which Mynou refuses, so the tests use the physical runner directory.
+          export TMPDIR="$(cd "$RUNNER_TEMP" && pwd -P)"
+          python3 .github/scripts/parallel_tests.py target/debug/mynou-ci-test-build.jsonl --metadata "$RUNNER_TEMP/metadata.json" --output "$RUNNER_TEMP/mynou-test-results"
       - name: Preserve test timings and logs
         if: always()
         uses: actions/upload-artifact@v7.0.1
@@ -118,82 +121,41 @@ jobs:
             target/debug/mynou-ci-test-timings.json
           key: ${{ steps.cache.outputs.cache-primary-key }}
   build:
-    name: Build ${{ matrix.target }}
-    runs-on: ${{ matrix.runner }}
+    name: Build aarch64-apple-darwin
+    runs-on: macos-26
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-musl
-            runner: ubuntu-latest
-          - target: aarch64-apple-darwin
-            runner: macos-26
-            arch: arm64
-          # Cross-compiled on Apple Silicon, which builds release code far faster
-          # than the Intel runner; Rosetta 2 runs its demonstration.
-          - target: x86_64-apple-darwin
-            runner: macos-26
-            arch: x86_64
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - name: Restore exact release binaries
+      - name: Restore exact release binary
         id: cache
         uses: actions/cache/restore@v6.1.0
         with:
           path: |
-            target/${{ matrix.target }}/release/mynou
-          key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99-release-v1-${{ matrix.target }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'examples/**', 'deploy-compose.yaml', '.github/workflows/ci.yml') }}
+            target/aarch64-apple-darwin/release/mynou
+          key: ${{ runner.os }}-${{ runner.arch }}-rust-1.99-release-v1-aarch64-apple-darwin-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'examples/**', '.github/workflows/ci.yml') }}
       - name: Install Rust 1.99.0 and target
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          rustup toolchain install 1.99.0 --profile minimal --target '${{ matrix.target }}'
+          rustup toolchain install 1.99.0 --profile minimal --target aarch64-apple-darwin
           rustup default 1.99.0
-      - name: Build release deliverables
+      - name: Build the release executable
         if: steps.cache.outputs.cache-hit != 'true'
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          cargo build --release --offline --locked --target "$TARGET" --bin mynou
-      - name: Verify the Linux release binary
-        if: runner.os == 'Linux'
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          binary="target/$TARGET/release/mynou"
-          test -x "$binary"
-          readelf -h "$binary" > "$RUNNER_TEMP/mynou-elf-header.txt"
-          readelf -l "$binary" > "$RUNNER_TEMP/mynou-elf-programs.txt"
-          readelf -d "$binary" > "$RUNNER_TEMP/mynou-elf-dynamic.txt"
-          if [[ "$TARGET" == x86_64-unknown-linux-musl ]]; then
-            if grep -q INTERP "$RUNNER_TEMP/mynou-elf-programs.txt" || grep -q NEEDED "$RUNNER_TEMP/mynou-elf-dynamic.txt"; then exit 1; fi
-          fi
-          sha256sum "$binary"
+        run: cargo build --release --offline --locked --target aarch64-apple-darwin --bin mynou
       - name: Verify the macOS release binary
-        if: runner.os == 'macOS'
-        env:
-          TARGET: ${{ matrix.target }}
-          ARCH: ${{ matrix.arch }}
         run: |
-          binary="target/$TARGET/release/mynou"
+          binary=target/aarch64-apple-darwin/release/mynou
           test -x "$binary"
           file "$binary"
-          test "$(lipo -archs "$binary")" = "$ARCH"
+          test "$(lipo -archs "$binary")" = arm64
           otool -hv "$binary"
           otool -L "$binary"
           shasum -a 256 "$binary"
-      - name: Provide Rosetta 2 for the Intel demonstration
-        if: matrix.target == 'x86_64-apple-darwin'
-        run: arch -x86_64 /usr/bin/true 2>/dev/null || sudo softwareupdate --install-rosetta --agree-to-license
       - name: Run the standalone demonstration
-        if: matrix.target == 'x86_64-unknown-linux-musl' || runner.os == 'macOS'
-        env:
-          TARGET: ${{ matrix.target }}
         run: |
           demo_root=$(cd "$RUNNER_TEMP" && pwd -P)
-          "target/$TARGET/release/mynou" demo --dir "$demo_root/mynou-demo" > "$RUNNER_TEMP/mynou-demo.json"
+          target/aarch64-apple-darwin/release/mynou demo --dir "$demo_root/mynou-demo" > "$RUNNER_TEMP/mynou-demo.json"
           cat "$RUNNER_TEMP/mynou-demo.json"
           python3 - "$RUNNER_TEMP/mynou-demo.json" <<'DEMO'
           import json, sys
@@ -202,31 +164,23 @@ jobs:
           assert result["job"]["state"] == "ready"
           assert result["plex_scan_confirmed"] is True
           DEMO
-      - name: Preserve native macOS deliverables for packaging
-        if: runner.os == 'macOS'
+      - name: Preserve the executable for packaging
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: mynou-native-${{ matrix.target }}-${{ github.sha }}
-          path: target/${{ matrix.target }}/release/mynou
+          name: mynou-native-aarch64-apple-darwin-${{ github.sha }}
+          path: target/aarch64-apple-darwin/release/mynou
           if-no-files-found: error
           retention-days: 1
-      - name: Preserve static deliverables for packaging
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: mynou-static-${{ github.sha }}
-          path: target/x86_64-unknown-linux-musl/release/mynou
-          if-no-files-found: error
-          retention-days: 1
-      - name: Save exact release binaries
+      - name: Save exact release binary
         if: success() && github.event_name != 'pull_request' && github.ref == 'refs/heads/trunk' && steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6.1.0
         with:
           path: |
-            target/${{ matrix.target }}/release/mynou
+            target/aarch64-apple-darwin/release/mynou
           key: ${{ steps.cache.outputs.cache-primary-key }}
   package:
     needs: [validate, build]
+    # Packaging only copies and checksums the executable; it builds nothing.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
@@ -238,75 +192,20 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@v8.0.1
         with:
-          name: mynou-static-${{ github.sha }}
-          path: ${{ runner.temp }}/mynou-static
-      - uses: actions/download-artifact@v8.0.1
-        with:
           name: mynou-native-aarch64-apple-darwin-${{ github.sha }}
           path: ${{ runner.temp }}/mynou-macos-arm64
-      - uses: actions/download-artifact@v8.0.1
-        with:
-          name: mynou-native-x86_64-apple-darwin-${{ github.sha }}
-          path: ${{ runner.temp }}/mynou-macos-x86_64
-      - name: Prepare checked executable and runner TLS trust data
-        run: |
-          chmod 755 "$RUNNER_TEMP/mynou-static/mynou"
-          mkdir .ci-image
-          cp "$RUNNER_TEMP/mynou-static/mynou" .ci-image/mynou
-          install -m 644 /etc/ssl/certs/ca-certificates.crt .ci-image/ca-certificates.crt
-          test -s .ci-image/ca-certificates.crt
-          test "$(wc -c < .ci-image/ca-certificates.crt)" -le 4194304
-          grep -q '^-----BEGIN CERTIFICATE-----$' .ci-image/ca-certificates.crt
-          sha256sum .ci-image/ca-certificates.crt
-      - name: Build and verify the container without recompiling
-        env:
-          VERSION: ${{ needs.validate.outputs.version }}
-        run: |
-          docker build --check .
-          docker build --network none --build-arg "MYNOU_VERSION=$VERSION" \
-            --build-arg "MYNOU_REVISION=$GITHUB_SHA" --tag "mynou:$VERSION" .
-          container=$(docker create "mynou:$VERSION")
-          trap 'docker rm -f "$container" >/dev/null' EXIT
-          docker cp "$container:/mynou" "$RUNNER_TEMP/mynou-image-binary"
-          docker cp "$container:/etc/ssl/certs/ca-certificates.crt" "$RUNNER_TEMP/mynou-image-ca"
-          docker rm "$container"
-          trap - EXIT
-          cmp "$RUNNER_TEMP/mynou-static/mynou" "$RUNNER_TEMP/mynou-image-binary"
-          cmp .ci-image/ca-certificates.crt "$RUNNER_TEMP/mynou-image-ca"
-          mkdir "$RUNNER_TEMP/mynou-container-demo"
-          chmod 777 "$RUNNER_TEMP/mynou-container-demo"
-          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true \
-            --mount "type=bind,src=$RUNNER_TEMP/mynou-container-demo,dst=/data" \
-            "mynou:$VERSION" demo --dir /data/demo
-          # Exercise the publication cleanup path with read-only PR permissions.
-          python3 .github/scripts/publish_container.py --verify-demo "mynou:$VERSION"
-      - name: Save the checked image for default publication
-        if: needs.validate.outputs.publish == 'true'
-        env:
-          VERSION: ${{ needs.validate.outputs.version }}
-        run: docker save "mynou:$VERSION" | gzip -n > "$RUNNER_TEMP/mynou-image.tar.gz"
+      - name: Check release script syntax
+        run: bash -n .github/scripts/publish-release.sh
       - name: Package the validated release
         env:
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
           mkdir "$RUNNER_TEMP/mynou-release"
-          install -m 755 "$RUNNER_TEMP/mynou-static/mynou" "$RUNNER_TEMP/mynou-release/mynou-v$VERSION-linux-x86_64"
-          cmp "$RUNNER_TEMP/mynou-static/mynou" "$RUNNER_TEMP/mynou-release/mynou-v$VERSION-linux-x86_64"
-          for arch in arm64 x86_64; do
-            name="mynou-v$VERSION-macos-$arch"
-            install -m 755 "$RUNNER_TEMP/mynou-macos-$arch/mynou" "$RUNNER_TEMP/mynou-release/$name"
-            test -x "$RUNNER_TEMP/mynou-release/$name"
-            cmp "$RUNNER_TEMP/mynou-macos-$arch/mynou" "$RUNNER_TEMP/mynou-release/$name"
-          done
-          (cd "$RUNNER_TEMP/mynou-release" && sha256sum mynou-* > SHA256SUMS && sha256sum -c SHA256SUMS)
-      - name: Preserve checked image for default publication
-        if: needs.validate.outputs.publish == 'true'
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: mynou-container-${{ github.sha }}
-          path: ${{ runner.temp }}/mynou-image.tar.gz
-          if-no-files-found: error
-          retention-days: 1
+          name="mynou-v$VERSION-macos-arm64"
+          install -m 755 "$RUNNER_TEMP/mynou-macos-arm64/mynou" "$RUNNER_TEMP/mynou-release/$name"
+          test -x "$RUNNER_TEMP/mynou-release/$name"
+          cmp "$RUNNER_TEMP/mynou-macos-arm64/mynou" "$RUNNER_TEMP/mynou-release/$name"
+          (cd "$RUNNER_TEMP/mynou-release" && sha256sum "$name" > SHA256SUMS && sha256sum -c SHA256SUMS)
       - name: Preserve validated release files
         uses: actions/upload-artifact@v7.0.1
         with:
@@ -322,7 +221,6 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
-      packages: write
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -331,30 +229,8 @@ jobs:
         with:
           name: mynou-release-${{ github.sha }}
           path: ${{ runner.temp }}/mynou-release
-      - uses: actions/download-artifact@v8.0.1
-        with:
-          name: mynou-container-${{ github.sha }}
-          path: ${{ runner.temp }}/mynou-container
-      - name: Publish and verify the private registry image
-        id: container
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.package.outputs.version }}
-        run: |
-          python3 .github/scripts/publish_container.py \
-            "$RUNNER_TEMP/mynou-container/mynou-image.tar.gz" "$VERSION" \
-            "$RUNNER_TEMP/mynou-release/mynou-v$VERSION-linux-x86_64"
       - name: Publish the validated version
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.package.outputs.version }}
-          MYNOU_CONTAINER_REF: ${{ steps.container.outputs.image_ref }}
         run: bash .github/scripts/publish-release.sh "$RUNNER_TEMP/mynou-release" "$VERSION"
-      - name: Preserve source-bound private publication proof
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: mynou-publication-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/mynou-image.json
-          if-no-files-found: error
-          retention-days: 90
-

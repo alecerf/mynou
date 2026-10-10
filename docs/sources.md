@@ -96,8 +96,7 @@ unaffected.
 ## IRC announcements
 
 IRC reception is opt-in. Each source connects out to one channel and accepts
-announcements from one exact sender. No port needs to be published, even in
-Docker.
+announcements from one exact sender. No inbound port needs to be opened.
 
 ```json
 {

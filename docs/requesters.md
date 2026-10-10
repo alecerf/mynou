@@ -22,7 +22,7 @@ Add an optional `requesters` section to `mynou.json`:
       {"id": "bob", "expected_user_id": "234567", "token_env": "MYNOU_PLEX_BOB_TOKEN"}
     ],
     "destinations": [
-      {"id": "family", "movies_root": "/library/family/movies", "series_root": "/library/family/series"}
+      {"id": "family", "movies_root": "/Volumes/Media/family/movies", "series_root": "/Volumes/Media/family/series"}
     ]
   }
 }
@@ -39,9 +39,8 @@ Add an optional `requesters` section to `mynou.json`:
   (default `https://discover.provider.plex.tv/library/sections/watchlist/all`)
   are optional.
 - The destination `default` is the main library roots. Named destinations
-  resolve relative paths against the configuration file. Mount them in the
-  container and make them visible to Plex; Plex sections and
-  [path mappings](deployment.md#connect-plex) still apply.
+  resolve relative paths against the configuration file. Make them visible to
+  Plex; Plex sections and [path mappings](macos.md#connect-plex) still apply.
 
 Keep tokens in the environment; they never appear in controls or reports.
 

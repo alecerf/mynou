@@ -219,11 +219,6 @@ impl Input {
     fn open(path: &Path) -> Result<Self> {
         let mut options = OpenOptions::new();
         options.read(true);
-        #[cfg(target_os = "linux")]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.custom_flags(0o400000 | 0o4000); // O_NOFOLLOW | O_NONBLOCK.
-        }
         let file = options
             .open(path)
             .map_err(|e| format!("Cannot open media: {e}"))?;

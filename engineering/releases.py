@@ -11,7 +11,7 @@ from github import APIError, GitHub
 from protocol import instant, labels as label_names, stamp
 
 PRODUCT_DIRS = ("src/", "examples/", ".cargo/")
-PRODUCT_FILES = {"build.rs", "rust-toolchain.toml", "Dockerfile", ".dockerignore", "deploy-compose.yaml"}
+PRODUCT_FILES = {"build.rs", "rust-toolchain.toml"}
 MANIFESTS = {"Cargo.toml", "Cargo.lock"}
 NOTES = "docs/releases/"
 VERSION = re.compile(r"(?:0|[1-9][0-9]{0,5})\.(?:0|[1-9][0-9]{0,5})\.(?:0|[1-9][0-9]{0,5})")
@@ -54,7 +54,7 @@ def unversioned(manifest):
 
 
 def shipped(paths, truncated, released, current):
-    """Whether the executables or the image can differ from the last release."""
+    """Whether the executable can differ from the last release."""
     return (truncated or any(path.startswith(PRODUCT_DIRS) or path in PRODUCT_FILES for path in paths)
             or unversioned(released) != unversioned(current))
 

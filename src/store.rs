@@ -620,8 +620,6 @@ pub(crate) fn private_options() -> OpenOptions {
     use std::os::unix::fs::OpenOptionsExt;
     let mut options = OpenOptions::new();
     options.mode(0o600);
-    #[cfg(target_os = "linux")]
-    options.custom_flags(0o400000 | 0o4000); // O_NOFOLLOW | O_NONBLOCK.
     options
 }
 

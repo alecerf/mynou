@@ -12,7 +12,9 @@ class SchedulerTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        # The scheduler resolves paths, and macOS temporary directories sit
+        # behind a symbolic link, so the fixture root must be the physical path.
+        self.root = Path(self.temporary.name).resolve()
         (self.root / "src").mkdir()
         (self.root / "target/debug").mkdir(parents=True)
         self.targets = []

@@ -9,7 +9,7 @@ for its exact commit only: an earlier green run does not validate later changes.
 
 | Workflow | Runs on | Purpose |
 | --- | --- | --- |
-| Mynou CI | Pull requests, `trunk` | Dependency graph, format, Clippy, all tests, release builds, demos, container; publishes a new version from `trunk` |
+| Mynou CI | Pull requests, `trunk` | Dependency graph, format, Clippy, all tests, the macOS arm64 build and demo; publishes a new version from `trunk` |
 | Engineering checks | Pull requests, `trunk` | Organization policy and engineering tooling scenarios |
 | Release policy | Pull requests | Version changes only in a release PR |
 | Security audit | Pull requests, `trunk`, hourly | Reachable Git objects and Actions logs |
@@ -18,25 +18,22 @@ for its exact commit only: an earlier green run does not validate later changes.
 ## Mynou CI
 
 The workflow in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) has
-four jobs:
+four jobs. Mynou ships for macOS on Apple Silicon only, so `validate` and `build`
+run on an Apple Silicon `macos-26` runner:
 
 1. **validate** checks the Cargo graph offline (exactly one package, `mynou`,
    with no dependencies), formatting, Clippy with warnings denied, the
-   live-progress browser fixture (Node without npm packages), the release
-   script's syntax, the test scheduler and the engineering policy. It then runs
-   every Cargo test harness.
-2. **build** produces the three published executables on separate runners: a
-   static `x86_64-unknown-linux-musl` binary, and `aarch64-apple-darwin` and
-   `x86_64-apple-darwin` binaries on Apple Silicon `macos-26` runners. The Intel
-   binary is cross-compiled and its demo runs under Rosetta 2. CI checks that the
-   Linux binary has no ELF interpreter or shared library and that each macOS
-   binary has the exact target architecture. Every target runs the standalone
+   live-progress browser fixture (Node without npm packages), the test scheduler
+   and the engineering policy. It then runs every Cargo test harness, using the
+   physical runner directory as temporary directory because Mynou refuses the
+   symbolic link behind macOS's default one.
+2. **build** produces the published `aarch64-apple-darwin` executable. CI checks
+   that the binary has the exact target architecture and runs the standalone
    demo, which must reach `ready` with simulated Plex confirmation.
-3. **package** waits for validation and all builds of the same commit. It builds
-   the container `FROM scratch` from the checked static binary and the runner's
-   CA bundle (logged with its SHA-256) without recompiling, compares the binary in the image byte for byte,
-   runs the container demo without network access, with a read-only root and no
-   capabilities, then writes the three executables and `SHA256SUMS`.
+3. **package** waits for validation and the build of the same commit. It checks
+   the release script's syntax, copies the checked executable under its release
+   name, compares the copy byte for byte and writes `SHA256SUMS`. It only copies
+   and checksums, so it runs on a Linux runner.
 4. **release** runs only on `trunk`, and only when `Cargo.toml` carries a version
    without a `v<version>` tag. Only a merged release PR introduces such a
    version, so every other `trunk` commit is validated without a release.
@@ -66,8 +63,8 @@ builds omit debug symbols; debug assertions and overflow checks stay enabled.
 ## Caches
 
 Only successful `trunk` runs save caches; pull requests can restore them. Keys
-are exact fingerprints of the manifests, sources, tests, examples, deployment
-template and workflow, with no partial-key fallback. The test cache holds
+are exact fingerprints of the manifests, sources, tests, examples and workflow,
+with no partial-key fallback. The test cache holds
 compiled harnesses, their build manifest and timing history; every test still
 runs. Release caches hold only the target binary; its checks and demo still run.
 Caches never contain a journal, downloads, a library or personal configuration,
@@ -80,26 +77,21 @@ bumps the version and gathers the notes from `docs/releases/unreleased/`; see th
 [engineering runbook](../engineering/README.md#releases). The `Release policy`
 check refuses version changes anywhere else.
 
-The release job first publishes the checked Linux amd64 image to the private
-`ghcr.io/alecerf/mynou` package. The publisher verifies the repository and
-package identity, refuses conflicting tags or labels, reuses an existing exact
-tag without pushing, then pulls the recorded digest, compares its executable and
-repeats the container demo. Only then does
-[publish-release.sh](../.github/scripts/publish-release.sh) create the tag and
-the GitHub release from the validated commit. Only this job has `contents: write`
-and `packages: write`, using the ephemeral repository token.
+The release job runs
+[publish-release.sh](../.github/scripts/publish-release.sh), which checks the
+packaged files and creates the tag and the GitHub release from the validated
+commit. Only this job has `contents: write`, using the ephemeral repository
+token.
 
 | Asset | Contents |
 | --- | --- |
-| `mynou-vVERSION-linux-x86_64` | Static Linux x86_64 executable |
 | `mynou-vVERSION-macos-arm64` | Native Apple Silicon executable |
-| `mynou-vVERSION-macos-x86_64` | Native Intel macOS executable |
-| `SHA256SUMS` | One manifest covering the three executables |
+| `SHA256SUMS` | One manifest covering the executable |
 
-The release notes record the image's content digest. Registry tags can be
-changed by authorized writers, so pin the digest. GitHub's own source downloads
-contain sources only and need a build. Releases before 0.22.19 had other assets
-(source archives, image archives and per-file checksums) and remain unchanged.
+GitHub's own source downloads contain sources only and need a build. Earlier
+releases also provided a Linux x86_64 executable, an Intel macOS executable and a
+private container image, and releases before 0.22.19 had other assets (source
+archives, image archives and per-file checksums); they remain unchanged.
 
 Published tags and assets are immutable. A failed publication is re-run from the
 failed job, never by replacing assets; a burned version moves to the next patch
@@ -109,19 +101,18 @@ branch (for example `release-source/<version>`) before re-running the failed job
 
 ## Verify release assets
 
-Download your executable and `SHA256SUMS` from the same published release.
-Select its exact filename from the manifest so other architectures need not
-be downloaded. For example, after downloading the 0.22.19 Apple Silicon binary:
+Download the executable and `SHA256SUMS` from the same published release. Select
+the executable's exact filename from the manifest, which also works for releases
+that list more files. For example, after downloading the 0.22.19 Apple Silicon
+binary:
 
 ```sh
 awk '$2 == "mynou-v0.22.19-macos-arm64"' SHA256SUMS | shasum -a 256 -c -
 ```
 
-Use `sha256sum -c -` on Linux. A missing or incorrect selected entry fails
-verification; do not install or execute after failure. Downloading all three
-executables also permits `sha256sum -c SHA256SUMS`.
+A missing or incorrect selected entry fails verification; do not install or
+execute after failure.
 
 Checksums establish integrity relative to the same release's manifest, not Apple
 signing or publisher identity. Review the exact source and successful Actions
-run. Container deployment uses the verified content digest; registry version
-tags are mutable by authorized writers. See [Docker installation](deployment.md).
+run.

@@ -245,39 +245,3 @@ fn traversal_and_symlinks_cannot_redirect_upgrade_imports() {
     assert_eq!(fs::read(&outside_file).unwrap(), b"external media");
     assert!(fs::symlink_metadata(&destination).unwrap().is_symlink());
 }
-
-#[cfg(target_os = "linux")]
-#[test]
-fn versioned_import_copies_across_filesystems_and_retries_without_mutation() {
-    use std::os::unix::fs::MetadataExt;
-
-    if !Path::new("/dev/shm").is_dir() {
-        return;
-    }
-    let source_directory = Directory::new();
-    let library_directory = Directory::in_parent(Path::new("/dev/shm"));
-    if fs::metadata(&source_directory.0).unwrap().dev()
-        == fs::metadata(&library_directory.0).unwrap().dev()
-    {
-        return;
-    }
-    let bytes: Vec<u8> = (0..=255).cycle().take(270_000).collect();
-    let source = source_directory.source("upgrade.mkv", &bytes);
-    let library = library_directory.0.join("library");
-    let destination = import_versioned_file(&source, &library, &movie(), FIRST_REVISION).unwrap();
-
-    assert_eq!(fs::read(&source).unwrap(), bytes);
-    assert_eq!(fs::read(&destination).unwrap(), bytes);
-    assert_ne!(
-        fs::metadata(&source).unwrap().dev(),
-        fs::metadata(&destination).unwrap().dev()
-    );
-    assert_eq!(
-        import_versioned_file(&source, &library, &movie(), FIRST_REVISION).unwrap(),
-        destination
-    );
-    assert_eq!(
-        fs::read_dir(destination.parent().unwrap()).unwrap().count(),
-        1
-    );
-}
