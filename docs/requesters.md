@@ -82,8 +82,7 @@ explicit opt-in. The policy is a complete object:
     "max_daily": 32,
     "movie_profile": "any",
     "episode_profile": "any",
-    "destination": "family",
-    "notifications": "decisions"
+    "destination": "family"
   }
 }
 ```
@@ -121,7 +120,7 @@ operator jobs or move their files.
 ## CLI, API and browser
 
 The browser's **Requesters** page shows accounts, poll results, active/daily
-usage, pending decisions and recorded notification outcomes. Review a policy,
+usage and pending decisions. Review a policy,
 approval, rejection, removal or retry, then apply that exact review. The server
 keeps one bounded session review for ten minutes. Apply carries account, action
 and guard fields; policy substitutions, another session, logout and stale reviews
@@ -160,7 +159,7 @@ available active capacity. Removed and rejected records are tombstones; polls
 never silently revive them. Explicit operator submission can establish an
 independent interest, followed by a deliberate retry where needed.
 
-## Polling, persistence and notifications
+## Polling and persistence
 
 An account poll verifies identity, completes bounded watchlist pagination and
 resolves canonical movie/episode identities and retained numbering before
@@ -189,14 +188,10 @@ after policy and configuration edits. A removed last requester cancels only
 requester-created unfinished work without other approved/operator interests;
 ready bytes remain in place.
 
-`notifications` chooses `none`, `decisions` or `all`. Outcomes are recorded in a
-bounded inbox, with up to 1,000 retained records globally and 100 recent outcomes
-on an account page. Repeated polls do not repeat the same outcome. `decisions`
-omits routine reservation/active transitions; `all` includes them. Credential
-values and endpoint URLs are absent from reports and recorded outcomes. External
-[notification delivery](notifications.md) is implemented in 0.20.7; requester
-self-service login remains later work. Durable route events respect the same
-preferences and retain their original account scope.
+Credential values and endpoint URLs are absent from reports. Requester
+self-service login remains later work. Notification preferences and recorded
+notification outcomes were removed without migration: a `requesters.bin` saved by
+an earlier version still holds them, and this version refuses to open it.
 
 ## Reviewed IRC origins in 0.20.6
 
@@ -214,6 +209,8 @@ an unadmitted policy through the existing reviewed controls. The canonical reque
 and retained source numbering stay frozen in the intent and demand.
 
 Requester format 2 and IRC format 3 prevent older binaries from silently removing
-explicit origins. Earlier checked formats remain readable when they contain no
-new semantics. Back up private storage before downgrading; preserve the library
-and downloads. See [IRC requests](irc.md#reviewed-requester-demand-in-0206).
+explicit origins. IRC history formats 1–3 remain readable when they contain no new
+semantics; IRC format 4 and requester snapshots saved by earlier versions are not,
+because they hold removed notification records. Back up private storage before
+downgrading; preserve the library and downloads. See
+[IRC requests](irc.md#reviewed-requester-demand-in-0206).

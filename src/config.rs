@@ -78,7 +78,6 @@ pub struct Config {
     pub sources: Vec<Source>,
     pub requesters: crate::requesters::Settings,
     pub irc: crate::irc::Settings,
-    pub notifications: crate::notifications::Settings,
 }
 
 fn object(items: Vec<(&str, Value)>) -> Value {
@@ -362,7 +361,6 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             "indexers",
             "requesters",
             "irc",
-            "notifications",
         ],
     )?;
     if number(v, "schema_version", 0, 1)? != 1 {
@@ -492,8 +490,6 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
     }) {
         return Err("IRC: rule requester is not configured".into());
     }
-    let notifications =
-        crate::notifications::Settings::from_json(v.get("notifications"), &requesters, &irc)?;
     Ok(Config {
         store_dir: path(&base, text(v, "store_dir", "state/jobs")?)?,
         listen,
@@ -543,7 +539,6 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         sources,
         requesters,
         irc,
-        notifications,
     })
 }
 pub fn secret(name: &str) -> Result<String> {

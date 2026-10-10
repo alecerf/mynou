@@ -29,8 +29,8 @@ replacement lineage. Confirmed owners stage until one atomic promotion makes the
 whole replacement current; prior library files remain in place.
 
 [Plex requester policies](docs/requesters.md) add stable account bindings, explicit
-opt-in profiles, durable approvals and quotas, captured destinations and recorded
-notification outcomes. Compatible accounts share acquisition; removals retain
+opt-in profiles, durable approvals and quotas, and captured destinations.
+Compatible accounts share acquisition; removals retain
 other demand and ready media. CLI, API and browser controls require reviewed
 scope guards. Configurations without requester accounts retain single-account
 behavior. [v0.19.1](https://github.com/alecerf/mynou/releases/tag/v0.19.1) verifies
@@ -89,13 +89,10 @@ its original local-service fixtures passed all five jobs in run 37427693256:
 [v0.20.6](https://github.com/alecerf/mynou/releases/tag/v0.20.6) from the exact
 validated source with seven assets; the prior release remained unchanged.
 
-[Durable notification delivery](docs/notifications.md) now records requester and
-IRC outcomes in their owning snapshots before native HTTP delivery. Opt-in routes
-retain immutable identities, stable event IDs, bounded attempts and redacted
-CLI/API/browser controls. Delivery is at-least-once; receiver deduplication is
-required. CI published v0.20.7 after all five jobs in run 37429460979 passed:
-602 Rust tests across 53 harnesses and four scheduler checks. The exact tag/seven
-assets were verified, preserving v0.20.6.
+v0.20.7 added native HTTP delivery of requester and IRC outcome notifications,
+which has since been removed. CI published v0.20.7 after all five jobs in run
+37429460979 passed: 602 Rust tests across 53 harnesses and four scheduler checks.
+The exact tag/seven assets were verified, preserving v0.20.6.
 
 [Native indexer authentication](docs/indexers.md) adds Basic, Bearer and an
 explicit single-cookie form adapter. Origin-bound in-memory sessions renew once

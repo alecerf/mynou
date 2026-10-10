@@ -149,15 +149,12 @@ fn approval_precedes_native_acquisition_and_captured_route_survives_edit_restart
     assert_eq!(ready_job.imports, scanning.imports);
     assert_eq!(ready_job.requester, captured);
     assert_eq!(fs::read(&ready_job.imports[0]).unwrap(), bytes);
-    let notifications = engine.requester("alice", 0, 100).unwrap();
-    assert!(
-        notifications
-            .get("notifications")
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|v| v.get("outcome").and_then(Value::as_str) == Some("ready"))
+    let report = engine.requester("alice", 0, 100).unwrap();
+    assert_eq!(
+        demand(&engine, "alice")
+            .get("outcome")
+            .and_then(Value::as_str),
+        Some("ready")
     );
-    no_credentials(&notifications);
+    no_credentials(&report);
 }

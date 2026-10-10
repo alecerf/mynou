@@ -196,8 +196,8 @@ This interface has the privileges of the shared API token. It does not add
 individual users, approval policies or quotas. API requests still require
 `Authorization: Bearer …`; browser cookies never authenticate `/api` routes,
 and a Bearer header does not sign a browser session in. Configuration editing,
-notifications configuration, WebSocket streaming and personal-installation validation remain
-outside this release.
+WebSocket streaming and personal-installation validation remain outside this
+release.
 
 [Docker installation](deployment.md) · [Explicit limits](limits.md) ·
 [CI validation](validation.md) · [Release roadmap](roadmap.md)

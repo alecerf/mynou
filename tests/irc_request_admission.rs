@@ -674,7 +674,6 @@ fn committed_and_uncommitted_crash_intents_recover_without_replay_or_extra_charg
             let path = cfg.store_dir.join("requesters.bin");
             let mut ledger = read_checked(&path);
             ledger.insert("demands", Value::Array(Vec::new()));
-            ledger.insert("notifications", Value::Array(Vec::new()));
             write_checked(&path, b"MYNOUR02", &ledger);
         }
         let before = irc_support::bytes(&cfg.store_dir);

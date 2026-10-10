@@ -61,9 +61,6 @@ const HELP: &str = "Mynou — media automation using Rust std only
   requester-sync [--config mynou.json]
   indexers [--config mynou.json]
   indexer-control SOURCE_ID --action enable|pause|reset_session|probe [--apply --plan-id ID] [--config mynou.json]
-  notifications [--offset N --limit N] [--config mynou.json]
-  notifications-dispatch [--config mynou.json]
-  notification-control EVENT_ID --kind requester|irc --action retry|discard [--apply --plan-id ID] [--config mynou.json]
   irc [--config mynou.json]
   announcements [--offset N --limit N] [--config mynou.json]
   announcement ANNOUNCEMENT_ID [--config mynou.json]
@@ -124,9 +121,6 @@ impl Args {
             "requesters" | "requester-sync" => &["config", "help"],
             "indexers" => &["config", "help"],
             "indexer-control" => &["config", "help", "action", "apply", "plan-id"],
-            "notifications" => &["config", "help", "offset", "limit"],
-            "notifications-dispatch" => &["config", "help"],
-            "notification-control" => &["config", "help", "kind", "action", "apply", "plan-id"],
             "irc" | "announcement" => &["config", "help"],
             "announcements" => &["config", "help", "offset", "limit"],
             "irc-preview" => &["config", "help", "announcement", "text"],
@@ -219,7 +213,6 @@ impl Args {
                 "announcement",
                 "irc-preview",
                 "irc-control",
-                "notification-control",
                 "indexer-control",
                 "analyze",
                 "show",
@@ -803,66 +796,6 @@ fn execute(args: Args) -> Result<()> {
                     return Err("Indexer policy: application requires the running service".into());
                 }
                 output(&Engine::open_for_preview(config)?.indexer_control(id, &q)?);
-            }
-        }
-        "notifications" => {
-            let query = format!(
-                "offset={}&limit={}",
-                args.value("offset", "0"),
-                args.value("limit", "100")
-            );
-            let (offset, limit) = mynou::requesters::page(&query)?;
-            if online {
-                output(&call(
-                    &config,
-                    &path,
-                    "GET",
-                    &format!("/api/notifications?{query}"),
-                    None,
-                )?);
-            } else {
-                output(&Engine::open_for_preview(config)?.notifications(offset, limit)?);
-            }
-        }
-        "notifications-dispatch" => {
-            if !online {
-                return Err("Notifications: dispatch requires the running service".into());
-            }
-            output(&call(
-                &config,
-                &path,
-                "POST",
-                "/api/notifications/dispatch",
-                Some(&Value::object()),
-            )?);
-        }
-        "notification-control" => {
-            let mut v = Value::object();
-            v.insert("kind", args.value("kind", ""));
-            v.insert("event_id", args.positions[0].clone());
-            v.insert("action", args.value("action", ""));
-            v.insert("apply", args.options.contains_key("apply"));
-            v.insert(
-                "plan_id",
-                args.options
-                    .get("plan-id")
-                    .cloned()
-                    .map_or(Value::Null, Value::from),
-            );
-            let q = mynou::notifications::ControlRequest::from_json(&v)?;
-            if online {
-                output(&call(
-                    &config,
-                    &path,
-                    "POST",
-                    "/api/notifications/control",
-                    Some(&q.to_json()),
-                )?);
-            } else {
-                if q.apply {
-                    return Err("Notifications: application requires the running service".into());
-                }
-                output(&Engine::open_for_preview(config)?.notification_control(&q)?);
             }
         }
         "irc" => {
