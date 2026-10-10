@@ -1667,10 +1667,6 @@ impl Store {
         Ok(job)
     }
 
-    pub fn renew_lease(&mut self, id: &str, lease_id: &str, at: u64, ttl: u64) -> Result<Job> {
-        self.renew(id, lease_id, at, ttl)
-    }
-
     pub fn release_lease(&mut self, id: &str, lease_id: &str) -> Result<Job> {
         let mut job = self.get(id).ok_or_else(|| "unknown job".to_owned())?;
         if job.lease_id.as_deref() != Some(lease_id) {
@@ -2769,7 +2765,7 @@ mod tests {
         let mut job = store.claim(at, 60).unwrap().unwrap();
         assert_eq!(job.attempts, 0);
         let id = job.lease_id.clone().unwrap();
-        let heartbeat = store.renew_lease(&job.id, &id, at, 300).unwrap();
+        let heartbeat = store.renew(&job.id, &id, at, 300).unwrap();
         job.state = "downloading".to_owned();
         job.acquisition_url =
             Some("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567".to_owned());

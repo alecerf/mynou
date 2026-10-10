@@ -524,20 +524,6 @@ fn catalog_identity(request: &Request, value: &Value) -> Result<u64> {
         .ok_or("TMDB catalog: missing identification")?)
 }
 
-/// A bounded fresh plan includes known future/undated episodes without queuing them.
-pub fn series_plan(
-    config: &Config,
-    request: &Request,
-    include_specials: bool,
-) -> Result<crate::series::Plan> {
-    series_plan_before(
-        config,
-        request,
-        include_specials,
-        Instant::now() + SEARCH_BUDGET,
-    )
-}
-
 pub(crate) fn series_plan_before(
     config: &Config,
     request: &Request,
