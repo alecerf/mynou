@@ -20,7 +20,7 @@ use std::{
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
-use web_support::{Browser, Server, TOKEN};
+use web_support::{Server, TOKEN};
 #[derive(Clone)]
 struct Reply {
     status: u16,
@@ -531,46 +531,6 @@ fn native_rss_and_torznab_parsers_use_authenticated_fetch_and_report_parse_failu
         redacted(&health(&c));
     }
 }
-#[test]
-fn protected_source_health_api_browser_and_cli_expose_only_safe_aliases() {
-    let d = Directory::new();
-    let p = Provider::open();
-    let c = cfg(&d, &p, "form");
-    let server = Server::open(c);
-    integrations::search(&server.engine.config, &movie()).unwrap();
-    assert_eq!(server.call("GET", "/api/indexers", &[], "").status, 401);
-    let reply = server.call(
-        "GET",
-        "/api/indexers",
-        &[("Authorization", &format!("Bearer {TOKEN}"))],
-        "",
-    );
-    assert_eq!(reply.status, 200);
-    reply.no_secrets();
-    redacted(&json::parse(&reply.body).unwrap());
-    let browser = Browser::login(&server);
-    let page = browser.get(&server, "/ui/indexers");
-    assert_eq!(page.status, 200);
-    assert!(page.body.contains("fixture") && page.body.contains("form"));
-    assert!(!page.body.contains("private-session-fixture"));
-    let mut v = value(&d, &p, "form");
-    v.insert("listen", server.authority.clone());
-    let path = d.0.join("mynou.json");
-    fs::write(&path, json::stringify(&v)).unwrap();
-    let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .env("MYNOU_API_TOKEN", TOKEN)
-        .args(["indexers", "--config"])
-        .arg(&path)
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    redacted(&json::parse(std::str::from_utf8(&out.stdout).unwrap()).unwrap());
-    assert_eq!(p.logins.load(Ordering::Acquire), 1);
-}
 
 fn policy_id(engine: &mynou::engine::Engine) -> String {
     engine
@@ -877,86 +837,6 @@ fn offline_source_previews_never_create_missing_snapshot_or_apply_control() {
     assert_eq!(p.searches.load(Ordering::Acquire), 0);
 }
 #[test]
-fn protected_source_controls_bind_browser_sessions_csrf_and_one_use_reviews() {
-    let d = Directory::new();
-    let p = Provider::open();
-    let server = Server::open(cfg(&d, &p, "none"));
-    let id = policy_id(&server.engine);
-    let route = format!("/api/indexers/{id}/control");
-    assert_eq!(
-        server
-            .call(
-                "POST",
-                &route,
-                &[("Content-Type", "application/json")],
-                r#"{"action":"pause"}"#
-            )
-            .status,
-        401
-    );
-    let api = server.call(
-        "POST",
-        &route,
-        &[
-            ("Content-Type", "application/json"),
-            ("Authorization", &format!("Bearer {TOKEN}")),
-        ],
-        r#"{"action":"pause","extra":true}"#,
-    );
-    assert_eq!(api.status, 400);
-    let browser = Browser::login(&server);
-    let other = Browser::login(&server);
-    let review = browser.post(
-        &server,
-        "/ui/indexers/control",
-        &[("id", &id), ("action", "pause")],
-    );
-    assert_eq!(review.status, 200, "{}", review.body);
-    review.no_secrets();
-    let plan = review
-        .body
-        .split("name=\"plan_id\" value=\"")
-        .nth(1)
-        .unwrap()
-        .split('"')
-        .next()
-        .unwrap();
-    let fields = [
-        ("id", id.as_str()),
-        ("action", "pause"),
-        ("apply", "yes"),
-        ("plan_id", plan),
-    ];
-    assert_eq!(
-        other.post(&server, "/ui/indexers/control", &fields).status,
-        400
-    );
-    assert_eq!(
-        browser
-            .raw_post(
-                &server,
-                "/ui/indexers/control",
-                &web_support::fields(&fields)
-            )
-            .status,
-        403
-    );
-    assert_eq!(
-        browser
-            .post(&server, "/ui/indexers/control", &fields)
-            .status,
-        303
-    );
-    assert_eq!(
-        browser
-            .post(&server, "/ui/indexers/control", &fields)
-            .status,
-        400
-    );
-    assert!(integrations::search(&server.engine.config, &movie()).is_err());
-    assert_eq!(p.searches.load(Ordering::Acquire), 0);
-}
-#[test]
 fn cli_source_control_uses_online_guard_and_offline_persisted_policy() {
     let d = Directory::new();
     let p = Provider::open();
@@ -1003,5 +883,82 @@ fn cli_source_control_uses_online_guard_and_offline_persisted_policy() {
         report.get("sources").unwrap().as_array().unwrap()[0].get("enabled"),
         Some(&Value::Bool(false))
     );
+    assert_eq!(p.searches.load(Ordering::Acquire), 0);
+}
+#[test]
+fn protected_source_health_api_and_cli_expose_only_safe_aliases() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let c = cfg(&d, &p, "form");
+    let server = Server::open(c);
+    integrations::search(&server.engine.config, &movie()).unwrap();
+    assert_eq!(server.call("GET", "/api/indexers", &[], "").status, 401);
+    let reply = server.call(
+        "GET",
+        "/api/indexers",
+        &[("Authorization", &format!("Bearer {TOKEN}"))],
+        "",
+    );
+    assert_eq!(reply.status, 200);
+    reply.no_secrets();
+    redacted(&json::parse(&reply.body).unwrap());
+    let mut v = value(&d, &p, "form");
+    v.insert("listen", server.authority.clone());
+    let path = d.0.join("mynou.json");
+    fs::write(&path, json::stringify(&v)).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
+        .env("MYNOU_API_TOKEN", TOKEN)
+        .args(["indexers", "--config"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    redacted(&json::parse(std::str::from_utf8(&out.stdout).unwrap()).unwrap());
+    assert_eq!(p.logins.load(Ordering::Acquire), 1);
+}
+#[test]
+fn protected_source_controls_bind_bearer_and_one_use_reviews() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let server = Server::open(cfg(&d, &p, "none"));
+    let id = policy_id(&server.engine);
+    let route = format!("/api/indexers/{id}/control");
+    assert_eq!(
+        server
+            .call(
+                "POST",
+                &route,
+                &[("Content-Type", "application/json")],
+                r#"{"action":"pause"}"#
+            )
+            .status,
+        401
+    );
+    let auth = format!("Bearer {TOKEN}");
+    let headers = [
+        ("Content-Type", "application/json"),
+        ("Authorization", auth.as_str()),
+    ];
+    let api = server.call(
+        "POST",
+        &route,
+        &headers,
+        r#"{"action":"pause","extra":true}"#,
+    );
+    assert_eq!(api.status, 400);
+    let pause = r#"{"action":"pause"}"#;
+    let preview = server.call("POST", &route, &headers, pause);
+    assert_eq!(preview.status, 200, "{}", preview.body);
+    preview.no_secrets();
+    let plan = json::parse(&preview.body).unwrap();
+    let plan = plan.get("plan_id").unwrap().as_str().unwrap();
+    let apply = format!(r#"{{"action":"pause","apply":true,"plan_id":"{plan}"}}"#);
+    assert_eq!(server.call("POST", &route, &headers, &apply).status, 200);
+    assert_eq!(server.call("POST", &route, &headers, &apply).status, 400);
+    assert!(integrations::search(&server.engine.config, &movie()).is_err());
     assert_eq!(p.searches.load(Ordering::Acquire), 0);
 }

@@ -215,7 +215,7 @@ allowing force pushes or deletion.
 
 Roles are listed in [roles.json](roles.json) with their Skills in
 `.agents/skills`. Use the minimum useful sequence, for example Rust → QA,
-UX → Web → QA, or Security → Rust → Security → QA for a trust boundary.
+UX → Rust → QA, or Security → Rust → Security → QA for a trust boundary.
 Changes to Skills, policy or tooling follow the normal Issue/PR flow with
 Security review.
 

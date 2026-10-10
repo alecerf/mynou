@@ -68,8 +68,6 @@ mynou file-priority ID --file 0 --priority high --config ./mynou.json
   is the original metadata index, so padding files leave gaps. A v1 piece shared
   by several files takes the highest of their priorities.
 
-The browser's **Transfers** page offers the same controls.
-
 ## Selective acquisition
 
 Ordinary requests download every file. Mapped [season packs](packs.md) record
@@ -85,8 +83,7 @@ mynou torrent-select ID --selection '{"all":true}' --config ./mynou.json
 
 Choose exactly one of `indices` (original non-padding metadata indices) or
 `all: true`. Expansion keeps the pause, priority and policy; resume explicitly
-if the transfer is paused. In the browser, transfer details provide **Include
-file** and **Download all files**.
+if the transfer is paused.
 
 `torrent ID` distinguishes the states:
 

@@ -19,7 +19,7 @@ use requester_support::{
 };
 use std::{fs, sync::atomic::Ordering, thread};
 use transfer_support::{RecordingProxy, Seeder, Torrent};
-use web_support::{Browser, Server, TOKEN};
+use web_support::{Server, TOKEN};
 
 fn rule(v: &mut Value) -> &mut Value {
     let Value::Array(r) = v.get_mut("irc").unwrap().get_mut("rules").unwrap() else {
@@ -293,7 +293,7 @@ fn selector_edits_invalidate_pending_grabs_and_review_guards_without_reinterpret
 }
 
 #[test]
-fn protected_source_reports_and_browser_rules_show_only_requester_aliases() {
+fn protected_source_reports_and_rules_show_only_requester_aliases() {
     let dir = Directory::new();
     let mut v = configured_json(&dir);
     rule(&mut v).insert("requester", "alice");
@@ -317,11 +317,6 @@ fn protected_source_reports_and_browser_rules_show_only_requester_aliases() {
         Some("alice")
     );
     no_private(&public);
-    let session = Browser::login(&server);
-    let page = session.get(&server, "/ui/irc");
-    assert_eq!(page.status, 200);
-    assert!(page.body.contains("Requester") && page.body.contains("alice"));
-    assert!(!page.body.contains("MYNOU_TEST_ALICE"));
     irc_support::no_jobs(e);
     let mut s = irc_support::settings("irc://127.0.0.1:1");
     let Value::Array(r) = s.get_mut("rules").unwrap() else {

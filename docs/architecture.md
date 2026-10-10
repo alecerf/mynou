@@ -32,7 +32,7 @@ them.
 ## Request flow
 
 ```text
-CLI / API / browser   Plex watchlists   IRC announcements
+CLI / API            Plex watchlists   IRC announcements
         |                    |                  |
         +------------- Requests ----------------+
                            |
@@ -109,13 +109,6 @@ CLI / API / browser   Plex watchlists   IRC announcements
 - `net`, `tls`, `pki` and `crypto` implement HTTP/1.1, the TLS 1.3 client, X.509
   validation and the primitives they need. A failed negotiation never disables
   certificate validation.
-- `server` serves the Bearer-token API and the health routes. `web` shares its
-  listener and calls engine operations directly. Pages are rendered in Rust with
-  an embedded stylesheet and work without JavaScript. The optional live-progress
-  script (`/ui/live.js`) is embedded and pinned by its SHA-256 digest in the
-  content security policy and in script integrity; it polls the session-only
-  `/ui/live/jobs` and `/ui/live/transfers` read routes. Sessions use random
-  opaque cookies and separate form tokens, and session locks never span engine or
-  network work.
+- `server` serves the Bearer-token API and the health routes.
 - `demo` runs the end-to-end demonstration with synthetic media, a loopback peer
   and simulated Plex and indexer services.

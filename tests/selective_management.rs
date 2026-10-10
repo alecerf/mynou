@@ -1,4 +1,4 @@
-//! Native selection expansion is protected by the established API and form guards.
+//! Native selection expansion is protected by the established API guards.
 #[allow(dead_code)]
 mod transfer_support;
 mod web_support;
@@ -9,10 +9,10 @@ use mynou::{
 };
 use std::fs;
 use transfer_support::{BLOCK, Scratch, Torrent, engine_config, payload, wait};
-use web_support::{Browser, Server, TOKEN};
+use web_support::{Server, TOKEN};
 
 #[test]
-fn bearer_and_browser_expand_shared_interests_without_undoing_pause_or_modifying_source_metadata() {
+fn bearer_api_expands_shared_interests_without_undoing_pause_or_modifying_source_metadata() {
     let scratch = Scratch::new();
     let torrent = Torrent::multiple(
         &scratch.0.join("meta"),
@@ -81,67 +81,8 @@ fn bearer_and_browser_expand_shared_interests_without_undoing_pause_or_modifying
         ]))
     );
     assert_eq!(expanded.get("user_paused"), Some(&Value::Bool(true)));
-    let browser = Browser::login(&server);
-    let detail_route = format!("/ui/transfers/{}", torrent.id);
-    let page = browser.get(&server, &detail_route);
-    assert_eq!(page.status, 200);
-    assert!(page.body.contains("Not selected"));
-    assert!(page.body.contains("Include file"));
-    page.no_secrets();
-    let bad = browser.raw_post(
-        &server,
-        "/ui/transfers/selection",
-        &format!("csrf=wrong&id={}&action=all", torrent.id),
-    );
-    assert_eq!(bad.status, 403);
-    bad.no_secrets();
-    assert_eq!(
-        server
-            .engine
-            .transfer(&torrent.id)
-            .unwrap()
-            .get("file_selection"),
-        expanded.get("file_selection")
-    );
-    for fields in [
-        vec![
-            ("id", torrent.id.as_str()),
-            ("action", "include"),
-            ("index", "99"),
-        ],
-        vec![
-            ("id", torrent.id.as_str()),
-            ("action", "include"),
-            ("index", "1.5"),
-        ],
-        vec![
-            ("id", torrent.id.as_str()),
-            ("action", "all"),
-            ("index", "1"),
-        ],
-    ] {
-        assert_eq!(
-            browser
-                .post(&server, "/ui/transfers/selection", &fields)
-                .status,
-            400
-        );
-        assert_eq!(
-            server
-                .engine
-                .transfer(&torrent.id)
-                .unwrap()
-                .get("file_selection"),
-            expanded.get("file_selection")
-        );
-    }
-    let included = browser.post(
-        &server,
-        "/ui/transfers/selection",
-        &[("id", &torrent.id), ("action", "include"), ("index", "2")],
-    );
-    assert_eq!(included.status, 303, "{}", included.body);
-    assert_eq!(included.headers["location"], detail_route);
+    let included = server.call("POST", &route, &headers, r#"{"indices":[2]}"#);
+    assert_eq!(included.status, 200, "{}", included.body);
     let snapshot = server.engine.transfer(&torrent.id).unwrap();
     assert_eq!(
         snapshot
@@ -154,14 +95,10 @@ fn bearer_and_browser_expand_shared_interests_without_undoing_pause_or_modifying
     );
     assert_eq!(snapshot.get("user_paused"), Some(&Value::Bool(true)));
     assert_eq!(
-        browser
-            .post(
-                &server,
-                "/ui/transfers/selection",
-                &[("id", &torrent.id), ("action", "all")]
-            )
+        server
+            .call("POST", &route, &headers, r#"{"all":true}"#)
             .status,
-        303
+        200
     );
     let snapshot = server.engine.transfer(&torrent.id).unwrap();
     assert_eq!(snapshot.get("file_selection"), Some(&Value::Null));

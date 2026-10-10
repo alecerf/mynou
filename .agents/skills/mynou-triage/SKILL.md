@@ -17,7 +17,7 @@ checks prerequisites, risk and executable specialist sequence; UX designs the
 experience. Keep unknown prerequisites Needs Triage and actual native blockers.
 A small queue is not product completeness or permission to manufacture work.
 
-Choose minimum useful sequences: Rust -> CI -> QA; UX -> Web -> CI -> QA;
+Choose minimum useful sequences: Rust -> CI -> QA; UX -> Rust -> CI -> QA;
 trust boundary -> Security -> implementation -> Security verification -> QA.
 Recover lapsed claims from the actual Issue, branch, commits, PR and CI: take
 over with `/unassign <old>` then `/assign <you>`, and continue the existing PR.

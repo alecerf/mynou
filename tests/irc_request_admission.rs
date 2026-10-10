@@ -21,7 +21,7 @@ use requester_support::{
 use series_support::{Catalog, episode};
 use std::{fs, process::Command, sync::atomic::Ordering, thread};
 use transfer_support::{Seeder, Torrent};
-use web_support::{Browser, Server, TOKEN};
+use web_support::{Server, TOKEN};
 
 fn catalog() -> Catalog {
     let c = Catalog::open(vec![episode(1, 1, Some("2024-01-01"), "Original Episode")]);
@@ -112,25 +112,6 @@ fn pending(snapshot: &mut Value, id: &str) {
     r.insert("decision", "pending");
     r.insert("decided_at", Value::Null);
     r.insert("revision", "2");
-}
-fn post(server: &Server, route: &str, v: &Value) -> web_support::Reply {
-    server.call(
-        "POST",
-        route,
-        &[
-            ("Authorization", &format!("Bearer {TOKEN}")),
-            ("Content-Type", "application/json"),
-        ],
-        &json::stringify(v),
-    )
-}
-fn guard(body: &str) -> &str {
-    body.split("name=\"plan_id\" value=\"")
-        .nth(1)
-        .unwrap()
-        .split('"')
-        .next()
-        .unwrap()
 }
 
 #[test]
@@ -711,8 +692,20 @@ fn requester_identity_mismatch_or_failure_cannot_borrow_configured_authority() {
     assert!(demands(&e, "alice").is_empty());
 }
 
+fn post(server: &Server, route: &str, v: &Value) -> web_support::Reply {
+    server.call(
+        "POST",
+        route,
+        &[
+            ("Authorization", &format!("Bearer {TOKEN}")),
+            ("Content-Type", "application/json"),
+        ],
+        &json::stringify(v),
+    )
+}
+
 #[test]
-fn protected_api_browser_and_cli_reviews_bind_the_request_action_and_session() {
+fn protected_api_and_cli_reviews_bind_the_request_action() {
     let dir = Directory::new();
     let c = catalog();
     let a = Accounts::open();
@@ -731,38 +724,8 @@ fn protected_api_browser_and_cli_reviews_bind_the_request_action_and_session() {
     let response = post(&server, &route, &irc_support::query("request").to_json());
     assert_eq!(response.status, 200, "{}", response.body);
     response.no_secrets();
-    no_private(&json::parse(&response.body).unwrap());
-    let first = Browser::login(&server);
-    let second = Browser::login(&server);
-    assert!(
-        first
-            .get(&server, &format!("/ui/irc/{id}"))
-            .body
-            .contains("Review requester demand")
-    );
-    let review = first.post(
-        &server,
-        "/ui/irc/control",
-        &[("id", id), ("action", "request")],
-    );
-    assert_eq!(review.status, 200, "{}", review.body);
-    assert!(review.body.contains("Confirmed media") && review.body.contains("alice"));
-    let plan = guard(&review.body);
-    assert_eq!(
-        second
-            .post(
-                &server,
-                "/ui/irc/control",
-                &[
-                    ("id", id),
-                    ("action", "request"),
-                    ("apply", "yes"),
-                    ("plan_id", plan)
-                ]
-            )
-            .status,
-        400
-    );
+    let review = json::parse(&response.body).unwrap();
+    no_private(&review);
     let mut v = value(&dir, &c, &a, 0);
     v.insert("listen", server.authority.clone());
     let path = dir.0.join("mynou.json");
@@ -780,36 +743,28 @@ fn protected_api_browser_and_cli_reviews_bind_the_request_action_and_session() {
     );
     no_private(&json::parse(std::str::from_utf8(&output.stdout).unwrap()).unwrap());
     assert_eq!(irc_support::bytes(&server.engine.config.store_dir), before);
-    assert_eq!(
-        first
-            .post(
-                &server,
-                "/ui/irc/control",
-                &[
-                    ("id", id),
-                    ("action", "request"),
-                    ("apply", "yes"),
-                    ("plan_id", plan)
-                ]
-            )
-            .status,
-        303
+    let plan = review.get("plan_id").unwrap().as_str().unwrap();
+    let apply = format!(r#"{{"action":"request","apply":true,"plan_id":"{plan}"}}"#);
+    let applied = server.call(
+        "POST",
+        &route,
+        &[
+            ("Authorization", &format!("Bearer {TOKEN}")),
+            ("Content-Type", "application/json"),
+        ],
+        &apply,
     );
-    assert_eq!(
-        first
-            .post(
-                &server,
-                "/ui/irc/control",
-                &[
-                    ("id", id),
-                    ("action", "request"),
-                    ("apply", "yes"),
-                    ("plan_id", plan)
-                ]
-            )
-            .status,
-        400
+    assert_eq!(applied.status, 200, "{}", applied.body);
+    let replay = server.call(
+        "POST",
+        &route,
+        &[
+            ("Authorization", &format!("Bearer {TOKEN}")),
+            ("Content-Type", "application/json"),
+        ],
+        &apply,
     );
+    assert_eq!(replay.status, 400, "{}", replay.body);
     assert_eq!(lock(&server.engine.store).unwrap().list().len(), 1);
 }
 

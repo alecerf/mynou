@@ -1,4 +1,4 @@
-//! Original Bearer API, browser review and CLI requester scenarios.
+//! Original Bearer API and CLI requester scenarios.
 mod library_support;
 mod requester_support;
 mod web_support;
@@ -14,7 +14,7 @@ use std::{
     fs,
     process::{Command, Stdio},
 };
-use web_support::{Browser, Server, TOKEN};
+use web_support::{Server, TOKEN};
 fn authenticated(server: &Server, route: &str, v: &Value) -> web_support::Reply {
     server.call(
         "POST",
@@ -25,14 +25,6 @@ fn authenticated(server: &Server, route: &str, v: &Value) -> web_support::Reply 
         ],
         &json::stringify(v),
     )
-}
-fn plan(body: &str) -> &str {
-    body.split("name=\"plan_id\" value=\"")
-        .nth(1)
-        .unwrap()
-        .split('"')
-        .next()
-        .unwrap()
 }
 fn snapshot(root: &std::path::Path) -> BTreeMap<std::path::PathBuf, Vec<u8>> {
     fs::read_dir(root)
@@ -120,188 +112,6 @@ fn requester_api_requires_authentication_strict_scopes_and_current_guards() {
     );
     assert_eq!(listing.status, 200);
     no_credentials(&json::parse(&listing.body).unwrap());
-}
-#[test]
-fn browser_requester_reviews_bind_session_identity_action_and_public_policy() {
-    let directory = Directory::new();
-    let accounts = Accounts::open();
-    accounts.watchlist("alice", vec![movie(7, "Fixture Movie")]);
-    let server = Server::open(accounts.config(&directory.0));
-    server.engine.sync_requesters().unwrap();
-    let d = demand(&server.engine, "alice");
-    let browser = Browser::login(&server);
-    let other = Browser::login(&server);
-    let page = browser.get(&server, "/ui/requesters/alice");
-    assert_eq!(page.status, 200);
-    assert!(page.body.contains("Review removal"));
-    assert!(page.body.contains("Acquisition enabled"));
-    let review = browser.post(
-        &server,
-        "/ui/requesters/control",
-        &[
-            ("account_id", "alice"),
-            ("action", "remove"),
-            ("demand_id", id(&d)),
-        ],
-    );
-    assert_eq!(review.status, 200, "{}", review.body);
-    let guard = plan(&review.body);
-    assert!(!review.body.contains("token_env"));
-    assert!(!review.body.contains("/identity"));
-    let values = [
-        ("account_id", "alice"),
-        ("action", "remove"),
-        ("plan_id", guard),
-        ("apply", "yes"),
-    ];
-    assert_eq!(
-        other
-            .post(&server, "/ui/requesters/control", &values)
-            .status,
-        400
-    );
-    assert_eq!(
-        browser
-            .post(
-                &server,
-                "/ui/requesters/control",
-                &[
-                    ("account_id", "bob"),
-                    ("action", "remove"),
-                    ("plan_id", guard),
-                    ("apply", "yes")
-                ]
-            )
-            .status,
-        400
-    );
-    assert_eq!(
-        browser
-            .post(
-                &server,
-                "/ui/requesters/control",
-                &[
-                    ("account_id", "alice"),
-                    ("action", "retry"),
-                    ("plan_id", guard),
-                    ("apply", "yes")
-                ]
-            )
-            .status,
-        400
-    );
-    let mut changed = values.to_vec();
-    changed.push(("destination", "family"));
-    assert_eq!(
-        browser
-            .post(&server, "/ui/requesters/control", &changed)
-            .status,
-        400
-    );
-    assert_eq!(
-        demand(&server.engine, "alice")
-            .get("state")
-            .unwrap()
-            .as_str(),
-        Some("pending")
-    );
-    assert_eq!(
-        browser
-            .post(&server, "/ui/requesters/control", &values)
-            .status,
-        303
-    );
-    assert_eq!(
-        browser
-            .post(&server, "/ui/requesters/control", &values)
-            .status,
-        400
-    );
-    assert_eq!(
-        demand(&server.engine, "alice")
-            .get("state")
-            .unwrap()
-            .as_str(),
-        Some("removed")
-    );
-    let csrf = web_support::fields(&[
-        ("csrf", "wrong"),
-        ("account_id", "alice"),
-        ("action", "remove"),
-        ("demand_id", id(&d)),
-    ]);
-    assert_eq!(
-        browser
-            .raw_post(&server, "/ui/requesters/control", &csrf)
-            .status,
-        403
-    );
-}
-#[test]
-fn logout_and_stale_policy_reviews_cannot_apply_requester_decisions() {
-    let directory = Directory::new();
-    let accounts = Accounts::open();
-    accounts.watchlist("alice", vec![movie(7, "Fixture Movie")]);
-    let server = Server::open(accounts.config(&directory.0));
-    server.engine.sync_requesters().unwrap();
-    let d = demand(&server.engine, "alice");
-    let browser = Browser::login(&server);
-    let review = browser.post(
-        &server,
-        "/ui/requesters/control",
-        &[
-            ("account_id", "alice"),
-            ("action", "remove"),
-            ("demand_id", id(&d)),
-        ],
-    );
-    assert_eq!(review.status, 200);
-    let mut p = policy(&server.engine, "alice");
-    p.destination = "family".into();
-    apply(&server.engine, "alice", policy_query(p));
-    let values = [
-        ("account_id", "alice"),
-        ("action", "remove"),
-        ("plan_id", plan(&review.body)),
-        ("apply", "yes"),
-    ];
-    let before = snapshot(&server.engine.config.store_dir);
-    assert_eq!(
-        browser
-            .post(&server, "/ui/requesters/control", &values)
-            .status,
-        400
-    );
-    assert_eq!(snapshot(&server.engine.config.store_dir), before);
-    let review = browser.post(
-        &server,
-        "/ui/requesters/control",
-        &[
-            ("account_id", "alice"),
-            ("action", "remove"),
-            ("demand_id", id(&d)),
-        ],
-    );
-    assert_eq!(review.status, 200);
-    browser.post(&server, "/ui/logout", &[]);
-    let expired = browser.post(
-        &server,
-        "/ui/requesters/control",
-        &[
-            ("account_id", "alice"),
-            ("action", "remove"),
-            ("plan_id", plan(&review.body)),
-            ("apply", "yes"),
-        ],
-    );
-    assert_eq!(expired.status, 403);
-    assert_eq!(
-        demand(&server.engine, "alice")
-            .get("state")
-            .unwrap()
-            .as_str(),
-        Some("pending")
-    );
 }
 fn config_file(cfg: &mynou::config::Config, file: &std::path::Path) {
     let mut value = config::default_json();

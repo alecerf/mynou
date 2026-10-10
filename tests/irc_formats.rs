@@ -16,7 +16,7 @@ use mynou::{
     json::{self, Value},
 };
 use std::{fs, io::Write, process::Command, thread};
-use web_support::{Browser, Server, TOKEN};
+use web_support::{Server, TOKEN};
 
 fn format(episodes: bool) -> Value {
     let mut v = Value::object();
@@ -59,61 +59,6 @@ fn text(id: u64, hash: &str) -> String {
 }
 fn claim() -> String {
     text(7, "1234567890abcdef1234567890abcdef12345678")
-}
-
-#[test]
-fn format_configuration_is_bounded_complete_and_has_no_url_or_pattern_fields() {
-    let dir = Directory::new();
-    for (key, value) in [
-        ("type", Value::from("regex")),
-        ("prefix", Value::from("")),
-        ("separator", Value::from("")),
-        ("separator", Value::from(" ")),
-        ("separator", Value::from("alphabet")),
-        ("prefix", Value::from("x".repeat(129))),
-        ("suffix", Value::from("x".repeat(129))),
-        ("prefix", Value::from("\n")),
-        ("url", Value::from("https://source.invalid/?token=private")),
-        ("fields", Value::Array(vec![Value::from("title"); 6])),
-    ] {
-        let mut v = settings(&dir, "irc://127.0.0.1:1");
-        source(&mut v)
-            .get_mut("announcement_format")
-            .unwrap()
-            .insert(key, value);
-        assert!(config::from_json(&v, &dir.0).is_err());
-    }
-    for names in [
-        vec!["title", "kind", "media_title", "year", "tmdb_id", "url"],
-        vec![
-            "title",
-            "kind",
-            "media_title",
-            "year",
-            "tmdb_id",
-            "info_hash",
-            "season",
-        ],
-        vec![
-            "title",
-            "kind",
-            "media_title",
-            "year",
-            "info_hash",
-            "episode",
-        ],
-    ] {
-        let mut v = settings(&dir, "irc://127.0.0.1:1");
-        source(&mut v)
-            .get_mut("announcement_format")
-            .unwrap()
-            .insert(
-                "fields",
-                Value::Array(names.into_iter().map(Value::from).collect()),
-            );
-        assert!(config::from_json(&v, &dir.0).is_err());
-    }
-    assert!(!dir.0.join("jobs").exists());
 }
 
 #[test]
@@ -294,71 +239,6 @@ fn library_delivery_preserves_first_claim_and_never_creates_unsolicited_jobs() {
 }
 
 #[test]
-fn protected_api_and_offline_cli_share_pure_text_previews_without_storage_writes() {
-    let dir = Directory::new();
-    let v = settings(&dir, "irc://127.0.0.1:1");
-    let cfg = config::from_json(&v, &dir.0).unwrap();
-    let path = dir.0.join("mynou.json");
-    let file = dir.0.join("announce.txt");
-    fs::write(&path, json::stringify(&v)).unwrap();
-    fs::write(&file, claim()).unwrap();
-    let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .args(["irc-preview", "local", "--text"])
-        .arg(&file)
-        .arg("--config")
-        .arg(&path)
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    assert!(!cfg.store_dir.exists());
-    let report = json::parse(std::str::from_utf8(&out.stdout).unwrap().trim()).unwrap();
-    let server = Server::open(cfg);
-    let before = irc_support::bytes(&server.engine.config.store_dir);
-    let mut body = Value::object();
-    body.insert("source_id", "local");
-    body.insert("text", claim());
-    assert_eq!(
-        server
-            .call("POST", "/api/irc/preview", &[], &json::stringify(&body))
-            .status,
-        401
-    );
-    let auth = format!("Bearer {TOKEN}");
-    let headers = [
-        ("Authorization", auth.as_str()),
-        ("Content-Type", "application/json"),
-    ];
-    let reply = server.call(
-        "POST",
-        "/api/irc/preview",
-        &headers,
-        &json::stringify(&body),
-    );
-    assert_eq!(reply.status, 200);
-    assert_eq!(json::parse(&reply.body).unwrap(), report);
-    body.insert("announcement", irc_support::announcement(7));
-    assert_eq!(
-        server
-            .call(
-                "POST",
-                "/api/irc/preview",
-                &headers,
-                &json::stringify(&body)
-            )
-            .status,
-        400
-    );
-    assert_eq!(irc_support::bytes(&server.engine.config.store_dir), before);
-    let browser = Browser::login(&server);
-    assert!(browser.get(&server, "/ui/irc").body.contains("delimited"));
-    irc_support::no_jobs(&server.engine);
-}
-
-#[test]
 fn live_fragmented_text_requires_membership_and_exact_sender_before_receipts() {
     let dir = Directory::new();
     let (listener, url) = irc_support::listener();
@@ -481,4 +361,122 @@ fn a_text_candidate_enters_the_existing_verified_native_import_path() {
     drop(engine);
     let engine = Engine::open(cfg).unwrap();
     assert_eq!(irc_routing_support::job(&engine, &admitted.id), ready);
+}
+
+#[test]
+fn format_configuration_is_bounded_complete_and_has_no_url_or_pattern_fields() {
+    let dir = Directory::new();
+    for (key, value) in [
+        ("type", Value::from("regex")),
+        ("prefix", Value::from("")),
+        ("separator", Value::from("")),
+        ("separator", Value::from(" ")),
+        ("separator", Value::from("alphabet")),
+        ("prefix", Value::from("x".repeat(129))),
+        ("suffix", Value::from("x".repeat(129))),
+        ("prefix", Value::from("\n")),
+        ("url", Value::from("https://source.invalid/?token=private")),
+        ("fields", Value::Array(vec![Value::from("title"); 6])),
+    ] {
+        let mut v = settings(&dir, "irc://127.0.0.1:1");
+        source(&mut v)
+            .get_mut("announcement_format")
+            .unwrap()
+            .insert(key, value);
+        assert!(config::from_json(&v, &dir.0).is_err());
+    }
+    for names in [
+        vec!["title", "kind", "media_title", "year", "tmdb_id", "url"],
+        vec![
+            "title",
+            "kind",
+            "media_title",
+            "year",
+            "tmdb_id",
+            "info_hash",
+            "season",
+        ],
+        vec![
+            "title",
+            "kind",
+            "media_title",
+            "year",
+            "info_hash",
+            "episode",
+        ],
+    ] {
+        let mut v = settings(&dir, "irc://127.0.0.1:1");
+        source(&mut v)
+            .get_mut("announcement_format")
+            .unwrap()
+            .insert(
+                "fields",
+                Value::Array(names.into_iter().map(Value::from).collect()),
+            );
+        assert!(config::from_json(&v, &dir.0).is_err());
+    }
+    assert!(!dir.0.join("jobs").exists());
+}
+
+#[test]
+fn protected_api_and_offline_cli_share_pure_text_previews_without_storage_writes() {
+    let dir = Directory::new();
+    let v = settings(&dir, "irc://127.0.0.1:1");
+    let cfg = config::from_json(&v, &dir.0).unwrap();
+    let path = dir.0.join("mynou.json");
+    let file = dir.0.join("announce.txt");
+    fs::write(&path, json::stringify(&v)).unwrap();
+    fs::write(&file, claim()).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
+        .args(["irc-preview", "local", "--text"])
+        .arg(&file)
+        .arg("--config")
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!cfg.store_dir.exists());
+    let report = json::parse(std::str::from_utf8(&out.stdout).unwrap().trim()).unwrap();
+    let server = Server::open(cfg);
+    let before = irc_support::bytes(&server.engine.config.store_dir);
+    let mut body = Value::object();
+    body.insert("source_id", "local");
+    body.insert("text", claim());
+    assert_eq!(
+        server
+            .call("POST", "/api/irc/preview", &[], &json::stringify(&body))
+            .status,
+        401
+    );
+    let auth = format!("Bearer {TOKEN}");
+    let headers = [
+        ("Authorization", auth.as_str()),
+        ("Content-Type", "application/json"),
+    ];
+    let reply = server.call(
+        "POST",
+        "/api/irc/preview",
+        &headers,
+        &json::stringify(&body),
+    );
+    assert_eq!(reply.status, 200);
+    assert_eq!(json::parse(&reply.body).unwrap(), report);
+    body.insert("announcement", irc_support::announcement(7));
+    assert_eq!(
+        server
+            .call(
+                "POST",
+                "/api/irc/preview",
+                &headers,
+                &json::stringify(&body)
+            )
+            .status,
+        400
+    );
+    assert_eq!(irc_support::bytes(&server.engine.config.store_dir), before);
+    irc_support::no_jobs(&server.engine);
 }

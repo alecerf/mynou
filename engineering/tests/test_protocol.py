@@ -116,8 +116,8 @@ class PullRequestTurns(unittest.TestCase):
         self.assertTrue(protocol.security_required(["engineering/board.py"], set()))
         self.assertTrue(protocol.security_required(["AGENTS.md"], set()))
         self.assertTrue(protocol.security_required(["src/tls/record.rs"], set()))
-        self.assertTrue(protocol.security_required(["src/web/views.rs"], {"risk:high"}))
-        self.assertFalse(protocol.security_required(["src/web/views.rs", "docs/web.md"], {"risk:medium"}))
+        self.assertTrue(protocol.security_required(["src/views.rs"], {"risk:high"}))
+        self.assertFalse(protocol.security_required(["src/views.rs", "docs/views.md"], {"risk:medium"}))
 
     def test_ci_is_green_only_when_every_latest_check_completed_cleanly(self):
         done = {"status": "completed", "conclusion": "success"}

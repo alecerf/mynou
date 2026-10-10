@@ -1,4 +1,4 @@
-//! Original protected API/browser and pure/offline CLI reviews.
+//! Original protected API and pure/offline CLI reviews.
 mod irc_support;
 mod library_support;
 mod web_support;
@@ -10,7 +10,7 @@ use mynou::{
     json::{self, Value},
 };
 use std::{fs, process::Command};
-use web_support::{Browser, Server, TOKEN};
+use web_support::{Server, TOKEN};
 fn post(server: &Server, route: &str, value: &Value) -> web_support::Reply {
     server.call(
         "POST",
@@ -21,14 +21,6 @@ fn post(server: &Server, route: &str, value: &Value) -> web_support::Reply {
         ],
         &json::stringify(value),
     )
-}
-fn guard(body: &str) -> &str {
-    body.split("name=\"plan_id\" value=\"")
-        .nth(1)
-        .unwrap()
-        .split('"')
-        .next()
-        .unwrap()
 }
 #[test]
 fn api_requires_authentication_strict_fields_and_current_guards() {
@@ -86,177 +78,6 @@ fn api_requires_authentication_strict_fields_and_current_guards() {
     assert_eq!(reply.status, 200);
     assert_eq!(bytes(&server.engine.config.store_dir), before);
     no_credentials(&json::parse(&reply.body).unwrap());
-    no_jobs(&server.engine);
-}
-#[test]
-fn browser_reviews_escape_claims_and_bind_session_record_action_and_guard() {
-    let dir = Directory::new();
-    let server = Server::open(config(&dir.0));
-    let mut a = announcement(7);
-    a.insert("title", "Fixture.Movie.2024.<script>alert('x')</script>");
-    let r = server
-        .engine
-        .irc_receive("local", SENDER, "#announces", &a)
-        .unwrap();
-    let id = record_id(&r);
-    let other_row = receive(&server.engine, 8);
-    let other_id = record_id(&other_row);
-    let browser = Browser::login(&server);
-    let other = Browser::login(&server);
-    let page = browser.get(&server, &format!("/ui/irc/{id}"));
-    assert_eq!(page.status, 200);
-    assert!(page.body.contains("&lt;script&gt;"));
-    assert!(!page.body.contains("<script>"));
-    page.no_secrets();
-    let listing = browser.get(&server, "/ui/irc?limit=1");
-    assert_eq!(listing.status, 200);
-    assert!(listing.body.contains("Next announcements"));
-    let before = bytes(&server.engine.config.store_dir);
-    let review = browser.post(
-        &server,
-        "/ui/irc/control",
-        &[("id", id), ("action", "acknowledge")],
-    );
-    assert_eq!(review.status, 200, "{}", review.body);
-    assert_eq!(bytes(&server.engine.config.store_dir), before);
-    let plan = guard(&review.body);
-    assert_eq!(
-        other
-            .post(
-                &server,
-                "/ui/irc/control",
-                &[
-                    ("id", id),
-                    ("action", "acknowledge"),
-                    ("apply", "yes"),
-                    ("plan_id", plan)
-                ]
-            )
-            .status,
-        400
-    );
-    for (target, action) in [(other_id, "acknowledge"), (id, "dismiss")] {
-        assert_eq!(
-            browser
-                .post(
-                    &server,
-                    "/ui/irc/control",
-                    &[
-                        ("id", target),
-                        ("action", action),
-                        ("apply", "yes"),
-                        ("plan_id", plan)
-                    ]
-                )
-                .status,
-            400
-        );
-    }
-    assert_eq!(bytes(&server.engine.config.store_dir), before);
-    assert_eq!(
-        browser
-            .post(
-                &server,
-                "/ui/irc/control",
-                &[
-                    ("id", id),
-                    ("action", "acknowledge"),
-                    ("apply", "yes"),
-                    ("plan_id", plan),
-                    ("source_id", "other")
-                ]
-            )
-            .status,
-        400
-    );
-    let applied = browser.post(
-        &server,
-        "/ui/irc/control",
-        &[
-            ("id", id),
-            ("action", "acknowledge"),
-            ("apply", "yes"),
-            ("plan_id", plan),
-        ],
-    );
-    assert_eq!(applied.status, 303);
-    assert_eq!(
-        browser
-            .post(
-                &server,
-                "/ui/irc/control",
-                &[
-                    ("id", id),
-                    ("action", "acknowledge"),
-                    ("apply", "yes"),
-                    ("plan_id", plan)
-                ]
-            )
-            .status,
-        400
-    );
-    no_jobs(&server.engine);
-}
-#[test]
-fn browser_logout_and_stale_decisions_preserve_history() {
-    let dir = Directory::new();
-    let server = Server::open(config(&dir.0));
-    let r = receive(&server.engine, 7);
-    let id = record_id(&r);
-    let browser = Browser::login(&server);
-    let review = browser.post(
-        &server,
-        "/ui/irc/control",
-        &[("id", id), ("action", "dismiss")],
-    );
-    assert_eq!(review.status, 200);
-    let plan = guard(&review.body);
-    let q = reviewed(&server.engine, id, "acknowledge");
-    server.engine.irc_control(id, &q).unwrap();
-    let before = bytes(&server.engine.config.store_dir);
-    assert_eq!(
-        browser
-            .post(
-                &server,
-                "/ui/irc/control",
-                &[
-                    ("id", id),
-                    ("action", "dismiss"),
-                    ("apply", "yes"),
-                    ("plan_id", plan)
-                ]
-            )
-            .status,
-        400
-    );
-    assert_eq!(bytes(&server.engine.config.store_dir), before);
-    let r = receive(&server.engine, 8);
-    let id = record_id(&r);
-    let review = browser.post(
-        &server,
-        "/ui/irc/control",
-        &[("id", id), ("action", "dismiss")],
-    );
-    assert_eq!(review.status, 200);
-    let plan = guard(&review.body);
-    assert_eq!(browser.post(&server, "/ui/logout", &[]).status, 303);
-    let before = bytes(&server.engine.config.store_dir);
-    assert_eq!(
-        browser
-            .post(
-                &server,
-                "/ui/irc/control",
-                &[
-                    ("id", id),
-                    ("action", "dismiss"),
-                    ("apply", "yes"),
-                    ("plan_id", plan)
-                ]
-            )
-            .status,
-        403
-    );
-    assert_eq!(bytes(&server.engine.config.store_dir), before);
     no_jobs(&server.engine);
 }
 #[test]

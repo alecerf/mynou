@@ -60,8 +60,8 @@ export MYNOU_TMDB_TOKEN='replace-with-your-TMDB-token'
 "$HOME/.local/bin/mynou" serve --config ./mynou.json
 ```
 
-Open **http://127.0.0.1:8787/ui** and sign in with the API token. Run the
-service as the user that owns its configuration, data and library. Mynou does
+The API listens on `http://127.0.0.1:8787` and takes the API token as a Bearer
+token. Run the service as the user that owns its configuration, data and library. Mynou does
 not install a launch agent or background service; supervising it is up to you.
 
 ## Configure Mynou
@@ -76,7 +76,7 @@ file is valid. Restart the service after any change.
 | `library.movies_root`, `library.series_root` | `library/movies`, `library/series` | Where imports go |
 | `downloads` | enabled, `downloads`, `state/torrents`, port 6881, seeding, DHT and PEX on | BitTorrent client; see [transfers](transfers.md) |
 | `store_dir` | `state/jobs` | Request journal and snapshots |
-| `listen` | `127.0.0.1:8787` | API and browser listener |
+| `listen` | `127.0.0.1:8787` | API listener |
 | `api_token_env` | `MYNOU_API_TOKEN` | Variable holding the API token |
 | `workers` | `2` (1 to 32) | Requests processed at the same time |
 | `max_attempts` | `10` (up to 1,000) | Automatic retries of a failed request, with growing delays |
@@ -94,7 +94,7 @@ Each integration names the environment variable that holds its secret:
 
 | Variable | Used for |
 | --- | --- |
-| `MYNOU_API_TOKEN` | API and browser sign-in (generated in `.env`) |
+| `MYNOU_API_TOKEN` | API Bearer token (generated in `.env`) |
 | `MYNOU_PLEX_TOKEN` | Plex server and its watchlist |
 | `MYNOU_TMDB_TOKEN` or `MYNOU_TMDB_API_KEY` | TMDB catalog |
 | `MYNOU_INDEXER_API_KEY` | Default API key variable for sources |
@@ -141,12 +141,11 @@ mynou jobs --config ./mynou.json
 
 ## Everyday use
 
-The browser and the API share `127.0.0.1:8787`. `/healthz` and `/readyz` report
+The API listens on `127.0.0.1:8787`. `/healthz` and `/readyz` report
 health, and `mynou healthcheck --config ./mynou.json` exits with an error unless
 the running service answers `/readyz` (it bypasses any proxy). `/api` routes need
 `Authorization: Bearer` with the API token. For remote access, put a TLS reverse
-proxy in front and keep the plain listener private; see
-[remote access](web.md#sign-in-sessions-and-remote-access).
+proxy in front and keep the plain listener private.
 
 Port 6881/TCP accepts BitTorrent peers; whether peers can reach it depends on
 your firewall and router. DHT and UDP trackers use outgoing connections only.

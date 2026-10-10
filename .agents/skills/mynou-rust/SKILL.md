@@ -4,7 +4,7 @@ description: Own safe std-only Rust, systems/API design, concurrency, networking
 ---
 
 Invoke for Rust behavior and domain design or demonstrated performance problems.
-Skip browser-only work and cosmetic docs. Product invariants: zero dependencies,
+Skip cosmetic docs. Product invariants: zero dependencies,
 no unsafe/FFI, copied third-party code, runtime helpers or Go fallback. Expertise
 about the ecosystem or unsafe helps assess boundaries, never authorizes use.
 

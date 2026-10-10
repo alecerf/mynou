@@ -6,8 +6,7 @@ instead, each with its own profiles and library destination. When compatible
 accounts ask for the same movie or episode, one download serves all of them.
 Without requester accounts, the single-watchlist behavior is unchanged.
 
-The operator API token and browser sign-in remain the only management
-authority. Requester tokens only read their account's identity and watchlist;
+The operator API token remains the only management authority. Requester tokens only read their account's identity and watchlist;
 the server token still confirms and refreshes the library.
 
 ## Bind accounts
@@ -94,9 +93,6 @@ polls every account now and needs the service.
 | `GET /api/requesters/ACCOUNT?offset=0&limit=100` | One account and its demand |
 | `POST /api/requesters/sync` | Poll all accounts, with `{}` |
 | `POST /api/requesters/ACCOUNT/control` | Same object as the control file; add `"apply": true` and `"plan_id"` to apply |
-
-The browser's **Requesters** page shows accounts, poll results and demand, and
-offers the same reviewed controls.
 
 ## How demand is handled
 

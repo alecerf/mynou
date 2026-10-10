@@ -21,7 +21,7 @@ use std::{
     time::{Duration, Instant},
 };
 use transfer_support::{BLOCK, Torrent, payload};
-use web_support::{Browser, Server, TOKEN};
+use web_support::{Server, TOKEN};
 
 fn setup(directory: &Directory, provider: &Provider) -> (Catalog, Config, String) {
     let catalog = Catalog::open(vec![
@@ -109,134 +109,6 @@ fn bearer_routes_reject_invalid_controls_before_io_and_apply_only_the_reviewed_b
             .iter()
             .all(|j| !json::stringify(&mynou::engine::public_job(j)).contains(SECRET))
     );
-}
-
-#[test]
-fn browser_review_keeps_sources_server_side_and_is_bound_to_its_session_and_csrf() {
-    let directory = Directory::new();
-    let provider = Provider::open();
-    let (catalog, _cfg, source) = setup(&directory, &provider);
-    let cfg = catalog.config(&directory.0.join("engine"));
-    let server = Server::open(cfg);
-    let series = tracked(&server.engine);
-    let browser = Browser::login(&server);
-    let route = "/ui/series/shared-file";
-    let detail = browser.get(&server, &format!("/ui/series/{series}"));
-    assert!(detail.body.contains("One video for multiple episodes"));
-    detail.no_secrets();
-    let fields = [
-        ("id", series.as_str()),
-        ("source_value", source.as_str()),
-        ("file_path", "Pack/shared.mp4"),
-        ("season", "1"),
-        ("episodes", "[1,2]"),
-        ("action", "preview"),
-    ];
-    let before = provider.calls.lock().unwrap().len();
-    assert_eq!(
-        browser
-            .raw_post(
-                &server,
-                route,
-                &format!("csrf=wrong&id={series}&action=preview")
-            )
-            .status,
-        403
-    );
-    assert_eq!(
-        browser
-            .post(
-                &server,
-                route,
-                &[
-                    ("id", &series),
-                    ("action", "apply"),
-                    ("plan_id", &"a".repeat(64))
-                ]
-            )
-            .status,
-        400
-    );
-    assert_eq!(provider.calls.lock().unwrap().len(), before);
-    let page = browser.post(&server, route, &fields);
-    assert_eq!(page.status, 200, "{}", page.body);
-    assert!(page.body.contains("Record reviewed shared ownership"));
-    assert!(!page.body.contains(SECRET));
-    assert!(!page.body.contains("source_value"));
-    page.no_secrets();
-    let plan = page
-        .body
-        .split("name=\"plan_id\" value=\"")
-        .nth(1)
-        .unwrap()
-        .split('"')
-        .next()
-        .unwrap();
-    let other = Browser::login(&server);
-    let fields = [
-        ("id", series.as_str()),
-        ("action", "apply"),
-        ("plan_id", plan),
-    ];
-    assert_eq!(other.post(&server, route, &fields).status, 400);
-    assert!(lock(&server.engine.store).unwrap().list().is_empty());
-    let applied = browser.post(&server, route, &fields);
-    assert_eq!(applied.status, 303, "{}", applied.body);
-    assert_eq!(applied.headers["location"], "/ui/jobs");
-    assert_eq!(lock(&server.engine.store).unwrap().list().len(), 2);
-    assert_eq!(browser.post(&server, route, &fields).status, 400);
-    let job = lock(&server.engine.store).unwrap().list().remove(0);
-    server.engine.cancel(&job.id).unwrap();
-    let detail = browser.get(&server, &format!("/ui/jobs/{}", job.id));
-    assert!(detail.body.contains("Shared ownership"));
-    assert!(!detail.body.contains("Correct mapping and retry"));
-    detail.no_secrets();
-}
-
-#[test]
-fn stale_browser_reviews_do_not_queue_owners_or_echo_source_credentials() {
-    let directory = Directory::new();
-    let provider = Provider::open();
-    let (catalog, _cfg, source) = setup(&directory, &provider);
-    let server = Server::open(catalog.config(&directory.0.join("engine")));
-    let series = tracked(&server.engine);
-    let browser = Browser::login(&server);
-    let route = "/ui/series/shared-file";
-    let page = browser.post(
-        &server,
-        route,
-        &[
-            ("id", &series),
-            ("source_value", &source),
-            ("file_path", "Pack/shared.mp4"),
-            ("season", "1"),
-            ("episodes", "[1,2]"),
-            ("action", "preview"),
-        ],
-    );
-    assert_eq!(page.status, 200, "{}", page.body);
-    let plan = page
-        .body
-        .split("name=\"plan_id\" value=\"")
-        .nth(1)
-        .unwrap()
-        .split('"')
-        .next()
-        .unwrap();
-    server
-        .engine
-        .configure_series(&series, Some(true), None, None)
-        .unwrap();
-    let reply = browser.post(
-        &server,
-        route,
-        &[("id", &series), ("action", "apply"), ("plan_id", plan)],
-    );
-    assert_eq!(reply.status, 400);
-    assert!(reply.body.contains("preview changed"));
-    reply.no_secrets();
-    assert!(!reply.body.contains(SECRET));
-    assert!(lock(&server.engine.store).unwrap().list().is_empty());
 }
 
 fn config_value(cfg: &Config) -> Value {

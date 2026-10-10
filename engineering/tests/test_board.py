@@ -80,7 +80,7 @@ class Repository:
         if path == "pulls/65/files":
             return [{"filename": "src/par2.rs"}]
         if path == "pulls/57/files":
-            return [{"filename": "src/web/views.rs"}]
+            return [{"filename": "src/views.rs"}]
         if path == "commits/" + "a" * 40 + "/check-runs" and key == "check_runs":
             return [{"status": "completed", "conclusion": "success"}]
         if path == "commits/" + "c" * 40 + "/check-runs" and key == "check_runs":

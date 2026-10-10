@@ -1,4 +1,4 @@
-//! Original HTTP/form fixture: no browser framework or dependency.
+//! Original HTTP fixture: no framework or dependency.
 #![allow(dead_code)]
 use mynou::{config::Config, engine::Engine, server::Api};
 use std::{
@@ -123,7 +123,7 @@ impl Reply {
         ] {
             assert!(
                 !self.body.contains(forbidden),
-                "Browser page exposed {forbidden}"
+                "Response exposed {forbidden}"
             );
             assert!(
                 !self.headers.values().any(|value| value.contains(forbidden)),
@@ -131,108 +131,4 @@ impl Reply {
             );
         }
     }
-}
-
-pub struct Browser {
-    pub cookie: String,
-    pub csrf: String,
-}
-
-impl Browser {
-    pub fn challenge(server: &Server) -> Self {
-        let response = server.call("GET", "/ui/login", &[], "");
-        assert_eq!(response.status, 200);
-        response.no_secrets();
-        Self {
-            cookie: response.headers["set-cookie"]
-                .split(';')
-                .next()
-                .unwrap()
-                .to_owned(),
-            csrf: csrf(&response.body),
-        }
-    }
-
-    pub fn login(server: &Server) -> Self {
-        let mut browser = Self::challenge(server);
-        let old_cookie = browser.cookie.clone();
-        let body = fields(&[("csrf", &browser.csrf), ("token", TOKEN)]);
-        let response = server.call(
-            "POST",
-            "/ui/login",
-            &[
-                ("Cookie", &browser.cookie),
-                ("Origin", &server.origin()),
-                ("Content-Type", "application/x-www-form-urlencoded"),
-            ],
-            &body,
-        );
-        assert_eq!(response.status, 303, "{}", response.body);
-        assert_eq!(response.headers["location"], "/ui");
-        response.no_secrets();
-        browser.cookie = response.headers["set-cookie"]
-            .split(';')
-            .next()
-            .unwrap()
-            .to_owned();
-        assert_ne!(old_cookie, browser.cookie);
-        let page = browser.get(server, "/ui");
-        assert_eq!(page.status, 200);
-        browser.csrf = csrf(&page.body);
-        page.no_secrets();
-        browser
-    }
-
-    pub fn get(&self, server: &Server, route: &str) -> Reply {
-        server.call("GET", route, &[("Cookie", &self.cookie)], "")
-    }
-
-    pub fn post(&self, server: &Server, route: &str, values: &[(&str, &str)]) -> Reply {
-        let mut entries = vec![("csrf", self.csrf.as_str())];
-        entries.extend_from_slice(values);
-        self.raw_post(server, route, &fields(&entries))
-    }
-
-    pub fn raw_post(&self, server: &Server, route: &str, body: &str) -> Reply {
-        server.call(
-            "POST",
-            route,
-            &[
-                ("Cookie", &self.cookie),
-                ("Origin", &server.origin()),
-                ("Content-Type", "application/x-www-form-urlencoded"),
-            ],
-            body,
-        )
-    }
-}
-
-pub fn csrf(page: &str) -> String {
-    page.split("name=\"csrf\" value=\"")
-        .nth(1)
-        .expect("CSRF field")
-        .split('"')
-        .next()
-        .unwrap()
-        .to_owned()
-}
-
-pub fn fields(values: &[(&str, &str)]) -> String {
-    values
-        .iter()
-        .map(|(name, value)| format!("{}={}", encode(name), encode(value)))
-        .collect::<Vec<_>>()
-        .join("&")
-}
-
-fn encode(text: &str) -> String {
-    let mut result = String::new();
-    for byte in text.bytes() {
-        if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
-            result.push(byte as char);
-        } else {
-            result.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    result
 }

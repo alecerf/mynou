@@ -22,10 +22,9 @@ four jobs. Mynou ships for macOS on Apple Silicon only, so `validate` and `build
 run on an Apple Silicon `macos-26` runner:
 
 1. **validate** checks the Cargo graph offline (exactly one package, `mynou`,
-   with no dependencies), formatting, Clippy with warnings denied, the
-   live-progress browser fixture (Node without npm packages), the test scheduler
-   and the engineering policy. It then runs every Cargo test harness, using the
-   physical runner directory as temporary directory because Mynou refuses the
+   with no dependencies), formatting, Clippy with warnings denied, the test
+   scheduler and the engineering policy. It then runs every Cargo test harness,
+   using the physical runner directory as temporary directory because Mynou refuses the
    symbolic link behind macOS's default one.
 2. **build** produces the published `aarch64-apple-darwin` executable. CI checks
    that the binary has the exact target architecture and runs the standalone

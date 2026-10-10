@@ -1,4 +1,4 @@
-//! Original protected API/browser and CLI numbering workflows. CI only.
+//! Original protected API and CLI numbering workflows. CI only.
 mod library_support;
 mod series_support;
 mod web_support;
@@ -11,7 +11,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use web_support::{Browser, Reply, Server, TOKEN};
+use web_support::{Reply, Server, TOKEN};
 
 fn body() -> Value {
     json::parse(r#"{"changes":[{"catalog_id":11001,"catalog":{"season":1,"episode":1},"source":{"absolute":13}}]}"#).unwrap()
@@ -81,89 +81,6 @@ fn numbering_api_requires_authentication_and_the_reviewed_plan() {
         1
     );
     assert!(!preview.body.contains(&catalog.url));
-}
-
-#[test]
-fn browser_numbering_uses_protected_preview_and_apply_forms_and_escaped_titles() {
-    let directory = Directory::new();
-    let catalog = Catalog::open(vec![episode(
-        1,
-        1,
-        Some("2200-01-01"),
-        "<script>fixture</script>",
-    )]);
-    let server = Server::open(catalog.config(&directory.0));
-    let record = server
-        .engine
-        .track_series_with_policy(&request(), false, false, false)
-        .unwrap();
-    let id = id(&record);
-    let browser = Browser::login(&server);
-    let changes = json::stringify(body().get("changes").unwrap());
-    let before = server.engine.series_record(id).unwrap();
-    assert_eq!(
-        browser
-            .raw_post(
-                &server,
-                "/ui/series/numbering",
-                &format!("csrf=wrong&id={id}&changes=%5B%5D&action=preview")
-            )
-            .status,
-        403
-    );
-    assert_eq!(
-        server
-            .call(
-                "POST",
-                "/ui/series/numbering",
-                &[("Content-Type", "application/x-www-form-urlencoded")],
-                ""
-            )
-            .status,
-        403
-    );
-    assert_eq!(server.engine.series_record(id).unwrap(), before);
-    let preview = browser.post(
-        &server,
-        "/ui/series/numbering",
-        &[("id", id), ("changes", &changes), ("action", "preview")],
-    );
-    assert_eq!(preview.status, 200, "{}", preview.body);
-    assert!(preview.body.contains("&lt;script&gt;"));
-    assert!(!preview.body.contains("<script>"));
-    assert!(preview.body.contains("Save reviewed numbering"));
-    preview.no_secrets();
-    assert_eq!(server.engine.series_record(id).unwrap(), before);
-    let marker = "name=\"plan_id\" value=\"";
-    let start = preview.body.find(marker).unwrap() + marker.len();
-    let guard = preview.body[start..].split('"').next().unwrap();
-    let applied = browser.post(
-        &server,
-        "/ui/series/numbering",
-        &[
-            ("id", id),
-            ("changes", &changes),
-            ("action", "apply"),
-            ("plan_id", guard),
-        ],
-    );
-    assert_eq!(applied.status, 303, "{}", applied.body);
-    assert_eq!(applied.headers["location"], format!("/ui/series/{id}"));
-    assert_eq!(
-        browser
-            .post(
-                &server,
-                "/ui/series/numbering",
-                &[
-                    ("id", id),
-                    ("changes", &changes),
-                    ("action", "apply"),
-                    ("plan_id", guard)
-                ]
-            )
-            .status,
-        400
-    );
 }
 
 fn command(directory: &Directory, args: &[&str]) -> std::process::Output {
