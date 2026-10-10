@@ -49,8 +49,8 @@ fn fixture(dir: &Directory) -> Torrent {
     )
 }
 fn shared(engine: &Engine, accounts: &Accounts) -> String {
-    enable(engine, "alice", false);
-    enable(engine, "bob", false);
+    enable(engine, "alice");
+    enable(engine, "bob");
     accounts.watchlist("alice", vec![movie(7, "Fixture Movie")]);
     engine.sync_requesters().unwrap();
     let id = demand(engine, "alice")
@@ -129,7 +129,7 @@ fn an_explicit_default_selector_preserves_pending_legacy_reviews_and_storage() {
 }
 
 #[test]
-fn selected_grabs_cannot_substitute_an_operator_or_another_unapproved_account() {
+fn selected_grabs_cannot_substitute_an_operator_or_another_unadmitted_account() {
     for mode in ["operator", "missing", "pending"] {
         let dir = Directory::new();
         let accounts = Accounts::open();
@@ -138,8 +138,7 @@ fn selected_grabs_cannot_substitute_an_operator_or_another_unapproved_account() 
         let id = if mode == "operator" {
             e.submit(request(7)).unwrap().remove(0).id
         } else {
-            enable(&e, "alice", false);
-            enable(&e, "bob", true);
+            enable(&e, "alice");
             accounts.watchlist("alice", vec![movie(7, "Fixture Movie")]);
             if mode == "pending" {
                 accounts.watchlist("bob", vec![movie(7, "Fixture Movie")]);
@@ -162,7 +161,7 @@ fn selected_grabs_cannot_substitute_an_operator_or_another_unapproved_account() 
         assert_eq!(irc_support::bytes(&cfg.store_dir), before);
         no_candidate_work(&e, &id);
         if mode == "pending" {
-            assert_eq!(demand(&e, "bob").get("charged_at"), Some(&Value::Null));
+            assert_eq!(demand(&e, "bob").get("admitted_at"), Some(&Value::Null));
         }
     }
 }
@@ -193,16 +192,6 @@ fn a_compatible_selected_coowner_routes_one_native_import_under_the_creators_cap
         fs::read(&ready.imports[0]).unwrap(),
         include_bytes!("../examples/demo.mp4")
     );
-    for account in ["alice", "bob"] {
-        assert_eq!(
-            e.requester(account, 0, 100)
-                .unwrap()
-                .get("daily")
-                .unwrap()
-                .as_u64(),
-            Some(1)
-        );
-    }
     let before = irc_support::bytes(&cfg.store_dir);
     assert!(
         receive(&e, &torrent.id, 7)
@@ -219,13 +208,13 @@ fn a_compatible_selected_coowner_routes_one_native_import_under_the_creators_cap
 }
 
 #[test]
-fn incompatible_selected_routes_do_not_borrow_another_accounts_approval_or_quota() {
+fn incompatible_selected_routes_do_not_borrow_another_accounts_admission() {
     let dir = Directory::new();
     let accounts = Accounts::open();
     let cfg = selected(&dir, &accounts, 1, "bob");
     let e = Engine::open(cfg.clone()).unwrap();
-    enable(&e, "alice", false);
-    enable(&e, "bob", false);
+    enable(&e, "alice");
+    enable(&e, "bob");
     let mut changed = policy(&e, "bob");
     changed.destination = "family".into();
     apply(&e, "bob", policy_query(changed));
@@ -249,7 +238,7 @@ fn incompatible_selected_routes_do_not_borrow_another_accounts_approval_or_quota
         outcome(&e.irc_route_pending().unwrap()),
         "requester_mismatch"
     );
-    assert_eq!(demand(&e, "bob").get("charged_at"), Some(&Value::Null));
+    assert_eq!(demand(&e, "bob").get("admitted_at"), Some(&Value::Null));
     assert_eq!(irc_support::bytes(&cfg.store_dir), before);
     no_candidate_work(&e, &id);
 }

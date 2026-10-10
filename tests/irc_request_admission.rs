@@ -170,7 +170,7 @@ fn receipt_duplicates_and_catalog_previews_never_create_demand_or_mutate_storage
     let a = Accounts::open();
     let cfg = configured(&dir, &c, &a);
     let e = Engine::open(cfg.clone()).unwrap();
-    enable(&e, "alice", false);
+    enable(&e, "alice");
     let row = irc_support::receive(&e, 7);
     let before = irc_support::bytes(&cfg.store_dir);
     let preview = e
@@ -196,13 +196,12 @@ fn receipt_duplicates_and_catalog_previews_never_create_demand_or_mutate_storage
 }
 
 #[test]
-fn explicit_origins_survive_empty_watchlists_approval_and_removal_tombstones() {
+fn explicit_origins_survive_empty_watchlists_opt_in_and_removal_tombstones() {
     let dir = Directory::new();
     let c = catalog();
     let a = Accounts::open();
     let cfg = configured(&dir, &c, &a);
     let e = Engine::open(cfg.clone()).unwrap();
-    enable(&e, "alice", true);
     let row = irc_support::receive(&e, 7);
     let accepted = request(&e, &row);
     assert_eq!(accepted.get("applied"), Some(&Value::Bool(true)));
@@ -215,23 +214,11 @@ fn explicit_origins_survive_empty_watchlists_approval_and_removal_tombstones() {
     e.sync_requesters().unwrap();
     let d = demand(&e, "alice");
     assert_eq!(d.get("state").unwrap().as_str(), Some("pending"));
-    assert_eq!(d.get("charged_at"), Some(&Value::Null));
-    apply(
-        &e,
-        "alice",
-        demand_query("approve", requester_support::id(&d)),
-    );
+    assert_eq!(d.get("admitted_at"), Some(&Value::Null));
+    enable(&e, "alice");
     let d = demand(&e, "alice");
     let job_id = d.get("job_id").unwrap().as_str().unwrap().to_owned();
     assert_eq!(job(&e, &job_id).requester.unwrap().account_id, "alice");
-    assert_eq!(
-        e.requester("alice", 0, 100)
-            .unwrap()
-            .get("daily")
-            .unwrap()
-            .as_u64(),
-        Some(1)
-    );
     apply(
         &e,
         "alice",
@@ -259,46 +246,12 @@ fn explicit_origins_survive_empty_watchlists_approval_and_removal_tombstones() {
 }
 
 #[test]
-fn quota_reservations_are_shared_with_ordinary_requester_admission() {
-    let dir = Directory::new();
-    let c = catalog();
-    let a = Accounts::open();
-    let e = Engine::open(configured(&dir, &c, &a)).unwrap();
-    enable(&e, "alice", false);
-    let mut p = policy(&e, "alice");
-    p.max_active = 1;
-    p.max_daily = 1;
-    apply(&e, "alice", policy_query(p));
-    request(&e, &irc_support::receive(&e, 7));
-    let row = irc_support::receive(&e, 8);
-    let accepted = request(&e, &row);
-    let d = accepted.get("demand").unwrap();
-    assert_eq!(d.get("state").unwrap().as_str(), Some("quota"));
-    assert_eq!(d.get("job_id"), Some(&Value::Null));
-    assert_eq!(lock(&e.store).unwrap().list().len(), 1);
-    assert_eq!(
-        e.requester("alice", 0, 100)
-            .unwrap()
-            .get("daily")
-            .unwrap()
-            .as_u64(),
-        Some(1)
-    );
-    let before = irc_support::bytes(&e.config.store_dir);
-    assert!(
-        e.irc_control(irc_support::record_id(&row), &irc_support::query("request"))
-            .is_err()
-    );
-    assert_eq!(irc_support::bytes(&e.config.store_dir), before);
-}
-
-#[test]
 fn incorrect_missing_future_or_unavailable_catalog_facts_cannot_admit() {
     let dir = Directory::new();
     let c = catalog();
     let a = Accounts::open();
     let e = Engine::open(configured(&dir, &c, &a)).unwrap();
-    enable(&e, "alice", false);
+    enable(&e, "alice");
     let row = irc_support::receive(&e, 7);
     let before = irc_support::bytes(&e.config.store_dir);
     for (key, v) in [
@@ -335,13 +288,11 @@ fn stale_policy_job_scope_and_catalog_races_reject_before_intent() {
     let c = catalog();
     let a = Accounts::open();
     let e = Engine::open(configured(&dir, &c, &a)).unwrap();
-    enable(&e, "alice", false);
+    enable(&e, "alice");
     let row = irc_support::receive(&e, 7);
     let id = irc_support::record_id(&row);
     let old = irc_support::reviewed(&e, id, "request");
-    let mut p = policy(&e, "alice");
-    p.max_daily += 1;
-    apply(&e, "alice", policy_query(p));
+    apply(&e, "alice", policy_query(policy(&e, "alice")));
     let before = irc_support::bytes(&e.config.store_dir);
     assert!(e.irc_control(id, &old).is_err());
     assert_eq!(irc_support::bytes(&e.config.store_dir), before);
@@ -368,12 +319,12 @@ fn stale_policy_job_scope_and_catalog_races_reject_before_intent() {
 }
 
 #[test]
-fn concurrent_review_application_charges_one_canonical_demand_once() {
+fn concurrent_review_application_records_one_canonical_demand() {
     let dir = Directory::new();
     let c = catalog();
     let a = Accounts::open();
     let e = Engine::open(configured(&dir, &c, &a)).unwrap();
-    enable(&e, "alice", false);
+    enable(&e, "alice");
     let row = irc_support::receive(&e, 7);
     let q = irc_support::reviewed(&e, irc_support::record_id(&row), "request");
     let workers: Vec<_> = (0..2)
@@ -394,14 +345,6 @@ fn concurrent_review_application_charges_one_canonical_demand_once() {
     );
     assert_eq!(demands(&e, "alice").len(), 1);
     assert_eq!(lock(&e.store).unwrap().list().len(), 1);
-    assert_eq!(
-        e.requester("alice", 0, 100)
-            .unwrap()
-            .get("daily")
-            .unwrap()
-            .as_u64(),
-        Some(1)
-    );
 }
 
 #[test]
@@ -412,8 +355,8 @@ fn a_new_irc_coowner_shares_one_existing_captured_requester_job() {
     let mut cfg = configured(&dir, &c, &a);
     cfg.irc.rules[0].requester = Some("bob".into());
     let e = Engine::open(cfg.clone()).unwrap();
-    enable(&e, "alice", false);
-    enable(&e, "bob", false);
+    enable(&e, "alice");
+    enable(&e, "bob");
     a.watchlist("alice", vec![movie(7, "Fixture Movie")]);
     e.sync_requesters().unwrap();
     let first = demand(&e, "alice")
@@ -440,16 +383,6 @@ fn a_new_irc_coowner_shares_one_existing_captured_requester_job() {
         demand(&e, "bob").get("state").unwrap().as_str(),
         Some("active")
     );
-    for account in ["alice", "bob"] {
-        assert_eq!(
-            e.requester(account, 0, 100)
-                .unwrap()
-                .get("daily")
-                .unwrap()
-                .as_u64(),
-            Some(1)
-        );
-    }
     drop(e);
     let e = Engine::open(cfg).unwrap();
     assert_eq!(phase(&e, &row), "committed");
@@ -465,7 +398,7 @@ fn unready_operator_work_cannot_replace_captured_requester_admission() {
     let c = catalog();
     let a = Accounts::open();
     let e = Engine::open(configured(&dir, &c, &a)).unwrap();
-    enable(&e, "alice", false);
+    enable(&e, "alice");
     let operator = e.submit(irc_routing_support::request(7)).unwrap().remove(0);
     let accepted = request(&e, &irc_support::receive(&e, 7));
     assert_eq!(
@@ -477,7 +410,7 @@ fn unready_operator_work_cannot_replace_captured_requester_admission() {
             .as_str(),
         Some("conflict")
     );
-    assert_eq!(demand(&e, "alice").get("charged_at"), Some(&Value::Null));
+    assert_eq!(demand(&e, "alice").get("admitted_at"), Some(&Value::Null));
     assert_eq!(job(&e, &operator.id), operator);
     assert_eq!(lock(&e.store).unwrap().list().len(), 1);
 }
@@ -495,7 +428,7 @@ fn reviewed_new_demand_reaches_one_verified_native_import_and_survives_restart()
     let seed = Seeder::open(&dir.0.join("seed"), &[&torrent]);
     let cfg = config::from_json(&value(&dir, &c, &a, seed.client.listen_port()), &dir.0).unwrap();
     let e = Engine::open(cfg.clone()).unwrap();
-    enable(&e, "alice", false);
+    enable(&e, "alice");
     let row = irc_routing_support::receive(&e, &torrent.id, 7);
     assert_eq!(
         e.irc_route_pending()
@@ -559,7 +492,7 @@ fn new_episode_demand_requires_aired_stable_catalog_facts_without_series_writes(
     let mut cfg = configured(&dir, &c, &a);
     cfg.irc.rules[0].kind = "episode".into();
     let e = Engine::open(cfg.clone()).unwrap();
-    enable(&e, "alice", false);
+    enable(&e, "alice");
     let mut claim = irc_support::announcement(42);
     claim.insert("kind", "episode");
     claim.insert("media_title", "Fixture Series");
@@ -607,7 +540,7 @@ fn retained_source_numbering_is_captured_without_rewriting_the_series_plan() {
     let mut cfg = configured(&dir, &c, &a);
     cfg.irc.rules[0].kind = "episode".into();
     let e = Engine::open(cfg).unwrap();
-    enable(&e, "alice", false);
+    enable(&e, "alice");
     let record = e
         .track_series_with_policy(&series_support::request(), false, false, false)
         .unwrap();
@@ -654,14 +587,13 @@ fn retained_source_numbering_is_captured_without_rewriting_the_series_plan() {
 }
 
 #[test]
-fn committed_and_uncommitted_crash_intents_recover_without_replay_or_extra_charge() {
+fn committed_and_uncommitted_crash_intents_recover_without_replay_or_admission() {
     for durable in [true, false] {
         let dir = Directory::new();
         let c = catalog();
         let a = Accounts::open();
         let cfg = configured(&dir, &c, &a);
         let e = Engine::open(cfg.clone()).unwrap();
-        enable(&e, "alice", true);
         let row = irc_support::receive(&e, 7);
         request(&e, &row);
         let id = irc_support::record_id(&row);
@@ -689,7 +621,7 @@ fn committed_and_uncommitted_crash_intents_recover_without_replay_or_extra_charg
         irc_support::no_jobs(&e);
         assert_eq!(demands(&e, "alice").len(), usize::from(durable));
         if durable {
-            assert_eq!(demand(&e, "alice").get("charged_at"), Some(&Value::Null));
+            assert_eq!(demand(&e, "alice").get("admitted_at"), Some(&Value::Null));
         }
         e.sync_requesters().unwrap();
         irc_support::no_jobs(&e);
@@ -712,7 +644,6 @@ fn missing_cross_store_provenance_and_semantic_format_downgrades_fail_closed() {
         let a = Accounts::open();
         let cfg = configured(&dir, &c, &a);
         let e = Engine::open(cfg.clone()).unwrap();
-        enable(&e, "alice", true);
         let row = irc_support::receive(&e, 7);
         request(&e, &row);
         drop(e);
@@ -759,7 +690,7 @@ fn requester_identity_mismatch_or_failure_cannot_borrow_configured_authority() {
     let c = catalog();
     let a = Accounts::open();
     let e = Engine::open(configured(&dir, &c, &a)).unwrap();
-    enable(&e, "alice", false);
+    enable(&e, "alice");
     let row = irc_support::receive(&e, 7);
     let before = irc_support::bytes(&e.config.store_dir);
     let calls = c.calls.load(Ordering::Acquire);
@@ -786,7 +717,7 @@ fn protected_api_browser_and_cli_reviews_bind_the_request_action_and_session() {
     let c = catalog();
     let a = Accounts::open();
     let server = Server::open(configured(&dir, &c, &a));
-    enable(&server.engine, "alice", false);
+    enable(&server.engine, "alice");
     let row = irc_support::receive(&server.engine, 7);
     let id = irc_support::record_id(&row);
     let route = format!("/api/irc/announcements/{id}/control");
@@ -889,7 +820,7 @@ fn offline_cli_catalog_review_is_read_only_and_application_requires_the_service(
     let a = Accounts::open();
     let cfg = configured(&dir, &c, &a);
     let e = Engine::open(cfg.clone()).unwrap();
-    enable(&e, "alice", false);
+    enable(&e, "alice");
     let row = irc_support::receive(&e, 7);
     let path = dir.0.join("mynou.json");
     fs::write(&path, json::stringify(&value(&dir, &c, &a, 0))).unwrap();

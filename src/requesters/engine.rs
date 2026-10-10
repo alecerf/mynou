@@ -49,7 +49,6 @@ fn compatible(config: &crate::config::Config, demand: &Demand, job: &Job) -> Res
         config,
         &Policy {
             enabled: true,
-            approval_required: false,
             ..Policy::initial(config)
         },
         &job.request.kind,
@@ -86,7 +85,6 @@ pub(crate) fn interest(state: &State, job: &Job, config: &crate::config::Config)
     let key = job.request.media_key();
     state.demands.values().any(|d| {
         d.request.media_key() == key
-            && d.approved
             && matches!(d.state.as_str(), "reserved" | "active" | "ready")
             && job
                 .requester
@@ -97,34 +95,7 @@ pub(crate) fn interest(state: &State, job: &Job, config: &crate::config::Config)
             })
     })
 }
-fn usage(state: &State, id: &str, jobs: &Store, now: u64) -> (usize, usize) {
-    let active = state
-        .demands
-        .values()
-        .filter(|d| {
-            d.account_id == id
-                && matches!(d.state.as_str(), "reserved" | "active")
-                && d.job_id.as_ref().is_none_or(|job| {
-                    jobs.get(job)
-                        .is_none_or(|j| !matches!(j.state.as_str(), "ready" | "cancelled"))
-                })
-        })
-        .count();
-    let daily = state
-        .demands
-        .values()
-        .filter(|d| {
-            d.account_id == id && d.charged_at.is_some_and(|at| at / 86_400 == now / 86_400)
-        })
-        .count();
-    (active, daily)
-}
-fn public_account(
-    state: &State,
-    record: &Record,
-    config: &crate::config::Config,
-    jobs: &Store,
-) -> Value {
+fn public_account(state: &State, record: &Record, config: &crate::config::Config) -> Value {
     let mut v = record.to_json();
     if let Value::Object(m) = &mut v {
         m.remove("binding");
@@ -133,9 +104,6 @@ fn public_account(
         "configured",
         config.requesters.accounts.iter().any(|a| a.id == record.id),
     );
-    let (active, daily) = usage(state, &record.id, jobs, store::now());
-    v.insert("active", active as u32);
-    v.insert("daily", daily as u32);
     v.insert(
         "pending",
         state
@@ -156,7 +124,6 @@ impl Engine {
     }
     pub fn requesters(&self) -> Result<Value> {
         let ledger = lock(&self.requester_store)?;
-        let jobs = lock(&self.store)?;
         let mut v = Value::object();
         v.insert(
             "accounts",
@@ -165,7 +132,7 @@ impl Engine {
                     .state
                     .accounts
                     .values()
-                    .map(|a| public_account(&ledger.state, a, &self.config, &jobs))
+                    .map(|a| public_account(&ledger.state, a, &self.config))
                     .collect(),
             ),
         );
@@ -196,13 +163,12 @@ impl Engine {
             return Err("Requester: invalid account or page bounds".into());
         }
         let ledger = lock(&self.requester_store)?;
-        let jobs = lock(&self.store)?;
         let record = ledger
             .state
             .accounts
             .get(id)
             .ok_or("Requester: unknown account")?;
-        let mut v = public_account(&ledger.state, record, &self.config, &jobs);
+        let mut v = public_account(&ledger.state, record, &self.config);
         let demands: Vec<_> = ledger
             .state
             .demands
@@ -262,6 +228,18 @@ impl Engine {
                 .revision
                 .checked_add(1)
                 .ok_or("Requester: policy revision overflow")?;
+            let (policy, revision) = (account.policy.clone(), account.revision);
+            // Unadmitted demand follows the reviewed policy; removed records do not.
+            for d in proposed.demands.values_mut().filter(|d| {
+                d.account_id == id
+                    && d.job_id.is_none()
+                    && d.admitted_at.is_none()
+                    && matches!(d.state.as_str(), "pending" | "conflict")
+            }) {
+                d.capture = Capture::new(&self.config, &policy, &d.request.kind)?;
+                d.revision = revision;
+                d.state = "pending".into();
+            }
         } else {
             let demand_id = query
                 .demand_id
@@ -273,43 +251,13 @@ impl Engine {
                 .filter(|d| d.account_id == id)
                 .ok_or("Requester: demand belongs to another account or does not exist")?;
             match query.action.as_str() {
-                "approve" => {
-                    if d.job_id.is_some()
-                        || d.charged_at.is_some()
-                        || !matches!(d.state.as_str(), "pending" | "quota" | "conflict")
-                    {
-                        return Err("Requester: approval requires unadmitted pending demand".into());
-                    }
-                    if !record.policy.enabled {
-                        return Err("Requester: account policy is disabled".into());
-                    }
-                    d.capture = Capture::new(&self.config, &record.policy, &d.request.kind)?;
-                    d.revision = record.revision;
-                    d.approved = true;
-                    d.state = "pending".into();
-                }
-                "reject" => {
-                    if d.job_id.is_some() || d.charged_at.is_some() {
-                        return Err(
-                            "Requester: admitted demand must be removed rather than rejected"
-                                .into(),
-                        );
-                    }
-                    d.state = "rejected".into();
-                    d.approved = false;
-                }
                 "remove" => {
                     d.state = "removed".into();
-                    d.approved = false;
                 }
                 "retry" => {
-                    if !record.policy.enabled
-                        || !d.approved
-                        || d.job_id.is_none()
-                        || matches!(d.state.as_str(), "removed" | "rejected")
-                    {
+                    if !record.policy.enabled || d.job_id.is_none() || d.state == "removed" {
                         return Err(
-                            "Requester: retry requires retained approved acquisition".into()
+                            "Requester: retry requires retained admitted acquisition".into()
                         );
                     }
                     let job = jobs
@@ -317,10 +265,6 @@ impl Engine {
                         .ok_or("Requester: acquisition is missing")?;
                     if !matches!(job.state.as_str(), "failed" | "cancelled") {
                         return Err("Requester: acquisition is not retryable".into());
-                    }
-                    let (active, _) = usage(&ledger.state, id, &jobs, store::now());
-                    if job.state == "cancelled" && active >= record.policy.max_active as usize {
-                        return Err("Requester: active quota prevents retry".into());
                     }
                     d.state = "reserved".into();
                 }
@@ -340,7 +284,6 @@ impl Engine {
             "jobs",
             Value::Array(jobs.list().iter().map(Job::to_json).collect()),
         );
-        guard.insert("day", (store::now() / 86_400).to_string());
         guard.insert("profiles", self.config.selection.to_json());
         guard.insert(
             "destinations",
@@ -428,11 +371,6 @@ impl Engine {
         for job in jobs.library_jobs() {
             current.insert(job.request.media_key(), job);
         }
-        let mut limits: BTreeMap<_, _> = next
-            .accounts
-            .keys()
-            .map(|id| (id.clone(), usage(&next, id, jobs, now)))
-            .collect();
         let mut planned: BTreeMap<_, _> = next
             .demands
             .values()
@@ -442,13 +380,7 @@ impl Engine {
         let mut ids: Vec<_> = next
             .demands
             .values()
-            .filter(|d| {
-                d.approved
-                    && matches!(
-                        d.state.as_str(),
-                        "pending" | "quota" | "conflict" | "reserved"
-                    )
-            })
+            .filter(|d| matches!(d.state.as_str(), "pending" | "conflict" | "reserved"))
             .map(|d| d.id.clone())
             .collect();
         ids.sort_by_key(|id| {
@@ -476,13 +408,12 @@ impl Engine {
             {
                 continue;
             }
-            if d.revision != record.revision && d.charged_at.is_none() {
-                let demand = next
-                    .demands
+            if d.revision != record.revision && d.admitted_at.is_none() {
+                // Unadmitted demand waits for capture under the current policy.
+                next.demands
                     .get_mut(&id)
-                    .ok_or("Requester: missing demand")?;
-                demand.approved = false;
-                demand.state = "pending".into();
+                    .ok_or("Requester: missing demand")?
+                    .state = "pending".into();
                 continue;
             }
             let existing = current.get(&d.request.media_key()).cloned();
@@ -500,33 +431,11 @@ impl Engine {
                 next.record_outcome(&id, "conflict")?;
                 continue;
             }
-            let (active, daily) = limits[&d.account_id];
-            let needs_active = existing.as_ref().is_none_or(|j| j.state != "ready");
-            if d.charged_at.is_none()
-                && ((needs_active && active >= record.policy.max_active as usize)
-                    || daily >= record.policy.max_daily as usize)
-            {
-                next.demands
-                    .get_mut(&id)
-                    .ok_or("Requester: missing demand")?
-                    .state = "quota".into();
-                next.record_outcome(&id, "quota")?;
-                continue;
-            }
-            if d.charged_at.is_none() {
-                let usage = limits
-                    .get_mut(&d.account_id)
-                    .ok_or("Requester: missing quota")?;
-                usage.1 += 1;
-                if needs_active {
-                    usage.0 += 1;
-                }
-            }
             let demand = next
                 .demands
                 .get_mut(&id)
                 .ok_or("Requester: missing demand")?;
-            demand.charged_at.get_or_insert(now);
+            demand.admitted_at.get_or_insert(now);
             demand.state = "reserved".into();
             planned.insert(d.request.media_key(), d.capture.clone());
             next.record_outcome(&id, "reserved")?;
@@ -535,7 +444,7 @@ impl Engine {
         if next != ledger.state {
             ledger.save(next)?;
         }
-        // All provenance and quota reservations are durable before any new job can run.
+        // All provenance and reservations are durable before any new job can run.
         let mut next = ledger.state.clone();
         for (id, current) in admitted {
             let demand = next.demands[&id].clone();
@@ -578,7 +487,7 @@ impl Engine {
         for d in next.demands.values_mut() {
             if let Some(id) = &d.job_id
                 && let Some(job) = jobs.get(id)
-                && !matches!(d.state.as_str(), "removed" | "rejected")
+                && d.state != "removed"
                 && job.state == "ready"
             {
                 d.state = "ready".into();
@@ -587,7 +496,7 @@ impl Engine {
         let outcomes: Vec<_> = next
             .demands
             .values()
-            .filter(|d| !matches!(d.state.as_str(), "removed" | "rejected"))
+            .filter(|d| d.state != "removed")
             .filter_map(|d| {
                 d.job_id
                     .as_ref()
@@ -651,17 +560,7 @@ impl Engine {
             return Ok(());
         }
         if !interest(&ledger.state, &job, &self.config) {
-            return Err("Requester: acquisition has no approved demand".into());
-        }
-        for d in ledger.state.demands.values().filter(|d| {
-            d.job_id.as_deref() == Some(id) && !matches!(d.state.as_str(), "removed" | "rejected")
-        }) {
-            let (active, _) = usage(&ledger.state, &d.account_id, &jobs, store::now());
-            if job.state == "cancelled"
-                && active >= ledger.state.accounts[&d.account_id].policy.max_active as usize
-            {
-                return Err("Requester: active quota prevents retry".into());
-            }
+            return Err("Requester: acquisition has no admitted demand".into());
         }
         Ok(())
     }
@@ -725,10 +624,9 @@ impl Engine {
                                     request: request.clone(),
                                     revision: previous.revision,
                                     capture: Capture::new(&self.config, policy, &request.kind)?,
-                                    approved: policy.enabled && !policy.approval_required,
                                     state: "pending".into(),
                                     job_id: None,
-                                    charged_at: None,
+                                    admitted_at: None,
                                     outcome: String::new(),
                                 },
                             );
@@ -736,13 +634,12 @@ impl Engine {
                         } else if let Some(d) = next.demands.get_mut(&id) {
                             d.origins.insert(origin);
                             if d.job_id.is_none()
-                                && d.charged_at.is_none()
+                                && d.admitted_at.is_none()
                                 && d.revision != previous.revision
-                                && !matches!(d.state.as_str(), "removed" | "rejected")
+                                && d.state != "removed"
                             {
                                 d.capture = Capture::new(&self.config, policy, &d.request.kind)?;
                                 d.revision = previous.revision;
-                                d.approved = policy.enabled && !policy.approval_required;
                                 d.state = "pending".into();
                             }
                         }
@@ -762,7 +659,7 @@ impl Engine {
                         .filter(|d| {
                             d.account_id == account.id
                                 && d.origins.is_empty()
-                                && !matches!(d.state.as_str(), "removed" | "rejected")
+                                && d.state != "removed"
                         })
                         .map(|d| d.id.clone())
                         .collect();
@@ -772,7 +669,6 @@ impl Engine {
                             .get_mut(&id)
                             .ok_or("Requester: missing demand")?;
                         d.state = "removed".into();
-                        d.approved = false;
                         next.record_outcome(&id, "removed")?;
                     }
                     let current = next
@@ -932,7 +828,7 @@ pub(crate) fn validate_storage(state: &State, jobs: &Store) -> Result<()> {
                 || d.capture != p.capture
                 || d.revision != p.policy_revision
                 || d.request.media_key() != job.request.media_key()
-                || d.charged_at.is_none()
+                || d.admitted_at.is_none()
             {
                 return Err("Requester: queued provenance differs from durable admission".into());
             }

@@ -39,7 +39,6 @@ fn existing_plex_media_under_the_mapped_destination_needs_no_native_acquisition(
     let engine = Engine::open_for_management(cfg).unwrap();
     let mut p = policy(&engine, "alice");
     p.enabled = true;
-    p.approval_required = false;
     p.destination = "family".into();
     apply(&engine, "alice", policy_query(p));
     engine.sync_requesters().unwrap();
@@ -58,8 +57,7 @@ fn existing_plex_media_under_the_mapped_destination_needs_no_native_acquisition(
 use transfer_support::{Seeder, Torrent};
 
 #[test]
-fn approval_precedes_native_acquisition_and_captured_route_survives_edit_restart_and_confirmation()
-{
+fn opt_in_precedes_native_acquisition_and_captured_route_survives_edit_restart_and_confirmation() {
     let directory = Directory::new();
     let accounts = Accounts::open();
     let provider = Provider::open();
@@ -92,17 +90,15 @@ fn approval_precedes_native_acquisition_and_captured_route_survives_edit_restart
     old.insert("Media", Value::Array(vec![media]));
     accounts.response("/library/sections/1/all", 200, container(vec![old.clone()]));
     let engine = Engine::open(cfg.clone()).unwrap();
-    let mut p = policy(&engine, "alice");
-    p.enabled = true;
-    p.destination = "family".into();
-    apply(&engine, "alice", policy_query(p));
     engine.sync_requesters().unwrap();
     assert!(!engine.tick().unwrap());
     assert!(provider.calls.lock().unwrap().is_empty());
     assert!(lock(&engine.store).unwrap().list().is_empty());
     assert!(!cfg.downloads.data_dir.join(&torrent.id).exists());
-    let d = demand(&engine, "alice");
-    apply(&engine, "alice", demand_query("approve", id(&d)));
+    let mut p = policy(&engine, "alice");
+    p.enabled = true;
+    p.destination = "family".into();
+    apply(&engine, "alice", policy_query(p));
     let acquired = job(&engine, "alice");
     let captured = acquired.requester.clone();
     let mut p = policy(&engine, "alice");

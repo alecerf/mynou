@@ -245,9 +245,6 @@ impl Settings {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Policy {
     pub enabled: bool,
-    pub approval_required: bool,
-    pub max_active: u32,
-    pub max_daily: u32,
     pub movie_profile: String,
     pub episode_profile: String,
     pub destination: String,
@@ -256,9 +253,6 @@ impl Policy {
     pub(crate) fn initial(config: &Config) -> Self {
         Self {
             enabled: false,
-            approval_required: true,
-            max_active: 8,
-            max_daily: 32,
             movie_profile: config.selection.movie_profile.clone(),
             episode_profile: config.selection.episode_profile.clone(),
             destination: "default".into(),
@@ -267,32 +261,15 @@ impl Policy {
     pub fn from_json(v: &Value) -> Result<Self> {
         only(
             v,
-            &[
-                "enabled",
-                "approval_required",
-                "max_active",
-                "max_daily",
-                "movie_profile",
-                "episode_profile",
-                "destination",
-            ],
+            &["enabled", "movie_profile", "episode_profile", "destination"],
         )?;
         let policy = Self {
             enabled: boolean(v, "enabled")?,
-            approval_required: boolean(v, "approval_required")?,
-            max_active: u32::try_from(integer(v, "max_active")?)
-                .map_err(|_| "Requester: invalid max_active")?,
-            max_daily: u32::try_from(integer(v, "max_daily")?)
-                .map_err(|_| "Requester: invalid max_daily")?,
             movie_profile: text(v, "movie_profile")?,
             episode_profile: text(v, "episode_profile")?,
             destination: text(v, "destination")?,
         };
-        if policy.max_active > 64
-            || policy.max_active == 0
-            || policy.max_daily > 1024
-            || policy.max_daily == 0
-            || !valid_id(&policy.destination)
+        if !valid_id(&policy.destination)
             || !valid_profile(&policy.movie_profile)
             || !valid_profile(&policy.episode_profile)
         {
@@ -303,9 +280,6 @@ impl Policy {
     pub fn to_json(&self) -> Value {
         let mut v = Value::object();
         v.insert("enabled", self.enabled);
-        v.insert("approval_required", self.approval_required);
-        v.insert("max_active", self.max_active);
-        v.insert("max_daily", self.max_daily);
         v.insert("movie_profile", self.movie_profile.clone());
         v.insert("episode_profile", self.episode_profile.clone());
         v.insert("destination", self.destination.clone());
@@ -478,10 +452,10 @@ pub(crate) struct Demand {
     pub request: Request,
     pub revision: u64,
     pub capture: Capture,
-    pub approved: bool,
     pub state: String,
     pub job_id: Option<String>,
-    pub charged_at: Option<u64>,
+    /// First durable reservation; the capture stays frozen from then on.
+    pub admitted_at: Option<u64>,
     pub outcome: String,
 }
 impl Demand {
@@ -505,15 +479,14 @@ impl Demand {
         v.insert("request", self.request.to_json());
         v.insert("revision", self.revision.to_string());
         v.insert("capture", self.capture.to_json());
-        v.insert("approved", self.approved);
         v.insert("state", self.state.clone());
         v.insert(
             "job_id",
             self.job_id.clone().map_or(Value::Null, Value::String),
         );
         v.insert(
-            "charged_at",
-            self.charged_at
+            "admitted_at",
+            self.admitted_at
                 .map_or(Value::Null, |n| Value::String(n.to_string())),
         );
         v.insert("outcome", self.outcome.clone());
@@ -529,10 +502,9 @@ impl Demand {
                 "request",
                 "revision",
                 "capture",
-                "approved",
                 "state",
                 "job_id",
-                "charged_at",
+                "admitted_at",
                 "outcome",
             ],
         )?;
@@ -558,18 +530,17 @@ impl Demand {
             capture: Capture::from_json(
                 v.get("capture").ok_or("Requester: missing demand policy")?,
             )?,
-            approved: boolean(v, "approved")?,
             state: text(v, "state")?,
             job_id: optional(v, "job_id")?,
-            charged_at: match v.get("charged_at") {
+            admitted_at: match v.get("admitted_at") {
                 Some(Value::Null) => None,
-                Some(_) => Some(integer(v, "charged_at")?),
-                None => return Err("Requester: missing quota charge".into()),
+                Some(_) => Some(integer(v, "admitted_at")?),
+                None => return Err("Requester: missing admission time".into()),
             },
             outcome: text(v, "outcome")?,
         };
         if !valid_id(&d.account_id)
-            || (d.origins.is_empty() && !matches!(d.state.as_str(), "removed" | "rejected"))
+            || (d.origins.is_empty() && d.state != "removed")
             || d.origins.len() > MAX_POLL_ITEMS
             || d.origins.iter().any(|origin| {
                 origin.is_empty()
@@ -583,8 +554,7 @@ impl Demand {
             || d.request.source_path.is_some()
             || d.request.source_url.is_some()
             || ![
-                "pending", "reserved", "active", "ready", "quota", "conflict", "rejected",
-                "removed",
+                "pending", "reserved", "active", "ready", "conflict", "removed",
             ]
             .contains(&d.state.as_str())
             || ![
@@ -595,9 +565,7 @@ impl Demand {
                 "ready",
                 "failed",
                 "cancelled",
-                "quota",
                 "conflict",
-                "rejected",
                 "removed",
             ]
             .contains(&d.outcome.as_str())
@@ -605,7 +573,7 @@ impl Demand {
                 .as_ref()
                 .is_some_and(|id| id.len() != 32 || !id.bytes().all(|b| b.is_ascii_hexdigit()))
             || (matches!(d.state.as_str(), "reserved" | "active" | "ready")
-                && (!d.approved || d.charged_at.is_none()))
+                && d.admitted_at.is_none())
             || (matches!(d.state.as_str(), "active" | "ready") && d.job_id.is_none())
         {
             return Err("Requester: inconsistent persistent demand".into());
@@ -805,7 +773,7 @@ impl ControlRequest {
         Ok(q)
     }
     pub(crate) fn validate(&self) -> Result<()> {
-        if !["policy", "approve", "reject", "remove", "retry"].contains(&self.action.as_str())
+        if !["policy", "remove", "retry"].contains(&self.action.as_str())
             || (self.action == "policy") != self.policy.is_some()
             || (self.action == "policy") != self.demand_id.is_none()
             || self.demand_id.as_ref().is_some_and(|id| !valid_digest(id))

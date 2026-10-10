@@ -63,9 +63,10 @@ reviewed policy, a complete object such as:
 ```
 
 Profile names must exist in your [selection](selection.md) configuration. A
-policy change applies to new demand; existing requests keep the profiles and
-destination they captured. Disabling an account stops new requests; use
-`remove` to withdraw existing demand.
+reviewed policy change recaptures the account's pending or conflicting demand
+that has not been admitted, using the new profiles and destination. Already
+admitted requests keep their captured policy. Disabling an account stops new
+admissions; use `remove` to withdraw existing demand.
 
 ```sh
 mynou requesters --config ./mynou.json
@@ -126,9 +127,10 @@ journal. Startup checks it against the journal before any transfer starts, and
 an interruption between the two writes is recovered without a duplicate job.
 Bounds are listed in [limits](limits.md#plex-requester-accounts).
 
-Snapshots saved before the notification removal are rejected at startup; there
-is no migration. Removing `requesters.bin` alone does not restore startup while
-requester-provenance jobs or committed IRC admissions remain: they require
+Snapshots saved before the approvals, quotas and notification removals are
+rejected at startup; there is no migration. Removing `requesters.bin` alone
+does not restore startup while requester-provenance jobs or committed IRC
+admissions remain: they require
 their original durable demand and origin. No stored data is deleted
 automatically. Read the [release notes](releases/) and back up private storage
 before upgrading.

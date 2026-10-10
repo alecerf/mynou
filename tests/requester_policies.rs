@@ -48,7 +48,7 @@ fn account_configuration_is_bounded_strict_and_backwards_compatible() {
     assert_eq!(mynou::requesters::page("offset=2&limit=3").unwrap(), (2, 3));
 }
 #[test]
-fn new_accounts_require_explicit_opt_in_and_durable_approval_before_queueing() {
+fn new_accounts_require_explicit_opt_in_before_queueing() {
     let dir = Directory::new();
     let accounts = Accounts::open();
     accounts.watchlist("alice", vec![movie(7, "Fixture Movie")]);
@@ -61,17 +61,14 @@ fn new_accounts_require_explicit_opt_in_and_durable_approval_before_queueing() {
         demand(&engine, "alice").get("state").unwrap().as_str(),
         Some("pending")
     );
-    enable(&engine, "alice", true);
-    assert!(lock(&engine.store).unwrap().list().is_empty());
-    let pending = demand(&engine, "alice");
-    apply(&engine, "alice", demand_query("approve", id(&pending)));
+    enable(&engine, "alice");
     let queued = job(&engine, "alice");
     assert_eq!(queued.state, "queued");
     assert_eq!(queued.requester.as_ref().unwrap().account_id, "alice");
     let ledger = read_snapshot(&cfg.store_dir);
     assert!(
         ledger.get("demands").unwrap().as_array().unwrap()[0]
-            .get("charged_at")
+            .get("admitted_at")
             .unwrap()
             .as_str()
             .is_some()
@@ -85,13 +82,8 @@ fn new_accounts_require_explicit_opt_in_and_durable_approval_before_queueing() {
     let engine = Engine::open_for_management(cfg).unwrap();
     assert_eq!(job(&engine, "alice").requester, queued.requester);
     assert_eq!(
-        engine
-            .requester("alice", 0, 100)
-            .unwrap()
-            .get("daily")
-            .unwrap()
-            .as_u64(),
-        Some(1)
+        demand(&engine, "alice").get("state").unwrap().as_str(),
+        Some("active")
     );
 }
 #[test]
@@ -106,7 +98,7 @@ fn compatible_accounts_share_one_acquisition_and_removals_retain_other_interest(
     }
     let engine = Engine::open_for_management(accounts.config(&dir.0)).unwrap();
     for a in ["alice", "bob"] {
-        enable(&engine, a, false);
+        enable(&engine, a);
     }
     engine.sync_requesters().unwrap();
     assert_eq!(lock(&engine.store).unwrap().list().len(), 1);
@@ -143,18 +135,15 @@ fn compatible_accounts_share_one_acquisition_and_removals_retain_other_interest(
             .state,
         "cancelled"
     );
-    assert_eq!(
-        engine
-            .requester("alice", 0, 100)
-            .unwrap()
-            .get("daily")
-            .unwrap()
-            .as_u64(),
-        Some(1)
-    );
+    for a in ["alice", "bob"] {
+        assert_eq!(
+            demand(&engine, a).get("state").unwrap().as_str(),
+            Some("removed")
+        );
+    }
 }
 #[test]
-fn conflicting_profiles_and_destinations_do_not_merge_or_charge_unadmitted_demand() {
+fn conflicting_profiles_and_destinations_do_not_merge_unadmitted_demand() {
     let dir = Directory::new();
     let accounts = Accounts::open();
     for a in ["alice", "bob"] {
@@ -167,10 +156,9 @@ fn conflicting_profiles_and_destinations_do_not_merge_or_charge_unadmitted_deman
     };
     cfg.selection.profiles.insert("strict".into(), profile);
     let engine = Engine::open_for_management(cfg).unwrap();
-    enable(&engine, "alice", false);
+    enable(&engine, "alice");
     let mut p = policy(&engine, "bob");
     p.enabled = true;
-    p.approval_required = false;
     p.movie_profile = "strict".into();
     p.destination = "family".into();
     apply(&engine, "bob", policy_query(p));
@@ -178,12 +166,11 @@ fn conflicting_profiles_and_destinations_do_not_merge_or_charge_unadmitted_deman
     assert_eq!(lock(&engine.store).unwrap().list().len(), 1);
     let other = demand(&engine, "bob");
     assert_eq!(other.get("state").unwrap().as_str(), Some("conflict"));
-    assert_eq!(other.get("charged_at"), Some(&Value::Null));
+    assert_eq!(other.get("admitted_at"), Some(&Value::Null));
     let mut p = policy(&engine, "bob");
     p.movie_profile = "any".into();
     p.destination = "default".into();
     apply(&engine, "bob", policy_query(p));
-    apply(&engine, "bob", demand_query("approve", id(&other)));
     assert_eq!(job(&engine, "alice").id, job(&engine, "bob").id);
 }
 #[test]
@@ -287,7 +274,7 @@ fn uncaptured_operator_jobs_require_verified_ready_imports_and_compatible_qualit
             operator = lock(&engine.store).unwrap().get(&operator.id).unwrap();
         }
         let journal = fs::read(cfg.store_dir.join("journal.bin")).unwrap();
-        enable(&engine, "alice", false);
+        enable(&engine, "alice");
         engine.sync_requesters().unwrap();
         let admitted = matches!(case, "valid" | "accepted_baseline");
         let row = demand(&engine, "alice");
@@ -297,18 +284,8 @@ fn uncaptured_operator_jobs_require_verified_ready_imports_and_compatible_qualit
             "{case}"
         );
         assert_eq!(
-            row.get("charged_at") != Some(&Value::Null),
+            row.get("admitted_at") != Some(&Value::Null),
             admitted,
-            "{case}"
-        );
-        assert_eq!(
-            engine
-                .requester("alice", 0, 100)
-                .unwrap()
-                .get("daily")
-                .unwrap()
-                .as_u64(),
-            Some(u64::from(admitted)),
             "{case}"
         );
         if admitted {
@@ -340,22 +317,19 @@ fn uncaptured_operator_jobs_require_verified_ready_imports_and_compatible_qualit
     }
 }
 #[test]
-fn quota_guards_fence_parallel_approvals_and_retries_without_double_charging() {
+fn review_guards_fence_parallel_removals_and_retry_reuses_the_admitted_job() {
     let dir = Directory::new();
     let accounts = Accounts::open();
     accounts.watchlist("alice", vec![movie(1, "First"), movie(2, "Second")]);
     let engine = Engine::open_for_management(accounts.config(&dir.0)).unwrap();
-    let mut p = policy(&engine, "alice");
-    p.enabled = true;
-    p.max_active = 1;
-    p.max_daily = 1;
-    apply(&engine, "alice", policy_query(p));
+    enable(&engine, "alice");
     engine.sync_requesters().unwrap();
+    assert_eq!(lock(&engine.store).unwrap().list().len(), 2);
     let rows = demands(&engine, "alice");
     let guards: Vec<_> = rows
         .iter()
         .map(|d| {
-            let mut q = demand_query("approve", id(d));
+            let mut q = demand_query("remove", id(d));
             let v = engine.requester_control("alice", &q).unwrap();
             q.apply = true;
             q.plan_id = Some(v.get("plan_id").unwrap().as_str().unwrap().into());
@@ -375,34 +349,25 @@ fn quota_guards_fence_parallel_approvals_and_retries_without_double_charging() {
         .filter(|ok| *ok)
         .count();
     assert_eq!(passed, 1);
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 1);
     let rows = demands(&engine, "alice");
-    let pending = rows
+    let kept = rows
         .iter()
-        .find(|d| d.get("job_id") == Some(&Value::Null))
+        .find(|d| d.get("state").and_then(Value::as_str) != Some("removed"))
         .unwrap();
-    apply(&engine, "alice", demand_query("approve", id(pending)));
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 1);
-    let queued = lock(&engine.store).unwrap().list().remove(0);
-    engine.cancel(&queued.id).unwrap();
-    let selected = rows
-        .iter()
-        .find(|d| d.get("job_id").and_then(Value::as_str) == Some(&queued.id))
-        .unwrap();
-    apply(&engine, "alice", demand_query("retry", id(selected)));
     assert_eq!(
-        lock(&engine.store).unwrap().get(&queued.id).unwrap().state,
+        rows.iter()
+            .filter(|d| d.get("state").and_then(Value::as_str) == Some("removed"))
+            .count(),
+        1
+    );
+    let queued = kept.get("job_id").unwrap().as_str().unwrap().to_owned();
+    engine.cancel(&queued).unwrap();
+    apply(&engine, "alice", demand_query("retry", id(kept)));
+    assert_eq!(
+        lock(&engine.store).unwrap().get(&queued).unwrap().state,
         "queued"
     );
-    assert_eq!(
-        engine
-            .requester("alice", 0, 100)
-            .unwrap()
-            .get("daily")
-            .unwrap()
-            .as_u64(),
-        Some(1)
-    );
+    assert_eq!(lock(&engine.store).unwrap().list().len(), 2);
 }
 #[test]
 fn partial_failure_and_identity_mismatch_preserve_each_accounts_cursor_and_demand() {
@@ -413,7 +378,7 @@ fn partial_failure_and_identity_mismatch_preserve_each_accounts_cursor_and_deman
     }
     let engine = Engine::open_for_management(accounts.config(&dir.0)).unwrap();
     for a in ["alice", "bob"] {
-        enable(&engine, a, false);
+        enable(&engine, a);
     }
     engine.sync_requesters().unwrap();
     accounts.response(
@@ -470,7 +435,7 @@ fn policy_changes_during_poll_discard_the_result_before_acquisition() {
     let accounts = Accounts::open();
     accounts.watchlist("alice", vec![movie(7, "Fixture Movie")]);
     let engine = Engine::open_for_management(accounts.config(&dir.0)).unwrap();
-    enable(&engine, "alice", false);
+    enable(&engine, "alice");
     accounts.blocked.store(true, Ordering::Release);
     let old = accounts.calls.lock().unwrap().len();
     let e = engine.clone();
@@ -493,22 +458,21 @@ fn policy_changes_during_poll_discard_the_result_before_acquisition() {
     );
 }
 #[test]
-fn pending_rejection_tombstones_and_imported_media_survive_policy_edits_and_restart() {
+fn removal_tombstones_and_imported_media_survive_policy_edits_and_restart() {
     let dir = Directory::new();
     let accounts = Accounts::open();
     accounts.watchlist(
         "alice",
-        vec![movie(7, "Fixture Movie"), movie(8, "Rejected Movie")],
+        vec![movie(7, "Fixture Movie"), movie(8, "Removed Movie")],
     );
     let cfg = accounts.config(&dir.0);
     let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    enable(&engine, "alice", true);
+    enable(&engine, "alice");
     engine.sync_requesters().unwrap();
     let rows = demands(&engine, "alice");
     let chosen = &rows[0];
-    let rejected = &rows[1];
-    apply(&engine, "alice", demand_query("reject", id(rejected)));
-    apply(&engine, "alice", demand_query("approve", id(chosen)));
+    let removed = &rows[1];
+    apply(&engine, "alice", demand_query("remove", id(removed)));
     let job_id = demand_id_job(&engine, id(chosen));
     let imported = ready(&engine, &job_id);
     let mut p = policy(&engine, "alice");
@@ -528,7 +492,7 @@ fn pending_rejection_tombstones_and_imported_media_survive_policy_edits_and_rest
     assert!(
         demands(&engine, "alice")
             .iter()
-            .any(|d| d.get("state").unwrap().as_str() == Some("rejected"))
+            .all(|d| d.get("state").unwrap().as_str() == Some("removed"))
     );
 }
 fn demand_id_job(engine: &Engine, id: &str) -> String {
@@ -550,7 +514,6 @@ fn captured_destination_and_profile_cannot_be_rebound_through_job_updates() {
     let engine = Engine::open_for_management(accounts.config(&dir.0)).unwrap();
     let mut p = policy(&engine, "alice");
     p.enabled = true;
-    p.approval_required = false;
     p.destination = "family".into();
     apply(&engine, "alice", policy_query(p));
     engine.sync_requesters().unwrap();
@@ -586,9 +549,10 @@ fn reservation_recovery_is_idempotent_and_corruption_or_missing_provenance_fails
     accounts.watchlist("alice", vec![movie(7, "Fixture Movie")]);
     let cfg = accounts.config(&dir.0);
     let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    enable(&engine, "alice", false);
+    enable(&engine, "alice");
     engine.sync_requesters().unwrap();
     let acquired = job(&engine, "alice");
+    let admitted = demand(&engine, "alice").get("admitted_at").cloned();
     drop(engine);
     let mut snapshot = read_snapshot(&cfg.store_dir);
     let Value::Array(rows) = snapshot.get_mut("demands").unwrap() else {
@@ -603,13 +567,8 @@ fn reservation_recovery_is_idempotent_and_corruption_or_missing_provenance_fails
     assert_eq!(job(&engine, "alice").id, acquired.id);
     assert_eq!(lock(&engine.store).unwrap().list().len(), 1);
     assert_eq!(
-        engine
-            .requester("alice", 0, 100)
-            .unwrap()
-            .get("daily")
-            .unwrap()
-            .as_u64(),
-        Some(1)
+        demand(&engine, "alice").get("admitted_at").cloned(),
+        admitted
     );
     drop(engine);
     let saved = fs::read(cfg.store_dir.join("requesters.bin")).unwrap();
@@ -637,7 +596,7 @@ fn legacy_operator_interest_is_retained_when_the_last_requester_removes_demand()
     let accounts = Accounts::open();
     accounts.watchlist("alice", vec![movie(7, "Fixture Movie")]);
     let engine = Engine::open_for_management(accounts.config(&dir.0)).unwrap();
-    enable(&engine, "alice", false);
+    enable(&engine, "alice");
     engine.sync_requesters().unwrap();
     let acquired = job(&engine, "alice");
     engine.submit(acquired.request.clone()).unwrap();
@@ -656,7 +615,7 @@ fn legacy_operator_interest_is_retained_when_the_last_requester_removes_demand()
     );
 }
 #[test]
-fn polling_series_creates_canonical_approved_episode_demand_without_enabling_global_acquisition() {
+fn polling_series_creates_canonical_episode_demand_without_enabling_global_acquisition() {
     let dir = Directory::new();
     let accounts = Accounts::open();
     let catalog = series_support::Catalog::open(vec![
@@ -668,7 +627,6 @@ fn polling_series_creates_canonical_approved_episode_demand_without_enabling_glo
     cfg.catalog = c.catalog;
     accounts.watchlist("alice", vec![show()]);
     let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    enable(&engine, "alice", true);
     engine.sync_requesters().unwrap();
     assert_eq!(demands(&engine, "alice").len(), 1);
     assert!(lock(&engine.store).unwrap().list().is_empty());
@@ -679,8 +637,7 @@ fn polling_series_creates_canonical_approved_episode_demand_without_enabling_glo
             .as_bool(),
         Some(false)
     );
-    let d = demand(&engine, "alice");
-    apply(&engine, "alice", demand_query("approve", id(&d)));
+    enable(&engine, "alice");
     let acquired = job(&engine, "alice");
     assert_eq!((acquired.request.season, acquired.request.episode), (1, 1));
     drop(engine);
@@ -691,7 +648,7 @@ fn polling_series_creates_canonical_approved_episode_demand_without_enabling_glo
 }
 
 #[test]
-fn canonical_episode_demand_retains_approved_source_numbering_when_series_policy_changes() {
+fn canonical_episode_demand_retains_captured_source_numbering_when_series_policy_changes() {
     let dir = Directory::new();
     let accounts = Accounts::open();
     let catalog = series_support::Catalog::open(vec![series_support::episode(
@@ -724,9 +681,7 @@ fn canonical_episode_demand_retains_approved_source_numbering_when_series_policy
     choices.plan_id = Some(preview.get("plan_id").unwrap().as_str().unwrap().into());
     engine.series_numbering(series_id, &choices).unwrap();
     accounts.watchlist("alice", vec![show()]);
-    enable(&engine, "alice", true);
     engine.sync_requesters().unwrap();
-    let d = demand(&engine, "alice");
     choices.apply = false;
     choices.plan_id = None;
     choices.changes[0].source = mynou::numbering::SourceNumber::Absolute(14);
@@ -735,7 +690,7 @@ fn canonical_episode_demand_retains_approved_source_numbering_when_series_policy
     choices.plan_id = Some(preview.get("plan_id").unwrap().as_str().unwrap().into());
     engine.series_numbering(series_id, &choices).unwrap();
     engine.sync_requesters().unwrap();
-    apply(&engine, "alice", demand_query("approve", id(&d)));
+    enable(&engine, "alice");
     let acquired = job(&engine, "alice");
     assert_eq!(
         acquired.request.source_numbering,
@@ -745,52 +700,4 @@ fn canonical_episode_demand_retains_approved_source_numbering_when_series_policy
     let engine = Engine::open_for_management(cfg).unwrap();
     engine.sync_requesters().unwrap();
     assert_eq!(job(&engine, "alice").request, acquired.request);
-}
-
-#[test]
-fn daily_quota_rollover_releases_new_admissions_and_retains_old_charge_history() {
-    let dir = Directory::new();
-    let accounts = Accounts::open();
-    accounts.watchlist("alice", vec![movie(7, "First")]);
-    let cfg = accounts.config(&dir.0);
-    let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    let mut p = policy(&engine, "alice");
-    p.enabled = true;
-    p.approval_required = false;
-    p.max_daily = 1;
-    apply(&engine, "alice", policy_query(p));
-    engine.sync_requesters().unwrap();
-    let acquired = job(&engine, "alice");
-    ready(&engine, &acquired.id);
-    accounts.watchlist("alice", vec![movie(7, "First"), movie(8, "Second")]);
-    engine.sync_requesters().unwrap();
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 1);
-    assert!(
-        demands(&engine, "alice")
-            .iter()
-            .any(|d| d.get("state").and_then(Value::as_str) == Some("quota"))
-    );
-    drop(engine);
-    let mut snapshot = read_snapshot(&cfg.store_dir);
-    let Value::Array(rows) = snapshot.get_mut("demands").unwrap() else {
-        panic!("demand array")
-    };
-    let charged = rows
-        .iter_mut()
-        .find(|d| d.get("charged_at").and_then(Value::as_str).is_some())
-        .unwrap();
-    charged.insert("charged_at", (mynou::store::now() - 86400).to_string());
-    write_snapshot(&cfg.store_dir, &snapshot);
-    let engine = Engine::open_for_management(cfg).unwrap();
-    engine.sync_requesters().unwrap();
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 2);
-    assert_eq!(
-        engine
-            .requester("alice", 0, 100)
-            .unwrap()
-            .get("daily")
-            .unwrap()
-            .as_u64(),
-        Some(1)
-    );
 }

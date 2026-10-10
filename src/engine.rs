@@ -1013,7 +1013,7 @@ impl Heartbeat {
                         || j.lease_until <= store::now()
                         || !crate::requesters::engine::interest(&ledger.state, &j, &engine.config)
                     {
-                        return Err("Lease or approved demand lost".into());
+                        return Err("Lease or admitted demand lost".into());
                     }
                     if last.elapsed() >= period {
                         s.renew(&id, &lease, store::now(), engine.config.lease_duration_secs)?;

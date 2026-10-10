@@ -298,9 +298,9 @@ IRC announcements:
 ## Persistence and platform
 
 - Job journal formats 6 to 8, which stored the removed Usenet provenance, are
-  rejected. Requester snapshots containing removed notification records and
-  IRC history format 4 are also rejected during startup. These removals provide
-  no migration and do not delete stored data automatically. Read the
+  rejected. Requester snapshots containing removed approval, quota or
+  notification fields and IRC history format 4 are also rejected during startup.
+  These removals provide no migration and do not delete stored data automatically. Read the
   [release notes](releases/) and back up private storage before upgrading.
 - The journal replaces SQLite and needs a single owner of its directory. It
   holds at most 10,000 requests and keeps the latest 1,000 events in total, so

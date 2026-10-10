@@ -5,7 +5,7 @@ mod web_support;
 use library_support::Directory;
 use mynou::{
     config,
-    engine::{Engine, lock},
+    engine::Engine,
     json::{self, Value},
 };
 use requester_support::*;
@@ -75,19 +75,19 @@ fn requester_api_requires_authentication_strict_scopes_and_current_guards() {
     assert_eq!(preview.status, 200, "{}", preview.body);
     assert_eq!(snapshot(&server.engine.config.store_dir), before);
     no_credentials(&json::parse(&preview.body).unwrap());
-    enable(&server.engine, "alice", true);
+    enable(&server.engine, "alice");
     server.engine.sync_requesters().unwrap();
     let d = demand(&server.engine, "alice");
     assert_eq!(
         authenticated(
             &server,
             "/api/requesters/bob/control",
-            &demand_query("approve", id(&d)).to_json()
+            &demand_query("remove", id(&d)).to_json()
         )
         .status,
         400
     );
-    let q = demand_query("approve", id(&d));
+    let q = demand_query("remove", id(&d));
     let response = authenticated(&server, route, &q.to_json());
     let mut applied = q.to_json();
     applied.insert("apply", true);
@@ -127,21 +127,20 @@ fn browser_requester_reviews_bind_session_identity_action_and_public_policy() {
     let accounts = Accounts::open();
     accounts.watchlist("alice", vec![movie(7, "Fixture Movie")]);
     let server = Server::open(accounts.config(&directory.0));
-    enable(&server.engine, "alice", true);
     server.engine.sync_requesters().unwrap();
     let d = demand(&server.engine, "alice");
     let browser = Browser::login(&server);
     let other = Browser::login(&server);
     let page = browser.get(&server, "/ui/requesters/alice");
     assert_eq!(page.status, 200);
-    assert!(page.body.contains("Review approval"));
-    assert!(page.body.contains("Maximum active requests"));
+    assert!(page.body.contains("Review removal"));
+    assert!(page.body.contains("Acquisition enabled"));
     let review = browser.post(
         &server,
         "/ui/requesters/control",
         &[
             ("account_id", "alice"),
-            ("action", "approve"),
+            ("action", "remove"),
             ("demand_id", id(&d)),
         ],
     );
@@ -151,7 +150,7 @@ fn browser_requester_reviews_bind_session_identity_action_and_public_policy() {
     assert!(!review.body.contains("/identity"));
     let values = [
         ("account_id", "alice"),
-        ("action", "approve"),
+        ("action", "remove"),
         ("plan_id", guard),
         ("apply", "yes"),
     ];
@@ -168,7 +167,7 @@ fn browser_requester_reviews_bind_session_identity_action_and_public_policy() {
                 "/ui/requesters/control",
                 &[
                     ("account_id", "bob"),
-                    ("action", "approve"),
+                    ("action", "remove"),
                     ("plan_id", guard),
                     ("apply", "yes")
                 ]
@@ -183,7 +182,7 @@ fn browser_requester_reviews_bind_session_identity_action_and_public_policy() {
                 "/ui/requesters/control",
                 &[
                     ("account_id", "alice"),
-                    ("action", "reject"),
+                    ("action", "retry"),
                     ("plan_id", guard),
                     ("apply", "yes")
                 ]
@@ -199,7 +198,13 @@ fn browser_requester_reviews_bind_session_identity_action_and_public_policy() {
             .status,
         400
     );
-    assert!(lock(&server.engine.store).unwrap().list().is_empty());
+    assert_eq!(
+        demand(&server.engine, "alice")
+            .get("state")
+            .unwrap()
+            .as_str(),
+        Some("pending")
+    );
     assert_eq!(
         browser
             .post(&server, "/ui/requesters/control", &values)
@@ -212,7 +217,13 @@ fn browser_requester_reviews_bind_session_identity_action_and_public_policy() {
             .status,
         400
     );
-    assert_eq!(lock(&server.engine.store).unwrap().list().len(), 1);
+    assert_eq!(
+        demand(&server.engine, "alice")
+            .get("state")
+            .unwrap()
+            .as_str(),
+        Some("removed")
+    );
     let csrf = web_support::fields(&[
         ("csrf", "wrong"),
         ("account_id", "alice"),
@@ -227,12 +238,11 @@ fn browser_requester_reviews_bind_session_identity_action_and_public_policy() {
     );
 }
 #[test]
-fn logout_and_stale_policy_reviews_cannot_admit_or_revive_requests() {
+fn logout_and_stale_policy_reviews_cannot_apply_requester_decisions() {
     let directory = Directory::new();
     let accounts = Accounts::open();
     accounts.watchlist("alice", vec![movie(7, "Fixture Movie")]);
     let server = Server::open(accounts.config(&directory.0));
-    enable(&server.engine, "alice", true);
     server.engine.sync_requesters().unwrap();
     let d = demand(&server.engine, "alice");
     let browser = Browser::login(&server);
@@ -241,7 +251,7 @@ fn logout_and_stale_policy_reviews_cannot_admit_or_revive_requests() {
         "/ui/requesters/control",
         &[
             ("account_id", "alice"),
-            ("action", "approve"),
+            ("action", "remove"),
             ("demand_id", id(&d)),
         ],
     );
@@ -251,7 +261,7 @@ fn logout_and_stale_policy_reviews_cannot_admit_or_revive_requests() {
     apply(&server.engine, "alice", policy_query(p));
     let values = [
         ("account_id", "alice"),
-        ("action", "approve"),
+        ("action", "remove"),
         ("plan_id", plan(&review.body)),
         ("apply", "yes"),
     ];
@@ -268,7 +278,7 @@ fn logout_and_stale_policy_reviews_cannot_admit_or_revive_requests() {
         "/ui/requesters/control",
         &[
             ("account_id", "alice"),
-            ("action", "approve"),
+            ("action", "remove"),
             ("demand_id", id(&d)),
         ],
     );
@@ -279,13 +289,19 @@ fn logout_and_stale_policy_reviews_cannot_admit_or_revive_requests() {
         "/ui/requesters/control",
         &[
             ("account_id", "alice"),
-            ("action", "approve"),
+            ("action", "remove"),
             ("plan_id", plan(&review.body)),
             ("apply", "yes"),
         ],
     );
     assert_eq!(expired.status, 403);
-    assert!(lock(&server.engine.store).unwrap().list().is_empty());
+    assert_eq!(
+        demand(&server.engine, "alice")
+            .get("state")
+            .unwrap()
+            .as_str(),
+        Some("pending")
+    );
 }
 fn config_file(cfg: &mynou::config::Config, file: &std::path::Path) {
     let mut value = config::default_json();
