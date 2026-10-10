@@ -9,7 +9,7 @@ for its exact commit only: an earlier green run does not validate later changes.
 
 | Workflow | Runs on | Purpose |
 | --- | --- | --- |
-| Mynou CI | Pull requests, `trunk` | Dependency graph, format, Clippy, all tests, the macOS arm64 build and demo; publishes a new version from `trunk` |
+| Mynou CI | Pull requests; `trunk` only to publish a new version | Dependency graph, format, Clippy, all tests, the macOS arm64 build and demo; publishes a new version from `trunk` |
 | Engineering checks | Pull requests, `trunk` | Organization policy and engineering tooling scenarios |
 | Release policy | Pull requests | Version changes only in a release PR |
 | Security audit | Pull requests, `trunk`, hourly | Reachable Git objects and Actions logs |
@@ -18,12 +18,17 @@ for its exact commit only: an earlier green run does not validate later changes.
 ## Mynou CI
 
 The workflow in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) has
-four jobs. Mynou ships for macOS on Apple Silicon only, so `validate` and `build`
-run on an Apple Silicon `macos-26` runner:
+five jobs. Mynou ships for macOS on Apple Silicon only, so `validate` and `build`
+run on an Apple Silicon `macos-26` runner. A small Linux **decide** job runs
+first: pull requests and manual dispatches always continue, but a push to `trunk`
+continues only when `Cargo.toml` carries a version without a `v<version>` tag.
+Protection requires an up-to-date branch and rebase merging, so any other `trunk`
+commit has the tree its pull request already validated and is not validated again.
 
 1. **validate** checks the Cargo graph offline (exactly one package, `mynou`,
    with no dependencies), formatting, Clippy with warnings denied, the test
-   scheduler and the engineering policy. It then runs every Cargo test harness,
+   scheduler. The engineering policy and its tests run in the required Linux
+   `organization` check. It then runs every Cargo test harness,
    using the physical runner directory as temporary directory because Mynou refuses the
    symbolic link behind macOS's default one.
 2. **build** produces the published `aarch64-apple-darwin` executable. CI checks
@@ -35,7 +40,8 @@ run on an Apple Silicon `macos-26` runner:
    and checksums, so it runs on a Linux runner.
 4. **release** runs only on `trunk`, and only when `Cargo.toml` carries a version
    without a `v<version>` tag. Only a merged release PR introduces such a
-   version, so every other `trunk` commit is validated without a release.
+   version, so every other `trunk` commit skips validate, build, package and
+   release.
 
 Pull request runs validate, build and package but cannot publish. A newer pull
 request head cancels the older run; `trunk` runs are never cancelled, so a later

@@ -14,16 +14,72 @@ concurrency:
 env:
   PYTHONDONTWRITEBYTECODE: '1'
 jobs:
+  decide:
+    # A push to trunk adds nothing to validate: protection requires an up-to-date
+    # branch and rebase merging, so the trunk tree is the tree its pull request
+    # already validated. Trunk only runs the full chain to publish a version that
+    # has no tag yet, or on manual dispatch. Pull requests always run it.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      run: ${{ steps.decision.outputs.run }}
+      publish: ${{ steps.decision.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read the package version
+        id: version
+        run: |
+          python3 - >> "$GITHUB_OUTPUT" <<'VERSION'
+          import tomllib
+          with open("Cargo.toml", "rb") as stream:
+              print("version=" + tomllib.load(stream)["package"]["version"])
+          VERSION
+      - name: Decide whether this run validates and publishes a release
+        id: decision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ] || [ "$GITHUB_REF" != refs/heads/trunk ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Trunk integrates validated work. Only a version that a release PR
+          # introduced, and that has no tag yet, is published.
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" > /dev/null 2> "$RUNNER_TEMP/tag-lookup.txt"; then
+            publish=false
+            echo "v$VERSION is already published; trunk needs no new validation." >> "$GITHUB_STEP_SUMMARY"
+          elif grep -q 'HTTP 404' "$RUNNER_TEMP/tag-lookup.txt"; then
+            publish=true
+            echo "v$VERSION has no tag; this run publishes it once every check passes." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Cannot determine whether v$VERSION is published." >&2
+            exit 1
+          fi
+          run=$publish
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            run=true
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
   validate:
+    needs: decide
+    # A required check that is skipped counts as passed, so a failed decision must
+    # never skip a pull request's validation: it runs without the decision, and
+    # its version assertion then fails the run.
+    if: ${{ !cancelled() && (github.event_name != 'push' || needs.decide.outputs.run == 'true') }}
     # Mynou ships for macOS Apple Silicon only, so its checks run there too.
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 10
     env:
       CARGO_PROFILE_DEV_DEBUG: '0'
       CARGO_PROFILE_TEST_DEBUG: '0'
     outputs:
       version: ${{ steps.metadata.outputs.version }}
-      publish: ${{ steps.publication.outputs.publish }}
     steps:
       # Security audit's source-history job scans every reachable object.
       - uses: actions/checkout@v7.0.1
@@ -46,46 +102,27 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-${{ github.repository }}-rust-1.99-tests-v2-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'tests/**', 'examples/**', '.github/workflows/ci.yml') }}
       - name: Verify the dependency graph
         id: metadata
+        env:
+          DECIDED_VERSION: ${{ needs.decide.outputs.version }}
         run: |
           cargo metadata --offline --locked --format-version 1 > "$RUNNER_TEMP/metadata.json"
           python3 - "$RUNNER_TEMP/metadata.json" >> "$GITHUB_OUTPUT" <<'GRAPH'
-          import json, sys
+          import json, os, sys
           with open(sys.argv[1]) as stream:
               packages = json.load(stream)["packages"]
           assert len(packages) == 1 and packages[0]["name"] == "mynou"
           assert packages[0]["dependencies"] == []
+          # The publication decision read this same version from Cargo.toml.
+          assert packages[0]["version"] == os.environ["DECIDED_VERSION"]
           print("version=" + packages[0]["version"])
           GRAPH
           cargo tree --all-features --target all --edges all --offline --locked
-      - name: Decide whether this default-branch commit publishes a release
-        id: publication
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/trunk'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.metadata.outputs.version }}
-        run: |
-          # Trunk integrates validated work. Only a version that a release PR
-          # introduced, and that has no tag yet, is published.
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" > /dev/null 2> "$RUNNER_TEMP/tag-lookup.txt"; then
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "v$VERSION is already published; this commit is validated without a release." >> "$GITHUB_STEP_SUMMARY"
-          elif grep -q 'HTTP 404' "$RUNNER_TEMP/tag-lookup.txt"; then
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-            echo "v$VERSION has no tag; this run publishes it once every check passes." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "Cannot determine whether v$VERSION is published." >&2
-            exit 1
-          fi
       - name: Check formatting
         run: cargo fmt --all --check
       - name: Run Clippy
         run: cargo clippy --all-targets --offline --locked -- -D warnings
       - name: Check the CI test scheduler
         run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
-      - name: Verify engineering policy, coordination and release-policy scenarios
-        run: |
-          python3 engineering/policy.py
-          python3 -m unittest discover -s engineering/tests -p 'test_*.py' -v
       - name: Compile all test harnesses
         if: steps.cache.outputs.cache-hit != 'true'
         run: cargo test --all-targets --no-run --offline --locked --message-format=json-render-diagnostics > target/debug/mynou-ci-test-build.jsonl
@@ -116,8 +153,10 @@ jobs:
           key: ${{ steps.cache.outputs.cache-primary-key }}
   build:
     name: Build aarch64-apple-darwin
+    needs: decide
+    if: ${{ !cancelled() && (github.event_name != 'push' || needs.decide.outputs.run == 'true') }}
     runs-on: macos-26
-    timeout-minutes: 15
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -173,13 +212,15 @@ jobs:
             target/aarch64-apple-darwin/release/mynou
           key: ${{ steps.cache.outputs.cache-primary-key }}
   package:
-    needs: [validate, build]
+    needs: [decide, validate, build]
+    # Runs after a successful validation and build only; a skipped trunk push skips it.
+    if: ${{ !cancelled() && needs.validate.result == 'success' && needs.build.result == 'success' }}
     # Packaging only copies and checksums the executable; it builds nothing.
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
     outputs:
-      version: ${{ needs.validate.outputs.version }}
-      publish: ${{ needs.validate.outputs.publish }}
+      version: ${{ needs.decide.outputs.version }}
+      publish: ${{ needs.decide.outputs.publish }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -193,7 +234,9 @@ jobs:
       - name: Package the validated release
         env:
           VERSION: ${{ needs.validate.outputs.version }}
+          DECIDED_VERSION: ${{ needs.decide.outputs.version }}
         run: |
+          test "$VERSION" = "$DECIDED_VERSION"
           mkdir "$RUNNER_TEMP/mynou-release"
           name="mynou-v$VERSION-macos-arm64"
           install -m 755 "$RUNNER_TEMP/mynou-macos-arm64/mynou" "$RUNNER_TEMP/mynou-release/$name"

@@ -111,9 +111,12 @@ Rebase on your own work branch with `git fetch origin && git rebase origin/trunk
 then `git push --force-with-lease`; never rewrite `trunk` or another agent's
 branch, with one exception: `gh pr update-branch --rebase` may move a PR that is
 behind `trunk` when the rebase has no conflict. Either way the rebase moves the
-head, so it needs a new verdict: rebase before `/wait qa`, and if `trunk` moves
-while the PR waits, the head is rebased again and a reviewer re-checks the result
-(an unchanged diff is a quick pass). A PR that is behind `trunk` is not merged.
+head, so it needs a new verdict. Rebase once before `/wait qa`; do not chase
+`trunk` while the PR waits on QA or Security, since every push reruns the whole CI
+for nothing. If `trunk` moved by merge time, rebase then, wait for the one CI run,
+and a reviewer re-approves the new head (`git range-diff` against the approved head
+showing an unchanged patch is a quick pass). A PR that is behind `trunk` is not
+merged.
 
 Merging deletes the branch, but GitHub does not close the Issue in this
 repository: close it yourself (`gh issue close <issue> --reason completed`) with
@@ -139,8 +142,9 @@ be lost (merged, superseded or kept by a closed PR), then
 
 ## Releases
 
-Merging to `trunk` validates the commit; it does not release it. Mynou CI
-publishes only when `Cargo.toml` carries a version that has no `v<version>` tag
+Merging to `trunk` does not release it, and Mynou CI does not validate it again:
+its pull request already did, and protection keeps the tree identical. Mynou CI
+runs on `trunk` and publishes only when `Cargo.toml` carries a version that has no `v<version>` tag
 yet, which only a merged release PR introduces. Actions alone tags and publishes;
 published assets are immutable.
 
@@ -184,7 +188,7 @@ mark release Issues and PRs. Native dependencies mark real blockers.
 
 | Workflow | Runs | Checks |
 | --- | --- | --- |
-| Mynou CI | PRs, `trunk` | Dependency graph, format, Clippy, all tests, the macOS arm64 build and demo; publishes on `trunk` only a new version |
+| Mynou CI | PRs; `trunk` only to publish | Dependency graph, format, Clippy, all tests, the macOS arm64 build and demo; on `trunk` it runs, and publishes, only a new version |
 | Engineering checks | PRs, `trunk` | Organization policy and tooling scenarios |
 | Release policy | PRs | Version changes only in a weekly release PR |
 | Security audit | PRs, `trunk`, hourly | Reachable Git objects and Actions logs |
