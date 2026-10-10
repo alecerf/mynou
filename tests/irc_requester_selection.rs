@@ -11,6 +11,7 @@ use library_support::{Directory, run_until};
 use mynou::{
     config,
     engine::{Engine, lock},
+    irc::Settings,
     json::{self, Value},
 };
 use requester_support::{
@@ -18,6 +19,7 @@ use requester_support::{
 };
 use std::{fs, sync::atomic::Ordering, thread};
 use transfer_support::{RecordingProxy, Seeder, Torrent};
+use web_support::{Server, TOKEN};
 
 fn rule(v: &mut Value) -> &mut Value {
     let Value::Array(r) = v.get_mut("irc").unwrap().get_mut("rules").unwrap() else {
@@ -288,4 +290,38 @@ fn selector_edits_invalidate_pending_grabs_and_review_guards_without_reinterpret
     assert_eq!(e.irc_announcement(row_id(&row)).unwrap(), original);
     assert_eq!(irc_support::bytes(&cfg.store_dir), before);
     no_candidate_work(&e, &id);
+}
+
+#[test]
+fn protected_source_reports_and_rules_show_only_requester_aliases() {
+    let dir = Directory::new();
+    let mut v = configured_json(&dir);
+    rule(&mut v).insert("requester", "alice");
+    let cfg = config::from_json(&v, &dir.0).unwrap();
+    let server = Server::open(cfg.clone());
+    let e = &server.engine;
+    assert_eq!(server.call("GET", "/api/irc", &[], "").status, 401);
+    let report = server.call(
+        "GET",
+        "/api/irc",
+        &[("Authorization", &format!("Bearer {TOKEN}"))],
+        "",
+    );
+    assert_eq!(report.status, 200);
+    let public = json::parse(&report.body).unwrap();
+    assert_eq!(
+        public.get("rules").unwrap().as_array().unwrap()[0]
+            .get("requester")
+            .unwrap()
+            .as_str(),
+        Some("alice")
+    );
+    no_private(&public);
+    irc_support::no_jobs(e);
+    let mut s = irc_support::settings("irc://127.0.0.1:1");
+    let Value::Array(r) = s.get_mut("rules").unwrap() else {
+        panic!()
+    };
+    r[0].insert("requester", "alice");
+    assert!(Settings::from_json(&s, &cfg.selection).is_ok());
 }

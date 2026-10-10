@@ -885,3 +885,75 @@ fn cli_source_control_uses_online_guard_and_offline_persisted_policy() {
     );
     assert_eq!(p.searches.load(Ordering::Acquire), 0);
 }
+#[test]
+fn protected_source_health_api_and_cli_expose_only_safe_aliases() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let c = cfg(&d, &p, "form");
+    let server = Server::open(c);
+    integrations::search(&server.engine.config, &movie()).unwrap();
+    assert_eq!(server.call("GET", "/api/indexers", &[], "").status, 401);
+    let reply = server.call(
+        "GET",
+        "/api/indexers",
+        &[("Authorization", &format!("Bearer {TOKEN}"))],
+        "",
+    );
+    assert_eq!(reply.status, 200);
+    reply.no_secrets();
+    redacted(&json::parse(&reply.body).unwrap());
+    let mut v = value(&d, &p, "form");
+    v.insert("listen", server.authority.clone());
+    let path = d.0.join("mynou.json");
+    fs::write(&path, json::stringify(&v)).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
+        .env("MYNOU_API_TOKEN", TOKEN)
+        .args(["indexers", "--config"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    redacted(&json::parse(std::str::from_utf8(&out.stdout).unwrap()).unwrap());
+    assert_eq!(p.logins.load(Ordering::Acquire), 1);
+}
+#[test]
+fn protected_source_controls_bind_bearer_and_one_use_reviews() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let server = Server::open(cfg(&d, &p, "none"));
+    let id = policy_id(&server.engine);
+    let route = format!("/api/indexers/{id}/control");
+    assert_eq!(
+        server
+            .call(
+                "POST",
+                &route,
+                &[("Content-Type", "application/json")],
+                r#"{"action":"pause"}"#
+            )
+            .status,
+        401
+    );
+    let auth = format!("Bearer {TOKEN}");
+    let headers = [
+        ("Content-Type", "application/json"),
+        ("Authorization", auth.as_str()),
+    ];
+    let api = server.call("POST", &route, &headers, r#"{"action":"pause","extra":true}"#);
+    assert_eq!(api.status, 400);
+    let pause = r#"{"action":"pause"}"#;
+    let preview = server.call("POST", &route, &headers, pause);
+    assert_eq!(preview.status, 200, "{}", preview.body);
+    preview.no_secrets();
+    let plan = json::parse(&preview.body).unwrap();
+    let plan = plan.get("plan_id").unwrap().as_str().unwrap();
+    let apply = format!(r#"{{"action":"pause","apply":true,"plan_id":"{plan}"}}"#);
+    assert_eq!(server.call("POST", &route, &headers, &apply).status, 200);
+    assert_eq!(server.call("POST", &route, &headers, &apply).status, 400);
+    assert!(integrations::search(&server.engine.config, &movie()).is_err());
+    assert_eq!(p.searches.load(Ordering::Acquire), 0);
+}

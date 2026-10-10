@@ -64,7 +64,7 @@ mynou serve --config ./mynou.json
 ```
 
 `init` creates `mynou.json` and a private `.env` holding a random API token.
-Run `mynou doctor --config ./mynou.json` to list what is still missing; the HTTP
+Run `mynou doctor --config ./mynou.json` to check the configuration and service status; the HTTP
 API at `http://127.0.0.1:8787` takes `MYNOU_API_TOKEN` from `.env` as a Bearer token.
 
 ## Essential configuration
