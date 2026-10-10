@@ -32,8 +32,8 @@ product-defining, destructive, sensitive or costly decisions.
 - Meaningful changes need a distinct QA pass over the actual diff. Changes to
   `AGENTS.md`, `engineering/`, `.agents/`, `.github/`, crypto/TLS/PKI or
   high-risk Issues also need Security. Never fabricate a review or approval.
-- Merge (rebase only, `--match-head-commit`: no merge commit) a branch rebased
-  on `trunk` when every required verdict approves the head and checks are green.
+- Rebase-merge (`--match-head-commit`, no merge commit) a branch on `trunk` when
+  all required verdicts approve the head and checks are green; close the Issue.
 - Product code is Rust std only: **zero Cargo dependencies** of any kind, no
   `unsafe`, FFI, copied third-party code, external runtime helpers or Go
   fallback. Tooling uses Python std and GitHub, as existing CI does.
