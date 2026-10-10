@@ -213,7 +213,7 @@ fn ordinary_retry_uses_the_same_recorded_retirement() {
     fail_holding(&engine, &job_id, &transfer);
     let retried = engine.retry(&job_id).unwrap();
     assert!(retried.download_id.is_none());
-    assert!(retried.retiring_transfers.is_empty());
+    assert!(stored(&engine, &job_id).retiring_transfers.is_empty());
     assert!(paused(&engine, &transfer));
 }
 
