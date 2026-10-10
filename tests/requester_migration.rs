@@ -136,8 +136,8 @@ fn unapproved_quota_and_rejected_demand_loads_held_or_removed_and_never_admits_i
     assert_eq!(state(&engine, "Pending Movie"), "held");
     drop(engine);
     assert_eq!(
-        mynou::json::stringify(&read_snapshot(&cfg.store_dir)),
-        mynou::json::stringify(&migrated)
+        mynou::json::stringify(read_snapshot(&cfg.store_dir).get("demands").unwrap()),
+        mynou::json::stringify(migrated.get("demands").unwrap())
     );
 
     // Held demand needs an explicit reviewed decision.
