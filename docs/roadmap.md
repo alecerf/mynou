@@ -14,10 +14,8 @@ Visibility, authentication and failure stop or pause requests. It ships with the
 next weekly release; see [the unreleased note](releases/unreleased/45.md) and
 [live progress](web.md#live-progress).
 
-Since [v0.22.34](https://github.com/alecerf/mynou/releases/tag/v0.22.34), `trunk`
-also carries media-sized PAR2 recovery (#39);
-automatic Usenet repair #40 awaits triage. Guided setup #41 and the original
-immutable releases remain preserved.
+Since [v0.22.34](https://github.com/alecerf/mynou/releases/tag/v0.22.34), guided
+setup #41 and the original immutable releases remain preserved.
 
 ## Published organization increment: 0.22.27
 
@@ -31,14 +29,8 @@ hidden. Native review/publication evidence lives in the linked Issues/PR.
 ## Native next product opportunities
 
 - [Issue41](https://github.com/alecerf/mynou/issues/41), P1: guided private setup.
-- [Issue39](https://github.com/alecerf/mynou/issues/39), P2: bounded file-backed
-  media-sized PAR2 recovery, preserving old memory-mode limits and integrity.
-- [Issue40](https://github.com/alecerf/mynou/issues/40), Needs Triage: automatic
-  ownership-bound Usenet repair, actually blocked by39.
 - [Issue45](https://github.com/alecerf/mynou/issues/45), P2: bounded optional live
   progress that preserves browser controls and privacy.
-- [Issue46](https://github.com/alecerf/mynou/issues/46), in review (PR74): native
-  Usenet upgrades for ordinary owned movies/episodes.
 - [Issue44](https://github.com/alecerf/mynou/issues/44): verified publication
   reconciliation for automatic Product rearming, after consumer setup.
 
@@ -64,7 +56,7 @@ cleanup evidence. Earlier immutable releases remain preserved.
 Owner-bound private workspaces reconstruct before new writes and verify the exact
 source/policy/owner inventory on reopening. Existing-file repair, automatic
 queue activation and library admission remain later product integration. Read
-[PAR2 support](par2.md) and native Issues for the actual delivered limits.
+the native Issues for the actual delivered limits.
 
 ## Preceding published stage: 0.22.12
 
@@ -540,7 +532,7 @@ promised before implementation and measurement.
 | --- | --- | --- |
 | 0.20 | IRC announcements, immediate grabs, filters, action routing and notifications | Bounded announcement parsing, reconnect/backoff, duplicate suppression and auditable rule decisions |
 | 0.21 | Native indexer adapters, login/session management, source health and configuration | Per-adapter protocol fixtures, credential redaction, rate limits and safe session renewal |
-| 0.22 | Usenet search/acquisition and management | Native protocol support, bounded message processing, integrity/recovery and explicit format limits without external helpers |
+| 0.22 | Usenet search/acquisition and management (delivered, then removed by #113) | Native protocol support, bounded message processing, integrity/recovery and explicit format limits without external helpers |
 | 0.23 | Cross-seeding and further bulk automation | Verified content identity and safe reuse of existing files; no accidental extra acquisition or library overwrite |
 
 Each stage needs meaningful automated checks and an updated support matrix.

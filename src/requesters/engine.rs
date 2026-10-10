@@ -384,20 +384,6 @@ impl Engine {
             if query.plan_id.as_deref() != Some(&plan_id) {
                 return Err("Requester review changed or expired; preview again".into());
             }
-            if query.action == "retry" {
-                let demand = query
-                    .demand_id
-                    .as_deref()
-                    .ok_or("Requester: missing demand")?;
-                let job_id = proposed.demands[demand]
-                    .job_id
-                    .as_deref()
-                    .ok_or("Requester: missing acquisition")?;
-                let job = jobs.get(job_id).ok_or("Requester: missing acquisition")?;
-                if job.usenet_origin.is_some() {
-                    self.retry_usenet_job(&job)?;
-                }
-            }
             ledger.save(proposed)?;
             if query.action == "retry" {
                 let demand_id = query

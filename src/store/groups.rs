@@ -389,7 +389,6 @@ impl Store {
         for (parent, request) in parents.iter().zip(requests) {
             jobs.push(Job {
                 irc_origin: None,
-                usenet_origin: None,
                 id: random_id()?,
                 key: request.canonical_key(),
                 request,
