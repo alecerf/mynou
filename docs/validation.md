@@ -11,16 +11,8 @@ revision.
 
 ## Automated checks and releases
 
-The active 0.22.5 source adds held native Usenet preparations with immutable
-owner/source/provider/limit bindings. Private workspace proofs bind the owner.
-Trusted library callers grant at most sixty seconds of nonpersistent permission
-after checking current admission. Restart needs fresh authorization; expiry,
-revocation and late results preserve receipts and spent attempts. Raw queue
-controls cannot adopt or resume owned files, and owned output needs fresh
-authorization and complete verification. This is an admission primitive: automatic
-canonical/requester library jobs are not connected in this increment.
-This source requires its own complete Actions validation and publication.
-Ordinary Engine admission follows immediately, before cross-seeding/bulk.
+Usenet, PAR2 and archive processing were removed after 0.22.34; the records
+below remain historical evidence for the versions that shipped them.
 
 The preceding 0.22.2 workspace fixtures passed exact CI, including the 65 MiB
 streamed output. Its 18.445-second observed harness weight now guides scheduling.

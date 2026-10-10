@@ -47,14 +47,6 @@ struct IndexerPreview {
 }
 
 #[derive(Clone)]
-struct UsenetPreview {
-    server_id: String,
-    action: Option<String>,
-    query: crate::usenet::ProbeRequest,
-    expires: Instant,
-}
-
-#[derive(Clone)]
 pub struct Session {
     pub id: String,
     pub csrf: String,
@@ -69,7 +61,6 @@ pub struct Session {
     requester_preview: Option<RequesterPreview>,
     irc_preview: Option<IrcPreview>,
     indexer_preview: Option<IndexerPreview>,
-    usenet_preview: Option<UsenetPreview>,
 }
 
 pub struct Sessions(BTreeMap<String, Session>);
@@ -121,7 +112,6 @@ impl Sessions {
             requester_preview: None,
             irc_preview: None,
             indexer_preview: None,
-            usenet_preview: None,
         };
         self.0.insert(session.id.clone(), session.clone());
         Ok(session)
@@ -184,104 +174,6 @@ impl Sessions {
             .unwrap_or_default()
     }
 
-    pub fn save_usenet_preview(
-        &mut self,
-        id: &str,
-        server_id: &str,
-        query: crate::usenet::ProbeRequest,
-    ) -> Result<()> {
-        query.validate()?;
-        if !query.apply || !crate::requesters::valid_id(server_id) {
-            return Err("Usenet: browser review requires its apply guard".into());
-        }
-        self.purge();
-        let session = self
-            .0
-            .get_mut(id)
-            .filter(|s| s.origin.is_some())
-            .ok_or("Browser session expired")?;
-        session.shared_preview = None;
-        session.group_preview = None;
-        session.requester_preview = None;
-        session.irc_preview = None;
-        session.indexer_preview = None;
-        session.usenet_preview = Some(UsenetPreview {
-            server_id: server_id.into(),
-            action: None,
-            query,
-            expires: Instant::now() + Duration::from_secs(CHALLENGE_SECS),
-        });
-        Ok(())
-    }
-    pub fn usenet_preview(
-        &mut self,
-        id: &str,
-        server_id: &str,
-        plan_id: &str,
-    ) -> Result<crate::usenet::ProbeRequest> {
-        self.purge();
-        self.0
-            .get(id)
-            .and_then(|s| s.usenet_preview.as_ref())
-            .filter(|p| {
-                p.expires > Instant::now()
-                    && p.server_id == server_id
-                    && p.action.is_none()
-                    && p.query.plan_id.as_deref() == Some(plan_id)
-            })
-            .map(|p| p.query.clone())
-            .ok_or("Usenet: browser review expired or changed; preview again".into())
-    }
-    pub fn clear_usenet_preview(&mut self, id: &str) {
-        if let Some(s) = self.0.get_mut(id) {
-            s.usenet_preview = None;
-        }
-    }
-    pub fn save_usenet_queue_preview(
-        &mut self,
-        id: &str,
-        transfer_id: &str,
-        q: crate::usenet::QueueControl,
-    ) -> Result<()> {
-        q.validate()?;
-        if !crate::requesters::valid_digest(transfer_id) {
-            return Err("Usenet queue: invalid browser transfer identity".into());
-        }
-        self.save_usenet_preview(id, transfer_id, q.review())?;
-        let preview = self
-            .0
-            .get_mut(id)
-            .and_then(|s| s.usenet_preview.as_mut())
-            .ok_or("Usenet queue: browser review expired")?;
-        preview.action = Some(q.action);
-        Ok(())
-    }
-    pub fn usenet_queue_preview(
-        &mut self,
-        id: &str,
-        transfer_id: &str,
-        action: &str,
-        guard: &str,
-    ) -> Result<crate::usenet::QueueControl> {
-        self.purge();
-        let p = self
-            .0
-            .get(id)
-            .and_then(|s| s.usenet_preview.as_ref())
-            .filter(|p| {
-                p.expires > Instant::now()
-                    && p.server_id == transfer_id
-                    && p.action.as_deref() == Some(action)
-                    && p.query.plan_id.as_deref() == Some(guard)
-            })
-            .ok_or("Usenet queue: browser review expired or changed; preview again")?;
-        Ok(crate::usenet::QueueControl {
-            action: action.into(),
-            apply: p.query.apply,
-            plan_id: p.query.plan_id.clone(),
-        })
-    }
-
     pub fn save_indexer_preview(
         &mut self,
         id: &str,
@@ -302,7 +194,6 @@ impl Sessions {
         session.group_preview = None;
         session.requester_preview = None;
         session.irc_preview = None;
-        session.usenet_preview = None;
         session.indexer_preview = Some(IndexerPreview {
             source_id: source_id.into(),
             query,
@@ -353,7 +244,6 @@ impl Sessions {
             .get_mut(id)
             .filter(|s| s.origin.is_some())
             .ok_or("Browser session expired")?;
-        session.usenet_preview = None;
         session.indexer_preview = None;
         session.irc_preview = Some(IrcPreview {
             announcement_id: announcement_id.into(),
@@ -412,7 +302,6 @@ impl Sessions {
             query,
             expires: Instant::now() + Duration::from_secs(CHALLENGE_SECS),
         });
-        session.usenet_preview = None;
         session.indexer_preview = None;
         session.shared_preview = None;
         session.group_preview = None;
@@ -491,7 +380,6 @@ impl Sessions {
     }
     pub fn clear_shared_preview(&mut self, id: &str) {
         if let Some(session) = self.0.get_mut(id) {
-            session.usenet_preview = None;
             session.indexer_preview = None;
             session.shared_preview = None;
         }
@@ -518,7 +406,6 @@ impl Sessions {
             query,
             expires: Instant::now() + Duration::from_secs(CHALLENGE_SECS),
         });
-        session.usenet_preview = None;
         session.indexer_preview = None;
         session.shared_preview = None;
         session.requester_preview = None;
@@ -583,136 +470,6 @@ fn nonce() -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn usenet_queue_reviews_bind_action_and_cannot_be_used_as_probes() {
-        let mut sessions = Sessions::new();
-        let challenge = sessions.challenge("localhost").unwrap();
-        let session = sessions
-            .login(&challenge.id, &challenge.csrf, "http://localhost", true)
-            .unwrap()
-            .unwrap();
-        let target = "a".repeat(64);
-        let guard = "b".repeat(64);
-        let q = crate::usenet::QueueControl {
-            action: "pause".into(),
-            apply: true,
-            plan_id: Some(guard.clone()),
-        };
-        sessions
-            .save_usenet_queue_preview(&session.id, &target, q.clone())
-            .unwrap();
-        assert!(
-            sessions
-                .usenet_queue_preview(&session.id, &target, "pause", &guard)
-                .is_ok()
-        );
-        assert!(
-            sessions
-                .usenet_queue_preview(&session.id, &target, "cancel", &guard)
-                .is_err()
-        );
-        assert!(
-            sessions
-                .usenet_queue_preview("other", &target, "pause", &guard)
-                .is_err()
-        );
-        assert!(
-            sessions
-                .usenet_preview(&session.id, &target, &guard)
-                .is_err()
-        );
-        sessions
-            .0
-            .get_mut(&session.id)
-            .unwrap()
-            .usenet_preview
-            .as_mut()
-            .unwrap()
-            .expires = Instant::now();
-        assert!(
-            sessions
-                .usenet_queue_preview(&session.id, &target, "pause", &guard)
-                .is_err()
-        );
-        sessions
-            .save_usenet_queue_preview(&session.id, &target, q)
-            .unwrap();
-        sessions
-            .save_usenet_preview(
-                &session.id,
-                "original",
-                crate::usenet::ProbeRequest {
-                    apply: true,
-                    plan_id: Some(guard.clone()),
-                },
-            )
-            .unwrap();
-        assert!(
-            sessions
-                .usenet_queue_preview(&session.id, &target, "pause", &guard)
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn usenet_probe_reviews_bind_session_server_guard_and_expiry() {
-        let mut sessions = Sessions::new();
-        let challenge = sessions.challenge("localhost").unwrap();
-        let session = sessions
-            .login(&challenge.id, &challenge.csrf, "http://localhost", true)
-            .unwrap()
-            .unwrap();
-        let q = crate::usenet::ProbeRequest {
-            apply: true,
-            plan_id: Some("b".repeat(64)),
-        };
-        sessions
-            .save_usenet_preview(&session.id, "provider", q.clone())
-            .unwrap();
-        assert!(
-            sessions
-                .usenet_preview(&session.id, "provider", &"b".repeat(64))
-                .is_ok()
-        );
-        assert!(
-            sessions
-                .usenet_preview("other", "provider", &"b".repeat(64))
-                .is_err()
-        );
-        assert!(
-            sessions
-                .usenet_preview(&session.id, "other", &"b".repeat(64))
-                .is_err()
-        );
-        assert!(
-            sessions
-                .usenet_preview(&session.id, "provider", &"c".repeat(64))
-                .is_err()
-        );
-        sessions
-            .0
-            .get_mut(&session.id)
-            .unwrap()
-            .usenet_preview
-            .as_mut()
-            .unwrap()
-            .expires = Instant::now();
-        assert!(
-            sessions
-                .usenet_preview(&session.id, "provider", &"b".repeat(64))
-                .is_err()
-        );
-        sessions
-            .save_usenet_preview(&session.id, "provider", q)
-            .unwrap();
-        sessions.clear_usenet_preview(&session.id);
-        assert!(
-            sessions
-                .usenet_preview(&session.id, "provider", &"b".repeat(64))
-                .is_err()
-        );
-    }
 
     #[test]
     fn indexer_reviews_bind_source_action_session_guard_and_expiry() {

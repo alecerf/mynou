@@ -7,7 +7,6 @@ mod requester_views;
 mod series_views;
 mod session;
 mod setup_views;
-mod usenet_views;
 mod views;
 
 use crate::{
@@ -45,7 +44,6 @@ pub(crate) struct Response {
     location: Option<String>,
     cookie: Option<String>,
     allow: &'static str,
-    attachment: Option<&'static str>,
 }
 
 impl Response {
@@ -57,7 +55,6 @@ impl Response {
             location: None,
             cookie: None,
             allow: "GET, POST",
-            attachment: None,
         }
     }
 
@@ -90,11 +87,6 @@ impl Response {
         );
         if let Some(location) = self.location {
             head.push_str(&format!("Location: {location}\r\n"));
-        }
-        if let Some(name) = self.attachment {
-            head.push_str(&format!(
-                "Content-Disposition: attachment; filename=\"{name}\"\r\n"
-            ));
         }
         if let Some(cookie) = self.cookie {
             head.push_str(&format!("Set-Cookie: {cookie}\r\n"));
@@ -261,13 +253,6 @@ impl Web {
         };
         let query = Form::parse(query.as_bytes())?;
         session.messages = lock(&self.sessions)?.take_messages(&session.id);
-        if path == "/ui/calendar.ics" {
-            return Ok(Response {
-                content_type: "text/calendar; charset=utf-8",
-                attachment: Some("mynou-episode-dates.ics"),
-                ..Response::html(200, series_views::calendar_export(engine, &query)?)
-            });
-        }
         let page = match path {
             "/ui" => {
                 query.only(&[])?;
@@ -282,10 +267,6 @@ impl Web {
                 requester_views::list(engine, &session)?
             }
             "/ui/irc" => irc_views::list(engine, &session, &query)?,
-            "/ui/usenet" => {
-                query.only(&[])?;
-                usenet_views::list(engine, &session)?
-            }
             "/ui/indexers" => {
                 query.only(&[])?;
                 indexer_views::list(engine, &session)
@@ -400,70 +381,6 @@ impl Web {
         session: &Session,
     ) -> Result<Response> {
         match path {
-            "/ui/usenet/control" => {
-                form.only(&["csrf", "id", "action", "apply", "plan_id"])?;
-                let id = form.value("id")?;
-                let action = form.value("action")?;
-                if form.value("apply")? == "yes" {
-                    let q = lock(&self.sessions)?.usenet_queue_preview(
-                        &session.id,
-                        id,
-                        action,
-                        form.value("plan_id")?,
-                    )?;
-                    engine.usenet_queue_control(id, &q)?;
-                    lock(&self.sessions)?.clear_usenet_preview(&session.id);
-                    return self.redirect(
-                        session,
-                        "/ui/usenet",
-                        vec!["Reviewed Usenet control applied".into()],
-                    );
-                }
-                form.only(&["csrf", "id", "action"])?;
-                let mut q = crate::usenet::QueueControl {
-                    action: action.into(),
-                    apply: false,
-                    plan_id: None,
-                };
-                let report = engine.usenet_queue_control(id, &q)?;
-                q.apply = true;
-                q.plan_id = report
-                    .get("plan_id")
-                    .and_then(crate::json::Value::as_str)
-                    .map(str::to_owned);
-                lock(&self.sessions)?.save_usenet_queue_preview(&session.id, id, q)?;
-                Ok(Response::html(
-                    200,
-                    usenet_views::queue_review(session, &report),
-                ))
-            }
-            "/ui/usenet/probe" => {
-                form.only(&["csrf", "id", "apply", "plan_id"])?;
-                let id = form.value("id")?;
-                if form.value("apply")? == "yes" {
-                    let q = lock(&self.sessions)?.usenet_preview(
-                        &session.id,
-                        id,
-                        form.value("plan_id")?,
-                    )?;
-                    let report = engine.usenet_probe(id, &q)?;
-                    lock(&self.sessions)?.clear_usenet_preview(&session.id);
-                    return self.redirect(session,"/ui/usenet",vec![if report.get("probe_success").and_then(crate::json::Value::as_bool) == Some(true) {"Usenet connection probe succeeded".into()} else {"Usenet connection probe failed; inspect settings and server availability".into()}]);
-                }
-                form.only(&["csrf", "id"])?;
-                let mut q = crate::usenet::ProbeRequest {
-                    apply: false,
-                    plan_id: None,
-                };
-                let report = engine.usenet_probe(id, &q)?;
-                q.apply = true;
-                q.plan_id = report
-                    .get("plan_id")
-                    .and_then(crate::json::Value::as_str)
-                    .map(str::to_owned);
-                lock(&self.sessions)?.save_usenet_preview(&session.id, id, q)?;
-                Ok(Response::html(200, usenet_views::review(session, &report)))
-            }
             "/ui/indexers/control" => {
                 form.only(&["csrf", "id", "action", "apply", "plan_id"])?;
                 let id = form.value("id")?;

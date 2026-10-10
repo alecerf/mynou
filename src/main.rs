@@ -23,18 +23,6 @@ const HELP: &str = "Mynou — media automation using Rust std only
 
   init [--config mynou.json]
   analyze FILE [--json]
-  nzb-inspect FILE
-  zip-inspect FILE
-  rar-inspect FILE
-  par2-inspect FILE
-  par2-verify FILE --root DIRECTORY
-  usenet [--config mynou.json]
-  usenet-probe SERVER_ID [--apply --plan-id ID] [--config mynou.json]
-  usenet-queue [--config mynou.json]
-  usenet-enqueue NZB_FILE --server ID [--file-index N] [--apply --plan-id ID]
-                 [--config mynou.json]
-  usenet-control TRANSFER_ID --action pause|resume|cancel|retry
-                 [--apply --plan-id ID] [--config mynou.json]
   doctor [--config mynou.json]
   serve [--config mynou.json]
   submit --title TITLE [--kind movie|episode|series|file] [--year YEAR]
@@ -131,10 +119,7 @@ impl Args {
                 &["config", "help"]
             }
             "requesters" | "requester-sync" => &["config", "help"],
-            "indexers" | "usenet" | "usenet-queue" => &["config", "help"],
-            "usenet-probe" => &["config", "help", "apply", "plan-id"],
-            "usenet-enqueue" => &["config", "help", "server", "file-index", "apply", "plan-id"],
-            "usenet-control" => &["config", "help", "action", "apply", "plan-id"],
+            "indexers" => &["config", "help"],
             "indexer-control" => &["config", "help", "action", "apply", "plan-id"],
             "irc" | "announcement" => &["config", "help"],
             "announcements" => &["config", "help", "offset", "limit"],
@@ -212,8 +197,6 @@ impl Args {
                 "limit",
             ],
             "analyze" => &["json", "help"],
-            "nzb-inspect" | "zip-inspect" | "rar-inspect" | "par2-inspect" => &["help"],
-            "par2-verify" => &["root", "help"],
             "demo" | "setup-docker" => &["dir", "help"],
             "help" | "--help" | "version" | "--version" => &[],
             _ => return Err(format!("Unknown command: {command}")),
@@ -231,15 +214,7 @@ impl Args {
                 "irc-preview",
                 "irc-control",
                 "indexer-control",
-                "usenet-probe",
-                "usenet-enqueue",
-                "usenet-control",
                 "analyze",
-                "nzb-inspect",
-                "zip-inspect",
-                "rar-inspect",
-                "par2-inspect",
-                "par2-verify",
                 "show",
                 "events",
                 "retry",
@@ -505,52 +480,6 @@ fn execute(args: Args) -> Result<()> {
                 "mynou {} — Rust std, 0 dependencies",
                 env!("CARGO_PKG_VERSION")
             );
-            return Ok(());
-        }
-        "nzb-inspect" => {
-            let nzb = mynou::usenet::nzb::Nzb::read_file(Path::new(&args.positions[0]))?;
-            output(&nzb.report());
-            return Ok(());
-        }
-        "zip-inspect" => {
-            let archive = mynou::archive::Zip::read_file(
-                Path::new(&args.positions[0]),
-                mynou::archive::Limits::default(),
-            )?;
-            output(&archive.report());
-            return Ok(());
-        }
-        "rar-inspect" => {
-            let archive = mynou::archive::Rar5::read_file(
-                Path::new(&args.positions[0]),
-                mynou::archive::Limits::default(),
-            )?;
-            output(&archive.report());
-            return Ok(());
-        }
-        "par2-inspect" => {
-            let set = mynou::par2::Set::read_file(
-                Path::new(&args.positions[0]),
-                mynou::par2::Limits::default(),
-            )?;
-            output(&set.report());
-            return Ok(());
-        }
-        "par2-verify" => {
-            let root = args
-                .options
-                .get("root")
-                .ok_or("par2-verify requires --root DIRECTORY")?;
-            let verified = mynou::par2::verify_directory(
-                Path::new(&args.positions[0]),
-                Path::new(root),
-                mynou::par2::Limits::default(),
-                mynou::par2::MultiRecoveryLimits::default(),
-            )?;
-            output(&verified.to_json());
-            if !verified.content_verified() {
-                return Err("PAR2 protected content is damaged or missing".into());
-            }
             return Ok(());
         }
         "analyze" => {
@@ -836,121 +765,6 @@ fn execute(args: Args) -> Result<()> {
                 output(&call(&config, &path, "GET", "/api/indexers", None)?);
             } else {
                 output(&Engine::open_for_preview(config)?.indexers()?);
-            }
-        }
-        "usenet" => {
-            if online {
-                output(&call(&config, &path, "GET", "/api/usenet", None)?);
-            } else {
-                output(&config.usenet.report());
-            }
-        }
-        "usenet-queue" => {
-            if online {
-                output(&call(&config, &path, "GET", "/api/usenet/queue", None)?);
-            } else {
-                output(&Engine::open_for_preview(config)?.usenet_queue()?);
-            }
-        }
-        "usenet-enqueue" => {
-            let mut v = Value::object();
-            v.insert("apply", args.options.contains_key("apply"));
-            v.insert(
-                "plan_id",
-                args.options
-                    .get("plan-id")
-                    .cloned()
-                    .map_or(Value::Null, Value::from),
-            );
-            let q = mynou::usenet::ProbeRequest::from_json(&v)?;
-            let bytes = mynou::usenet::nzb::Nzb::read_bytes(Path::new(&args.positions[0]))?;
-            let server = args.value("server", "");
-            if !mynou::requesters::valid_id(server) {
-                return Err("Usenet queue: --server requires a configured server ID".into());
-            }
-            let index = args.number("file-index")? as usize;
-            if online {
-                v.insert(
-                    "nzb",
-                    std::str::from_utf8(&bytes).map_err(|_| "NZB: document must be UTF-8")?,
-                );
-                v.insert("server_id", server);
-                v.insert("file_index", index as u32);
-                output(&call(
-                    &config,
-                    &path,
-                    "POST",
-                    "/api/usenet/queue",
-                    Some(&v),
-                )?);
-            } else {
-                if q.apply {
-                    return Err("Usenet queue: application requires the running service".into());
-                }
-                output(
-                    &Engine::open_for_preview(config)?.usenet_enqueue(&bytes, server, index, &q)?,
-                );
-            }
-        }
-        "usenet-control" => {
-            let mut v = Value::object();
-            v.insert("action", args.value("action", ""));
-            v.insert("apply", args.options.contains_key("apply"));
-            v.insert(
-                "plan_id",
-                args.options
-                    .get("plan-id")
-                    .cloned()
-                    .map_or(Value::Null, Value::from),
-            );
-            let q = mynou::usenet::QueueControl::from_json(&v)?;
-            let id = &args.positions[0];
-            if !mynou::usenet::queue::valid_transfer_id(id) {
-                return Err("Usenet queue: invalid transfer ID".into());
-            }
-            if online {
-                output(&call(
-                    &config,
-                    &path,
-                    "POST",
-                    &format!("/api/usenet/queue/{id}/control"),
-                    Some(&q.to_json()),
-                )?);
-            } else {
-                if q.apply {
-                    return Err("Usenet queue: application requires the running service".into());
-                }
-                output(&Engine::open_for_preview(config)?.usenet_queue_control(id, &q)?);
-            }
-        }
-        "usenet-probe" => {
-            let mut v = Value::object();
-            v.insert("apply", args.options.contains_key("apply"));
-            v.insert(
-                "plan_id",
-                args.options
-                    .get("plan-id")
-                    .cloned()
-                    .map_or(Value::Null, Value::from),
-            );
-            let q = mynou::usenet::ProbeRequest::from_json(&v)?;
-            let id = &args.positions[0];
-            if !mynou::requesters::valid_id(id) {
-                return Err("Usenet: invalid server ID".into());
-            }
-            if online {
-                output(&call(
-                    &config,
-                    &path,
-                    "POST",
-                    &format!("/api/usenet/{id}/probe"),
-                    Some(&q.to_json()),
-                )?);
-            } else {
-                if q.apply {
-                    return Err("Usenet: application requires the running service".into());
-                }
-                output(&Engine::open_for_preview(config)?.usenet_probe(id, &q)?);
             }
         }
         "indexer-control" => {

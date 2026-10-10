@@ -78,7 +78,6 @@ pub struct Config {
     pub sources: Vec<Source>,
     pub requesters: crate::requesters::Settings,
     pub irc: crate::irc::Settings,
-    pub usenet: crate::usenet::Settings,
 }
 
 fn object(items: Vec<(&str, Value)>) -> Value {
@@ -362,7 +361,6 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
             "indexers",
             "requesters",
             "irc",
-            "usenet",
         ],
     )?;
     if number(v, "schema_version", 0, 1)? != 1 {
@@ -423,14 +421,11 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
                     "min_interval_ms",
                     "authentication",
                     "id",
-                    "usenet",
                 ],
             )?;
             let kind = text(source, "kind", "json")?;
-            if !["rss", "json", "torznab", "newznab"].contains(&kind.as_str()) {
-                return Err(
-                    "Configuration: expected an rss, json, torznab or newznab source".into(),
-                );
+            if !["rss", "json", "torznab"].contains(&kind.as_str()) {
+                return Err("Configuration: expected an rss, json or torznab source".into());
             }
             let url = text(source, "url", "")?;
             crate::net::parse_url(&url)?;
@@ -495,7 +490,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
     }) {
         return Err("IRC: rule requester is not configured".into());
     }
-    let config = Config {
+    Ok(Config {
         store_dir: path(&base, text(v, "store_dir", "state/jobs")?)?,
         listen,
         api_token_env: text(v, "api_token_env", "MYNOU_API_TOKEN")?,
@@ -544,34 +539,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         sources,
         requesters,
         irc,
-        usenet: crate::usenet::Settings::from_json_at(v.get("usenet"), &base)?,
-    };
-    for source in &config.sources {
-        if let Some(options) = &source.options.newznab
-            && !config
-                .usenet
-                .servers
-                .iter()
-                .any(|s| s.id() == options.server_id)
-        {
-            return Err("Configuration: Newznab requires a configured Usenet server ID".into());
-        }
-    }
-    if let Some(downloads) = &config.usenet.downloads {
-        let root = &downloads.state_dir;
-        for other in [
-            &config.store_dir,
-            &config.downloads.state_dir,
-            &config.downloads.data_dir,
-            &config.movies_root,
-            &config.series_root,
-        ] {
-            if root.starts_with(other) || other.starts_with(root) {
-                return Err("Configuration: Usenet storage must be separate from other state and media roots".into());
-            }
-        }
-    }
-    Ok(config)
+    })
 }
 pub fn secret(name: &str) -> Result<String> {
     let value = std::env::var(name).unwrap_or_default().trim().to_owned();
