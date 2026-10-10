@@ -143,7 +143,7 @@ remove old files yourself. Plan disk space accordingly.
 With Plex enabled, the upgrade is ready only when a fresh Plex response reports
 the **new** path in `Part.file`; an existing matching title is not enough. If
 Plex sees the library under another path, configure
-[path mappings](deployment.md#connect-plex).
+[path mappings](macos.md#connect-plex).
 
 ## Upgrade a shared group
 

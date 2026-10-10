@@ -597,42 +597,6 @@ mod tests {
         assert_eq!(fs::read(source).unwrap(), b"intact source");
     }
 
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn import_copies_between_filesystems_and_preserves_source() {
-        use std::os::unix::fs::MetadataExt;
-        if !Path::new("/dev/shm").is_dir() {
-            return;
-        }
-        let source_directory = Directory::new();
-        let library_directory = Directory(PathBuf::from(format!(
-            "/dev/shm/mynou-copy-{}-{}",
-            std::process::id(),
-            TEMPORARY.fetch_add(1, Ordering::Relaxed)
-        )));
-        fs::create_dir(&library_directory.0).unwrap();
-        if fs::metadata(&source_directory.0).unwrap().dev()
-            == fs::metadata(&library_directory.0).unwrap().dev()
-        {
-            return;
-        }
-        let source = source_directory.0.join("source.mp4");
-        let bytes: Vec<u8> = (0..=255).cycle().take(150_000).collect();
-        fs::write(&source, &bytes).unwrap();
-        let destination =
-            import_file(&source, &library_directory.0.join("library"), &request()).unwrap();
-        assert_eq!(fs::read(&source).unwrap(), bytes);
-        assert_eq!(fs::read(&destination).unwrap(), bytes);
-        assert_ne!(
-            fs::metadata(&source).unwrap().dev(),
-            fs::metadata(&destination).unwrap().dev()
-        );
-        assert_eq!(
-            import_file(&source, &library_directory.0.join("library"), &request()).unwrap(),
-            destination
-        );
-    }
-
     #[cfg(unix)]
     #[test]
     fn source_and_destination_symlinks_are_rejected() {

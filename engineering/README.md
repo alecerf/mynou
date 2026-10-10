@@ -129,9 +129,9 @@ yet, which only a merged release PR introduces. Actions alone tags and publishes
 published assets are immutable.
 
 - **Cadence:** at most one release per `minimum_interval_days` (seven), and only
-  when shipped inputs (`src/`, `examples/`, `Dockerfile`, `deploy-compose.yaml`,
-  Rust toolchain or build settings) changed since the latest release.
-  Engineering, CI and documentation changes are never released on their own.
+  when shipped inputs (`src/`, `examples/`, Rust toolchain or build settings)
+  changed since the latest release. Engineering, CI and documentation changes
+  are never released on their own.
 - **Urgent:** label the PR `release-now` for a security fix or an explicit owner
   request. It skips the weekly and shipped-change rules, nothing else.
 - **Cutting a release** when `release.due` (or on an owner request):
@@ -143,8 +143,8 @@ published assets are immutable.
      Use a minor version for new user-visible capability, a patch otherwise.
   3. Open the PR labeled `release`; QA checks the notes and the version. The
      `Release policy` check refuses anything else in the PR.
-  4. After merge, confirm that Actions published `v<version>` with its four
-     assets and its private image digest.
+  4. After merge, confirm that Actions published `v<version>` with its
+     executable and `SHA256SUMS`.
 - A failed publication is re-run from the failed job. Never retag or replace
   published assets; a burned version moves to the next patch in a new release PR.
 
@@ -168,7 +168,7 @@ mark release Issues and PRs. Native dependencies mark real blockers.
 
 | Workflow | Runs | Checks |
 | --- | --- | --- |
-| Mynou CI | PRs, `trunk` | Dependency graph, format, Clippy, all tests, release builds, demos, container; publishes on `trunk` only a new version |
+| Mynou CI | PRs, `trunk` | Dependency graph, format, Clippy, all tests, the macOS arm64 build and demo; publishes on `trunk` only a new version |
 | Engineering checks | PRs, `trunk` | Organization policy and tooling scenarios |
 | Release policy | PRs | Version changes only in a weekly release PR |
 | Security audit | PRs, `trunk`, hourly | Reachable Git objects and Actions logs |

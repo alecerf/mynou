@@ -138,7 +138,7 @@ pub fn default_json() -> Value {
             "plex",
             object(vec![
                 ("enabled", false.into()),
-                ("url", "http://host.docker.internal:32400".into()),
+                ("url", "http://127.0.0.1:32400".into()),
                 (
                     "watchlist_url",
                     "https://discover.provider.plex.tv/library/sections/watchlist/all".into(),
@@ -456,7 +456,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         .parse::<std::net::SocketAddr>()
         .map_err(|_| "Configuration: listen requires an IP address and port")?;
     for url in [
-        text(p, "url", "http://host.docker.internal:32400")?,
+        text(p, "url", "http://127.0.0.1:32400")?,
         text(
             p,
             "watchlist_url",
@@ -518,7 +518,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         series_packs_enabled,
         plex: Plex {
             enabled: boolean(p, "enabled", false)?,
-            url: text(p, "url", "http://host.docker.internal:32400")?,
+            url: text(p, "url", "http://127.0.0.1:32400")?,
             watchlist_url: text(
                 p,
                 "watchlist_url",

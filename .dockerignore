@@ -1,5 +1,0 @@
-**
-!Dockerfile
-!.ci-image
-!.ci-image/mynou
-!.ci-image/ca-certificates.crt

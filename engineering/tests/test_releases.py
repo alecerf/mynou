@@ -104,7 +104,7 @@ class ReleasePullRequests(unittest.TestCase):
 class Cadence(unittest.TestCase):
     def test_shipped_inputs(self):
         same = manifest()
-        for path in ["src/main.rs", "examples/demo.mp4", "Dockerfile", "deploy-compose.yaml", "rust-toolchain.toml"]:
+        for path in ["src/main.rs", "examples/demo.mp4", "rust-toolchain.toml"]:
             self.assertTrue(releases.shipped({path}, False, same, same), path)
         docs = {"docs/ci.md", "engineering/board.py", ".github/workflows/ci.yml", "AGENTS.md", "Cargo.lock"}
         self.assertFalse(releases.shipped(docs, False, same, manifest("0.22.35")))

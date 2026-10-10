@@ -29,8 +29,8 @@ assistive-technology compatibility has not been independently reviewed.
 A search preview contacts your sources but records nothing; recording the
 request runs automatic selection later, so the displayed candidate is not
 reserved. An explicit URL or server path skips automatic selection and is
-cleared from the form after preview. Paths refer to files the service can see
-(container paths in Docker); the browser does not upload files. Applying
+cleared from the form after preview. Paths refer to files the service can see;
+the browser does not upload files. Applying
 upgrades runs a fresh search rather than replaying the preview.
 
 Shared videos, group upgrades and requester, indexer and announcement controls
@@ -56,8 +56,8 @@ source addresses, credential names or values, or upstream errors, and opening it
 performs no network request or write.
 
 Mynou does not edit its configuration from the browser. Change `mynou.json` and
-`.env` on the host, recreate a Docker service (or restart the service) and run
-`mynou doctor`; see [deployment](deployment.md). Then preview a request on
+`.env`, restart the service and run `mynou doctor`; see
+[Configure Mynou](macos.md#configure-mynou). Then preview a request on
 **Search**, record it when ready and follow it in **Jobs**.
 
 ## Live progress
@@ -108,8 +108,8 @@ The content security policy allows only same-origin styles, forms and
 connections and the content-pinned live-progress script; inline scripts and
 handlers are blocked. Displayed labels are escaped, bounded and redacted.
 
-Generated Docker installations publish the interface on loopback only. For
-remote access, put a TLS reverse proxy in front that keeps the browser's `Host`
-and `Origin` (or same-origin `Referer`), forwards `/ui` without rewriting it and
-keeps the plain HTTP listener private. Sign in through the HTTPS address to get
-a `Secure` cookie; changing the address or scheme requires a new sign-in.
+The default listener is loopback only. For remote access, put a TLS reverse
+proxy in front that keeps the browser's `Host` and `Origin` (or same-origin
+`Referer`), forwards `/ui` without rewriting it and keeps the plain HTTP
+listener private. Sign in through the HTTPS address to get a `Secure` cookie;
+changing the address or scheme requires a new sign-in.

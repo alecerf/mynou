@@ -21,14 +21,13 @@ offline on every run (see [CI](validation.md#mynou-ci)).
 | JSON, bencode and XML | Bounded parsers in `src/json.rs`, `src/bencode.rs` and `src/xml.rs` |
 | Hashing and cryptography | Native algorithms in `src/crypto/` |
 
-Rust and Cargo are build tools; Docker and Compose are deployment tools. At
-runtime Mynou uses only the standard library and the operating system for
-files, network, time and randomness. On Linux, security randomness comes from
-`/dev/urandom`. The container image holds the static binary and a CA bundle
-(trust data) and nothing else: no OpenSSL, ffprobe, curl, shell, SQL engine or
-torrent client. Plex, TMDB, indexers and IRC servers are network services that
-the user configures, not dependencies. GitHub Actions and its tools are
-development infrastructure; the application never invokes them.
+Rust and Cargo are build tools. At runtime Mynou uses only the standard library
+and the operating system for files, network, time and randomness. Security
+randomness comes from `/dev/urandom`. The executable needs no OpenSSL, ffprobe,
+curl, shell, SQL engine or torrent client. Plex, TMDB, indexers and IRC servers
+are network services that the user configures, not dependencies. GitHub Actions
+and its tools are development infrastructure; the application never invokes
+them.
 
 ## Request flow
 

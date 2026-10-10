@@ -323,9 +323,9 @@ IRC announcements:
 - Data from the earlier Go release (SQLite) is not migrated: keep it in a
   separate directory. Preserve configuration, data, downloads and library when
   changing versions, and back up before a downgrade.
-- The container targets Linux x86_64 (musl). Apple Silicon Docker hosts need
-  amd64 emulation; there is no native Linux arm64 image. The macOS executables
-  are verified on macOS 26 only and are not signed or notarized.
+- Mynou ships for macOS on Apple Silicon only: there is no Intel, Linux or
+  Docker build. The executable is verified on macOS 26 only and is not signed or
+  notarized.
 - Mynou installs no Unix signal handler. `POST /api/shutdown` stops gracefully;
   a forced stop relies on journal recovery. Security randomness needs
   `/dev/urandom`.

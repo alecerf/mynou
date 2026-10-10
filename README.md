@@ -34,14 +34,13 @@ Every feature has explicit bounds, listed in [limits](docs/limits.md).
 ## Try it
 
 Each [release](https://github.com/alecerf/mynou/releases) provides
-`mynou-vVERSION-linux-x86_64` (static), `mynou-vVERSION-macos-arm64`,
-`mynou-vVERSION-macos-x86_64` and a `SHA256SUMS` manifest.
-[Verify](docs/validation.md#verify-release-assets) the file you downloaded,
-install it as `mynou` and run the demo:
+`mynou-vVERSION-macos-arm64`, the executable for Apple Silicon Macs, and a
+`SHA256SUMS` manifest. [Verify](docs/validation.md#verify-release-assets) the
+file you downloaded, install it as `mynou` and run the demo:
 
 ```sh
-install -m 755 mynou-vVERSION-linux-x86_64 "$HOME/.local/bin/mynou"
-mynou demo --dir /tmp/mynou-demo
+install -m 755 mynou-vVERSION-macos-arm64 "$HOME/.local/bin/mynou"
+mynou demo --dir "$HOME/mynou-demo"
 ```
 
 The demo starts a local torrent peer and simulated Plex and indexer services,
@@ -53,10 +52,8 @@ To build from source, use Rust 1.99.0: `cargo build --release --offline --locked
 
 ## Install
 
-- **macOS** (Apple Silicon or Intel, no Docker): follow the
-  [macOS guide](docs/macos.md).
-- **Docker** (Linux amd64 image in a private registry): follow the
-  [Docker guide](docs/deployment.md).
+Mynou runs on macOS with Apple Silicon: follow the [macOS guide](docs/macos.md).
+There is no Intel, Linux or Docker build.
 
 ## First start
 
@@ -72,9 +69,9 @@ and open **Setup**, which lists what is still missing.
 
 ## Essential configuration
 
-Plex and TMDB start disabled. Edit the generated `mynou.json`, put secrets in
-the service's environment (Docker loads them from `.env`) and restart the
-service after each change:
+Plex and TMDB start disabled. Edit the generated `mynou.json`, export secrets in
+the environment of the service (only `MYNOU_API_TOKEN` is read from `.env`) and
+restart the service after each change:
 
 | What | Settings in `mynou.json` | Secret |
 | --- | --- | --- |
@@ -85,7 +82,7 @@ service after each change:
 | Sources to search | `indexers` | `MYNOU_INDEXER_API_KEY` or per source |
 
 Relative paths resolve against the configuration file. The
-[configuration reference](docs/deployment.md#configure-mynou) lists every
+[configuration reference](docs/macos.md#configure-mynou) lists every
 setting.
 
 ## Everyday commands
@@ -118,8 +115,7 @@ commands need the running service. `mynou help` lists every command.
 
 For users and operators:
 
-- [Install with Docker and configure Mynou](docs/deployment.md)
-- [Install on macOS](docs/macos.md)
+- [Install and configure on macOS](docs/macos.md)
 - [Browser interface](docs/web.md)
 - [Sources: indexers and IRC announcements](docs/sources.md)
 - [Release selection profiles](docs/selection.md)

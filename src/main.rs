@@ -69,7 +69,6 @@ const HELP: &str = "Mynou — media automation using Rust std only
   jobs | status | sync [--config mynou.json]
   show | events | retry | cancel ID [--config mynou.json]
   healthcheck [--config mynou.json]
-  setup-docker [--dir mynou-docker]
   demo [--dir mynou-demo]
   version
 
@@ -197,7 +196,7 @@ impl Args {
                 "limit",
             ],
             "analyze" => &["json", "help"],
-            "demo" | "setup-docker" => &["dir", "help"],
+            "demo" => &["dir", "help"],
             "help" | "--help" | "version" | "--version" => &[],
             _ => return Err(format!("Unknown command: {command}")),
         };
@@ -451,20 +450,6 @@ fn init(path: &Path, value: &Value) -> Result<()> {
     }
     Ok(())
 }
-fn docker_config() -> Value {
-    let mut v = config::default_json();
-    v.insert("store_dir", "/data/jobs");
-    v.insert("listen", "0.0.0.0:8787");
-    if let Some(Value::Object(d)) = v.get_mut("downloads") {
-        d.insert("data_dir".into(), "/data/downloads".into());
-        d.insert("state_dir".into(), "/data/torrents".into());
-    }
-    if let Some(Value::Object(l)) = v.get_mut("library") {
-        l.insert("movies_root".into(), "/library/movies".into());
-        l.insert("series_root".into(), "/library/series".into());
-    }
-    v
-}
 fn execute(args: Args) -> Result<()> {
     if args.options.contains_key("help") {
         print!("{HELP}");
@@ -530,26 +515,6 @@ fn execute(args: Args) -> Result<()> {
             println!(
                 "Created configuration and .env. Run: mynou serve --config {}",
                 args.config_path().display()
-            );
-            return Ok(());
-        }
-        "setup-docker" => {
-            let dir = Path::new(args.value("dir", "mynou-docker"));
-            if dir.exists() {
-                return Err("The Docker installation directory must not already exist".into());
-            }
-            fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-            init(&dir.join("mynou.json"), &docker_config())?;
-            let compose = include_str!("../deploy-compose.yaml")
-                .replace("MYNOU_VERSION", env!("CARGO_PKG_VERSION"));
-            private_write(&dir.join("compose.yaml"), compose.as_bytes())?;
-            for name in ["data", "library/movies", "library/series"] {
-                fs::create_dir_all(dir.join(name)).map_err(|e| e.to_string())?;
-            }
-            println!(
-                "Created installation in {}. Authenticate to ghcr.io, then run: cd {} && docker compose pull && docker compose up -d",
-                dir.display(),
-                dir.display()
             );
             return Ok(());
         }

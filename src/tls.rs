@@ -411,11 +411,7 @@ fn secure_random(destination: &mut [u8]) -> Result<()> {
 fn load_roots() -> Result<Vec<u8>> {
     let paths = match std::env::var_os("MYNOU_CA_FILE") {
         Some(path) => vec![std::path::PathBuf::from(path)],
-        None => vec![
-            "/etc/ssl/certs/ca-certificates.crt".into(),
-            "/etc/pki/tls/certs/ca-bundle.crt".into(),
-            "/etc/ssl/cert.pem".into(),
-        ],
+        None => vec!["/etc/ssl/cert.pem".into()],
     };
     for path in paths {
         if let Ok(mut file) = File::open(path) {
