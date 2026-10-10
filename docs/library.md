@@ -194,10 +194,7 @@ Preview authenticates the torrent metadata without downloading payload or
 recording jobs. Apply authenticates it again and checks that nothing changed:
 owners, monitoring, release, source, hash, path and import files. Otherwise
 run a new preview. The API equivalent is `POST /api/library/OWNER_ID/group` with
-the same fields, plus `"apply": true` and `"plan_id"` to apply. In the browser,
-open a shared owner's job page and use **Preview whole-group baseline** or
-**Preview whole-group replacement**, then **Record reviewed whole-group
-decision**.
+the same fields, plus `"apply": true` and `"plan_id"` to apply. 
 
 The new video downloads, imports once and must be confirmed in Plex for every
 owner. Confirmed owners wait in the `staged` state; the last confirmation

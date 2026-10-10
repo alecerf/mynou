@@ -13,7 +13,7 @@ Sonarr. Plex, TMDB and your indexers are network services you configure.
 ## What it does
 
 - **Requests** from Plex watchlists (one or several accounts), the command
-  line, an HTTP API and a browser interface.
+  line and an HTTP API.
 - **Sources**: RSS, JSON and Torznab indexers, with optional authentication,
   and opt-in IRC announcement channels.
 - **Release selection** with movie and episode profiles (resolution, source,
@@ -64,8 +64,8 @@ mynou serve --config ./mynou.json
 ```
 
 `init` creates `mynou.json` and a private `.env` holding a random API token.
-Open **http://127.0.0.1:8787/ui**, sign in with `MYNOU_API_TOKEN` from `.env`
-and open **Setup**, which lists what is still missing.
+Run `mynou doctor --config ./mynou.json` to list what is still missing; the HTTP
+API at `http://127.0.0.1:8787` takes `MYNOU_API_TOKEN` from `.env` as a Bearer token.
 
 ## Essential configuration
 
@@ -116,7 +116,6 @@ commands need the running service. `mynou help` lists every command.
 For users and operators:
 
 - [Install and configure on macOS](docs/macos.md)
-- [Browser interface](docs/web.md)
 - [Sources: indexers and IRC announcements](docs/sources.md)
 - [Release selection profiles](docs/selection.md)
 - [Series, calendar and episode numbering](docs/series.md)

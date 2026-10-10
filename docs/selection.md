@@ -119,8 +119,7 @@ The API equivalent is `POST /api/search` with the same object as
 `{"kind": "episode", "title": "Example Series", "year": 2026, "season": 1, "episode": 2}`.
 A body containing `source_url` or `source_path` returns `manual_override: true`
 without searching or echoing the source. `GET /api/profiles` returns the
-configured profiles, and `mynou doctor` shows the active profile names. The
-browser's **Search** page offers the same preview.
+configured profiles, and `mynou doctor` shows the active profile names.
 
 If your sources name releases differently, a restrictive profile may reject
 them: inspect the preview and adjust the policy deliberately. Keep source

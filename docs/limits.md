@@ -239,8 +239,7 @@ IRC announcements:
 - Numbering keeps at most 2,000 IDs and choices per scope and 20,000 in total.
   A decision holds at most 2,000 changes. Seasons range from 0 to 9,999,
   episodes and absolute numbers from 1 to 99,999 and catalog IDs from 1 to
-  2^53−1. Mapping files are limited to 512 KiB; the browser shows the first 100
-  comparison rows. Numbering history is never discarded to make room. Version
+  2^53−1. Mapping files are limited to 512 KiB. Numbering history is never discarded to make room. Version
   0.15 cannot read numbering data saved by later versions.
 - Explicit packs map 1 to 64 episodes to distinct files. Paths have at most
   4,096 bytes, 32 components and 255 bytes per component, without empty,
@@ -273,27 +272,6 @@ IRC announcements:
 - Requester demand is acquired episode by episode; automatic packs keep their
   separate operator rules.
 - Requester data uses job storage format 4, which earlier versions refuse.
-
-## Browser interface
-
-- One shared operator token, no individual users. The interface does not edit
-  configuration, adopt an existing Plex library or stream over WebSocket.
-- Sessions last eight hours from sign-in and are not extended by activity.
-  Sign-in challenges expire after ten minutes and after five wrong tokens. At
-  most 128 sessions and challenges exist; new challenges can evict older
-  challenges but never signed-in sessions.
-- Forms accept at most 64 fields, 65,536 encoded bytes and 8,192 decoded bytes
-  per field, so the browser accepts smaller inputs than the API. Malformed
-  escapes, invalid UTF-8, unexpected or duplicate fields, control characters and
-  invalid numbers are rejected.
-- Bulk actions select at most 32 entries; lists show 50 rows per page.
-- Live progress polls visible pages every ten seconds, one request at a time,
-  with an eight-second deadline, at most 50 rows and 48 KiB per reply. It does
-  not remember preferences, insert rows, stream, or estimate time or speed. Its
-  read routes require the browser session and exact origin, and they never
-  renew the session or consume messages.
-- Browser and assistive-technology compatibility has not been independently
-  verified.
 
 ## Persistence and platform
 
@@ -355,5 +333,4 @@ IRC announcements:
 "Zero dependencies" describes how Mynou is built. It does not guarantee
 completeness, security, optimal performance or compatibility. CI uses synthetic
 media, loopback peers and simulated services: passing CI does not establish
-compatibility with your Plex installation, public-swarm throughput or browser
-and assistive-technology support.
+compatibility with your Plex installation or public-swarm throughput.

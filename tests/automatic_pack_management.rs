@@ -7,21 +7,11 @@ mod transfer_support;
 mod web_support;
 use automatic_pack_support::*;
 use library_support::Directory;
-use mynou::{
-    config::Config,
-    engine::{Engine, lock},
-    json::{self, Value},
-};
+use mynou::{config::Config, engine::{Engine, lock}, json::{self, Value}};
 use series_support::{Catalog, episode, id, request};
-use std::{
-    fs,
-    path::Path,
-    process::{Command, Output, Stdio},
-    thread,
-    time::{Duration, Instant},
-};
+use std::{fs, path::Path, process::{Command, Output, Stdio}, thread, time::{Duration, Instant}};
 use transfer_support::{BLOCK, Torrent, payload};
-use web_support::{Browser, Server, TOKEN};
+use web_support::{Server, TOKEN};
 
 fn setup(directory: &Directory, provider: &Provider) -> (Catalog, Config) {
     let catalog = Catalog::open(vec![
@@ -104,85 +94,6 @@ fn bearer_pack_routes_validate_before_network_io_and_keep_origin_private_data_re
     for job in jobs {
         assert!(!json::stringify(&mynou::engine::public_job(&job)).contains(SECRET));
     }
-}
-
-#[test]
-fn browser_pack_preview_escapes_catalog_and_indexer_labels_and_guards_acquisition() {
-    let directory = Directory::new();
-    let provider = Provider::open();
-    let (_catalog, cfg) = setup(&directory, &provider);
-    let server = Server::open(cfg);
-    let series = tracked(&server.engine);
-    let browser = Browser::login(&server);
-    let detail = browser.get(&server, &format!("/ui/series/{series}"));
-    assert!(detail.body.contains("Automatic season-pack search"));
-    let before = provider.calls.lock().unwrap().len();
-    assert_eq!(
-        browser
-            .raw_post(
-                &server,
-                "/ui/series/pack-search",
-                &format!("csrf=wrong&id={series}&season=1&action=preview")
-            )
-            .status,
-        403
-    );
-    assert_eq!(
-        browser
-            .post(
-                &server,
-                "/ui/series/pack-search",
-                &[("id", &series), ("season", "1.5"), ("action", "preview")]
-            )
-            .status,
-        400
-    );
-    assert_eq!(
-        browser
-            .post(
-                &server,
-                "/ui/series/pack-search",
-                &[("id", &series), ("season", "1"), ("action", "apply")]
-            )
-            .status,
-        400
-    );
-    assert_eq!(provider.calls.lock().unwrap().len(), before);
-    let page = browser.post(
-        &server,
-        "/ui/series/pack-search",
-        &[("id", &series), ("season", "1"), ("action", "preview")],
-    );
-    assert_eq!(page.status, 200, "{}", page.body);
-    assert!(page.body.contains("Acquire resolved pack"));
-    assert!(page.body.contains("&lt;img src=x&gt;"));
-    assert!(page.body.contains("&lt;script&gt;"));
-    assert!(!page.body.contains("<img"));
-    assert!(!page.body.contains("<script>"));
-    assert!(!page.body.contains(SECRET));
-    page.no_secrets();
-    assert!(lock(&server.engine.store).unwrap().list().is_empty());
-    let report = server.engine.search_packs(&series, &preview(1)).unwrap();
-    let candidate = report
-        .get("selected_candidate_id")
-        .unwrap()
-        .as_str()
-        .unwrap();
-    let scope = report.get("scope_id").unwrap().as_str().unwrap();
-    let response = browser.post(
-        &server,
-        "/ui/series/pack-search",
-        &[
-            ("id", &series),
-            ("season", "1"),
-            ("action", "apply"),
-            ("candidate_id", candidate),
-            ("scope_id", scope),
-        ],
-    );
-    assert_eq!(response.status, 303, "{}", response.body);
-    assert_eq!(response.headers["location"], "/ui/jobs");
-    assert_eq!(lock(&server.engine.store).unwrap().list().len(), 2);
 }
 
 fn cli_config(config: &Config) -> Value {

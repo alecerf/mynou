@@ -9,19 +9,21 @@ mod transfer_support;
 mod web_support;
 use irc_routing_support::{job, no_private, read_checked, row_mut, write_checked};
 use library_support::{Directory, run_until};
-use mynou::{
-    config,
-    engine::{Engine, lock},
-    irc::ControlRequest,
-    json::{self, Value},
-};
+use mynou::{config, engine::{Engine, lock}, irc::ControlRequest, json::{self, Value}};
 use requester_support::{
-    Accounts, apply, demand, demand_query, demands, enable, movie, policy, policy_query,
+    Accounts,
+    apply,
+    demand,
+    demand_query,
+    demands,
+    enable,
+    movie,
+    policy,
+    policy_query,
 };
 use series_support::{Catalog, episode};
 use std::{fs, process::Command, sync::atomic::Ordering, thread};
 use transfer_support::{Seeder, Torrent};
-use web_support::{Browser, Server, TOKEN};
 
 fn catalog() -> Catalog {
     let c = Catalog::open(vec![episode(1, 1, Some("2024-01-01"), "Original Episode")]);
@@ -112,25 +114,6 @@ fn pending(snapshot: &mut Value, id: &str) {
     r.insert("decision", "pending");
     r.insert("decided_at", Value::Null);
     r.insert("revision", "2");
-}
-fn post(server: &Server, route: &str, v: &Value) -> web_support::Reply {
-    server.call(
-        "POST",
-        route,
-        &[
-            ("Authorization", &format!("Bearer {TOKEN}")),
-            ("Content-Type", "application/json"),
-        ],
-        &json::stringify(v),
-    )
-}
-fn guard(body: &str) -> &str {
-    body.split("name=\"plan_id\" value=\"")
-        .nth(1)
-        .unwrap()
-        .split('"')
-        .next()
-        .unwrap()
 }
 
 #[test]
@@ -709,108 +692,6 @@ fn requester_identity_mismatch_or_failure_cannot_borrow_configured_authority() {
     assert_eq!(c.calls.load(Ordering::Acquire), calls);
     irc_support::no_jobs(&e);
     assert!(demands(&e, "alice").is_empty());
-}
-
-#[test]
-fn protected_api_browser_and_cli_reviews_bind_the_request_action_and_session() {
-    let dir = Directory::new();
-    let c = catalog();
-    let a = Accounts::open();
-    let server = Server::open(configured(&dir, &c, &a));
-    enable(&server.engine, "alice");
-    let row = irc_support::receive(&server.engine, 7);
-    let id = irc_support::record_id(&row);
-    let route = format!("/api/irc/announcements/{id}/control");
-    let before = irc_support::bytes(&server.engine.config.store_dir);
-    assert_eq!(
-        server
-            .call("POST", &route, &[], r#"{"action":"request"}"#)
-            .status,
-        401
-    );
-    let response = post(&server, &route, &irc_support::query("request").to_json());
-    assert_eq!(response.status, 200, "{}", response.body);
-    response.no_secrets();
-    no_private(&json::parse(&response.body).unwrap());
-    let first = Browser::login(&server);
-    let second = Browser::login(&server);
-    assert!(
-        first
-            .get(&server, &format!("/ui/irc/{id}"))
-            .body
-            .contains("Review requester demand")
-    );
-    let review = first.post(
-        &server,
-        "/ui/irc/control",
-        &[("id", id), ("action", "request")],
-    );
-    assert_eq!(review.status, 200, "{}", review.body);
-    assert!(review.body.contains("Confirmed media") && review.body.contains("alice"));
-    let plan = guard(&review.body);
-    assert_eq!(
-        second
-            .post(
-                &server,
-                "/ui/irc/control",
-                &[
-                    ("id", id),
-                    ("action", "request"),
-                    ("apply", "yes"),
-                    ("plan_id", plan)
-                ]
-            )
-            .status,
-        400
-    );
-    let mut v = value(&dir, &c, &a, 0);
-    v.insert("listen", server.authority.clone());
-    let path = dir.0.join("mynou.json");
-    fs::write(&path, json::stringify(&v)).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_mynou"))
-        .env("MYNOU_API_TOKEN", TOKEN)
-        .args(["irc-control", id, "--action", "request", "--config"])
-        .arg(&path)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    no_private(&json::parse(std::str::from_utf8(&output.stdout).unwrap()).unwrap());
-    assert_eq!(irc_support::bytes(&server.engine.config.store_dir), before);
-    assert_eq!(
-        first
-            .post(
-                &server,
-                "/ui/irc/control",
-                &[
-                    ("id", id),
-                    ("action", "request"),
-                    ("apply", "yes"),
-                    ("plan_id", plan)
-                ]
-            )
-            .status,
-        303
-    );
-    assert_eq!(
-        first
-            .post(
-                &server,
-                "/ui/irc/control",
-                &[
-                    ("id", id),
-                    ("action", "request"),
-                    ("apply", "yes"),
-                    ("plan_id", plan)
-                ]
-            )
-            .status,
-        400
-    );
-    assert_eq!(lock(&server.engine.store).unwrap().list().len(), 1);
 }
 
 #[test]

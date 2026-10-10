@@ -36,7 +36,7 @@ New records monitor all known dated regular episodes. Options:
 
 - `--unmonitored` keeps the plan without requesting anything, for example
   before choosing [numbering](#episode-numbering) or a
-  [season pack](packs.md). The browser offers the same choice.
+  [season pack](packs.md).
 - `--future-only` starts monitoring at today's UTC date, including today.
 - `--include-specials` adds catalog season zero.
 
@@ -47,10 +47,6 @@ immediately. `submit --kind series` and Plex show watchlist entries also create
 series records. Removing a show from the Plex watchlist does not stop its
 monitoring: unmonitor it explicitly. Monitoring controls never cancel requests
 or delete files.
-
-The browser's **Series** and **Calendar** pages offer the same operations:
-tracking, plan details, monitoring, specials and earliest date, per-episode
-exclusions, refresh and bulk monitor/unmonitor.
 
 ## Which episodes are requested
 
@@ -174,9 +170,7 @@ choices; unresolved proposals are never saved. It records labels and the
 accepted plan but creates no requests: monitoring or a refresh then requests
 aired episodes as usual. The API equivalent is
 `POST /api/series/SERIES_ID/numbering` with `changes`, plus `"apply": true` and
-`"plan_id"` to apply. Series details in the browser provide **Episode
-numbering** and **Save reviewed numbering**; use the CLI or API for decisions
-larger than a browser field.
+`"plan_id"` to apply.
 
 With a saved source label, searches send that season and episode (JSON and
 Torznab), or add the padded absolute number to the search term (JSON also

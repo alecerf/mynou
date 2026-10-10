@@ -73,7 +73,7 @@ mynou indexer-control movies-source --action pause --apply \
   --plan-id PLAN_ID --config ./mynou.json
 ```
 
-`mynou indexers`, `GET /api/indexers` and the browser's **Indexers** page show
+`mynou indexers` and `GET /api/indexers` show
 each source's alias, format, enabled and authentication mode, request counters,
 last diagnostic, HTTP status, parse result and whether a session exists. They
 never show URLs, variable names or values, response bodies, headers or cookies.
@@ -310,7 +310,6 @@ cancel its job. Listing and previews work offline without writing.
 | `POST /api/irc/preview` | Parse a sample announcement |
 | `POST /api/irc/announcements/ID/control` | `acknowledge`, `dismiss` or `request`; add `"apply": true` and `"plan_id"` to apply |
 
-The browser's **Announcements** page shows source health, rules and history and
-offers the same reviews. Reports show authentication state (for example
+Reports show authentication state (for example
 `health.sasl_authenticated` or `health.nickserv_authenticated`) but never
 credentials, templates, magnets or raw server text.

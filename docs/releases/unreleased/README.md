@@ -7,7 +7,7 @@ named after its Issue: `<issue>.md`. Write for people who run Mynou:
 ## Short user-facing title
 
 One to three sentences: what changed for users, how to use it and any limit.
-See [the relevant guide](../../web.md) when one exists.
+See [the relevant guide](../../macos.md) when one exists.
 ```
 
 Do not record CI runs, review evidence or engineering process here. A release PR

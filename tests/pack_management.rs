@@ -1,14 +1,11 @@
-//! Bearer and browser pack journeys; original local catalog fixtures, CI only.
+//! Bearer pack journeys; original local catalog fixtures, CI only.
 mod library_support;
 mod series_support;
 mod web_support;
 use library_support::Directory;
-use mynou::{
-    engine::lock,
-    json::{self, Value},
-};
+use mynou::{engine::lock, json::{self, Value}};
 use series_support::{Catalog, episode, id, request};
-use web_support::{Browser, Server, TOKEN};
+use web_support::{Server, TOKEN};
 
 fn catalog() -> Catalog {
     Catalog::open(vec![
@@ -82,105 +79,6 @@ fn bearer_pack_api_checks_entire_scope_and_redacts_source_urls() {
         Some(&Value::Number(2.0))
     );
     assert_eq!(lock(&server.engine.store).unwrap().list().len(), 2);
-}
-
-#[test]
-fn browser_unmonitored_tracking_pack_submission_and_immutable_mapping_details() {
-    let directory = Directory::new();
-    let catalog = catalog();
-    let server = Server::open(catalog.config(&directory.0));
-    let browser = Browser::login(&server);
-    let tracked = browser.post(
-        &server,
-        "/ui/series/track",
-        &[
-            ("kind", "series"),
-            ("title", "Fixture Series"),
-            ("tmdb_id", "42"),
-            ("unmonitored", "true"),
-        ],
-    );
-    assert_eq!(tracked.status, 303);
-    let records = server.engine.series().unwrap();
-    let record = &records.as_array().unwrap()[0];
-    let id = id(record);
-    assert_eq!(record.get("monitored"), Some(&Value::Bool(false)));
-    assert!(lock(&server.engine.store).unwrap().list().is_empty());
-    let detail = browser.get(&server, &format!("/ui/series/{id}"));
-    assert_eq!(detail.status, 200);
-    assert!(detail.body.contains("Acquire a mapped pack"));
-    assert!(detail.body.contains("name=episodes"));
-    let bad = EPISODES.replace("Pack/002.mp4", "../escape.mp4");
-    assert_eq!(
-        browser
-            .post(
-                &server,
-                "/ui/series/packs",
-                &[("id", id), ("source_value", SOURCE), ("episodes", &bad)]
-            )
-            .status,
-        400
-    );
-    assert!(lock(&server.engine.store).unwrap().list().is_empty());
-    assert_eq!(
-        browser
-            .raw_post(
-                &server,
-                "/ui/series/packs",
-                &format!("csrf=invalid&id={id}&source_value=fixture.torrent&episodes=%5B%5D")
-            )
-            .status,
-        403
-    );
-    let hostile = EPISODES.replace("Pack/001.mp4", "Pack/<img>.mp4");
-    let reply = browser.post(
-        &server,
-        "/ui/series/packs",
-        &[("id", id), ("source_value", SOURCE), ("episodes", &hostile)],
-    );
-    assert_eq!(reply.status, 303, "{}", reply.body);
-    assert_eq!(reply.headers["location"], "/ui/jobs");
-    let jobs = lock(&server.engine.store).unwrap().list();
-    let first = jobs.iter().find(|job| job.request.episode == 1).unwrap();
-    let page = browser.get(&server, &format!("/ui/jobs/{}", first.id));
-    assert_eq!(page.status, 200);
-    assert!(page.body.contains("Mapped torrent file"));
-    assert!(page.body.contains("&lt;img&gt;"));
-    assert!(!page.body.contains("<img>"));
-    page.no_secrets();
-    assert!(!page.body.contains("provider.invalid"));
-    assert!(!page.body.contains("Correct mapping and retry"));
-    server.engine.cancel(&first.id).unwrap();
-    let cancelled = browser.get(&server, &format!("/ui/jobs/{}", first.id));
-    assert!(cancelled.body.contains("Correct mapping and retry"));
-    assert_eq!(
-        browser
-            .post(
-                &server,
-                "/ui/jobs/pack-mapping",
-                &[("id", &first.id), ("file_path", "Pack/002.mp4")]
-            )
-            .status,
-        400
-    );
-    assert_eq!(
-        browser
-            .post(
-                &server,
-                "/ui/jobs/pack-mapping",
-                &[("id", &first.id), ("file_path", "Pack/corrected.mp4")]
-            )
-            .status,
-        303
-    );
-    assert_eq!(
-        lock(&server.engine.store)
-            .unwrap()
-            .get(&first.id)
-            .unwrap()
-            .state,
-        "queued"
-    );
 }
 
 #[test]

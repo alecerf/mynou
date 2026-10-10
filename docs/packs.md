@@ -15,8 +15,7 @@ the torrent; it cannot prove that a file shows the episode you assigned. Review
 the files before mapping them.
 
 Packs work while series monitoring is off. To choose a pack before Mynou
-requests individual episodes, track the series with `--unmonitored` (or
-**Save without automatic episode acquisition** in the browser). Existing
+requests individual episodes, track the series with `--unmonitored`. Existing
 requests for an episode, in any state, are always reused rather than replaced.
 Pack jobs have no release baseline, so [library upgrades](library.md) need an
 explicit baseline first.
@@ -45,9 +44,8 @@ mynou series-pack ID --url 'magnet:?xt=urn:btih:...' \
 
 The source can be a magnet, an HTTP or HTTPS torrent URL or a `.torrent` path
 visible to the service. The torrent is only read when the job runs, so an
-unreachable source creates jobs that then fail with a clear error. In the
-browser, open the series and use **Acquire a mapped pack**. The API equivalent
-is `POST /api/series/ID/packs` with `{"source_url": "...", "episodes": [...]}`;
+unreachable source creates jobs that then fail with a clear error. The API call is
+`POST /api/series/ID/packs` with `{"source_url": "...", "episodes": [...]}`;
 the response contains `series_id`, `submitted`, `reused` and the public `jobs`.
 
 Each mapped episode must exist in the accepted plan with a catalog ID and an
@@ -70,8 +68,7 @@ mynou pack-remap JOB_ID --file-path Pack/corrected.mp4 --config ./mynou.json
 ```
 
 The API equivalent is `POST /api/jobs/JOB_ID/pack-mapping` with
-`{"file_path": "Pack/corrected.mp4"}`; the browser offers **Correct mapping and
-retry** in job details. The job must be `failed` or `cancelled`, without an
+`{"file_path": "Pack/corrected.mp4"}`; the job must be `failed` or `cancelled`, without an
 active lease or a confirmed import, and the new file must not belong to another
 episode of the same pack. Mynou records the correction, resets attempts and
 requeues the job, reusing bytes that were already verified.
@@ -100,8 +97,7 @@ without guards acquires whatever currently resolves. An empty scope returns
 `scope_empty: true` without contacting sources. Applying needs the running
 service. The API equivalent is `POST /api/series/ID/pack-search` with
 `{"season": 1}`, plus `"apply": true`, `"scope_id"` and `"candidate_id"` to
-acquire; the response then adds `submission`. In the browser, use **Preview
-season packs** and **Acquire resolved pack** in series details.
+acquire; the response then adds `submission`.
 
 What qualifies:
 
@@ -162,9 +158,7 @@ The preview authenticates the metadata and requires exactly one non-empty video
 at that path; it downloads no payload and records no jobs. Review `binding`,
 `group_id`, `new_owners` and `plan_id` before applying. The API equivalent is
 `POST /api/series/SERIES_ID/shared-file` with `source_url`, `file_path`,
-`season`, `episodes` and, to apply, `"apply": true` and `"plan_id"`. The
-browser offers **One video for multiple episodes**, **Preview shared file** and
-**Record reviewed shared ownership** in series details.
+`season`, `episodes` and, to apply, `"apply": true` and `"plan_id"`.
 
 The file is imported once, under a name that covers the whole range, for
 example `Example Series/Season 01/Example Series - S01E01-E02 [mynou-GROUP_ID].mp4`,
