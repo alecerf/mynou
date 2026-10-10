@@ -232,3 +232,144 @@ fn an_invalid_remote_tls_record_never_reaches_irc_registration() {
     drop(workers);
     peer.join().unwrap();
 }
+fn rejected(engine: &Engine) -> String {
+    engine
+        .irc_sources()
+        .unwrap()
+        .get("sources")
+        .unwrap()
+        .as_array()
+        .unwrap()[0]
+        .get("health")
+        .unwrap()
+        .get("rejected")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+fn attempts(engine: &Engine) -> String {
+    engine
+        .irc_sources()
+        .unwrap()
+        .get("sources")
+        .unwrap()
+        .as_array()
+        .unwrap()[0]
+        .get("health")
+        .unwrap()
+        .get("attempts")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+fn wire(body: &str) -> String {
+    format!(":{SENDER} PRIVMSG #announces :{body}\r\n")
+}
+fn delimited() -> Value {
+    let mut format = Value::object();
+    format.insert("type", "delimited");
+    format.insert("prefix", "NEW | ");
+    format.insert("separator", " | ");
+    format.insert("suffix", " END");
+    format.insert(
+        "fields",
+        Value::Array(
+            [
+                "title",
+                "kind",
+                "media_title",
+                "year",
+                "tmdb_id",
+                "info_hash",
+            ]
+            .into_iter()
+            .map(Value::from)
+            .collect(),
+        ),
+    );
+    format
+}
+const MARKER: &str = "private-marker";
+/// One connection receives `malformed`, a valid announcement and a PING, in a single
+/// write or in small fragments, then a second PING; it must never reconnect.
+fn malformed_then_valid(format: Option<Value>, malformed: &str, valid: &str, fragmented: bool) {
+    let dir = Directory::new();
+    let (listener, url) = listener();
+    let mut v = value(&dir.0, &url);
+    if let Some(format) = format {
+        let Value::Array(s) = v.get_mut("irc").unwrap().get_mut("sources").unwrap() else {
+            panic!()
+        };
+        s[0].insert("announcement_format", format);
+    }
+    let cfg = config::from_json(&v, &dir.0).unwrap();
+    let batch = format!("{}{}PING :after-reject\r\n", wire(malformed), wire(valid));
+    let peer = thread::spawn(move || {
+        let mut stream = accept(&listener);
+        registration(&mut stream, false);
+        if fragmented {
+            for chunk in batch.as_bytes().chunks(5) {
+                stream.write_all(chunk).unwrap();
+                stream.flush().unwrap();
+                thread::sleep(Duration::from_millis(1));
+            }
+        } else {
+            stream.write_all(batch.as_bytes()).unwrap();
+        }
+        assert_eq!(line(&mut stream), "PONG :after-reject");
+        send(&mut stream, "PING :still-open");
+        assert_eq!(line(&mut stream), "PONG :still-open");
+        closed(&mut stream);
+    });
+    let engine = Engine::open(cfg).unwrap();
+    let workers = engine.start();
+    wait(|| received(&engine, 1));
+    assert_eq!(rejected(&engine), "1");
+    assert_eq!(attempts(&engine), "1");
+    let report = engine.irc_sources().unwrap();
+    no_credentials(&report);
+    assert!(!mynou::json::stringify(&report).contains(MARKER));
+    assert_eq!(rows(&engine).len(), 1);
+    assert_eq!(
+        rows(&engine)[0]
+            .get("announcement")
+            .unwrap()
+            .get("tmdb_id")
+            .unwrap()
+            .as_str(),
+        Some("7")
+    );
+    no_jobs(&engine);
+    drop(workers);
+    peer.join().unwrap();
+    assert_eq!(attempts(&engine), "1");
+}
+#[test]
+fn a_malformed_json_announcement_is_rejected_without_losing_the_connection() {
+    let valid = format!("MYNOU {}", mynou::json::stringify(&announcement(7)));
+    let mut invalid = announcement(8);
+    invalid.insert("tmdb_id", format!("not-a-number-{MARKER}"));
+    for malformed in [
+        format!("MYNOU {{\"title\":\"{MARKER}\","),
+        format!("MYNOU {}", mynou::json::stringify(&invalid)),
+    ] {
+        for fragmented in [false, true] {
+            malformed_then_valid(None, &malformed, &valid, fragmented);
+        }
+    }
+}
+#[test]
+fn a_malformed_delimited_announcement_is_rejected_without_losing_the_connection() {
+    let valid = "NEW | Fixture.Movie.2024.1080p.BluRay.x264 | movie | Fixture Movie | 2024 | 7 | 1234567890abcdef1234567890abcdef12345678 END";
+    for malformed in [
+        format!("NEW | Fixture.Movie | movie | {MARKER} END"),
+        format!("{} | {MARKER} END", &valid[..valid.len() - 4]),
+        format!("{} {MARKER}", &valid[..valid.len() - 4]),
+    ] {
+        for fragmented in [false, true] {
+            malformed_then_valid(Some(delimited()), &malformed, valid, fragmented);
+        }
+    }
+}

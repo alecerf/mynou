@@ -313,3 +313,8 @@ cancel its job. Listing and previews work offline without writing.
 Reports show authentication state (for example
 `health.sasl_authenticated` or `health.nickserv_authenticated`) but never
 credentials, templates, magnets or raw server text.
+
+A malformed announcement from the configured sender is skipped without closing
+the connection: `health.rejected` counts them and the message text is never kept
+or logged. Authentication, TLS, framing, size-limit and storage failures still
+end the connection and trigger a reconnect.

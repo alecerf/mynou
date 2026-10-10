@@ -53,3 +53,7 @@ If Mynou stops while copying a download into your library, the half-written `.my
 ## Fixed: Verify retained imports before announcing availability
 
 After a restart, Mynou verifies recorded imports before marking them ready or sharing a ready job with another requester. Missing files, directories, symbolic links and paths outside the recorded destination produce a failure or conflict while preserving downloads and library files. Restore the original regular file and retry; existing Plex-only availability and sharing of pending work remain supported.
+
+## Fixed: A malformed IRC announcement no longer drops the connection
+
+When the configured announcer sent an announcement that Mynou could not read, Mynou closed the IRC connection and discarded the messages that arrived with it. It now skips that announcement, counts it in `health.rejected` of `GET /api/irc` (the text is never stored or logged) and keeps receiving. Authentication, size-limit, protocol and storage failures still end the connection. See [IRC sources](/docs/sources.md).
