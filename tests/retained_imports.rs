@@ -50,7 +50,11 @@ fn restarted_imports_fail_safely_with_plex_disabled_or_stale_indexed_paths() {
             let engine = Engine::open(cfg.clone()).unwrap();
             let mut req = request(7, "Fixture Movie");
             req.source_path = Some(source.to_str().unwrap().into());
-            let id = engine.submit(req).unwrap().remove(0).id;
+            let id = engine
+                .submit(req)
+                .unwrap_or_else(|_| panic!("Synthetic local request submission failed"))
+                .remove(0)
+                .id;
             assert!(engine.tick().unwrap());
             let imported = lock(&engine.store).unwrap().get(&id).unwrap();
             assert_eq!(imported.state, "imported");
@@ -196,7 +200,11 @@ fn resumed_operator_imports_cannot_escape_the_configured_destination() {
         let engine = Engine::open_for_management(cfg.clone()).unwrap();
         let mut req = request(7, "Fixture Movie");
         req.source_path = Some(source.to_str().unwrap().into());
-        let id = engine.submit(req).unwrap().remove(0).id;
+        let id = engine
+            .submit(req)
+            .unwrap_or_else(|_| panic!("Synthetic local request submission failed"))
+            .remove(0)
+            .id;
         engine.tick().unwrap();
         let mut imported = lock(&engine.store).unwrap().get(&id).unwrap();
         if case == "changed_root" {
