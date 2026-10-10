@@ -21,6 +21,7 @@ use requester_support::{
 use series_support::{Catalog, episode};
 use std::{fs, process::Command, sync::atomic::Ordering, thread};
 use transfer_support::{Seeder, Torrent};
+use web_support::{Server, TOKEN};
 
 fn catalog() -> Catalog {
     let c = Catalog::open(vec![episode(1, 1, Some("2024-01-01"), "Original Episode")]);
@@ -689,6 +690,82 @@ fn requester_identity_mismatch_or_failure_cannot_borrow_configured_authority() {
     assert_eq!(c.calls.load(Ordering::Acquire), calls);
     irc_support::no_jobs(&e);
     assert!(demands(&e, "alice").is_empty());
+}
+
+fn post(server: &Server, route: &str, v: &Value) -> web_support::Reply {
+    server.call(
+        "POST",
+        route,
+        &[
+            ("Authorization", &format!("Bearer {TOKEN}")),
+            ("Content-Type", "application/json"),
+        ],
+        &json::stringify(v),
+    )
+}
+
+#[test]
+fn protected_api_and_cli_reviews_bind_the_request_action() {
+    let dir = Directory::new();
+    let c = catalog();
+    let a = Accounts::open();
+    let server = Server::open(configured(&dir, &c, &a));
+    enable(&server.engine, "alice");
+    let row = irc_support::receive(&server.engine, 7);
+    let id = irc_support::record_id(&row);
+    let route = format!("/api/irc/announcements/{id}/control");
+    let before = irc_support::bytes(&server.engine.config.store_dir);
+    assert_eq!(
+        server
+            .call("POST", &route, &[], r#"{"action":"request"}"#)
+            .status,
+        401
+    );
+    let response = post(&server, &route, &irc_support::query("request").to_json());
+    assert_eq!(response.status, 200, "{}", response.body);
+    response.no_secrets();
+    let review = json::parse(&response.body).unwrap();
+    no_private(&review);
+    let mut v = value(&dir, &c, &a, 0);
+    v.insert("listen", server.authority.clone());
+    let path = dir.0.join("mynou.json");
+    fs::write(&path, json::stringify(&v)).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_mynou"))
+        .env("MYNOU_API_TOKEN", TOKEN)
+        .args(["irc-control", id, "--action", "request", "--config"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    no_private(&json::parse(std::str::from_utf8(&output.stdout).unwrap()).unwrap());
+    assert_eq!(irc_support::bytes(&server.engine.config.store_dir), before);
+    let plan = review.get("plan_id").unwrap().as_str().unwrap();
+    let apply = format!(r#"{{"action":"request","apply":true,"plan_id":"{plan}"}}"#);
+    let applied = server.call(
+        "POST",
+        &route,
+        &[
+            ("Authorization", &format!("Bearer {TOKEN}")),
+            ("Content-Type", "application/json"),
+        ],
+        &apply,
+    );
+    assert_eq!(applied.status, 200, "{}", applied.body);
+    let replay = server.call(
+        "POST",
+        &route,
+        &[
+            ("Authorization", &format!("Bearer {TOKEN}")),
+            ("Content-Type", "application/json"),
+        ],
+        &apply,
+    );
+    assert_eq!(replay.status, 400, "{}", replay.body);
+    assert_eq!(lock(&server.engine.store).unwrap().list().len(), 1);
 }
 
 #[test]

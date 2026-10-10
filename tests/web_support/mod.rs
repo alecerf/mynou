@@ -123,7 +123,7 @@ impl Reply {
         ] {
             assert!(
                 !self.body.contains(forbidden),
-                "Browser page exposed {forbidden}"
+                "Response exposed {forbidden}"
             );
             assert!(
                 !self.headers.values().any(|value| value.contains(forbidden)),
