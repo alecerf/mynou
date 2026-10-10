@@ -522,6 +522,40 @@ mod tests {
     }
 
     #[test]
+    fn shared_import_copies_payloads_larger_than_the_copy_buffer() {
+        let directory = Directory::new();
+        let source = directory.0.join("source.mp4");
+        let bytes: Vec<u8> = (0..=255).cycle().take(150_000).collect();
+        fs::write(&source, &bytes).unwrap();
+        let library = directory.0.join("library");
+        let mut file = crate::pack::SharedFile {
+            torrent_id: "b".repeat(40),
+            file_path: "Pack/large.mp4".into(),
+            tmdb_id: 43,
+            title: "Large Series".into(),
+            year: 2024,
+            season: 1,
+            first_episode: 1,
+            last_episode: 2,
+            import_path: String::new(),
+        };
+        file.import_path = shared_target(&library, &file)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .into();
+        let active = AtomicBool::new(true);
+        let destination =
+            import_shared_file_cancellable(&source, &library, &file, &active).unwrap();
+        assert_eq!(fs::read(&source).unwrap(), bytes);
+        assert_eq!(fs::read(&destination).unwrap(), bytes);
+        assert_eq!(
+            import_shared_file_cancellable(&source, &library, &file, &active).unwrap(),
+            destination
+        );
+    }
+
+    #[test]
     fn import_is_idempotent_and_never_overwrites_different_content() {
         let directory = Directory::new();
         let source = directory.0.join("source.mkv");

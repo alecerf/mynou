@@ -199,7 +199,7 @@ pub(super) fn page(engine: &Arc<Engine>, session: &Session) -> Result<String> {
         "folders",
         "1. Private state and library folders",
         folders,
-        "Set library movie and series roots and mount the same media folders in Plex and Mynou. Paths stay private. Use the deployment guide and doctor command to check access; this page does not test writes or permissions.",
+        "Set library movie and series roots and make the same media folders visible to Plex and Mynou. Paths stay private. Use the macOS guide and the doctor command to check access; this page does not test writes or permissions.",
         ("#configuration", "Find configuration guidance"),
     );
     card(

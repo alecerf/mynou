@@ -22,7 +22,7 @@ Add an optional `requesters` section to `mynou.json`:
       {"id": "bob", "expected_user_id": "234567", "token_env": "MYNOU_PLEX_BOB_TOKEN"}
     ],
     "destinations": [
-      {"id": "family", "movies_root": "/library/family/movies", "series_root": "/library/family/series"}
+      {"id": "family", "movies_root": "/Volumes/Media/family/movies", "series_root": "/Volumes/Media/family/series"}
     ]
   }
 }
