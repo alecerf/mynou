@@ -234,8 +234,9 @@ settings refuse force pushes to `trunk` and its deletion.
 history bind administrators, and every agent is one, so `--admin` and a direct
 push no longer get around them. No workflow needs to push to `trunk`: the release
 job only publishes for a tag someone pushed, and format-source pushes `format/**` branches.
-Auto-merge (the `allow_auto_merge` setting is on) would still merge on green
-required checks without any QA or Security verdict: never use it. If the rules
+Auto-merge is off (`allow_auto_merge`), since it would merge on green required
+checks without any QA or Security verdict: never turn it on or use it. Default
+workflow permissions are read; a job that writes declares it. If the rules
 ever deadlock (for example a required job was renamed), only the owner lifts
 `enforce_admins` in their own session, merges the fix and turns it back on; a
 comment on the shared account proves nothing. A required check also proves only

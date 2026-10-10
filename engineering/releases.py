@@ -20,6 +20,10 @@ ENTRY = re.compile("## (" + "|".join(CATEGORIES) + r"): (\S.*)")
 # Under GitHub's release-body limit, leaving room for the link prefixes and the footer, so
 # oversized notes fail in the PR that writes them and never burn a version.
 NOTES_LIMIT = 100_000
+# The rendered changelog also gets link prefixes and a footer, so it is bounded on its own.
+RENDERED_LIMIT = 110_000
+# The longest tag the version pattern allows, so that a check renders the worst case.
+LONGEST_TAG = "v999999.999999.999999"
 VERSION = re.compile(r"(?:0|[1-9][0-9]{0,5})\.(?:0|[1-9][0-9]{0,5})\.(?:0|[1-9][0-9]{0,5})")
 COMPARE_FILE_LIMIT = 300
 
@@ -111,13 +115,16 @@ def changelog(text, repository, tag):
             lines.append("")
     root = f"https://github.com/{repository}/blob/{tag}"
     rendered = "\n".join(lines).rstrip("\n")
-    return re.sub(r"\]\(/([^)\s]{0,512})\)", lambda link: f"]({root}/{link[1]})", rendered) + "\n"
+    text = re.sub(r"\]\(/([^)\s]{0,512})\)", lambda link: f"]({root}/{link[1]})", rendered) + "\n"
+    if len(text) > RENDERED_LIMIT:
+        raise ValueError(f"The generated changelog exceeds {RENDERED_LIMIT} characters, too many for a release page")
+    return text
 
 
 def notes_problems(api, ref):
     """Why the unreleased notes at `ref` cannot be published; empty when they can."""
     try:
-        parse_entries(file_text(api, UNRELEASED, ref, NOTES_LIMIT))
+        changelog(file_text(api, UNRELEASED, ref, NOTES_LIMIT), api.cfg["repository"], LONGEST_TAG)
     except ValueError as error:
         return [f"{UNRELEASED}: {error}"]
     return []
@@ -231,7 +238,7 @@ def plan_tag(api, number):
     if released <= version(manifest(api, parent)):
         raise ValueError("The tag must sit on the commit that raises the version over its parent")
     try:
-        parse_entries(file_text(api, UNRELEASED, parent, NOTES_LIMIT))
+        changelog(file_text(api, UNRELEASED, parent, NOTES_LIMIT), api.cfg["repository"], LONGEST_TAG)
     except APIError as error:
         if error.status != 404:
             raise
