@@ -212,7 +212,13 @@ pub(super) fn review(session: &Session, id: &str, report: &Value) -> String {
         e(text(report, "action"))
     );
     if let Some(p) = report.get("policy") {
-        body.push_str(&format!("<p>Enabled: {}.</p><p>Movie profile: {}. Episode profile: {}. Destination: {}.</p>",scalar(p,"enabled"),e(text(p,"movie_profile")),e(text(p,"episode_profile")),e(text(p,"destination"))));
+        body.push_str(&format!(
+            "<p>Enabled: {}.</p><p>Movie profile: {}. Episode profile: {}. Destination: {}.</p>",
+            scalar(p, "enabled"),
+            e(text(p, "movie_profile")),
+            e(text(p, "episode_profile")),
+            e(text(p, "destination"))
+        ));
     }
     if let Some(d) = report.get("demand") {
         body.push_str(&format!(

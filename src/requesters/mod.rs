@@ -261,12 +261,7 @@ impl Policy {
     pub fn from_json(v: &Value) -> Result<Self> {
         only(
             v,
-            &[
-                "enabled",
-                "movie_profile",
-                "episode_profile",
-                "destination",
-            ],
+            &["enabled", "movie_profile", "episode_profile", "destination"],
         )?;
         let policy = Self {
             enabled: boolean(v, "enabled")?,
