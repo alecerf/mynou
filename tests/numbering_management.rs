@@ -1,7 +1,8 @@
 //! Original protected API and CLI numbering workflows. CI only.
+mod api_support;
 mod library_support;
 mod series_support;
-mod web_support;
+use api_support::{Reply, Server, TOKEN};
 use library_support::Directory;
 use mynou::json::{self, Value};
 use series_support::{Catalog, episode, id, request};
@@ -11,7 +12,6 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use web_support::{Reply, Server, TOKEN};
 
 fn body() -> Value {
     json::parse(r#"{"changes":[{"catalog_id":11001,"catalog":{"season":1,"episode":1},"source":{"absolute":13}}]}"#).unwrap()

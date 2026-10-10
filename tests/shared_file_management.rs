@@ -1,10 +1,11 @@
 //! Protected shared-file previews and guarded application through HTTP, forms and CLI.
+mod api_support;
 mod automatic_pack_support;
 mod library_support;
 mod series_support;
 #[allow(dead_code)]
 mod transfer_support;
-mod web_support;
+use api_support::{Server, TOKEN};
 use automatic_pack_support::{Provider, SECRET, no_sources, snapshot};
 use library_support::Directory;
 use mynou::{
@@ -21,7 +22,6 @@ use std::{
     time::{Duration, Instant},
 };
 use transfer_support::{BLOCK, Torrent, payload};
-use web_support::{Server, TOKEN};
 
 fn setup(directory: &Directory, provider: &Provider) -> (Catalog, Config, String) {
     let catalog = Catalog::open(vec![

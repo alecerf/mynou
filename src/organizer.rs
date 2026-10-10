@@ -298,9 +298,6 @@ fn import_destination(
     active: &AtomicBool,
     copy_source: bool,
 ) -> Result<PathBuf> {
-    #[cfg(not(unix))]
-    return Err("atomic import currently requires a Unix system".to_owned());
-
     #[cfg(unix)]
     {
         active_import(active)?;

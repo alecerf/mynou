@@ -235,8 +235,6 @@ fn uncaptured_operator_jobs_require_verified_ready_imports_and_compatible_qualit
                             std::os::unix::fs::symlink(outside, root.join("link")).unwrap();
                         }
                     }
-                    #[cfg(not(unix))]
-                    continue;
                 }
                 _ => {
                     fs::create_dir_all(path.parent().unwrap()).unwrap();

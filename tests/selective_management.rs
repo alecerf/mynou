@@ -1,7 +1,8 @@
 //! Native selection expansion is protected by the established API guards.
+mod api_support;
 #[allow(dead_code)]
 mod transfer_support;
-mod web_support;
+use api_support::{Server, TOKEN};
 use mynou::{
     engine::lock,
     json::{self, Value},
@@ -9,7 +10,6 @@ use mynou::{
 };
 use std::fs;
 use transfer_support::{BLOCK, Scratch, Torrent, engine_config, payload, wait};
-use web_support::{Server, TOKEN};
 
 #[test]
 fn bearer_api_expands_shared_interests_without_undoing_pause_or_modifying_source_metadata() {

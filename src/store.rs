@@ -623,11 +623,6 @@ pub(crate) fn private_options() -> OpenOptions {
     options
 }
 
-#[cfg(not(unix))]
-pub(crate) fn private_options() -> OpenOptions {
-    OpenOptions::new()
-}
-
 pub(crate) fn reject_symlinks(path: &Path) -> Result<()> {
     for ancestor in path.ancestors() {
         match fs::symlink_metadata(ancestor) {
@@ -729,8 +724,6 @@ fn create_private_directory(path: &Path) -> Result<()> {
             .create(path)
             .map_err(|error| format!("cannot create storage: {error}"))?;
     }
-    #[cfg(not(unix))]
-    fs::create_dir(path).map_err(|error| error.to_string())?;
     sync_directory(path)?;
     sync_directory(
         path.parent()
@@ -752,9 +745,6 @@ impl Store {
     }
 
     pub fn open(directory: &Path) -> Result<Self> {
-        #[cfg(not(unix))]
-        return Err("durable storage currently requires a Unix system".to_owned());
-
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -845,9 +835,6 @@ impl Store {
     }
 
     fn read_existing(directory: &Path, preparing: bool) -> Result<Self> {
-        #[cfg(not(unix))]
-        return Err("durable storage currently requires a Unix system".to_owned());
-
         #[cfg(unix)]
         {
             if directory.file_name().is_none()

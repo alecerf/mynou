@@ -1,10 +1,11 @@
 //! Protected automatic pack previews and acquisition through native HTTP/forms/CLI.
+mod api_support;
 mod automatic_pack_support;
 mod library_support;
 mod series_support;
 #[allow(dead_code)]
 mod transfer_support;
-mod web_support;
+use api_support::{Server, TOKEN};
 use automatic_pack_support::*;
 use library_support::Directory;
 use mynou::{
@@ -21,7 +22,6 @@ use std::{
     time::{Duration, Instant},
 };
 use transfer_support::{BLOCK, Torrent, payload};
-use web_support::{Server, TOKEN};
 
 fn setup(directory: &Directory, provider: &Provider) -> (Catalog, Config) {
     let catalog = Catalog::open(vec![

@@ -1,10 +1,11 @@
 //! Original fixed-format text fixtures, protected previews and native import.
+mod api_support;
 mod irc_routing_support;
 mod irc_support;
 mod library_support;
 #[allow(dead_code)]
 mod transfer_support;
-mod web_support;
+use api_support::{Server, TOKEN};
 use library_support::Directory;
 use mynou::{
     config,
@@ -16,7 +17,6 @@ use mynou::{
     json::{self, Value},
 };
 use std::{fs, io::Write, process::Command, thread};
-use web_support::{Server, TOKEN};
 
 fn format(episodes: bool) -> Value {
     let mut v = Value::object();
