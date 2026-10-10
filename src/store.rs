@@ -85,6 +85,17 @@ pub struct Job {
     pub shared_upgrade: Option<SharedUpgrade>,
     pub requester: Option<crate::requesters::Provenance>,
     pub irc_origin: Option<crate::irc::Origin>,
+    /// Native transfers an automatic retry detached from this request. Each one
+    /// stays recorded here, in the retry's own transaction, until its pause (or
+    /// the decision to keep it for another owner) is itself durable.
+    pub retiring_transfers: Vec<String>,
+}
+
+/// Bounds the retirements one request can owe at the same time.
+pub const MAX_RETIRING_TRANSFERS: usize = 8;
+
+fn valid_transfer_id(id: &str) -> bool {
+    matches!(id.len(), 40 | 64) && id.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -415,7 +426,7 @@ impl Job {
     pub fn to_json(&self) -> Value {
         let list =
             |values: &[String]| Value::Array(values.iter().cloned().map(Value::String).collect());
-        object([
+        let mut value = object([
             (
                 "irc_origin",
                 self.irc_origin
@@ -472,7 +483,11 @@ impl Job {
                     .as_ref()
                     .map_or(Value::Null, SharedUpgrade::to_json),
             ),
-        ])
+        ]);
+        if !self.retiring_transfers.is_empty() {
+            value.insert("retiring_transfers", list(&self.retiring_transfers));
+        }
+        value
     }
 
     pub fn from_json(value: &Value) -> Result<Self> {
@@ -532,7 +547,22 @@ impl Job {
                 None | Some(Value::Null) => None,
                 Some(value) => Some(SharedUpgrade::from_json(value)?),
             },
+            retiring_transfers: match map.get("retiring_transfers") {
+                None | Some(Value::Null) => Vec::new(),
+                Some(_) => strings(map, "retiring_transfers")?,
+            },
         };
+        if job.retiring_transfers.len() > MAX_RETIRING_TRANSFERS
+            || job
+                .retiring_transfers
+                .iter()
+                .enumerate()
+                .any(|(index, id)| {
+                    !valid_transfer_id(id) || job.retiring_transfers[..index].contains(id)
+                })
+        {
+            return Err("invalid pending transfer retirement".to_owned());
+        }
         if let Some(p) = &job.requester
             && (!matches!(job.request.kind.as_str(), "movie" | "episode")
                 || p.demand_id != crate::requesters::Demand::identity(&p.account_id, &job.request))
@@ -1066,6 +1096,7 @@ impl Store {
             shared_upgrade: None,
             requester: parent.requester.clone(),
             irc_origin: None,
+            retiring_transfers: Vec::new(),
         };
         self.commit(job.clone(), "library upgrade recorded")?;
         Ok(job)
@@ -1287,6 +1318,7 @@ impl Store {
                 shared_upgrade: None,
                 requester: None,
                 irc_origin: None,
+                retiring_transfers: Vec::new(),
             });
         }
         self.validate_shared_batch(&jobs)?;
@@ -1510,6 +1542,7 @@ impl Store {
             shared_upgrade: None,
             requester,
             irc_origin: None,
+            retiring_transfers: Vec::new(),
         };
         self.commit(job.clone(), "request recorded")?;
         Ok(job)
@@ -1533,6 +1566,8 @@ impl Store {
         {
             return Err("job identity is immutable".to_owned());
         }
+        // Only retry and retirement change the debt; a worker's stale copy cannot.
+        job.retiring_transfers = current.retiring_transfers.clone();
         let ready_upgrade =
             current.state != "ready" && job.state == "ready" && current.upgrade_parent.is_some();
         if ready_upgrade {
@@ -1729,14 +1764,55 @@ impl Store {
         {
             // A fresh automatic search must not inherit the previous release's
             // URL or baseline, even if the process stops immediately afterward.
+            // The detached transfer is recorded in this same transaction, so a
+            // stop before its retirement leaves it discoverable.
+            if let Some(previous) = job.download_id.take()
+                && valid_transfer_id(&previous)
+                && !job.retiring_transfers.contains(&previous)
+            {
+                if job.retiring_transfers.len() >= MAX_RETIRING_TRANSFERS {
+                    return Err(
+                        "previous transfers still await retirement; restart or retry later"
+                            .to_owned(),
+                    );
+                }
+                job.retiring_transfers.push(previous);
+            }
             job.release = None;
             job.acquisition_url = None;
-            job.download_id = None;
             job.files.clear();
             job.progress = 0.0;
         }
         self.commit(job.clone(), "request retried")?;
         Ok(job)
+    }
+
+    /// Transfers detached by an automatic retry whose retirement is not yet
+    /// durable, as `(request id, transfer id)` pairs in stable order.
+    pub fn pending_retirements(&self) -> Vec<(String, String)> {
+        self.jobs
+            .values()
+            .flat_map(|job| {
+                job.retiring_transfers
+                    .iter()
+                    .map(|id| (job.id.clone(), id.clone()))
+            })
+            .collect()
+    }
+
+    /// Records that one detached transfer was paused, or deliberately kept for
+    /// another owner. Unknown requests and transfers are already settled.
+    pub fn complete_retirement(&mut self, job_id: &str, transfer_id: &str) -> Result<()> {
+        let Some(mut job) = self.get(job_id) else {
+            return Ok(());
+        };
+        let before = job.retiring_transfers.len();
+        job.retiring_transfers.retain(|id| id != transfer_id);
+        if job.retiring_transfers.len() == before {
+            return Ok(());
+        }
+        job.updated_at = now();
+        self.commit(job, "previous transfer retired")
     }
 
     /// Checks whether a completed acquisition can become the current import.
