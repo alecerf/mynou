@@ -8,5 +8,5 @@ Verification: link actual Actions runs and behavior evidence; state remaining
 limits. Do not claim unfinished checks passed.
 
 Checklist: one Issue, one branch, this one PR. Work PRs keep the version and add
-user-facing notes to `docs/releases/unreleased.md`; only a PR labeled
+user-facing notes to `docs/releases/unreleased.md` (`## <Category>: <Title>`); only a PR labeled
 `release` bumps it. When ready, comment `/wait qa`.

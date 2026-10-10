@@ -48,7 +48,7 @@ product-defining, destructive, sensitive or costly decisions.
   append user-facing notes to `docs/releases/unreleased.md`.
 - A release is its own Issue and one-commit PR labeled `release`. It only bumps
   the version in `Cargo.toml`/`Cargo.lock` and deletes the unreleased notes,
-  which ship in the release. At most one release per week, and only when
+  which become the release changelog. At most one release per week, and only when
   shipped code changed. `release-now` is reserved for security fixes and explicit
   owner requests. The `Release policy` check enforces this.
 - Pushing `v<version>` (equal to `Cargo.toml`) makes Actions validate and publish.

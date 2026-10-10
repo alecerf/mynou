@@ -65,11 +65,14 @@ with green checks goes to QA.
    existing PR instead of opening another.
 3. Commit and push meaningful progress often. CI runs on every push; fix reds
    with new commits. Never run tests, builds or linters locally.
-4. User-visible changes append a section to `docs/releases/unreleased.md`: a
-   `## Title` heading and one to three lines for people who run Mynou (what
-   changed, how to use it, any limit; link the relevant guide), never CI runs,
-   review evidence or process. The file holds only what is not released yet; if
-   two PRs append at once, the rebase conflict keeps both sections.
+4. User-visible changes append a section to `docs/releases/unreleased.md`:
+   `## <Category>: <Title>` with a category of Added, Changed, Deprecated,
+   Removed, Fixed or Security, then one to three lines for people who run Mynou
+   (what changed, how to use it, any limit; link guides from the repository
+   root, such as `[the guide](/docs/macos.md)`), never CI runs, review evidence
+   or process. The file holds only what is not released yet and `Release policy`
+   refuses a malformed note; if two PRs append at once, the rebase conflict keeps
+   both sections.
    Engineering-only changes need no note. Never change the version in
    `Cargo.toml` or `Cargo.lock`.
 5. Rebase on `origin/trunk` (see [Merging](#merging)), mark the PR ready and post
@@ -167,8 +170,8 @@ Published assets are immutable.
   2. On `work/<issue>-release-<version>`, rebased on `trunk`, make one commit
      that bumps the version in `Cargo.toml` and `Cargo.lock` and deletes
      `docs/releases/unreleased.md`. Everything on `trunk` before that commit
-     ships, so the notes ship with it: nothing else is written, and no
-     `docs/releases/<version>.md` is kept. Use a minor version for new
+     ships, so its notes become the release changelog: nothing else is written,
+     and no `docs/releases/<version>.md` is kept. Use a minor version for new
      user-visible capability, a patch otherwise.
   3. Open the PR labeled `release`; QA reads the deleted notes and checks the
      version. The `Release policy` check refuses a second commit, a kept notes
@@ -178,8 +181,10 @@ Published assets are immutable.
      at the PR's merge commit and refuses a tag that exists, a version that does
      not exceed the parent's or the latest release, missing notes in the parent,
      or a commit outside `trunk`. Then run it again with `--create` to push the
-     tag at that commit, which starts publication; the release notes are the
-     parent's `docs/releases/unreleased.md`.
+     tag at that commit, which starts publication. The GitHub release gets a
+     changelog generated from the parent's `docs/releases/unreleased.md`: notes
+     grouped under Added, Changed, Deprecated, Removed, Fixed and Security, then
+     a link to the full comparison with the previous release.
      Confirm that Actions published `v<version>` with its executable and
      `SHA256SUMS`, and only then close the release Issue (the board keeps
      `release.due` false while it is open).

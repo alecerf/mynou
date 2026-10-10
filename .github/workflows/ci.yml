@@ -66,7 +66,7 @@ jobs:
           if parse(before) >= parse(sys.argv[2]):
               sys.exit("The tagged commit does not raise the version over its parent.")
           RAISED
-          git cat-file -e "$GITHUB_SHA^:docs/releases/unreleased.md"
+          git show "$GITHUB_SHA^:docs/releases/unreleased.md" | python3 engineering/releases.py notes --tag "$GITHUB_REF_NAME" > /dev/null
           # Only a commit that reached trunk through a validated pull request may
           # be released: it must be trunk itself or one of its ancestors.
           relation=$(gh api "repos/$GITHUB_REPOSITORY/compare/trunk...$GITHUB_SHA" --jq .status)

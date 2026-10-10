@@ -28,9 +28,13 @@ fi
 
 notes="$RUNNER_TEMP/mynou-release-notes.md"
 : > "$notes"
-# The release commit deleted the unreleased notes; they ship in this release.
-git -C "$GITHUB_WORKSPACE" show "$GITHUB_SHA^:docs/releases/unreleased.md" >> "$notes"
-printf '\n\n' >> "$notes"
+# The release commit deleted the unreleased notes; the changelog is generated from them.
+git -C "$GITHUB_WORKSPACE" show "$GITHUB_SHA^:docs/releases/unreleased.md" \
+  | python3 "$GITHUB_WORKSPACE/engineering/releases.py" notes --tag "$tag" >> "$notes"
+if previous=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2> /dev/null); then
+  printf '\n**Full changelog**: %s/%s/compare/%s...%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$previous" "$tag" >> "$notes"
+fi
+printf '\n' >> "$notes"
 cat >> "$notes" <<EOF
 <!-- mynou-ci-release -->
 Mynou $version uses Rust 1.99.0 and the standard library only: no Cargo dependencies, unsafe code, FFI, or external programs at runtime.
