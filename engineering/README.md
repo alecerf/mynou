@@ -105,6 +105,12 @@ repository: close it yourself (`gh issue close <issue> --reason completed`) with
 a comment linking the merge. If the head moved, a new verdict is needed. A red
 `trunk` blocks further merges until a fix-forward PR lands.
 
+`trunk` is protected (see [Branch protection](#branch-protection)), but not
+against administrators, and every agent is one: only this rule stops an agent
+from merging a red or unreviewed PR. Never use `--admin`, a direct push or
+auto-merge (`--auto`) to get past a red or pending check or a missing QA or
+Security verdict; GitHub cannot see those verdicts.
+
 ## Branches
 
 No ghost branches. A branch exists only while work is in progress on it: it is
@@ -166,6 +172,33 @@ mark release Issues and PRs. Native dependencies mark real blockers.
 | Engineering checks | PRs, `trunk` | Organization policy and tooling scenarios |
 | Release policy | PRs | Version changes only in a weekly release PR |
 | Security audit | PRs, `trunk`, hourly | Reachable Git objects and Actions logs |
+
+### Branch protection
+
+`trunk` requires `validate`, `Build x86_64-unknown-linux-musl`,
+`Build aarch64-apple-darwin`, `Build x86_64-apple-darwin`, `package`,
+`organization`, `release-policy`, `source-history` and `CodeQL` to pass before a
+merge. `CodeQL` is the code scanning result (GitHub Advanced Security); the other
+eight are job names pinned to GitHub Actions. No review is required (every agent
+uses the same account, so an approval cannot exist) and branches need not be up
+to date. The settings refuse force pushes to `trunk` and its deletion.
+
+The required checks do not bind administrators (`enforce_admins` is off, on
+purpose) and every agent is one. A blocked PR can be merged with `--admin`, a
+direct push is possible, and auto-merge (the `allow_auto_merge` setting is on)
+would merge on green required checks without any QA or Security verdict. That
+bypass is for an emergency: use it only on an explicit request from the owner in
+their own session. A required check also proves only that a PR's own workflows
+passed, so Security review of changes to `.github/` and `engineering/` is the
+control for that.
+
+The `release` job and `actions-logs` are not required: they are skipped on pull
+requests by design. The required list is a repository setting. A PR that renames
+or removes a required job stays blocked on the old name until the list is
+updated: update it in that change and say so in the PR, and QA and Security
+confirm the live list with `gh api repos/alecerf/mynou/branches/trunk/protection`.
+Any other change that loosens the protection (a check, its pinned app, code
+scanning, force pushes or deletion) needs the owner.
 
 ## Recovery
 
