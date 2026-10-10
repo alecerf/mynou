@@ -38,6 +38,7 @@ def check_workflows(root):
     assert "tags: ['v*']" in ci and "branches: [trunk]" not in ci
     assert 'GITHUB_REF_NAME" != "v$VERSION"' in ci and "compare/trunk...$GITHUB_SHA" in ci
     assert "$GITHUB_SHA^:Cargo.toml" in ci and "$GITHUB_SHA^:docs/releases/unreleased.md" in ci
+    assert "engineering/releases.py notes" in ci
     assert "needs.package.outputs.publish == 'true'" in ci
     policy = (workflows / "release-policy.yml").read_text()
     assert "engineering/releases.py check-pr" in policy and ": write" not in policy

@@ -1,5 +1,6 @@
-"""Deliberate releases: only a weekly release PR changes the version, and CI
-publishes a version once, when a tag for it is pushed. Python std only."""
+"""Deliberate releases: only a weekly release PR changes the version and consumes the
+unreleased notes, and CI publishes a version once, when a tag for it is pushed,
+with a changelog generated from those notes. Python std only."""
 import argparse
 import base64
 from datetime import datetime, timedelta, timezone
@@ -7,13 +8,16 @@ import json
 import re
 import sys
 
-from github import APIError, GitHub
+from github import APIError, GitHub, config
 from protocol import instant, labels as label_names, stamp
 
 PRODUCT_DIRS = ("src/", "examples/", ".cargo/")
 PRODUCT_FILES = {"build.rs", "rust-toolchain.toml"}
 MANIFESTS = {"Cargo.toml", "Cargo.lock"}
 UNRELEASED = "docs/releases/unreleased.md"
+CATEGORIES = ("Added", "Changed", "Deprecated", "Removed", "Fixed", "Security")
+ENTRY = re.compile("## (" + "|".join(CATEGORIES) + r"): (\S.*)")
+NOTES_LIMIT = 256 * 1024
 VERSION = re.compile(r"(?:0|[1-9][0-9]{0,5})\.(?:0|[1-9][0-9]{0,5})\.(?:0|[1-9][0-9]{0,5})")
 COMPARE_FILE_LIMIT = 300
 
@@ -57,6 +61,63 @@ def shipped(paths, truncated, released, current):
     """Whether the executable can differ from the last release."""
     return (truncated or any(path.startswith(PRODUCT_DIRS) or path in PRODUCT_FILES for path in paths)
             or unversioned(released) != unversioned(current))
+
+
+def parse_entries(text):
+    """(category, title, body lines) of every `## <Category>: <title>` section of the
+    unreleased notes. Anything else fails closed, so a release never drops text."""
+    entries, current = [], None
+    for number, line in enumerate(text.splitlines(), 1):
+        if line.startswith("## "):
+            match = ENTRY.fullmatch(line)
+            if not match:
+                raise ValueError(f"Line {number}: use `## <Category>: <title>` with a category of "
+                                 + ", ".join(CATEGORIES))
+            current = (match[1], match[2].strip().rstrip("."), [])
+            entries.append(current)
+        elif line.startswith("#"):
+            raise ValueError(f"Line {number}: a note holds text, not headings")
+        elif current is not None:
+            current[2].append(line.rstrip())
+        elif line.strip():
+            raise ValueError(f"Line {number}: text before the first `## <Category>: <title>`")
+    for _, title, body in entries:
+        while body and not body[-1]:
+            body.pop()
+        while body and not body[0]:
+            body.pop(0)
+        if not body:
+            raise ValueError(f"The note '{title}' has no text")
+    if not entries:
+        raise ValueError(f"{UNRELEASED} holds no notes")
+    return entries
+
+
+def changelog(text, repository, tag):
+    """The human changelog of a release: notes grouped by category in a fixed order,
+    one bullet per note, with repository-root links made absolute for the release page."""
+    entries = parse_entries(text)
+    lines = []
+    for category in CATEGORIES:
+        group = [entry for entry in entries if entry[0] == category]
+        if not group:
+            continue
+        lines += [f"### {category}", ""]
+        for _, title, body in group:
+            lines.append(f"- **{title}.** {body[0]}")
+            lines += ["  " + line if line else "" for line in body[1:]]
+            lines.append("")
+    root = f"https://github.com/{repository}/blob/{tag}"
+    rendered = "\n".join(lines).rstrip("\n")
+    return re.sub(r"\]\(/([^)\s]*)\)", lambda link: f"]({root}/{link[1]})", rendered) + "\n"
+
+
+def notes_errors(text):
+    try:
+        parse_entries(text)
+    except ValueError as error:
+        return [f"{UNRELEASED}: {error}"]
+    return []
 
 
 def due(latest, shipped_change, now, policy):
@@ -106,14 +167,18 @@ def check(*, base, head, files, labels, latest, shipped_change, tag_exists, now,
     return errors
 
 
-def manifest(api, ref):
-    value = api.rest("GET", "contents/Cargo.toml?ref=" + ref)
+def file_text(api, path, ref, limit=64 * 1024):
+    value = api.rest("GET", f"contents/{path}?ref={ref}")
     if not isinstance(value, dict) or value.get("encoding") != "base64":
-        raise ValueError("Cargo.toml is unavailable at " + ref)
+        raise ValueError(f"{path} is unavailable at {ref}")
     raw = base64.b64decode(value["content"])
-    if len(raw) > 64 * 1024:
-        raise ValueError("Cargo.toml exceeds its bound")
+    if len(raw) > limit:
+        raise ValueError(f"{path} exceeds its bound")
     return raw.decode("utf-8")
+
+
+def manifest(api, ref):
+    return file_text(api, "Cargo.toml", ref)
 
 
 def latest_release(api):
@@ -163,7 +228,7 @@ def plan_tag(api, number):
     if released <= version(manifest(api, parent)):
         raise ValueError("The tag must sit on the commit that raises the version over its parent")
     try:
-        api.rest("GET", f"contents/{UNRELEASED}?ref={parent}")
+        parse_entries(file_text(api, UNRELEASED, parent, NOTES_LIMIT))
     except APIError as error:
         if error.status != 404:
             raise
@@ -207,8 +272,14 @@ def check_pr(api, number, now):
         latest = latest_release(api)
         change = shipped_since(api, latest, pull["head"]["sha"])
         exists = tag_exists(api, "v" + name(version(head)))
-    return check(base=base, head=head, files=files, labels=names, latest=latest, shipped_change=change,
-                 tag_exists=exists, now=now, policy=api.cfg["release_policy"], commits=pull["commits"])
+    errors = check(base=base, head=head, files=files, labels=names, latest=latest, shipped_change=change,
+                   tag_exists=exists, now=now, policy=api.cfg["release_policy"], commits=pull["commits"])
+    # A malformed note must fail in the PR that writes it, not when the release publishes.
+    if files.get(UNRELEASED) not in (None, "removed"):
+        errors += notes_errors(file_text(api, UNRELEASED, pull["head"]["sha"], NOTES_LIMIT))
+    elif "release" in names and version(base) != version(head) and files.get(UNRELEASED) == "removed":
+        errors += notes_errors(file_text(api, UNRELEASED, pull["base"]["sha"], NOTES_LIMIT))
+    return errors
 
 
 def status(api, now, open_release_issues=()):
@@ -226,10 +297,20 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("check-pr").add_argument("number", type=int)
     commands.add_parser("status")
+    rendering = commands.add_parser("notes", help="render the unreleased notes on stdin as a release changelog")
+    rendering.add_argument("--tag", required=True)
     tagging = commands.add_parser("tag", help="plan, and with --create push, the tag of a merged release PR")
     tagging.add_argument("number", type=int)
     tagging.add_argument("--create", action="store_true")
     args = parser.parse_args()
+    if args.command == "notes":
+        if not re.fullmatch("v" + VERSION.pattern, args.tag):
+            raise ValueError("The tag must be v<major>.<minor>.<patch>")
+        text = sys.stdin.read(NOTES_LIMIT + 1)
+        if len(text) > NOTES_LIMIT:
+            raise ValueError("The unreleased notes exceed their bound")
+        sys.stdout.write(changelog(text, config()["repository"], args.tag))
+        return
     api = GitHub()
     now = datetime.now(timezone.utc)
     if args.command == "tag":

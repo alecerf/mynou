@@ -14,7 +14,7 @@ existing changes/data compatibility. Commit meaningful progress, use independent
 authored synthetic edge-case fixtures, format as editing, and validate only in CI.
 Push completed scope; fix red jobs with commits until required checks are green.
 Never change the package version; add user-facing notes to
-docs/releases/unreleased.md.
+docs/releases/unreleased.md as `## <Category>: <Title>`.
 
 Measure before performance claims. Record nearby nonblocking findings for Triage
 without endless scope growth. Hand over to QA with `/wait qa` and a comment that

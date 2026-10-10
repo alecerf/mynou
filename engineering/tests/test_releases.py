@@ -15,6 +15,12 @@ POLICY = {"minimum_interval_days": 7, "urgent_label": "release-now"}
 LATEST = {"tag": "v0.22.34", "published_at": AT - timedelta(days=8)}
 BASE = "b" * 40
 HEAD = "a" * 40
+NOTES = ("## Fixed: One fix\nA sentence.\n\n## Added: One thing\nFirst paragraph.\n\n"
+         "Second paragraph, see [the guide](/docs/macos.md#configure-mynou).\n\n## Removed: Old thing.\nGone.\n")
+
+
+def text_file(text):
+    return {"encoding": "base64", "content": base64.b64encode(text.encode()).decode()}
 
 
 def manifest(version="0.22.34", lto="thin"):
@@ -121,9 +127,9 @@ class Cadence(unittest.TestCase):
 
 
 class FakeAPI:
-    def __init__(self, files, labels=("release",), head_version="0.23.0"):
+    def __init__(self, files, labels=("release",), head_version="0.23.0", notes=NOTES):
         self.cfg = {"release_policy": POLICY, "default_branch": "trunk"}
-        self.files, self.labels, self.head_version = files, labels, head_version
+        self.files, self.labels, self.head_version, self.notes = files, labels, head_version, notes
         self.paths = []
 
     def rest(self, method, path, value=None):
@@ -137,6 +143,8 @@ class FakeAPI:
             return toml()
         if path == "contents/Cargo.toml?ref=" + HEAD:
             return toml(self.head_version)
+        if path in ("contents/docs/releases/unreleased.md?ref=" + BASE, "contents/docs/releases/unreleased.md?ref=" + HEAD):
+            return text_file(self.notes)
         if path == "releases/latest":
             return {"tag_name": "v0.22.34", "published_at": protocol.stamp(AT - timedelta(days=8))}
         if path == "git/ref/tags/v0.23.0":
@@ -168,6 +176,40 @@ class ReleasePolicyCheck(unittest.TestCase):
         self.assertEqual(releases.check_pr(work, 5, AT), [])
         self.assertNotIn("releases/latest", work.paths)
 
+    def test_malformed_notes_fail_in_the_work_pr_that_writes_them_and_in_the_release_that_ships_them(self):
+        notes = [{"filename": "docs/releases/unreleased.md", "status": "modified"}]
+        good = FakeAPI(notes, labels=(), head_version="0.22.34")
+        self.assertEqual(releases.check_pr(good, 5, AT), [])
+        bad = FakeAPI(notes, labels=(), head_version="0.22.34", notes="## Oops\ntext\n")
+        self.assertIn("docs/releases/unreleased.md: Line 1", " ".join(releases.check_pr(bad, 5, AT)))
+        release = FakeAPI([{"filename": "Cargo.toml", "status": "modified"},
+                           {"filename": "Cargo.lock", "status": "modified"},
+                           {"filename": "docs/releases/unreleased.md", "status": "removed"}], notes="plain text\n")
+        self.assertIn("text before the first", " ".join(releases.check_pr(release, 5, AT)))
+
+
+class Changelog(unittest.TestCase):
+    def test_notes_become_a_changelog_grouped_by_category_with_absolute_links(self):
+        text = releases.changelog(NOTES, "alecerf/mynou", "v0.23.0")
+        self.assertEqual(text, "\n".join([
+            "### Added", "", "- **One thing.** First paragraph.", "",
+            "  Second paragraph, see [the guide](https://github.com/alecerf/mynou/blob/v0.23.0/docs/macos.md#configure-mynou).",
+            "", "### Removed", "", "- **Old thing.** Gone.", "", "### Fixed", "", "- **One fix.** A sentence.", ""]))
+
+    def test_malformed_notes_fail_closed_with_their_line(self):
+        for text, message in (("## Fixed one\nx\n", "Line 1"), ("text\n## Fixed: a\nx\n", "Line 1: text before"),
+                              ("## Fixed: a\n### sub\nx\n", "Line 2"), ("## Fixed: a\n\n", "has no text"),
+                              ("## Broken: a\nx\n", "Line 1"), ("", "holds no notes")):
+            with self.subTest(text=text):
+                with self.assertRaises(ValueError) as error:
+                    releases.changelog(text, "alecerf/mynou", "v0.23.0")
+                self.assertIn(message, str(error.exception))
+
+    def test_only_repository_root_links_are_rewritten(self):
+        text = releases.changelog("## Added: A\nSee [x](https://example.org/a), [y](docs/y.md), [z](/docs/z.md).\n",
+                                  "alecerf/mynou", "v1.2.3")
+        self.assertIn("[x](https://example.org/a), [y](docs/y.md), [z](https://github.com/alecerf/mynou/blob/v1.2.3/docs/z.md)", text)
+
 
 MERGED = "c" * 40
 PARENT = "d" * 40
@@ -177,7 +219,7 @@ class TagAPI:
     """A merged release PR whose merge commit carries `merged_version`."""
     def __init__(self, merged_version="0.23.0", head_version="0.23.0", base_version="0.22.34", merged=True,
                  labels=("release",), exists=False, relation="behind", commit=MERGED, parent_version="0.22.34",
-                 parents=(PARENT,), notes=True, latest=LATEST):
+                 parents=(PARENT,), notes=NOTES, latest=LATEST):
         self.cfg = {"release_policy": POLICY, "default_branch": "trunk"}
         self.versions = {MERGED: merged_version, HEAD: head_version, BASE: base_version, PARENT: parent_version}
         self.merged, self.labels, self.exists, self.relation, self.commit = merged, labels, exists, relation, commit
@@ -196,9 +238,9 @@ class TagAPI:
         if path == "git/commits/" + MERGED:
             return {"parents": [{"sha": sha} for sha in self.parents]}
         if path == "contents/docs/releases/unreleased.md?ref=" + PARENT:
-            if self.notes:
-                return {"type": "file"}
-            raise APIError(404)
+            if self.notes is None:
+                raise APIError(404)
+            return text_file(self.notes)
         if path == "releases/latest":
             return {"tag_name": self.latest["tag"], "published_at": protocol.stamp(self.latest["published_at"])}
         if path == "git/ref/tags/v0.23.0":
@@ -231,7 +273,7 @@ class ReleaseTags(unittest.TestCase):
                     dict(merged_version="0.23.1"), dict(head_version="0.22.34", merged_version="0.22.34"),
                     dict(base_version="0.23.0"), dict(exists=True), dict(relation="ahead"),
                     dict(relation="diverged"), dict(parents=()), dict(parents=(PARENT, "e" * 40)),
-                    dict(parent_version="0.23.0"), dict(notes=False),
+                    dict(parent_version="0.23.0"), dict(notes=None), dict(notes="## Oops\ntext\n"),
                     dict(latest=dict(LATEST, tag="v0.23.0")), dict(latest=dict(LATEST, tag="v1.0.0"))]
         for overrides in refusals:
             with self.subTest(overrides=overrides):

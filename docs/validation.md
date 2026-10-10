@@ -81,14 +81,17 @@ and they never authorize a release.
 Merging to `trunk` does not release anything. At most once a week, a release PR
 bumps the version and deletes `docs/releases/unreleased.md`, the one file that
 holds the notes of everything not yet released; once it is merged, pushing the tag
-`v<version>` publishes it with those notes; see the
+`v<version>` publishes it with a changelog generated from those notes, grouped by
+category (Added, Changed, Deprecated, Removed, Fixed, Security) and ending with a
+link to the full comparison; see the
 [engineering runbook](../engineering/README.md#releases). The `Release policy`
 check refuses version changes anywhere else.
 
 The release job runs
 [publish-release.sh](../.github/scripts/publish-release.sh), which checks the
 packaged files and creates the GitHub release for the pushed tag from the
-validated commit, with the notes read from that commit's parent. Only this job has `contents: write`, using the ephemeral repository
+validated commit, with the changelog generated from the notes in that commit's
+parent. Only this job has `contents: write`, using the ephemeral repository
 token.
 
 | Asset | Contents |
