@@ -630,7 +630,11 @@ mod tests {
         );
         let revision = "a".repeat(32);
         let upgrade = import_native_versioned_file_cancellable(
-            &source, &library, &request(), &revision, &active,
+            &source,
+            &library,
+            &request(),
+            &revision,
+            &active,
         )
         .unwrap();
         assert_eq!(fs::read(&upgrade).unwrap(), b"payload bytes");
