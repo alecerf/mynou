@@ -1503,51 +1503,6 @@ impl Client {
             &self.config,
         ))
     }
-    /// A bounded read-only projection: no file, policy, source or request snapshots.
-    pub(crate) fn transfer_progress(&self, ids: &[String]) -> Result<crate::json::Value> {
-        use crate::json::Value as Json;
-        if ids.is_empty() || ids.len() > 50 {
-            return Err("Transfer progress scope exceeds the limit".into());
-        }
-        let jobs = self
-            .jobs
-            .lock()
-            .map_err(|_| "BitTorrent state lock is poisoned")?;
-        let mut entries = Vec::with_capacity(ids.len());
-        for id in ids {
-            let mut entry = Json::object();
-            entry.insert("id", id.as_str());
-            if let Some(job) = jobs.get(id) {
-                entry.insert("state", transfer_state(job));
-                entry.insert(
-                    "progress",
-                    Json::Number(if job.status.progress.is_finite() {
-                        job.status.progress.clamp(0.0, 1.0)
-                    } else {
-                        0.0
-                    }),
-                );
-                entry.insert(
-                    "downloaded_bytes",
-                    job.counters.downloaded.load(Ordering::Relaxed).to_string(),
-                );
-                entry.insert(
-                    "uploaded_bytes",
-                    job.counters.uploaded.load(Ordering::Relaxed).to_string(),
-                );
-                entry.insert(
-                    "verified_bytes",
-                    job.counters.verified.load(Ordering::Relaxed).to_string(),
-                );
-                entry.insert("seed_elapsed_secs", seed_clock_snapshot(job).0.to_string());
-            } else {
-                entry.insert("missing", true);
-            }
-            entries.push(entry);
-        }
-        Ok(Json::Array(entries))
-    }
-
     pub fn transfers(&self) -> Result<crate::json::Value> {
         let jobs = self
             .jobs

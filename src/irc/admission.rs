@@ -254,16 +254,6 @@ fn public_request(request: &Request) -> Value {
 }
 
 impl Engine {
-    pub(crate) fn irc_request_available(&self, id: &str) -> Result<bool> {
-        let ledger = lock(&self.irc_store)?;
-        let record = ledger
-            .state
-            .records
-            .get(id)
-            .ok_or("IRC: unknown announcement")?;
-        Ok(request_rule(&self.config, record).is_ok())
-    }
-
     pub(crate) fn irc_request_control(&self, id: &str, query: &ControlRequest) -> Result<Value> {
         if self.stopped.load(Ordering::Acquire) || (query.apply && self.read_only) {
             return Err("IRC: request application requires a running writable service".into());
