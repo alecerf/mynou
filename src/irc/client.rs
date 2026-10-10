@@ -23,6 +23,7 @@ pub(crate) struct Health {
     attempts: u64,
     received: u64,
     duplicates: u64,
+    rejected: u64,
     last_received: u64,
     last_error: Option<String>,
     retry_in_secs: u64,
@@ -39,6 +40,7 @@ impl Health {
             ("attempts", self.attempts),
             ("received", self.received),
             ("duplicates", self.duplicates),
+            ("rejected", self.rejected),
             ("last_received", self.last_received),
             ("retry_in_secs", self.retry_in_secs),
         ] {
@@ -75,6 +77,7 @@ impl Runtime {
                             attempts: 0,
                             received: 0,
                             duplicates: 0,
+                            rejected: 0,
                             last_received: 0,
                             last_error: None,
                             retry_in_secs: 0,
@@ -392,7 +395,16 @@ fn connected(engine: &Engine, source: &Source) -> Result<()> {
                     health(engine, &source.id, "connected", None, 0);
                 }
                 Event::Announcement(body) => {
-                    let value = source.decode_payload(&body)?.to_json();
+                    // Only a content error is recoverable: the sender is already
+                    // authorized and the line framed. Storage and policy errors below
+                    // still end the connection.
+                    let Ok(announcement) = source.decode_payload(&body) else {
+                        if let Some(h) = lock(&engine.irc_runtime)?.health.get_mut(&source.id) {
+                            h.rejected = h.rejected.saturating_add(1);
+                        }
+                        continue;
+                    };
+                    let value = announcement.to_json();
                     let report =
                         engine.irc_receive(&source.id, &source.sender, &source.channel, &value)?;
                     let mut runtime = lock(&engine.irc_runtime)?;
