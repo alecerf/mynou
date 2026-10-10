@@ -51,7 +51,7 @@ product-defining, destructive, sensitive or costly decisions.
   `docs/releases/<version>.md`. At most one release per week, and only when
   shipped code changed. `release-now` is reserved for security fixes and explicit
   owner requests. The `Release policy` check enforces this.
-- Actions alone tags and publishes release assets from validated source.
+- Pushing `v<version>` (equal to `Cargo.toml`) makes Actions validate and publish.
   Published assets are immutable. Preserve Go data separately.
 
 ## Safety

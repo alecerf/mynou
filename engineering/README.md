@@ -142,11 +142,13 @@ be lost (merged, superseded or kept by a closed PR), then
 
 ## Releases
 
-Merging to `trunk` does not release it, and Mynou CI does not validate it again:
-its pull request already did, and protection keeps the tree identical. Mynou CI
-runs on `trunk` and publishes only when `Cargo.toml` carries a version that has no `v<version>` tag
-yet, which only a merged release PR introduces. Actions alone tags and publishes;
-published assets are immutable.
+Merging to `trunk` neither releases nor runs Mynou CI again: the pull request
+already validated that tree and protection keeps it identical. A release starts
+when someone pushes the tag `v<version>`. The binary reports the `Cargo.toml`
+version, so Mynou CI refuses a tag that differs from it, or a commit that is not
+on `trunk`. It validates that commit again, since rebase merging gives `trunk`
+new commits without check results, then Actions alone publishes the assets.
+Published assets are immutable.
 
 - **Cadence:** at most one release per `minimum_interval_days` (seven), and only
   when shipped inputs (`src/`, `examples/`, Rust toolchain or build settings)
@@ -163,10 +165,15 @@ published assets are immutable.
      Use a minor version for new user-visible capability, a patch otherwise.
   3. Open the PR labeled `release`; QA checks the notes and the version. The
      `Release policy` check refuses anything else in the PR.
-  4. After merge, confirm that Actions published `v<version>` with its
-     executable and `SHA256SUMS`.
-- A failed publication is re-run from the failed job. Never retag or replace
+  4. After merge, with the release commit on `trunk`, push the tag:
+     `git fetch origin && git tag -a v<version> -m "Mynou <version>" <commit>`
+     then `git push origin v<version>` (use the release PR's merged commit, which
+     `gh pr view <pr> --json mergeCommit` shows). Then confirm that Actions
+     published `v<version>` with its executable and `SHA256SUMS`.
+- A failed publication is re-run from the failed job. Never move a tag or replace
   published assets; a burned version moves to the next patch in a new release PR.
+  A tag the decision refused (wrong version or not on `trunk`) published nothing:
+  only the owner deletes it, then the correct tag is pushed.
 
 ## Product planning
 
@@ -188,8 +195,8 @@ mark release Issues and PRs. Native dependencies mark real blockers.
 
 | Workflow | Runs | Checks |
 | --- | --- | --- |
-| Mynou CI | PRs; `trunk` only to publish | Dependency graph, format, Clippy, all tests, the macOS arm64 build and demo; on `trunk` it runs, and publishes, only a new version |
-| Engineering checks | PRs, `trunk` | Organization policy and tooling scenarios |
+| Mynou CI | PRs; a pushed `v*` tag | Dependency graph, format, Clippy, all tests, the macOS arm64 build and demo; a version tag publishes after the same checks |
+| Engineering checks | PRs | Organization policy and tooling scenarios |
 | Release policy | PRs | Version changes only in a weekly release PR |
 | Security audit | PRs, `trunk`, hourly | Reachable Git objects and Actions logs |
 
@@ -207,7 +214,7 @@ settings refuse force pushes to `trunk` and its deletion.
 `enforce_admins` is on: the required checks, the up-to-date rule and linear
 history bind administrators, and every agent is one, so `--admin` and a direct
 push no longer get around them. No workflow needs to push to `trunk`: the release
-job only tags and publishes, and format-source pushes `format/**` branches.
+job only publishes for a tag someone pushed, and format-source pushes `format/**` branches.
 Auto-merge (the `allow_auto_merge` setting is on) would still merge on green
 required checks without any QA or Security verdict: never use it. If the rules
 ever deadlock (for example a required job was renamed), only the owner lifts

@@ -34,8 +34,9 @@ def check_workflows(root):
     for path in sorted(workflows.glob("*.yml")):
         assert "pull_request_target" not in path.read_text(), "Never run PR code with base privileges: " + path.name
     ci = (workflows / "ci.yml").read_text()
-    # Trunk commits are validated; only a version without a tag is published.
-    assert "git/ref/tags/v$VERSION" in ci and "HTTP 404" in ci
+    # Pull requests validate; only a version tag on a trunk commit is published.
+    assert "tags: ['v*']" in ci and "branches: [trunk]" not in ci
+    assert 'GITHUB_REF_NAME" != "v$VERSION"' in ci and "compare/trunk...$GITHUB_SHA" in ci
     assert "needs.package.outputs.publish == 'true'" in ci
     policy = (workflows / "release-policy.yml").read_text()
     assert "engineering/releases.py check-pr" in policy and ": write" not in policy
