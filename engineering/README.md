@@ -105,10 +105,12 @@ repository: close it yourself (`gh issue close <issue> --reason completed`) with
 a comment linking the merge. If the head moved, a new verdict is needed. A red
 `trunk` blocks further merges until a fix-forward PR lands.
 
-GitHub enforces the check rule: `trunk` is protected and refuses a merge until
-the required checks pass (see [Branch protection](#branch-protection)). Never use
-`--admin` or push to `trunk` directly to get past a red or pending check; both are
-reserved for an explicit owner request.
+`trunk` is protected, but only against non-administrators, and every agent is one
+(see [Branch protection](#branch-protection)). GitHub will not stop an agent
+from merging a red or unreviewed PR; this rule does. Never use `--admin`, direct
+pushes, auto-merge (`--auto`) or settings edits to get past a red or pending
+check or a missing QA or Security verdict: GitHub cannot see those verdicts, and
+auto-merge would merge on green checks even after a `/reject` or a push.
 
 ## Branches
 
@@ -177,14 +179,27 @@ mark release Issues and PRs. Native dependencies mark real blockers.
 `trunk` requires `validate`, `Build x86_64-unknown-linux-musl`,
 `Build aarch64-apple-darwin`, `Build x86_64-apple-darwin`, `package`,
 `organization`, `release-policy`, `source-history` and `CodeQL` to pass before a
-merge. No review is required (every agent uses the same account, so an approval
-cannot exist) and branches need not be up to date. Force pushes to `trunk` and
-its deletion are refused. The administrator bypass stays for emergencies.
+merge. `CodeQL` is the code scanning result (GitHub Advanced Security), not a
+workflow job; the other eight are job names pinned to GitHub Actions. No review
+is required (every agent uses the same account, so an approval cannot exist) and
+branches need not be up to date.
+
+Enforcement is off for administrators (`enforce_admins` is off, on purpose) and
+every agent is one, so merging a blocked PR, direct and force pushes, deleting
+`trunk` and enabling auto-merge all stay possible for an agent. The
+administrator bypass is for an emergency, which means an explicit owner request.
+A required check also proves only that a PR's own workflows passed, since a PR
+runs its own workflows and scripts: Security review of changes to `.github/` and
+`engineering/` is the control for that.
 
 The `release` job and `actions-logs` are not required: they are skipped on pull
-requests by design. When a PR renames or removes a required job, its merge stays
-blocked on the old name until the required list in the repository settings is
-updated; update it as part of that change and say so in the PR.
+requests by design. The required list is a repository setting, not a file. A PR
+that renames or removes a required job stays blocked on the old name until the
+list is updated: update it as part of that change, say so in the PR, and let QA
+and Security confirm the live list against the diff with
+`gh api repos/alecerf/mynou/branches/trunk/protection`. Dropping or loosening a
+check or its pinned app, or disabling code scanning (which blocks every merge),
+needs the owner's approval.
 
 ## Recovery
 
