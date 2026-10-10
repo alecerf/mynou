@@ -8,8 +8,14 @@ mod transfer_support;
 mod web_support;
 use irc_routing_support::*;
 use library_support::{Directory, run_until};
-use mynou::{config, engine::{Engine, lock}, json::{self, Value}};
-use requester_support::{Accounts, apply, demand, demand_query, enable, movie, policy, policy_query};
+use mynou::{
+    config,
+    engine::{Engine, lock},
+    json::{self, Value},
+};
+use requester_support::{
+    Accounts, apply, demand, demand_query, enable, movie, policy, policy_query,
+};
 use std::{fs, sync::atomic::Ordering, thread};
 use transfer_support::{RecordingProxy, Seeder, Torrent};
 
@@ -283,4 +289,3 @@ fn selector_edits_invalidate_pending_grabs_and_review_guards_without_reinterpret
     assert_eq!(irc_support::bytes(&cfg.store_dir), before);
     no_candidate_work(&e, &id);
 }
-

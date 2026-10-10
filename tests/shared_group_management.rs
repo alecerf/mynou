@@ -8,9 +8,18 @@ mod transfer_support;
 mod web_support;
 use automatic_pack_support::{Provider, SECRET, no_sources, snapshot};
 use library_support::Directory;
-use mynou::{config::{self, Config}, engine::{Engine, lock}, json::{self, Value}};
+use mynou::{
+    config::{self, Config},
+    engine::{Engine, lock},
+    json::{self, Value},
+};
 use shared_group_support::{Fixture, apply, baseline, baseline_query};
-use std::{fs, process::{Command, Output, Stdio}, thread, time::{Duration, Instant}};
+use std::{
+    fs,
+    process::{Command, Output, Stdio},
+    thread,
+    time::{Duration, Instant},
+};
 use web_support::{Server, TOKEN};
 
 fn headers() -> [(String, String); 2] {
@@ -253,4 +262,3 @@ fn cli_offline_preview_preserves_state_and_service_apply_uses_the_same_guard() {
     assert_eq!(created.get("submitted"), Some(&Value::Number(2.0)));
     assert_eq!(lock(&server.engine.store).unwrap().list().len(), 4);
 }
-

@@ -9,17 +9,14 @@ mod transfer_support;
 mod web_support;
 use irc_routing_support::{job, no_private, read_checked, row_mut, write_checked};
 use library_support::{Directory, run_until};
-use mynou::{config, engine::{Engine, lock}, irc::ControlRequest, json::{self, Value}};
+use mynou::{
+    config,
+    engine::{Engine, lock},
+    irc::ControlRequest,
+    json::{self, Value},
+};
 use requester_support::{
-    Accounts,
-    apply,
-    demand,
-    demand_query,
-    demands,
-    enable,
-    movie,
-    policy,
-    policy_query,
+    Accounts, apply, demand, demand_query, demands, enable, movie, policy, policy_query,
 };
 use series_support::{Catalog, episode};
 use std::{fs, process::Command, sync::atomic::Ordering, thread};

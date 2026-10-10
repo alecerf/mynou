@@ -6,7 +6,15 @@ mod library_support;
 mod transfer_support;
 mod web_support;
 use library_support::Directory;
-use mynou::{config, engine::Engine, irc::{self, protocol::{Decoder, Message}}, json::{self, Value}};
+use mynou::{
+    config,
+    engine::Engine,
+    irc::{
+        self,
+        protocol::{Decoder, Message},
+    },
+    json::{self, Value},
+};
 use std::{fs, thread};
 
 fn format(episodes: bool) -> Value {

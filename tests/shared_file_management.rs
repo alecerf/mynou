@@ -7,9 +7,19 @@ mod transfer_support;
 mod web_support;
 use automatic_pack_support::{Provider, SECRET, no_sources, snapshot};
 use library_support::Directory;
-use mynou::{config::Config, engine::{Engine, lock}, json::{self, Value}, pack::SharedFileRequest};
+use mynou::{
+    config::Config,
+    engine::{Engine, lock},
+    json::{self, Value},
+    pack::SharedFileRequest,
+};
 use series_support::{Catalog, episode, id, request};
-use std::{fs, process::{Command, Output, Stdio}, thread, time::{Duration, Instant}};
+use std::{
+    fs,
+    process::{Command, Output, Stdio},
+    thread,
+    time::{Duration, Instant},
+};
 use transfer_support::{BLOCK, Torrent, payload};
 use web_support::{Server, TOKEN};
 

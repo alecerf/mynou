@@ -3,7 +3,10 @@ mod library_support;
 mod series_support;
 mod web_support;
 use library_support::Directory;
-use mynou::{engine::lock, json::{self, Value}};
+use mynou::{
+    engine::lock,
+    json::{self, Value},
+};
 use series_support::{Catalog, episode, id, request};
 use web_support::{Server, TOKEN};
 

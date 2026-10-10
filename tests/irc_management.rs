@@ -4,7 +4,11 @@ mod library_support;
 mod web_support;
 use irc_support::*;
 use library_support::Directory;
-use mynou::{config, engine::Engine, json::{self, Value}};
+use mynou::{
+    config,
+    engine::Engine,
+    json::{self, Value},
+};
 use std::{fs, process::Command};
 use web_support::{Server, TOKEN};
 fn post(server: &Server, route: &str, value: &Value) -> web_support::Reply {

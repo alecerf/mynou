@@ -2,7 +2,11 @@
 mod library_support;
 mod web_support;
 use library_support::Directory;
-use mynou::{config, integrations, json::{self, Value}, store::Request};
+use mynou::{
+    config, integrations,
+    json::{self, Value},
+    store::Request,
+};
 use std::{
     collections::BTreeMap,
     fs,
@@ -10,22 +14,11 @@ use std::{
     net::TcpListener,
     process::Command,
     sync::{
-        Arc,
-        Mutex,
-        atomic::{
-            AtomicBool,
-            AtomicUsize,
-            Ordering,
-        },
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
-    thread::{
-        self,
-        JoinHandle,
-    },
-    time::{
-        Duration,
-        Instant,
-    },
+    thread::{self, JoinHandle},
+    time::{Duration, Instant},
 };
 use web_support::{Server, TOKEN};
 #[derive(Clone)]

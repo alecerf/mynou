@@ -5,7 +5,12 @@ mod web_support;
 use library_support::Directory;
 use mynou::json::{self, Value};
 use series_support::{Catalog, episode, id, request};
-use std::{fs, process::{Command, Stdio}, thread, time::{Duration, Instant}};
+use std::{
+    fs,
+    process::{Command, Stdio},
+    thread,
+    time::{Duration, Instant},
+};
 use web_support::{Reply, Server, TOKEN};
 
 fn body() -> Value {
