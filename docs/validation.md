@@ -9,8 +9,8 @@ for its exact commit only: an earlier green run does not validate later changes.
 
 | Workflow | Runs on | Purpose |
 | --- | --- | --- |
-| Mynou CI | Pull requests; `trunk` only to publish a new version | Dependency graph, format, Clippy, all tests, the macOS arm64 build and demo; publishes a new version from `trunk` |
-| Engineering checks | Pull requests, `trunk` | Organization policy and engineering tooling scenarios |
+| Mynou CI | Pull requests; a pushed `v<version>` tag | Dependency graph, format, Clippy, all tests, the macOS arm64 build and demo; a version tag publishes after the same checks |
+| Engineering checks | Pull requests | Organization policy and engineering tooling scenarios |
 | Release policy | Pull requests | Version changes only in a release PR |
 | Security audit | Pull requests, `trunk`, hourly | Reachable Git objects and Actions logs |
 | Format source branches | Pushes to `format/**` | Runs rustfmt with Rust 1.99.0 and commits the edits; validates and publishes nothing |
@@ -20,10 +20,11 @@ for its exact commit only: an earlier green run does not validate later changes.
 The workflow in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) has
 five jobs. Mynou ships for macOS on Apple Silicon only, so `validate` and `build`
 run on an Apple Silicon `macos-26` runner. A small Linux **decide** job runs
-first: pull requests and manual dispatches always continue, but a push to `trunk`
-continues only when `Cargo.toml` carries a version without a `v<version>` tag.
-Protection requires an up-to-date branch and rebase merging, so any other `trunk`
-commit has the tree its pull request already validated and is not validated again.
+first: pull requests and manual dispatches always continue. Nothing runs for a
+commit pushed to `trunk`: protection requires an up-to-date branch and rebase
+merging, so `trunk` holds the tree its pull request already validated. Pushing the
+tag `v<version>` continues only when the tag equals the `Cargo.toml` version
+(the binary reports that version) and the tagged commit is on `trunk`.
 
 1. **validate** checks the Cargo graph offline (exactly one package, `mynou`,
    with no dependencies), formatting, Clippy with warnings denied, the test
@@ -38,15 +39,12 @@ commit has the tree its pull request already validated and is not validated agai
    the release script's syntax, copies the checked executable under its release
    name, compares the copy byte for byte and writes `SHA256SUMS`. It only copies
    and checksums, so it runs on a Linux runner.
-4. **release** runs only on `trunk`, and only when `Cargo.toml` carries a version
-   without a `v<version>` tag. Only a merged release PR introduces such a
-   version, so every other `trunk` commit skips validate, build, package and
-   release.
+4. **release** runs only for a pushed version tag that passed the decision, after
+   validate, build and package succeeded on the tagged commit.
 
 Pull request runs validate, build and package but cannot publish. A newer pull
-request head cancels the older run; `trunk` runs are never cancelled, so a later
-merge cannot interrupt a publication. Let a release publish before merging the
-next change. Network tests use synthetic media, loopback peers and simulated
+request head cancels the older run; tag runs are never cancelled, so a later
+push cannot interrupt a publication. Network tests use synthetic media, loopback peers and simulated
 services; CI never acquires public media.
 
 ## Test harnesses
@@ -67,7 +65,9 @@ builds omit debug symbols; debug assertions and overflow checks stay enabled.
 
 ## Caches
 
-Only successful `trunk` runs save caches; pull requests can restore them. Keys
+Only successful runs on `trunk` (a manual dispatch there) save caches, and pull
+requests restore them only when one exists, so a cold cache costs a PR about 80
+seconds in parallel jobs. Keys
 are exact fingerprints of the manifests, sources, tests, examples and workflow,
 with no partial-key fallback. The test cache holds
 compiled harnesses, their build manifest and timing history; every test still
@@ -78,14 +78,15 @@ and they never authorize a release.
 ## Releases
 
 Merging to `trunk` does not release anything. At most once a week, a release PR
-bumps the version and gathers the notes from `docs/releases/unreleased/`; see the
+bumps the version and gathers the notes from `docs/releases/unreleased/`; once it
+is merged, pushing the tag `v<version>` publishes it; see the
 [engineering runbook](../engineering/README.md#releases). The `Release policy`
 check refuses version changes anywhere else.
 
 The release job runs
 [publish-release.sh](../.github/scripts/publish-release.sh), which checks the
-packaged files and creates the tag and the GitHub release from the validated
-commit. Only this job has `contents: write`, using the ephemeral repository
+packaged files and creates the GitHub release for the pushed tag from the
+validated commit. Only this job has `contents: write`, using the ephemeral repository
 token.
 
 | Asset | Contents |
@@ -100,9 +101,7 @@ archives, image archives and per-file checksums); they remain unchanged.
 
 Published tags and assets are immutable. A failed publication is re-run from the
 failed job, never by replacing assets; a burned version moves to the next patch
-in a new release PR. If GitHub refuses to create a release because the workflow
-on `trunk` changed since the run started, keep the validated commit on a source
-branch (for example `release-source/<version>`) before re-running the failed job.
+in a new release PR.
 
 ## Verify release assets
 

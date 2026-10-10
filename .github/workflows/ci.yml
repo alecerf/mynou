@@ -1,24 +1,26 @@
 name: Mynou CI
 on:
   push:
-    branches: [trunk]
+    # Nothing runs for a commit on trunk: protection requires an up-to-date
+    # branch and rebase merging, so trunk holds the tree its pull request
+    # validated. Pushing a version tag validates that commit again and publishes.
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
   group: mynou-${{ github.workflow }}-${{ github.ref }}
-  # A newer PR head supersedes its older validation. Default-branch runs, which
-  # can publish a release, are never cancelled.
+  # A newer PR head supersedes its older validation. Tag runs, which publish a
+  # release, are never cancelled.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   PYTHONDONTWRITEBYTECODE: '1'
 jobs:
   decide:
-    # A push to trunk adds nothing to validate: protection requires an up-to-date
-    # branch and rebase merging, so the trunk tree is the tree its pull request
-    # already validated. Trunk only runs the full chain to publish a version that
-    # has no tag yet, or on manual dispatch. Pull requests always run it.
+    # Pull requests and manual dispatches always run the full chain. A pushed
+    # version tag runs it too and then publishes, but only for a tag that names
+    # the Cargo.toml version of a commit that is already on trunk.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -43,29 +45,26 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" = pull_request ] || [ "$GITHUB_REF" != refs/heads/trunk ]; then
+          if [ "$GITHUB_REF_TYPE" != tag ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
             echo "publish=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # Trunk integrates validated work. Only a version that a release PR
-          # introduced, and that has no tag yet, is published.
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" > /dev/null 2> "$RUNNER_TEMP/tag-lookup.txt"; then
-            publish=false
-            echo "v$VERSION is already published; trunk needs no new validation." >> "$GITHUB_STEP_SUMMARY"
-          elif grep -q 'HTTP 404' "$RUNNER_TEMP/tag-lookup.txt"; then
-            publish=true
-            echo "v$VERSION has no tag; this run publishes it once every check passes." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "Cannot determine whether v$VERSION is published." >&2
+          # The binary reports the Cargo.toml version, so the tag must name it.
+          if [ "$GITHUB_REF_NAME" != "v$VERSION" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match the Cargo.toml version v$VERSION." >&2
             exit 1
           fi
-          run=$publish
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
-            run=true
-          fi
-          echo "run=$run" >> "$GITHUB_OUTPUT"
-          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          # Only a commit that reached trunk through a validated pull request may
+          # be released: it must be trunk itself or one of its ancestors.
+          relation=$(gh api "repos/$GITHUB_REPOSITORY/compare/trunk...$GITHUB_SHA" --jq .status)
+          case "$relation" in
+            identical|behind) ;;
+            *) echo "Commit $GITHUB_SHA is not on trunk (compare status: $relation)." >&2; exit 1 ;;
+          esac
+          echo "v$VERSION is a trunk commit; this run publishes it once every check passes." >> "$GITHUB_STEP_SUMMARY"
+          echo "run=true" >> "$GITHUB_OUTPUT"
+          echo "publish=true" >> "$GITHUB_OUTPUT"
   validate:
     needs: decide
     # A required check that is skipped counts as passed, so a failed decision must
@@ -252,8 +251,8 @@ jobs:
           retention-days: 7
   release:
     needs: package
-    # Only a merged release PR introduces an unpublished version.
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/trunk' && needs.package.outputs.publish == 'true'
+    # Only a pushed version tag that passed the decision publishes.
+    if: github.ref_type == 'tag' && needs.package.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
