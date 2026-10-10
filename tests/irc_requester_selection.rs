@@ -5,7 +5,7 @@ mod library_support;
 mod requester_support;
 #[allow(dead_code)]
 mod transfer_support;
-mod web_support;
+mod api_support;
 use irc_routing_support::*;
 use library_support::{Directory, run_until};
 use mynou::{
@@ -19,7 +19,7 @@ use requester_support::{
 };
 use std::{fs, sync::atomic::Ordering, thread};
 use transfer_support::{RecordingProxy, Seeder, Torrent};
-use web_support::{Server, TOKEN};
+use api_support::{Server, TOKEN};
 
 fn rule(v: &mut Value) -> &mut Value {
     let Value::Array(r) = v.get_mut("irc").unwrap().get_mut("rules").unwrap() else {

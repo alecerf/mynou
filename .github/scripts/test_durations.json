@@ -2,7 +2,6 @@
   "schema": 1,
   "observed_run": 37510460908,
   "targets": {
-    "examples/benchmark.rs": 0.002,
     "src/lib.rs": 10.756,
     "src/main.rs": 0.002,
     "tests/automatic_pack_management.rs": 0.366,

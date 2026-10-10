@@ -1,14 +1,14 @@
 //! Bearer pack journeys; original local catalog fixtures, CI only.
 mod library_support;
 mod series_support;
-mod web_support;
+mod api_support;
 use library_support::Directory;
 use mynou::{
     engine::lock,
     json::{self, Value},
 };
 use series_support::{Catalog, episode, id, request};
-use web_support::{Server, TOKEN};
+use api_support::{Server, TOKEN};
 
 fn catalog() -> Catalog {
     Catalog::open(vec![

@@ -1,7 +1,7 @@
 //! Original protected API and pure/offline CLI reviews.
 mod irc_support;
 mod library_support;
-mod web_support;
+mod api_support;
 use irc_support::*;
 use library_support::Directory;
 use mynou::{
@@ -10,8 +10,8 @@ use mynou::{
     json::{self, Value},
 };
 use std::{fs, process::Command};
-use web_support::{Server, TOKEN};
-fn post(server: &Server, route: &str, value: &Value) -> web_support::Reply {
+use api_support::{Server, TOKEN};
+fn post(server: &Server, route: &str, value: &Value) -> api_support::Reply {
     server.call(
         "POST",
         route,

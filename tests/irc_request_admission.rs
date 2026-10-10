@@ -6,7 +6,7 @@ mod requester_support;
 mod series_support;
 #[allow(dead_code)]
 mod transfer_support;
-mod web_support;
+mod api_support;
 use irc_routing_support::{job, no_private, read_checked, row_mut, write_checked};
 use library_support::{Directory, run_until};
 use mynou::{
@@ -21,7 +21,7 @@ use requester_support::{
 use series_support::{Catalog, episode};
 use std::{fs, process::Command, sync::atomic::Ordering, thread};
 use transfer_support::{Seeder, Torrent};
-use web_support::{Server, TOKEN};
+use api_support::{Server, TOKEN};
 
 fn catalog() -> Catalog {
     let c = Catalog::open(vec![episode(1, 1, Some("2024-01-01"), "Original Episode")]);
@@ -692,7 +692,7 @@ fn requester_identity_mismatch_or_failure_cannot_borrow_configured_authority() {
     assert!(demands(&e, "alice").is_empty());
 }
 
-fn post(server: &Server, route: &str, v: &Value) -> web_support::Reply {
+fn post(server: &Server, route: &str, v: &Value) -> api_support::Reply {
     server.call(
         "POST",
         route,

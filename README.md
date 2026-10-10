@@ -124,7 +124,7 @@ For users and operators:
 - [Torrent transfers](docs/transfers.md)
 - [Plex requester accounts](docs/requesters.md)
 - [Supported formats and limits](docs/limits.md)
-- [Release notes](docs/releases/)
+- [Release notes](https://github.com/alecerf/mynou/releases)
 
 For contributors:
 

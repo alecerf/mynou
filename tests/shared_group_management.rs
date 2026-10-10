@@ -5,7 +5,7 @@ mod series_support;
 mod shared_group_support;
 #[allow(dead_code)]
 mod transfer_support;
-mod web_support;
+mod api_support;
 use automatic_pack_support::{Provider, SECRET, no_sources, snapshot};
 use library_support::Directory;
 use mynou::{
@@ -20,7 +20,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use web_support::{Server, TOKEN};
+use api_support::{Server, TOKEN};
 
 fn headers() -> [(String, String); 2] {
     [
