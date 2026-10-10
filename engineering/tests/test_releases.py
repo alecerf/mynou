@@ -205,6 +205,13 @@ class Changelog(unittest.TestCase):
                     releases.changelog(text, "alecerf/mynou", "v0.23.0")
                 self.assertIn(message, str(error.exception))
 
+    def test_a_link_longer_than_the_bound_is_left_alone_and_oversized_notes_are_refused(self):
+        far = "/" + "a" * 600
+        self.assertIn(f"]({far})", releases.changelog(f"## Added: A\nSee [x]({far}).\n", "alecerf/mynou", "v1.0.0"))
+        big = FakeAPI([{"filename": "docs/releases/unreleased.md", "status": "modified"}], labels=(),
+                      head_version="0.22.34", notes="## Added: A\n" + "x" * releases.NOTES_LIMIT)
+        self.assertIn("exceeds its bound", " ".join(releases.check_pr(big, 5, AT)))
+
     def test_only_repository_root_links_are_rewritten(self):
         text = releases.changelog("## Added: A\nSee [x](https://example.org/a), [y](docs/y.md), [z](/docs/z.md).\n",
                                   "alecerf/mynou", "v1.2.3")

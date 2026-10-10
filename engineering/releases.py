@@ -17,7 +17,9 @@ MANIFESTS = {"Cargo.toml", "Cargo.lock"}
 UNRELEASED = "docs/releases/unreleased.md"
 CATEGORIES = ("Added", "Changed", "Deprecated", "Removed", "Fixed", "Security")
 ENTRY = re.compile("## (" + "|".join(CATEGORIES) + r"): (\S.*)")
-NOTES_LIMIT = 256 * 1024
+# Under GitHub's release-body limit, leaving room for the link prefixes and the footer, so
+# oversized notes fail in the PR that writes them and never burn a version.
+NOTES_LIMIT = 100_000
 VERSION = re.compile(r"(?:0|[1-9][0-9]{0,5})\.(?:0|[1-9][0-9]{0,5})\.(?:0|[1-9][0-9]{0,5})")
 COMPARE_FILE_LIMIT = 300
 
@@ -109,12 +111,13 @@ def changelog(text, repository, tag):
             lines.append("")
     root = f"https://github.com/{repository}/blob/{tag}"
     rendered = "\n".join(lines).rstrip("\n")
-    return re.sub(r"\]\(/([^)\s]*)\)", lambda link: f"]({root}/{link[1]})", rendered) + "\n"
+    return re.sub(r"\]\(/([^)\s]{0,512})\)", lambda link: f"]({root}/{link[1]})", rendered) + "\n"
 
 
-def notes_errors(text):
+def notes_problems(api, ref):
+    """Why the unreleased notes at `ref` cannot be published; empty when they can."""
     try:
-        parse_entries(text)
+        parse_entries(file_text(api, UNRELEASED, ref, NOTES_LIMIT))
     except ValueError as error:
         return [f"{UNRELEASED}: {error}"]
     return []
@@ -276,9 +279,9 @@ def check_pr(api, number, now):
                    tag_exists=exists, now=now, policy=api.cfg["release_policy"], commits=pull["commits"])
     # A malformed note must fail in the PR that writes it, not when the release publishes.
     if files.get(UNRELEASED) not in (None, "removed"):
-        errors += notes_errors(file_text(api, UNRELEASED, pull["head"]["sha"], NOTES_LIMIT))
+        errors += notes_problems(api, pull["head"]["sha"])
     elif "release" in names and version(base) != version(head) and files.get(UNRELEASED) == "removed":
-        errors += notes_errors(file_text(api, UNRELEASED, pull["base"]["sha"], NOTES_LIMIT))
+        errors += notes_problems(api, pull["base"]["sha"])
     return errors
 
 

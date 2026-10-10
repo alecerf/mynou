@@ -8,7 +8,8 @@ Invoke for meaningful changes when a PR waits for `qa`. Claim the PR with
 distinct critical pass, ideally by another agent, never a fabricated identity.
 
 Read the Issue acceptance, the complete actual diff, earlier findings and the
-actual CI results. Verify behavior, regressions, edge cases, architecture, docs,
+actual CI results; for a release PR, read the deleted unreleased notes, which
+become the public changelog. Verify behavior, regressions, edge cases, architecture, docs,
 release notes, impacted UX/security and shortcuts. Do not trust implementation
 assertions. Run no validation locally.
 
