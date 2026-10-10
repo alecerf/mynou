@@ -45,9 +45,8 @@ def board(api, now, agent=None):
             by_issue.setdefault(number, (pull, entry))
     work, claims = [], []
     for issue in sorted(issues, key=protocol.rank):
-        if protocol.blocked(issue):
-            continue
         number = issue["number"]
+        stalled = protocol.blocked(issue)
         pull, entry = by_issue.get(number, (None, None))
         item = {"issue": number, "title": issue["title"],
                 "labels": sorted(protocol.labels(issue)), "pr": pull and pull["number"]}
@@ -55,10 +54,13 @@ def board(api, now, agent=None):
         if owner is not None:
             activity = [issue["updated_at"], owner["since"]] + ([pull["updated_at"]] if pull else [])
             owner["lapsed"] = protocol.lapsed(activity, now, ttl)
-            claims.append(dict(item, owner=owner))
+            claims.append(dict(item, blocked=stalled, owner=owner))
             if not owner["lapsed"]:
                 continue
-        # A PR waiting for review, CI, merge or the owner is not implementation work.
+        # Blocked Issues keep their claims above but are never free work; a PR
+        # waiting for review, CI, merge or the owner is not implementation work.
+        if stalled:
+            continue
         if entry is None or entry["waiting_for"] == "author":
             work.append(item)
     open_heads = {pull["head"].get("ref") for pull, _ in pulls.values()}
