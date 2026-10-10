@@ -13,7 +13,7 @@ use mynou::{
     engine::{Engine, lock},
     json::{self, Value},
 };
-use shared_group_support::{Fixture, apply, baseline, baseline_query};
+use shared_group_support::{Fixture, baseline, baseline_query};
 use std::{
     fs,
     process::{Command, Output, Stdio},
@@ -27,14 +27,6 @@ fn headers() -> [(String, String); 2] {
         ("Authorization".into(), format!("Bearer {TOKEN}")),
         ("Content-Type".into(), "application/json".into()),
     ]
-}
-fn plan(page: &str) -> &str {
-    page.split("name=\"plan_id\" value=\"")
-        .nth(1)
-        .unwrap()
-        .split('"')
-        .next()
-        .unwrap()
 }
 
 #[test]

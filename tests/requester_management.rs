@@ -26,14 +26,6 @@ fn authenticated(server: &Server, route: &str, v: &Value) -> web_support::Reply 
         &json::stringify(v),
     )
 }
-fn plan(body: &str) -> &str {
-    body.split("name=\"plan_id\" value=\"")
-        .nth(1)
-        .unwrap()
-        .split('"')
-        .next()
-        .unwrap()
-}
 fn snapshot(root: &std::path::Path) -> BTreeMap<std::path::PathBuf, Vec<u8>> {
     fs::read_dir(root)
         .unwrap()
