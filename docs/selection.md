@@ -1,15 +1,14 @@
 # Release selection profiles
 
-Mynou 0.7.0 introduces policies for choosing a release before automatic
-acquisition. Movie and episode requests can use different named profiles.
-Profiles filter candidates and rank those that remain. Since 0.8.0, the same
-policies also compare an owned import's recorded baseline with proposed upgrade
-candidates. See [library monitoring](library.md) for preview/apply commands,
-per-entry policy and preservation of earlier files.
+Profiles decide which release Mynou downloads when it searches your sources.
+Movie and episode requests can use different named profiles. A profile first
+rejects unsuitable candidates, then ranks the rest. Library upgrades use the
+same profiles to compare a recorded release with new candidates; see
+[library upgrades](library.md).
 
 ## Configure profiles
 
-Add this optional object to `mynou.json` alongside `indexers`:
+Add an optional `selection` object to `mynou.json`:
 
 ```json
 {
@@ -42,168 +41,88 @@ Add this optional object to `mynou.json` alongside `indexers`:
 
 This example requires an explicitly identified 1080p or 720p release from the
 listed sources, using H.265 or H.264 and an English audio marker. It prefers
-1080p to 720p, WEB-DL to Blu-ray to WEBRip, and H.265 to H.264. A matching `proper`
-rule adds ten points and takes precedence over those ordered preferences.
+1080p to 720p, WEB-DL to Blu-ray to WEBRip, and H.265 to H.264. A matching
+`proper` rule adds ten points, which outweighs those ordered preferences.
 
-If `selection` is absent, both request kinds use the unrestricted `any` profile.
-An empty list places no restriction on that attribute. All `allow_unknown_*`
-flags default to `false`; they affect an attribute only when its allowlist is
-nonempty. Set a flag to `true` to permit missing or unrecognized markers for
-that attribute. The flag does not permit conflicting recognized markers or an
-explicitly malformed/unsupported resolution marker when that attribute is
-restricted. An unknown attribute does not become a preferred known value.
-For an unrestricted attribute, marker issues remain visible in
-`assessment.attributes.issues` without rejecting an otherwise matching release.
+Without `selection`, both request kinds use the unrestricted `any` profile.
+`movie_profile` and `episode_profile` must name configured profiles. Restart
+the service after changing the configuration.
 
-Movie and episode profile names must refer to configured profiles. Use `any`
-for one request kind and a restrictive profile for the other if desired.
-
-## Attributes and title terms
-
-Supported canonical profile values are:
-
-| Attribute | Values |
+| Attribute | Values, most preferred first |
 | --- | --- |
 | `resolutions` | `480`, `576`, `720`, `1080`, `2160` |
 | `sources` | `cam`, `dvd`, `hdtv`, `webrip`, `web-dl`, `bluray`, `remux` |
 | `codecs` | `h264`, `h265`, `av1`, `vp9` |
 | `languages` | `en`, `fr`, `de`, `es`, `it`, `ja`, `ko`, `zh`, `pt`, `ru` |
 
-Each allowlist is ordered from most preferred to least preferred. Unsupported
-configuration values produce an explicit error instead of silently changing
-the policy.
+Each list is ordered from most to least preferred. An empty list places no
+restriction on that attribute. Unsupported values are a configuration error.
+`cutoff_resolution` (default `null`) stops library upgrades once reached; see
+[quality cutoffs](library.md#quality-cutoffs).
 
-The optional `cutoff_resolution` defaults to `null`. A non-null value must appear
-in the profile's `resolutions` list. For monitored upgrades, an accepted baseline
-at that position or an earlier preferred position has reached the cutoff and
-stops further upgrades. Preference order controls this rule, not numeric pixel
-height; `[720, 1080]` with cutoff `1080` also stops at `720`. A reached cutoff
-stops source, codec and score upgrades too. Initial candidate selection still
-uses the normal ranking below.
+## How a candidate is judged
 
-Attributes are inferred from the release-title suffix after matching the
-requested title and year or episode identity. A media title containing words
-such as `French` or `Remux` must not itself become an audio or source marker.
-An explicit `VOSTFR` marker describes French subtitles, not French audio;
-`MULTI` leaves the actual audio languages unknown. These are release-name hints,
-not an inspection of the downloaded media's tracks.
+Attributes come from the release title after the part that matches the
+requested title and year or episode. Words in the media title itself, such as
+`French` or `Remux`, are not treated as markers. These markers are claims in a
+name: `VOSTFR` means French subtitles, not French audio, and `MULTI` does not
+say which audio languages are present. Mynou never decodes the media before
+choosing.
 
-Terms also apply to the matched release-title suffix. They match contiguous
-normalized token phrases. Matching is case insensitive and does not treat a
-substring within an unrelated word as a match. All
-`required_terms` must match. Any matching `blocked_terms` rejects a candidate.
-A score rule applies only when every phrase in its `terms` matches; matching
-rules add their signed scores together. `minimum_score` rejects candidates below
-the configured threshold. `minimum_score` defaults to zero, so a negative total
-is rejected by default. To use a negative rule for downranking rather than
-rejection, set a sufficiently low `minimum_score`, such as `-100` for a
-`-10` rule.
+- When an attribute's list is not empty, a candidate without a recognized
+  marker is rejected unless the matching `allow_unknown_*` flag is `true`.
+  Conflicting markers and malformed or unsupported resolution markers are
+  rejected even then. An unknown value never counts as a preferred one.
+- For unrestricted attributes, marker problems appear in
+  `assessment.attributes.issues` without rejecting the release.
+- Terms match whole, case-insensitive token phrases in the release title, not
+  substrings inside other words. Every `required_terms` entry must match; any
+  matching `blocked_terms` entry rejects the candidate.
+- A score rule applies when all of its `terms` match; matching rules add up.
+  Totals below `minimum_score` are rejected. Its default of zero rejects any
+  negative total, so set a lower minimum (for example `-100` for a `-10` rule)
+  to downrank instead of reject.
 
-Lists are limited to 32 entries and each term to 128 bytes. Scores are bounded
-to an absolute value of 100,000 per rule or minimum threshold. There may be
-between 1 and 64 profiles; profile names contain 1 to 64 ASCII letters, digits,
-hyphens or underscores. Configuration is validated when loaded.
+Accepted candidates are ranked by:
 
-## Ranking and acceptance
+1. the highest custom score;
+2. resolution, source, codec and language preferences, in that order;
+3. more seeds, then a deterministic tie-breaker.
 
-The existing strict movie/episode identity checks remain necessary. A profile
-cannot turn an unrelated release or an unsupported season pack into a match.
-Eligible candidates are evaluated in this order:
+With an unrestricted profile and no score rules, seed count decides. Source
+order never bypasses a profile, and when nothing is accepted Mynou does not
+fall back to a rejected release. Strict title, year and episode matching still
+applies: a profile cannot turn an unrelated release into a match.
 
-1. Reject required-term, blocked-term, attribute, or minimum-score violations.
-2. Prefer the highest custom score.
-3. Compare resolution, source, codec, and language preferences in that order.
-4. Prefer more seeds, with deterministic final tie breaking.
-
-With an unrestricted profile and no scoring rules, seed count remains the
-primary preference. Source endpoints and indexer order do not bypass profile
-requirements. If no candidate passes, Mynou does not silently use a rejected
-release.
-
-Explicit `submit --url` and local `submit --path` requests represent a source
-you chose yourself. Profiles govern automatic source search; they do not
-reinterpret those explicit inputs as a new search.
+A request with an explicit source (`submit --url` or `submit --path`) is your
+own choice: profiles apply only to automatic searches.
 
 ## Preview a search
 
-The CLI accepts a movie or individual episode request:
-
 ```sh
-mynou search --title "Example Movie" --kind movie --year 2026 \
-  --config ./mynou.json
+mynou search --title "Example Movie" --year 2026 --config ./mynou.json
 mynou search --title "Example Series" --kind episode --season 1 --episode 2 \
   --config ./mynou.json
 ```
 
-The authenticated `GET /api/profiles` operation returns the configured profile
-names and policies. `doctor` also displays the active movie and episode profile
-names.
+A preview contacts your sources but records no request, writes nothing to the
+journal and starts no download. The report lists accepted and rejected
+candidates with their attributes, ranks and reasons, opaque candidate IDs and
+`selected_candidate_id` for the proposed winner. It never includes acquisition
+URLs or credentials. `candidate_count`, `reported_count` and `truncated` show
+whether every row is displayed; the winner is always chosen from the full set.
+Per-source counts show configured, successful and failed responses, and a
+partially failed search can still choose from the sources that answered.
 
-The equivalent authenticated search operation is `POST /api/search`, using the
-same request object as `POST /api/jobs`:
+The API equivalent is `POST /api/search` with the same object as
+`POST /api/jobs`, for example
+`{"kind": "episode", "title": "Example Series", "year": 2026, "season": 1, "episode": 2}`.
+A body containing `source_url` or `source_path` returns `manual_override: true`
+without searching or echoing the source. `GET /api/profiles` returns the
+configured profiles, and `mynou doctor` shows the active profile names. The
+browser's **Search** page offers the same preview.
 
-```json
-{
-  "kind": "episode",
-  "title": "Example Series",
-  "year": 2026,
-  "season": 1,
-  "episode": 2
-}
-```
-
-The JSON report includes accepted and rejected candidate assessments, inferred
-attributes, ranks and decision reasons, opaque candidate IDs, and a
-`selected_candidate_id` identifying the proposed winner when one exists.
-Acquisition URLs and credentials are not included. A preview contacts the
-configured sources but does not submit a job, write the request journal, or
-start a torrent. Movie and episode previews share the same selection policy
-used by automatic acquisition.
-
-Reports include `candidate_count`, `reported_count` and `truncated`. At most
-1,000 candidate rows are displayed, after sorting; a truncated report still
-identifies the winner from the full evaluated set. Retained candidate data has
-a 16 MiB budget, and exceeding it produces an explicit error. Indexer counts
-show configured, successful and failed responses; a partially failed search
-can still select from successful sources. Search has a 90-second budget for
-HTTP/socket operations and processing checks. Standard-library synchronous DNS
-may block longer; late results are rejected, so a DNS stall can exceed the
-nominal wall-clock budget.
-
-An API request containing `source_url` or `source_path` returns
-`manual_override: true` with no candidate selection, without echoing the value
-or contacting indexers. It does not download or validate the contents of that
-explicit source. The CLI search command accepts identity fields only; use
-`submit` to choose an explicit source.
-
-Indexer credentials still belong in environment variables. Do not embed them
-in profile terms. Candidates with missing language or quality markers may be
-rejected by a restrictive profile; inspect the preview and adjust the policy
-deliberately if your sources use different naming conventions.
-
-## Profiles and upgrades
-
-0.8.0 adds controlled upgrades for monitored owned imports with recorded release
-baselines. Both baseline and candidate are assessed using the current configured
-profile, even when the baseline was acquired under a different profile name.
-Profile acceptance comes before quality rank. A baseline outside the current
-profile can be replaced by an accepted candidate even with a lower raw rank;
-changing a required language is one example of this deliberate policy change.
-If the baseline is accepted, the candidate must have a strictly better custom
-score or ordered attribute preferences. More seeds or a tie-breaking title alone
-do not constitute an improvement.
-
-Previews contact indexers but do not write journal state or queue a child.
-Applying a decision queues a deduplicated replacement request. Earlier files
-remain current until the child is ready and remain on disk afterward. See the
-[library guide](library.md) for explicit baseline setup, cutoffs and Plex file
-confirmation.
-
-Selection and monitoring do not decode audio/video or prove release-name claims.
-Search previews and submissions are also available in the [browser](web.md).
-Durable [series monitoring and calendars](series.md) use these episode profiles.
-Explicit [pack acquisitions](packs.md) use operator-provided file mappings.
-Automatic pack search and general alternate/anime numbering remain the next
-[stage](roadmap.md).
-See [limits](limits.md) for remaining torrent,
-integration and series constraints.
+If your sources name releases differently, a restrictive profile may reject
+them: inspect the preview and adjust the policy deliberately. Keep source
+credentials in environment variables, never in profile terms. Bounds are listed
+in [limits](limits.md#search-and-selection).

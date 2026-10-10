@@ -1,22 +1,19 @@
-# Native macOS installation
+# Install Mynou on macOS
 
-Mynou provides separate executables for Apple Silicon (`macos-arm64`) and
-Intel (`macos-x86_64`). Rust, Docker and external download/media programs are
-not required at runtime. CI builds and runs the local acquisition/import demo
-on standard macOS 26 runners for both architectures. Earlier macOS versions
-have not been verified.
+Mynou provides separate executables for Apple Silicon (`macos-arm64`) and Intel
+(`macos-x86_64`). They need no Rust, Docker or other download or media program.
+CI builds both and runs the local acquisition and import demo on macOS 26;
+earlier macOS versions have not been verified.
 
 ## Download and verify
 
-Open [GitHub Releases](https://github.com/alecerf/mynou/releases) while signed
-in with an account authorized for this private repository. Choose a published
-release containing your architecture's executable and `SHA256SUMS`.
-From 0.22.19 one manifest replaces the individual checksum files; use the
-matching published version. The recorded v0.22.16 release remains unchanged.
-Use **About This Mac** to identify Apple Silicon or Intel; `uname -m` in a
-Terminal running under Rosetta can report Intel on an Apple Silicon machine.
+Open [GitHub Releases](https://github.com/alecerf/mynou/releases) and download
+your architecture's executable and `SHA256SUMS` from the same release (0.22.19 or
+later). Use **About This Mac** to tell Apple Silicon from Intel: `uname -m` in a
+Terminal running under Rosetta can report Intel on Apple Silicon.
 
-For Apple Silicon, after downloading both files into Downloads:
+For Apple Silicon, with both files in Downloads (replace the version with the
+one you downloaded):
 
 ```sh
 cd "$HOME/Downloads" &&
@@ -26,57 +23,60 @@ cd "$HOME/Downloads" &&
   "$HOME/.local/bin/mynou" demo --dir "$HOME/mynou-demo"
 ```
 
-Each step runs only if the preceding one succeeds. A checksum failure prevents
-installation and execution; download the matching release files again before retrying.
+On Intel, use `macos-x86_64` in the manifest entry and the file name. Each step
+runs only if the previous one succeeded, so a checksum failure stops before
+installation: download the files again before retrying. The
+[verification guide](validation.md#verify-release-assets) explains what the
+checksums prove. The demo needs a directory that does not exist yet, uses
+synthetic media, loopback peers and simulated Plex and indexer services, and
+needs no secrets. Add `$HOME/.local/bin` to your `PATH` to run `mynou` directly.
 
-On Intel, replace `macos-arm64` with `macos-x86_64` in the selected manifest
-entry and executable filename. Only the downloaded architecture's entry is checked.
-The demonstration directory must not already exist. It uses synthetic media,
-loopback peers and simulated Plex/indexer responses; it needs no personal secrets.
-Add `$HOME/.local/bin` to your shell's PATH if you want to invoke `mynou` directly.
-
-Release checksums detect changed downloads. They do not provide an Apple
-Developer signature. These executables are not signed with an Apple Developer
-identity or notarized. If macOS blocks a verified download, use the per-application
-**Open Anyway** control in **System Settings → Privacy & Security**, then confirm
-the application. Keep Gatekeeper enabled globally.
+The executables are not signed with an Apple Developer identity or notarized.
+If macOS blocks a verified download, use **Open Anyway** in **System Settings →
+Privacy & Security** for that application, then confirm. Keep Gatekeeper
+enabled globally.
 
 ## Configure and start
 
-Create an owned directory outside the download folder:
+Create a directory you own, outside Downloads:
 
 ```sh
 mkdir -p "$HOME/Library/Application Support/Mynou" &&
   cd "$HOME/Library/Application Support/Mynou" &&
   "$HOME/.local/bin/mynou" init --config ./mynou.json &&
-  "$HOME/.local/bin/mynou" doctor --config ./mynou.json &&
-  "$HOME/.local/bin/mynou" serve --config ./mynou.json
+  "$HOME/.local/bin/mynou" doctor --config ./mynou.json
 ```
 
-`init` creates configuration and a private `.env` containing a random API token.
-Plex and TMDB start disabled. Configure the integrations, source credentials
-and owned media paths before enabling acquisition. Secrets belong in the
-environment or the private `.env`; do not put them in Issues or release notes.
-Open **http://127.0.0.1:8787/ui** and sign in with the generated API token.
-Run the service as the same ordinary user that owns its state and media paths.
+`init` writes `mynou.json` and a private `.env` with a random API token; Plex
+and TMDB start disabled. Set your library folders, sources, Plex and catalog as
+described in [configure Mynou](deployment.md#configure-mynou), using local paths
+instead of container paths. Use ordinary folders you own rather than paths
+through symbolic links: imports never overwrite files and refuse symbolic links.
 
-Native TLS reads PEM trust bundles, including `/etc/ssl/cert.pem`; it does not
-read macOS Keychain directly. Set `MYNOU_CA_FILE` to an approved PEM bundle when
-your deployment needs private certificate authorities. Keep certificate and
-hostname verification enabled. See [TLS and protocol limits](limits.md).
+Mynou reads only `MYNOU_API_TOKEN` from the `.env` file beside the
+configuration. Export the other configured secrets (Plex, TMDB, sources) in the
+shell that starts the service, using your shell's quoting rules. Treat `.env`
+as data: sourcing it interprets its contents as shell code. For example, replace
+the placeholders below with shell-quoted values:
 
-Native filesystem writes retain the existing owned-path, no-overwrite and
-symlink protections. Use ordinary owned directories, rather than paths through
-symlinked temporary folders. Service supervision is a separate deployment choice;
-this release does not install a launch agent or background service.
+```sh
+export MYNOU_PLEX_TOKEN='replace-with-your-Plex-token'
+export MYNOU_TMDB_TOKEN='replace-with-your-TMDB-token'
+"$HOME/.local/bin/mynou" serve --config ./mynou.json
+```
+
+Open **http://127.0.0.1:8787/ui** and sign in with the API token. Run the
+service as the user that owns its configuration, data and library. Mynou does
+not install a launch agent or background service; supervising it is up to you.
+
+The TLS client reads PEM certificate bundles such as `/etc/ssl/cert.pem`, not
+the macOS Keychain. To trust a private certificate authority, set
+`MYNOU_CA_FILE` to an approved PEM bundle. Certificate and host name checks
+cannot be disabled.
 
 ## Upgrade
 
-Stop the running service before replacing the installed executable. Download
-the next published binary for the same architecture, verify its matching
-checksum and install it at the same path. Retain the configuration, private
-environment, journal, downloads and library directories. Published release
-assets remain immutable; updates use a new release version.
-
-[Browser management](web.md) · [Configuration](../README.md#configuration-and-commands)
-· [Docker installation](deployment.md) · [CI guarantees](ci.md)
+Stop the service, download the next release's executable for the same
+architecture, verify it as above and install it at the same path. Keep the
+configuration, `.env`, journal, downloads and library folders. Published
+releases never change; each update is a new version.

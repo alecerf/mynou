@@ -1,11 +1,20 @@
-# Supported formats and explicit limits
+# Supported formats and limits
+
+This page lists what Mynou supports, its fixed bounds and what it does not do.
+The guides explain how to use each feature; when a bound is exceeded, Mynou
+reports an explicit English error instead of growing without limit.
+
+Several network operations have time budgets. Standard-library DNS resolution
+is synchronous and cannot be interrupted, so a slow resolver can exceed a
+budget; results that arrive late are rejected. Budgets are therefore not strict
+wall-clock deadlines. The same applies to blocking filesystem calls.
 
 ## Media analysis
 
-Analysis reads container metadata. It does not decode pictures, audio samples,
-or subtitles, and does not prove that a player can decode the whole file.
-Unknown formats, inconsistent sizes, or excessive metadata produce an explicit
-English error.
+Analysis reads container metadata. It does not decode pictures, audio samples
+or subtitles, does not prove that a player can decode the whole file and does
+not replace Plex transcoding. Unknown formats, inconsistent sizes or excessive
+metadata produce an error.
 
 | Container | Analyzed information | Limits |
 | --- | --- | --- |
@@ -16,315 +25,335 @@ English error.
 | FLAC | STREAMINFO, sample count, Vorbis TITLE/DATE comments | No audio block decoding or sample MD5 verification |
 | MP3/MPEG audio | Two consistent frame headers, ID3 v2.2–v2.4, Xing/Info/VBRI | Duration only when described by an index; otherwise unknown; encrypted, compressed, or unsynchronized tags are not interpreted |
 
-Embedded titles take precedence over filenames. Date stays absent unless usable
-metadata describes it. Unknown codecs retain their container identifier. Missing
-values remain `null` in JSON. Analysis is bounded to 8 MiB per metadata read,
-64 MiB total, and 100,000 elements. Large media payloads are skipped with `seek`.
+Embedded titles take precedence over file names. A date stays absent unless
+metadata describes it, unknown codecs keep their container identifier and
+missing values are `null` in JSON. Each metadata read is limited to 8 MiB, all
+metadata to 64 MiB and parsing to 100,000 elements. Payload is skipped with
+seeks rather than read, including MP4 `mdat` boxes larger than 4 GiB.
 
 ## BitTorrent
 
-The engine implements v1, v2, and hybrid torrents, the TCP peer protocol,
-metadata exchange, v2 hash proofs, HTTP/HTTPS/UDP trackers, a DHT client, and PEX
-reception. Concurrency is bounded by configuration. It does not implement uTP,
-WebRTC/WebTorrent, webseeds, UPnP/NAT-PMP, or a complete persistent DHT table.
+Mynou implements v1, v2 and hybrid torrents, `btih` and `btmh` magnets, the TCP
+peer protocol, metadata exchange, v2 hash proofs, HTTP, HTTPS and UDP trackers,
+a DHT client and PEX reception. Peer data uses TCP only.
 
-Each transfer uses a bounded number of parallel TCP peer workers, controlled by
-`downloads.max_peers`: default four, accepted range one through eight. Setting
-one retains a single-peer baseline. Global worker and per-transfer resource
-bounds may reduce concurrency. Each peer can pipeline up to 16 blocks when
-unlimited; payload rate gating reduces the request pipeline when a cap applies.
-The coordinator claims a piece exclusively and publishes verified data; failed
-pieces are reclaimed without duplicate endgame requests. A peer count is a
-ceiling, not a guarantee of connections or higher throughput.
+- **Peers**: `downloads.max_peers` (1 to 8, default 4) is a per-transfer
+  ceiling. Outgoing workers per transfer are
+  `min(max_peers, max(1, 64 / max_active))`, so at most 64 across all active
+  transfers (direct Rust library callers can run up to 128 active transfers
+  with one worker each). Incoming seeding connections are limited to 32.
+  Concurrency is also reduced using a 128 MiB per-transfer memory estimate, with
+  at least one worker; this is not a hard process memory limit. A peer pipelines
+  up to 16 blocks, fewer when a rate limit applies. A peer count is not a
+  promise of connections or speed.
+- **Connections**: new connections have a one-second attempt timeout,
+  established sockets check for cancellation every 100 ms, idle peers rotate
+  after two seconds and corrupt peers are excluded for the rest of the download.
+  No duplicate end-game requests are sent.
+- **Discovery** keeps at most 1,024 peers per torrent. Tracker intervals are
+  bounded between 30 seconds and 24 hours. Seeding announces `started`,
+  `completed` and `stopped`, but a forced stop may not send `stopped`. Torrent
+  metadata is limited to 8 MiB.
+- **Private torrents**: a magnet cannot reveal its private flag before its
+  metadata arrives. With a tracker or `x.pe` hint, public discovery waits for the
+  metadata; without one, Mynou may use DHT first and stops public discovery if
+  the torrent turns out to be private. Use the `.torrent` file or a magnet with
+  its private tracker when confidentiality must hold from the start.
+- **Integrity**: data is rechecked after a restart, and a modified file never
+  becomes ready just because it exists. Unsafe paths and contradictory metadata
+  are rejected. Cancelling one request does not stop a torrent another request
+  shares.
+- **Network**: port 6881/TCP accepts peers; inbound access depends on your
+  firewall and router. DHT and UDP trackers use outgoing ephemeral sockets, no
+  inbound UDP port is published and the DHT client is not a complete DHT
+  server.
 
-Discovery caches at most 1,024 peers per torrent. Known usable peers can start
-while background discovery proceeds. Seeding announces `started`, `completed`, and
-`stopped` events and respects tracker intervals, bounded between 30 seconds and
-24 hours. A forced stop does not guarantee a `stopped` announcement. Download and
-upload counters describe content payload bytes, not all interface traffic.
-Since 0.9.0, counters and seeding elapsed time persist across clean restart.
-Updates are coalesced on a one-second interval and flushed on clean shutdown;
-an abrupt crash can lose the latest unflushed increments. This accounting does
-not claim exact crash durability or equivalence with a tracker's records.
+### Transfer controls
 
-Durable user pauses affect all requests sharing a transfer and are not undone
-by automatic retries. Queue scheduling prefers higher priority, then FIFO, and
-is nonpreemptive. File listings keep original metadata indices after filtering
-padding, so indices can have gaps; file-priority controls reject padding indices.
-File priorities change the order of required pieces, with no `skip` priority.
-Mapped pack transfers can acquire an additive union of at most 1,024 exact paths
-with a 1 MiB aggregate path limit. v1 selection also needs boundary bytes from
-neighbor files; v2/hybrid selected roots remain mandatory. Partial availability
-does not imply whole-torrent readiness, seeding or a tracker completion event.
-Existing full acquisitions remain full; selections do not contract or remove
-previously requested bytes. Global bandwidth limits
-cover aggregate content payload; protocol/metadata overhead is outside those
-caps. Each aggregate rate bucket allows a bounded 16 KiB burst. Per-transfer
-rate caps cannot bypass the global cap. Local policy objects replace configured
-seeding defaults in full; omitted seed fields mean no local cap, while clearing
-the override restores configured defaults.
+- Pauses are durable, affect every request sharing the transfer and are never
+  undone by automatic retries. Queue priority is -1000 to 1000, higher first,
+  then first-in first-out, without preempting active transfers.
+- File indices are the original metadata indices (below 100,000), with gaps
+  where padding files were filtered; padding indices are rejected. Priorities
+  order the required pieces; there is no `skip` priority.
+- A selection update holds 1 to 1,024 distinct indices. Retained selections
+  hold at most 1,024 paths and 1 MiB of path bytes, each path at most 4,096
+  bytes, 65 components and 255 bytes per component. Selections never shrink, a
+  v1 selection also stores boundary bytes of neighbor files, v2 and hybrid
+  selections require their file roots, and partial availability is not
+  whole-torrent readiness: partial transfers never seed or announce completion.
+- Rate limits accept 0 to 1,073,741,824 payload bytes per second (0 means
+  unlimited) and cover payload only, not protocol, metadata or tracker
+  overhead. Each aggregate rate bucket allows a 16 KiB burst. Per-transfer rates
+  cannot exceed the global ones.
+- Seeding ratios accept 1 to 1,000,000 thousandths and seeding times 1 to
+  315,360,000 seconds. A per-transfer policy replaces the configured seeding
+  defaults entirely. The ratio budget is the verified non-padding payload size
+  times the ratio, rounded up; whole blocks never exceed it, so seeding can stop
+  slightly below the ratio. Seeding time counts online availability, including
+  idle time, and excludes offline, paused or limited time.
+- Payload counters and seeding time survive a clean restart. Updates are saved
+  every second and on clean shutdown, so a crash can lose the latest
+  increments; counters are not equivalent to a tracker's records. Older
+  transfers start their counters at zero.
+- Native transfer state written by 0.14 or later is refused by 0.13 and earlier.
 
-The seed-ratio denominator is verified non-padding torrent payload size, not the
-download counter. Whole upload blocks cannot exceed the remaining ratio budget,
-so seeding may stop below the nominal ratio. Elapsed seeding time counts ready,
-unpaused online availability, including idle time; it excludes offline, paused
-or seed-limited time. Older records without accounting start at zero rather than
-inventing past activity. Policies retain downloads/imports. See
-[transfers.md](transfers.md).
+## Network, HTTP and TLS
 
-A magnet cannot reveal its private flag before metadata arrives. When a tracker
-or `x.pe` is provided, public discovery waits for torrent classification. A magnet
-without such a hint can discover peers through DHT, then stop public discovery if
-the metadata marks it private. For a private acquisition whose confidentiality
-must be known immediately, use its `.torrent` file or a magnet with its private
-tracker.
+- The HTTP client implements HTTP/1.1 with size limits, deadlines, redirects
+  and HTTP CONNECT proxies (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`); local
+  management commands bypass the proxy. HTTP/2 and HTTP/3 are not supported.
+- The API accepts HTTP/1.1 requests with a declared content length and bodies
+  up to 1 MiB; it rejects chunked request bodies and ambiguous headers.
+- The TLS client supports TLS 1.3 with X25519 and ChaCha20-Poly1305/SHA-256,
+  certificate and host name validation, and RSA and ECDSA P-256/P-384
+  signatures with SHA-256/SHA-384. Unsupported algorithms or critical extensions
+  are errors; there is no unauthenticated fallback. X.509 NameConstraints is not
+  implemented and causes rejection, and CRLs and OCSP are not consulted. Trust
+  comes from PEM bundles (`MYNOU_CA_FILE`); the macOS Keychain is not read.
+  The primitives are checked with test vectors and local protocol tests, not an
+  independent audit.
+- Plex, TMDB and sources need valid addresses and credentials. Plex
+  availability confirmation always uses a fresh response. Catalog responses used
+  for ordinary requests are cached for one hour (at most 256 entries and 32
+  MiB); series planning bypasses that cache.
 
-Recovery rechecks local data. A modified file does not become ready merely by
-existing. Unsafe paths and contradictory metadata are rejected. Canceling one
-request does not necessarily stop a torrent shared by another request.
+## Sources
 
-## HTTP, TLS, and integrations
+Indexers:
 
-The client implements HTTP/1.1 with size limits, deadlines, redirects, and
-HTTP/CONNECT proxies. It does not negotiate HTTP/2 or HTTP/3. The local API accepts
-HTTP/1.1 requests with a declared content length and rejects chunked request
-bodies and ambiguous headers.
+- Supported formats are RSS, JSON and Torznab, from an endpoint that serves
+  them directly; Mynou does not perform a general web search. A search uses at
+  most 1,000 configured sources. Responses are limited to 8 MiB.
+- Authentication supports `none`, `bearer`, `basic` and a single-cookie `form`
+  login. Credential values keep their exact UTF-8 bytes; empty, oversized or
+  control-character values are rejected, and Bearer tokens must use the token
+  alphabet. Remote authentication requires verified HTTPS.
+- Form login uses a direct same-origin POST, a 64 KiB response limit and at most
+  ten seconds within the search budget. The response must set exactly one
+  matching cookie; path, domain, expiry, `Secure`, `HttpOnly` and `SameSite` are
+  checked, and multiple or ambiguous cookies, duplicate or unknown attributes
+  and unrelated scopes are rejected. `Max-Age` wins over `Expires`, and
+  `max_age_secs` (1 to 3,600) is always an upper bound.
+- Request intervals accept 0 to 60,000 ms. `Retry-After` on HTTP 429 defaults
+  to 60 seconds and is clamped to 1 to 3,600. A probe has a five-second budget;
+  if the service crashes during a probe its outcome stays unknown, and probes
+  are never replayed.
+- Source policy is kept in a private checksummed `indexers.bin` of up to 1,000
+  sources and 2 MiB, including removed sources. Corruption, unsupported
+  formats, links and public permissions stop the service before workers start.
 
-The TLS client uses TLS 1.3, X25519, and ChaCha20-Poly1305/SHA-256 with certificate
-and hostname validation. Certificate signatures support RSA and ECDSA P-256/P-384
-with SHA-256/SHA-384. Unsupported algorithms or critical extensions produce an
-error; there is no unauthenticated fallback. Primitives are checked using vectors
-and local protocol tests, without claiming an independent cryptographic audit.
-X.509 NameConstraints is not implemented and causes explicit rejection. The
-client does not consult CRLs or OCSP servers.
+IRC announcements:
 
-Plex, TMDB, and indexers need valid addresses and credentials. Local-response tests
-do not mean the release has connected to your personal installation. Source
-selection is bounded by implemented formats and matching criteria; it does not
-perform a general Web search. Search, upgrade and series-refresh passes have a 90-second budget
-for HTTP/socket operations and processing checks. Synchronous standard-library
-DNS resolution can block beyond it, so this is not a strict wall-clock deadline;
-late results are rejected.
+- At most 8 sources, 32 retained source IDs and 64 rules, each rule with at most
+  16 required and 16 blocked terms of 128 bytes.
+- Nicknames have 1 to 24 ASCII letters, digits, hyphens or underscores,
+  starting with a letter. Channels are `#` followed by 1 to 63 letters, digits,
+  hyphens or underscores. Senders are an exact `nick!user@host` of at most 128
+  bytes. Plain-text IRC is accepted only on loopback IP addresses.
+- The history (`announcements.bin`, checked, at most 8 MiB) keeps 1,000
+  announcement identities. When full, new identities are rejected rather than
+  pruned. Counters and source health reset when the service restarts.
+- Lines are limited to 8,192 bytes, reads to 4,096 bytes, batches to 128
+  parsed messages and each source to 256 messages per second. Connection and
+  registration (including authentication) must finish within ten seconds,
+  which incoming traffic cannot extend; a partial line must complete within ten
+  seconds. Idle timeout is 30 to 600 seconds. Server error text is not echoed.
+- SASL supports only `PLAIN`, without SASLprep or Unicode normalization.
+  Capability negotiation accepts 16 lines, 64 capabilities and 4,096 bytes;
+  credential values have 1 to 256 bytes; the encoded response has at most
+  1,028 bytes, sent in at most three chunks of 400 bytes.
+- NickServ accounts have 1 to 64 ASCII letters, digits, hyphens or
+  underscores; success and the 1 to 8 failure notices have at most 256 bytes;
+  passwords have 1 to 256 printable non-space ASCII characters. Only the
+  `IDENTIFY` command is supported.
+- Text formats use a non-empty prefix and a suffix of at most 128 ASCII bytes
+  each, separators of 1 to 16 ASCII bytes containing punctuation, and unique
+  fields among the eight documented names. Pattern languages and URL fields are
+  not supported. Announcements without a catalog ID and a hash, such as
+  title-only messages, cannot be used.
+- Preview files and bodies are limited to 8 KiB; announcement lists return at
+  most 200 entries per page.
+- Magnet templates contain `{xt}` once, at most four trackers and eight
+  literal-IP `x.pe` peers. HTTPS and UDP trackers are supported; plain HTTP
+  trackers only on loopback. Embedded credentials, host names in `x.pe`, zero
+  ports, unspecified or multicast addresses and malformed escapes are rejected.
+- Routing attempts one announcement per pass, sharing a ten-second budget for
+  availability and metadata; the worker checks once per second, a failed
+  announcement waits 30 seconds, attempts reset at restart, and the worker may
+  take up to that budget to notice shutdown. Held jobs defer negative Plex
+  checks for 60 seconds. A request review has a ten-second budget; title-only,
+  incomplete, future, ambiguous or mismatched facts stay unresolved, and an
+  aborted review is never replayed.
+- Announced catalog IDs remain claims: matching a hash and labels does not prove
+  what the video depicts.
+- IRC routing and request reviews use newer storage formats (IRC history 2 and
+  3, requester snapshot 2, job journal 5) that earlier versions refuse.
 
-Legacy TMDB enrichment responses are cached for one hour, with at most 256
-entries and 32 MiB. Durable series planning bypasses that cache and retains future
-and undated episodes. Newly aired acquisition requires a known episode identity
-and monitoring policy; optional season-zero specials require explicit opt-in.
-Plex availability confirmation always uses a fresh network response. Automatic
-source selection requires a strict title match and an identified file for the
-requested episode. [Automatic pack search](automatic-packs.md) uses a separate
-season-title assessment and authenticated metadata mapping; unresolved numbering
-or title variants are rejected. Explicit [pack mappings](packs.md) select exact verified torrent
-paths for known aired catalog episodes, with 1–64 distinct files per submission
-and no fallback to a different video. See
-[series monitoring](series.md) for refresh, numbering and scheduling limits.
+## Search and selection
 
-## Selection and library management
+- Up to 64 profiles, named with 1 to 64 ASCII letters, digits, hyphens or
+  underscores. Lists hold at most 32 entries, terms at most 128 bytes, and
+  scores and minimums are bounded to ±100,000.
+- Markers are claims in a release name. Selection does not verify audio
+  languages or decode video: `VOSTFR` does not mean French audio and `MULTI`
+  does not say which languages are present. Automatic selection requires a
+  strict title match and, for episodes, an identified file.
+- Search, upgrade and series refresh passes have a 90-second budget. Reports
+  show at most 1,000 candidate rows; retained candidate data is limited to
+  16 MiB, beyond which the search fails rather than choosing from an incomplete
+  set.
+- Explicit `--url` and `--path` sources are not searched or ranked.
 
-Named movie/episode profiles govern release selection. Resolution,
-source, codec and language markers are inferred from the matched release-title
-suffix. Required/blocked token phrases and additive scores filter candidates;
-custom score, ordered preferences and seed count determine the ranking. See
-[selection.md](selection.md) for the supported values and preview commands.
+## Library and upgrades
 
-These markers are claims in a name. Selection does not verify actual audio
-languages or decode video before acquisition. `VOSTFR` does not identify French
-audio, and `MULTI` does not establish which audio languages are present. A
-restricted attribute rejects unknown markers by default unless its explicit
-`allow_unknown_*` flag is enabled. Empty attribute lists remain unrestricted.
-Conflicting recognized markers and explicitly malformed/unsupported resolution
-markers reject a candidate only when the corresponding attribute is restricted;
-an `allow_unknown_*` flag does not override those contradictions. Unrestricted
-attributes retain marker issues in the preview without changing acceptance.
-Score totals below `minimum_score` are rejected; its default of zero means a
-negative total needs an explicitly lower threshold to remain eligible.
+- The library view covers imports Mynou owns. It is not a scan of Plex or of
+  existing folders, and a Plex skip does not create an owned import.
+- Monitoring is off by default; `interval_secs` accepts 60 to 86,400 and
+  `max_checks` 1 to 256.
+- Baselines are release titles of 1 to 2,048 bytes without control characters.
+  Decisions rely on release-name claims.
+- Upgrades keep earlier imports and downloads: there is no automatic cleanup,
+  rollback deletion or adoption of existing library folders.
+- `plex.path_mappings` holds at most 32 entries of normalized absolute paths of
+  at most 4,096 bytes, with distinct Mynou prefixes.
+- Shared-group upgrades replace one video for 2 to 64 owners with one new video.
+  They need every owner current and monitored, an accepted improvement and a
+  new URL and torrent hash. Mapping files are limited to 512 KiB, API bodies to
+  1 MiB, titles to 2,048 bytes and the action to 60 seconds. Group data uses
+  storage format 3, which versions before 0.18 refuse.
 
-Profiles apply to automatic source search. A source explicitly provided through
-`--url` or `--path` is not a newly searched candidate. Search previews contact
-configured sources but do not submit jobs or start torrents, and their public
-reports omit acquisition URLs and credentials.
-Preview reports display at most 1,000 candidate rows with explicit count and
-truncation fields. Retained candidate data is limited to 16 MiB; exceeding this
-budget reports an error instead of choosing from an incomplete set.
+## Series, numbering and packs
 
-0.8.0 adds owned-library views, per-entry monitoring, resolution cutoffs and
-controlled upgrades. Background monitoring defaults to disabled. Older or
-explicitly submitted imports without a release baseline are ineligible until
-you supply a release-title claim. An initial Plex skip does not adopt that file
-as an owned import. The library view is not a scan of all existing Plex content.
+- Series storage holds 128 tracked scopes, 2,000 episodes per plan, 20,000
+  episodes in total and an 8 MiB snapshot, with no automatic eviction. A plan
+  covers at most 100 seasons and 1,000 episodes per catalog season.
+- The service checks due records every minute: at most four per pass, 64
+  episode requests per batch, a 90-second pass budget and 20 seconds per catalog
+  request.
+- Calendar pages return 1 to 200 rows (offset up to 20,000) over an inclusive
+  window of at most 367 days, for years 1800 to 9999. Air dates are catalog days
+  in UTC, not premiere times.
+- Refresh checks compare the catalog with the retained plan, not with a complete
+  numbering history. A known episode ID can never be replaced or reassigned.
+- Numbering keeps at most 2,000 IDs and choices per scope and 20,000 in total.
+  A decision holds at most 2,000 changes. Seasons range from 0 to 9,999,
+  episodes and absolute numbers from 1 to 99,999 and catalog IDs from 1 to
+  2^53−1. Mapping files are limited to 512 KiB; the browser shows the first 100
+  comparison rows. Numbering history is never discarded to make room. Version
+  0.15 cannot read numbering data saved by later versions.
+- Explicit packs map 1 to 64 episodes to distinct files. Paths have at most
+  4,096 bytes, 32 components and 255 bytes per component, without empty,
+  absolute, dot, parent, backslash, colon or control components. Supported
+  videos are MP4, M4V, MOV, MKV, WebM and AVI. Mapping files are read up to
+  1 MiB. Versions 0.12 and earlier ignore pack mappings: do not downgrade.
+- Automatic pack searches cover at most 64 episodes of one season and inspect
+  the metadata of at most eight candidates, each within ten seconds of the
+  90-second budget. Inspection accepts 1,024 files and 1 MiB of paths. Magnet
+  inspection uses at most eight peers and four trackers (five seconds per
+  attempt), never payload, DHT or PEX; some trackers decline metadata-only
+  queries, so a DHT-only magnet can fail automatic inspection yet work as an
+  explicit source. Monitored pack preference looks at four seasons per pass.
+  Failed pack searches are not kept in a history. Versions before 0.15 ignore
+  the identity checks of automatic pack jobs: do not downgrade.
+- Shared videos bind 2 to 64 consecutive episodes of one season. Inspection
+  uses the same metadata bounds with a 60-second deadline; mapping files are
+  limited to 512 KiB. File names fit 255 bytes. Versions before 0.17 refuse
+  shared data.
+- Pack and shared jobs have no release baseline, and pack provenance does not
+  establish upgrade quality.
 
-Upgrade comparisons use the current movie/episode profile for both the baseline
-and candidates. Acceptance is compared first: an accepted candidate may replace
-a baseline rejected by the current policy even with a lower raw rank. If both
-are accepted, a strict quality-rank improvement is required. A seed-count
-increase alone is insufficient. A cutoff stops
-further upgrades when an accepted baseline reaches that resolution or an earlier
-position in the configured preference order; it is not a numeric resolution
-threshold. These decisions still rely on release-name claims.
+## Plex requester accounts
 
-Upgrades create child requests and unique imported filenames, preserving the
-earlier ready entry until a child is ready. With Plex enabled, confirmation
-requires the new file's `Part.file` path, optionally translated by configured
-path mappings. Failed or canceled children leave the earlier entry current.
-An unrelated same-media manual request cannot become ready while an upgrade is
-pending; cancel the pending child before completing that alternative. Promotion
-inherits the parent's current monitoring flag. Original imports and downloads
-remain on disk; there is no automatic cleanup, rollback deletion or
-library-directory adoption. See [library.md](library.md).
+- At most 32 account aliases and 32 destinations, 10,000 retained demands, 512
+  watchlist and expanded items per account and 64 new requests per pass. The
+  checked `requesters.bin` snapshot is limited to 16 MiB.
+- A poll pass has 90 seconds, with ten seconds per account for identity,
+  watchlist and catalog. Control files are limited to 64 KiB.
+- Requester demand is acquired episode by episode; automatic packs keep their
+  separate operator rules.
+- Requester data uses job storage format 4, which earlier versions refuse.
 
-[Requester policies](requesters.md) support up to 32 retained account identities
-and 32 configured destinations, 10,000 retained canonical demands, 512 watchlist
-and expanded items per account, a 64-admission pass and a 16 MiB checked snapshot.
-Each account shares a ten-second identity/watchlist/catalog budget within a
-90-second poll pass. Unattempted accounts keep their older attempt timestamp for
-subsequent priority. A poll advances only its own successful full snapshot; failed
-accounts retain interests and cursors. New accounts require explicit opt-in;
-an enabled account admits demand without manual approvals or per-account quotas.
-Library maintenance and explicit operator submissions remain separate from new
-requester admission.
-Requester polling acquires aired episodes individually; optional
-operator season-pack automation retains its earlier rules. Removed requester
-demand remains a tombstone and is not silently revived. Ready imports
-stay present. New reuse of uncaptured operator work requires ready regular-file
-imports beneath the selected destination and a compatible recorded quality
-baseline, or the unrestricted default profile when no baseline exists. Pending
-operator work stays an unadmitted conflict. Complete CI and publication passed
-for [v0.19.1](validation.md#recorded-0191-ci-evidence); later changes need their
-own completed run.
+## Browser interface
 
-Series storage supports 128 tracked scopes, 2,000 episodes per plan, 20,000
-episodes total and an 8 MiB verified snapshot. A due pass checks at most four
-records and a submission batch at most 64 missing aired episodes. Calendar pages
-accept at most 200 entries over an inclusive 367-day window. Settings revisions
-prevent a late refresh from applying an earlier monitoring policy. Series
-monitoring retains existing requests and files; it does not silently retry
-terminal jobs or stop when a Plex watchlist entry disappears. Changed known catalog numbers require an explicit [numbering decision](numbering.md).
-Retained IDs cannot be replaced or reassigned. The CLI/API/browser accept explicit
-alternate/absolute source labels; automatic anime-order inference and
-automatic range inference remain later work. Explicit packs can map exact source paths
-to canonical episodes. Mapping fields cannot be changed by workers, and earlier unmapped jobs retain ordinary behavior. Do not downgrade
-storage containing mapped jobs to an earlier binary that ignores those fields.
-
-Automatic packs require one unique explicit numbered video for every eligible
-missing episode in one season. At most eight ranked candidates undergo metadata
-decisions; metadata listings are limited to 1,024 files and 1 MiB of path bytes.
-The 90-second search budget and ten-second metadata attempt budget also apply
-to opt-in monitored pack preference within its shared catalog deadline. Magnet
-inspection uses up to eight outbound peers and four trackers, no payload and no
-DHT/PEX fallback. Metadata-only tracker queries may be declined. Preview/apply
-guards bind scope, candidate, hash and paths; queued sources must retain the
-authenticated hash. Pack provenance does not establish episode upgrade quality.
-See [automatic packs](automatic-packs.md) for exact filename and discovery bounds.
-
-Shared files explicitly bind one authenticated video to 2–64 consecutive owners
-in one canonical season. A later request can reuse any nonempty owner subset;
-the full physical binding cannot be extended or reassigned. One synchronized
-transaction records all new owners, and group claims serialize import work.
-Preview uses the metadata-only discovery bounds above with a 60-second action
-deadline. The CLI mapping is capped at 512 KiB; API bodies at 1 MiB; browser fields
-at 8 KiB. Shared formats reject older readers. Individual remaps, baselines and
-upgrades remain blocked for individual shared owners. Coordinated replacement
-uses the complete captured owner range, one new shared video, group baselines and
-staged confirmations before atomic promotion. It requires all parents to remain
-current and monitored, an accepted quality improvement and a new URL/torrent hash.
-Whole-group cancellation/retry retains bytes and rejects obsolete parents. Format
-3 prevents silent downgrade. Automatic group search, splitting into individual
-files and range inference remain later work. See
-[shared-file ownership](shared-files.md) and [group upgrades](group-upgrades.md).
-
-The browser interface uses a shared operator token, original server-rendered
-pages and native forms. Optional Jobs/Transfers list/detail progress uses explicit
-page-only enable/pause controls, visible-only ten-second polling, one request at
-a time, an eight-second deadline, at most 50 displayed identifiers and 48 KiB
-per reply. It changes known progress nodes only; filters, selected rows and
-unfinished forms remain in place. Freshness follows complete accepted replies;
-missing rows remain Unavailable. Authentication stops updates; other failures
-require explicit retry or refresh. No preference persistence, row insertion,
-streaming, ETA or bandwidth estimation is added. Manual refresh remains available.
-The first-party asset has exact CSP/SRI content pinning; status routes require the
-browser session and exact origin, disclose no private source metadata and do not
-consume flash messages or renew sessions. Browser/assistive-technology
-interoperability has not been independently verified. See [live progress](web.md#live-progress).
-The UI retains bounded pagination and bulk job/library/transfer/series controls. It does not edit
-configuration or adopt a complete existing Plex library. Plex requester policies
-provide explicit opt-in and routing; requester self-service remains
-later work.
-Indexer integrations support RSS/JSON/Torznab endpoints. Native Basic, Bearer and
-explicit single-cookie form authentication, bounded renewal, request intervals
-and redacted health passed complete v0.21.0 CI. Checked persistent source policy
-and guarded controls passed complete v0.21.1 CI. Login
-redirects, CSRF/CAPTCHA/interactive flows, arbitrary cookie jars and a general
-tracker adapter catalog remain unsupported. Opt-in IRC reception
-supports an explicit strict JSON envelope and review rules, with eight sources,
-64 rules, 1,000 retained identities and an 8 MiB checked snapshot. Duplicates do
-not rewrite history; full history rejects new identities without pruning.
-Acknowledgement and dismissal create no acquisition work. The 0.20.1 increment adds explicit grab rules
-and hash-pinned metadata verification for existing admitted requests, immutable
-origins and exact file imports. Catalog claims must agree with admitted labels;
-this does not prove semantic media identity. Queued compatible jobs wait for
-IRC, with no unsolicited demand or implicit search fallback while the rule is
-enabled. The 0.20.3 increment adds configurable fixed-delimiter text formats
-requiring complete explicit catalog/hash claims. It does not resolve title-only
-provider messages. The 0.20.2 increment adds required SASL PLAIN with bounded capabilities
-and credentials; remote use requires verified TLS, and failure has no
-unauthenticated fallback. Only PLAIN is supported; credentials retain their
-UTF-8 bytes without SASLprep or Unicode normalization. IRC pack/upgrade actions
-and broader tracker text adapters, cross-seeding and broader bulk automation remain later work.
-See [IRC behavior](irc.md) for protocol, deadlines and recovery. Complete
-validation/publication passed for v0.20.3; later commits require their own complete CI.
-The 0.20.4 NickServ increment requires exact configured sender/account notices
-before membership. It supports the explicit IDENTIFY account/password command,
-with bounded ASCII credentials and no interactive fallback; complete validation
-and publication passed for that source with 560 Rust tests. The 0.20.5 selector
-increment binds grabs to one compatible admitted requester and passed complete
-CI/publication with 568 Rust tests. The 0.20.6 implementation adds guarded new
-demand with fresh catalog/account confirmation, explicit persistent origins,
-approval/quotas and checked recovery. Request review uses a shared ten-second
-network budget; synchronous DNS can exceed it and late results are rejected.
-Title-only, missing/future catalog facts, ambiguous retained series and mismatched
-source labels stay unresolved. Aborted admission intents are terminal and never
-replayed. New origin semantics use requester snapshot format 2 and IRC format 3;
-old binaries cannot safely read those files. Complete v0.20.6 CI/publication passed
-with 585 Rust tests.
-
-The [roadmap](roadmap.md) separates these capabilities into future releases.
+- One shared operator token, no individual users. The interface does not edit
+  configuration, adopt an existing Plex library or stream over WebSocket.
+- Sessions last eight hours from sign-in and are not extended by activity.
+  Sign-in challenges expire after ten minutes and after five wrong tokens. At
+  most 128 sessions and challenges exist; new challenges can evict older
+  challenges but never signed-in sessions.
+- Forms accept at most 64 fields, 65,536 encoded bytes and 8,192 decoded bytes
+  per field, so the browser accepts smaller inputs than the API. Malformed
+  escapes, invalid UTF-8, unexpected or duplicate fields, control characters and
+  invalid numbers are rejected.
+- Bulk actions select at most 32 entries; lists show 50 rows per page.
+- Live progress polls visible pages every ten seconds, one request at a time,
+  with an eight-second deadline, at most 50 rows and 48 KiB per reply. It does
+  not remember preferences, insert rows, stream, or estimate time or speed. Its
+  read routes require the browser session and exact origin, and they never
+  renew the session or consume messages.
+- Browser and assistive-technology compatibility has not been independently
+  verified.
 
 ## Persistence and platform
 
-The Rust journal replaces SQLite and requires a single owner of its directory.
-Go-release files stay separate; no silent schema or torrent migration occurs.
-Preserve the library and downloads when changing versions.
+- Job journal formats 6 to 8, which stored the removed Usenet provenance, are
+  rejected. Requester snapshots containing removed approval, quota or
+  notification fields and IRC history format 4 are also rejected during startup.
+  These removals provide no migration and do not delete stored data automatically. Read the
+  [release notes](releases/) and back up private storage before upgrading.
+- The journal replaces SQLite and needs a single owner of its directory. It
+  holds at most 10,000 requests and keeps the latest 1,000 events in total, so
+  history is not an unlimited archive. It compacts at 4 MiB; records and
+  snapshots are limited to 16 MiB and the journal to 64 MiB. The configuration
+  file is limited to 1 MiB.
+- Offline listings and previews open storage read-only: they create nothing,
+  change no permissions, repair nothing and still exclude a concurrent writer.
+  After an interrupted write they ask for writable recovery, which the next
+  service start performs.
+- Series, requester, IRC and source data live in separate private snapshots,
+  written through a temporary file, synchronization and an atomic rename. Their
+  checksums detect corruption; they do not authenticate against someone who can
+  rewrite the files. When a write's durability is uncertain, that store refuses
+  further changes until the service restarts.
+- Request and series writes are separate commits: after a crash, a partly
+  recorded episode batch is kept and completed without duplicates. Without a
+  series snapshot no series is tracked, and earlier episode jobs are never
+  adopted as series records.
+- Data from the earlier Go release (SQLite) is not migrated: keep it in a
+  separate directory. Preserve configuration, data, downloads and library when
+  changing versions, and back up before a downgrade.
+- The container targets Linux x86_64 (musl). Apple Silicon Docker hosts need
+  amd64 emulation; there is no native Linux arm64 image. The macOS executables
+  are verified on macOS 26 only and are not signed or notarized.
+- Mynou installs no Unix signal handler. `POST /api/shutdown` stops gracefully;
+  a forced stop relies on journal recovery. Security randomness needs
+  `/dev/urandom`.
 
-Outcome notifications were removed without migration. Requester snapshots
-(`requesters.bin`) saved by earlier versions hold notification records that this
-version rejects, so Mynou does not start while such a snapshot is present. IRC
-history saved in format 4 (written once an IRC notification route was
-configured) is rejected too, and a configuration with a `notifications` section
-fails to load.
+## Not supported
 
-Offline library listing and upgrade previews use read-only storage. They do not
-create directories/files, change permissions, compact or repair the journal.
-Fresh storage returns an empty view; an interrupted tail reports explicit
-writable recovery is needed rather than changing data during a preview.
+- Advanced torrent transports and networking: uTP, WebRTC/WebTorrent, webseeds,
+  automatic NAT traversal (UPnP/NAT-PMP) and a complete persistent DHT table.
+- Partial seeding, shrinking a selection and automatic cleanup of downloads or
+  old imports.
+- Broad tracker and provider coverage, changing authentication schemes and a
+  comprehensive adapter catalog; login redirects, CSRF, CAPTCHA or interactive
+  logins and arbitrary cookie jars.
+- IRC pack or upgrade actions, broader announcement formats and interactive IRC
+  authentication.
+- Cross-seeding and further bulk automation.
+- Automatic anime-order or episode-range inference, splitting or cutting
+  videos, automatic search for shared groups, and renaming or deleting library
+  files.
+- Scheduling episodes by premiere time or time zone.
+- Requester self-service sign-in.
+- Full parity with Radarr, Sonarr, Pulsarr, qBittorrent, qui, autobrr or
+  Prowlarr.
+- Mature administration across multiple installations and operating systems.
+- An independent review of the original cryptographic and protocol code.
 
-Series metadata uses a separate private `series.json` snapshot under the same
-directory owner, with file/rename/directory synchronization. Request and series
-writes are separate commits; a partial confirmed acquisition batch is retained
-and deduplicated after restart. An absent series snapshot means no tracked
-series; earlier episode jobs are not adopted as monitoring records. Read-only
-views do not create or mutate it. See [series persistence](series.md).
-
-History retains the most recent 1,000 events across the journal, then filters by
-request for `events`. Requests and their state remain in snapshots; event history
-is not an unlimited archive. Automatic compaction is attempted at 4 MiB of journal
-data. Records and snapshots are limited to 16 MiB, and the journal to 64 MiB;
-exceeding a limit produces an error rather than unbounded growth.
-
-The Docker delivery target is Linux x86_64 with musl. The project installs no Unix
-signal handler through FFI: authenticated API shutdown is graceful, while journal
-recovery handles forced interruptions. Security functions using `/dev/urandom`
-require a system providing that source.
-
-Explicit alternate/absolute [numbering](numbering.md) is implemented in 0.16.
-Retained canonical identities cannot be reassigned; new jobs capture admitted
-source labels. Multi-episode physical ownership remains the next release stage.
+"Zero dependencies" describes how Mynou is built. It does not guarantee
+completeness, security, optimal performance or compatibility. CI uses synthetic
+media, loopback peers and simulated services: passing CI does not establish
+compatibility with your Plex installation, public-swarm throughput or browser
+and assistive-technology support.
