@@ -20,11 +20,12 @@ for its exact commit only: an earlier green run does not validate later changes.
 The workflow in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) has
 five jobs. Mynou ships for macOS on Apple Silicon only, so `validate` and `build`
 run on an Apple Silicon `macos-26` runner. A small Linux **decide** job runs
-first: pull requests and manual dispatches always continue. Nothing runs for a
-commit pushed to `trunk`: protection requires an up-to-date branch and rebase
-merging, so `trunk` holds the tree its pull request already validated. Pushing the
-tag `v<version>` continues only when the tag equals the `Cargo.toml` version
-(the binary reports that version) and the tagged commit is on `trunk`.
+beside the checks. Nothing runs for a commit pushed to `trunk`: protection
+requires an up-to-date branch and rebase merging, so `trunk` holds the tree its
+pull request already validated. Pushing the tag `v<version>` runs every check
+again on the tagged commit, and the release job publishes only when the tag
+equals the `Cargo.toml` version (the binary reports that version) and the commit
+is on `trunk`. A failed decision publishes nothing and fails `package`.
 
 1. **validate** checks the Cargo graph offline (exactly one package, `mynou`,
    with no dependencies), formatting, Clippy with warnings denied, the test

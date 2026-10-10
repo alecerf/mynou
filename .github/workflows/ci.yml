@@ -18,14 +18,14 @@ env:
   PYTHONDONTWRITEBYTECODE: '1'
 jobs:
   decide:
-    # Pull requests and manual dispatches always run the full chain. A pushed
-    # version tag runs it too and then publishes, but only for a tag that names
-    # the Cargo.toml version of a commit that is already on trunk.
+    # Pull requests, manual dispatches and tags all run the full chain; only a
+    # tag that names the Cargo.toml version of a commit already on trunk may
+    # then publish. Nothing else depends on this job, and package fails closed
+    # when its version is missing, so a failed decision never passes a check.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
-      run: ${{ steps.decision.outputs.run }}
       publish: ${{ steps.decision.outputs.publish }}
     steps:
       - uses: actions/checkout@v7.0.1
@@ -46,7 +46,6 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           if [ "$GITHUB_REF_TYPE" != tag ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
             echo "publish=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -63,14 +62,10 @@ jobs:
             *) echo "Commit $GITHUB_SHA is not on trunk (compare status: $relation)." >&2; exit 1 ;;
           esac
           echo "v$VERSION is a trunk commit; this run publishes it once every check passes." >> "$GITHUB_STEP_SUMMARY"
-          echo "run=true" >> "$GITHUB_OUTPUT"
           echo "publish=true" >> "$GITHUB_OUTPUT"
   validate:
-    needs: decide
-    # A required check that is skipped counts as passed, so a failed decision must
-    # never skip a pull request's validation: it runs without the decision, and
-    # its version assertion then fails the run.
-    if: ${{ !cancelled() && (github.event_name != 'push' || needs.decide.outputs.run == 'true') }}
+    # Never gated on the decision: a required check that is skipped counts as
+    # passed, so only a run that really ended can leave it green.
     # Mynou ships for macOS Apple Silicon only, so its checks run there too.
     runs-on: macos-26
     timeout-minutes: 10
@@ -101,18 +96,14 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-${{ github.repository }}-rust-1.99-tests-v2-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/**', 'build.rs', 'src/**', 'tests/**', 'examples/**', '.github/workflows/ci.yml') }}
       - name: Verify the dependency graph
         id: metadata
-        env:
-          DECIDED_VERSION: ${{ needs.decide.outputs.version }}
         run: |
           cargo metadata --offline --locked --format-version 1 > "$RUNNER_TEMP/metadata.json"
           python3 - "$RUNNER_TEMP/metadata.json" >> "$GITHUB_OUTPUT" <<'GRAPH'
-          import json, os, sys
+          import json, sys
           with open(sys.argv[1]) as stream:
               packages = json.load(stream)["packages"]
           assert len(packages) == 1 and packages[0]["name"] == "mynou"
           assert packages[0]["dependencies"] == []
-          # The publication decision read this same version from Cargo.toml.
-          assert packages[0]["version"] == os.environ["DECIDED_VERSION"]
           print("version=" + packages[0]["version"])
           GRAPH
           cargo tree --all-features --target all --edges all --offline --locked
@@ -152,8 +143,6 @@ jobs:
           key: ${{ steps.cache.outputs.cache-primary-key }}
   build:
     name: Build aarch64-apple-darwin
-    needs: decide
-    if: ${{ !cancelled() && (github.event_name != 'push' || needs.decide.outputs.run == 'true') }}
     runs-on: macos-26
     timeout-minutes: 8
     steps:
@@ -212,7 +201,8 @@ jobs:
           key: ${{ steps.cache.outputs.cache-primary-key }}
   package:
     needs: [decide, validate, build]
-    # Runs after a successful validation and build only; a skipped trunk push skips it.
+    # Runs after a successful validation and build, even when the decision failed:
+    # the version check below then fails the run instead of skipping the check.
     if: ${{ !cancelled() && needs.validate.result == 'success' && needs.build.result == 'success' }}
     # Packaging only copies and checksums the executable; it builds nothing.
     runs-on: ubuntu-latest

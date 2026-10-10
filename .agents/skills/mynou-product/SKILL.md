@@ -12,7 +12,7 @@ without client management. Never claim broad stack parity or unmeasured benefits
 Invoke when the board reports `product_planning.due`: fewer than three
 unblocked Ready agent-proposed increments and no review on the configured
 planning Issue for a day. Claim that Issue with `/assign` for the review.
-Owner requests, a red `trunk` and security or corruption work come first.
+Owner requests, a failed release run and security or corruption work come first.
 
 Inspect recent deliveries, known support gaps and prior findings first. Read open
 and relevant closed native Issues/PRs to deduplicate, then only the code/docs/CI
