@@ -1,5 +1,5 @@
 """Deliberate releases: only a weekly release PR changes the version, and CI
-publishes a version once, when it has no tag yet. Python std only."""
+publishes a version once, when a tag for it is pushed. Python std only."""
 import argparse
 import base64
 from datetime import datetime, timedelta, timezone
@@ -138,6 +138,36 @@ def tag_exists(api, tag):
     return True
 
 
+def plan_tag(api, number):
+    """The tag a merged release PR calls for, after checking that it can be pushed.
+
+    Pushing the tag starts publication, and CI refuses a tag that differs from the
+    Cargo.toml version of its commit or whose commit is not on the default branch;
+    this plan checks the same things first, so a mistake never reaches CI."""
+    pull = api.rest("GET", f"pulls/{number}")
+    if "release" not in label_names(pull) or not pull.get("merged"):
+        raise ValueError("Only a merged release PR is tagged")
+    commit = pull.get("merge_commit_sha")
+    if not isinstance(commit, str) or not re.fullmatch("[0-9a-f]{40}", commit):
+        raise ValueError("The release PR has no merge commit")
+    released = version(manifest(api, commit))
+    if released != version(manifest(api, pull["head"]["sha"])):
+        raise ValueError("The merged commit does not carry the release PR's version")
+    if released <= version(manifest(api, pull["base"]["sha"])):
+        raise ValueError("The release PR does not raise the version")
+    tag = "v" + name(released)
+    if tag_exists(api, tag):
+        raise ValueError(f"{tag} already exists; a published or burned version is never retagged")
+    relation = api.rest("GET", f"compare/{api.cfg['default_branch']}...{commit}")["status"]
+    if relation not in ("identical", "behind"):
+        raise ValueError("The release commit is not on the default branch")
+    return {"pr": number, "tag": tag, "commit": commit}
+
+
+def create_tag(api, plan):
+    api.rest("POST", "git/refs", {"ref": "refs/tags/" + plan["tag"], "sha": plan["commit"]})
+
+
 def shipped_since(api, latest, head):
     """Shipped inputs that changed between the latest release tag and head."""
     if latest is None:
@@ -180,9 +210,18 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("check-pr").add_argument("number", type=int)
     commands.add_parser("status")
+    tagging = commands.add_parser("tag", help="plan, and with --create push, the tag of a merged release PR")
+    tagging.add_argument("number", type=int)
+    tagging.add_argument("--create", action="store_true")
     args = parser.parse_args()
     api = GitHub()
     now = datetime.now(timezone.utc)
+    if args.command == "tag":
+        plan = plan_tag(api, args.number)
+        if args.create:
+            create_tag(api, plan)
+        print(json.dumps(dict(plan, created=args.create), indent=2))
+        return
     if args.command == "status":
         print(json.dumps(status(api, now), indent=2))
         return

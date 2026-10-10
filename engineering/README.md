@@ -120,8 +120,8 @@ merged.
 
 Merging deletes the branch, but GitHub does not close the Issue in this
 repository: close it yourself (`gh issue close <issue> --reason completed`) with
-a comment linking the merge. If the head moved, a new verdict is needed. A red
-`trunk` blocks further merges until a fix-forward PR lands.
+a comment linking the merge. If the head moved, a new verdict is needed. A failed
+release run publishes nothing and is fixed forward in a new PR.
 
 `trunk` is protected (see [Branch protection](#branch-protection)) and the
 protection binds administrators, so GitHub refuses a red, pending or behind merge
@@ -165,15 +165,18 @@ Published assets are immutable.
      Use a minor version for new user-visible capability, a patch otherwise.
   3. Open the PR labeled `release`; QA checks the notes and the version. The
      `Release policy` check refuses anything else in the PR.
-  4. After merge, with the release commit on `trunk`, push the tag:
-     `git fetch origin && git tag -a v<version> -m "Mynou <version>" <commit>`
-     then `git push origin v<version>` (use the release PR's merged commit, which
-     `gh pr view <pr> --json mergeCommit` shows). Then confirm that Actions
-     published `v<version>` with its executable and `SHA256SUMS`.
-- A failed publication is re-run from the failed job. Never move a tag or replace
-  published assets; a burned version moves to the next patch in a new release PR.
-  A tag the decision refused (wrong version or not on `trunk`) published nothing:
-  only the owner deletes it, then the correct tag is pushed.
+  4. After merge, plan the tag with `python3 engineering/releases.py tag <pr>`: it
+     reads the version at the PR's merge commit and refuses a tag that exists, a
+     version that does not rise, or a commit outside `trunk`. Then run it again
+     with `--create` to push the tag at that commit, which starts publication.
+     Confirm that Actions published `v<version>` with its executable and
+     `SHA256SUMS`, and only then close the release Issue (the board keeps
+     `release.due` false while it is open).
+- A failed publication is re-run from the failed job; a failed tag run is fixed
+  forward. Never move a tag or replace published assets; a burned version moves
+  to the next patch in a new release PR. A tag the decision refused (wrong version
+  or not on `trunk`) published nothing: only the owner deletes it, then the
+  correct tag is pushed.
 
 ## Product planning
 

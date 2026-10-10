@@ -166,5 +166,64 @@ class ReleasePolicyCheck(unittest.TestCase):
         self.assertNotIn("releases/latest", work.paths)
 
 
+MERGED = "c" * 40
+
+
+class TagAPI:
+    """A merged release PR whose merge commit carries `merged_version`."""
+    def __init__(self, merged_version="0.23.0", head_version="0.23.0", base_version="0.22.34", merged=True,
+                 labels=("release",), exists=False, relation="behind", commit=MERGED):
+        self.cfg = {"release_policy": POLICY, "default_branch": "trunk"}
+        self.versions = {MERGED: merged_version, HEAD: head_version, BASE: base_version}
+        self.merged, self.labels, self.exists, self.relation, self.commit = merged, labels, exists, relation, commit
+        self.calls = []
+
+    def rest(self, method, path, value=None):
+        self.calls.append((method, path, value))
+        if method == "POST":
+            return {"ref": value["ref"]}
+        if path == "pulls/7":
+            return {"labels": [{"name": n} for n in self.labels], "merged": self.merged,
+                    "merge_commit_sha": self.commit, "base": {"sha": BASE}, "head": {"sha": HEAD}}
+        if path.startswith("contents/Cargo.toml?ref="):
+            return toml(self.versions[path.rsplit("=", 1)[1]])
+        if path == "git/ref/tags/v0.23.0":
+            if self.exists:
+                return {"ref": "refs/tags/v0.23.0"}
+            raise APIError(404)
+        if path == "compare/trunk..." + MERGED:
+            return {"status": self.relation}
+        raise AssertionError(path)
+
+
+class ReleaseTags(unittest.TestCase):
+    def plan(self, **overrides):
+        api = TagAPI(**overrides)
+        return api, releases.plan_tag(api, 7)
+
+    def test_a_merged_release_pr_is_tagged_at_its_merge_commit_with_the_manifest_version(self):
+        api, plan = self.plan()
+        self.assertEqual(plan, {"pr": 7, "tag": "v0.23.0", "commit": MERGED})
+        self.assertTrue(all(method == "GET" for method, _, _ in api.calls))
+        self.assertEqual(releases.plan_tag(TagAPI(relation="identical"), 7)["tag"], "v0.23.0")
+
+    def test_creating_the_tag_pushes_one_lightweight_ref_at_the_planned_commit(self):
+        api, plan = self.plan()
+        releases.create_tag(api, plan)
+        self.assertEqual(api.calls[-1], ("POST", "git/refs", {"ref": "refs/tags/v0.23.0", "sha": MERGED}))
+
+    def test_anything_that_ci_would_refuse_is_refused_before_a_tag_exists(self):
+        refusals = [dict(merged=False), dict(labels=()), dict(commit=None), dict(commit="not-a-sha"),
+                    dict(merged_version="0.23.1"), dict(head_version="0.22.34", merged_version="0.22.34"),
+                    dict(base_version="0.23.0"), dict(exists=True), dict(relation="ahead"),
+                    dict(relation="diverged")]
+        for overrides in refusals:
+            with self.subTest(overrides=overrides):
+                api = TagAPI(**overrides)
+                with self.assertRaises(ValueError):
+                    releases.plan_tag(api, 7)
+                self.assertFalse([call for call in api.calls if call[0] == "POST"])
+
+
 if __name__ == "__main__":
     unittest.main()

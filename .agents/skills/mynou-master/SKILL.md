@@ -9,7 +9,7 @@ working at the same time: respect their claims and coordinate only through the
 comment commands.
 
 Existing user work outranks speculative improvement; critical security,
-corruption and a red `trunk` may preempt it. Use the minimum useful role
+corruption and a failed release run may preempt it. Use the minimum useful role
 sequence; do not invoke every specialist. Own native Issues, dependencies and
 PRs: one Issue, one branch, one PR. Native Issue labels describe the work;
 claims say who does it.
