@@ -144,8 +144,8 @@ mynou jobs --config ./mynou.json
 The browser and the API share `127.0.0.1:8787`. `/healthz` and `/readyz` report
 health, and `mynou healthcheck --config ./mynou.json` exits with an error unless
 the running service answers `/readyz` (it bypasses any proxy). `/api` routes need
-`Authorization: Bearer` with the API token. For remote
-access, put a TLS reverse proxy in front and keep the plain listener private; see
+`Authorization: Bearer` with the API token. For remote access, put a TLS reverse
+proxy in front and keep the plain listener private; see
 [remote access](web.md#sign-in-sessions-and-remote-access).
 
 Port 6881/TCP accepts BitTorrent peers; whether peers can reach it depends on
