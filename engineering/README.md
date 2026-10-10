@@ -68,7 +68,8 @@ with green checks goes to QA.
 4. User-visible changes add `docs/releases/unreleased/<issue>.md`: a heading and
    a few lines for users. Engineering-only changes need no note. Never change the
    version in `Cargo.toml` or `Cargo.lock`.
-5. Mark the PR ready and post `/wait qa`. Keep the Issue claim.
+5. Rebase on `origin/trunk` (see [Merging](#merging)), mark the PR ready and post
+   `/wait qa`. Keep the Issue claim.
 
 Rejections send the turn back to you: fix, push, answer the findings and post
 `/wait qa` again. Every push needs a new verdict.
@@ -94,11 +95,25 @@ available; never fabricate a review, an identity or a GitHub approval.
 
 ## Merging
 
-`gh pr merge <pr> --merge --match-head-commit <head-sha>`, only when:
+`gh pr merge <pr> --rebase --match-head-commit <head-sha>`, only when:
 
+- the branch is rebased on the current `trunk` (no commit of `trunk` is missing
+  from it);
 - the latest QA verdict (and Security, if required) approves that exact head;
 - every check on the head is green (`ci: success` on the board);
 - no review conversation is unresolved.
+
+`trunk` history stays linear: rebase merging is the only enabled method, so
+there are no merge commits and no squashes. Keep one meaningful commit per
+logical change on the branch, since each lands on `trunk` as is.
+
+Rebase on your own work branch with `git fetch origin && git rebase origin/trunk`
+then `git push --force-with-lease`; never rewrite `trunk` or another agent's
+branch. A rebase moves the head, so it needs a new verdict: rebase before
+`/wait qa`, and if `trunk` moves while the PR waits, the author rebases again and
+a reviewer re-checks the result (an unchanged diff is a quick pass). A PR that is
+behind `trunk` is not merged; `gh pr update-branch --rebase` is enough when the
+rebase has no conflict.
 
 Merging deletes the branch, but GitHub does not close the Issue in this
 repository: close it yourself (`gh issue close <issue> --reason completed`) with
@@ -180,8 +195,10 @@ mark release Issues and PRs. Native dependencies mark real blockers.
 `organization`, `release-policy`, `source-history` and `CodeQL` to pass before a
 merge. `CodeQL` is the code scanning result (GitHub Advanced Security); the other
 six are job names pinned to GitHub Actions. No review is required (every agent
-uses the same account, so an approval cannot exist) and branches need not be up
-to date. The settings refuse force pushes to `trunk` and its deletion.
+uses the same account, so an approval cannot exist) but branches must be up to
+date with `trunk` (`strict`) and the history must stay linear
+(`required_linear_history`). The repository allows rebase merging only. The
+settings refuse force pushes to `trunk` and its deletion.
 
 The required checks do not bind administrators (`enforce_admins` is off, on
 purpose) and every agent is one. A blocked PR can be merged with `--admin`, a
