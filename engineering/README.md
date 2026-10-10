@@ -109,23 +109,23 @@ logical change on the branch, since each lands on `trunk` as is.
 
 Rebase on your own work branch with `git fetch origin && git rebase origin/trunk`
 then `git push --force-with-lease`; never rewrite `trunk` or another agent's
-branch. A rebase moves the head, so it needs a new verdict: rebase before
-`/wait qa`, and if `trunk` moves while the PR waits, the author rebases again and
-a reviewer re-checks the result (an unchanged diff is a quick pass). A PR that is
-behind `trunk` is not merged; `gh pr update-branch --rebase` is enough when the
-rebase has no conflict.
+branch, with one exception: `gh pr update-branch --rebase` may move a PR that is
+behind `trunk` when the rebase has no conflict. Either way the rebase moves the
+head, so it needs a new verdict: rebase before `/wait qa`, and if `trunk` moves
+while the PR waits, the head is rebased again and a reviewer re-checks the result
+(an unchanged diff is a quick pass). A PR that is behind `trunk` is not merged.
 
 Merging deletes the branch, but GitHub does not close the Issue in this
 repository: close it yourself (`gh issue close <issue> --reason completed`) with
 a comment linking the merge. If the head moved, a new verdict is needed. A red
 `trunk` blocks further merges until a fix-forward PR lands.
 
-`trunk` is protected (see [Branch protection](#branch-protection)), but its
-required checks do not bind administrators, and every agent is one: only this
-rule stops an agent from merging a red or unreviewed PR. Never use `--admin`, a
-direct push or auto-merge (`--auto`) to get past a red or pending check or a
-missing QA or Security verdict, unless the owner asks for it in their own
-session; GitHub cannot see those verdicts.
+`trunk` is protected (see [Branch protection](#branch-protection)) and the
+protection binds administrators, so GitHub refuses a red, pending or behind merge
+from any agent. It cannot see QA or Security verdicts: only this rule stops an
+agent from merging an unreviewed PR. Never use auto-merge (`--auto`) to get past a
+pending check or a missing verdict, unless the owner asks for it in their own
+session.
 
 ## Branches
 
@@ -200,14 +200,17 @@ date with `trunk` (`strict`) and the history must stay linear
 (`required_linear_history`). The repository allows rebase merging only. The
 settings refuse force pushes to `trunk` and its deletion.
 
-The required checks do not bind administrators (`enforce_admins` is off, on
-purpose) and every agent is one. A blocked PR can be merged with `--admin`, a
-direct push is possible, and auto-merge (the `allow_auto_merge` setting is on)
-would merge on green required checks without any QA or Security verdict. That
-bypass is for an emergency: use it only on an explicit request from the owner in
-their own session, since a comment on the shared account proves nothing. A
-required check also proves only that a PR's own workflows passed, so Security
-review of changes to `.github/` and `engineering/` is the control for that.
+`enforce_admins` is on: the required checks, the up-to-date rule and linear
+history bind administrators, and every agent is one, so `--admin` and a direct
+push no longer get around them. No workflow needs to push to `trunk`: the release
+job only tags and publishes, and format-source pushes `format/**` branches.
+Auto-merge (the `allow_auto_merge` setting is on) would still merge on green
+required checks without any QA or Security verdict: never use it. If the rules
+ever deadlock (for example a required job was renamed), only the owner lifts
+`enforce_admins` in their own session, merges the fix and turns it back on; a
+comment on the shared account proves nothing. A required check also proves only
+that a PR's own workflows passed, so Security review of changes to `.github/` and
+`engineering/` is the control for that.
 
 The `release` job and `actions-logs` are not required: they are skipped on pull
 requests by design. The required list is a repository setting. A PR that renames
@@ -217,7 +220,7 @@ change, say so in the PR, and let QA and Security confirm the live list with
 `gh api repos/alecerf/mynou/branches/trunk/protection`. Any other loosening needs
 the owner: dropping another check (in particular `source-history`,
 `release-policy` or `CodeQL`), changing a pinned app, disabling code scanning, or
-allowing force pushes or deletion.
+turning off `enforce_admins`, or allowing force pushes or deletion.
 
 ## Recovery
 
