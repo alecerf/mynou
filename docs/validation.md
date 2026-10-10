@@ -33,8 +33,8 @@ four jobs:
    binary has the exact target architecture. Every target runs the standalone
    demo, which must reach `ready` with simulated Plex confirmation.
 3. **package** waits for validation and all builds of the same commit. It builds
-   the container from the checked static binary (the Dockerfile's `prebuilt`
-   stage) without recompiling, compares the binary in the image byte for byte,
+   the container `FROM scratch` from the checked static binary and the runner's
+   CA bundle (logged with its SHA-256) without recompiling, compares the binary in the image byte for byte,
    runs the container demo without network access, with a read-only root and no
    capabilities, then writes the three executables and `SHA256SUMS`.
 4. **release** runs only on `trunk`, and only when `Cargo.toml` carries a version

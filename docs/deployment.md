@@ -190,6 +190,26 @@ private certificate authority, mount a PEM bundle read-only and point
 network needs a proxy, set `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` for the
 service; local management commands bypass it.
 
+## Build the image locally
+
+The Dockerfile only copies two files into `scratch`; it compiles nothing. Build
+the static binary and take your host's CA bundle (path varies by distribution),
+then build:
+
+```sh
+rustup target add x86_64-unknown-linux-musl
+cargo build --release --offline --locked --target x86_64-unknown-linux-musl
+mkdir .ci-image
+cp target/x86_64-unknown-linux-musl/release/mynou .ci-image/mynou
+install -m 644 /etc/ssl/certs/ca-certificates.crt .ci-image/ca-certificates.crt
+docker build --build-arg MYNOU_VERSION=local --tag mynou:local .
+```
+
+In CI the CA bundle is the one shipped on the GitHub-hosted `ubuntu-latest`
+runner, so the image trusts whatever that runner carried on the build date and
+rebuilds are not reproducible. The job logs the bundle's SHA-256. At runtime
+`MYNOU_CA_FILE` overrides the bundle.
+
 ## Back up and upgrade
 
 Keep `mynou.json`, `.env`, `data/` and the library folders. For a consistent

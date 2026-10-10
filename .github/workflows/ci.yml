@@ -248,22 +248,31 @@ jobs:
         with:
           name: mynou-native-x86_64-apple-darwin-${{ github.sha }}
           path: ${{ runner.temp }}/mynou-macos-x86_64
-      - name: Prepare checked static deliverables
+      - name: Prepare checked executable and runner TLS trust data
         run: |
           chmod 755 "$RUNNER_TEMP/mynou-static/mynou"
           mkdir .ci-image
           cp "$RUNNER_TEMP/mynou-static/mynou" .ci-image/mynou
+          install -m 644 /etc/ssl/certs/ca-certificates.crt .ci-image/ca-certificates.crt
+          test -s .ci-image/ca-certificates.crt
+          test "$(wc -c < .ci-image/ca-certificates.crt)" -le 4194304
+          grep -q '^-----BEGIN CERTIFICATE-----$' .ci-image/ca-certificates.crt
+          sha256sum .ci-image/ca-certificates.crt
       - name: Build and verify the container without recompiling
         env:
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
           docker build --check .
-          docker build --build-arg BINARY_STAGE=prebuilt --build-arg "MYNOU_VERSION=$VERSION" \
+          docker build --network none --build-arg "MYNOU_VERSION=$VERSION" \
             --build-arg "MYNOU_REVISION=$GITHUB_SHA" --tag "mynou:$VERSION" .
           container=$(docker create "mynou:$VERSION")
+          trap 'docker rm -f "$container" >/dev/null' EXIT
           docker cp "$container:/mynou" "$RUNNER_TEMP/mynou-image-binary"
+          docker cp "$container:/etc/ssl/certs/ca-certificates.crt" "$RUNNER_TEMP/mynou-image-ca"
           docker rm "$container"
+          trap - EXIT
           cmp "$RUNNER_TEMP/mynou-static/mynou" "$RUNNER_TEMP/mynou-image-binary"
+          cmp .ci-image/ca-certificates.crt "$RUNNER_TEMP/mynou-image-ca"
           mkdir "$RUNNER_TEMP/mynou-container-demo"
           chmod 777 "$RUNNER_TEMP/mynou-container-demo"
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true \
