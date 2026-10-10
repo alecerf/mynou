@@ -25,7 +25,7 @@ fn pending_for<'a>(jobs: &'a [Job], media_key: &str) -> Option<&'a Job> {
     })
 }
 
-fn import_exists(job: &Job) -> bool {
+pub(crate) fn import_exists(job: &Job) -> bool {
     !job.imports.is_empty()
         && job.imports.iter().all(|file| {
             let path = Path::new(file);

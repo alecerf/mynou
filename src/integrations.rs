@@ -11,7 +11,7 @@ use crate::config::{self, Config, Source};
 use crate::crypto::Sha256;
 use crate::json::{self, Value};
 use crate::net::{self, HttpClient};
-use crate::selection::{Assessment, tokens};
+use crate::selection::{Assessment, Profile, tokens};
 use crate::store::{RecordedRelease, Request};
 use crate::xml::{MAX_XML, parse_xml};
 
@@ -946,10 +946,10 @@ pub fn expand(config: &Config, request: &Request) -> Result<Vec<Request>> {
 }
 
 #[derive(Debug)]
-struct Release {
-    title: String,
-    url: String,
-    seeders: u64,
+pub(crate) struct Release {
+    pub(crate) title: String,
+    pub(crate) url: String,
+    pub(crate) seeders: u64,
 }
 
 fn episode_marker(text: &str) -> Option<(u32, u32)> {
@@ -1329,6 +1329,53 @@ impl SearchResult {
     }
 }
 
+/// The identity, profile, provenance and seed gates shared by every automatic
+/// acquisition path: request-driven search and feed watching.
+fn assess_release(
+    config: &Config,
+    profile_name: &str,
+    profile: &Profile,
+    request: &Request,
+    release: &Release,
+    pack: bool,
+) -> Assessment {
+    let mut assessment = profile.assess(&release.title, &request.title);
+    if (RecordedRelease {
+        title: release.title.clone(),
+        profile: profile_name.into(),
+    })
+    .validate()
+    .is_err()
+    {
+        assessment.accepted = false;
+        assessment
+            .reasons
+            .push("Release title or profile is invalid for acquisition provenance".into());
+    }
+    if !(if pack {
+        crate::pack::season_title_matches(request, &release.title)
+    } else {
+        release_matches(request, &release.title)
+    }) {
+        assessment.accepted = false;
+        assessment.reasons.push(
+            if pack {
+                "Release does not match the requested series, year or single season pack"
+            } else {
+                "Release does not match the requested title, year or episode"
+            }
+            .into(),
+        );
+    }
+    if release.seeders < config.minimum_seeders {
+        assessment.accepted = false;
+        assessment
+            .reasons
+            .push("Release has fewer than the minimum seeders".into());
+    }
+    assessment
+}
+
 fn search_candidates(config: &Config, request: &Request) -> Result<SearchResult> {
     search_candidates_since(config, request, Instant::now())
 }
@@ -1401,36 +1448,8 @@ fn search_candidates_mode(
                 if candidates.len() >= MAX_ITEMS {
                     return Err("Search: too many candidates".into());
                 }
-                let mut assessment = profile.assess(&release.title, &request.title);
-                if (RecordedRelease {
-                    title: release.title.clone(),
-                    profile: profile_name.into(),
-                })
-                .validate()
-                .is_err()
-                {
-                    assessment.accepted = false;
-                    assessment.reasons.push(
-                        "Release title or profile is invalid for acquisition provenance".into(),
-                    );
-                }
-                if !(if pack {
-                    crate::pack::season_title_matches(request, &release.title)
-                } else {
-                    release_matches(request, &release.title)
-                }) {
-                    assessment.accepted = false;
-                    assessment
-                        .reasons
-                        .push(if pack { "Release does not match the requested series, year or single season pack" }
-                            else { "Release does not match the requested title, year or episode" }.into());
-                }
-                if release.seeders < config.minimum_seeders {
-                    assessment.accepted = false;
-                    assessment
-                        .reasons
-                        .push("Release has fewer than the minimum seeders".into());
-                }
+                let assessment =
+                    assess_release(config, profile_name, profile, request, &release, pack);
                 candidate_bytes = candidate_bytes.saturating_add(candidate_allocation_bytes(
                     &release,
                     source_label.len(),
@@ -1888,7 +1907,14 @@ fn plex_available_before(
     Ok(false)
 }
 
-fn rss_releases(text: &str, base: &str) -> Result<Vec<Release>> {
+struct RssItem {
+    guid: Option<String>,
+    release: Release,
+}
+
+/// Valid items in document order, and the number of items without a usable
+/// title or acquisition URL.
+fn rss_items(text: &str, base: &str) -> Result<(Vec<RssItem>, u32)> {
     let root = parse_xml(text)?;
     if root.local() == "error" {
         return Err("Torznab indexer: service error".into());
@@ -1899,6 +1925,7 @@ fn rss_releases(text: &str, base: &str) -> Result<Vec<Release>> {
         return Err("RSS: expected an rss root element".into());
     };
     let mut out = Vec::new();
+    let mut skipped = 0_u32;
     for item in channel
         .children
         .iter()
@@ -1909,6 +1936,7 @@ fn rss_releases(text: &str, base: &str) -> Result<Vec<Release>> {
             .map(|v| v.text.trim())
             .filter(|s| !s.is_empty() && s.len() <= 2048)
         else {
+            skipped = skipped.saturating_add(1);
             continue;
         };
         let mut url = item
@@ -1936,23 +1964,220 @@ fn rss_releases(text: &str, base: &str) -> Result<Vec<Release>> {
         }
         let url = url.or_else(|| item.child("link").map(|v| v.text.trim()));
         let Some(url) = url else {
+            skipped = skipped.saturating_add(1);
             continue;
         };
         let Ok(url) = acquisition_url(url, base) else {
+            skipped = skipped.saturating_add(1);
             continue;
         };
-        out.push(Release {
-            title: title.into(),
-            url,
-            seeders,
+        out.push(RssItem {
+            guid: item
+                .child("guid")
+                .map(|v| v.text.trim())
+                .filter(|s| !s.is_empty() && s.len() <= 2048)
+                .map(str::to_owned),
+            release: Release {
+                title: title.into(),
+                url,
+                seeders,
+            },
         });
     }
-    Ok(out)
+    Ok((out, skipped))
+}
+
+fn rss_releases(text: &str, base: &str) -> Result<Vec<Release>> {
+    Ok(rss_items(text, base)?
+        .0
+        .into_iter()
+        .map(|item| item.release)
+        .collect())
+}
+
+/// One entry observed on a watched feed. Its identity is an opaque, bounded
+/// digest that never reveals the title, URL or any credential.
+#[derive(Debug)]
+pub(crate) struct FeedEntry {
+    pub(crate) id: String,
+    pub(crate) release: Release,
+}
+
+#[derive(Debug)]
+pub(crate) struct FeedPoll {
+    pub(crate) entries: Vec<FeedEntry>,
+    pub(crate) skipped: u32,
+    pub(crate) truncated: bool,
+}
+
+pub(crate) const MAX_FEED_ENTRIES: usize = 500;
+
+/// A GUID is the feed's own stable identity; without one the title and URL
+/// identify the entry.
+fn entry_identity(guid: Option<&str>, release: &Release) -> String {
+    let mut hash = Sha256::new();
+    let fields: Vec<&str> = match guid {
+        Some(guid) => vec!["guid", guid],
+        None => vec!["release", release.title.as_str(), release.url.as_str()],
+    };
+    for field in fields {
+        hash.update(&(field.len() as u64).to_be_bytes());
+        hash.update(field.as_bytes());
+    }
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut id = String::with_capacity(32);
+    for byte in &hash.finalize()[..16] {
+        id.push(HEX[(byte >> 4) as usize] as char);
+        id.push(HEX[(byte & 15) as usize] as char);
+    }
+    id
+}
+
+fn feed_entries(text: &str, base: &str) -> Result<FeedPoll> {
+    let (items, skipped) = rss_items(text, base)?;
+    let mut entries = Vec::new();
+    let mut truncated = false;
+    for item in items {
+        if entries.len() == MAX_FEED_ENTRIES {
+            truncated = true;
+            break;
+        }
+        entries.push(FeedEntry {
+            id: entry_identity(item.guid.as_deref(), &item.release),
+            release: item.release,
+        });
+    }
+    Ok(FeedPoll {
+        entries,
+        skipped,
+        truncated,
+    })
+}
+
+/// Fixed, redacted outcome for a failed source request.
+fn fetch_outcome(error: &str) -> &'static str {
+    match error {
+        "Indexer: source is busy" => "busy",
+        "Indexer: source is disabled" => "disabled",
+        "Indexer: source rate limit reached" => "rate_limited",
+        "Indexer: authentication rejected" | "Indexer: authentication unavailable" => {
+            "authentication_failed"
+        }
+        "Indexer: response rejected" => "response_rejected",
+        "Indexer: network request failed" => "network_failed",
+        "Indexer: source policy changed during the request" => "policy_changed",
+        "Indexer: request budget expired" => "timed_out",
+        _ => "request_failed",
+    }
+}
+
+/// Fetches the newest entries of an RSS or Torznab source once. The result is
+/// bounded and holds no storage lock; failures carry only a fixed outcome code.
+pub(crate) fn poll_feed(
+    source: &Source,
+    deadline: Instant,
+) -> std::result::Result<FeedPoll, &'static str> {
+    if !matches!(source.kind.as_str(), "rss" | "torznab") {
+        return Err("unsupported_format");
+    }
+    let mut pairs: Vec<(&str, String)> = Vec::new();
+    if source.kind == "torznab" {
+        pairs.push(("t", "search".into()));
+    }
+    if let Some(key) = optional_secret(&source.api_key_env).map_err(|_| "authentication_failed")? {
+        pairs.push(("apikey", key));
+    }
+    let url = query(&source.url, &pairs).map_err(|_| "request_failed")?;
+    let response = crate::indexers::fetch(
+        source,
+        &url,
+        "application/rss+xml, application/xml",
+        deadline,
+    )
+    .map_err(|error| fetch_outcome(&error))?;
+    remaining_search_time(deadline).map_err(|_| "timed_out")?;
+    let parsed = std::str::from_utf8(&response.body)
+        .map_err(|_| "parse_rejected")
+        .and_then(|text| feed_entries(text, &source.url).map_err(|_| "parse_rejected"));
+    crate::indexers::parsed(source, parsed.is_ok());
+    parsed
+}
+
+/// A watched release that satisfies the request's identity and profile gates.
+#[derive(Debug)]
+pub(crate) struct WatchCandidate {
+    pub(crate) url: String,
+    pub(crate) title: String,
+    pub(crate) profile: String,
+    pub(crate) assessment: Assessment,
+    pub(crate) seeders: u64,
+}
+
+impl WatchCandidate {
+    /// Larger rank wins, then seeders; remaining ties are deterministic.
+    pub(crate) fn beats(&self, other: &Self) -> bool {
+        (&self.assessment.rank, self.seeders)
+            .cmp(&(&other.assessment.rank, other.seeders))
+            .then_with(|| (&other.title, &other.url).cmp(&(&self.title, &self.url)))
+            .is_gt()
+    }
+}
+
+/// Applies the same gates as an indexer search to one watched entry. A request
+/// whose manual source overrides discovery never matches.
+pub(crate) fn assess_feed_entry(
+    config: &Config,
+    request: &Request,
+    entry: &FeedEntry,
+) -> Option<WatchCandidate> {
+    if request.source_path.is_some()
+        || request.source_url.is_some()
+        || !release_matches(request, &entry.release.title)
+    {
+        return None;
+    }
+    let (profile_name, profile) = config.selection.profile(&request.kind).ok()?;
+    let assessment = assess_release(
+        config,
+        profile_name,
+        profile,
+        request,
+        &entry.release,
+        false,
+    );
+    assessment.accepted.then(|| WatchCandidate {
+        url: entry.release.url.clone(),
+        title: entry.release.title.clone(),
+        profile: profile_name.into(),
+        assessment,
+        seeders: entry.release.seeders,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn feed_identities_ignore_order_prefer_guids_and_count_invalid_items() {
+        let first = "<item><title>A.Movie.2024</title><guid>g-1</guid><link>magnet:?xt=urn:btih:aa</link></item>";
+        let second = "<item><title>B.Movie.2024</title><link>magnet:?xt=urn:btih:bb</link></item>";
+        let untitled = "<item><link>magnet:?xt=urn:btih:cc</link></item>";
+        let document = |items: &str| format!("<rss><channel>{items}</channel></rss>");
+        let base = "http://127.0.0.1/feed";
+        let one = feed_entries(&document(&format!("{first}{second}{untitled}")), base).unwrap();
+        let two = feed_entries(&document(&format!("{second}{first}")), base).unwrap();
+        assert_eq!((one.skipped, two.skipped), (1, 0));
+        assert_eq!(one.entries[0].id.len(), 32);
+        assert_eq!(one.entries[0].id, two.entries[1].id);
+        assert_eq!(one.entries[1].id, two.entries[0].id);
+        assert_ne!(one.entries[0].id, one.entries[1].id);
+        // A feed GUID survives a changed download link; without one the link counts.
+        let moved = feed_entries(&document(&first.replace("aa", "dd")), base).unwrap();
+        assert_eq!(moved.entries[0].id, one.entries[0].id);
+        let moved = feed_entries(&document(&second.replace("bb", "dd")), base).unwrap();
+        assert_ne!(moved.entries[0].id, one.entries[1].id);
+    }
 
     fn cache_key(id: u32) -> [u8; 32] {
         let mut key = [0; 32];

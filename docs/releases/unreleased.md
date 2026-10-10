@@ -65,3 +65,7 @@ The API now gives every response a total write time of 10 seconds. A client that
 ## Fixed: Retry pauses the previous torrent
 
 Retrying a failed requester request, like retrying an ordinary one, now pauses the torrent it started before beginning a new search, unless another request still uses it. Files are kept, a torrent you paused stays paused, and a restart in the middle of a retry finishes the pause when Mynou starts again.
+
+## Added: Watch RSS and Torznab feeds for new releases
+
+An RSS or Torznab indexer can now be watched with `"watch": {"enabled": true, "interval_secs": 900}`. Mynou polls the feed on its own schedule, starting with a baseline that acquires nothing, and routes only new entries to requests that already wait, such as watchlist requests, requester demand and monitored missing episodes, or to a strictly better release of monitored owned media. A feed never creates a request. `mynou feeds` and `GET /api/feeds` show freshness, counts and failures without addresses or credentials; pause a source with `indexer-control` to stop its polling. See [sources](/docs/sources.md#watching-a-feed).

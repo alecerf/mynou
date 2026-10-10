@@ -421,6 +421,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
                     "min_interval_ms",
                     "authentication",
                     "id",
+                    "watch",
                 ],
             )?;
             let kind = text(source, "kind", "json")?;
@@ -437,6 +438,11 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
                 api_key_env: text(source, "api_key_env", "MYNOU_INDEXER_API_KEY")?,
             });
         }
+    }
+    if sources.iter().filter(|s| s.options.watch.enabled).count()
+        > crate::indexers::feed::MAX_WATCHED
+    {
+        return Err("Configuration: too many watched feeds".into());
     }
     let workers = number(v, "workers", 2, 32)? as usize;
     let max_active = number(d, "max_active", 2, 64)? as usize;

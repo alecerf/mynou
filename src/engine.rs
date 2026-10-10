@@ -31,6 +31,9 @@ pub struct Engine {
     pub(crate) irc_route_runtime: Mutex<crate::irc::routing::Runtime>,
     pub(crate) irc_route_lock: Mutex<()>,
     pub(crate) indexer_store: Mutex<crate::indexers::policy::SourceStore>,
+    pub(crate) feed_store: Mutex<crate::indexers::feed::FeedStore>,
+    pub(crate) feed_runtime: Mutex<crate::indexers::watch::Runtime>,
+    pub(crate) feed_lock: Mutex<()>,
     pub(crate) upgrade_lock: Mutex<()>,
     pub(crate) read_only: bool,
     pub stopped: AtomicBool,
@@ -74,6 +77,8 @@ impl Engine {
     ) -> Result<Arc<Self>> {
         let mut indexer_store =
             crate::indexers::policy::SourceStore::open(&config.store_dir, &config, read_only)?;
+        let mut feed_store =
+            crate::indexers::feed::FeedStore::open(&config.store_dir, &config, read_only)?;
         let series_store = crate::series::SeriesStore::open(&config.store_dir, read_only)?;
         let mut requester_store =
             crate::requesters::RequesterStore::open(&config.store_dir, &config, read_only)?;
@@ -88,6 +93,7 @@ impl Engine {
             store.initialize()?;
         }
         indexer_store.initialize(&config)?;
+        feed_store.initialize()?;
         requester_store.initialize()?;
         irc_store.initialize()?;
         if !read_only && irc_recovery_changed {
@@ -151,6 +157,9 @@ impl Engine {
             irc_route_runtime: Mutex::new(crate::irc::routing::Runtime::default()),
             irc_route_lock: Mutex::new(()),
             indexer_store: Mutex::new(indexer_store),
+            feed_store: Mutex::new(feed_store),
+            feed_runtime: Mutex::new(crate::indexers::watch::Runtime::default()),
+            feed_lock: Mutex::new(()),
             upgrade_lock: Mutex::new(()),
             read_only,
             stopped: AtomicBool::new(false),
@@ -442,6 +451,7 @@ impl Engine {
         let mut handles = Vec::new();
         crate::irc::client::start(self, &mut handles);
         crate::irc::routing::start(self, &mut handles);
+        crate::indexers::watch::start(self, &mut handles);
         if self.config.catalog.enabled {
             let engine = self.clone();
             handles.push(thread::spawn(move || {
