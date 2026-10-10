@@ -1,11 +1,5 @@
 **
-!Cargo.toml
-!Cargo.lock
 !Dockerfile
-!deploy-compose.yaml
-!examples
-!examples/demo.mp4
-!src
-!src/**
 !.ci-image
 !.ci-image/mynou
+!.ci-image/ca-certificates.crt
