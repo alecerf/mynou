@@ -143,6 +143,17 @@ Indexers:
   sources and 2 MiB, including removed sources. Corruption, unsupported
   formats, links and public permissions stop the service before workers start.
 
+Watched feeds:
+
+- At most 64 watched RSS or Torznab sources, polled every 60 to 86,400 seconds
+  (default 900), at most four per pass, with a 30-second budget per poll.
+- A poll reads at most 500 entries, considers 200 unseen ones, and routes at
+  most 32 jobs and 32 upgrades. The window keeps 1,024 identities per source.
+- `feeds.bin` is private and checksummed, at most 4 MiB. A failed save reports
+  `storage_failed` and leaves the previous state; corruption, unsupported
+  formats, links and public permissions stop the service before workers start.
+  A source not polled successfully for seven days is baselined again.
+
 IRC announcements:
 
 - At most 8 sources, 32 retained source IDs and 64 rules, each rule with at most

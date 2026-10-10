@@ -74,6 +74,12 @@ CLI / API            Plex watchlists   IRC announcements
   and health. `selection` scores candidates against the movie or episode
   profile; automatic acquisition and search previews share that code, and
   previews never take the journal owner lock or create a job.
+- `indexers::feed` and `indexers::watch` poll opted-in RSS and Torznab sources
+  independently of IRC and of per-title search. The cursor and a bounded window
+  of entry identities are checked and synchronized before a poll is routed or
+  reported. Routing only selects a release for demand that already exists: it
+  rechecks the job and its admitted requester demand under the same locks that
+  workers, upgrade checks and IRC admission use, so the first selection wins.
 - `irc` runs one receiver per source with strict framing and verified TLS, keeps
   a checked announcement history, and routes hash-pinned candidates to existing
   jobs. Source I/O holds no storage lock. Admission takes locks in IRC, requester,

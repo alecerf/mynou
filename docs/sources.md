@@ -1,11 +1,12 @@
 # Sources: indexers and IRC announcements
 
-Mynou finds releases in two kinds of sources. **Indexers** are searched when a
-request needs a release: RSS, JSON and Torznab endpoints. **IRC announcement
-channels** push new releases as they appear; rules decide whether to keep them
-for review or route them to requests. Every candidate then goes through your
-[selection profiles](selection.md). Bounds for both are listed in
-[limits](limits.md#sources).
+Mynou finds releases in three ways. **Indexers** are searched when a request
+needs a release: RSS, JSON and Torznab endpoints. An RSS or Torznab indexer can
+also be **watched**: Mynou polls its feed for new releases and routes them to
+requests that already wait. **IRC announcement channels** push new releases as
+they appear; rules decide whether to keep them for review or route them to
+requests. Every candidate then goes through your [selection profiles](selection.md).
+Bounds for all of them are listed in [limits](limits.md#sources).
 
 ## Indexers
 
@@ -92,6 +93,67 @@ A source that answers `429` is rested for its `Retry-After` delay (60 seconds
 when absent, clamped to 1 to 3,600) and is never retried immediately. A second
 request to a busy source fails at once instead of waiting; other sources are
 unaffected.
+
+### Watching a feed
+
+Watching is opt-in per RSS or Torznab source and independent of IRC and of the
+per-title search:
+
+```json
+{
+  "id": "movies-feed",
+  "name": "movies",
+  "kind": "torznab",
+  "url": "https://indexer.example.test/api",
+  "watch": { "enabled": true, "interval_secs": 900 }
+}
+```
+
+- `interval_secs` accepts 60 to 86,400 (default 900). At most 64 sources can be
+  watched. Watching needs downloads enabled, and a JSON source cannot be watched.
+- Each poll fetches the newest entries once: a Torznab source gets `t=search`
+  without a query and an RSS source is requested as configured. The source's
+  authentication, `min_interval_ms`, busy state, `429` rest and `pause` apply as
+  for a search. A search that finds the source busy fails at once, and a poll
+  that finds it busy tries again after ten seconds.
+- The first successful poll only **baselines** the feed: what it lists is
+  remembered and never acquired. Later polls consider only entries not seen
+  before, whatever their order, so duplicates and reordering change nothing. The
+  cursor and a window of the last 1,024 entry identities are saved in a private
+  checksummed `feeds.bin` **before** a poll is routed or reported as successful;
+  a failed save reports `storage_failed` and the same entries are seen again.
+  Restarting keeps the window and replays nothing. The file holds opaque
+  digests, never addresses, titles or credentials.
+- A source that is paused, or whose `watch` is disabled, forgets its window:
+  resuming baselines it again instead of acquiring what it published meanwhile.
+  So does a source that was not polled successfully for seven days.
+- New entries go **only to demand that already exists**, never to a new request:
+  queued or retrying movie and episode jobs that no worker has leased and that
+  have no selected release, which includes watchlist requests, requester
+  demand and monitored missing episodes; and, when [monitoring](library.md#background-monitoring) is
+  enabled, owned monitored media whose profile has not reached its cutoff. An
+  entry must pass the same title, year, episode, profile and minimum-seeder
+  gates as a search, and an upgrade must rank strictly higher than the recorded
+  release. The best entry wins, a job takes at most one release, and the job's
+  admitted requester demand and captured profile are checked again where the
+  job changes. A job that a worker, an IRC announcement or another poll already
+  selected is never replaced. A configured Plex library is asked first, and
+  media already present is left to the normal availability check.
+- Per poll, at most 500 entries are read, 200 unseen ones are considered
+  (the rest stay new for the next poll) and 32 jobs and 32 upgrades are routed.
+
+```sh
+mynou feeds --config ./mynou.json
+```
+
+`mynou feeds` and `GET /api/feeds` report, for every RSS or Torznab source,
+whether it is watched and active, whether it has a baseline, when it last
+succeeded, how many polls, failures and new entries it saw, the last outcome
+(`ok`, `busy`, `disabled`, `rate_limited`, `authentication_failed`,
+`response_rejected`, `network_failed`, `parse_rejected`, `storage_failed`,
+`timed_out` or `request_failed`), the delay before the next poll and any `429`
+rest. Last-outcome counters reset when the service restarts. Reports never show
+URLs, titles, entries or credentials.
 
 ## IRC announcements
 

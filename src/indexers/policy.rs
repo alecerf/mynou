@@ -57,7 +57,7 @@ impl Options {
             ]),
         }
     }
-    fn binding(&self, source: &Source) -> String {
+    pub(super) fn binding(&self, source: &Source) -> String {
         digest(
             json::stringify(&Value::Array(vec![
                 source.name.clone().into(),

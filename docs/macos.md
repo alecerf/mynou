@@ -84,7 +84,7 @@ file is valid. Restart the service after any change.
 | `poll_interval_ms`, `lease_duration_secs` | `500`, `60` | Worker polling interval and lease length |
 | `plex` | disabled | [Connect Plex](#connect-plex) |
 | `catalog` | disabled | TMDB catalog, required for series |
-| `indexers` | none | [Sources](sources.md) to search |
+| `indexers` | none | [Sources](sources.md) to search, and [feeds to watch](sources.md#watching-a-feed) |
 | `selection` | unrestricted | [Release selection](selection.md) |
 | `monitoring` | disabled | [Library upgrades](library.md#background-monitoring) |
 | `series_packs` | disabled | [Automatic packs](packs.md#prefer-packs-during-monitoring) |

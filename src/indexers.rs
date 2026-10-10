@@ -1,6 +1,8 @@
 //! Native bounded source authentication. Sessions are ephemeral and origin-bound.
+pub(crate) mod feed;
 pub(crate) mod policy;
 mod session;
+pub(crate) mod watch;
 use crate::{
     Result,
     config::Source,
@@ -48,6 +50,20 @@ impl Authentication {
         }
     }
 }
+/// Opt-in bounded polling of an RSS or Torznab feed for new releases.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Watch {
+    pub enabled: bool,
+    pub interval_secs: u64,
+}
+impl Default for Watch {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            interval_secs: 900,
+        }
+    }
+}
 #[derive(Clone)]
 pub struct Options {
     pub id: Option<String>,
@@ -58,6 +74,7 @@ pub struct Options {
     pub enabled: bool,
     pub min_interval_ms: u64,
     pub authentication: Authentication,
+    pub watch: Watch,
     runtime: Arc<Mutex<Runtime>>,
 }
 impl std::fmt::Debug for Options {
@@ -80,6 +97,7 @@ impl Default for Options {
             enabled: true,
             min_interval_ms: 0,
             authentication: Authentication::None,
+            watch: Watch::default(),
             runtime: Arc::new(Mutex::new(Runtime::default())),
         }
     }
@@ -124,7 +142,31 @@ fn token(s: &str) -> bool {
         && s.bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-'))
 }
+fn watch(v: &Value) -> Result<Watch> {
+    let Some(section) = v.get("watch") else {
+        return Ok(Watch::default());
+    };
+    crate::numbering::only(section, &["enabled", "interval_secs"])?;
+    let enabled = match section.get("enabled") {
+        None => false,
+        Some(Value::Bool(b)) => *b,
+        _ => return Err("Indexer: invalid watch flag".into()),
+    };
+    let watch = Watch {
+        enabled,
+        interval_secs: integer(section, "interval_secs", 900, 86_400)?,
+    };
+    let kind = v.get("kind").and_then(Value::as_str).unwrap_or("json");
+    if watch.interval_secs < 60 || (watch.enabled && !matches!(kind, "rss" | "torznab")) {
+        return Err("Indexer: watching requires an rss or torznab source and an interval of 60 to 86400 seconds".into());
+    }
+    Ok(watch)
+}
 impl Options {
+    /// A watched source is opted in and not paused.
+    pub(crate) fn watched(&self) -> bool {
+        self.watch.enabled && self.effective_enabled()
+    }
     pub(crate) fn from_json(v: &Value, url: &str) -> Result<Self> {
         let enabled = match v.get("enabled") {
             None => true,
@@ -140,6 +182,7 @@ impl Options {
             id,
             enabled,
             min_interval_ms: integer(v, "min_interval_ms", 0, 60_000)?,
+            watch: watch(v)?,
             ..Self::default()
         };
         if let Some(auth) = v.get("authentication") {
@@ -406,6 +449,14 @@ fn fetch_before(
         return Ok(response);
     }
     Err("Indexer: authentication rejected".into())
+}
+/// Remaining 429 cooldown of a source, if any. A busy source reports none.
+pub(crate) fn cooldown(source: &Source) -> Option<Duration> {
+    let state = source.options.runtime.try_lock().ok()?;
+    state
+        .blocked_until
+        .and_then(|at| at.checked_duration_since(Instant::now()))
+        .filter(|remaining| !remaining.is_zero())
 }
 pub(crate) fn parsed(source: &Source, ok: bool) {
     if let Ok(mut s) = source.options.runtime.try_lock() {

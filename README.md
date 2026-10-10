@@ -15,7 +15,7 @@ Sonarr. Plex, TMDB and your indexers are network services you configure.
 - **Requests** from Plex watchlists (one or several accounts), the command
   line and an HTTP API.
 - **Sources**: RSS, JSON and Torznab indexers, with optional authentication,
-  and opt-in IRC announcement channels.
+  opt-in feed watching for new releases, and opt-in IRC announcement channels.
 - **Release selection** with movie and episode profiles (resolution, source,
   codec, language, terms and scores) and previews that explain every decision.
 - **BitTorrent**: v1, v2 and hybrid torrents, magnets, trackers, DHT and PEX,
