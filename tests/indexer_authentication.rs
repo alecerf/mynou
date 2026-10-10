@@ -10,7 +10,7 @@ use mynou::{
 use std::{
     collections::BTreeMap,
     fs,
-    io::Write,
+    io::{Read, Write},
     net::TcpListener,
     process::Command,
     sync::{

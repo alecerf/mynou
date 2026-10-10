@@ -15,7 +15,7 @@ use mynou::{
     },
     json::{self, Value},
 };
-use std::{fs, thread};
+use std::{fs, io::Write, thread};
 
 fn format(episodes: bool) -> Value {
     let mut v = Value::object();
