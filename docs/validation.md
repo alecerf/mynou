@@ -48,6 +48,26 @@ request head cancels the older run; tag runs are never cancelled, so a later
 push cannot interrupt a publication. Network tests use synthetic media, loopback peers and simulated
 services; CI never acquires public media.
 
+## CodeQL triage in pull requests
+
+The required `CodeQL` check fails a PR only on alerts in lines it changes, so
+the open alert list on `trunk` should hold only findings that need attention.
+When a PR raises a CodeQL alert, read the flagged line and its data flow before
+acting:
+
+- Fix a real finding in the PR, or open an Issue for it when it is out of scope.
+  Never dismiss a production finding to turn the check green.
+- Dismiss only test-only patterns, and always with a dismissal reason and a
+  one-line justification that names the pattern and says why it is harmless
+  (for example `used in tests`: a `payload(len, salt)` seed, an `unwrap()` on an
+  error that carries only an environment-variable name, or a fixture path under
+  a test directory). A `#[cfg(test)]` vector or a public protocol constant in
+  `src/` may be dismissed the same way after reading the code; anything that
+  could be a production key, salt or IV is a finding.
+- Record the alert numbers and justifications in the PR description, and never
+  paste a secret into a dismissal comment.
+- Production path-injection alerts follow their own audit, not this note.
+
 ## Test harnesses
 
 CI compiles all targets once, keeping Cargo's JSON build manifest. The
