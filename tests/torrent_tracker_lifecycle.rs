@@ -73,6 +73,7 @@ fn tracker_scenario(partial: bool) {
                     }
                     Err(e) => panic!("accept: {e}"),
                 };
+                stream.set_nonblocking(false).unwrap();
                 stream
                     .set_read_timeout(Some(Duration::from_secs(2)))
                     .expect("timeout");

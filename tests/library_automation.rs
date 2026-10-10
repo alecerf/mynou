@@ -621,6 +621,7 @@ impl Plex {
                     }
                     Err(error) => panic!("Cannot accept Plex fixture request: {error}"),
                 };
+                stream.set_nonblocking(false).unwrap();
                 stream
                     .set_read_timeout(Some(Duration::from_secs(2)))
                     .unwrap();

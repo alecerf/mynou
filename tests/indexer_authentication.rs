@@ -103,6 +103,7 @@ impl Provider {
                     }
                     Err(e) => panic!("Source fixture accept failed: {e}"),
                 };
+                stream.set_nonblocking(false).unwrap();
                 stream
                     .set_read_timeout(Some(Duration::from_secs(3)))
                     .unwrap();

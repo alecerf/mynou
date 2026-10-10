@@ -1162,6 +1162,7 @@ mod tests {
             let (mut remote, _) = listener.accept().expect("peer");
             let client_writer = stream.try_clone().expect("shared client socket");
             let expected = payload.clone();
+            let (finished, wait) = std::sync::mpsc::channel::<()>();
             let server = std::thread::spawn(move || {
                 let mut requests = Vec::new();
                 for block in 0..payload.len().div_ceil(BLOCK) {
@@ -1189,6 +1190,10 @@ mod tests {
                     block.extend_from_slice(payload);
                     write_message(&mut remote, 7, &block, None).expect("final block");
                 }
+                // macOS refuses socket options once both directions are shut
+                // down, so the peer stays open until the client has read every
+                // block.
+                let _ = wait.recv_timeout(Duration::from_secs(5));
             });
             let counters = Arc::new(super::super::TransferCounters::default());
             let mut peer = Peer {
@@ -1210,6 +1215,7 @@ mod tests {
                 availability_known: false,
             };
             let result = peer.fetch_piece(&mut meta, 0, &AtomicBool::new(false));
+            let _ = finished.send(());
             server.join().expect("server");
             assert_eq!(result.expect("verified piece is retained"), expected);
             assert_eq!(

@@ -295,6 +295,7 @@ impl RecordingProxy {
             while !thread_stopped.load(Ordering::Acquire) {
                 match listener.accept() {
                     Ok((client, _)) => {
+                        client.set_nonblocking(false).unwrap();
                         let requests = thread_requests.clone();
                         let keep_alives = thread_keep_alives.clone();
                         let enabled = thread_enabled.clone();

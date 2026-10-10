@@ -153,6 +153,8 @@ pub fn accept(listener: &TcpListener) -> TcpStream {
     loop {
         match listener.accept() {
             Ok((s, _)) => {
+                // macOS keeps the listener's non-blocking mode on accepted sockets.
+                s.set_nonblocking(false).unwrap();
                 s.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
                 s.set_write_timeout(Some(Duration::from_secs(3))).unwrap();
                 s.set_nodelay(true).unwrap();

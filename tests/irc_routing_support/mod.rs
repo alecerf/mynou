@@ -152,6 +152,7 @@ impl MetadataGate {
                     }
                     Err(e) => panic!("Local metadata gate accept failed: {e}"),
                 };
+                client.set_nonblocking(false).unwrap();
                 assert!(
                     a.fetch_add(1, Ordering::AcqRel) < 16,
                     "Metadata gate connection bound exceeded"
