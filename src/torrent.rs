@@ -395,7 +395,12 @@ fn atomic_write(path: &Path, data: &[u8]) -> Result<()> {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
-    let temporary = parent.join(format!(".tmp-{}-{nonce}", std::process::id()));
+    static TEMPORARY: AtomicU64 = AtomicU64::new(0);
+    let temporary = parent.join(format!(
+        ".tmp-{}-{nonce}-{}",
+        std::process::id(),
+        TEMPORARY.fetch_add(1, Ordering::Relaxed)
+    ));
     let result = (|| {
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);

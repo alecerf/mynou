@@ -12,11 +12,12 @@ use std::{
     net::{SocketAddr, TcpListener},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+static NEXT: AtomicU64 = AtomicU64::new(0);
 fn d(items: &[(&[u8], Value)]) -> Value {
     Value::Dict(items.iter().map(|(k, v)| (k.to_vec(), v.clone())).collect())
 }
@@ -47,12 +48,13 @@ fn wait(mut predicate: impl FnMut() -> bool) {
 }
 fn tracker_scenario(partial: bool) {
     let root = std::env::temp_dir().join(format!(
-        "mynou-tracker-{}-{}",
+        "mynou-tracker-{}-{}-{}",
         std::process::id(),
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time")
-            .as_nanos()
+            .as_nanos(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
     ));
     fs::create_dir_all(&root).expect("dir");
     let listener = TcpListener::bind("127.0.0.1:0").expect("tracker");
