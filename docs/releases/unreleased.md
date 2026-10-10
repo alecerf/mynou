@@ -61,3 +61,7 @@ When the configured announcer sent an announcement that Mynou could not read, My
 ## Fixed: Slow API clients can no longer hold a connection
 
 The API now gives every response a total write time of 10 seconds. A client that stops reading, or reads only a few bytes at a time, is disconnected once that time has passed, so it can no longer occupy one of the API's 32 connection slots and make other requests fail with `503 API busy`. Clients that read normally still receive complete responses.
+
+## Fixed: Retry pauses the previous torrent
+
+Retrying a failed requester request, like retrying an ordinary one, now pauses the torrent it started before beginning a new search, unless another request still uses it. Files are kept, a torrent you paused stays paused, and a restart in the middle of a retry finishes the pause when Mynou starts again.

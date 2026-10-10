@@ -133,6 +133,10 @@ impl Engine {
         } else {
             None
         };
+        if !read_only {
+            // Finish retirements a previous run recorded but did not complete.
+            retire_transfers(downloads.as_ref(), &mut store)?;
+        }
         let irc_runtime = crate::irc::client::Runtime::new(&config.irc.sources);
         Ok(Arc::new(Self {
             config,
@@ -246,7 +250,7 @@ impl Engine {
     pub fn retry(&self, id: &str) -> Result<Job> {
         self.requester_retry_allowed(id)?;
         let mut store = lock(&self.store)?;
-        let previous = store.get(id).ok_or("Unknown job")?;
+        store.get(id).ok_or("Unknown job")?;
         let job = store.retry(id)?;
         if job.irc_origin.is_some() {
             drop(store);
@@ -275,26 +279,8 @@ impl Engine {
             }
             return Ok(job);
         }
-        if job.imports.is_empty()
-            && job.request.source_path.is_none()
-            && job.request.source_url.is_none()
-        {
-            let old_id = previous.download_id;
-            let shared = old_id.as_ref().is_some_and(|id| {
-                store.list().iter().any(|other| {
-                    other.id != job.id
-                        && other.download_id.as_ref() == Some(id)
-                        && other.state != "cancelled"
-                })
-            });
-            drop(store);
-            if !shared
-                && let (Some(client), Some(old_id)) = (&self.downloads, old_id)
-                && client.statuses()?.iter().any(|status| status.id == old_id)
-            {
-                client.cancel(&old_id)?;
-            }
-        }
+        // The retry above already recorded any detached transfer durably.
+        self.retire_previous_transfers(&mut store)?;
         Ok(job)
     }
 
@@ -562,6 +548,14 @@ impl Engine {
         drop(store);
         self.requester_reconcile()?;
         Ok(true)
+    }
+
+    /// Pauses, without deleting files, each transfer an automatic retry detached
+    /// from its request, unless a live request still needs it. The request keeps
+    /// the record until this finishes, so an interruption is repaired by the next
+    /// call: after any retry, requester reconciliation and startup.
+    pub(crate) fn retire_previous_transfers(&self, store: &mut Store) -> Result<()> {
+        retire_transfers(self.downloads.as_ref(), store)
     }
 
     pub(crate) fn pause_unwanted_transfers(&self, store: &Store) -> Result<()> {
@@ -1051,6 +1045,63 @@ impl Drop for Heartbeat {
             let _ = h.join();
         }
     }
+}
+
+/// Whether a request depends on a native transfer through its own download, a
+/// shared-file or pack binding, or an IRC selection.
+fn references_transfer(job: &Job, id: &str) -> bool {
+    if job.download_id.as_deref() == Some(id) {
+        return true;
+    }
+    if let Some(file) = &job.shared_file
+        && file.torrent_id == id
+    {
+        return true;
+    }
+    if let Some(origin) = &job.pack_origin
+        && origin.torrent_id == id
+    {
+        return true;
+    }
+    if let Some(origin) = &job.irc_origin
+        && (origin.torrent_id == id || origin.torrent_aliases.iter().any(|alias| alias == id))
+    {
+        return true;
+    }
+    false
+}
+
+/// A live request, including this one if it found the same release again, keeps
+/// the transfer. Cancelled requests do not; finished ones retain it.
+fn transfer_has_owner(store: &Store, id: &str) -> bool {
+    let jobs = store.list();
+    jobs.iter()
+        .any(|job| job.state != "cancelled" && references_transfer(job, id))
+}
+
+/// Settles every recorded retirement: pause an unowned transfer, then clear the
+/// record. Without a native client the records stay for a later run. User pause
+/// state is never touched, and no payload or metadata is removed.
+fn retire_transfers(client: Option<&Client>, store: &mut Store) -> Result<()> {
+    let pending = store.pending_retirements();
+    let Some(client) = client else {
+        return Ok(());
+    };
+    if pending.is_empty() {
+        return Ok(());
+    }
+    let known: std::collections::BTreeSet<_> = client
+        .statuses()?
+        .into_iter()
+        .map(|status| status.id)
+        .collect();
+    for (job_id, id) in pending {
+        if known.contains(&id) && !transfer_has_owner(store, &id) {
+            client.cancel(&id)?;
+        }
+        store.complete_retirement(&job_id, &id)?;
+    }
+    Ok(())
 }
 
 pub fn public_job(job: &Job) -> Value {

@@ -389,6 +389,7 @@ impl Store {
         for (parent, request) in parents.iter().zip(requests) {
             jobs.push(Job {
                 irc_origin: None,
+                retiring_transfers: Vec::new(),
                 id: random_id()?,
                 key: request.canonical_key(),
                 request,

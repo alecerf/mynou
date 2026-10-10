@@ -323,6 +323,8 @@ impl Engine {
                     .clone()
                     .ok_or("Requester: missing acquisition")?;
                 jobs.retry(&job_id)?;
+                // Same previous-transfer handling as `Engine::retry`.
+                self.retire_previous_transfers(&mut jobs)?;
             }
             self.admit_requester_demand(&mut ledger, &mut jobs)?;
         }
@@ -514,6 +516,7 @@ impl Engine {
         }
         cancel_unwanted(&ledger.state, jobs, &self.config)?;
         self.pause_unwanted_transfers(jobs)?;
+        self.retire_previous_transfers(jobs)?;
         Ok(())
     }
     pub(crate) fn requester_reconcile(&self) -> Result<()> {
