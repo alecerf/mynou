@@ -8,7 +8,7 @@ import tomllib
 
 ROOT = Path(__file__).resolve().parent.parent
 TOKEN = re.compile(rb"(?<![A-Za-z0-9])(?:gh[psoru]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{60,255}|sk-(?:proj-)?[A-Za-z0-9_-]{40,255})(?![A-Za-z0-9])")
-ROLES = {"master", "triage", "rust", "web", "ux", "security", "qa", "quality", "product"}
+ROLES = {"master", "triage", "rust", "ux", "security", "qa", "quality", "product"}
 
 
 def check_config(cfg):

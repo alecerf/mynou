@@ -4,7 +4,6 @@
     "master": ".agents/skills/mynou-master/SKILL.md",
     "triage": ".agents/skills/mynou-triage/SKILL.md",
     "rust": ".agents/skills/mynou-rust/SKILL.md",
-    "web": ".agents/skills/mynou-web/SKILL.md",
     "ux": ".agents/skills/mynou-ux/SKILL.md",
     "security": ".agents/skills/mynou-security/SKILL.md",
     "qa": ".agents/skills/mynou-qa/SKILL.md",
