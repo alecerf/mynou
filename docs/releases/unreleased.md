@@ -57,3 +57,7 @@ After a restart, Mynou verifies recorded imports before marking them ready or sh
 ## Fixed: A malformed IRC announcement no longer drops the connection
 
 When the configured announcer sent an announcement that Mynou could not read, Mynou closed the IRC connection and discarded the messages that arrived with it. It now skips that announcement, counts it in `health.rejected` of `GET /api/irc` (the text is never stored or logged) and keeps receiving. Authentication, size-limit, protocol and storage failures still end the connection. See [IRC sources](/docs/sources.md).
+
+## Fixed: Slow API clients can no longer hold a connection
+
+The API now gives every response a total write time of 10 seconds. A client that stops reading, or reads only a few bytes at a time, is disconnected once that time has passed, so it can no longer occupy one of the API's 32 connection slots and make other requests fail with `503 API busy`. Clients that read normally still receive complete responses.

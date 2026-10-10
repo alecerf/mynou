@@ -13,11 +13,16 @@ use std::{
     net::{SocketAddr, TcpListener, TcpStream},
     sync::{Arc, atomic::Ordering},
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 const MAX_BODY: usize = 1_048_576;
 const MAX_HEADER: usize = 16_384;
+/// Total time one response may take to leave the socket, however slowly the
+/// client reads. Each write is also bounded by `WRITE_STEP`.
+const RESPONSE_DEADLINE: Duration = Duration::from_secs(10);
+const WRITE_STEP: Duration = Duration::from_secs(5);
+const WRITE_CHUNK: usize = 16_384;
 pub struct Api {
     listener: TcpListener,
     token: String,
@@ -64,8 +69,12 @@ impl Api {
                 }
                 Ok((mut stream, _)) => {
                     let _ = crate::net::blocking(&stream);
-                    let _ = stream.set_write_timeout(Some(Duration::from_millis(100)));
-                    let _ = respond(&mut stream, 503, error("API busy"));
+                    let _ = respond_within(
+                        &mut stream,
+                        503,
+                        error("API busy"),
+                        Duration::from_millis(100),
+                    );
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     thread::sleep(Duration::from_millis(20))
@@ -681,6 +690,14 @@ fn control_body(body: &[u8], allowed: &[&str], allow_empty: bool) -> Result<Valu
     Ok(value)
 }
 fn respond(stream: &mut TcpStream, status: u16, value: Value) -> Result<()> {
+    respond_within(stream, status, value, RESPONSE_DEADLINE)
+}
+fn respond_within(
+    stream: &mut TcpStream,
+    status: u16,
+    value: Value,
+    limit: Duration,
+) -> Result<()> {
     let body = json::stringify(&value);
     let reason = match status {
         200 => "OK",
@@ -696,10 +713,39 @@ fn respond(stream: &mut TcpStream, status: u16, value: Value) -> Result<()> {
         "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nContent-Security-Policy: frame-ancestors 'none'\r\n\r\n",
         body.len()
     );
-    stream
-        .write_all(head.as_bytes())
-        .and_then(|()| stream.write_all(body.as_bytes()))
+    let deadline = Instant::now() + limit;
+    write_within(stream, head.as_bytes(), deadline)
+        .and_then(|()| write_within(stream, body.as_bytes(), deadline))
         .map_err(|e| format!("Cannot write the response: {e}"))
+}
+/// Writes `data` in bounded steps and fails once `deadline` passes, so a client
+/// that reads slowly or not at all cannot hold the connection past it.
+fn write_within(stream: &mut TcpStream, data: &[u8], deadline: Instant) -> Result<()> {
+    let mut offset = 0;
+    while offset < data.len() {
+        let remaining = deadline
+            .checked_duration_since(Instant::now())
+            .filter(|left| !left.is_zero())
+            .ok_or("the response write deadline passed")?;
+        stream
+            .set_write_timeout(Some(remaining.min(WRITE_STEP)))
+            .map_err(|e| e.to_string())?;
+        let end = data.len().min(offset + WRITE_CHUNK);
+        match stream.write(&data[offset..end]) {
+            Ok(0) => return Err("the connection stopped accepting data".into()),
+            Ok(n) => offset += n,
+            Err(e) => match e.kind() {
+                std::io::ErrorKind::Interrupted => {}
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut => {
+                    if Instant::now() >= deadline {
+                        return Err("the response write deadline passed".into());
+                    }
+                }
+                _ => return Err(e.to_string()),
+            },
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -751,5 +797,63 @@ mod tests {
         let request = read_request(&mut c).unwrap();
         writer.join().unwrap();
         assert_eq!(request.body, b"{}");
+    }
+    fn loopback() -> (TcpStream, TcpStream) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (server, _) = listener.accept().unwrap();
+        crate::net::blocking(&server).unwrap();
+        (server, client)
+    }
+    fn large_value() -> Value {
+        let mut value = Value::object();
+        value.insert("data", "a".repeat(32 * 1024 * 1024));
+        value
+    }
+    #[test]
+    fn a_client_that_stops_reading_a_large_response_is_dropped_at_the_deadline() {
+        let (mut server, client) = loopback();
+        let started = Instant::now();
+        let result = respond_within(&mut server, 200, large_value(), Duration::from_millis(400));
+        let elapsed = started.elapsed();
+        drop(client);
+        assert!(result.is_err());
+        assert!(elapsed >= Duration::from_millis(300), "{elapsed:?}");
+        assert!(elapsed < Duration::from_secs(4), "{elapsed:?}");
+    }
+    #[test]
+    fn a_client_that_reads_a_few_bytes_at_a_time_is_dropped_at_the_deadline() {
+        let (mut server, mut client) = loopback();
+        let reader = thread::spawn(move || {
+            let mut byte = [0; 1];
+            while client.read(&mut byte).is_ok_and(|n| n > 0) {
+                thread::sleep(Duration::from_millis(50));
+            }
+        });
+        let started = Instant::now();
+        let result = respond_within(&mut server, 200, large_value(), Duration::from_millis(400));
+        let elapsed = started.elapsed();
+        drop(server);
+        reader.join().unwrap();
+        assert!(result.is_err());
+        assert!(elapsed < Duration::from_secs(4), "{elapsed:?}");
+    }
+    #[test]
+    fn a_normal_client_receives_a_complete_large_response() {
+        let (mut server, mut client) = loopback();
+        let reader = thread::spawn(move || {
+            let mut received = Vec::new();
+            client.read_to_end(&mut received).unwrap();
+            received
+        });
+        respond(&mut server, 200, large_value()).unwrap();
+        drop(server);
+        let received = reader.join().unwrap();
+        let text = String::from_utf8(received).unwrap();
+        let (head, body) = text.split_once("\r\n\r\n").unwrap();
+        assert!(head.starts_with("HTTP/1.1 200 OK"));
+        assert!(head.contains(&format!("Content-Length: {}", body.len())));
+        assert!(body.starts_with("{\"data\":\"aaaa"));
+        assert!(body.ends_with("\"}"));
     }
 }
