@@ -718,6 +718,41 @@ fn restart_reuses_a_verified_shared_file_published_before_its_import_was_journal
 }
 
 #[test]
+fn retained_shared_import_uses_its_binding_after_the_library_root_changes() {
+    let directory = Directory::new();
+    let catalog = catalog(2);
+    let torrent = torrent(&directory, "metadata");
+    let mut cfg = catalog.config(&directory.0.join("engine"));
+    let engine = Engine::open_for_management(cfg.clone()).unwrap();
+    let series = tracked(&engine);
+    let ids = jobs(&apply(
+        &engine,
+        &series,
+        &query(torrent.path.to_str().unwrap()),
+    ));
+    let owners = lock(&engine.store).unwrap().list();
+    let binding = owners[0].shared_file.as_ref().unwrap();
+    let path = std::path::Path::new(&binding.import_path);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let bytes = include_bytes!("../examples/demo.mp4");
+    fs::write(path, bytes).unwrap();
+    for mut owner in owners.clone() {
+        owner.state = "imported".into();
+        owner.imports = vec![binding.import_path.clone()];
+        lock(&engine.store).unwrap().update(owner).unwrap();
+    }
+    drop(engine);
+    cfg.series_root = directory.0.join("different-series-library");
+    let engine = Engine::open_for_management(cfg).unwrap();
+    for id in ids {
+        let ready = run_until(&engine, &id, "ready");
+        assert_eq!(ready.imports, std::slice::from_ref(&binding.import_path));
+        assert_eq!(ready.shared_file.as_ref(), Some(binding));
+    }
+    assert_eq!(fs::read(path).unwrap(), bytes);
+}
+
+#[test]
 fn signed_but_incomplete_ownership_is_rejected_in_both_journal_and_snapshot() {
     let directory = Directory::new();
     let catalog = catalog(3);

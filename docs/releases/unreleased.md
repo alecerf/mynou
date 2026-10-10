@@ -49,3 +49,7 @@ Mynou now ships a single executable, `mynou-vVERSION-macos-arm64` for Apple Sili
 ## Fixed: Interrupted imports no longer leave temporary files behind
 
 If Mynou stops while copying a download into your library, the half-written `.mynou-*.tmp` file is now removed the next time an import writes to that folder.
+
+## Fixed: Verify retained imports before announcing availability
+
+After a restart, Mynou verifies recorded imports before marking them ready or sharing a ready job with another requester. Missing files, directories, symbolic links and paths outside the recorded destination produce a failure or conflict while preserving downloads and library files. Restore the original regular file and retry; existing Plex-only availability and sharing of pending work remain supported.

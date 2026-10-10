@@ -41,6 +41,43 @@ fn validate_path(path: &Path) -> Result<()> {
     reject_symlinks(path)
 }
 
+/// Runtime availability proof only: journal replay must not depend on disk state.
+/// Metadata checks cannot prevent another process changing a path afterward.
+pub(crate) fn check_retained_imports(
+    job: &crate::store::Job,
+    config: &crate::config::Config,
+) -> Result<()> {
+    for file in &job.imports {
+        let path = Path::new(file);
+        let root = if let Some(requester) = &job.requester {
+            Path::new(if job.request.kind == "movie" {
+                &requester.capture.movies_root
+            } else {
+                &requester.capture.series_root
+            })
+        } else if job.request.kind == "movie" {
+            &config.movies_root
+        } else {
+            &config.series_root
+        };
+        let under_root = path != root && path.starts_with(root);
+        let confined = if let Some(shared) = &job.shared_file {
+            // A shared import keeps its recorded destination across config edits.
+            file == &shared.import_path && (job.requester.is_none() || under_root)
+        } else {
+            under_root
+        };
+        if !path.is_absolute()
+            || !confined
+            || validate_path(path).is_err()
+            || !fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file())
+        {
+            return Err("Recorded import is missing, unsafe or outside its destination; restore the original regular file and retry".into());
+        }
+    }
+    Ok(())
+}
+
 fn create_directory(path: &Path) -> Result<()> {
     validate_path(path)?;
     if path.exists() {
