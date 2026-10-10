@@ -24,8 +24,8 @@ beside the checks. Nothing runs for a commit pushed to `trunk`: protection
 requires an up-to-date branch and rebase merging, so `trunk` holds the tree its
 pull request already validated. Pushing the tag `v<version>` runs every check
 again on the tagged commit, and the release job publishes only when the tag
-equals the `Cargo.toml` version (the binary reports that version) and the commit
-is on `trunk`. A failed decision publishes nothing and fails `package`.
+equals the `Cargo.toml` version (the binary reports that version), the commit is
+on `trunk`, and it raised the version over its parent. A failed decision publishes nothing, and on a pull request it fails `package`.
 
 1. **validate** checks the Cargo graph offline (exactly one package, `mynou`,
    with no dependencies), formatting, Clippy with warnings denied, the test
@@ -79,15 +79,16 @@ and they never authorize a release.
 ## Releases
 
 Merging to `trunk` does not release anything. At most once a week, a release PR
-bumps the version and gathers the notes from `docs/releases/unreleased/`; once it
-is merged, pushing the tag `v<version>` publishes it; see the
+bumps the version and deletes `docs/releases/unreleased.md`, the one file that
+holds the notes of everything not yet released; once it is merged, pushing the tag
+`v<version>` publishes it with those notes; see the
 [engineering runbook](../engineering/README.md#releases). The `Release policy`
 check refuses version changes anywhere else.
 
 The release job runs
 [publish-release.sh](../.github/scripts/publish-release.sh), which checks the
 packaged files and creates the GitHub release for the pushed tag from the
-validated commit. Only this job has `contents: write`, using the ephemeral repository
+validated commit, with the notes read from that commit's parent. Only this job has `contents: write`, using the ephemeral repository
 token.
 
 | Asset | Contents |

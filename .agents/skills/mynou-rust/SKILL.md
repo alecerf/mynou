@@ -13,8 +13,8 @@ policy, checked recovery and scoped effects. Inspect relevant code once. Preserv
 existing changes/data compatibility. Commit meaningful progress, use independently
 authored synthetic edge-case fixtures, format as editing, and validate only in CI.
 Push completed scope; fix red jobs with commits until required checks are green.
-Never change the package version; add user-facing notes in
-docs/releases/unreleased/<issue>.md.
+Never change the package version; add user-facing notes to
+docs/releases/unreleased.md.
 
 Measure before performance claims. Record nearby nonblocking findings for Triage
 without endless scope growth. Hand over to QA with `/wait qa` and a comment that

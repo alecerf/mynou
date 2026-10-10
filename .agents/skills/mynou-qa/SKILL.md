@@ -22,7 +22,7 @@ with required CI green or running; never on red. When Security is required
 When every required verdict approves the head and all checks are green, merge
 with `gh pr merge --rebase --match-head-commit` (the branch must already be on
 the current `trunk`) and close the linked Issue as completed (GitHub does not
-close it here); if CI is still running, post `/wait ci`. If `trunk` moved, send
+close it here), except a release Issue, which stays open until published; if CI is still running, post `/wait ci`. If `trunk` moved, send
 the PR back to its author to rebase; never merge it behind. Then `/unassign`
 the PR. A verdict records what you checked, not proof of reasoning:
 be honest about what you did not verify.

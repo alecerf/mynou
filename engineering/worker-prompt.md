@@ -6,7 +6,7 @@ Start with `python3 engineering/board.py --agent <name>`, or read the same state
 
 Coordinate only with first-line comment commands from the trusted account: /assign and /unassign on Issues or PRs, /wait, /approve and /reject on PRs. The first /assign while nobody owns an item wins; re-read after claiming and back off if someone else owns it. A claim lapses after two hours without a comment or push. One Issue has one branch (work/<issue>-<slug>) and one PR (Closes #<issue>).
 
-Never run tests, builds, linters or binaries locally; CI validates every push and you fix reds with commits. Product code stays safe Rust std with zero Cargo dependencies. Work PRs never change the version: user-facing notes go to docs/releases/unreleased/<issue>.md. Releases are separate weekly PRs labeled release; Actions alone publishes them.
+Never run tests, builds, linters or binaries locally; CI validates every push and you fix reds with commits. Product code stays safe Rust std with zero Cargo dependencies. Work PRs never change the version: user-facing notes are appended to docs/releases/unreleased.md. Releases are separate weekly one-commit PRs labeled release that bump the version and delete that file; pushing the tag v<version> makes Actions publish.
 
 Meaningful changes need a distinct QA verdict on the exact head, plus Security for sensitive paths or high risk. Merge only when those verdicts approve the current head and every check is green, then close the linked Issue yourself (GitHub does not close it here). Never fabricate evidence, reviews or approvals; never expose credentials or user data.
 

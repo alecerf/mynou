@@ -28,11 +28,9 @@ fi
 
 notes="$RUNNER_TEMP/mynou-release-notes.md"
 : > "$notes"
-changes="$GITHUB_WORKSPACE/docs/releases/$version.md"
-if [[ -f "$changes" ]]; then
-  cat "$changes" >> "$notes"
-  printf '\n\n' >> "$notes"
-fi
+# The release commit deleted the unreleased notes; they ship in this release.
+git -C "$GITHUB_WORKSPACE" show "$GITHUB_SHA^:docs/releases/unreleased.md" >> "$notes"
+printf '\n\n' >> "$notes"
 cat >> "$notes" <<EOF
 <!-- mynou-ci-release -->
 Mynou $version uses Rust 1.99.0 and the standard library only: no Cargo dependencies, unsafe code, FFI, or external programs at runtime.

@@ -65,9 +65,13 @@ with green checks goes to QA.
    existing PR instead of opening another.
 3. Commit and push meaningful progress often. CI runs on every push; fix reds
    with new commits. Never run tests, builds or linters locally.
-4. User-visible changes add `docs/releases/unreleased/<issue>.md`: a heading and
-   a few lines for users. Engineering-only changes need no note. Never change the
-   version in `Cargo.toml` or `Cargo.lock`.
+4. User-visible changes append a section to `docs/releases/unreleased.md`: a
+   `## Title` heading and one to three lines for people who run Mynou (what
+   changed, how to use it, any limit; link the relevant guide), never CI runs,
+   review evidence or process. The file holds only what is not released yet; if
+   two PRs append at once, the rebase conflict keeps both sections.
+   Engineering-only changes need no note. Never change the version in
+   `Cargo.toml` or `Cargo.lock`.
 5. Rebase on `origin/trunk` (see [Merging](#merging)), mark the PR ready and post
    `/wait qa`. Keep the Issue claim.
 
@@ -120,7 +124,8 @@ merged.
 
 Merging deletes the branch, but GitHub does not close the Issue in this
 repository: close it yourself (`gh issue close <issue> --reason completed`) with
-a comment linking the merge. If the head moved, a new verdict is needed. A failed
+a comment linking the merge. A release Issue stays open until the release is
+published (see [Releases](#releases)). If the head moved, a new verdict is needed. A failed
 release run publishes nothing and is fixed forward in a new PR.
 
 `trunk` is protected (see [Branch protection](#branch-protection)) and the
@@ -159,16 +164,22 @@ Published assets are immutable.
 - **Cutting a release** when `release.due` (or on an owner request):
   1. Open an Issue `Release v<version>` labeled `agent-work`, `release`,
      `status:ready`, `priority:p1`, `risk:low`, and claim it.
-  2. On `work/<issue>-release-<version>`, bump the version in `Cargo.toml` and
-     `Cargo.lock`, merge the `docs/releases/unreleased/*.md` notes into
-     `docs/releases/<version>.md` and delete them (keep the folder README).
-     Use a minor version for new user-visible capability, a patch otherwise.
-  3. Open the PR labeled `release`; QA checks the notes and the version. The
-     `Release policy` check refuses anything else in the PR.
-  4. After merge, plan the tag with `python3 engineering/releases.py tag <pr>`: it
-     reads the version at the PR's merge commit and refuses a tag that exists, a
-     version that does not rise, or a commit outside `trunk`. Then run it again
-     with `--create` to push the tag at that commit, which starts publication.
+  2. On `work/<issue>-release-<version>`, rebased on `trunk`, make one commit
+     that bumps the version in `Cargo.toml` and `Cargo.lock` and deletes
+     `docs/releases/unreleased.md`. Everything on `trunk` before that commit
+     ships, so the notes ship with it: nothing else is written, and no
+     `docs/releases/<version>.md` is kept. Use a minor version for new
+     user-visible capability, a patch otherwise.
+  3. Open the PR labeled `release`; QA reads the deleted notes and checks the
+     version. The `Release policy` check refuses a second commit, a kept notes
+     file or anything else in the PR.
+  4. After merge, plan the tag with `python3 engineering/releases.py tag <pr>`
+     (with `GH_TOKEN` set to a token that can write refs): it reads the version
+     at the PR's merge commit and refuses a tag that exists, a version that does
+     not exceed the parent's or the latest release, missing notes in the parent,
+     or a commit outside `trunk`. Then run it again with `--create` to push the
+     tag at that commit, which starts publication; the release notes are the
+     parent's `docs/releases/unreleased.md`.
      Confirm that Actions published `v<version>` with its executable and
      `SHA256SUMS`, and only then close the release Issue (the board keeps
      `release.due` false while it is open).

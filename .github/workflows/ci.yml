@@ -19,9 +19,10 @@ env:
 jobs:
   decide:
     # Pull requests, manual dispatches and tags all run the full chain; only a
-    # tag that names the Cargo.toml version of a commit already on trunk may
-    # then publish. Nothing else depends on this job, and package fails closed
-    # when its version is missing, so a failed decision never passes a check.
+    # tag that names the Cargo.toml version of a commit already on trunk, and
+    # that raised the version over its parent, may then publish. Nothing else
+    # depends on this job: package fails on a pull request when its version is
+    # missing, and for a tag a failed decision only keeps release from running.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -30,6 +31,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
         with:
+          # The parent of a tagged commit carries the previous version and the notes.
+          fetch-depth: 2
           persist-credentials: false
       - name: Read the package version
         id: version
@@ -54,6 +57,16 @@ jobs:
             echo "Tag $GITHUB_REF_NAME does not match the Cargo.toml version v$VERSION." >&2
             exit 1
           fi
+          # The tag sits on the release commit: it raised the version over its
+          # parent, whose unreleased notes become the release notes.
+          python3 - "$(git show "$GITHUB_SHA^:Cargo.toml")" "$VERSION" <<'RAISED'
+          import sys, tomllib
+          before = tomllib.loads(sys.argv[1])["package"]["version"]
+          parse = lambda text: tuple(int(part) for part in text.split("."))
+          if parse(before) >= parse(sys.argv[2]):
+              sys.exit("The tagged commit does not raise the version over its parent.")
+          RAISED
+          git cat-file -e "$GITHUB_SHA^:docs/releases/unreleased.md"
           # Only a commit that reached trunk through a validated pull request may
           # be released: it must be trunk itself or one of its ancestors.
           relation=$(gh api "repos/$GITHUB_REPOSITORY/compare/trunk...$GITHUB_SHA" --jq .status)
@@ -202,7 +215,7 @@ jobs:
   package:
     needs: [decide, validate, build]
     # Runs after a successful validation and build, even when the decision failed:
-    # the version check below then fails the run instead of skipping the check.
+    # on a pull request the version check below then fails instead of skipping.
     if: ${{ !cancelled() && needs.validate.result == 'success' && needs.build.result == 'success' }}
     # Packaging only copies and checksums the executable; it builds nothing.
     runs-on: ubuntu-latest
@@ -250,6 +263,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
         with:
+          fetch-depth: 2
           persist-credentials: false
       - uses: actions/download-artifact@v8.0.1
         with:

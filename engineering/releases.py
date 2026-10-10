@@ -13,7 +13,7 @@ from protocol import instant, labels as label_names, stamp
 PRODUCT_DIRS = ("src/", "examples/", ".cargo/")
 PRODUCT_FILES = {"build.rs", "rust-toolchain.toml"}
 MANIFESTS = {"Cargo.toml", "Cargo.lock"}
-NOTES = "docs/releases/"
+UNRELEASED = "docs/releases/unreleased.md"
 VERSION = re.compile(r"(?:0|[1-9][0-9]{0,5})\.(?:0|[1-9][0-9]{0,5})\.(?:0|[1-9][0-9]{0,5})")
 COMPARE_FILE_LIMIT = 300
 
@@ -66,7 +66,7 @@ def due(latest, shipped_change, now, policy):
     return latest is None or now >= latest["published_at"] + timedelta(days=policy["minimum_interval_days"])
 
 
-def check(*, base, head, files, labels, latest, shipped_change, tag_exists, now, policy):
+def check(*, base, head, files, labels, latest, shipped_change, tag_exists, now, policy, commits=1):
     """Release-policy violations of one pull request; empty when compliant.
 
     `files` maps every path the PR touches (including a rename's old path) to
@@ -77,19 +77,20 @@ def check(*, base, head, files, labels, latest, shipped_change, tag_exists, now,
         return ["A PR labeled `release` must bump the package version."] if requested else []
     if not requested:
         return ["Only a PR labeled `release` may change the package version. Keep the version, "
-                "and add user-facing notes in docs/releases/unreleased/<issue>.md instead."]
+                "and add user-facing notes to docs/releases/unreleased.md instead."]
     errors = []
     if new <= old:
         errors.append("The release version must increase.")
-    outside = sorted(path for path in files if path not in MANIFESTS and not path.startswith(NOTES))
+    outside = sorted(path for path in files if path not in MANIFESTS and path != UNRELEASED)
     if outside:
-        errors.append("A release PR changes only Cargo.toml, Cargo.lock and docs/releases/; "
+        errors.append("A release PR changes only Cargo.toml, Cargo.lock and docs/releases/unreleased.md; "
                       "move these to their own PRs: " + ", ".join(outside[:20]))
     if unversioned(base) != unversioned(head):
         errors.append("A release PR changes nothing in Cargo.toml but the package version.")
-    notes = NOTES + name(new) + ".md"
-    if files.get(notes) in (None, "removed"):
-        errors.append(f"A release PR adds its notes in {notes}.")
+    if files.get(UNRELEASED) != "removed":
+        errors.append(f"A release PR deletes {UNRELEASED}: its notes ship in the release.")
+    if commits != 1:
+        errors.append("A release PR is a single commit: the tag sits on it and the notes are read from its parent.")
     if tag_exists:
         errors.append(f"v{name(new)} already exists; choose the next version.")
     urgent = policy["urgent_label"]
@@ -155,6 +156,21 @@ def plan_tag(api, number):
         raise ValueError("The merged commit does not carry the release PR's version")
     if released <= version(manifest(api, pull["base"]["sha"])):
         raise ValueError("The release PR does not raise the version")
+    parents = api.rest("GET", f"git/commits/{commit}").get("parents") or []
+    if len(parents) != 1:
+        raise ValueError("The release commit must have exactly one parent")
+    parent = parents[0]["sha"]
+    if released <= version(manifest(api, parent)):
+        raise ValueError("The tag must sit on the commit that raises the version over its parent")
+    try:
+        api.rest("GET", f"contents/{UNRELEASED}?ref={parent}")
+    except APIError as error:
+        if error.status != 404:
+            raise
+        raise ValueError(f"The release notes {UNRELEASED} are missing before the release commit") from None
+    latest = latest_release(api)
+    if latest and released <= tuple(int(part) for part in latest["tag"][1:].split(".")):
+        raise ValueError(f"The version must exceed the latest release {latest['tag']}")
     tag = "v" + name(released)
     if tag_exists(api, tag):
         raise ValueError(f"{tag} already exists; a published or burned version is never retagged")
@@ -191,8 +207,8 @@ def check_pr(api, number, now):
         latest = latest_release(api)
         change = shipped_since(api, latest, pull["head"]["sha"])
         exists = tag_exists(api, "v" + name(version(head)))
-    return check(base=base, head=head, files=files, labels=names, latest=latest,
-                 shipped_change=change, tag_exists=exists, now=now, policy=api.cfg["release_policy"])
+    return check(base=base, head=head, files=files, labels=names, latest=latest, shipped_change=change,
+                 tag_exists=exists, now=now, policy=api.cfg["release_policy"], commits=pull["commits"])
 
 
 def status(api, now, open_release_issues=()):
