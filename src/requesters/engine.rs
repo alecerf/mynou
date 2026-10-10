@@ -265,17 +265,6 @@ impl Engine {
                 .filter(|d| d.account_id == id)
                 .ok_or("Requester: demand belongs to another account or does not exist")?;
             match query.action.as_str() {
-                "admit" => {
-                    if d.state != "held" || d.job_id.is_some() || d.admitted_at.is_some() {
-                        return Err("Requester: admission requires held demand".into());
-                    }
-                    if !record.policy.enabled {
-                        return Err("Requester: account policy is disabled".into());
-                    }
-                    d.capture = Capture::new(&self.config, &record.policy, &d.request.kind)?;
-                    d.revision = record.revision;
-                    d.state = "pending".into();
-                }
                 "remove" => {
                     d.state = "removed".into();
                 }
@@ -676,7 +665,7 @@ impl Engine {
                             if d.job_id.is_none()
                                 && d.admitted_at.is_none()
                                 && d.revision != previous.revision
-                                && !matches!(d.state.as_str(), "removed" | "held")
+                                && d.state != "removed"
                             {
                                 d.capture = Capture::new(&self.config, policy, &d.request.kind)?;
                                 d.revision = previous.revision;
