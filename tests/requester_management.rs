@@ -1,7 +1,8 @@
 //! Original Bearer API and CLI requester scenarios.
+mod api_support;
 mod library_support;
 mod requester_support;
-mod api_support;
+use api_support::{Server, TOKEN};
 use library_support::Directory;
 use mynou::{
     config,
@@ -14,7 +15,6 @@ use std::{
     fs,
     process::{Command, Stdio},
 };
-use api_support::{Server, TOKEN};
 fn authenticated(server: &Server, route: &str, v: &Value) -> api_support::Reply {
     server.call(
         "POST",

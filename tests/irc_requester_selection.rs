@@ -1,11 +1,12 @@
 //! Original local requester-selective IRC routing and immutable demand fixtures.
+mod api_support;
 mod irc_routing_support;
 mod irc_support;
 mod library_support;
 mod requester_support;
 #[allow(dead_code)]
 mod transfer_support;
-mod api_support;
+use api_support::{Server, TOKEN};
 use irc_routing_support::*;
 use library_support::{Directory, run_until};
 use mynou::{
@@ -19,7 +20,6 @@ use requester_support::{
 };
 use std::{fs, sync::atomic::Ordering, thread};
 use transfer_support::{RecordingProxy, Seeder, Torrent};
-use api_support::{Server, TOKEN};
 
 fn rule(v: &mut Value) -> &mut Value {
     let Value::Array(r) = v.get_mut("irc").unwrap().get_mut("rules").unwrap() else {

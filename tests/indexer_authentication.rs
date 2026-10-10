@@ -1,6 +1,7 @@
 //! Original native HTTP source protocol fixtures. Never public trackers or torrents.
-mod library_support;
 mod api_support;
+mod library_support;
+use api_support::{Server, TOKEN};
 use library_support::Directory;
 use mynou::{
     config, integrations,
@@ -20,7 +21,6 @@ use std::{
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
-use api_support::{Server, TOKEN};
 #[derive(Clone)]
 struct Reply {
     status: u16,

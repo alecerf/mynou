@@ -1,7 +1,8 @@
 //! API and CLI against synthetic catalog data. CI only.
+mod api_support;
 mod library_support;
 mod series_support;
-mod api_support;
+use api_support::{Reply, Server, TOKEN};
 use library_support::Directory;
 use mynou::{
     engine::lock,
@@ -14,7 +15,6 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use api_support::{Reply, Server, TOKEN};
 
 fn api(
     server: &Server,
