@@ -10,22 +10,8 @@ pub enum Value {
     Dict(BTreeMap<Vec<u8>, Value>),
 }
 impl Value {
-    pub fn as_int(&self) -> Option<i64> {
-        if let Self::Int(v) = self {
-            Some(*v)
-        } else {
-            None
-        }
-    }
     pub fn as_bytes(&self) -> Option<&[u8]> {
         if let Self::Bytes(v) = self {
-            Some(v)
-        } else {
-            None
-        }
-    }
-    pub fn as_list(&self) -> Option<&[Value]> {
-        if let Self::List(v) = self {
             Some(v)
         } else {
             None
