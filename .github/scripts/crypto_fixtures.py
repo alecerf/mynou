@@ -65,6 +65,11 @@ def empty_aad_aead(key, nonce, message):
 
 
 def transport_vectors():
+    # RFC8439 section 2.3.2 anchors the counter-1 encryption stream separately.
+    assert chacha_block(bytes(range(32)), bytes.fromhex("000000090000004a00000000"), 1).hex() == (
+        "10f1e7e4d13b5915500fdd1fa32071c4c7d1f4c733c068030422aa9ac3d46c4e"
+        "d2826446079faa0914c2d705d98b02a2b5129cd1de164eb9cbd083e8a2503c4e"
+    )
     # Public C2SP/Wycheproof chacha20_poly1305_test.json tcId 2 anchors the AEAD
     # reference (empty message and AAD, independent published expected tag).
     assert empty_aad_aead(
