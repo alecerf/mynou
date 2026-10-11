@@ -174,10 +174,11 @@ struct Replay {
 
 impl Replay {
     fn available(&self, counter: u64) -> bool {
-        if let Some(highest) = self.highest {
-            if counter <= highest && highest - counter >= WINDOW {
-                return false;
-            }
+        if let Some(highest) = self.highest
+            && counter <= highest
+            && highest - counter >= WINDOW
+        {
+            return false;
         }
         let bit = (counter % WINDOW) as usize;
         self.highest.is_none_or(|highest| counter > highest)
@@ -185,15 +186,15 @@ impl Replay {
     }
 
     fn record(&mut self, counter: u64) {
-        if let Some(highest) = self.highest {
-            if counter > highest {
-                if counter - highest >= WINDOW {
-                    self.bits.fill(0);
-                } else {
-                    for expired in highest + 1..=counter {
-                        let bit = (expired % WINDOW) as usize;
-                        self.bits[bit / 64] &= !(1 << (bit % 64));
-                    }
+        if let Some(highest) = self.highest
+            && counter > highest
+        {
+            if counter - highest >= WINDOW {
+                self.bits.fill(0);
+            } else {
+                for expired in highest + 1..=counter {
+                    let bit = (expired % WINDOW) as usize;
+                    self.bits[bit / 64] &= !(1 << (bit % 64));
                 }
             }
         }
