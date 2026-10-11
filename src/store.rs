@@ -927,6 +927,33 @@ impl Store {
             .collect()
     }
 
+    /// The job representing each requested media key: a ready job wins,
+    /// otherwise the newest. One pass; only matching jobs are cloned.
+    pub(crate) fn states_for(
+        &self,
+        keys: &std::collections::BTreeSet<String>,
+    ) -> std::collections::BTreeMap<String, Job> {
+        let mut matching: Vec<(&Job, String)> = self
+            .jobs
+            .values()
+            .filter_map(|job| {
+                let key = job.request.media_key();
+                keys.contains(&key).then_some((job, key))
+            })
+            .collect();
+        matching.sort_by(|a, b| (a.0.created_at, &a.0.id).cmp(&(b.0.created_at, &b.0.id)));
+        let mut states = std::collections::BTreeMap::new();
+        for (job, key) in matching {
+            if states
+                .get(&key)
+                .is_none_or(|current: &Job| current.state != "ready")
+            {
+                states.insert(key, job.clone());
+            }
+        }
+        states
+    }
+
     fn index_shared(&mut self, job: &Job) {
         if let Some(file) = &job.shared_file {
             if job.shared_upgrade.is_none() {

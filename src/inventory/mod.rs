@@ -6,21 +6,29 @@
 
 mod persistence;
 mod tree;
+#[cfg(test)]
+pub(crate) use persistence::Fault;
 
-use crate::{Result, crypto::sha256};
+use crate::Result;
 use std::{collections::BTreeSet, fs::File, path::PathBuf};
-use tree::{Header, Tree, ValueRef};
+use tree::{Header, Tree};
 
 /// Ordered binary identity. Callers define their own table/range prefixes.
 pub type Key = [u8; 64];
 pub const MAX_VALUE_BYTES: usize = 1024 * 1024;
 pub const MAX_PAGE_ROWS: usize = 200;
 pub const MAX_PAGE_BYTES: usize = 4 * 1024 * 1024;
-pub const MAX_CHANGES: usize = 1024;
+/// Operation bound; see docs/inventory-storage.md. It is not an inventory bound.
+pub const MAX_CHANGES: usize = 16_384;
+/// Longest value that can be stored inline in a tree leaf (no record file).
+pub const MAX_INLINE_BYTES: usize = tree::MAX_INLINE_BYTES;
 
 #[derive(Debug)]
 pub enum Change {
+    /// A record file addressed by the key (at most `MAX_VALUE_BYTES`).
     Put(Key, Vec<u8>),
+    /// A tiny value (at most `MAX_INLINE_BYTES`) stored inside the tree leaf.
+    PutInline(Key, Vec<u8>),
     Delete(Key),
 }
 
@@ -80,6 +88,21 @@ impl Index {
 
     pub fn open(directory: &std::path::Path, read_only: bool) -> Result<Self> {
         persistence::open(directory, read_only)
+    }
+
+    /// The random identity chosen when the store was created.
+    pub fn identity(&self) -> [u8; 32] {
+        self.header.identity
+    }
+
+    /// False after an uncertain commit, until the store is reopened.
+    pub fn is_usable(&self) -> bool {
+        !self.poisoned
+    }
+
+    #[cfg(test)]
+    pub(crate) fn inject(&mut self, fault: Option<Fault>) {
+        self.fault = fault;
     }
 
     fn available(&self) -> Result<()> {
@@ -177,9 +200,19 @@ impl Index {
         let mut bytes = 0usize;
         for change in &changes {
             let key = match change {
-                Change::Put(key, value) => {
-                    if value.len() > MAX_VALUE_BYTES {
-                        return Err("Inventory value exceeds 1 MiB".into());
+                Change::Put(key, value) | Change::PutInline(key, value) => {
+                    let limit = if matches!(change, Change::Put(..)) {
+                        MAX_VALUE_BYTES
+                    } else {
+                        MAX_INLINE_BYTES
+                    };
+                    if value.len() > limit {
+                        return Err(if limit == MAX_VALUE_BYTES {
+                            "Inventory value exceeds 1 MiB"
+                        } else {
+                            "Inline inventory value exceeds 32 bytes"
+                        }
+                        .into());
                     }
                     bytes = bytes
                         .checked_add(value.len())
@@ -200,21 +233,23 @@ impl Index {
         // silent repair of corrupt storage, and preparation changes no files.
         let mut actions = Vec::with_capacity(changes.len());
         for change in changes {
-            let (key, data) = match change {
-                Change::Put(key, data) => (key, Some(data)),
-                Change::Delete(key) => (key, None),
+            let (key, data, inline) = match change {
+                Change::Put(key, data) => (key, Some(data), false),
+                Change::PutInline(key, data) => (key, Some(data), true),
+                Change::Delete(key) => (key, None, false),
             };
             let existed = self.get(&key)?.is_some();
             persistence::check_value_path(&self.directory, &key)?;
-            actions.push(persistence::Action { key, data, existed });
+            actions.push(persistence::Action {
+                key,
+                data,
+                inline,
+                existed,
+            });
         }
         let mut staged = Tree::new(&mut self.tree, before);
         for action in &actions {
-            let value = action.data.as_ref().map(|data| ValueRef {
-                length: data.len() as u32,
-                digest: sha256(data),
-            });
-            staged.change(&action.key, value, action.existed)?;
+            staged.change(&action.key, action.reference()?, action.existed)?;
         }
         staged.header.sequence = before
             .sequence

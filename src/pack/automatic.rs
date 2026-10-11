@@ -459,8 +459,8 @@ impl Engine {
             return Err("Pack search deadline exceeded".into());
         }
         let scope = {
-            let series = lock(&self.series_store)?;
-            let record = series.get(id).ok_or("Unknown tracked series")?;
+            let mut series = lock(&self.series_store)?;
+            let record = series.get(id)?.ok_or("Unknown tracked series")?;
             {
                 let jobs = lock(&self.store)?;
                 capture_scope(&record, &jobs, query.season)?
@@ -582,8 +582,8 @@ impl Engine {
         report.insert("metadata_decisions", Value::Array(decisions));
         // Recheck catalog content as well as revision: refreshes can change a plan without settings changes.
         {
-            let series = lock(&self.series_store)?;
-            let current = series.get(id).ok_or("Unknown tracked series")?;
+            let mut series = lock(&self.series_store)?;
+            let current = series.get(id)?.ok_or("Unknown tracked series")?;
             let jobs = lock(&self.store)?;
             if capture_scope(&current, &jobs, query.season)?.id != scope.id
                 || self.stopped.load(Ordering::Acquire)

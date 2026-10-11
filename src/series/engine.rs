@@ -17,14 +17,36 @@ const INTERVAL: u64 = 3600;
 const RETRY: u64 = 300;
 const MAX_CHECKS: usize = 4;
 const MAX_SUBMISSIONS: usize = 64;
+const SERIES_PAGE: usize = 200;
 
 impl Engine {
+    /// Every summary as one array while the inventory fits a single page.
+    /// Larger inventories are read with `series_page`; no total is truncated.
     pub fn series(&self) -> Result<Value> {
-        Ok(lock(&self.series_store)?.summaries())
+        let page = lock(&self.series_store)?.page(None, SERIES_PAGE)?;
+        if page.next.is_some() {
+            return Err(format!(
+                "Series inventory holds {} entries; read it page by page with a limit and an after cursor",
+                page.total
+            ));
+        }
+        Ok(Value::Array(page.series))
     }
+
+    /// One page of summaries ordered by identifier. `next` is the `after`
+    /// cursor of the following page and is null after the last.
+    pub fn series_page(&self, after: Option<&str>, limit: usize) -> Result<Value> {
+        let page = lock(&self.series_store)?.page(after, limit)?;
+        let mut value = Value::object();
+        value.insert("series", Value::Array(page.series));
+        value.insert("next", page.next.map_or(Value::Null, Value::String));
+        value.insert("total", Value::Number(page.total as f64));
+        Ok(value)
+    }
+
     pub fn series_record(&self, id: &str) -> Result<Value> {
         Ok(lock(&self.series_store)?
-            .get(id)
+            .get(id)?
             .ok_or("Unknown monitored series")?
             .public_json())
     }
@@ -56,28 +78,12 @@ impl Engine {
                 "Series monitoring requires a series identity without an explicit source".into(),
             );
         }
-        let records = lock(&self.series_store)?.list();
-        let matches: Vec<_> = records
-            .iter()
-            .filter(|record| {
-                let known = &record.plan.request;
-                known.season == request.season
-                    && known.episode == request.episode
-                    && match request.tmdb_id {
-                        Some(id) => known.tmdb_id == Some(id),
-                        None => {
-                            crate::selection::tokens(&known.title)
-                                == crate::selection::tokens(&request.title)
-                                && (request.year == 0 || request.year == known.year)
-                        }
-                    }
-            })
-            .collect();
+        let matches = lock(&self.series_store)?.matching(request)?;
         if matches.len() > 1 {
             return Err("Series identity is ambiguous; specify a TMDB ID".into());
         }
-        let (record, schedule) = if let Some(record) = matches.first() {
-            ((*record).clone(), false)
+        let (record, schedule) = if let Some(record) = matches.into_iter().next() {
+            (record, false)
         } else {
             let plan = integrations::series_plan_before(
                 &self.config,
@@ -144,14 +150,14 @@ impl Engine {
                 return Err("Series refresh coordination unavailable".into());
             }
         };
-        let now = store::now();
-        let mut records = lock(&self.series_store)?.list();
-        records.retain(|record| record.monitored && record.next_check_at <= now);
-        records.sort_by_key(|record| (record.next_check_at, record.id.clone()));
+        // The due index is ordered by (next check, identifier): the oldest
+        // work comes first and a processed scope moves to the back, so no scope
+        // starves however many are due. One pass reads one tree path.
+        let due = lock(&self.series_store)?.due(store::now(), MAX_CHECKS)?;
         let deadline = Instant::now() + Duration::from_secs(90);
         let mut reports = Vec::new();
         let mut first_error = None;
-        for record in records.into_iter().take(MAX_CHECKS) {
+        for record in due {
             if self.stopped.load(Ordering::Acquire) || Instant::now() >= deadline {
                 break;
             }
@@ -180,7 +186,7 @@ impl Engine {
             return Err("Series storage is read-only".into());
         }
         let previous = lock(&self.series_store)?
-            .get(id)
+            .get(id)?
             .ok_or("Unknown monitored series")?;
         let fetched = previous
             .fetch_catalog(self, false, deadline)
@@ -192,7 +198,7 @@ impl Engine {
             });
         {
             let mut series = lock(&self.series_store)?;
-            let mut current = series.get(id).ok_or("Unknown monitored series")?;
+            let mut current = series.get(id)?.ok_or("Unknown monitored series")?;
             if current.revision != previous.revision || self.stopped.load(Ordering::Acquire) {
                 return Err("Series settings changed during refresh; result discarded".into());
             }
@@ -228,8 +234,8 @@ impl Engine {
     ) -> Result<(Record, Vec<Job>)> {
         let mut submitted = Vec::new();
         let pack_plan = if self.config.series_packs_enabled {
-            let series = lock(&self.series_store)?;
-            let record = series.get(id).ok_or("Unknown monitored series")?;
+            let mut series = lock(&self.series_store)?;
+            let record = series.get(id)?.ok_or("Unknown monitored series")?;
             if record.revision != revision {
                 return Err("Series settings changed; submission discarded".into());
             }
@@ -294,7 +300,7 @@ impl Engine {
         // Lock order is series then requests. This bounded commit batch contains no network I/O.
         let mut series = lock(&self.series_store)?;
         series.check_writable()?;
-        let mut record = series.get(id).ok_or("Unknown monitored series")?;
+        let mut record = series.get(id)?.ok_or("Unknown monitored series")?;
         if record.revision != revision {
             return Err("Series settings changed; submission discarded".into());
         }
@@ -347,29 +353,23 @@ impl Engine {
         Ok((record, submitted))
     }
 
+    /// One calendar page from the date index. `offset` pages are limited to
+    /// 20,000 rows; `after` (the `next` cursor of a previous page) reaches
+    /// every later row of any window.
     pub fn episode_calendar(&self, query: &CalendarQuery) -> Result<Value> {
         query.validate()?;
-        let records = lock(&self.series_store)?.list();
-        let jobs = lock(&self.store)?.list();
-        let mut states = BTreeMap::<String, &Job>::new();
-        for job in &jobs {
-            let key = job.request.media_key();
-            if states
-                .get(&key)
-                .is_none_or(|current| current.state != "ready")
-            {
-                states.insert(key, job);
-            }
+        let page = lock(&self.series_store)?.calendar(query)?;
+        let mut wanted = std::collections::BTreeSet::new();
+        for row in &page.rows {
+            wanted.insert(row.series.episode_request(&row.episode).media_key());
         }
-        // Sort borrowed catalog rows, then construct public JSON only for the requested page.
-        let entries = window(&records, query);
-        let total = entries.len();
+        let states = lock(&self.store)?.states_for(&wanted);
         let today = date::today();
-        let page = entries
-            .into_iter()
-            .skip(query.offset)
-            .take(query.limit)
-            .map(|(record, episode)| {
+        let rows = page
+            .rows
+            .iter()
+            .map(|row| {
+                let (record, episode) = (&row.series, &row.episode);
                 let job = states.get(&record.episode_request(episode).media_key());
                 let mut value = Value::object();
                 value.insert("series_id", record.id.clone());
@@ -412,38 +412,17 @@ impl Engine {
         let mut value = Value::object();
         value.insert("from", query.from.clone());
         value.insert("to", query.to.clone());
-        value.insert("total", total as u32);
+        value.insert(
+            "total",
+            page.total
+                .map_or(Value::Null, |total| Value::Number(total as f64)),
+        );
         value.insert("offset", query.offset as u32);
         value.insert("limit", query.limit as u32);
-        value.insert("episodes", Value::Array(page));
+        value.insert("next", page.next.map_or(Value::Null, Value::String));
+        value.insert("episodes", Value::Array(rows));
         Ok(value)
     }
-}
-
-/// Sorted known-dated episodes inside the query window and series scope.
-fn window<'a>(
-    records: &'a [Record],
-    query: &CalendarQuery,
-) -> Vec<(&'a Record, &'a super::Episode)> {
-    let mut entries = Vec::new();
-    for record in records {
-        if query.series_id.as_ref().is_some_and(|id| id != &record.id) {
-            continue;
-        }
-        for episode in &record.plan.episodes {
-            if episode
-                .air_date
-                .as_ref()
-                .is_some_and(|date| date >= &query.from && date <= &query.to)
-            {
-                entries.push((record, episode));
-            }
-        }
-    }
-    entries.sort_by(|(a, x), (b, y)| {
-        (&x.air_date, &a.id, x.season, x.episode).cmp(&(&y.air_date, &b.id, y.season, y.episode))
-    });
-    entries
 }
 
 #[derive(Clone, Debug)]
@@ -453,6 +432,8 @@ pub struct CalendarQuery {
     pub series_id: Option<String>,
     pub offset: usize,
     pub limit: usize,
+    /// Exclusive cursor from a previous page's `next`; excludes `offset`.
+    pub after: Option<String>,
 }
 
 impl CalendarQuery {
@@ -464,7 +445,7 @@ impl CalendarQuery {
         if !text.is_empty() {
             for pair in text.split('&') {
                 let (name, value) = pair.split_once('=').ok_or("Invalid calendar query")?;
-                if !["from", "to", "series_id", "offset", "limit"].contains(&name)
+                if !["from", "to", "series_id", "offset", "limit", "after"].contains(&name)
                     || fields.insert(name, value).is_some()
                 {
                     return Err("Unknown or duplicate calendar field".into());
@@ -474,6 +455,10 @@ impl CalendarQuery {
         let mut query = Self::new(fields.get("from").copied(), fields.get("to").copied())?;
         query.series_id = fields
             .get("series_id")
+            .filter(|text| !text.is_empty())
+            .map(|text| (*text).to_owned());
+        query.after = fields
+            .get("after")
             .filter(|text| !text.is_empty())
             .map(|text| (*text).to_owned());
         for (key, target) in [("offset", &mut query.offset), ("limit", &mut query.limit)] {
@@ -502,6 +487,7 @@ impl CalendarQuery {
             series_id: None,
             offset: 0,
             limit: 50,
+            after: None,
         };
         query.validate()?;
         Ok(query)
@@ -512,6 +498,13 @@ impl CalendarQuery {
             || self.limit == 0
             || self.limit > 200
             || self.offset > 20_000
+            || (self.after.is_some() && self.offset != 0)
+            || self.after.as_ref().is_some_and(|after| {
+                after.len() > 128
+                    || !after.bytes().all(|b| {
+                        b.is_ascii_digit() || b.is_ascii_lowercase() || matches!(b, b'-' | b'.')
+                    })
+            })
             || self.series_id.as_ref().is_some_and(|id| {
                 id.len() != 32
                     || !id
@@ -519,8 +512,55 @@ impl CalendarQuery {
                         .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
             })
         {
-            return Err("Calendar requires an ordered range of at most 367 days, a limit of 1 to 200 and a valid series identifier".into());
+            return Err("Calendar requires an ordered range of at most 367 days, a limit of 1 to 200, either an offset of at most 20,000 or an after cursor, and a valid series identifier".into());
         }
         Ok(())
+    }
+}
+
+/// Query of `GET /api/series`: a cursor page of summaries.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SeriesPageQuery {
+    pub after: Option<String>,
+    pub limit: usize,
+}
+
+impl SeriesPageQuery {
+    pub fn parse(text: &str) -> Result<Self> {
+        if text.len() > 256 {
+            return Err("Series query is too large".into());
+        }
+        let mut query = Self {
+            after: None,
+            limit: 50,
+        };
+        let mut seen = std::collections::BTreeSet::new();
+        for pair in text.split('&').filter(|pair| !pair.is_empty()) {
+            let (name, value) = pair.split_once('=').ok_or("Invalid series query")?;
+            if !seen.insert(name) {
+                return Err("Duplicate series query field".into());
+            }
+            match name {
+                "after" => {
+                    if value.len() != 32
+                        || !value
+                            .bytes()
+                            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+                    {
+                        return Err("Invalid series cursor".into());
+                    }
+                    query.after = Some(value.to_owned());
+                }
+                "limit" => {
+                    query.limit = value
+                        .parse()
+                        .ok()
+                        .filter(|limit| (1..=200).contains(limit) && !value.starts_with('0'))
+                        .ok_or("Series limit must be 1 to 200")?;
+                }
+                _ => return Err("Unknown series query field".into()),
+            }
+        }
+        Ok(query)
     }
 }

@@ -8,6 +8,8 @@ use std::{
 
 pub(super) const PAGE_SIZE: usize = 4096;
 const FANOUT: usize = 32;
+/// Operation bound on the distinct pages one transaction may rewrite.
+pub(super) const MAX_DIRTY_PAGES: usize = 16_384;
 const NODE_MAGIC: &[u8; 8] = b"MYNOUIN1";
 const HEADER_MAGIC: &[u8; 8] = b"MYNOUI01";
 
@@ -76,10 +78,49 @@ impl Header {
     }
 }
 
+/// A leaf reference either names a separate record file (`length` bytes whose
+/// SHA-256 is `digest`) or carries at most 32 bytes inline in the tree page
+/// itself, zero-padded in the digest field.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct ValueRef {
     pub length: u32,
     pub digest: [u8; 32],
+    pub inline: bool,
+}
+
+const INLINE_FLAG: u32 = 0x8000_0000;
+pub(super) const MAX_INLINE_BYTES: usize = 32;
+
+impl ValueRef {
+    pub fn file(data: &[u8]) -> Self {
+        Self {
+            length: data.len() as u32,
+            digest: sha256(data),
+            inline: false,
+        }
+    }
+    pub fn inline(data: &[u8]) -> Result<Self> {
+        if data.len() > MAX_INLINE_BYTES {
+            return Err("Inline inventory value exceeds 32 bytes".into());
+        }
+        let mut digest = [0; 32];
+        digest[..data.len()].copy_from_slice(data);
+        Ok(Self {
+            length: data.len() as u32,
+            digest,
+            inline: true,
+        })
+    }
+    pub fn inline_data(&self) -> &[u8] {
+        &self.digest[..self.length as usize]
+    }
+    fn stored_length(self) -> u32 {
+        if self.inline {
+            self.length | INLINE_FLAG
+        } else {
+            self.length
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -138,7 +179,8 @@ impl Node {
             Items::Leaf(items) => {
                 for (key, value) in items {
                     bytes[cursor..cursor + 64].copy_from_slice(key);
-                    bytes[cursor + 64..cursor + 68].copy_from_slice(&value.length.to_le_bytes());
+                    bytes[cursor + 64..cursor + 68]
+                        .copy_from_slice(&value.stored_length().to_le_bytes());
                     bytes[cursor + 68..cursor + 100].copy_from_slice(&value.digest);
                     cursor += 100;
                 }
@@ -183,18 +225,34 @@ impl Node {
             }
             previous = Some(key);
             if level == 0 {
-                let length = u32::from_le_bytes(
+                let stored = u32::from_le_bytes(
                     bytes[cursor + 64..cursor + 68]
                         .try_into()
                         .map_err(|_| "Invalid value length")?,
                 );
-                if length as usize > MAX_VALUE_BYTES {
-                    return Err("Oversized inventory value reference".into());
-                }
-                let digest = bytes[cursor + 68..cursor + 100]
+                let inline = stored & INLINE_FLAG != 0;
+                let length = stored & !INLINE_FLAG;
+                let digest: [u8; 32] = bytes[cursor + 68..cursor + 100]
                     .try_into()
                     .map_err(|_| "Invalid value digest")?;
-                leaves.push((key, ValueRef { length, digest }));
+                if length as usize
+                    > if inline {
+                        MAX_INLINE_BYTES
+                    } else {
+                        MAX_VALUE_BYTES
+                    }
+                    || (inline && digest[length as usize..].iter().any(|byte| *byte != 0))
+                {
+                    return Err("Oversized or malformed inventory value reference".into());
+                }
+                leaves.push((
+                    key,
+                    ValueRef {
+                        length,
+                        digest,
+                        inline,
+                    },
+                ));
                 cursor += 100;
             } else {
                 let page = integer(bytes, cursor + 64)?;
@@ -457,7 +515,7 @@ impl<'a> Tree<'a> {
                 self.header.level = level;
             }
         }
-        if self.dirty.len() > 4096 {
+        if self.dirty.len() > MAX_DIRTY_PAGES {
             return Err("Inventory transaction exceeds its page budget".into());
         }
         self.header.count = match (value.is_some(), existed) {

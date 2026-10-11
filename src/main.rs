@@ -39,12 +39,12 @@ const HELP: &str = "Mynou — media automation using Rust std only
   series-pack-search ID --season N [--apply] [--candidate-id ID --scope-id ID]
                      [--config mynou.json]
   pack-remap JOB_ID --file-path PATH [--config mynou.json]
-  series [ID] [--config mynou.json]
+  series [ID | --limit N --after SERIES_ID] [--config mynou.json]
   series-numbering ID [--mapping FILE] [--apply --plan-id ID] [--config mynou.json]
   series-monitor | series-unmonitor | series-refresh ID [--config mynou.json]
   episode-monitor | episode-unmonitor ID --season N --episode N [--config mynou.json]
   calendar [--from YYYY-MM-DD --to YYYY-MM-DD --series-id ID]
-           [--offset N --limit N] [--config mynou.json]
+           [--offset N | --after CURSOR] [--limit N] [--config mynou.json]
   library [--config mynou.json]
   upgrades [--apply] [--config mynou.json]
   monitor | unmonitor ID [--config mynou.json]
@@ -183,9 +183,8 @@ impl Args {
                 "scope-id",
             ],
             "pack-remap" => &["config", "help", "file-path"],
-            "series" | "series-monitor" | "series-unmonitor" | "series-refresh" => {
-                &["config", "help"]
-            }
+            "series" => &["config", "help", "after", "limit"],
+            "series-monitor" | "series-unmonitor" | "series-refresh" => &["config", "help"],
             "episode-monitor" | "episode-unmonitor" => &["config", "help", "season", "episode"],
             "calendar" => &[
                 "config",
@@ -195,6 +194,7 @@ impl Args {
                 "series-id",
                 "offset",
                 "limit",
+                "after",
             ],
             "analyze" => &["json", "help"],
             "demo" => &["dir", "help"],
@@ -1217,6 +1217,7 @@ fn execute(args: Args) -> Result<()> {
                     args.options.get("to").map(String::as_str),
                 )?;
                 checked.series_id = args.options.get("series-id").cloned();
+                checked.after = args.options.get("after").cloned();
                 for (name, target) in [
                     ("offset", &mut checked.offset),
                     ("limit", &mut checked.limit),
@@ -1229,7 +1230,7 @@ fn execute(args: Args) -> Result<()> {
                     }
                 }
                 checked.validate()?;
-                let fields: Vec<_> = ["from", "to", "series-id", "offset", "limit"]
+                let fields: Vec<_> = ["from", "to", "series-id", "offset", "limit", "after"]
                     .iter()
                     .filter_map(|name| {
                         args.options
@@ -1247,7 +1248,22 @@ fn execute(args: Args) -> Result<()> {
                     None,
                 )?);
             } else if args.command == "series" && args.positions.is_empty() {
-                output(&call(&config, &path, "GET", "/api/series", None)?);
+                let fields: Vec<_> = ["limit", "after"]
+                    .iter()
+                    .filter_map(|name| {
+                        args.options
+                            .get(*name)
+                            .map(|value| format!("{name}={value}"))
+                    })
+                    .collect();
+                let route = if fields.is_empty() {
+                    "/api/series".to_owned()
+                } else {
+                    let query = fields.join("&");
+                    mynou::series::SeriesPageQuery::parse(&query)?;
+                    format!("/api/series?{query}")
+                };
+                output(&call(&config, &path, "GET", &route, None)?);
             } else {
                 let id = args.positions[0].to_ascii_lowercase();
                 if id.len() != 32 || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {

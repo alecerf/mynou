@@ -177,7 +177,7 @@ impl Engine {
                 .and_then(Value::as_str)
                 .ok_or("Missing series identity")?;
             let series = lock(&self.series_store)?
-                .get(id)
+                .get(id)?
                 .ok_or("Missing series record")?;
             let keys: std::collections::BTreeSet<_> = series
                 .plan
@@ -413,11 +413,10 @@ impl Engine {
         v.insert(
             "monitored_series",
             lock(&self.series_store)?
-                .list()
-                .iter()
-                .filter(|record| record.monitored)
-                .count() as u32,
+                .counts()
+                .map_or(Value::Null, |counts| Value::Number(counts.monitored as f64)),
         );
+        v.insert("series_storage", lock(&self.series_store)?.describe());
         v.insert(
             "last_series_error",
             lock(&self.last_series_error)?

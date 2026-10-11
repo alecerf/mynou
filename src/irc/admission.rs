@@ -266,15 +266,17 @@ impl Engine {
             .clone();
         let rule = request_rule(&self.config, &record)?.clone();
         let episode = record.announcement.request.kind == "episode";
-        let series_snapshot = if episode {
-            lock(&self.series_store)?.list()
+        // Only the scopes of this catalog series are read; the store sequence
+        // fences any other change that lands before the plan is applied.
+        let (retained, series_sequence) = if episode {
+            let mut store = lock(&self.series_store)?;
+            (
+                store.retained(record.announcement.request.tmdb_id)?,
+                store.sequence()?,
+            )
         } else {
-            Vec::new()
+            (Vec::new(), 0)
         };
-        let retained: Vec<_> = series_snapshot
-            .iter()
-            .filter(|r| r.plan.request.tmdb_id == record.announcement.request.tmdb_id)
-            .collect();
         if retained.len() > 1 {
             return Err("IRC: retained series identity is ambiguous".into());
         }
@@ -291,18 +293,21 @@ impl Engine {
         let canonical = integrations::irc_catalog_request_before(
             &self.config,
             &record.announcement.request,
-            retained.first().copied(),
+            retained.first(),
             deadline,
         )
         .map_err(|_| "IRC: catalog identity could not be verified".to_owned())?;
 
         // Series precedes IRC, then requester ledger and jobs. No network I/O is held.
-        let series = if episode {
+        let mut series = if episode {
             Some(lock(&self.series_store)?)
         } else {
             None
         };
-        if series.as_ref().is_some_and(|s| s.list() != series_snapshot) {
+        if let Some(store) = series.as_mut()
+            && (store.sequence()? != series_sequence
+                || store.retained(record.announcement.request.tmdb_id)? != retained)
+        {
             return Err("IRC: source numbering changed during catalog verification".into());
         }
         let mut irc = lock(&self.irc_store)?;
@@ -378,12 +383,13 @@ impl Engine {
         guard.insert(
             "series",
             Value::Array(
-                series_snapshot
+                retained
                     .iter()
                     .map(crate::series::Record::to_json)
                     .collect(),
             ),
         );
+        guard.insert("series_sequence", Value::Number(series_sequence as f64));
         let plan_id = super::digest(json::stringify(&guard).as_bytes());
         let mut report = Value::object();
         report.insert("action", "request");
