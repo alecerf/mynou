@@ -109,6 +109,52 @@ seed: it advertises no pieces, uploads nothing, counts no seeding time and never
 sends a tracker `completed` event. Once every piece is verified, normal seeding
 rules apply.
 
+## Manual cross-seeding
+
+Enable `downloads.seed`, then explicitly supply a v1 torrent and the ID of a
+fully verified ordinary native transfer:
+
+```sh
+mynou cross-seed SOURCE_ID --torrent ./candidate.torrent --config ./mynou.json
+mynou torrent CANDIDATE_ID --config ./mynou.json
+```
+
+Every candidate piece must verify from the existing bytes before any announce
+or peer advertisement. No media file, copy, link or library import is created.
+Default mapping pairs non-padding files in metadata order; names may differ
+but every pair must have equal size. For reordered files or a subset of the
+completed source, supply original source file indices in candidate non-padding
+order, for example `--mapping '[2,0]'`. Inspect source indices with `torrent`.
+Missing mappings, duplicate indices, size mismatches and existing swarms fail.
+
+The Bearer-authenticated API is `POST /api/transfers/SOURCE_ID/cross-seed` with
+`{"metadata_hex":"...","mapping":[2,0]}`; `mapping` is optional. Send the
+hexadecimal torrent bytes, never a server path. The first increment supports
+distinct-infohash v1 candidates only, up to 256 KiB metadata and 1024 metadata
+files. V2/hybrid candidates, chained reuse and automatic discovery are excluded.
+
+Diagnostics include `seed_only: true` and `cross_seed_source_id`. A mismatch
+or missing/unsafe file shows `failed` with an error: there is no partial
+advertisement or fallback acquisition. Repair the source and explicitly
+`resume CANDIDATE_ID` to reverify read-only. Ordinary acquisition and file
+selection refuse seed-only identities. Existing pause and policy controls
+apply; resume always retires the old proof. Pausing the source does not pause
+its cross-seeds: their explicit seeding permission and controls are independent,
+and verification never resumes or reacquires the original transfer.
+
+Private candidates use their own trackers, with DHT and PEX excluded. Source
+trackers and peers are not inherited. Uploads hash reused candidate pieces
+again; missing, unsafe or mismatching files invalidate candidate readiness.
+Source directories and their ancestors must be physical directories; mapped
+files must be regular, have no extra hardlinks and exactly match their lengths.
+
+A private atomic `.seed` record binds metadata/source/mapping independently
+of ordinary queue files. Restart always rehashes before seeding. Damaged seed
+state, missing source state or conflicting ordinary entries refuse startup
+explicitly, never convert into a download. Older versions ignore `.seed`
+records, so these seeds do not run after downgrade. Keep the source media and
+native state while seeding.
+
 ## Bandwidth and seeding
 
 Global limits and default seeding policy live in the `downloads` object:
