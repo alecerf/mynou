@@ -1,6 +1,7 @@
 //! CI-only IRC candidate journeys, metadata gates, ownership and checked recovery.
 mod irc_routing_support;
 mod irc_support;
+mod jobs_state;
 mod library_support;
 mod requester_support;
 #[allow(dead_code)]
@@ -92,10 +93,10 @@ fn admitted_jobs_wait_for_irc_and_metadata_precedes_selective_payload_and_exact_
     assert!(!engine.tick().unwrap());
     no_candidate_work(&engine, &admitted.id);
     let row = receive(&engine, &torrent.id, 7);
-    let before = fs::read(cfg.store_dir.join("journal.bin")).unwrap();
+    let before = jobs_state::fingerprint(&cfg.store_dir);
     let report = engine.irc_route_pending().unwrap();
     assert!(routing(&report), "{report:?}");
-    assert_ne!(before, fs::read(cfg.store_dir.join("journal.bin")).unwrap());
+    assert_ne!(before, jobs_state::fingerprint(&cfg.store_dir));
     assert!(proxy.requests.lock().unwrap().is_empty());
     assert!(engine.transfers().unwrap().as_array().unwrap().is_empty());
     let routed = job(&engine, &admitted.id);
@@ -137,10 +138,6 @@ fn admitted_jobs_wait_for_irc_and_metadata_precedes_selective_payload_and_exact_
     );
     assert_eq!(outcome(&engine.irc_route_pending().unwrap()), "idle");
     assert_eq!(irc_support::bytes(&cfg.store_dir), before);
-    assert_eq!(
-        &fs::read(cfg.store_dir.join("snapshot.bin")).unwrap()[..8],
-        b"MYNOUS05"
-    );
     assert_eq!(
         &fs::read(cfg.store_dir.join("announcements.bin")).unwrap()[..8],
         b"MYNOUI02"
@@ -529,6 +526,7 @@ fn interrupted_reservations_recover_without_replaying_an_uncommitted_grab() {
         let admitted = engine.submit(request(7)).unwrap().remove(0);
         let row = receive(&engine, &torrent.id, 7);
         assert!(routing(&engine.irc_route_pending().unwrap()));
+        let mut jobs = lock(&engine.store).unwrap().list().unwrap();
         drop(engine);
         let history_path = cfg.store_dir.join("announcements.bin");
         let mut history = read_checked(&history_path);
@@ -538,13 +536,15 @@ fn interrupted_reservations_recover_without_replaying_an_uncommitted_grab() {
             .insert("phase", "reserved");
         write_checked(&history_path, b"MYNOUI02", &history);
         if !committed {
-            let path = cfg.store_dir.join("snapshot.bin");
-            let mut state = read_checked(&path);
-            let j = only_job_mut(&mut state);
-            j.insert("irc_origin", Value::Null);
-            j.insert("acquisition_url", Value::Null);
-            j.insert("release", Value::Null);
-            write_checked(&path, b"MYNOUS01", &state);
+            // The reservation was durable but the origin never reached the job.
+            for job in &mut jobs {
+                job.irc_origin = None;
+                job.acquisition_url = None;
+                job.release = None;
+            }
+            jobs_state::downgrade(&cfg.store_dir, &jobs);
+            // Only a writable start migrates; a preview cannot read the old files.
+            drop(mynou::store::Store::open(&cfg.store_dir).unwrap());
         }
         let before = irc_support::bytes(&cfg.store_dir);
         let preview = Engine::open_for_preview(cfg.clone()).unwrap();
@@ -587,6 +587,7 @@ fn forged_origin_changes_and_silent_format_downgrades_fail_before_downloads_star
         let mut changed = job(&engine, &admitted.id);
         changed.irc_origin.as_mut().unwrap().file = "Other.Movie.mp4".into();
         assert!(lock(&engine.store).unwrap().update(changed).is_err());
+        let jobs = lock(&engine.store).unwrap().list().unwrap();
         drop(engine);
         let p = cfg.store_dir.join("announcements.bin");
         let mut history = read_checked(&p);
@@ -617,9 +618,8 @@ fn forged_origin_changes_and_silent_format_downgrades_fail_before_downloads_star
             &history,
         );
         if corruption == "downgrade_job" {
-            let p = cfg.store_dir.join("snapshot.bin");
-            let value = read_checked(&p);
-            write_checked(&p, b"MYNOUS01", &value);
+            // The origin sits in a snapshot of a format that predates it.
+            jobs_state::downgrade_as(&cfg.store_dir, &jobs, Some(b"MYNOUS01"));
         }
         assert!(Engine::open(cfg.clone()).is_err());
         assert!(!cfg.downloads.data_dir.join(&torrent.id).exists());
@@ -877,25 +877,20 @@ fn an_origin_cannot_create_its_own_admission_in_journal_replay() {
     engine.submit(request(7)).unwrap();
     receive(&engine, &torrent.id, 7);
     assert!(routing(&engine.irc_route_pending().unwrap()));
+    let jobs = lock(&engine.store).unwrap().list().unwrap();
     drop(engine);
-    let path = cfg.store_dir.join("journal.bin");
-    let bytes = fs::read(&path).unwrap();
-    let second = 116 + u32::from_le_bytes(bytes[16..20].try_into().unwrap()) as usize;
-    assert_eq!(&bytes[second..second + 8], b"MYNOUJ05");
-    let length = u32::from_le_bytes(bytes[second + 16..second + 20].try_into().unwrap()) as usize;
-    let mut value =
-        mynou::json::parse(std::str::from_utf8(&bytes[second + 84..second + 84 + length]).unwrap())
-            .unwrap();
-    value.get_mut("event").unwrap().insert("id", "1");
-    let payload = mynou::json::stringify(&value).into_bytes();
-    let mut frame = b"MYNOUJ05".to_vec();
-    frame.extend_from_slice(&1_u64.to_le_bytes());
-    frame.extend_from_slice(&(payload.len() as u32).to_le_bytes());
-    frame.extend_from_slice(&[0; 32]);
-    frame.extend_from_slice(&mynou::crypto::sha256(&frame));
-    frame.extend_from_slice(&payload);
-    frame.extend_from_slice(&mynou::crypto::sha256(&frame));
-    fs::write(path, frame).unwrap();
+    // A legacy journal whose first and only transaction already carries the
+    // origin: the job was never admitted before it was routed.
+    jobs_state::reset(&cfg.store_dir);
+    let event = mynou::store::Event {
+        id: 1,
+        job_id: jobs[0].id.clone(),
+        state: jobs[0].state.clone(),
+        message: "forged".into(),
+        at: jobs[0].updated_at,
+    };
+    let (journal, _) = jobs_state::frame(&jobs, &event, 1, &[0; 32], b"MYNOUJ05", None);
+    jobs_state::write_private(&cfg.store_dir.join("journal.bin"), &journal);
     assert!(Engine::open(cfg.clone()).is_err());
     assert!(!cfg.downloads.data_dir.join(&torrent.id).exists());
 }

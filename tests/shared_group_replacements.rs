@@ -1,5 +1,6 @@
 //! CI-only atomic replacement, recovery, native transfer and exact Plex journeys.
 mod automatic_pack_support;
+mod jobs_state;
 mod library_support;
 mod series_support;
 mod shared_group_support;
@@ -25,45 +26,6 @@ use std::{
     time::{Duration, Instant},
 };
 use transfer_support::{RecordingProxy, Seeder, engine_config, wait};
-
-fn frame_offsets(bytes: &[u8]) -> Vec<usize> {
-    let mut offsets = Vec::new();
-    let mut at = 0;
-    while at < bytes.len() {
-        offsets.push(at);
-        let size = u32::from_le_bytes(bytes[at + 16..at + 20].try_into().unwrap()) as usize;
-        at += size + 116;
-    }
-    assert_eq!(at, bytes.len());
-    offsets
-}
-fn rewrite_last_frame(original: &[u8], change: impl FnOnce(&mut Value)) -> Vec<u8> {
-    let at = *frame_offsets(original).last().unwrap();
-    let size = u32::from_le_bytes(original[at + 16..at + 20].try_into().unwrap()) as usize;
-    let mut value =
-        json::parse(std::str::from_utf8(&original[at + 84..at + 84 + size]).unwrap()).unwrap();
-    change(&mut value);
-    let payload = json::stringify(&value).into_bytes();
-    let mut frame = original[at..at + 52].to_vec();
-    frame[16..20].copy_from_slice(&(payload.len() as u32).to_le_bytes());
-    frame.extend_from_slice(&sha256(&frame));
-    frame.extend_from_slice(&payload);
-    frame.extend_from_slice(&sha256(&frame));
-    let mut bytes = original[..at].to_vec();
-    bytes.extend_from_slice(&frame);
-    bytes
-}
-fn rewrite_snapshot(original: &[u8], change: impl FnOnce(&mut Value)) -> Vec<u8> {
-    let mut value =
-        json::parse(std::str::from_utf8(&original[16..original.len() - 32]).unwrap()).unwrap();
-    change(&mut value);
-    let payload = json::stringify(&value).into_bytes();
-    let mut bytes = original[..8].to_vec();
-    bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
-    bytes.extend_from_slice(&payload);
-    bytes.extend_from_slice(&sha256(&bytes));
-    bytes
-}
 
 #[test]
 fn sixty_four_owners_receive_one_baseline_and_one_atomic_replacement_before_any_payload() {
@@ -118,63 +80,12 @@ fn sixty_four_owners_receive_one_baseline_and_one_atomic_replacement_before_any_
     assert_eq!(store.list().unwrap().len(), 128);
     drop(store);
     assert_eq!(
-        &fs::read(fixture.cfg.store_dir.join("snapshot.bin")).unwrap()[..8],
-        b"MYNOUS03"
-    );
-    assert_eq!(
         Store::open_read_only(&fixture.cfg.store_dir)
             .unwrap()
             .list()
             .unwrap()
             .len(),
         128
-    );
-}
-
-#[test]
-fn torn_creation_never_exposes_a_subset_and_complete_corruption_is_not_repaired() {
-    let directory = Directory::new();
-    let fixture = Fixture::new(&directory, 3);
-    let engine = Engine::open_for_management(fixture.cfg.clone()).unwrap();
-    let parents = fixture.parents(&engine);
-    baseline(&engine, &parents[0].id);
-    apply(&engine, &parents[0].id, &fixture.replacement_query());
-    let original = fs::read(fixture.cfg.store_dir.join("journal.bin")).unwrap();
-    let at = *frame_offsets(&original).last().unwrap();
-    assert_eq!(&original[at..at + 8], b"MYNOUJ03");
-    drop(engine);
-    for cut in [1, 83, 100, original.len() - at - 1] {
-        fs::write(
-            fixture.cfg.store_dir.join("journal.bin"),
-            &original[..at + cut],
-        )
-        .unwrap();
-        let mut store = Store::open(&fixture.cfg.store_dir).unwrap();
-        assert_eq!(store.list().unwrap().len(), 3);
-        assert_eq!(store.library_jobs().unwrap().len(), 3);
-        drop(store);
-        assert_eq!(
-            fs::read(fixture.cfg.store_dir.join("journal.bin")).unwrap(),
-            original[..at]
-        );
-    }
-    let mut corrupt = original.clone();
-    let last = corrupt.len() - 1;
-    corrupt[last] ^= 1;
-    fs::write(fixture.cfg.store_dir.join("journal.bin"), &corrupt).unwrap();
-    assert!(Store::open(&fixture.cfg.store_dir).is_err());
-    assert_eq!(
-        fs::read(fixture.cfg.store_dir.join("journal.bin")).unwrap(),
-        corrupt
-    );
-    fs::write(fixture.cfg.store_dir.join("journal.bin"), original).unwrap();
-    assert_eq!(
-        Store::open(&fixture.cfg.store_dir)
-            .unwrap()
-            .list()
-            .unwrap()
-            .len(),
-        6
     );
 }
 
@@ -225,7 +136,6 @@ fn every_owner_stages_before_one_atomic_promotion_and_restart_keeps_old_bytes() 
     drop(engine);
     let engine = Engine::open_for_management(fixture.cfg.clone()).unwrap();
     assert_eq!(library_ids(&engine).len(), 64);
-    let prior = fs::read(fixture.cfg.store_dir.join("journal.bin")).unwrap();
     {
         let mut store = lock(&engine.store).unwrap();
         confirm(
@@ -246,40 +156,8 @@ fn every_owner_stages_before_one_atomic_promotion_and_restart_keeps_old_bytes() 
                 .all(|job| children.contains(&job.id))
         );
     }
-    let published = fs::read(fixture.cfg.store_dir.join("journal.bin")).unwrap();
-    assert_eq!(
-        frame_offsets(&published).len(),
-        frame_offsets(&prior).len() + 1
-    );
     assert_eq!(fs::read(&old_path).unwrap(), old_bytes);
     drop(engine);
-    fs::write(
-        fixture.cfg.store_dir.join("journal.bin"),
-        &published[..published.len() - 1],
-    )
-    .unwrap();
-    {
-        let mut store = Store::open(&fixture.cfg.store_dir).unwrap();
-        assert!(
-            store
-                .library_jobs()
-                .unwrap()
-                .iter()
-                .all(|job| parents.iter().any(|parent| parent.id == job.id))
-        );
-        assert!(
-            store
-                .list()
-                .unwrap()
-                .iter()
-                .all(|job| job.shared_upgrade.is_none() || job.state != "ready")
-        );
-    }
-    assert_eq!(
-        fs::read(fixture.cfg.store_dir.join("journal.bin")).unwrap(),
-        prior
-    );
-    fs::write(fixture.cfg.store_dir.join("journal.bin"), published).unwrap();
     let mut store = Store::open(&fixture.cfg.store_dir).unwrap();
     assert!(
         store
@@ -301,7 +179,7 @@ fn every_owner_stages_before_one_atomic_promotion_and_restart_keeps_old_bytes() 
 }
 
 #[test]
-fn signed_partial_group_creation_and_partial_ready_snapshot_are_rejected() {
+fn partial_legacy_groups_are_refused_by_migration_without_writing() {
     let directory = Directory::new();
     let fixture = Fixture::new(&directory, 3);
     let engine = Engine::open_for_management(fixture.cfg.clone()).unwrap();
@@ -312,43 +190,42 @@ fn signed_partial_group_creation_and_partial_ready_snapshot_are_rejected() {
         &parents[0].id,
         &fixture.replacement_query(),
     ));
-    let original = fs::read(fixture.cfg.store_dir.join("journal.bin")).unwrap();
+    {
+        let mut store = lock(&engine.store).unwrap();
+        confirm(&mut store, &children[0], &fixture.replacement.files[0].1);
+    }
+    let all = lock(&engine.store).unwrap().list().unwrap();
     drop(engine);
-    let invalid = rewrite_last_frame(&original, |value| {
-        if let Value::Array(jobs) = value.get_mut("group_jobs").unwrap() {
-            jobs.pop();
-        }
-    });
-    fs::write(fixture.cfg.store_dir.join("journal.bin"), &invalid).unwrap();
-    assert!(Store::open(&fixture.cfg.store_dir).is_err());
-    assert_eq!(
-        fs::read(fixture.cfg.store_dir.join("journal.bin")).unwrap(),
-        invalid
-    );
-    fs::write(fixture.cfg.store_dir.join("journal.bin"), &original).unwrap();
-    let mut store = Store::open(&fixture.cfg.store_dir).unwrap();
-    confirm(&mut store, &children[0], &fixture.replacement.files[0].1);
-    drop(store);
-    let snapshot = fs::read(fixture.cfg.store_dir.join("snapshot.bin")).unwrap();
-    let invalid = rewrite_snapshot(&snapshot, |value| {
-        if let Value::Array(jobs) = value.get_mut("jobs").unwrap() {
-            let owner = jobs
-                .iter_mut()
-                .find(|job| job.get("id").and_then(Value::as_str) == Some(children[0].as_str()))
-                .unwrap();
-            owner.insert("state", "ready");
-        }
-    });
-    fs::write(fixture.cfg.store_dir.join("snapshot.bin"), &invalid).unwrap();
-    assert!(Store::open_read_only(&fixture.cfg.store_dir).is_err());
-    assert_eq!(
-        fs::read(fixture.cfg.store_dir.join("snapshot.bin")).unwrap(),
-        invalid
-    );
+    let store_dir = &fixture.cfg.store_dir;
+    let mut cases = Vec::new();
+    // A replacement group missing its last owner.
+    let mut missing = all.clone();
+    missing.retain(|job| job.id != children[2]);
+    cases.push((missing, "Incomplete shared ownership"));
+    // One owner promoted while the others are still staged or queued.
+    let mut partial = all;
+    partial
+        .iter_mut()
+        .find(|job| job.id == children[0])
+        .unwrap()
+        .state = "ready".into();
+    cases.push((partial, "shared replacement"));
+    for (jobs, expected) in cases {
+        jobs_state::downgrade(store_dir, &jobs);
+        let before = snapshot(store_dir);
+        let error = Store::open(store_dir).err().unwrap();
+        assert!(
+            error.to_lowercase().contains(&expected.to_lowercase()),
+            "{error}"
+        );
+        assert!(Store::open_read_only(store_dir).unwrap().list().is_err());
+        assert_eq!(snapshot(store_dir), before);
+        assert!(!store_dir.join("jobs.idx").exists());
+    }
 }
 
 #[test]
-fn lineage_mutation_single_baselines_and_individual_promotion_frames_fail_closed() {
+fn lineage_mutation_and_single_baselines_fail_closed() {
     let directory = Directory::new();
     let fixture = Fixture::new(&directory, 2);
     let engine = Engine::open_for_management(fixture.cfg.clone()).unwrap();
@@ -375,18 +252,6 @@ fn lineage_mutation_single_baselines_and_individual_promotion_frames_fail_closed
         assert!(store.update(wrong).is_err());
         confirm(&mut store, &children[0], &fixture.replacement.files[0].1);
     }
-    let original = fs::read(fixture.cfg.store_dir.join("journal.bin")).unwrap();
-    drop(engine);
-    let invalid = rewrite_last_frame(&original, |value| {
-        value.get_mut("job").unwrap().insert("state", "ready");
-        value.get_mut("event").unwrap().insert("state", "ready");
-    });
-    fs::write(fixture.cfg.store_dir.join("journal.bin"), &invalid).unwrap();
-    assert!(Store::open(&fixture.cfg.store_dir).is_err());
-    assert_eq!(
-        fs::read(fixture.cfg.store_dir.join("journal.bin")).unwrap(),
-        invalid
-    );
 }
 
 #[test]

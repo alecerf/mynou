@@ -1,5 +1,6 @@
 //! Original configuration, admission-free review and persistence scenarios.
 mod irc_support;
+mod jobs_state;
 mod library_support;
 use irc_support::*;
 use library_support::Directory;
@@ -195,7 +196,7 @@ fn first_claim_and_deduplication_survive_review_and_restart_without_job_writes()
     let dir = Directory::new();
     let cfg = config(&dir.0);
     let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    let journal = fs::read(cfg.store_dir.join("journal.bin")).unwrap();
+    let journal = jobs_state::fingerprint(&cfg.store_dir);
     let first = receive(&engine, 7);
     let id = record_id(&first).to_owned();
     let snapshot_bytes = fs::read(cfg.store_dir.join("announcements.bin")).unwrap();
@@ -225,10 +226,7 @@ fn first_claim_and_deduplication_survive_review_and_restart_without_job_writes()
         Some("acknowledged")
     );
     no_jobs(&engine);
-    assert_eq!(
-        fs::read(cfg.store_dir.join("journal.bin")).unwrap(),
-        journal
-    );
+    assert_eq!(jobs_state::fingerprint(&cfg.store_dir), journal);
     drop(engine);
     let reopened = Engine::open_for_management(cfg).unwrap();
     let repeat = receive(&reopened, 7);

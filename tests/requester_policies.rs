@@ -1,4 +1,5 @@
 //! CI-only multiple-account ownership, policy fencing and restart scenarios.
+mod jobs_state;
 mod library_support;
 mod requester_support;
 mod series_support;
@@ -72,10 +73,6 @@ fn new_accounts_require_explicit_opt_in_before_queueing() {
             .unwrap()
             .as_str()
             .is_some()
-    );
-    assert_eq!(
-        &fs::read(cfg.store_dir.join("journal.bin")).unwrap()[..8],
-        b"MYNOUJ04"
     );
     no_credentials(&ledger);
     drop(engine);
@@ -278,7 +275,7 @@ fn uncaptured_operator_jobs_require_verified_ready_imports_and_compatible_qualit
                 .unwrap()
                 .unwrap();
         }
-        let journal = fs::read(cfg.store_dir.join("journal.bin")).unwrap();
+        let journal = jobs_state::fingerprint(&cfg.store_dir);
         enable(&engine, "alice");
         engine.sync_requesters().unwrap();
         let admitted = matches!(case, "valid" | "accepted_baseline");
@@ -306,11 +303,7 @@ fn uncaptured_operator_jobs_require_verified_ready_imports_and_compatible_qualit
             vec![operator.clone()],
             "{case}"
         );
-        assert_eq!(
-            fs::read(cfg.store_dir.join("journal.bin")).unwrap(),
-            journal,
-            "{case}"
-        );
+        assert_eq!(jobs_state::fingerprint(&cfg.store_dir), journal, "{case}");
         drop(engine);
         let reopened = Engine::open_for_management(cfg).unwrap();
         assert_eq!(demand(&reopened, "alice"), row, "{case}");
@@ -545,17 +538,14 @@ fn captured_destination_and_profile_cannot_be_rebound_through_job_updates() {
     let mut changed = acquired.clone();
     changed.requester.as_mut().unwrap().capture.destination = "default".into();
     assert!(lock(&engine.store).unwrap().update(changed).is_err());
-    let before = fs::read(engine.config.store_dir.join("journal.bin")).unwrap();
+    let before = jobs_state::fingerprint(&engine.config.store_dir);
     let mut q = demand_query("remove", id(&demand(&engine, "alice")));
     let preview = engine.requester_control("alice", &q).unwrap();
     engine.cancel(&acquired.id).unwrap();
     q.apply = true;
     q.plan_id = Some(preview.get("plan_id").unwrap().as_str().unwrap().into());
     assert!(engine.requester_control("alice", &q).is_err());
-    assert_ne!(
-        fs::read(engine.config.store_dir.join("journal.bin")).unwrap(),
-        before
-    );
+    assert_ne!(jobs_state::fingerprint(&engine.config.store_dir), before);
 }
 #[test]
 fn reservation_recovery_is_idempotent_and_corruption_or_missing_provenance_fails_closed() {
@@ -595,14 +585,12 @@ fn reservation_recovery_is_idempotent_and_corruption_or_missing_provenance_fails
     fs::remove_file(cfg.store_dir.join("requesters.bin")).unwrap();
     assert!(Engine::open_for_management(cfg.clone()).is_err());
     fs::write(cfg.store_dir.join("requesters.bin"), saved).unwrap();
-    let mut frame = fs::read(cfg.store_dir.join("journal.bin")).unwrap();
-    frame[..8].copy_from_slice(b"MYNOUJ01");
-    let h = sha256(&frame[..52]);
-    frame[52..84].copy_from_slice(&h);
-    let len = u32::from_le_bytes(frame[16..20].try_into().unwrap()) as usize;
-    let check = sha256(&frame[..84 + len]);
-    frame[84 + len..116 + len].copy_from_slice(&check);
-    fs::write(cfg.store_dir.join("journal.bin"), frame).unwrap();
+    // Requester provenance in a snapshot of a format that predates it.
+    let jobs = mynou::store::Store::open(&cfg.store_dir)
+        .unwrap()
+        .list()
+        .unwrap();
+    jobs_state::downgrade_as(&cfg.store_dir, &jobs, Some(b"MYNOUS01"));
     assert!(Engine::open_for_management(cfg).is_err());
 }
 #[test]

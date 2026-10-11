@@ -1,4 +1,5 @@
 //! Original explicit numbering, identity retention and restart scenarios. CI only.
+mod jobs_state;
 mod library_support;
 mod series_support;
 use library_support::{Directory, Indexer};
@@ -153,7 +154,7 @@ fn numbering_preview_is_read_only_online_and_after_restart() {
         .unwrap();
     let id = id(&record).to_owned();
     let snapshot = series_state(&cfg.store_dir);
-    let journal = fs::read(cfg.store_dir.join("journal.bin")).unwrap();
+    let journal = jobs_state::fingerprint(&cfg.store_dir);
     let choices = query(vec![choice(
         11001,
         number(1, 1),
@@ -166,10 +167,7 @@ fn numbering_preview_is_read_only_online_and_after_restart() {
         record_with_no_submission(record.clone())
     );
     assert_eq!(series_state(&cfg.store_dir), snapshot);
-    assert_eq!(
-        fs::read(cfg.store_dir.join("journal.bin")).unwrap(),
-        journal
-    );
+    assert_eq!(jobs_state::fingerprint(&cfg.store_dir), journal);
     drop(engine);
     let reader = Engine::open_for_preview(cfg.clone()).unwrap();
     assert_eq!(reader.series_numbering(&id, &choices).unwrap(), preview);
@@ -183,10 +181,7 @@ fn numbering_preview_is_read_only_online_and_after_restart() {
             .contains("writable")
     );
     assert_eq!(series_state(&cfg.store_dir), snapshot);
-    assert_eq!(
-        fs::read(cfg.store_dir.join("journal.bin")).unwrap(),
-        journal
-    );
+    assert_eq!(jobs_state::fingerprint(&cfg.store_dir), journal);
 }
 
 fn record_with_no_submission(mut value: Value) -> Value {

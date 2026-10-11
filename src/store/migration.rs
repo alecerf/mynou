@@ -355,7 +355,7 @@ impl Plan {
             let created = state
                 .jobs
                 .get(root)
-                .ok_or("missing upgrade lineage reference")?
+                .ok_or("missing upgrade parent reference")?
                 .created_at;
             roots.insert(
                 id.clone(),
