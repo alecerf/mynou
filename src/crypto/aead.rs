@@ -58,11 +58,15 @@ impl XChaCha20Poly1305 {
     }
 
     fn derived(&self, nonce: [u8; 24]) -> (ChaCha20Poly1305, [u8; 12]) {
-        let (prefix, tail) = nonce.split_at(16);
-        let mut short = [0; 12];
-        short[4..].copy_from_slice(tail);
-        let mut input = [0; 16];
-        input.copy_from_slice(prefix);
+        let input = nonce[..16].try_into().expect("fixed XChaCha nonce prefix");
+        // The draft mandates four zero prefix bytes; the tail is caller supplied.
+        let short = std::array::from_fn(|index| {
+            if index < 4 {
+                0
+            } else {
+                nonce[index + 12]
+            }
+        });
         (ChaCha20Poly1305::new(hchacha20(self.key, input)), short)
     }
 
@@ -508,15 +512,19 @@ mod tests {
             for aad_length in [0, 1, 15, 16, 17] {
                 let plaintext = vec![7; length];
                 let aad = vec![9; aad_length];
-                let mut nonce = [0; 24];
-                nonce[..4].copy_from_slice(&(length as u32).to_le_bytes());
-                nonce[16..20].copy_from_slice(&(aad_length as u32).to_le_bytes());
+                let length_bytes = (length as u64).to_le_bytes();
+                let aad_bytes = (aad_length as u64).to_le_bytes();
+                let nonce = std::array::from_fn(|index| match index {
+                    0..=7 => length_bytes[index],
+                    8..=15 => 0,
+                    _ => aad_bytes[index - 16],
+                });
                 let encrypted = cipher.seal(nonce, &aad, &plaintext).unwrap();
                 assert_eq!(encrypted.len(), length + 16);
                 assert_eq!(cipher.open(nonce, &aad, &encrypted).unwrap(), plaintext);
                 for index in [15, 23] {
                     let mut wrong = nonce;
-                    wrong[index] = 1;
+                    wrong[index] ^= 1;
                     assert!(cipher.open(wrong, &aad, &encrypted).is_err());
                 }
             }
