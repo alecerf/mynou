@@ -822,3 +822,61 @@ fn malformed_mapping_metadata_and_disabled_optin_have_no_queue_side_effects() {
         1
     );
 }
+
+#[test]
+fn case_aliases_of_primary_state_names_refuse_registration_without_replacement() {
+    for suffix in ["TORRENT", "SOURCE", "SEED"] {
+        let scratch = scratch();
+        let bytes = fixture_bytes(BLOCK);
+        let source = Torrent::single(&scratch.0, "source.bin", bytes.clone());
+        let target = Torrent::single(&scratch.0, "target.bin", bytes);
+        let seed = Seeder::open(&scratch.0.join("seed"), &[&source]);
+        let cfg = client_config(&seed.root, true);
+        let existing = cfg
+            .state_dir
+            .join(format!("{}.{}", target.id.to_ascii_uppercase(), suffix));
+        fs::write(&existing, b"existing primary must remain unchanged").unwrap();
+        assert!(
+            seed.client
+                .cross_seed(&source.id, &request(&target, None))
+                .is_err()
+        );
+        assert_eq!(
+            fs::read(existing).unwrap(),
+            b"existing primary must remain unchanged"
+        );
+        assert_eq!(
+            seed.client.transfers().unwrap().as_array().unwrap().len(),
+            1
+        );
+        assert!(!cfg.data_dir.join(&target.id).exists());
+    }
+}
+
+#[test]
+#[cfg(unix)]
+fn a_seed_state_directory_retargeted_to_a_link_refuses_restart() {
+    use std::os::unix::fs::symlink;
+    let scratch = scratch();
+    let bytes = fixture_bytes(BLOCK);
+    let source = Torrent::single(&scratch.0, "source.bin", bytes.clone());
+    let target = Torrent::single(&scratch.0, "target.bin", bytes);
+    let seed = Seeder::open(&scratch.0.join("seed"), &[&source]);
+    let cfg = client_config(&seed.root, true);
+    seed.client
+        .cross_seed(&source.id, &request(&target, None))
+        .unwrap();
+    ready(&seed.client, &target.id);
+    seed.client.pause(&target.id).unwrap();
+    drop(seed);
+    let moved = scratch.0.join("moved-state");
+    fs::rename(&cfg.state_dir, &moved).unwrap();
+    let ancestor = cfg.state_dir.parent().unwrap();
+    let moved_parent = scratch.0.join("moved-parent");
+    fs::rename(ancestor, &moved_parent).unwrap();
+    // Retarget an ancestor rather than the final directory; ordinary root checks
+    // already reject a final-component link, while the seed binding must reject both.
+    symlink(&moved_parent, ancestor).unwrap();
+    fs::rename(&moved, cfg.state_dir.clone()).unwrap();
+    assert!(Client::open(cfg).is_err());
+}
