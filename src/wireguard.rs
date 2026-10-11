@@ -43,7 +43,10 @@ pub struct Session {
 
 impl Session {
     // Deliberately inert until the independently reviewed handshake is delivered.
-    #[cfg_attr(not(test), expect(dead_code, reason = "future authenticated handshake integration"))]
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "future authenticated handshake integration")
+    )]
     pub(crate) fn from_handshake(
         keys: [[u8; 32]; 2],
         indexes: [u32; 2],
@@ -52,7 +55,10 @@ impl Session {
         now: Duration,
     ) -> Self {
         Self {
-            keys: Some((ChaCha20Poly1305::new(keys[0]), ChaCha20Poly1305::new(keys[1]))),
+            keys: Some((
+                ChaCha20Poly1305::new(keys[0]),
+                ChaCha20Poly1305::new(keys[1]),
+            )),
             local_index: indexes[0],
             remote_index: indexes[1],
             role,
@@ -107,7 +113,12 @@ impl Session {
         self.sent += 1;
         let mut padded = vec![0; payload.len().div_ceil(16) * 16];
         padded[..payload.len()].copy_from_slice(payload);
-        let ciphertext = self.keys.as_ref().unwrap().0.seal(nonce(counter), &[], &padded)?;
+        let ciphertext = self
+            .keys
+            .as_ref()
+            .unwrap()
+            .0
+            .seal(nonce(counter), &[], &padded)?;
         let mut bytes = Vec::with_capacity(16 + ciphertext.len());
         bytes.extend_from_slice(&[4, 0, 0, 0]);
         bytes.extend_from_slice(&self.remote_index.to_le_bytes());
@@ -133,7 +144,12 @@ impl Session {
         if counter >= REJECT_AFTER_MESSAGES || !self.replay.available(counter) {
             return Err("WireGuard: rejected transport counter".into());
         }
-        let bytes = self.keys.as_ref().unwrap().1.open(nonce(counter), &[], &packet[16..])?;
+        let bytes = self
+            .keys
+            .as_ref()
+            .unwrap()
+            .1
+            .open(nonce(counter), &[], &packet[16..])?;
         // No authentication failure can move the window or confirm a responder.
         self.replay.record(counter);
         self.confirmed = true;
