@@ -415,6 +415,9 @@ pub(super) fn restore(config: &DownloadConfig, jobs: &mut BTreeMap<String, Job>)
         let stat =
             fs::symlink_metadata(entry.path()).map_err(|_| "Could not inspect cross-seed state")?;
         private_state_file(&stat)?;
+        let control = fs::symlink_metadata(config.state_dir.join(format!("{id}.control")))
+            .map_err(|_| "Cross-seed controls are missing; refusing to reset seeding permission")?;
+        private_state_file(&control)?;
         if stat.len() > MAX_RECORD as u64 {
             return Err("Cross-seed state exceeds limits".into());
         }

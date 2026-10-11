@@ -1551,6 +1551,7 @@ impl Client {
                 && !job.control.seed_limited
             {
                 job.cancel = Arc::new(AtomicBool::new(false));
+                cross_seed::retire_proof(job);
             }
             return Err(error);
         }
@@ -1558,6 +1559,7 @@ impl Client {
             job.cancel = Arc::new(AtomicBool::new(false));
             job.status.message = "Download verified and available".into();
         }
+        cross_seed::retire_proof(job);
         apply_seed_limits(job, &self.config, &self.policy.policy);
         persist_control(&self.config, job)
     }
@@ -2961,7 +2963,9 @@ fn serve_peer(
                 {
                     return Err("Block request is out of bounds".into());
                 }
-                if cached_piece.as_ref().is_none_or(|(i, _)| *i != index) {
+                // Reused files can disappear or change between requests. Never
+                // let a cached piece bypass read-only path and content checks.
+                if reuse.is_some() || cached_piece.as_ref().is_none_or(|(i, _)| *i != index) {
                     let data = if let Some(reuse) = &reuse {
                         match reuse.read_piece(config, &meta, index) {
                             Ok(data) => data,

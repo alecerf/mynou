@@ -302,12 +302,7 @@ fn partial_match_never_announces_or_acquires_and_resume_reverifies() {
     failed(&seed.client, &bad.id);
     assert!(tracker.events.lock().unwrap().is_empty());
     assert!(!cfg.data_dir.join(&bad.id).exists());
-    assert!(
-        seed.client
-            .check(&bad.id)
-            .unwrap_err()
-            .contains("mismatch")
-    );
+    assert!(seed.client.check(&bad.id).unwrap_err().contains("mismatch"));
     seed.client.resume(&bad.id).unwrap();
     failed(&seed.client, &bad.id);
     assert!(tracker.events.lock().unwrap().is_empty());
@@ -400,6 +395,7 @@ fn corrupt_or_conflicting_seed_state_refuses_restart_before_any_download() {
             .cross_seed(&source.id, &request(&target, None))
             .unwrap();
         ready(&seed.client, &target.id);
+        seed.client.pause(&target.id).unwrap();
         drop(seed);
         let primary = cfg.state_dir.join(format!("{}.seed", target.id));
         match corruption {
@@ -431,14 +427,7 @@ fn corrupt_or_conflicting_seed_state_refuses_restart_before_any_download() {
             _ => unreachable!(),
         }
         let reopened = Client::open(cfg.clone());
-        if corruption == "missing-control" {
-            let reopened = reopened.unwrap();
-            ready(&reopened, &target.id);
-            assert!(reopened.ensure(target.path.to_str().unwrap()).is_err());
-            assert_eq!(reopened.transfer_stats(&target.id).unwrap().0, 0);
-        } else {
-            assert!(reopened.is_err(), "{corruption}");
-        }
+        assert!(reopened.is_err(), "{corruption}");
         assert!(!cfg.data_dir.join(&target.id).exists());
     }
 }
@@ -544,6 +533,98 @@ fn private_seed_upload_change_revokes_all_peers_and_requires_new_proof() {
     seed.client.resume(&target.id).unwrap();
     ready(&seed.client, &target.id);
     assert_eq!(seed.client.transfer_stats(&target.id).unwrap().0, 0);
+}
+
+#[test]
+fn raising_a_seed_limit_requires_a_new_proof_before_advertising_changed_files() {
+    let scratch = scratch();
+    let bytes = payload(BLOCK + 17, 63);
+    let source = Torrent::single(&scratch.0, "source.bin", bytes.clone());
+    let target = Torrent::single(&scratch.0, "limited-target.bin", bytes.clone());
+    let tracker = Tracker::new();
+    let seed = Seeder::open(&scratch.0.join("seed"), &[&source]);
+    seed.client
+        .cross_seed(
+            &source.id,
+            &CrossSeedRequest {
+                metadata: tracker.attach(&target),
+                mapping: None,
+            },
+        )
+        .unwrap();
+    ready(&seed.client, &target.id);
+    seed.client
+        .set_policy(
+            &target.id,
+            Some(mynou::torrent::TransferPolicy {
+                seed_time_secs: Some(1),
+                ..Default::default()
+            }),
+        )
+        .unwrap();
+    wait(|| {
+        seed.client
+            .transfer(&target.id)
+            .unwrap()
+            .get("seed_limited")
+            == Some(&Value::Bool(true))
+    });
+    let path = seed.client.check(&source.id).unwrap().files[0].clone();
+    let mut corrupt = bytes.clone();
+    corrupt[0] ^= 1;
+    fs::write(&path, &corrupt).unwrap();
+    let before = tracker
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|event| !event.contains("event=stopped"))
+        .count();
+    seed.client.set_policy(&target.id, None).unwrap();
+    failed(&seed.client, &target.id);
+    let after = tracker
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|event| !event.contains("event=stopped"))
+        .count();
+    assert_eq!(after, before);
+    assert_eq!(fs::read(&path).unwrap(), corrupt);
+    fs::write(&path, &bytes).unwrap();
+    seed.client.resume(&target.id).unwrap();
+    ready(&seed.client, &target.id);
+}
+
+#[test]
+fn cached_seed_piece_cannot_hide_missing_or_modified_source_files() {
+    for change in ["missing", "modified", "hardlink"] {
+        let scratch = scratch();
+        let bytes = payload(BLOCK, 65);
+        let source = Torrent::single(&scratch.0, "source.bin", bytes.clone());
+        let target = Torrent::single(&scratch.0, "cached-target.bin", bytes.clone());
+        let seed = Seeder::open(&scratch.0.join("seed"), &[&source]);
+        seed.client
+            .cross_seed(&source.id, &request(&target, None))
+            .unwrap();
+        ready(&seed.client, &target.id);
+        let mut connection = peer(&seed.client, &target.id, false);
+        let piece = block(&mut connection, 0).unwrap();
+        assert_eq!(&piece[9..], &bytes);
+        let path = seed.client.check(&source.id).unwrap().files[0].clone();
+        match change {
+            "missing" => fs::remove_file(&path).unwrap(),
+            "modified" => {
+                let mut changed = bytes.clone();
+                changed[0] ^= 1;
+                fs::write(&path, changed).unwrap();
+            }
+            "hardlink" => fs::hard_link(&path, scratch.0.join("extra-link.bin")).unwrap(),
+            _ => unreachable!(),
+        }
+        assert!(block(&mut connection, 0).is_err(), "{change}");
+        failed(&seed.client, &target.id);
+    }
 }
 
 #[test]
