@@ -344,6 +344,13 @@ impl Client {
         }
         let meta = candidate(&request.metadata)?;
         let id = hex(&meta.v1.ok_or("Missing v1 cross-seed identity")?);
+        // State filenames contain only the authenticated hash, never metadata paths.
+        if id.len() != 40 || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err("Invalid cross-seed candidate identity".into());
+        }
+        let name = Path::new(&id)
+            .file_name()
+            .ok_or("Invalid cross-seed candidate filename")?;
         let mut jobs = self
             .jobs
             .lock()
@@ -354,7 +361,7 @@ impl Client {
                     Some(&hash[..20]) == meta.v1.as_ref().map(|hash| hash.as_slice())
                 })
         }) || ["torrent", "source", "seed"].iter().any(|suffix| {
-            fs::symlink_metadata(self.config.state_dir.join(format!("{id}.{suffix}"))).is_ok()
+            fs::symlink_metadata(self.config.state_dir.join(name).with_extension(suffix)).is_ok()
         }) {
             return Err("Candidate swarm already exists; inspect its transfer instead".into());
         }
@@ -649,7 +656,7 @@ mod tests {
             (b"pieces".to_vec(), Value::Bytes(Vec::new())),
             (b"private".to_vec(), Value::Int(1)),
         ]));
-        let encoded = bencode::encode(&Value::Dict(BTreeMap::from([
+        let encoded = crate::bencode::encode(&Value::Dict(BTreeMap::from([
             (b"info".to_vec(), info),
             (
                 b"announce".to_vec(),
