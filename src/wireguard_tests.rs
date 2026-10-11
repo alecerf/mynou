@@ -48,17 +48,28 @@ fn independent_reference_packets_include_nonce_endianness_and_padding() {
         let payload = bytes(row.get("payload").unwrap().as_str().unwrap());
         let mut session =
             Session::from_handshake([key, [9; 32]], [17, 31], Role::Initiator, 4, Duration::ZERO);
-        session.sent = row.get("counter").unwrap().as_str().unwrap().parse().unwrap();
+        session.sent = row
+            .get("counter")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
         let actual = session.send(&payload, 4, Duration::ZERO).unwrap();
         assert_eq!(
             actual.bytes,
             bytes(row.get("packet").unwrap().as_str().unwrap())
         );
-        let mut receiver = Session::from_handshake([[9; 32], key], [31, 17], Role::Responder, 4, Duration::ZERO);
+        let mut receiver =
+            Session::from_handshake([[9; 32], key], [31, 17], Role::Responder, 4, Duration::ZERO);
         let expected = bytes(row.get("packet").unwrap().as_str().unwrap());
         let received = receiver.receive(&expected, 4, Duration::ZERO).unwrap();
         assert_eq!(&received.bytes[..payload.len()], &payload);
-        assert!(received.bytes[payload.len()..].iter().all(|byte| *byte == 0));
+        assert!(
+            received.bytes[payload.len()..]
+                .iter()
+                .all(|byte| *byte == 0)
+        );
         assert!(receiver.receive(&expected, 4, Duration::ZERO).is_err());
     }
 }
@@ -210,7 +221,9 @@ fn monotonic_age_generation_and_revocation_never_reactivate_keys() {
     for mode in 0..3 {
         let (mut sender, mut receiver) = pair();
         let first = sender.send(b"", 4, Duration::ZERO).unwrap().bytes;
-        receiver.receive(&first, 4, Duration::from_secs(10)).unwrap();
+        receiver
+            .receive(&first, 4, Duration::from_secs(10))
+            .unwrap();
         let next = sender.send(b"", 4, Duration::ZERO).unwrap().bytes;
         match mode {
             0 => assert!(receiver.receive(&next, 4, Duration::from_secs(9)).is_err()),
@@ -221,11 +234,30 @@ fn monotonic_age_generation_and_revocation_never_reactivate_keys() {
         assert!(receiver.keys.is_none());
     }
     let created = Duration::from_secs(1000);
-    let mut session = Session::from_handshake([[7; 32], [9; 32]], [17, 31], Role::Initiator, 4, created);
-    assert!(!session.send(b"", 4, created + Duration::from_secs(119)).unwrap().rekey);
-    assert!(session.send(b"", 4, created + Duration::from_secs(120)).unwrap().rekey);
-    assert!(session.send(b"", 4, created + Duration::from_secs(179)).is_ok());
-    assert!(session.send(b"", 4, created + Duration::from_secs(180)).is_err());
+    let mut session =
+        Session::from_handshake([[7; 32], [9; 32]], [17, 31], Role::Initiator, 4, created);
+    assert!(
+        !session
+            .send(b"", 4, created + Duration::from_secs(119))
+            .unwrap()
+            .rekey
+    );
+    assert!(
+        session
+            .send(b"", 4, created + Duration::from_secs(120))
+            .unwrap()
+            .rekey
+    );
+    assert!(
+        session
+            .send(b"", 4, created + Duration::from_secs(179))
+            .is_ok()
+    );
+    assert!(
+        session
+            .send(b"", 4, created + Duration::from_secs(180))
+            .is_err()
+    );
 }
 
 #[test]
