@@ -1146,6 +1146,7 @@ impl SeriesStore {
 
     /// Monitored scopes whose check is due, oldest first. Work is one tree
     /// path plus at most `limit` rows however many scopes exist.
+    #[cfg(test)]
     pub(crate) fn due(&mut self, now: u64, limit: usize) -> Result<Vec<Due>> {
         self.due_after(now, None, limit)
     }
@@ -1513,6 +1514,13 @@ fn scoped_calendar(index: &mut Index, query: &CalendarQuery, id: &str) -> Result
             })
             .collect(),
     })
+}
+
+/// Test-only: overwrites the counters, as a damaged index could present them.
+#[cfg(test)]
+pub(super) fn forge_counts(index: &mut Index, series: u64, monitored: u64) -> Result<()> {
+    index.commit(vec![counts_change(Counts { series, monitored })])?;
+    Ok(())
 }
 
 /// Test-only bulk loader: commits many brand-new records per transaction.

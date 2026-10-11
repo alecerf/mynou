@@ -4,7 +4,7 @@ use super::{
     CalendarQuery, Episode, NumberingChoice, Plan, Record,
     legacy::MAX_LEGACY_SNAPSHOT,
     migration::{self, Stage},
-    storage::{Backend, SeriesStore, insert_many, verify_record},
+    storage::{Backend, SeriesStore, forge_counts, insert_many, verify_record},
 };
 use crate::{
     crypto::{random_bytes, sha256},
@@ -1008,16 +1008,9 @@ fn save_widest(spread: u32) {
 
 #[test]
 fn the_widest_valid_plan_saves_in_one_transaction_and_round_trips() {
-    save_widest(100);
-}
-
-/// The pathological block spread (4,000 blocks) is slow to synchronize, so it
-/// runs only on request: `MYNOU_WIDEST=1 cargo test widest_possible`.
-#[test]
-fn the_widest_possible_block_spread_still_fits_one_transaction() {
-    if std::env::var_os("MYNOU_WIDEST").is_some() {
-        save_widest(2_000);
-    }
+    // 2,000 episodes and 2,000 identities over 4,000 blocks (about 10,000
+    // changes), then every date changed (about 6,000 changes), each one commit.
+    save_widest(2_000);
 }
 
 #[test]
@@ -1178,4 +1171,104 @@ fn resident_kib() -> u64 {
                 .and_then(|line| line.split_whitespace().next()?.parse().ok())
         })
         .unwrap_or(0)
+}
+
+#[test]
+fn empty_and_old_limit_snapshots_migrate_and_counters_never_underflow() {
+    // An empty snapshot is a valid snapshot.
+    let directory = Directory::new();
+    let original = write_legacy(&directory.0, &[], 2);
+    let mut store = SeriesStore::open(&directory.0, false).unwrap();
+    let report = store.migration.clone().unwrap();
+    assert_eq!((report.records, report.episodes), (0, 0));
+    assert_eq!(store.counts().unwrap().series, 0);
+    assert_eq!(
+        fs::read(directory.0.join(&report.backup)).unwrap(),
+        original
+    );
+    assert_eq!(marker_schema(&directory.0), Some(3));
+    store.save(record(1, 1, 2, 10)).unwrap();
+    drop(store);
+
+    // A snapshot at the old limits: 128 scopes, just under 20,000 episodes and
+    // just under 8 MiB, the largest file the old store could have written.
+    let directory = Directory::new();
+    let records: Vec<Record> = (1..=128).map(|n| record(n, 2, 78, 300)).collect();
+    let bytes = write_legacy(&directory.0, &records, 2);
+    let episodes: usize = records.iter().map(|r| r.plan.episodes.len()).sum();
+    assert_eq!(episodes, 19_968);
+    assert!(bytes.len() > 7 * 1024 * 1024 && bytes.len() <= MAX_LEGACY_SNAPSHOT);
+    let started = Instant::now();
+    let mut store = SeriesStore::open(&directory.0, false).unwrap();
+    eprintln!(
+        "series-migration-at-old-limits scopes=128 episodes={episodes} snapshot_bytes={} elapsed_ms={}",
+        bytes.len(),
+        started.elapsed().as_millis()
+    );
+    let mut expected = records.clone();
+    expected.sort_by(|a, b| a.id.cmp(&b.id));
+    assert_eq!(load_all(&mut store), expected);
+    assert_eq!(store.counts().unwrap().series, 128);
+    verify_record(ready(&mut store), &expected[127]).unwrap();
+    drop(store);
+
+    // Counters that disagree with the records are an error, not a panic or wrap.
+    let directory = Directory::new();
+    let mut store = SeriesStore::open(&directory.0, false).unwrap();
+    store.save(record(1, 1, 2, 10)).unwrap();
+    forge_counts(ready(&mut store), 1, 0).unwrap();
+    let mut changed = record(1, 1, 2, 10);
+    changed.monitored = false;
+    changed.revision = 2;
+    assert!(
+        store
+            .save(changed)
+            .unwrap_err()
+            .contains("counters disagree")
+    );
+    assert_eq!(store.counts().unwrap().monitored, 0);
+}
+
+#[test]
+fn a_preserved_copy_must_be_a_private_regular_file_of_the_exact_size() {
+    use std::os::unix::fs::symlink;
+    let records = sample();
+    let original = legacy_bytes(&records, 2);
+    let name = format!("series.legacy-{}.json", super::hex(&sha256(&original)[..8]));
+    for case in ["public", "hard link", "symlink", "oversized", "directory"] {
+        let directory = Directory::new();
+        write_legacy(&directory.0, &records, 2);
+        let backup = directory.0.join(&name);
+        match case {
+            "public" => {
+                fs::write(&backup, &original).unwrap();
+                fs::set_permissions(&backup, fs::Permissions::from_mode(0o644)).unwrap();
+            }
+            "hard link" => {
+                fs::write(&backup, &original).unwrap();
+                fs::set_permissions(&backup, fs::Permissions::from_mode(0o600)).unwrap();
+                fs::hard_link(&backup, directory.0.join("alias")).unwrap();
+            }
+            "symlink" => {
+                fs::write(directory.0.join("target"), &original).unwrap();
+                symlink(directory.0.join("target"), &backup).unwrap();
+            }
+            "oversized" => {
+                fs::write(&backup, vec![b'x'; original.len() + 1]).unwrap();
+                fs::set_permissions(&backup, fs::Permissions::from_mode(0o600)).unwrap();
+            }
+            _ => fs::create_dir(&backup).unwrap(),
+        }
+        let before = contents(&directory.0);
+        assert!(SeriesStore::open(&directory.0, false).is_err(), "{case}");
+        assert_eq!(contents(&directory.0), before, "{case}");
+    }
+    // The same bytes in a private file are accepted and reused.
+    let directory = Directory::new();
+    write_legacy(&directory.0, &records, 2);
+    let backup = directory.0.join(&name);
+    fs::write(&backup, &original).unwrap();
+    fs::set_permissions(&backup, fs::Permissions::from_mode(0o600)).unwrap();
+    let mut store = SeriesStore::open(&directory.0, false).unwrap();
+    assert_consistent(&mut store, &records);
 }

@@ -28,11 +28,12 @@ mynou calendar --from 2026-10-01 --to 2026-10-31 --series-id ID \
   --config ./mynou.json
 ```
 
-`mynou series` prints every record as one array, reading the service page by
-page; with `--limit` (1 to 200) and `--after ID` it prints one page object whose
-`next` is the `--after` value of the following page. There is no limit on how many
+`mynou series` prints one page object, `{"series": [...], "next": ID or null,
+"total": N}`: 50 records by default, or `--limit` (1 to 200) after the record `--after
+ID`. Pass `next` as `--after` for the following page. There is no limit on how many
 series you track: records are stored on disk, not in one in-memory snapshot (see
-[storage](inventory-storage.md#series-storage)).
+[storage](inventory-storage.md#series-storage)). The web interface shows the first
+50 and loads more on request.
 
 `ID` is the series record's 32-character identifier, distinct from job and
 transfer IDs. `--tmdb-id` is optional when the title and year identify one
@@ -84,7 +85,13 @@ episodes during monitored tracking and refresh; see
 With the catalog enabled, the service checks due records every minute and
 refreshes at most four per pass, oldest first. Due records come from an index
 ordered by due time, so a pass costs the same with ten series or ten thousand, and
-a record that was just checked goes behind every older one: no record starves. A successful record is due again
+a record that was just checked goes behind every older one: no record starves.
+At four per minute, at most 240 records are checked per hour: with more than 240
+monitored records a record waits longer than its hour, oldest first, and new
+episodes are noticed later; the pass limit is not configurable. A record whose
+stored data cannot be read is skipped for an hour, counted in
+`status.series_unreadable` and named in `status.last_series_error`; it never holds
+back the records behind it. A successful record is due again
 after one hour; a remaining backlog brings it back after one minute; a failed
 catalog refresh keeps the previous plan and retries after five minutes. A
 manual refresh can inspect a disabled record but still respects its policy.
@@ -104,7 +111,7 @@ All routes need the Bearer token:
 
 | Route | Purpose |
 | --- | --- |
-| `GET /api/series` | Summaries with episode, undated and unmapped counts: an array while the list fits 200 entries, otherwise page with `?limit=N&after=ID`, which returns `{"series", "next", "total"}` |
+| `GET /api/series` | Summaries with episode, undated and unmapped counts, always as `{"series", "next", "total"}`: 50 by default, `?limit=N` (1 to 200) and `after=ID` choose the page |
 | `POST /api/series` | Track: `{"request": {"kind": "series", "title": "Example Series", "year": 2026, "tmdb_id": 123}, "include_specials": false, "future_only": false}`; add `"enabled": false` to keep it unmonitored |
 | `GET /api/series/ID` | Record, accepted plan and monitoring choices |
 | `POST /api/series/ID/monitor` | Any of `enabled`, `include_specials` and `start_date` (`YYYY-MM-DD` or `null`) |

@@ -148,7 +148,8 @@ a catalog episode identity has one canonical number and a canonical number one
 identity across every scope of a series, and a scope exists once. The widest
 valid record (2,000 unmapped dated episodes and 2,000 retained identities with
 choices spread over 4,000 blocks, then every date changed) needs about 10,000
-changes and fits one transaction; a test saves it.
+changes and fits one transaction; a CI test saves a record of exactly that shape
+and then changes every date (about 6,000 changes), each in one commit.
 
 Reads touch only what they need: summaries are cursor pages of at most 200
 headers; one due-work pass reads one tree path plus its (at most four) rows;
@@ -160,10 +161,14 @@ blocks (at most the per-plan bounds).
 
 ### Measured behavior
 
-One run of the `series_scale_report` harness (release build, Linux container
-on overlayfs, synthetic scopes of 3 seasons x 30 episodes, one reading process
-per size, so these numbers are indicative, not a macOS or throughput claim;
-synchronization is cheaper there than on macOS):
+One hand-run of the `series_scale_report` harness (release build, Linux
+container on overlayfs, synthetic scopes of 3 seasons x 30 episodes, one reading
+process per size). These are indicative container numbers: CI does not run or
+enforce them, and file synchronization is cheaper there than on macOS. Migrating
+a snapshot at the old limits (128 scopes, 19,968 episodes, 8.3 MB) took 3.1 s in
+the same container; CI prints the time of that migration (debug build, macOS) in
+its test log as `series-migration-at-old-limits`, but nothing asserts it, and the
+start-up delay on a real macOS machine has not been measured.
 
 | Scopes | Episodes | On disk | Open | 200-summary pages walked | Due pass | One scope save | Calendar page (200 rows) | Peak RSS reading |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -194,6 +199,13 @@ Opening storage with write access migrates a legacy snapshot (schema 1 or 2):
 6. `series.json` is atomically replaced by the schema 3 marker. Before this step
    an older binary still finds the unchanged legacy file; after it, older binaries
    reject the unsupported schema instead of reading stale or empty data.
+
+Migration runs on the first start with write access, before the service listens,
+and prints no progress; a failure stops the start. There is no validate-only or
+dry-run mode beyond the read-only `needs_migration` status. If verification fails
+(`Series migration verification failed`), `series.json` has not been touched:
+stop Mynou, remove the derived `series.idx.migrating` directory, and start again;
+if it fails again, keep `series.json` and the preserved copy and report it.
 
 Every step is safe to repeat. A legacy snapshot that differs from the one the
 index came from, a marker without its index and a marker bound to another index
