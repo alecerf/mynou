@@ -462,7 +462,7 @@ mod tests {
         let mut unmasked = vec![0x81, 0x01, b'x'];
         assert!(decode(&mut unmasked).is_err());
         assert!(decode(&mut masked(1, false, b"x")).is_err());
-        assert!(decode(&mut masked(1, true, &vec![b'x'; 65_536])).is_err());
+        assert!(decode(&mut masked(1, true, &vec![b'x'; 65_537])).is_err());
         assert!(decode(&mut masked(9, true, &[0; 126])).is_err());
         assert!(decode(&mut masked(2, true, b"x")).is_err());
         assert!(decode(&mut masked(1, true, &[0xff, 0xfe])).is_err());
