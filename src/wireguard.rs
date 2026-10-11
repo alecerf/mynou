@@ -1,10 +1,14 @@
-//! Offline WireGuard transport datagrams; no handshake, sockets or VPN protection.
+//! Offline WireGuard handshake/transport; no sockets or VPN protection.
 //! Session keys must come from a fresh authenticated handshake. See
 //! docs/wireguard-transport.md for provenance, ownership and integration gates.
 
 use crate::Result;
 use crate::crypto::ChaCha20Poly1305;
 use std::time::Duration;
+
+#[path = "wireguard/handshake.rs"]
+mod handshake;
+pub use handshake::{Handshake, Response};
 
 pub const MAX_PAYLOAD: usize = 1424;
 pub const MAX_DATAGRAM: usize = MAX_PAYLOAD + 32;
@@ -42,11 +46,6 @@ pub struct Session {
 }
 
 impl Session {
-    // Deliberately inert until the independently reviewed handshake is delivered.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "future authenticated handshake integration")
-    )]
     pub(crate) fn from_handshake(
         keys: [[u8; 32]; 2],
         indexes: [u32; 2],

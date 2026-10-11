@@ -46,7 +46,7 @@ def chacha_block(key, nonce, counter):
                     for a, b in zip(initial, working))
 
 
-def empty_aad_aead(key, nonce, message):
+def reference_aead(key, nonce, message, aad=b""):
     ciphertext = bytearray()
     for offset in range(0, len(message), 64):
         stream = chacha_block(key, nonce, offset // 64 + 1)
@@ -54,8 +54,9 @@ def empty_aad_aead(key, nonce, message):
     one_time_key = chacha_block(key, nonce, 0)[:32]
     # Arbitrary-precision modular arithmetic is independent of Rust's limb code.
     r = int.from_bytes(one_time_key[:16], "little") & 0x0ffffffc0ffffffc0ffffffc0fffffff
-    authenticated = bytes(ciphertext) + bytes((-len(ciphertext)) % 16)
-    authenticated += bytes(8) + len(ciphertext).to_bytes(8, "little")
+    authenticated = aad + bytes((-len(aad)) % 16)
+    authenticated += bytes(ciphertext) + bytes((-len(ciphertext)) % 16)
+    authenticated += len(aad).to_bytes(8, "little") + len(ciphertext).to_bytes(8, "little")
     accumulator = 0
     for offset in range(0, len(authenticated), 16):
         block = int.from_bytes(authenticated[offset:offset+16] + b"\x01", "little")
@@ -72,7 +73,7 @@ def transport_vectors():
     )
     # Public C2SP/Wycheproof chacha20_poly1305_test.json tcId 2 anchors the AEAD
     # reference (empty message and AAD, independent published expected tag).
-    assert empty_aad_aead(
+    assert reference_aead(
         bytes.fromhex("80ba3192c803ce965ea371d5ff073cf0f43b6a2ab576b208426e11409c09b9b0"),
         bytes.fromhex("4da5bf8dfd5852c1ea12379d"), b""
     ).hex() == "76acb342cf3166a5b63c0c0ea1383c8d"
@@ -85,7 +86,94 @@ def transport_vectors():
             nonce = bytes(4) + counter.to_bytes(8, "little")
             header = bytes((4, 0, 0, 0)) + (31).to_bytes(4, "little") + counter.to_bytes(8, "little")
             rows.append({"key": key.hex(), "counter": str(counter), "payload": payload.hex(),
-                         "packet": (header + empty_aad_aead(key, nonce, padded)).hex()})
+                         "packet": (header + reference_aead(key, nonce, padded)).hex()})
+    return rows
+
+
+def reference_dh(secret, peer):
+    """Independently authored RFC7748 Montgomery equations with Python integers."""
+    scalar = bytearray(secret)
+    scalar[0] &= 248
+    scalar[31] = (scalar[31] & 127) | 64
+    scalar = int.from_bytes(scalar, "little")
+    prime = (1 << 255) - 19
+    coordinate = int.from_bytes(peer, "little") & ((1 << 255) - 1)
+    x2, z2, x3, z3 = 1, 0, coordinate, 1
+    for bit in range(254, -1, -1):
+        selected = (scalar >> bit) & 1
+        if selected:
+            x2, z2, x3, z3 = x3, z3, x2, z2
+        a, b, c, d = x2 + z2, x2 - z2, x3 + z3, x3 - z3
+        aa, bb = a * a % prime, b * b % prime
+        e = (aa - bb) % prime
+        da, cb = d * a % prime, c * b % prime
+        x3, z3 = (da + cb)**2 % prime, coordinate * (da - cb)**2 % prime
+        x2, z2 = aa * bb % prime, e * (aa + 121665 * e) % prime
+        if selected:
+            x2, z2, x3, z3 = x3, z3, x2, z2
+    return (x2 * pow(z2, prime - 2, prime) % prime).to_bytes(32, "little")
+
+
+def handshake_vectors():
+    base = bytes((9,)) + bytes(31)
+    assert reference_dh(base, base).hex() == (
+        "422c8e7a6227d7bca1350b3e2bb7279f7897b87bb6854b783c60e80311ae3079"
+    )  # RFC7748 section 5.2, iteration one.
+    # RFC8439 section 2.8.2 anchors nonempty associated data, not just empty tags.
+    assert reference_aead(bytes(range(128, 160)), bytes.fromhex("070000004041424344454647"),
+        b"Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.",
+        bytes.fromhex("50515253c0c1c2c3c4c5c6c7")).hex() == (
+        "d31a8d34648e60db7b86afbc53ef7ec2a4aded51296e08fea9e2b5a736ee62d63"
+        "dbea45e8ca9671282fafb69da92728b1a71de0a9e060b2905d6a5b67ecd3b3692"
+        "ddbd7f2d778b8c9803aee328091b58fab324e4fad675945585808b4831d7bc3ff4"
+        "def08e4b7a9de576d26586cec64b61161ae10b594f09e26a7e902ecbd0600691"
+    )
+    rows = []
+    digest = lambda data: hashlib.blake2s(data).digest()
+    for present in (False, True):
+        initiator, responder = pattern(32, 17), pattern(32, 29)
+        ephemeral_i, ephemeral_r = pattern(32, 37), pattern(32, 43)
+        psk = pattern(32, 53) if present else bytes(32)
+        public_i, public_r = reference_dh(initiator, base), reference_dh(responder, base)
+        public_ei, public_er = reference_dh(ephemeral_i, base), reference_dh(ephemeral_r, base)
+        chain = digest(b"Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s")
+        transcript = digest(digest(chain + b"WireGuard v1 zx2c4 Jason@zx2c4.com") + public_r)
+        def mix(value, count):
+            nonlocal chain
+            output = expand(mac(chain, value), b"", count * 32)
+            chain = output[:32]
+            return [output[i:i+32] for i in range(0, len(output), 32)]
+        transcript = digest(transcript + public_ei)
+        mix(public_ei, 1)
+        key = mix(reference_dh(ephemeral_i, public_r), 2)[1]
+        identity = reference_aead(key, bytes(12), public_i, transcript)
+        transcript = digest(transcript + identity)
+        key = mix(reference_dh(initiator, public_r), 2)[1]
+        timestamp = (0x400000000000000a + 123).to_bytes(8, "big") + (456).to_bytes(4, "big")
+        encrypted_time = reference_aead(key, bytes(12), timestamp, transcript)
+        transcript = digest(transcript + encrypted_time)
+        initiation = bytes((1, 0, 0, 0)) + (17).to_bytes(4, "little") + public_ei + identity + encrypted_time
+        initiation += hashlib.blake2s(initiation, key=digest(b"mac1----" + public_r), digest_size=16).digest() + bytes(16)
+        initial_chain, initial_hash = chain, transcript
+        transcript = digest(transcript + public_er)
+        mix(public_er, 1)
+        mix(reference_dh(ephemeral_r, public_ei), 1)
+        mix(reference_dh(ephemeral_r, public_i), 1)
+        _, temp, key = mix(psk, 3)
+        transcript = digest(transcript + temp)
+        empty = reference_aead(key, bytes(12), b"", transcript)
+        response = bytes((2, 0, 0, 0)) + (31).to_bytes(4, "little") + (17).to_bytes(4, "little") + public_er + empty
+        response += hashlib.blake2s(response, key=digest(b"mac1----" + public_i), digest_size=16).digest() + bytes(16)
+        directional = expand(mac(chain, b""), b"", 64)
+        payload = b"reference proof!"  # exactly 16 bytes including exclamation.
+        payload += bytes((-len(payload)) % 16)
+        transport = bytes((4, 0, 0, 0)) + (31).to_bytes(4, "little") + bytes(8)
+        transport += reference_aead(directional[:32], bytes(12), payload)
+        rows.append({"initiator": initiator.hex(), "responder": responder.hex(),
+                     "ephemeral_i": ephemeral_i.hex(), "ephemeral_r": ephemeral_r.hex(),
+                     "psk": psk.hex(), "initiation": initiation.hex(), "response": response.hex(),
+                     "initial_chain": initial_chain.hex(), "initial_hash": initial_hash.hex(),
+                     "final_chain": chain.hex(), "transport": transport.hex()})
     return rows
 
 
@@ -118,7 +206,7 @@ def vectors():
                                     "info": info.hex(), "prk": prk.hex(), "size": length,
                                     "output": expand(prk, info, length).hex()})
     return {"schema": 1, "blake2s": hashes, "hmac": hmacs, "hkdf": derivations,
-            "wireguard": transport_vectors()}
+            "wireguard": transport_vectors(), "handshake": handshake_vectors()}
 
 
 def main():
@@ -130,7 +218,8 @@ def main():
         json.dump(data, stream, separators=(",", ":"))
     print("Generated independent std-only synthetic crypto vectors: "
           f"{len(data['blake2s'])} hashes, {len(data['hmac'])} HMACs, "
-          f"{len(data['hkdf'])} HKDFs, {len(data['wireguard'])} transport packets")
+          f"{len(data['hkdf'])} HKDFs, {len(data['wireguard'])} transport packets, "
+          f"{len(data['handshake'])} Noise handshakes")
 
 
 if __name__ == "__main__":
