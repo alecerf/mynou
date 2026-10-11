@@ -75,7 +75,7 @@ fn two_absolute_named_episodes_share_one_verified_pack_and_survive_restart() {
     let record = engine
         .track_series_with_policy(&request(), false, false, false)
         .unwrap();
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
     let pack = mapping(&torrent.magnet(seed.client.listen_port()), 2);
     let report = engine.submit_pack(id(&record), &pack).unwrap();
     assert_eq!(report.get("submitted"), Some(&Value::Number(2.0)));
@@ -115,12 +115,15 @@ fn two_absolute_named_episodes_share_one_verified_pack_and_survive_restart() {
     );
     let saved: Vec<_> = ids
         .iter()
-        .map(|id| lock(&engine.store).unwrap().get(id).unwrap())
+        .map(|id| lock(&engine.store).unwrap().get(id).unwrap().unwrap())
         .collect();
     drop(engine);
     let engine = Engine::open(cfg.clone()).unwrap();
     for job in saved {
-        assert_eq!(lock(&engine.store).unwrap().get(&job.id).unwrap(), job);
+        assert_eq!(
+            lock(&engine.store).unwrap().get(&job.id).unwrap().unwrap(),
+            job
+        );
     }
     let reused = engine.submit_pack(id(&record), &pack).unwrap();
     assert_eq!(reused.get("submitted"), Some(&Value::Number(0.0)));
@@ -167,6 +170,7 @@ fn mapped_episodes_import_from_a_partial_torrent_and_cancellation_retains_shared
         lock(&engine.store)
             .unwrap()
             .list()
+            .unwrap()
             .iter()
             .all(|job| job.download_id.is_some())
     });
@@ -178,7 +182,12 @@ fn mapped_episodes_import_from_a_partial_torrent_and_cancellation_retains_shared
         include_bytes!("../examples/demo.mp4")
     );
     assert_eq!(
-        lock(&engine.store).unwrap().get(&ids[0]).unwrap().state,
+        lock(&engine.store)
+            .unwrap()
+            .get(&ids[0])
+            .unwrap()
+            .unwrap()
+            .state,
         "cancelled"
     );
     let native = engine.transfer(&torrent.id).unwrap();
@@ -199,11 +208,21 @@ fn mapped_episodes_import_from_a_partial_torrent_and_cancellation_retains_shared
             .join("Pack/untouched.txt")
             .exists()
     );
-    assert_eq!(engine.library().unwrap().as_array().unwrap().len(), 1);
+    assert_eq!(
+        engine
+            .library(None, 200)
+            .unwrap()
+            .get("library")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
     drop(engine);
     proxy.wait_idle();
     let engine = Engine::open(cfg).unwrap();
-    let retained = lock(&engine.store).unwrap().get(&ids[1]).unwrap();
+    let retained = lock(&engine.store).unwrap().get(&ids[1]).unwrap().unwrap();
     assert_eq!(retained, imported);
     assert_eq!(engine.transfers().unwrap().as_array().unwrap().len(), 1);
 }
@@ -225,7 +244,16 @@ fn absent_mapped_file_never_falls_back_to_another_video() {
     let job = run_until(&engine, &jobs(&report)[0], "failed");
     assert!(job.imports.is_empty());
     assert!(job.last_error.unwrap().contains("absent or ambiguous"));
-    assert!(engine.library().unwrap().as_array().unwrap().is_empty());
+    assert!(
+        engine
+            .library(None, 200)
+            .unwrap()
+            .get("library")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
     engine.remap_pack(&job.id, "Pack/001.mp4".into()).unwrap();
     let repaired = run_until(&engine, &job.id, "ready");
     assert_eq!(repaired.download_id.as_deref(), Some(torrent.id.as_str()));
@@ -257,6 +285,7 @@ fn cancelling_one_pack_episode_keeps_another_shared_episode_download_active() {
         lock(&engine.store)
             .unwrap()
             .list()
+            .unwrap()
             .iter()
             .all(|job| job.download_id.is_some())
     });
@@ -264,12 +293,12 @@ fn cancelling_one_pack_episode_keeps_another_shared_episode_download_active() {
     proxy.payloads_enabled.store(true, Ordering::Release);
     let retained = run_until(&engine, &ids[1], "ready");
     assert_eq!(retained.download_id.as_deref(), Some(torrent.id.as_str()));
-    let cancelled = lock(&engine.store).unwrap().get(&ids[0]).unwrap();
+    let cancelled = lock(&engine.store).unwrap().get(&ids[0]).unwrap().unwrap();
     assert_eq!(cancelled.state, "cancelled");
     assert!(cancelled.imports.is_empty());
     assert!(engine.remap_pack(&ids[0], "Pack/002.mp4".into()).is_err());
     assert_eq!(
-        lock(&engine.store).unwrap().get(&ids[0]).unwrap(),
+        lock(&engine.store).unwrap().get(&ids[0]).unwrap().unwrap(),
         cancelled
     );
     assert_eq!(
@@ -303,7 +332,7 @@ fn unsafe_unknown_or_duplicate_mappings_are_rejected_before_any_job_is_recorded(
             engine.submit_pack(id(&record), &pack).is_err(),
             "Accepted {path}"
         );
-        assert!(lock(&engine.store).unwrap().list().is_empty());
+        assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
     }
     for duplicate_file in [false, true] {
         let mut pack = mapping("fixture.torrent", 2);
@@ -317,7 +346,7 @@ fn unsafe_unknown_or_duplicate_mappings_are_rejected_before_any_job_is_recorded(
     let mut pack = mapping("fixture.torrent", 2);
     pack.episodes[1].episode = 99;
     assert!(engine.submit_pack(id(&record), &pack).is_err());
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
 }
 
 #[test]
@@ -341,7 +370,7 @@ fn pack_plan_excludes_future_undated_and_unidentified_episodes() {
         pack.episodes[0].episode = number;
         assert!(engine.submit_pack(id(&record), &pack).is_err());
     }
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
 }
 
 #[test]
@@ -356,7 +385,7 @@ fn pack_mapping_is_immutable_idempotent_and_compatible_with_older_unmapped_jobs(
         .submit_pack(id(&record), &mapping("fixture.torrent", 1))
         .unwrap();
     let id = jobs(&report).remove(0);
-    let original = lock(&engine.store).unwrap().get(&id).unwrap();
+    let original = lock(&engine.store).unwrap().get(&id).unwrap().unwrap();
     let mut changed = original.clone();
     changed.pack_file = Some("Pack/different.mp4".into());
     assert!(lock(&engine.store).unwrap().update(changed).is_err());
@@ -367,7 +396,7 @@ fn pack_mapping_is_immutable_idempotent_and_compatible_with_older_unmapped_jobs(
             .submit_pack(series_support::id(&record), &conflict)
             .is_err()
     );
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 1);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 1);
     engine.cancel(&id).unwrap();
     assert_eq!(
         engine

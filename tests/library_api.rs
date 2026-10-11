@@ -174,6 +174,7 @@ fn library_routes_authenticate_before_reading_mutating_or_searching() {
         lock(&server.engine.store)
             .unwrap()
             .get(&original.id)
+            .unwrap()
             .unwrap(),
         original
     );
@@ -187,7 +188,7 @@ fn api_exposes_owned_entries_and_requires_explicit_application_of_upgrades() {
     let original = local_import(&server.engine, &directory.0, "Fixture Movie");
     let (status, library) = server.call("GET", "/api/library", Some(TOKEN), None);
     assert_eq!(status, 200);
-    let entry = &library.as_array().unwrap()[0];
+    let entry = &library.get("library").unwrap().as_array().unwrap()[0];
     assert_eq!(
         entry.get("id").and_then(Value::as_str),
         Some(original.id.as_str())
@@ -227,7 +228,7 @@ fn api_exposes_owned_entries_and_requires_explicit_application_of_upgrades() {
         Some("upgrade_available")
     );
     assert_eq!(files(&directory.0), before);
-    assert_eq!(lock(&server.engine.store).unwrap().list().len(), 1);
+    assert_eq!(lock(&server.engine.store).unwrap().list().unwrap().len(), 1);
     assert_redacted(&preview);
 
     let (status, applied) = server.call(
@@ -240,6 +241,7 @@ fn api_exposes_owned_entries_and_requires_explicit_application_of_upgrades() {
     assert_eq!(applied.get("queued").and_then(Value::as_u64), Some(1));
     assert_redacted(&applied);
     let (_, library) = server.call("GET", "/api/library", Some(TOKEN), None);
+    let library = library.get("library").unwrap();
     assert_eq!(library.as_array().unwrap().len(), 1);
     let pending = library.as_array().unwrap()[0]
         .get("pending_upgrade_id")
@@ -247,7 +249,11 @@ fn api_exposes_owned_entries_and_requires_explicit_application_of_upgrades() {
         .as_str()
         .unwrap();
     assert_ne!(pending, original.id);
-    let child = lock(&server.engine.store).unwrap().get(pending).unwrap();
+    let child = lock(&server.engine.store)
+        .unwrap()
+        .get(pending)
+        .unwrap()
+        .unwrap();
     assert_eq!(child.upgrade_parent.as_deref(), Some(original.id.as_str()));
     assert_eq!(child.state, "queued");
     assert_redacted(&library);
@@ -311,6 +317,7 @@ fn api_rejects_malformed_controls_without_modifying_state() {
         lock(&server.engine.store)
             .unwrap()
             .get(&original.id)
+            .unwrap()
             .unwrap(),
         original
     );
@@ -326,7 +333,10 @@ fn online_cli_uses_the_api_while_the_engine_owns_the_journal_lock() {
     server.write_cli_config(&directory.0, configuration);
     let before = files(&directory.0);
     let library = successful(command(&directory.0, &["library"]));
-    assert_eq!(library, server.engine.library().unwrap());
+    assert_eq!(
+        library,
+        server.engine.library(None, 200).unwrap(),
+    );
     assert_eq!(files(&directory.0), before);
     let baseline = successful(command(
         &directory.0,
@@ -353,7 +363,7 @@ fn online_cli_uses_the_api_while_the_engine_owns_the_journal_lock() {
     assert_eq!(files(&directory.0), before);
     let applied = successful(command(&directory.0, &["upgrades", "--apply"]));
     assert_eq!(applied.get("queued").and_then(Value::as_u64), Some(1));
-    assert_eq!(lock(&server.engine.store).unwrap().list().len(), 2);
+    assert_eq!(lock(&server.engine.store).unwrap().list().unwrap().len(), 2);
     for output in [
         &library,
         &baseline,
@@ -400,7 +410,11 @@ fn offline_cli_controls_persist_and_previews_leave_the_journal_unchanged() {
     assert_eq!(fs::read(&journal).unwrap(), before);
     assert_redacted(&preview);
     let engine = Engine::open(config::from_json(&configuration, &directory.0).unwrap()).unwrap();
-    let resumed = lock(&engine.store).unwrap().get(&original.id).unwrap();
+    let resumed = lock(&engine.store)
+        .unwrap()
+        .get(&original.id)
+        .unwrap()
+        .unwrap();
     assert!(resumed.monitored);
     assert_eq!(resumed.release.unwrap().title, BASELINE);
     assert_eq!(resumed.imports, original.imports);
@@ -522,7 +536,7 @@ fn relative_nested_config_keeps_library_controls_and_preview_on_the_same_store()
         &["library", "--config", "nested/mynou.json"],
     ));
     assert_eq!(
-        library.as_array().unwrap()[0]
+        library.get("library").unwrap().as_array().unwrap()[0]
             .get("id")
             .and_then(Value::as_str),
         Some(original.id.as_str())

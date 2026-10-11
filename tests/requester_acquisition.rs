@@ -104,7 +104,7 @@ fn opt_in_precedes_native_acquisition_and_captured_route_survives_edit_restart_a
     engine.sync_requesters().unwrap();
     assert!(!engine.tick().unwrap());
     assert!(provider.calls.lock().unwrap().is_empty());
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
     assert!(!cfg.downloads.data_dir.join(&torrent.id).exists());
     let mut p = policy(&engine, "alice");
     p.enabled = true;
@@ -142,6 +142,7 @@ fn opt_in_precedes_native_acquisition_and_captured_route_survives_edit_restart_a
         lock(&engine.store)
             .unwrap()
             .get(&acquired.id)
+            .unwrap()
             .unwrap()
             .requester,
         captured

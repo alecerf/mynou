@@ -189,7 +189,8 @@ impl Engine {
             origin.validate()?;
             if origin.series_id != id
                 || origin.series_revision != record.revision
-                || automatic::capture_scope(&record, &mut store, origin.season)?.id != origin.scope_id
+                || automatic::capture_scope(&record, &mut store, origin.season)?.id
+                    != origin.scope_id
             {
                 return Err("Pack catalog or request scope changed; acquisition discarded".into());
             }

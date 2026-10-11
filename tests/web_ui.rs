@@ -208,6 +208,7 @@ fn calls_and_subscriptions_use_the_existing_routes(server: &Server) {
     assert_eq!(
         reply
             .get("body")
+            .and_then(|body| body.get("jobs"))
             .and_then(json::Value::as_array)
             .map(<[_]>::len),
         Some(0)

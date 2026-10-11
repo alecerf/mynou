@@ -109,7 +109,7 @@ fn authenticated_group_routes_require_complete_scope_and_guarded_quality_decisio
     let reply = server.call("POST", &route, &auth, &json::stringify(&query.to_json()));
     assert_eq!(reply.status, 200, "{}", reply.body);
     no_sources(&json::parse(&reply.body).unwrap());
-    assert_eq!(lock(&server.engine.store).unwrap().list().len(), 4);
+    assert_eq!(lock(&server.engine.store).unwrap().list().unwrap().len(), 4);
     assert_eq!(
         server
             .call(
@@ -252,5 +252,5 @@ fn cli_offline_preview_preserves_state_and_service_apply_uses_the_same_guard() {
     ));
     no_sources(&created);
     assert_eq!(created.get("submitted"), Some(&Value::Number(2.0)));
-    assert_eq!(lock(&server.engine.store).unwrap().list().len(), 4);
+    assert_eq!(lock(&server.engine.store).unwrap().list().unwrap().len(), 4);
 }

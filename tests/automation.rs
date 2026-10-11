@@ -141,10 +141,15 @@ fn authenticated_api_import_dedup_events_and_restart() {
     let id = submit(&server, &request);
     assert_eq!(submit(&server, &request), id);
     let (_, jobs) = server.call("GET", "/api/jobs", Some(TOKEN), None);
-    assert_eq!(jobs.as_array().unwrap().len(), 1);
+    assert_eq!(jobs.get("jobs").unwrap().as_array().unwrap().len(), 1);
     assert!(server.engine.tick().unwrap());
     assert_eq!(
-        lock(&server.engine.store).unwrap().get(&id).unwrap().state,
+        lock(&server.engine.store)
+            .unwrap()
+            .get(&id)
+            .unwrap()
+            .unwrap()
+            .state,
         "imported"
     );
     assert!(server.engine.tick().unwrap());
@@ -201,6 +206,7 @@ fn native_torrent_cancel_and_retry_preserve_identity() {
         .unwrap()
         .get(&id)
         .unwrap()
+        .unwrap()
         .download_id
         .unwrap();
     assert_eq!(
@@ -222,7 +228,11 @@ fn native_torrent_cancel_and_retry_preserve_identity() {
     );
     assert!(server.engine.tick().unwrap());
     assert!(!pause.exists());
-    let job = lock(&server.engine.store).unwrap().get(&id).unwrap();
+    let job = lock(&server.engine.store)
+        .unwrap()
+        .get(&id)
+        .unwrap()
+        .unwrap();
     assert_eq!(job.download_id.as_deref(), Some(download_id.as_str()));
     assert_eq!(job.state, "downloading");
     assert_eq!(job.attempts, 0);
@@ -304,7 +314,13 @@ fn api_rejects_ambiguous_requests_and_non_json_media_types() {
         )
         .unwrap();
     assert_eq!(response.status, 415);
-    assert!(lock(&server.engine.store).unwrap().list().is_empty());
+    assert!(
+        lock(&server.engine.store)
+            .unwrap()
+            .list()
+            .unwrap()
+            .is_empty()
+    );
 }
 
 struct DelayedMetadata {
@@ -445,6 +461,7 @@ fn cancellation_during_metadata_fetch_pauses_native_transfer_and_survives_restar
             .unwrap()
             .get(&id)
             .unwrap()
+            .unwrap()
             .download_id
             .is_none()
     );
@@ -457,7 +474,11 @@ fn cancellation_during_metadata_fetch_pauses_native_transfer_and_survives_restar
     );
     metadata.release();
     assert!(tick.join().unwrap().unwrap());
-    let saved = lock(&server.engine.store).unwrap().get(&id).unwrap();
+    let saved = lock(&server.engine.store)
+        .unwrap()
+        .get(&id)
+        .unwrap()
+        .unwrap();
     assert_eq!(saved.state, "cancelled");
     assert_eq!(saved.download_id.as_deref(), Some(expected_id.as_str()));
     assert!(saved.lease_id.is_none());
@@ -478,7 +499,11 @@ fn cancellation_during_metadata_fetch_pauses_native_transfer_and_survives_restar
     // and writing the native pause marker. The journal is authoritative.
     fs::remove_file(&pause).unwrap();
     let restarted = Server::open(config);
-    let resumed = lock(&restarted.engine.store).unwrap().get(&id).unwrap();
+    let resumed = lock(&restarted.engine.store)
+        .unwrap()
+        .get(&id)
+        .unwrap()
+        .unwrap();
     assert_eq!(resumed.state, "cancelled");
     assert_eq!(resumed.download_id, saved.download_id);
     assert_eq!(fs::read(pause).unwrap(), b"paused\n");

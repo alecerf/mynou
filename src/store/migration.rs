@@ -239,7 +239,11 @@ fn migrate(
         write_backup(directory, &format!("snapshot.legacy-{tag}.bin"), snapshot)?;
     }
     if !files.journal.is_empty() {
-        write_backup(directory, &format!("journal.legacy-{tag}.bin"), &files.journal)?;
+        write_backup(
+            directory,
+            &format!("journal.legacy-{tag}.bin"),
+            &files.journal,
+        )?;
     }
     hook(Stage::BackupWritten)?;
 
@@ -461,10 +465,7 @@ impl Plan {
             }
         }
         if let Some(log) = self.events.get(id) {
-            out.insert(
-                layout::events_key(&raw),
-                Entry::File(encode_events(log)),
-            );
+            out.insert(layout::events_key(&raw), Entry::File(encode_events(log)));
             for event in log {
                 out.insert(layout::sequence_key(event.id), Entry::Inline(raw.to_vec()));
             }
@@ -622,10 +623,8 @@ fn write_backup(directory: &Path, name: &str, bytes: &[u8]) -> Result<()> {
 }
 
 fn replace_file(directory: &Path, target: &Path, bytes: &[u8]) -> Result<()> {
-    let temporary: PathBuf = directory.join(format!(
-        ".jobs-{}.tmp",
-        super::hex(&random_bytes::<16>()?)
-    ));
+    let temporary: PathBuf =
+        directory.join(format!(".jobs-{}.tmp", super::hex(&random_bytes::<16>()?)));
     let write = (|| -> Result<()> {
         let mut file = private_options()
             .write(true)

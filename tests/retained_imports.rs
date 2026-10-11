@@ -56,7 +56,7 @@ fn restarted_imports_fail_safely_with_plex_disabled_or_stale_indexed_paths() {
                 .remove(0)
                 .id;
             assert!(engine.tick().unwrap());
-            let imported = lock(&engine.store).unwrap().get(&id).unwrap();
+            let imported = lock(&engine.store).unwrap().get(&id).unwrap().unwrap();
             assert_eq!(imported.state, "imported");
             drop(engine);
             remove_or_replace(Path::new(&imported.imports[0]), &source, case);
@@ -73,7 +73,7 @@ fn restarted_imports_fail_safely_with_plex_disabled_or_stale_indexed_paths() {
             accounts.response("/library/sections/1/refresh", 200, Value::object());
             let engine = Engine::open(cfg.clone()).unwrap();
             assert!(engine.tick().unwrap());
-            let failed = lock(&engine.store).unwrap().get(&id).unwrap();
+            let failed = lock(&engine.store).unwrap().get(&id).unwrap().unwrap();
             assert_eq!(failed.state, "failed", "{case}, Plex {plex}");
             assert_eq!(failed.imports, imported.imports);
             assert_eq!(failed.files, imported.files);
@@ -87,7 +87,7 @@ fn restarted_imports_fail_safely_with_plex_disabled_or_stale_indexed_paths() {
             // Retry preserves the retained record and does not copy/reacquire.
             engine.retry(&id).unwrap();
             assert!(engine.tick().unwrap());
-            let failed_again = lock(&engine.store).unwrap().get(&id).unwrap();
+            let failed_again = lock(&engine.store).unwrap().get(&id).unwrap().unwrap();
             assert_eq!(failed_again.state, "failed");
             assert_eq!(failed_again.imports, imported.imports);
             drop(engine);
@@ -109,7 +109,12 @@ fn restarted_imports_fail_safely_with_plex_disabled_or_stale_indexed_paths() {
             engine.retry(&id).unwrap();
             assert!(engine.tick().unwrap());
             assert_eq!(
-                lock(&engine.store).unwrap().get(&id).unwrap().state,
+                lock(&engine.store)
+                    .unwrap()
+                    .get(&id)
+                    .unwrap()
+                    .unwrap()
+                    .state,
                 "ready"
             );
         }
@@ -184,7 +189,7 @@ fn captured_ready_reuse_requires_files_but_pending_sharing_remains_compatible() 
             assert_eq!(reused.get("job_id"), Some(&Value::Null));
             assert_eq!(reused.get("admitted_at"), Some(&Value::Null));
         }
-        assert_eq!(lock(&engine.store).unwrap().list().len(), 1);
+        assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 1);
     }
 }
 
@@ -206,7 +211,7 @@ fn resumed_operator_imports_cannot_escape_the_configured_destination() {
             .remove(0)
             .id;
         engine.tick().unwrap();
-        let mut imported = lock(&engine.store).unwrap().get(&id).unwrap();
+        let mut imported = lock(&engine.store).unwrap().get(&id).unwrap().unwrap();
         if case == "changed_root" {
             cfg.movies_root = directory.0.join("different-library");
         } else {
@@ -229,7 +234,7 @@ fn resumed_operator_imports_cannot_escape_the_configured_destination() {
         drop(engine);
         let engine = Engine::open_for_management(cfg).unwrap();
         engine.tick().unwrap();
-        let failed = lock(&engine.store).unwrap().get(&id).unwrap();
+        let failed = lock(&engine.store).unwrap().get(&id).unwrap().unwrap();
         assert_eq!(failed.state, "failed", "{case}");
         assert_eq!(failed.imports, imported.imports);
         assert!(library_ids(&engine).is_empty());
@@ -269,7 +274,11 @@ fn file_removed_during_plex_confirmation_never_produces_ready_outcomes() {
     accounts.response("/library/sections/1/refresh", 200, Value::object());
     *accounts.remove_on_request.lock().unwrap() = Some(("/library/sections/1/all".into(), path));
     assert!(engine.tick().unwrap());
-    let failed = lock(&engine.store).unwrap().get(&imported.id).unwrap();
+    let failed = lock(&engine.store)
+        .unwrap()
+        .get(&imported.id)
+        .unwrap()
+        .unwrap();
     assert_eq!(failed.state, "failed");
     assert_eq!(failed.imports, imported.imports);
     assert_eq!(
@@ -283,6 +292,7 @@ fn file_removed_during_plex_confirmation_never_produces_ready_outcomes() {
         lock(&engine.store)
             .unwrap()
             .events(&imported.id)
+            .unwrap()
             .iter()
             .all(|event| event.state != "ready")
     );
@@ -310,6 +320,7 @@ fn an_unsafe_retained_upgrade_does_not_replace_its_valid_parent() {
     let mut child = lock(&engine.store)
         .unwrap()
         .list()
+        .unwrap()
         .into_iter()
         .find(|job| job.upgrade_parent.as_deref() == Some(parent.id.as_str()))
         .unwrap();
@@ -321,7 +332,12 @@ fn an_unsafe_retained_upgrade_does_not_replace_its_valid_parent() {
     let engine = Engine::open(cfg).unwrap();
     engine.tick().unwrap();
     assert_eq!(
-        lock(&engine.store).unwrap().get(&child.id).unwrap().state,
+        lock(&engine.store)
+            .unwrap()
+            .get(&child.id)
+            .unwrap()
+            .unwrap()
+            .state,
         "failed"
     );
     assert_eq!(library_ids(&engine), [parent.id]);

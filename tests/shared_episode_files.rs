@@ -101,7 +101,7 @@ fn metadata_preview_is_read_only_and_sixty_four_owners_commit_in_one_verified_fr
     assert!(!cfg.series_root.exists());
     let result = apply(&engine, &series, &query);
     assert_eq!(result.get("submitted"), Some(&Value::Number(64.0)));
-    let saved = lock(&engine.store).unwrap().list();
+    let saved = lock(&engine.store).unwrap().list().unwrap();
     assert_eq!(saved.len(), 64);
     let binding = saved[0].shared_file.as_ref().unwrap();
     assert_eq!(binding.torrent_id, torrent.id);
@@ -115,11 +115,10 @@ fn metadata_preview_is_read_only_and_sixty_four_owners_commit_in_one_verified_fr
     assert_eq!(&bytes[..8], b"MYNOUJ02");
     let length = u32::from_le_bytes(bytes[16..20].try_into().unwrap()) as usize;
     assert_eq!(bytes.len(), length + 116);
-    assert_eq!(lock(&engine.store).unwrap().events("").len(), 1);
+    assert_eq!(lock(&engine.store).unwrap().events("").unwrap().len(), 1);
     drop(engine);
     let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    assert_eq!(lock(&engine.store).unwrap().list(), saved);
-    lock(&engine.store).unwrap().compact().unwrap();
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap(), saved);
     assert_eq!(
         &fs::read(cfg.store_dir.join("snapshot.bin")).unwrap()[..8],
         b"MYNOUS02"
@@ -127,7 +126,7 @@ fn metadata_preview_is_read_only_and_sixty_four_owners_commit_in_one_verified_fr
     drop(engine);
     let preview = Engine::open_for_preview(cfg.clone()).unwrap();
     let before = snapshot(&cfg.store_dir);
-    assert_eq!(lock(&preview.store).unwrap().list(), saved);
+    assert_eq!(lock(&preview.store).unwrap().list().unwrap(), saved);
     let report = preview.shared_file(&series, &query).unwrap();
     assert_eq!(report.get("new_owners"), Some(&Value::Number(0.0)));
     query.apply = true;
@@ -154,12 +153,12 @@ fn interrupted_group_frames_recover_all_or_none_and_complete_corruption_fails_cl
         let path = directory.0.join(format!("torn-{n}"));
         drop(Store::open(&path).unwrap());
         fs::write(path.join("journal.bin"), &original[..cut]).unwrap();
-        let store = Store::open(&path).unwrap();
+        let mut store = Store::open(&path).unwrap();
         assert!(
-            store.list().is_empty(),
+            store.list().unwrap().is_empty(),
             "Recovered part of a group at byte {cut}"
         );
-        assert!(store.events("").is_empty());
+        assert!(store.events("").unwrap().is_empty());
         assert_eq!(fs::metadata(path.join("journal.bin")).unwrap().len(), 0);
     }
     let mut corrupt = original;
@@ -190,7 +189,7 @@ fn subset_reuse_cannot_change_the_owner_range_or_reset_cancelled_requests() {
     assert_eq!(jobs(&subset), vec![ids[0].clone()]);
     assert_eq!(subset.get("submitted"), Some(&Value::Number(0.0)));
     assert_eq!(
-        lock(&engine.store).unwrap().get(&ids[0]).unwrap(),
+        lock(&engine.store).unwrap().get(&ids[0]).unwrap().unwrap(),
         cancelled
     );
     assert!(
@@ -211,7 +210,7 @@ fn subset_reuse_cannot_change_the_owner_range_or_reset_cancelled_requests() {
     let mut edited = cancelled;
     edited.shared_file.as_mut().unwrap().last_episode = 3;
     assert!(lock(&engine.store).unwrap().update(edited).is_err());
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 2);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 2);
 }
 
 #[test]
@@ -256,7 +255,7 @@ fn stale_source_metadata_and_policy_guards_record_no_owners() {
             .unwrap_err()
             .contains("preview changed")
     );
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
 }
 
 #[test]
@@ -295,7 +294,7 @@ fn bad_owner_catalogs_and_inputs_fail_before_metadata_io() {
             "Accepted {change}"
         );
     }
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
 }
 
 #[test]
@@ -315,7 +314,7 @@ fn simultaneous_workers_import_one_range_path_and_block_individual_upgrades() {
             workers.push(scope.spawn(|| {
                 let deadline = Instant::now() + Duration::from_secs(20);
                 loop {
-                    let all = lock(&engine.store).unwrap().list();
+                    let all = lock(&engine.store).unwrap().list().unwrap();
                     if all.iter().all(|j| j.state == "ready") {
                         break;
                     }
@@ -330,7 +329,7 @@ fn simultaneous_workers_import_one_range_path_and_block_individual_upgrades() {
             worker.join().unwrap();
         }
     });
-    let saved = lock(&engine.store).unwrap().list();
+    let saved = lock(&engine.store).unwrap().list().unwrap();
     assert_eq!(saved[0].imports, saved[1].imports);
     assert_eq!(saved[0].imports.len(), 1);
     {
@@ -354,7 +353,17 @@ fn simultaneous_workers_import_one_range_path_and_block_individual_upgrades() {
             .count(),
         1
     );
-    assert_eq!(engine.library().unwrap().as_array().unwrap().len(), 2);
+    assert_eq!(
+        engine
+            .library(None, 200)
+            .unwrap()
+            .get("library")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
     assert_eq!(engine.transfers().unwrap().as_array().unwrap().len(), 1);
     assert_eq!(
         engine.transfer(&torrent.id).unwrap().get("ready"),
@@ -402,7 +411,7 @@ fn simultaneous_workers_import_one_range_path_and_block_individual_upgrades() {
     );
     drop(engine);
     let engine = Engine::open(cfg).unwrap();
-    assert_eq!(lock(&engine.store).unwrap().list(), saved);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap(), saved);
 }
 
 #[test]
@@ -417,7 +426,7 @@ fn cancelling_the_first_claim_preserves_an_unclaimed_owner_across_restart_and_re
     let series = tracked(&engine);
     apply(&engine, &series, &query(&torrent.magnet(proxy.port)));
     engine.tick().unwrap();
-    let all = lock(&engine.store).unwrap().list();
+    let all = lock(&engine.store).unwrap().list().unwrap();
     let active = all.iter().find(|j| j.download_id.is_some()).unwrap();
     let other = all.iter().find(|j| j.id != active.id).unwrap();
     assert!(other.download_id.is_none());
@@ -444,10 +453,25 @@ fn cancelling_the_first_claim_preserves_an_unclaimed_owner_across_restart_and_re
     proxy.payloads_enabled.store(true, Ordering::Release);
     let ready = run_until(&engine, &other.id, "ready");
     assert_eq!(
-        lock(&engine.store).unwrap().get(&active.id).unwrap().state,
+        lock(&engine.store)
+            .unwrap()
+            .get(&active.id)
+            .unwrap()
+            .unwrap()
+            .state,
         "cancelled"
     );
-    assert_eq!(engine.library().unwrap().as_array().unwrap().len(), 1);
+    assert_eq!(
+        engine
+            .library(None, 200)
+            .unwrap()
+            .get("library")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
     engine.retry(&active.id).unwrap();
     let retried = run_until(&engine, &active.id, "ready");
     assert_eq!(ready.imports, retried.imports);
@@ -477,7 +501,7 @@ fn cancelling_the_last_unclaimed_owner_pauses_the_known_transfer_without_deletin
     let series = tracked(&engine);
     apply(&engine, &series, &query(&torrent.magnet(proxy.port)));
     engine.tick().unwrap();
-    let all = lock(&engine.store).unwrap().list();
+    let all = lock(&engine.store).unwrap().list().unwrap();
     let active = all.iter().find(|j| j.download_id.is_some()).unwrap();
     let unclaimed = all.iter().find(|j| j.id != active.id).unwrap();
     engine.cancel(&active.id).unwrap();
@@ -486,6 +510,7 @@ fn cancelling_the_last_unclaimed_owner_pauses_the_known_transfer_without_deletin
         lock(&engine.store)
             .unwrap()
             .list()
+            .unwrap()
             .iter()
             .all(|j| j.state == "cancelled")
     );
@@ -520,16 +545,24 @@ fn changed_source_after_acquisition_commit_never_creates_a_transfer_or_import() 
         lock(&engine.store)
             .unwrap()
             .list()
+            .unwrap()
             .iter()
             .all(|j| j.state == "failed")
     });
-    assert!(lock(&engine.store).unwrap().list().iter().all(|j| {
-        j.imports.is_empty()
-            && j.last_error
-                .as_deref()
-                .unwrap()
-                .contains("identity differs")
-    }));
+    assert!(
+        lock(&engine.store)
+            .unwrap()
+            .list()
+            .unwrap()
+            .iter()
+            .all(|j| {
+                j.imports.is_empty()
+                    && j.last_error
+                        .as_deref()
+                        .unwrap()
+                        .contains("identity differs")
+            })
+    );
     assert!(engine.transfers().unwrap().as_array().unwrap().is_empty());
     assert!(!cfg.series_root.exists());
 }
@@ -558,13 +591,14 @@ fn plex_confirms_the_same_exact_import_separately_for_each_canonical_owner() {
         .unwrap()
         .get(&ids[0])
         .unwrap()
+        .unwrap()
         .shared_file
         .unwrap();
     fs::create_dir_all(std::path::Path::new(&binding.import_path).parent().unwrap()).unwrap();
     fs::write(&binding.import_path, include_bytes!("../examples/demo.mp4")).unwrap();
     for id in &ids {
         let mut store = lock(&engine.store).unwrap();
-        let mut job = store.get(id).unwrap();
+        let mut job = store.get(id).unwrap().unwrap();
         job.imports = vec![binding.import_path.clone()];
         job.state = "imported".into();
         store.update(job).unwrap();
@@ -600,7 +634,7 @@ fn plex_confirms_the_same_exact_import_separately_for_each_canonical_owner() {
     );
     engine.tick().unwrap();
     engine.tick().unwrap();
-    let all = lock(&engine.store).unwrap().list();
+    let all = lock(&engine.store).unwrap().list().unwrap();
     assert_eq!(
         all.iter().find(|j| j.request.episode == 1).unwrap().state,
         "ready"
@@ -609,7 +643,17 @@ fn plex_confirms_the_same_exact_import_separately_for_each_canonical_owner() {
         all.iter().find(|j| j.request.episode == 2).unwrap().state,
         "scanning"
     );
-    assert_eq!(engine.library().unwrap().as_array().unwrap().len(), 1);
+    assert_eq!(
+        engine
+            .library(None, 200)
+            .unwrap()
+            .get("library")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
     plex.response(
         "/library/metadata/7/allLeaves",
         200,
@@ -619,6 +663,7 @@ fn plex_confirms_the_same_exact_import_separately_for_each_canonical_owner() {
         let mut store = lock(&engine.store).unwrap();
         let mut pending = store
             .list()
+            .unwrap()
             .into_iter()
             .find(|j| j.request.episode == 2)
             .unwrap();
@@ -630,10 +675,21 @@ fn plex_confirms_the_same_exact_import_separately_for_each_canonical_owner() {
         lock(&engine.store)
             .unwrap()
             .list()
+            .unwrap()
             .iter()
             .all(|j| j.state == "ready")
     );
-    assert_eq!(engine.library().unwrap().as_array().unwrap().len(), 2);
+    assert_eq!(
+        engine
+            .library(None, 200)
+            .unwrap()
+            .get("library")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
 }
 
 #[test]
@@ -659,7 +715,7 @@ fn an_active_group_lease_excludes_other_owners_and_recovery_keeps_the_binding() 
     let mut wrong = second.clone();
     wrong.imports = vec!["/elsewhere/wrong.mp4".into()];
     assert!(store.update(wrong).is_err());
-    assert_eq!(store.get(&second.id).unwrap(), second);
+    assert_eq!(store.get(&second.id).unwrap().unwrap(), second);
 }
 
 #[test]
@@ -682,7 +738,7 @@ fn restart_reuses_a_verified_shared_file_published_before_its_import_was_journal
     wait(|| {
         engine.transfer(&torrent.id).unwrap().get("selected_ready") == Some(&Value::Bool(true))
     });
-    let owners = lock(&engine.store).unwrap().list();
+    let owners = lock(&engine.store).unwrap().list().unwrap();
     assert!(owners.iter().all(|j| j.imports.is_empty()));
     let binding = owners[0].shared_file.as_ref().unwrap();
     let destination = std::path::Path::new(&binding.import_path);
@@ -704,6 +760,7 @@ fn restart_reuses_a_verified_shared_file_published_before_its_import_was_journal
         lock(&engine.store)
             .unwrap()
             .list()
+            .unwrap()
             .iter()
             .all(|j| j.imports == vec![binding.import_path.clone()])
     );
@@ -730,7 +787,7 @@ fn retained_shared_import_uses_its_binding_after_the_library_root_changes() {
         &series,
         &query(torrent.path.to_str().unwrap()),
     ));
-    let owners = lock(&engine.store).unwrap().list();
+    let owners = lock(&engine.store).unwrap().list().unwrap();
     let binding = owners[0].shared_file.as_ref().unwrap();
     let path = std::path::Path::new(&binding.import_path);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -786,7 +843,6 @@ fn signed_but_incomplete_ownership_is_rejected_in_both_journal_and_snapshot() {
     assert_eq!(fs::read(cfg.store_dir.join("journal.bin")).unwrap(), frame);
     fs::write(cfg.store_dir.join("journal.bin"), original).unwrap();
     let mut store = Store::open(&cfg.store_dir).unwrap();
-    store.compact().unwrap();
     drop(store);
     let bytes = fs::read(cfg.store_dir.join("snapshot.bin")).unwrap();
     let mut value =
@@ -849,5 +905,5 @@ fn missing_empty_nonconsecutive_or_independently_owned_files_never_create_shared
             .unwrap_err()
             .contains("unrelated episode request")
     );
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 1);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 1);
 }

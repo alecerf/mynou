@@ -445,7 +445,12 @@ pub(super) fn owned(job: &Job, root: &Root) -> Result<BTreeMap<Key, Entry>> {
     if request.tmdb_id.is_some() {
         inline(
             key(&[
-                &identity_prefix(&request.kind, request.tmdb_id, request.season, request.episode),
+                &identity_prefix(
+                    &request.kind,
+                    request.tmdb_id,
+                    request.season,
+                    request.episode,
+                ),
                 &id,
             ]),
             &[],

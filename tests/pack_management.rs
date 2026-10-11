@@ -34,7 +34,13 @@ fn bearer_pack_api_checks_entire_scope_and_redacts_source_urls() {
     assert_eq!(created.status, 201);
     let record = json::parse(&created.body).unwrap();
     assert_eq!(record.get("monitored"), Some(&Value::Bool(false)));
-    assert!(lock(&server.engine.store).unwrap().list().is_empty());
+    assert!(
+        lock(&server.engine.store)
+            .unwrap()
+            .list()
+            .unwrap()
+            .is_empty()
+    );
     let route = format!("/api/series/{}/packs", id(&record));
     let mut payload = Value::object();
     payload.insert("source_url", SOURCE);
@@ -53,7 +59,13 @@ fn bearer_pack_api_checks_entire_scope_and_redacts_source_urls() {
     );
     let bad = valid.replace("\"episode\":2", "\"episode\":99");
     assert_eq!(server.call("POST", &route, &headers, &bad).status, 400);
-    assert!(lock(&server.engine.store).unwrap().list().is_empty());
+    assert!(
+        lock(&server.engine.store)
+            .unwrap()
+            .list()
+            .unwrap()
+            .is_empty()
+    );
     let reply = server.call("POST", &route, &headers, &valid);
     assert_eq!(reply.status, 200, "{}", reply.body);
     assert!(!reply.body.contains(TOKEN));
@@ -81,7 +93,7 @@ fn bearer_pack_api_checks_entire_scope_and_redacts_source_urls() {
             .get("reused"),
         Some(&Value::Number(2.0))
     );
-    assert_eq!(lock(&server.engine.store).unwrap().list().len(), 2);
+    assert_eq!(lock(&server.engine.store).unwrap().list().unwrap().len(), 2);
 }
 
 #[test]
@@ -111,5 +123,5 @@ fn pack_source_key_collisions_between_series_are_rejected_without_partial_writes
             .unwrap_err()
             .contains("conflicts")
     );
-    assert_eq!(lock(&server.engine.store).unwrap().list().len(), 1);
+    assert_eq!(lock(&server.engine.store).unwrap().list().unwrap().len(), 1);
 }

@@ -57,7 +57,7 @@ fn ready(store: &mut Store, title: &str, url: Option<&str>) -> Job {
     // imports need not win root precedence to retain that provenance.
     job.release = Some(release("Example.2026.720p.WEB-DL.ENG"));
     store.update(job.clone()).unwrap();
-    store.get(&job.id).unwrap()
+    store.get(&job.id).unwrap().unwrap()
 }
 
 fn complete(store: &mut Store, mut job: Job) -> Job {
@@ -65,7 +65,7 @@ fn complete(store: &mut Store, mut job: Job) -> Job {
     job.progress = 1.0;
     job.imports = vec![format!("/library/{}.mkv", job.id)];
     store.update(job.clone()).unwrap();
-    store.get(&job.id).unwrap()
+    store.get(&job.id).unwrap().unwrap()
 }
 
 fn edit_snapshot(path: &Path, edit: impl FnOnce(&mut Value)) {
@@ -218,7 +218,11 @@ fn missing_import_baseline_can_be_recorded_once_and_survives_restart() {
     );
     drop(store);
     assert_eq!(
-        Store::open(&directory.0).unwrap().get(&job.id).unwrap(),
+        Store::open(&directory.0)
+            .unwrap()
+            .get(&job.id)
+            .unwrap()
+            .unwrap(),
         recorded
     );
 }
@@ -229,9 +233,7 @@ fn legacy_journal_and_snapshot_load_without_library_fields() {
         let directory = Directory::new();
         let mut store = Store::open(&directory.0).unwrap();
         let original = store.submit(request("Legacy", None)).unwrap();
-        if snapshot {
-            store.compact().unwrap();
-        }
+        if snapshot {}
         drop(store);
         if snapshot {
             edit_snapshot(&directory.0.join("snapshot.bin"), |value| {
@@ -245,8 +247,8 @@ fn legacy_journal_and_snapshot_load_without_library_fields() {
                 remove_library_fields(value.get_mut("job").unwrap());
             });
         }
-        let reopened = Store::open(&directory.0).unwrap();
-        assert_eq!(reopened.get(&original.id).unwrap(), original);
+        let mut reopened = Store::open(&directory.0).unwrap();
+        assert_eq!(reopened.get(&original.id).unwrap().unwrap(), original);
     }
 }
 
@@ -293,9 +295,9 @@ fn legacy_ready_cancellation_replays_without_weakening_current_cancellation_rule
         offset = end;
     }
     fs::write(journal, rewritten).unwrap();
-    let reopened = Store::open(&directory.0).unwrap();
-    assert_eq!(reopened.get(&job.id).unwrap().state, "cancelled");
-    assert!(reopened.library_jobs().is_empty());
+    let mut reopened = Store::open(&directory.0).unwrap();
+    assert_eq!(reopened.get(&job.id).unwrap().unwrap().state, "cancelled");
+    assert!(reopened.library_jobs().unwrap().is_empty());
 }
 
 #[test]
@@ -311,23 +313,22 @@ fn pending_upgrade_preserves_parent_and_ready_child_survives_compaction_and_rest
         )
         .unwrap();
     assert_eq!(child.upgrade_parent.as_deref(), Some(parent.id.as_str()));
-    assert_eq!(store.library_jobs(), vec![parent.clone()]);
+    assert_eq!(store.library_jobs().unwrap(), vec![parent.clone()]);
     drop(store);
     let mut store = Store::open(&directory.0).unwrap();
-    assert_eq!(store.library_jobs(), vec![parent.clone()]);
-    assert_eq!(store.get(&child.id).unwrap(), child);
+    assert_eq!(store.library_jobs().unwrap(), vec![parent.clone()]);
+    assert_eq!(store.get(&child.id).unwrap().unwrap(), child);
     let child = complete(&mut store, child);
-    assert_eq!(store.library_jobs(), vec![child.clone()]);
-    assert_eq!(store.get(&parent.id).unwrap(), parent);
+    assert_eq!(store.library_jobs().unwrap(), vec![child.clone()]);
+    assert_eq!(store.get(&parent.id).unwrap().unwrap(), parent);
     store.record_monitor_check(&child.id, 500).unwrap();
     store.record_monitor_check(&child.id, 400).unwrap();
     let child = store.set_monitored(&child.id, false).unwrap();
     assert_eq!(child.monitor_checked_at, 500);
-    store.compact().unwrap();
     drop(store);
-    let reopened = Store::open(&directory.0).unwrap();
-    assert_eq!(reopened.library_jobs(), vec![child]);
-    assert_eq!(reopened.get(&parent.id).unwrap(), parent);
+    let mut reopened = Store::open(&directory.0).unwrap();
+    assert_eq!(reopened.library_jobs().unwrap(), vec![child]);
+    assert_eq!(reopened.get(&parent.id).unwrap().unwrap(), parent);
 }
 
 #[test]
@@ -364,14 +365,14 @@ fn upgrade_source_deduplication_never_requeues_failed_or_cancelled_children() {
     failed.last_error = Some("test acquisition failure".into());
     failed.next_attempt_at = 0;
     store.update(failed).unwrap();
-    let failed = store.get(&child.id).unwrap();
+    let failed = store.get(&child.id).unwrap().unwrap();
     assert_eq!(
         store
             .submit_upgrade(&parent.id, request, candidate)
             .unwrap(),
         failed
     );
-    assert_eq!(store.library_jobs(), vec![parent]);
+    assert_eq!(store.library_jobs().unwrap(), vec![parent]);
 }
 
 #[test]
@@ -420,7 +421,7 @@ fn scheduled_failed_upgrade_blocks_competitors_and_retry_obeys_current_monitorin
             .set_baseline(&parent.id, release("Alternative"))
             .is_err()
     );
-    assert_eq!(store.library_jobs(), vec![replacement]);
+    assert_eq!(store.library_jobs().unwrap(), vec![replacement]);
 }
 
 #[test]
@@ -445,16 +446,15 @@ fn claimed_upgrade_inherits_monitoring_disabled_during_acquisition() {
     // This is the stale worker copy from before monitoring was disabled.
     assert!(claimed.monitored);
     store.update(claimed).unwrap();
-    let promoted = store.get(&child.id).unwrap();
+    let promoted = store.get(&child.id).unwrap().unwrap();
     assert!(!promoted.monitored);
-    assert_eq!(store.library_jobs(), vec![promoted.clone()]);
+    assert_eq!(store.library_jobs().unwrap(), vec![promoted.clone()]);
     drop(store);
     let mut reopened = Store::open(&directory.0).unwrap();
-    assert_eq!(reopened.library_jobs(), vec![promoted.clone()]);
-    reopened.compact().unwrap();
+    assert_eq!(reopened.library_jobs().unwrap(), vec![promoted.clone()]);
     drop(reopened);
     assert_eq!(
-        Store::open(&directory.0).unwrap().library_jobs(),
+        Store::open(&directory.0).unwrap().library_jobs().unwrap(),
         vec![promoted]
     );
 }
@@ -487,11 +487,11 @@ fn unrelated_root_cannot_obsolete_a_pending_upgrade() {
     );
     let error = store.update(unrelated.clone()).unwrap_err();
     assert!(error.contains("cancel the pending upgrade"));
-    assert_eq!(store.library_jobs(), vec![parent.clone()]);
-    assert_eq!(store.get(&unrelated.id).unwrap().state, "queued");
+    assert_eq!(store.library_jobs().unwrap(), vec![parent.clone()]);
+    assert_eq!(store.get(&unrelated.id).unwrap().unwrap().state, "queued");
     drop(store);
     let mut reopened = Store::open(&directory.0).unwrap();
-    assert_eq!(reopened.library_jobs(), vec![parent]);
+    assert_eq!(reopened.library_jobs().unwrap(), vec![parent]);
     reopened.cancel(&child.id).unwrap();
     reopened.check_ready_promotion(&unrelated).unwrap();
     reopened.update(unrelated).unwrap();
@@ -504,7 +504,6 @@ fn read_only_store_loads_verified_state_without_file_or_permission_changes() {
     let directory = Directory::new();
     let mut store = Store::open(&directory.0).unwrap();
     let parent = ready(&mut store, "Example", None);
-    store.compact().unwrap();
     let pending = store.submit(request("Queued", None)).unwrap();
     drop(store);
     fs::set_permissions(&directory.0, fs::Permissions::from_mode(0o750)).unwrap();
@@ -521,8 +520,8 @@ fn read_only_store_loads_verified_state_without_file_or_permission_changes() {
         })
         .collect();
     let mut read_only = Store::open_read_only(&directory.0).unwrap();
-    assert_eq!(read_only.library_jobs(), vec![parent]);
-    assert_eq!(read_only.get(&pending.id).unwrap(), pending);
+    assert_eq!(read_only.library_jobs().unwrap(), vec![parent]);
+    assert_eq!(read_only.get(&pending.id).unwrap().unwrap(), pending);
     assert!(
         Store::open_read_only(&directory.0).is_err(),
         "read-only loading still excludes concurrent writers"
@@ -533,7 +532,6 @@ fn read_only_store_loads_verified_state_without_file_or_permission_changes() {
             .unwrap_err()
             .contains("read-only")
     );
-    assert!(read_only.compact().unwrap_err().contains("read-only"));
     drop(read_only);
     assert_eq!(
         fs::metadata(&directory.0).unwrap().permissions().mode() & 0o777,
@@ -569,8 +567,8 @@ fn read_only_store_refuses_interrupted_tail_without_truncating_it() {
     let error = Store::open_read_only(&directory.0).err().unwrap();
     assert!(error.contains("recovery required"));
     assert_eq!(fs::read(&journal).unwrap(), interrupted);
-    let repaired = Store::open(&directory.0).unwrap();
-    assert_eq!(repaired.get(&job.id).unwrap(), job);
+    let mut repaired = Store::open(&directory.0).unwrap();
+    assert_eq!(repaired.get(&job.id).unwrap().unwrap(), job);
     assert_eq!(fs::read(journal).unwrap(), complete);
 }
 
@@ -731,8 +729,8 @@ fn automatic_retry_atomically_forgets_failed_search_provenance() {
     assert!(retried.files.is_empty());
     assert_eq!(retried.progress, 0.0);
     drop(store);
-    let reopened = Store::open(&directory.0).unwrap();
-    assert_eq!(reopened.get(&retried.id).unwrap(), retried);
+    let mut reopened = Store::open(&directory.0).unwrap();
+    assert_eq!(reopened.get(&retried.id).unwrap().unwrap(), retried);
 }
 
 #[test]
@@ -749,7 +747,6 @@ fn unrelated_ready_roots_use_creation_order_even_after_monitor_timestamp_changes
         "Example",
         Some("https://example.invalid/second.torrent"),
     );
-    store.compact().unwrap();
     drop(store);
     edit_snapshot(&directory.0.join("snapshot.bin"), |value| {
         let Value::Array(jobs) = value.get_mut("jobs").unwrap() else {
@@ -767,9 +764,9 @@ fn unrelated_ready_roots_use_creation_order_even_after_monitor_timestamp_changes
         }
     });
     let mut store = Store::open(&directory.0).unwrap();
-    assert_eq!(store.library_jobs()[0].id, second.id);
+    assert_eq!(store.library_jobs().unwrap()[0].id, second.id);
     store.record_monitor_check(&second.id, u64::MAX).unwrap();
-    assert_eq!(store.library_jobs()[0].id, second.id);
+    assert_eq!(store.library_jobs().unwrap()[0].id, second.id);
     assert!(store.record_monitor_check(&first.id, u64::MAX).is_err());
 }
 
@@ -787,7 +784,7 @@ fn unrelated_root_precedence_does_not_change_when_its_ready_child_has_a_lower_id
         "Example",
         Some("https://example.invalid/second.torrent"),
     );
-    let parent = store.library_jobs().remove(0);
+    let parent = store.library_jobs().unwrap().remove(0);
     let other = if parent.id == first.id { second } else { first };
     let child = store
         .submit_upgrade(
@@ -797,7 +794,6 @@ fn unrelated_root_precedence_does_not_change_when_its_ready_child_has_a_lower_id
         )
         .unwrap();
     let child = complete(&mut store, child);
-    store.compact().unwrap();
     drop(store);
     let parent_id = "ffffffffffffffffffffffffffffffff";
     let other_id = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
@@ -839,7 +835,7 @@ fn unrelated_root_precedence_does_not_change_when_its_ready_child_has_a_lower_id
         }
     });
     let mut reopened = Store::open(&directory.0).unwrap();
-    assert_eq!(reopened.library_jobs()[0].id, child_id);
+    assert_eq!(reopened.library_jobs().unwrap()[0].id, child_id);
     assert!(reopened.set_monitored(other_id, false).is_err());
     let grandchild = reopened
         .submit_upgrade(
@@ -852,11 +848,10 @@ fn unrelated_root_precedence_does_not_change_when_its_ready_child_has_a_lower_id
         )
         .unwrap();
     let grandchild = complete(&mut reopened, grandchild);
-    assert_eq!(reopened.library_jobs(), vec![grandchild.clone()]);
-    reopened.compact().unwrap();
+    assert_eq!(reopened.library_jobs().unwrap(), vec![grandchild.clone()]);
     drop(reopened);
     assert_eq!(
-        Store::open(&directory.0).unwrap().library_jobs(),
+        Store::open(&directory.0).unwrap().library_jobs().unwrap(),
         vec![grandchild]
     );
 }
@@ -879,7 +874,6 @@ fn verified_snapshot_rejects_missing_parent_cross_media_and_cycles() {
             )
             .unwrap();
         let child = complete(&mut store, child);
-        store.compact().unwrap();
         drop(store);
         edit_snapshot(&directory.0.join("snapshot.bin"), |value| {
             let Value::Array(jobs) = value.get_mut("jobs").unwrap() else {

@@ -97,7 +97,7 @@ pub fn rows(engine: &Engine) -> Vec<Value> {
         .to_vec()
 }
 pub fn no_jobs(engine: &Engine) {
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
 }
 pub fn bytes(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     fs::read_dir(root)

@@ -108,7 +108,11 @@ fn bearer_api_expands_shared_interests_without_undoing_pause_or_modifying_source
         Some(&Value::String("0".into()))
     );
     assert_eq!(fs::read(&torrent.path).unwrap(), metadata);
-    let retained = lock(&server.engine.store).unwrap().get(&job.id).unwrap();
+    let retained = lock(&server.engine.store)
+        .unwrap()
+        .get(&job.id)
+        .unwrap()
+        .unwrap();
     assert_eq!(retained.pack_file.as_deref(), Some("Controls/first.mp4"));
     assert!(retained.imports.is_empty());
 }

@@ -94,14 +94,20 @@ fn bearer_routes_reject_invalid_controls_before_io_and_apply_only_the_reviewed_b
     assert_eq!(reply.status, 200, "{}", reply.body);
     let preview = json::parse(&reply.body).unwrap();
     no_sources(&preview);
-    assert!(lock(&server.engine.store).unwrap().list().is_empty());
+    assert!(
+        lock(&server.engine.store)
+            .unwrap()
+            .list()
+            .unwrap()
+            .is_empty()
+    );
     let mut value = body(&source);
     value.insert("apply", true);
     value.insert("plan_id", preview.get("plan_id").unwrap().clone());
     let reply = server.call("POST", &route, &headers, &json::stringify(&value));
     assert_eq!(reply.status, 200, "{}", reply.body);
     no_sources(&json::parse(&reply.body).unwrap());
-    let owners = lock(&server.engine.store).unwrap().list();
+    let owners = lock(&server.engine.store).unwrap().list().unwrap();
     assert_eq!(owners.len(), 2);
     assert_eq!(owners[0].shared_file, owners[1].shared_file);
     assert!(
@@ -267,5 +273,5 @@ fn cli_offline_preview_preserves_storage_and_online_apply_requires_its_guard() {
     ));
     no_sources(&applied);
     assert_eq!(applied.get("submitted"), Some(&Value::Number(2.0)));
-    assert_eq!(lock(&server.engine.store).unwrap().list().len(), 2);
+    assert_eq!(lock(&server.engine.store).unwrap().list().unwrap().len(), 2);
 }

@@ -143,9 +143,7 @@ impl Engine {
 
     /// Establishes an explicit release-name baseline for a legacy owned import.
     pub fn set_baseline(&self, id: &str, title: &str) -> Result<Job> {
-        let job = lock(&self.store)?
-            .get(id)?
-            .ok_or("Unknown library entry")?;
+        let job = lock(&self.store)?.get(id)?.ok_or("Unknown library entry")?;
         let release = validate_baseline(&self.configuration_for(&job), &job, title)?;
         lock(&self.store)?.set_baseline(id, release)
     }

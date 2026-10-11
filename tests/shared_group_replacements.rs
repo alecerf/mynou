@@ -78,12 +78,12 @@ fn sixty_four_owners_receive_one_baseline_and_one_atomic_replacement_before_any_
     no_sources(&preview);
     assert_eq!(snapshot(&fixture.cfg.store_dir), before);
     assert_eq!(preview.get("owners"), Some(&Value::Number(64.0)));
-    let before_events = lock(&engine.store).unwrap().events("").len();
+    let before_events = lock(&engine.store).unwrap().events("").unwrap().len();
     baseline(&engine, &parents[0].id);
-    let store = lock(&engine.store).unwrap();
+    let mut store = lock(&engine.store).unwrap();
     let saved = store.shared_group(&parents[0].id).unwrap();
     assert!(saved.iter().all(|job| job.release == saved[0].release));
-    assert_eq!(store.events("").len(), before_events + 1);
+    assert_eq!(store.events("").unwrap().len(), before_events + 1);
     drop(store);
     let before = snapshot(&fixture.cfg.store_dir);
     let query = fixture.replacement_query();
@@ -94,14 +94,19 @@ fn sixty_four_owners_receive_one_baseline_and_one_atomic_replacement_before_any_
     assert_eq!(created.get("submitted"), Some(&Value::Number(64.0)));
     assert_eq!(library_ids(&engine).len(), 64);
     let children = ids(&created);
-    let store = lock(&engine.store).unwrap();
-    assert_eq!(store.list().len(), 128);
+    let mut store = lock(&engine.store).unwrap();
+    assert_eq!(store.list().unwrap().len(), 128);
     assert!(
         children
             .iter()
-            .all(|id| store.get(id).unwrap().state == "queued")
+            .all(|id| store.get(id).unwrap().unwrap().state == "queued")
     );
-    let lineage = store.get(&children[0]).unwrap().shared_upgrade.unwrap();
+    let lineage = store
+        .get(&children[0])
+        .unwrap()
+        .unwrap()
+        .shared_upgrade
+        .unwrap();
     assert_eq!(
         lineage.parent_jobs,
         saved.iter().map(|job| job.id.clone()).collect::<Vec<_>>()
@@ -110,8 +115,7 @@ fn sixty_four_owners_receive_one_baseline_and_one_atomic_replacement_before_any_
     drop(store);
     drop(engine);
     let mut store = Store::open(&fixture.cfg.store_dir).unwrap();
-    assert_eq!(store.list().len(), 128);
-    store.compact().unwrap();
+    assert_eq!(store.list().unwrap().len(), 128);
     drop(store);
     assert_eq!(
         &fs::read(fixture.cfg.store_dir.join("snapshot.bin")).unwrap()[..8],
@@ -121,6 +125,7 @@ fn sixty_four_owners_receive_one_baseline_and_one_atomic_replacement_before_any_
         Store::open_read_only(&fixture.cfg.store_dir)
             .unwrap()
             .list()
+            .unwrap()
             .len(),
         128
     );
@@ -144,9 +149,9 @@ fn torn_creation_never_exposes_a_subset_and_complete_corruption_is_not_repaired(
             &original[..at + cut],
         )
         .unwrap();
-        let store = Store::open(&fixture.cfg.store_dir).unwrap();
-        assert_eq!(store.list().len(), 3);
-        assert_eq!(store.library_jobs().len(), 3);
+        let mut store = Store::open(&fixture.cfg.store_dir).unwrap();
+        assert_eq!(store.list().unwrap().len(), 3);
+        assert_eq!(store.library_jobs().unwrap().len(), 3);
         drop(store);
         assert_eq!(
             fs::read(fixture.cfg.store_dir.join("journal.bin")).unwrap(),
@@ -163,7 +168,14 @@ fn torn_creation_never_exposes_a_subset_and_complete_corruption_is_not_repaired(
         corrupt
     );
     fs::write(fixture.cfg.store_dir.join("journal.bin"), original).unwrap();
-    assert_eq!(Store::open(&fixture.cfg.store_dir).unwrap().list().len(), 6);
+    assert_eq!(
+        Store::open(&fixture.cfg.store_dir)
+            .unwrap()
+            .list()
+            .unwrap()
+            .len(),
+        6
+    );
 }
 
 #[test]
@@ -188,6 +200,7 @@ fn every_owner_stages_before_one_atomic_promotion_and_restart_keeps_old_bytes() 
         assert_eq!(
             store
                 .library_jobs()
+                .unwrap()
                 .iter()
                 .map(|job| &job.id)
                 .collect::<std::collections::BTreeSet<_>>(),
@@ -197,14 +210,14 @@ fn every_owner_stages_before_one_atomic_promotion_and_restart_keeps_old_bytes() 
             children
                 .iter()
                 .take(63)
-                .all(|id| store.get(id).unwrap().state == "staged")
+                .all(|id| store.get(id).unwrap().unwrap().state == "staged")
         );
         assert!(store.claim(now(), 30).unwrap().is_some());
     }
     // Release the remaining owner's lease so the simulated final confirmation is current.
     {
         let mut store = lock(&engine.store).unwrap();
-        let job = store.get(children.last().unwrap()).unwrap();
+        let job = store.get(children.last().unwrap()).unwrap().unwrap();
         if let Some(lease) = job.lease_id {
             store.release_lease(&job.id, &lease).unwrap();
         }
@@ -223,11 +236,12 @@ fn every_owner_stages_before_one_atomic_promotion_and_restart_keeps_old_bytes() 
         assert!(
             children
                 .iter()
-                .all(|id| store.get(id).unwrap().state == "ready")
+                .all(|id| store.get(id).unwrap().unwrap().state == "ready")
         );
         assert!(
             store
                 .library_jobs()
+                .unwrap()
                 .iter()
                 .all(|job| children.contains(&job.id))
         );
@@ -245,16 +259,18 @@ fn every_owner_stages_before_one_atomic_promotion_and_restart_keeps_old_bytes() 
     )
     .unwrap();
     {
-        let store = Store::open(&fixture.cfg.store_dir).unwrap();
+        let mut store = Store::open(&fixture.cfg.store_dir).unwrap();
         assert!(
             store
                 .library_jobs()
+                .unwrap()
                 .iter()
                 .all(|job| parents.iter().any(|parent| parent.id == job.id))
         );
         assert!(
             store
                 .list()
+                .unwrap()
                 .iter()
                 .all(|job| job.shared_upgrade.is_none() || job.state != "ready")
         );
@@ -268,15 +284,16 @@ fn every_owner_stages_before_one_atomic_promotion_and_restart_keeps_old_bytes() 
     assert!(
         store
             .library_jobs()
+            .unwrap()
             .iter()
             .all(|job| children.contains(&job.id))
     );
-    store.compact().unwrap();
     drop(store);
     assert!(
         Store::open_read_only(&fixture.cfg.store_dir)
             .unwrap()
             .library_jobs()
+            .unwrap()
             .iter()
             .all(|job| children.contains(&job.id))
     );
@@ -311,7 +328,6 @@ fn signed_partial_group_creation_and_partial_ready_snapshot_are_rejected() {
     fs::write(fixture.cfg.store_dir.join("journal.bin"), &original).unwrap();
     let mut store = Store::open(&fixture.cfg.store_dir).unwrap();
     confirm(&mut store, &children[0], &fixture.replacement.files[0].1);
-    store.compact().unwrap();
     drop(store);
     let snapshot = fs::read(fixture.cfg.store_dir.join("snapshot.bin")).unwrap();
     let invalid = rewrite_snapshot(&snapshot, |value| {
@@ -350,7 +366,7 @@ fn lineage_mutation_single_baselines_and_individual_promotion_frames_fail_closed
     ));
     {
         let mut store = lock(&engine.store).unwrap();
-        let child = store.get(&children[0]).unwrap();
+        let child = store.get(&children[0]).unwrap().unwrap();
         let mut wrong = child.clone();
         wrong.shared_upgrade.as_mut().unwrap().parent_jobs.pop();
         assert!(store.update(wrong).is_err());
@@ -388,7 +404,7 @@ fn cancellation_covers_staged_owners_and_retry_rechecks_all_current_parents() {
     {
         let mut store = lock(&engine.store).unwrap();
         confirm(&mut store, &children[0], &fixture.replacement.files[0].1);
-        let mut last = store.get(&children[1]).unwrap();
+        let mut last = store.get(&children[1]).unwrap().unwrap();
         last.state = "failed".into();
         last.last_error = Some("Synthetic failure".into());
         store.update(last).unwrap();
@@ -399,13 +415,13 @@ fn cancellation_covers_staged_owners_and_retry_rechecks_all_current_parents() {
     assert!(engine.library_group(&parents[0].id, &query).is_err());
     engine.cancel(&children[1]).unwrap();
     {
-        let store = lock(&engine.store).unwrap();
+        let mut store = lock(&engine.store).unwrap();
         assert!(
             children
                 .iter()
-                .all(|id| store.get(id).unwrap().state == "cancelled")
+                .all(|id| store.get(id).unwrap().unwrap().state == "cancelled")
         );
-        assert_eq!(store.get(&children[0]).unwrap().imports.len(), 1);
+        assert_eq!(store.get(&children[0]).unwrap().unwrap().imports.len(), 1);
     }
     let other = ids(&apply(&engine, &parents[0].id, &query));
     assert!(engine.retry(&children[1]).is_err());
@@ -419,13 +435,14 @@ fn cancellation_covers_staged_owners_and_retry_rechecks_all_current_parents() {
         assert!(
             children
                 .iter()
-                .all(|id| store.get(id).unwrap().state == "queued")
+                .all(|id| store.get(id).unwrap().unwrap().state == "queued")
         );
         confirm(&mut store, &children[0], &fixture.replacement.files[0].1);
         confirm(&mut store, &children[1], &fixture.replacement.files[0].1);
         assert!(
             store
                 .library_jobs()
+                .unwrap()
                 .iter()
                 .all(|job| children.contains(&job.id))
         );
@@ -454,12 +471,12 @@ fn disabling_one_parent_pauses_claims_and_prevents_partial_promotion_until_reena
     {
         let mut store = lock(&engine.store).unwrap();
         assert!(store.claim(now(), 30).unwrap().is_none());
-        let mut last = store.get(&children[1]).unwrap();
+        let mut last = store.get(&children[1]).unwrap().unwrap();
         last.state = "ready".into();
         last.progress = 1.0;
-        last.imports = store.get(&children[0]).unwrap().imports;
+        last.imports = store.get(&children[0]).unwrap().unwrap().imports;
         assert!(store.update(last).is_err());
-        assert_eq!(store.get(&children[1]).unwrap().state, "queued");
+        assert_eq!(store.get(&children[1]).unwrap().unwrap().state, "queued");
     }
     assert!(
         library_ids(&engine)
@@ -473,6 +490,7 @@ fn disabling_one_parent_pauses_claims_and_prevents_partial_promotion_until_reena
         assert!(
             store
                 .library_jobs()
+                .unwrap()
                 .iter()
                 .all(|job| children.contains(&job.id))
         );
@@ -518,9 +536,9 @@ fn stale_group_guards_bind_monitoring_quality_exact_metadata_and_existing_replac
     assert!(
         ids(&reused)
             .iter()
-            .all(|id| lock(&engine.store).unwrap().get(id).unwrap().state == "cancelled")
+            .all(|id| lock(&engine.store).unwrap().get(id).unwrap().unwrap().state == "cancelled")
     );
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 4);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 4);
 }
 
 #[test]
@@ -560,7 +578,7 @@ fn partial_scope_wrong_titles_same_quality_cutoffs_and_bad_paths_never_acquire_p
             )
             .is_err()
     );
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 2);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 2);
 }
 
 #[test]
@@ -605,7 +623,7 @@ fn exact_range_release_labels_and_a_reached_cutoff_are_enforced_for_the_whole_gr
         query.release_title = title.into();
         assert!(engine.library_group(&parents[0].id, &query).is_ok());
     }
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 2);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 2);
     let directory = Directory::new();
     let fixture = Fixture::new(&directory, 2);
     let mut cfg = fixture.cfg.clone();
@@ -624,7 +642,7 @@ fn exact_range_release_labels_and_a_reached_cutoff_are_enforced_for_the_whole_gr
             .unwrap_err()
             .contains("cutoff")
     );
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 2);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 2);
 }
 
 #[test]

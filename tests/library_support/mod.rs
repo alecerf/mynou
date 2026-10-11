@@ -197,7 +197,7 @@ pub fn local_import(engine: &Arc<Engine>, directory: &Path, title: &str) -> Job 
 pub fn run_until(engine: &Arc<Engine>, id: &str, state: &str) -> Job {
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
-        let job = lock(&engine.store).unwrap().get(id).unwrap();
+        let job = lock(&engine.store).unwrap().get(id).unwrap().unwrap();
         if job.state == state {
             return job;
         }
@@ -216,6 +216,7 @@ pub fn library_ids(engine: &Engine) -> Vec<String> {
     lock(&engine.store)
         .unwrap()
         .library_jobs()
+        .unwrap()
         .into_iter()
         .map(|job| job.id)
         .collect()

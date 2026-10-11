@@ -66,13 +66,14 @@ impl Fixture {
             .unwrap()
             .get(&owners[0])
             .unwrap()
+            .unwrap()
             .shared_file
             .unwrap();
         fs::create_dir_all(Path::new(&binding.import_path).parent().unwrap()).unwrap();
         fs::write(&binding.import_path, &self.original.files[0].1).unwrap();
         let mut store = lock(&engine.store).unwrap();
         for owner in &owners {
-            let mut job = store.get(owner).unwrap();
+            let mut job = store.get(owner).unwrap().unwrap();
             job.state = "ready".into();
             job.progress = 1.0;
             job.imports = vec![binding.import_path.clone()];
@@ -144,7 +145,7 @@ pub fn ids(report: &Value) -> Vec<String> {
         .collect()
 }
 pub fn confirm(store: &mut Store, owner: &str, bytes: &[u8]) {
-    let mut job = store.get(owner).unwrap();
+    let mut job = store.get(owner).unwrap().unwrap();
     let destination = job.shared_file.as_ref().unwrap().import_path.clone();
     if !Path::new(&destination).exists() {
         fs::create_dir_all(Path::new(&destination).parent().unwrap()).unwrap();

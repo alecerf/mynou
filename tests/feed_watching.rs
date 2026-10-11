@@ -216,7 +216,7 @@ fn state_dir(dir: &Directory) -> PathBuf {
     dir.0.join("jobs")
 }
 fn stored(engine: &Engine, id: &str) -> Job {
-    lock(&engine.store).unwrap().get(id).unwrap()
+    lock(&engine.store).unwrap().get(id).unwrap().unwrap()
 }
 fn first(report: &Value) -> &Value {
     &report.get("sources").unwrap().as_array().unwrap()[0]
@@ -321,7 +321,7 @@ fn first_poll_baselines_and_later_polls_route_only_new_entries_to_existing_deman
         })
     );
     // Entries without matching demand never create requests.
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 1);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 1);
 
     let report = engine.feeds_poll(None, true).unwrap();
     let row = first(&report);
@@ -779,6 +779,7 @@ fn monitored_owned_media_takes_a_strictly_better_new_entry_once() {
     let children: Vec<_> = lock(&engine.store)
         .unwrap()
         .list()
+        .unwrap()
         .into_iter()
         .filter(|job| job.upgrade_parent.as_deref() == Some(original.id.as_str()))
         .collect();

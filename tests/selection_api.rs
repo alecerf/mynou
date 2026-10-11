@@ -491,7 +491,7 @@ fn authenticated_api_and_online_cli_preview_work_while_the_engine_journal_is_loc
     )
     .unwrap();
     let before = files(&directory.0);
-    let store = lock(&server.engine.store).unwrap();
+    let mut store = lock(&server.engine.store).unwrap();
     let (status, profiles) = server.call("GET", "/api/profiles", Some(TOKEN), None);
     assert_eq!(status, 200);
     assert_eq!(profiles, server.engine.config.selection.to_json());
@@ -516,7 +516,7 @@ fn authenticated_api_and_online_cli_preview_work_while_the_engine_journal_is_loc
     assert_eq!(online, report);
     assert_eq!(indexer.requests.load(Ordering::Relaxed), 2);
     assert_eq!(failed.requests.load(Ordering::Relaxed), 2);
-    assert!(store.list().is_empty());
+    assert!(store.list().unwrap().is_empty());
     assert_eq!(files(&directory.0), before);
 }
 
@@ -542,7 +542,13 @@ fn preview_api_requires_authentication_before_accessing_profiles_or_indexers() {
         );
     }
     assert_eq!(indexer.requests.load(Ordering::Relaxed), 0);
-    assert!(lock(&server.engine.store).unwrap().list().is_empty());
+    assert!(
+        lock(&server.engine.store)
+            .unwrap()
+            .list()
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(files(&directory.0), before);
 }
 
@@ -645,7 +651,13 @@ fn api_manual_override_preview_preserves_privacy_without_submitting_or_searching
     );
     assert_redacted(&report);
     assert_eq!(indexer.requests.load(Ordering::Relaxed), 0);
-    assert!(lock(&server.engine.store).unwrap().list().is_empty());
+    assert!(
+        lock(&server.engine.store)
+            .unwrap()
+            .list()
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(files(&directory.0), before);
 }
 
@@ -681,6 +693,12 @@ fn invalid_authenticated_search_requests_fail_before_indexer_access_or_journal_w
         assert_redacted(&error);
     }
     assert_eq!(indexer.requests.load(Ordering::Relaxed), 0);
-    assert!(lock(&server.engine.store).unwrap().list().is_empty());
+    assert!(
+        lock(&server.engine.store)
+            .unwrap()
+            .list()
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(files(&directory.0), before);
 }

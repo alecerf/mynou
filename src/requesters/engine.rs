@@ -280,7 +280,12 @@ impl Engine {
         // bounded by its own snapshot limit).
         let mut linked = Vec::new();
         for demand in ledger.state.demands.values().filter(|d| d.account_id == id) {
-            if let Some(job) = demand.job_id.as_deref().map(|job| jobs.get(job)).transpose()? {
+            if let Some(job) = demand
+                .job_id
+                .as_deref()
+                .map(|job| jobs.get(job))
+                .transpose()?
+            {
                 linked.push(job.map_or(Value::Null, |job| job.to_json()));
             }
         }

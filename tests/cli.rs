@@ -123,7 +123,7 @@ fn cli_init_analyze_offline_management_and_no_overwrite() {
         .as_str()
         .unwrap();
     let jobs = parse(command(&directory.0, &["jobs"]));
-    assert_eq!(jobs.as_array().unwrap().len(), 1);
+    assert_eq!(jobs.get("jobs").unwrap().as_array().unwrap().len(), 1);
     assert_eq!(
         parse(command(&directory.0, &["show", id]))
             .get("state")
@@ -217,6 +217,8 @@ fn cli_routes_to_running_api_while_store_is_locked() {
             .unwrap();
         assert_eq!(
             parse(command(&directory.0, &["jobs"]))
+                .get("jobs")
+                .unwrap()
                 .as_array()
                 .unwrap()
                 .len(),

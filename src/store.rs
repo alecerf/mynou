@@ -29,8 +29,8 @@ mod ops;
 mod rules;
 #[cfg(test)]
 mod tests;
-use groups::{GroupAction, GroupState, group_format};
 pub use groups::SharedUpgrade;
+use groups::{GroupAction, GroupState, group_format};
 pub use migration::MigrationReport;
 
 /// Events kept per job (a per-record bound); the total is not limited.
@@ -744,7 +744,6 @@ fn create_private_directory(path: &Path) -> Result<()> {
     )
 }
 
-
 /// Reads other jobs by identifier. Implemented over a legacy snapshot held in
 /// memory and over the index, so lineage rules are written once.
 pub(crate) trait JobLookup {
@@ -759,7 +758,8 @@ use ops::{Db, cursor_text, parse_cursor};
 /// Jobs examined by one claim attempt. Work per attempt is bounded by this,
 /// not by how many jobs are open; a rotating cursor reaches the rest.
 const CLAIM_SCAN: usize = 256;
-const UNMIGRATED: &str = "Job storage has not been migrated; start the service or any command with write access once";
+const UNMIGRATED: &str =
+    "Job storage has not been migrated; start the service or any command with write access once";
 
 pub(crate) enum Backend {
     /// Nothing has ever been stored (a read-only open of an empty directory).
@@ -1028,9 +1028,8 @@ impl Store {
         }
         let after = after
             .map(|text| {
-                parse_cursor(text).map(|(created, id)| {
-                    layout::key(&[&[table], &(!created).to_be_bytes(), &id])
-                })
+                parse_cursor(text)
+                    .map(|(created, id)| layout::key(&[&[table], &(!created).to_be_bytes(), &id]))
             })
             .transpose()?;
         let empty = JobPage {
@@ -1104,7 +1103,11 @@ impl Store {
 
     /// Events of every job in sequence order after `after` (exclusive), at most
     /// `limit`, with the sequence to continue from when more remain.
-    pub fn event_feed(&mut self, after: Option<u64>, limit: usize) -> Result<(Vec<Event>, Option<u64>)> {
+    pub fn event_feed(
+        &mut self,
+        after: Option<u64>,
+        limit: usize,
+    ) -> Result<(Vec<Event>, Option<u64>)> {
         self.read((Vec::new(), None), |db| {
             let mut events = Vec::new();
             let mut cursor = after.map(layout::sequence_key);
@@ -1142,7 +1145,10 @@ impl Store {
             for key in keys {
                 let mut chosen: Option<Job> = None;
                 for job in db.media_jobs(key, MAX_PAGE_ROWS)? {
-                    if chosen.as_ref().is_none_or(|current| current.state != "ready") {
+                    if chosen
+                        .as_ref()
+                        .is_none_or(|current| current.state != "ready")
+                    {
                         chosen = Some(job);
                     }
                 }
@@ -1170,7 +1176,7 @@ impl Store {
     }
 
     /// Jobs that depend on a transfer through any binding.
-    pub(crate) fn transfer_jobs(&mut self, transfer: &str) -> Result<Vec<Job>> {
+    pub fn transfer_jobs(&mut self, transfer: &str) -> Result<Vec<Job>> {
         self.read(Vec::new(), |db| db.transfer_jobs(transfer, MAX_PAGE_ROWS))
     }
 
@@ -1188,7 +1194,9 @@ impl Store {
         let mut shared = false;
         if let Some(download) = &job.download_id {
             shared |= self.transfer_jobs(download)?.iter().any(|other| {
-                other.id != job.id && other.state != "cancelled" && other.download_id == job.download_id
+                other.id != job.id
+                    && other.state != "cancelled"
+                    && other.download_id == job.download_id
             });
         }
         if let Some(file) = &job.shared_file {
@@ -1309,10 +1317,11 @@ impl Store {
     pub(crate) fn sweep_requester_jobs(&mut self, limit: usize) -> Result<(Vec<Job>, bool)> {
         let after = self.sweep_cursor;
         let (jobs, next) = self.requester_open_page(after, limit)?;
-        self.sweep_cursor = next.and(
-            jobs.last()
-                .and_then(|job| layout::id_bytes(&job.id).ok().map(|id| layout::requester_key(job.created_at, &id))),
-        );
+        self.sweep_cursor = next.and(jobs.last().and_then(|job| {
+            layout::id_bytes(&job.id)
+                .ok()
+                .map(|id| layout::requester_key(job.created_at, &id))
+        }));
         Ok((jobs, next.is_none()))
     }
 
@@ -1660,7 +1669,9 @@ impl Store {
                             && (job.request.source_url == request.source_url
                                 || job.download_id.as_deref() == Some(file.torrent_id.as_str()))
                         {
-                            return Err("Physical video is already mapped without shared ownership".into());
+                            return Err(
+                                "Physical video is already mapped without shared ownership".into(),
+                            );
                         }
                     }
                 }
@@ -1821,8 +1832,7 @@ impl Store {
             if current.lease_id != job.lease_id {
                 return Err("stale processing lease".to_owned());
             }
-            if matches!(current.state.as_str(), "ready" | "cancelled")
-                && current.state != job.state
+            if matches!(current.state.as_str(), "ready" | "cancelled") && current.state != job.state
             {
                 return Err("a completed job cannot be modified by a worker".to_owned());
             }
@@ -1881,7 +1891,10 @@ impl Store {
             db.promote(at)?;
             let mut examined = 0;
             loop {
-                let (keys, more) = db.due(cursor, CLAIM_SCAN.saturating_sub(examined).min(MAX_PAGE_ROWS))?;
+                let (keys, more) = db.due(
+                    cursor,
+                    CLAIM_SCAN.saturating_sub(examined).min(MAX_PAGE_ROWS),
+                )?;
                 for found in &keys {
                     examined += 1;
                     let id: [u8; 16] = ops::key_part(found, 9)?;
@@ -2092,21 +2105,24 @@ impl JobLookup for Store {
 
 impl Db<'_> {
     /// Whether a queued job may run now, under the rules the claim applies.
-    fn claimable(
-        &mut self,
-        job: &Job,
-        at: u64,
-        eligible: &impl Fn(&Job) -> bool,
-    ) -> Result<bool> {
+    fn claimable(&mut self, job: &Job, at: u64, eligible: &impl Fn(&Job) -> bool) -> Result<bool> {
         if !layout::open(job) || layout::wake(job) > at || !eligible(job) {
             return Ok(false);
         }
         if let Some(file) = &job.shared_file {
             let group = layout::short("group", &[&file.id()]);
-            for found in self.all_keys(&[&[layout::T_GROUP][..], &group].concat())? {
-                let member = self.require(&ops::key_part(&found, 17)?)?;
-                if member.lease_id.is_some() && member.lease_until > at {
-                    return Ok(false);
+            let mut after = None;
+            loop {
+                let page = self.scan(&[&[layout::T_GROUP][..], &group].concat(), after, MAX_PAGE_ROWS)?;
+                for (_, value) in &page.entries {
+                    let member = self.require(&ops::array(value)?)?;
+                    if member.lease_id.is_some() && member.lease_until > at {
+                        return Ok(false);
+                    }
+                }
+                after = page.next;
+                if after.is_none() {
+                    break;
                 }
             }
         }

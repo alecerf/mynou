@@ -78,7 +78,13 @@ fn bearer_pack_routes_validate_before_network_io_and_keep_origin_private_data_re
         assert_eq!(reply.status, 400, "{}", reply.body);
     }
     assert_eq!(provider.calls.lock().unwrap().len(), before);
-    assert!(lock(&server.engine.store).unwrap().list().is_empty());
+    assert!(
+        lock(&server.engine.store)
+            .unwrap()
+            .list()
+            .unwrap()
+            .is_empty()
+    );
     let response = server.call("POST", &route, &headers, r#"{"season":1}"#);
     assert_eq!(response.status, 200, "{}", response.body);
     let report = json::parse(&response.body).unwrap();
@@ -95,7 +101,7 @@ fn bearer_pack_routes_validate_before_network_io_and_keep_origin_private_data_re
     assert_eq!(response.status, 200, "{}", response.body);
     let applied = json::parse(&response.body).unwrap();
     no_sources(&applied);
-    let jobs = lock(&server.engine.store).unwrap().list();
+    let jobs = lock(&server.engine.store).unwrap().list().unwrap();
     assert_eq!(jobs.len(), 2);
     assert!(
         jobs.iter()

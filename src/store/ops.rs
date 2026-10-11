@@ -99,7 +99,10 @@ pub(super) fn parse_cursor(text: &str) -> Result<(u64, [u8; 16])> {
         return Err(invalid());
     }
     let (created, id) = text.split_at(16);
-    if !created.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+    if !created
+        .bytes()
+        .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    {
         return Err(invalid());
     }
     let created = u64::from_str_radix(created, 16).map_err(|_| invalid())?;
@@ -363,9 +366,7 @@ impl Db<'_> {
             let id = id_bytes(&job.id)?;
             let previous = self.job(&id)?;
             let root = match &previous {
-                Some(_) => self
-                    .root(&id)?
-                    .ok_or("Job lineage entry is missing")?,
+                Some(_) => self.root(&id)?.ok_or("Job lineage entry is missing")?,
                 None => match &job.upgrade_parent {
                     Some(parent) => self
                         .root(&id_bytes(parent)?)?
@@ -457,10 +458,7 @@ impl Db<'_> {
             let dropped = log.remove(0);
             staged.insert(sequence_key(dropped.id), None);
         }
-        staged.insert(
-            events_key(&id),
-            Some(Entry::File(encode_events(&log))),
-        );
+        staged.insert(events_key(&id), Some(Entry::File(encode_events(&log))));
         staged.insert(sequence_key(event.id), Some(Entry::Inline(id.to_vec())));
         Ok(())
     }
@@ -527,7 +525,10 @@ impl Db<'_> {
             }
             let after_tip = candidates.iter().next_back().map(|(_, value)| *value);
             let holder = |value: &[u8; 24]| -> Result<([u8; 16], u64)> {
-                Ok((array(&value[..16])?, u64::from_be_bytes(array(&value[16..])?)))
+                Ok((
+                    array(&value[..16])?,
+                    u64::from_be_bytes(array(&value[16..])?),
+                ))
             };
             let before = before.as_ref().map(holder).transpose()?;
             let after_tip = after_tip.as_ref().map(holder).transpose()?;
@@ -610,7 +611,11 @@ impl Db<'_> {
 /// Counter changes one job transition causes.
 fn adjust(mut counts: Counts, pair: &Pair) -> Result<Counts> {
     let underflow = || "Job index counters disagree with its records".to_owned();
-    let add = |value: u64| value.checked_add(1).ok_or("Job counter overflow".to_owned());
+    let add = |value: u64| {
+        value
+            .checked_add(1)
+            .ok_or("Job counter overflow".to_owned())
+    };
     let sub = |value: u64| value.checked_sub(1).ok_or_else(underflow);
     if let Some(previous) = &pair.previous {
         if !terminal(&previous.state) {

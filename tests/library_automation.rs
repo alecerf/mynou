@@ -30,6 +30,7 @@ fn children(engine: &Engine, parent: &str) -> Vec<mynou::store::Job> {
     lock(&engine.store)
         .unwrap()
         .list()
+        .unwrap()
         .into_iter()
         .filter(|job| job.upgrade_parent.as_deref() == Some(parent))
         .collect()
@@ -50,7 +51,7 @@ fn preview_is_read_only_and_application_is_idempotent_without_hiding_the_import(
     let original = engine.set_baseline(&original.id, BASELINE).unwrap();
     assert_eq!(original.release.as_ref().unwrap().profile, "fixture");
     let before = files(&directory.0);
-    let events = lock(&engine.store).unwrap().events(&original.id);
+    let events = lock(&engine.store).unwrap().events(&original.id).unwrap();
     let first = engine.check_upgrades(false).unwrap();
     assert_eq!(first.get("apply"), Some(&Value::Bool(false)));
     assert_eq!(queued(&first), 0);
@@ -58,7 +59,10 @@ fn preview_is_read_only_and_application_is_idempotent_without_hiding_the_import(
     assert_eq!(engine.check_upgrades(false).unwrap(), first);
     assert_redacted(&first);
     assert_eq!(files(&directory.0), before);
-    assert_eq!(lock(&engine.store).unwrap().events(&original.id), events);
+    assert_eq!(
+        lock(&engine.store).unwrap().events(&original.id).unwrap(),
+        events
+    );
     assert!(children(&engine, &original.id).is_empty());
     assert_eq!(
         library_ids(&engine).as_slice(),
@@ -166,7 +170,11 @@ fn cutoffs_and_unmonitoring_skip_searches_and_survive_restart() {
     let cfg = engine.config.clone();
     drop(engine);
     let resumed = Engine::open(cfg).unwrap();
-    let second = lock(&resumed.store).unwrap().get(&second.id).unwrap();
+    let second = lock(&resumed.store)
+        .unwrap()
+        .get(&second.id)
+        .unwrap()
+        .unwrap();
     assert!(!second.monitored);
     assert!(second.release.is_some());
     assert_eq!(queued(&resumed.check_upgrades(true).unwrap()), 0);
@@ -227,6 +235,7 @@ fn cancelled_and_failed_upgrades_leave_the_existing_file_current() {
             .unwrap()
             .get(&cancelled.id)
             .unwrap()
+            .unwrap()
             .state,
         "cancelled"
     );
@@ -246,7 +255,11 @@ fn cancelled_and_failed_upgrades_leave_the_existing_file_current() {
         .find(|job| job.state == "queued")
         .unwrap();
     engine.tick().unwrap();
-    let failed = lock(&engine.store).unwrap().get(&failed.id).unwrap();
+    let failed = lock(&engine.store)
+        .unwrap()
+        .get(&failed.id)
+        .unwrap()
+        .unwrap();
     assert_eq!(failed.state, "failed");
     assert_eq!(failed.next_attempt_at, 0);
     assert_eq!(library_ids(&engine), [original.id]);
@@ -328,7 +341,12 @@ fn missing_owned_imports_are_reported_without_searching_or_acquiring() {
     let original = local_import(&engine, &directory.0, "Fixture Movie");
     engine.set_baseline(&original.id, BASELINE).unwrap();
     fs::remove_file(&original.imports[0]).unwrap();
-    let library = engine.library().unwrap();
+    let library = engine
+        .library(None, 200)
+        .unwrap()
+        .get("library")
+        .unwrap()
+        .clone();
     assert_eq!(
         library.as_array().unwrap()[0].get("imports_present"),
         Some(&Value::Bool(false))
@@ -360,7 +378,11 @@ fn unmonitoring_a_parent_prevents_its_queued_child_from_being_claimed() {
     let child = children(&engine, &original.id).remove(0);
     engine.set_monitored(&original.id, false).unwrap();
     assert!(!engine.tick().unwrap());
-    let pending = lock(&engine.store).unwrap().get(&child.id).unwrap();
+    let pending = lock(&engine.store)
+        .unwrap()
+        .get(&child.id)
+        .unwrap()
+        .unwrap();
     assert_eq!(pending.state, "queued");
     assert!(pending.download_id.is_none());
     assert_eq!(
@@ -370,7 +392,12 @@ fn unmonitoring_a_parent_prevents_its_queued_child_from_being_claimed() {
     engine.set_monitored(&original.id, true).unwrap();
     assert!(engine.tick().unwrap());
     assert_eq!(
-        lock(&engine.store).unwrap().get(&child.id).unwrap().state,
+        lock(&engine.store)
+            .unwrap()
+            .get(&child.id)
+            .unwrap()
+            .unwrap()
+            .state,
         "failed"
     );
     assert_eq!(library_ids(&engine), [original.id]);
@@ -392,7 +419,11 @@ fn enabled_background_monitoring_records_a_check_and_respects_the_polling_interv
     let workers = engine.start();
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
-        let job = lock(&engine.store).unwrap().get(&original.id).unwrap();
+        let job = lock(&engine.store)
+            .unwrap()
+            .get(&original.id)
+            .unwrap()
+            .unwrap();
         if job.monitor_checked_at > 0 && indexer.calls.load(Ordering::Relaxed) == 1 {
             break;
         }
@@ -404,7 +435,7 @@ fn enabled_background_monitoring_records_a_check_and_respects_the_polling_interv
     }
     thread::sleep(Duration::from_millis(250));
     assert_eq!(indexer.calls.load(Ordering::Relaxed), 1);
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 1);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 1);
     drop(workers);
     assert!(lock(&engine.last_upgrade_error).unwrap().is_none());
 }
@@ -545,7 +576,12 @@ fn native_upgrade_imports_a_distinct_version_and_retains_both_files_after_restar
     );
     assert!(engine.set_monitored(&original.id, false).is_err());
     assert_eq!(queued(&engine.check_upgrades(true).unwrap()), 0);
-    let library = engine.library().unwrap();
+    let library = engine
+        .library(None, 200)
+        .unwrap()
+        .get("library")
+        .unwrap()
+        .clone();
     assert_eq!(library.as_array().unwrap().len(), 1);
     assert_redacted(&library);
     let cfg = engine.config.clone();
@@ -558,6 +594,7 @@ fn native_upgrade_imports_a_distinct_version_and_retains_both_files_after_restar
             .unwrap()
             .get(&original.id)
             .unwrap()
+            .unwrap()
             .imports,
         original.imports
     );
@@ -565,6 +602,7 @@ fn native_upgrade_imports_a_distinct_version_and_retains_both_files_after_restar
         lock(&resumed.store)
             .unwrap()
             .get(&ready.id)
+            .unwrap()
             .unwrap()
             .imports,
         ready.imports
@@ -589,7 +627,7 @@ fn initial_automatic_acquisition_records_the_selected_release_for_future_compari
     assert_eq!(release.profile, "fixture");
     assert!(ready.upgrade_parent.is_none());
     assert_eq!(queued(&engine.check_upgrades(true).unwrap()), 0);
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 1);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 1);
 }
 
 struct Plex {
@@ -731,7 +769,11 @@ fn plex_must_confirm_the_mapped_new_version_before_an_upgrade_becomes_current() 
     let child = children(&engine, &original.id).remove(0);
     let imported = run_until(&engine, &child.id, "imported");
     assert!(engine.tick().unwrap());
-    let scanning = lock(&engine.store).unwrap().get(&child.id).unwrap();
+    let scanning = lock(&engine.store)
+        .unwrap()
+        .get(&child.id)
+        .unwrap()
+        .unwrap();
     assert_eq!(
         scanning.state, "scanning",
         "Plex reporting only the old file must not confirm the upgrade"

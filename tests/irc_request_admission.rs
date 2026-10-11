@@ -223,7 +223,7 @@ fn explicit_origins_survive_empty_watchlists_opt_in_and_removal_tombstones() {
         demand(&e, "alice").get("state").unwrap().as_str(),
         Some("removed")
     );
-    assert_eq!(lock(&e.store).unwrap().list().len(), 1);
+    assert_eq!(lock(&e.store).unwrap().list().unwrap().len(), 1);
 }
 
 #[test]
@@ -278,7 +278,7 @@ fn stale_policy_job_scope_and_catalog_races_reject_before_intent() {
     assert!(e.irc_control(id, &old).is_err());
     assert_eq!(irc_support::bytes(&e.config.store_dir), before);
     let old = irc_support::reviewed(&e, id, "request");
-    e.submit(irc_routing_support::request(8)).unwrap();
+    e.submit(irc_routing_support::request(7)).unwrap();
     let before = irc_support::bytes(&e.config.store_dir);
     assert!(e.irc_control(id, &old).is_err());
     assert_eq!(irc_support::bytes(&e.config.store_dir), before);
@@ -325,7 +325,7 @@ fn concurrent_review_application_records_one_canonical_demand() {
         1
     );
     assert_eq!(demands(&e, "alice").len(), 1);
-    assert_eq!(lock(&e.store).unwrap().list().len(), 1);
+    assert_eq!(lock(&e.store).unwrap().list().unwrap().len(), 1);
 }
 
 #[test]
@@ -358,7 +358,7 @@ fn a_new_irc_coowner_shares_one_existing_captured_requester_job() {
         Some(first.as_str())
     );
     assert_eq!(job(&e, &first).requester.unwrap().account_id, "alice");
-    assert_eq!(lock(&e.store).unwrap().list().len(), 1);
+    assert_eq!(lock(&e.store).unwrap().list().unwrap().len(), 1);
     e.sync_requesters().unwrap();
     assert_eq!(
         demand(&e, "bob").get("state").unwrap().as_str(),
@@ -393,7 +393,7 @@ fn unready_operator_work_cannot_replace_captured_requester_admission() {
     );
     assert_eq!(demand(&e, "alice").get("admitted_at"), Some(&Value::Null));
     assert_eq!(job(&e, &operator.id), operator);
-    assert_eq!(lock(&e.store).unwrap().list().len(), 1);
+    assert_eq!(lock(&e.store).unwrap().list().unwrap().len(), 1);
 }
 
 #[test]
@@ -462,7 +462,7 @@ fn reviewed_new_demand_reaches_one_verified_native_import_and_survives_restart()
     let e = Engine::open(cfg).unwrap();
     assert_eq!(job(&e, &id).irc_origin, ready.irc_origin);
     assert_eq!(phase(&e, &row), "committed");
-    assert_eq!(lock(&e.store).unwrap().list().len(), 1);
+    assert_eq!(lock(&e.store).unwrap().list().unwrap().len(), 1);
 }
 
 #[test]
@@ -774,7 +774,7 @@ fn protected_api_and_cli_reviews_bind_the_request_action() {
         &apply,
     );
     assert_eq!(replay.status, 400, "{}", replay.body);
-    assert_eq!(lock(&server.engine.store).unwrap().list().len(), 1);
+    assert_eq!(lock(&server.engine.store).unwrap().list().unwrap().len(), 1);
 }
 
 #[test]

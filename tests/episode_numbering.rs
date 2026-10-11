@@ -75,8 +75,8 @@ fn explicit_source_labels_preserve_request_keys_and_durable_job_snapshots() {
     original.source_numbering = Some(SourceNumber::SeasonEpisode(number(2, 1)));
     assert_eq!(store.submit(original).unwrap(), job);
     drop(store);
-    let reopened = Store::open(&directory.0).unwrap();
-    assert_eq!(reopened.get(&job.id).unwrap(), job);
+    let mut reopened = Store::open(&directory.0).unwrap();
+    assert_eq!(reopened.get(&job.id).unwrap().unwrap(), job);
 }
 
 #[test]
@@ -208,7 +208,7 @@ fn approved_catalog_renumbering_keeps_jobs_exclusions_and_library_numbers() {
     let record = engine.track_series(&request(), false, false).unwrap();
     let id = id(&record).to_owned();
     engine.monitor_series_episode(&id, 1, 2, false).unwrap();
-    let existing = lock(&engine.store).unwrap().list();
+    let existing = lock(&engine.store).unwrap().list().unwrap();
     catalog.episodes(
         1,
         vec![
@@ -244,15 +244,15 @@ fn approved_catalog_renumbering_keeps_jobs_exclusions_and_library_numbers() {
         episodes(&retained)[1].get("excluded"),
         Some(&Value::Bool(true))
     );
-    assert_eq!(lock(&engine.store).unwrap().list(), existing);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap(), existing);
     engine.refresh_series(&id).unwrap();
-    assert_eq!(lock(&engine.store).unwrap().list(), existing);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap(), existing);
     engine.monitor_series_episode(&id, 1, 2, true).unwrap();
     assert_eq!(
         engine.refresh_series(&id).unwrap().get("submitted"),
         Some(&Value::Number(1.0))
     );
-    let jobs = lock(&engine.store).unwrap().list();
+    let jobs = lock(&engine.store).unwrap().list().unwrap();
     let new = jobs
         .iter()
         .find(|job| job.request.episode == 2)
@@ -273,7 +273,12 @@ fn approved_catalog_renumbering_keeps_jobs_exclusions_and_library_numbers() {
         Some(&Value::Number(0.0))
     );
     assert_eq!(
-        lock(&reopened.store).unwrap().get(&new.id).unwrap().request,
+        lock(&reopened.store)
+            .unwrap()
+            .get(&new.id)
+            .unwrap()
+            .unwrap()
+            .request,
         new.request
     );
 }
@@ -336,7 +341,7 @@ fn stale_numbering_guard_rejects_changed_policy_catalog_and_choices_without_writ
             .contains("stale")
     );
     assert_eq!(series_state(&cfg.store_dir), before);
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
 }
 
 #[test]
@@ -424,7 +429,7 @@ fn retained_identity_history_blocks_replacement_after_disappearance_and_overlapp
             .unwrap_err()
             .contains("cannot be reassigned")
     );
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
     catalog.episodes(1, vec![moved(1, 10, 11001, "2024-01-01")]);
     let mut other = request();
     other.season = 1;
@@ -483,7 +488,7 @@ fn cross_season_catalog_moves_keep_the_original_scope() {
         episodes(&retained)[0].get("episode"),
         Some(&Value::Number(1.0))
     );
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
 }
 
 #[test]
@@ -702,7 +707,7 @@ fn source_search_uses_only_the_approved_labels_under_the_existing_profile() {
     engine.configure_series(id, Some(true), None, None).unwrap();
     catalog.episodes(1, vec![episode(1, 1, Some("2024-01-01"), "Aired")]);
     engine.refresh_series(id).unwrap();
-    let job = lock(&engine.store).unwrap().list()[0].clone();
+    let job = lock(&engine.store).unwrap().list().unwrap()[0].clone();
     assert_eq!(
         job.request.source_numbering,
         Some(SourceNumber::Absolute(13))
@@ -777,7 +782,12 @@ fn approved_numbering_does_not_rewrite_ready_library_records_or_imported_bytes()
     request.source_path = Some(source.to_str().unwrap().into());
     let job = engine.submit(request).unwrap().remove(0);
     let ready = library_support::run_until(&engine, &job.id, "ready");
-    let owned = engine.library().unwrap();
+    let owned = engine
+        .library(None, 200)
+        .unwrap()
+        .get("library")
+        .unwrap()
+        .clone();
     let imports = library_support::files(&cfg.series_root);
     catalog.episodes(1, vec![moved(1, 10, 11001, "2024-01-01")]);
     apply(
@@ -794,8 +804,23 @@ fn approved_numbering_does_not_rewrite_ready_library_records_or_imported_bytes()
         engine.refresh_series(id).unwrap().get("submitted"),
         Some(&Value::Number(0.0))
     );
-    assert_eq!(engine.library().unwrap(), owned);
-    assert_eq!(lock(&engine.store).unwrap().get(&ready.id).unwrap(), ready);
+    assert_eq!(
+        engine
+            .library(None, 200)
+            .unwrap()
+            .get("library")
+            .unwrap()
+            .clone(),
+        owned
+    );
+    assert_eq!(
+        lock(&engine.store)
+            .unwrap()
+            .get(&ready.id)
+            .unwrap()
+            .unwrap(),
+        ready
+    );
     assert_eq!(library_support::files(&cfg.series_root), imports);
     assert_eq!(
         fs::read(&source).unwrap(),
