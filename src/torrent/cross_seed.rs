@@ -348,9 +348,6 @@ impl Client {
         if id.len() != 40 || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
             return Err("Invalid cross-seed candidate identity".into());
         }
-        let name = Path::new(&id)
-            .file_name()
-            .ok_or("Invalid cross-seed candidate filename")?;
         let mut jobs = self
             .jobs
             .lock()
@@ -363,12 +360,18 @@ impl Client {
         }) {
             return Err("Candidate swarm already exists; inspect its transfer instead".into());
         }
-        for suffix in ["torrent", "source", "seed"] {
-            let path = self.config.state_dir.join(name).with_extension(suffix);
-            if !path.starts_with(&self.config.state_dir) {
-                return Err("Cross-seed state path escaped its private directory".into());
-            }
-            if fs::symlink_metadata(&path).is_ok() {
+        let reserved = ["torrent", "source", "seed"].map(|suffix| format!("{id}.{suffix}"));
+        // Compare names already present in the private directory. Candidate
+        // metadata never supplies a filesystem path for an existence probe.
+        for entry in fs::read_dir(&self.config.state_dir)
+            .map_err(|_| "Could not inspect cross-seed state directory")?
+        {
+            let entry = entry.map_err(|_| "Could not inspect cross-seed state entry")?;
+            if entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| reserved.iter().any(|reserved| reserved == name))
+            {
                 return Err("Candidate swarm already exists; inspect its transfer instead".into());
             }
         }
