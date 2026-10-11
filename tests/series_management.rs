@@ -90,7 +90,13 @@ fn series_api_requires_bearer_and_validates_settings_before_changing_records() {
     );
     assert_eq!(updated.status, 200);
     assert_eq!(parse(&updated).get("monitored"), Some(&Value::Bool(false)));
-    assert!(lock(&server.engine.store).unwrap().list().is_empty());
+    assert!(
+        lock(&server.engine.store)
+            .unwrap()
+            .list()
+            .unwrap()
+            .is_empty()
+    );
 }
 
 fn command(directory: &Directory, args: &[&str]) -> std::process::Output {
@@ -236,8 +242,12 @@ fn cli_routes_series_creation_controls_and_calendar_to_the_running_service() {
         .status
         .success()
     );
-    assert_eq!(lock(&server.engine.store).unwrap().list().len(), 1);
-    let job = lock(&server.engine.store).unwrap().list().remove(0);
+    assert_eq!(lock(&server.engine.store).unwrap().list().unwrap().len(), 1);
+    let job = lock(&server.engine.store)
+        .unwrap()
+        .list()
+        .unwrap()
+        .remove(0);
     let corrected = command(
         &directory,
         &["pack-remap", &job.id, "--file-path", "Pack/new.mp4"],
@@ -257,6 +267,7 @@ fn cli_routes_series_creation_controls_and_calendar_to_the_running_service() {
         lock(&server.engine.store)
             .unwrap()
             .get(&job.id)
+            .unwrap()
             .unwrap()
             .pack_file
             .as_deref(),

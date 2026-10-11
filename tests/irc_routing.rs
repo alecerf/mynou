@@ -137,7 +137,6 @@ fn admitted_jobs_wait_for_irc_and_metadata_precedes_selective_payload_and_exact_
     );
     assert_eq!(outcome(&engine.irc_route_pending().unwrap()), "idle");
     assert_eq!(irc_support::bytes(&cfg.store_dir), before);
-    lock(&engine.store).unwrap().compact().unwrap();
     assert_eq!(
         &fs::read(cfg.store_dir.join("snapshot.bin")).unwrap()[..8],
         b"MYNOUS05"
@@ -163,7 +162,7 @@ fn unrequested_claims_never_create_demand_and_review_rules_never_hold_jobs() {
         "waiting_for_admitted_job"
     );
     assert_eq!(before, irc_support::bytes(&cfg.store_dir));
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
     assert!(engine.transfers().unwrap().as_array().unwrap().is_empty());
     drop(engine);
     cfg.irc.rules[0].action = "review".into();
@@ -397,9 +396,9 @@ fn requester_opt_in_and_removal_are_never_bypassed_by_irc() {
     receive(&engine, &"1".repeat(40), 7);
     receive(&engine, &"2".repeat(40), 8);
     assert!(!routing(&engine.irc_route_pending().unwrap()));
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
     requester_support::enable(&engine, "alice");
-    let jobs = lock(&engine.store).unwrap().list();
+    let jobs = lock(&engine.store).unwrap().list().unwrap();
     assert_eq!(jobs.len(), 2);
     assert!(!engine.tick().unwrap());
     accounts.watchlist("alice", Vec::new());
@@ -530,7 +529,6 @@ fn interrupted_reservations_recover_without_replaying_an_uncommitted_grab() {
         let admitted = engine.submit(request(7)).unwrap().remove(0);
         let row = receive(&engine, &torrent.id, 7);
         assert!(routing(&engine.irc_route_pending().unwrap()));
-        lock(&engine.store).unwrap().compact().unwrap();
         drop(engine);
         let history_path = cfg.store_dir.join("announcements.bin");
         let mut history = read_checked(&history_path);
@@ -589,7 +587,6 @@ fn forged_origin_changes_and_silent_format_downgrades_fail_before_downloads_star
         let mut changed = job(&engine, &admitted.id);
         changed.irc_origin.as_mut().unwrap().file = "Other.Movie.mp4".into();
         assert!(lock(&engine.store).unwrap().update(changed).is_err());
-        lock(&engine.store).unwrap().compact().unwrap();
         drop(engine);
         let p = cfg.store_dir.join("announcements.bin");
         let mut history = read_checked(&p);
@@ -736,6 +733,7 @@ fn a_verified_physical_video_cannot_be_routed_to_two_different_canonical_jobs() 
         lock(&engine.store)
             .unwrap()
             .list()
+            .unwrap()
             .iter()
             .filter(|j| j.irc_origin.is_some())
             .count(),

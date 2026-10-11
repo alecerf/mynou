@@ -314,7 +314,8 @@ impl Engine {
                         .air_date
                         .as_deref()
                         .is_some_and(|day| day <= today.as_str())
-                    && !lock(&self.store)?.media_exists(&record.episode_request(episode).media_key())?
+                    && !lock(&self.store)?
+                        .media_exists(&record.episode_request(episode).media_key())?
                 {
                     *seasons.entry(episode.season).or_default() += 1;
                 }
@@ -344,8 +345,8 @@ impl Engine {
                                 .get("id")
                                 .and_then(Value::as_str)
                                 .map(|id| jobs.get(id))
-                .transpose()?
-                .flatten()
+                                .transpose()?
+                                .flatten()
                             {
                                 submitted.push(job);
                             }

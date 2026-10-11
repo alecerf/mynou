@@ -265,9 +265,10 @@ pub fn job(engine: &Engine, id: &str) -> Job {
         .unwrap()
         .get(d.get("job_id").unwrap().as_str().unwrap())
         .unwrap()
+        .unwrap()
 }
 pub fn ready(engine: &Engine, id: &str) -> Job {
-    let mut job = lock(&engine.store).unwrap().get(id).unwrap();
+    let mut job = lock(&engine.store).unwrap().get(id).unwrap().unwrap();
     let capture = &job.requester.as_ref().unwrap().capture;
     let root = if job.request.kind == "movie" {
         &capture.movies_root

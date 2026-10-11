@@ -45,7 +45,7 @@ const HELP: &str = "Mynou — media automation using Rust std only
   episode-monitor | episode-unmonitor ID --season N --episode N [--config mynou.json]
   calendar [--from YYYY-MM-DD --to YYYY-MM-DD --series-id ID]
            [--offset N | --after CURSOR] [--limit N] [--config mynou.json]
-  library [--config mynou.json]
+  library [--limit N --after CURSOR] [--config mynou.json]   (a page of 50 by default)
   upgrades [--apply] [--config mynou.json]
   monitor | unmonitor ID [--config mynou.json]
   baseline ID --release-title TITLE [--config mynou.json]
@@ -68,7 +68,8 @@ const HELP: &str = "Mynou — media automation using Rust std only
   announcement ANNOUNCEMENT_ID [--config mynou.json]
   irc-preview SOURCE_ID --announcement FILE | --text FILE [--config mynou.json]
   irc-control ANNOUNCEMENT_ID --action acknowledge|dismiss|request [--apply --plan-id ID] [--config mynou.json]
-  jobs | status | sync [--config mynou.json]
+  jobs [--limit N --after CURSOR] [--config mynou.json]   (a page of 50, newest first)
+  status | sync [--config mynou.json]
   show | events | retry | cancel ID [--config mynou.json]
   healthcheck [--config mynou.json]
   demo [--dir mynou-demo]
@@ -115,10 +116,9 @@ impl Args {
             }
         }
         let allowed: &[&str] = match command.as_str() {
-            "init" | "doctor" | "serve" | "jobs" | "status" | "sync" | "show" | "events"
-            | "retry" | "cancel" | "healthcheck" | "library" | "monitor" | "unmonitor" => {
-                &["config", "help"]
-            }
+            "init" | "doctor" | "serve" | "status" | "sync" | "show" | "events" | "retry"
+            | "cancel" | "healthcheck" | "monitor" | "unmonitor" => &["config", "help"],
+            "jobs" | "library" => &["config", "help", "after", "limit"],
             "requesters" | "requester-sync" => &["config", "help"],
             "indexers" | "feeds" => &["config", "help"],
             "indexer-control" => &["config", "help", "action", "apply", "plan-id"],
@@ -712,14 +712,23 @@ fn execute(args: Args) -> Result<()> {
             )?);
         }
         "library" => {
+            let query = page_query(&args)?;
+            let page = mynou::store::PageQuery::parse(&query)?;
             if online {
-                output(&call(&config, &path, "GET", "/api/library", None)?);
+                output(&call(
+                    &config,
+                    &path,
+                    "GET",
+                    &format!("/api/library?{query}"),
+                    None,
+                )?);
             } else if Store::directory_exists(&config.store_dir)? {
-                let store = Store::open_read_only(&config.store_dir)?;
-                output(&mynou::library::describe(
-                    &store.library_jobs(),
-                    &store.list(),
-                ));
+                let mut store = Store::open_read_only(&config.store_dir)?;
+                output(&mynou::library::describe_page(
+                    &mut store,
+                    page.after.as_deref(),
+                    page.limit,
+                )?);
             } else {
                 output(&Value::Array(Vec::new()));
             }
@@ -1071,7 +1080,7 @@ fn execute(args: Args) -> Result<()> {
             } else {
                 let mut store = Store::open(&config.store_dir)?;
                 let job = if baseline {
-                    let job = store.get(id).ok_or("Unknown library entry")?;
+                    let job = store.get(id)?.ok_or("Unknown library entry")?;
                     let title = args
                         .options
                         .get("release-title")
@@ -1398,15 +1407,20 @@ fn execute(args: Args) -> Result<()> {
             }
         }
         "jobs" => {
+            let query = page_query(&args)?;
+            let page = mynou::store::PageQuery::parse(&query)?;
             if online {
-                output(&call(&config, &path, "GET", "/api/jobs", None)?);
+                output(&call(
+                    &config,
+                    &path,
+                    "GET",
+                    &format!("/api/jobs?{query}"),
+                    None,
+                )?);
             } else {
-                output(&Value::Array(
-                    Store::open(&config.store_dir)?
-                        .list()
-                        .iter()
-                        .map(public_job)
-                        .collect(),
+                let mut store = Store::open(&config.store_dir)?;
+                output(&mynou::engine::jobs_value(
+                    store.page(page.after.as_deref(), page.limit)?,
                 ));
             }
         }
@@ -1414,10 +1428,10 @@ fn execute(args: Args) -> Result<()> {
             if online {
                 output(&call(&config, &path, "GET", "/api/status", None)?);
             } else {
-                let store = Store::open(&config.store_dir)?;
+                let mut store = Store::open(&config.store_dir)?;
                 let mut v = Value::object();
                 v.insert("service", "stopped");
-                v.insert("jobs", store.list().len() as u32);
+                v.insert("jobs", Value::Number(store.counts()?.jobs as f64));
                 output(&v);
             }
         }
@@ -1451,9 +1465,9 @@ fn execute(args: Args) -> Result<()> {
             } else {
                 let mut store = Store::open(&config.store_dir)?;
                 let v = match args.command.as_str() {
-                    "show" => public_job(&store.get(id).ok_or("Unknown job")?),
+                    "show" => public_job(&store.get(id)?.ok_or("Unknown job")?),
                     "events" => {
-                        Value::Array(store.events(id).iter().map(|e| e.to_json()).collect())
+                        Value::Array(store.events(id)?.iter().map(|e| e.to_json()).collect())
                     }
                     "retry" => {
                         let mut job = store.retry(id)?;
@@ -1462,7 +1476,7 @@ fn execute(args: Args) -> Result<()> {
                             && job.request.source_url.is_none()
                         {
                             if let Some(old_id) = &job.download_id {
-                                let shared = store.list().iter().any(|other| {
+                                let shared = store.transfer_jobs(old_id)?.iter().any(|other| {
                                     other.id != job.id
                                         && other.download_id.as_ref() == Some(old_id)
                                         && other.state != "cancelled"
@@ -1488,6 +1502,21 @@ fn execute(args: Args) -> Result<()> {
     }
     Ok(())
 }
+/// The `after` and `limit` options as a validated page query string.
+fn page_query(args: &Args) -> Result<String> {
+    let fields: Vec<_> = ["limit", "after"]
+        .iter()
+        .filter_map(|name| {
+            args.options
+                .get(*name)
+                .map(|value| format!("{name}={value}"))
+        })
+        .collect();
+    let query = fields.join("&");
+    mynou::store::PageQuery::parse(&query)?;
+    Ok(query)
+}
+
 fn main() {
     if let Err(error) = Args::parse().and_then(execute) {
         eprintln!("mynou: {error}");

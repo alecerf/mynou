@@ -56,7 +56,7 @@ fn new_accounts_require_explicit_opt_in_before_queueing() {
     let engine = Engine::open_for_management(cfg.clone()).unwrap();
     let report = engine.sync_requesters().unwrap();
     no_credentials(&report);
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
     assert_eq!(
         demand(&engine, "alice").get("state").unwrap().as_str(),
         Some("pending")
@@ -101,7 +101,7 @@ fn compatible_accounts_share_one_acquisition_and_removals_retain_other_interest(
         enable(&engine, a);
     }
     engine.sync_requesters().unwrap();
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 1);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 1);
     assert_eq!(job(&engine, "alice").id, job(&engine, "bob").id);
     assert_eq!(demands(&engine, "alice").len(), 1);
     let first = demand(&engine, "alice");
@@ -111,6 +111,7 @@ fn compatible_accounts_share_one_acquisition_and_removals_retain_other_interest(
         lock(&engine.store)
             .unwrap()
             .get(&acquired.id)
+            .unwrap()
             .unwrap()
             .state,
         "queued"
@@ -122,6 +123,7 @@ fn compatible_accounts_share_one_acquisition_and_removals_retain_other_interest(
             .unwrap()
             .get(&acquired.id)
             .unwrap()
+            .unwrap()
             .state,
         "cancelled"
     );
@@ -131,6 +133,7 @@ fn compatible_accounts_share_one_acquisition_and_removals_retain_other_interest(
         lock(&engine.store)
             .unwrap()
             .get(&acquired.id)
+            .unwrap()
             .unwrap()
             .state,
         "cancelled"
@@ -163,7 +166,7 @@ fn conflicting_profiles_and_destinations_do_not_merge_unadmitted_demand() {
     p.destination = "family".into();
     apply(&engine, "bob", policy_query(p));
     engine.sync_requesters().unwrap();
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 1);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 1);
     let other = demand(&engine, "bob");
     assert_eq!(other.get("state").unwrap().as_str(), Some("conflict"));
     assert_eq!(other.get("admitted_at"), Some(&Value::Null));
@@ -269,7 +272,11 @@ fn uncaptured_operator_jobs_require_verified_ready_imports_and_compatible_qualit
                 .unwrap()
                 .update(operator.clone())
                 .unwrap();
-            operator = lock(&engine.store).unwrap().get(&operator.id).unwrap();
+            operator = lock(&engine.store)
+                .unwrap()
+                .get(&operator.id)
+                .unwrap()
+                .unwrap();
         }
         let journal = fs::read(cfg.store_dir.join("journal.bin")).unwrap();
         enable(&engine, "alice");
@@ -295,7 +302,7 @@ fn uncaptured_operator_jobs_require_verified_ready_imports_and_compatible_qualit
             assert_eq!(row.get("job_id"), Some(&Value::Null));
         }
         assert_eq!(
-            lock(&engine.store).unwrap().list(),
+            lock(&engine.store).unwrap().list().unwrap(),
             vec![operator.clone()],
             "{case}"
         );
@@ -308,7 +315,7 @@ fn uncaptured_operator_jobs_require_verified_ready_imports_and_compatible_qualit
         let reopened = Engine::open_for_management(cfg).unwrap();
         assert_eq!(demand(&reopened, "alice"), row, "{case}");
         assert_eq!(
-            lock(&reopened.store).unwrap().list(),
+            lock(&reopened.store).unwrap().list().unwrap(),
             vec![operator],
             "{case}"
         );
@@ -322,7 +329,7 @@ fn review_guards_fence_parallel_removals_and_retry_reuses_the_admitted_job() {
     let engine = Engine::open_for_management(accounts.config(&dir.0)).unwrap();
     enable(&engine, "alice");
     engine.sync_requesters().unwrap();
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 2);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 2);
     let rows = demands(&engine, "alice");
     let guards: Vec<_> = rows
         .iter()
@@ -362,10 +369,15 @@ fn review_guards_fence_parallel_removals_and_retry_reuses_the_admitted_job() {
     engine.cancel(&queued).unwrap();
     apply(&engine, "alice", demand_query("retry", id(kept)));
     assert_eq!(
-        lock(&engine.store).unwrap().get(&queued).unwrap().state,
+        lock(&engine.store)
+            .unwrap()
+            .get(&queued)
+            .unwrap()
+            .unwrap()
+            .state,
         "queued"
     );
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 2);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 2);
 }
 #[test]
 fn partial_failure_and_identity_mismatch_preserve_each_accounts_cursor_and_demand() {
@@ -444,7 +456,7 @@ fn policy_changes_during_poll_discard_the_result_before_acquisition() {
     apply(&engine, "alice", policy_query(p));
     accounts.blocked.store(false, Ordering::Release);
     poll.join().unwrap().unwrap();
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
     assert_eq!(
         engine
             .requester("alice", 0, 100)
@@ -483,7 +495,12 @@ fn removal_tombstones_and_imported_media_survive_policy_edits_and_restart() {
     let engine = Engine::open_for_management(cfg).unwrap();
     engine.sync_requesters().unwrap();
     assert_eq!(
-        lock(&engine.store).unwrap().get(&job_id).unwrap().state,
+        lock(&engine.store)
+            .unwrap()
+            .get(&job_id)
+            .unwrap()
+            .unwrap()
+            .state,
         "ready"
     );
     assert_eq!(fs::read(&imported.imports[0]).unwrap(), bytes);
@@ -563,7 +580,7 @@ fn reservation_recovery_is_idempotent_and_corruption_or_missing_provenance_fails
     let engine = Engine::open_for_management(cfg.clone()).unwrap();
     engine.sync_requesters().unwrap();
     assert_eq!(job(&engine, "alice").id, acquired.id);
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 1);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 1);
     assert_eq!(
         demand(&engine, "alice").get("admitted_at").cloned(),
         admitted
@@ -608,6 +625,7 @@ fn legacy_operator_interest_is_retained_when_the_last_requester_removes_demand()
             .unwrap()
             .get(&acquired.id)
             .unwrap()
+            .unwrap()
             .state,
         "queued"
     );
@@ -627,7 +645,7 @@ fn polling_series_creates_canonical_episode_demand_without_enabling_global_acqui
     let engine = Engine::open_for_management(cfg.clone()).unwrap();
     engine.sync_requesters().unwrap();
     assert_eq!(demands(&engine, "alice").len(), 1);
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
     assert_eq!(
         engine
             .series_page(None, 200)

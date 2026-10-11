@@ -67,7 +67,7 @@ pub fn route_phase(row: &Value) -> Option<&str> {
         .and_then(Value::as_str)
 }
 pub fn job(engine: &Engine, id: &str) -> Job {
-    lock(&engine.store).unwrap().get(id).unwrap()
+    lock(&engine.store).unwrap().get(id).unwrap().unwrap()
 }
 pub fn no_candidate_work(engine: &Engine, id: &str) {
     let job = job(engine, id);

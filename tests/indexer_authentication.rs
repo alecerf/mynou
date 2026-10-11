@@ -707,7 +707,7 @@ fn probes_require_review_make_one_source_search_and_never_queue_media() {
     assert_eq!(r.get("probe_success"), Some(&Value::Bool(true)));
     assert_eq!(p.searches.load(Ordering::Acquire), 1);
     assert!(engine.indexer_control(&id, &q).is_err());
-    assert!(engine.store.lock().unwrap().list().is_empty());
+    assert!(engine.store.lock().unwrap().list().unwrap().is_empty());
     p.feed.lock().unwrap().body = "invalid-json".into();
     let q = reviewed(&engine, &id, "probe");
     assert_eq!(

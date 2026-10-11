@@ -22,7 +22,7 @@ fn background_monitor_queues_an_episode_when_its_catalog_air_date_becomes_due() 
     let catalog = Catalog::open(vec![episode(1, 1, Some("2200-01-01"), "Future")]);
     let engine = Engine::open_for_management(catalog.config(&directory.0)).unwrap();
     let record = engine.track_series(&request(), false, false).unwrap();
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
     catalog.episodes(1, vec![episode(1, 1, Some("2024-01-01"), "Now aired")]);
     engine
         .configure_series(id(&record), Some(true), None, None)
@@ -32,7 +32,7 @@ fn background_monitor_queues_an_episode_when_its_catalog_air_date_becomes_due() 
     let workers = engine.start();
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
-        let jobs = lock(&engine.store).unwrap().list();
+        let jobs = lock(&engine.store).unwrap().list().unwrap();
         if !jobs.is_empty() {
             assert_eq!(jobs.len(), 1);
             assert_eq!(jobs[0].request.season, 1);
@@ -46,7 +46,7 @@ fn background_monitor_queues_an_episode_when_its_catalog_air_date_becomes_due() 
         thread::sleep(Duration::from_millis(10));
     }
     drop(workers);
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 1);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 1);
 }
 
 #[test]
@@ -105,7 +105,7 @@ fn background_catalog_failure_is_visible_in_series_and_service_status() {
             .unwrap()
             .contains("HTTP response 503")
     );
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
 }
 
 #[test]
@@ -124,7 +124,7 @@ fn aired_future_and_undated_episodes_keep_distinct_acquisition_states() {
     assert_eq!(episodes(&record).len(), 4);
     assert_eq!(episodes(&record)[2].get("air_date"), Some(&Value::Null));
     assert_eq!(episodes(&record)[3].get("air_date"), Some(&Value::Null));
-    let jobs = lock(&engine.store).unwrap().list();
+    let jobs = lock(&engine.store).unwrap().list().unwrap();
     assert_eq!(jobs.len(), 1);
     assert_eq!(jobs[0].request.episode, 1);
     let summaries = engine
@@ -159,7 +159,7 @@ fn future_only_episode_exclusions_and_cancellation_survive_repeated_refresh() {
     let engine = Engine::open_for_management(catalog.config(&directory.0)).unwrap();
     let record = engine.track_series(&request(), false, true).unwrap();
     let id = id(&record);
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 1);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 1);
     engine.monitor_series_episode(id, 1, 3, false).unwrap();
     catalog.episodes(
         1,
@@ -181,16 +181,22 @@ fn future_only_episode_exclusions_and_cancellation_survive_repeated_refresh() {
     let job = lock(&engine.store)
         .unwrap()
         .list()
+        .unwrap()
         .into_iter()
         .find(|job| job.request.episode == 3)
         .unwrap();
     engine.cancel(&job.id).unwrap();
     engine.refresh_series(id).unwrap();
     assert_eq!(
-        lock(&engine.store).unwrap().get(&job.id).unwrap().state,
+        lock(&engine.store)
+            .unwrap()
+            .get(&job.id)
+            .unwrap()
+            .unwrap()
+            .state,
         "cancelled"
     );
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 2);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 2);
 }
 
 #[test]
@@ -207,6 +213,7 @@ fn specials_are_explicit_and_series_disable_keeps_existing_jobs() {
         lock(&engine.store)
             .unwrap()
             .list()
+            .unwrap()
             .iter()
             .any(|job| job.request.season == 0)
     );
@@ -221,10 +228,10 @@ fn specials_are_explicit_and_series_disable_keeps_existing_jobs() {
         ],
     );
     engine.refresh_series(id).unwrap();
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 2);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 2);
     engine.configure_series(id, Some(true), None, None).unwrap();
     engine.refresh_series(id).unwrap();
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 3);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 3);
 }
 
 #[test]
@@ -253,7 +260,7 @@ fn series_snapshot_restart_and_read_only_preview_preserve_settings_and_bytes() {
     drop(preview);
     let reopened = Engine::open_for_management(cfg).unwrap();
     assert_eq!(reopened.series_record(&id).unwrap(), expected);
-    assert!(lock(&reopened.store).unwrap().list().is_empty());
+    assert!(lock(&reopened.store).unwrap().list().unwrap().is_empty());
 }
 
 #[test]
@@ -387,7 +394,7 @@ fn ambiguous_numbering_and_known_episode_identity_changes_never_queue_new_conten
             .unwrap_err()
             .contains("explicit mapping decision")
     );
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
     let retained = engine.series_record(id).unwrap();
     assert_eq!(episodes(&retained), episodes(&record));
     assert!(
@@ -407,7 +414,7 @@ fn ambiguous_numbering_and_known_episode_identity_changes_never_queue_new_conten
             .unwrap_err()
             .contains("explicit mapping decision")
     );
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
     catalog.episodes(
         1,
         vec![
@@ -416,10 +423,10 @@ fn ambiguous_numbering_and_known_episode_identity_changes_never_queue_new_conten
         ],
     );
     assert!(engine.refresh_series(id).is_err());
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
     catalog.episodes(1, vec![episode(1, 1, Some("2024-01-01"), "Known")]);
     engine.refresh_series(id).unwrap();
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 1);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 1);
 }
 
 #[test]
@@ -432,7 +439,7 @@ fn missing_catalog_episode_identity_requires_mapping_before_automatic_acquisitio
     let catalog = Catalog::open(vec![unmapped]);
     let engine = Engine::open_for_management(catalog.config(&directory.0)).unwrap();
     engine.track_series(&request(), false, false).unwrap();
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
     let calendar = engine
         .episode_calendar(&CalendarQuery::new(Some("2024-01-01"), Some("2024-01-02")).unwrap())
         .unwrap();
@@ -472,7 +479,7 @@ fn acquisitions_are_batched_and_restart_or_overlapping_scope_never_duplicates_jo
     let record = engine.track_series(&request(), false, false).unwrap();
     let id = id(&record).to_owned();
     assert_eq!(record.get("submitted"), Some(&Value::Number(64.0)));
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 64);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 64);
     drop(engine);
     let engine = Engine::open_for_management(cfg).unwrap();
     assert_eq!(
@@ -482,7 +489,7 @@ fn acquisitions_are_batched_and_restart_or_overlapping_scope_never_duplicates_jo
     let mut scope = request();
     scope.season = 1;
     engine.track_series(&scope, false, false).unwrap();
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 100);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 100);
     assert_eq!(
         engine.refresh_series(&id).unwrap().get("submitted"),
         Some(&Value::Number(0.0))
@@ -514,7 +521,7 @@ fn monitoring_revision_discards_a_catalog_response_that_arrives_after_disable() 
             .unwrap_err()
             .contains("result discarded")
     );
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
     assert_eq!(
         engine.series_record(&id).unwrap().get("monitored"),
         Some(&Value::Bool(false))
@@ -602,7 +609,7 @@ fn plex_series_watchlist_creates_persistent_monitoring_beyond_watchlist_removal(
             .get("monitored"),
         Some(&Value::Bool(true))
     );
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
 }
 
 #[test]

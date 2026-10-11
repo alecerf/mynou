@@ -1031,11 +1031,19 @@ fn authenticated_pause_is_durable_during_engine_polling_and_explicit_resume_comp
     assert_eq!(resumed.get("user_paused"), Some(&Value::Bool(false)));
     wait(|| {
         server.engine.tick().unwrap();
-        let job = lock(&server.engine.store).unwrap().get(&job.id).unwrap();
+        let job = lock(&server.engine.store)
+            .unwrap()
+            .get(&job.id)
+            .unwrap()
+            .unwrap();
         assert_ne!(job.state, "failed", "{:?}", job.last_error);
         job.state == "ready"
     });
-    let imported = lock(&server.engine.store).unwrap().get(&job.id).unwrap();
+    let imported = lock(&server.engine.store)
+        .unwrap()
+        .get(&job.id)
+        .unwrap()
+        .unwrap();
     assert_eq!(
         fs::read(&imported.imports[0]).unwrap(),
         include_bytes!("../examples/demo.mp4")
@@ -1206,10 +1214,10 @@ fn shared_requests_expose_one_transfer_and_apply_controls_to_both_requests() {
     assert_ne!(expected[0], expected[1]);
     wait(|| {
         server.engine.tick().unwrap();
-        let store = lock(&server.engine.store).unwrap();
-        expected
-            .iter()
-            .all(|id| store.get(id).unwrap().download_id.as_deref() == Some(torrent.id.as_str()))
+        let mut store = lock(&server.engine.store).unwrap();
+        expected.iter().all(|id| {
+            store.get(id).unwrap().unwrap().download_id.as_deref() == Some(torrent.id.as_str())
+        })
     });
     wait(|| !proxy.requests.lock().unwrap().is_empty());
     let (status, list) = server.call("GET", "/api/transfers", Some(TOKEN), None);
@@ -1253,15 +1261,16 @@ fn shared_requests_expose_one_transfer_and_apply_controls_to_both_requests() {
     );
     wait(|| {
         server.engine.tick().unwrap();
-        let store = lock(&server.engine.store).unwrap();
-        assert_eq!(store.get(&expected[0]).unwrap().state, "cancelled");
-        let active = store.get(&expected[1]).unwrap();
+        let mut store = lock(&server.engine.store).unwrap();
+        assert_eq!(store.get(&expected[0]).unwrap().unwrap().state, "cancelled");
+        let active = store.get(&expected[1]).unwrap().unwrap();
         assert_ne!(active.state, "failed", "{:?}", active.last_error);
         active.state == "ready"
     });
     let active = lock(&server.engine.store)
         .unwrap()
         .get(&expected[1])
+        .unwrap()
         .unwrap();
     assert_eq!(
         fs::read(&active.imports[0]).unwrap(),

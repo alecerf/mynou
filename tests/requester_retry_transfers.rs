@@ -44,7 +44,7 @@ fn user_paused(engine: &Engine, transfer: &str) -> bool {
 }
 
 fn stored(engine: &Engine, job_id: &str) -> Job {
-    lock(&engine.store).unwrap().get(job_id).unwrap()
+    lock(&engine.store).unwrap().get(job_id).unwrap().unwrap()
 }
 
 /// Gives a request a failed acquisition that owns `transfer`.

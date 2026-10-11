@@ -90,7 +90,9 @@ impl Db<'_> {
         let owner = self.0.get(&shared_media_key(&media))?;
         if let Some(file) = &job.shared_file {
             file.validate_job(job)?;
-            let physical = self.0.get(&physical_key(&file.torrent_id, &file.file_path))?;
+            let physical = self
+                .0
+                .get(&physical_key(&file.torrent_id, &file.file_path))?;
             if physical.is_some_and(|known| known != file_digest(file))
                 || owner.is_some_and(|owner| owner != id && job.shared_upgrade.is_none())
             {
@@ -181,7 +183,9 @@ impl Db<'_> {
                 .get(current.upgrade_parent.as_deref().unwrap_or_default())?
                 .ok_or_else(|| "missing upgrade parent".to_owned())?;
             if job.monitored != parent.monitored {
-                return Err("promoted upgrade monitoring differs from its current parent".to_owned());
+                return Err(
+                    "promoted upgrade monitoring differs from its current parent".to_owned(),
+                );
             }
         } else if current.state != "ready" && current.monitored != job.monitored {
             return Err("monitoring can only change on a ready library import".to_owned());
@@ -250,14 +254,10 @@ impl Db<'_> {
                         continue;
                     }
                     let other = self.require(&key_part(&key, 33)?)?;
-                    if other
-                        .irc_origin
-                        .as_ref()
-                        .is_some_and(|known| {
-                            &known.file == file
-                                && known.torrent_aliases.iter().any(|alias| alias == transfer)
-                        })
-                    {
+                    if other.irc_origin.as_ref().is_some_and(|known| {
+                        &known.file == file
+                            && known.torrent_aliases.iter().any(|alias| alias == transfer)
+                    }) {
                         return Err(
                             "IRC: pack mapping conflicts with retained announcement ownership"
                                 .into(),

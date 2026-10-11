@@ -89,7 +89,7 @@ fn ranking_and_metadata_fallback_cover_every_missing_episode_without_mutation() 
     assert_eq!(report.get("mapping").unwrap().as_array().unwrap().len(), 2);
     assert_eq!(report.get("rejected").unwrap().as_array().unwrap().len(), 3);
     no_sources(&report);
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
     assert_eq!(snapshot(&cfg.store_dir), before);
     let mut ordinary = request();
     ordinary.kind = "episode".into();
@@ -129,7 +129,7 @@ fn magnet_preview_requests_only_metadata_then_bound_jobs_import_from_one_partial
     let series = tracked(&engine);
     let report = engine.search_packs(&series, &preview(1)).unwrap();
     assert!(proxy.requests.lock().unwrap().is_empty());
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
     assert!(engine.transfers().unwrap().as_array().unwrap().is_empty());
     no_sources(&report);
     let applied = engine.search_packs(&series, &apply(&report)).unwrap();
@@ -137,7 +137,7 @@ fn magnet_preview_requests_only_metadata_then_bound_jobs_import_from_one_partial
         applied.get("submission").unwrap().get("submitted"),
         Some(&Value::Number(2.0))
     );
-    let jobs = lock(&engine.store).unwrap().list();
+    let jobs = lock(&engine.store).unwrap().list().unwrap();
     assert_eq!(jobs.len(), 2);
     for job in &jobs {
         let origin = job.pack_origin.as_ref().unwrap();
@@ -161,6 +161,7 @@ fn magnet_preview_requests_only_metadata_then_bound_jobs_import_from_one_partial
         lock(&engine.store)
             .unwrap()
             .list()
+            .unwrap()
             .iter()
             .all(|job| job.download_id.is_some())
     });
@@ -183,11 +184,11 @@ fn magnet_preview_requests_only_metadata_then_bound_jobs_import_from_one_partial
             .join("Fixture.Series.S01/untouched.txt")
             .exists()
     );
-    let saved = lock(&engine.store).unwrap().list();
+    let saved = lock(&engine.store).unwrap().list().unwrap();
     drop(engine);
     proxy.wait_idle();
     let engine = Engine::open(cfg).unwrap();
-    assert_eq!(lock(&engine.store).unwrap().list(), saved);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap(), saved);
     let calls = provider.calls.lock().unwrap().len();
     let empty = engine
         .search_packs(
@@ -246,10 +247,15 @@ fn policy_and_existing_terminal_requests_restrict_the_scope_without_resurrection
     assert_eq!(report.get("scope_empty"), Some(&Value::Bool(true)));
     assert_eq!(provider.calls.lock().unwrap().len(), calls);
     assert_eq!(
-        lock(&engine.store).unwrap().get(&queued.id).unwrap().state,
+        lock(&engine.store)
+            .unwrap()
+            .get(&queued.id)
+            .unwrap()
+            .unwrap()
+            .state,
         "cancelled"
     );
-    assert_eq!(lock(&engine.store).unwrap().list().len(), 1);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 1);
 }
 
 #[test]
@@ -289,7 +295,7 @@ fn changed_policy_during_metadata_discards_the_entire_acquisition() {
             .unwrap_err()
             .contains("scope changed")
     );
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
 }
 
 #[test]
@@ -338,7 +344,7 @@ fn a_catalog_refresh_without_a_revision_change_also_invalidates_the_captured_sco
             .unwrap_err()
             .contains("scope changed")
     );
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
 }
 
 #[test]
@@ -371,7 +377,7 @@ fn changed_metadata_breaks_preview_guards_and_queued_hash_binding_before_payload
             .unwrap_err()
             .contains("candidate changed")
     );
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
     engine
         .search_packs(
             &series,
@@ -381,7 +387,7 @@ fn changed_metadata_breaks_preview_guards_and_queued_hash_binding_before_payload
             },
         )
         .unwrap();
-    let jobs = lock(&engine.store).unwrap().list();
+    let jobs = lock(&engine.store).unwrap().list().unwrap();
     let mut forged = jobs[0].clone();
     forged.pack_origin = None;
     assert!(
@@ -403,10 +409,10 @@ fn changed_metadata_breaks_preview_guards_and_queued_hash_binding_before_payload
         assert_eq!(failed.pack_origin.unwrap().torrent_id, changed.id);
     }
     assert!(engine.transfers().unwrap().as_array().unwrap().is_empty());
-    let saved = lock(&engine.store).unwrap().list();
+    let saved = lock(&engine.store).unwrap().list().unwrap();
     drop(engine);
     let engine = Engine::open(cfg).unwrap();
-    assert_eq!(lock(&engine.store).unwrap().list(), saved);
+    assert_eq!(lock(&engine.store).unwrap().list().unwrap(), saved);
 }
 
 #[test]
@@ -512,7 +518,7 @@ fn metadata_candidate_limit_is_explicit_and_does_not_reach_a_ninth_pack() {
             )
             .is_err()
     );
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
 }
 
 #[test]
@@ -560,6 +566,7 @@ fn opt_in_series_monitoring_prefers_a_resolved_pack_and_defaults_keep_individual
         lock(&normal.store)
             .unwrap()
             .list()
+            .unwrap()
             .iter()
             .all(|job| job.pack_origin.is_none() && job.request.source_url.is_none())
     );
@@ -573,6 +580,7 @@ fn opt_in_series_monitoring_prefers_a_resolved_pack_and_defaults_keep_individual
         lock(&engine.store)
             .unwrap()
             .list()
+            .unwrap()
             .iter()
             .all(|job| job.pack_origin.is_some()
                 && job.request.source_url.as_deref() == Some(url.as_str()))
@@ -596,7 +604,7 @@ fn monitored_pack_preference_acquires_newly_aired_episodes_once_and_falls_back_f
     let engine = Engine::open_for_management(cfg.clone()).unwrap();
     let record = engine.track_series(&request(), false, false).unwrap();
     let series = id(&record).to_owned();
-    assert!(lock(&engine.store).unwrap().list().is_empty());
+    assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
     assert!(provider.calls.lock().unwrap().is_empty());
     catalog.episodes(
         1,
@@ -607,7 +615,7 @@ fn monitored_pack_preference_acquires_newly_aired_episodes_once_and_falls_back_f
     );
     let refreshed = engine.refresh_series(&series).unwrap();
     assert_eq!(refreshed.get("submitted"), Some(&Value::Number(1.0)));
-    let job = lock(&engine.store).unwrap().list().remove(0);
+    let job = lock(&engine.store).unwrap().list().unwrap().remove(0);
     assert_eq!(job.request.episode, 1);
     assert!(job.pack_origin.is_some());
     let calls = provider.calls.lock().unwrap().len();
@@ -630,10 +638,11 @@ fn monitored_pack_preference_acquires_newly_aired_episodes_once_and_falls_back_f
         lock(&fallback.store)
             .unwrap()
             .list()
+            .unwrap()
             .iter()
             .all(|job| job.pack_origin.is_none() && job.request.source_url.is_none())
     );
-    assert_eq!(lock(&fallback.store).unwrap().list().len(), 1);
+    assert_eq!(lock(&fallback.store).unwrap().list().unwrap().len(), 1);
 }
 
 #[test]
@@ -677,7 +686,7 @@ fn monitoring_bounds_combined_pack_and_episode_submissions_to_sixty_four_per_pas
     let engine = Engine::open_for_management(cfg).unwrap();
     let record = engine.track_series(&request(), false, false).unwrap();
     assert_eq!(record.get("submitted"), Some(&Value::Number(64.0)));
-    let jobs = lock(&engine.store).unwrap().list();
+    let jobs = lock(&engine.store).unwrap().list().unwrap();
     assert_eq!(jobs.len(), 64);
     assert_eq!(
         jobs.iter().filter(|job| job.pack_origin.is_some()).count(),
@@ -693,7 +702,7 @@ fn monitoring_bounds_combined_pack_and_episode_submissions_to_sixty_four_per_pas
     );
     let refreshed = engine.refresh_series(id(&record)).unwrap();
     assert_eq!(refreshed.get("submitted"), Some(&Value::Number(16.0)));
-    let jobs = lock(&engine.store).unwrap().list();
+    let jobs = lock(&engine.store).unwrap().list().unwrap();
     assert_eq!(jobs.len(), 80);
     assert_eq!(
         jobs.iter().filter(|job| job.pack_origin.is_some()).count(),

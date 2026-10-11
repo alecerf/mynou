@@ -1,7 +1,8 @@
 //! Admission attaches an immutable verified candidate in one index transaction.
 use super::{
-    Job, Request, Result, now,
+    Job, Request, Result,
     layout::{self, id_bytes},
+    now,
     ops::{Db, key_part},
 };
 use crate::irc::Origin;
@@ -73,7 +74,10 @@ impl Db<'_> {
         let mut jobs: Vec<Job> = Vec::new();
         for (key, _) in &page.entries {
             let id = key_part::<16>(key, 33)?;
-            if jobs.iter().all(|job| id_bytes(&job.id).is_ok_and(|raw| raw != id)) {
+            if jobs
+                .iter()
+                .all(|job| id_bytes(&job.id).is_ok_and(|raw| raw != id))
+            {
                 jobs.push(self.require(&id)?);
             }
         }

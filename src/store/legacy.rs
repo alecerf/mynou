@@ -60,7 +60,9 @@ pub(super) enum Inspection {
     Missing,
     Legacy(Files),
     /// The index marker, binding the directory to one index identity.
-    Marker { binding: String },
+    Marker {
+        binding: String,
+    },
 }
 
 pub(super) fn digest_of(snapshot: Option<&[u8]>, journal: &[u8]) -> [u8; 32] {
@@ -148,8 +150,8 @@ pub(super) fn inspect(directory: &Path, repair: bool) -> Result<Inspection> {
         let binding = parse_marker(bytes)?;
         return Ok(Inspection::Marker { binding });
     }
-    let journal = read_bounded(&directory.join(JOURNAL), MAX_JOURNAL_BYTES, repair)?
-        .unwrap_or_default();
+    let journal =
+        read_bounded(&directory.join(JOURNAL), MAX_JOURNAL_BYTES, repair)?.unwrap_or_default();
     if snapshot.is_none() && journal.is_empty() {
         return Ok(Inspection::Missing);
     }
@@ -171,7 +173,8 @@ fn parse_marker(bytes: &[u8]) -> Result<String> {
     {
         return Err(invalid());
     }
-    let value = json::parse(std::str::from_utf8(&bytes[16..bytes.len() - 32]).map_err(|_| invalid())?)?;
+    let value =
+        json::parse(std::str::from_utf8(&bytes[16..bytes.len() - 32]).map_err(|_| invalid())?)?;
     let map = fields(&value)?;
     if string(map, "format")? != "mynou-jobs-index/1" {
         return Err("Unsupported job index marker".into());
@@ -330,7 +333,8 @@ fn replay(state: &mut State, journal: &[u8], snapshot_chain: [u8; 32]) -> Result
         if sha256(&header[..52]).as_slice() != &header[52..84] {
             return Err(format!("corrupt journal header at byte {offset}"));
         }
-        let sequence = u64::from_le_bytes(header[8..16].try_into().map_err(|_| "invalid sequence")?);
+        let sequence =
+            u64::from_le_bytes(header[8..16].try_into().map_err(|_| "invalid sequence")?);
         let payload_length =
             u32::from_le_bytes(header[16..20].try_into().map_err(|_| "invalid length")?) as usize;
         let chain: [u8; 32] = header[20..52].try_into().map_err(|_| "invalid chain")?;
@@ -420,7 +424,11 @@ fn apply_record(state: &mut State, magic: &[u8], payload: &[u8], sequence: u64) 
         if magic != SHARED_JOURNAL_MAGIC && !requester_ok {
             return Err("Shared ownership requires journal format 2".into());
         }
-        owners = Some(shared.as_array().ok_or("Invalid shared ownership journal array")?);
+        owners = Some(
+            shared
+                .as_array()
+                .ok_or("Invalid shared ownership journal array")?,
+        );
     } else if map.contains_key("group_jobs") {
         return Err("Group owners require a journal action".into());
     }
@@ -473,7 +481,11 @@ pub(super) fn validate(state: &State) -> Result<()> {
         .into_iter()
         .map(|job| job.id.clone())
         .collect();
-    for job in state.jobs.values().filter(|job| super::layout::pending_upgrade(job)) {
+    for job in state
+        .jobs
+        .values()
+        .filter(|job| super::layout::pending_upgrade(job))
+    {
         if job
             .upgrade_parent
             .as_ref()
@@ -516,11 +528,7 @@ pub(super) fn roots(jobs: &BTreeMap<String, Job>) -> Result<BTreeMap<String, Str
             }
             path.push(cursor.id.clone());
             match cursor.upgrade_parent.as_deref() {
-                Some(id) => {
-                    cursor = jobs
-                        .get(id)
-                        .ok_or("missing upgrade lineage reference")?
-                }
+                Some(id) => cursor = jobs.get(id).ok_or("missing upgrade lineage reference")?,
                 None => break cursor.id.clone(),
             }
         };

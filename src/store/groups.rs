@@ -1,6 +1,6 @@
 //! Whole-group replacement lineage and synchronized group transitions.
-use super::*;
 use super::layout::{self, digest_bytes, id_bytes};
+use super::*;
 use crate::pack::{MAX_PACK_EPISODES, SharedFile};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -101,7 +101,6 @@ pub(super) struct GroupState<'a> {
     pub ready: usize,
     pub cancelled: usize,
 }
-
 
 /// Group lineage rules that need only identifier lookups.
 pub(super) fn validate_group_lineage<L: JobLookup>(lookup: &mut L, job: &Job) -> Result<()> {
@@ -439,9 +438,7 @@ impl Db<'_> {
                     }
                 }
                 GroupAction::Promote => {
-                    let current = self
-                        .get(&job.id)?
-                        .ok_or("Missing shared promotion owner")?;
+                    let current = self.get(&job.id)?.ok_or("Missing shared promotion owner")?;
                     if job.shared_upgrade.is_none()
                         || job.state != "ready"
                         || job.progress != 1.0

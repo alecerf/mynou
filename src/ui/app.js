@@ -309,9 +309,26 @@ async function openJob(job) {
   } catch (e) { events.replaceChildren(h('li', { class: 'error' }, e.message)); }
 }
 
+// The live topic carries the newest page; older pages are read on demand, so
+// the list is never limited by how many jobs exist.
+const jobsTail = { items: [], next: null };
+const jobsLoaded = () => {
+  const first = itemsOf(data.get('jobs')?.data);
+  const seen = new Set(first.map((j) => j.id));
+  return [...first, ...jobsTail.items.filter((j) => !seen.has(j.id))];
+};
 views.jobs = {
   init() {
     wireJobRows($('#jobs'));
+    $('#jobs-more').addEventListener('click', (e) =>
+      act(e.currentTarget, async () => {
+        const after = jobsTail.next ?? data.get('jobs')?.data?.next;
+        if (!after) return;
+        const page = await link.call('GET', `/api/jobs?limit=50&after=${encodeURIComponent(after)}`);
+        jobsTail.items.push(...itemsOf(page.jobs));
+        jobsTail.next = page.next;
+        views.jobs.render();
+      }));
     $('#job-filter').addEventListener('input', () => views.jobs.render());
     $('#job-states').addEventListener('click', (event) => {
       const button = event.target.closest('button');
@@ -322,7 +339,12 @@ views.jobs = {
   },
   render() {
     const list = $('#jobs');
-    const all = itemsOf(data.get('jobs')?.data);
+    const all = jobsLoaded();
+    const entry = data.get('jobs')?.data;
+    const next = jobsTail.items.length ? jobsTail.next : entry?.next;
+    const more = $('#jobs-more');
+    more.hidden = !next;
+    more.textContent = entry?.total ? `Load more jobs (${all.length} of ${entry.total})` : 'Load more jobs';
     const states = [...new Set(all.map((j) => j.state))].sort();
     reconcile($('#job-states'), states, (s) => s,
       (s) => h('button', { type: 'button', dataset: { state: s }, 'aria-pressed': 'false' }, s),
@@ -381,15 +403,32 @@ function cards(topic, container, empty, render, more = []) {
     (el, item) => { $('h3', el).textContent = titleOf(item); $('.body', el).replaceChildren(render(item)); });
 }
 
+const libraryTail = { items: [], next: null };
 views.library = {
   init() {
+    $('#library-more').addEventListener('click', (e) =>
+      act(e.currentTarget, async () => {
+        const after = libraryTail.next ?? data.get('library')?.data?.next;
+        if (!after) return;
+        const page = await link.call('GET', `/api/library?limit=50&after=${encodeURIComponent(after)}`);
+        libraryTail.items.push(...itemsOf(page.library));
+        libraryTail.next = page.next;
+        views.library.render();
+      }));
     $('#check-upgrades').addEventListener('click', (e) =>
       act(e.currentTarget, async () => {
         const report = await link.call('POST', '/api/upgrades', {});
         openDetail('Upgrade check', facts(report));
       }));
   },
-  render() { cards('library', $('#library'), 'Nothing in the library yet.', (item) => facts(item, ['id'])); },
+  render() {
+    cards('library', $('#library'), 'Nothing in the library yet.', (item) => facts(item, ['id']), libraryTail.items);
+    const entry = data.get('library')?.data;
+    const next = libraryTail.items.length ? libraryTail.next : entry?.next;
+    const button = $('#library-more');
+    button.hidden = !next;
+    button.textContent = entry?.total ? `Load more library entries (${itemsOf(entry).length + libraryTail.items.length} of ${entry.total})` : 'Load more library entries';
+  },
 };
 // The live topic carries the first page; further pages are read on demand, so
 // the list is never limited by how many series are tracked.

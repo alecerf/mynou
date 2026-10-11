@@ -217,11 +217,7 @@ impl Engine {
     /// A page of jobs, newest first, with the cursor of the next page.
     pub fn jobs_page(&self, after: Option<&str>, limit: usize) -> Result<Value> {
         let page = lock(&self.store)?.page(after, limit)?;
-        let mut value = Value::object();
-        value.insert("jobs", Value::Array(page.jobs.iter().map(public_job).collect()));
-        value.insert("next", page.next.map_or(Value::Null, Value::String));
-        value.insert("total", Value::Number(page.total as f64));
-        Ok(value)
+        Ok(jobs_value(page))
     }
 
     pub fn cancel(&self, id: &str) -> Result<Job> {
@@ -371,7 +367,10 @@ impl Engine {
     pub fn status(&self) -> Result<Value> {
         let (counts, maintenance_error) = {
             let mut store = lock(&self.store)?;
-            (store.counts()?, store.maintenance_error().map(str::to_owned))
+            (
+                store.counts()?,
+                store.maintenance_error().map(str::to_owned),
+            )
         };
         let mut v = Value::object();
         v.insert("version", env!("CARGO_PKG_VERSION"));
@@ -795,8 +794,8 @@ impl Engine {
                             cancelled.download_id = Some(status.id.clone());
                             store.update(cancelled)?;
                         }
-                        let shared = store
-                            .transfer_claimed(&status.id, job.acquisition_url.as_deref())?;
+                        let shared =
+                            store.transfer_claimed(&status.id, job.acquisition_url.as_deref())?;
                         if !shared {
                             // Only local writes: no network requests while
                             // this decision is protected by the lock.
@@ -1055,11 +1054,27 @@ fn cancel_orphaned_transfers(client: &Client, store: &mut Store) -> Result<()> {
                         .as_ref()
                         .is_some_and(|file| file.torrent_id == status.id))
         });
-        if !active && jobs.iter().any(|job| job.state == "cancelled" && named(job)) {
+        if !active
+            && jobs
+                .iter()
+                .any(|job| job.state == "cancelled" && named(job))
+        {
             client.cancel(&status.id)?;
         }
     }
     Ok(())
+}
+
+/// The JSON of one page of jobs: `jobs`, the `next` cursor and the `total`.
+pub fn jobs_value(page: crate::store::JobPage) -> Value {
+    let mut value = Value::object();
+    value.insert(
+        "jobs",
+        Value::Array(page.jobs.iter().map(public_job).collect()),
+    );
+    value.insert("next", page.next.map_or(Value::Null, Value::String));
+    value.insert("total", Value::Number(page.total as f64));
+    value
 }
 
 pub fn public_job(job: &Job) -> Value {

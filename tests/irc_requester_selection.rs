@@ -204,7 +204,7 @@ fn a_compatible_selected_coowner_routes_one_native_import_under_the_creators_cap
     drop(e);
     let e = Engine::open(cfg).unwrap();
     assert_eq!(job(&e, &id).irc_origin, Some(origin));
-    assert_eq!(lock(&e.store).unwrap().list().len(), 1);
+    assert_eq!(lock(&e.store).unwrap().list().unwrap().len(), 1);
 }
 
 #[test]
