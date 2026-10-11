@@ -565,3 +565,232 @@ fn record_envelopes_bind_the_exact_key_even_when_payloads_are_identical() {
     assert!(index.get(&key(1)).is_err());
     assert_eq!(index.get(&key(2)).unwrap(), Some(Vec::new()));
 }
+
+fn object_exists(directory: &Path, id: u64) -> bool {
+    directory
+        .join("objects/00")
+        .join(
+            key(id)
+                .iter()
+                .skip(1)
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>(),
+        )
+        .exists()
+}
+
+fn inline(id: u64, data: &[u8]) -> Change {
+    Change::PutInline(key(id), data.to_vec())
+}
+
+#[test]
+fn inline_values_live_in_the_tree_and_switch_kinds_without_orphan_files() {
+    let directory = Directory::new();
+    let mut index = Index::create(&directory.0).unwrap();
+    index
+        .commit(vec![
+            inline(1, b"abc"),
+            inline(2, &[]),
+            inline(3, &[7; 32]),
+            Change::Put(key(4), vec![9; 100]),
+        ])
+        .unwrap();
+    assert!(inline_rejected(&mut index));
+    assert!(!object_exists(&directory.0, 1));
+    assert!(!object_exists(&directory.0, 3));
+    assert!(object_exists(&directory.0, 4));
+    assert_eq!(index.get(&key(1)).unwrap(), Some(b"abc".to_vec()));
+    assert_eq!(index.get(&key(2)).unwrap(), Some(Vec::new()));
+    assert_eq!(index.get(&key(3)).unwrap(), Some(vec![7; 32]));
+    let page = index.page(&Query::default()).unwrap();
+    assert_eq!(page.entries.len(), 4);
+    assert_eq!(page.entries[0].1, b"abc");
+    assert_eq!(page.entries[3].1, vec![9; 100]);
+    // A file value becomes inline and its record file is removed; the reverse
+    // creates the file. The cache never serves the earlier value.
+    index.get(&key(4)).unwrap();
+    index
+        .commit(vec![
+            inline(4, b"now tiny"),
+            Change::Put(key(1), vec![5; 40]),
+        ])
+        .unwrap();
+    assert_eq!(index.get(&key(4)).unwrap(), Some(b"now tiny".to_vec()));
+    assert_eq!(index.get(&key(1)).unwrap(), Some(vec![5; 40]));
+    assert!(!object_exists(&directory.0, 4));
+    assert!(object_exists(&directory.0, 1));
+    index
+        .commit(vec![Change::Delete(key(2)), Change::Delete(key(4))])
+        .unwrap();
+    assert_eq!(index.len().unwrap(), 2);
+    assert!(index.get(&key(2)).unwrap().is_none());
+    drop(index);
+    let mut index = Index::open(&directory.0, true).unwrap();
+    assert_eq!(index.get(&key(3)).unwrap(), Some(vec![7; 32]));
+    assert_eq!(index.get(&key(1)).unwrap(), Some(vec![5; 40]));
+    assert_eq!(index.len().unwrap(), 2);
+}
+
+fn inline_rejected(index: &mut Index) -> bool {
+    index.commit(vec![inline(9, &[1; 33])]).is_err()
+        && index
+            .commit(vec![inline(9, b"x"), Change::Delete(key(9))])
+            .is_err()
+        && index.get(&key(9)).unwrap().is_none()
+}
+
+#[test]
+fn inline_values_recover_at_every_commit_boundary_without_leftover_files() {
+    for fault in [
+        Fault::Staged,
+        Fault::Published,
+        Fault::FirstRecord,
+        Fault::FirstPage,
+        Fault::Applied,
+        Fault::Unlinked,
+    ] {
+        let directory = Directory::new();
+        let mut index = Index::create(&directory.0).unwrap();
+        index
+            .commit((0..40).map(|id| inline(id, &id.to_be_bytes())).collect())
+            .unwrap();
+        index.commit(vec![put(100)]).unwrap();
+        index.fault = Some(fault);
+        assert!(
+            index
+                .commit(vec![
+                    Change::Delete(key(3)),
+                    inline(8, b"replacement"),
+                    inline(100, b"was a file"),
+                    Change::Put(key(70), vec![1; 64]),
+                ])
+                .is_err()
+        );
+        assert!(index.get(&key(8)).is_err());
+        drop(index);
+        let mut index = Index::open(&directory.0, false).unwrap();
+        if fault == Fault::Staged {
+            assert_eq!(
+                index.get(&key(8)).unwrap(),
+                Some(8u64.to_be_bytes().to_vec())
+            );
+            assert_eq!(
+                index.get(&key(100)).unwrap(),
+                Some(100u64.to_be_bytes().to_vec())
+            );
+            assert!(object_exists(&directory.0, 100));
+            assert!(index.get(&key(70)).unwrap().is_none());
+        } else {
+            assert!(index.get(&key(3)).unwrap().is_none());
+            assert_eq!(index.get(&key(8)).unwrap(), Some(b"replacement".to_vec()));
+            assert_eq!(index.get(&key(100)).unwrap(), Some(b"was a file".to_vec()));
+            assert!(!object_exists(&directory.0, 100));
+            assert_eq!(index.get(&key(70)).unwrap(), Some(vec![1; 64]));
+        }
+        assert!(
+            contents(&directory.0)
+                .iter()
+                .all(|(path, _, _)| !path.to_string_lossy().contains(".record-"))
+        );
+        assert_eq!(index.len().unwrap(), 41);
+    }
+}
+
+#[test]
+fn malformed_inline_references_are_rejected_as_corruption() {
+    let directory = Directory::new();
+    let mut index = Index::create(&directory.0).unwrap();
+    index.commit(vec![inline(1, b"ab")]).unwrap();
+    let root = index.header.root;
+    drop(index);
+    let path = directory.0.join("tree.bin");
+    let mut file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&path)
+        .unwrap();
+    let original = tree::read_page(&mut file, root).unwrap();
+    for (offset, value) in [
+        // Data beyond the declared inline length must be zero padding.
+        (64 + 68 + 5, 1u8),
+        // An inline length larger than the 32 inline bytes.
+        (64 + 64, 40u8),
+    ] {
+        let mut page = original;
+        page[offset] = value;
+        let digest = sha256(&page[..PAGE_SIZE - 32]);
+        page[PAGE_SIZE - 32..].copy_from_slice(&digest);
+        file.seek(SeekFrom::Start(tree::offset(root).unwrap()))
+            .unwrap();
+        file.write_all(&page).unwrap();
+        assert!(Index::open(&directory.0, false).is_err(), "{offset}");
+    }
+    file.seek(SeekFrom::Start(tree::offset(root).unwrap()))
+        .unwrap();
+    file.write_all(&original).unwrap();
+    let mut index = Index::open(&directory.0, false).unwrap();
+    assert_eq!(index.get(&key(1)).unwrap(), Some(b"ab".to_vec()));
+}
+
+#[test]
+fn one_transaction_may_change_up_to_the_operation_bound_and_no_more() {
+    let directory = Directory::new();
+    let mut index = Index::create(&directory.0).unwrap();
+    let limit = super::MAX_CHANGES as u64;
+    index
+        .commit(
+            (0..limit)
+                .rev()
+                .map(|id| inline(id, &id.to_be_bytes()))
+                .collect(),
+        )
+        .unwrap();
+    assert_eq!(index.len().unwrap(), limit);
+    assert!(index.last_staged_nodes <= super::tree::MAX_DIRTY_PAGES);
+    assert!(
+        index
+            .commit((limit..=limit * 2).map(|id| inline(id, b"x")).collect())
+            .is_err()
+    );
+    assert_eq!(index.len().unwrap(), limit);
+    drop(index);
+    let mut index = Index::open(&directory.0, true).unwrap();
+    assert_eq!(
+        index.get(&key(limit - 1)).unwrap(),
+        Some((limit - 1).to_be_bytes().to_vec())
+    );
+}
+
+#[test]
+fn cached_pages_never_outlive_a_commit_or_a_recovery() {
+    let directory = Directory::new();
+    let mut index = Index::create(&directory.0).unwrap();
+    index.commit((0..300).map(put).collect()).unwrap();
+    // Populate the cache along several paths, then rewrite those pages.
+    for id in 0..300 {
+        assert!(index.get(&key(id)).unwrap().is_some());
+    }
+    index
+        .commit(
+            (0..300)
+                .step_by(7)
+                .map(|id| Change::Delete(key(id)))
+                .collect(),
+        )
+        .unwrap();
+    for id in 0..300u64 {
+        assert_eq!(index.get(&key(id)).unwrap().is_some(), id % 7 != 0, "{id}");
+    }
+    let page = index
+        .page(&Query {
+            limit: 200,
+            ..Query::default()
+        })
+        .unwrap();
+    assert!(page.entries.iter().all(|(found, _)| found != &key(0)));
+    index.fault = Some(Fault::Published);
+    assert!(index.commit(vec![Change::Delete(key(1))]).is_err());
+    drop(index);
+    let mut index = Index::open(&directory.0, false).unwrap();
+    assert!(index.get(&key(1)).unwrap().is_none());
+}

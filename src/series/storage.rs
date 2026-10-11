@@ -971,7 +971,7 @@ impl SeriesStore {
 
     /// Identifies the stored state for stale-plan fences; changes on every commit.
     pub(crate) fn sequence(&mut self) -> Result<u64> {
-        Ok(self.reader()?.map_or(Ok(0), |index| index.sequence())?)
+        self.reader()?.map_or(Ok(0), |index| index.sequence())
     }
 
     /// Storage state for status reports; never fails on an unreadable store.
@@ -1358,11 +1358,11 @@ impl SeriesStore {
                 }
             };
             let block = block_key(&id, season, episode);
-            if !blocks.contains_key(&block) {
+            if let std::collections::hash_map::Entry::Vacant(slot) = blocks.entry(block) {
                 let bytes = index
                     .get(&block)?
                     .ok_or("Series calendar index disagrees with its records")?;
-                blocks.insert(block, Block::decode(&bytes, season, episode / BLOCK)?);
+                slot.insert(Block::decode(&bytes, season, episode / BLOCK)?);
             }
             let content = &blocks[&block];
             let known = content
@@ -1496,4 +1496,54 @@ fn scoped_calendar(index: &mut Index, query: &CalendarQuery, id: &str) -> Result
             })
             .collect(),
     })
+}
+
+/// Test-only bulk loader: commits many brand-new records per transaction.
+/// Production code always goes through `save_record`.
+#[cfg(test)]
+pub(super) fn insert_many(index: &mut Index, records: &[Record]) -> Result<()> {
+    let mut changes: Vec<Change> = Vec::new();
+    let mut shared: BTreeMap<Key, Vec<u8>> = BTreeMap::new();
+    let mut before = counts(index)?;
+    for record in records {
+        record.validate()?;
+        let series = tmdb(record)?;
+        let mut pending = Vec::new();
+        for (key, entry) in owned(record)? {
+            pending.push(entry.change(key));
+        }
+        let mut local = BTreeMap::new();
+        for (catalog, number) in &record.anchors {
+            local.insert(identity_key(series, *catalog), number_bytes(*number));
+            local.insert(owner_key(series, *number), catalog.to_le_bytes().to_vec());
+        }
+        if !changes.is_empty()
+            && changes.len() + shared.len() + pending.len() + local.len() + 1
+                > crate::inventory::MAX_CHANGES
+        {
+            flush(index, &mut changes, &mut shared, before)?;
+        }
+        changes.extend(pending);
+        shared.extend(local);
+        before.series += 1;
+        before.monitored += u64::from(record.monitored);
+    }
+    flush(index, &mut changes, &mut shared, before)
+}
+
+#[cfg(test)]
+fn flush(
+    index: &mut Index,
+    changes: &mut Vec<Change>,
+    shared: &mut BTreeMap<Key, Vec<u8>>,
+    after: Counts,
+) -> Result<()> {
+    for (key, value) in std::mem::take(shared) {
+        if index.get(&key)?.is_none() {
+            changes.push(Change::PutInline(key, value));
+        }
+    }
+    changes.push(counts_change(after));
+    index.commit(std::mem::take(changes))?;
+    Ok(())
 }

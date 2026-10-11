@@ -1,7 +1,7 @@
 use super::{Key, MAX_VALUE_BYTES, Query};
 use crate::{Result, crypto::sha256};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     fs::File,
     io::{Read, Seek, SeekFrom},
 };
@@ -285,20 +285,28 @@ struct Bounds {
     lower: Option<Key>,
 }
 
+/// Decoded pages that were verified against their checksum and are still
+/// current. Cleared whenever a commit may have changed a page; at most
+/// `CACHE_NODES` entries (about 8 MiB) are kept.
+pub(super) type Cache = HashMap<u64, Node>;
+pub(super) const CACHE_NODES: usize = 2048;
+
 pub(super) struct Tree<'a> {
     pub file: &'a mut File,
     pub header: Header,
     pub dirty: BTreeMap<u64, Node>,
+    cache: &'a mut Cache,
     #[cfg(test)]
     pub reads: usize,
 }
 
 impl<'a> Tree<'a> {
-    pub fn new(file: &'a mut File, header: Header) -> Self {
+    pub fn new(file: &'a mut File, header: Header, cache: &'a mut Cache) -> Self {
         Self {
             file,
             header,
             dirty: BTreeMap::new(),
+            cache,
             #[cfg(test)]
             reads: 0,
         }
@@ -307,7 +315,7 @@ impl<'a> Tree<'a> {
         if id == 0 || id >= self.header.next || level > 63 {
             return Err("Invalid inventory tree reference".into());
         }
-        let node = if let Some(node) = self.dirty.get(&id) {
+        let node = if let Some(node) = self.dirty.get(&id).or_else(|| self.cache.get(&id)) {
             node.clone()
         } else {
             #[cfg(test)]
@@ -315,7 +323,12 @@ impl<'a> Tree<'a> {
                 self.reads += 1;
             }
             let bytes = read_page(self.file, id)?;
-            Node::decode(&bytes, id, level, self.header.next, self.header.identity)?
+            let node = Node::decode(&bytes, id, level, self.header.next, self.header.identity)?;
+            if self.cache.len() >= CACHE_NODES {
+                self.cache.clear();
+            }
+            self.cache.insert(id, node.clone());
+            node
         };
         if node.level != level
             || bounds

@@ -63,14 +63,11 @@ fn repeated_tracking_keeps_monitor_choices_due_time_and_snapshot_unchanged() {
                 .unwrap();
         }
         let expected = engine.series_record(id(&record)).unwrap();
-        let snapshot = fs::read(cfg.store_dir.join("series.json")).unwrap();
+        let snapshot = series_state(&cfg.store_dir);
         // Reusing an existing scope does not apply the new-scope flags.
         engine.track_series(&request(), true, true).unwrap();
         assert_eq!(engine.series_record(id(&record)).unwrap(), expected);
-        assert_eq!(
-            fs::read(cfg.store_dir.join("series.json")).unwrap(),
-            snapshot
-        );
+        assert_eq!(series_state(&cfg.store_dir), snapshot);
     }
 }
 
@@ -238,8 +235,7 @@ fn series_snapshot_restart_and_read_only_preview_preserve_settings_and_bytes() {
         .configure_series(&id, Some(false), None, None)
         .unwrap();
     let expected = engine.series_record(&id).unwrap();
-    let path = cfg.store_dir.join("series.json");
-    let bytes = fs::read(&path).unwrap();
+    let bytes = series_state(&cfg.store_dir);
     drop(engine);
     let preview = Engine::open_for_preview(cfg.clone()).unwrap();
     assert_eq!(preview.series_record(&id).unwrap(), expected);
@@ -248,7 +244,7 @@ fn series_snapshot_restart_and_read_only_preview_preserve_settings_and_bytes() {
             .configure_series(&id, Some(true), None, None)
             .is_err()
     );
-    assert_eq!(fs::read(&path).unwrap(), bytes);
+    assert_eq!(series_state(&cfg.store_dir), bytes);
     drop(preview);
     let reopened = Engine::open_for_management(cfg).unwrap();
     assert_eq!(reopened.series_record(&id).unwrap(), expected);
@@ -256,21 +252,28 @@ fn series_snapshot_restart_and_read_only_preview_preserve_settings_and_bytes() {
 }
 
 #[test]
-fn corrupt_and_linked_snapshots_fail_before_series_data_is_used() {
+fn corrupt_and_linked_series_storage_fails_before_series_data_is_used() {
     let directory = Directory::new();
     let catalog = Catalog::open(vec![episode(1, 1, Some("2200-01-01"), "Future")]);
     let cfg = catalog.config(&directory.0);
     let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    engine.track_series(&request(), false, true).unwrap();
+    let record = engine.track_series(&request(), false, true).unwrap();
+    let id = id(&record).to_owned();
     drop(engine);
     let path = cfg.store_dir.join("series.json");
     let original = fs::read(&path).unwrap();
-    let text = std::str::from_utf8(&original)
-        .unwrap()
-        .replace("Fixture Series", "Altered Series");
-    fs::write(&path, text).unwrap();
+    // The marker names exactly one index: any other binding is refused.
+    let text = std::str::from_utf8(&original).unwrap();
+    let marker: json::Value = json::parse(text).unwrap();
+    let digest = marker.get("digest").unwrap().as_str().unwrap().to_owned();
+    let other = format!(
+        "{}{}",
+        if digest.starts_with('0') { '1' } else { '0' },
+        &digest[1..]
+    );
+    fs::write(&path, text.replace(&digest, &other)).unwrap();
     let error = Engine::open_for_management(cfg.clone()).err().unwrap();
-    assert!(error.contains("checksum mismatch"));
+    assert!(error.contains("different series index"), "{error}");
     fs::write(&path, &original).unwrap();
     #[cfg(unix)]
     {
@@ -283,10 +286,84 @@ fn corrupt_and_linked_snapshots_fail_before_series_data_is_used() {
                 .contains("hard links")
         );
         fs::remove_file(linked).unwrap();
-        fs::rename(&path, directory.0.join("original-snapshot")).unwrap();
-        std::os::unix::fs::symlink(directory.0.join("original-snapshot"), &path).unwrap();
-        assert!(Engine::open_for_management(cfg).is_err());
+        fs::rename(&path, directory.0.join("original-marker")).unwrap();
+        std::os::unix::fs::symlink(directory.0.join("original-marker"), &path).unwrap();
+        assert!(Engine::open_for_management(cfg.clone()).is_err());
+        fs::remove_file(&path).unwrap();
+        fs::rename(directory.0.join("original-marker"), &path).unwrap();
     }
+    // A damaged record is an error wherever it is read, never an empty result.
+    let objects = cfg.store_dir.join("series.idx/objects");
+    let damaged: Vec<_> = walk(&objects);
+    assert!(!damaged.is_empty());
+    let saved: Vec<_> = damaged
+        .iter()
+        .map(|path| (path.clone(), fs::read(path).unwrap()))
+        .collect();
+    for (path, bytes) in &saved {
+        let mut broken = bytes.clone();
+        let middle = broken.len() / 2;
+        broken[middle] ^= 0x55;
+        fs::write(path, broken).unwrap();
+    }
+    let engine = Engine::open_for_management(cfg.clone()).unwrap();
+    assert!(engine.series_record(&id).is_err());
+    assert!(engine.series().is_err());
+    drop(engine);
+    for (path, bytes) in &saved {
+        fs::write(path, bytes).unwrap();
+    }
+    let engine = Engine::open_for_management(cfg).unwrap();
+    assert_eq!(
+        engine
+            .series_record(&id)
+            .unwrap()
+            .get("id")
+            .unwrap()
+            .as_str(),
+        Some(id.as_str())
+    );
+}
+
+fn walk(path: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    for entry in fs::read_dir(path).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            files.extend(walk(&path));
+        } else {
+            files.push(path);
+        }
+    }
+    files
+}
+
+#[test]
+fn a_corrupt_legacy_snapshot_is_never_migrated() {
+    let directory = Directory::new();
+    let catalog = Catalog::open(vec![episode(1, 1, Some("2200-01-01"), "Future")]);
+    let cfg = catalog.config(&directory.0);
+    let engine = Engine::open_for_management(cfg.clone()).unwrap();
+    let record = engine.track_series(&request(), false, true).unwrap();
+    let legacy = legacy_snapshot(&[engine.series_record(id(&record)).unwrap()], 2);
+    drop(engine);
+    restore_legacy(&cfg.store_dir, &legacy);
+    let altered = std::str::from_utf8(&legacy)
+        .unwrap()
+        .replace("Fixture Series", "Altered Series");
+    fs::write(cfg.store_dir.join("series.json"), &altered).unwrap();
+    let before = series_state(&cfg.store_dir);
+    let error = Engine::open_for_management(cfg.clone()).err().unwrap();
+    assert!(error.contains("checksum mismatch"), "{error}");
+    assert!(Engine::open_for_preview(cfg.clone()).is_err());
+    assert_eq!(series_state(&cfg.store_dir), before);
+    assert!(fs::read_dir(&cfg.store_dir).unwrap().all(|entry| {
+        !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with("series.legacy")
+    }));
 }
 
 #[test]
@@ -450,7 +527,7 @@ fn calendar_date_bounds_pagination_and_series_scope_are_strict_and_read_only() {
     let cfg = catalog.config(&directory.0);
     let engine = Engine::open_for_management(cfg.clone()).unwrap();
     let record = engine.track_series(&request(), false, true).unwrap();
-    let snapshot = fs::read(cfg.store_dir.join("series.json")).unwrap();
+    let snapshot = series_state(&cfg.store_dir);
     let mut query = CalendarQuery::parse(&format!(
         "from=2024-02-29&to=2024-03-01&series_id={}&offset=50&limit=20",
         id(&record)
@@ -463,10 +540,7 @@ fn calendar_date_bounds_pagination_and_series_scope_are_strict_and_read_only() {
         episodes(&value)[0].get("episode"),
         Some(&Value::Number(51.0))
     );
-    assert_eq!(
-        fs::read(cfg.store_dir.join("series.json")).unwrap(),
-        snapshot
-    );
+    assert_eq!(series_state(&cfg.store_dir), snapshot);
     for text in [
         "from=2024-02-30",
         "from=2024-01-01&to=2026-01-01",

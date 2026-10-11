@@ -71,6 +71,7 @@ pub struct Index {
     _lock: File,
     tree: File,
     header: Header,
+    cache: tree::Cache,
     read_only: bool,
     poisoned: bool,
     #[cfg(test)]
@@ -98,6 +99,11 @@ impl Index {
     /// False after an uncertain commit, until the store is reopened.
     pub fn is_usable(&self) -> bool {
         !self.poisoned
+    }
+
+    #[cfg(test)]
+    pub(crate) fn last_page_reads(&self) -> usize {
+        self.last_page_reads
     }
 
     #[cfg(test)]
@@ -132,7 +138,7 @@ impl Index {
 
     pub fn get(&mut self, key: &Key) -> Result<Option<Vec<u8>>> {
         self.available()?;
-        let value = Tree::new(&mut self.tree, self.header).find(key)?;
+        let value = Tree::new(&mut self.tree, self.header, &mut self.cache).find(key)?;
         value
             .map(|value| persistence::read_value(&self.directory, key, value))
             .transpose()
@@ -155,7 +161,7 @@ impl Index {
         {
             return Err("Inventory changed during the scan; restart from the first page".into());
         }
-        let mut tree = Tree::new(&mut self.tree, self.header);
+        let mut tree = Tree::new(&mut self.tree, self.header, &mut self.cache);
         let refs = tree.range(query, query.limit + 1)?;
         #[cfg(test)]
         {
@@ -247,7 +253,7 @@ impl Index {
                 existed,
             });
         }
-        let mut staged = Tree::new(&mut self.tree, before);
+        let mut staged = Tree::new(&mut self.tree, before, &mut self.cache);
         for action in &actions {
             staged.change(&action.key, action.reference()?, action.existed)?;
         }
@@ -266,6 +272,8 @@ impl Index {
             actions,
         };
         let bytes = transaction.encode()?;
+        // Applying rewrites pages in place: nothing cached may outlive it.
+        self.cache.clear();
         persistence::publish_and_apply(self, &transaction, &bytes)?;
         self.header = transaction.after;
         Ok(self.header.sequence)

@@ -193,3 +193,77 @@ pub fn id(value: &Value) -> &str {
 pub fn episodes(value: &Value) -> &[Value] {
     value.get("episodes").unwrap().as_array().unwrap()
 }
+
+fn collect(path: &Path, prefix: &str, files: &mut Vec<(String, Vec<u8>)>) {
+    let Ok(metadata) = std::fs::symlink_metadata(path) else {
+        return;
+    };
+    if metadata.is_dir() {
+        let mut names: Vec<_> = std::fs::read_dir(path)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        names.sort();
+        for name in names {
+            let child = format!("{prefix}/{}", name.to_string_lossy());
+            collect(&path.join(&name), &child, files);
+        }
+    } else {
+        files.push((prefix.to_owned(), std::fs::read(path).unwrap()));
+    }
+}
+
+/// Every byte of series storage: the marker or snapshot and the whole index.
+pub fn series_state(store_dir: &Path) -> Vec<(String, Vec<u8>)> {
+    let mut files = Vec::new();
+    for name in ["series.json", "series.idx", "series.idx.migrating"] {
+        collect(&store_dir.join(name), name, &mut files);
+    }
+    files
+}
+
+/// A pre-index `series.json` (schema 1 omits numbering history) rebuilt from
+/// the public records of a series.
+pub fn legacy_snapshot(records: &[Value], schema: u32) -> Vec<u8> {
+    let payload = Value::Array(
+        records
+            .iter()
+            .map(|record| {
+                let mut record = record.clone();
+                if let Some(Value::Array(episodes)) = record.get_mut("episodes") {
+                    for episode in episodes {
+                        if let Value::Object(fields) = episode {
+                            fields.remove("monitored");
+                            fields.remove("excluded");
+                        }
+                    }
+                }
+                if schema == 1
+                    && let Value::Object(fields) = &mut record
+                {
+                    fields.remove("anchors");
+                    fields.remove("numbering");
+                }
+                record
+            })
+            .collect(),
+    );
+    let digest: String = mynou::crypto::sha256(json::stringify(&payload).as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    let mut envelope = Value::object();
+    envelope.insert("schema_version", schema);
+    envelope.insert("digest", digest);
+    envelope.insert("records", payload);
+    json::stringify(&envelope).into_bytes()
+}
+
+/// Turns a store directory back into what 0.23 and earlier left behind.
+pub fn restore_legacy(store_dir: &Path, bytes: &[u8]) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::remove_dir_all(store_dir.join("series.idx"));
+    let path = store_dir.join("series.json");
+    std::fs::write(&path, bytes).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+}
