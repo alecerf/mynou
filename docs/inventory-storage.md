@@ -166,9 +166,11 @@ container on overlayfs, synthetic scopes of 3 seasons x 30 episodes, one reading
 process per size). These are indicative container numbers: CI does not run or
 enforce them, and file synchronization is cheaper there than on macOS. Migrating
 a snapshot at the old limits (128 scopes, 19,968 episodes, 8.3 MB) took 3.1 s in
-the same container; CI prints the time of that migration (debug build, macOS) in
-its test log as `series-migration-at-old-limits`, but nothing asserts it, and the
-start-up delay on a real macOS machine has not been measured.
+the same container. One CI run on a macOS runner (unoptimized test build, so a
+pessimistic figure) took 38 s for it; CI logs it as `series-migration-at-old-limits`
+but nothing asserts it, and the start-up delay of the release build on a real
+machine has not been measured. Expect a first start after upgrading to wait up to
+tens of seconds for a snapshot near the old limits.
 
 | Scopes | Episodes | On disk | Open | 200-summary pages walked | Due pass | One scope save | Calendar page (200 rows) | Peak RSS reading |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
