@@ -174,7 +174,12 @@ impl Mapping {
             .iter()
             .find(|(r, _)| r == role)
             .map(|(_, name)| name.as_str())
-            .or_else(|| ROLES.iter().find(|(r, _)| *r == role).map(|(_, name)| *name))?;
+            .or_else(|| {
+                ROLES
+                    .iter()
+                    .find(|(r, _)| *r == role)
+                    .map(|(_, name)| *name)
+            })?;
         (!name.is_empty()).then_some(name)
     }
 
@@ -246,8 +251,8 @@ mod tests {
         assert_eq!(none.canonical(), "");
         assert_eq!(none.parameter("query"), Some("q"));
         assert_eq!(none.parameter("api_key"), Some("apikey"));
-        let page = json::parse(r#"{"results":[{"title":"A","magnet":"m","seeders_count":"7"}]}"#)
-            .unwrap();
+        let page =
+            json::parse(r#"{"results":[{"title":"A","magnet":"m","seeders_count":"7"}]}"#).unwrap();
         let item = &none.list(&page).unwrap()[0];
         assert_eq!(none.title(item), Some("A"));
         assert_eq!(none.url(item), Some("m"));
@@ -268,7 +273,11 @@ mod tests {
         assert_eq!(mapping.title(item), Some("N"));
         assert_eq!(mapping.url(item), Some("https://x.test/d/1"));
         assert_eq!(mapping.seeders(item), 12);
-        assert!(mapping.list(&json::parse(r#"{"data":[]}"#).unwrap()).is_none());
+        assert!(
+            mapping
+                .list(&json::parse(r#"{"data":[]}"#).unwrap())
+                .is_none()
+        );
         assert!(!mapping.canonical().is_empty());
     }
 
