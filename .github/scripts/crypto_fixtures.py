@@ -84,7 +84,7 @@ def transport_vectors():
             padded = payload + bytes((-size) % 16)
             nonce = bytes(4) + counter.to_bytes(8, "little")
             header = bytes((4, 0, 0, 0)) + (31).to_bytes(4, "little") + counter.to_bytes(8, "little")
-            rows.append({"key": key.hex(), "counter": counter, "payload": payload.hex(),
+            rows.append({"key": key.hex(), "counter": str(counter), "payload": payload.hex(),
                          "packet": (header + empty_aad_aead(key, nonce, padded)).hex()})
     return rows
 

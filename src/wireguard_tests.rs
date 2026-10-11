@@ -48,7 +48,7 @@ fn independent_reference_packets_include_nonce_endianness_and_padding() {
         let payload = bytes(row.get("payload").unwrap().as_str().unwrap());
         let mut session =
             Session::from_handshake([key, [9; 32]], [17, 31], Role::Initiator, 4, Duration::ZERO);
-        session.sent = row.get("counter").unwrap().as_u64().unwrap();
+        session.sent = row.get("counter").unwrap().as_str().unwrap().parse().unwrap();
         let actual = session.send(&payload, 4, Duration::ZERO).unwrap();
         assert_eq!(
             actual.bytes,
