@@ -1011,10 +1011,13 @@ fn the_widest_valid_plan_saves_in_one_transaction_and_round_trips() {
     save_widest(100);
 }
 
+/// The pathological block spread (4,000 blocks) is slow to synchronize, so it
+/// runs only on request: `MYNOU_WIDEST=1 cargo test widest_possible`.
 #[test]
-#[ignore = "worst block spread; run with --ignored"]
 fn the_widest_possible_block_spread_still_fits_one_transaction() {
-    save_widest(2_000);
+    if std::env::var_os("MYNOU_WIDEST").is_some() {
+        save_widest(2_000);
+    }
 }
 
 #[test]
@@ -1076,12 +1079,14 @@ fn settings_changes_keep_counters_indexes_and_scope_lookups_exact() {
 
 /// Measurement harness, run by hand: `MYNOU_SCALE_DIR=/path MYNOU_SCALE_SCOPES=N
 /// MYNOU_SCALE_PHASE=build|read cargo test --release series_scale_report
-/// -- --ignored --nocapture`. The phases run in separate processes so the
-/// peak resident size of reading an existing inventory is measured on its own.
+/// -- --nocapture`; without MYNOU_SCALE_DIR the test does nothing. The phases
+/// run in separate processes so the peak resident size of reading an existing
+/// inventory is measured on its own.
 #[test]
-#[ignore = "measurement run; see the doc comment"]
 fn series_scale_report() {
-    let directory = PathBuf::from(std::env::var("MYNOU_SCALE_DIR").expect("MYNOU_SCALE_DIR"));
+    let Some(directory) = std::env::var_os("MYNOU_SCALE_DIR").map(PathBuf::from) else {
+        return;
+    };
     let scopes: u64 = std::env::var("MYNOU_SCALE_SCOPES")
         .expect("MYNOU_SCALE_SCOPES")
         .parse()
