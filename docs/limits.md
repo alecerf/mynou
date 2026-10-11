@@ -135,6 +135,9 @@ Indexers:
   checked, and multiple or ambiguous cookies, duplicate or unknown attributes
   and unrelated scopes are rejected. `Max-Age` wins over `Expires`, and
   `max_age_secs` (1 to 3,600) is always an upper bound.
+- A JSON `mapping` has paths of up to eight parts, up to four alternative
+  `url` paths and up to eight fixed parameters of at most 256 characters; names
+  are at most 64 characters. A search reads a single result page.
 - Request intervals accept 0 to 60,000 ms. `Retry-After` on HTTP 429 defaults
   to 60 seconds and is clamped to 1 to 3,600. A probe has a five-second budget;
   if the service crashes during a probe its outcome stays unknown, and probes

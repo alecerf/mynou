@@ -65,6 +65,70 @@ displayed. An expired session is renewed before the next fetch; a `401`
 triggers one renewal, and a second `401` fails the request. There is never an
 unauthenticated fallback.
 
+### Connecting any indexer
+
+Pick the first format your indexer offers:
+
+1. **Torznab** (`kind: "torznab"`) is the standard search API, served directly
+   by many indexers and by aggregators such as Prowlarr or Jackett, and Mynou
+   speaks it natively.
+2. **RSS** (`kind: "rss"`) reads any feed whose items carry a title and an
+   enclosure, link or magnet.
+3. **JSON** (`kind: "json"`) reads any other JSON search API once a `mapping`
+   tells Mynou where things are. Without a `mapping`, Mynou expects a list (or
+   `results` / `items`) of objects with `title`, a download address
+   (`download_url`, `magnet`, `magnet_url`, `url` or `link`) and `seeders`, and
+   sends `q`, `kind`, `year`, `season`, `episode`, `absolute` and `apikey`.
+
+A `mapping` is a section of a `json` source. Every key is optional:
+
+```json
+{
+  "name": "tracker",
+  "kind": "json",
+  "url": "https://indexer.example.test/api/search",
+  "api_key_env": "MYNOU_INDEXER_API_KEY",
+  "mapping": {
+    "results": "data.torrents",
+    "title": "meta.name",
+    "url": ["links.magnet", "links.download"],
+    "seeders": "stats.seeders",
+    "params": { "query": "search", "kind": "category", "year": "", "api_key": "key" },
+    "kind_values": { "movie": "2000", "episode": "5000" },
+    "fixed_params": { "limit": "100" }
+  }
+}
+```
+
+- `results`, `title`, `url` and `seeders` are dot-separated paths of up to eight
+  parts through objects; a numeric part picks an array element (`links.0`).
+  `url` accepts up to four paths and uses the first that holds a text value.
+  A relative address is resolved against the source's origin; entries without a
+  title or a valid magnet or HTTP(S) address are skipped, and `seeders` may be
+  a number or numeric text (missing means 0).
+- `params` renames what Mynou sends: `query`, `kind`, `year`, `season`,
+  `episode`, `absolute` and `api_key` map to your parameter name, and an empty
+  name leaves that parameter out. `kind_values` replaces the value sent for
+  `movie`, `episode` and `series`, for indexers that expect a category.
+- `fixed_params` adds up to eight constant parameters, such as a category or a
+  page size. They are written in `mynou.json` in clear: never put a credential
+  there. Credentials stay in environment variables (`api_key_env` and
+  [authentication](#authentication)), and the API key is sent as a query
+  parameter named by `params.api_key`.
+- All resulting parameter names must be distinct. Unknown keys, malformed paths
+  and a `mapping` on a non-`json` source stop the service from starting.
+- A response that does not match the mapping is reported as a parse failure
+  (`last_parse` in `mynou indexers`). `mynou indexers` never shows the mapping.
+- The mapping is part of the source's identity: changing it on a source with an
+  `id` needs a new `id`, as for the URL.
+
+Not supported: HTML scraping, reading several result pages, API keys sent in a
+header (use `bearer` or `basic` authentication where the indexer accepts it),
+interactive or CAPTCHA logins, and scripts. An indexer that offers none of the
+three formats is not reachable directly; put an aggregator that serves Torznab
+in front of it. Compatibility of any particular tracker is not verified by
+Mynou: check it with `mynou indexer-control SOURCE --action probe`.
+
 ### Health, pause and probe
 
 ```sh
