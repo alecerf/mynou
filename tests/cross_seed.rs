@@ -686,7 +686,10 @@ fn api_authorization_and_cli_register_only_the_selected_readonly_seed() {
         401
     );
     body.insert("unknown", true);
-    let headers = vec![("Authorization".into(), format!("Bearer {TOKEN}"))];
+    let headers = vec![
+        ("Authorization".into(), format!("Bearer {TOKEN}")),
+        ("Content-Type".into(), "application/json".into()),
+    ];
     assert_eq!(
         http.request("POST", &route, &headers, json::stringify(&body).as_bytes())
             .unwrap()

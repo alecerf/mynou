@@ -360,10 +360,17 @@ impl Client {
                 || job.source.v2.is_some_and(|hash| {
                     Some(&hash[..20]) == meta.v1.as_ref().map(|hash| hash.as_slice())
                 })
-        }) || ["torrent", "source", "seed"].iter().any(|suffix| {
-            fs::symlink_metadata(self.config.state_dir.join(name).with_extension(suffix)).is_ok()
         }) {
             return Err("Candidate swarm already exists; inspect its transfer instead".into());
+        }
+        for suffix in ["torrent", "source", "seed"] {
+            let path = self.config.state_dir.join(name).with_extension(suffix);
+            if !path.starts_with(&self.config.state_dir) {
+                return Err("Cross-seed state path escaped its private directory".into());
+            }
+            if fs::symlink_metadata(&path).is_ok() {
+                return Err("Candidate swarm already exists; inspect its transfer instead".into());
+            }
         }
         let source = jobs
             .get(source_id)
@@ -671,7 +678,7 @@ mod tests {
         fs::create_dir_all(config.data_dir.join(&source_id)).unwrap();
         fs::write(config.data_dir.join(&source_id).join("empty.bin"), []).unwrap();
         let reuse = CrossSeed::bind(&source_id, Arc::new(meta.clone()), &meta, None).unwrap();
-        let job = queued(meta, reuse, id.clone(), 0, &config).unwrap();
+        let job = queued(meta, reuse, id.clone(), 1, &config).unwrap();
         let old = job.cancel.clone();
         let jobs: Jobs = Arc::new(Mutex::new(BTreeMap::from([(id.clone(), job)])));
         assert!(select_announce(&config, &jobs, &mut None).is_none());
