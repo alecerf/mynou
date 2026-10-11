@@ -350,7 +350,11 @@ impl Engine {
         self.transfer(id)
     }
 
-    pub fn cross_seed(&self, source_id: &str, request: &crate::torrent::CrossSeedRequest) -> Result<Value> {
+    pub fn cross_seed(
+        &self,
+        source_id: &str,
+        request: &crate::torrent::CrossSeedRequest,
+    ) -> Result<Value> {
         let status = self.native_client()?.cross_seed(source_id, request)?;
         self.transfer(&status.id)
     }
