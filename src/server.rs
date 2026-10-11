@@ -549,7 +549,10 @@ pub(crate) fn route(
                 let snapshot = match parts[1] {
                     "cross-seed" => {
                         let value = control_body(body, &["metadata_hex", "mapping"], false)?;
-                        engine.cross_seed(&id, &crate::torrent::CrossSeedRequest::from_json(&value)?)?
+                        engine.cross_seed(
+                            &id,
+                            &crate::torrent::CrossSeedRequest::from_json(&value)?,
+                        )?
                     }
                     "pause" | "resume" => {
                         control_body(body, &[], true)?;

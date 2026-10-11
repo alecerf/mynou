@@ -587,23 +587,43 @@ fn execute(args: Args) -> Result<()> {
     let online = args.command != "irc-preview" && running(&config);
     match args.command.as_str() {
         "cross-seed" => {
-            if !online { return Err("Cross-seeding requires the running Mynou service".into()); }
+            if !online {
+                return Err("Cross-seeding requires the running Mynou service".into());
+            }
             let id = &args.positions[0];
             if ![40, 64].contains(&id.len()) || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
                 return Err("Invalid native source transfer ID".into());
             }
             let file = args.options.get("torrent").ok_or("--torrent is required")?;
             let mut metadata = Vec::new();
-            fs::File::open(file).and_then(|file| file.take((mynou::torrent::MAX_CROSS_SEED_METADATA + 1) as u64).read_to_end(&mut metadata))
+            fs::File::open(file)
+                .and_then(|file| {
+                    file.take((mynou::torrent::MAX_CROSS_SEED_METADATA + 1) as u64)
+                        .read_to_end(&mut metadata)
+                })
                 .map_err(|_| "Could not read cross-seed torrent metadata")?;
             if metadata.is_empty() || metadata.len() > mynou::torrent::MAX_CROSS_SEED_METADATA {
                 return Err("Cross-seed metadata must contain 1 to 262144 bytes".into());
             }
             let mut body = Value::object();
-            body.insert("metadata_hex", metadata.iter().map(|byte| format!("{byte:02x}")).collect::<String>());
-            if let Some(mapping) = args.options.get("mapping") { body.insert("mapping", json::parse(mapping)?); }
+            body.insert(
+                "metadata_hex",
+                metadata
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>(),
+            );
+            if let Some(mapping) = args.options.get("mapping") {
+                body.insert("mapping", json::parse(mapping)?);
+            }
             mynou::torrent::CrossSeedRequest::from_json(&body)?;
-            output(&call(&config, &path, "POST", &format!("/api/transfers/{}/cross-seed", id.to_ascii_lowercase()), Some(&body))?);
+            output(&call(
+                &config,
+                &path,
+                "POST",
+                &format!("/api/transfers/{}/cross-seed", id.to_ascii_lowercase()),
+                Some(&body),
+            )?);
         }
         "torrents" => {
             if !online {

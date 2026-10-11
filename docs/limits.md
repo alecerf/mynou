@@ -349,7 +349,9 @@ IRC announcements:
   logins and arbitrary cookie jars.
 - IRC pack or upgrade actions, broader announcement formats and interactive IRC
   authentication.
-- Cross-seeding and further bulk automation.
+- Automatic cross-seed discovery, v2/hybrid cross-seeding and further bulk
+  automation. See [the transfer guide](transfers.md#manual-cross-seeding) for
+  the limits of supported manual v1 cross-seeding.
 - Automatic anime-order or episode-range inference, splitting or cutting
   videos, automatic search for shared groups, and renaming or deleting library
   files.
