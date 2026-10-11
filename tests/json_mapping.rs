@@ -88,12 +88,17 @@ const MAPPED_BODY: &str = r#"{"data":{"torrents":[{"meta":{"name":"Fixture.Movie
 fn mapping_renames_parameters_and_reads_nested_fields_without_leaking_the_key() {
     let directory = Directory::new();
     let (url, server) = serve(MAPPED_BODY);
-    let c = config::from_json(&configuration(&directory, &url, Some(MAPPING)), &directory.0)
-        .unwrap();
+    let c = config::from_json(
+        &configuration(&directory, &url, Some(MAPPING)),
+        &directory.0,
+    )
+    .unwrap();
     let report = json::stringify(&integrations::search_report(&c, &movie()).unwrap());
     let line = server.join().unwrap();
     assert!(
-        line.starts_with("GET /api?search=Fixture%20Movie&category=2000&season=0&episode=0&limit=50&key="),
+        line.starts_with(
+            "GET /api?search=Fixture%20Movie&category=2000&season=0&episode=0&limit=50&key="
+        ),
         "unexpected request: {line}"
     );
     assert!(!line.contains("year=") && !line.contains("apikey="));
@@ -107,7 +112,9 @@ fn mapping_renames_parameters_and_reads_nested_fields_without_leaking_the_key() 
 #[test]
 fn a_source_without_mapping_keeps_the_built_in_names() {
     let directory = Directory::new();
-    let (url, server) = serve(r#"[{"title":"Fixture.Movie.2024.1080p","seeders":5,"url":"magnet:?xt=urn:btih:0123456789012345678901234567890123456789"}]"#);
+    let (url, server) = serve(
+        r#"[{"title":"Fixture.Movie.2024.1080p","seeders":5,"url":"magnet:?xt=urn:btih:0123456789012345678901234567890123456789"}]"#,
+    );
     let mut v = configuration(&directory, &url, None);
     let Value::Array(sources) = v.get_mut("indexers").unwrap() else {
         panic!()
@@ -126,8 +133,11 @@ fn a_source_without_mapping_keeps_the_built_in_names() {
 fn a_response_that_does_not_match_the_mapping_is_a_parse_failure() {
     let directory = Directory::new();
     let (url, server) = serve(r#"{"results":[{"title":"Fixture.Movie.2024.1080p"}]}"#);
-    let c = config::from_json(&configuration(&directory, &url, Some(MAPPING)), &directory.0)
-        .unwrap();
+    let c = config::from_json(
+        &configuration(&directory, &url, Some(MAPPING)),
+        &directory.0,
+    )
+    .unwrap();
     let _ = integrations::search_report(&c, &movie());
     server.join().unwrap();
     let health = mynou::indexers::report(&c.sources);
