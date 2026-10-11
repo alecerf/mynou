@@ -9,6 +9,9 @@ use super::{
 use crate::json::{self, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// The history message of a lease renewal.
+pub(super) const RENEWED: &str = "processing lease renewed";
+
 /// Totals kept in one inline entry so status needs no scan.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Counts {
@@ -453,6 +456,14 @@ impl Db<'_> {
     fn stage_event(&mut self, event: &Event, staged: &mut Staged) -> Result<()> {
         let id = id_bytes(&event.job_id)?;
         let mut log = self.events(&id)?;
+        // Heartbeats would push the meaningful history out of a bounded log:
+        // a renewal replaces the previous one instead of adding to it.
+        if event.message == RENEWED
+            && log.last().is_some_and(|last| last.message == RENEWED)
+            && let Some(replaced) = log.pop()
+        {
+            staged.insert(sequence_key(replaced.id), None);
+        }
         log.push(event.clone());
         while log.len() > MAX_JOB_EVENTS {
             let dropped = log.remove(0);

@@ -1,5 +1,6 @@
 //! Original shared-file lifecycle scenarios. Executed by GitHub Actions only.
 mod automatic_pack_support;
+mod jobs_state;
 mod library_support;
 mod series_support;
 #[allow(dead_code)]
@@ -111,18 +112,10 @@ fn metadata_preview_is_read_only_and_sixty_four_owners_commit_in_one_verified_fr
             .iter()
             .all(|j| j.shared_file.as_ref() == Some(binding) && j.download_id.is_none())
     );
-    let bytes = fs::read(cfg.store_dir.join("journal.bin")).unwrap();
-    assert_eq!(&bytes[..8], b"MYNOUJ02");
-    let length = u32::from_le_bytes(bytes[16..20].try_into().unwrap()) as usize;
-    assert_eq!(bytes.len(), length + 116);
     assert_eq!(lock(&engine.store).unwrap().events("").unwrap().len(), 1);
     drop(engine);
     let engine = Engine::open_for_management(cfg.clone()).unwrap();
     assert_eq!(lock(&engine.store).unwrap().list().unwrap(), saved);
-    assert_eq!(
-        &fs::read(cfg.store_dir.join("snapshot.bin")).unwrap()[..8],
-        b"MYNOUS02"
-    );
     drop(engine);
     let preview = Engine::open_for_preview(cfg.clone()).unwrap();
     let before = snapshot(&cfg.store_dir);
@@ -133,43 +126,6 @@ fn metadata_preview_is_read_only_and_sixty_four_owners_commit_in_one_verified_fr
     query.plan_id = Some(report.get("plan_id").unwrap().as_str().unwrap().into());
     assert!(preview.shared_file(&series, &query).is_err());
     assert_eq!(snapshot(&cfg.store_dir), before);
-}
-
-#[test]
-fn interrupted_group_frames_recover_all_or_none_and_complete_corruption_fails_closed() {
-    let directory = Directory::new();
-    let catalog = catalog(2);
-    let torrent = torrent(&directory, "metadata");
-    let cfg = catalog.config(&directory.0.join("engine"));
-    let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    let series = tracked(&engine);
-    apply(&engine, &series, &query(torrent.path.to_str().unwrap()));
-    let original = fs::read(cfg.store_dir.join("journal.bin")).unwrap();
-    drop(engine);
-    for (n, cut) in [0, 8, 83, 84, original.len() / 2, original.len() - 1]
-        .into_iter()
-        .enumerate()
-    {
-        let path = directory.0.join(format!("torn-{n}"));
-        drop(Store::open(&path).unwrap());
-        fs::write(path.join("journal.bin"), &original[..cut]).unwrap();
-        let mut store = Store::open(&path).unwrap();
-        assert!(
-            store.list().unwrap().is_empty(),
-            "Recovered part of a group at byte {cut}"
-        );
-        assert!(store.events("").unwrap().is_empty());
-        assert_eq!(fs::metadata(path.join("journal.bin")).unwrap().len(), 0);
-    }
-    let mut corrupt = original;
-    corrupt[90] ^= 1;
-    fs::write(cfg.store_dir.join("journal.bin"), &corrupt).unwrap();
-    let error = Store::open(&cfg.store_dir).err().unwrap();
-    assert!(error.contains("corrupt complete transaction"), "{error}");
-    assert_eq!(
-        fs::read(cfg.store_dir.join("journal.bin")).unwrap(),
-        corrupt
-    );
 }
 
 #[test]
@@ -810,7 +766,7 @@ fn retained_shared_import_uses_its_binding_after_the_library_root_changes() {
 }
 
 #[test]
-fn signed_but_incomplete_ownership_is_rejected_in_both_journal_and_snapshot() {
+fn incomplete_legacy_ownership_is_refused_by_migration_without_writing() {
     let directory = Directory::new();
     let catalog = catalog(3);
     let torrent = torrent(&directory, "metadata");
@@ -820,49 +776,37 @@ fn signed_but_incomplete_ownership_is_rejected_in_both_journal_and_snapshot() {
     let mut query = query(torrent.path.to_str().unwrap());
     query.episodes = vec![1, 2, 3];
     apply(&engine, &series, &query);
-    let original = fs::read(cfg.store_dir.join("journal.bin")).unwrap();
+    let mut owners = lock(&engine.store).unwrap().list().unwrap();
     drop(engine);
-    let size = u32::from_le_bytes(original[16..20].try_into().unwrap()) as usize;
-    let mut value = json::parse(std::str::from_utf8(&original[84..84 + size]).unwrap()).unwrap();
-    if let Value::Array(owners) = value.get_mut("shared_owners").unwrap() {
-        owners.pop();
+    owners.pop();
+    // The same group missing its last owner, as a snapshot and as a journal.
+    for journal in [false, true] {
+        jobs_state::reset(&cfg.store_dir);
+        let (journal_magic, snapshot_magic) = jobs_state::magics(&owners);
+        if journal {
+            let event = mynou::store::Event {
+                id: 1,
+                job_id: owners[0].id.clone(),
+                state: owners[0].state.clone(),
+                message: "legacy".into(),
+                at: owners[0].updated_at,
+            };
+            let (bytes, _) = jobs_state::frame(&owners, &event, 1, &[0; 32], journal_magic, None);
+            jobs_state::write_private(&cfg.store_dir.join("journal.bin"), &bytes);
+        } else {
+            let bytes = jobs_state::snapshot(&owners, &[], 0, &[0; 32], snapshot_magic);
+            jobs_state::write_private(&cfg.store_dir.join("snapshot.bin"), &bytes);
+        }
+        let before = snapshot(&cfg.store_dir);
+        assert!(
+            Store::open(&cfg.store_dir)
+                .err()
+                .unwrap()
+                .contains("Incomplete shared ownership")
+        );
+        assert_eq!(snapshot(&cfg.store_dir), before);
+        assert!(!cfg.store_dir.join("jobs.idx").exists());
     }
-    let payload = json::stringify(&value).into_bytes();
-    let mut frame = original[..52].to_vec();
-    frame[16..20].copy_from_slice(&(payload.len() as u32).to_le_bytes());
-    frame.extend_from_slice(&mynou::crypto::sha256(&frame));
-    frame.extend_from_slice(&payload);
-    frame.extend_from_slice(&mynou::crypto::sha256(&frame));
-    fs::write(cfg.store_dir.join("journal.bin"), &frame).unwrap();
-    assert!(
-        Store::open(&cfg.store_dir)
-            .err()
-            .unwrap()
-            .contains("Incomplete shared ownership")
-    );
-    assert_eq!(fs::read(cfg.store_dir.join("journal.bin")).unwrap(), frame);
-    fs::write(cfg.store_dir.join("journal.bin"), original).unwrap();
-    let mut store = Store::open(&cfg.store_dir).unwrap();
-    drop(store);
-    let bytes = fs::read(cfg.store_dir.join("snapshot.bin")).unwrap();
-    let mut value =
-        json::parse(std::str::from_utf8(&bytes[16..bytes.len() - 32]).unwrap()).unwrap();
-    if let Value::Array(owners) = value.get_mut("jobs").unwrap() {
-        owners.pop();
-    }
-    let payload = json::stringify(&value).into_bytes();
-    let mut bytes = b"MYNOUS02".to_vec();
-    bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
-    bytes.extend_from_slice(&payload);
-    bytes.extend_from_slice(&mynou::crypto::sha256(&bytes));
-    fs::write(cfg.store_dir.join("snapshot.bin"), &bytes).unwrap();
-    assert!(
-        Store::open(&cfg.store_dir)
-            .err()
-            .unwrap()
-            .contains("Incomplete shared ownership")
-    );
-    assert_eq!(fs::read(cfg.store_dir.join("snapshot.bin")).unwrap(), bytes);
 }
 
 #[test]

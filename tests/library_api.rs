@@ -1,4 +1,5 @@
 //! Authenticated library controls and CLI routing; all services are synthetic and local.
+mod jobs_state;
 mod library_support;
 
 use library_support::*;
@@ -333,10 +334,7 @@ fn online_cli_uses_the_api_while_the_engine_owns_the_journal_lock() {
     server.write_cli_config(&directory.0, configuration);
     let before = files(&directory.0);
     let library = successful(command(&directory.0, &["library"]));
-    assert_eq!(
-        library,
-        server.engine.library(None, 200).unwrap(),
-    );
+    assert_eq!(library, server.engine.library(None, 200).unwrap(),);
     assert_eq!(files(&directory.0), before);
     let baseline = successful(command(
         &directory.0,
@@ -378,7 +376,7 @@ fn online_cli_uses_the_api_while_the_engine_owns_the_journal_lock() {
 }
 
 #[test]
-fn offline_cli_controls_persist_and_previews_leave_the_journal_unchanged() {
+fn offline_cli_controls_persist_and_previews_leave_the_job_index_unchanged() {
     let directory = Directory::new();
     let indexer = candidate_indexer();
     let configuration = configuration(Some(&indexer), HD);
@@ -389,12 +387,12 @@ fn offline_cli_controls_persist_and_previews_leave_the_journal_unchanged() {
     .unwrap();
     let engine = Engine::open(config::from_json(&configuration, &directory.0).unwrap()).unwrap();
     let original = local_import(&engine, &directory.0, "Fixture Movie");
-    let journal = engine.config.store_dir.join("journal.bin");
+    let store = engine.config.store_dir.clone();
     drop(engine);
-    let before = fs::read(&journal).unwrap();
+    let before = jobs_state::fingerprint(&store);
     let library = successful(command(&directory.0, &["library"]));
-    assert_eq!(library.as_array().unwrap().len(), 1);
-    assert_eq!(fs::read(&journal).unwrap(), before);
+    assert_eq!(library.get("library").unwrap().as_array().unwrap().len(), 1);
+    assert_eq!(jobs_state::fingerprint(&store), before);
     successful(command(
         &directory.0,
         &["baseline", &original.id, "--release-title", BASELINE],
@@ -404,10 +402,10 @@ fn offline_cli_controls_persist_and_previews_leave_the_journal_unchanged() {
     assert_eq!(preview.get("queued").and_then(Value::as_u64), Some(0));
     assert_eq!(indexer.calls.load(Ordering::Relaxed), 0);
     successful(command(&directory.0, &["monitor", &original.id]));
-    let before = fs::read(&journal).unwrap();
+    let before = jobs_state::fingerprint(&store);
     let preview = successful(command(&directory.0, &["upgrades"]));
     assert_eq!(preview.get("apply"), Some(&Value::Bool(false)));
-    assert_eq!(fs::read(&journal).unwrap(), before);
+    assert_eq!(jobs_state::fingerprint(&store), before);
     assert_redacted(&preview);
     let engine = Engine::open(config::from_json(&configuration, &directory.0).unwrap()).unwrap();
     let resumed = lock(&engine.store)
@@ -487,7 +485,7 @@ fn offline_previews_of_a_missing_store_create_no_files_or_directories() {
 }
 
 #[test]
-fn offline_previews_refuse_partial_journal_recovery_without_changing_existing_bytes() {
+fn offline_previews_refuse_an_unmigrated_store_without_changing_existing_bytes() {
     let directory = Directory::new();
     let indexer = candidate_indexer();
     let configuration = configuration(Some(&indexer), HD);
@@ -499,21 +497,23 @@ fn offline_previews_refuse_partial_journal_recovery_without_changing_existing_by
     let engine = Engine::open(config::from_json(&configuration, &directory.0).unwrap()).unwrap();
     let original = local_import(&engine, &directory.0, "Fixture Movie");
     engine.set_baseline(&original.id, BASELINE).unwrap();
-    let journal = engine.config.store_dir.join("journal.bin");
+    let store = engine.config.store_dir.clone();
+    let jobs = lock(&engine.store).unwrap().list().unwrap();
     drop(engine);
-    let mut incomplete = fs::read(&journal).unwrap();
-    // Two bytes cannot contain a complete four-byte record length.
-    incomplete.extend_from_slice(&[0, 1]);
-    fs::write(&journal, &incomplete).unwrap();
+    // The files an earlier version left: a snapshot plus an interrupted write.
+    jobs_state::downgrade(&store, &jobs);
+    let mut journal = Vec::new();
+    // Two bytes cannot contain a complete record header.
+    journal.extend_from_slice(&[0, 1]);
+    jobs_state::write_private(&store.join("journal.bin"), &journal);
     let before = files(&directory.0);
     for args in [vec!["library"], vec!["upgrades"]] {
         let output = command(&directory.0, &args);
         assert!(
             !output.status.success(),
-            "Preview silently recovered a partial journal: {args:?}"
+            "Preview migrated or read an unmigrated store: {args:?}"
         );
-        assert!(String::from_utf8_lossy(&output.stderr).contains("recovery"));
-        assert_eq!(fs::read(&journal).unwrap(), incomplete);
+        assert!(String::from_utf8_lossy(&output.stderr).contains("migrated"));
         assert_eq!(files(&directory.0), before);
     }
     assert_eq!(indexer.calls.load(Ordering::Relaxed), 0);
@@ -529,7 +529,7 @@ fn relative_nested_config_keeps_library_controls_and_preview_on_the_same_store()
     fs::write(nested.join("mynou.json"), json::stringify(&configuration)).unwrap();
     let engine = Engine::open(config::from_json(&configuration, &nested).unwrap()).unwrap();
     let original = local_import(&engine, &nested, "Fixture Movie");
-    let journal = engine.config.store_dir.join("journal.bin");
+    let store = engine.config.store_dir.clone();
     drop(engine);
     let library = successful(command(
         &directory.0,
@@ -552,7 +552,7 @@ fn relative_nested_config_keeps_library_controls_and_preview_on_the_same_store()
             "nested/mynou.json",
         ],
     ));
-    let before = fs::read(&journal).unwrap();
+    let before = jobs_state::fingerprint(&store);
     let preview = successful(command(
         &directory.0,
         &["upgrades", "--config", "nested/mynou.json"],
@@ -563,7 +563,7 @@ fn relative_nested_config_keeps_library_controls_and_preview_on_the_same_store()
             .and_then(Value::as_str),
         Some("upgrade_available")
     );
-    assert_eq!(fs::read(&journal).unwrap(), before);
+    assert_eq!(jobs_state::fingerprint(&store), before);
     assert!(!directory.0.join("state").exists());
     assert!(!directory.0.join("library").exists());
     assert_redacted(&library);

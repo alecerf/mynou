@@ -441,6 +441,10 @@ fn apply_record(state: &mut State, magic: &[u8], payload: &[u8], sequence: u64) 
         }
     }
     for job in jobs {
+        // An origin is attached to a job that was admitted earlier.
+        if job.irc_origin.is_some() && !state.jobs.contains_key(&job.id) {
+            return Err("IRC provenance requires a previously admitted job".into());
+        }
         state.jobs.insert(job.id.clone(), job);
     }
     push_event(&mut state.events, event);
@@ -528,7 +532,7 @@ pub(super) fn roots(jobs: &BTreeMap<String, Job>) -> Result<BTreeMap<String, Str
             }
             path.push(cursor.id.clone());
             match cursor.upgrade_parent.as_deref() {
-                Some(id) => cursor = jobs.get(id).ok_or("missing upgrade lineage reference")?,
+                Some(id) => cursor = jobs.get(id).ok_or("missing upgrade parent reference")?,
                 None => break cursor.id.clone(),
             }
         };

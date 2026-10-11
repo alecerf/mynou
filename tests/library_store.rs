@@ -1,6 +1,6 @@
 //! Durable library identity, upgrade provenance and monitoring transactions.
-use mynou::crypto::sha256;
-use mynou::json::{self, Value};
+mod jobs_state;
+use mynou::json::Value;
 use mynou::store::{self, Job, RecordedRelease, Request, Store};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -66,63 +66,6 @@ fn complete(store: &mut Store, mut job: Job) -> Job {
     job.imports = vec![format!("/library/{}.mkv", job.id)];
     store.update(job.clone()).unwrap();
     store.get(&job.id).unwrap().unwrap()
-}
-
-fn edit_snapshot(path: &Path, edit: impl FnOnce(&mut Value)) {
-    let bytes = fs::read(path).unwrap();
-    let mut value =
-        json::parse(std::str::from_utf8(&bytes[16..bytes.len() - 32]).unwrap()).unwrap();
-    edit(&mut value);
-    let payload = json::stringify(&value);
-    let mut replacement = b"MYNOUS01".to_vec();
-    replacement.extend_from_slice(&(payload.len() as u64).to_le_bytes());
-    replacement.extend_from_slice(payload.as_bytes());
-    replacement.extend_from_slice(&sha256(&replacement));
-    fs::write(path, replacement).unwrap();
-}
-
-fn edit_first_journal(path: &Path, edit: impl FnOnce(&mut Value)) {
-    let bytes = fs::read(path).unwrap();
-    let length = u32::from_le_bytes(bytes[16..20].try_into().unwrap()) as usize;
-    assert_eq!(
-        bytes.len(),
-        length + 116,
-        "fixture has exactly one transaction"
-    );
-    let mut value = json::parse(std::str::from_utf8(&bytes[84..84 + length]).unwrap()).unwrap();
-    edit(&mut value);
-    let payload = json::stringify(&value);
-    let mut replacement = bytes[..52].to_vec();
-    replacement[16..20].copy_from_slice(&(payload.len() as u32).to_le_bytes());
-    replacement.extend_from_slice(&sha256(&replacement));
-    replacement.extend_from_slice(payload.as_bytes());
-    replacement.extend_from_slice(&sha256(&replacement));
-    fs::write(path, replacement).unwrap();
-}
-
-fn edit_last_journal(path: &Path, edit: impl FnOnce(&mut Value)) {
-    let bytes = fs::read(path).unwrap();
-    let mut offset = 0;
-    loop {
-        let length =
-            u32::from_le_bytes(bytes[offset + 16..offset + 20].try_into().unwrap()) as usize;
-        if offset + length + 116 == bytes.len() {
-            break;
-        }
-        offset += length + 116;
-    }
-    let mut value =
-        json::parse(std::str::from_utf8(&bytes[offset + 84..bytes.len() - 32]).unwrap()).unwrap();
-    edit(&mut value);
-    let payload = json::stringify(&value);
-    let mut frame = bytes[offset..offset + 52].to_vec();
-    frame[16..20].copy_from_slice(&(payload.len() as u32).to_le_bytes());
-    frame.extend_from_slice(&sha256(&frame));
-    frame.extend_from_slice(payload.as_bytes());
-    frame.extend_from_slice(&sha256(&frame));
-    let mut replacement = bytes[..offset].to_vec();
-    replacement.extend_from_slice(&frame);
-    fs::write(path, replacement).unwrap();
 }
 
 fn remove_library_fields(job: &mut Value) {
@@ -228,32 +171,7 @@ fn missing_import_baseline_can_be_recorded_once_and_survives_restart() {
 }
 
 #[test]
-fn legacy_journal_and_snapshot_load_without_library_fields() {
-    for snapshot in [false, true] {
-        let directory = Directory::new();
-        let mut store = Store::open(&directory.0).unwrap();
-        let original = store.submit(request("Legacy", None)).unwrap();
-        if snapshot {}
-        drop(store);
-        if snapshot {
-            edit_snapshot(&directory.0.join("snapshot.bin"), |value| {
-                let Value::Array(jobs) = value.get_mut("jobs").unwrap() else {
-                    panic!("jobs");
-                };
-                remove_library_fields(&mut jobs[0]);
-            });
-        } else {
-            edit_first_journal(&directory.0.join("journal.bin"), |value| {
-                remove_library_fields(value.get_mut("job").unwrap());
-            });
-        }
-        let mut reopened = Store::open(&directory.0).unwrap();
-        assert_eq!(reopened.get(&original.id).unwrap().unwrap(), original);
-    }
-}
-
-#[test]
-fn legacy_ready_cancellation_replays_without_weakening_current_cancellation_rules() {
+fn legacy_ready_cancellation_migrates_as_cancelled_and_leaves_the_library() {
     let directory = Directory::new();
     let mut store = Store::open(&directory.0).unwrap();
     let mut job = store
@@ -263,41 +181,15 @@ fn legacy_ready_cancellation_replays_without_weakening_current_cancellation_rule
     job.imports = vec!["/library/legacy.mkv".into()];
     store.update(job.clone()).unwrap();
     assert!(store.cancel(&job.id).is_err());
-    store.record_monitor_check(&job.id, 0).unwrap();
+    let mut cancelled = store.get(&job.id).unwrap().unwrap();
     drop(store);
-    let journal = directory.0.join("journal.bin");
-    let original = fs::read(&journal).unwrap();
-    let mut offset = 0;
-    let mut chain = [0_u8; 32];
-    let mut rewritten = Vec::new();
-    while offset < original.len() {
-        let length =
-            u32::from_le_bytes(original[offset + 16..offset + 20].try_into().unwrap()) as usize;
-        let end = offset + length + 116;
-        let mut value =
-            json::parse(std::str::from_utf8(&original[offset + 84..offset + 84 + length]).unwrap())
-                .unwrap();
-        remove_library_fields(value.get_mut("job").unwrap());
-        if end == original.len() {
-            value.get_mut("job").unwrap().insert("state", "cancelled");
-            value.get_mut("event").unwrap().insert("state", "cancelled");
-        }
-        let payload = json::stringify(&value);
-        let mut frame = b"MYNOUJ01".to_vec();
-        frame.extend_from_slice(&original[offset + 8..offset + 16]);
-        frame.extend_from_slice(&(payload.len() as u32).to_le_bytes());
-        frame.extend_from_slice(&chain);
-        frame.extend_from_slice(&sha256(&frame));
-        frame.extend_from_slice(payload.as_bytes());
-        chain = sha256(&frame);
-        frame.extend_from_slice(&chain);
-        rewritten.extend_from_slice(&frame);
-        offset = end;
-    }
-    fs::write(journal, rewritten).unwrap();
+    // An earlier version could record a cancellation of a ready import.
+    cancelled.state = "cancelled".into();
+    jobs_state::downgrade(&directory.0, std::slice::from_ref(&cancelled));
     let mut reopened = Store::open(&directory.0).unwrap();
     assert_eq!(reopened.get(&job.id).unwrap().unwrap().state, "cancelled");
     assert!(reopened.library_jobs().unwrap().is_empty());
+    assert_eq!(reopened.counts().unwrap().library, 0);
 }
 
 #[test]
@@ -498,6 +390,39 @@ fn unrelated_root_cannot_obsolete_a_pending_upgrade() {
     assert!(reopened.claim(store::now(), 600).unwrap().is_none());
 }
 
+fn tree(root: &Path) -> Vec<(PathBuf, Vec<u8>, u32, std::time::SystemTime)> {
+    use std::os::unix::fs::PermissionsExt;
+    fn walk(directory: &Path, found: &mut Vec<PathBuf>) {
+        for entry in fs::read_dir(directory).unwrap() {
+            let path = entry.unwrap().path();
+            found.push(path.clone());
+            if path.is_dir() {
+                walk(&path, found);
+            }
+        }
+    }
+    let mut paths = Vec::new();
+    walk(root, &mut paths);
+    paths.sort();
+    paths
+        .into_iter()
+        .map(|path| {
+            let metadata = fs::metadata(&path).unwrap();
+            let bytes = if path.is_file() {
+                fs::read(&path).unwrap()
+            } else {
+                Vec::new()
+            };
+            (
+                path,
+                bytes,
+                metadata.permissions().mode() & 0o777,
+                metadata.modified().unwrap(),
+            )
+        })
+        .collect()
+}
+
 #[test]
 fn read_only_store_loads_verified_state_without_file_or_permission_changes() {
     use std::os::unix::fs::PermissionsExt;
@@ -507,69 +432,34 @@ fn read_only_store_loads_verified_state_without_file_or_permission_changes() {
     let pending = store.submit(request("Queued", None)).unwrap();
     drop(store);
     fs::set_permissions(&directory.0, fs::Permissions::from_mode(0o750)).unwrap();
-    let filenames = [".lock", "journal.bin", "snapshot.bin"];
-    let before: Vec<_> = filenames
-        .iter()
-        .map(|name| {
-            let path = directory.0.join(name);
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
-            (
-                fs::read(&path).unwrap(),
-                fs::metadata(&path).unwrap().modified().unwrap(),
-            )
-        })
-        .collect();
+    fs::set_permissions(directory.0.join(".lock"), fs::Permissions::from_mode(0o640)).unwrap();
+    let before = tree(&directory.0);
     let mut read_only = Store::open_read_only(&directory.0).unwrap();
     assert_eq!(read_only.library_jobs().unwrap(), vec![parent]);
     assert_eq!(read_only.get(&pending.id).unwrap().unwrap(), pending);
+    assert_eq!(read_only.page(None, 10).unwrap().jobs.len(), 2);
     assert!(
         Store::open_read_only(&directory.0).is_err(),
         "read-only loading still excludes concurrent writers"
     );
-    assert!(
+    for error in [
         read_only
             .submit(request("Forbidden write", None))
-            .unwrap_err()
-            .contains("read-only")
-    );
+            .unwrap_err(),
+        read_only.cancel(&pending.id).unwrap_err(),
+        read_only.claim(store::now(), 60).unwrap_err(),
+    ] {
+        assert!(error.contains("read-only"), "{error}");
+    }
     drop(read_only);
     assert_eq!(
         fs::metadata(&directory.0).unwrap().permissions().mode() & 0o777,
         0o750
     );
-    for (index, name) in filenames.iter().enumerate() {
-        let path = directory.0.join(name);
-        let metadata = fs::metadata(&path).unwrap();
-        assert_eq!(fs::read(&path).unwrap(), before[index].0);
-        assert_eq!(metadata.modified().unwrap(), before[index].1);
-        assert_eq!(metadata.permissions().mode() & 0o777, 0o640);
-    }
-    assert_eq!(fs::read_dir(&directory.0).unwrap().count(), 3);
+    assert_eq!(tree(&directory.0), before);
     let absent = directory.0.join("absent");
     assert!(Store::open_read_only(&absent).is_err());
     assert!(!absent.exists());
-}
-
-#[test]
-fn read_only_store_refuses_interrupted_tail_without_truncating_it() {
-    use std::io::Write;
-    let directory = Directory::new();
-    let mut store = Store::open(&directory.0).unwrap();
-    let job = store.submit(request("Persisted", None)).unwrap();
-    drop(store);
-    let journal = directory.0.join("journal.bin");
-    let complete = fs::read(&journal).unwrap();
-    let mut file = fs::OpenOptions::new().append(true).open(&journal).unwrap();
-    file.write_all(b"MYNOU").unwrap();
-    file.sync_all().unwrap();
-    drop(file);
-    let interrupted = fs::read(&journal).unwrap();
-    let error = Store::open_read_only(&directory.0).err().unwrap();
-    assert!(error.contains("recovery required"));
-    assert_eq!(fs::read(&journal).unwrap(), interrupted);
-    let mut repaired = Store::open(&directory.0).unwrap();
-    assert_eq!(repaired.get(&job.id).unwrap().unwrap(), job);
-    assert_eq!(fs::read(journal).unwrap(), complete);
 }
 
 #[test]
@@ -737,32 +627,23 @@ fn automatic_retry_atomically_forgets_failed_search_provenance() {
 fn unrelated_ready_roots_use_creation_order_even_after_monitor_timestamp_changes() {
     let directory = Directory::new();
     let mut store = Store::open(&directory.0).unwrap();
-    let first = ready(
+    let mut first = ready(
         &mut store,
         "Example",
         Some("https://example.invalid/first.torrent"),
     );
-    let second = ready(
+    let mut second = ready(
         &mut store,
         "Example",
         Some("https://example.invalid/second.torrent"),
     );
     drop(store);
-    edit_snapshot(&directory.0.join("snapshot.bin"), |value| {
-        let Value::Array(jobs) = value.get_mut("jobs").unwrap() else {
-            panic!("jobs");
-        };
-        for job in jobs {
-            if job.get("id").and_then(Value::as_str) == Some(first.id.as_str()) {
-                job.insert("created_at", "100");
-                job.insert("updated_at", "999999");
-                job.insert("monitor_checked_at", "999999");
-            } else if job.get("id").and_then(Value::as_str) == Some(second.id.as_str()) {
-                job.insert("created_at", "200");
-                job.insert("updated_at", "200");
-            }
-        }
-    });
+    first.created_at = 100;
+    first.updated_at = 999_999;
+    first.monitor_checked_at = 999_999;
+    second.created_at = 200;
+    second.updated_at = 200;
+    jobs_state::downgrade(&directory.0, &[first.clone(), second.clone()]);
     let mut store = Store::open(&directory.0).unwrap();
     assert_eq!(store.library_jobs().unwrap()[0].id, second.id);
     store.record_monitor_check(&second.id, u64::MAX).unwrap();
@@ -809,31 +690,16 @@ fn unrelated_root_precedence_does_not_change_when_its_ready_child_has_a_lower_id
             panic!("unexpected fixture identity");
         }
     };
-    edit_snapshot(&directory.0.join("snapshot.bin"), |value| {
-        let Value::Array(jobs) = value.get_mut("jobs").unwrap() else {
-            panic!("jobs");
-        };
-        for job in jobs {
-            let id = job.get("id").and_then(Value::as_str).unwrap().to_owned();
-            job.insert("id", mapped_id(&id));
-            job.insert("created_at", "100");
-            if let Some(parent) = job.get("upgrade_parent").and_then(Value::as_str) {
-                let parent = mapped_id(parent);
-                job.insert("upgrade_parent", parent);
-            }
-        }
-        let Value::Array(events) = value.get_mut("events").unwrap() else {
-            panic!("events");
-        };
-        for event in events {
-            let id = event
-                .get("job_id")
-                .and_then(Value::as_str)
-                .unwrap()
-                .to_owned();
-            event.insert("job_id", mapped_id(&id));
-        }
-    });
+    let jobs: Vec<Job> = [parent.clone(), other.clone(), child.clone()]
+        .into_iter()
+        .map(|mut job| {
+            job.id = mapped_id(&job.id);
+            job.created_at = 100;
+            job.upgrade_parent = job.upgrade_parent.as_deref().map(mapped_id);
+            job
+        })
+        .collect();
+    jobs_state::downgrade(&directory.0, &jobs);
     let mut reopened = Store::open(&directory.0).unwrap();
     assert_eq!(reopened.library_jobs().unwrap()[0].id, child_id);
     assert!(reopened.set_monitored(other_id, false).is_err());
@@ -857,7 +723,7 @@ fn unrelated_root_precedence_does_not_change_when_its_ready_child_has_a_lower_id
 }
 
 #[test]
-fn verified_snapshot_rejects_missing_parent_cross_media_and_cycles() {
+fn migration_rejects_missing_parent_cross_media_and_cycles() {
     for damage in ["missing", "media", "cycle"] {
         let directory = Directory::new();
         let mut store = Store::open(&directory.0).unwrap();
@@ -875,73 +741,36 @@ fn verified_snapshot_rejects_missing_parent_cross_media_and_cycles() {
             .unwrap();
         let child = complete(&mut store, child);
         drop(store);
-        edit_snapshot(&directory.0.join("snapshot.bin"), |value| {
-            let Value::Array(jobs) = value.get_mut("jobs").unwrap() else {
-                panic!("jobs");
-            };
-            for job in jobs {
-                let id = job.get("id").and_then(Value::as_str).unwrap().to_owned();
-                if id == child.id && damage == "missing" {
-                    job.insert("upgrade_parent", "00000000000000000000000000000000");
-                } else if id == child.id && damage == "media" {
-                    job.get_mut("request")
-                        .unwrap()
-                        .insert("title", "Unrelated media");
-                } else if id == parent.id && damage == "cycle" {
-                    job.insert("upgrade_parent", child.id.clone());
-                }
-            }
-        });
+        let (mut parent, mut child) = (parent, child);
+        match damage {
+            "missing" => child.upgrade_parent = Some("0".repeat(32)),
+            "media" => child.request.title = "Unrelated media".into(),
+            _ => parent.upgrade_parent = Some(child.id.clone()),
+        }
+        jobs_state::downgrade(&directory.0, &[parent, child]);
+        let before = jobs_state::fingerprint(&directory.0);
         assert!(
             Store::open(&directory.0).is_err(),
             "verified {damage} snapshot must be rejected"
         );
+        assert_eq!(jobs_state::fingerprint(&directory.0), before);
+        assert!(!directory.0.join("jobs.idx").exists());
     }
 }
 
 #[test]
-fn verified_journal_rejects_fabricated_upgrade_parent() {
+fn migration_rejects_a_fabricated_upgrade_parent() {
     let directory = Directory::new();
     let mut store = Store::open(&directory.0).unwrap();
-    store
+    let mut job = store
         .submit(request(
             "Example",
             Some("https://example.invalid/child.torrent"),
         ))
         .unwrap();
     drop(store);
-    edit_first_journal(&directory.0.join("journal.bin"), |value| {
-        let job = value.get_mut("job").unwrap();
-        job.insert("upgrade_parent", "00000000000000000000000000000000");
-        job.insert("release", release("Example.1080p").to_json());
-    });
+    job.upgrade_parent = Some("0".repeat(32));
+    job.release = Some(release("Example.1080p"));
+    jobs_state::downgrade(&directory.0, &[job]);
     assert!(Store::open(&directory.0).err().unwrap().contains("parent"));
-}
-
-#[test]
-fn verified_journal_rejects_rewriting_an_existing_upgrade_parent() {
-    let directory = Directory::new();
-    let mut store = Store::open(&directory.0).unwrap();
-    let parent = ready(&mut store, "Example", None);
-    let child = store
-        .submit_upgrade(
-            &parent.id,
-            request("Example", Some("https://example.invalid/child.torrent")),
-            release("Example.1080p"),
-        )
-        .unwrap();
-    store.cancel(&child.id).unwrap();
-    drop(store);
-    edit_last_journal(&directory.0.join("journal.bin"), |value| {
-        value
-            .get_mut("job")
-            .unwrap()
-            .insert("upgrade_parent", Value::Null);
-    });
-    assert!(
-        Store::open(&directory.0)
-            .err()
-            .unwrap()
-            .contains("parent changed")
-    );
 }

@@ -1936,7 +1936,7 @@ impl Store {
                     .ok_or_else(|| "lease duration too large".to_owned())?,
             );
             job.updated_at = at;
-            db.commit_jobs(vec![job.clone()], "processing lease renewed")?;
+            db.commit_jobs(vec![job.clone()], ops::RENEWED)?;
             Ok(job)
         })
     }
@@ -2113,7 +2113,11 @@ impl Db<'_> {
             let group = layout::short("group", &[&file.id()]);
             let mut after = None;
             loop {
-                let page = self.scan(&[&[layout::T_GROUP][..], &group].concat(), after, MAX_PAGE_ROWS)?;
+                let page = self.scan(
+                    &[&[layout::T_GROUP][..], &group].concat(),
+                    after,
+                    MAX_PAGE_ROWS,
+                )?;
                 for (_, value) in &page.entries {
                     let member = self.require(&ops::array(value)?)?;
                     if member.lease_id.is_some() && member.lease_until > at {
