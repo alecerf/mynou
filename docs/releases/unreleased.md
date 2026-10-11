@@ -69,3 +69,7 @@ Retrying a failed requester request, like retrying an ordinary one, now pauses t
 ## Added: Watch RSS and Torznab feeds for new releases
 
 An RSS or Torznab indexer can now be watched with `"watch": {"enabled": true, "interval_secs": 900}`. Mynou polls the feed on its own schedule, starting with a baseline that acquires nothing, and routes only new entries to requests that already wait, such as watchlist requests, requester demand and monitored missing episodes, or to a strictly better release of monitored owned media. A feed never creates a request. `mynou feeds` and `GET /api/feeds` show freshness, counts and failures without addresses or credentials; pause a source with `indexer-control` to stop its polling. See [sources](/docs/sources.md#watching-a-feed).
+
+## Added: Web interface
+
+Open `http://127.0.0.1:8787/` and paste your API token to manage Mynou in the browser: dashboard, requests with a search preview and a separate submission, jobs with every state, live native transfers with pause and resume, library, series and sources. It updates instantly over a WebSocket, works with the keyboard (`/` opens the command palette) and follows your light or dark setting. It is plain HTML, CSS and JavaScript inside the binary, with no framework or extra download. See [the README](/README.md#web-interface).

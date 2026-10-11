@@ -24,6 +24,8 @@ pub mod server;
 pub mod store;
 pub mod tls;
 pub mod torrent;
+pub mod ui;
+pub mod ws;
 mod xml;
 
 pub type Result<T> = std::result::Result<T, String>;

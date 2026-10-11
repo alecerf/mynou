@@ -1,0 +1,564 @@
+// Mynou web interface: no framework, no build step, no dependency.
+// Untrusted text only ever reaches the DOM through textContent / text nodes.
+
+const TOPICS = ['status', 'jobs', 'transfers', 'library', 'series', 'indexers', 'feeds', 'irc', 'requesters'];
+const VIEWS = [
+  ['dashboard', 'Dashboard'],
+  ['requests', 'Requests'],
+  ['jobs', 'Jobs'],
+  ['transfers', 'Transfers'],
+  ['library', 'Library'],
+  ['series', 'Series'],
+  ['sources', 'Sources'],
+];
+const TERMINAL_STATES = new Set(['ready', 'failed', 'cancelled']);
+const TOKEN_KEY = 'mynou.token';
+
+const $ = (selector, root = document) => root.querySelector(selector);
+
+/** Tiny DOM builder. Strings become text nodes, never markup. */
+function h(tag, props = {}, ...children) {
+  const el = document.createElement(tag);
+  for (const [key, value] of Object.entries(props ?? {})) {
+    if (value === undefined || value === null || value === false) continue;
+    if (key === 'class') el.className = value;
+    else if (key === 'dataset') Object.assign(el.dataset, value);
+    else if (key.startsWith('on')) el.addEventListener(key.slice(2), value);
+    else if (key in el && key !== 'list') el[key] = value;
+    else el.setAttribute(key, value === true ? '' : value);
+  }
+  el.append(...children.flat().filter((c) => c !== null && c !== undefined && c !== false));
+  return el;
+}
+
+const formatBytes = (value) => {
+  let n = Number(value);
+  if (!Number.isFinite(n)) return '–';
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return `${n.toFixed(i && n < 10 ? 1 : 0)} ${units[i]}`;
+};
+
+const relativeTime = (() => {
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto', style: 'short' });
+  return (iso) => {
+    const t = Date.parse(iso);
+    if (Number.isNaN(t)) return '';
+    const s = Math.round((t - Date.now()) / 1000);
+    for (const [unit, size] of [['day', 86400], ['hour', 3600], ['minute', 60]]) {
+      if (Math.abs(s) >= size) return rtf.format(Math.round(s / size), unit);
+    }
+    return rtf.format(s, 'second');
+  };
+})();
+
+const toneFor = (state) =>
+  state === 'ready' || state === 'imported' ? 'ok' : state === 'failed' || state === 'cancelled' ? 'bad' : 'warn';
+
+/** Updates `container` so it holds one element per item, in order, reusing existing nodes by key. */
+function reconcile(container, items, key, create, update) {
+  const existing = new Map([...container.children].map((el) => [el.dataset.key, el]));
+  let cursor = container.firstElementChild;
+  for (const item of items) {
+    const k = String(key(item));
+    let el = existing.get(k);
+    if (el) existing.delete(k);
+    else { el = create(item); el.dataset.key = k; }
+    update(el, item);
+    if (el !== cursor) container.insertBefore(el, cursor);
+    else cursor = cursor.nextElementSibling;
+  }
+  for (const el of existing.values()) el.remove();
+}
+
+function toast(message, tone = 'ok') {
+  const el = h('div', { class: 'toast', dataset: { tone } }, message);
+  $('#toasts').append(el);
+  setTimeout(() => el.remove(), tone === 'bad' ? 7000 : 3500);
+}
+
+// ---------------------------------------------------------------- link ----
+
+/** One WebSocket with request/response calls, pushed topics and an HTTP fallback. */
+class Link extends EventTarget {
+  #socket = null;
+  #pending = new Map();
+  #next = 1;
+  #attempt = 0;
+  #timer = 0;
+  #token = '';
+  state = 'closed';
+
+  get token() { return this.#token; }
+
+  connect(token) {
+    this.#token = token;
+    this.#open();
+  }
+
+  disconnect() {
+    clearTimeout(this.#timer);
+    this.#token = '';
+    this.#socket?.close(1000);
+  }
+
+  #setState(state) {
+    this.state = state;
+    this.dispatchEvent(new CustomEvent('state', { detail: state }));
+  }
+
+  #open() {
+    clearTimeout(this.#timer);
+    if (!this.#token) return;
+    this.#setState('connecting');
+    const hex = [...new TextEncoder().encode(this.#token)].map((b) => b.toString(16).padStart(2, '0')).join('');
+    const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+    const socket = new WebSocket(`${scheme}://${location.host}/ws`, ['mynou.v1', `auth.${hex}`]);
+    this.#socket = socket;
+    let opened = false;
+    socket.addEventListener('open', () => {
+      opened = true;
+      this.#attempt = 0;
+      this.#setState('open');
+      socket.send(JSON.stringify({ subscribe: TOPICS }));
+    });
+    socket.addEventListener('message', (event) => this.#receive(event.data));
+    socket.addEventListener('close', () => {
+      if (this.#socket !== socket) return;
+      this.#socket = null;
+      for (const { reject } of this.#pending.values()) reject(new Error('Connection lost'));
+      this.#pending.clear();
+      this.#setState('closed');
+      if (!opened && this.#attempt === 0) this.#probe();
+      const delay = Math.min(15000, 500 * 2 ** this.#attempt++) * (0.7 + Math.random() * 0.6);
+      this.#timer = setTimeout(() => this.#open(), delay);
+    });
+  }
+
+  /** A failed handshake is a wrong token only if the plain API says so. */
+  async #probe() {
+    try {
+      const response = await fetch('/api/status', { headers: { Authorization: `Bearer ${this.#token}` }, signal: AbortSignal.timeout(5000) });
+      if (response.status === 401) this.dispatchEvent(new Event('rejected'));
+    } catch { /* unreachable service: keep retrying */ }
+  }
+
+  #receive(text) {
+    let message;
+    try { message = JSON.parse(text); } catch { return; }
+    if (message.topic) {
+      this.dispatchEvent(new CustomEvent('topic', { detail: message }));
+    } else if (this.#pending.has(message.id)) {
+      const { resolve, reject } = this.#pending.get(message.id);
+      this.#pending.delete(message.id);
+      if (message.status >= 200 && message.status < 300) resolve(message.body);
+      else reject(new Error(message.body?.error ?? `Request failed (${message.status})`));
+    }
+  }
+
+  async call(method, path, body) {
+    if (this.#socket?.readyState === WebSocket.OPEN) {
+      const id = this.#next++;
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          this.#pending.delete(id);
+          reject(new Error('The request timed out'));
+        }, 60000);
+        this.#pending.set(id, {
+          resolve: (v) => { clearTimeout(timeout); resolve(v); },
+          reject: (e) => { clearTimeout(timeout); reject(e); },
+        });
+        this.#socket.send(JSON.stringify({ id, method, path, body }));
+      });
+    }
+    const response = await fetch(path, {
+      method,
+      headers: { Authorization: `Bearer ${this.#token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(60000),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error ?? `Request failed (${response.status})`);
+    return data;
+  }
+}
+
+// --------------------------------------------------------------- state ----
+
+const link = new Link();
+const data = new Map();      // topic -> { status, data, at }
+const views = {};            // name -> { render(), show() }
+let current = '';
+let jobStates = new Set();   // active state filters
+
+const itemsOf = (value) => {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === 'object') {
+    const arrays = Object.values(value).filter(Array.isArray);
+    return arrays.flat();
+  }
+  return [];
+};
+const scalars = (item) =>
+  Object.entries(item ?? {}).filter(([, v]) => ['string', 'number', 'boolean'].includes(typeof v) && v !== '');
+const titleOf = (item) =>
+  item?.request?.title ?? item?.title ?? item?.name ?? item?.release?.title ?? item?.id ?? '(unnamed)';
+
+function emptyOrError(topic, container, empty) {
+  const entry = data.get(topic);
+  if (!entry) { container.replaceChildren(h('p', { class: 'empty' }, 'Loading…')); return true; }
+  if (entry.status >= 400) {
+    container.replaceChildren(h('p', { class: 'empty' }, entry.data?.error ?? `Unavailable (${entry.status})`));
+    return true;
+  }
+  if (!itemsOf(entry.data).length && empty) { container.replaceChildren(h('p', { class: 'empty' }, empty)); return true; }
+  return false;
+}
+
+function facts(item, skip = []) {
+  const dl = h('dl', { class: 'facts' });
+  for (const [k, v] of scalars(item)) {
+    if (skip.includes(k)) continue;
+    dl.append(h('dt', {}, k.replaceAll('_', ' ')), h('dd', {}, String(v)));
+  }
+  return dl;
+}
+
+function openDetail(title, ...content) {
+  $('#detail-title').textContent = title;
+  $('#detail-body').replaceChildren(...content);
+  $('#detail').showModal();
+}
+
+async function act(button, work, done) {
+  button.disabled = true;
+  try { await work(); if (done) toast(done); } catch (e) { toast(e.message, 'bad'); } finally { button.disabled = false; }
+}
+
+// --------------------------------------------------------------- views ----
+
+views.dashboard = {
+  render() {
+    const status = data.get('status')?.data;
+    const transfers = itemsOf(data.get('transfers')?.data);
+    const stats = $('#stats');
+    if (!status) { stats.replaceChildren(h('p', { class: 'empty' }, 'Loading…')); return; }
+    const cards = [
+      ['Active jobs', status.active], ['Ready', status.ready], ['Total jobs', status.jobs],
+      ['Transfers', transfers.length], ['Monitored series', status.monitored_series], ['Version', status.version],
+    ];
+    reconcile(stats, cards, (c) => c[0],
+      () => h('div', { class: 'stat' }, h('b'), h('span')),
+      (el, [label, value]) => { $('b', el).textContent = value ?? '–'; $('span', el).textContent = label; });
+    const alerts = [status.maintenance_error && `Maintenance: ${status.maintenance_error}`,
+      status.last_sync_error && `Last sync: ${status.last_sync_error}`, status.stopped && 'The service is stopping.'].filter(Boolean);
+    $('#alerts').replaceChildren(...alerts.map((a) => h('p', { class: 'alert', role: 'alert' }, a)));
+    const jobs = itemsOf(data.get('jobs')?.data).toSorted((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))).slice(0, 8);
+    const recent = $('#recent');
+    if (!jobs.length) recent.replaceChildren(h('li', { class: 'empty' }, 'No jobs yet. Make a request to get started.'));
+    else reconcile(recent, jobs, (j) => j.id, createJobRow, updateJobRow);
+  },
+};
+
+function createJobRow() {
+  return h('li', { class: 'row' },
+    h('button', { class: 'open', type: 'button' }, h('span', { class: 'title' }), h('span', { class: 'sub' })),
+    h('div', { class: 'buttons' }, h('span', { class: 'badge' }), h('button', { type: 'button', dataset: { act: 'retry' } }, 'Retry'),
+      h('button', { type: 'button', class: 'danger', dataset: { act: 'cancel' } }, 'Cancel')));
+}
+
+function updateJobRow(el, job) {
+  const request = job.request ?? {};
+  const label = request.kind === 'episode'
+    ? `${request.title} S${String(request.season).padStart(2, '0')}E${String(request.episode).padStart(2, '0')}`
+    : `${request.title ?? titleOf(job)}${request.year ? ` (${request.year})` : ''}`;
+  $('.title', el).textContent = label;
+  $('.sub', el).textContent = job.last_error ? `${job.state} · ${job.last_error}` : `${request.kind ?? 'job'} · updated ${relativeTime(job.updated_at)}`;
+  const badge = $('.badge', el);
+  badge.textContent = job.state;
+  badge.dataset.tone = toneFor(job.state);
+  $('[data-act="retry"]', el).hidden = !(job.state === 'failed' || job.state === 'cancelled');
+  $('[data-act="cancel"]', el).hidden = TERMINAL_STATES.has(job.state);
+  el._job = job;
+}
+
+function wireJobRows(list) {
+  list.addEventListener('click', async (event) => {
+    const row = event.target.closest('.row');
+    if (!row?._job) return;
+    const button = event.target.closest('button');
+    const job = row._job;
+    if (button?.dataset.act) {
+      await act(button, () => link.call('POST', `/api/jobs/${encodeURIComponent(job.id)}/${button.dataset.act}`, {}),
+        button.dataset.act === 'retry' ? 'Retry queued' : 'Cancelled');
+    } else if (button) {
+      openJob(job);
+    }
+  });
+}
+
+async function openJob(job) {
+  const events = h('ol', { class: 'list' }, h('li', { class: 'muted' }, 'Loading events…'));
+  openDetail(titleOf(job), facts({ ...job, ...job.request }, ['updated_at']), h('h2', {}, 'Events'), events);
+  try {
+    const list = itemsOf(await link.call('GET', `/api/jobs/${encodeURIComponent(job.id)}/events`));
+    events.replaceChildren(...(list.length ? list : [{ message: 'No events recorded.' }]).map((e) =>
+      h('li', { class: 'sub' }, [e.at, e.state, e.message].filter(Boolean).join(' · '))));
+  } catch (e) { events.replaceChildren(h('li', { class: 'error' }, e.message)); }
+}
+
+views.jobs = {
+  init() {
+    wireJobRows($('#jobs'));
+    $('#job-filter').addEventListener('input', () => views.jobs.render());
+    $('#job-states').addEventListener('click', (event) => {
+      const button = event.target.closest('button');
+      if (!button) return;
+      jobStates.has(button.dataset.state) ? jobStates.delete(button.dataset.state) : jobStates.add(button.dataset.state);
+      views.jobs.render();
+    });
+  },
+  render() {
+    const list = $('#jobs');
+    const all = itemsOf(data.get('jobs')?.data);
+    const states = [...new Set(all.map((j) => j.state))].sort();
+    reconcile($('#job-states'), states, (s) => s,
+      (s) => h('button', { type: 'button', dataset: { state: s }, 'aria-pressed': 'false' }, s),
+      (el, s) => { el.setAttribute('aria-pressed', String(jobStates.has(s))); el.textContent = `${s} ${all.filter((j) => j.state === s).length}`; });
+    if (emptyOrError('jobs', list, 'No jobs yet.')) return;
+    const needle = $('#job-filter').value.trim().toLowerCase();
+    const shown = all
+      .filter((j) => (!jobStates.size || jobStates.has(j.state)) && (!needle || `${titleOf(j)} ${j.state} ${j.id}`.toLowerCase().includes(needle)))
+      .toSorted((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
+    if (!shown.length) list.replaceChildren(h('li', { class: 'empty' }, 'No job matches the filter.'));
+    else { list.querySelector('.empty')?.remove(); reconcile(list, shown, (j) => j.id, createJobRow, updateJobRow); }
+  },
+};
+
+views.transfers = {
+  init() {
+    $('#transfers').addEventListener('click', (event) => {
+      const button = event.target.closest('button[data-act]');
+      const row = event.target.closest('.row');
+      if (!button || !row?._transfer) return;
+      act(button, () => link.call('POST', `/api/transfers/${encodeURIComponent(row._transfer.id)}/${button.dataset.act}`, {}),
+        button.dataset.act === 'pause' ? 'Paused' : 'Resumed');
+    });
+  },
+  render() {
+    const list = $('#transfers');
+    if (emptyOrError('transfers', list, 'No native transfers are active.')) return;
+    reconcile(list, itemsOf(data.get('transfers').data), (t) => t.id,
+      () => h('li', { class: 'row' },
+        h('div', {}, h('div', { class: 'title' }), h('div', { class: 'sub' })),
+        h('div', { class: 'buttons' }, h('span', { class: 'badge' }), h('button', { type: 'button', dataset: { act: 'pause' } }, 'Pause'),
+          h('button', { type: 'button', dataset: { act: 'resume' } }, 'Resume')),
+        h('div', { class: 'bar-track', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': 100 }, h('div', { class: 'bar-fill' }))),
+      (el, t) => {
+        const fraction = Math.min(1, Math.max(0, Number(t.progress) > 1 ? Number(t.progress) / 100 : Number(t.progress) || 0));
+        $('.title', el).textContent = t.name ?? t.title ?? t.id;
+        $('.sub', el).textContent = `${Math.round(fraction * 100)}% · ${formatBytes(t.verified_bytes)}${t.message ? ` · ${t.message}` : ''}`;
+        const badge = $('.badge', el);
+        badge.textContent = t.status ?? 'unknown';
+        badge.dataset.tone = t.failed ? 'bad' : t.ready ? 'ok' : 'warn';
+        $('.bar-fill', el).style.setProperty('--p', fraction);
+        $('.bar-track', el).setAttribute('aria-valuenow', Math.round(fraction * 100));
+        $('[data-act="pause"]', el).hidden = Boolean(t.paused);
+        $('[data-act="resume"]', el).hidden = !t.paused;
+        el._transfer = t;
+      });
+  },
+};
+
+function cards(topic, container, empty, render) {
+  if (emptyOrError(topic, container, empty)) return;
+  reconcile(container, itemsOf(data.get(topic).data), (item, i) => item.id ?? titleOf(item),
+    () => h('article', { class: 'card' }, h('h3'), h('div', { class: 'body' })),
+    (el, item) => { $('h3', el).textContent = titleOf(item); $('.body', el).replaceChildren(render(item)); });
+}
+
+views.library = {
+  init() {
+    $('#check-upgrades').addEventListener('click', (e) =>
+      act(e.currentTarget, async () => {
+        const report = await link.call('POST', '/api/upgrades', {});
+        openDetail('Upgrade check', facts(report));
+      }));
+  },
+  render() { cards('library', $('#library'), 'Nothing in the library yet.', (item) => facts(item, ['id'])); },
+};
+views.series = { render() { cards('series', $('#series'), 'No series are tracked.', (item) => facts(item, ['id'])); } };
+
+views.sources = {
+  init() {
+    $('#sync-now').addEventListener('click', (e) =>
+      act(e.currentTarget, async () => { const r = await link.call('POST', '/api/sync', {}); toast(`Submitted ${r.submitted ?? 0} request(s)`); }));
+  },
+  render() {
+    const root = $('#sources');
+    const groups = [['indexers', 'Indexer'], ['feeds', 'Feed'], ['irc', 'IRC'], ['requesters', 'Account']];
+    const items = groups.flatMap(([topic, label]) => itemsOf(data.get(topic)?.data).map((item) => ({ ...item, label, _key: `${topic}:${item.id ?? titleOf(item)}` })));
+    if (!items.length) { root.replaceChildren(h('p', { class: 'empty' }, data.has('indexers') ? 'No sources are configured.' : 'Loading…')); return; }
+    root.querySelector('.empty')?.remove();
+    reconcile(root, items, (i) => i._key,
+      () => h('article', { class: 'card' }, h('h3'), h('div', { class: 'body' })),
+      (el, item) => { $('h3', el).textContent = `${item.label} · ${titleOf(item)}`; $('.body', el).replaceChildren(facts(item, ['id', 'label', '_key'])); });
+  },
+};
+
+views.requests = {
+  init() {
+    const form = $('#request-form');
+    const sync = () => { form.dataset.kind = form.elements.kind.value; };
+    form.elements.kind.addEventListener('change', sync);
+    sync();
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const request = this.request(form);
+      const button = $('button[type="submit"]', form);
+      await act(button, async () => {
+        $('#search-out').replaceChildren(h('p', { class: 'empty' }, 'Searching…'));
+        this.show(request, await link.call('POST', '/api/search', request));
+      }).catch(() => {});
+      if ($('#search-out').textContent === 'Searching…') $('#search-out').replaceChildren();
+    });
+  },
+  request(form) {
+    const field = (name) => form.elements[name].value;
+    const number = (name) => (field(name) ? Number(field(name)) : undefined);
+    const request = { kind: field('kind'), title: field('title').trim() };
+    if (number('year')) request.year = number('year');
+    if (request.kind === 'episode') { request.season = number('season') ?? 0; request.episode = number('episode') ?? 0; }
+    return request;
+  },
+  show(request, report) {
+    const accepted = itemsOf(report.accepted);
+    const rejected = itemsOf(report.rejected);
+    const out = $('#search-out');
+    const submit = h('button', { type: 'button', class: 'primary', disabled: !accepted.length }, 'Submit request');
+    submit.addEventListener('click', () => act(submit, async () => {
+      await link.call('POST', '/api/jobs', request);
+      out.replaceChildren(h('p', { class: 'empty' }, 'Request submitted.'));
+      location.hash = '#jobs';
+    }, 'Request submitted'));
+    out.replaceChildren(
+      h('div', { class: 'actions' }, submit,
+        h('span', { class: 'muted' }, `${accepted.length} acceptable · ${rejected.length} rejected${report.truncated ? ' · list truncated' : ''}`)),
+      h('ol', { class: 'list' }, accepted.slice(0, 50).map((c) => h('li', { class: 'row' },
+        h('div', {}, h('div', { class: 'title' }, c.title ?? '(untitled)'), h('div', { class: 'sub' }, [c.seeders != null && `${c.seeders} seeders`, c.size_bytes && formatBytes(c.size_bytes), c.indexer].filter(Boolean).join(' · '))),
+        h('span', { class: 'score' }, c.rank != null ? `#${c.rank}` : ''))),
+        accepted.length ? null : h('li', { class: 'empty' }, 'No acceptable release was found. Nothing will be submitted unless you try again.')));
+  },
+};
+
+// ------------------------------------------------------------- routing ----
+
+function show(name) {
+  if (!views[name]) name = 'dashboard';
+  const apply = () => {
+    for (const section of document.querySelectorAll('.view')) section.hidden = section.id !== `view-${name}`;
+    for (const button of document.querySelectorAll('#nav button')) {
+      if (button.dataset.view === name) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
+    }
+    current = name;
+    document.title = `${VIEWS.find(([id]) => id === name)[1]} · Mynou`;
+    views[name].render?.();
+  };
+  if (document.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches && current) document.startViewTransition(apply);
+  else apply();
+}
+
+const route = () => show(location.hash.slice(1));
+
+// ----------------------------------------------------- command palette ----
+
+const commands = [
+  ...VIEWS.map(([id, label], i) => ({ label: `Go to ${label}`, key: String(i + 1), run: () => { location.hash = `#${id}`; } })),
+  { label: 'Sync now', run: () => link.call('POST', '/api/sync', {}).then((r) => toast(`Submitted ${r.submitted ?? 0} request(s)`)).catch((e) => toast(e.message, 'bad')) },
+  { label: 'Disconnect and forget the token', run: () => { try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* storage unavailable */ } link.disconnect(); askToken(); } },
+];
+
+function setupPalette() {
+  const dialog = $('#palette');
+  const input = $('#palette-input');
+  const list = $('#palette-list');
+  let shown = [];
+  let index = 0;
+  const paint = () => {
+    list.replaceChildren(...shown.map((c, i) => h('li', { role: 'option', 'aria-selected': String(i === index), onclick: () => choose(i) },
+      h('span', {}, c.label), c.key ? h('kbd', {}, c.key) : null)));
+    list.children[index]?.scrollIntoView({ block: 'nearest' });
+  };
+  const filter = () => {
+    const needle = input.value.trim().toLowerCase();
+    shown = commands.filter((c) => c.label.toLowerCase().includes(needle));
+    index = 0;
+    paint();
+  };
+  const choose = (i) => { const c = shown[i]; dialog.close(); c?.run(); };
+  const open = () => { if (dialog.open) return; input.value = ''; filter(); dialog.showModal(); input.focus(); };
+  input.addEventListener('input', filter);
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown') { index = Math.min(shown.length - 1, index + 1); paint(); event.preventDefault(); }
+    else if (event.key === 'ArrowUp') { index = Math.max(0, index - 1); paint(); event.preventDefault(); }
+    else if (event.key === 'Enter') { choose(index); event.preventDefault(); }
+  });
+  dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); });
+  $('#open-palette').addEventListener('click', open);
+  document.addEventListener('keydown', (event) => {
+    const typing = event.target.closest?.('input, select, textarea, dialog[open]');
+    if ((event.key === 'k' && (event.metaKey || event.ctrlKey)) || (event.key === '/' && !typing)) { event.preventDefault(); open(); }
+    else if (!typing && !event.metaKey && !event.ctrlKey && !event.altKey && /^[1-7]$/.test(event.key)) location.hash = `#${VIEWS[Number(event.key) - 1][0]}`;
+  });
+}
+
+// ----------------------------------------------------------- bootstrap ----
+
+function askToken(message = '') {
+  const dialog = $('#login');
+  $('#login-error').textContent = message;
+  if (!dialog.open) dialog.showModal();
+  $('input', dialog).focus();
+}
+
+function setup() {
+  $('#nav').replaceChildren(...VIEWS.map(([id, label]) => h('button', { type: 'button', dataset: { view: id }, onclick: () => { location.hash = `#${id}`; } }, label)));
+  for (const view of Object.values(views)) view.init?.();
+  $('#detail-close').addEventListener('click', () => $('#detail').close());
+  $('#detail').addEventListener('click', (event) => { if (event.target.id === 'detail') event.target.close(); });
+  $('#login').addEventListener('cancel', (event) => event.preventDefault());
+  $('#login-form').addEventListener('submit', (event) => {
+    const token = new FormData(event.currentTarget).get('token').trim();
+    event.currentTarget.reset();
+    try { sessionStorage.setItem(TOKEN_KEY, token); } catch { /* storage unavailable: the token lives for this page only */ }
+    link.connect(token);
+  });
+  setupPalette();
+
+  const pill = $('#link');
+  link.addEventListener('state', ({ detail }) => {
+    pill.dataset.state = detail;
+    pill.textContent = { open: 'Live', connecting: 'Connecting', closed: 'Offline' }[detail];
+    if (detail === 'open') $('#login').close();
+  });
+  link.addEventListener('rejected', () => {
+    // A refused handshake before any success usually means a wrong token.
+    if (!data.size) { try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ } link.disconnect(); askToken('The token was refused. Check it and try again.'); }
+  });
+  let queued = false;
+  link.addEventListener('topic', ({ detail }) => {
+    data.set(detail.topic, { status: detail.status, data: detail.data, at: Date.now() });
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; views[current]?.render?.(); });
+  });
+  addEventListener('hashchange', route);
+  route();
+
+  let token = '';
+  try { token = sessionStorage.getItem(TOKEN_KEY) ?? ''; } catch { /* ignore */ }
+  if (token) link.connect(token); else askToken();
+}
+
+setup();

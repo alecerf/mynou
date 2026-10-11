@@ -115,6 +115,12 @@ CLI / API            Plex watchlists   IRC announcements
 - `net`, `tls`, `pki` and `crypto` implement HTTP/1.1, the TLS 1.3 client, X.509
   validation and the primitives they need. A failed negotiation never disables
   certificate validation.
-- `server` serves the Bearer-token API and the health routes.
+- `server` serves the Bearer-token API and the health routes. `ui` embeds the
+  web interface (`src/ui/`: plain HTML, CSS and JavaScript, no build step) and
+  serves it without authentication since it holds no data. `ws` implements a
+  bounded RFC 6455 WebSocket on the same listener: the token arrives in the
+  subprotocol list, the origin must match the host, and at most eight sockets
+  may be open. Calls reach the same `route` function as HTTP, and subscribed
+  topics are pushed only when their serialized value changes.
 - `demo` runs the end-to-end demonstration with synthetic media, a loopback peer
   and simulated Plex and indexer services.

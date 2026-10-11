@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="no-referrer">
+  <title>Mynou</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" type="module"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="bar">
+    <a class="brand" href="#dashboard" aria-label="Mynou home"><span class="mark" aria-hidden="true"></span>Mynou</a>
+    <nav id="nav" aria-label="Views"></nav>
+    <div class="tools">
+      <button type="button" id="open-palette" class="ghost" aria-keyshortcuts="Control+K /">
+        Commands <kbd>/</kbd>
+      </button>
+      <output id="link" class="pill" data-state="connecting" role="status">Connecting</output>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <section id="view-dashboard" class="view" aria-labelledby="t-dashboard" hidden>
+      <h1 id="t-dashboard">Dashboard</h1>
+      <div id="stats" class="stats"></div>
+      <div id="alerts" class="alerts"></div>
+      <h2>Recent activity</h2>
+      <ol id="recent" class="list"></ol>
+    </section>
+
+    <section id="view-requests" class="view" aria-labelledby="t-requests" hidden>
+      <h1 id="t-requests">Requests</h1>
+      <form id="request-form" class="card form" autocomplete="off">
+        <label class="field">Kind
+          <select name="kind">
+            <option value="movie">Movie</option>
+            <option value="episode">Episode</option>
+            <option value="series">Series</option>
+          </select>
+        </label>
+        <label class="field grow">Title
+          <input name="title" required maxlength="200" placeholder="Title" spellcheck="false">
+        </label>
+        <label class="field narrow">Year
+          <input name="year" type="number" inputmode="numeric" min="1888" max="2100" placeholder="Any">
+        </label>
+        <label class="field narrow" data-for="episode">Season
+          <input name="season" type="number" inputmode="numeric" min="0" max="9999">
+        </label>
+        <label class="field narrow" data-for="episode">Episode
+          <input name="episode" type="number" inputmode="numeric" min="1" max="99999">
+        </label>
+        <div class="actions">
+          <button type="submit" class="primary">Preview</button>
+        </div>
+      </form>
+      <div id="search-out" aria-live="polite"></div>
+    </section>
+
+    <section id="view-jobs" class="view" aria-labelledby="t-jobs" hidden>
+      <h1 id="t-jobs">Jobs</h1>
+      <div class="filters">
+        <input id="job-filter" type="search" placeholder="Filter jobs" aria-label="Filter jobs" spellcheck="false">
+        <div id="job-states" class="chips" role="group" aria-label="State"></div>
+      </div>
+      <ol id="jobs" class="list"></ol>
+    </section>
+
+    <section id="view-transfers" class="view" aria-labelledby="t-transfers" hidden>
+      <h1 id="t-transfers">Transfers</h1>
+      <ol id="transfers" class="list"></ol>
+    </section>
+
+    <section id="view-library" class="view" aria-labelledby="t-library" hidden>
+      <h1 id="t-library">Library</h1>
+      <div class="actions"><button type="button" id="check-upgrades">Check for upgrades</button></div>
+      <div id="library" class="grid"></div>
+    </section>
+
+    <section id="view-series" class="view" aria-labelledby="t-series" hidden>
+      <h1 id="t-series">Series</h1>
+      <div id="series" class="grid"></div>
+    </section>
+
+    <section id="view-sources" class="view" aria-labelledby="t-sources" hidden>
+      <h1 id="t-sources">Sources</h1>
+      <div class="actions"><button type="button" id="sync-now">Sync now</button></div>
+      <div id="sources" class="grid"></div>
+    </section>
+  </main>
+
+  <dialog id="login" aria-labelledby="login-title">
+    <form method="dialog" id="login-form" class="sheet">
+      <h2 id="login-title">Connect to Mynou</h2>
+      <p class="muted">Paste the API token. It stays in this tab only and is sent as a WebSocket subprotocol, never in a URL.</p>
+      <label class="field">API token
+        <input name="token" type="password" autocomplete="off" required minlength="32" spellcheck="false">
+      </label>
+      <p id="login-error" class="error" role="alert"></p>
+      <div class="actions"><button class="primary" value="ok">Connect</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="palette" aria-label="Command palette">
+    <div class="sheet">
+      <input id="palette-input" type="search" placeholder="Type a command" aria-label="Command" autocomplete="off" spellcheck="false">
+      <ul id="palette-list" role="listbox" aria-label="Commands"></ul>
+    </div>
+  </dialog>
+
+  <dialog id="detail" aria-labelledby="detail-title">
+    <div class="sheet">
+      <h2 id="detail-title"></h2>
+      <div id="detail-body"></div>
+      <div class="actions"><button type="button" id="detail-close">Close</button></div>
+    </div>
+  </dialog>
+
+  <div id="toasts" role="status" aria-live="polite"></div>
+</body>
+</html>
