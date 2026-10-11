@@ -1,8 +1,9 @@
 # Offline WireGuard transport sessions
 
 [#178](https://github.com/alecerf/mynou/issues/178) adds an inert protocol
-building block after the primitives in #169. It adds no handshake, sockets,
-profile, tunnel, protected mode or VPN leak protection. #111 remains open.
+building block after the primitives in #169. [The offline handshake](/docs/wireguard-handshake.md)
+now establishes its keys. Neither increment adds sockets, a profile, tunnel,
+protected mode or VPN leak protection. #111 remains open.
 
 ## Ownership and protocol
 
@@ -11,8 +12,8 @@ replay sections of the [WireGuard protocol](https://www.wireguard.com/protocol/)
 and [whitepaper sections 5.4.6 and 6](https://www.wireguard.com/papers/wireguard.pdf)
 (read 2026-10-11), using the existing RFC8439 ChaCha20-Poly1305 primitive.
 No third-party implementation is copied. The constructor is crate-private,
-with no production caller until an independently reviewed authenticated
-handshake exists. It consumes local-send/local-receive keys, local/remote
+and used only after successful offline handshake processing; the handshake owner
+has no engine/profile/driver caller. It consumes local-send/local-receive keys, local/remote
 receiver indexes, role, generation and a monotonic creation time. Keys must be
 fresh and never reused in a different Session, including after restart.
 
@@ -75,8 +76,9 @@ large jumps, counter/rekey/expiry boundaries, old generations and clock regressi
 Validation runs only in Actions; no fixture is a product runtime helper.
 
 Same-code round trips and independently computed AEAD bytes do **not** demonstrate
-WireGuard peer interoperability. Noise IKpsk2, timestamp/index ownership,
-cookies, rekey/retry scheduling, a controlled independent peer, the IP/TCP/UDP/DNS
+WireGuard peer interoperability. The offline Noise increment covers transcript
+authentication and per-owner timestamp/index ownership. Cookies, rekey/retry
+scheduling, a controlled independent peer, the IP/TCP/UDP/DNS
 stack, complete network integration and actual ordinary-path attempt observation
 remain required by [the design](/docs/wireguard-design.md). Protected mode stays
 unavailable until those gates and separate QA/Security are delivered.
