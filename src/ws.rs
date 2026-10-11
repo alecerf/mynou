@@ -290,7 +290,6 @@ pub fn serve(stream: &mut TcpStream, engine: &Arc<Engine>, route: Route) -> Resu
         match stream.read(&mut chunk) {
             Ok(0) => return Ok(()),
             Ok(n) => {
-                heard = Instant::now();
                 buffer.extend_from_slice(&chunk[..n]);
             }
             Err(e)
@@ -304,7 +303,12 @@ pub fn serve(stream: &mut TcpStream, engine: &Arc<Engine>, route: Route) -> Resu
         }
         loop {
             let frame = match decode(&mut buffer) {
-                Ok(Some(frame)) => frame,
+                Ok(Some(frame)) => {
+                    // Only a complete frame counts as life: a trickled
+                    // partial frame cannot hold a slot past the idle limit.
+                    heard = Instant::now();
+                    frame
+                }
                 Ok(None) => break,
                 Err(e) => {
                     let _ = send(stream, 8, &1002u16.to_be_bytes());
