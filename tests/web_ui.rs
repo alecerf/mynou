@@ -1,5 +1,6 @@
 //! The embedded web interface and its WebSocket transport, over loopback only.
 mod api_support;
+mod series_support;
 
 use api_support::{Server, TOKEN};
 use mynou::{config, json};
@@ -170,6 +171,7 @@ fn websocket_scenarios() {
     handshake_requires_token_and_same_origin(&server);
     calls_and_subscriptions_use_the_existing_routes(&server);
     the_number_of_open_sockets_is_bounded(&server);
+    series_beyond_two_hundred_reach_the_socket_in_pages();
 }
 
 fn handshake_requires_token_and_same_origin(server: &Server) {
@@ -286,4 +288,102 @@ fn the_number_of_open_sockets_is_bounded(server: &Server) {
     );
     assert!(head.starts_with("HTTP/1.1 503"), "{head}");
     drop(held);
+}
+
+/// 201 migrated series (more than one page of any size, and more than the old
+/// 128-scope snapshot allowed) reach the interface through bounded pages.
+fn series_beyond_two_hundred_reach_the_socket_in_pages() {
+    use series_support::{legacy_snapshot, record_id, synthetic_record};
+    let root = std::env::temp_dir().join(format!("mynou-web-ui-pages-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    let store = root.join("store");
+    fs::create_dir_all(&root).unwrap();
+    let records: Vec<_> = (1..=201u64)
+        .map(|n| {
+            synthetic_record(
+                &record_id(n * 7919),
+                5000 + n,
+                &format!("Synthetic Series {n}"),
+                2020,
+                n * 1000 + 1,
+                0,
+                false,
+            )
+        })
+        .collect();
+    let mut value = config::default_json();
+    value.insert("listen", "127.0.0.1:0");
+    value.insert("store_dir", store.to_str().unwrap().to_owned());
+    value.get_mut("downloads").unwrap().insert("enabled", false);
+    let cfg = config::from_json(&value, &root).unwrap();
+    // A store written by 0.23: create it, then leave only the old snapshot.
+    drop(mynou::engine::Engine::open_for_management(cfg.clone()).unwrap());
+    series_support::restore_legacy(&store, &legacy_snapshot(&records, 2));
+    let server = Server::open(cfg);
+    let mut socket = open_when_free(&server);
+
+    // The live topic carries one bounded page and says how many exist.
+    send(&mut socket, r#"{"subscribe":["series"]}"#);
+    let push = next_json(&mut socket);
+    assert_eq!(
+        push.get("topic").and_then(json::Value::as_str),
+        Some("series")
+    );
+    assert_eq!(push.get("status").and_then(json::Value::as_u64), Some(200));
+    let first = push.get("data").unwrap();
+    assert_eq!(first.get("total").and_then(json::Value::as_u64), Some(201));
+    assert_eq!(
+        first
+            .get("series")
+            .and_then(json::Value::as_array)
+            .unwrap()
+            .len(),
+        50
+    );
+    assert!(first.get("next").and_then(json::Value::as_str).is_some());
+
+    // The bare route has the same shape, and the cursor reaches every series.
+    let mut seen = std::collections::BTreeSet::new();
+    let mut after: Option<String> = None;
+    let mut id = 10;
+    loop {
+        let path = match &after {
+            Some(after) => format!("/api/series?limit=200&after={after}"),
+            None => "/api/series".to_owned(),
+        };
+        id += 1;
+        send(
+            &mut socket,
+            &format!(r#"{{"id":{id},"method":"GET","path":"{path}"}}"#),
+        );
+        let reply = next_json(&mut socket);
+        if reply.get("topic").is_some() {
+            id -= 1;
+            continue;
+        }
+        assert_eq!(reply.get("status").and_then(json::Value::as_u64), Some(200));
+        let body = reply.get("body").unwrap();
+        assert_eq!(body.get("total").and_then(json::Value::as_u64), Some(201));
+        for item in body.get("series").and_then(json::Value::as_array).unwrap() {
+            assert!(
+                seen.insert(
+                    item.get("id")
+                        .and_then(json::Value::as_str)
+                        .unwrap()
+                        .to_owned()
+                )
+            );
+        }
+        after = body
+            .get("next")
+            .and_then(json::Value::as_str)
+            .map(str::to_owned);
+        if after.is_none() {
+            break;
+        }
+    }
+    assert_eq!(seen.len(), 201);
+    drop(socket);
+    drop(server);
+    let _ = fs::remove_dir_all(root);
 }

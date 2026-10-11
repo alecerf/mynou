@@ -17,22 +17,12 @@ const INTERVAL: u64 = 3600;
 const RETRY: u64 = 300;
 const MAX_CHECKS: usize = 4;
 const MAX_SUBMISSIONS: usize = 64;
-const SERIES_PAGE: usize = 200;
+const SCAN_PAGE: usize = 50;
+const MAX_SCANNED: usize = 400;
+const MAX_UNREADABLE: usize = 1024;
+const UNREADABLE_RETRY: Duration = Duration::from_secs(3600);
 
 impl Engine {
-    /// Every summary as one array while the inventory fits a single page.
-    /// Larger inventories are read with `series_page`; no total is truncated.
-    pub fn series(&self) -> Result<Value> {
-        let page = lock(&self.series_store)?.page(None, SERIES_PAGE)?;
-        if page.next.is_some() {
-            return Err(format!(
-                "Series inventory holds {} entries; read it page by page with a limit and an after cursor",
-                page.total
-            ));
-        }
-        Ok(Value::Array(page.series))
-    }
-
     /// One page of summaries ordered by identifier. `next` is the `after`
     /// cursor of the following page and is null after the last.
     pub fn series_page(&self, after: Option<&str>, limit: usize) -> Result<Value> {
@@ -152,26 +142,69 @@ impl Engine {
         };
         // The due index is ordered by (next check, identifier): the oldest
         // work comes first and a processed scope moves to the back, so no scope
-        // starves however many are due. One pass reads one tree path.
-        let due = lock(&self.series_store)?.due(store::now(), MAX_CHECKS)?;
+        // starves however many are due. One pass reads one tree path per
+        // page of at most `SCAN_PAGE` entries. A scope whose record cannot be
+        // read is skipped, reported and retried later; it neither counts
+        // toward the pass budget nor holds back the scopes behind it, and at
+        // most `MAX_SCANNED` readable due entries are examined per pass.
+        let now = store::now();
         let deadline = Instant::now() + Duration::from_secs(90);
         let mut reports = Vec::new();
         let mut first_error = None;
-        for record in due {
-            if self.stopped.load(Ordering::Acquire) || Instant::now() >= deadline {
-                break;
-            }
-            let mut report = Value::object();
-            report.insert("id", record.id.clone());
-            match self.refresh_series_before(&record.id, deadline) {
-                Ok(value) => report.insert("result", value),
-                Err(error) => {
-                    let error = integrations::report_text(&error, 2048);
+        let mut attempts = 0;
+        let mut scanned = 0;
+        let mut cursor = None;
+        'pass: loop {
+            let page = lock(&self.series_store)?.due_after(now, cursor.as_ref(), SCAN_PAGE)?;
+            for record in &page {
+                cursor = Some(record.clone());
+                if self.stopped.load(Ordering::Acquire) || Instant::now() >= deadline {
+                    break 'pass;
+                }
+                if self.series_is_unreadable(&record.id) {
+                    continue;
+                }
+                scanned += 1;
+                let probe = lock(&self.series_store)?.get(&record.id);
+                if !matches!(probe, Ok(Some(_))) {
+                    let error = match probe {
+                        Err(error) => error,
+                        _ => "the due index names a record that does not exist".to_owned(),
+                    };
+                    self.series_mark_unreadable(&record.id);
+                    let error = integrations::report_text(
+                        &format!(
+                            "Series {} is unreadable and was skipped: {error}",
+                            record.id
+                        ),
+                        2048,
+                    );
                     first_error.get_or_insert_with(|| error.clone());
+                    let mut report = Value::object();
+                    report.insert("id", record.id.clone());
                     report.insert("error", error);
+                    reports.push(report);
+                    continue;
+                }
+                let mut report = Value::object();
+                report.insert("id", record.id.clone());
+                match self.refresh_series_before(&record.id, deadline) {
+                    Ok(value) => report.insert("result", value),
+                    Err(error) => {
+                        let error = integrations::report_text(&error, 2048);
+                        first_error.get_or_insert_with(|| error.clone());
+                        report.insert("error", error);
+                    }
+                }
+                reports.push(report);
+                attempts += 1;
+                if attempts == MAX_CHECKS {
+                    break 'pass;
                 }
             }
-            reports.push(report);
+            if page.len() < SCAN_PAGE || scanned >= MAX_SCANNED {
+                break;
+            }
         }
         if let Some(error) = first_error {
             return Err(error);
@@ -179,6 +212,32 @@ impl Engine {
         let mut value = Value::object();
         value.insert("reports", Value::Array(reports));
         Ok(value)
+    }
+
+    fn series_is_unreadable(&self, id: &str) -> bool {
+        self.series_unreadable.lock().is_ok_and(|mut skipped| {
+            let now = Instant::now();
+            skipped.retain(|_, until| *until > now);
+            skipped.contains_key(id)
+        })
+    }
+
+    fn series_mark_unreadable(&self, id: &str) {
+        if let Ok(mut skipped) = self.series_unreadable.lock() {
+            let now = Instant::now();
+            skipped.retain(|_, until| *until > now);
+            if skipped.len() < MAX_UNREADABLE {
+                skipped.insert(id.to_owned(), now + UNREADABLE_RETRY);
+            }
+        }
+    }
+
+    pub fn series_unreadable_count(&self) -> usize {
+        self.series_unreadable.lock().map_or(0, |mut skipped| {
+            let now = Instant::now();
+            skipped.retain(|_, until| *until > now);
+            skipped.len()
+        })
     }
 
     fn refresh_series_before(&self, id: &str, deadline: Instant) -> Result<Value> {

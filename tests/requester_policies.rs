@@ -629,7 +629,13 @@ fn polling_series_creates_canonical_episode_demand_without_enabling_global_acqui
     assert_eq!(demands(&engine, "alice").len(), 1);
     assert!(lock(&engine.store).unwrap().list().is_empty());
     assert_eq!(
-        engine.series().unwrap().as_array().unwrap()[0]
+        engine
+            .series_page(None, 200)
+            .unwrap()
+            .get("series")
+            .unwrap()
+            .as_array()
+            .unwrap()[0]
             .get("monitored")
             .unwrap()
             .as_bool(),

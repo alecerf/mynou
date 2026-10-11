@@ -39,7 +39,7 @@ const HELP: &str = "Mynou — media automation using Rust std only
   series-pack-search ID --season N [--apply] [--candidate-id ID --scope-id ID]
                      [--config mynou.json]
   pack-remap JOB_ID --file-path PATH [--config mynou.json]
-  series [ID | --limit N --after SERIES_ID] [--config mynou.json]
+  series [ID | --limit N --after SERIES_ID] [--config mynou.json]   (a page of 50 by default)
   series-numbering ID [--mapping FILE] [--apply --plan-id ID] [--config mynou.json]
   series-monitor | series-unmonitor | series-refresh ID [--config mynou.json]
   episode-monitor | episode-unmonitor ID --season N --episode N [--config mynou.json]
@@ -1256,43 +1256,15 @@ fn execute(args: Args) -> Result<()> {
                             .map(|value| format!("{name}={value}"))
                     })
                     .collect();
-                if fields.is_empty() {
-                    // Without a cursor, walk every page and stream the same
-                    // compact array one call used to print.
-                    let mut after: Option<String> = None;
-                    let mut first = true;
-                    print!("[");
-                    loop {
-                        let route = match &after {
-                            Some(after) => format!("/api/series?limit=200&after={after}"),
-                            None => "/api/series?limit=200".to_owned(),
-                        };
-                        let page = call(&config, &path, "GET", &route, None)?;
-                        for item in page
-                            .get("series")
-                            .and_then(Value::as_array)
-                            .ok_or("Invalid series page")?
-                        {
-                            print!("{}{}", if first { "" } else { "," }, json::stringify(item));
-                            first = false;
-                        }
-                        after = page.get("next").and_then(Value::as_str).map(str::to_owned);
-                        if after.is_none() {
-                            break;
-                        }
-                    }
-                    println!("]");
-                } else {
-                    let query = fields.join("&");
-                    mynou::series::SeriesPageQuery::parse(&query)?;
-                    output(&call(
-                        &config,
-                        &path,
-                        "GET",
-                        &format!("/api/series?{query}"),
-                        None,
-                    )?);
-                }
+                let query = fields.join("&");
+                mynou::series::SeriesPageQuery::parse(&query)?;
+                output(&call(
+                    &config,
+                    &path,
+                    "GET",
+                    &format!("/api/series?{query}"),
+                    None,
+                )?);
             } else {
                 let id = args.positions[0].to_ascii_lowercase();
                 if id.len() != 32 || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {

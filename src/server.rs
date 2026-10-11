@@ -263,7 +263,6 @@ pub(crate) fn route(
         ("GET", "/api/feeds") => Ok((200, engine.feeds()?)),
         ("GET", "/api/transfers") => Ok((200, engine.transfers()?)),
         ("GET", "/api/library") => Ok((200, engine.library()?)),
-        ("GET", "/api/series") => Ok((200, engine.series()?)),
         ("GET", "/api/requesters") => Ok((200, engine.requesters()?)),
         ("GET", "/api/irc") => Ok((200, engine.irc_sources()?)),
         ("POST", "/api/requesters/sync") => {
@@ -425,8 +424,10 @@ pub(crate) fn route(
                 }
                 return Ok((404, error("Unknown requester route")));
             }
-            if method == "GET" && path.starts_with("/api/series?") {
-                let query = crate::series::SeriesPageQuery::parse(&path["/api/series?".len()..])?;
+            if method == "GET" && (path == "/api/series" || path.starts_with("/api/series?")) {
+                let query = crate::series::SeriesPageQuery::parse(
+                    path.split_once('?').map_or("", |(_, query)| query),
+                )?;
                 return Ok((
                     200,
                     engine.series_page(query.after.as_deref(), query.limit)?,

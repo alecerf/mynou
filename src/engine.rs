@@ -23,6 +23,8 @@ pub struct Engine {
     pub store: Mutex<Store>,
     pub(crate) series_store: Mutex<crate::series::SeriesStore>,
     pub(crate) series_refresh_lock: Mutex<()>,
+    /// Scopes whose records could not be read, skipped until the instant.
+    pub(crate) series_unreadable: Mutex<std::collections::BTreeMap<String, std::time::Instant>>,
     downloads: Option<Client>,
     pub(crate) sync_lock: Mutex<()>,
     pub(crate) requester_store: Mutex<crate::requesters::RequesterStore>,
@@ -149,6 +151,7 @@ impl Engine {
             store: Mutex::new(store),
             series_store: Mutex::new(series_store),
             series_refresh_lock: Mutex::new(()),
+            series_unreadable: Mutex::new(std::collections::BTreeMap::new()),
             downloads,
             sync_lock: Mutex::new(()),
             requester_store: Mutex::new(requester_store),
@@ -417,6 +420,10 @@ impl Engine {
                 .map_or(Value::Null, |counts| Value::Number(counts.monitored as f64)),
         );
         v.insert("series_storage", lock(&self.series_store)?.describe());
+        v.insert(
+            "series_unreadable",
+            Value::Number(self.series_unreadable_count() as f64),
+        );
         v.insert(
             "last_series_error",
             lock(&self.last_series_error)?
