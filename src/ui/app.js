@@ -60,8 +60,8 @@ const toneFor = (state) =>
 function reconcile(container, items, key, create, update) {
   const existing = new Map([...container.children].map((el) => [el.dataset.key, el]));
   let cursor = container.firstElementChild;
-  for (const item of items) {
-    const k = String(key(item));
+  for (const [index, item] of items.entries()) {
+    const k = String(key(item, index));
     let el = existing.get(k);
     if (el) existing.delete(k);
     else { el = create(item); el.dataset.key = k; }
@@ -239,6 +239,7 @@ async function act(button, work, done) {
 // --------------------------------------------------------------- views ----
 
 views.dashboard = {
+  init() { wireJobRows($('#recent')); },
   render() {
     const status = data.get('status')?.data;
     const transfers = itemsOf(data.get('transfers')?.data);
@@ -373,7 +374,7 @@ views.transfers = {
 
 function cards(topic, container, empty, render) {
   if (emptyOrError(topic, container, empty)) return;
-  reconcile(container, itemsOf(data.get(topic).data), (item, i) => item.id ?? titleOf(item),
+  reconcile(container, itemsOf(data.get(topic).data), (item, i) => item.id ?? `${titleOf(item)}:${i}`,
     () => h('article', { class: 'card' }, h('h3'), h('div', { class: 'body' })),
     (el, item) => { $('h3', el).textContent = titleOf(item); $('.body', el).replaceChildren(render(item)); });
 }
@@ -401,7 +402,7 @@ views.sources = {
     const items = groups.flatMap(([topic, label]) => itemsOf(data.get(topic)?.data).map((item) => ({ ...item, label, _key: `${topic}:${item.id ?? titleOf(item)}` })));
     if (!items.length) { root.replaceChildren(h('p', { class: 'empty' }, data.has('indexers') ? 'No sources are configured.' : 'Loading…')); return; }
     root.querySelector('.empty')?.remove();
-    reconcile(root, items, (i) => i._key,
+    reconcile(root, items, (item, i) => `${item._key}:${i}`,
       () => h('article', { class: 'card' }, h('h3'), h('div', { class: 'body' })),
       (el, item) => { $('h3', el).textContent = `${item.label} · ${titleOf(item)}`; $('.body', el).replaceChildren(facts(item, ['id', 'label', '_key'])); });
   },
@@ -445,12 +446,26 @@ views.requests = {
     out.replaceChildren(
       h('div', { class: 'actions' }, submit,
         h('span', { class: 'muted' }, `${accepted.length} acceptable · ${rejected.length} rejected${report.truncated ? ' · list truncated' : ''}`)),
-      h('ol', { class: 'list' }, accepted.slice(0, 50).map((c) => h('li', { class: 'row' },
-        h('div', {}, h('div', { class: 'title' }, c.title ?? '(untitled)'), h('div', { class: 'sub' }, [c.seeders != null && `${c.seeders} seeders`, c.size_bytes && formatBytes(c.size_bytes), c.indexer].filter(Boolean).join(' · '))),
-        h('span', { class: 'score' }, c.rank != null ? `#${c.rank}` : ''))),
-        accepted.length ? null : h('li', { class: 'empty' }, 'No acceptable release was found. Nothing will be submitted unless you try again.')));
+      h('ol', { class: 'list' }, accepted.slice(0, 50).map((c) => candidateRow(c)),
+        accepted.length ? null : h('li', { class: 'empty' }, 'No acceptable release was found. Nothing will be submitted unless you try again.')),
+      rejected.length ? h('details', {}, h('summary', {}, `${rejected.length} rejected`),
+        h('ol', { class: 'list' }, rejected.slice(0, 50).map((c) => candidateRow(c)))) : null);
   },
 };
+
+/** One search candidate: title, source, seeders, score and the reasons behind the verdict. */
+function candidateRow(c) {
+  const assessment = c.assessment ?? {};
+  const rank = assessment.rank ?? {};
+  const traits = [rank.resolution, rank.source, rank.codec, rank.language].filter((v) => typeof v === 'string' && v);
+  const reasons = Array.isArray(assessment.reasons) ? assessment.reasons.filter((r) => typeof r === 'string') : [];
+  return h('li', { class: 'row' },
+    h('div', {},
+      h('div', { class: 'title' }, c.title ?? '(untitled)'),
+      h('div', { class: 'sub' }, [c.source, c.seeders != null && `${c.seeders} seeders`, ...traits].filter(Boolean).join(' · ')),
+      reasons.length ? h('div', { class: 'sub' }, reasons.join(' · ')) : null),
+    typeof rank.custom_score === 'number' ? h('span', { class: 'score', title: 'Score' }, String(rank.custom_score)) : null);
+}
 
 // ------------------------------------------------------------- routing ----
 

@@ -79,6 +79,20 @@ fn open(server: &Server) -> TcpStream {
     stream
 }
 
+fn open_when_free(server: &Server) -> TcpStream {
+    let origin = server.origin();
+    let protocols = format!("mynou.v1, auth.{}", hex(TOKEN));
+    for _ in 0..200 {
+        let (stream, head) = handshake(server, Some(&origin), &protocols);
+        if head.starts_with("HTTP/1.1 101") {
+            return stream;
+        }
+        assert!(head.starts_with("HTTP/1.1 503"), "{head}");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    panic!("a socket slot never became free");
+}
+
 fn send(stream: &mut TcpStream, text: &str) {
     let mask = [9u8, 8, 7, 6];
     let mut frame = vec![0x81];
@@ -203,6 +217,10 @@ fn calls_and_subscriptions_use_the_existing_routes(server: &Server) {
             r#"{"id":2,"method":"POST","path":"/api/shutdown","body":{}}"#,
         ),
         (3, r#"{"id":3,"method":"GET","path":"/healthz"}"#),
+        (
+            6,
+            r#"{"id":6,"method":"POST","path":"/api/shutdown?x=1","body":{}}"#,
+        ),
         (4, r#"{"id":4,"method":"DELETE","path":"/api/jobs"}"#),
         (
             5,
@@ -258,7 +276,8 @@ fn calls_and_subscriptions_use_the_existing_routes(server: &Server) {
 }
 
 fn the_number_of_open_sockets_is_bounded(server: &Server) {
-    let held: Vec<_> = (0..8).map(|_| open(server)).collect();
+    // Slots of earlier sockets are released asynchronously by the server.
+    let held: Vec<_> = (0..8).map(|_| open_when_free(server)).collect();
     let origin = server.origin();
     let (_, head) = handshake(
         server,
