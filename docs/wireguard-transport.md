@@ -28,7 +28,8 @@ bytes. The AEAD nonce is four zero bytes and the little-endian 64-bit counter;
 associated data is empty. Payloads are zero-padded to a 16-byte boundary. The
 maximum unpadded payload is 1424 bytes and datagram 1456 bytes, a conservative
 operation budget, not an established path MTU. Oversized and malformed input
-fails before decryption/allocation. Receive returns authenticated **padded**+bytes; the future IP parser must validate actual IP length, addresses, checksums
+fails before decryption/allocation. Receive returns authenticated **padded**
+bytes; the future IP parser must validate actual IP length, addresses, checksums
 and padding before publishing a virtual packet. This module does not do that.
 
 The receive replay window stores 2048 counters in 256 bytes and accepts
