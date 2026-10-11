@@ -1,8 +1,10 @@
 //! Noise IKpsk2 equations from the WireGuard protocol, independently authored.
 use super::{Role, Session, nonce};
 use crate::Result;
-use crate::crypto::{ChaCha20Poly1305, blake2s, constant_time_eq, hkdf_blake2s_expand,
-    hkdf_blake2s_extract, keyed_blake2s, random_bytes, x25519, x25519_public_key};
+use crate::crypto::{
+    ChaCha20Poly1305, blake2s, constant_time_eq, hkdf_blake2s_expand, hkdf_blake2s_extract,
+    keyed_blake2s, random_bytes, x25519, x25519_public_key,
+};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const CONSTRUCTION: &[u8] = b"Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s";
@@ -57,16 +59,25 @@ struct CipherState {
 }
 impl CipherState {
     fn new(key: [u8; 32]) -> Self {
-        Self { cipher: ChaCha20Poly1305::new(key), counter: u64::default() }
+        Self {
+            cipher: ChaCha20Poly1305::new(key),
+            counter: u64::default(),
+        }
     }
     fn seal(&mut self, aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
-        let next = self.counter.checked_add(1).ok_or("Noise: cipher counter exhausted")?;
+        let next = self
+            .counter
+            .checked_add(1)
+            .ok_or("Noise: cipher counter exhausted")?;
         let encoded = nonce(self.counter);
         self.counter = next;
         self.cipher.seal(encoded, aad, plaintext)
     }
     fn open(&mut self, aad: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>> {
-        let next = self.counter.checked_add(1).ok_or("Noise: cipher counter exhausted")?;
+        let next = self
+            .counter
+            .checked_add(1)
+            .ok_or("Noise: cipher counter exhausted")?;
         let plaintext = self.cipher.open(nonce(self.counter), aad, ciphertext)?;
         self.counter = next;
         Ok(plaintext)
@@ -98,20 +109,48 @@ pub struct Response {
 }
 
 impl Handshake {
-    #[cfg_attr(not(test), expect(dead_code, reason = "future private profile/driver integration"))]
-    pub(crate) fn new(secret: [u8; 32], peer: [u8; 32], psk: Option<[u8; 32]>, generation: u64, now: Duration) -> Result<Self> {
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "future private profile/driver integration")
+    )]
+    pub(crate) fn new(
+        secret: [u8; 32],
+        peer: [u8; 32],
+        psk: Option<[u8; 32]>,
+        generation: u64,
+        now: Duration,
+    ) -> Result<Self> {
         let initial = u32::from_le_bytes(random_bytes::<4>()?);
         Self::configured(secret, peer, psk, generation, now, initial)
     }
 
-    fn configured(secret: [u8; 32], peer: [u8; 32], psk: Option<[u8; 32]>, generation: u64, now: Duration, initial: u32) -> Result<Self> {
+    fn configured(
+        secret: [u8; 32],
+        peer: [u8; 32],
+        psk: Option<[u8; 32]>,
+        generation: u64,
+        now: Duration,
+        initial: u32,
+    ) -> Result<Self> {
         x25519(secret, peer)?;
         let public = x25519_public_key(secret);
         if constant_time_eq(&public, &peer) {
             return Err("WireGuard: peer identity equals local identity".into());
         }
-        Ok(Self { credentials: Some(Credentials { secret, public, peer, psk: psk.unwrap_or_default() }), pending: None,
-            issued: None, accepted: None, next_index: initial, generation, observed: now })
+        Ok(Self {
+            credentials: Some(Credentials {
+                secret,
+                public,
+                peer,
+                psk: psk.unwrap_or_default(),
+            }),
+            pending: None,
+            issued: None,
+            accepted: None,
+            next_index: initial,
+            generation,
+            observed: now,
+        })
     }
 
     /// The future driver must also revoke every returned Session and serialize
@@ -135,11 +174,18 @@ impl Handshake {
 
     fn index(&mut self) -> Result<u32> {
         let index = self.next_index;
-        self.next_index = index.checked_add(1).ok_or("WireGuard: local index space exhausted")?;
+        self.next_index = index
+            .checked_add(1)
+            .ok_or("WireGuard: local index space exhausted")?;
         Ok(index)
     }
 
-    pub fn initiate(&mut self, wall: SystemTime, generation: u64, now: Duration) -> Result<Vec<u8>> {
+    pub fn initiate(
+        &mut self,
+        wall: SystemTime,
+        generation: u64,
+        now: Duration,
+    ) -> Result<Vec<u8>> {
         self.admit(generation, now)?;
         let timestamp = timestamp(wall)?;
         if self.issued.is_some_and(|previous| timestamp <= previous) {
@@ -149,7 +195,12 @@ impl Handshake {
         self.initiate_inner(timestamp, ephemeral, now)
     }
 
-    fn initiate_inner(&mut self, timestamp: [u8; 12], ephemeral: [u8; 32], now: Duration) -> Result<Vec<u8>> {
+    fn initiate_inner(
+        &mut self,
+        timestamp: [u8; 12],
+        ephemeral: [u8; 32],
+        now: Duration,
+    ) -> Result<Vec<u8>> {
         let index = self.index()?;
         let keys = self.credentials.as_ref().unwrap();
         let mut noise = Noise::new(keys.peer)?;
@@ -165,7 +216,12 @@ impl Handshake {
         packet.extend_from_slice(&identity);
         packet.extend_from_slice(&encrypted_time);
         append_macs(&mut packet, keys.peer)?;
-        self.pending = Some(Pending { noise, ephemeral, index, created: now });
+        self.pending = Some(Pending {
+            noise,
+            ephemeral,
+            index,
+            created: now,
+        });
         self.issued = Some(timestamp);
         Ok(packet)
     }
@@ -178,7 +234,12 @@ impl Handshake {
         self.respond_inner(packet, ephemeral, now)
     }
 
-    fn respond_inner(&mut self, packet: &[u8], ephemeral: [u8; 32], now: Duration) -> Result<Response> {
+    fn respond_inner(
+        &mut self,
+        packet: &[u8],
+        ephemeral: [u8; 32],
+        now: Duration,
+    ) -> Result<Response> {
         let keys = self.credentials.as_ref().unwrap();
         let remote_index = u32::from_le_bytes(packet[4..8].try_into().unwrap());
         let remote_ephemeral: [u8; 32] = packet[8..40].try_into().unwrap();
@@ -192,7 +253,9 @@ impl Handshake {
         }
         let key = noise.mix::<2>(&x25519(keys.secret, keys.peer)?)?[1];
         let decoded = noise.decrypt(key, &packet[88..116])?;
-        let timestamp: [u8; 12] = decoded.try_into().map_err(|_| "WireGuard: invalid timestamp size")?;
+        let timestamp: [u8; 12] = decoded
+            .try_into()
+            .map_err(|_| "WireGuard: invalid timestamp size")?;
         validate_timestamp(timestamp)?;
         if self.accepted.is_some_and(|previous| timestamp <= previous) {
             return Err("WireGuard: replayed initiation timestamp".into());
@@ -213,14 +276,26 @@ impl Handshake {
         response.extend_from_slice(&public);
         response.extend_from_slice(&empty);
         append_macs(&mut response, peer)?;
-        let session = Session::from_handshake([directional[1], directional[0]], [index, remote_index], Role::Responder, self.generation, now);
+        let session = Session::from_handshake(
+            [directional[1], directional[0]],
+            [index, remote_index],
+            Role::Responder,
+            self.generation,
+            now,
+        );
         self.accepted = Some(timestamp);
-        Ok(Response { packet: response, session })
+        Ok(Response {
+            packet: response,
+            session,
+        })
     }
 
     pub fn finish(&mut self, packet: &[u8], generation: u64, now: Duration) -> Result<Session> {
         self.admit(generation, now)?;
-        let pending = self.pending.as_ref().ok_or("WireGuard: no pending initiation")?;
+        let pending = self
+            .pending
+            .as_ref()
+            .ok_or("WireGuard: no pending initiation")?;
         if now - pending.created >= PENDING_AGE {
             self.pending = None;
             return Err("WireGuard: pending initiation expired".into());
@@ -233,7 +308,10 @@ impl Handshake {
         let remote_index = u32::from_le_bytes(packet[4..8].try_into().unwrap());
         let public: [u8; 32] = packet[12..44].try_into().unwrap();
         // Speculative transcript: unauthenticated input never consumes pending.
-        let mut noise = Noise { chain: pending.noise.chain, hash: pending.noise.hash };
+        let mut noise = Noise {
+            chain: pending.noise.chain,
+            hash: pending.noise.hash,
+        };
         noise.mix_hash(&public)?;
         noise.mix::<1>(&public)?;
         noise.mix::<1>(&x25519(pending.ephemeral, public)?)?;
@@ -245,15 +323,26 @@ impl Handshake {
             return Err("WireGuard: response confirmation is not empty".into());
         }
         let directional = derive::<2>(&noise.chain, &[])?;
-        let session = Session::from_handshake(directional, [pending.index, remote_index], Role::Initiator, self.generation, now);
+        let session = Session::from_handshake(
+            directional,
+            [pending.index, remote_index],
+            Role::Initiator,
+            self.generation,
+            now,
+        );
         self.pending = None;
         Ok(session)
     }
 }
 
 fn timestamp(wall: SystemTime) -> Result<[u8; 12]> {
-    let elapsed = wall.duration_since(UNIX_EPOCH).map_err(|_| "WireGuard: wall clock precedes Unix epoch")?;
-    let seconds = elapsed.as_secs().checked_add(TAI_OFFSET).ok_or("WireGuard: timestamp seconds overflow")?;
+    let elapsed = wall
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| "WireGuard: wall clock precedes Unix epoch")?;
+    let seconds = elapsed
+        .as_secs()
+        .checked_add(TAI_OFFSET)
+        .ok_or("WireGuard: timestamp seconds overflow")?;
     let mut encoded = [0; 12];
     encoded[..8].copy_from_slice(&seconds.to_be_bytes());
     encoded[8..].copy_from_slice(&elapsed.subsec_nanos().to_be_bytes());
@@ -262,7 +351,8 @@ fn timestamp(wall: SystemTime) -> Result<[u8; 12]> {
 
 fn validate_timestamp(timestamp: [u8; 12]) -> Result<()> {
     if u64::from_be_bytes(timestamp[..8].try_into().unwrap()) < TAI_OFFSET
-        || u32::from_be_bytes(timestamp[8..].try_into().unwrap()) >= 1_000_000_000 {
+        || u32::from_be_bytes(timestamp[8..].try_into().unwrap()) >= 1_000_000_000
+    {
         return Err("WireGuard: invalid TAI64N timestamp".into());
     }
     Ok(())
@@ -282,7 +372,9 @@ fn hash_pair(left: &[u8], right: &[u8]) -> Result<[u8; 32]> {
 fn derive<const N: usize>(chain: &[u8; 32], input: &[u8]) -> Result<[[u8; 32]; N]> {
     let prk = hkdf_blake2s_extract(chain, input)?;
     let bytes = hkdf_blake2s_expand(&prk, &[], N * 32)?;
-    Ok(std::array::from_fn(|index| bytes[index * 32..(index + 1) * 32].try_into().unwrap()))
+    Ok(std::array::from_fn(|index| {
+        bytes[index * 32..(index + 1) * 32].try_into().unwrap()
+    }))
 }
 fn append_macs(packet: &mut Vec<u8>, recipient: [u8; 32]) -> Result<()> {
     let mac = keyed_blake2s(&hash_pair(b"mac1----", &recipient)?, packet, 16)?;
