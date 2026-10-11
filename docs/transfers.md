@@ -138,19 +138,24 @@ or missing/unsafe file shows `failed` with an error: there is no partial
 advertisement or fallback acquisition. Repair the source and explicitly
 `resume CANDIDATE_ID` to reverify read-only. Ordinary acquisition and file
 selection refuse seed-only identities. Existing pause and policy controls
-apply; resume always retires the old proof. Pausing the source does not pause
+apply; resume and a seeding-policy change retire the old proof. Pausing the
+source does not pause
 its cross-seeds: their explicit seeding permission and controls are independent,
 and verification never resumes or reacquires the original transfer.
 
 Private candidates use their own trackers, with DHT and PEX excluded. Source
 trackers and peers are not inherited. Uploads hash reused candidate pieces
-again; missing, unsafe or mismatching files invalidate candidate readiness.
+again on every block request, including previously cached pieces; observed
+missing, unsafe or mismatching files invalidate candidate readiness. Keep files
+stable while seeding: checks occur during verification and upload requests,
+not continuously, and already transmitted bytes cannot be recalled.
 Source directories and their ancestors must be physical directories; mapped
 files must be regular, have no extra hardlinks and exactly match their lengths.
 
 A private atomic `.seed` record binds metadata/source/mapping independently
 of ordinary queue files. Restart always rehashes before seeding. Damaged seed
-state, missing source state or conflicting ordinary entries refuse startup
+state, missing source state or seed controls, or conflicting ordinary entries
+refuse startup
 explicitly, never convert into a download. Older versions ignore `.seed`
 records, so these seeds do not run after downgrade. Keep the source media and
 native state while seeding.
