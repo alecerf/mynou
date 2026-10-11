@@ -267,3 +267,24 @@ pub fn restore_legacy(store_dir: &Path, bytes: &[u8]) {
     std::fs::write(&path, bytes).unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
 }
+
+/// A minimal valid legacy series record: one future episode, no choices.
+pub fn synthetic_record(
+    id: &str,
+    tmdb_id: u64,
+    title: &str,
+    year: u32,
+    catalog_id: u64,
+    next_check_at: u64,
+    monitored: bool,
+) -> Value {
+    json::parse(&format!(
+        r#"{{"id":"{id}","request":{{"kind":"series","title":"{title}","year":{year},"season":0,"episode":0,"source_path":null,"source_url":null,"tmdb_id":{tmdb_id}}},"episodes":[{{"catalog_id":{catalog_id},"season":1,"episode":1,"title":"Future","air_date":"2200-01-01"}}],"anchors":[{{"catalog_id":{catalog_id},"season":1,"episode":1}}],"numbering":[],"monitored":{monitored},"include_specials":false,"start_date":null,"excluded":[],"revision":"1","created_at":"1","updated_at":"1","checked_at":"1","next_check_at":"{next_check_at}","last_error":null}}"#
+    ))
+    .unwrap()
+}
+
+/// A 32-character record identifier derived from a number.
+pub fn record_id(number: u64) -> String {
+    format!("{number:032x}")
+}

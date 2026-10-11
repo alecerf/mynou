@@ -28,7 +28,7 @@ use crate::{
 };
 use std::{
     fs,
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -327,13 +327,36 @@ fn write_backup(directory: &Path, name: &str, bytes: &[u8]) -> Result<()> {
     let path = directory.join(name);
     reject_symlinks(&path)?;
     if exists(&path)? {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let refuse = || {
+            format!(
+                "{name} exists with different content or is not a private regular file; refusing to overwrite a preserved snapshot"
+            )
+        };
         let metadata = fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
+        // Only a file of exactly the expected size is ever read, so a foreign
+        // or huge file cannot be pulled into memory.
         if !metadata.is_file()
-            || sha256(&fs::read(&path).map_err(|error| error.to_string())?) != sha256(bytes)
+            || metadata.nlink() != 1
+            || metadata.permissions().mode() & 0o077 != 0
+            || metadata.len() != bytes.len() as u64
         {
-            return Err(format!(
-                "{name} exists with different content; refusing to overwrite a preserved snapshot"
-            ));
+            return Err(refuse());
+        }
+        let mut file = private_options()
+            .read(true)
+            .open(&path)
+            .map_err(|error| format!("Cannot open {name}: {error}"))?;
+        let opened = file.metadata().map_err(|error| error.to_string())?;
+        if opened.dev() != metadata.dev() || opened.ino() != metadata.ino() {
+            return Err(refuse());
+        }
+        let mut existing = Vec::with_capacity(bytes.len());
+        std::io::Read::take(&mut file, bytes.len() as u64 + 1)
+            .read_to_end(&mut existing)
+            .map_err(|error| error.to_string())?;
+        if sha256(&existing) != sha256(bytes) {
+            return Err(refuse());
         }
         return Ok(());
     }

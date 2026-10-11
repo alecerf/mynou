@@ -283,9 +283,11 @@ fn series_and_calendar_pages_follow_cursors_and_reject_inconsistent_queries() {
     let after = format!("/api/series?limit=5&after={series}");
     let empty = parse(&api(&server, "GET", &after, None, true));
     assert!(empty.get("series").unwrap().as_array().unwrap().is_empty());
-    // The legacy bare array remains while the inventory fits one page.
+    // The shape never depends on the inventory size.
     let bare = parse(&api(&server, "GET", "/api/series", None, true));
-    assert_eq!(bare.as_array().unwrap().len(), 1);
+    assert_eq!(bare.get("series").unwrap().as_array().unwrap().len(), 1);
+    assert_eq!(bare.get("total"), Some(&Value::Number(1.0)));
+    assert_eq!(bare.get("next"), Some(&Value::Null));
     for route in [
         "/api/series?limit=0",
         "/api/series?limit=201",

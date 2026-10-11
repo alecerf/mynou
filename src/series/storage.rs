@@ -836,7 +836,12 @@ pub(super) fn save_record(index: &mut Index, record: &Record, extra: Vec<Change>
     let mut after = before;
     match &previous {
         None => after.series += 1,
-        Some(old) if old.monitored => after.monitored -= 1,
+        Some(old) if old.monitored => {
+            after.monitored = after
+                .monitored
+                .checked_sub(1)
+                .ok_or("Series index counters disagree with its records")?;
+        }
         Some(_) => {}
     }
     if record.monitored {
@@ -1142,6 +1147,19 @@ impl SeriesStore {
     /// Monitored scopes whose check is due, oldest first. Work is one tree
     /// path plus at most `limit` rows however many scopes exist.
     pub(crate) fn due(&mut self, now: u64, limit: usize) -> Result<Vec<Due>> {
+        self.due_after(now, None, limit)
+    }
+
+    /// The same order continued after an earlier entry (`after` is exclusive).
+    pub(crate) fn due_after(
+        &mut self,
+        now: u64,
+        after: Option<&Due>,
+        limit: usize,
+    ) -> Result<Vec<Due>> {
+        let after = after
+            .map(|due| Ok::<_, String>(due_key(due.next_check_at, &id_bytes(&due.id)?)))
+            .transpose()?;
         let Some(index) = self.reader()? else {
             return Ok(Vec::new());
         };
@@ -1153,7 +1171,7 @@ impl SeriesStore {
         let page = index.page(&Query {
             start,
             end: Some(end),
-            after: None,
+            after,
             limit: limit.clamp(1, MAX_PAGE_ROWS),
             sequence: None,
         })?;
@@ -1339,8 +1357,10 @@ impl SeriesStore {
                 break;
             }
         }
-        let next = (more && !selected.is_empty())
-            .then(|| cursor_text(selected.last().expect("a selected row")));
+        let next = match selected.last() {
+            Some(last) if more => Some(cursor_text(last)?),
+            _ => None,
+        };
         let total = (complete && after.is_none()).then_some(counted);
         let mut heads: HashMap<[u8; 16], Rc<Record>> = HashMap::new();
         let mut blocks: HashMap<Key, Block> = HashMap::new();
@@ -1388,10 +1408,9 @@ impl SeriesStore {
     }
 }
 
-fn cursor_text(found: &Key) -> String {
-    let (day, id, season, episode) =
-        parse_calendar_key(found).expect("keys selected from the calendar parse");
-    format!("{day}.{}.{season}.{episode}", id_text(&id))
+fn cursor_text(found: &Key) -> Result<String> {
+    let (day, id, season, episode) = parse_calendar_key(found)?;
+    Ok(format!("{day}.{}.{season}.{episode}", id_text(&id)))
 }
 
 fn parse_cursor(text: &str) -> Result<Key> {
@@ -1470,15 +1489,13 @@ fn scoped_calendar(index: &mut Index, query: &CalendarQuery, id: &str) -> Result
     };
     let more = positioned.len() > query.limit;
     let shown: Vec<&Episode> = positioned.into_iter().take(query.limit).collect();
-    let next = if more {
-        shown.last().and_then(|episode| {
-            episode
-                .air_date
-                .as_deref()
-                .map(|date| cursor_text(&calendar_key(date, &raw, episode.season, episode.episode)))
-        })
-    } else {
-        None
+    let next = match shown.last().filter(|_| more) {
+        Some(episode) => episode
+            .air_date
+            .as_deref()
+            .map(|date| cursor_text(&calendar_key(date, &raw, episode.season, episode.episode)))
+            .transpose()?,
+        None => None,
     };
     let shared = Rc::new({
         let mut shell = record.clone();

@@ -508,7 +508,16 @@ fn new_episode_demand_requires_aired_stable_catalog_facts_without_series_writes(
         d.get("request").unwrap().get("episode").unwrap().as_u64(),
         Some(1)
     );
-    assert_eq!(e.series().unwrap().as_array().unwrap().len(), 0);
+    assert_eq!(
+        e.series_page(None, 200)
+            .unwrap()
+            .get("series")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
     drop(e);
     assert!(Engine::open(cfg).is_ok());
 }

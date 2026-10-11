@@ -372,9 +372,11 @@ views.transfers = {
   },
 };
 
-function cards(topic, container, empty, render) {
+function cards(topic, container, empty, render, more = []) {
   if (emptyOrError(topic, container, empty)) return;
-  reconcile(container, itemsOf(data.get(topic).data), (item, i) => item.id ?? `${titleOf(item)}:${i}`,
+  const first = itemsOf(data.get(topic).data);
+  const seen = new Set(first.map((item) => item.id));
+  reconcile(container, [...first, ...more.filter((item) => !seen.has(item.id))], (item, i) => item.id ?? `${titleOf(item)}:${i}`,
     () => h('article', { class: 'card' }, h('h3'), h('div', { class: 'body' })),
     (el, item) => { $('h3', el).textContent = titleOf(item); $('.body', el).replaceChildren(render(item)); });
 }
@@ -389,7 +391,30 @@ views.library = {
   },
   render() { cards('library', $('#library'), 'Nothing in the library yet.', (item) => facts(item, ['id'])); },
 };
-views.series = { render() { cards('series', $('#series'), 'No series are tracked.', (item) => facts(item, ['id'])); } };
+// The live topic carries the first page; further pages are read on demand, so
+// the list is never limited by how many series are tracked.
+const seriesTail = { items: [], next: null };
+views.series = {
+  init() {
+    $('#series-more').addEventListener('click', (e) =>
+      act(e.currentTarget, async () => {
+        const after = seriesTail.next ?? data.get('series')?.data?.next;
+        if (!after) return;
+        const page = await link.call('GET', `/api/series?limit=50&after=${encodeURIComponent(after)}`);
+        seriesTail.items.push(...itemsOf(page.series));
+        seriesTail.next = page.next;
+        views.series.render();
+      }));
+  },
+  render() {
+    cards('series', $('#series'), 'No series are tracked.', (item) => facts(item, ['id']), seriesTail.items);
+    const entry = data.get('series')?.data;
+    const next = seriesTail.items.length ? seriesTail.next : entry?.next;
+    const button = $('#series-more');
+    button.hidden = !next;
+    button.textContent = entry?.total ? `Load more series (${itemsOf(entry).length + seriesTail.items.length} of ${entry.total})` : 'Load more series';
+  },
+};
 
 views.sources = {
   init() {

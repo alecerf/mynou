@@ -38,7 +38,7 @@ const TOPICS: [(&str, &str, Duration); 9] = [
     ("jobs", "/api/jobs", FAST),
     ("transfers", "/api/transfers", FAST),
     ("library", "/api/library", SLOW),
-    ("series", "/api/series", SLOW),
+    ("series", "/api/series?limit=50", SLOW),
     ("indexers", "/api/indexers", SLOW),
     ("feeds", "/api/feeds", SLOW),
     ("irc", "/api/irc", SLOW),

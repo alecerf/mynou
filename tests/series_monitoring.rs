@@ -127,7 +127,12 @@ fn aired_future_and_undated_episodes_keep_distinct_acquisition_states() {
     let jobs = lock(&engine.store).unwrap().list();
     assert_eq!(jobs.len(), 1);
     assert_eq!(jobs[0].request.episode, 1);
-    let summaries = engine.series().unwrap();
+    let summaries = engine
+        .series_page(None, 200)
+        .unwrap()
+        .get("series")
+        .unwrap()
+        .clone();
     let summary = &summaries.as_array().unwrap()[0];
     assert_eq!(summary.get("undated_count"), Some(&Value::Number(2.0)));
     assert!(summary.get("episodes").is_none());
@@ -308,7 +313,7 @@ fn corrupt_and_linked_series_storage_fails_before_series_data_is_used() {
     }
     let engine = Engine::open_for_management(cfg.clone()).unwrap();
     assert!(engine.series_record(&id).is_err());
-    assert!(engine.series().is_err());
+    assert!(engine.series_page(None, 50).is_err());
     drop(engine);
     for (path, bytes) in &saved {
         fs::write(path, bytes).unwrap();
@@ -569,7 +574,17 @@ fn plex_series_watchlist_creates_persistent_monitoring_beyond_watchlist_removal(
     cfg.plex.token_override = Some("synthetic-series-plex-token".into());
     let engine = Engine::open_for_management(cfg).unwrap();
     engine.sync().unwrap();
-    assert_eq!(engine.series().unwrap().as_array().unwrap().len(), 1);
+    assert_eq!(
+        engine
+            .series_page(None, 200)
+            .unwrap()
+            .get("series")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
     catalog.response(
         "/watchlist",
         200,
@@ -577,8 +592,94 @@ fn plex_series_watchlist_creates_persistent_monitoring_beyond_watchlist_removal(
     );
     engine.sync().unwrap();
     assert_eq!(
-        engine.series().unwrap().as_array().unwrap()[0].get("monitored"),
+        engine
+            .series_page(None, 200)
+            .unwrap()
+            .get("series")
+            .unwrap()
+            .as_array()
+            .unwrap()[0]
+            .get("monitored"),
         Some(&Value::Bool(true))
     );
     assert!(lock(&engine.store).unwrap().list().is_empty());
+}
+
+#[test]
+fn unreadable_scopes_are_skipped_and_reported_without_starving_due_work() {
+    let directory = Directory::new();
+    let catalog = Catalog::open(vec![episode(1, 1, Some("2200-01-01"), "Future")]);
+    let cfg = catalog.config(&directory.0);
+    drop(Engine::open_for_management(cfg.clone()).unwrap());
+    // Five scopes with the oldest due times, then one healthy scope behind them.
+    let mut records: Vec<Value> = (1..=5u64)
+        .map(|n| {
+            synthetic_record(
+                &record_id(n),
+                7000 + n,
+                "Broken Series",
+                2020,
+                n * 1000 + 1,
+                n,
+                true,
+            )
+        })
+        .collect();
+    let healthy = record_id(900);
+    records.push(synthetic_record(
+        &healthy,
+        42,
+        "Fixture Series",
+        2024,
+        11001,
+        100,
+        true,
+    ));
+    restore_legacy(&cfg.store_dir, &legacy_snapshot(&records, 2));
+    let engine = Engine::open_for_management(cfg.clone()).unwrap();
+    drop(engine);
+    // Damage the header record of each broken scope.
+    for n in 1..=5u64 {
+        let name = format!("10{}{}", record_id(n), "00".repeat(47));
+        let path = cfg
+            .store_dir
+            .join("series.idx/objects")
+            .join(&name[..2])
+            .join(&name[2..]);
+        let mut bytes = fs::read(&path).unwrap();
+        let middle = bytes.len() / 2;
+        bytes[middle] ^= 0x55;
+        fs::write(&path, bytes).unwrap();
+    }
+    let engine = Engine::open_for_management(cfg).unwrap();
+    assert_eq!(engine.series_unreadable_count(), 0);
+    let workers = engine.start();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let checked = engine
+            .series_record(&healthy)
+            .unwrap()
+            .get("checked_at")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        if checked.as_deref() != Some("1") {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "The healthy scope was starved by unreadable scopes"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    drop(workers);
+    assert_eq!(engine.series_unreadable_count(), 5);
+    let status = engine.status().unwrap();
+    assert_eq!(status.get("series_unreadable"), Some(&Value::Number(5.0)));
+    assert!(
+        status
+            .get("last_series_error")
+            .and_then(Value::as_str)
+            .is_some_and(|error| error.contains("unreadable")),
+        "{status:?}"
+    );
 }
