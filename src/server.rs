@@ -6,6 +6,7 @@ use crate::{
     integrations,
     json::{self, Value},
     store::Request,
+    ui, ws,
 };
 use std::{
     collections::BTreeMap,
@@ -218,6 +219,14 @@ fn connection(stream: &mut TcpStream, engine: &Arc<Engine>, token: &str) -> Resu
             v,
         );
     }
+    if method == "GET"
+        && let Some(asset) = ui::asset(&path)
+    {
+        return respond_asset(stream, asset);
+    }
+    if method == "GET" && path == "/ws" {
+        return upgrade(stream, engine, token, &headers);
+    }
     let bearer = headers
         .get("authorization")
         .and_then(|v| v.strip_prefix("Bearer "))
@@ -242,7 +251,12 @@ fn connection(stream: &mut TcpStream, engine: &Arc<Engine>, token: &str) -> Resu
         Err(e) => respond(stream, 400, error(&e)),
     }
 }
-fn route(engine: &Arc<Engine>, method: &str, path: &str, body: &[u8]) -> Result<(u16, Value)> {
+pub(crate) fn route(
+    engine: &Arc<Engine>,
+    method: &str,
+    path: &str,
+    body: &[u8],
+) -> Result<(u16, Value)> {
     match (method, path) {
         ("GET", "/api/status") => Ok((200, engine.status()?)),
         ("GET", "/api/indexers") => Ok((200, engine.indexers()?)),
@@ -690,6 +704,54 @@ fn control_body(body: &[u8], allowed: &[&str], allow_empty: bool) -> Result<Valu
     }
     Ok(value)
 }
+fn respond_asset(stream: &mut TcpStream, asset: ui::Asset) -> Result<()> {
+    let head = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-cache\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: {}\r\n\r\n",
+        asset.content_type,
+        asset.body.len(),
+        ui::CSP
+    );
+    let deadline = Instant::now() + RESPONSE_DEADLINE;
+    write_within(stream, head.as_bytes(), deadline)
+        .and_then(|()| write_within(stream, asset.body.as_bytes(), deadline))
+        .map_err(|e| format!("Cannot write the response: {e}"))
+}
+/// Verifies the WebSocket handshake (token, same origin, slot) and serves the
+/// socket until it closes.
+fn upgrade(
+    stream: &mut TcpStream,
+    engine: &Arc<Engine>,
+    token: &str,
+    headers: &BTreeMap<String, String>,
+) -> Result<()> {
+    let header = |name: &str| headers.get(name).map(String::as_str).unwrap_or("");
+    let is_upgrade = header("upgrade").eq_ignore_ascii_case("websocket")
+        && header("connection")
+            .split(',')
+            .any(|v| v.trim().eq_ignore_ascii_case("upgrade"))
+        && header("sec-websocket-version") == "13"
+        && ws::valid_key(header("sec-websocket-key"));
+    if !is_upgrade {
+        return respond(stream, 400, error("A WebSocket upgrade is required"));
+    }
+    if !ws::same_origin(header("origin"), header("host")) {
+        return respond(stream, 403, error("Cross-origin sockets are refused"));
+    }
+    match ws::token_from_protocols(header("sec-websocket-protocol")) {
+        Some(offered) if constant_time_eq(&offered, token.as_bytes()) => {}
+        _ => return respond(stream, 401, error("Authentication required")),
+    }
+    let Some(_slot) = ws::Slot::take() else {
+        return respond(stream, 503, error("Too many open sockets"));
+    };
+    let head = format!(
+        "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {}\r\nSec-WebSocket-Protocol: {}\r\nCache-Control: no-store\r\n\r\n",
+        ws::accept_key(header("sec-websocket-key")),
+        ws::SUBPROTOCOL
+    );
+    write_within(stream, head.as_bytes(), Instant::now() + RESPONSE_DEADLINE)?;
+    ws::serve(stream, engine, route)
+}
 fn respond(stream: &mut TcpStream, status: u16, value: Value) -> Result<()> {
     respond_within(stream, status, value, RESPONSE_DEADLINE)
 }
@@ -705,6 +767,7 @@ fn respond_within(
         201 => "Created",
         400 => "Bad Request",
         401 => "Unauthorized",
+        403 => "Forbidden",
         404 => "Not Found",
         415 => "Unsupported Media Type",
         503 => "Service Unavailable",
@@ -721,7 +784,7 @@ fn respond_within(
 }
 /// Writes `data` in bounded steps and fails once `deadline` passes, so a client
 /// that reads slowly or not at all cannot hold the connection past it.
-fn write_within(stream: &mut TcpStream, data: &[u8], deadline: Instant) -> Result<()> {
+pub(crate) fn write_within(stream: &mut TcpStream, data: &[u8], deadline: Instant) -> Result<()> {
     let mut offset = 0;
     while offset < data.len() {
         let remaining = deadline

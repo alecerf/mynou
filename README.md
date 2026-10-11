@@ -67,6 +67,10 @@ mynou serve --config ./mynou.json
 Run `mynou doctor --config ./mynou.json` to check the configuration and service status; the HTTP
 API at `http://127.0.0.1:8787` takes `MYNOU_API_TOKEN` from `.env` as a Bearer token.
 
+## Web interface
+
+Open `http://127.0.0.1:8787/` while the service runs and paste the API token (`MYNOU_API_TOKEN`). The interface is plain HTML, CSS and JavaScript embedded in the binary: no framework, no build step and no dependency. It shows the dashboard, requests (search preview, then an explicit submission), jobs, native transfers, the library, series and sources, updated live over one WebSocket. Press `/` or `Ctrl+K` for the command palette and `1`–`7` to switch views. The token stays in the tab (`sessionStorage`) and travels only in the WebSocket handshake; the socket accepts same-origin pages only and exposes the same `/api` calls as the Bearer API, minus `shutdown`. Serve it beyond loopback only behind a reverse proxy you trust.
+
 ## Essential configuration
 
 Plex and TMDB start disabled. Edit the generated `mynou.json`, export secrets in
