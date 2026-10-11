@@ -245,15 +245,16 @@ IRC announcements:
   Each plan still holds at most 2,000 episodes, 100 seasons and 1,000 episodes
   per catalog season. Earlier versions stopped at 128 scopes, 20,000 episodes and
   8 MiB; their data migrates on the first start with write access.
-- The service checks due records every minute: at most four per pass, 64
+- The service checks due records every minute: at most four per pass (240 an
+  hour, so with more monitored records each waits longer than an hour), 64
   episode requests per batch, a 90-second pass budget and 20 seconds per catalog
   request.
 - Calendar pages return 1 to 200 rows over an inclusive window of at most 367
   days, for years 1800 to 9999. An `offset` reaches at most row 20,000; the
   `after` cursor returned as `next` reaches every later row. `total` is exact for
-  windows of at most 20,000 rows and `null` beyond that. Series summaries are read
-  with `limit` (1 to 200) and the `after` series ID returned as `next`; without
-  them the list is returned in one array only while it fits one page of 200.
+  windows of at most 20,000 rows and `null` beyond that. Series summaries are always
+  a page: `limit` (1 to 200, default 50) and the `after` series ID returned as
+  `next` reach every series, however many are tracked.
   Air dates are catalog days in UTC, not premiere times.
 - Refresh checks compare the catalog with the retained plan, not with a complete
   numbering history. A known episode ID can never be replaced or reassigned.
