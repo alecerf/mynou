@@ -14,7 +14,7 @@ use std::{
 fn server(name: &str) -> (Server, PathBuf) {
     let root = std::env::temp_dir().join(format!("mynou-web-ui-{name}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
-    for dir in ["store", "movies", "series", "downloads", "state/torrents"] {
+    for dir in ["movies", "series"] {
         fs::create_dir_all(root.join(dir)).unwrap();
     }
     let mut value = config::default_json();
