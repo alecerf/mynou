@@ -54,6 +54,12 @@ fn independent_reference_packets_include_nonce_endianness_and_padding() {
             actual.bytes,
             bytes(row.get("packet").unwrap().as_str().unwrap())
         );
+        let mut receiver = Session::from_handshake([[9; 32], key], [31, 17], Role::Responder, 4, Duration::ZERO);
+        let expected = bytes(row.get("packet").unwrap().as_str().unwrap());
+        let received = receiver.receive(&expected, 4, Duration::ZERO).unwrap();
+        assert_eq!(&received.bytes[..payload.len()], &payload);
+        assert!(received.bytes[payload.len()..].iter().all(|byte| *byte == 0));
+        assert!(receiver.receive(&expected, 4, Duration::ZERO).is_err());
     }
 }
 
@@ -201,6 +207,25 @@ fn monotonic_age_generation_and_revocation_never_reactivate_keys() {
     );
     assert!(receiver.keys.is_none());
     assert!(sender.send(b"", 4, Duration::from_secs(180)).is_err());
+    for mode in 0..3 {
+        let (mut sender, mut receiver) = pair();
+        let first = sender.send(b"", 4, Duration::ZERO).unwrap().bytes;
+        receiver.receive(&first, 4, Duration::from_secs(10)).unwrap();
+        let next = sender.send(b"", 4, Duration::ZERO).unwrap().bytes;
+        match mode {
+            0 => assert!(receiver.receive(&next, 4, Duration::from_secs(9)).is_err()),
+            1 => assert!(receiver.receive(&next, 5, Duration::from_secs(10)).is_err()),
+            _ => receiver.revoke(),
+        }
+        assert!(receiver.receive(&next, 4, Duration::from_secs(11)).is_err());
+        assert!(receiver.keys.is_none());
+    }
+    let created = Duration::from_secs(1000);
+    let mut session = Session::from_handshake([[7; 32], [9; 32]], [17, 31], Role::Initiator, 4, created);
+    assert!(!session.send(b"", 4, created + Duration::from_secs(119)).unwrap().rekey);
+    assert!(session.send(b"", 4, created + Duration::from_secs(120)).unwrap().rekey);
+    assert!(session.send(b"", 4, created + Duration::from_secs(179)).is_ok());
+    assert!(session.send(b"", 4, created + Duration::from_secs(180)).is_err());
 }
 
 #[test]
