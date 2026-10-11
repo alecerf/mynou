@@ -60,13 +60,7 @@ impl XChaCha20Poly1305 {
     fn derived(&self, nonce: [u8; 24]) -> (ChaCha20Poly1305, [u8; 12]) {
         let input = nonce[..16].try_into().expect("fixed XChaCha nonce prefix");
         // The draft mandates four zero prefix bytes; the tail is caller supplied.
-        let short = std::array::from_fn(|index| {
-            if index < 4 {
-                0
-            } else {
-                nonce[index + 12]
-            }
-        });
+        let short = std::array::from_fn(|index| if index < 4 { 0 } else { nonce[index + 12] });
         (ChaCha20Poly1305::new(hchacha20(self.key, input)), short)
     }
 
