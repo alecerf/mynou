@@ -349,6 +349,12 @@ struct Plan {
 
 impl Plan {
     fn new(state: &State) -> Result<Self> {
+        // Every record must fit its bound before anything is written.
+        for job in state.jobs.values() {
+            if layout::encode_job(job).len() > crate::inventory::MAX_VALUE_BYTES {
+                return Err("A job record exceeds the 1 MiB record limit".into());
+            }
+        }
         let root_ids = legacy::roots(&state.jobs)?;
         let mut roots = BTreeMap::new();
         for (id, root) in &root_ids {
