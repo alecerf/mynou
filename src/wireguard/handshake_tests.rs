@@ -305,3 +305,39 @@ fn framing_cookie_and_index_exhaustion_fail_before_state_publication() {
     );
     assert_eq!(left.issued, Some(timestamp(wall()).unwrap()));
 }
+
+#[test]
+fn public_mac_filter_never_substitutes_for_identity_and_timestamp_authentication() {
+    let (mut left, mut right) = pair(None);
+    let original = left.initiate(wall(), 4, Duration::ZERO).unwrap();
+    for index in [40, 87, 88, 115] {
+        let mut corrupted = original.clone();
+        corrupted[index] ^= 1;
+        remac(&mut corrupted, right.credentials.as_ref().unwrap().public);
+        assert!(right.respond(&corrupted, 4, Duration::ZERO).is_err());
+        assert!(right.accepted.is_none());
+        assert_eq!(right.next_index, 31);
+    }
+    assert!(right.respond(&original, 4, Duration::ZERO).is_ok());
+    assert!(validate_timestamp([0; 12]).is_err());
+}
+
+#[test]
+fn authenticated_response_has_public_routing_index_and_fresh_session_age() {
+    let (mut left, mut right) = pair(None);
+    let original = left.initiate(wall(), 4, Duration::ZERO).unwrap();
+    let mut response = right.respond(&original, 4, Duration::ZERO).unwrap();
+    response.packet[4..8].copy_from_slice(&97u32.to_le_bytes());
+    remac(&mut response.packet, left.credentials.as_ref().unwrap().public);
+    let finish_time = PENDING_AGE - Duration::from_nanos(1);
+    let mut session = left.finish(&response.packet, 4, finish_time).unwrap();
+    let packet = session.send(b"", 4, finish_time).unwrap();
+    assert_eq!(u32::from_le_bytes(packet.bytes[4..8].try_into().unwrap()), 97);
+    // Altering a public routing index cannot forge the peer's encrypted proof,
+    // but can cause misrouting; the future driver must not call it an identity.
+    assert!(response.session.receive(&packet.bytes, 4, finish_time).is_err());
+    assert!(!session.send(b"", 4, finish_time + Duration::from_secs(119)).unwrap().rekey);
+    assert!(session.send(b"", 4, finish_time + Duration::from_secs(120)).unwrap().rekey);
+    assert!(session.send(b"", 4, finish_time + Duration::from_secs(179)).is_ok());
+    assert!(session.send(b"", 4, finish_time + Duration::from_secs(180)).is_err());
+}
