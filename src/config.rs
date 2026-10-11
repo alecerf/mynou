@@ -422,6 +422,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
                     "authentication",
                     "id",
                     "watch",
+                    "mapping",
                 ],
             )?;
             let kind = text(source, "kind", "json")?;

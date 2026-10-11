@@ -9,6 +9,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use crate::Result;
 use crate::config::{self, Config, Source};
 use crate::crypto::Sha256;
+use crate::indexers::mapping::Mapping;
 use crate::json::{self, Value};
 use crate::net::{self, HttpClient};
 use crate::selection::{Assessment, Profile, tokens};
@@ -1069,39 +1070,31 @@ fn acquisition_url(url: &str, base: &str) -> Result<String> {
     Ok(url)
 }
 
-fn json_releases(value: &Value, base: &str) -> Result<Vec<Release>> {
-    let items = value
-        .as_array()
-        .or_else(|| value.get("results").and_then(Value::as_array))
-        .or_else(|| value.get("items").and_then(Value::as_array))
+fn json_releases(value: &Value, base: &str, mapping: &Mapping) -> Result<Vec<Release>> {
+    let items = mapping
+        .list(value)
         .ok_or("JSON indexer: missing results/items list")?;
     if items.len() > MAX_ITEMS {
         return Err("JSON indexer: too many results".into());
     }
     let mut out = Vec::new();
     for item in items {
-        let Some(title) = string(item, "title") else {
+        let Some(title) = mapping.title(item) else {
             continue;
         };
         if title.len() > 2_048 {
             continue;
         }
-        let Some(url) = ["download_url", "magnet", "magnet_url", "url", "link"]
-            .iter()
-            .find_map(|k| string(item, k))
-        else {
+        let Some(url) = mapping.url(item) else {
             continue;
         };
         let Ok(url) = acquisition_url(url, base) else {
             continue;
         };
-        let seeders = integer(item, "seeders")
-            .or_else(|| integer(item, "seeders_count"))
-            .unwrap_or(0);
         out.push(Release {
             title: title.into(),
             url,
-            seeders,
+            seeders: mapping.seeders(item),
         });
     }
     Ok(out)
@@ -1148,16 +1141,37 @@ fn source_releases(source: &Source, request: &Request, deadline: Instant) -> Res
             }
         }
     } else if source.kind == "json" {
-        pairs.push(("kind", request.kind.clone()));
-        pairs.push(("year", request.year.to_string()));
-        pairs.push(("season", season.to_string()));
-        pairs.push(("episode", episode.to_string()));
-        if let crate::numbering::SourceNumber::Absolute(number) = numbering {
-            pairs.push(("absolute", number.to_string()));
+        let mapping = &source.options.mapping;
+        if let Some(name) = mapping.parameter("query") {
+            pairs[0].0 = name;
+        } else {
+            pairs.clear();
         }
+        let mut extra = vec![
+            ("kind", mapping.kind_value(&request.kind).to_owned()),
+            ("year", request.year.to_string()),
+            ("season", season.to_string()),
+            ("episode", episode.to_string()),
+        ];
+        if let crate::numbering::SourceNumber::Absolute(number) = numbering {
+            extra.push(("absolute", number.to_string()));
+        }
+        for (role, value) in extra {
+            if let Some(name) = mapping.parameter(role) {
+                pairs.push((name, value));
+            }
+        }
+        pairs.extend(mapping.fixed().iter().map(|(n, v)| (n.as_str(), v.clone())));
     }
     if let Some(key) = optional_secret(&source.api_key_env)? {
-        pairs.push(("apikey", key));
+        let name = if source.kind == "json" {
+            source.options.mapping.parameter("api_key")
+        } else {
+            Some("apikey")
+        };
+        if let Some(name) = name {
+            pairs.push((name, key));
+        }
     }
     let url = query(&source.url, &pairs)?;
     let response = crate::indexers::fetch(
@@ -1174,7 +1188,7 @@ fn source_releases(source: &Source, request: &Request, deadline: Instant) -> Res
     let releases = (|| {
         let text = std::str::from_utf8(&response.body).map_err(|_| "Indexer: invalid UTF-8")?;
         if source.kind == "json" {
-            json_releases(&json::parse(text)?, &source.url)
+            json_releases(&json::parse(text)?, &source.url, &source.options.mapping)
         } else {
             rss_releases(text, &source.url)
         }

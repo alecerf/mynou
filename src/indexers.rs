@@ -1,5 +1,6 @@
 //! Native bounded source authentication. Sessions are ephemeral and origin-bound.
 pub(crate) mod feed;
+pub(crate) mod mapping;
 pub(crate) mod policy;
 mod session;
 pub(crate) mod watch;
@@ -75,6 +76,7 @@ pub struct Options {
     pub min_interval_ms: u64,
     pub authentication: Authentication,
     pub watch: Watch,
+    pub(crate) mapping: mapping::Mapping,
     runtime: Arc<Mutex<Runtime>>,
 }
 impl std::fmt::Debug for Options {
@@ -98,6 +100,7 @@ impl Default for Options {
             min_interval_ms: 0,
             authentication: Authentication::None,
             watch: Watch::default(),
+            mapping: mapping::Mapping::default(),
             runtime: Arc::new(Mutex::new(Runtime::default())),
         }
     }
@@ -183,6 +186,7 @@ impl Options {
             enabled,
             min_interval_ms: integer(v, "min_interval_ms", 0, 60_000)?,
             watch: watch(v)?,
+            mapping: mapping::Mapping::from_json(v)?,
             ..Self::default()
         };
         if let Some(auth) = v.get("authentication") {

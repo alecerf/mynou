@@ -58,17 +58,19 @@ impl Options {
         }
     }
     pub(super) fn binding(&self, source: &Source) -> String {
-        digest(
-            json::stringify(&Value::Array(vec![
-                source.name.clone().into(),
-                source.kind.clone().into(),
-                source.url.clone().into(),
-                source.api_key_env.clone().into(),
-                self.min_interval_ms.to_string().into(),
-                self.auth_binding(),
-            ]))
-            .as_bytes(),
-        )
+        let mut parts = vec![
+            source.name.clone().into(),
+            source.kind.clone().into(),
+            source.url.clone().into(),
+            source.api_key_env.clone().into(),
+            self.min_interval_ms.to_string().into(),
+            self.auth_binding(),
+        ];
+        // Only a mapped source binds its mapping, so earlier bindings stay valid.
+        if !self.mapping.canonical().is_empty() {
+            parts.push(self.mapping.canonical().into());
+        }
+        digest(json::stringify(&Value::Array(parts)).as_bytes())
     }
     pub(super) fn identity(&self, source: &Source) -> String {
         self.id.clone().unwrap_or_else(|| self.binding(source))
