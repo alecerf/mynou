@@ -161,9 +161,9 @@ impl Session {
 }
 
 fn nonce(counter: u64) -> [u8; 12] {
-    let mut nonce = [0; 12];
-    nonce[4..].copy_from_slice(&counter.to_le_bytes());
-    nonce
+    let encoded = counter.to_le_bytes();
+    // WireGuard mandates a zero prefix; uniqueness comes from the owned counter.
+    std::array::from_fn(|index| if index < 4 { 0 } else { encoded[index - 4] })
 }
 
 #[derive(Default)]
