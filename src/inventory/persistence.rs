@@ -203,7 +203,8 @@ impl Transaction {
         if length < tree::offset(self.before.next)? || length > tree::offset(self.after.next)? {
             return Err("Inventory file length disagrees with recovery".into());
         }
-        let mut overlay = Tree::new(file, self.after);
+        let mut cache = tree::Cache::new();
+        let mut overlay = Tree::new(file, self.after, &mut cache);
         overlay.dirty = self.pages.clone();
         for action in &self.actions {
             if overlay.find(&action.key)? != action.reference()? {
@@ -343,6 +344,7 @@ pub(super) fn create(directory: &Path) -> Result<Index> {
         _lock: lock,
         tree,
         header,
+        cache: tree::Cache::new(),
         read_only: false,
         poisoned: false,
         #[cfg(test)]
@@ -439,6 +441,7 @@ pub(super) fn open(directory: &Path, read_only: bool) -> Result<Index> {
         _lock: lock,
         tree,
         header,
+        cache: tree::Cache::new(),
         read_only,
         poisoned: false,
         #[cfg(test)]

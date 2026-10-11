@@ -482,3 +482,6 @@ fn flag(value: &Value, key: &str) -> Result<bool> {
         .and_then(Value::as_bool)
         .ok_or_else(|| format!("Missing series flag: {key}"))
 }
+
+#[cfg(test)]
+mod tests;

@@ -12,7 +12,9 @@ use mynou::{
     series::{NumberingChoice, NumberingRequest},
     store::{Request, Store},
 };
-use series_support::{Catalog, episode, episodes, id, request};
+use series_support::{
+    Catalog, episode, episodes, id, legacy_snapshot, request, restore_legacy, series_state,
+};
 use std::{fs, sync::atomic::Ordering, thread};
 
 fn number(season: u32, episode: u32) -> EpisodeNumber {
@@ -150,7 +152,7 @@ fn numbering_preview_is_read_only_online_and_after_restart() {
         .track_series_with_policy(&request(), false, false, false)
         .unwrap();
     let id = id(&record).to_owned();
-    let snapshot = fs::read(cfg.store_dir.join("series.json")).unwrap();
+    let snapshot = series_state(&cfg.store_dir);
     let journal = fs::read(cfg.store_dir.join("journal.bin")).unwrap();
     let choices = query(vec![choice(
         11001,
@@ -163,10 +165,7 @@ fn numbering_preview_is_read_only_online_and_after_restart() {
         engine.series_record(&id).unwrap(),
         record_with_no_submission(record.clone())
     );
-    assert_eq!(
-        fs::read(cfg.store_dir.join("series.json")).unwrap(),
-        snapshot
-    );
+    assert_eq!(series_state(&cfg.store_dir), snapshot);
     assert_eq!(
         fs::read(cfg.store_dir.join("journal.bin")).unwrap(),
         journal
@@ -183,10 +182,7 @@ fn numbering_preview_is_read_only_online_and_after_restart() {
             .unwrap_err()
             .contains("writable")
     );
-    assert_eq!(
-        fs::read(cfg.store_dir.join("series.json")).unwrap(),
-        snapshot
-    );
+    assert_eq!(series_state(&cfg.store_dir), snapshot);
     assert_eq!(
         fs::read(cfg.store_dir.join("journal.bin")).unwrap(),
         journal
@@ -303,14 +299,14 @@ fn stale_numbering_guard_rejects_changed_policy_catalog_and_choices_without_writ
     engine
         .configure_series(id, Some(false), None, None)
         .unwrap();
-    let before = fs::read(cfg.store_dir.join("series.json")).unwrap();
+    let before = series_state(&cfg.store_dir);
     assert!(
         engine
             .series_numbering(id, &choices)
             .unwrap_err()
             .contains("stale")
     );
-    assert_eq!(fs::read(cfg.store_dir.join("series.json")).unwrap(), before);
+    assert_eq!(series_state(&cfg.store_dir), before);
     choices.apply = false;
     choices.plan_id = None;
     let preview = engine.series_numbering(id, &choices).unwrap();
@@ -326,7 +322,7 @@ fn stale_numbering_guard_rejects_changed_policy_catalog_and_choices_without_writ
             .unwrap_err()
             .contains("stale")
     );
-    assert_eq!(fs::read(cfg.store_dir.join("series.json")).unwrap(), before);
+    assert_eq!(series_state(&cfg.store_dir), before);
     choices.apply = false;
     choices.plan_id = None;
     let preview = engine.series_numbering(id, &choices).unwrap();
@@ -339,7 +335,7 @@ fn stale_numbering_guard_rejects_changed_policy_catalog_and_choices_without_writ
             .unwrap_err()
             .contains("stale")
     );
-    assert_eq!(fs::read(cfg.store_dir.join("series.json")).unwrap(), before);
+    assert_eq!(series_state(&cfg.store_dir), before);
     assert!(lock(&engine.store).unwrap().list().is_empty());
 }
 
@@ -356,7 +352,7 @@ fn conflicting_source_labels_require_a_resolved_atomic_decision() {
         .track_series_with_policy(&request(), false, false, false)
         .unwrap();
     let id = id(&record);
-    let before = fs::read(cfg.store_dir.join("series.json")).unwrap();
+    let before = series_state(&cfg.store_dir);
     let mut conflicting = query(vec![choice(
         11001,
         number(1, 1),
@@ -367,7 +363,7 @@ fn conflicting_source_labels_require_a_resolved_atomic_decision() {
     conflicting.apply = true;
     conflicting.plan_id = Some(report.get("plan_id").unwrap().as_str().unwrap().into());
     assert!(engine.series_numbering(id, &conflicting).is_err());
-    assert_eq!(fs::read(cfg.store_dir.join("series.json")).unwrap(), before);
+    assert_eq!(series_state(&cfg.store_dir), before);
     apply(
         &engine,
         id,
@@ -535,7 +531,7 @@ fn rewrite_snapshot(path: &std::path::Path, envelope: &mut Value) {
 }
 
 #[test]
-fn legacy_snapshots_are_inferred_read_only_then_versioned_on_explicit_save() {
+fn legacy_snapshots_are_inferred_then_migrated_and_versioned_by_a_writable_open() {
     let directory = Directory::new();
     let catalog = Catalog::open(vec![episode(1, 1, Some("2200-01-01"), "Future")]);
     let cfg = catalog.config(&directory.0);
@@ -544,23 +540,36 @@ fn legacy_snapshots_are_inferred_read_only_then_versioned_on_explicit_save() {
         .track_series_with_policy(&request(), false, false, false)
         .unwrap();
     let id = id(&record).to_owned();
+    let public = engine.series_record(&id).unwrap();
     drop(engine);
+    // A 0.23 store: schema 1 snapshots carry no numbering history.
+    let bytes = legacy_snapshot(&[public], 1);
+    restore_legacy(&cfg.store_dir, &bytes);
     let path = cfg.store_dir.join("series.json");
-    let mut envelope = json::parse(&fs::read_to_string(&path).unwrap()).unwrap();
-    if let Some(Value::Array(records)) = envelope.get_mut("records") {
-        for record in records {
-            if let Value::Object(fields) = record {
-                fields.remove("anchors");
-                fields.remove("numbering");
-            }
-        }
-    }
-    envelope.insert("schema_version", 1_u32);
-    rewrite_snapshot(&path, &mut envelope);
-    let bytes = fs::read(&path).unwrap();
+    let before = series_state(&cfg.store_dir);
+    // A read-only preview refuses series data instead of guessing, and writes nothing.
     let reader = Engine::open_for_preview(cfg.clone()).unwrap();
+    assert!(
+        reader
+            .series_record(&id)
+            .unwrap_err()
+            .contains("not been migrated")
+    );
     assert_eq!(
         reader
+            .status()
+            .unwrap()
+            .get("series_storage")
+            .and_then(|state| state.get("state")),
+        Some(&Value::String("needs_migration".into()))
+    );
+    drop(reader);
+    assert_eq!(series_state(&cfg.store_dir), before);
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+    // A writable open migrates once: identities are inferred, then stored.
+    let writer = Engine::open_for_management(cfg.clone()).unwrap();
+    assert_eq!(
+        writer
             .series_record(&id)
             .unwrap()
             .get("anchors")
@@ -570,10 +579,6 @@ fn legacy_snapshots_are_inferred_read_only_then_versioned_on_explicit_save() {
             .len(),
         1
     );
-    reader.series_numbering(&id, &query(Vec::new())).unwrap();
-    drop(reader);
-    assert_eq!(fs::read(&path).unwrap(), bytes);
-    let writer = Engine::open_for_management(cfg.clone()).unwrap();
     apply(
         &writer,
         &id,
@@ -584,8 +589,20 @@ fn legacy_snapshots_are_inferred_read_only_then_versioned_on_explicit_save() {
         )]),
     );
     drop(writer);
-    let upgraded = json::parse(&fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(upgraded.get("schema_version"), Some(&Value::Number(2.0)));
+    let marker = json::parse(&fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(marker.get("schema_version"), Some(&Value::Number(3.0)));
+    let preserved: Vec<_> = fs::read_dir(&cfg.store_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("series.legacy-")
+        })
+        .collect();
+    assert_eq!(preserved.len(), 1);
+    assert_eq!(fs::read(&preserved[0]).unwrap(), bytes);
     let reopened = Engine::open_for_preview(cfg).unwrap();
     assert_eq!(
         reopened
@@ -601,17 +618,18 @@ fn legacy_snapshots_are_inferred_read_only_then_versioned_on_explicit_save() {
 }
 
 #[test]
-fn verified_but_invalid_numbering_data_is_rejected_before_use() {
+fn verified_but_invalid_numbering_data_is_rejected_before_migration() {
     let directory = Directory::new();
     let catalog = Catalog::open(vec![episode(1, 1, Some("2200-01-01"), "Future")]);
     let cfg = catalog.config(&directory.0);
     let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    engine
+    let record = engine
         .track_series_with_policy(&request(), false, false, false)
         .unwrap();
+    let public = engine.series_record(id(&record)).unwrap();
     drop(engine);
     let path = cfg.store_dir.join("series.json");
-    let valid = json::parse(&fs::read_to_string(&path).unwrap()).unwrap();
+    let valid = json::parse(std::str::from_utf8(&legacy_snapshot(&[public], 2)).unwrap()).unwrap();
     for mode in ["missing", "duplicate", "wrong-owner", "unknown-choice"] {
         let mut envelope = valid.clone();
         let Some(Value::Array(records)) = envelope.get_mut("records") else {
@@ -643,8 +661,20 @@ fn verified_but_invalid_numbering_data_is_rejected_before_use() {
             }
             _ => unreachable!(),
         }
+        std::fs::remove_dir_all(cfg.store_dir.join("series.idx")).ok();
         rewrite_snapshot(&path, &mut envelope);
-        assert!(Engine::open_for_preview(cfg.clone()).is_err(), "{mode}");
+        let before = series_state(&cfg.store_dir);
+        // Read-only opens defer the record checks; migration refuses without writing.
+        assert!(Engine::open_for_management(cfg.clone()).is_err(), "{mode}");
+        assert_eq!(series_state(&cfg.store_dir), before, "{mode}");
+        assert!(
+            fs::read_dir(&cfg.store_dir).unwrap().all(|entry| !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with("series.legacy")),
+            "{mode}"
+        );
     }
 }
 

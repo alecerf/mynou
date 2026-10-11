@@ -263,3 +263,85 @@ fn cli_routes_series_creation_controls_and_calendar_to_the_running_service() {
         Some("Pack/corrected.mp4")
     );
 }
+
+#[test]
+fn series_and_calendar_pages_follow_cursors_and_reject_inconsistent_queries() {
+    let directory = Directory::new();
+    let catalog = Catalog::open(
+        (1..=80)
+            .map(|number| episode(1, number, Some("2024-02-29"), "Leap day"))
+            .collect(),
+    );
+    let server = Server::open(catalog.config(&directory.0));
+    let created = parse(&api(&server, "POST", "/api/series", Some(&create()), true));
+    let series = id(&created).to_owned();
+
+    let page = parse(&api(&server, "GET", "/api/series?limit=1", None, true));
+    assert_eq!(page.get("total"), Some(&Value::Number(1.0)));
+    assert_eq!(page.get("next"), Some(&Value::Null));
+    assert_eq!(page.get("series").unwrap().as_array().unwrap().len(), 1);
+    let after = format!("/api/series?limit=5&after={series}");
+    let empty = parse(&api(&server, "GET", &after, None, true));
+    assert!(empty.get("series").unwrap().as_array().unwrap().is_empty());
+    // The legacy bare array remains while the inventory fits one page.
+    let bare = parse(&api(&server, "GET", "/api/series", None, true));
+    assert_eq!(bare.as_array().unwrap().len(), 1);
+    for route in [
+        "/api/series?limit=0",
+        "/api/series?limit=201",
+        "/api/series?after=nothex",
+        "/api/series?limit=5&limit=6",
+        "/api/series?unknown=1",
+    ] {
+        assert_eq!(
+            api(&server, "GET", route, None, true).status,
+            400,
+            "{route}"
+        );
+    }
+
+    let window = format!("/api/calendar?from=2024-02-29&to=2024-03-01&series_id={series}&limit=30");
+    let mut seen = Vec::new();
+    let mut route = window.clone();
+    loop {
+        let reply = api(&server, "GET", &route, None, true);
+        assert_eq!(reply.status, 200);
+        let value = parse(&reply);
+        seen.extend(
+            value
+                .get("episodes")
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| row.get("episode").unwrap().as_u64().unwrap()),
+        );
+        match value.get("next").and_then(Value::as_str) {
+            Some(cursor) => route = format!("{window}&after={cursor}"),
+            None => break,
+        }
+    }
+    assert_eq!(seen, (1..=80).collect::<Vec<_>>());
+    assert_eq!(
+        api(
+            &server,
+            "GET",
+            &format!("{window}&offset=5&after=2024-02-29.{series}.1.1"),
+            None,
+            true
+        )
+        .status,
+        400
+    );
+    assert_eq!(
+        api(
+            &server,
+            "GET",
+            &format!("{window}&after=garbage"),
+            None,
+            true
+        )
+        .status,
+        400
+    );
+}
