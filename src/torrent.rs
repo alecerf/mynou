@@ -1,6 +1,8 @@
 //! Original BitTorrent implementation using only Rust's standard library.
 #[path = "torrent/control.rs"]
 mod control;
+#[path = "torrent/cross_seed.rs"]
+mod cross_seed;
 #[path = "torrent/discovery.rs"]
 mod discovery;
 #[path = "torrent/inspection.rs"]
@@ -15,6 +17,7 @@ mod selection;
 mod wire;
 use control::RateGate;
 pub use control::{FilePriority, TorrentControl, TransferPolicy};
+pub use cross_seed::{CrossSeedRequest, MAX_CROSS_SEED_METADATA};
 pub use inspection::{MetadataFile, TorrentMetadata, inspect_metadata};
 pub use selection::{FileSelection, SelectionUpdate};
 
@@ -93,6 +96,7 @@ impl Default for AnnounceState {
     }
 }
 struct Job {
+    cross_seed: Option<Arc<cross_seed::CrossSeed>>,
     source: Source,
     meta: Option<Arc<Meta>>,
     status: DownloadStatus,
@@ -740,6 +744,8 @@ fn transfer_state(job: &Job) -> &'static str {
         "ready"
     } else if job.status.selected_ready {
         "selected_ready"
+    } else if job.running && job.cross_seed.is_some() {
+        "verifying"
     } else if job.running {
         "downloading"
     } else {
@@ -756,6 +762,8 @@ fn transfer_value(
     use crate::json::Value as Json;
     let mut value = snapshot_control(job).to_json();
     value.insert("ready", job.status.ready);
+    value.insert("seed_only", job.cross_seed.is_some());
+    value.insert("cross_seed_source_id", job.cross_seed.as_ref().map_or(Json::Null, |reuse| Json::String(reuse.source_id.clone())));
     value.insert("selected_ready", job.status.selected_ready);
     value.insert("running", job.running);
     value.insert("paused", job.paused || job.control.user_paused);
@@ -936,6 +944,7 @@ impl Client {
                 id.to_owned(),
                 Job {
                     source,
+                    cross_seed: None,
                     meta: Some(Arc::new(meta)),
                     status,
                     running: false,
@@ -995,6 +1004,7 @@ impl Client {
                 id.to_owned(),
                 Job {
                     meta: None,
+                    cross_seed: None,
                     source,
                     status: DownloadStatus {
                         id: id.to_owned(),
@@ -1027,6 +1037,7 @@ impl Client {
                 },
             );
         }
+        cross_seed::restore(&config, &mut map)?;
         restore_controls(&config, &mut map)?;
         for job in map.values_mut() {
             if job.paused || job.control.user_paused {
@@ -1119,10 +1130,17 @@ impl Client {
             .jobs
             .lock()
             .map_err(|_| "BitTorrent state lock is poisoned")?;
+        if jobs.values().any(|job| job.cross_seed.is_some()
+            && source.v2.is_some_and(|hash| job.source.v1.is_some_and(|identity| hash[..20] == identity))) {
+            return Err("Seed-only cross-seed wire identity cannot be used for acquisition".into());
+        }
         if let Some(job) = jobs.values_mut().find(|job| {
             source.v1.is_some_and(|h| job.source.v1 == Some(h))
                 || source.v2.is_some_and(|h| job.source.v2 == Some(h))
         }) {
+            if job.cross_seed.is_some() {
+                return Err("Seed-only cross-seed identity cannot be used for acquisition".into());
+            }
             if (source.v1.is_some() && job.source.v1.is_none())
                 || (source.v2.is_some() && job.source.v2.is_none())
             {
@@ -1192,6 +1210,7 @@ impl Client {
             id.clone(),
             Job {
                 meta: metadata,
+                cross_seed: None,
                 source,
                 status: status.clone(),
                 running: false,
@@ -1231,6 +1250,9 @@ impl Client {
             .lock()
             .map_err(|_| "BitTorrent state lock is poisoned")?;
         let job = jobs.get_mut(id).ok_or("Unknown download")?;
+        if job.cross_seed.is_some() {
+            return Err("Seed-only cross-seed selection cannot change".into());
+        }
         let selection = match update {
             SelectionUpdate::All => FileSelection::All,
             SelectionUpdate::Indices(indices) => {
@@ -1277,6 +1299,9 @@ impl Client {
             .lock()
             .map_err(|_| "BitTorrent state lock is poisoned")?;
         let job = jobs.get_mut(id).ok_or("Unknown download")?;
+        if job.cross_seed.is_some() {
+            return Err("Seed-only cross-seed identity cannot supply acquisition files".into());
+        }
         if !job.failed
             && match selection {
                 FileSelection::All => job.control.file_selection == FileSelection::All,
@@ -1297,6 +1322,8 @@ impl Client {
     }
     /// Pause a native transfer without removing its verified files or metadata.
     pub fn cancel(&self, id: &str) -> Result<()> {
+        let gate = cross_seed::gate(self, id)?;
+        let _admission = gate.as_ref().map(|gate| gate.lock().map_err(|_| "Cross-seed activity lock is poisoned")).transpose()?;
         let mut jobs = self
             .jobs
             .lock()
@@ -1315,6 +1342,8 @@ impl Client {
     }
     /// Resume using the cached, authenticated identity; never reload a source URL.
     pub fn resume(&self, id: &str) -> Result<DownloadStatus> {
+        let gate = cross_seed::gate(self, id)?;
+        let _admission = gate.as_ref().map(|gate| gate.lock().map_err(|_| "Cross-seed activity lock is poisoned")).transpose()?;
         let mut jobs = self
             .jobs
             .lock()
@@ -1339,9 +1368,12 @@ impl Client {
             }
             .into();
         }
+        cross_seed::retire_proof(job);
         Ok(job.status.clone())
     }
     pub fn resume_if_allowed(&self, id: &str) -> Result<DownloadStatus> {
+        let gate = cross_seed::gate(self, id)?;
+        let _admission = gate.as_ref().map(|gate| gate.lock().map_err(|_| "Cross-seed activity lock is poisoned")).transpose()?;
         let mut jobs = self
             .jobs
             .lock()
@@ -1349,10 +1381,13 @@ impl Client {
         let job = jobs.get_mut(id).ok_or("Unknown download")?;
         if !job.control.user_paused {
             resume_job(&self.config, job)?;
+            cross_seed::retire_proof(job);
         }
         Ok(job.status.clone())
     }
     pub fn pause(&self, id: &str) -> Result<()> {
+        let gate = cross_seed::gate(self, id)?;
+        let _admission = gate.as_ref().map(|gate| gate.lock().map_err(|_| "Cross-seed activity lock is poisoned")).transpose()?;
         let mut jobs = self
             .jobs
             .lock()
@@ -1417,6 +1452,8 @@ impl Client {
         })
     }
     pub fn set_policy(&self, id: &str, policy: Option<TransferPolicy>) -> Result<()> {
+        let gate = cross_seed::gate(self, id)?;
+        let _admission = gate.as_ref().map(|gate| gate.lock().map_err(|_| "Cross-seed activity lock is poisoned")).transpose()?;
         if let Some(policy) = &policy {
             policy.validate()?;
         }
@@ -1667,6 +1704,7 @@ fn select_announce(
                 continue;
             }
             let inactive = job.paused
+                || (job.cross_seed.is_some() && !job.status.ready)
                 || job.control.user_paused
                 || job.control.seed_limited
                 || job.failed
@@ -1720,6 +1758,21 @@ fn select_announce(
     None
 }
 fn announce(task: AnnounceTask, port: u16, peer_id: [u8; 20], jobs: &Jobs) {
+    let reuse = jobs.lock().ok().and_then(|map| map.get(&task.id).and_then(|job| job.cross_seed.clone()));
+    let _admission = match reuse.as_ref().map(|reuse| reuse.activity.lock()).transpose() {
+        Ok(guard) => guard,
+        Err(_) => return,
+    };
+    if reuse.is_some() {
+        let Ok(mut map) = jobs.lock() else { return; };
+        let Some(job) = map.get_mut(&task.id) else { return; };
+        if !Arc::ptr_eq(&job.cancel, &task.cancel)
+            || (task.event != discovery::TrackerEvent::Stopped
+                && (!job.status.ready || job.failed || job.paused || job.control.user_paused || job.control.seed_limited || task.cancel.load(Ordering::Acquire))) {
+            if let Some(state) = job.announcements.get_mut(&task.url) { state.in_flight = false; }
+            return;
+        }
+    }
     let request = discovery::TrackerRequest {
         hash: &task.hash,
         peer_id: &peer_id,
@@ -1732,6 +1785,7 @@ fn announce(task: AnnounceTask, port: u16, peer_id: [u8; 20], jobs: &Jobs) {
     let result = discovery::tracker(&task.url, &request);
     if let Ok(mut jobs) = jobs.lock()
         && let Some(job) = jobs.get_mut(&task.id)
+        && (job.cross_seed.is_none() || Arc::ptr_eq(&job.cancel, &task.cancel))
         && let Some(state) = job.announcements.get_mut(&task.url)
     {
         state.in_flight = false;
@@ -2037,6 +2091,11 @@ fn download(
     peer_id: &[u8; 20],
     policy: &PolicyRuntime,
 ) -> Result<()> {
+    let seed_only = jobs.lock().map_err(|_| "BitTorrent state lock is poisoned")?
+        .get(id).ok_or("Download no longer exists")?.cross_seed.is_some();
+    if seed_only {
+        return cross_seed::verify(config, jobs, stop, id);
+    }
     let full = jobs
         .lock()
         .map_err(|_| "BitTorrent state lock is poisoned")?
@@ -2704,7 +2763,7 @@ fn serve_peer(
     }
     let mut hash = [0; 20];
     hash.copy_from_slice(&incoming[28..48]);
-    let (torrent_id, meta, ready, known_peers, cancel, counters, upload_gate) = {
+    let (torrent_id, meta, ready, known_peers, cancel, counters, upload_gate, reuse) = {
         let mut jobs = jobs
             .lock()
             .map_err(|_| "BitTorrent state lock is poisoned")?;
@@ -2712,6 +2771,7 @@ fn serve_peer(
             .find_map(|(id, job)| {
                 apply_seed_limits(job, config, &policy.policy);
                 if job.paused
+                    || (job.cross_seed.is_some() && (!job.status.ready || !config.seed))
                     || job.control.user_paused
                     || job.control.seed_limited
                     || job.failed
@@ -2730,6 +2790,7 @@ fn serve_peer(
                         job.cancel.clone(),
                         job.counters.clone(),
                         job.upload_gate.clone(),
+                        job.cross_seed.clone(),
                     ))
                 } else {
                     None
@@ -2806,7 +2867,28 @@ fn serve_peer(
                     return Err("Block request is out of bounds".into());
                 }
                 if cached_piece.as_ref().is_none_or(|(i, _)| *i != index) {
-                    let data = read_piece(&meta, &base, index)?;
+                    let data = if let Some(reuse) = &reuse {
+                        match reuse.read_piece(config, &meta, index) {
+                            Ok(data) => data,
+                            Err(error) => {
+                                let _admission = reuse.activity.lock().map_err(|_| "Cross-seed activity lock is poisoned")?;
+                                let mut map = jobs.lock().map_err(|_| "BitTorrent state lock is poisoned")?;
+                                if let Some(job) = map.get_mut(&torrent_id)
+                                    && Arc::ptr_eq(&job.cancel, &cancel) {
+                                    job.failed = true;
+                                    job.status.ready = false;
+                                    job.status.selected_ready = false;
+                                    job.status.available_files.clear();
+                                    job.status.progress = 0.0;
+                                    job.status.message = error.clone();
+                                    job.cancel.store(true, Ordering::Release);
+                                }
+                                return Err(error);
+                            }
+                        }
+                    } else {
+                        read_piece(&meta, &base, index)?
+                    };
                     if !meta.verify(index, &data) {
                         return Err("Seeding data has been modified".into());
                     }
@@ -3011,6 +3093,7 @@ mod control_runtime_tests {
         let mut meta = geometry(&[(BLOCK as u64, false)]);
         meta.v1 = Some([byte; 20]);
         Job {
+            cross_seed: None,
             source: Source {
                 original: format!("magnet:?xt=urn:btih:{id}"),
                 v1: meta.v1,
