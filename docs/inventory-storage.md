@@ -1,9 +1,10 @@
-# Inventory storage foundation
+# Inventory storage
 
 The `mynou::inventory::Index` Rust API is the storage foundation for
-[growing inventories](https://github.com/alecerf/mynou/issues/106). It is not
-connected to the service yet. Existing request, series and requester limits
-remain unchanged; there is no migration command or new CLI/API endpoint.
+[growing inventories](https://github.com/alecerf/mynou/issues/106). Series,
+episode and numbering storage uses it (see [Series storage](#series-storage)).
+The request journal, requester ledger and the other snapshots still use their
+own files and fixed limits; see [limits](limits.md).
 
 ## Ownership and format
 
@@ -38,8 +39,8 @@ is reported when that path is read, never returned as an empty/absent result.
 
 ## Transaction and recovery
 
-One transaction contains at most 1,024 distinct key changes, 4,096 dirty pages
-and 64 MiB of WAL payload. These are operation bounds, not inventory bounds.
+One transaction contains at most 16,384 distinct key changes, 16,384 dirty pages
+and 128 MiB of WAL payload. These are operation bounds, not inventory bounds.
 Primary and secondary keys can change together. Preparation verifies existing
 records, stages tree changes in memory and validates the resulting key changes.
 
@@ -89,7 +90,7 @@ or a retained snapshot.
 
 Memory and work depend on tree height, the bounded transaction and the requested
 page, rather than retaining all record identities in RAM. The implementation
-keeps at most 4,096 staged nodes plus at most one extra split path during
+keeps at most 16,384 staged nodes plus at most one extra split path during
 preparation. Overlay validation may retain two copies of the completed staged
 map. Action/value buffers, WAL encoding/decoding buffers and response values
 are also bounded. The height bound is 63; page allocation checks the file-offset
@@ -98,15 +99,129 @@ representation. These are source-level bounds, not measured RSS or throughput.
 Unreachable old page slots and interrupted temporary object files are not
 reclaimed by this first increment. Repeated churn can therefore consume extra
 disk space. Compaction/reclamation must be designed and verified before the
-integration claims scalable routine operation. There is no automatic cleanup,
-backup, downgrade or data migration in this API. A backup is a stopped-store
-copy, including any recovery artifacts; a partial copy is not a backup.
+integration claims scalable routine operation. The index API itself has no
+automatic cleanup or backup; migration and downgrade of series data are described
+under [Series storage](#series-storage). A backup is a stopped-store copy,
+including any recovery artifacts; a partial copy is not a backup.
+
+## Inline values and the page cache
+
+A key stores either a record file (up to 1 MiB, one file per key) or an inline
+value of at most 32 bytes in its tree leaf (`Change::PutInline`). Inline values
+need no object file and no per-record synchronization, so secondary index
+entries that carry little or no payload cost one leaf slot. A key may change
+between the two kinds; the record file is removed or created in the same
+transaction, and recovery replays that idempotently. Inline lengths and zero
+padding are validated like any other tree field.
+
+Decoded, checksum-verified pages are cached (at most 2,048, about 8 MiB) and the
+cache is cleared before every commit applies and on every open, so a cached page
+never outlives the pages it was read from. A page that is corrupted on disk
+after it was cached is reported on the next read after a reopen or commit, not
+before; the checksum guards storage faults, not a hostile rewrite of an open
+directory.
+
+## Series storage
+
+`series.idx/` in the store directory is a private index. `series.json` is
+reduced to a schema 3 marker bound to that index; `series.legacy-<digest>.json`
+is the exact snapshot a migration started from (see below).
+
+A series scope is one header record (settings, schedule, exclusions and counters)
+plus block records, one per season and 64 consecutive episode numbers, holding
+the episodes, retained numbering identities and numbering choices of that range.
+A record is bounded by the per-plan limits (2,000 episodes, identities, choices
+and exclusions), never by how many scopes exist. Inline secondary entries cover:
+
+- calendar: air date, scope, season, episode;
+- due work: next check time, scope (monitored scopes only);
+- exact scope identity (a digest of the canonical key), TMDB series/season/
+  episode, and title-token lookups for series requested without a TMDB ID;
+- catalog identity to canonical number, and canonical number to catalog identity,
+  per TMDB series, shared by every overlapping scope;
+- the scope and monitored counters and the format marker.
+
+A save is one index transaction: header, changed blocks, calendar/due/lookup
+entries, new identity entries and counters become durable together or not at all.
+The identity entries enforce the invariants the whole snapshot used to check:
+a catalog episode identity has one canonical number and a canonical number one
+identity across every scope of a series, and a scope exists once. The widest
+valid record (2,000 unmapped dated episodes and 2,000 retained identities with
+choices spread over 4,000 blocks, then every date changed) needs about 10,000
+changes and fits one transaction; a test saves it.
+
+Reads touch only what they need: summaries are cursor pages of at most 200
+headers; one due-work pass reads one tree path plus its (at most four) rows;
+scope and TMDB lookups read their own entries; calendar windows are cursor
+pages over the date entries (an `offset` of at most 20,000 skips rows, an
+`after` cursor reaches any later row, and the exact `total` is reported only when
+the window holds at most 20,000 rows). Loading one scope reads its header and
+blocks (at most the per-plan bounds).
+
+### Measured behavior
+
+One run of the `series_scale_report` harness (release build, Linux container
+on overlayfs, synthetic scopes of 3 seasons x 30 episodes, one reading process
+per size, so these numbers are indicative, not a macOS or throughput claim;
+synchronization is cheaper there than on macOS):
+
+| Scopes | Episodes | On disk | Open | 200-summary pages walked | Due pass | One scope save | Calendar page (200 rows) | Peak RSS reading |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 150 | 13,500 | 14 MiB | <1 ms | 5 ms | <1 ms | 3 ms | 22 ms | 6 MiB |
+| 1,000 | 90,000 | 93 MiB | <1 ms | 33 ms | <1 ms | 4 ms | 27 ms | 6 MiB |
+| 4,000 | 360,000 | 373 MiB | <1 ms | 135 ms | <1 ms | 9 ms | 38 ms | 8 MiB |
+| 12,000 | 1,080,000 | 1.1 GiB | <1 ms | 733 ms | <1 ms | 34 ms | 42 ms | 8 MiB |
+
+Building these inventories with the test-only bulk loader (16,384 changes per
+transaction, keys in random order) peaked at 30 to 139 MiB resident; that is the
+transaction bound, not steady-state use. Disk use is about 1 KiB per episode.
+
+### Migration from `series.json`
+
+Opening storage with write access migrates a legacy snapshot (schema 1 or 2):
+
+1. The whole snapshot is validated first (checksum, every record and field bound,
+   duplicate scopes, identity invariants). An invalid snapshot is refused and
+   nothing is written.
+2. Its exact bytes are copied to `series.legacy-<digest>.json` (never replacing a
+   file with other contents).
+3. A staging index `series.idx.migrating` is filled one record per transaction;
+   the legacy digest and a cursor commit with the records, so an interrupted
+   migration resumes after the last record. A staging directory built from other
+   bytes is derived data and is rebuilt.
+4. Every record, index entry and counter is verified against the legacy parse.
+5. The staging directory is renamed to `series.idx`.
+6. `series.json` is atomically replaced by the schema 3 marker. Before this step
+   an older binary still finds the unchanged legacy file; after it, older binaries
+   reject the unsupported schema instead of reading stale or empty data.
+
+Every step is safe to repeat. A legacy snapshot that differs from the one the
+index came from, a marker without its index and a marker bound to another index
+are refused, never overwritten. Read-only opens never migrate: they create and
+change nothing, and series calls report that the store has not been migrated.
+A store that never held series stays empty until the first series is saved,
+which creates the index and marker atomically.
+
+### Downgrade and recovery
+
+A downgrade is restoring the preserved snapshot: stop Mynou, move `series.idx`
+aside, copy `series.legacy-<digest>.json` to `series.json`. Everything saved after
+the migration (new series, refreshes, settings) is only in the index and is not in
+that copy; older binaries also refuse more than 128 scopes. Opening the restored
+snapshot with a newer binary while `series.idx` is still present is refused unless
+it is the unchanged snapshot that produced the index.
+
+A failed write never discards stored records: record files are replaced by
+rename, pages are rewritten in place only after the complete redo is durable, and
+an uncertain commit blocks the series store until restart, when the redo is
+replayed. If the disk is still full, opening reports the error and leaves the
+files as they are.
 
 ## Remaining delivery
 
-Issue #106 still needs recoverable legacy migration; series, episode and
-numbering integration; job/history/requester and ownership indexes; paginated
-management views; fair indexed scheduling; resource/backlog diagnostics; and
-increasing-size evidence. Do not use this foundation as evidence that the
-service's current inventory caps have been removed. Validation uses original
-synthetic fixtures in GitHub Actions on the supported macOS target only.
+Issue #106 still needs the job/history/requester and ownership indexes, paginated
+management views for every inventory, fair bounded scheduling in all admission
+and monitoring paths, and resource/backlog diagnostics. Only the series store has
+left the fixed total limits; do not read this page as evidence that the request
+journal, requester ledger or library views are unbounded. Validation uses
+original synthetic fixtures in GitHub Actions on the supported macOS target.

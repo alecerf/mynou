@@ -239,19 +239,26 @@ IRC announcements:
 
 ## Series, numbering and packs
 
-- Series storage holds 128 tracked scopes, 2,000 episodes per plan, 20,000
-  episodes in total and an 8 MiB snapshot, with no automatic eviction. A plan
-  covers at most 100 seasons and 1,000 episodes per catalog season.
+- Series storage keeps as many tracked scopes and episodes as the disk allows,
+  with no total count, aggregate size or automatic eviction: it is an indexed
+  [disk store](inventory-storage.md#series-storage), not a snapshot held in memory.
+  Each plan still holds at most 2,000 episodes, 100 seasons and 1,000 episodes
+  per catalog season. Earlier versions stopped at 128 scopes, 20,000 episodes and
+  8 MiB; their data migrates on the first start with write access.
 - The service checks due records every minute: at most four per pass, 64
   episode requests per batch, a 90-second pass budget and 20 seconds per catalog
   request.
-- Calendar pages return 1 to 200 rows (offset up to 20,000) over an inclusive
-  window of at most 367 days, for years 1800 to 9999. Air dates are catalog days
-  in UTC, not premiere times.
+- Calendar pages return 1 to 200 rows over an inclusive window of at most 367
+  days, for years 1800 to 9999. An `offset` reaches at most row 20,000; the
+  `after` cursor returned as `next` reaches every later row. `total` is exact for
+  windows of at most 20,000 rows and `null` beyond that. Series summaries are read
+  with `limit` (1 to 200) and the `after` series ID returned as `next`; without
+  them the list is returned in one array only while it fits one page of 200.
+  Air dates are catalog days in UTC, not premiere times.
 - Refresh checks compare the catalog with the retained plan, not with a complete
   numbering history. A known episode ID can never be replaced or reassigned.
-- Numbering keeps at most 2,000 IDs and choices per scope and 20,000 in total.
-  A decision holds at most 2,000 changes. Seasons range from 0 to 9,999,
+- Numbering keeps at most 2,000 IDs and choices per scope, with no total across
+  scopes. A decision holds at most 2,000 changes. Seasons range from 0 to 9,999,
   episodes and absolute numbers from 1 to 99,999 and catalog IDs from 1 to
   2^53−1. Mapping files are limited to 512 KiB. Numbering history is never discarded to make room. Version
   0.15 cannot read numbering data saved by later versions.
@@ -303,15 +310,23 @@ IRC announcements:
   change no permissions, repair nothing and still exclude a concurrent writer.
   After an interrupted write they ask for writable recovery, which the next
   service start performs.
-- Series, requester, IRC and source data live in separate private snapshots,
-  written through a temporary file, synchronization and an atomic rename. Their
-  checksums detect corruption; they do not authenticate against someone who can
-  rewrite the files. When a write's durability is uncertain, that store refuses
-  further changes until the service restarts.
+- Requester, IRC and source data live in separate private snapshots, written
+  through a temporary file, synchronization and an atomic rename. Series data
+  lives in a checksummed disk index with a write-ahead log
+  ([details](inventory-storage.md)). Checksums detect corruption; they do not
+  authenticate against someone who can rewrite the files. When a write's
+  durability is uncertain, that store refuses further changes until the service
+  restarts.
+- Series data moves from `series.json` to `series.idx` on the first start with
+  write access; the previous snapshot is kept as `series.legacy-*.json` and
+  `series.json` becomes a marker that older versions refuse. Going back means
+  restoring that copy, which lacks later changes and keeps the old limits. A
+  read-only open of a store that has not been migrated reports that it must be
+  migrated and writes nothing.
 - Request and series writes are separate commits: after a crash, a partly
-  recorded episode batch is kept and completed without duplicates. Without a
-  series snapshot no series is tracked, and earlier episode jobs are never
-  adopted as series records.
+  recorded episode batch is kept and completed without duplicates. Without
+  series storage no series is tracked, and earlier episode jobs are never adopted
+  as series records.
 - Data from the earlier Go release (SQLite) is not migrated: keep it in a
   separate directory. Preserve configuration, data, downloads and library when
   changing versions, and back up before a downgrade.

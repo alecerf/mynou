@@ -1074,15 +1074,28 @@ fn settings_changes_keep_counters_indexes_and_scope_lookups_exact() {
     assert!(store.matching(&title_only).unwrap().is_empty());
 }
 
+/// Measurement harness, run by hand: `MYNOU_SCALE_DIR=/path MYNOU_SCALE_SCOPES=N
+/// MYNOU_SCALE_PHASE=build|read cargo test --release series_scale_report
+/// -- --ignored --nocapture`. The phases run in separate processes so the
+/// peak resident size of reading an existing inventory is measured on its own.
 #[test]
-#[ignore = "measurement run: cargo test --release series_scale_report -- --ignored --nocapture"]
+#[ignore = "measurement run; see the doc comment"]
 fn series_scale_report() {
-    for scopes in [150u64, 1_000, 4_000, 12_000] {
-        let directory = Directory::new();
-        let mut store = SeriesStore::open(&directory.0, false).unwrap();
+    let directory = PathBuf::from(std::env::var("MYNOU_SCALE_DIR").expect("MYNOU_SCALE_DIR"));
+    let scopes: u64 = std::env::var("MYNOU_SCALE_SCOPES")
+        .expect("MYNOU_SCALE_SCOPES")
+        .parse()
+        .unwrap();
+    let phase = std::env::var("MYNOU_SCALE_PHASE").expect("MYNOU_SCALE_PHASE");
+    let episodes = scopes * 90;
+    if phase == "build" {
+        fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&directory)
+            .unwrap();
+        let mut store = SeriesStore::open(&directory, false).unwrap();
         let started = Instant::now();
-        let first = record(1, 3, 30, 60);
-        store.save(first.clone()).unwrap();
+        store.save(record(1, 3, 30, 60)).unwrap();
         let mut batch = Vec::new();
         for n in 2..=scopes {
             batch.push(record(n, 3, 30, 60));
@@ -1094,49 +1107,61 @@ fn series_scale_report() {
         if !batch.is_empty() {
             insert_many(ready(&mut store), &batch).unwrap();
         }
-        let load = started.elapsed();
-        let episodes = scopes * 90;
-        let started = Instant::now();
-        let mut pages = 0;
-        let mut after: Option<String> = None;
-        loop {
-            let page = store.page(after.as_deref(), 200).unwrap();
-            pages += 1;
-            after = page.next;
-            if after.is_none() {
-                break;
-            }
-        }
-        let paged = started.elapsed();
-        let started = Instant::now();
-        let due = store.due(u64::MAX, 4).unwrap();
-        let due_time = started.elapsed();
-        let started = Instant::now();
-        let mut changed = store.get(&due[0].id).unwrap().unwrap();
-        changed.revision += 1;
-        changed.next_check_at += 10_000_000;
-        store.save(changed).unwrap();
-        let save_time = started.elapsed();
-        let mut query = CalendarQuery::new(Some("2024-01-01"), Some("2024-03-01")).unwrap();
-        query.limit = 200;
-        let started = Instant::now();
-        let calendar = store.calendar(&query).unwrap();
-        let calendar_time = started.elapsed();
-        let size: u64 = fs::metadata(directory.0.join("series.idx/tree.bin"))
-            .unwrap()
-            .len();
         eprintln!(
-            "series-scale scopes={scopes} episodes={episodes} load_ms={} summary_pages={pages} page_walk_ms={} due_ms={} one_save_ms={} calendar_page_ms={} calendar_total={:?} tree_mib={:.1} rss_kib={}",
-            load.as_millis(),
-            paged.as_millis(),
-            due_time.as_millis(),
-            save_time.as_millis(),
-            calendar_time.as_millis(),
-            calendar.total,
-            size as f64 / 1_048_576.0,
+            "series-scale-build scopes={scopes} episodes={episodes} elapsed_ms={} peak_rss_kib={}",
+            started.elapsed().as_millis(),
             resident_kib()
         );
+        return;
     }
+    let started = Instant::now();
+    let mut store = SeriesStore::open(&directory, false).unwrap();
+    let open = started.elapsed();
+    let started = Instant::now();
+    let mut pages = 0;
+    let mut after: Option<String> = None;
+    loop {
+        let page = store.page(after.as_deref(), 200).unwrap();
+        pages += 1;
+        after = page.next;
+        if after.is_none() {
+            break;
+        }
+    }
+    let paged = started.elapsed();
+    let started = Instant::now();
+    let due = store.due(u64::MAX, 4).unwrap();
+    let due_time = started.elapsed();
+    let started = Instant::now();
+    let mut changed = store.get(&due[0].id).unwrap().unwrap();
+    changed.revision += 1;
+    changed.next_check_at += 10_000_000;
+    store.save(changed).unwrap();
+    let save_time = started.elapsed();
+    let mut query = CalendarQuery::new(Some("2024-01-01"), Some("2024-03-01")).unwrap();
+    query.limit = 200;
+    let started = Instant::now();
+    let calendar = store.calendar(&query).unwrap();
+    let calendar_time = started.elapsed();
+    let started = Instant::now();
+    let found = store.matching(&request(scopes / 2 + 1, 0, 0)).unwrap();
+    let lookup_time = started.elapsed();
+    assert_eq!(found.len(), 1);
+    let size = fs::metadata(directory.join("series.idx/tree.bin"))
+        .unwrap()
+        .len();
+    eprintln!(
+        "series-scale-read scopes={scopes} episodes={episodes} open_ms={} summary_pages={pages} page_walk_ms={} due_pass_ms={} scope_lookup_ms={} one_save_ms={} calendar_page_ms={} calendar_total={:?} tree_mib={:.1} peak_rss_kib={}",
+        open.as_millis(),
+        paged.as_millis(),
+        due_time.as_millis(),
+        lookup_time.as_millis(),
+        save_time.as_millis(),
+        calendar_time.as_millis(),
+        calendar.total,
+        size as f64 / 1_048_576.0,
+        resident_kib()
+    );
 }
 
 fn resident_kib() -> u64 {

@@ -1256,14 +1256,43 @@ fn execute(args: Args) -> Result<()> {
                             .map(|value| format!("{name}={value}"))
                     })
                     .collect();
-                let route = if fields.is_empty() {
-                    "/api/series".to_owned()
+                if fields.is_empty() {
+                    // Without a cursor, walk every page and stream the same
+                    // compact array one call used to print.
+                    let mut after: Option<String> = None;
+                    let mut first = true;
+                    print!("[");
+                    loop {
+                        let route = match &after {
+                            Some(after) => format!("/api/series?limit=200&after={after}"),
+                            None => "/api/series?limit=200".to_owned(),
+                        };
+                        let page = call(&config, &path, "GET", &route, None)?;
+                        for item in page
+                            .get("series")
+                            .and_then(Value::as_array)
+                            .ok_or("Invalid series page")?
+                        {
+                            print!("{}{}", if first { "" } else { "," }, json::stringify(item));
+                            first = false;
+                        }
+                        after = page.get("next").and_then(Value::as_str).map(str::to_owned);
+                        if after.is_none() {
+                            break;
+                        }
+                    }
+                    println!("]");
                 } else {
                     let query = fields.join("&");
                     mynou::series::SeriesPageQuery::parse(&query)?;
-                    format!("/api/series?{query}")
-                };
-                output(&call(&config, &path, "GET", &route, None)?);
+                    output(&call(
+                        &config,
+                        &path,
+                        "GET",
+                        &format!("/api/series?{query}"),
+                        None,
+                    )?);
+                }
             } else {
                 let id = args.positions[0].to_ascii_lowercase();
                 if id.len() != 32 || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
