@@ -425,6 +425,13 @@ pub(crate) fn route(
                 }
                 return Ok((404, error("Unknown requester route")));
             }
+            if method == "GET" && path.starts_with("/api/series?") {
+                let query = crate::series::SeriesPageQuery::parse(&path["/api/series?".len()..])?;
+                return Ok((
+                    200,
+                    engine.series_page(query.after.as_deref(), query.limit)?,
+                ));
+            }
             if method == "GET" && (path == "/api/calendar" || path.starts_with("/api/calendar?")) {
                 let query = crate::series::CalendarQuery::parse(
                     path.split_once('?').map_or("", |(_, query)| query),

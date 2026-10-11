@@ -154,9 +154,9 @@ impl Engine {
         pack.validate()?;
         // Entire input, catalog scope and source-key collisions are checked before the first commit.
         // Series then requests matches the monitoring coordinator's lock order; no network I/O.
-        let series = lock(&self.series_store)?;
+        let mut series = lock(&self.series_store)?;
         series.check_writable()?;
-        let record = series.get(id).ok_or("Unknown tracked series")?;
+        let record = series.get(id)?.ok_or("Unknown tracked series")?;
         let mut requests = Vec::with_capacity(pack.episodes.len());
         let today = date::today();
         for mapping in &pack.episodes {

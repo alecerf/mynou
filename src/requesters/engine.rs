@@ -744,23 +744,7 @@ impl Engine {
                 let mut identity = item.clone();
                 identity.kind = "series".into();
                 identity.validate()?;
-                let records = lock(&self.series_store)?.list();
-                let matches: Vec<_> = records
-                    .into_iter()
-                    .filter(|r| {
-                        let known = &r.plan.request;
-                        known.season == identity.season
-                            && known.episode == identity.episode
-                            && match identity.tmdb_id {
-                                Some(id) => known.tmdb_id == Some(id),
-                                None => {
-                                    crate::selection::tokens(&known.title)
-                                        == crate::selection::tokens(&identity.title)
-                                        && (identity.year == 0 || known.year == identity.year)
-                                }
-                            }
-                    })
-                    .collect();
+                let matches = lock(&self.series_store)?.matching(&identity)?;
                 if matches.len() > 1 {
                     return Err("Requester: ambiguous retained catalog identity".into());
                 }
@@ -777,7 +761,7 @@ impl Engine {
                     let mut checked = previous.clone();
                     checked.accept_catalog(normalized)?;
                     let mut series = lock(&self.series_store)?;
-                    if series.get(&previous.id).as_ref() != Some(&previous) {
+                    if series.get(&previous.id)?.as_ref() != Some(&previous) {
                         return Err("Requester: captured series scope changed during poll".into());
                     }
                     series.save(checked.clone())?;

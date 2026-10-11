@@ -308,7 +308,7 @@ impl Engine {
             return Err("Shared-file acquisition requires writable storage".into());
         }
         let initial = lock(&self.series_store)?
-            .get(id)
+            .get(id)?
             .ok_or("Unknown tracked series")?;
         let today = date::today();
         for number in &query.episodes {
@@ -345,11 +345,11 @@ impl Engine {
                 "Shared video path is absent, empty or ambiguous in authenticated metadata".into(),
             );
         }
-        let series = lock(&self.series_store)?;
+        let mut series = lock(&self.series_store)?;
         if query.apply {
             series.check_writable()?;
         }
-        let record = series.get(id).ok_or("Unknown tracked series")?;
+        let record = series.get(id)?.ok_or("Unknown tracked series")?;
         if record != initial {
             return Err(
                 "Shared-file catalog changed during metadata inspection; preview again".into(),

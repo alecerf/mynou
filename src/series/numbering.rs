@@ -268,7 +268,7 @@ impl Engine {
             .map_err(|_| "A series refresh is already running")?;
         let deadline = Instant::now() + Duration::from_secs(90);
         let previous = lock(&self.series_store)?
-            .get(id)
+            .get(id)?
             .ok_or("Unknown monitored series")?;
         if query
             .changes
@@ -332,7 +332,7 @@ impl Engine {
         );
         let plan_id = super::hex(&sha256(json::stringify(&fingerprint).as_bytes()));
         let mut series = lock(&self.series_store)?;
-        let current = series.get(id).ok_or("Unknown monitored series")?;
+        let current = series.get(id)?.ok_or("Unknown monitored series")?;
         if current != previous || self.stopped.load(Ordering::Acquire) || Instant::now() >= deadline
         {
             return Err(

@@ -1,6 +1,6 @@
 use super::{
     Index, Key, MAX_CHANGES, MAX_VALUE_BYTES,
-    tree::{self, Header, Node, PAGE_SIZE, Tree, ValueRef},
+    tree::{self, Header, MAX_DIRTY_PAGES, Node, PAGE_SIZE, Tree, ValueRef},
 };
 use crate::{
     Result,
@@ -15,7 +15,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub(super) const MAX_WAL_BYTES: usize = 64 * 1024 * 1024;
+pub(super) const MAX_WAL_BYTES: usize = 128 * 1024 * 1024;
 const WAL_MAGIC: &[u8; 8] = b"MYNOUIW1";
 const VALUE_MAGIC: &[u8; 8] = b"MYNOUIV1";
 const ID_MAGIC: &[u8; 8] = b"MYNOUID1";
@@ -23,7 +23,24 @@ const ID_MAGIC: &[u8; 8] = b"MYNOUID1";
 pub(super) struct Action {
     pub key: Key,
     pub data: Option<Vec<u8>>,
+    /// Inline values live in the tree leaf and have no record file.
+    pub inline: bool,
     pub existed: bool,
+}
+
+impl Action {
+    pub(super) fn reference(&self) -> Result<Option<ValueRef>> {
+        self.data
+            .as_ref()
+            .map(|data| {
+                if self.inline {
+                    ValueRef::inline(data)
+                } else {
+                    Ok(ValueRef::file(data))
+                }
+            })
+            .transpose()
+    }
 }
 pub(super) struct Transaction {
     pub before: Header,
@@ -58,7 +75,11 @@ impl Transaction {
         bytes.extend_from_slice(&(self.actions.len() as u32).to_le_bytes());
         for action in &self.actions {
             bytes.extend_from_slice(&action.key);
-            bytes.push(u8::from(action.data.is_some()));
+            bytes.push(match (&action.data, action.inline) {
+                (None, _) => 0,
+                (Some(_), false) => 1,
+                (Some(_), true) => 2,
+            });
             bytes.push(u8::from(action.existed));
             bytes.extend_from_slice(
                 &(action.data.as_ref().map_or(0, Vec::len) as u32).to_le_bytes(),
@@ -96,7 +117,7 @@ impl Transaction {
             return Err("Inventory WAL identity, sequence or allocation mismatch".into());
         }
         let count = reader.u32()? as usize;
-        if count > 4096 {
+        if count > MAX_DIRTY_PAGES {
             return Err("Too many inventory WAL pages".into());
         }
         let mut pages = BTreeMap::new();
@@ -126,19 +147,28 @@ impl Transaction {
             let put = reader.byte()?;
             let existed = reader.byte()?;
             let length = reader.u32()? as usize;
-            if put > 1 || existed > 1 || length > MAX_VALUE_BYTES || (put == 0 && length != 0) {
+            if put > 2
+                || existed > 1
+                || length
+                    > if put == 2 {
+                        tree::MAX_INLINE_BYTES
+                    } else {
+                        MAX_VALUE_BYTES
+                    }
+                || (put == 0 && length != 0)
+            {
                 return Err("Invalid inventory WAL value or action".into());
             }
-            let data = if put == 1 {
+            let data = if put != 0 {
                 Some(reader.take(length)?.to_vec())
             } else {
                 None
             };
-            expected = match (put, existed) {
-                (1, 0) => expected
+            expected = match (put != 0, existed) {
+                (true, 0) => expected
                     .checked_add(1)
                     .ok_or("Inventory WAL count overflow")?,
-                (0, 1) => expected
+                (false, 1) => expected
                     .checked_sub(1)
                     .ok_or("Inventory WAL count underflow")?,
                 _ => expected,
@@ -146,6 +176,7 @@ impl Transaction {
             actions.push(Action {
                 key,
                 data,
+                inline: put == 2,
                 existed: existed == 1,
             });
         }
@@ -175,11 +206,7 @@ impl Transaction {
         let mut overlay = Tree::new(file, self.after);
         overlay.dirty = self.pages.clone();
         for action in &self.actions {
-            let expected = action.data.as_ref().map(|data| ValueRef {
-                length: data.len() as u32,
-                digest: sha256(data),
-            });
-            if overlay.find(&action.key)? != expected {
+            if overlay.find(&action.key)? != action.reference()? {
                 return Err("Inventory WAL records disagree with its tree pages".into());
             }
         }
@@ -457,6 +484,9 @@ pub(super) fn check_value_path(directory: &Path, key: &Key) -> Result<()> {
 }
 
 pub(super) fn read_value(directory: &Path, key: &Key, reference: ValueRef) -> Result<Vec<u8>> {
+    if reference.inline {
+        return Ok(reference.inline_data().to_vec());
+    }
     check_value_path(directory, key)?;
     let mut file = private_file(&value_path(directory, key), false)?;
     let bytes = read_bounded(&mut file, reference.length as usize + 108)?;
@@ -540,7 +570,7 @@ fn apply(
     for (number, action) in transaction.actions.iter().enumerate() {
         let path = value_path(directory, &action.key);
         let parent = path.parent().ok_or("Missing inventory object directory")?;
-        if let Some(data) = &action.data {
+        if let Some(data) = action.data.as_ref().filter(|_| !action.inline) {
             if !present(parent)? {
                 fs::DirBuilder::new()
                     .mode(0o700)
@@ -619,7 +649,7 @@ fn hex(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) enum Fault {
+pub(crate) enum Fault {
     Staged,
     Published,
     FirstRecord,
