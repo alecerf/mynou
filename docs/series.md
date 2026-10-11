@@ -17,6 +17,7 @@ These commands need the running service:
 mynou track-series --title "Example Series" --year 2026 --tmdb-id 123 \
   --config ./mynou.json
 mynou series --config ./mynou.json
+mynou series --limit 50 --after ID --config ./mynou.json
 mynou series ID --config ./mynou.json
 mynou series-unmonitor ID --config ./mynou.json
 mynou series-monitor ID --config ./mynou.json
@@ -26,6 +27,12 @@ mynou series-refresh ID --config ./mynou.json
 mynou calendar --from 2026-10-01 --to 2026-10-31 --series-id ID \
   --config ./mynou.json
 ```
+
+`mynou series` prints every record as one array, reading the service page by
+page; with `--limit` (1 to 200) and `--after ID` it prints one page object whose
+`next` is the `--after` value of the following page. There is no limit on how many
+series you track: records are stored on disk, not in one in-memory snapshot (see
+[storage](inventory-storage.md#series-storage)).
 
 `ID` is the series record's 32-character identifier, distinct from job and
 transfer IDs. `--tmdb-id` is optional when the title and year identify one
@@ -75,7 +82,9 @@ episodes during monitored tracking and refresh; see
 ## Refresh and failures
 
 With the catalog enabled, the service checks due records every minute and
-refreshes at most four per pass, oldest first. A successful record is due again
+refreshes at most four per pass, oldest first. Due records come from an index
+ordered by due time, so a pass costs the same with ten series or ten thousand, and
+a record that was just checked goes behind every older one: no record starves. A successful record is due again
 after one hour; a remaining backlog brings it back after one minute; a failed
 catalog refresh keeps the previous plan and retries after five minutes. A
 manual refresh can inspect a disabled record but still respects its policy.
@@ -95,7 +104,7 @@ All routes need the Bearer token:
 
 | Route | Purpose |
 | --- | --- |
-| `GET /api/series` | Summaries with episode, undated and unmapped counts |
+| `GET /api/series` | Summaries with episode, undated and unmapped counts: an array while the list fits 200 entries, otherwise page with `?limit=N&after=ID`, which returns `{"series", "next", "total"}` |
 | `POST /api/series` | Track: `{"request": {"kind": "series", "title": "Example Series", "year": 2026, "tmdb_id": 123}, "include_specials": false, "future_only": false}`; add `"enabled": false` to keep it unmonitored |
 | `GET /api/series/ID` | Record, accepted plan and monitoring choices |
 | `POST /api/series/ID/monitor` | Any of `enabled`, `include_specials` and `start_date` (`YYYY-MM-DD` or `null`) |
@@ -105,13 +114,32 @@ All routes need the Bearer token:
 | `POST /api/series/ID/packs`, `/pack-search`, `/shared-file` | [Season packs and shared videos](packs.md) |
 | `GET /api/calendar` | Dated episodes with monitoring choices and matching jobs |
 
-Calendar queries accept `from`, `to`, `series_id`, `offset` and `limit`, each at
-most once, as literal ASCII values. The default window is today through 30 days
+Calendar queries accept `from`, `to`, `series_id`, `offset`, `after` and `limit`,
+each at most once, as literal ASCII values. The default window is today through 30 days
 later, with offset 0 and limit 50. Rows are sorted by date, record, season and
 episode. A row's state comes from an existing job (ready first when several
 versions exist), otherwise `mapping_required`, `unmonitored`, `missing` (aired
 and monitored) or `scheduled` (future and monitored). Undated episodes appear in
 series details, never on an invented day. Reading the calendar changes nothing.
+
+A calendar page reports `next`, a cursor to pass as `after` (not together with
+`offset`) for the following rows; unlike `offset`, which reaches at most row
+20,000, it reaches every row of a window however many series are tracked. `total`
+is the exact row count for windows of at most 20,000 rows and `null` for larger
+ones.
+
+## Storage and upgrading
+
+Series, episodes and numbering are stored in `series.idx` inside the store
+directory. The first start with write access after upgrading from 0.23 or
+earlier migrates `series.json`: it is validated, copied unchanged to
+`series.legacy-<digest>.json`, rebuilt into the new store, verified and then
+replaced by a marker that older versions refuse. An interrupted migration resumes
+on the next start. Offline commands that only read storage do not migrate; they
+report that the store must be migrated first. To go back to an older version,
+restore the preserved copy as described in
+[the storage notes](inventory-storage.md#downgrade-and-recovery); changes made
+after the migration are not in it.
 
 ## Episode numbering
 
