@@ -1,4 +1,4 @@
-//! ChaCha20-Poly1305 AEAD from RFC 8439 (96-bit nonce, 128-bit tag).
+//! RFC 8439 AEAD and extended nonces from draft-irtf-cfrg-xchacha-03.
 
 use crate::Result;
 
@@ -45,6 +45,39 @@ impl ChaCha20Poly1305 {
     }
 }
 
+/// Extended-nonce AEAD from draft-irtf-cfrg-xchacha-03.
+/// No nonce may repeat under the same key; this type does not allocate nonces.
+#[derive(Clone)]
+pub struct XChaCha20Poly1305 {
+    key: [u8; 32],
+}
+
+impl XChaCha20Poly1305 {
+    pub fn new(key: [u8; 32]) -> Self {
+        Self { key }
+    }
+
+    fn derived(&self, nonce: [u8; 24]) -> (ChaCha20Poly1305, [u8; 12]) {
+        let (prefix, tail) = nonce.split_at(16);
+        let mut short = [0; 12];
+        short[4..].copy_from_slice(tail);
+        let mut input = [0; 16];
+        input.copy_from_slice(prefix);
+        (ChaCha20Poly1305::new(hchacha20(self.key, input)), short)
+    }
+
+    pub fn seal(&self, nonce: [u8; 24], aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
+        let (cipher, nonce) = self.derived(nonce);
+        cipher.seal(nonce, aad, plaintext)
+    }
+
+    /// Authentication succeeds before any plaintext is returned.
+    pub fn open(&self, nonce: [u8; 24], aad: &[u8], ciphertext_and_tag: &[u8]) -> Result<Vec<u8>> {
+        let (cipher, nonce) = self.derived(nonce);
+        cipher.open(nonce, aad, ciphertext_and_tag)
+    }
+}
+
 fn check_length(length: usize) -> Result<()> {
     // Counter 0 is reserved for the Poly1305 key; data uses 1 through 2^32 - 1.
     if (length as u128) > u128::from(u32::MAX) * 64 {
@@ -69,6 +102,42 @@ fn quarter(words: &mut [u32; 16], a: usize, b: usize, c: usize, d: usize) {
     words[b] = words[b].rotate_left(7);
 }
 
+fn rounds(words: &mut [u32; 16]) {
+    for _ in 0..10 {
+        quarter(words, 0, 4, 8, 12);
+        quarter(words, 1, 5, 9, 13);
+        quarter(words, 2, 6, 10, 14);
+        quarter(words, 3, 7, 11, 15);
+        quarter(words, 0, 5, 10, 15);
+        quarter(words, 1, 6, 11, 12);
+        quarter(words, 2, 7, 8, 13);
+        quarter(words, 3, 4, 9, 14);
+    }
+}
+
+/// HChaCha20 returns selected state words after 20 rounds, without feed-forward.
+pub fn hchacha20(key: [u8; 32], nonce: [u8; 16]) -> [u8; 32] {
+    let mut words = [0; 16];
+    words[..4].copy_from_slice(&[0x61707865, 0x3320646e, 0x79622d32, 0x6b206574]);
+    for (word, bytes) in words[4..12].iter_mut().zip(key.as_chunks::<4>().0) {
+        *word = u32::from_le_bytes(*bytes);
+    }
+    for (word, bytes) in words[12..].iter_mut().zip(nonce.as_chunks::<4>().0) {
+        *word = u32::from_le_bytes(*bytes);
+    }
+    rounds(&mut words);
+    let mut output = [0; 32];
+    for (chunk, index) in output
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .zip([0, 1, 2, 3, 12, 13, 14, 15])
+    {
+        chunk.copy_from_slice(&words[index].to_le_bytes());
+    }
+    output
+}
+
 fn chacha_block(key: &[u8; 32], nonce: &[u8; 12], counter: u32) -> [u8; 64] {
     let mut words = [0u32; 16];
     words[..4].copy_from_slice(&[0x61707865, 0x3320646e, 0x79622d32, 0x6b206574]);
@@ -80,16 +149,7 @@ fn chacha_block(key: &[u8; 32], nonce: &[u8; 12], counter: u32) -> [u8; 64] {
         *word = u32::from_le_bytes(*bytes);
     }
     let initial = words;
-    for _ in 0..10 {
-        quarter(&mut words, 0, 4, 8, 12);
-        quarter(&mut words, 1, 5, 9, 13);
-        quarter(&mut words, 2, 6, 10, 14);
-        quarter(&mut words, 3, 7, 11, 15);
-        quarter(&mut words, 0, 5, 10, 15);
-        quarter(&mut words, 1, 6, 11, 12);
-        quarter(&mut words, 2, 7, 8, 13);
-        quarter(&mut words, 3, 4, 9, 14);
-    }
+    rounds(&mut words);
     let mut output = [0u8; 64];
     for (i, chunk) in output.as_chunks_mut::<4>().0.iter_mut().enumerate() {
         chunk.copy_from_slice(&words[i].wrapping_add(initial[i]).to_le_bytes());
@@ -382,6 +442,87 @@ mod tests {
         );
         assert!(aead.open(nonce, &aad, &[0u8; 15]).is_err());
     }
+    #[test]
+    fn draft03_hchacha20_public_vector() {
+        let key = bytes("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+            .try_into()
+            .unwrap();
+        let nonce = bytes("000000090000004a0000000031415927")
+            .try_into()
+            .unwrap();
+        assert_eq!(
+            hchacha20(key, nonce).as_slice(),
+            bytes("82413b4227b27bfed30e42508a877d73a0f9e4d58a74a853c12ec41326d3ecdc")
+        );
+    }
+
+    #[test]
+    fn draft03_xchacha20_poly1305_public_vector_and_authentication() {
+        let key = bytes("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f")
+            .try_into()
+            .unwrap();
+        let nonce: [u8; 24] = bytes("404142434445464748494a4b4c4d4e4f5051525354555657")
+            .try_into()
+            .unwrap();
+        let aad = bytes("50515253c0c1c2c3c4c5c6c7");
+        let plaintext = b"Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
+        let expected = bytes(concat!(
+            "bd6d179d3e83d43b9576579493c0e939572a1700252bfaccbed2902c21396cbb",
+            "731c7f1b0b4aa6440bf3a82f4eda7e39ae64c6708c54c216cb96b72e1213b452",
+            "2f8c9ba40db5d945b11b69b982c1bb9e3f3fac2bc369488f76b2383565d3fff9",
+            "21f9664c97637da9768812f615c68b13b52e",
+            "c0875924c1c7987947deafd8780acf49"
+        ));
+        let cipher = XChaCha20Poly1305::new(key);
+        assert_eq!(cipher.seal(nonce, &aad, plaintext).unwrap(), expected);
+        assert_eq!(cipher.open(nonce, &aad, &expected).unwrap(), plaintext);
+        for index in 0..expected.len() {
+            let mut corrupt = expected.clone();
+            corrupt[index] ^= 1;
+            assert!(cipher.open(nonce, &aad, &corrupt).is_err());
+        }
+        for index in 0..24 {
+            let mut wrong = nonce;
+            wrong[index] ^= 1;
+            assert!(cipher.open(wrong, &aad, &expected).is_err());
+        }
+        assert!(
+            cipher
+                .open(nonce, b"wrong associated data", &expected)
+                .is_err()
+        );
+        assert!(
+            XChaCha20Poly1305::new([0; 32])
+                .open(nonce, &aad, &expected)
+                .is_err()
+        );
+        for length in 0..16 {
+            assert!(cipher.open(nonce, &aad, &expected[..length]).is_err());
+        }
+    }
+
+    #[test]
+    fn xchacha20_poly1305_empty_and_partial_blocks() {
+        let cipher = XChaCha20Poly1305::new([43; 32]);
+        for length in [0, 1, 15, 16, 17, 63, 64, 65, 1023] {
+            for aad_length in [0, 1, 15, 16, 17] {
+                let plaintext = vec![7; length];
+                let aad = vec![9; aad_length];
+                let mut nonce = [0; 24];
+                nonce[..4].copy_from_slice(&(length as u32).to_le_bytes());
+                nonce[16..20].copy_from_slice(&(aad_length as u32).to_le_bytes());
+                let encrypted = cipher.seal(nonce, &aad, &plaintext).unwrap();
+                assert_eq!(encrypted.len(), length + 16);
+                assert_eq!(cipher.open(nonce, &aad, &encrypted).unwrap(), plaintext);
+                for index in [15, 23] {
+                    let mut wrong = nonce;
+                    wrong[index] = 1;
+                    assert!(cipher.open(wrong, &aad, &encrypted).is_err());
+                }
+            }
+        }
+    }
+
     #[test]
     #[cfg(target_pointer_width = "64")]
     fn rejects_counter_exhaustion_without_allocating() {

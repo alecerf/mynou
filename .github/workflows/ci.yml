@@ -134,10 +134,14 @@ jobs:
         run: cargo clippy --all-targets --offline --locked -- -D warnings
       - name: Check the CI test scheduler
         run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
+      - name: Generate independent crypto reference fixtures
+        run: python3 .github/scripts/crypto_fixtures.py "$RUNNER_TEMP/mynou-crypto-vectors.json"
       - name: Compile all test harnesses
         if: steps.cache.outputs.cache-hit != 'true'
         run: cargo test --all-targets --no-run --offline --locked --message-format=json-render-diagnostics > target/debug/mynou-ci-test-build.jsonl
       - name: Run all Rust test harnesses in parallel
+        env:
+          MYNOU_CRYPTO_FIXTURES: ${{ runner.temp }}/mynou-crypto-vectors.json
         run: |
           # macOS keeps its default temporary directory behind a symbolic link,
           # which Mynou refuses, so the tests use the physical runner directory.
