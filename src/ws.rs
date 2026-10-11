@@ -35,9 +35,9 @@ const SLOW: Duration = Duration::from_secs(5);
 /// Topic name, API path and refresh period.
 const TOPICS: [(&str, &str, Duration); 9] = [
     ("status", "/api/status", FAST),
-    ("jobs", "/api/jobs", FAST),
+    ("jobs", "/api/jobs?limit=50", FAST),
     ("transfers", "/api/transfers", FAST),
-    ("library", "/api/library", SLOW),
+    ("library", "/api/library?limit=50", SLOW),
     ("series", "/api/series?limit=50", SLOW),
     ("indexers", "/api/indexers", SLOW),
     ("feeds", "/api/feeds", SLOW),

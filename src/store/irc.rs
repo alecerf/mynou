@@ -1,24 +1,42 @@
-//! Admission attaches an immutable verified candidate in one journal transaction.
-use super::{Job, Request, Store, now};
-use crate::{Result, irc::Origin};
+//! Admission attaches an immutable verified candidate in one index transaction.
+use super::{
+    Job, Request, Result, now,
+    layout::{self, id_bytes},
+    ops::{Db, key_part},
+};
+use crate::irc::Origin;
 
-impl Store {
-    pub(crate) fn irc_jobs(&self, request: &Request) -> Vec<Job> {
-        self.jobs
-            .values()
-            .filter(|j| {
-                j.request.kind == request.kind
-                    && j.request.tmdb_id == request.tmdb_id
-                    && j.request.season == request.season
-                    && j.request.episode == request.episode
-            })
-            .cloned()
-            .collect()
+impl Db<'_> {
+    /// Jobs with the same catalog identity as an announcement. Only requests
+    /// with a catalog identifier can match.
+    pub(super) fn irc_jobs(&mut self, request: &Request) -> Result<Vec<Job>> {
+        if request.tmdb_id.is_none() {
+            return Ok(Vec::new());
+        }
+        let prefix = layout::identity_prefix(
+            &request.kind,
+            request.tmdb_id,
+            request.season,
+            request.episode,
+        );
+        let mut jobs = Vec::new();
+        for key in self.all_keys(&prefix)? {
+            let job = self.require(&key_part(&key, 17)?)?;
+            if job.request.kind == request.kind
+                && job.request.tmdb_id == request.tmdb_id
+                && job.request.season == request.season
+                && job.request.episode == request.episode
+            {
+                jobs.push(job);
+            }
+        }
+        Ok(jobs)
     }
-    pub(crate) fn check_irc_origin(&self, origin: &Origin) -> Result<()> {
+
+    pub(super) fn check_irc_origin(&mut self, origin: &Origin) -> Result<()> {
         origin.validate()?;
         let job = self
-            .get(&origin.job_id)
+            .get(&origin.job_id)?
             .ok_or("IRC: admitted job is missing")?;
         if !crate::irc::routing::eligible(&job) {
             return Err("IRC: admitted job is no longer eligible".into());
@@ -28,78 +46,37 @@ impl Store {
         routed.release = Some(origin.release.clone());
         routed.irc_origin = Some(origin.clone());
         origin.validate_job(&routed)?;
-        self.validate_transaction(&routed, false)
+        self.validate_transaction(&routed)
     }
-    pub(crate) fn attach_irc_origin(&mut self, origin: Origin) -> Result<Job> {
+
+    pub(super) fn attach_irc_origin(&mut self, origin: Origin) -> Result<Job> {
         self.check_irc_origin(&origin)?;
         let mut job = self
-            .get(&origin.job_id)
+            .get(&origin.job_id)?
             .ok_or("IRC: admitted job is missing")?;
         job.acquisition_url = Some(origin.magnet.clone());
         job.release = Some(origin.release.clone());
         job.irc_origin = Some(origin);
         job.next_attempt_at = 0;
         job.updated_at = now();
-        self.commit(job.clone(), "verified IRC candidate routed")?;
+        self.commit_jobs(vec![job.clone()], "verified IRC candidate routed")?;
         Ok(job)
     }
-    pub(super) fn check_irc_ownership(&self, job: &Job) -> Result<()> {
-        if job.irc_origin.is_none() && job.pack_file.is_none() {
-            return Ok(());
-        }
-        for other in self.jobs.values().filter(|j| j.id != job.id) {
-            if job.irc_origin.is_none() {
-                if let Some(known) = &other.irc_origin
-                    && job.pack_file.as_ref() == Some(&known.file)
-                    && (job
-                        .pack_origin
-                        .as_ref()
-                        .is_some_and(|p| known.torrent_aliases.contains(&p.torrent_id))
-                        || job
-                            .shared_file
-                            .as_ref()
-                            .is_some_and(|f| known.torrent_aliases.contains(&f.torrent_id))
-                        || job
-                            .download_id
-                            .as_ref()
-                            .is_some_and(|id| known.torrent_aliases.contains(id)))
-                {
-                    return Err(
-                        "IRC: pack mapping conflicts with retained announcement ownership".into(),
-                    );
-                }
-                continue;
-            }
-            let origin = job
-                .irc_origin
-                .as_ref()
-                .ok_or("IRC: missing ownership origin")?;
-            if let Some(known) = &other.irc_origin
-                && known.file == origin.file
-                && known
-                    .torrent_aliases
-                    .iter()
-                    .any(|id| origin.torrent_aliases.contains(id))
-            {
-                return Err("IRC: physical video already belongs to another acquisition".into());
-            }
-            if other.pack_file.as_ref() == Some(&origin.file)
-                && (other
-                    .pack_origin
-                    .as_ref()
-                    .is_some_and(|p| origin.torrent_aliases.contains(&p.torrent_id))
-                    || other
-                        .shared_file
-                        .as_ref()
-                        .is_some_and(|f| origin.torrent_aliases.contains(&f.torrent_id))
-                    || other
-                        .download_id
-                        .as_ref()
-                        .is_some_and(|id| origin.torrent_aliases.contains(id)))
-            {
-                return Err("IRC: candidate conflicts with retained pack ownership".into());
+
+    /// One page of the jobs that carry an IRC acquisition origin, in key order.
+    pub(super) fn irc_origin_page(
+        &mut self,
+        after: Option<crate::inventory::Key>,
+        limit: usize,
+    ) -> Result<(Vec<Job>, Option<crate::inventory::Key>)> {
+        let page = self.scan(&[layout::T_IRC], after, limit)?;
+        let mut jobs: Vec<Job> = Vec::new();
+        for (key, _) in &page.entries {
+            let id = key_part::<16>(key, 33)?;
+            if jobs.iter().all(|job| id_bytes(&job.id).is_ok_and(|raw| raw != id)) {
+                jobs.push(self.require(&id)?);
             }
         }
-        Ok(())
+        Ok((jobs, page.next))
     }
 }

@@ -262,7 +262,6 @@ pub(crate) fn route(
         ("GET", "/api/indexers") => Ok((200, engine.indexers()?)),
         ("GET", "/api/feeds") => Ok((200, engine.feeds()?)),
         ("GET", "/api/transfers") => Ok((200, engine.transfers()?)),
-        ("GET", "/api/library") => Ok((200, engine.library()?)),
         ("GET", "/api/requesters") => Ok((200, engine.requesters()?)),
         ("GET", "/api/irc") => Ok((200, engine.irc_sources()?)),
         ("POST", "/api/requesters/sync") => {
@@ -297,10 +296,6 @@ pub(crate) fn route(
             };
             Ok((200, engine.check_upgrades(apply)?))
         }
-        ("GET", "/api/jobs") => Ok((
-            200,
-            Value::Array(lock(&engine.store)?.list().iter().map(public_job).collect()),
-        )),
         ("POST", "/api/search") => {
             let value = json::parse(
                 std::str::from_utf8(body).map_err(|_| "Request body is not valid UTF-8")?,
@@ -423,6 +418,21 @@ pub(crate) fn route(
                     ));
                 }
                 return Ok((404, error("Unknown requester route")));
+            }
+            for (route, library) in [("/api/jobs", false), ("/api/library", true)] {
+                if method == "GET" && (path == route || path.starts_with(&format!("{route}?"))) {
+                    let query = crate::store::PageQuery::parse(
+                        path.split_once('?').map_or("", |(_, query)| query),
+                    )?;
+                    return Ok((
+                        200,
+                        if library {
+                            engine.library(query.after.as_deref(), query.limit)?
+                        } else {
+                            engine.jobs_page(query.after.as_deref(), query.limit)?
+                        },
+                    ));
+                }
             }
             if method == "GET" && (path == "/api/series" || path.starts_with("/api/series?")) {
                 let query = crate::series::SeriesPageQuery::parse(
@@ -656,7 +666,7 @@ pub(crate) fn route(
                     return Ok((404, error("Unknown job")));
                 }
                 if parts.len() == 1 && method == "GET" {
-                    return Ok(match lock(&engine.store)?.get(id) {
+                    return Ok(match lock(&engine.store)?.get(id)? {
                         Some(job) => (200, public_job(&job)),
                         None => (404, error("Unknown job")),
                     });
@@ -668,7 +678,7 @@ pub(crate) fn route(
                                 200,
                                 Value::Array(
                                     lock(&engine.store)?
-                                        .events(id)
+                                        .events(id)?
                                         .iter()
                                         .map(|e| e.to_json())
                                         .collect(),

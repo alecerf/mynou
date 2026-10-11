@@ -559,12 +559,12 @@ fn choose_file(job: &Job, metadata: &TorrentMetadata) -> Result<(String, u64)> {
 }
 
 /// Validate both directions before any native workers can resume.
-pub(crate) fn recovered_state(state: &State, jobs: &Store) -> Result<State> {
+pub(crate) fn recovered_state(state: &State, jobs: &mut Store) -> Result<State> {
     let mut next = state.clone();
     for r in state.records.values() {
         if let Some(route) = &r.route {
             let job = jobs
-                .get(&route.origin.job_id)
+                .get(&route.origin.job_id)?
                 .ok_or("IRC: reserved job is missing")?;
             if route.phase == "aborted" {
                 if job
@@ -618,8 +618,14 @@ pub(crate) fn recovered_state(state: &State, jobs: &Store) -> Result<State> {
         }
     }
     let mut physical = BTreeSet::new();
-    for job in jobs.list() {
-        if let Some(origin) = &job.irc_origin {
+    // Only jobs that carry an IRC origin are read, one page at a time.
+    let mut after = None;
+    loop {
+        let (page, next_page) = jobs.irc_origin_page(after, 200)?;
+        for job in page {
+            let Some(origin) = &job.irc_origin else {
+                continue;
+            };
             origin.validate_job(&job)?;
             let route = state
                 .records
@@ -635,6 +641,10 @@ pub(crate) fn recovered_state(state: &State, jobs: &Store) -> Result<State> {
             {
                 return Err("IRC: acquisition provenance or physical ownership conflicts".into());
             }
+        }
+        after = next_page;
+        if after.is_none() {
+            break;
         }
     }
     Ok(next)
@@ -702,10 +712,10 @@ fn candidate(
     config: &Config,
     r: &Record,
     rule: &super::Rule,
-    jobs: &Store,
+    jobs: &mut Store,
     requesters: &crate::requesters::State,
 ) -> Result<Job> {
-    let matches = jobs.irc_jobs(&r.announcement.request);
+    let matches = jobs.irc_jobs(&r.announcement.request)?;
     let eligible: Vec<_> = matches.iter().filter(|j| eligible(j)).collect();
     if eligible.is_empty()
         && matches.iter().any(|j| {
@@ -836,8 +846,8 @@ impl Engine {
         let rule = matched_rule(&self.config, record, fingerprint)?;
         let job = {
             let requesters = lock(&self.requester_store)?;
-            let jobs = lock(&self.store)?;
-            candidate(&self.config, record, rule, &jobs, &requesters.state)?
+            let mut jobs = lock(&self.store)?;
+            candidate(&self.config, record, rule, &mut jobs, &requesters.state)?
         };
         let source = self.config.irc.source(&record.source_id)?;
         let deadline = Instant::now() + Duration::from_secs(10);
@@ -862,7 +872,7 @@ impl Engine {
             }
             let requesters = lock(&self.requester_store)?;
             let mut jobs = lock(&self.store)?;
-            if candidate(&self.config, current, rule, &jobs, &requesters.state)? != job {
+            if candidate(&self.config, current, rule, &mut jobs, &requesters.state)? != job {
                 return Err("IRC: admitted job changed during metadata inspection".into());
             }
             let mut fulfilled = job;
@@ -925,7 +935,7 @@ impl Engine {
             &self.config,
             current,
             current_rule,
-            &jobs,
+            &mut jobs,
             &requesters.state,
         )?;
         if current_job != job {

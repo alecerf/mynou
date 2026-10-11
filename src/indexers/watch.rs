@@ -280,11 +280,12 @@ impl Engine {
     fn route_jobs(&self, source: &Source, fresh: &[&FeedEntry], tally: &mut Tally) -> Result<()> {
         let demand: Vec<Job> = {
             let requesters = lock(&self.requester_store)?;
-            let jobs = lock(&self.store)?;
-            jobs.list()
+            let mut jobs = lock(&self.store)?;
+            // The first `MAX_ROUTE_JOBS` open jobs: the window is bounded, not
+            // the inventory.
+            jobs.open_jobs(MAX_ROUTE_JOBS)?
                 .into_iter()
                 .filter(|job| routable(job) && interest(&requesters.state, job, &self.config))
-                .take(MAX_ROUTE_JOBS)
                 .collect()
         };
         for job in demand {
@@ -332,7 +333,7 @@ impl Engine {
         // Authorization and ownership are checked again where the job changes.
         let requesters = lock(&self.requester_store)?;
         let mut jobs = lock(&self.store)?;
-        let Some(current) = jobs.get(&job.id) else {
+        let Some(current) = jobs.get(&job.id)? else {
             return Ok(Attach::Changed);
         };
         if self.stopped.load(Ordering::Acquire)
@@ -370,7 +371,16 @@ impl Engine {
             tally.changed += 1;
             return Ok(());
         };
-        let library = lock(&self.store)?.library_jobs();
+        let mut library = Vec::new();
+        let mut after: Option<String> = None;
+        loop {
+            let page = lock(&self.store)?.library_page(after.as_deref(), 200)?;
+            library.extend(page.jobs);
+            after = page.next;
+            if after.is_none() || library.len() >= MAX_ROUTE_JOBS {
+                break;
+            }
+        }
         for parent in library.into_iter().take(MAX_ROUTE_JOBS) {
             if tally.upgrades as usize >= MAX_ROUTES_PER_POLL
                 || self.stopped.load(Ordering::Acquire)

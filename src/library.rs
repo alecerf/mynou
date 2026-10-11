@@ -6,7 +6,7 @@ use crate::{
     integrations,
     json::Value,
     media,
-    store::{self, Job, RecordedRelease, reject_symlinks},
+    store::{self, Job, RecordedRelease, Store, reject_symlinks},
 };
 pub use groups::GroupRequest;
 use std::{
@@ -15,15 +15,6 @@ use std::{
     sync::atomic::Ordering,
     time::{Duration, Instant},
 };
-
-fn pending_for<'a>(jobs: &'a [Job], media_key: &str) -> Option<&'a Job> {
-    jobs.iter().find(|job| {
-        job.upgrade_parent.is_some()
-            && job.request.media_key() == media_key
-            && !matches!(job.state.as_str(), "ready" | "cancelled")
-            && (job.shared_upgrade.is_some() || job.state != "failed" || job.next_attempt_at != 0)
-    })
-}
 
 pub(crate) fn import_exists(job: &Job) -> bool {
     !job.imports.is_empty()
@@ -34,6 +25,11 @@ pub(crate) fn import_exists(job: &Job) -> bool {
         })
 }
 
+/// Library entries read per page by a monitoring pass.
+const MAX_REPORT_PAGE: usize = 200;
+/// Shared-group entries listed in one report; more set `limited`.
+const MAX_SHARED_ENTRIES: usize = 200;
+
 fn entry(job: &Job, action: &str) -> Value {
     let mut value = Value::object();
     value.insert("job_id", job.id.clone());
@@ -42,32 +38,42 @@ fn entry(job: &Job, action: &str) -> Value {
     value
 }
 
-pub fn describe(current: &[Job], all: &[Job]) -> Value {
-    Value::Array(
-        current
-            .iter()
-            .map(|job| {
-                let mut value = public_job(job);
-                value.insert("media_key", job.request.media_key());
-                value.insert(
-                    "baseline_required",
-                    job.release.is_none() && job.shared_file.is_none(),
-                );
-                value.insert("group_upgrade_required", job.shared_file.is_some());
-                value.insert(
-                    "group_baseline_required",
-                    job.shared_file.is_some() && job.release.is_none(),
-                );
-                value.insert("imports_present", import_exists(job));
-                value.insert(
-                    "pending_upgrade_id",
-                    pending_for(all, &job.request.media_key())
-                        .map_or(Value::Null, |child| child.id.clone().into()),
-                );
-                value
-            })
-            .collect(),
-    )
+/// Library entries with their upgrade state. A pending upgrade is found by
+/// its media identity, never by scanning the other jobs.
+pub fn describe(store: &mut Store, current: &[Job]) -> Result<Value> {
+    let mut entries = Vec::with_capacity(current.len());
+    for job in current {
+        let mut value = public_job(job);
+        value.insert("media_key", job.request.media_key());
+        value.insert(
+            "baseline_required",
+            job.release.is_none() && job.shared_file.is_none(),
+        );
+        value.insert("group_upgrade_required", job.shared_file.is_some());
+        value.insert(
+            "group_baseline_required",
+            job.shared_file.is_some() && job.release.is_none(),
+        );
+        value.insert("imports_present", import_exists(job));
+        value.insert(
+            "pending_upgrade_id",
+            store
+                .pending_for(&job.request.media_key())?
+                .map_or(Value::Null, |child| child.id.into()),
+        );
+        entries.push(value);
+    }
+    Ok(Value::Array(entries))
+}
+
+/// One page of the library, in the shape of every other paged list.
+pub fn describe_page(store: &mut Store, after: Option<&str>, limit: usize) -> Result<Value> {
+    let page = store.library_page(after, limit)?;
+    let mut value = Value::object();
+    value.insert("library", describe(store, &page.jobs)?);
+    value.insert("next", page.next.map_or(Value::Null, Value::String));
+    value.insert("total", Value::Number(page.total as f64));
+    Ok(value)
 }
 
 fn report(apply: bool, entries: Vec<Value>, queued: u32, limited: bool, counts: [u32; 3]) -> Value {
@@ -125,13 +131,10 @@ pub fn validate_baseline(
 }
 
 impl Engine {
-    /// Returns owned ready versions; an unfinished child cannot replace its parent.
-    pub fn library(&self) -> Result<Value> {
-        let (current, all) = {
-            let store = lock(&self.store)?;
-            (store.library_jobs(), store.list())
-        };
-        Ok(describe(&current, &all))
+    /// Returns a page of owned ready versions; an unfinished child cannot
+    /// replace its parent.
+    pub fn library(&self, after: Option<&str>, limit: usize) -> Result<Value> {
+        describe_page(&mut *lock(&self.store)?, after, limit)
     }
 
     pub fn set_monitored(&self, id: &str, enabled: bool) -> Result<Job> {
@@ -140,7 +143,9 @@ impl Engine {
 
     /// Establishes an explicit release-name baseline for a legacy owned import.
     pub fn set_baseline(&self, id: &str, title: &str) -> Result<Job> {
-        let job = lock(&self.store)?.get(id).ok_or("Unknown library entry")?;
+        let job = lock(&self.store)?
+            .get(id)?
+            .ok_or("Unknown library entry")?;
         let release = validate_baseline(&self.configuration_for(&job), &job, title)?;
         lock(&self.store)?.set_baseline(id, release)
     }
@@ -164,37 +169,58 @@ impl Engine {
             .map_err(|_| "An upgrade check is already in progress")?;
         let at = store::now();
         let started = Instant::now();
-        let (current, all) = {
-            let store = lock(&self.store)?;
-            (store.library_jobs(), store.list())
-        };
+        let max_checks = self.config.monitoring.max_checks;
         let mut unmonitored = 0_u32;
         let mut baseline_required = 0_u32;
         let mut unsupported = 0_u32;
-        let mut eligible = Vec::new();
+        // Only the `max_checks + 1` oldest checks are kept: memory does not
+        // grow with the library, which is read one page at a time.
+        let mut eligible: Vec<Job> = Vec::new();
+        let mut eligible_total = 0_usize;
         let mut shared = Vec::new();
-        for job in current {
-            if !job.monitored {
-                unmonitored += 1;
-            } else if job.shared_file.is_some() {
-                shared.push(entry(&job, "shared_group_upgrade_required"));
-            } else if job.release.is_none() {
-                baseline_required += 1;
-            } else if !matches!(job.request.kind.as_str(), "movie" | "episode") {
-                unsupported += 1;
-            } else if force
-                || job.monitor_checked_at > at
-                || at.saturating_sub(job.monitor_checked_at) >= self.config.monitoring.interval_secs
+        let mut incomplete = false;
+        let mut after: Option<String> = None;
+        loop {
+            let page = lock(&self.store)?.library_page(after.as_deref(), MAX_REPORT_PAGE)?;
+            for job in page.jobs {
+                if !job.monitored {
+                    unmonitored = unmonitored.saturating_add(1);
+                } else if job.shared_file.is_some() {
+                    if shared.len() < MAX_SHARED_ENTRIES {
+                        shared.push(entry(&job, "shared_group_upgrade_required"));
+                    } else {
+                        incomplete = true;
+                    }
+                } else if job.release.is_none() {
+                    baseline_required = baseline_required.saturating_add(1);
+                } else if !matches!(job.request.kind.as_str(), "movie" | "episode") {
+                    unsupported = unsupported.saturating_add(1);
+                } else if force
+                    || job.monitor_checked_at > at
+                    || at.saturating_sub(job.monitor_checked_at)
+                        >= self.config.monitoring.interval_secs
+                {
+                    eligible_total += 1;
+                    let position = eligible.partition_point(|known| {
+                        (known.monitor_checked_at, &known.id) <= (job.monitor_checked_at, &job.id)
+                    });
+                    if position <= max_checks {
+                        eligible.insert(position, job);
+                        eligible.truncate(max_checks.saturating_add(1));
+                    }
+                }
+            }
+            after = page.next;
+            if after.is_none() {
+                break;
+            }
+            if self.stopped.load(Ordering::Acquire) || started.elapsed() >= Duration::from_secs(90)
             {
-                eligible.push(job);
+                incomplete = true;
+                break;
             }
         }
-        eligible.sort_by(|a, b| {
-            a.monitor_checked_at
-                .cmp(&b.monitor_checked_at)
-                .then_with(|| a.id.cmp(&b.id))
-        });
-        let mut limited = eligible.len() > self.config.monitoring.max_checks;
+        let mut limited = eligible_total > max_checks || incomplete;
         let mut entries = shared;
         let mut queued = 0_u32;
         for job in eligible.into_iter().take(self.config.monitoring.max_checks) {
@@ -212,7 +238,7 @@ impl Engine {
                 continue;
             }
             let media_key = job.request.media_key();
-            if let Some(pending) = pending_for(&all, &media_key) {
+            if let Some(pending) = lock(&self.store)?.pending_for(&media_key)? {
                 let mut item = entry(&job, "upgrade_pending");
                 item.insert("upgrade_job_id", pending.id.clone());
                 entries.push(item);
@@ -272,10 +298,10 @@ impl Engine {
                 profile: selected.profile,
             };
             let mut store = lock(&self.store)?;
-            let before = store.list().len();
+            let before = store.counts()?.jobs;
             match store.submit_upgrade(&job.id, request, release) {
                 Ok(child) => {
-                    let created = store.list().len() > before;
+                    let created = store.counts()?.jobs > before;
                     queued += u32::from(created);
                     item.insert(
                         "action",
