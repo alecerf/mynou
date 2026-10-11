@@ -185,6 +185,7 @@ fn parse_marker(bytes: &[u8]) -> Result<String> {
 }
 
 /// The final state a legacy snapshot and journal describe.
+#[derive(Debug)]
 pub(super) struct State {
     pub jobs: BTreeMap<String, Job>,
     pub events: VecDeque<Event>,

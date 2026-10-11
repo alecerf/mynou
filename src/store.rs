@@ -639,7 +639,7 @@ pub(crate) fn reject_symlinks(path: &Path) -> Result<()> {
     for ancestor in path.ancestors() {
         match fs::symlink_metadata(ancestor) {
             Ok(metadata) if metadata.file_type().is_symlink() => {
-                return Err(format!("symbolic link not allowed: {}", ancestor.display()));
+                return Err("symbolic link not allowed in a storage path".to_owned());
             }
             Ok(_) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
