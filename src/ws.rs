@@ -52,7 +52,7 @@ pub type Route = fn(&Arc<Engine>, &str, &str, &[u8]) -> Result<(u16, Value)>;
 pub struct Slot;
 impl Slot {
     pub fn take() -> Option<Self> {
-        OPEN.fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+        OPEN.try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
             (n < MAX_SOCKETS).then_some(n + 1)
         })
         .ok()
