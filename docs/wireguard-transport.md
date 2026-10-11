@@ -63,7 +63,8 @@ It uses RFC8439 word equations for ChaCha and arbitrary-precision modular
 arithmetic for Poly1305, independent of the Rust limb implementation; it neither
 imports nor executes product code. The published
 [C2SP/Wycheproof ChaCha20-Poly1305 vector](https://github.com/C2SP/wycheproof/blob/main/testvectors_v1/chacha20_poly1305_test.json)
-`tcId 2` anchors the empty-AAD/tag reference. Existing RFC8439 vectors continue
+`tcId 2` anchors the empty-AAD/tag reference; RFC8439 section 2.3.2 separately
+anchors the counter-1 encryption stream. Existing RFC8439 vectors continue
 to cover the product primitive. All keys/messages are synthetic, not credentials.
 
 The matrix covers empty, partial, exact-block and maximum payloads plus counters

@@ -1,4 +1,4 @@
-"""CI-only independent hash/KDF reference data from Python's standard library.
+"""CI-only independent hash/KDF/AEAD reference data using Python's standard library.
 
 No Mynou implementation is imported or executed; all keys/messages are synthetic.
 """
@@ -129,7 +129,8 @@ def main():
     with args.output.open("x", encoding="utf-8") as stream:
         json.dump(data, stream, separators=(",", ":"))
     print("Generated independent std-only synthetic crypto vectors: "
-          f"{len(data['blake2s'])} hashes, {len(data['hmac'])} HMACs, {len(data['hkdf'])} HKDFs")
+          f"{len(data['blake2s'])} hashes, {len(data['hmac'])} HMACs, "
+          f"{len(data['hkdf'])} HKDFs, {len(data['wireguard'])} transport packets")
 
 
 if __name__ == "__main__":
