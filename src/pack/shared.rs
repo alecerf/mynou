@@ -356,14 +356,10 @@ impl Engine {
             );
         }
         let mut store = lock(&self.store)?;
-        let all = store.list();
         let mut episodes = query.episodes.clone();
         episodes.sort_unstable();
-        let known = all
-            .iter()
-            .filter_map(|job| job.shared_file.as_ref())
-            .find(|file| file.torrent_id == metadata.id && file.file_path == query.file_path);
-        let file = if let Some(known) = known {
+        let known = store.shared_binding(&metadata.id, &query.file_path)?;
+        let file = if let Some(known) = &known {
             if record.plan.request.tmdb_id != Some(known.tmdb_id)
                 || query.season != known.season
                 || episodes
@@ -438,8 +434,9 @@ impl Engine {
         fence.insert(
             "owners",
             Value::Array(
-                all.iter()
-                    .filter(|job| job.shared_file.as_ref() == Some(&file))
+                store
+                    .group_members(&file)?
+                    .iter()
                     .map(Job::to_json)
                     .collect(),
             ),

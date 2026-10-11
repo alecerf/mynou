@@ -378,7 +378,13 @@ impl Engine {
         guard.insert("ledger", ledger.state.to_json());
         guard.insert(
             "jobs",
-            Value::Array(jobs.list().iter().map(crate::store::Job::to_json).collect()),
+            // Only the requests of this media identity can change the outcome.
+            Value::Array(
+                jobs.media_jobs(&canonical.media_key())?
+                    .iter()
+                    .map(crate::store::Job::to_json)
+                    .collect(),
+            ),
         );
         guard.insert(
             "series",
@@ -492,7 +498,9 @@ impl Engine {
             ledger.state.demands[&demand_id]
                 .job_id
                 .as_deref()
-                .and_then(|id| jobs.get(id))
+                .map(|id| jobs.get(id))
+                .transpose()?
+                .flatten()
                 .is_some_and(|j| j.download_id.is_some()),
         );
         Ok(report)

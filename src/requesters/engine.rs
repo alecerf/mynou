@@ -22,19 +22,16 @@ struct Watchlist {
     requests: Vec<(String, Request)>,
 }
 
-fn current_job(store: &Store, request: &Request) -> Option<Job> {
-    let key = request.media_key();
-    store
-        .library_jobs()
-        .into_iter()
-        .find(|j| j.request.media_key() == key)
-        .or_else(|| {
-            store
-                .list()
-                .into_iter()
-                .filter(|j| j.request.media_key() == key && j.upgrade_parent.is_none())
-                .min_by(|a, b| (&a.created_at, &a.id).cmp(&(&b.created_at, &b.id)))
-        })
+/// The job that currently represents a request's media: the library's current
+/// version, else the oldest request that is not an upgrade.
+fn current_job(store: &mut Store, request: &Request) -> Result<Option<Job>> {
+    let jobs = store.media_jobs(&request.media_key())?;
+    for job in &jobs {
+        if store.is_library_tip(&job.id)? {
+            return Ok(Some(job.clone()));
+        }
+    }
+    Ok(jobs.into_iter().find(|job| job.upgrade_parent.is_none()))
 }
 fn compatible(config: &crate::config::Config, demand: &Demand, job: &Job) -> Result<bool> {
     if let Some(p) = &job.requester {
@@ -260,7 +257,7 @@ impl Engine {
                         );
                     }
                     let job = jobs
-                        .get(d.job_id.as_deref().ok_or("Requester: missing job")?)
+                        .get(d.job_id.as_deref().ok_or("Requester: missing job")?)?
                         .ok_or("Requester: acquisition is missing")?;
                     if !matches!(job.state.as_str(), "failed" | "cancelled") {
                         return Err("Requester: acquisition is not retryable".into());
@@ -279,10 +276,15 @@ impl Engine {
         guard.insert("account", record.to_json());
         guard.insert("ledger", ledger.state.to_json());
         guard.insert("query", normalized.to_json());
-        guard.insert(
-            "jobs",
-            Value::Array(jobs.list().iter().map(Job::to_json).collect()),
-        );
+        // The acquisitions this account's demand points at (the ledger is
+        // bounded by its own snapshot limit).
+        let mut linked = Vec::new();
+        for demand in ledger.state.demands.values().filter(|d| d.account_id == id) {
+            if let Some(job) = demand.job_id.as_deref().map(|job| jobs.get(job)).transpose()? {
+                linked.push(job.map_or(Value::Null, |job| job.to_json()));
+            }
+        }
+        guard.insert("jobs", Value::Array(linked));
         guard.insert("profiles", self.config.selection.to_json());
         guard.insert(
             "destinations",
@@ -361,17 +363,6 @@ impl Engine {
     ) -> Result<()> {
         let now = store::now();
         let mut next = ledger.state.clone();
-        let mut current = BTreeMap::<String, Job>::new();
-        for job in jobs
-            .list()
-            .into_iter()
-            .filter(|j| j.upgrade_parent.is_none())
-        {
-            current.entry(job.request.media_key()).or_insert(job);
-        }
-        for job in jobs.library_jobs() {
-            current.insert(job.request.media_key(), job);
-        }
         let mut planned: BTreeMap<_, _> = next
             .demands
             .values()
@@ -417,7 +408,7 @@ impl Engine {
                     .state = "pending".into();
                 continue;
             }
-            let existing = current.get(&d.request.media_key()).cloned();
+            let existing = current_job(jobs, &d.request)?;
             if planned
                 .get(&d.request.media_key())
                 .is_some_and(|p| p != &d.capture)
@@ -449,7 +440,7 @@ impl Engine {
         let mut next = ledger.state.clone();
         for (id, current) in admitted {
             let demand = next.demands[&id].clone();
-            let job = if let Some(job) = current.or_else(|| current_job(jobs, &demand.request)) {
+            let job = if let Some(job) = current {
                 if !compatible(&self.config, &demand, &job)? {
                     return Err("Requester: reservation conflicts with queued acquisition".into());
                 }
@@ -488,7 +479,7 @@ impl Engine {
         let mut outcomes = Vec::new();
         for d in next.demands.values_mut() {
             if let Some(id) = &d.job_id
-                && let Some(job) = jobs.get(id)
+                && let Some(job) = jobs.get(id)?
                 && d.state != "removed"
             {
                 let outcome = if job.state == "ready" {
@@ -514,7 +505,7 @@ impl Engine {
         if next != ledger.state {
             ledger.save(next)?;
         }
-        cancel_unwanted(&ledger.state, jobs, &self.config)?;
+        cancel_unwanted(&ledger.state, jobs, &self.config, false)?;
         self.pause_unwanted_transfers(jobs)?;
         self.retire_previous_transfers(jobs)?;
         Ok(())
@@ -557,8 +548,8 @@ impl Engine {
     }
     pub(crate) fn requester_retry_allowed(&self, id: &str) -> Result<()> {
         let ledger = lock(&self.requester_store)?;
-        let jobs = lock(&self.store)?;
-        let job = jobs.get(id).ok_or("Unknown job")?;
+        let mut jobs = lock(&self.store)?;
+        let job = jobs.get(id)?.ok_or("Unknown job")?;
         if job.requester.is_none() || ledger.state.operator_jobs.contains(id) {
             return Ok(());
         }
@@ -789,11 +780,11 @@ impl Engine {
     }
 }
 
-pub(crate) fn validate_storage(state: &State, jobs: &Store) -> Result<()> {
+pub(crate) fn validate_storage(state: &State, jobs: &mut Store) -> Result<()> {
     for d in state.demands.values() {
         if let Some(id) = &d.job_id {
             let job = jobs
-                .get(id)
+                .get(id)?
                 .ok_or("Requester: recorded acquisition is missing")?;
             if job.request.media_key() != d.request.media_key()
                 || job
@@ -805,8 +796,14 @@ pub(crate) fn validate_storage(state: &State, jobs: &Store) -> Result<()> {
             }
         }
     }
-    for job in jobs.list() {
-        if let Some(p) = &job.requester {
+    // Every request that carries requester provenance, one page at a time.
+    let mut after = None;
+    loop {
+        let (page, next) = jobs.requester_jobs_page(after, 200)?;
+        for job in page {
+            let Some(p) = &job.requester else {
+                continue;
+            };
             let d = state
                 .demands
                 .get(&p.demand_id)
@@ -820,28 +817,44 @@ pub(crate) fn validate_storage(state: &State, jobs: &Store) -> Result<()> {
                 return Err("Requester: queued provenance differs from durable admission".into());
             }
         }
+        after = next;
+        if after.is_none() {
+            return Ok(());
+        }
     }
-    Ok(())
 }
+
+/// Requests examined by one sweep for work no demand wants any more.
+const SWEEP_JOBS: usize = 512;
+
+/// Cancels unfinished requester work that no admitted demand needs. One call
+/// examines at most `SWEEP_JOBS` requests, resuming where the last one stopped;
+/// `full` repeats until every request was examined once (service start).
 pub(crate) fn cancel_unwanted(
     state: &State,
     jobs: &mut Store,
     config: &crate::config::Config,
+    full: bool,
 ) -> Result<()> {
-    for job in jobs.list() {
-        if job.requester.is_some()
-            && job.state != "ready"
-            && job.state != "cancelled"
-            && !interest(state, &job, config)
-        {
-            if job.shared_file.is_some() {
-                let owners = jobs.shared_group(&job.id)?;
-                if owners.iter().any(|j| interest(state, j, config)) {
-                    continue;
+    loop {
+        let (page, wrapped) = jobs.sweep_requester_jobs(SWEEP_JOBS)?;
+        for job in page {
+            if job.requester.is_some()
+                && job.state != "ready"
+                && job.state != "cancelled"
+                && !interest(state, &job, config)
+            {
+                if job.shared_file.is_some() {
+                    let owners = jobs.shared_group(&job.id)?;
+                    if owners.iter().any(|j| interest(state, j, config)) {
+                        continue;
+                    }
                 }
+                jobs.cancel(&job.id)?;
             }
-            jobs.cancel(&job.id)?;
+        }
+        if !full || wrapped {
+            return Ok(());
         }
     }
-    Ok(())
 }

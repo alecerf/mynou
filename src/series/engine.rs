@@ -305,7 +305,6 @@ impl Engine {
         if let Some(record) = &pack_plan
             && record.monitored
         {
-            let existing = lock(&self.store)?.media_keys();
             let today = date::today();
             let mut seasons = BTreeMap::<u32, usize>::new();
             for episode in &record.plan.episodes {
@@ -315,7 +314,7 @@ impl Engine {
                         .air_date
                         .as_deref()
                         .is_some_and(|day| day <= today.as_str())
-                    && !existing.contains(&record.episode_request(episode).media_key())
+                    && !lock(&self.store)?.media_exists(&record.episode_request(episode).media_key())?
                 {
                     *seasons.entry(episode.season).or_default() += 1;
                 }
@@ -334,7 +333,7 @@ impl Engine {
                     candidate_id: None,
                 };
                 if let Ok(report) = self.search_packs_before(id, &query, deadline) {
-                    let jobs = lock(&self.store)?;
+                    let mut jobs = lock(&self.store)?;
                     if let Some(rows) = report
                         .get("submission")
                         .and_then(|submission| submission.get("jobs"))
@@ -344,7 +343,9 @@ impl Engine {
                             if let Some(job) = row
                                 .get("id")
                                 .and_then(Value::as_str)
-                                .and_then(|id| jobs.get(id))
+                                .map(|id| jobs.get(id))
+                .transpose()?
+                .flatten()
                             {
                                 submitted.push(job);
                             }
@@ -371,22 +372,21 @@ impl Engine {
         }
         let today = date::today();
         let mut jobs = lock(&self.store)?;
-        let existing = jobs.media_keys();
-        let mut candidates: Vec<_> = record
-            .plan
-            .episodes
-            .iter()
-            .filter(|episode| {
-                record.episode_monitored(episode)
-                    && episode.catalog_id.is_some()
-                    && episode
-                        .air_date
-                        .as_deref()
-                        .is_some_and(|date| date <= today.as_str())
-            })
-            .map(|episode| (episode.air_date.clone(), record.episode_request(episode)))
-            .filter(|(_, request)| !existing.contains(&request.media_key()))
-            .collect();
+        let mut candidates = Vec::new();
+        for episode in &record.plan.episodes {
+            if record.episode_monitored(episode)
+                && episode.catalog_id.is_some()
+                && episode
+                    .air_date
+                    .as_deref()
+                    .is_some_and(|date| date <= today.as_str())
+            {
+                let request = record.episode_request(episode);
+                if !jobs.media_exists(&request.media_key())? {
+                    candidates.push((episode.air_date.clone(), request));
+                }
+            }
+        }
         candidates
             .sort_by(|a, b| (&a.0, a.1.season, a.1.episode).cmp(&(&b.0, b.1.season, b.1.episode)));
         let remaining = MAX_SUBMISSIONS.saturating_sub(submitted.len());
@@ -422,7 +422,7 @@ impl Engine {
         for row in &page.rows {
             wanted.insert(row.series.episode_request(&row.episode).media_key());
         }
-        let states = lock(&self.store)?.states_for(&wanted);
+        let states = lock(&self.store)?.states_for(&wanted)?;
         let today = date::today();
         let rows = page
             .rows

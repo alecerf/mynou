@@ -176,7 +176,7 @@ pub(super) struct Scope {
     episodes: Vec<Episode>,
 }
 
-pub(super) fn capture_scope(record: &Record, store: &Store, season: u32) -> Result<Scope> {
+pub(super) fn capture_scope(record: &Record, store: &mut Store, season: u32) -> Result<Scope> {
     if season > 9999
         || !record
             .plan
@@ -209,7 +209,6 @@ pub(super) fn capture_scope(record: &Record, store: &Store, season: u32) -> Resu
         return Err("Alternate source numbering requires explicit pack file mappings".into());
     }
     let today = date::today();
-    let existing = store.media_keys();
     // An explicit on-demand pack action does not enable background series monitoring.
     let mut episodes: Vec<_> = record
         .plan
@@ -227,10 +226,17 @@ pub(super) fn capture_scope(record: &Record, store: &Store, season: u32) -> Resu
                             .as_deref()
                             .is_none_or(|start| day >= start)
                 })
-                && !existing.contains(&record.episode_request(episode).media_key())
         })
         .cloned()
         .collect();
+    // Each candidate reads only its own media identity.
+    let mut missing = Vec::with_capacity(episodes.len());
+    for episode in episodes {
+        if !store.media_exists(&record.episode_request(&episode).media_key())? {
+            missing.push(episode);
+        }
+    }
+    let mut episodes = missing;
     episodes.sort_by_key(|episode| episode.episode);
     if episodes.len() > MAX_PACK_EPISODES {
         return Err("Automatic pack scope exceeds 64 missing aired episodes".into());
@@ -462,8 +468,8 @@ impl Engine {
             let mut series = lock(&self.series_store)?;
             let record = series.get(id)?.ok_or("Unknown tracked series")?;
             {
-                let jobs = lock(&self.store)?;
-                capture_scope(&record, &jobs, query.season)?
+                let mut jobs = lock(&self.store)?;
+                capture_scope(&record, &mut jobs, query.season)?
             }
         };
         if query.scope_id.as_ref().is_some_and(|id| id != &scope.id) {
@@ -584,8 +590,8 @@ impl Engine {
         {
             let mut series = lock(&self.series_store)?;
             let current = series.get(id)?.ok_or("Unknown tracked series")?;
-            let jobs = lock(&self.store)?;
-            if capture_scope(&current, &jobs, query.season)?.id != scope.id
+            let mut jobs = lock(&self.store)?;
+            if capture_scope(&current, &mut jobs, query.season)?.id != scope.id
                 || self.stopped.load(Ordering::Acquire)
                 || Instant::now() >= deadline
             {

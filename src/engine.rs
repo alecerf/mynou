@@ -86,10 +86,10 @@ impl Engine {
             crate::requesters::RequesterStore::open(&config.store_dir, &config, read_only)?;
         let mut irc_store =
             crate::irc::AnnouncementStore::open(&config.store_dir, &config.irc, read_only)?;
-        crate::requesters::engine::validate_storage(&requester_store.state, &store)?;
+        crate::requesters::engine::validate_storage(&requester_store.state, &mut store)?;
         let irc_admitted =
             crate::irc::admission::recovered_state(&irc_store.state, &requester_store.state)?;
-        let irc_recovered = crate::irc::routing::recovered_state(&irc_admitted, &store)?;
+        let irc_recovered = crate::irc::routing::recovered_state(&irc_admitted, &mut store)?;
         let irc_recovery_changed = irc_recovered != irc_store.state;
         if !read_only {
             store.initialize()?;
@@ -106,37 +106,13 @@ impl Engine {
                 &requester_store.state,
                 &mut store,
                 &config,
+                true,
             )?;
         }
         let downloads = if start_downloads && config.downloads_enabled {
             let client =
                 Client::open_with_policy(config.downloads.clone(), config.download_policy.clone())?;
-            let jobs = store.list();
-            let active: std::collections::BTreeSet<_> = jobs
-                .iter()
-                .filter(|job| job.state != "cancelled")
-                .filter_map(|job| {
-                    job.download_id.as_deref().or_else(|| {
-                        job.shared_file
-                            .as_ref()
-                            .map(|file| file.torrent_id.as_str())
-                    })
-                })
-                .collect();
-            let known: std::collections::BTreeSet<_> = client
-                .statuses()?
-                .into_iter()
-                .map(|status| status.id)
-                .collect();
-            for id in jobs
-                .iter()
-                .filter(|job| job.state == "cancelled")
-                .filter_map(|job| job.download_id.as_deref())
-            {
-                if !active.contains(id) && known.contains(id) {
-                    client.cancel(id)?;
-                }
-            }
+            cancel_orphaned_transfers(&client, &mut store)?;
             Some(client)
         } else {
             None
@@ -188,12 +164,22 @@ impl Engine {
                 .iter()
                 .map(|episode| series.episode_request(episode).media_key())
                 .collect();
-            let jobs = lock(&self.store)?
-                .list()
-                .into_iter()
-                .filter(|job| keys.contains(&job.request.media_key()))
-                .take(64)
-                .collect::<Vec<_>>();
+            let jobs = {
+                let mut store = lock(&self.store)?;
+                let mut found = Vec::new();
+                for key in &keys {
+                    for job in store.media_jobs(key)? {
+                        if found.len() == 64 {
+                            break;
+                        }
+                        found.push(job);
+                    }
+                    if found.len() == 64 {
+                        break;
+                    }
+                }
+                found
+            };
             self.requester_operator_interest(&jobs)?;
             return Ok(jobs);
         }
@@ -211,13 +197,13 @@ impl Engine {
 
     pub fn sync(&self) -> Result<usize> {
         if !self.config.requesters.accounts.is_empty() {
-            let before = lock(&self.store)?.list().len();
+            let before = lock(&self.store)?.counts()?.jobs;
             self.sync_requesters()?;
-            return Ok(lock(&self.store)?.list().len().saturating_sub(before));
+            return Ok(lock(&self.store)?.counts()?.jobs.saturating_sub(before) as usize);
         }
         let _guard = lock(&self.sync_lock)?;
         let requests = integrations::watchlist_identities(&self.config)?;
-        let before = lock(&self.store)?.list().len();
+        let before = lock(&self.store)?.counts()?.jobs;
         for request in requests {
             if request.kind == "series" {
                 self.track_series(&request, false, false)?;
@@ -225,24 +211,24 @@ impl Engine {
                 self.submit(request)?;
             }
         }
-        Ok(lock(&self.store)?.list().len().saturating_sub(before))
+        Ok(lock(&self.store)?.counts()?.jobs.saturating_sub(before) as usize)
+    }
+
+    /// A page of jobs, newest first, with the cursor of the next page.
+    pub fn jobs_page(&self, after: Option<&str>, limit: usize) -> Result<Value> {
+        let page = lock(&self.store)?.page(after, limit)?;
+        let mut value = Value::object();
+        value.insert("jobs", Value::Array(page.jobs.iter().map(public_job).collect()));
+        value.insert("next", page.next.map_or(Value::Null, Value::String));
+        value.insert("total", Value::Number(page.total as f64));
+        Ok(value)
     }
 
     pub fn cancel(&self, id: &str) -> Result<Job> {
         let (job, shared) = {
             let mut store = lock(&self.store)?;
             let job = store.cancel(id)?;
-            let shared = store.list().iter().any(|other| {
-                other.id != id
-                    && other.state != "cancelled"
-                    && ((other.download_id.is_some() && other.download_id == job.download_id)
-                        || job.shared_file.as_ref().is_some_and(|file| {
-                            other
-                                .shared_file
-                                .as_ref()
-                                .is_some_and(|known| known.torrent_id == file.torrent_id)
-                        }))
-            });
+            let shared = store.has_co_owner(&job)?;
             (job, shared)
         };
         let transfer_id = job.download_id.as_deref().or_else(|| {
@@ -262,7 +248,7 @@ impl Engine {
     pub fn retry(&self, id: &str) -> Result<Job> {
         self.requester_retry_allowed(id)?;
         let mut store = lock(&self.store)?;
-        store.get(id).ok_or("Unknown job")?;
+        store.get(id)?.ok_or("Unknown job")?;
         let job = store.retry(id)?;
         if job.irc_origin.is_some() {
             drop(store);
@@ -306,7 +292,7 @@ impl Engine {
     pub fn transfer(&self, id: &str) -> Result<Value> {
         let mut value = self.native_client()?.transfer(id)?;
         let requests = lock(&self.store)?
-            .list()
+            .transfer_jobs(id)?
             .into_iter()
             .filter(|job| job.download_id.as_deref() == Some(id))
             .map(|job| Value::String(job.id))
@@ -317,17 +303,6 @@ impl Engine {
 
     pub fn transfers(&self) -> Result<Value> {
         let snapshots = self.native_client()?.transfers()?;
-        let jobs = lock(&self.store)?.list();
-        let mut references: std::collections::BTreeMap<String, Vec<Value>> =
-            std::collections::BTreeMap::new();
-        for job in jobs {
-            if let Some(id) = job.download_id {
-                references
-                    .entry(id)
-                    .or_default()
-                    .push(Value::String(job.id));
-            }
-        }
         let mut snapshots = snapshots
             .as_array()
             .ok_or("Invalid native transfer snapshot")?
@@ -337,10 +312,13 @@ impl Engine {
                 .get("id")
                 .and_then(Value::as_str)
                 .ok_or("Missing native transfer identity")?;
-            value.insert(
-                "request_ids",
-                Value::Array(references.remove(id).unwrap_or_default()),
-            );
+            let references = lock(&self.store)?
+                .transfer_jobs(id)?
+                .into_iter()
+                .filter(|job| job.download_id.as_deref() == Some(id))
+                .map(|job| Value::String(job.id))
+                .collect();
+            value.insert("request_ids", Value::Array(references));
         }
         Ok(Value::Array(snapshots))
     }
@@ -391,25 +369,15 @@ impl Engine {
     }
 
     pub fn status(&self) -> Result<Value> {
-        let (jobs, maintenance_error) = {
-            let store = lock(&self.store)?;
-            (store.list(), store.maintenance_error().map(str::to_owned))
+        let (counts, maintenance_error) = {
+            let mut store = lock(&self.store)?;
+            (store.counts()?, store.maintenance_error().map(str::to_owned))
         };
         let mut v = Value::object();
         v.insert("version", env!("CARGO_PKG_VERSION"));
-        v.insert("jobs", Value::Number(jobs.len() as f64));
-        v.insert(
-            "active",
-            Value::Number(
-                jobs.iter()
-                    .filter(|j| !matches!(j.state.as_str(), "ready" | "failed" | "cancelled"))
-                    .count() as f64,
-            ),
-        );
-        v.insert(
-            "ready",
-            Value::Number(jobs.iter().filter(|j| j.state == "ready").count() as f64),
-        );
+        v.insert("jobs", Value::Number(counts.jobs as f64));
+        v.insert("active", Value::Number(counts.active as f64));
+        v.insert("ready", Value::Number(counts.ready as f64));
         v.insert("stopped", self.stopped.load(Ordering::Acquire));
         v.insert(
             "maintenance_error",
@@ -544,7 +512,7 @@ impl Engine {
         heartbeat.finish();
         // Cancellation or a new lease owner makes this result stale.
         let mut store = lock(&self.store)?;
-        let Some(current) = store.get(&job.id) else {
+        let Some(current) = store.get(&job.id)? else {
             return Ok(true);
         };
         if current.lease_id.as_deref() != Some(&lease) || current.lease_until <= store::now() {
@@ -583,36 +551,11 @@ impl Engine {
         retire_transfers(self.downloads.as_ref(), store)
     }
 
-    pub(crate) fn pause_unwanted_transfers(&self, store: &Store) -> Result<()> {
+    pub(crate) fn pause_unwanted_transfers(&self, store: &mut Store) -> Result<()> {
         let Some(client) = &self.downloads else {
             return Ok(());
         };
-        let jobs = store.list();
-        let active: std::collections::BTreeSet<_> = jobs
-            .iter()
-            .filter(|j| j.state != "cancelled")
-            .filter_map(|j| {
-                j.download_id
-                    .as_deref()
-                    .or_else(|| j.shared_file.as_ref().map(|f| f.torrent_id.as_str()))
-            })
-            .collect();
-        let known: std::collections::BTreeSet<_> =
-            client.statuses()?.into_iter().map(|s| s.id).collect();
-        for id in jobs
-            .iter()
-            .filter(|j| j.state == "cancelled")
-            .filter_map(|j| {
-                j.download_id
-                    .as_deref()
-                    .or_else(|| j.shared_file.as_ref().map(|f| f.torrent_id.as_str()))
-            })
-        {
-            if !active.contains(id) && known.contains(id) {
-                client.cancel(id)?;
-            }
-        }
-        Ok(())
+        cancel_orphaned_transfers(client, store)
     }
 
     fn import_version(
@@ -842,7 +785,7 @@ impl Engine {
                 // without waiting for the next heartbeat.
                 {
                     let mut store = lock(&self.store)?;
-                    let current = store.get(&job.id).ok_or("Missing job")?;
+                    let current = store.get(&job.id)?.ok_or("Missing job")?;
                     if current.lease_id != job.lease_id || current.lease_until <= store::now() {
                         if current.state == "cancelled"
                             && current.acquisition_url == job.acquisition_url
@@ -852,16 +795,8 @@ impl Engine {
                             cancelled.download_id = Some(status.id.clone());
                             store.update(cancelled)?;
                         }
-                        let shared = store.list().iter().any(|other| {
-                            other.state != "cancelled"
-                                && (other.download_id.as_deref() == Some(&status.id)
-                                    || other
-                                        .shared_file
-                                        .as_ref()
-                                        .is_some_and(|file| file.torrent_id == status.id)
-                                    || (other.acquisition_url.is_some()
-                                        && other.acquisition_url == job.acquisition_url))
-                        });
+                        let shared = store
+                            .transfer_claimed(&status.id, job.acquisition_url.as_deref())?;
                         if !shared {
                             // Only local writes: no network requests while
                             // this decision is protected by the lock.
@@ -1031,7 +966,7 @@ impl Heartbeat {
                 let valid = (|| -> Result<()> {
                     let ledger = lock(&engine.requester_store)?;
                     let mut s = lock(&engine.store)?;
-                    let j = s.get(&id).ok_or("Missing job")?;
+                    let j = s.get(&id)?.ok_or("Missing job")?;
                     if j.lease_id.as_deref() != Some(&lease)
                         || j.lease_until <= store::now()
                         || !crate::requesters::engine::interest(&ledger.state, &j, &engine.config)
@@ -1072,59 +1007,57 @@ impl Drop for Heartbeat {
     }
 }
 
-/// Whether a request depends on a native transfer through its own download, a
-/// shared-file or pack binding, or an IRC selection.
-fn references_transfer(job: &Job, id: &str) -> bool {
-    if job.download_id.as_deref() == Some(id) {
-        return true;
-    }
-    if let Some(file) = &job.shared_file
-        && file.torrent_id == id
-    {
-        return true;
-    }
-    if let Some(origin) = &job.pack_origin
-        && origin.torrent_id == id
-    {
-        return true;
-    }
-    if let Some(origin) = &job.irc_origin
-        && (origin.torrent_id == id || origin.torrent_aliases.iter().any(|alias| alias == id))
-    {
-        return true;
-    }
-    false
-}
-
-/// A live request, including this one if it found the same release again, keeps
-/// the transfer. Cancelled requests do not; finished ones retain it.
-fn transfer_has_owner(store: &Store, id: &str) -> bool {
-    let jobs = store.list();
-    jobs.iter()
-        .any(|job| job.state != "cancelled" && references_transfer(job, id))
-}
-
 /// Settles every recorded retirement: pause an unowned transfer, then clear the
 /// record. Without a native client the records stay for a later run. User pause
-/// state is never touched, and no payload or metadata is removed.
+/// state is never touched, and no payload or metadata is removed. Each round
+/// reads a bounded batch, so memory does not grow with the backlog.
 fn retire_transfers(client: Option<&Client>, store: &mut Store) -> Result<()> {
-    let pending = store.pending_retirements();
     let Some(client) = client else {
         return Ok(());
     };
-    if pending.is_empty() {
-        return Ok(());
-    }
-    let known: std::collections::BTreeSet<_> = client
-        .statuses()?
-        .into_iter()
-        .map(|status| status.id)
-        .collect();
-    for (job_id, id) in pending {
-        if known.contains(&id) && !transfer_has_owner(store, &id) {
-            client.cancel(&id)?;
+    loop {
+        let pending = store.pending_retirements(RETIREMENT_BATCH)?;
+        if pending.is_empty() {
+            return Ok(());
         }
-        store.complete_retirement(&job_id, &id)?;
+        let known: std::collections::BTreeSet<_> = client
+            .statuses()?
+            .into_iter()
+            .map(|status| status.id)
+            .collect();
+        for (job_id, id) in pending {
+            // A live request, including this one if it found the same release
+            // again, keeps the transfer. Cancelled requests do not; finished
+            // ones retain it.
+            if known.contains(&id) && !store.transfer_has_owner(&id)? {
+                client.cancel(&id)?;
+            }
+            store.complete_retirement(&job_id, &id)?;
+        }
+    }
+}
+
+/// Requests examined per retirement round.
+const RETIREMENT_BATCH: usize = 64;
+
+/// Cancels a native transfer that only cancelled requests still name. The
+/// native client lists its transfers; each one is checked against the
+/// transfer's own index entries, never against the whole job inventory.
+fn cancel_orphaned_transfers(client: &Client, store: &mut Store) -> Result<()> {
+    for status in client.statuses()? {
+        let jobs = store.transfer_jobs(&status.id)?;
+        let named = |job: &Job| job.download_id.as_deref() == Some(status.id.as_str());
+        let active = jobs.iter().any(|job| {
+            job.state != "cancelled"
+                && (named(job)
+                    || job
+                        .shared_file
+                        .as_ref()
+                        .is_some_and(|file| file.torrent_id == status.id))
+        });
+        if !active && jobs.iter().any(|job| job.state == "cancelled" && named(job)) {
+            client.cancel(&status.id)?;
+        }
     }
     Ok(())
 }

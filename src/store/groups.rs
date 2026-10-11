@@ -1,5 +1,6 @@
 //! Whole-group replacement lineage and synchronized group transitions.
 use super::*;
+use super::layout::{self, digest_bytes, id_bytes};
 use crate::pack::{MAX_PACK_EPISODES, SharedFile};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -101,154 +102,102 @@ pub(super) struct GroupState<'a> {
     pub cancelled: usize,
 }
 
-impl Store {
-    pub fn shared_group(&self, id: &str) -> Result<Vec<Job>> {
-        let owner = self.jobs.get(id).ok_or("Unknown shared-group owner")?;
-        let binding = owner
-            .shared_file
-            .as_ref()
-            .ok_or("Library entry has no shared ownership")?;
-        let mut jobs: Vec<_> = self
-            .jobs
-            .values()
-            .filter(|job| job.shared_file.as_ref() == Some(binding))
-            .cloned()
-            .collect();
-        jobs.sort_by_key(|job| job.request.episode);
-        if jobs.len() != (binding.last_episode - binding.first_episode + 1) as usize
-            || jobs
-                .iter()
-                .map(|job| job.request.episode)
-                .ne(binding.first_episode..=binding.last_episode)
-        {
-            return Err("Shared group is incomplete".into());
-        }
-        Ok(jobs)
-    }
 
-    pub(crate) fn current_shared_group(&self, id: &str) -> Result<Vec<Job>> {
-        let jobs = self.shared_group(id)?;
-        let tips: BTreeSet<_> = self.library_jobs().into_iter().map(|job| job.id).collect();
-        if jobs
-            .iter()
-            .any(|job| job.state != "ready" || job.imports.is_empty() || !tips.contains(&job.id))
-        {
-            return Err("Operation requires the complete current shared library group".into());
-        }
-        Ok(jobs)
+/// Group lineage rules that need only identifier lookups.
+pub(super) fn validate_group_lineage<L: JobLookup>(lookup: &mut L, job: &Job) -> Result<()> {
+    let lineage = job
+        .shared_upgrade
+        .as_ref()
+        .ok_or("Missing shared-group lineage")?;
+    lineage.validate()?;
+    let child = job
+        .shared_file
+        .as_ref()
+        .ok_or("Shared replacement requires a shared file")?;
+    if job.release.is_none()
+        || lineage.parent_jobs.len() != (child.last_episode - child.first_episode + 1) as usize
+    {
+        return Err("Shared replacement lacks its complete baseline or parent scope".into());
     }
-
-    /// Memoized, iterative traversal avoids recursion and repeated long histories.
-    pub(super) fn lineage_roots(&self) -> Result<BTreeMap<&str, &Job>> {
-        let mut roots = BTreeMap::new();
-        for job in self.jobs.values() {
-            let mut path = Vec::new();
-            let mut seen = BTreeSet::new();
-            let mut cursor = job;
-            let root = loop {
-                if let Some(root) = roots.get(cursor.id.as_str()) {
-                    break *root;
-                }
-                if !seen.insert(cursor.id.as_str()) {
-                    return Err("Cycle in upgrade lineage".into());
-                }
-                path.push(cursor.id.as_str());
-                match cursor.upgrade_parent.as_deref() {
-                    Some(id) => {
-                        cursor = self
-                            .jobs
-                            .get(id)
-                            .ok_or("Missing upgrade lineage reference")?
-                    }
-                    None => break cursor,
-                }
-            };
-            for id in path {
-                roots.insert(id, root);
-            }
-        }
-        Ok(roots)
+    let first = lookup
+        .lookup(&lineage.parent_jobs[0])?
+        .ok_or("Missing shared-group parent")?;
+    let old = first
+        .shared_file
+        .as_ref()
+        .ok_or("Replacement parent has no shared binding")?;
+    if old.id() != lineage.parent_group
+        || old.id() == child.id()
+        || old.torrent_id == child.torrent_id
+        || old.import_path == child.import_path
+        || (
+            old.tmdb_id,
+            &old.title,
+            old.year,
+            old.season,
+            old.first_episode,
+            old.last_episode,
+        ) != (
+            child.tmdb_id,
+            &child.title,
+            child.year,
+            child.season,
+            child.first_episode,
+            child.last_episode,
+        )
+    {
+        return Err("Shared replacement must preserve every canonical owner and use a new torrent and destination".into());
     }
-
-    pub(super) fn validate_group_lineage(&self, job: &Job) -> Result<()> {
-        let lineage = job
-            .shared_upgrade
-            .as_ref()
-            .ok_or("Missing shared-group lineage")?;
-        lineage.validate()?;
-        let child = job
-            .shared_file
-            .as_ref()
-            .ok_or("Shared replacement requires a shared file")?;
-        if job.release.is_none()
-            || lineage.parent_jobs.len() != (child.last_episode - child.first_episode + 1) as usize
-        {
-            return Err("Shared replacement lacks its complete baseline or parent scope".into());
+    for (offset, id) in lineage.parent_jobs.iter().enumerate() {
+        let parent = lookup.lookup(id)?.ok_or("Missing shared-group parent")?;
+        if job.upgrade_parent.as_deref() == Some(id) && job.requester != parent.requester {
+            return Err("Shared replacement requester provenance is immutable".into());
         }
-        let first = self
-            .jobs
-            .get(&lineage.parent_jobs[0])
-            .ok_or("Missing shared-group parent")?;
-        let old = first
-            .shared_file
-            .as_ref()
-            .ok_or("Replacement parent has no shared binding")?;
-        if old.id() != lineage.parent_group
-            || old.id() == child.id()
-            || old.torrent_id == child.torrent_id
-            || old.import_path == child.import_path
-            || (
-                old.tmdb_id,
-                &old.title,
-                old.year,
-                old.season,
-                old.first_episode,
-                old.last_episode,
-            ) != (
-                child.tmdb_id,
-                &child.title,
-                child.year,
-                child.season,
-                child.first_episode,
-                child.last_episode,
-            )
+        if parent.shared_file.as_ref() != Some(old)
+            || parent.request.episode != old.first_episode + offset as u32
+            || parent.state != "ready"
+            || parent.imports.is_empty()
+            || parent.release.is_none()
+            || parent.release != first.release
         {
-            return Err("Shared replacement must preserve every canonical owner and use a new torrent and destination".into());
+            return Err("Shared replacement parents are incomplete or inconsistent".into());
         }
-        for (offset, id) in lineage.parent_jobs.iter().enumerate() {
-            let parent = self.jobs.get(id).ok_or("Missing shared-group parent")?;
-            if job.upgrade_parent.as_deref() == Some(id) && job.requester != parent.requester {
-                return Err("Shared replacement requester provenance is immutable".into());
-            }
-            if parent.shared_file.as_ref() != Some(old)
-                || parent.request.episode != old.first_episode + offset as u32
-                || parent.state != "ready"
-                || parent.imports.is_empty()
-                || parent.release.is_none()
-                || parent.release != first.release
+        if parent.request.episode == job.request.episode {
+            let mut expected = parent.request.clone();
+            expected.source_url = job.request.source_url.clone();
+            if job.upgrade_parent.as_ref() != Some(id)
+                || expected != job.request
+                || job.request.source_url == parent.request.source_url
+                || job.request.source_url == parent.acquisition_url
             {
-                return Err("Shared replacement parents are incomplete or inconsistent".into());
-            }
-            if parent.request.episode == job.request.episode {
-                let mut expected = parent.request.clone();
-                expected.source_url = job.request.source_url.clone();
-                if job.upgrade_parent.as_ref() != Some(id)
-                    || expected != job.request
-                    || job.request.source_url == parent.request.source_url
-                    || job.request.source_url == parent.acquisition_url
-                {
-                    return Err(
-                        "Shared replacement changes captured identity or repeats an old source"
-                            .into(),
-                    );
-                }
+                return Err(
+                    "Shared replacement changes captured identity or repeats an old source".into(),
+                );
             }
         }
-        Ok(())
+    }
+    Ok(())
+}
+
+use super::ops::Db;
+
+impl Db<'_> {
+    pub(crate) fn shared_group(&mut self, id: &str) -> Result<Vec<Job>> {
+        self.group_jobs_of(id)
     }
 
-    pub(super) fn group_eligible(&self, job: &Job) -> Result<()> {
-        self.validate_group_lineage(job)?;
+    pub(super) fn current_shared_group(&mut self, id: &str) -> Result<Vec<Job>> {
+        let jobs = self.shared_group(id)?;
+        for job in &jobs {
+            if job.state != "ready" || job.imports.is_empty() || !self.is_tip(&job.id)? {
+                return Err("Operation requires the complete current shared library group".into());
+            }
+        }
+        Ok(jobs)
+    }
+
+    pub(super) fn group_eligible(&mut self, job: &Job) -> Result<()> {
+        validate_group_lineage(self, job)?;
         let lineage = job
             .shared_upgrade
             .as_ref()
@@ -265,24 +214,28 @@ impl Store {
             );
         }
         let group = job.shared_file.as_ref().ok_or("Missing shared file")?.id();
-        if self.jobs.values().any(|other| {
-            other
-                .shared_file
-                .as_ref()
-                .is_none_or(|file| file.id() != group)
-                && Self::pending_upgrade(other)
-                && other
-                    .upgrade_parent
+        for parent in &lineage.parent_jobs {
+            for (child, _) in self.children(&id_bytes(parent)?)? {
+                let other = self.require(&child)?;
+                if other
+                    .shared_file
                     .as_ref()
-                    .is_some_and(|id| lineage.parent_jobs.contains(id))
-        }) {
-            return Err("Another replacement already reserves this shared group".into());
+                    .is_none_or(|file| file.id() != group)
+                    && layout::pending_upgrade(&other)
+                    && other
+                        .upgrade_parent
+                        .as_ref()
+                        .is_some_and(|id| lineage.parent_jobs.contains(id))
+                {
+                    return Err("Another replacement already reserves this shared group".into());
+                }
+            }
         }
         Ok(())
     }
 
-    pub(crate) fn check_group_replacement(
-        &self,
+    pub(super) fn check_group_replacement(
+        &mut self,
         parents: &[Job],
         file: &SharedFile,
         requests: &[Request],
@@ -329,12 +282,7 @@ impl Store {
                 return Err("Replacement must preserve the complete captured request scope".into());
             }
         }
-        let known: Vec<_> = self
-            .jobs
-            .values()
-            .filter(|job| job.shared_file.as_ref() == Some(file))
-            .cloned()
-            .collect();
+        let known = self.group_members(file)?;
         if !known.is_empty() {
             let jobs = self.shared_group(&known[0].id)?;
             if jobs.iter().zip(requests).any(|(job, request)| {
@@ -346,201 +294,41 @@ impl Store {
             }
             return Ok(jobs);
         }
+        let mapped_elsewhere = {
+            let mut found = false;
+            for (kind, value) in [
+                ("t", Some(file.torrent_id.as_str())),
+                ("u", prototype.request.source_url.as_deref()),
+            ] {
+                let Some(value) = value else { continue };
+                for job in self.pack_holders(&file.file_path, kind, value, 200)? {
+                    found |= job.shared_file.is_none()
+                        && (job.download_id.as_deref() == Some(&file.torrent_id)
+                            || job.request.source_url == prototype.request.source_url);
+                }
+            }
+            found
+        };
+        let mut owned_request = false;
+        for request in requests {
+            owned_request |= self.exists(&layout::canonical_key(&digest_bytes(
+                &request.canonical_key(),
+            )?))?;
+        }
         if self
-            .shared_by_physical
-            .contains_key(&(file.torrent_id.clone(), file.file_path.clone()))
-            || requests
-                .iter()
-                .any(|request| self.by_key.contains_key(&request.canonical_key()))
-            || self.jobs.values().any(|job| {
-                job.shared_file.is_none()
-                    && job.pack_file.as_deref() == Some(&file.file_path)
-                    && (job.download_id.as_deref() == Some(&file.torrent_id)
-                        || job.request.source_url == prototype.request.source_url)
-            })
+            .0
+            .get(&layout::physical_key(&file.torrent_id, &file.file_path))?
+            .is_some()
+            || owned_request
+            || mapped_elsewhere
         {
             return Err("Replacement physical source or request is already owned".into());
         }
-        self.check_submission_capacity(requests.len())?;
         Ok(Vec::new())
     }
 
-    pub(crate) fn submit_group_replacement(
-        &mut self,
-        parents: &[Job],
-        file: SharedFile,
-        requests: Vec<Request>,
-        release: RecordedRelease,
-    ) -> Result<Vec<Job>> {
-        let known = self.check_group_replacement(parents, &file, &requests, &release)?;
-        if !known.is_empty() {
-            return Ok(known);
-        }
-        let at = now();
-        let lineage = SharedUpgrade {
-            parent_group: parents[0]
-                .shared_file
-                .as_ref()
-                .ok_or("Missing group binding")?
-                .id(),
-            parent_jobs: parents.iter().map(|job| job.id.clone()).collect(),
-        };
-        let mut jobs = Vec::with_capacity(requests.len());
-        for (parent, request) in parents.iter().zip(requests) {
-            jobs.push(Job {
-                irc_origin: None,
-                retiring_transfers: Vec::new(),
-                id: random_id()?,
-                key: request.canonical_key(),
-                request,
-                state: "queued".into(),
-                progress: 0.0,
-                files: Vec::new(),
-                imports: Vec::new(),
-                attempts: 0,
-                last_error: None,
-                created_at: at,
-                updated_at: at,
-                next_attempt_at: 0,
-                acquisition_url: None,
-                download_id: None,
-                lease_id: None,
-                lease_until: 0,
-                release: Some(release.clone()),
-                upgrade_parent: Some(parent.id.clone()),
-                monitored: parent.monitored,
-                monitor_checked_at: 0,
-                pack_file: Some(file.file_path.clone()),
-                pack_origin: None,
-                shared_file: Some(file.clone()),
-                shared_upgrade: Some(lineage.clone()),
-                requester: parent.requester.clone(),
-            });
-        }
-        self.commit_group(
-            jobs.clone(),
-            "whole shared-group replacement recorded",
-            GroupAction::Create,
-        )?;
-        Ok(jobs)
-    }
-
-    pub(crate) fn set_group_baseline(
-        &mut self,
-        id: &str,
-        release: RecordedRelease,
-    ) -> Result<Vec<Job>> {
-        release.validate()?;
-        let mut jobs = self.current_shared_group(id)?;
-        if jobs.iter().any(|job| job.release.is_some()) {
-            return Err("Shared-group baseline is already recorded".into());
-        }
-        let at = now();
-        for job in &mut jobs {
-            job.release = Some(release.clone());
-            job.updated_at = at;
-        }
-        self.commit_group(
-            jobs.clone(),
-            "whole shared-group baseline recorded",
-            GroupAction::Baseline,
-        )?;
-        Ok(jobs)
-    }
-
-    pub(super) fn finish_group_owner(&mut self, mut job: Job) -> Result<()> {
-        self.group_eligible(&job)?;
-        job.state = "staged".into();
-        job.lease_id = None;
-        job.lease_until = 0;
-        Job::from_json(&job.to_json())?;
-        let mut jobs = self.shared_group(&job.id)?;
-        for owner in &mut jobs {
-            if owner.id == job.id {
-                *owner = job.clone();
-            }
-        }
-        if jobs.iter().all(|owner| owner.state == "staged") {
-            let at = now();
-            for owner in &mut jobs {
-                owner.state = "ready".into();
-                owner.updated_at = at;
-                owner.monitored = self
-                    .jobs
-                    .get(owner.upgrade_parent.as_deref().unwrap_or_default())
-                    .ok_or("Missing promotion parent")?
-                    .monitored;
-            }
-            self.commit_group(
-                jobs,
-                "whole shared group promoted atomically",
-                GroupAction::Promote,
-            )
-        } else {
-            self.commit(
-                job,
-                "shared owner confirmed; waiting for the complete group",
-            )
-        }
-    }
-
-    pub(super) fn cancel_group(&mut self, id: &str) -> Result<Job> {
-        let mut jobs = self.shared_group(id)?;
-        if jobs.iter().any(|job| job.state == "ready") {
-            return Err("A promoted shared group cannot be cancelled".into());
-        }
-        if jobs.iter().all(|job| job.state == "cancelled") {
-            return self.get(id).ok_or("Unknown group owner".into());
-        }
-        let at = now();
-        for job in &mut jobs {
-            job.state = "cancelled".into();
-            job.lease_id = None;
-            job.lease_until = 0;
-            job.updated_at = at;
-        }
-        self.commit_group(
-            jobs,
-            "whole shared-group replacement cancelled",
-            GroupAction::Cancel,
-        )?;
-        self.get(id).ok_or("Unknown group owner".into())
-    }
-
-    pub(super) fn retry_group(&mut self, id: &str) -> Result<Job> {
-        let mut jobs = self.shared_group(id)?;
-        if !jobs
-            .iter()
-            .any(|job| matches!(job.state.as_str(), "failed" | "cancelled"))
-            || jobs
-                .iter()
-                .any(|job| job.state == "ready" || job.lease_id.is_some())
-        {
-            return Err(
-                "Group retry requires a failed or cancelled replacement without active leases"
-                    .into(),
-            );
-        }
-        self.group_eligible(&jobs[0])?;
-        let at = now();
-        for job in &mut jobs {
-            job.state = "queued".into();
-            job.lease_id = None;
-            job.lease_until = 0;
-            job.last_error = None;
-            job.next_attempt_at = 0;
-            job.updated_at = at;
-        }
-        self.commit_group(
-            jobs,
-            "whole shared-group replacement retried",
-            GroupAction::Retry,
-        )?;
-        self.get(id).ok_or("Unknown group owner".into())
-    }
-
-    pub(super) fn validate_group_single(&self, job: &Job) -> Result<()> {
-        let Some(current) = self.jobs.get(&job.id) else {
+    pub(super) fn validate_group_single(&mut self, job: &Job) -> Result<()> {
+        let Some(current) = self.get(&job.id)? else {
             if job.shared_upgrade.is_some() {
                 return Err("Shared replacements require a whole-group transaction".into());
             }
@@ -561,7 +349,11 @@ impl Store {
         Ok(())
     }
 
-    pub(super) fn validate_group_operation(&self, jobs: &[Job], action: GroupAction) -> Result<()> {
+    pub(super) fn validate_group_operation(
+        &mut self,
+        jobs: &[Job],
+        action: GroupAction,
+    ) -> Result<()> {
         let first = jobs.first().ok_or("Empty shared-group transaction")?;
         let binding = first
             .shared_file
@@ -623,10 +415,10 @@ impl Store {
             {
                 return Err("Inconsistent shared-group transaction".into());
             }
-            self.validate_transaction(job, false)?;
+            self.validate_transaction(job)?;
             match action {
                 GroupAction::Create => {
-                    if self.jobs.contains_key(&job.id)
+                    if self.get(&job.id)?.is_some()
                         || job.shared_upgrade.is_none()
                         || job.state != "queued"
                         || job.progress != 0.0
@@ -648,8 +440,7 @@ impl Store {
                 }
                 GroupAction::Promote => {
                     let current = self
-                        .jobs
-                        .get(&job.id)
+                        .get(&job.id)?
                         .ok_or("Missing shared promotion owner")?;
                     if job.shared_upgrade.is_none()
                         || job.state != "ready"
@@ -678,7 +469,7 @@ impl Store {
                     }
                 }
                 _ => {
-                    let current = self.jobs.get(&job.id).ok_or("Missing shared-group owner")?;
+                    let current = self.get(&job.id)?.ok_or("Missing shared-group owner")?;
                     let mut expected = current.clone();
                     expected.updated_at = job.updated_at;
                     match action {
@@ -720,12 +511,11 @@ impl Store {
         if action == GroupAction::Promote && completing != 1 {
             return Err("Promotion requires exactly one final owner confirmation".into());
         }
-        if action == GroupAction::Create {
-            self.check_submission_capacity(jobs.len())?;
-        }
         Ok(())
     }
 
+    /// One recoverable transaction for a whole group: validated first, then
+    /// every owner, its entries, the library tips and the history together.
     pub(super) fn commit_group(
         &mut self,
         jobs: Vec<Job>,
@@ -733,6 +523,250 @@ impl Store {
         action: GroupAction,
     ) -> Result<()> {
         self.validate_group_operation(&jobs, action)?;
-        self.commit_operation(jobs, message, Some(action))
+        self.commit_operation(jobs, message)
+    }
+
+    pub(super) fn commit_operation(&mut self, jobs: Vec<Job>, message: &str) -> Result<()> {
+        if jobs.is_empty() {
+            return Err("Empty job transaction".into());
+        }
+        for job in &jobs {
+            self.validate_transaction(job)?;
+        }
+        let changes = self.stage(&jobs, message)?;
+        self.0.commit(changes)?;
+        Ok(())
+    }
+
+    pub(super) fn commit_jobs(&mut self, jobs: Vec<Job>, message: &str) -> Result<()> {
+        if jobs.len() > 1 {
+            self.validate_shared_batch(&jobs)?;
+        } else if let Some(job) = jobs.first() {
+            self.validate_group_single(job)?;
+        }
+        self.commit_operation(jobs, message)
+    }
+
+    pub(super) fn validate_shared_batch(&mut self, jobs: &[Job]) -> Result<()> {
+        let first = jobs.first().ok_or("Empty shared ownership transaction")?;
+        let file = first
+            .shared_file
+            .as_ref()
+            .ok_or("Ownership transaction requires a shared binding")?;
+        let mut numbers = BTreeSet::new();
+        let mut keys = BTreeSet::new();
+        let mut ids = BTreeSet::new();
+        if !(2..=crate::pack::MAX_PACK_EPISODES).contains(&jobs.len()) {
+            return Err("Invalid shared ownership transaction size".into());
+        }
+        for job in jobs {
+            if job.shared_file.as_ref() != Some(file)
+                || self.get(&job.id)?.is_some()
+                || job.state != "queued"
+                || job.lease_id.is_some()
+                || job.lease_until != 0
+                || job.progress != 0.0
+                || job.attempts != 0
+                || !job.files.is_empty()
+                || !job.imports.is_empty()
+                || job.download_id.is_some()
+                || job.acquisition_url.is_some()
+                || job.release.is_some()
+                || job.shared_upgrade.is_some()
+                || job.last_error.is_some()
+                || job.next_attempt_at != 0
+                || !job.monitored
+                || job.monitor_checked_at != 0
+                || job.created_at != first.created_at
+                || job.updated_at != first.updated_at
+                || job.request.source_url != first.request.source_url
+                || !numbers.insert(job.request.episode)
+                || !keys.insert(&job.key)
+                || !ids.insert(&job.id)
+            {
+                return Err("Inconsistent new shared ownership transaction".into());
+            }
+            self.validate_transaction(job)?;
+        }
+        if numbers
+            .into_iter()
+            .ne(file.first_episode..=file.last_episode)
+        {
+            return Err("Incomplete shared ownership transaction".into());
+        }
+        Ok(())
+    }
+
+    pub(super) fn set_group_baseline(
+        &mut self,
+        id: &str,
+        release: RecordedRelease,
+    ) -> Result<Vec<Job>> {
+        release.validate()?;
+        let mut jobs = self.current_shared_group(id)?;
+        if jobs.iter().any(|job| job.release.is_some()) {
+            return Err("Shared-group baseline is already recorded".into());
+        }
+        let at = now();
+        for job in &mut jobs {
+            job.release = Some(release.clone());
+            job.updated_at = at;
+        }
+        self.commit_group(
+            jobs.clone(),
+            "whole shared-group baseline recorded",
+            GroupAction::Baseline,
+        )?;
+        Ok(jobs)
+    }
+
+    pub(super) fn submit_group_replacement(
+        &mut self,
+        parents: &[Job],
+        file: SharedFile,
+        requests: Vec<Request>,
+        release: RecordedRelease,
+    ) -> Result<Vec<Job>> {
+        let known = self.check_group_replacement(parents, &file, &requests, &release)?;
+        if !known.is_empty() {
+            return Ok(known);
+        }
+        let at = now();
+        let lineage = SharedUpgrade {
+            parent_group: parents[0]
+                .shared_file
+                .as_ref()
+                .ok_or("Missing group binding")?
+                .id(),
+            parent_jobs: parents.iter().map(|job| job.id.clone()).collect(),
+        };
+        let mut jobs = Vec::with_capacity(requests.len());
+        for (parent, request) in parents.iter().zip(requests) {
+            jobs.push(Job {
+                irc_origin: None,
+                retiring_transfers: Vec::new(),
+                id: random_id()?,
+                key: request.canonical_key(),
+                request,
+                state: "queued".into(),
+                progress: 0.0,
+                files: Vec::new(),
+                imports: Vec::new(),
+                attempts: 0,
+                last_error: None,
+                created_at: at,
+                updated_at: at,
+                next_attempt_at: 0,
+                acquisition_url: None,
+                download_id: None,
+                lease_id: None,
+                lease_until: 0,
+                release: Some(release.clone()),
+                upgrade_parent: Some(parent.id.clone()),
+                monitored: parent.monitored,
+                monitor_checked_at: 0,
+                pack_file: Some(file.file_path.clone()),
+                pack_origin: None,
+                shared_file: Some(file.clone()),
+                shared_upgrade: Some(lineage.clone()),
+                requester: parent.requester.clone(),
+            });
+        }
+        self.commit_group(
+            jobs.clone(),
+            "whole shared-group replacement recorded",
+            GroupAction::Create,
+        )?;
+        Ok(jobs)
+    }
+
+    pub(super) fn finish_group_owner(&mut self, mut job: Job) -> Result<()> {
+        self.group_eligible(&job)?;
+        job.state = "staged".into();
+        job.lease_id = None;
+        job.lease_until = 0;
+        Job::from_json(&job.to_json())?;
+        let mut jobs = self.shared_group(&job.id)?;
+        for owner in &mut jobs {
+            if owner.id == job.id {
+                *owner = job.clone();
+            }
+        }
+        if jobs.iter().all(|owner| owner.state == "staged") {
+            let at = now();
+            for owner in &mut jobs {
+                owner.state = "ready".into();
+                owner.updated_at = at;
+                owner.monitored = self
+                    .get(owner.upgrade_parent.as_deref().unwrap_or_default())?
+                    .ok_or("Missing promotion parent")?
+                    .monitored;
+            }
+            self.commit_group(
+                jobs,
+                "whole shared group promoted atomically",
+                GroupAction::Promote,
+            )
+        } else {
+            self.commit_jobs(
+                vec![job],
+                "shared owner confirmed; waiting for the complete group",
+            )
+        }
+    }
+
+    pub(super) fn cancel_group(&mut self, id: &str) -> Result<Job> {
+        let mut jobs = self.shared_group(id)?;
+        if jobs.iter().any(|job| job.state == "ready") {
+            return Err("A promoted shared group cannot be cancelled".into());
+        }
+        if jobs.iter().all(|job| job.state == "cancelled") {
+            return self.get(id)?.ok_or("Unknown group owner".into());
+        }
+        let at = now();
+        for job in &mut jobs {
+            job.state = "cancelled".into();
+            job.lease_id = None;
+            job.lease_until = 0;
+            job.updated_at = at;
+        }
+        self.commit_group(
+            jobs,
+            "whole shared-group replacement cancelled",
+            GroupAction::Cancel,
+        )?;
+        self.get(id)?.ok_or("Unknown group owner".into())
+    }
+
+    pub(super) fn retry_group(&mut self, id: &str) -> Result<Job> {
+        let mut jobs = self.shared_group(id)?;
+        if !jobs
+            .iter()
+            .any(|job| matches!(job.state.as_str(), "failed" | "cancelled"))
+            || jobs
+                .iter()
+                .any(|job| job.state == "ready" || job.lease_id.is_some())
+        {
+            return Err(
+                "Group retry requires a failed or cancelled replacement without active leases"
+                    .into(),
+            );
+        }
+        self.group_eligible(&jobs[0])?;
+        let at = now();
+        for job in &mut jobs {
+            job.state = "queued".into();
+            job.lease_id = None;
+            job.lease_until = 0;
+            job.last_error = None;
+            job.next_attempt_at = 0;
+            job.updated_at = at;
+        }
+        self.commit_group(
+            jobs,
+            "whole shared-group replacement retried",
+            GroupAction::Retry,
+        )?;
+        self.get(id)?.ok_or("Unknown group owner".into())
     }
 }

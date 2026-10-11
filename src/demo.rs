@@ -177,7 +177,7 @@ pub fn run(directory: &Path) -> Result<Value> {
         let deadline = Instant::now() + Duration::from_secs(30);
         loop {
             engine.tick()?;
-            let jobs = lock(&engine.store)?.list();
+            let jobs = lock(&engine.store)?.page(None, 1)?.jobs;
             if let Some(job) = jobs.first() {
                 if job.state == "ready" {
                     let mut output = Value::object();
@@ -187,7 +187,7 @@ pub fn run(directory: &Path) -> Result<Value> {
                         "events",
                         Value::Array(
                             lock(&engine.store)?
-                                .events(&job.id)
+                                .events(&job.id)?
                                 .iter()
                                 .map(|e| e.to_json())
                                 .collect(),

@@ -189,28 +189,21 @@ impl Engine {
             origin.validate()?;
             if origin.series_id != id
                 || origin.series_revision != record.revision
-                || automatic::capture_scope(&record, &store, origin.season)?.id != origin.scope_id
+                || automatic::capture_scope(&record, &mut store, origin.season)?.id != origin.scope_id
             {
                 return Err("Pack catalog or request scope changed; acquisition discarded".into());
             }
         }
-        let existing = store.list();
-        let mut by_media = BTreeMap::new();
-        let mut by_key = BTreeMap::new();
-        for job in &existing {
-            by_key.insert(job.key.clone(), job);
-            let key = job.request.media_key();
-            if by_media
-                .get(&key)
-                .is_none_or(|known: &&crate::store::Job| known.state != "ready")
-            {
-                by_media.insert(key, job);
-            }
-        }
+        // Only the media identities of this pack are read (at most 64).
+        let wanted: BTreeSet<String> = requests
+            .iter()
+            .map(|(request, _)| request.media_key())
+            .collect();
+        let by_media = store.states_for(&wanted)?;
         for (request, path) in &requests {
             let media_key = request.media_key();
-            if by_key
-                .get(&request.canonical_key())
+            if store
+                .by_key(&request.canonical_key())?
                 .is_some_and(|job| job.request.media_key() != media_key)
                 || by_media.get(&media_key).is_some_and(|job| {
                     job.request.source_url == request.source_url
@@ -220,16 +213,11 @@ impl Engine {
                 return Err("Pack source or mapping conflicts with an existing request".into());
             }
         }
-        let new_count = requests
-            .iter()
-            .filter(|(request, _)| !by_media.contains_key(&request.media_key()))
-            .count();
-        store.check_submission_capacity(new_count)?;
         let mut submitted = 0_u32;
         let mut jobs = Vec::with_capacity(requests.len());
         for (request, path) in requests {
             let job = if let Some(job) = by_media.get(&request.media_key()) {
-                (*job).clone()
+                job.clone()
             } else {
                 let job = if let Some(origin) = origin {
                     store.submit_auto_pack(request, path, origin.clone())?
