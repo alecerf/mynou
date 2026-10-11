@@ -6,6 +6,26 @@ pub const MAX_CROSS_SEED_METADATA: usize = 256 * 1024;
 const MAX_FILES: usize = 1024;
 const MAX_RECORD: usize = MAX_CROSS_SEED_METADATA + 64 * 1024;
 
+fn state_directory(config: &DownloadConfig) -> Result<PathBuf> {
+    let configured = if config.state_dir.is_absolute() {
+        config.state_dir.clone()
+    } else {
+        std::env::current_dir()
+            .map_err(|_| "Could not resolve cross-seed state directory")?
+            .join(&config.state_dir)
+    };
+    safe_directory(&configured)?;
+    let normalized = configured
+        .canonicalize()
+        .map_err(|_| "Could not normalize cross-seed state directory")?;
+    if !normalized.starts_with(&configured) {
+        return Err(
+            "Cross-seed state directory does not match its physical configured root".into(),
+        );
+    }
+    Ok(normalized)
+}
+
 fn safe_directory(path: &Path) -> Result<()> {
     let absolute = if path.is_absolute() {
         path.to_owned()
@@ -363,15 +383,15 @@ impl Client {
         let reserved = ["torrent", "source", "seed"].map(|suffix| format!("{id}.{suffix}"));
         // Compare names already present in the private directory. Candidate
         // metadata never supplies a filesystem path for an existence probe.
-        for entry in fs::read_dir(&self.config.state_dir)
+        for entry in fs::read_dir(state_directory(&self.config)?)
             .map_err(|_| "Could not inspect cross-seed state directory")?
         {
             let entry = entry.map_err(|_| "Could not inspect cross-seed state entry")?;
-            if entry
-                .file_name()
-                .to_str()
-                .is_some_and(|name| reserved.iter().any(|reserved| reserved == name))
-            {
+            if entry.file_name().to_str().is_some_and(|name| {
+                reserved
+                    .iter()
+                    .any(|reserved| reserved.eq_ignore_ascii_case(name))
+            }) {
                 return Err("Candidate swarm already exists; inspect its transfer instead".into());
             }
         }
@@ -417,6 +437,9 @@ pub(super) fn restore(config: &DownloadConfig, jobs: &mut BTreeMap<String, Job>)
         let Some(id) = name.to_str().and_then(|name| name.strip_suffix(".seed")) else {
             continue;
         };
+        // Seed records require the same physical root binding as registration;
+        // ordinary legacy queue entries retain their existing startup behavior.
+        state_directory(config)?;
         let identity = decode_hex::<20>(id).map_err(|_| "Invalid persisted cross-seed identity")?;
         if id != id.to_ascii_lowercase()
             || jobs.values().any(|job| {

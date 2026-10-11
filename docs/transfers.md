@@ -151,6 +151,8 @@ stable while seeding: checks occur during verification and upload requests,
 not continuously, and already transmitted bytes cannot be recalled.
 Source directories and their ancestors must be physical directories; mapped
 files must be regular, have no extra hardlinks and exactly match their lengths.
+The private cross-seed state directory and its ancestors must also be physical;
+its canonical path must remain bound to the configured root.
 
 A private atomic `.seed` record binds metadata/source/mapping independently
 of ordinary queue files. Restart always rehashes before seeding. Damaged seed
