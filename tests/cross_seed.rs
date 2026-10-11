@@ -43,6 +43,9 @@ fn request(torrent: &Torrent, mapping: Option<Vec<usize>>) -> CrossSeedRequest {
         mapping,
     }
 }
+fn fixture_bytes(length: usize) -> Vec<u8> {
+    (0..length).map(|index| (index % 251) as u8).collect()
+}
 fn scratch() -> Scratch {
     let mut scratch = Scratch::new();
     // macOS temp_dir can contain /var -> /private/var; fixtures need physical roots.
@@ -156,8 +159,8 @@ impl Drop for Tracker {
 #[test]
 fn mapped_cross_file_padding_reuse_uploads_and_survives_restart_without_media_writes() {
     let scratch = scratch();
-    let first = payload(11_000, 17);
-    let second = payload(5_001, 39);
+    let first = fixture_bytes(11_000);
+    let second = fixture_bytes(5_001);
     let source = Torrent::multiple_with_padding(
         &scratch.0,
         "Source",
@@ -285,7 +288,7 @@ fn mapped_cross_file_padding_reuse_uploads_and_survives_restart_without_media_wr
 #[test]
 fn partial_match_never_announces_or_acquires_and_resume_reverifies() {
     let scratch = scratch();
-    let bytes = payload(BLOCK * 16 + 37, 11);
+    let bytes = fixture_bytes(BLOCK * 16 + 37);
     let source = Torrent::single(&scratch.0, "original.bin", bytes.clone());
     let good = Torrent::single(&scratch.0, "candidate.bin", bytes.clone());
     let mut wrong = bytes.clone();
@@ -334,7 +337,7 @@ fn unsafe_or_truncated_sources_fail_without_repairing_or_linking() {
         "missing",
     ] {
         let scratch = scratch();
-        let data = payload(BLOCK + 17, 31);
+        let data = fixture_bytes(BLOCK + 17);
         let source = Torrent::single(&scratch.0, "original.bin", data.clone());
         let target = Torrent::single(&scratch.0, "target.bin", data);
         let seed = Seeder::open(&scratch.0.join("seed"), &[&source]);
@@ -386,7 +389,7 @@ fn corrupt_or_conflicting_seed_state_refuses_restart_before_any_download() {
         "missing-control",
     ] {
         let scratch = scratch();
-        let bytes = payload(BLOCK + 1, 43);
+        let bytes = fixture_bytes(BLOCK + 1);
         let source = Torrent::single(&scratch.0, "source.bin", bytes.clone());
         let target = Torrent::single(&scratch.0, "target.bin", bytes);
         let seed = Seeder::open(&scratch.0.join("seed"), &[&source]);
@@ -494,7 +497,7 @@ fn block(stream: &mut TcpStream, index: u32) -> std::io::Result<Vec<u8>> {
 #[test]
 fn private_seed_upload_change_revokes_all_peers_and_requires_new_proof() {
     let scratch = scratch();
-    let bytes = payload(BLOCK * 2 + 17, 61);
+    let bytes = fixture_bytes(BLOCK * 2 + 17);
     let source = Torrent::single(&scratch.0, "source.bin", bytes.clone());
     let target = Torrent::single(&scratch.0, "private-target.bin", bytes.clone());
     let mut cfg = client_config(&scratch.0.join("seed"), true);
@@ -538,7 +541,7 @@ fn private_seed_upload_change_revokes_all_peers_and_requires_new_proof() {
 #[test]
 fn raising_a_seed_limit_requires_a_new_proof_before_advertising_changed_files() {
     let scratch = scratch();
-    let bytes = payload(BLOCK + 17, 63);
+    let bytes = fixture_bytes(BLOCK + 17);
     let source = Torrent::single(&scratch.0, "source.bin", bytes.clone());
     let target = Torrent::single(&scratch.0, "limited-target.bin", bytes.clone());
     let tracker = Tracker::new();
@@ -600,7 +603,7 @@ fn raising_a_seed_limit_requires_a_new_proof_before_advertising_changed_files() 
 fn cached_seed_piece_cannot_hide_missing_or_modified_source_files() {
     for change in ["missing", "modified", "hardlink"] {
         let scratch = scratch();
-        let bytes = payload(BLOCK, 65);
+        let bytes = fixture_bytes(BLOCK);
         let source = Torrent::single(&scratch.0, "source.bin", bytes.clone());
         let target = Torrent::single(&scratch.0, "cached-target.bin", bytes.clone());
         let seed = Seeder::open(&scratch.0.join("seed"), &[&source]);
@@ -630,7 +633,7 @@ fn cached_seed_piece_cannot_hide_missing_or_modified_source_files() {
 #[test]
 fn api_authorization_and_cli_register_only_the_selected_readonly_seed() {
     let scratch = scratch();
-    let bytes = payload(BLOCK + 17, 71);
+    let bytes = fixture_bytes(BLOCK + 17);
     let source = Torrent::single(&scratch.0, "source.bin", bytes.clone());
     let target = Torrent::single(&scratch.0, "target.bin", bytes);
     let mut settings = configuration();
@@ -730,13 +733,13 @@ fn malformed_mapping_metadata_and_disabled_optin_have_no_queue_side_effects() {
         assert!(CrossSeedRequest::from_json(&json::parse(value).unwrap()).is_err());
     }
     let scratch = scratch();
-    let source = Torrent::single(&scratch.0, "source.bin", payload(BLOCK, 29));
-    let target = Torrent::single(&scratch.0, "target.bin", payload(BLOCK, 29));
+    let source = Torrent::single(&scratch.0, "source.bin", fixture_bytes(BLOCK));
+    let target = Torrent::single(&scratch.0, "target.bin", fixture_bytes(BLOCK));
     let seed = Seeder::open(&scratch.0.join("seed"), &[&source]);
     for hybrid in [false, true] {
         use bencode::Value as B;
         use std::collections::BTreeMap;
-        let bytes = payload(BLOCK, 29);
+        let bytes = fixture_bytes(BLOCK);
         let leaf = B::Dict(BTreeMap::from([
             (b"length".to_vec(), B::Int(BLOCK as i64)),
             (
