@@ -711,3 +711,50 @@ fn canonical_episode_demand_retains_captured_source_numbering_when_series_policy
     engine.sync_requesters().unwrap();
     assert_eq!(job(&engine, "alice").request, acquired.request);
 }
+
+#[test]
+fn an_indexed_requester_job_recovers_a_missing_marker_without_an_empty_preflight() {
+    let dir = Directory::new();
+    let accounts = Accounts::open();
+    accounts.watchlist("alice", vec![movie(7, "Fixture Movie")]);
+    let cfg = accounts.config(&dir.0);
+    let engine = Engine::open_for_management(cfg.clone()).unwrap();
+    enable(&engine, "alice");
+    engine.sync_requesters().unwrap();
+    let acquired = job(&engine, "alice");
+    drop(engine);
+    fs::remove_file(cfg.store_dir.join("snapshot.bin")).unwrap();
+    let reopened = Engine::open_for_management(cfg.clone()).unwrap();
+    assert_eq!(job(&reopened, "alice"), acquired);
+    assert!(cfg.store_dir.join("snapshot.bin").exists());
+}
+
+#[test]
+fn invalid_requester_links_leave_legacy_job_files_unmigrated() {
+    let dir = Directory::new();
+    let accounts = Accounts::open();
+    accounts.watchlist("alice", vec![movie(7, "Fixture Movie")]);
+    let cfg = accounts.config(&dir.0);
+    let engine = Engine::open_for_management(cfg.clone()).unwrap();
+    enable(&engine, "alice");
+    engine.sync_requesters().unwrap();
+    let acquired = job(&engine, "alice");
+    drop(engine);
+    jobs_state::downgrade(&cfg.store_dir, &[acquired]);
+    let original = fs::read(cfg.store_dir.join("snapshot.bin")).unwrap();
+    let mut ledger = read_snapshot(&cfg.store_dir);
+    let Value::Array(rows) = ledger.get_mut("demands").unwrap() else { panic!("Expected demands"); };
+    rows[0].insert("job_id", "f".repeat(32));
+    write_snapshot(&cfg.store_dir, &ledger);
+    let saved_ledger = fs::read(cfg.store_dir.join("requesters.bin")).unwrap();
+    let error = match Engine::open_for_management(cfg.clone()) {
+        Ok(_) => panic!("A broken legacy requester link was accepted"),
+        Err(error) => error,
+    };
+    assert!(error.contains("Requester:"), "{error}");
+    assert_eq!(fs::read(cfg.store_dir.join("snapshot.bin")).unwrap(), original);
+    assert_eq!(fs::read(cfg.store_dir.join("requesters.bin")).unwrap(), saved_ledger);
+    assert!(!cfg.store_dir.join("jobs.idx").exists());
+    assert!(!cfg.store_dir.join("jobs.idx.migrating").exists());
+    assert!(!fs::read_dir(&cfg.store_dir).unwrap().any(|entry| entry.unwrap().file_name().to_string_lossy().contains("legacy-")));
+}
