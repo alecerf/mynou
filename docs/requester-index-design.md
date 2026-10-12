@@ -1,6 +1,6 @@
 # Requester index delivery
 
-This design describes the requester-ledger increment of [growing inventories](https://github.com/alecerf/mynou/issues/106). It is implemented through [issue 186](https://github.com/alecerf/mynou/issues/186); the draft work does not establish that every path already uses it.
+This design describes the requester-ledger increment of [growing inventories](https://github.com/alecerf/mynou/issues/106). It is implemented through [issue 186](https://github.com/alecerf/mynou/issues/186), covering the ledger and its direct consumers. Parent issue 106 retains the remaining scheduling, upstream paging, IRC inventory and diagnostics work.
 
 The ledger owns an `inventory::Index` under the existing jobs-directory lock. Accounts remain a bounded configuration cache. Demands and operator interests have primary keys; account, media, admission, outcome and IRC-origin references have secondary keys. Primary records, references, counters and revision fences change in the same bounded transaction. Reads return explicit errors, including unreadable ownership proofs.
 
