@@ -2238,7 +2238,12 @@ impl JobLookup for Store {
 
 impl Db<'_> {
     /// Whether a queued job may run now, under the rules the claim applies.
-    fn claimable(&mut self, job: &Job, at: u64, eligible: &impl Fn(&Job) -> Result<bool>) -> Result<bool> {
+    fn claimable(
+        &mut self,
+        job: &Job,
+        at: u64,
+        eligible: &impl Fn(&Job) -> Result<bool>,
+    ) -> Result<bool> {
         if !layout::open(job) || layout::wake(job) > at || !eligible(job)? {
             return Ok(false);
         }

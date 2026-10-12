@@ -401,7 +401,10 @@ pub(crate) fn route(
                 if method == "GET" && parts.len() == 1 {
                     if query.split('&').any(|field| field.starts_with("after=")) {
                         let (after, limit) = crate::requesters::cursor_page(query)?;
-                        return Ok((200, engine.requester_page(parts[0], after.as_deref(), limit)?));
+                        return Ok((
+                            200,
+                            engine.requester_page(parts[0], after.as_deref(), limit)?,
+                        ));
                     }
                     let (offset, limit) = crate::requesters::page(query)?;
                     return Ok((200, engine.requester(parts[0], offset, limit)?));

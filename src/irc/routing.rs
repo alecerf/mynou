@@ -419,14 +419,30 @@ pub(crate) fn waits_for_candidate(
     // Plex jobs retain their ordinary availability check before waiting.
     Ok(!config.plex.enabled && eligible(job) && selection_from_irc(config, job, requesters)?)
 }
-pub(crate) fn selection_from_irc(config: &Config, job: &Job, requesters: &impl crate::requesters::LedgerRead) -> Result<bool> {
-    if !unselected(job) || !enabled(config) { return Ok(false); }
-    let Ok((name, profile)) = admitted_profile(config, job) else { return Ok(false); };
+pub(crate) fn selection_from_irc(
+    config: &Config,
+    job: &Job,
+    requesters: &impl crate::requesters::LedgerRead,
+) -> Result<bool> {
+    if !unselected(job) || !enabled(config) {
+        return Ok(false);
+    }
+    let Ok((name, profile)) = admitted_profile(config, job) else {
+        return Ok(false);
+    };
     for rule in &config.irc.rules {
-        if rule.enabled && matches!(rule.action.as_str(), "grab" | "request") && rule.kind == job.request.kind && rule.profile == name
+        if rule.enabled
+            && matches!(rule.action.as_str(), "grab" | "request")
+            && rule.kind == job.request.kind
+            && rule.profile == name
             && config.selection.profiles.get(name) == Some(profile)
-            && config.irc.sources.iter().any(|source| source.id == rule.source && source.enabled && source.magnet_template.is_some())
-            && selected_interest(config, rule, job, requesters)? { return Ok(true); }
+            && config.irc.sources.iter().any(|source| {
+                source.id == rule.source && source.enabled && source.magnet_template.is_some()
+            })
+            && selected_interest(config, rule, job, requesters)?
+        {
+            return Ok(true);
+        }
     }
     Ok(false)
 }
@@ -723,7 +739,8 @@ fn candidate(
             .admission
             .as_ref()
             .ok_or("IRC: request acquisition has no committed origin")?;
-        if !requesters.demand(&a.demand_id)?
+        if !requesters
+            .demand(&a.demand_id)?
             .is_some_and(|d| d.origins.contains(&format!("irc:{}:{}", r.source_id, r.id)))
             || a.request.source_numbering != job.request.source_numbering
         {
@@ -906,13 +923,7 @@ impl Engine {
         let current_rule = matched_rule(&self.config, current, fingerprint)?;
         let requesters = lock(&self.requester_store)?;
         let mut jobs = lock(&self.store)?;
-        let current_job = candidate(
-            &self.config,
-            current,
-            current_rule,
-            &mut jobs,
-            &*requesters,
-        )?;
+        let current_job = candidate(&self.config, current, current_rule, &mut jobs, &*requesters)?;
         if current_job != job {
             return Err("IRC: admitted job changed during metadata inspection".into());
         }

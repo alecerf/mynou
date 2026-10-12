@@ -1,5 +1,6 @@
 //! Reviewed catalog demand uses checked intent, requester origin and ordinary admission.
 use super::{ControlRequest, Record, Rule, State, hash, integer, only, text, valid_id};
+use crate::requesters::LedgerRead;
 use crate::{
     Result,
     config::Config,
@@ -10,7 +11,6 @@ use crate::{
     selection::tokens,
     store::{self, Request},
 };
-use crate::requesters::LedgerRead;
 use std::{
     collections::BTreeSet,
     sync::atomic::Ordering,
@@ -147,14 +147,20 @@ fn demand_matches(a: &Admission, d: &Demand, state: &impl requesters::LedgerRead
 }
 
 /// Only a durable requester origin commits an intent. Absence aborts without replay.
-pub(crate) fn recovered_state(state: &State, requesters: &impl requesters::LedgerRead) -> Result<State> {
+pub(crate) fn recovered_state(
+    state: &State,
+    requesters: &impl requesters::LedgerRead,
+) -> Result<State> {
     let mut next = state.clone();
     for r in next.records.values_mut() {
         let o = origin(r);
         let Some(a) = &mut r.admission else { continue };
-        let retained = requesters.demand(&a.demand_id)?
+        let retained = requesters
+            .demand(&a.demand_id)?
             .filter(|d| d.origins.contains(&o));
-        if retained.as_ref().is_some_and(|d| !demand_matches(a, d, requesters))
+        if retained
+            .as_ref()
+            .is_some_and(|d| !demand_matches(a, d, requesters))
             || (a.phase == "committed" && retained.is_none())
             || (a.phase == "aborted" && retained.is_some())
         {
@@ -186,26 +192,28 @@ pub(crate) fn recovered_state(state: &State, requesters: &impl requesters::Ledge
     loop {
         let (page, cursor) = requesters.irc_demands_page(after, 200)?;
         for d in page {
-        for o in &d.origins {
-            if let Some((source, id)) = split_origin(o) {
-                let r = next
-                    .records
-                    .get(id)
-                    .filter(|r| r.source_id == source)
-                    .ok_or("IRC: explicit demand has no durable announcement")?;
-                let a = r
-                    .admission
-                    .as_ref()
-                    .filter(|a| a.phase == "committed")
-                    .ok_or("IRC: explicit demand has no committed admission")?;
-                if !demand_matches(a, &d, requesters) {
-                    return Err("IRC: explicit demand differs from committed admission".into());
+            for o in &d.origins {
+                if let Some((source, id)) = split_origin(o) {
+                    let r = next
+                        .records
+                        .get(id)
+                        .filter(|r| r.source_id == source)
+                        .ok_or("IRC: explicit demand has no durable announcement")?;
+                    let a = r
+                        .admission
+                        .as_ref()
+                        .filter(|a| a.phase == "committed")
+                        .ok_or("IRC: explicit demand has no committed admission")?;
+                    if !demand_matches(a, &d, requesters) {
+                        return Err("IRC: explicit demand differs from committed admission".into());
+                    }
                 }
             }
         }
-    }
         after = cursor;
-        if after.is_none() { break; }
+        if after.is_none() {
+            break;
+        }
     }
     State::from_json(&next.to_json())?;
     Ok(next)
@@ -441,7 +449,8 @@ impl Engine {
         let mut next = ledger.state.clone();
         let o = origin(&record);
         if let Some(mut d) = ledger.demand(&demand_id)? {
-            d.origins.insert(o); next.demands.insert(demand_id.clone(), d);
+            d.origins.insert(o);
+            next.demands.insert(demand_id.clone(), d);
         } else {
             next.demands.insert(
                 demand_id.clone(),
@@ -486,11 +495,14 @@ impl Engine {
         }
         report.insert("applied", true);
         report.insert("announcement", irc.state.records[id].public_json());
-        let demand = ledger.demand(&demand_id)?.ok_or("IRC: durable admitted demand is missing")?;
+        let demand = ledger
+            .demand(&demand_id)?
+            .ok_or("IRC: durable admitted demand is missing")?;
         report.insert("demand", public_demand(&demand));
         report.insert(
             "acquisition_started",
-            demand.job_id
+            demand
+                .job_id
                 .as_deref()
                 .map(|id| jobs.get(id))
                 .transpose()?
