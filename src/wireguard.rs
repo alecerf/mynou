@@ -6,8 +6,13 @@ use crate::Result;
 use crate::crypto::ChaCha20Poly1305;
 use std::time::Duration;
 
+#[path = "wireguard/cookie.rs"]
+mod cookie;
 #[path = "wireguard/handshake.rs"]
 mod handshake;
+pub use cookie::{
+    Admission, Admit, COOKIE_LIFETIME, Entropy, Load, MAX_SOURCES, OsEntropy, SECRET_LIFETIME,
+};
 pub use handshake::{Handshake, Response};
 
 pub const MAX_PAYLOAD: usize = 1424;
