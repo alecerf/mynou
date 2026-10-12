@@ -464,7 +464,14 @@ fn offline_previews_of_a_missing_store_create_no_files_or_directories() {
     .unwrap();
     let before = files(&directory.0);
     let library = successful(command(&directory.0, &["library"]));
-    assert!(library.get("library").unwrap().as_array().unwrap().is_empty());
+    assert!(
+        library
+            .get("library")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(library.get("next"), Some(&Value::Null));
     assert_eq!(library.get("total").and_then(Value::as_u64), Some(0));
     let preview = successful(command(&directory.0, &["upgrades"]));
