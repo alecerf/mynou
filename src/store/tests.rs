@@ -1472,8 +1472,15 @@ fn a_store_that_never_held_jobs_is_created_atomically() {
     fs::remove_dir_all(path.join("jobs.idx")).unwrap();
     fs::remove_file(path.join("snapshot.bin")).unwrap();
     assert!(Store::open(&path).is_err());
-    assert_eq!(fs::read(path.join("jobs.idx.migrating/junk")).unwrap(), b"x");
-    fs::rename(path.join("jobs.idx.migrating"), path.join("foreign-staging-kept")).unwrap();
+    assert_eq!(
+        fs::read(path.join("jobs.idx.migrating/junk")).unwrap(),
+        b"x"
+    );
+    fs::rename(
+        path.join("jobs.idx.migrating"),
+        path.join("foreign-staging-kept"),
+    )
+    .unwrap();
     assert!(Store::open(&path).is_ok());
 }
 
@@ -1676,11 +1683,13 @@ fn interrupted_staging_commits_are_preserved_and_rebuilt_without_foreign_data_lo
 #[test]
 fn hydrated_page_byte_limits_continue_without_skipping_large_jobs() {
     let directory = Directory::new();
-    let jobs: Vec<Job> = (0..3).map(|n| {
-        let mut job = raw_job(n, 100 + n);
-        job.files = vec!["x".repeat(2_100_000)];
-        job
-    }).collect();
+    let jobs: Vec<Job> = (0..3)
+        .map(|n| {
+            let mut job = raw_job(n, 100 + n);
+            job.files = vec!["x".repeat(2_100_000)];
+            job
+        })
+        .collect();
     let mut store = Store::open(&directory.0).unwrap();
     bulk(&mut store, jobs.clone());
     let mut seen = BTreeSet::new();
@@ -1690,7 +1699,9 @@ fn hydrated_page_byte_limits_continue_without_skipping_large_jobs() {
         assert_eq!(page.jobs.len(), 1);
         assert!(seen.insert(page.jobs[0].id.clone()));
         cursor = page.next;
-        if cursor.is_none() { break; }
+        if cursor.is_none() {
+            break;
+        }
     }
     assert_eq!(seen, jobs.iter().map(|job| job.id.clone()).collect());
 }
@@ -1700,9 +1711,16 @@ fn extra_secondary_keys_in_a_clean_staging_index_prevent_promotion() {
     let directory = Directory::new();
     let jobs = vec![raw_job(1, 100)];
     write_legacy(&directory.0, &jobs, &[], 0);
-    interrupted(&directory.0, |stage| stage == Stage::Verified).err().unwrap();
+    interrupted(&directory.0, |stage| stage == Stage::Verified)
+        .err()
+        .unwrap();
     let mut index = Index::open(&directory.0.join("jobs.idx.migrating"), false).unwrap();
-    index.commit(vec![Change::PutInline(layout::key(&[&[layout::T_TRANSFER], &[7; 16], &[8; 16]]), Vec::new())]).unwrap();
+    index
+        .commit(vec![Change::PutInline(
+            layout::key(&[&[layout::T_TRANSFER], &[7; 16], &[8; 16]]),
+            Vec::new(),
+        )])
+        .unwrap();
     drop(index);
     let error = Store::open(&directory.0).err().unwrap();
     assert!(error.contains("an index holds entries"), "{error}");
