@@ -1,6 +1,7 @@
 //! Offline WireGuard handshake/transport; no sockets or VPN protection.
 //! Session keys must come from a fresh authenticated handshake. See
-//! docs/wireguard-transport.md for provenance, ownership and integration gates.
+//! docs/wireguard-transport.md for provenance, ownership and integration gates,
+//! and docs/wireguard-cookies.md for cookies and under-load admission.
 
 use crate::Result;
 use crate::crypto::ChaCha20Poly1305;
