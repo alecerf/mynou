@@ -790,6 +790,7 @@ pub struct Store {
 /// One page of jobs ordered by creation time.
 #[derive(Debug)]
 pub struct JobPage {
+    pub sequence: u64,
     pub jobs: Vec<Job>,
     /// Exclusive cursor of the next page, absent after the last one.
     pub next: Option<String>,
@@ -1030,6 +1031,7 @@ impl Store {
             })
             .transpose()?;
         let empty = JobPage {
+            sequence: 0,
             jobs: Vec::new(),
             next: None,
             total: 0,
@@ -1056,6 +1058,7 @@ impl Store {
                 last = Some(cursor_text(created, &id));
             }
             Ok(JobPage {
+                sequence: db.0.sequence()?,
                 jobs,
                 next: if more { last } else { None },
                 total,
@@ -1158,8 +1161,33 @@ impl Store {
     }
 
     /// Jobs of one media identity, oldest first, scanning only this identity.
+    #[cfg(test)]
     pub(crate) fn media_jobs(&mut self, media_key: &str) -> Result<Vec<Job>> {
         self.read(Vec::new(), |db| db.media_jobs(media_key))
+    }
+
+    pub(crate) fn media_page(&mut self, media: &str, after: Option<Key>, limit: usize) -> Result<(Vec<Job>, Option<Key>)> {
+        self.read((Vec::new(), None), |db| {
+            let digest = layout::digest_bytes(media)?;
+            db.jobs_page(&[&[layout::T_MEDIA][..], &digest].concat(), 41, after, limit)
+        })
+    }
+
+    pub(crate) fn current_media_job(&mut self, media: &str) -> Result<Option<Job>> {
+        self.read(None, |db| db.current_media_job(media))
+    }
+
+    pub(crate) fn transfer_jobs_page(&mut self, transfer: &str, after: Option<&str>, limit: usize) -> Result<(Vec<Job>, Option<String>)> {
+        self.read((Vec::new(), None), |db| {
+            let prefix = [&[layout::T_TRANSFER][..], &layout::short("transfer", &[transfer])].concat();
+            let after = after.map(|text| {
+                let (created, id) = parse_cursor(text)?;
+                if created != 0 { return Err("Invalid transfer request cursor".to_owned()); }
+                Ok(layout::key(&[&prefix, &id]))
+            }).transpose()?;
+            let (jobs, next) = db.jobs_page(&prefix, 17, after, limit)?;
+            Ok((jobs, next.map(|key| ops::key_part::<16>(&key, 17).map(|id| cursor_text(0, &id))).transpose()?))
+        })
     }
 
     /// The job owning a canonical request key.
@@ -1173,6 +1201,7 @@ impl Store {
     }
 
     /// Jobs that depend on a transfer through any binding.
+    #[cfg(test)]
     pub fn transfer_jobs(&mut self, transfer: &str) -> Result<Vec<Job>> {
         self.read(Vec::new(), |db| db.transfer_jobs(transfer))
     }
@@ -1255,8 +1284,8 @@ impl Store {
         })
     }
 
-    pub(crate) fn irc_jobs(&mut self, request: &Request) -> Result<Vec<Job>> {
-        self.read(Vec::new(), |db| db.irc_jobs(request))
+    pub(crate) fn irc_candidates(&mut self, request: &Request) -> Result<irc::Candidates> {
+        self.read(irc::Candidates::default(), |db| db.irc_candidates(request))
     }
 
     pub(crate) fn irc_origin_page(
@@ -1366,14 +1395,9 @@ impl Store {
         file_path: &str,
     ) -> Result<Option<crate::pack::SharedFile>> {
         self.read(None, |db| {
-            for job in db.pack_holders(file_path, "t", torrent_id)? {
-                if let Some(file) = job.shared_file
-                    && file.torrent_id == torrent_id
-                    && file.file_path == file_path
-                {
-                    return Ok(Some(file));
-                }
-            }
+            let known = db.find_job(&layout::packref_prefix(file_path, "t", torrent_id), 33,
+                |job| job.shared_file.as_ref().is_some_and(|file| file.torrent_id == torrent_id && file.file_path == file_path))?;
+            if let Some(job) = known { return Ok(job.shared_file); }
             Ok(None)
         })
     }
@@ -1679,16 +1703,11 @@ impl Store {
                     ("t", Some(file.torrent_id.as_str())),
                 ] {
                     let Some(value) = value else { continue };
-                    for job in db.pack_holders(&file.file_path, kind, value)? {
-                        if job.shared_file.is_none()
-                            && (job.request.source_url == request.source_url
-                                || job.download_id.as_deref() == Some(file.torrent_id.as_str()))
-                        {
-                            return Err(
-                                "Physical video is already mapped without shared ownership".into(),
-                            );
-                        }
-                    }
+                    if db.pack_matches(&file.file_path, kind, value, |job| job.shared_file.is_none()
+                        && (job.request.source_url == request.source_url
+                            || job.download_id.as_deref() == Some(file.torrent_id.as_str())))?
+                    { return Err("Physical video is already mapped without shared ownership".into()); }
+
                 }
             }
             if db
@@ -1779,20 +1798,16 @@ impl Store {
             {
                 return Err("Mapping correction requires a failed or cancelled pack request without imports or an active lease".into());
             }
-            let mut holders = Vec::new();
-            if let Some(url) = &job.request.source_url {
-                holders.extend(db.pack_holders(&path, "u", url)?);
+            let mut conflict = false;
+            for (kind, value) in [("u", job.request.source_url.as_deref()), ("t", job.download_id.as_deref())] {
+                if let Some(value) = value {
+                    conflict |= db.pack_matches(&path, kind, value, |other| other.id != job.id
+                        && other.request.tmdb_id == job.request.tmdb_id
+                        && (other.request.source_url == job.request.source_url
+                            || (job.download_id.is_some() && other.download_id == job.download_id)))?;
+                }
             }
-            if let Some(download) = &job.download_id {
-                holders.extend(db.pack_holders(&path, "t", download)?);
-            }
-            if holders.iter().any(|other| {
-                other.id != job.id
-                    && other.request.tmdb_id == job.request.tmdb_id
-                    && (other.request.source_url == job.request.source_url
-                        || (job.download_id.is_some() && other.download_id == job.download_id))
-                    && other.pack_file.as_deref() == Some(&path)
-            }) {
+            if conflict {
                 return Err("Mapped file already belongs to another episode in this pack".into());
             }
             job.pack_file = Some(path);

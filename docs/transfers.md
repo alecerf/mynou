@@ -210,3 +210,12 @@ ratio. Seeding time counts time online while ready, enabled, unpaused and not
 yet limited, including idle time. Counters and seeding time survive a clean
 restart; transfers created before accounting existed start at zero. Reaching a
 limit stops seeding only: files, imports and Plex availability stay.
+
+### Paged request references
+
+Transfer responses contain one bounded page of `request_ids` and
+`request_ids_next`. Continue with
+`GET /api/transfers/TRANSFER_ID?limit=200&after=CURSOR` until the latter is null.
+The transfer list starts each reference list at its first page; individual
+transfer requests expose the following pages. Transfer controls and ownership
+checks still apply to all owners, including those outside the displayed page.

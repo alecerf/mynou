@@ -73,6 +73,7 @@ pub fn describe_page(store: &mut Store, after: Option<&str>, limit: usize) -> Re
     value.insert("library", describe(store, &page.jobs)?);
     value.insert("next", page.next.map_or(Value::Null, Value::String));
     value.insert("total", Value::Number(page.total as f64));
+    value.insert("sequence", Value::String(page.sequence.to_string()));
     Ok(value)
 }
 

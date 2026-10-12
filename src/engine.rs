@@ -168,7 +168,7 @@ impl Engine {
                 let mut store = lock(&self.store)?;
                 let mut found = Vec::new();
                 for key in &keys {
-                    for job in store.media_jobs(key)? {
+                    for job in store.media_page(key, None, 64 - found.len())?.0 {
                         if found.len() == 64 {
                             break;
                         }
@@ -286,13 +286,15 @@ impl Engine {
 
     /// Native transfer controls affect every request sharing that torrent identity.
     pub fn transfer(&self, id: &str) -> Result<Value> {
+        self.transfer_page(id, None, 200)
+    }
+
+    pub fn transfer_page(&self, id: &str, after: Option<&str>, limit: usize) -> Result<Value> {
         let mut value = self.native_client()?.transfer(id)?;
-        let requests = lock(&self.store)?
-            .transfer_jobs(id)?
-            .into_iter()
-            .filter(|job| job.download_id.as_deref() == Some(id))
-            .map(|job| Value::String(job.id))
-            .collect();
+        let (jobs, next) = lock(&self.store)?.transfer_jobs_page(id, after, limit)?;
+        let requests = jobs.into_iter().filter(|job| job.download_id.as_deref() == Some(id))
+            .map(|job| Value::String(job.id)).collect();
+        value.insert("request_ids_next", next.map_or(Value::Null, Value::String));
         value.insert("request_ids", Value::Array(requests));
         Ok(value)
     }
@@ -308,12 +310,10 @@ impl Engine {
                 .get("id")
                 .and_then(Value::as_str)
                 .ok_or("Missing native transfer identity")?;
-            let references = lock(&self.store)?
-                .transfer_jobs(id)?
-                .into_iter()
-                .filter(|job| job.download_id.as_deref() == Some(id))
-                .map(|job| Value::String(job.id))
-                .collect();
+            let (jobs, next) = lock(&self.store)?.transfer_jobs_page(id, None, 200)?;
+            let references = jobs.into_iter().filter(|job| job.download_id.as_deref() == Some(id))
+                .map(|job| Value::String(job.id)).collect();
+            value.insert("request_ids_next", next.map_or(Value::Null, Value::String));
             value.insert("request_ids", Value::Array(references));
         }
         Ok(Value::Array(snapshots))
@@ -1043,7 +1043,7 @@ const RETIREMENT_BATCH: usize = 64;
 /// transfer's own index entries, never against the whole job inventory.
 fn cancel_orphaned_transfers(client: &Client, store: &mut Store) -> Result<()> {
     for status in client.statuses()? {
-        if !store.transfer_claimed(&status.id, None)? && store.transfer_cancelled(&status.id)? {
+        if !store.transfer_has_owner(&status.id)? && store.transfer_cancelled(&status.id)? {
             client.cancel(&status.id)?;
         }
     }
@@ -1059,6 +1059,7 @@ pub fn jobs_value(page: crate::store::JobPage) -> Value {
     );
     value.insert("next", page.next.map_or(Value::Null, Value::String));
     value.insert("total", Value::Number(page.total as f64));
+    value.insert("sequence", Value::String(page.sequence.to_string()));
     value
 }
 

@@ -543,6 +543,7 @@ pub(crate) fn route(
                 return Ok((200, result));
             }
             if let Some(tail) = path.strip_prefix("/api/transfers/") {
+                let (tail, query) = tail.split_once('?').unwrap_or((tail, ""));
                 let parts: Vec<_> = tail.split('/').collect();
                 let id = parts[0];
                 if ![40, 64].contains(&id.len()) || !id.bytes().all(|byte| byte.is_ascii_hexdigit())
@@ -551,9 +552,10 @@ pub(crate) fn route(
                 }
                 let id = id.to_ascii_lowercase();
                 if parts.len() == 1 && method == "GET" {
-                    return Ok((200, engine.transfer(&id)?));
+                    let query = crate::store::PageQuery::parse(query)?;
+                    return Ok((200, engine.transfer_page(&id, query.after.as_deref(), query.limit)?));
                 }
-                if parts.len() != 2 || method != "POST" {
+                if parts.len() != 2 || method != "POST" || !query.is_empty() {
                     return Ok((404, error("Unknown transfer route")));
                 }
                 let snapshot = match parts[1] {

@@ -376,16 +376,7 @@ impl Engine {
         guard.insert("account", account.to_json());
         guard.insert("capture", capture.to_json());
         guard.insert("ledger", ledger.state.to_json());
-        guard.insert(
-            "jobs",
-            // Only the requests of this media identity can change the outcome.
-            Value::Array(
-                jobs.media_jobs(&canonical.media_key())?
-                    .iter()
-                    .map(crate::store::Job::to_json)
-                    .collect(),
-            ),
-        );
+        guard.insert("jobs_sequence", Value::String(jobs.sequence()?.to_string()));
         guard.insert(
             "series",
             Value::Array(

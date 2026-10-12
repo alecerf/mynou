@@ -6,9 +6,8 @@
 use super::{
     Job, JobLookup, Result,
     layout::*,
-    ops::{Db, key_part},
+    ops::Db,
 };
-use crate::inventory::MAX_PAGE_ROWS;
 
 /// Checks that need only to read other jobs by identifier, so the same rules
 /// validate a legacy snapshot in memory and a transaction against the index.
@@ -240,79 +239,28 @@ impl Db<'_> {
     /// Physical-video ownership by an IRC acquisition, a pack mapping or a
     /// shared file, through the ownership entries of the file and its aliases.
     pub(super) fn check_irc_ownership(&mut self, job: &Job) -> Result<()> {
-        if job.irc_origin.is_none() && job.pack_file.is_none() {
-            return Ok(());
-        }
-        let id = id_bytes(&job.id)?;
         let Some(origin) = &job.irc_origin else {
-            let Some(file) = &job.pack_file else {
-                return Ok(());
-            };
-            for transfer in pack_transfers(job) {
-                for key in self.all_keys(&irc_prefix(file, transfer))? {
-                    if key_part::<16>(&key, 33)? == id {
-                        continue;
-                    }
-                    let other = self.require(&key_part(&key, 33)?)?;
-                    if other.irc_origin.as_ref().is_some_and(|known| {
-                        &known.file == file
-                            && known.torrent_aliases.iter().any(|alias| alias == transfer)
-                    }) {
-                        return Err(
-                            "IRC: pack mapping conflicts with retained announcement ownership"
-                                .into(),
-                        );
-                    }
+            if let Some(file) = &job.pack_file {
+                for transfer in pack_transfers(job) {
+                    if self.find_job(&irc_prefix(file, transfer), 33, |other| other.id != job.id
+                        && other.irc_origin.as_ref().is_some_and(|known| &known.file == file
+                            && known.torrent_aliases.iter().any(|alias| alias == transfer)))?.is_some()
+                    { return Err("IRC: pack mapping conflicts with retained announcement ownership".into()); }
                 }
             }
             return Ok(());
         };
         for alias in &origin.torrent_aliases {
-            for key in self.all_keys(&irc_prefix(&origin.file, alias))? {
-                if key_part::<16>(&key, 33)? == id {
-                    continue;
-                }
-                let other = self.require(&key_part(&key, 33)?)?;
-                if other.irc_origin.as_ref().is_some_and(|known| {
-                    known.file == origin.file
-                        && known
-                            .torrent_aliases
-                            .iter()
-                            .any(|other| origin.torrent_aliases.contains(other))
-                }) {
-                    return Err("IRC: physical video already belongs to another acquisition".into());
-                }
-            }
-            for key in self.all_keys(&packref_prefix(&origin.file, "t", alias))? {
-                if key_part::<16>(&key, 33)? == id {
-                    continue;
-                }
-                let other = self.require(&key_part(&key, 33)?)?;
-                if other.pack_file.as_ref() == Some(&origin.file)
-                    && pack_transfers(&other)
-                        .iter()
-                        .any(|transfer| origin.torrent_aliases.iter().any(|a| a == transfer))
-                {
-                    return Err("IRC: candidate conflicts with retained pack ownership".into());
-                }
-            }
+            if self.find_job(&irc_prefix(&origin.file, alias), 33, |other| other.id != job.id
+                && other.irc_origin.as_ref().is_some_and(|known| known.file == origin.file
+                    && known.torrent_aliases.iter().any(|other| origin.torrent_aliases.contains(other))))?.is_some()
+            { return Err("IRC: physical video already belongs to another acquisition".into()); }
+            if self.find_job(&packref_prefix(&origin.file, "t", alias), 33, |other| other.id != job.id
+                && other.pack_file.as_ref() == Some(&origin.file)
+                && pack_transfers(other).iter().any(|transfer| origin.torrent_aliases.iter().any(|a| a == transfer)))?.is_some()
+            { return Err("IRC: candidate conflicts with retained pack ownership".into()); }
         }
         Ok(())
-    }
-
-    /// Every key under a prefix. The fan-out of the prefixes used here is the
-    /// number of jobs sharing one physical identity, never the inventory.
-    pub(super) fn all_keys(&mut self, prefix: &[u8]) -> Result<Vec<crate::inventory::Key>> {
-        let mut keys = Vec::new();
-        let mut after = None;
-        loop {
-            let page = self.scan(prefix, after, MAX_PAGE_ROWS)?;
-            keys.extend(page.entries.into_iter().map(|(key, _)| key));
-            after = page.next;
-            if after.is_none() {
-                return Ok(keys);
-            }
-        }
     }
 
     /// Group members whose record still carries the binding that keyed them.

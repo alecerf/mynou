@@ -178,15 +178,16 @@ pub fn write_private(path: &Path, bytes: &[u8]) {
 
 fn remove_owned(root: &Path, name: &str, directory: bool) {
     let path = root.join(name);
-    let metadata = match fs::symlink_metadata(&path) {
-        Ok(metadata) => metadata,
+    let requested = path;
+    let path = match requested.canonicalize() {
+        Ok(path) => path,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
-        Err(error) => panic!("Cannot inspect fixture: {error}"),
+        Err(error) => panic!("Cannot normalize fixture: {error}"),
     };
-    assert!(!metadata.file_type().is_symlink());
-    let path = path.canonicalize().unwrap();
     if !path.starts_with(root) { panic!("Fixture removal escaped its root"); }
-    if path == root { panic!("Cannot remove the fixture root"); }
+    if path == root || path != requested { panic!("Fixture removal cannot follow links or remove its root"); }
+    let metadata = fs::symlink_metadata(&path).unwrap();
+    assert!(!metadata.file_type().is_symlink());
     if directory {
         fs::remove_dir_all(&path).unwrap();
     } else {
