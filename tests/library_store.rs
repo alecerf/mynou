@@ -748,12 +748,14 @@ fn migration_rejects_missing_parent_cross_media_and_cycles() {
             _ => parent.upgrade_parent = Some(child.id.clone()),
         }
         jobs_state::downgrade(&directory.0, &[parent, child]);
-        let before = jobs_state::fingerprint(&directory.0);
+        let snapshot = directory.0.join("snapshot.bin");
+        let before = fs::read(&snapshot).unwrap();
         assert!(
             Store::open(&directory.0).is_err(),
             "verified {damage} snapshot must be rejected"
         );
-        assert_eq!(jobs_state::fingerprint(&directory.0), before);
+        assert_eq!(fs::read(&snapshot).unwrap(), before);
+        assert!(!directory.0.join("journal.bin").exists());
         assert!(!directory.0.join("jobs.idx").exists());
     }
 }
