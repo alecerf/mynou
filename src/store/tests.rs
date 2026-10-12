@@ -1797,7 +1797,7 @@ fn irc_fixture_job(n: u64) -> Job {
         media_key: job.request.media_key(),
         torrent_id: torrent.clone(),
         torrent_aliases: vec![torrent.clone(), format!("{}{:024x}", "e".repeat(40), n)],
-        magnet: format!("magnet:?xt=urn:btih:{torrent}"),
+        magnet: format!("magnet:?xt=urn:btih:{torrent}&x.pe=127.0.0.1:9"),
         file: format!("Synthetic.movie.{n}.2026.1080p.mp4"),
         file_length: 100,
         release: release.clone(),
