@@ -756,7 +756,6 @@ impl Replay {
         if action == GroupAction::Promote && completing != 1 {
             return Err("Promotion requires exactly one final owner confirmation".into());
         }
-        if action == GroupAction::Create {}
         Ok(())
     }
 

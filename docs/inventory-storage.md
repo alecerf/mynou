@@ -259,7 +259,8 @@ can require direct store inspection instead of an API response.
 
 Claims examine bounded queue windows and resume past ineligible jobs. Feed
 routing and requester cancellation sweeps also retain an in-memory cursor.
-Transfer retirement settles at most 64 records per pass. Indexed ownership
+Transfer retirement settles at most 64 jobs (up to eight transfer debts each)
+per pass. Indexed ownership
 predicates page through the matching physical identity before concluding it is
 unowned; a response page is never used as an exhaustive ownership proof.
 
