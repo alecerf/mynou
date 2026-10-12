@@ -56,7 +56,12 @@ fn due(at: u64, round: u64, id: &[u8; 16]) -> Key {
 fn schedule(job: &Job, round: u64) -> Result<Key> {
     let id = id_bytes(&job.id)?;
     if job.monitor_checked_at == 0 {
-        Ok(key(&[&[T_MONITOR_UNCHECKED], &job.created_at.to_be_bytes(), &round.to_be_bytes(), &id]))
+        Ok(key(&[
+            &[T_MONITOR_UNCHECKED],
+            &job.created_at.to_be_bytes(),
+            &round.to_be_bytes(),
+            &id,
+        ]))
     } else {
         Ok(due(job.monitor_checked_at, round, &id))
     }
@@ -109,10 +114,7 @@ fn entries(job: &Job, round: u64) -> Result<Vec<Change>> {
     value.extend_from_slice(&round.to_be_bytes());
     let mut changes = vec![Change::PutInline(reference(&id), value)];
     if class == 0 {
-        changes.push(Change::PutInline(
-            schedule(job, round)?,
-            Vec::new(),
-        ));
+        changes.push(Change::PutInline(schedule(job, round)?, Vec::new()));
     }
     if class == 4 {
         changes.push(Change::PutInline(shared(&id), Vec::new()));
@@ -299,26 +301,59 @@ impl Store {
                 // Future check times are serviced first so correcting one
                 // cannot hold back the remaining rollback work on forced passes.
                 let mut rows = if at < u64::MAX {
-                    window(db.0, key(&[&[T_MONITOR_DUE], &(at + 1).to_be_bytes()]), end, limit)?
-                } else { Vec::new() };
+                    window(
+                        db.0,
+                        key(&[&[T_MONITOR_DUE], &(at + 1).to_be_bytes()]),
+                        end,
+                        limit,
+                    )?
+                } else {
+                    Vec::new()
+                };
                 let (unchecked_start, unchecked_end) = prefix_range(&[T_MONITOR_UNCHECKED]);
                 if rows.len() < limit && at < u64::MAX {
-                    rows.extend(window(db.0, key(&[&[T_MONITOR_UNCHECKED], &(at + 1).to_be_bytes()]), unchecked_end, limit - rows.len())?);
+                    rows.extend(window(
+                        db.0,
+                        key(&[&[T_MONITOR_UNCHECKED], &(at + 1).to_be_bytes()]),
+                        unchecked_end,
+                        limit - rows.len(),
+                    )?);
                 }
                 let remaining = limit - rows.len();
                 if remaining > 0 {
-                    let cutoff = if force { Some(at) } else { at.checked_sub(interval) };
+                    let cutoff = if force {
+                        Some(at)
+                    } else {
+                        at.checked_sub(interval)
+                    };
                     let mut normal = if let Some(cutoff) = cutoff {
-                        let due_end = cutoff.checked_add(1).map(|next| key(&[&[T_MONITOR_DUE], &next.to_be_bytes()])).or(end);
+                        let due_end = cutoff
+                            .checked_add(1)
+                            .map(|next| key(&[&[T_MONITOR_DUE], &next.to_be_bytes()]))
+                            .or(end);
                         window(db.0, start, due_end, remaining)?
-                    } else { Vec::new() };
-                    let normal_unchecked_end = at.checked_add(1).map(|next| key(&[&[T_MONITOR_UNCHECKED], &next.to_be_bytes()])).or(unchecked_end);
-                    normal.extend(window(db.0, unchecked_start, normal_unchecked_end, remaining)?);
+                    } else {
+                        Vec::new()
+                    };
+                    let normal_unchecked_end = at
+                        .checked_add(1)
+                        .map(|next| key(&[&[T_MONITOR_UNCHECKED], &next.to_be_bytes()]))
+                        .or(unchecked_end);
+                    normal.extend(window(
+                        db.0,
+                        unchecked_start,
+                        normal_unchecked_end,
+                        remaining,
+                    )?);
                     normal.sort_by_key(|(key, _)| {
                         let mut time = [0; 8];
                         time.copy_from_slice(&key[1..9]);
                         let time = u64::from_be_bytes(time);
-                        let priority = if key[0] == T_MONITOR_UNCHECKED && !force { time.saturating_sub(interval) } else { time };
+                        let priority = if key[0] == T_MONITOR_UNCHECKED && !force {
+                            time.saturating_sub(interval)
+                        } else {
+                            time
+                        };
                         let mut order = [0; 24];
                         order.copy_from_slice(&key[9..33]);
                         (priority, order)
@@ -370,9 +405,17 @@ impl Store {
             for (key, value) in rows {
                 let id = ops::key_part(&key, 1)?;
                 let job = db.require(&id)?;
-                let binding = db.0.get(&reference(&id))?.ok_or("Missing shared monitoring reference")?;
+                let binding =
+                    db.0.get(&reference(&id))?
+                        .ok_or("Missing shared monitoring reference")?;
                 let (category, checked, _) = decode(&binding)?;
-                if !value.is_empty() || key != shared(&id) || category != 4 || checked != job.monitor_checked_at || class(&job) != 4 || !db.is_tip(&job.id)? {
+                if !value.is_empty()
+                    || key != shared(&id)
+                    || category != 4
+                    || checked != job.monitor_checked_at
+                    || class(&job) != 4
+                    || !db.is_tip(&job.id)?
+                {
                     return Err("Inconsistent shared library monitoring entry".into());
                 }
                 let length = encode_job(&job).len();
