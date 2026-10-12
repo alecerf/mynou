@@ -587,9 +587,24 @@ fn guarded_pause_enable_persists_and_previews_do_not_search_or_write() {
     engine.indexer_control(&id, &pause).unwrap();
     assert!(integrations::search(&c, &movie()).is_err());
     assert_eq!(p.searches.load(Ordering::Acquire), 0);
+    assert_eq!(Arc::strong_count(&engine), 1);
     drop(engine);
     let fresh = cfg(&d, &p, "none");
-    let engine = mynou::engine::Engine::open_for_management(fresh.clone()).unwrap();
+    // Other parallel fixtures spawn CLI processes. On macOS a concurrent
+    // spawn may briefly inherit the locked descriptor until exec closes it.
+    // Retry only that transient contention after dropping the sole owner;
+    // every other storage failure remains an immediate test failure.
+    let deadline = Instant::now() + Duration::from_secs(1);
+    let engine = loop {
+        match mynou::engine::Engine::open_for_management(fresh.clone()) {
+            Ok(engine) => break engine,
+            Err(error) if error.starts_with("storage is already open or cannot be locked:")
+                && Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(10));
+            }
+            Err(error) => panic!("cannot reopen the released fixture store: {error}"),
+        }
+    };
     assert_eq!(
         engine
             .indexers()

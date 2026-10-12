@@ -168,7 +168,9 @@ impl Db<'_> {
         if current.release.is_some() && current.release != job.release && !fresh_search {
             return Err("recorded release is immutable".to_owned());
         }
-        if job.monitor_checked_at < current.monitor_checked_at {
+        let now = super::now();
+        let rollback_correction = current.monitor_checked_at > now && job.monitor_checked_at <= now;
+        if job.monitor_checked_at < current.monitor_checked_at && !rollback_correction {
             return Err("monitor check timestamp moved backwards".to_owned());
         }
         let ready_upgrade =
