@@ -378,7 +378,13 @@ fn uncertain_reservation_commit_requires_reopen_and_recovers_frozen_capture() {
         );
         assert_eq!(index::count(&mut recovered, "fixture", 0).unwrap(), 1);
         // An idempotent replay must not duplicate reservations or counters.
-        index::commit(&mut recovered, &metadata, std::slice::from_ref(&record), &[]).unwrap();
+        index::commit(
+            &mut recovered,
+            &metadata,
+            std::slice::from_ref(&record),
+            &[],
+        )
+        .unwrap();
         assert_eq!(index::count(&mut recovered, "fixture", 0).unwrap(), 1);
         assert_eq!(
             index::get(&mut recovered, &record.id).unwrap(),
