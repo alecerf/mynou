@@ -171,15 +171,29 @@ impl Engine {
         let (counts, window, shared) = {
             let mut store = lock(&self.store)?;
             let counts = store.monitoring_counts()?;
-            let window = store.monitoring_due(at, self.config.monitoring.interval_secs, force, max_checks + 1)?;
+            let window = store.monitoring_due(
+                at,
+                self.config.monitoring.interval_secs,
+                force,
+                max_checks + 1,
+            )?;
             let shared = store.monitored_shared(MAX_SHARED_ENTRIES)?;
             (counts, window, shared)
         };
-        let [eligible_total, unmonitored, baseline_required, unsupported, shared_total] = counts;
+        let [
+            eligible_total,
+            unmonitored,
+            baseline_required,
+            unsupported,
+            shared_total,
+        ] = counts;
         let oldest_checked = window.jobs.first().map(|job| job.monitor_checked_at);
         let window_limited = window.jobs.len() > max_checks || window.next.is_some();
         let mut limited = window_limited || shared_total > shared.len() as u64;
-        let mut entries = shared.iter().map(|job| entry(job, "shared_group_upgrade_required")).collect::<Vec<_>>();
+        let mut entries = shared
+            .iter()
+            .map(|job| entry(job, "shared_group_upgrade_required"))
+            .collect::<Vec<_>>();
         let eligible = window.jobs;
         let mut queued = 0_u32;
         for job in eligible.into_iter().take(self.config.monitoring.max_checks) {
@@ -283,14 +297,34 @@ impl Engine {
             }
             entries.push(item);
         }
-        let mut value = report(apply, entries, queued, limited,
-            [unmonitored, baseline_required, unsupported].map(|n| n.min(u32::MAX as u64) as u32));
+        let mut value = report(
+            apply,
+            entries,
+            queued,
+            limited,
+            [unmonitored, baseline_required, unsupported].map(|n| n.min(u32::MAX as u64) as u32),
+        );
         value.insert("eligible_total", eligible_total.to_string());
         value.insert("window_limited", window_limited);
-        value.insert("oldest_checked_at", oldest_checked.map_or(Value::Null, |at| Value::String(at.to_string())));
-        value.insert("monitoring_interval_secs", self.config.monitoring.interval_secs.to_string());
+        value.insert(
+            "oldest_checked_at",
+            oldest_checked.map_or(Value::Null, |at| Value::String(at.to_string())),
+        );
+        value.insert(
+            "monitoring_interval_secs",
+            self.config.monitoring.interval_secs.to_string(),
+        );
         let mut totals = Value::object();
-        for (name, count) in ["eligible", "unmonitored", "baseline_required", "unsupported_kind", "shared_group"].into_iter().zip(counts) {
+        for (name, count) in [
+            "eligible",
+            "unmonitored",
+            "baseline_required",
+            "unsupported_kind",
+            "shared_group",
+        ]
+        .into_iter()
+        .zip(counts)
+        {
             totals.insert(name, count.to_string());
         }
         value.insert("inventory_counts", totals);

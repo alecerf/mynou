@@ -1620,7 +1620,11 @@ impl Store {
             // A real wall-clock rollback must not leave this entry permanently
             // ahead of the remaining queue. Preserve monotonic caller updates
             // when the stored check is not in the future.
-            job.monitor_checked_at = if job.monitor_checked_at > now() { at } else { job.monitor_checked_at.max(at) };
+            job.monitor_checked_at = if job.monitor_checked_at > now() {
+                at
+            } else {
+                job.monitor_checked_at.max(at)
+            };
             job.updated_at = now();
             db.commit_jobs(vec![job], "library monitor check recorded")
         })
