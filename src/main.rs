@@ -1422,21 +1422,27 @@ fn execute(args: Args) -> Result<()> {
                     &format!("/api/jobs?{query}"),
                     None,
                 )?);
-            } else {
+            } else if Store::directory_exists(&config.store_dir)? {
                 let mut store = Store::open_read_only(&config.store_dir)?;
                 output(&mynou::engine::jobs_value(
                     store.page(page.after.as_deref(), page.limit)?,
                 ));
+            } else {
+                output(&mynou::engine::jobs_value(mynou::store::JobPage {
+                    sequence: 0, jobs: Vec::new(), next: None, total: 0,
+                }));
             }
         }
         "status" => {
             if online {
                 output(&call(&config, &path, "GET", "/api/status", None)?);
             } else {
-                let mut store = Store::open_read_only(&config.store_dir)?;
+                let jobs = if Store::directory_exists(&config.store_dir)? {
+                    Store::open_read_only(&config.store_dir)?.counts()?.jobs
+                } else { 0 };
                 let mut v = Value::object();
                 v.insert("service", "stopped");
-                v.insert("jobs", Value::Number(store.counts()?.jobs as f64));
+                v.insert("jobs", Value::Number(jobs as f64));
                 output(&v);
             }
         }
