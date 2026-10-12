@@ -240,7 +240,11 @@ impl Engine {
                 started + Duration::from_secs(90),
             ) {
                 Ok(selected) => selected,
-                Err(_) => {
+                Err(error) if matches!(error.as_str(),
+                    "upgrade source URL is already owned by an unrelated request"
+                    | "an upgrade requires a monitored current library import with a release baseline"
+                    | "an upgrade for this media is already pending"
+                    | "an upgrade must use a different acquisition URL") => {
                     entries.push(entry(&job, "search_unavailable"));
                     continue;
                 }
@@ -294,6 +298,7 @@ impl Engine {
                     // parent must never cause a second upgrade or leak its URL.
                     item.insert("action", "entry_changed");
                 }
+                Err(error) => return Err(error),
             }
             entries.push(item);
         }
