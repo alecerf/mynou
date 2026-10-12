@@ -67,7 +67,7 @@ impl Engine {
     }
 
     fn open_with_downloads(config: Config, start_downloads: bool) -> Result<Arc<Self>> {
-        let store = Store::prepare(&config.store_dir)?;
+        let store = Store::prepare(&config.store_dir, &config)?;
         Self::from_store(config, store, start_downloads, false)
     }
 

@@ -780,7 +780,7 @@ impl Engine {
     }
 }
 
-pub(crate) fn validate_storage(state: &State, jobs: &mut Store) -> Result<()> {
+pub(crate) fn validate_storage(state: &State, jobs: &mut impl crate::store::RecoveryJobs) -> Result<()> {
     for d in state.demands.values() {
         if let Some(id) = &d.job_id {
             let job = jobs

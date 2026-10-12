@@ -11,18 +11,16 @@ use std::path::{Path, PathBuf};
 /// Every file of the job index, with its path relative to the index. Equal
 /// results mean no job record, entry or history row changed.
 pub fn fingerprint(store_dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
-    fn walk(root: &Path, directory: &Path, found: &mut Vec<(PathBuf, Vec<u8>)>) {
-        let directory = fixture_root(directory);
-        if !directory.starts_with(root) {
-            panic!("Fixture directory escaped its index");
-        }
+    fn walk(root: &Path, directory: &Path, found: &mut Vec<(PathBuf, Vec<u8>)>) -> mynou::Result<()> {
+        let directory = fixture_root(directory).unwrap();
+        if !directory.as_path().starts_with(root) { return Err("Fixture directory escaped its index".into()); }
         let entries = fs::read_dir(&directory).unwrap();
         for entry in entries {
             let path = entry.unwrap().path();
             let metadata = fs::symlink_metadata(&path).unwrap();
             assert!(!metadata.file_type().is_symlink());
             if metadata.is_dir() {
-                walk(root, &path, found);
+                walk(root, &path, found)?;
             } else if path.file_name().is_some_and(|name| name != ".lock") {
                 found.push((
                     path.strip_prefix(root).unwrap().to_owned(),
@@ -30,10 +28,11 @@ pub fn fingerprint(store_dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
                 ));
             }
         }
+        Ok(())
     }
-    let root = fixture_root(&store_dir.join("jobs.idx"));
+    let root = fixture_root(&store_dir.join("jobs.idx")).unwrap();
     let mut found = Vec::new();
-    walk(&root, &root, &mut found);
+    walk(&root, &root, &mut found).unwrap();
     found.sort();
     found
 }
@@ -126,7 +125,7 @@ pub fn frame(
 
 /// Removes every job file, leaving an empty store directory.
 pub fn reset(store_dir: &Path) {
-    let store_dir = fixture_root(store_dir);
+    let store_dir = fixture_root(store_dir).unwrap();
     remove_owned(&store_dir, "jobs.idx", true);
     remove_owned(&store_dir, "snapshot.bin", false);
     remove_owned(&store_dir, "journal.bin", false);
@@ -140,7 +139,7 @@ pub fn downgrade(store_dir: &Path, jobs: &[Job]) {
 
 /// As `downgrade`, with an explicit (possibly too old) snapshot format.
 pub fn downgrade_as(store_dir: &Path, jobs: &[Job], magic: Option<&[u8; 8]>) {
-    let store_dir = fixture_root(store_dir);
+    let store_dir = fixture_root(store_dir).unwrap();
     remove_owned(&store_dir, "jobs.idx", true);
     let snapshot_magic = magic.unwrap_or_else(|| magics(jobs).1);
     let events: Vec<Event> = jobs
@@ -163,52 +162,52 @@ pub fn downgrade_as(store_dir: &Path, jobs: &[Job], magic: Option<&[u8; 8]>) {
 
 /// Writes a file as the earlier store did: readable by its owner only.
 pub fn write_private(path: &Path, bytes: &[u8]) {
+    write_checked(path, bytes).unwrap();
+}
+
+fn write_checked(path: &Path, bytes: &[u8]) -> mynou::Result<()> {
     use std::os::unix::fs::PermissionsExt;
-    let root = fixture_root(path.parent().unwrap());
+    let parent = path.parent().ok_or("Fixture file lacks parent")?;
+    let root = fixture_root(parent)?;
+    if !root.as_path().starts_with(parent) { return Err("Fixture parent changed during normalization".into()); }
     let path = match path.file_name().and_then(|name| name.to_str()) {
         Some("snapshot.bin") => root.join("snapshot.bin"),
         Some("journal.bin") => root.join("journal.bin"),
         Some("mynou.json") => root.join("mynou.json"),
-        _ => panic!("Unsupported fixture file name"),
+        _ => return Err("Unsupported fixture file name".into()),
     };
     if let Ok(metadata) = fs::symlink_metadata(&path) {
-        assert!(metadata.is_file() && !metadata.file_type().is_symlink());
+        if !metadata.is_file() || metadata.file_type().is_symlink() { return Err("Fixture file is not regular".into()); }
     }
-    fs::write(&path, bytes).unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    fs::write(&path, bytes).map_err(|error| error.to_string())?;
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 fn remove_owned(root: &Path, name: &str, directory: bool) {
-    let path = root.join(name);
-    let requested = path;
-    let path = match requested.canonicalize() {
-        Ok(path) => path,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
-        Err(error) => panic!("Cannot normalize fixture: {error}"),
-    };
-    if !path.starts_with(root) {
-        panic!("Fixture removal escaped its root");
-    }
-    if path == root || path != requested {
-        panic!("Fixture removal cannot follow links or remove its root");
-    }
-    let metadata = fs::symlink_metadata(&path).unwrap();
-    assert!(!metadata.file_type().is_symlink());
-    if directory {
-        fs::remove_dir_all(&path).unwrap();
-    } else {
-        fs::remove_file(&path).unwrap();
-    }
+    remove_checked(root, name, directory).unwrap();
 }
 
-fn fixture_root(path: &Path) -> PathBuf {
-    let temporary = std::env::temp_dir().canonicalize().unwrap();
-    let path = path.canonicalize().unwrap();
-    if !path.starts_with(&temporary) {
-        panic!("Fixture path escaped temporary storage");
-    }
-    if path == temporary {
-        panic!("Fixture path must be below temporary storage");
-    }
-    path
+fn remove_checked(root: &Path, name: &str, directory: bool) -> mynou::Result<()> {
+    let requested = root.join(name);
+    let path = match requested.canonicalize() {
+        Ok(path) => path,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.to_string()),
+    };
+    if !path.as_path().starts_with(root) { return Err("Fixture removal escaped its root".into()); }
+    if path == root || path != requested { return Err("Fixture removal cannot follow links or remove its root".into()); }
+    let metadata = fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
+    if metadata.file_type().is_symlink() { return Err("Fixture removal cannot follow links".into()); }
+    if directory { fs::remove_dir_all(&path).map_err(|error| error.to_string())?; }
+    else { fs::remove_file(&path).map_err(|error| error.to_string())?; }
+    Ok(())
+}
+
+fn fixture_root(path: &Path) -> mynou::Result<PathBuf> {
+    let temporary = std::env::temp_dir().canonicalize().map_err(|error| error.to_string())?;
+    let normalized = path.canonicalize().map_err(|error| error.to_string())?;
+    if !normalized.as_path().starts_with(&temporary) { return Err("Fixture path escaped temporary storage".into()); }
+    if normalized == temporary { return Err("Fixture path must be below temporary storage".into()); }
+    Ok(normalized)
 }

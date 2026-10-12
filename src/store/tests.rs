@@ -1762,8 +1762,25 @@ fn transfer_reference_pages_reach_every_owner() {
 #[test]
 fn irc_origin_enumeration_returns_each_job_once_across_alias_pages() {
     let directory = Directory::new();
-    let jobs: Vec<Job> = (1..=201_u64)
-        .map(|n| {
+    let jobs: Vec<Job> = (1..=201_u64).map(irc_fixture_job).collect();
+    let mut store = Store::open(&directory.0).unwrap();
+    bulk(&mut store, jobs.clone());
+    let mut seen = BTreeSet::new();
+    let mut cursor = None;
+    loop {
+        let (page, next) = store.irc_origin_page(cursor, 200).unwrap();
+        for job in page {
+            assert!(seen.insert(job.id));
+        }
+        cursor = next;
+        if cursor.is_none() {
+            break;
+        }
+    }
+    assert_eq!(seen, jobs.iter().map(|job| job.id.clone()).collect());
+}
+
+fn irc_fixture_job(n: u64) -> Job {
             let mut job = raw_job(n, 100 + n);
             let torrent = format!("{n:040x}");
             let release = RecordedRelease {
@@ -1790,21 +1807,76 @@ fn irc_origin_enumeration_returns_each_job_once_across_alias_pages() {
             origin.validate_job(&job).unwrap();
             job.irc_origin = Some(origin);
             job
-        })
-        .collect();
-    let mut store = Store::open(&directory.0).unwrap();
-    bulk(&mut store, jobs.clone());
-    let mut seen = BTreeSet::new();
-    let mut cursor = None;
-    loop {
-        let (page, next) = store.irc_origin_page(cursor, 200).unwrap();
-        for job in page {
-            assert!(seen.insert(job.id));
-        }
-        cursor = next;
-        if cursor.is_none() {
-            break;
+
+}
+
+#[test]
+fn management_preflight_rejects_missing_irc_reservations_before_migration_writes() {
+    let directory = Directory::new();
+    let job = irc_fixture_job(1);
+    write_legacy(&directory.0, &[job], &[], 4);
+    private(&directory.0.join(".lock"), b"");
+    let mut value = crate::config::default_json();
+    value.insert("store_dir", directory.0.to_str().unwrap().to_owned());
+    value.get_mut("downloads").unwrap().insert("enabled", false);
+    let config = crate::config::from_json(&value, &directory.0).unwrap();
+    let before = contents(&directory.0);
+    let error = Store::prepare(&directory.0, &config).err().unwrap();
+    assert!(error.contains("durable announcement reservation"), "{error}");
+    assert_eq!(contents(&directory.0), before);
+    assert!(!directory.0.join("jobs.idx").exists());
+    assert!(!directory.0.join("jobs.idx.migrating").exists());
+}
+
+fn remove_historical_library_fields(mut bytes: Vec<u8>, snapshot: bool) -> Vec<u8> {
+    let at = if snapshot { 16 } else { 84 };
+    let mut value = crate::json::parse(std::str::from_utf8(&bytes[at..bytes.len()-32]).unwrap()).unwrap();
+    let remove = |job: &mut Value| {
+        let Value::Object(fields) = job else { panic!("Expected fixture job"); };
+        for field in ["release", "upgrade_parent", "monitored", "monitor_checked_at"] { fields.remove(field); }
+    };
+    if snapshot {
+        let Value::Array(jobs) = value.get_mut("jobs").unwrap() else { panic!("Expected fixture jobs"); };
+        for job in jobs { remove(job); }
+    } else { remove(value.get_mut("job").unwrap()); }
+    let payload = crate::json::stringify(&value).into_bytes();
+    if snapshot {
+        bytes.truncate(8);
+        bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+    } else {
+        bytes.truncate(52);
+        bytes[16..20].copy_from_slice(&(payload.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&crate::crypto::sha256(&bytes));
+    }
+    bytes.extend_from_slice(&payload);
+    bytes.extend_from_slice(&crate::crypto::sha256(&bytes));
+    bytes
+}
+
+#[test]
+fn historical_missing_fields_and_ready_cancellation_replay_without_weakening_new_records() {
+    for historical in [true, false] {
+        let directory = Directory::new();
+        let original = ready_job(1, 100);
+        let mut cancelled = original.clone();
+        cancelled.state = "cancelled".into();
+        cancelled.updated_at = 101;
+        let first = Event { id: 1, job_id: original.id.clone(), state: "ready".into(), message: "old import".into(), at: 100 };
+        let second = Event { id: 2, job_id: original.id.clone(), state: "cancelled".into(), message: "old cancel".into(), at: 101 };
+        let snapshot = fixture::snapshot(std::slice::from_ref(&original), &[first], 1, [0;32], legacy::SNAPSHOT_MAGIC);
+        let (frame, _) = fixture::frame(std::slice::from_ref(&cancelled), &second, 2, &[0;32], legacy::JOURNAL_MAGIC, None);
+        private(&directory.0.join("snapshot.bin"), &if historical { remove_historical_library_fields(snapshot, true) } else { snapshot });
+        private(&directory.0.join("journal.bin"), &if historical { remove_historical_library_fields(frame, false) } else { frame });
+        private(&directory.0.join(".lock"), b"");
+        let before = contents(&directory.0);
+        if historical {
+            let mut store = Store::open(&directory.0).unwrap();
+            assert_eq!(store.get(&original.id).unwrap().unwrap(), cancelled);
+            assert_eq!(store.events(&original.id).unwrap().len(), 2);
+        } else {
+            let error = Store::open(&directory.0).err().unwrap();
+            assert!(error.contains("ready import cannot change state"), "{error}");
+            assert_eq!(contents(&directory.0), before);
         }
     }
-    assert_eq!(seen, jobs.iter().map(|job| job.id.clone()).collect());
 }

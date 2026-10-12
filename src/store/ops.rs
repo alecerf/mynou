@@ -478,6 +478,19 @@ impl Db<'_> {
             .is_some())
     }
 
+    pub(super) fn replaced_by_child(&mut self, parent: &[u8; 16], pending: &BTreeMap<[u8; 16], bool>) -> Result<bool> {
+        let mut after = None;
+        loop {
+            let page = self.scan(&[&[T_CHILD][..], parent].concat(), after, MAX_PAGE_ROWS)?;
+            for (key, value) in &page.entries {
+                let child = key_part::<16>(key, 17)?;
+                if pending.get(&child).copied().unwrap_or(value.first() == Some(&1)) { return Ok(true); }
+            }
+            after = page.next;
+            if after.is_none() { return Ok(false); }
+        }
+    }
+
     /// Everything one transaction changes: the jobs and their entries, the
     /// library tips, the counters and the history of the first job.
     pub(super) fn stage(&mut self, jobs: &[Job], message: &str) -> Result<Vec<Change>> {
@@ -696,13 +709,7 @@ impl Db<'_> {
                 }
                 let id = id_bytes(&pair.job.id)?;
                 // A job that already has a ready import as a child is replaced.
-                let mut replaced = false;
-                for (child, ready) in self.children(&id)? {
-                    replaced |= in_transaction.get(&child).copied().unwrap_or(ready);
-                }
-                if replaced {
-                    continue;
-                }
+                if self.replaced_by_child(&id, &in_transaction)? { continue; }
                 let key = candidate_key(&media, pair.root.created_at, &pair.root.id);
                 let mut value = [0_u8; 24];
                 value[..16].copy_from_slice(&id);
