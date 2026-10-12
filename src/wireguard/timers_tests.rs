@@ -252,7 +252,10 @@ fn passive_keepalive_follows_received_data_by_ten_seconds() {
     );
     let due = timers.poll(G, secs(12)).unwrap();
     assert!(due.keepalive);
-    assert!(timers.poll(G, secs(12)).unwrap().keepalive, "due until sent");
+    assert!(
+        timers.poll(G, secs(12)).unwrap().keepalive,
+        "due until sent"
+    );
     timers.keepalive_sent(G, secs(12)).unwrap();
     assert!(!timers.poll(G, secs(12)).unwrap().keepalive);
 
@@ -266,20 +269,26 @@ fn passive_keepalive_follows_received_data_by_ten_seconds() {
 #[test]
 fn initiator_owes_a_confirming_keepalive_and_the_responder_does_not() {
     let mut initiator = timers(&[0]);
-    initiator.session_established(Role::Initiator, G, secs(3)).unwrap();
+    initiator
+        .session_established(Role::Initiator, G, secs(3))
+        .unwrap();
     assert!(initiator.poll(G, secs(3)).unwrap().keepalive);
     initiator.data_sent(false, G, secs(3)).unwrap();
     assert!(!initiator.poll(G, secs(3)).unwrap().keepalive);
 
     let mut responder = timers(&[0]);
-    responder.session_established(Role::Responder, G, secs(3)).unwrap();
+    responder
+        .session_established(Role::Responder, G, secs(3))
+        .unwrap();
     assert!(!responder.poll(G, secs(3)).unwrap().keepalive);
 }
 
 #[test]
 fn persistent_keepalive_counts_from_the_last_sent_packet() {
     let mut timers = established(Role::Initiator, ZERO);
-    timers.set_persistent_keepalive(Some(secs(25)), G, ZERO).unwrap();
+    timers
+        .set_persistent_keepalive(Some(secs(25)), G, ZERO)
+        .unwrap();
     let early = timers.poll(G, ms(24_999)).unwrap();
     assert!(!early.keepalive);
     assert_eq!(early.next, Some(secs(25)));
@@ -300,8 +309,12 @@ fn persistent_keepalive_interval_is_validated() {
     for bad in [ZERO, ms(1_500), secs(65_536), ms(999)] {
         assert!(timers.set_persistent_keepalive(Some(bad), G, ZERO).is_err());
     }
-    timers.set_persistent_keepalive(Some(secs(1)), G, ZERO).unwrap();
-    timers.set_persistent_keepalive(Some(secs(65_535)), G, ZERO).unwrap();
+    timers
+        .set_persistent_keepalive(Some(secs(1)), G, ZERO)
+        .unwrap();
+    timers
+        .set_persistent_keepalive(Some(secs(65_535)), G, ZERO)
+        .unwrap();
     timers.set_persistent_keepalive(None, G, ZERO).unwrap();
 }
 
@@ -353,7 +366,9 @@ fn session_expiry_and_the_triple_age_discard_have_exact_boundaries() {
 #[test]
 fn a_new_session_postpones_the_discard() {
     let mut timers = established(Role::Initiator, ZERO);
-    timers.session_established(Role::Initiator, G, secs(100)).unwrap();
+    timers
+        .session_established(Role::Initiator, G, secs(100))
+        .unwrap();
     timers.keepalive_sent(G, secs(100)).unwrap();
     let due = timers.poll(G, secs(280)).unwrap();
     assert!(due.expired);
@@ -408,7 +423,9 @@ fn the_largest_clock_value_fails_closed_without_panicking() {
     timers.queue_data(G, Duration::MAX).unwrap();
     let due = timers.poll(G, Duration::MAX).unwrap();
     assert!(due.gave_up && !due.initiate, "a retry cannot be scheduled");
-    timers.session_established(Role::Initiator, G, Duration::MAX).unwrap();
+    timers
+        .session_established(Role::Initiator, G, Duration::MAX)
+        .unwrap();
     timers.data_sent(true, G, Duration::MAX).unwrap();
     timers.poll(G, Duration::MAX).unwrap();
 }
@@ -566,7 +583,10 @@ fn discard_all_and_fences_are_strict() {
     sets.install_initiator(again, G, ZERO).unwrap();
 
     assert!(sets.send(b"x", 2, ZERO).is_err());
-    assert!(sets.send(b"x", G, ZERO).is_err(), "a generation change revokes");
+    assert!(
+        sets.send(b"x", G, ZERO).is_err(),
+        "a generation change revokes"
+    );
 
     let mut regress = KeySets::new(G, ZERO);
     regress.expire(G, secs(5)).unwrap();
@@ -631,7 +651,9 @@ fn two_peers_survive_loss_retry_passive_keepalive_and_rekey() {
     assert!(a.timers.poll(G, secs(5)).unwrap().initiate);
     let (a_one, b_one) = sessions(1, 2, 10, secs(5));
     a.sets.install_initiator(a_one, G, secs(5)).unwrap();
-    a.timers.session_established(Role::Initiator, G, secs(5)).unwrap();
+    a.timers
+        .session_established(Role::Initiator, G, secs(5))
+        .unwrap();
     b.sets.install_responder(b_one, G, secs(5)).unwrap();
 
     // The initiator confirms the key with a keepalive; the responder promotes.
@@ -658,7 +680,9 @@ fn two_peers_survive_loss_retry_passive_keepalive_and_rekey() {
 
     let (a_two, b_two) = sessions(3, 4, 30, secs(35));
     a.sets.install_initiator(a_two, G, secs(35)).unwrap();
-    a.timers.session_established(Role::Initiator, G, secs(35)).unwrap();
+    a.timers
+        .session_established(Role::Initiator, G, secs(35))
+        .unwrap();
     b.sets.install_responder(b_two, G, secs(35)).unwrap();
     assert!(a.timers.poll(G, secs(35)).unwrap().keepalive);
     let confirm = a.send(b"", secs(35));

@@ -150,8 +150,7 @@ impl<E: Entropy> Timers<E> {
     ) -> Result<()> {
         self.fence.admit(generation, now)?;
         if let Some(value) = interval
-            && (value.subsec_nanos() != 0
-                || !(1..=MAX_PERSISTENT_SECS).contains(&value.as_secs()))
+            && (value.subsec_nanos() != 0 || !(1..=MAX_PERSISTENT_SECS).contains(&value.as_secs()))
         {
             return Err("WireGuard: persistent keepalive must be 1 to 65535 seconds".into());
         }
@@ -325,7 +324,8 @@ impl<E: Entropy> Timers<E> {
                 self.attempt = Attempt::Abandoned;
                 due.gave_up = true;
             } else if now >= next {
-                let delay = REKEY_TIMEOUT.saturating_add(jitter.ok_or("WireGuard: missing jitter")?);
+                let delay =
+                    REKEY_TIMEOUT.saturating_add(jitter.ok_or("WireGuard: missing jitter")?);
                 match now.checked_add(delay) {
                     Some(next) => {
                         self.attempt = Attempt::Active { started, next };
@@ -351,7 +351,8 @@ impl<E: Entropy> Timers<E> {
         let base = self
             .last_sent
             .map_or(clock.born, |sent| sent.max(clock.born));
-        self.persistent.map(|interval| base.saturating_add(interval))
+        self.persistent
+            .map(|interval| base.saturating_add(interval))
     }
 
     /// The earliest instant at which a poll can produce a request, if any.
@@ -427,7 +428,13 @@ impl KeySets {
         discard(self.next.take());
     }
 
-    fn check(&mut self, session: &Session, role: Role, generation: u64, now: Duration) -> Result<()> {
+    fn check(
+        &mut self,
+        session: &Session,
+        role: Role,
+        generation: u64,
+        now: Duration,
+    ) -> Result<()> {
         self.fence.admit(generation, now)?;
         if session.role != role
             || session.generation != generation
@@ -541,8 +548,7 @@ impl KeySets {
         let mut removed = 0;
         for slot in [&mut self.current, &mut self.previous, &mut self.next] {
             let stale = slot.as_ref().is_some_and(|session| {
-                session.keys.is_none()
-                    || now.saturating_sub(session.created) >= REJECT_AFTER_TIME
+                session.keys.is_none() || now.saturating_sub(session.created) >= REJECT_AFTER_TIME
             });
             if stale {
                 discard(slot.take());
