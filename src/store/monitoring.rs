@@ -36,7 +36,7 @@ pub(super) fn counts(index: &mut Index) -> Result<[u64; 5]> {
         return Err("Invalid library monitoring counters".into());
     }
     let mut counts = [0; 5];
-    for (slot, bytes) in counts.iter_mut().zip(bytes.chunks_exact(8)) {
+    for (slot, bytes) in counts.iter_mut().zip(bytes.as_chunks::<8>().0) {
         *slot = u64::from_le_bytes(ops::array(bytes)?);
     }
     Ok(counts)
