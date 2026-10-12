@@ -1,181 +1,222 @@
-//! Checksummed atomic snapshots share the request journal's process lock.
-use super::{Policy, Record, State};
-use crate::{
-    Result,
-    config::Config,
-    crypto::{random_bytes, sha256},
-    json,
-    store::{private_options, reject_symlinks, sync_directory},
-};
-use std::{
-    fs::{self},
-    io::{Read, Write},
-    path::{Path, PathBuf},
-};
-const MAGIC: &[u8; 8] = b"MYNOUR01";
-const IRC_MAGIC: &[u8; 8] = b"MYNOUR02";
-const MAX_BYTES: usize = 16 * 1024 * 1024;
+//! Indexed demand storage; legacy state is retained only during checked migration.
+use super::{Demand, LedgerRead, Policy, Record, State, index};
+use crate::{Result, config::Config, crypto::{random_bytes, sha256}, inventory::{Change, Index, Key, MAX_PAGE_ROWS}, json, store::{private_options, reject_symlinks, sync_directory}};
+use std::{cell::RefCell, collections::{BTreeMap, BTreeSet}, fs, io::{Read, Write}, os::unix::fs::{MetadataExt, PermissionsExt}, path::{Path, PathBuf}};
+const MAX_LEGACY_BYTES: usize = 16 * 1024 * 1024;
+const MARKER: &[u8; 8] = b"MYNOUR03";
+const INDEX: &str = "requesters.idx";
+const STAGING: &str = "requesters.idx.staging";
 
+enum Backend { Legacy { state: State, bytes: Option<Vec<u8>> }, Ready(Index) }
 pub(crate) struct RequesterStore {
+    /// Bounded account metadata only. Demands/operator interests live on disk.
     pub state: State,
-    path: PathBuf,
+    directory: PathBuf,
+    backend: RefCell<Backend>,
     read_only: bool,
-    poisoned: bool,
     dirty: bool,
+    poisoned: bool,
+    pub admission_cursor: Option<Key>,
+    pub outcome_cursor: Option<Key>,
+}
+fn header(state: &State) -> State { let mut state = state.clone(); state.demands.clear(); state.operator_jobs.clear(); state }
+fn parse(bytes: &[u8]) -> Result<State> {
+    if bytes.len() < 48 || bytes.len() > MAX_LEGACY_BYTES + 48 || ![b"MYNOUR01".as_slice(), b"MYNOUR02".as_slice()].contains(&&bytes[..8]) || u64::from_le_bytes(bytes[8..16].try_into().map_err(|_| "Requester: invalid snapshot length")?) != bytes.len() as u64 - 48 || sha256(&bytes[..bytes.len() - 32]).as_slice() != &bytes[bytes.len() - 32..] { return Err("Requester: corrupt or unsupported snapshot".into()); }
+    let state = State::from_json(&json::parse(std::str::from_utf8(&bytes[16..bytes.len() - 32]).map_err(|_| "Requester: snapshot is not UTF-8")?)?)?;
+    if &bytes[..8] == b"MYNOUR01" && state.demands.values().any(|d| d.origins.iter().any(|o| o.starts_with("irc:"))) { return Err("Requester: explicit IRC origins require snapshot format 2".into()); }
+    Ok(state)
+}
+fn read(path: &Path) -> Result<Option<Vec<u8>>> {
+    reject_symlinks(path)?;
+    let metadata = match fs::symlink_metadata(path) { Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None), Err(_) => return Err("Requester: cannot inspect snapshot".into()), Ok(m) => m };
+    if !metadata.is_file() || metadata.nlink() != 1 || metadata.permissions().mode() & 0o077 != 0 || metadata.len() > (MAX_LEGACY_BYTES + 48) as u64 { return Err("Requester: invalid snapshot file, permissions or size".into()); }
+    let mut file = private_options().read(true).open(path).map_err(|_| "Requester: cannot open snapshot")?;
+    let opened = file.metadata().map_err(|_| "Requester: cannot inspect open snapshot")?;
+    if opened.dev() != metadata.dev() || opened.ino() != metadata.ino() { return Err("Requester: snapshot changed during open".into()); }
+    let mut bytes = Vec::new(); Read::take(&mut file, (MAX_LEGACY_BYTES + 49) as u64).read_to_end(&mut bytes).map_err(|_| "Requester: cannot read snapshot")?;
+    if bytes.len() as u64 != metadata.len() { return Err("Requester: snapshot changed during read".into()); }
+    Ok(Some(bytes))
+}
+fn replace(directory: &Path, path: &Path, bytes: &[u8]) -> Result<()> {
+    reject_symlinks(path)?;
+    let temp = directory.join(format!(".requesters-{}.tmp", super::digest(&random_bytes::<16>()?)));
+    let result = (|| {
+        let mut file = private_options().write(true).create_new(true).open(&temp).map_err(|_| "Requester: cannot create storage file")?;
+        file.write_all(bytes).and_then(|()| file.sync_all()).map_err(|_| "Requester: cannot persist storage file")?;
+        fs::rename(&temp, path).map_err(|_| "Requester: cannot publish storage file")?;
+        sync_directory(directory)
+    })();
+    if result.is_err() { let _ = fs::remove_file(temp); }
+    result
 }
 impl RequesterStore {
     pub(crate) fn open(directory: &Path, config: &Config, read_only: bool) -> Result<Self> {
-        let path = directory.join("requesters.bin");
-        reject_symlinks(&path)?;
-        let state = match fs::symlink_metadata(&path) {
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => State::empty(),
-            Err(_) => return Err("Requester: cannot inspect snapshot".into()),
-            Ok(m) => {
-                if !m.is_file() || m.len() < 48 || m.len() > MAX_BYTES as u64 + 48 {
-                    return Err("Requester: invalid snapshot file or size".into());
-                }
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::MetadataExt;
-                    if m.nlink() != 1 {
-                        return Err("Requester: snapshot cannot share hard links".into());
-                    }
-                }
-                let mut bytes = Vec::new();
-                private_options()
-                    .read(true)
-                    .open(&path)
-                    .map_err(|_| "Requester: cannot open snapshot")?
-                    .take(MAX_BYTES as u64 + 49)
-                    .read_to_end(&mut bytes)
-                    .map_err(|_| "Requester: cannot read snapshot")?;
-                if bytes.len() < 48
-                    || (&bytes[..8] != MAGIC && &bytes[..8] != IRC_MAGIC)
-                    || u64::from_le_bytes(
-                        bytes[8..16]
-                            .try_into()
-                            .map_err(|_| "Requester: invalid snapshot length")?,
-                    ) != bytes.len() as u64 - 48
-                    || sha256(&bytes[..bytes.len() - 32]).as_slice() != &bytes[bytes.len() - 32..]
-                {
-                    return Err("Requester: corrupt or unsupported snapshot".into());
-                }
-                let state = State::from_json(&json::parse(
-                    std::str::from_utf8(&bytes[16..bytes.len() - 32])
-                        .map_err(|_| "Requester: snapshot is not UTF-8")?,
-                )?)?;
-                if state
-                    .demands
-                    .values()
-                    .any(|d| d.origins.iter().any(|o| o.starts_with("irc:")))
-                    && &bytes[..8] == MAGIC
-                {
-                    return Err("Requester: explicit IRC origins require snapshot format 2".into());
-                }
-                state
-            }
+        let bytes = read(&directory.join("requesters.bin"))?;
+        let (backend, mut state) = if let Some(bytes) = &bytes && bytes.starts_with(MARKER) {
+            if bytes.len() != 72 || sha256(&bytes[..40]).as_slice() != &bytes[40..] { return Err("Requester: corrupt index marker".into()); }
+            let mut index = Index::open(&directory.join(INDEX), read_only)?;
+            if index.identity().as_slice() != &bytes[8..40] { return Err("Requester: index identity differs from marker".into()); }
+            let value = index.get(&index::HEADER)?.ok_or("Requester: index metadata is missing")?;
+            let state = State::from_json(&json::parse(std::str::from_utf8(&value).map_err(|_| "Requester: invalid metadata text")?)?)?;
+            if !state.demands.is_empty() || !state.operator_jobs.is_empty() { return Err("Requester: index metadata contains inventory records".into()); }
+            (Backend::Ready(index), state)
+        } else {
+            let state = bytes.as_deref().map(parse).transpose()?.unwrap_or_else(State::empty);
+            let metadata = header(&state);
+            (Backend::Legacy { state, bytes }, metadata)
         };
-        let mut store = Self {
-            state,
-            path,
-            read_only,
-            poisoned: false,
-            dirty: false,
-        };
-        let mut next = store.state.clone();
+        let original = state.clone();
         for account in &config.requesters.accounts {
-            if let Some(record) = next.accounts.get(&account.id) {
-                if record.binding != account.binding() {
-                    return Err("Requester: an existing account binding changed; use a new stable account ID".into());
-                }
+            if let Some(record) = state.accounts.get(&account.id) {
+                if record.binding != account.binding() { return Err("Requester: an existing account binding changed; use a new stable account ID".into()); }
             } else {
-                next.accounts.insert(
-                    account.id.clone(),
-                    Record {
-                        id: account.id.clone(),
-                        binding: account.binding(),
-                        policy: Policy::initial(config),
-                        revision: 1,
-                        cursor: 0,
-                        snapshot: None,
-                        polled_at: 0,
-                        last_error: None,
-                    },
-                );
+                state.accounts.insert(account.id.clone(), Record { id: account.id.clone(), binding: account.binding(), policy: Policy::initial(config), revision: 1, cursor: 0, snapshot: None, polled_at: 0, last_error: None });
             }
         }
-        State::from_json(&next.to_json())?;
-        if next != store.state {
-            store.state = next;
-            store.dirty = true;
-        }
-        Ok(store)
-    }
-    pub(crate) fn initialize(&mut self) -> Result<()> {
-        if self.dirty && !self.read_only {
-            self.save(self.state.clone())?;
-        }
-        Ok(())
-    }
-    pub(crate) fn save(&mut self, mut state: State) -> Result<()> {
-        if self.read_only {
-            return Err("Requester storage is read-only".into());
-        }
-        if self.poisoned {
-            return Err(
-                "Requester storage durability is uncertain; restart before changing demand".into(),
-            );
-        }
-        state.revision = self
-            .state
-            .revision
-            .checked_add(1)
-            .ok_or("Requester: revision overflow")?;
         State::from_json(&state.to_json())?;
-        let payload = json::stringify(&state.to_json()).into_bytes();
-        if payload.len() > MAX_BYTES {
-            return Err("Requester: snapshot exceeds 16 MiB".into());
-        }
-        let irc = state
-            .demands
-            .values()
-            .any(|d| d.origins.iter().any(|o| o.starts_with("irc:")));
-        let mut bytes = Vec::with_capacity(payload.len() + 48);
-        bytes.extend_from_slice(if irc { IRC_MAGIC } else { MAGIC });
-        bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
-        bytes.extend_from_slice(&payload);
-        bytes.extend_from_slice(&sha256(&bytes));
-        reject_symlinks(&self.path)?;
-        let temp = self.path.with_file_name(format!(
-            ".requesters-{}.tmp",
-            super::digest(&random_bytes::<16>()?)
-        ));
-        let written = (|| -> Result<()> {
-            let mut file = private_options()
-                .write(true)
-                .create_new(true)
-                .open(&temp)
-                .map_err(|_| "Requester: cannot create snapshot")?;
-            file.write_all(&bytes)
-                .and_then(|()| file.sync_all())
-                .map_err(|_| "Requester: cannot persist snapshot")?;
-            fs::rename(&temp, &self.path).map_err(|_| "Requester: cannot replace snapshot")?;
-            if let Err(e) = sync_directory(
-                self.path
-                    .parent()
-                    .ok_or("Requester: missing storage directory")?,
-            ) {
-                self.poisoned = true;
-                return Err(e);
-            }
-            Ok(())
-        })();
-        if written.is_err() {
-            let _ = fs::remove_file(&temp);
-        }
-        written?;
-        self.state = state;
-        self.dirty = false;
+        let dirty = state != original;
+        Ok(Self { state, directory: directory.to_owned(), backend: RefCell::new(backend), read_only, dirty, poisoned: false, admission_cursor: None, outcome_cursor: None })
+    }
+    fn available(&self) -> Result<()> {
+        if self.poisoned { return Err("Requester storage durability is uncertain; restart before reading or changing demand".into()); }
+        if let Backend::Ready(index) = &*self.backend.borrow() { index.sequence()?; }
         Ok(())
+    }
+    pub(crate) fn sequence(&self) -> Result<u64> { self.available()?; Ok(self.state.revision) }
+    pub(crate) fn initialize(&mut self) -> Result<()> {
+        if self.read_only { return Ok(()); }
+        let legacy = match &*self.backend.borrow() { Backend::Legacy { state, bytes } => Some((state.clone(), bytes.clone())), Backend::Ready(_) => None };
+        if let Some((state, bytes)) = legacy {
+            let result = self.migrate(&state, bytes.as_deref());
+            match result { Ok(index) => *self.backend.borrow_mut() = Backend::Ready(index), Err(error) => { self.poisoned = true; return Err(error); } }
+        }
+        if self.dirty { self.save_patch(self.state.clone())?; }
+        Ok(())
+    }
+    /// The supplied State contains metadata and explicit changed records only;
+    /// records omitted from this bounded patch are never removed.
+    pub(crate) fn save_patch(&mut self, mut patch: State) -> Result<()> {
+        self.available()?;
+        if self.read_only { return Err("Requester storage is read-only".into()); }
+        patch.revision = self.state.revision.checked_add(1).ok_or("Requester: revision overflow")?;
+        State::from_json(&patch.to_json())?;
+        let demands: Vec<_> = patch.demands.values().cloned().collect();
+        let operators: Vec<_> = patch.operator_jobs.iter().cloned().collect();
+        let mut backend = self.backend.borrow_mut();
+        let Backend::Ready(index) = &mut *backend else { return Err("Requester: checked migration must precede a patch".into()); };
+        let metadata = header(&patch);
+        let result = index::commit(index, &metadata, &demands, &operators);
+        if result.is_err() && !index.is_usable() { self.poisoned = true; }
+        result?;
+        self.state = metadata; self.dirty = false;
+        Ok(())
+    }
+    pub(crate) fn account_page(&self, account: &str, after: Option<Key>, limit: usize) -> Result<(Vec<Demand>, Option<Key>)> {
+        self.available()?;
+        match &mut *self.backend.borrow_mut() {
+            Backend::Ready(index) => { let page = index::account_page(index, account, after, limit)?; Ok((page.demands, page.next)) },
+            Backend::Legacy { state, .. } => {
+                let filtered = State { revision: state.revision, accounts: BTreeMap::new(), demands: state.demands.iter().filter(|(_, d)| d.account_id == account).map(|(id, d)| (id.clone(), d.clone())).collect(), operator_jobs: BTreeSet::new() };
+                index::legacy_page(&filtered, after, limit, false)
+            }
+        }
+    }
+    pub(crate) fn queue_page(&self, state_name: &str, after: Option<Key>, limit: usize) -> Result<(Vec<Demand>, Option<Key>)> {
+        self.available()?;
+        match &mut *self.backend.borrow_mut() {
+            Backend::Ready(index) => { let page = index::queue_page(index, state_name, after, limit)?; Ok((page.demands, page.next)) },
+            Backend::Legacy { .. } => Err("Requester: writable migration is required before scheduling".into())
+        }
+    }
+    pub(crate) fn count(&self, account: &str, state_name: Option<&str>) -> Result<u64> {
+        self.available()?;
+        match &mut *self.backend.borrow_mut() { Backend::Ready(index) => index::count(index, account, state_name.map(index::state_code).transpose()?.unwrap_or(255)), Backend::Legacy { state, .. } => Ok(state.demands.values().filter(|d| (account.is_empty() || d.account_id == account) && state_name.is_none_or(|name| name == d.state)).count() as u64) }
+    }
+    pub(crate) fn describe(&self) -> Result<json::Value> {
+        let mut value = json::Value::object(); value.insert("demands", self.count("", None)?.to_string()); value.insert("pending", self.count("", Some("pending"))?.to_string()); value.insert("reserved", self.count("", Some("reserved"))?.to_string()); value.insert("revision", self.sequence()?.to_string()); value.insert("backend", if matches!(&*self.backend.borrow(), Backend::Ready(_)) { "disk-index" } else { "legacy-awaiting-migration" }); Ok(value)
+    }
+    fn migrate(&self, state: &State, bytes: Option<&[u8]>) -> Result<Index> {
+        let source = sha256(bytes.unwrap_or_default());
+        if let Some(bytes) = bytes {
+            let backup = self.directory.join(format!("requesters.legacy-{}.bin", super::digest(&source)));
+            if let Some(known) = read(&backup)? { if known != bytes { return Err("Requester: preserved legacy copy differs; refusing replacement".into()); } } else { replace(&self.directory, &backup, bytes)?; }
+        }
+        let published = self.directory.join(INDEX); reject_symlinks(&published)?;
+        let staging = self.directory.join(STAGING); reject_symlinks(&staging)?;
+        let mut index = if published.try_exists().map_err(|_| "Requester: cannot inspect published index")? {
+            let mut index = Index::open(&published, false)?;
+            if index.get(&index::SOURCE)?.as_deref() != Some(source.as_slice()) { return Err("Requester: published index differs from validated legacy source".into()); }
+            index
+        } else {
+            let mut reusable = None;
+            if staging.try_exists().map_err(|_| "Requester: cannot inspect staging")? {
+                if let Ok(mut inspect) = Index::open(&staging, true) && inspect.get(&index::SOURCE)?.as_deref() == Some(source.as_slice()) { drop(inspect); reusable = Some(Index::open(&staging, false)?); }
+                else {
+                    let metadata = fs::symlink_metadata(&staging).map_err(|_| "Requester: cannot inspect staging")?;
+                    if !metadata.is_dir() || metadata.permissions().mode() & 0o077 != 0 { return Err("Requester: staging must be a private directory; move it aside explicitly".into()); }
+                    let preserved = self.directory.join(format!("requesters.idx.abandoned-{}", super::digest(&random_bytes::<16>()?)));
+                    fs::rename(&staging, &preserved).map_err(|_| "Requester: cannot preserve interrupted staging")?; sync_directory(&self.directory)?;
+                }
+            }
+            if let Some(index) = reusable { index } else { let mut index = Index::create(&staging)?; index.commit(vec![Change::PutInline(index::SOURCE, source.to_vec())])?; index }
+        };
+        let cursor = index.get(&index::CURSOR)?;
+        let mut batch = Vec::new();
+        for demand in state.demands.values() {
+            if cursor.as_deref().is_some_and(|done| demand.id.as_bytes() <= done) { continue; }
+            batch.push(demand.clone());
+            if batch.len() == MAX_PAGE_ROWS { write_migration_batch(&mut index, &self.state, &batch)?; batch.clear(); }
+        }
+        if !batch.is_empty() { write_migration_batch(&mut index, &self.state, &batch)?; }
+        let operators: Vec<_> = state.operator_jobs.iter().cloned().collect();
+        for batch in operators.chunks(MAX_PAGE_ROWS) { index::commit(&mut index, &self.state, &[], batch)?; }
+        index::commit(&mut index, &self.state, &[], &[])?;
+        verify(&mut index, state, &self.state, &source)?;
+        if index.get(&index::CURSOR)?.is_some() { index.commit(vec![Change::Delete(index::CURSOR)])?; }
+        let identity = index.identity(); drop(index);
+        if !published.try_exists().map_err(|_| "Requester: cannot inspect promotion")? { fs::rename(&staging, &published).map_err(|_| "Requester: cannot promote checked index")?; sync_directory(&self.directory)?; }
+        let mut marker = MARKER.to_vec(); marker.extend_from_slice(&identity); marker.extend_from_slice(&sha256(&marker));
+        replace(&self.directory, &self.directory.join("requesters.bin"), &marker)?;
+        Index::open(&published, false)
+    }
+}
+fn write_migration_batch(index: &mut Index, metadata: &State, batch: &[Demand]) -> Result<()> {
+    index::commit(index, metadata, batch, &[])?;
+    let last = batch.last().ok_or("Requester: empty migration batch")?;
+    index.commit(vec![Change::Put(index::CURSOR, last.id.as_bytes().to_vec())])?;
+    Ok(())
+}
+fn verify(index: &mut Index, legacy: &State, metadata: &State, source: &[u8; 32]) -> Result<()> {
+    let mut expected = BTreeMap::from([(index::HEADER, json::stringify(&header(metadata).to_json()).into_bytes()), (index::SOURCE, source.to_vec())]);
+    let mut counts = BTreeMap::<Key, u64>::new();
+    for demand in legacy.demands.values() {
+        expected.extend(index::entries(demand)?);
+        for account in [&demand.account_id[..], ""] { for state in [index::state_code(&demand.state)?, 255] { *counts.entry(index::counter(account, state)).or_default() += 1; } }
+    }
+    for (key, count) in counts { expected.insert(key, count.to_le_bytes().to_vec()); }
+    for id in &legacy.operator_jobs { expected.insert(index::operator_key(id)?, Vec::new()); }
+    if !legacy.operator_jobs.is_empty() { expected.insert(index::OPERATOR_COUNT, (legacy.operator_jobs.len() as u64).to_le_bytes().to_vec()); }
+    if let Some(cursor) = index.get(&index::CURSOR)? { expected.insert(index::CURSOR, cursor); }
+    for (key, value) in &expected { if index.get(key)?.as_ref() != Some(value) { return Err("Requester: migration primary, secondary or metadata proof differs".into()); } }
+    if index.len()? != expected.len() as u64 { return Err("Requester: migration contains unacknowledged extra keys".into()); }
+    Ok(())
+}
+impl LedgerRead for RequesterStore {
+    fn accounts(&self) -> &BTreeMap<String, Record> { &self.state.accounts }
+    fn demand(&self, id: &str) -> Result<Option<Demand>> {
+        self.available()?;
+        match &mut *self.backend.borrow_mut() { Backend::Ready(index) => index::get(index, id), Backend::Legacy { state, .. } => state.demand(id) }
+    }
+    fn demands_page(&self, after: Option<Key>, limit: usize) -> Result<(Vec<Demand>, Option<Key>)> {
+        self.available()?;
+        match &mut *self.backend.borrow_mut() { Backend::Ready(index) => { let page = index::all_page(index, after, limit)?; Ok((page.demands, page.next)) }, Backend::Legacy { state, .. } => state.demands_page(after, limit) }
+    }
+    fn irc_demands_page(&self, after: Option<Key>, limit: usize) -> Result<(Vec<Demand>, Option<Key>)> {
+        self.available()?;
+        match &mut *self.backend.borrow_mut() { Backend::Ready(index) => { let page = index::irc_page(index, after, limit)?; Ok((page.demands, page.next)) }, Backend::Legacy { state, .. } => state.irc_demands_page(after, limit) }
+    }
+    fn operator_interest(&self, id: &str) -> Result<bool> {
+        self.available()?;
+        match &mut *self.backend.borrow_mut() { Backend::Ready(index) => index::has_operator(index, id), Backend::Legacy { state, .. } => state.operator_interest(id) }
     }
 }
