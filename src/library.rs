@@ -289,11 +289,15 @@ impl Engine {
                     item.insert("upgrade_job_id", child.id);
                     item.insert("upgrade_state", child.state);
                 }
-                Err(error) if matches!(error.as_str(),
-                    "upgrade source URL is already owned by an unrelated request"
-                    | "an upgrade requires a monitored current library import with a release baseline"
-                    | "an upgrade for this media is already pending"
-                    | "an upgrade must use a different acquisition URL") => {
+                Err(error)
+                    if matches!(
+                        error.as_str(),
+                        "upgrade source URL is already owned by an unrelated request"
+                            | "an upgrade requires a monitored current library import with a release baseline"
+                            | "an upgrade for this media is already pending"
+                            | "an upgrade must use a different acquisition URL"
+                    ) =>
+                {
                     // A concurrent control, another source identity, or an obsolete
                     // parent must never cause a second upgrade or leak its URL.
                     item.insert("action", "entry_changed");
