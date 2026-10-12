@@ -1946,10 +1946,15 @@ fn cancellation_preserves_owners_bound_only_by_an_irc_alias() {
     let directory = Directory::new();
     let origin_job = irc_fixture_job(1);
     let mut cancelled = raw_job(2, 102);
-    cancelled.download_id = Some(origin_job.irc_origin.as_ref().unwrap().torrent_aliases[1].clone());
+    cancelled.download_id =
+        Some(origin_job.irc_origin.as_ref().unwrap().torrent_aliases[1].clone());
     cancelled.state = "cancelled".into();
     let mut store = Store::open(&directory.0).unwrap();
     bulk(&mut store, vec![origin_job, cancelled.clone()]);
     assert!(store.has_co_owner(&cancelled).unwrap());
-    assert!(store.transfer_has_owner(cancelled.download_id.as_deref().unwrap()).unwrap());
+    assert!(
+        store
+            .transfer_has_owner(cancelled.download_id.as_deref().unwrap())
+            .unwrap()
+    );
 }
