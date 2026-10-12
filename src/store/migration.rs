@@ -24,7 +24,7 @@ use super::{
 };
 use crate::{
     crypto::{random_bytes, sha256},
-    inventory::{Key, MAX_PAGE_ROWS, Query},
+    inventory::Key,
     store::{private_options, reject_symlinks, sync_directory},
 };
 use std::{
@@ -190,7 +190,7 @@ fn cursor_of(index: &mut Index) -> Result<Option<String>> {
 /// interrupted migration is emptied once it provably equals the preserved copy.
 fn settle_journal(directory: &Path, index: &mut Index, read_only: bool) -> Result<()> {
     let path = directory.join(legacy::JOURNAL);
-    let Some(bytes) = legacy::read_bounded(&path, legacy::MAX_JOURNAL_BYTES, !read_only)? else {
+    let Some(bytes) = legacy::read_bounded(&path, legacy::MAX_JOURNAL_BYTES, false)? else {
         return Ok(());
     };
     if bytes.is_empty() {
@@ -500,7 +500,13 @@ fn verify(index: &mut Index, state: &State, plan: &Plan, counts: Counts) -> Resu
     if stored != counts {
         return Err(failed("counters disagree"));
     }
-    let mut expected_events = 0_u64;
+    let mut expected = BTreeSet::from([
+        layout::FORMAT_KEY, layout::COUNTS_KEY, layout::LIBRARY_COUNT_KEY,
+        layout::MIGRATION_SOURCE_KEY,
+    ]);
+    if index.get(&layout::MIGRATION_CURSOR_KEY)?.is_some() {
+        expected.insert(layout::MIGRATION_CURSOR_KEY);
+    }
     for id in state.jobs.keys() {
         let mut entries = BTreeMap::new();
         plan.entries(state, id, &mut entries)?;
@@ -510,6 +516,7 @@ fn verify(index: &mut Index, state: &State, plan: &Plan, counts: Counts) -> Resu
             return Err(failed("a record differs"));
         }
         for (key, entry) in entries {
+            expected.insert(key);
             if index.get(&key)?.as_deref() != Some(entry.bytes()) {
                 return Err(failed("an index entry differs"));
             }
@@ -518,34 +525,11 @@ fn verify(index: &mut Index, state: &State, plan: &Plan, counts: Counts) -> Resu
         if log != plan.events.get(id).cloned().unwrap_or_default() {
             return Err(failed("a job history differs"));
         }
-        expected_events += log.len() as u64;
     }
-    let count_table = |index: &mut Index, table: u8| -> Result<u64> {
-        let (start, end) = layout::prefix_range(&[table]);
-        let mut after = None;
-        let mut total = 0_u64;
-        loop {
-            let page = index.page(&Query {
-                start,
-                end,
-                after,
-                limit: MAX_PAGE_ROWS,
-                sequence: None,
-            })?;
-            total += page.entries.len() as u64;
-            after = page.next;
-            if after.is_none() {
-                return Ok(total);
-            }
-        }
-    };
-    if count_table(index, layout::T_JOB)? != state.jobs.len() as u64
-        || count_table(index, layout::T_ALL)? != state.jobs.len() as u64
-        || count_table(index, layout::T_SEQUENCE)? != expected_events
-        || count_table(index, layout::T_CANDIDATE)? != plan.candidates.len() as u64
-        || count_table(index, layout::T_LIBRARY)? != plan.winners.len() as u64
-        || count_table(index, layout::T_TIP)? != plan.winners.len() as u64
-    {
+    // Every expected primary and secondary key has been compared above. The
+    // index's exact total also excludes ANY extra key, including ownership
+    // tables and unknown table prefixes, without materializing the disk tree.
+    if index.len()? != expected.len() as u64 {
         return Err(failed("an index holds entries the legacy state does not"));
     }
     Ok(())
