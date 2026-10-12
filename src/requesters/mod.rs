@@ -2,6 +2,8 @@
 pub(crate) mod engine;
 mod index;
 mod persistence;
+#[cfg(test)]
+mod index_tests;
 
 /// Authoritative fallible reads shared by validated legacy migration and the
 /// live disk index. A bounded patch is never used as a complete read view.
