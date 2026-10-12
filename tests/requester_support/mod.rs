@@ -342,13 +342,16 @@ pub fn read_snapshot(directory: &Path) -> Value {
     value
 }
 pub fn write_snapshot(directory: &Path, value: &Value) {
+    write_snapshot_format(directory, b"MYNOUR01", value);
+}
+pub fn write_snapshot_format(directory: &Path, magic: &[u8; 8], value: &Value) {
     // Deliberately restore legacy synthetic data; preserve the published index.
     let index = directory.join("requesters.idx");
     if index.exists() {
         fs::rename(&index, directory.join("requesters.idx.fixture-original")).unwrap();
     }
     let payload = json::stringify(value).into_bytes();
-    let mut bytes = b"MYNOUR01".to_vec();
+    let mut bytes = magic.to_vec();
     bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
     bytes.extend_from_slice(&payload);
     bytes.extend_from_slice(&sha256(&bytes));

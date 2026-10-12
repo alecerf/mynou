@@ -593,10 +593,9 @@ fn committed_and_uncommitted_crash_intents_recover_without_replay_or_admission()
         pending(&mut history, id);
         write_checked(&path, b"MYNOUI03", &history);
         if !durable {
-            let path = cfg.store_dir.join("requesters.bin");
-            let mut ledger = read_checked(&path);
+            let mut ledger = requester_support::read_snapshot(&cfg.store_dir);
             ledger.insert("demands", Value::Array(Vec::new()));
-            write_checked(&path, b"MYNOUR02", &ledger);
+            requester_support::write_snapshot_format(&cfg.store_dir, b"MYNOUR02", &ledger);
         }
         let before = irc_support::bytes(&cfg.store_dir);
         let preview = Engine::open_for_preview(cfg.clone()).unwrap();
@@ -638,12 +637,11 @@ fn missing_cross_store_provenance_and_semantic_format_downgrades_fail_closed() {
         request(&e, &row);
         drop(e);
         let hp = cfg.store_dir.join("announcements.bin");
-        let rp = cfg.store_dir.join("requesters.bin");
         let mut h = read_checked(&hp);
-        let mut r = read_checked(&rp);
+        let mut r = requester_support::read_snapshot(&cfg.store_dir);
         match corruption {
             "irc_magic" => write_checked(&hp, b"MYNOUI02", &h),
-            "requester_magic" => write_checked(&rp, b"MYNOUR01", &r),
+            "requester_magic" => requester_support::write_snapshot_format(&cfg.store_dir, b"MYNOUR01", &r),
             "missing_record" => {
                 h.insert("records", Value::Array(Vec::new()));
                 write_checked(&hp, b"MYNOUI03", &h);
@@ -660,7 +658,7 @@ fn missing_cross_store_provenance_and_semantic_format_downgrades_fail_closed() {
                     panic!()
                 };
                 ds[0].insert("origins", Value::Array(vec!["retained-plex-origin".into()]));
-                write_checked(&rp, b"MYNOUR02", &r);
+                requester_support::write_snapshot_format(&cfg.store_dir, b"MYNOUR02", &r);
             }
             _ => unreachable!(),
         }
