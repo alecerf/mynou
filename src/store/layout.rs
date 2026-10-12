@@ -45,10 +45,15 @@ pub(super) const T_ACQUISITION: u8 = 0x35;
 pub(super) const T_IRC_ORIGIN: u8 = 0x36;
 pub(super) const T_MEDIA_TIP: u8 = 0x37;
 pub(super) const T_JOB_CHUNK: u8 = 0x38;
+pub(super) const T_MONITOR_DUE: u8 = 0x39;
+pub(super) const T_MONITOR_REF: u8 = 0x3a;
+pub(super) const T_MONITOR_SHARED: u8 = 0x3b;
 
 pub(super) const FORMAT_KEY: Key = single(T_META, 0);
 pub(super) const COUNTS_KEY: Key = single(T_META, 1);
 pub(super) const LIBRARY_COUNT_KEY: Key = single(T_META, 2);
+pub(super) const MONITOR_COUNTS_KEY: Key = single(T_META, 3);
+pub(super) const MONITOR_CURSOR_KEY: Key = single(T_META, 4);
 pub(super) const MIGRATION_SOURCE_KEY: Key = single(T_MIGRATION, 0);
 pub(super) const MIGRATION_CURSOR_KEY: Key = single(T_MIGRATION, 1);
 

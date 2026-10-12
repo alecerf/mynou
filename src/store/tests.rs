@@ -699,6 +699,67 @@ fn bulk(store: &mut Store, jobs: Vec<Job>) {
     }
 }
 
+// Independently proposed QA fixtures for the indexed monitoring window.
+fn monitored_fixture(n: u64, checked: u64) -> Job {
+    let mut job = ready_job(n, 1_000 + n);
+    if n % 2 == 0 {
+        job.request.kind = "episode".into();
+        job.request.season = 1;
+        job.request.episode = 1;
+        job.key = job.request.canonical_key();
+    }
+    job.release = Some(RecordedRelease { title: format!("Synthetic {n} 2026 720p"), profile: "hd".into() });
+    job.monitor_checked_at = checked;
+    job
+}
+
+#[test]
+fn monitoring_windows_reach_old_tips_beyond_inventory_prefixes() {
+    for total in [201_u64, 10_001] {
+        let directory = Directory::new();
+        let mut store = Store::open(&directory.0).unwrap();
+        bulk(&mut store, (1..=total).map(|n| monitored_fixture(n, n)).collect());
+        assert_eq!(store.monitoring_counts().unwrap(), [total, 0, 0, 0, 0]);
+        let prefix = store.library_page(None, 200).unwrap();
+        assert!(!prefix.jobs.iter().any(|job| job.id == format!("{:032x}", 1)));
+        let window = store.monitoring_due(total + 1_000, 60, false, 4).unwrap();
+        assert_eq!(window.total, total);
+        assert_eq!(window.jobs.iter().map(|job| job.id.clone()).collect::<Vec<_>>(), (1..=4).map(|n| format!("{n:032x}")).collect::<Vec<_>>());
+        let reads = match &store.backend { Backend::Ready(index) => index.last_page_reads(), _ => unreachable!() };
+        assert!(reads <= 32, "{reads} tree pages for four monitoring rows with {total} tips");
+        assert!(store.monitoring_due(5, 60, false, 4).unwrap().jobs.iter().all(|job| job.monitor_checked_at > 5));
+        assert_eq!(store.monitoring_due(total + 1_000, 60, true, 257).unwrap().jobs.len(), total.min(257) as usize);
+        drop(store);
+        let mut reopened = Store::open_read_only(&directory.0).unwrap();
+        assert_eq!(reopened.monitoring_counts().unwrap(), [total, 0, 0, 0, 0]);
+        assert_eq!(reopened.monitoring_due(total + 1_000, 60, false, 4).unwrap().jobs[0].id, format!("{:032x}", 1));
+    }
+}
+
+#[test]
+fn same_second_checks_rotate_but_unrelated_tip_writes_do_not() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let at = now().saturating_sub(10);
+    bulk(&mut store, (1..=201).map(|n| monitored_fixture(n, at)).collect());
+    let first = store.monitoring_due(at, 0, true, 3).unwrap();
+    let mut unrelated = first.jobs[0].clone();
+    unrelated.last_error = Some("synthetic unrelated update".into());
+    store.update(unrelated).unwrap();
+    assert_eq!(store.monitoring_due(at, 0, true, 3).unwrap().jobs.iter().map(|j| &j.id).collect::<Vec<_>>(), first.jobs.iter().map(|j| &j.id).collect::<Vec<_>>());
+    let mut seen = BTreeSet::new();
+    while seen.len() < 201 {
+        let window = store.monitoring_due(at, 0, true, 3).unwrap();
+        for job in window.jobs.into_iter().take(201 - seen.len()) {
+            assert!(seen.insert(job.id.clone()), "same-second forced checks repeated before covering every tip");
+            store.record_monitor_check(&job.id, at).unwrap();
+        }
+    }
+    assert_eq!(store.monitoring_due(at, 0, true, 1).unwrap().jobs[0].id, first.jobs[0].id);
+    assert!(store.monitoring_due(at, 60, false, 3).unwrap().jobs.is_empty());
+    assert_eq!(store.monitoring_counts().unwrap(), [201, 0, 0, 0, 0]);
+}
+
 #[test]
 fn a_large_store_pages_looks_up_and_claims_with_bounded_work() {
     let directory = Directory::new();

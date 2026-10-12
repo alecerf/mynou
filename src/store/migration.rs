@@ -70,10 +70,11 @@ pub(super) fn open(directory: &Path, lock: File, read_only: bool) -> Result<Stor
 fn ready(
     directory: &Path,
     lock: File,
-    index: Index,
+    mut index: Index,
     read_only: bool,
     report: Option<MigrationReport>,
 ) -> Result<Store> {
+    super::monitoring::upgrade(&mut index, read_only)?;
     Ok(Store::from_parts(
         directory,
         lock,
@@ -159,7 +160,7 @@ fn open_index(path: &Path, read_only: bool) -> Result<Index> {
 
 fn check_format(index: &mut Index, read_only: bool) -> Result<()> {
     match index.get(&layout::FORMAT_KEY)? {
-        Some(value) if value == FORMAT => Db(index).counts().map(|_| ()),
+        Some(value) if value == FORMAT || value == super::monitoring::FORMAT || value == super::monitoring::PENDING => Db(index).counts().map(|_| ()),
         Some(_) => Err("Unsupported job index format".into()),
         None if index.is_empty()? && !read_only => initialize(index),
         None => Err("Job index is missing its format marker".into()),

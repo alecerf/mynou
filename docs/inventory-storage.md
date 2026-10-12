@@ -303,6 +303,43 @@ and changes exist in the index and are **not** in the legacy copies. Keep the
 index separately if those changes must be recovered. Do not downgrade over live
 storage or mix backup pairs.
 
+### Indexed library monitoring
+
+Scheduled and manual checks read the oldest check-time entries directly from
+the disk index, rather than first walking every library page. One pass hydrates
+at most `monitoring.max_checks + 1` eligible jobs (up to 257) and a shared-group
+summary window of at most 200 jobs. Each window uses the usual 4 MiB hydrated
+byte budget, allowing one larger job alone. Skip classifications and total
+eligible/shared counts are maintained with library-tip transactions. A check
+rotates a durable sequence tie-breaker even within the same second; unrelated
+job updates do not move its priority. A recorded future timestamp is corrected
+on its next applied check after wall-clock rollback.
+
+Upgrade reports include exact decimal `inventory_counts`, `eligible_total`,
+`oldest_checked_at` and `window_limited`. The eligible total includes entries
+whose interval has not elapsed; it is not an exact due-backlog count. A truncated
+shared summary also sets `limited`. Shared groups retain their explicit group
+upgrade workflow. Storage failures stop the check and report the error instead
+of presenting it as a concurrent entry change. No measured throughput claim is
+made by this increment.
+
+The first writable open upgrades existing job indexes from `mynou-jobs/1` to
+`mynou-jobs/2`. A pending format marker excludes old readers before any derived
+entries change. Each bounded library page commits scheduling entries, counters
+and its cursor together. Reopening resumes that cursor; existing jobs, history,
+ownership entries and preserved legacy files are never discarded or rewritten
+by this upgrade. Disk exhaustion leaves the pending marker and recovery data
+for a writable restart after storage is available. Read-only opening refuses
+an unfinished or required upgrade and never repairs it.
+
+Before upgrading, make a complete stopped-store backup if downgrade may be
+needed. Earlier binaries reject format 2 and the pending marker. Downgrade
+requires restoring that complete pre-upgrade backup, or the matching original
+legacy snapshots as described above; subsequent changes are only in the newer
+index. Never edit the index marker to bypass this rejection. Feed routing still
+needs a durable captured routing generation: merely moving its library cursor
+would lose transient releases after the feed marks them seen.
+
 ## Requester storage
 
 `requesters.idx` stores requester demands and operator interests without a total
