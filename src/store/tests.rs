@@ -760,6 +760,132 @@ fn same_second_checks_rotate_but_unrelated_tip_writes_do_not() {
     assert_eq!(store.monitoring_counts().unwrap(), [201, 0, 0, 0, 0]);
 }
 
+fn pending_monitoring_fixture(store: &mut Store) {
+    let prefix = store.library_page(None, 100).unwrap().jobs;
+    let index = match &mut store.backend { Backend::Ready(index) => index, _ => unreachable!() };
+    let mut changes = Vec::new();
+    for table in [layout::T_MONITOR_REF, layout::T_MONITOR_DUE, layout::T_MONITOR_SHARED] {
+        let mut after = None;
+        loop {
+            let page = ops::Db(index).scan(&[table], after, 200).unwrap();
+            changes.extend(page.entries.into_iter().map(|(key, _)| Change::Delete(key)));
+            after = page.next;
+            if after.is_none() { break; }
+        }
+    }
+    index.commit(changes).unwrap();
+    let mut changes = Vec::new();
+    for job in &prefix {
+        let id = layout::id_bytes(&job.id).unwrap();
+        let at = job.monitor_checked_at.to_be_bytes();
+        let round = 0_u64.to_be_bytes();
+        let mut reference = vec![0];
+        reference.extend_from_slice(&at);
+        reference.extend_from_slice(&round);
+        changes.push(Change::PutInline(layout::key(&[&[layout::T_MONITOR_REF], &id]), reference));
+        changes.push(Change::PutInline(layout::key(&[&[layout::T_MONITOR_DUE], &at, &round, &id]), Vec::new()));
+    }
+    let last = prefix.last().unwrap();
+    changes.push(Change::PutInline(layout::FORMAT_KEY, monitoring::PENDING.to_vec()));
+    changes.push(Change::Put(layout::MONITOR_COUNTS_KEY, monitoring::encode([100, 0, 0, 0, 0])));
+    changes.push(Change::Put(layout::MONITOR_CURSOR_KEY, layout::library_key(last.created_at, &layout::id_bytes(&last.id).unwrap()).to_vec()));
+    index.commit(changes).unwrap();
+}
+
+#[test]
+fn pending_monitoring_upgrade_is_read_only_safe_and_recovers_each_crash_boundary() {
+    for fault in [Fault::Staged, Fault::Published, Fault::FirstRecord, Fault::FirstPage, Fault::Applied, Fault::Unlinked] {
+        let directory = Directory::new();
+        let mut store = Store::open(&directory.0).unwrap();
+        let jobs: Vec<Job> = (1..=201).map(|n| monitored_fixture(n, 0)).collect();
+        bulk(&mut store, jobs.clone());
+        pending_monitoring_fixture(&mut store);
+        drop(store);
+        let before = contents(&directory.0);
+        let error = Store::open_read_only(&directory.0).err().unwrap();
+        assert!(error.contains("writable restart"), "{error}");
+        assert_eq!(contents(&directory.0), before);
+        let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
+        index.inject(Some(fault));
+        assert!(monitoring::upgrade(&mut index, false).is_err());
+        assert!(!index.is_usable());
+        drop(index);
+        let mut reopened = Store::open(&directory.0).unwrap();
+        assert_eq!(reopened.monitoring_counts().unwrap(), [201, 0, 0, 0, 0], "{fault:?}");
+        assert_eq!(reopened.monitoring_due(1_000, 60, false, 257).unwrap().jobs.len(), 201);
+        assert_eq!(reopened.counts().unwrap().library, 201);
+        for job in &jobs { assert_eq!(reopened.get(&job.id).unwrap().unwrap(), *job); }
+        let index = match &mut reopened.backend { Backend::Ready(index) => index, _ => unreachable!() };
+        assert_eq!(index.get(&layout::FORMAT_KEY).unwrap().unwrap(), monitoring::FORMAT);
+        assert!(index.get(&layout::MONITOR_CURSOR_KEY).unwrap().is_none());
+        for table in [layout::T_MONITOR_REF, layout::T_MONITOR_DUE] {
+            let mut count = 0;
+            let mut after = None;
+            loop {
+                let page = ops::Db(index).scan(&[table], after, 200).unwrap();
+                count += page.entries.len();
+                after = page.next;
+                if after.is_none() { break; }
+            }
+            assert_eq!(count, 201, "derived table {table} after {fault:?}");
+        }
+        drop(reopened);
+        let mut read_only = Store::open_read_only(&directory.0).unwrap();
+        assert_eq!(read_only.monitoring_counts().unwrap(), [201, 0, 0, 0, 0]);
+    }
+}
+
+#[test]
+fn monitoring_counters_follow_baselines_flags_shared_owners_and_current_tips() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let eligible = monitored_fixture(1, 0);
+    let mut unmonitored = monitored_fixture(2, 0);
+    unmonitored.monitored = false;
+    let mut baseline = monitored_fixture(3, 0);
+    baseline.release = None;
+    let mut unsupported = monitored_fixture(4, 0);
+    unsupported.request.kind = "file".into();
+    unsupported.request.season = 0;
+    unsupported.request.episode = 0;
+    unsupported.key = unsupported.request.canonical_key();
+    bulk(&mut store, vec![eligible.clone(), unmonitored.clone(), baseline.clone(), unsupported]);
+    assert_eq!(store.monitoring_counts().unwrap(), [1, 1, 1, 1, 0]);
+    let file = shared_file();
+    let owners = store.submit_shared_file(file.clone(), shared_requests(&file)).unwrap();
+    for mut owner in owners {
+        owner.state = "ready".into();
+        owner.progress = 1.0;
+        owner.imports = vec![file.import_path.clone()];
+        store.update(owner).unwrap();
+    }
+    assert_eq!(store.monitoring_counts().unwrap(), [1, 1, 1, 1, 3]);
+    store.set_baseline(&baseline.id, eligible.release.clone().unwrap()).unwrap();
+    store.set_monitored(&unmonitored.id, true).unwrap();
+    store.set_monitored(&eligible.id, false).unwrap();
+    assert_eq!(store.monitoring_counts().unwrap(), [2, 1, 0, 1, 3]);
+    let mut request = baseline.request.clone();
+    request.source_url = Some("http://127.0.0.1:9/synthetic-upgrade.torrent".into());
+    let mut child = store.submit_upgrade(&baseline.id, request, RecordedRelease { title: "Synthetic 3 2026 1080p".into(), profile: "hd".into() }).unwrap();
+    assert_eq!(store.monitoring_counts().unwrap(), [2, 1, 0, 1, 3]);
+    child.state = "ready".into();
+    child.progress = 1.0;
+    child.imports = vec!["/library/synthetic-upgrade.mkv".into()];
+    store.update(child.clone()).unwrap();
+    assert!(!store.is_library_tip(&baseline.id).unwrap());
+    assert!(store.is_library_tip(&child.id).unwrap());
+    assert_eq!(store.monitoring_counts().unwrap(), [2, 1, 0, 1, 3]);
+    let window = store.monitoring_due(1_000, 60, true, 257).unwrap();
+    assert!(window.jobs.iter().any(|job| job.id == child.id));
+    assert!(!window.jobs.iter().any(|job| job.id == baseline.id));
+    store.set_monitored(&child.id, false).unwrap();
+    assert_eq!(store.monitoring_counts().unwrap(), [1, 2, 0, 1, 3]);
+    let shared_id = store.monitored_shared(200).unwrap()[0].id.clone();
+    store.set_monitored(&shared_id, false).unwrap();
+    assert_eq!(store.monitoring_counts().unwrap(), [1, 3, 0, 1, 2]);
+    assert_eq!(store.monitored_shared(200).unwrap().len(), 2);
+}
+
 #[test]
 fn a_large_store_pages_looks_up_and_claims_with_bounded_work() {
     let directory = Directory::new();
