@@ -6,7 +6,6 @@ mod series_support;
 use library_support::Directory;
 use mynou::{
     config,
-    crypto::sha256,
     engine::{Engine, lock},
     json::{self, Value},
     selection::Profile,
