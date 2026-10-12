@@ -56,6 +56,8 @@ the AEAD (keyed by the peer's public key, bound to that MAC1) all match. A
 verified cookie is only **stored** with its receipt time; per whitepaper 6.6
 nothing is retransmitted, so the future retry timer sends the next message. An
 on-path observer who sees the MAC1 can forge a reply; that only costs a retry.
+Replaying an authentic reply is idempotent: the cookie already held keeps its
+first receipt time, so a replay never extends its 120 s life.
 `Handshake` no longer rejects nonzero MAC2, because the protocol ignores it
 without load. A caller that is loaded must run `Admission` first.
 
@@ -77,7 +79,7 @@ initiation and response). Rust test `independent_reference_cookie_replies_and_ma
 compares MAC1, the exact 64-byte replies, the cookie and the retry MAC2 byte for
 byte, then checks the retry passes admission. Other tests cover every-byte tamper
 and silence before MAC1, no entropy or state without load or before MAC1, source
-address/port binding, the 120 s secret and cookie boundaries, the budget, the
+address/port binding, exact reply replay, the 120 s secret and cookie boundaries, the budget, the
 table bound and eviction, entropy failure, clock/generation/revocation fences,
 extreme clock values, and end-to-end handshakes through a loaded responder or
 initiator. Same-code round trips and the reference share one reading of the

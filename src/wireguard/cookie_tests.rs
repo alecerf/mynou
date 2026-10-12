@@ -320,10 +320,30 @@ fn stored_cookie_and_message_age_boundaries() {
     let one = reply_of(admission.admit(&second, source, Load::High, 4, secs(1)));
     again.receive(&one, secs(2)).unwrap();
     let first_value = again.stored.as_ref().unwrap().value;
-    let two = reply_of(admission.admit(&second, source, Load::High, 4, secs(3)));
-    again.receive(&two, secs(4)).unwrap();
+    // The exact authenticated reply may be replayed: it is idempotent and, being
+    // the cookie already held, never refreshes the receipt time.
+    again.receive(&one, secs(4)).unwrap();
     assert_eq!(again.stored.as_ref().unwrap().value, first_value);
-    assert_eq!(again.stored.as_ref().unwrap().at, secs(4));
+    assert_eq!(again.stored.as_ref().unwrap().at, secs(2));
+    // A new reply for the same cookie (fresh nonce) behaves the same way.
+    let two = reply_of(admission.admit(&second, source, Load::High, 4, secs(3)));
+    assert_ne!(one, two);
+    again.receive(&two, secs(5)).unwrap();
+    assert_eq!(again.stored.as_ref().unwrap().value, first_value);
+    assert_eq!(again.stored.as_ref().unwrap().at, secs(2));
+    let near_end = restamp(&mut again, &second, secs(2) + COOKIE_LIFETIME);
+    assert_eq!(
+        near_end[near_end.len() - 16..],
+        [0; 16],
+        "replays never extend expiry"
+    );
+    // After the cookie's own expiry a new, different cookie replaces it.
+    let (third, mut other) = message(1, 7, &local);
+    restamp(&mut other, &third, secs(124));
+    let fresh = reply_of(admission.admit(&third, source, Load::High, 4, secs(125)));
+    other.receive(&fresh, secs(126)).unwrap();
+    assert!(admission.secret.as_ref().unwrap().born >= SECRET_LIFETIME);
+    assert_ne!(other.stored.as_ref().unwrap().value, first_value);
     // Revocation-style clearing drops everything.
     again.clear();
     assert!(again.receive(&two, secs(5)).is_err());
