@@ -396,7 +396,7 @@ fn history_is_bounded_per_job_keeps_sequence_ids_and_folds_heartbeats() {
     // Heartbeats fold into one entry instead of pushing real history out.
     let queued = reopened.submit(request("Heartbeats")).unwrap();
     let claimed = reopened
-        .claim_filtered(now(), 60, |candidate| candidate.id == queued.id)
+        .claim_filtered(now(), 60, |candidate| Ok(candidate.id == queued.id))
         .unwrap()
         .unwrap();
     let lease = claimed.lease_id.clone().unwrap();
@@ -598,7 +598,7 @@ fn claim_work_per_attempt_is_bounded_and_the_cursor_reaches_every_job() {
     let examined = std::cell::Cell::new(0);
     let eligible = |job: &Job| {
         examined.set(examined.get() + 1);
-        !blocked.contains(&job.id)
+        Ok(!blocked.contains(&job.id))
     };
     // Each attempt promotes a bounded batch and examines a bounded window of
     // the queue; resuming after the entries already examined reaches the

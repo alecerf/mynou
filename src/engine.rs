@@ -86,9 +86,9 @@ impl Engine {
             crate::requesters::RequesterStore::open(&config.store_dir, &config, read_only)?;
         let mut irc_store =
             crate::irc::AnnouncementStore::open(&config.store_dir, &config.irc, read_only)?;
-        crate::requesters::engine::validate_storage(&requester_store.state, &mut store)?;
+        crate::requesters::engine::validate_storage(&requester_store, &mut store)?;
         let irc_admitted =
-            crate::irc::admission::recovered_state(&irc_store.state, &requester_store.state)?;
+            crate::irc::admission::recovered_state(&irc_store.state, &requester_store)?;
         let irc_recovered = crate::irc::routing::recovered_state(&irc_admitted, &mut store)?;
         let irc_recovery_changed = irc_recovered != irc_store.state;
         if !read_only {
@@ -103,7 +103,7 @@ impl Engine {
         }
         if !read_only {
             crate::requesters::engine::cancel_unwanted(
-                &requester_store.state,
+                &requester_store,
                 &mut store,
                 &config,
                 true,
@@ -632,8 +632,8 @@ impl Engine {
         if crate::irc::routing::selection_from_irc(
             &self.config,
             job,
-            &lock(&self.requester_store)?.state,
-        ) {
+            &*lock(&self.requester_store)?,
+        )? {
             job.state = "queued".into();
             job.next_attempt_at = store::now().saturating_add(60);
             return Ok(());
@@ -974,7 +974,7 @@ impl Heartbeat {
                     let j = s.get(&id)?.ok_or("Missing job")?;
                     if j.lease_id.as_deref() != Some(&lease)
                         || j.lease_until <= store::now()
-                        || !crate::requesters::engine::interest(&ledger.state, &j, &engine.config)
+                        || !crate::requesters::engine::interest(&*ledger, &j, &engine.config)?
                     {
                         return Err("Lease or admitted demand lost".into());
                     }

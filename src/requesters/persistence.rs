@@ -17,6 +17,7 @@ pub(crate) struct RequesterStore {
     dirty: bool,
     poisoned: bool,
     pub admission_cursor: Option<Key>,
+    pub admission_state: u8,
     pub outcome_cursor: Option<Key>,
 }
 fn header(state: &State) -> State { let mut state = state.clone(); state.demands.clear(); state.operator_jobs.clear(); state }
@@ -75,14 +76,24 @@ impl RequesterStore {
         }
         State::from_json(&state.to_json())?;
         let dirty = state != original;
-        Ok(Self { state, directory: directory.to_owned(), backend: RefCell::new(backend), read_only, dirty, poisoned: false, admission_cursor: None, outcome_cursor: None })
+        let (admission_state, admission_cursor, outcome_cursor) = (0, None, None);
+        let mut store = Self { state, directory: directory.to_owned(), backend: RefCell::new(backend), read_only, dirty, poisoned: false, admission_cursor, admission_state, outcome_cursor };
+        if let Backend::Ready(index) = &mut *store.backend.borrow_mut() {
+            if let Some(bytes) = index.get(&index::ADMISSION_CURSOR)? {
+                if ![1, 65].contains(&bytes.len()) || bytes[0] > 2 { return Err("Requester: invalid admission continuation".into()); }
+                store.admission_state = bytes[0];
+                store.admission_cursor = if bytes.len() == 65 { Some(bytes[1..].try_into().map_err(|_| "Requester: invalid admission cursor")?) } else { None };
+            }
+            if let Some(bytes) = index.get(&index::OUTCOME_CURSOR)? { store.outcome_cursor = if bytes.is_empty() { None } else { Some(bytes.as_slice().try_into().map_err(|_| "Requester: invalid outcome cursor")?) }; }
+        }
+        Ok(store)
     }
     fn available(&self) -> Result<()> {
         if self.poisoned { return Err("Requester storage durability is uncertain; restart before reading or changing demand".into()); }
         if let Backend::Ready(index) = &*self.backend.borrow() { index.sequence()?; }
         Ok(())
     }
-    pub(crate) fn sequence(&self) -> Result<u64> { self.available()?; Ok(self.state.revision) }
+    pub(crate) fn sequence(&self) -> Result<u64> { self.available()?; match &*self.backend.borrow() { Backend::Ready(index) => index.sequence(), Backend::Legacy { state, .. } => Ok(state.revision) } }
     pub(crate) fn initialize(&mut self) -> Result<()> {
         if self.read_only { return Ok(()); }
         let legacy = match &*self.backend.borrow() { Backend::Legacy { state, bytes } => Some((state.clone(), bytes.clone())), Backend::Ready(_) => None };
@@ -95,17 +106,24 @@ impl RequesterStore {
     }
     /// The supplied State contains metadata and explicit changed records only;
     /// records omitted from this bounded patch are never removed.
-    pub(crate) fn save_patch(&mut self, mut patch: State) -> Result<()> {
+    pub(crate) fn save_patch(&mut self, patch: State) -> Result<()> {
+        self.save_poll_patch(patch, None)
+    }
+    pub(crate) fn save_poll_patch(&mut self, mut patch: State, poll: Option<(&str, &BTreeSet<String>)>) -> Result<()> {
         self.available()?;
         if self.read_only { return Err("Requester storage is read-only".into()); }
         patch.revision = self.state.revision.checked_add(1).ok_or("Requester: revision overflow")?;
+        for (id, previous) in &self.state.accounts {
+            let next = patch.accounts.get(id).ok_or("Requester: a patch cannot discard an account")?;
+            if next.binding != previous.binding || next.revision < previous.revision || next.cursor < previous.cursor { return Err("Requester: account binding or revision moved backwards".into()); }
+        }
         State::from_json(&patch.to_json())?;
         let demands: Vec<_> = patch.demands.values().cloned().collect();
         let operators: Vec<_> = patch.operator_jobs.iter().cloned().collect();
         let mut backend = self.backend.borrow_mut();
         let Backend::Ready(index) = &mut *backend else { return Err("Requester: checked migration must precede a patch".into()); };
         let metadata = header(&patch);
-        let result = index::commit(index, &metadata, &demands, &operators);
+        let result = index::commit_poll(index, &metadata, &demands, &operators, poll);
         if result.is_err() && !index.is_usable() { self.poisoned = true; }
         result?;
         self.state = metadata; self.dirty = false;
@@ -114,17 +132,30 @@ impl RequesterStore {
     pub(crate) fn account_page(&self, account: &str, after: Option<Key>, limit: usize) -> Result<(Vec<Demand>, Option<Key>)> {
         self.available()?;
         match &mut *self.backend.borrow_mut() {
-            Backend::Ready(index) => { let page = index::account_page(index, account, after, limit)?; Ok((page.demands, page.next)) },
+            Backend::Ready(index) => { let page = index::account_page(index, account, after, limit)?; let demands = page.demands.into_iter().map(|d| index::effective(index, d)).collect::<Result<Vec<_>>>()?; Ok((demands, page.next)) },
             Backend::Legacy { state, .. } => {
                 let filtered = State { revision: state.revision, accounts: BTreeMap::new(), demands: state.demands.iter().filter(|(_, d)| d.account_id == account).map(|(id, d)| (id.clone(), d.clone())).collect(), operator_jobs: BTreeSet::new() };
                 index::legacy_page(&filtered, after, limit, false)
             }
         }
     }
+    pub(crate) fn account_cursor(&self, account: &str, id: &str) -> Result<Key> { match &*self.backend.borrow() { Backend::Ready(_) => index::account_cursor(account, id), Backend::Legacy { .. } => index::primary_cursor(id) } }
+    pub(crate) fn save_admission_cursor(&mut self, state: u8, after: Option<Key>) -> Result<()> {
+        let mut bytes = vec![state]; if let Some(after) = after { bytes.extend_from_slice(&after); }
+        self.persist_cursor(index::ADMISSION_CURSOR, bytes)?; self.admission_state = state; self.admission_cursor = after; Ok(())
+    }
+    pub(crate) fn save_outcome_cursor(&mut self, after: Option<Key>) -> Result<()> {
+        self.persist_cursor(index::OUTCOME_CURSOR, after.map_or_else(Vec::new, |key| key.to_vec()))?; self.outcome_cursor = after; Ok(())
+    }
+    fn persist_cursor(&mut self, key: Key, bytes: Vec<u8>) -> Result<()> {
+        self.available()?; if self.read_only { return Err("Requester storage is read-only".into()); }
+        let mut backend = self.backend.borrow_mut(); let Backend::Ready(index) = &mut *backend else { return Err("Requester: checked migration must precede cursor writes".into()); };
+        index.commit(vec![Change::Put(key, bytes)])?; Ok(())
+    }
     pub(crate) fn queue_page(&self, state_name: &str, after: Option<Key>, limit: usize) -> Result<(Vec<Demand>, Option<Key>)> {
         self.available()?;
         match &mut *self.backend.borrow_mut() {
-            Backend::Ready(index) => { let page = index::queue_page(index, state_name, after, limit)?; Ok((page.demands, page.next)) },
+            Backend::Ready(index) => { let page = index::queue_page(index, state_name, after, limit)?; let demands = page.demands.into_iter().map(|d| index::effective(index, d)).collect::<Result<Vec<_>>>()?; Ok((demands, page.next)) },
             Backend::Legacy { .. } => Err("Requester: writable migration is required before scheduling".into())
         }
     }
@@ -134,6 +165,30 @@ impl RequesterStore {
     }
     pub(crate) fn describe(&self) -> Result<json::Value> {
         let mut value = json::Value::object(); value.insert("demands", self.count("", None)?.to_string()); value.insert("pending", self.count("", Some("pending"))?.to_string()); value.insert("reserved", self.count("", Some("reserved"))?.to_string()); value.insert("revision", self.sequence()?.to_string()); value.insert("backend", if matches!(&*self.backend.borrow(), Backend::Ready(_)) { "disk-index" } else { "legacy-awaiting-migration" }); Ok(value)
+    }
+    pub(crate) fn poll_ready(&self, account: &str) -> Result<bool> {
+        self.available()?;
+        match &mut *self.backend.borrow_mut() { Backend::Ready(index) => index::poll_ready(index, account), Backend::Legacy { .. } => Ok(true) }
+    }
+    /// One bounded durable retirement pass. A later poll cannot publish before
+    /// every prior absence is recorded, so origins never resurrect raw work.
+    pub(crate) fn reconcile_origins(&mut self, account: &str) -> Result<()> {
+        if self.poll_ready(account)? { return Ok(()); }
+        let (page, mut progress, changed) = {
+            let mut backend = self.backend.borrow_mut();
+            let Backend::Ready(index) = &mut *backend else { return Err("Requester: missing live index".into()); };
+            let (page, progress) = index::cleanup_page(index, account)?;
+            let mut changed = Vec::new();
+            for demand in &page.demands { let effective = index::effective(index, demand.clone())?; if effective != *demand { changed.push(effective); } }
+            (page, progress, changed)
+        };
+        if !changed.is_empty() { let mut patch = self.state.clone(); patch.demands = changed.into_iter().map(|d| (d.id.clone(), d)).collect(); self.save_patch(patch)?; }
+        progress.push(u8::from(page.next.is_none()));
+        if let Some(next) = page.next { progress.extend_from_slice(&next); }
+        let mut backend = self.backend.borrow_mut();
+        let Backend::Ready(index) = &mut *backend else { return Err("Requester: missing live index".into()); };
+        index.commit(vec![Change::Put(index::clean_key(account), progress)])?;
+        Ok(())
     }
     fn migrate(&self, state: &State, bytes: Option<&[u8]>) -> Result<Index> {
         let source = sha256(bytes.unwrap_or_default());
@@ -205,15 +260,15 @@ impl LedgerRead for RequesterStore {
     fn accounts(&self) -> &BTreeMap<String, Record> { &self.state.accounts }
     fn demand(&self, id: &str) -> Result<Option<Demand>> {
         self.available()?;
-        match &mut *self.backend.borrow_mut() { Backend::Ready(index) => index::get(index, id), Backend::Legacy { state, .. } => state.demand(id) }
+        match &mut *self.backend.borrow_mut() { Backend::Ready(index) => index::get(index, id)?.map(|d| index::effective(index, d)).transpose(), Backend::Legacy { state, .. } => state.demand(id) }
     }
     fn demands_page(&self, after: Option<Key>, limit: usize) -> Result<(Vec<Demand>, Option<Key>)> {
         self.available()?;
-        match &mut *self.backend.borrow_mut() { Backend::Ready(index) => { let page = index::all_page(index, after, limit)?; Ok((page.demands, page.next)) }, Backend::Legacy { state, .. } => state.demands_page(after, limit) }
+        match &mut *self.backend.borrow_mut() { Backend::Ready(index) => { let page = index::all_page(index, after, limit)?; let demands = page.demands.into_iter().map(|d| index::effective(index, d)).collect::<Result<Vec<_>>>()?; Ok((demands, page.next)) }, Backend::Legacy { state, .. } => state.demands_page(after, limit) }
     }
     fn irc_demands_page(&self, after: Option<Key>, limit: usize) -> Result<(Vec<Demand>, Option<Key>)> {
         self.available()?;
-        match &mut *self.backend.borrow_mut() { Backend::Ready(index) => { let page = index::irc_page(index, after, limit)?; Ok((page.demands, page.next)) }, Backend::Legacy { state, .. } => state.irc_demands_page(after, limit) }
+        match &mut *self.backend.borrow_mut() { Backend::Ready(index) => { let page = index::irc_page(index, after, limit)?; let demands = page.demands.into_iter().map(|d| index::effective(index, d)).collect::<Result<Vec<_>>>()?; Ok((demands, page.next)) }, Backend::Legacy { state, .. } => state.irc_demands_page(after, limit) }
     }
     fn operator_interest(&self, id: &str) -> Result<bool> {
         self.available()?;
