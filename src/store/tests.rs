@@ -1938,11 +1938,17 @@ fn a_journal_left_after_the_marker_is_emptied_only_when_it_matches_the_preserved
         .err()
         .unwrap();
     assert!(fs::metadata(directory.0.join("journal.bin")).unwrap().len() > 0);
-    // A read-only open tolerates it and writes nothing; a writable one empties it.
+    // This interruption precedes the scheduling upgrade: read-only opening
+    // refuses the required upgrade and writes nothing; writable opening first
+    // settles the matching journal and then finishes the derived index.
+    let before = contents(&directory.0);
+    let error = Store::open_read_only(&directory.0).err().unwrap();
+    assert!(error.contains("writable restart"), "{error}");
+    assert_eq!(contents(&directory.0), before);
+    drop(Store::open(&directory.0).unwrap());
     let before = contents(&directory.0);
     drop(Store::open_read_only(&directory.0).unwrap());
     assert_eq!(contents(&directory.0), before);
-    drop(Store::open(&directory.0).unwrap());
     assert_eq!(
         fs::metadata(directory.0.join("journal.bin")).unwrap().len(),
         0
