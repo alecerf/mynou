@@ -146,7 +146,11 @@ fn retained_inventory_outgrows_both_legacy_limits_and_continues_after_restart() 
     assert!(aggregate_bytes > 16 * 1024 * 1024);
     assert_eq!(store.count("fixture", None).unwrap(), 10_100);
     assert_eq!(all_ids(&store), expected);
-    assert!(store.operator_interest(&format!("{:032x}", 10_099)).unwrap());
+    assert!(
+        store
+            .operator_interest(&format!("{:032x}", 10_099))
+            .unwrap()
+    );
     drop(store);
 
     let mut index = Index::open(&directory.0.join("requesters.idx"), true).unwrap();
@@ -156,7 +160,10 @@ fn retained_inventory_outgrows_both_legacy_limits_and_continues_after_restart() 
     );
     let page = index::account_page(&mut index, "fixture", None, 25).unwrap();
     assert_eq!(page.demands.len(), 25);
-    assert!(index.last_page_reads() < 128, "a small page traversed the inventory");
+    assert!(
+        index.last_page_reads() < 128,
+        "a small page traversed the inventory"
+    );
     drop(index);
 
     let mut store = RequesterStore::open(&directory.0, &config, false).unwrap();
@@ -199,7 +206,10 @@ fn chunked_demands_keep_account_pages_within_the_hydrated_byte_budget() {
     loop {
         let (records, next) = store.account_page("fixture", after, MAX_PAGE_ROWS).unwrap();
         pages += 1;
-        let bytes: usize = records.iter().map(|record| json::stringify(&record.to_json()).len()).sum();
+        let bytes: usize = records
+            .iter()
+            .map(|record| json::stringify(&record.to_json()).len())
+            .sum();
         assert!(bytes <= crate::inventory::MAX_PAGE_BYTES);
         for record in records {
             assert!(observed.insert(record.id.clone()));
@@ -230,8 +240,15 @@ fn same_source_interrupted_migration_resumes_and_preserves_exact_private_origina
     write_private(&directory.0.join("requesters.bin"), &bytes);
     let source = sha256(&bytes);
     let mut staging = Index::create(&directory.0.join("requesters.idx.staging")).unwrap();
-    staging.commit(vec![Change::PutInline(index::SOURCE, source.to_vec())]).unwrap();
-    let batch: Vec<_> = legacy.demands.values().take(MAX_PAGE_ROWS).cloned().collect();
+    staging
+        .commit(vec![Change::PutInline(index::SOURCE, source.to_vec())])
+        .unwrap();
+    let batch: Vec<_> = legacy
+        .demands
+        .values()
+        .take(MAX_PAGE_ROWS)
+        .cloned()
+        .collect();
     let mut metadata = legacy.clone();
     metadata.demands.clear();
     index::commit(&mut staging, &metadata, &batch, &[]).unwrap();
@@ -247,9 +264,14 @@ fn same_source_interrupted_migration_resumes_and_preserves_exact_private_origina
     assert_eq!(all_ids(&store).len(), 203);
     assert_eq!(store.count("fixture", None).unwrap(), 203);
     drop(store);
-    let backup = directory.0.join(format!("requesters.legacy-{}.bin", super::digest(&source)));
+    let backup = directory
+        .0
+        .join(format!("requesters.legacy-{}.bin", super::digest(&source)));
     assert_eq!(fs::read(&backup).unwrap(), bytes);
-    assert_eq!(fs::metadata(backup).unwrap().permissions().mode() & 0o077, 0);
+    assert_eq!(
+        fs::metadata(backup).unwrap().permissions().mode() & 0o077,
+        0
+    );
     let mut published = Index::open(&directory.0.join("requesters.idx"), true).unwrap();
     assert_eq!(published.identity(), identity);
     assert!(published.get(&index::CURSOR).unwrap().is_none());
@@ -260,7 +282,9 @@ fn interrupted_staging_from_another_source_is_preserved_without_importing_its_ro
     let directory = Directory::new();
     let config = config(&directory.0);
     let mut staging = Index::create(&directory.0.join("requesters.idx.staging")).unwrap();
-    staging.commit(vec![Change::PutInline(index::SOURCE, [42; 32].to_vec())]).unwrap();
+    staging
+        .commit(vec![Change::PutInline(index::SOURCE, [42; 32].to_vec())])
+        .unwrap();
     let identity = staging.identity();
     drop(staging);
     let mut store = RequesterStore::open(&directory.0, &config, false).unwrap();
@@ -270,12 +294,20 @@ fn interrupted_staging_from_another_source_is_preserved_without_importing_its_ro
     let abandoned: Vec<_> = fs::read_dir(&directory.0)
         .unwrap()
         .map(|entry| entry.unwrap().path())
-        .filter(|path| path.file_name().unwrap().to_string_lossy().starts_with("requesters.idx.abandoned-"))
+        .filter(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("requesters.idx.abandoned-")
+        })
         .collect();
     assert_eq!(abandoned.len(), 1);
     let mut preserved = Index::open(&abandoned[0], true).unwrap();
     assert_eq!(preserved.identity(), identity);
-    assert_eq!(preserved.get(&index::SOURCE).unwrap(), Some([42; 32].to_vec()));
+    assert_eq!(
+        preserved.get(&index::SOURCE).unwrap(),
+        Some([42; 32].to_vec())
+    );
 }
 
 #[test]
@@ -317,7 +349,12 @@ fn restoring_a_matching_legacy_source_cannot_rewind_acknowledged_indexed_changes
 
 #[test]
 fn uncertain_reservation_commit_requires_reopen_and_recovers_frozen_capture() {
-    for fault in [Fault::Published, Fault::FirstRecord, Fault::FirstPage, Fault::Applied] {
+    for fault in [
+        Fault::Published,
+        Fault::FirstRecord,
+        Fault::FirstPage,
+        Fault::Applied,
+    ] {
         let directory = Directory::new();
         let config = config(&directory.0);
         let store = RequesterStore::open(&directory.0, &config, true).unwrap();
@@ -335,12 +372,18 @@ fn uncertain_reservation_commit_requires_reopen_and_recovers_frozen_capture() {
         assert!(index::get(&mut index, &record.id).is_err());
         drop(index);
         let mut recovered = Index::open(&directory.0.join("inventory"), false).unwrap();
-        assert_eq!(index::get(&mut recovered, &record.id).unwrap(), Some(record.clone()));
+        assert_eq!(
+            index::get(&mut recovered, &record.id).unwrap(),
+            Some(record.clone())
+        );
         assert_eq!(index::count(&mut recovered, "fixture", 0).unwrap(), 1);
         // An idempotent replay must not duplicate reservations or counters.
         index::commit(&mut recovered, &metadata, &[record.clone()], &[]).unwrap();
         assert_eq!(index::count(&mut recovered, "fixture", 0).unwrap(), 1);
-        assert_eq!(index::get(&mut recovered, &record.id).unwrap(), Some(record));
+        assert_eq!(
+            index::get(&mut recovered, &record.id).unwrap(),
+            Some(record)
+        );
     }
 }
 
@@ -357,7 +400,9 @@ fn dangling_ownership_and_corrupt_record_reads_return_errors_instead_of_absence(
     drop(store);
     let mut index = Index::open(&directory.0.join("requesters.idx"), false).unwrap();
     let primary = index::primary_cursor(&record.id).unwrap();
-    index.commit(vec![Change::Put(primary, b"broken-manifest".to_vec())]).unwrap();
+    index
+        .commit(vec![Change::Put(primary, b"broken-manifest".to_vec())])
+        .unwrap();
     drop(index);
     let store = RequesterStore::open(&directory.0, &config, true).unwrap();
     assert!(store.demand(&record.id).is_err());
@@ -391,7 +436,9 @@ fn only_a_completed_poll_generation_authorizes_removing_unseen_origins() {
     let mut patch = store.state.clone();
     patch.accounts.get_mut("fixture").unwrap().cursor = 1;
     let origins = first.origins.clone();
-    store.save_poll_patch(patch, Some(("fixture", &origins))).unwrap();
+    store
+        .save_poll_patch(patch, Some(("fixture", &origins)))
+        .unwrap();
     assert_eq!(store.demand(&first.id).unwrap(), Some(first.clone()));
     let removed = store.demand(&second.id).unwrap().unwrap();
     assert_eq!(removed.state, "removed");
