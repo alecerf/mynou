@@ -9,7 +9,6 @@ mod transfer_support;
 use automatic_pack_support::{Provider, no_sources, snapshot};
 use library_support::{Directory, library_ids};
 use mynou::{
-    crypto::sha256,
     engine::{Engine, lock},
     json::{self, Value},
     library::GroupRequest,

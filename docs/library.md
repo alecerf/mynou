@@ -15,14 +15,17 @@ video file are upgraded as a whole group; see
 mynou library --config ./mynou.json
 ```
 
-The API equivalent is `GET /api/library`. The view lists current ready imports
+The API equivalent is `GET /api/library`. Both return a page envelope with
+`library`, `next` and `total`. Use `--limit 1..200` and `--after CURSOR` in the
+CLI, or `limit` and `after` query parameters in the API, until `next` is null.
+The view lists current ready imports
 owned by Mynou: job ID, media identity, recorded release, monitoring state,
 whether a baseline is required, whether the imported files are present and any
 pending upgrade. It is not an inventory of Plex or a scan of existing library
 folders. A request skipped because Plex already had the title does not create an
 owned import.
 
-When the service is stopped, `library` and upgrade previews open the journal
+When the service is stopped, `library` and upgrade previews open the job index
 read-only: they create nothing and repair nothing. After an interrupted write,
 they report that writable recovery is required; start the service once, then
 preview again.
