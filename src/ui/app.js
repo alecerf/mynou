@@ -325,7 +325,10 @@ views.jobs = {
         if (jobsTail.refreshing) return;
         const after = jobsTail.next ?? data.get('jobs')?.data?.next;
         if (!after) return;
+        const generation = jobsTail.generation ?? 0;
+        const sequence = data.get('jobs')?.data?.sequence;
         const page = await link.call('GET', `/api/jobs?limit=50&after=${encodeURIComponent(after)}`);
+        if (generation !== (jobsTail.generation ?? 0) || sequence !== data.get('jobs')?.data?.sequence || page.sequence !== sequence) return;
         jobsTail.items.push(...itemsOf(page.jobs));
         jobsTail.next = page.next;
         views.jobs.render();
@@ -447,7 +450,10 @@ views.library = {
         if (libraryTail.refreshing) return;
         const after = libraryTail.next ?? data.get('library')?.data?.next;
         if (!after) return;
+        const generation = libraryTail.generation ?? 0;
+        const sequence = data.get('library')?.data?.sequence;
         const page = await link.call('GET', `/api/library?limit=50&after=${encodeURIComponent(after)}`);
+        if (generation !== (libraryTail.generation ?? 0) || sequence !== data.get('library')?.data?.sequence || page.sequence !== sequence) return;
         libraryTail.items.push(...itemsOf(page.library));
         libraryTail.next = page.next;
         views.library.render();

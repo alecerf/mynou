@@ -450,9 +450,8 @@ impl Plan {
     fn entries(&self, state: &State, id: &str, out: &mut BTreeMap<Key, Entry>) -> Result<()> {
         let job = state.jobs.get(id).ok_or("Missing legacy job")?;
         let root = self.roots.get(id).ok_or("Missing lineage root")?;
-        if layout::encode_job(job).len() > legacy::MAX_RECORD {
-            return Err("A job record exceeds the 16 MiB record limit".into());
-        }
+        // Plan::new checks every size before writes; owned checks it again
+        // while encoding the actual chunks, so do not serialize twice here.
         out.extend(owned(job, root)?);
         let raw = id_bytes(id)?;
         let media = layout::digest_bytes(&job.request.media_key())?;

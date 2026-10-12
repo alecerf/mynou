@@ -146,7 +146,9 @@ jobs:
           # macOS keeps its default temporary directory behind a symbolic link,
           # which Mynou refuses, so the tests use the physical runner directory.
           export TMPDIR="$(cd "$RUNNER_TEMP" && pwd -P)"
-          python3 .github/scripts/parallel_tests.py target/debug/mynou-ci-test-build.jsonl --metadata "$RUNNER_TEMP/metadata.json" --output "$RUNNER_TEMP/mynou-test-results"
+          # Full migration and >10,000-record regressions exceed the old
+          # three-minute harness budget; retain every test with a finite limit.
+          python3 .github/scripts/parallel_tests.py target/debug/mynou-ci-test-build.jsonl --metadata "$RUNNER_TEMP/metadata.json" --output "$RUNNER_TEMP/mynou-test-results" --timeout 360
       - name: Preserve test timings and logs
         if: always()
         uses: actions/upload-artifact@v7.0.1
