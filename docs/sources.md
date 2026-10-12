@@ -103,9 +103,11 @@ A `mapping` is a section of a `json` source. Every key is optional:
 - `results`, `title`, `url` and `seeders` are dot-separated paths of up to eight
   parts through objects; a numeric part picks an array element (`links.0`).
   `url` accepts up to four paths and uses the first that holds a text value.
-  A relative address is resolved against the source's origin; entries without a
-  title or a valid magnet or HTTP(S) address are skipped, and `seeders` may be
-  a number or numeric text (missing means 0).
+  Each part is made of letters, digits, `_` or `-`, so a key with a space or a
+  dot cannot be mapped. An address that starts with `/` is resolved against the
+  source's origin; any other relative address is skipped, like an entry without
+  a title or without a valid magnet or HTTP(S) address. `seeders` may be a
+  number or numeric text (missing means 0).
 - `params` renames what Mynou sends: `query`, `kind`, `year`, `season`,
   `episode`, `absolute` and `api_key` map to your parameter name, and an empty
   name leaves that parameter out. `kind_values` replaces the value sent for

@@ -2,7 +2,7 @@
 //! search with a JSON list can be read from configuration alone: no provider
 //! code, no scripts and no helper programs.
 use super::{text, token};
-use crate::{Result, json::Value, numbering};
+use crate::{Result, json::Value};
 
 const MAX_DEPTH: usize = 8;
 const MAX_ALTERNATIVES: usize = 4;
@@ -38,6 +38,17 @@ impl Path {
             _ => value.get(part),
         })
     }
+}
+
+/// The section must be an object holding only the allowed keys.
+fn fields(v: &Value, allowed: &[&str]) -> Result<()> {
+    let map = v
+        .as_object()
+        .ok_or("Indexer: a mapping section must be an object")?;
+    if map.keys().any(|key| !allowed.contains(&key.as_str())) {
+        return Err("Indexer: unknown mapping field".into());
+    }
+    Ok(())
 }
 
 fn paths(v: &Value, key: &str, limit: usize) -> Result<Vec<Path>> {
@@ -86,7 +97,7 @@ impl Mapping {
         let Some(v) = source.get("mapping") else {
             return Ok(Self::default());
         };
-        numbering::only(
+        fields(
             v,
             &[
                 "results",
@@ -111,7 +122,7 @@ impl Mapping {
         };
         if let Some(params) = v.get("params") {
             let roles: Vec<&str> = ROLES.iter().map(|(role, _)| *role).collect();
-            numbering::only(params, &roles)?;
+            fields(params, &roles)?;
             for (role, _) in ROLES {
                 if params.get(role).is_some() {
                     let name = text(params, role)?;
@@ -123,7 +134,7 @@ impl Mapping {
             }
         }
         if let Some(kinds) = v.get("kind_values") {
-            numbering::only(kinds, &["movie", "episode", "series"])?;
+            fields(kinds, &["movie", "episode", "series"])?;
             for kind in ["movie", "episode", "series"] {
                 if kinds.get(kind).is_some() {
                     let value = text(kinds, kind)?;
@@ -318,5 +329,19 @@ mod tests {
         }
         let torznab = json::parse(r#"{"kind":"torznab","mapping":{}}"#).unwrap();
         assert!(Mapping::from_json(&torznab).is_err());
+    }
+
+    #[test]
+    fn errors_name_the_mapping_not_numbering() {
+        for (mapping, expected) in [
+            (r#"{"unknown":"x"}"#, "unknown mapping field"),
+            (r#"{"params":{"unknown":"x"}}"#, "unknown mapping field"),
+            (r#"{"kind_values":{"album":"x"}}"#, "unknown mapping field"),
+            (r#"{"params":"query"}"#, "must be an object"),
+        ] {
+            let error = Mapping::from_json(&source(mapping)).unwrap_err();
+            assert!(error.contains(expected), "{mapping}: {error}");
+            assert!(!error.to_lowercase().contains("numbering"), "{error}");
+        }
     }
 }
