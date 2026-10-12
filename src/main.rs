@@ -932,14 +932,36 @@ fn execute(args: Args) -> Result<()> {
         }
         "requester" => {
             let id = &args.positions[0];
-            if !mynou::requesters::valid_id(id) { return Err("Invalid requester account ID".into()); }
-            if args.options.contains_key("after") && args.options.contains_key("offset") { return Err("Use either --offset or --after".into()); }
-            let query = if let Some(after) = args.options.get("after") { format!("after={after}&limit={}", args.value("limit", "100")) }
-                else { format!("offset={}&limit={}", args.value("offset", "0"), args.value("limit", "100")) };
-            if online { output(&call(&config, &path, "GET", &format!("/api/requesters/{id}?{query}"), None)?); }
-            else if args.options.contains_key("after") {
+            if !mynou::requesters::valid_id(id) {
+                return Err("Invalid requester account ID".into());
+            }
+            if args.options.contains_key("after") && args.options.contains_key("offset") {
+                return Err("Use either --offset or --after".into());
+            }
+            let query = if let Some(after) = args.options.get("after") {
+                format!("after={after}&limit={}", args.value("limit", "100"))
+            } else {
+                format!(
+                    "offset={}&limit={}",
+                    args.value("offset", "0"),
+                    args.value("limit", "100")
+                )
+            };
+            if online {
+                output(&call(
+                    &config,
+                    &path,
+                    "GET",
+                    &format!("/api/requesters/{id}?{query}"),
+                    None,
+                )?);
+            } else if args.options.contains_key("after") {
                 let (after, limit) = mynou::requesters::cursor_page(&query)?;
-                output(&Engine::open_for_preview(config)?.requester_page(id, after.as_deref(), limit)?);
+                output(&Engine::open_for_preview(config)?.requester_page(
+                    id,
+                    after.as_deref(),
+                    limit,
+                )?);
             } else {
                 let (offset, limit) = mynou::requesters::page(&query)?;
                 output(&Engine::open_for_preview(config)?.requester(id, offset, limit)?);
