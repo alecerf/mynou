@@ -280,5 +280,14 @@ impl Index {
     }
 }
 
+impl Drop for Index {
+    fn drop(&mut self) {
+        // A concurrently spawned child can briefly inherit the locked open
+        // description before exec closes it. Release our ownership explicitly
+        // so closing this index never waits for that child's descriptor.
+        let _ = self._lock.unlock();
+    }
+}
+
 #[cfg(test)]
 mod tests;
