@@ -542,6 +542,23 @@ fn jobs_above_the_old_total_cap_reach_http_websocket_and_cli_pages() {
         assert_eq!(seen.len(), 10_001, "{transport}");
         assert_eq!(seen, jobs.iter().map(|job| job.id.clone()).collect());
     }
+    // The inventory keeps growing past the old limit: no capacity error remains.
+    let created = server.call(
+        "POST",
+        "/api/jobs",
+        &[
+            ("Authorization", &auth),
+            ("Content-Type", "application/json"),
+        ],
+        r#"{"kind":"movie","title":"Beyond the old limit","year":2026,"tmdb_id":777777}"#,
+    );
+    assert_eq!(created.status, 201, "{}", created.body);
+    let reply = server.call("GET", "/api/jobs?limit=1", &[("Authorization", &auth)], "");
+    let page = json::parse(&reply.body).unwrap();
+    assert_eq!(
+        page.get("total").and_then(json::Value::as_u64),
+        Some(10_002)
+    );
     drop(socket);
     drop(server);
     fs::remove_dir_all(root).unwrap();
