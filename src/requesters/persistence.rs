@@ -517,7 +517,20 @@ impl RequesterStore {
                     "Requester: published index differs from validated legacy source".into(),
                 );
             }
-            index
+            // A promoted index may contain acknowledged changes if somebody
+            // restored old bytes beside it. Never rewrite it before proving
+            // this is exactly the pre-marker migration checkpoint.
+            verify(&mut index, state, &self.state, &source)?;
+            if index.get(&index::CURSOR)?.is_some() {
+                return Err("Requester: promoted index retains a staging cursor".into());
+            }
+            let identity = index.identity();
+            drop(index);
+            let mut marker = MARKER.to_vec();
+            marker.extend_from_slice(&identity);
+            marker.extend_from_slice(&sha256(&marker));
+            replace(&self.directory, &self.directory.join("requesters.bin"), &marker)?;
+            return Index::open(&published, false);
         } else {
             let mut reusable = None;
             if staging

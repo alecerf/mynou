@@ -286,9 +286,12 @@ IRC announcements:
 
 ## Plex requester accounts
 
-- At most 32 account aliases and 32 destinations, 10,000 retained demands, 512
-  watchlist and expanded items per account and 64 new requests per pass. The
-  checked `requesters.bin` snapshot is limited to 16 MiB.
+- At most 32 account aliases and 32 destinations, 512 watchlist and expanded
+  items per account and 64 new requests per pass. Retained demands and operator
+  interests have no total count or aggregate-byte cap in `requesters.idx`.
+  Demand records keep a 16 MiB bound; pages hold up to 200 rows and 4 MiB,
+  except one larger demand may appear alone. Legacy offsets stop at 10,000;
+  `after` cursors reach further rows ([storage guide](inventory-storage.md#requester-storage)).
 - A poll pass has 90 seconds, with ten seconds per account for identity,
   watchlist and catalog. Control files are limited to 64 KiB.
 - Requester demand is acquired episode by episode; automatic packs keep their
@@ -316,9 +319,9 @@ IRC announcements:
   change no permissions, repair nothing and still exclude a concurrent writer.
   After an interrupted write they ask for writable recovery, which the next
   service start performs.
-- Requester, IRC and source data live in separate private snapshots, written
-  through a temporary file, synchronization and an atomic rename. Series data
-  lives in a checksummed disk index with a write-ahead log
+- IRC and source data live in separate private snapshots, written
+  through a temporary file, synchronization and an atomic rename. Series,
+  jobs and requester demand live in checksummed disk indexes with a write-ahead log
   ([details](inventory-storage.md)). Checksums detect corruption; they do not
   authenticate against someone who can rewrite the files. When a write's
   durability is uncertain, that store refuses further changes until the service

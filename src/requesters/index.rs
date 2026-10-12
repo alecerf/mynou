@@ -129,7 +129,7 @@ pub(super) fn entries(demand: &Demand) -> Result<BTreeMap<Key, Vec<u8>>> {
         return Err("Requester: demand exceeds the historical 16 MiB record bound".into());
     }
     let mut entries = BTreeMap::new();
-    let mut manifest = Vec::from(FORMAT.as_slice());
+    let mut manifest = Vec::from(FORMAT);
     manifest.extend_from_slice(&(bytes.len() as u64).to_le_bytes());
     manifest.extend_from_slice(&sha256(&bytes));
     entries.insert(prefix(DEMAND, &[&id]), manifest);

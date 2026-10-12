@@ -284,11 +284,56 @@ pub fn ready(engine: &Engine, id: &str) -> Job {
     lock(&engine.store).unwrap().update(job.clone()).unwrap();
     job
 }
+// Synthetic fixtures may materialize the complete ledger to exercise legacy recovery.
 pub fn read_snapshot(directory: &Path) -> Value {
     let bytes = fs::read(directory.join("requesters.bin")).unwrap();
-    json::parse(std::str::from_utf8(&bytes[16..bytes.len() - 32]).unwrap()).unwrap()
+    if !bytes.starts_with(b"MYNOUR03") {
+        return json::parse(std::str::from_utf8(&bytes[16..bytes.len() - 32]).unwrap()).unwrap();
+    }
+    use mynou::inventory::{Index, Query, MAX_VALUE_BYTES};
+    let mut index = Index::open(&directory.join("requesters.idx"), true).unwrap();
+    let mut value = json::parse(std::str::from_utf8(&index.get(&[0; 64]).unwrap().unwrap()).unwrap()).unwrap();
+    let mut demands = Vec::new();
+    let mut operators = Vec::new();
+    for table in [1_u8, 7] {
+        let mut start = [0; 64];
+        start[0] = table;
+        let mut end = start;
+        end[0] += 1;
+        let mut after = None;
+        loop {
+            let page = index.page(&Query { start, end: Some(end), after, limit: 200, sequence: None }).unwrap();
+            for (key, manifest) in page.entries {
+                if table == 7 {
+                    operators.push(Value::String(std::str::from_utf8(&key[1..33]).unwrap().into()));
+                    continue;
+                }
+                let length = u64::from_le_bytes(manifest[8..16].try_into().unwrap()) as usize;
+                let mut payload = Vec::new();
+                for number in 0..length.div_ceil(MAX_VALUE_BYTES) {
+                    let mut chunk = key;
+                    chunk[0] = 9;
+                    chunk[33..37].copy_from_slice(&(number as u32).to_be_bytes());
+                    payload.extend(index.get(&chunk).unwrap().unwrap());
+                }
+                assert_eq!(payload.len(), length);
+                assert_eq!(sha256(&payload).as_slice(), &manifest[16..]);
+                demands.push(json::parse(std::str::from_utf8(&payload).unwrap()).unwrap());
+            }
+            after = page.next;
+            if after.is_none() { break; }
+        }
+    }
+    value.insert("demands", Value::Array(demands));
+    value.insert("operator_jobs", Value::Array(operators));
+    value
 }
 pub fn write_snapshot(directory: &Path, value: &Value) {
+    // Deliberately restore legacy synthetic data; preserve the published index.
+    let index = directory.join("requesters.idx");
+    if index.exists() {
+        fs::rename(&index, directory.join("requesters.idx.fixture-original")).unwrap();
+    }
     let payload = json::stringify(value).into_bytes();
     let mut bytes = b"MYNOUR01".to_vec();
     bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());

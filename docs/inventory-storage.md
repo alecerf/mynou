@@ -3,8 +3,8 @@
 The `mynou::inventory::Index` Rust API is the storage foundation for
 [growing inventories](https://github.com/alecerf/mynou/issues/106). Series,
 episode and numbering storage uses it (see [Series storage](#series-storage)).
-The request journal, requester ledger and the other snapshots still use their
-own files and fixed limits; see [limits](limits.md).
+Jobs and requester demand also use private disk indexes. IRC and source
+snapshots retain their own files and fixed limits; see [limits](limits.md).
 
 ## Ownership and format
 
@@ -238,7 +238,7 @@ index. Opening reads tree paths and requested records rather than one complete
 job inventory. Canonical deduplication, media identity, library tips, lineage,
 shared-file and pack ownership, IRC origins, requester job bindings, acquisition
 and transfer ownership are secondary entries committed with their jobs. The
-requester demand ledger itself remains the bounded `requesters.bin` snapshot.
+requester demand ledger uses its own `requesters.idx` index (see below).
 
 There is no total job-count or job-store byte cap. Each job retains the old
 16 MiB JSON/record limit; records larger than the index's 1 MiB object limit use
@@ -303,10 +303,63 @@ and changes exist in the index and are **not** in the legacy copies. Keep the
 index separately if those changes must be recovered. Do not downgrade over live
 storage or mix backup pairs.
 
+## Requester storage
+
+`requesters.idx` stores requester demands and operator interests without a total
+record-count or aggregate-byte limit. Only the bounded account configuration,
+requested pages and explicit changed-record patches remain in memory. Demand
+manifests bind checked chunks; account, media, admission, outcome and IRC-origin
+references and counters change atomically with their primary records.
+
+`mynou requester ACCOUNT --limit 1..200 --after CURSOR` and
+`GET /api/requesters/ACCOUNT?limit=200&after=CURSOR` return `demands`, `next`,
+`total` and a string `sequence`. Start without `after`; use `next` until null.
+Offsets remain available up to 10,000. Cursors are live key scans: concurrent
+insertions before the cursor may require restarting the listing. Pages hold at
+most 200 demands and 4 MiB of hydrated records, except a larger individual
+record may appear alone within its historical 16 MiB record bound. Network and
+JSON response bounds still apply.
+
+Policy previews bind ledger and job sequences, the affected account/demand and
+captured configuration without loading the inventory. Policy revisions fence
+new admissions; unadmitted demand adopts current policy during bounded admission
+passes. Durable reservation precedes job creation. Admission examines up to 200
+rows and admits at most 64 per pass; outcome reconciliation and origin retirement
+continue through persisted cursors. A successful complete upstream poll publishes
+an origin generation, and a later poll waits until its retirement pass finishes.
+Failed or partial reads never authorize removing an unseen origin. The upstream
+512-item/expanded-request batch limit remains.
+
+### Requester migration and downgrade
+
+Before publication, startup validates legacy `MYNOUR01`/`MYNOUR02` bytes and both
+directions of requester/job and requester/IRC provenance. Validated originals
+are preserved exactly as private `requesters.legacy-DIGEST.bin` copies.
+`requesters.idx.staging` binds its source and resumes bounded demand batches;
+a staging directory that cannot be safely reused is preserved under a unique
+`requesters.idx.abandoned-*` name. Every primary, secondary key and count is
+verified before promotion. An already promoted index must match the exact
+legacy image before marker publication; a restored older snapshot cannot rewrite
+acknowledged index changes. `requesters.bin` then becomes the `MYNOUR03` marker,
+bound to the verified index identity, which earlier binaries refuse.
+
+Read-only opens never migrate or repair. Legacy listings remain readable before
+migration; interrupted indexed writes require a writable restart. Uncertain
+writes block further reads and changes and retain recovery artifacts.
+
+To downgrade, stop Mynou, back up the complete current store, move
+`requesters.idx` and any staging directory aside, and restore the matching
+preserved original to `requesters.bin`. For an originally absent snapshot,
+remove the marker only after moving the index aside. Restore matching job/IRC
+state as well: incompatible provenance is refused. This restores pre-migration
+state only; later demands, policy changes and operator interests remain solely
+in the preserved index. Never mix backup generations or downgrade live storage.
+
 ## Remaining delivery
 
-Issue #106 still needs migration of the requester demand ledger, fair bounded
-scheduling across all remaining admission/monitoring paths, and resource/backlog
-diagnostics. Jobs and series have left their fixed total inventory limits;
-requester, IRC and source snapshots retain their documented bounds. Validation
-uses original synthetic fixtures in GitHub Actions on the supported macOS target.
+Issue #106 still needs fair bounded scheduling across remaining
+admission/monitoring paths, upstream paging and IRC inventory migration, and
+resource/backlog diagnostics. Jobs, series and requester demand have left their
+fixed total inventory limits; IRC and source snapshots retain their documented
+bounds. Validation uses original synthetic fixtures in GitHub Actions on the
+supported macOS target.

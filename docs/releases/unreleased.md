@@ -13,3 +13,7 @@ Use `cross-seed SOURCE_ID --torrent FILE` to seed a distinct v1 torrent from com
 ## Changed: Store jobs and history on disk without a total job limit
 
 Jobs and library listings now use cursor pages (`--limit`/`--after`, API `next`, and load more in the web interface). The first writable start migrates and preserves the old job files; history keeps up to 1,000 events per job. Earlier binaries refuse the new format, and restoring legacy backups loses changes made afterward; read [the storage guide](/docs/inventory-storage.md#job-storage) before downgrading.
+
+## Changed: Store requester demand without a total inventory limit
+
+Requester demands and operator interests now use an indexed on-disk ledger instead of the 10,000-record, 16 MiB aggregate snapshot. Use `mynou requester ACCOUNT --limit 200 --after CURSOR` or the account API’s `next` cursor to read further pages; polling batches remain bounded. The first writable start preserves legacy bytes before migration; older binaries refuse the new ledger and restoring the backup loses later changes ([storage guide](/docs/inventory-storage.md#requester-storage)).

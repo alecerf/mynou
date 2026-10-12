@@ -1444,7 +1444,7 @@ impl Store {
     pub(crate) fn open_jobs_filtered(
         &mut self,
         limit: usize,
-        eligible: impl Fn(&Job) -> bool,
+        eligible: impl Fn(&Job) -> Result<bool>,
     ) -> Result<Vec<Job>> {
         let mut cursor = self.route_cursor;
         let jobs = self.read(Vec::new(), |db| {
@@ -1462,7 +1462,7 @@ impl Store {
                 for (key, _) in &page.entries {
                     let at = if key[0] == layout::T_QUEUE { 9 } else { 17 };
                     let job = db.require(&ops::key_part(key, at)?)?;
-                    if eligible(&job) {
+                    if eligible(&job)? {
                         jobs.push(job);
                     }
                 }
