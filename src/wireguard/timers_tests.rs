@@ -695,3 +695,40 @@ fn two_peers_survive_loss_retry_passive_keepalive_and_rekey() {
     assert_eq!(a.timers.next_deadline(), Some(secs(215)));
     assert_eq!(b.timers.next_deadline(), Some(secs(215)));
 }
+
+#[test]
+fn initiation_spacing_holds_across_attempts_and_discards() {
+    let mut timers = timers(&[333]);
+    timers.queue_data(G, ZERO).unwrap();
+    let mut now = ZERO;
+    let mut last = ZERO;
+    loop {
+        let due = timers.poll(G, now).unwrap();
+        if due.initiate {
+            last = now;
+        }
+        if due.gave_up {
+            break;
+        }
+        now = due.next.unwrap();
+    }
+    assert_eq!(now, secs(90));
+    assert!(now - last < REKEY_TIMEOUT, "the last initiation was recent");
+
+    // New data right after the give-up must still wait out the timeout.
+    timers.queue_data(G, now).unwrap();
+    let due = timers.poll(G, now).unwrap();
+    assert!(!due.initiate);
+    assert_eq!(due.next, Some(last + REKEY_TIMEOUT));
+    let due = timers.poll(G, last + REKEY_TIMEOUT).unwrap();
+    assert!(due.initiate);
+}
+
+#[test]
+fn a_discard_keeps_an_attempt_started_just_before_it() {
+    let mut timers = established(Role::Initiator, ZERO);
+    timers.queue_data(G, secs(530)).unwrap();
+    let due = timers.poll(G, secs(540)).unwrap();
+    assert!(due.discard && due.initiate);
+    assert!(!due.gave_up);
+}

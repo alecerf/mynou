@@ -106,6 +106,7 @@ pub struct Timers<E: Entropy> {
     session: Option<Clock>,
     last_established: Option<Duration>,
     attempt: Attempt,
+    last_initiation: Option<Duration>,
     last_sent: Option<Duration>,
     keepalive_at: Option<Duration>,
     reply_by: Option<Duration>,
@@ -120,6 +121,7 @@ impl<E: Entropy> Timers<E> {
             session: None,
             last_established: None,
             attempt: Attempt::Idle,
+            last_initiation: None,
             last_sent: None,
             keepalive_at: None,
             reply_by: None,
@@ -129,13 +131,14 @@ impl<E: Entropy> Timers<E> {
     /// Irreversible: clears every deadline and refuses all later events.
     pub fn revoke(&mut self) {
         self.fence.revoked = true;
+        self.attempt = Attempt::Idle;
+        self.last_initiation = None;
         self.clear();
     }
 
     fn clear(&mut self) {
         self.session = None;
         self.last_established = None;
-        self.attempt = Attempt::Idle;
         self.last_sent = None;
         self.keepalive_at = None;
         self.reply_by = None;
@@ -177,10 +180,11 @@ impl<E: Entropy> Timers<E> {
             Attempt::Active { .. } => {}
             Attempt::Abandoned if !explicit => {}
             _ => {
-                self.attempt = Attempt::Active {
-                    started: now,
-                    next: now,
-                };
+                // Spacing holds across attempts, discards and restarts too.
+                let next = self
+                    .last_initiation
+                    .map_or(now, |sent| now.max(sent.saturating_add(REKEY_TIMEOUT)));
+                self.attempt = Attempt::Active { started: now, next };
                 self.reply_by = None;
             }
         }
@@ -329,6 +333,7 @@ impl<E: Entropy> Timers<E> {
                 match now.checked_add(delay) {
                     Some(next) => {
                         self.attempt = Attempt::Active { started, next };
+                        self.last_initiation = Some(now);
                         due.initiate = true;
                     }
                     // The clock cannot represent the retry: fail closed.
@@ -507,7 +512,7 @@ impl KeySets {
         let index = packet
             .get(4..8)
             .ok_or("WireGuard: invalid transport framing")?;
-        let index = u32::from_le_bytes(index.try_into().unwrap());
+        let index = u32::from_le_bytes([index[0], index[1], index[2], index[3]]);
         if let Some(session) = self.current.as_mut()
             && session.local_index == index
         {
