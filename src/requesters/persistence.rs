@@ -427,22 +427,6 @@ impl RequesterStore {
                 .count() as u64),
         }
     }
-    pub(crate) fn describe(&self) -> Result<json::Value> {
-        let mut value = json::Value::object();
-        value.insert("demands", self.count("", None)?.to_string());
-        value.insert("pending", self.count("", Some("pending"))?.to_string());
-        value.insert("reserved", self.count("", Some("reserved"))?.to_string());
-        value.insert("revision", self.sequence()?.to_string());
-        value.insert(
-            "backend",
-            if matches!(&*self.backend.borrow(), Backend::Ready(_)) {
-                "disk-index"
-            } else {
-                "legacy-awaiting-migration"
-            },
-        );
-        Ok(value)
-    }
     pub(crate) fn poll_ready(&self, account: &str) -> Result<bool> {
         self.available()?;
         match &mut *self.backend.borrow_mut() {
