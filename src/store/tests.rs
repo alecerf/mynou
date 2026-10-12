@@ -840,6 +840,7 @@ fn pending_monitoring_fixture(store: &mut Store) {
         layout::T_MONITOR_REF,
         layout::T_MONITOR_DUE,
         layout::T_MONITOR_SHARED,
+        layout::T_MONITOR_UNCHECKED,
     ] {
         let mut after = None;
         loop {
@@ -865,7 +866,7 @@ fn pending_monitoring_fixture(store: &mut Store) {
             reference,
         ));
         changes.push(Change::PutInline(
-            layout::key(&[&[layout::T_MONITOR_DUE], &at, &round, &id]),
+            layout::key(&[&[layout::T_MONITOR_UNCHECKED], &job.created_at.to_be_bytes(), &round, &id]),
             Vec::new(),
         ));
     }
@@ -918,7 +919,7 @@ fn pending_monitoring_upgrade_is_read_only_safe_and_recovers_each_crash_boundary
         );
         assert_eq!(
             reopened
-                .monitoring_due(1_000, 60, false, 257)
+                .monitoring_due(now(), 60, false, 257)
                 .unwrap()
                 .jobs
                 .len(),
@@ -937,7 +938,7 @@ fn pending_monitoring_upgrade_is_read_only_safe_and_recovers_each_crash_boundary
             monitoring::FORMAT
         );
         assert!(index.get(&layout::MONITOR_CURSOR_KEY).unwrap().is_none());
-        for table in [layout::T_MONITOR_REF, layout::T_MONITOR_DUE] {
+        for table in [layout::T_MONITOR_REF, layout::T_MONITOR_UNCHECKED] {
             let mut count = 0;
             let mut after = None;
             loop {
@@ -1026,6 +1027,111 @@ fn monitoring_counters_follow_baselines_flags_shared_owners_and_current_tips() {
     store.set_monitored(&shared_id, false).unwrap();
     assert_eq!(store.monitoring_counts().unwrap(), [1, 3, 0, 1, 2]);
     assert_eq!(store.monitored_shared(200).unwrap().len(), 2);
+}
+
+#[test]
+fn rollback_checks_correct_future_times_with_one_slot() {
+    for force in [false, true] {
+        let directory = Directory::new();
+        let mut store = Store::open(&directory.0).unwrap();
+        let at = now();
+        let mut jobs: Vec<Job> = (1..=3).map(|n| monitored_fixture(n, at + 86_400 * n)).collect();
+        let mut unchecked = monitored_fixture(4, 0);
+        unchecked.created_at = at + 86_400;
+        unchecked.updated_at = unchecked.created_at;
+        jobs.push(unchecked);
+        bulk(&mut store, jobs.clone());
+        let mut seen = BTreeSet::new();
+        for expected in &jobs {
+            let window = store.monitoring_due(at, 60, force, 1).unwrap();
+            assert_eq!(window.jobs.len(), 1);
+            assert_eq!(window.jobs[0].id, expected.id);
+            assert!(seen.insert(window.jobs[0].id.clone()));
+            store.record_monitor_check(&window.jobs[0].id, at).unwrap();
+            assert_eq!(store.get(&expected.id).unwrap().unwrap().monitor_checked_at, at);
+        }
+        assert_eq!(seen.len(), jobs.len());
+        assert!(store.monitoring_due(at, 60, false, 1).unwrap().jobs.is_empty());
+        drop(store);
+        let mut reopened = Store::open(&directory.0).unwrap();
+        assert!(reopened.monitoring_due(at, 60, false, 1).unwrap().jobs.is_empty());
+        assert_eq!(reopened.monitoring_due(at + 60, 60, false, 4).unwrap().jobs.len(), 4);
+        assert_eq!(reopened.monitoring_counts().unwrap(), [4, 0, 0, 0, 0]);
+    }
+}
+
+#[test]
+fn new_unchecked_imports_do_not_starve_old_due_checks() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let at = now();
+    let old = monitored_fixture(1, at - 120);
+    bulk(&mut store, vec![old.clone()]);
+    for n in 2..=25 {
+        let mut new = monitored_fixture(n, 0);
+        new.created_at = at;
+        new.updated_at = at;
+        bulk(&mut store, vec![new]);
+        let next = store.monitoring_due(at, 60, false, 1).unwrap();
+        assert_eq!(next.jobs[0].id, old.id);
+    }
+    store.record_monitor_check(&old.id, at).unwrap();
+    let next = store.monitoring_due(at, 60, false, 1).unwrap();
+    assert_ne!(next.jobs[0].id, old.id);
+    assert_eq!(next.jobs[0].monitor_checked_at, 0);
+}
+
+#[test]
+fn old_job_format_builds_monitoring_without_changing_primary_records() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let jobs: Vec<Job> = (1..=201).map(|n| {
+        let mut job = monitored_fixture(n, 0);
+        match n % 4 {
+            0 => (),
+            1 => job.monitored = false,
+            2 => job.release = None,
+            _ => { job.request.kind = "file".into(); job.request.season = 0; job.request.episode = 0; job.key = job.request.canonical_key(); }
+        }
+        job
+    }).collect();
+    bulk(&mut store, jobs);
+    let file = shared_file();
+    let owners = store.submit_shared_file(file.clone(), shared_requests(&file)).unwrap();
+    for mut owner in owners { owner.state = "ready".into(); owner.progress = 1.0; owner.imports = vec![file.import_path.clone()]; store.update(owner).unwrap(); }
+    let primary = store.list().unwrap();
+    let events = store.events("").unwrap();
+    let expected = [50, 51, 50, 50, 3];
+    assert_eq!(store.monitoring_counts().unwrap(), expected);
+    let index = match &mut store.backend { Backend::Ready(index) => index, _ => unreachable!() };
+    let mut changes = Vec::new();
+    for table in [layout::T_MONITOR_REF, layout::T_MONITOR_DUE, layout::T_MONITOR_SHARED, layout::T_MONITOR_UNCHECKED] {
+        let mut after = None;
+        loop {
+            let page = ops::Db(index).scan(&[table], after, 200).unwrap();
+            changes.extend(page.entries.into_iter().map(|(key, _)| Change::Delete(key)));
+            after = page.next;
+            if after.is_none() { break; }
+        }
+    }
+    changes.push(Change::Delete(layout::MONITOR_COUNTS_KEY));
+    changes.push(Change::Delete(layout::MONITOR_CURSOR_KEY));
+    changes.push(Change::PutInline(layout::FORMAT_KEY, layout::FORMAT.to_vec()));
+    index.commit(changes).unwrap();
+    drop(store);
+    let before = contents(&directory.0);
+    assert!(Store::open_read_only(&directory.0).err().unwrap().contains("writable restart"));
+    assert_eq!(contents(&directory.0), before);
+    let mut reopened = Store::open(&directory.0).unwrap();
+    assert_eq!(reopened.list().unwrap(), primary);
+    assert_eq!(reopened.events("").unwrap(), events);
+    assert_eq!(reopened.monitoring_counts().unwrap(), expected);
+    assert_eq!(reopened.monitoring_due(now(), 60, false, 257).unwrap().jobs.len(), 50);
+    assert_eq!(reopened.monitored_shared(200).unwrap().len(), 3);
+    assert_eq!(reopened.counts().unwrap().library, 204);
+    drop(reopened);
+    let mut read_only = Store::open_read_only(&directory.0).unwrap();
+    assert_eq!(read_only.monitoring_counts().unwrap(), expected);
 }
 
 #[test]

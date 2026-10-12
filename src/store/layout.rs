@@ -48,6 +48,7 @@ pub(super) const T_JOB_CHUNK: u8 = 0x38;
 pub(super) const T_MONITOR_DUE: u8 = 0x39;
 pub(super) const T_MONITOR_REF: u8 = 0x3a;
 pub(super) const T_MONITOR_SHARED: u8 = 0x3b;
+pub(super) const T_MONITOR_UNCHECKED: u8 = 0x3c;
 
 pub(super) const FORMAT_KEY: Key = single(T_META, 0);
 pub(super) const COUNTS_KEY: Key = single(T_META, 1);
