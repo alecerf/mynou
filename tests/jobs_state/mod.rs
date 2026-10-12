@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 pub fn fingerprint(store_dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     fn walk(root: &Path, directory: &Path, found: &mut Vec<(PathBuf, Vec<u8>)>) {
         let directory = fixture_root(directory);
-        assert!(directory.starts_with(root));
+        if !directory.starts_with(root) { panic!("Fixture directory escaped its index"); }
         let entries = fs::read_dir(&directory).unwrap();
         for entry in entries {
             let path = entry.unwrap().path();
@@ -163,8 +163,12 @@ pub fn downgrade_as(store_dir: &Path, jobs: &[Job], magic: Option<&[u8; 8]>) {
 pub fn write_private(path: &Path, bytes: &[u8]) {
     use std::os::unix::fs::PermissionsExt;
     let root = fixture_root(path.parent().unwrap());
-    let path = root.join(path.file_name().unwrap());
-    assert!(path.starts_with(&root));
+    let path = match path.file_name().and_then(|name| name.to_str()) {
+        Some("snapshot.bin") => root.join("snapshot.bin"),
+        Some("journal.bin") => root.join("journal.bin"),
+        Some("mynou.json") => root.join("mynou.json"),
+        _ => panic!("Unsupported fixture file name"),
+    };
     if let Ok(metadata) = fs::symlink_metadata(&path) {
         assert!(metadata.is_file() && !metadata.file_type().is_symlink());
     }
@@ -181,7 +185,8 @@ fn remove_owned(root: &Path, name: &str, directory: bool) {
     };
     assert!(!metadata.file_type().is_symlink());
     let path = path.canonicalize().unwrap();
-    assert!(path.starts_with(root) && path != root);
+    if !path.starts_with(root) { panic!("Fixture removal escaped its root"); }
+    if path == root { panic!("Cannot remove the fixture root"); }
     if directory {
         fs::remove_dir_all(&path).unwrap();
     } else {
@@ -192,6 +197,7 @@ fn remove_owned(root: &Path, name: &str, directory: bool) {
 fn fixture_root(path: &Path) -> PathBuf {
     let temporary = std::env::temp_dir().canonicalize().unwrap();
     let path = path.canonicalize().unwrap();
-    assert!(path.starts_with(&temporary) && path != temporary);
+    if !path.starts_with(&temporary) { panic!("Fixture path escaped temporary storage"); }
+    if path == temporary { panic!("Fixture path must be below temporary storage"); }
     path
 }

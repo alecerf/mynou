@@ -15,7 +15,7 @@ offline on every run (see [CI](validation.md#mynou-ci)).
 | Former component | Rust replacement |
 | --- | --- |
 | Go BitTorrent engine | `src/torrent.rs` and `src/torrent/` |
-| SQLite | Transaction journal and snapshots in `src/store.rs` |
+| SQLite | Disk-resident job and series indexes in `src/inventory/`, `src/store/` and `src/series/` |
 | ffprobe | Container parsers in `src/media.rs` and `src/media/` |
 | HTTP/TLS libraries | `src/net.rs`, `src/tls.rs` and `src/pki/` |
 | JSON, bencode and XML | Bounded parsers in `src/json.rs`, `src/bencode.rs` and `src/xml.rs` |
@@ -61,14 +61,16 @@ CLI / API            Plex watchlists   IRC announcements
 
 - `config` validates every field and resolves paths against the configuration
   file into absolute roots, even when the configuration path is relative.
-- `engine` orchestrates request transitions. It never holds the journal lock
+- `engine` orchestrates request transitions. It never holds the job-store lock
   during a transfer or an import. Workers take leases and renew them during
   long operations.
-- `store` synchronizes each transaction before confirming it. Records form a
-  SHA-256 chain: an incomplete tail after an interruption is recoverable, while
-  a corrupted complete record is reported. A file lock gives the journal a single
-  owner. Read-only opening (offline listings and previews) creates nothing,
-  changes no permissions and repairs nothing.
+- `store` commits jobs, history and secondary ownership entries atomically in
+  the disk-resident `inventory::Index`. Point lookups and cursor pages keep
+  routine reads independent of the total inventory. A directory lock excludes
+  concurrent owners; checksummed redo recovers interrupted published commits.
+  Legacy journal/snapshot migration validates and preserves the old files before
+  promotion. Read-only opening creates nothing and repairs nothing; see
+  [storage and recovery](inventory-storage.md#job-storage).
 - `integrations` turns Plex, TMDB and source responses into requests, catalog
   plans and candidates. `indexers` keeps source policy, authentication sessions
   and health. `selection` scores candidates against the movie or episode
