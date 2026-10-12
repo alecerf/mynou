@@ -1,6 +1,7 @@
 //! The embedded web interface and its WebSocket transport, over loopback only.
 mod api_support;
 mod series_support;
+mod jobs_state;
 
 use api_support::{Server, TOKEN};
 use mynou::{config, json};
@@ -387,4 +388,103 @@ fn series_beyond_two_hundred_reach_the_socket_in_pages() {
     drop(socket);
     drop(server);
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn jobs_above_the_old_total_cap_reach_http_websocket_and_cli_pages() {
+    use mynou::store::{Event, Request, Store};
+    use std::collections::BTreeSet;
+    use std::process::Command;
+    let root = std::env::temp_dir().join(format!("mynou-job-consumers-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let store_dir = root.join("store");
+    let mut value = config::default_json();
+    value.insert("listen", "127.0.0.1:0");
+    value.insert("store_dir", store_dir.to_str().unwrap().to_owned());
+    value.get_mut("downloads").unwrap().insert("enabled", false);
+    let mut store = Store::open(&store_dir).unwrap();
+    let prototype = store.submit(Request {
+        kind: "movie".into(), title: "Synthetic page fixture".into(), year: 2026,
+        season: 0, episode: 0, source_path: None, source_url: None,
+        source_numbering: None, tmdb_id: Some(1),
+    }).unwrap();
+    drop(store);
+    let jobs: Vec<_> = (1..=10_001_u64).map(|n| {
+        let mut job = prototype.clone();
+        job.id = format!("{n:032x}");
+        job.request.title = format!("Synthetic job {n}");
+        job.request.tmdb_id = Some(n);
+        job.key = job.request.canonical_key();
+        job.created_at = 100 + n;
+        job.updated_at = job.created_at;
+        job
+    }).collect();
+    let events: Vec<_> = jobs.iter().enumerate().skip(9_001).map(|(n, job)| Event {
+        id: n as u64 + 1, job_id: job.id.clone(), state: job.state.clone(),
+        message: "legacy fixture".into(), at: job.updated_at,
+    }).collect();
+    jobs_state::reset(&store_dir);
+    jobs_state::write_private(&store_dir.join("snapshot.bin"),
+        &jobs_state::snapshot(&jobs, &events, 10_001, &[0; 32], b"MYNOUS01"));
+    let cfg = config::from_json(&value, &root).unwrap();
+    let server = Server::open(cfg);
+    value.insert("listen", server.authority.clone());
+    let config_path = root.join("mynou.json");
+    jobs_state::write_private(&config_path, json::stringify(&value).as_bytes());
+    let auth = format!("Bearer {TOKEN}");
+    let mut socket = open_when_free(&server);
+    send(&mut socket, r#"{"subscribe":["jobs"]}"#);
+    let push = next_json(&mut socket);
+    let page = push.get("data").unwrap();
+    assert_eq!(page.get("total").and_then(json::Value::as_u64), Some(10_001));
+    assert_eq!(page.get("jobs").unwrap().as_array().unwrap().len(), 50);
+    assert!(page.get("next").unwrap().as_str().is_some());
+    for transport in ["http", "websocket", "cli"] {
+        let mut after: Option<String> = None;
+        let mut seen = BTreeSet::new();
+        let mut request_id = 100;
+        loop {
+            let route = after.as_ref().map_or_else(|| "/api/jobs?limit=200".to_owned(),
+                |cursor| format!("/api/jobs?limit=200&after={cursor}"));
+            let page = match transport {
+                "http" => {
+                    let reply = server.call("GET", &route, &[("Authorization", &auth)], "");
+                    assert_eq!(reply.status, 200, "{}", reply.body);
+                    json::parse(&reply.body).unwrap()
+                },
+                "websocket" => {
+                    request_id += 1;
+                    send(&mut socket, &format!(r#"{{"id":{request_id},"method":"GET","path":"{route}"}}"#));
+                    loop {
+                        let reply = next_json(&mut socket);
+                        if reply.get("id").and_then(json::Value::as_u64) == Some(request_id) {
+                            assert_eq!(reply.get("status").and_then(json::Value::as_u64), Some(200));
+                            break reply.get("body").unwrap().clone();
+                        }
+                    }
+                },
+                _ => {
+                    let mut command = Command::new(env!("CARGO_BIN_EXE_mynou"));
+                    command.current_dir(&root).env("MYNOU_API_TOKEN", TOKEN)
+                        .args(["jobs", "--config", config_path.to_str().unwrap(), "--limit", "200"]);
+                    if let Some(cursor) = &after { command.args(["--after", cursor]); }
+                    let output = command.output().unwrap();
+                    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+                    json::parse(std::str::from_utf8(&output.stdout).unwrap().trim()).unwrap()
+                }
+            };
+            assert_eq!(page.get("total").and_then(json::Value::as_u64), Some(10_001));
+            let rows = page.get("jobs").unwrap().as_array().unwrap();
+            assert!(!rows.is_empty() && rows.len() <= 200);
+            for row in rows { assert!(seen.insert(row.get("id").unwrap().as_str().unwrap().to_owned()), "{transport}"); }
+            after = page.get("next").and_then(json::Value::as_str).map(str::to_owned);
+            if after.is_none() { break; }
+        }
+        assert_eq!(seen.len(), 10_001, "{transport}");
+        assert_eq!(seen, jobs.iter().map(|job| job.id.clone()).collect());
+    }
+    drop(socket);
+    drop(server);
+    fs::remove_dir_all(root).unwrap();
 }

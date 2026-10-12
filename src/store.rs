@@ -17,7 +17,7 @@ use crate::json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod groups;
@@ -1040,15 +1040,24 @@ impl Store {
             let page = db.scan(&[table], after, limit)?;
             let mut jobs = Vec::with_capacity(page.entries.len());
             let mut last = None;
+            let mut bytes = 0_usize;
+            let mut more = page.next.is_some();
             for (found, _) in &page.entries {
                 let created = !u64::from_be_bytes(ops::key_part(found, 1)?);
                 let id: [u8; 16] = ops::key_part(found, 9)?;
-                jobs.push(db.require(&id)?);
+                let job = db.require(&id)?;
+                let length = layout::encode_job(&job).len();
+                if !jobs.is_empty() && bytes + length > crate::inventory::MAX_PAGE_BYTES {
+                    more = true;
+                    break;
+                }
+                bytes += length;
+                jobs.push(job);
                 last = Some(cursor_text(created, &id));
             }
             Ok(JobPage {
                 jobs,
-                next: page.next.and(last),
+                next: if more { last } else { None },
                 total,
             })
         })
@@ -1087,10 +1096,10 @@ impl Store {
     }
 
     /// Retained history of one job, or of every job when `id` is empty (the
-    /// newest first-page-sized window of the global sequence).
+    /// first page-sized window of the global sequence).
     pub fn events(&mut self, id: &str) -> Result<Vec<Event>> {
         if id.is_empty() {
-            return self.event_feed(None, usize::MAX).map(|(events, _)| events);
+            return self.event_feed(None, MAX_PAGE_ROWS).map(|(events, _)| events);
         }
         let Ok(raw) = layout::id_bytes(id) else {
             return Ok(Vec::new());
@@ -1138,16 +1147,7 @@ impl Store {
         self.read(BTreeMap::new(), |db| {
             let mut states = BTreeMap::new();
             for key in keys {
-                let mut chosen: Option<Job> = None;
-                for job in db.media_jobs(key)? {
-                    if chosen
-                        .as_ref()
-                        .is_none_or(|current| current.state != "ready")
-                    {
-                        chosen = Some(job);
-                    }
-                }
-                if let Some(job) = chosen {
+                if let Some(job) = db.media_state(key)? {
                     states.insert(key.clone(), job);
                 }
             }
@@ -1177,57 +1177,36 @@ impl Store {
 
     /// Whether another request than `job` shares its native transfer, through
     /// its own download or its shared-file binding.
-    pub(crate) fn has_co_owner(&mut self, job: &Job) -> Result<bool> {
-        let mut shared = false;
-        if let Some(download) = &job.download_id {
-            shared |= self.transfer_jobs(download)?.iter().any(|other| {
-                other.id != job.id
-                    && other.state != "cancelled"
-                    && other.download_id == job.download_id
-            });
-        }
-        if let Some(file) = &job.shared_file {
-            shared |= self.transfer_jobs(&file.torrent_id)?.iter().any(|other| {
-                other.id != job.id
-                    && other.state != "cancelled"
-                    && other
-                        .shared_file
-                        .as_ref()
-                        .is_some_and(|known| known.torrent_id == file.torrent_id)
-            });
-        }
-        Ok(shared)
-    }
-
-    /// Whether any request that is not cancelled still claims a transfer: by
-    /// its download, its shared binding or the acquisition it is fetching.
-    pub(crate) fn transfer_claimed(
-        &mut self,
-        transfer: &str,
-        acquisition: Option<&str>,
-    ) -> Result<bool> {
-        let named = self.transfer_jobs(transfer)?.into_iter().any(|job| {
-            job.state != "cancelled"
-                && (job.download_id.as_deref() == Some(transfer)
-                    || job
-                        .shared_file
-                        .as_ref()
-                        .is_some_and(|file| file.torrent_id == transfer))
-        });
-        if named {
-            return Ok(true);
-        }
-        let Some(url) = acquisition else {
-            return Ok(false);
-        };
+    pub fn has_co_owner(&mut self, job: &Job) -> Result<bool> {
         self.read(false, |db| {
-            for key in db.all_keys(&layout::acquisition_prefix(url))? {
-                let job = db.require(&ops::key_part(&key, 17)?)?;
-                if job.state != "cancelled" && job.acquisition_url.as_deref() == Some(url) {
-                    return Ok(true);
-                }
+            if let Some(download) = &job.download_id
+                && db.transfer_matches(download, |other| other.id != job.id
+                    && other.state != "cancelled" && other.download_id == job.download_id)?
+            { return Ok(true); }
+            if let Some(file) = &job.shared_file {
+                return db.transfer_matches(&file.torrent_id, |other| other.id != job.id
+                    && other.state != "cancelled" && other.shared_file.as_ref()
+                        .is_some_and(|known| known.torrent_id == file.torrent_id));
             }
             Ok(false)
+        })
+    }
+
+    pub(crate) fn transfer_cancelled(&mut self, transfer: &str) -> Result<bool> {
+        self.read(false, |db| db.transfer_matches(transfer, |job| job.state == "cancelled"
+            && job.download_id.as_deref() == Some(transfer)))
+    }
+
+    /// Whether any request that is not cancelled still claims a transfer.
+    pub(crate) fn transfer_claimed(&mut self, transfer: &str, acquisition: Option<&str>) -> Result<bool> {
+        self.read(false, |db| {
+            if db.transfer_matches(transfer, |job| job.state != "cancelled"
+                && (job.download_id.as_deref() == Some(transfer)
+                    || job.shared_file.as_ref().is_some_and(|file| file.torrent_id == transfer)))?
+            { return Ok(true); }
+            let Some(url) = acquisition else { return Ok(false); };
+            Ok(db.find_job(&layout::acquisition_prefix(url), 17, |job| job.state != "cancelled"
+                && job.acquisition_url.as_deref() == Some(url))?.is_some())
         })
     }
 
@@ -1670,7 +1649,7 @@ impl Store {
                     ("t", Some(file.torrent_id.as_str())),
                 ] {
                     let Some(value) = value else { continue };
-                    for job in db.pack_holders(&file.file_path, kind, value, MAX_PAGE_ROWS)? {
+                    for job in db.pack_holders(&file.file_path, kind, value)? {
                         if job.shared_file.is_none()
                             && (job.request.source_url == request.source_url
                                 || job.download_id.as_deref() == Some(file.torrent_id.as_str()))
@@ -1772,10 +1751,10 @@ impl Store {
             }
             let mut holders = Vec::new();
             if let Some(url) = &job.request.source_url {
-                holders.extend(db.pack_holders(&path, "u", url, MAX_PAGE_ROWS)?);
+                holders.extend(db.pack_holders(&path, "u", url)?);
             }
             if let Some(download) = &job.download_id {
-                holders.extend(db.pack_holders(&path, "t", download, MAX_PAGE_ROWS)?);
+                holders.extend(db.pack_holders(&path, "t", download)?);
             }
             if holders.iter().any(|other| {
                 other.id != job.id

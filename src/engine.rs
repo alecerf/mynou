@@ -1043,21 +1043,7 @@ const RETIREMENT_BATCH: usize = 64;
 /// transfer's own index entries, never against the whole job inventory.
 fn cancel_orphaned_transfers(client: &Client, store: &mut Store) -> Result<()> {
     for status in client.statuses()? {
-        let jobs = store.transfer_jobs(&status.id)?;
-        let named = |job: &Job| job.download_id.as_deref() == Some(status.id.as_str());
-        let active = jobs.iter().any(|job| {
-            job.state != "cancelled"
-                && (named(job)
-                    || job
-                        .shared_file
-                        .as_ref()
-                        .is_some_and(|file| file.torrent_id == status.id))
-        });
-        if !active
-            && jobs
-                .iter()
-                .any(|job| job.state == "cancelled" && named(job))
-        {
+        if !store.transfer_claimed(&status.id, None)? && store.transfer_cancelled(&status.id)? {
             client.cancel(&status.id)?;
         }
     }

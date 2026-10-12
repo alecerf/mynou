@@ -253,11 +253,14 @@ fn migrate(
     if exists(&staging_path)? {
         // Inspect without recovery writes. Unrecognized or corrupt data is
         // preserved for the operator; it is never treated as disposable.
-        let mut index = Index::open(&staging_path, true)?;
-        check_format(&mut index, true)?;
-        let matches = source_of(&mut index)?.as_deref() == Some(&files.digest[..]);
-        drop(index);
-        if matches {
+        let reusable = match Index::open(&staging_path, true) {
+            Ok(mut index) => check_format(&mut index, true).is_ok()
+                && source_of(&mut index)?.as_deref() == Some(&files.digest[..]),
+            // A mid-commit staging index can require recovery. Keep the exact
+            // artifacts and rebuild from the fully validated legacy originals.
+            Err(_) => false,
+        };
+        if reusable {
             resumed = true;
             staging = Some(Index::open(&staging_path, false)?);
         } else {
@@ -568,19 +571,12 @@ fn create_fresh(directory: &Path) -> Result<Index> {
 /// rebuilding. Even unexpected files inside it are retained, never deleted.
 fn preserve_staging(directory: &Path) -> Result<()> {
     let path = directory.join(STAGING);
-    let mut index = Index::open(&path, true)?;
-    match index.get(&layout::FORMAT_KEY)? {
-        Some(value) if value == FORMAT => {}
-        None if index.is_empty()? => {}
-        _ => {
-            return Err(
-                "Unrecognized job staging data; move it aside explicitly before retrying".into(),
-            );
-        }
+    reject_symlinks(&path)?;
+    let metadata = fs::symlink_metadata(&path).map_err(|_| "Cannot inspect job staging data")?;
+    if !metadata.is_dir() || metadata.permissions().mode() & 0o077 != 0 {
+        return Err("Job staging data must be a private regular directory; move it aside explicitly".into());
     }
-    drop(index);
-    let mut random = [0; 16];
-    random_bytes(&mut random)?;
+    let random = random_bytes::<16>()?;
     let preserved = directory.join(format!("jobs.idx.abandoned-{}", super::hex(&random)));
     if exists(&preserved)? {
         return Err("Cannot choose a unique preserved staging name".into());

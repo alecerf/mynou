@@ -9,3 +9,7 @@ Series, episodes and numbering are now stored in an indexed on-disk store instea
 ## Added: Manually cross-seed verified existing downloads
 
 Use `cross-seed SOURCE_ID --torrent FILE` to seed a distinct v1 torrent from completed native files after full verification, without copying or downloading them. Enable seeding first; optional file mapping and the initial format limits are explained in [the transfer guide](/docs/transfers.md#manual-cross-seeding).
+
+## Changed: Store jobs and history on disk without a total job limit
+
+Jobs and library listings now use cursor pages (`--limit`/`--after`, API `next`, and load more in the web interface). The first writable start migrates and preserves the old job files; history keeps up to 1,000 events per job. Earlier binaries refuse the new format, and restoring legacy backups loses changes made afterward; read [the storage guide](/docs/inventory-storage.md#job-storage) before downgrading.

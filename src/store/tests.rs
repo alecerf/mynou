@@ -8,6 +8,7 @@ use super::{
 };
 use crate::inventory::Fault;
 use std::{
+    path::PathBuf,
     collections::BTreeSet,
     os::unix::fs::PermissionsExt,
     sync::atomic::{AtomicU64, Ordering},
@@ -1489,5 +1490,118 @@ fn no_error_text_contains_a_store_path_or_a_secret() {
             .unwrap_or_default(),
     ] {
         assert!(!error.contains(&path), "{error}");
+    }
+}
+
+#[test]
+fn migration_preserves_a_thousand_maximum_messages_and_large_legacy_jobs() {
+    let directory = Directory::new();
+    let mut job = raw_job(1, 100);
+    job.files = vec!["x".repeat(1_100_000)];
+    let events: Vec<Event> = (1..=1_000).map(|id| Event {
+        id, job_id: job.id.clone(), state: job.state.clone(),
+        message: "x".repeat(MAX_EVENT_MESSAGE), at: job.updated_at,
+    }).collect();
+    private(&directory.0.join("snapshot.bin"), &fixture::snapshot(
+        std::slice::from_ref(&job), &events, 1_000, [0; 32], legacy::SNAPSHOT_MAGIC));
+    let mut store = Store::open(&directory.0).unwrap();
+    assert_eq!(store.get(&job.id).unwrap().unwrap(), job);
+    assert_eq!(store.events(&job.id).unwrap(), events);
+    assert_eq!(store.migration.as_ref().unwrap().events, 1_000);
+    job.progress = 0.5;
+    store.update(job.clone()).unwrap();
+    let history = store.events(&job.id).unwrap();
+    assert_eq!(history.len(), 1_000);
+    assert_eq!(history.first().unwrap().id, 2);
+    assert_eq!(history.last().unwrap().id, 1_001);
+    drop(store);
+    let mut reopened = Store::open_read_only(&directory.0).unwrap();
+    assert_eq!(reopened.get(&job.id).unwrap().unwrap(), job);
+    assert_eq!(reopened.events(&job.id).unwrap(), history);
+}
+
+#[test]
+fn complete_checksummed_illegal_legacy_transitions_are_refused() {
+    for ready in [false, true] {
+        let directory = Directory::new();
+        let job = if ready { ready_job(1, 100) } else { raw_job(1, 100) };
+        let mut changed = job.clone();
+        if ready { changed.state = "failed".into(); }
+        else { changed.created_at += 1; }
+        write_legacy(&directory.0, std::slice::from_ref(&job), &[changed], 0);
+        private(&directory.0.join(".lock"), b"");
+        let before = contents(&directory.0);
+        assert!(Store::open(&directory.0).is_err());
+        assert_eq!(contents(&directory.0), before);
+    }
+}
+
+#[test]
+fn ownership_and_media_checks_reach_beyond_the_first_page() {
+    let directory = Directory::new();
+    let transfer = "a".repeat(40);
+    let mut jobs: Vec<Job> = (0..205).map(|n| {
+        let mut job = raw_job(n, 100 + n);
+        job.download_id = Some(transfer.clone());
+        job.state = "cancelled".into();
+        job
+    }).collect();
+    jobs[204].state = "queued".into();
+    let mut store = Store::open(&directory.0).unwrap();
+    bulk(&mut store, jobs.clone());
+    assert_eq!(store.transfer_jobs(&transfer).unwrap().len(), 205);
+    assert!(store.transfer_has_owner(&transfer).unwrap());
+    assert!(store.transfer_claimed(&transfer, None).unwrap());
+    assert!(store.has_co_owner(&jobs[0]).unwrap());
+    jobs[204].state = "cancelled".into();
+    store.update(jobs[204].clone()).unwrap();
+    assert!(!store.transfer_has_owner(&transfer).unwrap());
+    assert!(!store.has_co_owner(&jobs[0]).unwrap());
+    let media = request("One media");
+    let same: Vec<Job> = (300..505).map(|n| {
+        let mut job = raw_job(n, 100 + n);
+        job.request = media.clone();
+        job.request.source_url = Some(format!("http://127.0.0.1/{n}"));
+        job.key = job.request.canonical_key();
+        if n == 504 { job.state = "ready".into(); job.imports = vec!["/library/current.mkv".into()]; job.progress = 1.0; }
+        job
+    }).collect();
+    bulk(&mut store, same.clone());
+    let key = media.media_key();
+    assert_eq!(store.media_jobs(&key).unwrap().len(), 205);
+    assert_eq!(store.states_for(&BTreeSet::from([key.clone()])).unwrap()[&key].id, same[204].id);
+}
+
+#[test]
+fn routing_window_continues_past_an_ineligible_page() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let jobs: Vec<Job> = (0..205).map(|n| raw_job(n, 100 + n)).collect();
+    bulk(&mut store, jobs.clone());
+    assert!(store.open_jobs_filtered(200, |job| job.id == jobs[204].id).unwrap().is_empty());
+    let next = store.open_jobs_filtered(200, |job| job.id == jobs[204].id).unwrap();
+    assert_eq!(next.len(), 1);
+    assert_eq!(next[0].id, jobs[204].id);
+}
+
+#[test]
+fn interrupted_staging_commits_are_preserved_and_rebuilt_without_foreign_data_loss() {
+    for fault in [Fault::Staged, Fault::Published, Fault::FirstRecord, Fault::FirstPage, Fault::Applied] {
+        let directory = Directory::new();
+        let jobs = vec![raw_job(1, 100)];
+        write_legacy(&directory.0, &jobs, &[], 0);
+        interrupted(&directory.0, |stage| stage == Stage::StagingCreated).err().unwrap();
+        let path = directory.0.join("jobs.idx.migrating");
+        let mut index = Index::open(&path, false).unwrap();
+        index.inject(Some(fault));
+        assert!(index.commit(vec![Change::Put(layout::job_key(&[9; 16]), b"partial fixture".to_vec())]).is_err());
+        drop(index);
+        private(&path.join("foreign.txt"), b"retain this unrelated file");
+        expect_migrated(&directory.0, &jobs);
+        let preserved = fs::read_dir(&directory.0).unwrap().filter_map(|entry| {
+            let path = entry.unwrap().path();
+            path.file_name().and_then(|name| name.to_str()).is_some_and(|name| name.starts_with("jobs.idx.abandoned-")).then_some(path)
+        }).next().unwrap();
+        assert_eq!(fs::read(preserved.join("foreign.txt")).unwrap(), b"retain this unrelated file");
     }
 }
