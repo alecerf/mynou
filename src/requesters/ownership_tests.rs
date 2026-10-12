@@ -87,7 +87,9 @@ fn corrupt_ownership_object_stops_cancellation_and_preserves_the_queued_job() {
     patch.demands.insert(record.id.clone(), record.clone());
     ledger.save_patch(patch).unwrap();
     let mut jobs = lock(&engine.store).unwrap();
-    let job = jobs.submit_requester(record.request.clone(), provenance(&record)).unwrap();
+    let job = jobs
+        .submit_requester(record.request.clone(), provenance(&record))
+        .unwrap();
     record.state = "active".into();
     record.outcome = "active".into();
     record.job_id = Some(job.id.clone());
@@ -97,7 +99,11 @@ fn corrupt_ownership_object_stops_cancellation_and_preserves_the_queued_job() {
     assert!(super::engine::interest(&*ledger, &job, &config).unwrap());
     let key = super::index::primary_cursor(&record.id).unwrap();
     let name: String = key.iter().map(|byte| format!("{byte:02x}")).collect();
-    let object = config.store_dir.join("requesters.idx/objects").join(&name[..2]).join(&name[2..]);
+    let object = config
+        .store_dir
+        .join("requesters.idx/objects")
+        .join(&name[..2])
+        .join(&name[2..]);
     fs::remove_file(object).unwrap();
     assert!(ledger.demand(&record.id).is_err());
     assert!(super::engine::interest(&*ledger, &job, &config).is_err());
@@ -140,7 +146,9 @@ fn coowner_beyond_the_first_inventory_page_keeps_a_removed_sources_job_queued() 
     patch.demands.insert(owner.id.clone(), owner.clone());
     ledger.save_patch(patch).unwrap();
     let mut jobs = lock(&engine.store).unwrap();
-    let job = jobs.submit_requester(source.request.clone(), provenance(&source)).unwrap();
+    let job = jobs
+        .submit_requester(source.request.clone(), provenance(&source))
+        .unwrap();
     source.state = "removed".into();
     source.outcome = "removed".into();
     source.origins.clear();
