@@ -88,8 +88,8 @@ WireGuard peer.
 
 ## Remaining obligations
 
-Bounded retry, rekey and keepalive timers and key-set rotation (next Issue); a
-driver that measures load, owns generations, indexes and retry scheduling, and
+Bounded retry, rekey and keepalive timers and key-set rotation now exist in
+[the timers guide](/docs/wireguard-timers.md); a driver that measures load, owns generations, indexes and retry scheduling, and
 adds a global (not only per-source) handshake bound; authenticated endpoint
 roaming; the IP/TCP/UDP/DNS stack; HTTP/TLS and torrent integration; profile
 controls; an independently implemented controlled peer exercising cookies; and

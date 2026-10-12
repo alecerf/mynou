@@ -54,7 +54,7 @@ or receive at age 165 seconds. Boundaries are conservative inclusive comparisons
 A signal requests a **fresh handshake**, never resets a counter or changes keys.
 Responder temporal rekey is not initiated here. Invalid packets never emit an
 accepted payload or rekey signal. Keepalive/retry scheduling and key-set rotation
-remain for the driver increment, not a timer claimed by this module.
+live in [the timers guide](/docs/wireguard-timers.md), not in this module.
 
 ## Evidence and remaining gates
 
