@@ -82,14 +82,16 @@ is invoked by the product. Synthetic secrets are fixture data, never credentials
 
 Rust checks complete independent initiation/response/transport bytes and the
 pending transcript/chaining key, optional PSK, fresh OS ephemeral/index ownership,
-confirmation, every packet-byte mutation, publicly recomputed MACs with invalid
+confirmation, every packet-byte mutation outside MAC2, publicly recomputed MACs with invalid
 tags/receiver, wrong peer/PSK, low-order ephemerals, replay/invalid timestamps,
 pending expiry/replacement/consumption, generation/revocation and index exhaustion.
 Validation runs only in Actions. Same-code round trips and computed transcripts
 do not establish controlled independent WireGuard peer interoperability.
 
-MAC2 must be zero: nonzero MAC2/cookie replies are explicitly unsupported in
-this increment. Cookies, under-load admission, retries/jitter/keepalive scheduling,
+MAC2 is ignored by this owner because the protocol examines it only under load;
+[the cookie increment](/docs/wireguard-cookies.md) adds the under-load admission
+state machine that judges it, and this owner now stamps MAC2 from a stored cookie
+and accepts type-3 cookie replies. Retries/jitter/keepalive scheduling,
 key-set rotation, authenticated roaming, independent peer interoperability,
 IP/TCP/UDP/DNS and HTTP/TLS/network integration, profile controls, and observed
 ordinary-path attempts remain obligations in [the design](/docs/wireguard-design.md).

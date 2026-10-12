@@ -77,8 +77,8 @@ Validation runs only in Actions; no fixture is a product runtime helper.
 
 Same-code round trips and independently computed AEAD bytes do **not** demonstrate
 WireGuard peer interoperability. The offline Noise increment covers transcript
-authentication and per-owner timestamp/index ownership. Cookies, rekey/retry
-scheduling, a controlled independent peer, the IP/TCP/UDP/DNS
+authentication and per-owner timestamp/index ownership. Rekey/retry
+scheduling (cookies are in [their own guide](/docs/wireguard-cookies.md)), a controlled independent peer, the IP/TCP/UDP/DNS
 stack, complete network integration and actual ordinary-path attempt observation
 remain required by [the design](/docs/wireguard-design.md). Protected mode stays
 unavailable until those gates and separate QA/Security are delivered.
