@@ -395,7 +395,17 @@ impl Cookies {
             .open(nonce, &sent.mac1, &packet[32..])?
             .try_into()
             .map_err(|_| "WireGuard: invalid cookie length")?;
-        self.stored = Some(Stored { value, at: now });
+        // A replayed or repeated reply carries the cookie we already hold; keeping
+        // the first receipt time never lets a replay extend the cookie's life.
+        let repeated = self.stored.as_ref().is_some_and(|stored| {
+            constant_time_eq(&stored.value, &value)
+                && now
+                    .checked_sub(stored.at)
+                    .is_some_and(|age| age < COOKIE_LIFETIME)
+        });
+        if !repeated {
+            self.stored = Some(Stored { value, at: now });
+        }
         Ok(())
     }
 }
