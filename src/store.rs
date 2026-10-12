@@ -770,6 +770,19 @@ pub(crate) enum Backend {
     Ready(Box<Index>),
 }
 
+/// Read-only job access shared by indexed state and bounded legacy preflight.
+pub(crate) trait RecoveryJobs {
+    fn get(&mut self, id: &str) -> Result<Option<Job>>;
+    fn requester_jobs_page(&mut self, after: Option<Key>, limit: usize) -> Result<(Vec<Job>, Option<Key>)>;
+    fn irc_origin_page(&mut self, after: Option<Key>, limit: usize) -> Result<(Vec<Job>, Option<Key>)>;
+}
+
+impl RecoveryJobs for Store {
+    fn get(&mut self, id: &str) -> Result<Option<Job>> { Store::get(self, id) }
+    fn requester_jobs_page(&mut self, after: Option<Key>, limit: usize) -> Result<(Vec<Job>, Option<Key>)> { Store::requester_jobs_page(self, after, limit) }
+    fn irc_origin_page(&mut self, after: Option<Key>, limit: usize) -> Result<(Vec<Job>, Option<Key>)> { Store::irc_origin_page(self, after, limit) }
+}
+
 /// The job inventory. One owner holds the directory lock; the index owns its
 /// own directory (`jobs.idx`).
 pub struct Store {
@@ -865,6 +878,10 @@ impl Store {
     /// Opens for writing, creating the store, recovering an interrupted write
     /// and migrating a journal of an earlier version.
     pub fn open(directory: &Path) -> Result<Self> {
+        Self::open_checked(directory, &mut |_| Ok(()))
+    }
+
+    fn open_checked(directory: &Path, preflight: &mut dyn FnMut(&legacy::State) -> Result<()>) -> Result<Self> {
         use std::os::unix::fs::PermissionsExt;
         clean_path(directory)?;
         create_private_directory(directory)?;
@@ -874,6 +891,15 @@ impl Store {
         lock.try_lock()
             .map_err(|error| format!("storage is already open or cannot be locked: {error}"))?;
         sync_directory(directory)?;
+        match legacy::inspect(directory, false)? {
+            legacy::Inspection::Legacy(files) => {
+                let state = legacy::parse(files.snapshot.as_deref(), &files.journal)?;
+                legacy::validate(&state)?;
+                preflight(&state)?;
+            }
+            legacy::Inspection::Missing => preflight(&legacy::parse(None, &[])?)?,
+            legacy::Inspection::Marker { .. } => {},
+        }
         migration::open(directory, lock, false)
     }
 
@@ -893,8 +919,20 @@ impl Store {
         migration::open(directory, lock, true)
     }
 
-    pub(crate) fn prepare(directory: &Path) -> Result<Self> {
-        Self::open(directory)
+    pub(crate) fn prepare(directory: &Path, config: &crate::config::Config) -> Result<Self> {
+        Self::open_checked(directory, &mut |state| {
+            let requesters = crate::requesters::RequesterStore::open(directory, config, true)?;
+            let irc = crate::irc::AnnouncementStore::open(directory, &config.irc, true)?;
+            let mut jobs = legacy::View(state);
+            crate::requesters::engine::validate_storage(&requesters.state, &mut jobs)?;
+            let admitted = crate::irc::admission::recovered_state(&irc.state, &requesters.state)?;
+            crate::irc::routing::recovered_state(&admitted, &mut jobs)?;
+            Ok(())
+        })
+    }
+
+    pub fn open_for_management(config: &crate::config::Config) -> Result<Self> {
+        Self::prepare(&config.store_dir, config)
     }
 
     pub(crate) fn initialize(&mut self) -> Result<()> {
@@ -1240,24 +1278,8 @@ impl Store {
     /// its own download or its shared-file binding.
     pub fn has_co_owner(&mut self, job: &Job) -> Result<bool> {
         self.read(false, |db| {
-            if let Some(download) = &job.download_id
-                && db.transfer_matches(download, |other| {
-                    other.id != job.id
-                        && other.state != "cancelled"
-                        && other.download_id == job.download_id
-                })?
-            {
-                return Ok(true);
-            }
-            if let Some(file) = &job.shared_file {
-                return db.transfer_matches(&file.torrent_id, |other| {
-                    other.id != job.id
-                        && other.state != "cancelled"
-                        && other
-                            .shared_file
-                            .as_ref()
-                            .is_some_and(|known| known.torrent_id == file.torrent_id)
-                });
+            for transfer in layout::transfers(job) {
+                if db.transfer_matches(transfer, |other| other.id != job.id && other.state != "cancelled")? { return Ok(true); }
             }
             Ok(false)
         })

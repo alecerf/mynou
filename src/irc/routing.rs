@@ -559,7 +559,7 @@ fn choose_file(job: &Job, metadata: &TorrentMetadata) -> Result<(String, u64)> {
 }
 
 /// Validate both directions before any native workers can resume.
-pub(crate) fn recovered_state(state: &State, jobs: &mut Store) -> Result<State> {
+pub(crate) fn recovered_state(state: &State, jobs: &mut impl crate::store::RecoveryJobs) -> Result<State> {
     let mut next = state.clone();
     for r in state.records.values() {
         if let Some(route) = &r.route {

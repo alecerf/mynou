@@ -269,7 +269,9 @@ unowned; a response page is never used as an exhaustive ownership proof.
 
 The first **writable** start validates the legacy `snapshot.bin`/`journal.bin`
 formats 1 through 5, checksums, hash chain, snapshot invariants and every complete
-journal transaction before creating migration state. Removed formats remain
+journal transaction before creating migration state. Service and management
+starts also preflight requester demand and IRC reservation relationships against
+the validated legacy jobs before publishing any migration files. Removed formats remain
 explicit errors. An incomplete final journal frame is ignored as an
 unacknowledged write, while the preserved journal retains its exact bytes.
 Read-only opens create or repair nothing; an unmigrated store reports that a

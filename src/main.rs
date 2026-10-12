@@ -1083,7 +1083,7 @@ fn execute(args: Args) -> Result<()> {
                 );
                 output(&call(&config, &path, "POST", &route, Some(&body))?);
             } else {
-                let mut store = Store::open(&config.store_dir)?;
+                let mut store = Store::open_for_management(&config)?;
                 let job = if baseline {
                     let job = store.get(id)?.ok_or("Unknown library entry")?;
                     let title = args
@@ -1403,7 +1403,7 @@ fn execute(args: Args) -> Result<()> {
                     return Ok(());
                 }
                 let requests = integrations::expand(&config, &r)?;
-                let mut store = Store::open(&config.store_dir)?;
+                let mut store = Store::open_for_management(&config)?;
                 let jobs: Vec<_> = requests
                     .into_iter()
                     .map(|r| store.submit(r).map(|j| public_job(&j)))
@@ -1423,7 +1423,7 @@ fn execute(args: Args) -> Result<()> {
                     None,
                 )?);
             } else {
-                let mut store = Store::open(&config.store_dir)?;
+                let mut store = Store::open_read_only(&config.store_dir)?;
                 output(&mynou::engine::jobs_value(
                     store.page(page.after.as_deref(), page.limit)?,
                 ));
@@ -1433,7 +1433,7 @@ fn execute(args: Args) -> Result<()> {
             if online {
                 output(&call(&config, &path, "GET", "/api/status", None)?);
             } else {
-                let mut store = Store::open(&config.store_dir)?;
+                let mut store = Store::open_read_only(&config.store_dir)?;
                 let mut v = Value::object();
                 v.insert("service", "stopped");
                 v.insert("jobs", Value::Number(store.counts()?.jobs as f64));
@@ -1468,7 +1468,9 @@ fn execute(args: Args) -> Result<()> {
                 };
                 output(&call(&config, &path, method, &route, None)?);
             } else {
-                let mut store = Store::open(&config.store_dir)?;
+                let mut store = if matches!(args.command.as_str(), "show" | "events") {
+                    Store::open_read_only(&config.store_dir)?
+                } else { Store::open_for_management(&config)? };
                 let v = match args.command.as_str() {
                     "show" => public_job(&store.get(id)?.ok_or("Unknown job")?),
                     "events" => {
