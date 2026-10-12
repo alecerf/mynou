@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 /// results mean no job record, entry or history row changed.
 pub fn fingerprint(store_dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     fn walk(root: &Path, directory: &Path, found: &mut Vec<(PathBuf, Vec<u8>)>) {
-        let directory = directory.canonicalize().unwrap();
+        let directory = fixture_root(directory);
         assert!(directory.starts_with(root));
         let entries = fs::read_dir(&directory).unwrap();
         for entry in entries {
@@ -29,7 +29,7 @@ pub fn fingerprint(store_dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
             }
         }
     }
-    let root = store_dir.join("jobs.idx").canonicalize().unwrap();
+    let root = fixture_root(&store_dir.join("jobs.idx"));
     let mut found = Vec::new();
     walk(&root, &root, &mut found);
     found.sort();
@@ -124,7 +124,7 @@ pub fn frame(
 
 /// Removes every job file, leaving an empty store directory.
 pub fn reset(store_dir: &Path) {
-    let store_dir = store_dir.canonicalize().unwrap();
+    let store_dir = fixture_root(store_dir);
     remove_owned(&store_dir, "jobs.idx", true);
     remove_owned(&store_dir, "snapshot.bin", false);
     remove_owned(&store_dir, "journal.bin", false);
@@ -138,7 +138,7 @@ pub fn downgrade(store_dir: &Path, jobs: &[Job]) {
 
 /// As `downgrade`, with an explicit (possibly too old) snapshot format.
 pub fn downgrade_as(store_dir: &Path, jobs: &[Job], magic: Option<&[u8; 8]>) {
-    let store_dir = store_dir.canonicalize().unwrap();
+    let store_dir = fixture_root(store_dir);
     remove_owned(&store_dir, "jobs.idx", true);
     let snapshot_magic = magic.unwrap_or_else(|| magics(jobs).1);
     let events: Vec<Event> = jobs
@@ -162,7 +162,7 @@ pub fn downgrade_as(store_dir: &Path, jobs: &[Job], magic: Option<&[u8; 8]>) {
 /// Writes a file as the earlier store did: readable by its owner only.
 pub fn write_private(path: &Path, bytes: &[u8]) {
     use std::os::unix::fs::PermissionsExt;
-    let root = path.parent().unwrap().canonicalize().unwrap();
+    let root = fixture_root(path.parent().unwrap());
     let path = root.join(path.file_name().unwrap());
     assert!(path.starts_with(&root));
     if let Ok(metadata) = fs::symlink_metadata(&path) {
@@ -187,4 +187,11 @@ fn remove_owned(root: &Path, name: &str, directory: bool) {
     } else {
         fs::remove_file(&path).unwrap();
     }
+}
+
+fn fixture_root(path: &Path) -> PathBuf {
+    let temporary = std::env::temp_dir().canonicalize().unwrap();
+    let path = path.canonicalize().unwrap();
+    assert!(path.starts_with(&temporary) && path != temporary);
+    path
 }

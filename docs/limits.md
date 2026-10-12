@@ -302,11 +302,16 @@ IRC announcements:
   notification fields and IRC history format 4 are also rejected during startup.
   These removals provide no migration and do not delete stored data automatically. Read the
   [release notes](releases/) and back up private storage before upgrading.
-- The journal replaces SQLite and needs a single owner of its directory. It
-  holds at most 10,000 requests and keeps the latest 1,000 events in total, so
-  history is not an unlimited archive. It compacts at 4 MiB; records and
-  snapshots are limited to 16 MiB and the journal to 64 MiB. The configuration
-  file is limited to 1 MiB.
+- Jobs and their secondary ownership indexes live in `jobs.idx`, a single-owner
+  disk index with no fixed total job, snapshot or journal-size cap. Job JSON
+  keeps its 16 MiB parser/record bound (large jobs use checked 1 MiB chunks).
+  History keeps at most 1,000 events **per job**, with 4,096-byte messages;
+  consecutive processing heartbeats are folded. History is not an unlimited
+  archive. Job/library listings return cursor pages of up to 200 rows and a
+  4 MiB job-byte budget; one larger job is returned alone within its record
+  bound. Network/JSON response limits still apply to unusually large records.
+  The configuration file remains limited to 1 MiB. See
+  [job migration and recovery](inventory-storage.md#job-storage).
 - Offline listings and previews open storage read-only: they create nothing,
   change no permissions, repair nothing and still exclude a concurrent writer.
   After an interrupted write they ask for writable recovery, which the next

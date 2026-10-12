@@ -619,7 +619,11 @@ function setup() {
   link.addEventListener('state', ({ detail }) => {
     pill.dataset.state = detail;
     pill.textContent = { open: 'Live', connecting: 'Connecting', closed: 'Offline' }[detail];
-    if (detail === 'open') $('#login').close();
+    if (detail === 'open') {
+      jobsTail.items = []; jobsTail.next = null;
+      libraryTail.items = []; libraryTail.next = null;
+      $('#login').close();
+    }
   });
   link.addEventListener('rejected', () => {
     // A refused handshake before any success usually means a wrong token.
@@ -627,6 +631,11 @@ function setup() {
   });
   let queued = false;
   link.addEventListener('topic', ({ detail }) => {
+    const previous = data.get(detail.topic);
+    if (previous && JSON.stringify(previous.data) !== JSON.stringify(detail.data)) {
+      const tail = detail.topic === 'jobs' ? jobsTail : detail.topic === 'library' ? libraryTail : null;
+      if (tail) { tail.items = []; tail.next = null; }
+    }
     data.set(detail.topic, { status: detail.status, data: detail.data, at: Date.now() });
     if (queued) return;
     queued = true;

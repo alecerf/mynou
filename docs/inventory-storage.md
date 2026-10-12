@@ -231,11 +231,78 @@ an uncertain commit blocks the series store until restart, when the redo is
 replayed. If the disk is still full, opening reports the error and leaves the
 files as they are.
 
+## Job storage
+
+Jobs, history and job ownership now use `jobs.idx`, beside the existing series
+index. Opening reads tree paths and requested records rather than one complete
+job inventory. Canonical deduplication, media identity, library tips, lineage,
+shared-file and pack ownership, IRC origins, requester job bindings, acquisition
+and transfer ownership are secondary entries committed with their jobs. The
+requester demand ledger itself remains the bounded `requesters.bin` snapshot.
+
+There is no total job-count or job-store byte cap. Each job retains the old
+16 MiB JSON/record limit; records larger than the index's 1 MiB object limit use
+up to sixteen checked chunks, with their manifest and SHA-256 binding in the
+same transaction. History uses one record per event and a sequence index. The
+latest 1,000 events are retained per job; consecutive lease-renewal events fold
+into the latest heartbeat. Migration preserves every event retained by the
+previous globally bounded history, including maximum-size messages.
+
+`mynou jobs` and `mynou library` accept `--limit 1..200` and `--after CURSOR`.
+`GET /api/jobs` and `GET /api/library` accept `limit` and `after` and return
+`jobs`/`library`, `next` (null at the end), and `total`. WebSocket requests use the
+same routes; live topics send the first page, and the embedded interface loads
+older pages on demand. Loaded tails reset when live data changes or reconnects.
+Pages have a 4 MiB hydrated-job byte budget, except one larger record may appear
+alone. Existing network and JSON limits still apply; large individual records
+can require direct store inspection instead of an API response.
+
+Claims examine bounded queue windows and resume past ineligible jobs. Feed
+routing and requester cancellation sweeps also retain an in-memory cursor.
+Transfer retirement settles at most 64 records per pass. Indexed ownership
+predicates page through the matching physical identity before concluding it is
+unowned; a response page is never used as an exhaustive ownership proof.
+
+### Job migration and downgrade
+
+The first **writable** start validates the legacy `snapshot.bin`/`journal.bin`
+formats 1 through 5, checksums, hash chain, snapshot invariants and every complete
+journal transaction before creating migration state. Removed formats remain
+explicit errors. An incomplete final journal frame is ignored as an
+unacknowledged write, while the preserved journal retains its exact bytes.
+Read-only opens create or repair nothing; an unmigrated store reports that a
+writable start is needed. Legacy files must be private regular single-link files.
+
+Validated originals are preserved as `snapshot.legacy-DIGEST.bin` and
+`journal.legacy-DIGEST.bin` (only files with content need a backup), never
+replacing a copy with different bytes. `jobs.idx.migrating` records its source
+binding and migration cursor with each bounded chunk. A clean matching stage
+resumes; a stage that cannot be safely read, or belongs to different originals,
+is kept under a unique `jobs.idx.abandoned-*` name before rebuilding from the
+validated originals. Its contents, including unexpected files and interrupted
+transaction artifacts, are never recursively deleted.
+
+Migration verifies jobs, secondary entries, history and counters before atomic
+promotion to `jobs.idx`. It then replaces `snapshot.bin` with a marker bound to
+that index and empties `journal.bin` only when it matches its preserved copy.
+Crashes at promotion or marker publication settle on the next writable open.
+Different restored originals beside an existing index are refused. Disk errors
+leave preserved originals or the published index in place; normal index writes
+use the transaction/recovery protocol described above and never evict jobs to
+make space.
+
+Earlier binaries reject the new `MYNOUS09` marker. To downgrade, stop Mynou,
+back up the complete current store, move `jobs.idx` aside, and restore the matching
+preserved files to `snapshot.bin` and `journal.bin`; remove a legacy file if that
+original was absent. This restores only the pre-migration state: subsequent jobs
+and changes exist in the index and are **not** in the legacy copies. Keep the
+index separately if those changes must be recovered. Do not downgrade over live
+storage or mix backup pairs.
+
 ## Remaining delivery
 
-Issue #106 still needs the job/history/requester and ownership indexes, paginated
-management views for every inventory, fair bounded scheduling in all admission
-and monitoring paths, and resource/backlog diagnostics. Only the series store has
-left the fixed total limits; do not read this page as evidence that the request
-journal, requester ledger or library views are unbounded. Validation uses
-original synthetic fixtures in GitHub Actions on the supported macOS target.
+Issue #106 still needs migration of the requester demand ledger, fair bounded
+scheduling across all remaining admission/monitoring paths, and resource/backlog
+diagnostics. Jobs and series have left their fixed total inventory limits;
+requester, IRC and source snapshots retain their documented bounds. Validation
+uses original synthetic fixtures in GitHub Actions on the supported macOS target.

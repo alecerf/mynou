@@ -730,7 +730,11 @@ fn execute(args: Args) -> Result<()> {
                     page.limit,
                 )?);
             } else {
-                output(&Value::Array(Vec::new()));
+                let mut empty = Value::object();
+                empty.insert("library", Value::Array(Vec::new()));
+                empty.insert("next", Value::Null);
+                empty.insert("total", 0_u32);
+                output(&empty);
             }
         }
         "upgrades" => {
@@ -1476,11 +1480,7 @@ fn execute(args: Args) -> Result<()> {
                             && job.request.source_url.is_none()
                         {
                             if let Some(old_id) = &job.download_id {
-                                let shared = store.transfer_jobs(old_id)?.iter().any(|other| {
-                                    other.id != job.id
-                                        && other.download_id.as_ref() == Some(old_id)
-                                        && other.state != "cancelled"
-                                });
+                                let shared = store.has_co_owner(&job)?;
                                 if !shared {
                                     mynou::torrent::pause_persisted(&config.downloads, old_id)?;
                                 }

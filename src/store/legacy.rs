@@ -290,6 +290,7 @@ pub(super) fn parse(snapshot: Option<&[u8]>, journal: &[u8]) -> Result<State> {
             push_event(&mut state.events, event);
         }
     }
+    validate(&state)?;
     replay(&mut state, journal, chain)?;
     Ok(state)
 }
@@ -315,6 +316,13 @@ fn check_snapshot_format(job: &Job, magic: &[u8]) -> Result<()> {
 }
 
 fn replay(state: &mut State, journal: &[u8], snapshot_chain: [u8; 32]) -> Result<()> {
+    let mut replay = super::replay::Replay::new(std::mem::take(&mut state.jobs));
+    let result = replay_frames(state, journal, snapshot_chain, &mut replay);
+    state.jobs = replay.jobs;
+    result
+}
+
+fn replay_frames(state: &mut State, journal: &[u8], snapshot_chain: [u8; 32], replay: &mut super::replay::Replay) -> Result<()> {
     let snapshot_sequence = state.sequence;
     let length = journal.len() as u64;
     let mut offset = 0_u64;
@@ -367,7 +375,7 @@ fn replay(state: &mut State, journal: &[u8], snapshot_chain: [u8; 32]) -> Result
             return Err("journal differs from acknowledged snapshot".to_owned());
         }
         if sequence > snapshot_sequence {
-            apply_record(state, &header[..8], &frame[84..], sequence)?;
+            apply_record(state, replay, &header[..8], &frame[84..], sequence)?;
             state.sequence = sequence;
         }
         previous = Some((sequence, digest));
@@ -381,7 +389,7 @@ fn replay(state: &mut State, journal: &[u8], snapshot_chain: [u8; 32]) -> Result
     Ok(())
 }
 
-fn apply_record(state: &mut State, magic: &[u8], payload: &[u8], sequence: u64) -> Result<()> {
+fn apply_record(state: &mut State, replay: &mut super::replay::Replay, magic: &[u8], payload: &[u8], sequence: u64) -> Result<()> {
     let value = json::parse(std::str::from_utf8(payload).map_err(|_| "journal is not UTF-8")?)?;
     let map = fields(&value)?;
     let raw_job = super::field(map, "job")?;
@@ -459,7 +467,6 @@ fn apply_record(state: &mut State, magic: &[u8], payload: &[u8], sequence: u64) 
     if jobs.iter().any(|job| job.irc_origin.is_some()) && magic != IRC_JOURNAL_MAGIC {
         return Err("IRC provenance requires journal format 5".into());
     }
-    let mut replay = super::replay::Replay::new(std::mem::take(&mut state.jobs));
     replay.validate_record(
         &jobs,
         group_action,
@@ -469,7 +476,6 @@ fn apply_record(state: &mut State, magic: &[u8], payload: &[u8], sequence: u64) 
     for job in jobs {
         replay.insert(job);
     }
-    state.jobs = replay.jobs;
     push_event(&mut state.events, event);
     Ok(())
 }
