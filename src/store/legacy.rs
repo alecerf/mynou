@@ -868,4 +868,3 @@ pub(super) mod fixture {
         (frame, digest)
     }
 }
-

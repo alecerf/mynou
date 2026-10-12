@@ -1429,7 +1429,10 @@ fn execute(args: Args) -> Result<()> {
                 ));
             } else {
                 output(&mynou::engine::jobs_value(mynou::store::JobPage {
-                    sequence: 0, jobs: Vec::new(), next: None, total: 0,
+                    sequence: 0,
+                    jobs: Vec::new(),
+                    next: None,
+                    total: 0,
                 }));
             }
         }
@@ -1439,7 +1442,9 @@ fn execute(args: Args) -> Result<()> {
             } else {
                 let jobs = if Store::directory_exists(&config.store_dir)? {
                     Store::open_read_only(&config.store_dir)?.counts()?.jobs
-                } else { 0 };
+                } else {
+                    0
+                };
                 let mut v = Value::object();
                 v.insert("service", "stopped");
                 v.insert("jobs", Value::Number(jobs as f64));

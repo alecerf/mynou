@@ -923,10 +923,14 @@ impl Store {
                 preflight(&state)?;
             }
             legacy::Inspection::Missing => {
-                if !directory.join("jobs.idx").try_exists().map_err(|_| "Cannot inspect the job index")? {
+                if !directory
+                    .join("jobs.idx")
+                    .try_exists()
+                    .map_err(|_| "Cannot inspect the job index")?
+                {
                     preflight(&legacy::parse(None, &[])?)?;
                 }
-            },
+            }
             legacy::Inspection::Marker { .. } => {}
         }
         migration::open(directory, lock, false)

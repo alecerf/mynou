@@ -743,7 +743,9 @@ fn invalid_requester_links_leave_legacy_job_files_unmigrated() {
     jobs_state::downgrade(&cfg.store_dir, &[acquired]);
     let original = fs::read(cfg.store_dir.join("snapshot.bin")).unwrap();
     let mut ledger = read_snapshot(&cfg.store_dir);
-    let Value::Array(rows) = ledger.get_mut("demands").unwrap() else { panic!("Expected demands"); };
+    let Value::Array(rows) = ledger.get_mut("demands").unwrap() else {
+        panic!("Expected demands");
+    };
     rows[0].insert("job_id", "f".repeat(32));
     write_snapshot(&cfg.store_dir, &ledger);
     let saved_ledger = fs::read(cfg.store_dir.join("requesters.bin")).unwrap();
@@ -752,9 +754,21 @@ fn invalid_requester_links_leave_legacy_job_files_unmigrated() {
         Err(error) => error,
     };
     assert!(error.contains("Requester:"), "{error}");
-    assert_eq!(fs::read(cfg.store_dir.join("snapshot.bin")).unwrap(), original);
-    assert_eq!(fs::read(cfg.store_dir.join("requesters.bin")).unwrap(), saved_ledger);
+    assert_eq!(
+        fs::read(cfg.store_dir.join("snapshot.bin")).unwrap(),
+        original
+    );
+    assert_eq!(
+        fs::read(cfg.store_dir.join("requesters.bin")).unwrap(),
+        saved_ledger
+    );
     assert!(!cfg.store_dir.join("jobs.idx").exists());
     assert!(!cfg.store_dir.join("jobs.idx.migrating").exists());
-    assert!(!fs::read_dir(&cfg.store_dir).unwrap().any(|entry| entry.unwrap().file_name().to_string_lossy().contains("legacy-")));
+    assert!(!fs::read_dir(&cfg.store_dir).unwrap().any(|entry| {
+        entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .contains("legacy-")
+    }));
 }
