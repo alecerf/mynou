@@ -322,7 +322,12 @@ fn replay(state: &mut State, journal: &[u8], snapshot_chain: [u8; 32]) -> Result
     result
 }
 
-fn replay_frames(state: &mut State, journal: &[u8], snapshot_chain: [u8; 32], replay: &mut super::replay::Replay) -> Result<()> {
+fn replay_frames(
+    state: &mut State,
+    journal: &[u8],
+    snapshot_chain: [u8; 32],
+    replay: &mut super::replay::Replay,
+) -> Result<()> {
     let snapshot_sequence = state.sequence;
     let length = journal.len() as u64;
     let mut offset = 0_u64;
@@ -389,7 +394,13 @@ fn replay_frames(state: &mut State, journal: &[u8], snapshot_chain: [u8; 32], re
     Ok(())
 }
 
-fn apply_record(state: &mut State, replay: &mut super::replay::Replay, magic: &[u8], payload: &[u8], sequence: u64) -> Result<()> {
+fn apply_record(
+    state: &mut State,
+    replay: &mut super::replay::Replay,
+    magic: &[u8],
+    payload: &[u8],
+    sequence: u64,
+) -> Result<()> {
     let value = json::parse(std::str::from_utf8(payload).map_err(|_| "journal is not UTF-8")?)?;
     let map = fields(&value)?;
     let raw_job = super::field(map, "job")?;

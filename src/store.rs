@@ -1099,7 +1099,9 @@ impl Store {
     /// first page-sized window of the global sequence).
     pub fn events(&mut self, id: &str) -> Result<Vec<Event>> {
         if id.is_empty() {
-            return self.event_feed(None, MAX_PAGE_ROWS).map(|(events, _)| events);
+            return self
+                .event_feed(None, MAX_PAGE_ROWS)
+                .map(|(events, _)| events);
         }
         let Ok(raw) = layout::id_bytes(id) else {
             return Ok(Vec::new());
@@ -1180,33 +1182,61 @@ impl Store {
     pub fn has_co_owner(&mut self, job: &Job) -> Result<bool> {
         self.read(false, |db| {
             if let Some(download) = &job.download_id
-                && db.transfer_matches(download, |other| other.id != job.id
-                    && other.state != "cancelled" && other.download_id == job.download_id)?
-            { return Ok(true); }
+                && db.transfer_matches(download, |other| {
+                    other.id != job.id
+                        && other.state != "cancelled"
+                        && other.download_id == job.download_id
+                })?
+            {
+                return Ok(true);
+            }
             if let Some(file) = &job.shared_file {
-                return db.transfer_matches(&file.torrent_id, |other| other.id != job.id
-                    && other.state != "cancelled" && other.shared_file.as_ref()
-                        .is_some_and(|known| known.torrent_id == file.torrent_id));
+                return db.transfer_matches(&file.torrent_id, |other| {
+                    other.id != job.id
+                        && other.state != "cancelled"
+                        && other
+                            .shared_file
+                            .as_ref()
+                            .is_some_and(|known| known.torrent_id == file.torrent_id)
+                });
             }
             Ok(false)
         })
     }
 
     pub(crate) fn transfer_cancelled(&mut self, transfer: &str) -> Result<bool> {
-        self.read(false, |db| db.transfer_matches(transfer, |job| job.state == "cancelled"
-            && job.download_id.as_deref() == Some(transfer)))
+        self.read(false, |db| {
+            db.transfer_matches(transfer, |job| {
+                job.state == "cancelled" && job.download_id.as_deref() == Some(transfer)
+            })
+        })
     }
 
     /// Whether any request that is not cancelled still claims a transfer.
-    pub(crate) fn transfer_claimed(&mut self, transfer: &str, acquisition: Option<&str>) -> Result<bool> {
+    pub(crate) fn transfer_claimed(
+        &mut self,
+        transfer: &str,
+        acquisition: Option<&str>,
+    ) -> Result<bool> {
         self.read(false, |db| {
-            if db.transfer_matches(transfer, |job| job.state != "cancelled"
-                && (job.download_id.as_deref() == Some(transfer)
-                    || job.shared_file.as_ref().is_some_and(|file| file.torrent_id == transfer)))?
-            { return Ok(true); }
-            let Some(url) = acquisition else { return Ok(false); };
-            Ok(db.find_job(&layout::acquisition_prefix(url), 17, |job| job.state != "cancelled"
-                && job.acquisition_url.as_deref() == Some(url))?.is_some())
+            if db.transfer_matches(transfer, |job| {
+                job.state != "cancelled"
+                    && (job.download_id.as_deref() == Some(transfer)
+                        || job
+                            .shared_file
+                            .as_ref()
+                            .is_some_and(|file| file.torrent_id == transfer))
+            })? {
+                return Ok(true);
+            }
+            let Some(url) = acquisition else {
+                return Ok(false);
+            };
+            Ok(db
+                .find_job(&layout::acquisition_prefix(url), 17, |job| {
+                    job.state != "cancelled" && job.acquisition_url.as_deref() == Some(url)
+                })?
+                .is_some())
         })
     }
 

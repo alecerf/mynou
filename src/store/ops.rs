@@ -243,16 +243,25 @@ impl Db<'_> {
         Ok(Some(job))
     }
 
-    pub(super) fn find_job(&mut self, prefix: &[u8], id_at: usize, predicate: impl Fn(&Job) -> bool) -> Result<Option<Job>> {
+    pub(super) fn find_job(
+        &mut self,
+        prefix: &[u8],
+        id_at: usize,
+        predicate: impl Fn(&Job) -> bool,
+    ) -> Result<Option<Job>> {
         let mut after = None;
         loop {
             let page = self.scan(prefix, after, MAX_PAGE_ROWS)?;
             for (key, _) in &page.entries {
                 let job = self.require(&key_part(key, id_at)?)?;
-                if predicate(&job) { return Ok(Some(job)); }
+                if predicate(&job) {
+                    return Ok(Some(job));
+                }
             }
             after = page.next;
-            if after.is_none() { return Ok(None); }
+            if after.is_none() {
+                return Ok(None);
+            }
         }
     }
 
@@ -265,18 +274,32 @@ impl Db<'_> {
             let page = self.scan(&prefix, after, MAX_PAGE_ROWS)?;
             for (key, _) in &page.entries {
                 let job = self.require(&key_part(key, 41)?)?;
-                if job.request.media_key() != media { return Err("Job media index disagrees with its record".into()); }
-                if job.state == "ready" { return Ok(Some(job)); }
+                if job.request.media_key() != media {
+                    return Err("Job media index disagrees with its record".into());
+                }
+                if job.state == "ready" {
+                    return Ok(Some(job));
+                }
                 chosen = Some(job);
             }
             after = page.next;
-            if after.is_none() { return Ok(chosen); }
+            if after.is_none() {
+                return Ok(chosen);
+            }
         }
     }
 
-    pub(super) fn transfer_matches(&mut self, transfer: &str, predicate: impl Fn(&Job) -> bool) -> Result<bool> {
+    pub(super) fn transfer_matches(
+        &mut self,
+        transfer: &str,
+        predicate: impl Fn(&Job) -> bool,
+    ) -> Result<bool> {
         let prefix = [&[T_TRANSFER][..], &short("transfer", &[transfer])].concat();
-        Ok(self.find_job(&prefix, 17, |job| transfers(job).contains(&transfer) && predicate(job))?.is_some())
+        Ok(self
+            .find_job(&prefix, 17, |job| {
+                transfers(job).contains(&transfer) && predicate(job)
+            })?
+            .is_some())
     }
 
     /// Jobs of one media identity in creation order, reading every page of this identity.
