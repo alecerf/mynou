@@ -53,6 +53,14 @@ fn due(at: u64, round: u64, id: &[u8; 16]) -> Key {
         id,
     ])
 }
+fn schedule(job: &Job, round: u64) -> Result<Key> {
+    let id = id_bytes(&job.id)?;
+    if job.monitor_checked_at == 0 {
+        Ok(key(&[&[T_MONITOR_UNCHECKED], &job.created_at.to_be_bytes(), &round.to_be_bytes(), &id]))
+    } else {
+        Ok(due(job.monitor_checked_at, round, &id))
+    }
+}
 fn shared(id: &[u8; 16]) -> Key {
     key(&[&[T_MONITOR_SHARED], id])
 }
@@ -102,7 +110,7 @@ fn entries(job: &Job, round: u64) -> Result<Vec<Change>> {
     let mut changes = vec![Change::PutInline(reference(&id), value)];
     if class == 0 {
         changes.push(Change::PutInline(
-            due(job.monitor_checked_at, round, &id),
+            schedule(job, round)?,
             Vec::new(),
         ));
     }
@@ -223,15 +231,23 @@ pub(super) fn stage(
         db.0.sequence()?
             .checked_add(1)
             .ok_or("Library monitoring round overflow")?;
-    if let Some((id, (class, at, previous_round))) = previous {
-        totals[class] = totals[class]
+    if let Some((id, (category, at, previous_round))) = previous {
+        totals[category] = totals[category]
             .checked_sub(1)
             .ok_or("Library monitoring count underflow")?;
         staged.insert(reference(&id), None);
-        if class == 0 {
-            staged.insert(due(at, previous_round, &id), None);
+        if category == 0 {
+            let job = db.require(&id)?;
+            if class(&job) != 0 || job.monitor_checked_at != at {
+                return Err("Inconsistent previous library scheduling reference".into());
+            }
+            let key = schedule(&job, previous_round)?;
+            if db.0.get(&key)?.as_deref() != Some(&[][..]) {
+                return Err("Missing previous library scheduling entry".into());
+            }
+            staged.insert(key, None);
         }
-        if class == 4 {
+        if category == 4 {
             staged.insert(shared(&id), None);
         }
         if !rotate && next_id == Some(id) && next.is_some_and(|job| job.monitor_checked_at == at) {
@@ -280,26 +296,34 @@ impl Store {
             },
             |db| {
                 let (start, end) = prefix_range(&[T_MONITOR_DUE]);
-                let due_end = if force || (at == u64::MAX && interval == 0) {
-                    end
-                } else {
-                    Some(key(&[
-                        &[T_MONITOR_DUE],
-                        &at.saturating_sub(interval).saturating_add(1).to_be_bytes(),
-                    ]))
-                };
-                let mut rows = if force || at >= interval {
-                    window(db.0, start, due_end, limit)?
-                } else {
-                    Vec::new()
-                };
-                if !force && rows.len() < limit && at < u64::MAX {
-                    rows.extend(window(
-                        db.0,
-                        key(&[&[T_MONITOR_DUE], &(at + 1).to_be_bytes()]),
-                        end,
-                        limit - rows.len(),
-                    )?);
+                // Future check times are serviced first so correcting one
+                // cannot hold back the remaining rollback work on forced passes.
+                let mut rows = if at < u64::MAX {
+                    window(db.0, key(&[&[T_MONITOR_DUE], &(at + 1).to_be_bytes()]), end, limit)?
+                } else { Vec::new() };
+                let (unchecked_start, unchecked_end) = prefix_range(&[T_MONITOR_UNCHECKED]);
+                if rows.len() < limit && at < u64::MAX {
+                    rows.extend(window(db.0, key(&[&[T_MONITOR_UNCHECKED], &(at + 1).to_be_bytes()]), unchecked_end, limit - rows.len())?);
+                }
+                let remaining = limit - rows.len();
+                if remaining > 0 {
+                    let cutoff = if force { Some(at) } else { at.checked_sub(interval) };
+                    let mut normal = if let Some(cutoff) = cutoff {
+                        let due_end = cutoff.checked_add(1).map(|next| key(&[&[T_MONITOR_DUE], &next.to_be_bytes()])).or(end);
+                        window(db.0, start, due_end, remaining)?
+                    } else { Vec::new() };
+                    let normal_unchecked_end = at.checked_add(1).map(|next| key(&[&[T_MONITOR_UNCHECKED], &next.to_be_bytes()])).or(unchecked_end);
+                    normal.extend(window(db.0, unchecked_start, normal_unchecked_end, remaining)?);
+                    normal.sort_by_key(|(key, _)| {
+                        let mut time = [0; 8];
+                        time.copy_from_slice(&key[1..9]);
+                        let time = u64::from_be_bytes(time);
+                        let priority = if key[0] == T_MONITOR_UNCHECKED && !force { time.saturating_sub(interval) } else { time };
+                        let mut order = [0; 24];
+                        order.copy_from_slice(&key[9..33]);
+                        (priority, order)
+                    });
+                    rows.extend(normal.into_iter().take(remaining));
                 }
                 let mut jobs = Vec::new();
                 let mut bytes = 0_usize;
@@ -315,7 +339,7 @@ impl Store {
                         || category != 0
                         || class(&job) != 0
                         || checked != job.monitor_checked_at
-                        || found != due(checked, round, &id)
+                        || found != schedule(&job, round)?
                         || !db.is_tip(&job.id)?
                     {
                         return Err("Inconsistent library monitoring entry".into());
@@ -344,8 +368,11 @@ impl Store {
             let mut jobs = Vec::new();
             let mut bytes = 0_usize;
             for (key, value) in rows {
-                let job = db.require(&ops::key_part(&key, 1)?)?;
-                if !value.is_empty() || class(&job) != 4 || !db.is_tip(&job.id)? {
+                let id = ops::key_part(&key, 1)?;
+                let job = db.require(&id)?;
+                let binding = db.0.get(&reference(&id))?.ok_or("Missing shared monitoring reference")?;
+                let (category, checked, _) = decode(&binding)?;
+                if !value.is_empty() || key != shared(&id) || category != 4 || checked != job.monitor_checked_at || class(&job) != 4 || !db.is_tip(&job.id)? {
                     return Err("Inconsistent shared library monitoring entry".into());
                 }
                 let length = encode_job(&job).len();

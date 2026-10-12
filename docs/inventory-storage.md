@@ -310,10 +310,13 @@ the disk index, rather than first walking every library page. One pass hydrates
 at most `monitoring.max_checks + 1` eligible jobs (up to 257) and a shared-group
 summary window of at most 200 jobs. Each window uses the usual 4 MiB hydrated
 byte budget, allowing one larger job alone. Skip classifications and total
-eligible/shared counts are maintained with library-tip transactions. A check
+eligible/shared counts are maintained with library-tip transactions. Unchecked
+imports have a separate creation-ordered queue, merged with elapsed checks by
+their due time, so new imports cannot continually displace older due work. A check
 rotates a durable sequence tie-breaker even within the same second; unrelated
-job updates do not move its priority. A recorded future timestamp is corrected
-on its next applied check after wall-clock rollback.
+job updates do not move its priority. Future check times and future-created
+unchecked imports receive a bounded correction window after wall-clock rollback;
+their next applied check returns them to normal scheduling.
 
 Upgrade reports include exact decimal `inventory_counts`, `eligible_total`,
 `oldest_checked_at` and `window_limited`. The eligible total includes entries
