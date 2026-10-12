@@ -17,3 +17,7 @@ Jobs and library listings now use cursor pages (`--limit`/`--after`, API `next`,
 ## Changed: Store requester demand without a total inventory limit
 
 Requester demands and operator interests now use an indexed on-disk ledger instead of the 10,000-record, 16 MiB aggregate snapshot. Use `mynou requester ACCOUNT --limit 200 --after CURSOR` or the account API’s `next` cursor to read further pages; polling batches remain bounded. The first writable start preserves legacy bytes before migration; older binaries refuse the new ledger and restoring the backup loses later changes ([storage guide](/docs/inventory-storage.md#requester-storage)).
+
+## Changed: Schedule library checks without scanning the inventory
+
+Library checks now read a bounded oldest-check window and report inventory counts and window truncation. The first writable start resumes an indexed scheduling upgrade after interruption; earlier binaries reject its new format, so keep a stopped-store backup before upgrading if downgrade may be needed ([storage guide](/docs/inventory-storage.md#indexed-library-monitoring)).

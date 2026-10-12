@@ -25,6 +25,7 @@ mod irc;
 mod layout;
 mod legacy;
 mod migration;
+mod monitoring;
 mod ops;
 mod replay;
 mod rules;
@@ -1616,7 +1617,10 @@ impl Store {
             if !db.is_tip(&job.id)? {
                 return Err("monitor checks require a current library import".to_owned());
             }
-            job.monitor_checked_at = job.monitor_checked_at.max(at);
+            // A real wall-clock rollback must not leave this entry permanently
+            // ahead of the remaining queue. Preserve monotonic caller updates
+            // when the stored check is not in the future.
+            job.monitor_checked_at = if job.monitor_checked_at > now() { at } else { job.monitor_checked_at.max(at) };
             job.updated_at = now();
             db.commit_jobs(vec![job], "library monitor check recorded")
         })

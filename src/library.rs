@@ -25,8 +25,6 @@ pub(crate) fn import_exists(job: &Job) -> bool {
         })
 }
 
-/// Library entries read per page by a monitoring pass.
-const MAX_REPORT_PAGE: usize = 200;
 /// Shared-group entries listed in one report; more set `limited`.
 const MAX_SHARED_ENTRIES: usize = 200;
 
@@ -169,58 +167,20 @@ impl Engine {
         let at = store::now();
         let started = Instant::now();
         let max_checks = self.config.monitoring.max_checks;
-        let mut unmonitored = 0_u32;
-        let mut baseline_required = 0_u32;
-        let mut unsupported = 0_u32;
-        // Only the `max_checks + 1` oldest checks are kept: memory does not
-        // grow with the library, which is read one page at a time.
-        let mut eligible: Vec<Job> = Vec::new();
-        let mut eligible_total = 0_usize;
-        let mut shared = Vec::new();
-        let mut incomplete = false;
-        let mut after: Option<String> = None;
-        loop {
-            let page = lock(&self.store)?.library_page(after.as_deref(), MAX_REPORT_PAGE)?;
-            for job in page.jobs {
-                if !job.monitored {
-                    unmonitored = unmonitored.saturating_add(1);
-                } else if job.shared_file.is_some() {
-                    if shared.len() < MAX_SHARED_ENTRIES {
-                        shared.push(entry(&job, "shared_group_upgrade_required"));
-                    } else {
-                        incomplete = true;
-                    }
-                } else if job.release.is_none() {
-                    baseline_required = baseline_required.saturating_add(1);
-                } else if !matches!(job.request.kind.as_str(), "movie" | "episode") {
-                    unsupported = unsupported.saturating_add(1);
-                } else if force
-                    || job.monitor_checked_at > at
-                    || at.saturating_sub(job.monitor_checked_at)
-                        >= self.config.monitoring.interval_secs
-                {
-                    eligible_total += 1;
-                    let position = eligible.partition_point(|known| {
-                        (known.monitor_checked_at, &known.id) <= (job.monitor_checked_at, &job.id)
-                    });
-                    if position <= max_checks {
-                        eligible.insert(position, job);
-                        eligible.truncate(max_checks.saturating_add(1));
-                    }
-                }
-            }
-            after = page.next;
-            if after.is_none() {
-                break;
-            }
-            if self.stopped.load(Ordering::Acquire) || started.elapsed() >= Duration::from_secs(90)
-            {
-                incomplete = true;
-                break;
-            }
-        }
-        let mut limited = eligible_total > max_checks || incomplete;
-        let mut entries = shared;
+        // Counters and the oldest-check index replace preparatory inventory scans.
+        let (counts, window, shared) = {
+            let mut store = lock(&self.store)?;
+            let counts = store.monitoring_counts()?;
+            let window = store.monitoring_due(at, self.config.monitoring.interval_secs, force, max_checks + 1)?;
+            let shared = store.monitored_shared(MAX_SHARED_ENTRIES)?;
+            (counts, window, shared)
+        };
+        let [eligible_total, unmonitored, baseline_required, unsupported, shared_total] = counts;
+        let oldest_checked = window.jobs.first().map(|job| job.monitor_checked_at);
+        let window_limited = window.jobs.len() > max_checks || window.next.is_some();
+        let mut limited = window_limited || shared_total > shared.len() as u64;
+        let mut entries = shared.iter().map(|job| entry(job, "shared_group_upgrade_required")).collect::<Vec<_>>();
+        let eligible = window.jobs;
         let mut queued = 0_u32;
         for job in eligible.into_iter().take(self.config.monitoring.max_checks) {
             if self.stopped.load(Ordering::Acquire) || started.elapsed() >= Duration::from_secs(90)
@@ -228,13 +188,15 @@ impl Engine {
                 limited = true;
                 break;
             }
-            if apply
-                && lock(&self.store)?
-                    .record_monitor_check(&job.id, at)
-                    .is_err()
-            {
-                entries.push(entry(&job, "entry_changed"));
-                continue;
+            if apply {
+                let mut store = lock(&self.store)?;
+                if store.get(&job.id)?.as_ref() != Some(&job) || !store.is_library_tip(&job.id)? {
+                    entries.push(entry(&job, "entry_changed"));
+                    continue;
+                }
+                // Resource/durability failures must reach the caller, rather
+                // than pretending the record was changed by another operator.
+                store.record_monitor_check(&job.id, at)?;
             }
             let media_key = job.request.media_key();
             if let Some(pending) = lock(&self.store)?.pending_for(&media_key)? {
@@ -321,12 +283,17 @@ impl Engine {
             }
             entries.push(item);
         }
-        Ok(report(
-            apply,
-            entries,
-            queued,
-            limited,
-            [unmonitored, baseline_required, unsupported],
-        ))
+        let mut value = report(apply, entries, queued, limited,
+            [unmonitored, baseline_required, unsupported].map(|n| n.min(u32::MAX as u64) as u32));
+        value.insert("eligible_total", eligible_total.to_string());
+        value.insert("window_limited", window_limited);
+        value.insert("oldest_checked_at", oldest_checked.map_or(Value::Null, |at| Value::String(at.to_string())));
+        value.insert("monitoring_interval_secs", self.config.monitoring.interval_secs.to_string());
+        let mut totals = Value::object();
+        for (name, count) in ["eligible", "unmonitored", "baseline_required", "unsupported_kind", "shared_group"].into_iter().zip(counts) {
+            totals.insert(name, count.to_string());
+        }
+        value.insert("inventory_counts", totals);
+        Ok(value)
     }
 }

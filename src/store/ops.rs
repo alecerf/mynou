@@ -535,7 +535,7 @@ impl Db<'_> {
             counts = adjust(counts, pair)?;
         }
         let library = counts.library;
-        counts.library = self.stage_tips(&pairs, &mut staged, library)?;
+        counts.library = self.stage_tips(&pairs, &mut staged, library, message == "library monitor check recorded")?;
         let first = jobs.first().ok_or("Empty job transaction")?;
         counts.events = counts
             .events
@@ -685,8 +685,9 @@ impl Db<'_> {
 
     /// Updates which job is the library's current version of each media
     /// identity touched by the transaction, with its flags and list entry.
-    fn stage_tips(&mut self, pairs: &[Pair], staged: &mut Staged, library: u64) -> Result<u64> {
+    fn stage_tips(&mut self, pairs: &[Pair], staged: &mut Staged, library: u64, rotate: bool) -> Result<u64> {
         let mut library = library;
+        let mut monitor_counts = super::monitoring::counts(self.0)?;
         let mut by_media: BTreeMap<[u8; 32], Vec<&Pair>> = BTreeMap::new();
         for pair in pairs {
             by_media
@@ -746,6 +747,15 @@ impl Db<'_> {
             };
             let before = before.as_ref().map(holder).transpose()?;
             let after_tip = after_tip.as_ref().map(holder).transpose()?;
+            let member = after_tip.and_then(|(id, _)| members.iter().find(|pair| id_bytes(&pair.job.id).is_ok_and(|raw| raw == id)));
+            if before != after_tip || member.is_some() {
+                let next = match (member, after_tip) {
+                    (Some(pair), _) => Some(pair.job.clone()),
+                    (None, Some((id, _))) => Some(self.require(&id)?),
+                    _ => None,
+                };
+                super::monitoring::stage(self, staged, &mut monitor_counts, before.map(|(id, _)| id), next.as_ref(), rotate)?;
+            }
             if before != after_tip {
                 if let Some((id, created)) = before {
                     staged.insert(library_key(created, &id), None);
@@ -780,6 +790,9 @@ impl Db<'_> {
                 }
             }
         }
+        let total = monitor_counts.into_iter().try_fold(0_u64, |total, n| total.checked_add(n).ok_or("Library monitoring count overflow"))?;
+        if total != library { return Err("Library monitoring counts disagree with the library".into()); }
+        staged.insert(MONITOR_COUNTS_KEY, Some(Entry::File(super::monitoring::encode(monitor_counts))));
         Ok(library)
     }
 
