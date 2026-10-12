@@ -33,8 +33,9 @@ returns a `Due` of explicit requests plus the next deadline:
 
 - `initiate`: send an initiation. The first goes out immediately; every retry
   waits 5 s plus jitter drawn from the injectable `Entropy`, so there is never
-  more than one initiation per Rekey-Timeout. `poll` itself records the send, so
-  a driver that polls repeatedly cannot exceed that rate.
+  more than one initiation per Rekey-Timeout, also across a give-up, a restart
+  and a discard. `poll` itself records the send, so a driver that polls
+  repeatedly cannot exceed that rate.
 - `gave_up`: the attempt is 90 s old (inclusive). Only explicit new outbound data
   (`queue_data`, or `data_sent` needing a rekey) starts another attempt with a
   fresh budget; received traffic, timers and queued data during an attempt never
@@ -68,7 +69,10 @@ forged packet rotates nothing. Only current sends. `expire` removes sessions at
 the reject age and `discard_all` removes everything.
 
 Generation or monotonic-clock changes and `revoke` irreversibly refuse all later
-calls. Safe Rust does not guarantee memory zeroization of keys, and nothing here is
+calls. `Timers` and `KeySets` have separate fences, so a driver must revoke both,
+and a fence violation in `KeySets` alone leaves keys resident until `discard_all`
+or drop. A responder's established session does not cancel a running attempt of
+our own, so redundant retries may continue until the 90 s budget ends. Safe Rust does not guarantee memory zeroization of keys, and nothing here is
 a cryptographic audit.
 
 ## Evidence
