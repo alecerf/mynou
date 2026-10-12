@@ -747,6 +747,56 @@ fn check_irc_ownership(jobs: &BTreeMap<String, Job>, job: &Job) -> Result<()> {
     Ok(())
 }
 
+/// The migration's validated legacy state, exposed without creating an index.
+pub(super) struct View<'a>(pub &'a State);
+impl View<'_> {
+    fn page(
+        &self,
+        after: Option<crate::inventory::Key>,
+        limit: usize,
+        predicate: impl Fn(&Job) -> bool,
+    ) -> Result<(Vec<Job>, Option<crate::inventory::Key>)> {
+        let last = after.map(|key| super::layout::id_text(&key[1..17]));
+        let mut rows: Vec<Job> = self
+            .0
+            .jobs
+            .iter()
+            .filter(|(id, job)| last.as_ref().is_none_or(|last| *id > last) && predicate(job))
+            .take(limit + 1)
+            .map(|(_, job)| job.clone())
+            .collect();
+        let more = rows.len() > limit;
+        rows.truncate(limit);
+        let next = if more {
+            rows.last()
+                .map(|job| super::layout::id_bytes(&job.id).map(|id| super::layout::job_key(&id)))
+                .transpose()?
+        } else {
+            None
+        };
+        Ok((rows, next))
+    }
+}
+impl super::RecoveryJobs for View<'_> {
+    fn get(&mut self, id: &str) -> Result<Option<Job>> {
+        Ok(self.0.jobs.get(id).cloned())
+    }
+    fn requester_jobs_page(
+        &mut self,
+        after: Option<crate::inventory::Key>,
+        limit: usize,
+    ) -> Result<(Vec<Job>, Option<crate::inventory::Key>)> {
+        self.page(after, limit, |job| job.requester.is_some())
+    }
+    fn irc_origin_page(
+        &mut self,
+        after: Option<crate::inventory::Key>,
+        limit: usize,
+    ) -> Result<(Vec<Job>, Option<crate::inventory::Key>)> {
+        self.page(after, limit, |job| job.irc_origin.is_some())
+    }
+}
+
 /// Frames in the old on-disk formats, for migration fixtures.
 #[cfg(test)]
 pub(super) mod fixture {
@@ -819,52 +869,3 @@ pub(super) mod fixture {
     }
 }
 
-/// The migration's validated legacy state, exposed without creating an index.
-pub(super) struct View<'a>(pub &'a State);
-impl View<'_> {
-    fn page(
-        &self,
-        after: Option<crate::inventory::Key>,
-        limit: usize,
-        predicate: impl Fn(&Job) -> bool,
-    ) -> Result<(Vec<Job>, Option<crate::inventory::Key>)> {
-        let last = after.map(|key| super::layout::id_text(&key[1..17]));
-        let mut rows: Vec<Job> = self
-            .0
-            .jobs
-            .iter()
-            .filter(|(id, job)| last.as_ref().is_none_or(|last| *id > last) && predicate(job))
-            .take(limit + 1)
-            .map(|(_, job)| job.clone())
-            .collect();
-        let more = rows.len() > limit;
-        rows.truncate(limit);
-        let next = if more {
-            rows.last()
-                .map(|job| super::layout::id_bytes(&job.id).map(|id| super::layout::job_key(&id)))
-                .transpose()?
-        } else {
-            None
-        };
-        Ok((rows, next))
-    }
-}
-impl super::RecoveryJobs for View<'_> {
-    fn get(&mut self, id: &str) -> Result<Option<Job>> {
-        Ok(self.0.jobs.get(id).cloned())
-    }
-    fn requester_jobs_page(
-        &mut self,
-        after: Option<crate::inventory::Key>,
-        limit: usize,
-    ) -> Result<(Vec<Job>, Option<crate::inventory::Key>)> {
-        self.page(after, limit, |job| job.requester.is_some())
-    }
-    fn irc_origin_page(
-        &mut self,
-        after: Option<crate::inventory::Key>,
-        limit: usize,
-    ) -> Result<(Vec<Job>, Option<crate::inventory::Key>)> {
-        self.page(after, limit, |job| job.irc_origin.is_some())
-    }
-}

@@ -922,7 +922,11 @@ impl Store {
                 legacy::validate(&state)?;
                 preflight(&state)?;
             }
-            legacy::Inspection::Missing => preflight(&legacy::parse(None, &[])?)?,
+            legacy::Inspection::Missing => {
+                if !directory.join("jobs.idx").try_exists().map_err(|_| "Cannot inspect the job index")? {
+                    preflight(&legacy::parse(None, &[])?)?;
+                }
+            },
             legacy::Inspection::Marker { .. } => {}
         }
         migration::open(directory, lock, false)
@@ -1505,6 +1509,7 @@ impl Store {
         self.read(Vec::new(), |db| db.current_shared_group(id))
     }
 
+    #[cfg(test)]
     pub(crate) fn is_library_tip(&mut self, id: &str) -> Result<bool> {
         self.read(false, |db| db.is_tip(id))
     }
