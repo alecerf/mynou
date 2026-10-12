@@ -53,6 +53,25 @@ fn contents(path: &Path) -> Vec<(PathBuf, Vec<u8>, u32)> {
 }
 
 #[test]
+fn closing_an_index_releases_ownership_even_with_an_inherited_descriptor() {
+    let directory = Directory::new();
+    let mut index = Index::create(&directory.0).unwrap();
+    index.commit(vec![put(1)]).unwrap();
+    let inherited = index._lock.try_clone().unwrap();
+    assert!(Index::open(&directory.0, false).is_err());
+    drop(index);
+    let mut reopened = Index::open(&directory.0, false).unwrap();
+    assert_eq!(
+        reopened.get(&key(1)).unwrap(),
+        Some(1_u64.to_be_bytes().to_vec())
+    );
+    drop(inherited);
+    assert!(Index::open(&directory.0, true).is_err());
+    drop(reopened);
+    assert!(Index::open(&directory.0, true).is_ok());
+}
+
+#[test]
 fn grows_past_old_caps_and_pages_every_record_after_restart() {
     let directory = Directory::new();
     let mut index = Index::create(&directory.0).unwrap();
