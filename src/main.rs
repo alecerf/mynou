@@ -57,7 +57,7 @@ const HELP: &str = "Mynou — media automation using Rust std only
   torrent-select ID --selection '{\"indices\":[0,2]}' [--config mynou.json]
   torrent-policy ID --policy JSON_OR_NULL [--config mynou.json]
   requesters [--config mynou.json]
-  requester ACCOUNT_ID [--offset N --limit N] [--config mynou.json]
+  requester ACCOUNT_ID [--offset N | --after CURSOR] [--limit N] [--config mynou.json]
   requester-control ACCOUNT_ID --mapping FILE [--apply --plan-id ID] [--config mynou.json]
   requester-sync [--config mynou.json]
   indexers [--config mynou.json]
@@ -126,7 +126,7 @@ impl Args {
             "announcements" => &["config", "help", "offset", "limit"],
             "irc-preview" => &["config", "help", "announcement", "text"],
             "irc-control" => &["config", "help", "action", "apply", "plan-id"],
-            "requester" => &["config", "help", "offset", "limit"],
+            "requester" => &["config", "help", "offset", "after", "limit"],
             "requester-control" => &["config", "help", "mapping", "apply", "plan-id"],
             "torrents" | "torrent" | "pause" | "resume" => &["config", "help"],
             "torrent-priority" => &["config", "help", "priority"],
@@ -932,24 +932,16 @@ fn execute(args: Args) -> Result<()> {
         }
         "requester" => {
             let id = &args.positions[0];
-            if !mynou::requesters::valid_id(id) {
-                return Err("Invalid requester account ID".into());
-            }
-            let query = format!(
-                "offset={}&limit={}",
-                args.value("offset", "0"),
-                args.value("limit", "100")
-            );
-            let (offset, limit) = mynou::requesters::page(&query)?;
-            if online {
-                output(&call(
-                    &config,
-                    &path,
-                    "GET",
-                    &format!("/api/requesters/{id}?{query}"),
-                    None,
-                )?);
+            if !mynou::requesters::valid_id(id) { return Err("Invalid requester account ID".into()); }
+            if args.options.contains_key("after") && args.options.contains_key("offset") { return Err("Use either --offset or --after".into()); }
+            let query = if let Some(after) = args.options.get("after") { format!("after={after}&limit={}", args.value("limit", "100")) }
+                else { format!("offset={}&limit={}", args.value("offset", "0"), args.value("limit", "100")) };
+            if online { output(&call(&config, &path, "GET", &format!("/api/requesters/{id}?{query}"), None)?); }
+            else if args.options.contains_key("after") {
+                let (after, limit) = mynou::requesters::cursor_page(&query)?;
+                output(&Engine::open_for_preview(config)?.requester_page(id, after.as_deref(), limit)?);
             } else {
+                let (offset, limit) = mynou::requesters::page(&query)?;
                 output(&Engine::open_for_preview(config)?.requester(id, offset, limit)?);
             }
         }

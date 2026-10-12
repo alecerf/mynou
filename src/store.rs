@@ -957,8 +957,8 @@ impl Store {
             let requesters = crate::requesters::RequesterStore::open(directory, config, true)?;
             let irc = crate::irc::AnnouncementStore::open(directory, &config.irc, true)?;
             let mut jobs = legacy::View(state);
-            crate::requesters::engine::validate_storage(&requesters.state, &mut jobs)?;
-            let admitted = crate::irc::admission::recovered_state(&irc.state, &requesters.state)?;
+            crate::requesters::engine::validate_storage(&requesters, &mut jobs)?;
+            let admitted = crate::irc::admission::recovered_state(&irc.state, &requesters)?;
             crate::irc::routing::recovered_state(&admitted, &mut jobs)?;
             Ok(())
         })
@@ -1999,7 +1999,7 @@ impl Store {
     }
 
     pub fn claim(&mut self, at: u64, ttl: u64) -> Result<Option<Job>> {
-        self.claim_filtered(at, ttl, |_| true)
+        self.claim_filtered(at, ttl, |_| Ok(true))
     }
 
     /// Hands out the oldest claimable job. Work per attempt is one promotion
@@ -2011,7 +2011,7 @@ impl Store {
         &mut self,
         at: u64,
         ttl: u64,
-        eligible: impl Fn(&Job) -> bool,
+        eligible: impl Fn(&Job) -> Result<bool>,
     ) -> Result<Option<Job>> {
         if ttl == 0 {
             return Err("lease duration must be positive".to_owned());
@@ -2238,8 +2238,8 @@ impl JobLookup for Store {
 
 impl Db<'_> {
     /// Whether a queued job may run now, under the rules the claim applies.
-    fn claimable(&mut self, job: &Job, at: u64, eligible: &impl Fn(&Job) -> bool) -> Result<bool> {
-        if !layout::open(job) || layout::wake(job) > at || !eligible(job) {
+    fn claimable(&mut self, job: &Job, at: u64, eligible: &impl Fn(&Job) -> Result<bool>) -> Result<bool> {
+        if !layout::open(job) || layout::wake(job) > at || !eligible(job)? {
             return Ok(false);
         }
         if let Some(file) = &job.shared_file {

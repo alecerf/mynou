@@ -17,6 +17,15 @@ const CHUNK: u8 = 9;
 pub(super) const SOURCE: Key = key_const(10);
 pub(super) const CURSOR: Key = key_const(11);
 pub(super) const OPERATOR_COUNT: Key = key_const(12);
+const POLL: u8 = 13;
+const ORIGIN: u8 = 14;
+const CLEAN: u8 = 15;
+const PLEX: u8 = 16;
+pub(super) const ADMISSION_CURSOR: Key = key_const(17);
+pub(super) const OUTCOME_CURSOR: Key = key_const(18);
+pub(super) fn account_cursor(account: &str, id: &str) -> Result<Key> { Ok(prefix(ACCOUNT, &[&short(account), &raw(id)?])) }
+pub(super) fn primary_cursor(id: &str) -> Result<Key> { Ok(prefix(DEMAND, &[&raw(id)?])) }
+pub(super) fn queue_cursor(state: &str, demand: &Demand) -> Result<Key> { Ok(prefix(QUEUE, &[&[state_code(state)?], &demand.request.season.to_be_bytes(), &demand.request.episode.to_be_bytes(), &raw(&demand.id)?])) }
 const MAX_RECORD: usize = 16 * 1024 * 1024;
 
 const fn key_const(table: u8) -> Key { let mut key = [0; 64]; key[0] = table; key }
@@ -36,7 +45,7 @@ fn raw(id: &str) -> Result<[u8; 32]> {
 }
 fn short(value: &str) -> [u8; 16] { sha256(value.as_bytes())[..16].try_into().expect("fixed digest width") }
 fn job_raw(id: &str) -> Result<[u8; 16]> {
-    if id.len() != 32 || !id.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) { return Err("Requester: invalid job identity".into()); }
+    if id.len() != 32 || !id.bytes().all(|b| b.is_ascii_hexdigit()) { return Err("Requester: invalid job identity".into()); }
     let mut value = [0; 16];
     for (i, byte) in value.iter_mut().enumerate() { *byte = u8::from_str_radix(&id[i * 2..i * 2 + 2], 16).map_err(|_| "Requester: invalid job identity")?; }
     Ok(value)
@@ -71,6 +80,7 @@ pub(super) fn entries(demand: &Demand) -> Result<BTreeMap<Key, Vec<u8>>> {
     if matches!(demand.state.as_str(), "reserved" | "active" | "ready") { entries.insert(prefix(MEDIA, &[&short(&demand.request.media_key()), &id]), Vec::new()); }
     if let Some(job) = &demand.job_id { entries.insert(prefix(LINKED, &[&job_raw(job)?, &id]), Vec::new()); }
     if demand.origins.iter().any(|origin| origin.starts_with("irc:")) { entries.insert(prefix(IRC, &[&id]), Vec::new()); }
+    if demand.state != "removed" && demand.origins.iter().any(|origin| !origin.starts_with("irc:")) { entries.insert(prefix(PLEX, &[&short(&demand.account_id), &id]), Vec::new()); }
     Ok(entries)
 }
 pub(super) fn get(index: &mut Index, id: &str) -> Result<Option<Demand>> {
@@ -123,8 +133,45 @@ pub(super) fn queue_page(index: &mut Index, state: &str, after: Option<Key>, lim
     Ok(page)
 }
 pub(super) fn irc_page(index: &mut Index, after: Option<Key>, limit: usize) -> Result<DemandPage> { let (start, end) = range(IRC, &[]); scan(index, start, end, after, 1, limit) }
-pub(super) fn has_operator(index: &mut Index, id: &str) -> Result<bool> { Ok(index.get(&prefix(OPERATOR, &[&job_raw(id)?]))?.is_some()) }
-pub(super) fn operator_key(id: &str) -> Result<Key> { Ok(prefix(OPERATOR, &[&job_raw(id)?])) }
+pub(super) fn has_operator(index: &mut Index, id: &str) -> Result<bool> { Ok(index.get(&operator_key(id)?)?.is_some()) }
+pub(super) fn operator_key(id: &str) -> Result<Key> {
+    if id.len() != 32 || !id.bytes().all(|b| b.is_ascii_hexdigit()) { return Err("Requester: invalid operator identity".into()); }
+    Ok(prefix(OPERATOR, &[id.as_bytes()]))
+}
+pub(super) fn clean_key(account: &str) -> Key { prefix(CLEAN, &[&short(account)]) }
+pub(super) fn poll_ready(index: &mut Index, account: &str) -> Result<bool> {
+    let Some(epoch) = index.get(&prefix(POLL, &[&short(account)]))? else { return Ok(true); };
+    let progress = index.get(&clean_key(account))?.ok_or("Requester: completed poll has no cleanup proof")?;
+    if epoch.len() != 8 || ![9, 73].contains(&progress.len()) || progress[..8] != epoch || progress[8] > 1 { return Err("Requester: invalid poll cleanup proof".into()); }
+    Ok(progress[8] == 1)
+}
+pub(super) fn cleanup_page(index: &mut Index, account: &str) -> Result<(DemandPage, Vec<u8>)> {
+    let progress = index.get(&clean_key(account))?.ok_or("Requester: missing poll cleanup proof")?;
+    if ![9, 73].contains(&progress.len()) || progress[8] != 0 { return Err("Requester: invalid unfinished cleanup proof".into()); }
+    let after = if progress.len() == 73 { Some(progress[9..].try_into().map_err(|_| "Requester: invalid cleanup cursor")?) } else { None };
+    let (start, end) = range(PLEX, &[&short(account)]);
+    let page = scan(index, start, end, after, 17, MAX_PAGE_ROWS)?;
+    if page.demands.iter().any(|d| d.account_id != account) { return Err("Requester: cleanup account identity differs".into()); }
+    Ok((page, progress[..8].to_vec()))
+}
+
+/// A complete source generation authorizes removals without rewriting all
+/// retained demand records. Partial/failed upstream reads never publish it.
+pub(super) fn effective(index: &mut Index, mut demand: Demand) -> Result<Demand> {
+    let Some(epoch) = index.get(&prefix(POLL, &[&short(&demand.account_id)]))? else { return Ok(demand); };
+    let epoch: [u8; 8] = epoch.as_slice().try_into().map_err(|_| "Requester: invalid completed poll generation")?;
+    let mut retained = BTreeSet::new();
+    for origin in &demand.origins {
+        if origin.starts_with("irc:") { retained.insert(origin.clone()); continue; }
+        if let Some(known) = index.get(&prefix(ORIGIN, &[&short(&demand.account_id), &epoch, &sha256(origin.as_bytes())]))? {
+            if known != origin.as_bytes() { return Err("Requester: origin index identity differs".into()); }
+            retained.insert(origin.clone());
+        }
+    }
+    demand.origins = retained;
+    if demand.origins.is_empty() { demand.state = "removed".into(); demand.outcome = "removed".into(); }
+    Ok(demand)
+}
 
 pub(super) fn legacy_page(state: &State, after: Option<Key>, limit: usize, irc: bool) -> Result<(Vec<Demand>, Option<Key>)> {
     if limit == 0 || limit > MAX_PAGE_ROWS { return Err("Requester: invalid page size".into()); }
@@ -142,7 +189,16 @@ pub(super) fn legacy_page(state: &State, after: Option<Key>, limit: usize, irc: 
 
 /// One bounded patch, with all derived entries/counters and the metadata fence.
 pub(super) fn commit(index: &mut Index, metadata: &State, demands: &[Demand], operators: &[String]) -> Result<()> {
-    if demands.len() > MAX_PAGE_ROWS || operators.len() > MAX_PAGE_ROWS { return Err("Requester: patch row bound exceeded".into()); }
+    commit_poll(index, metadata, demands, operators, None)
+}
+pub(super) fn commit_poll(index: &mut Index, metadata: &State, demands: &[Demand], operators: &[String], poll: Option<(&str, &BTreeSet<String>)>) -> Result<()> {
+    if demands.len() > super::MAX_POLL_ITEMS || operators.len() > MAX_PAGE_ROWS { return Err("Requester: patch row bound exceeded".into()); }
+    let mut hydrated = 0_usize;
+    for demand in demands {
+        let size = json::stringify(&demand.to_json()).len();
+        if size > MAX_RECORD || hydrated.saturating_add(size) > MAX_RECORD { return Err("Requester: patch byte bound exceeded; split the update into smaller batches".into()); }
+        hydrated = hydrated.checked_add(size).ok_or("Requester: patch byte count overflow")?;
+    }
     let mut changes = BTreeMap::new(); let mut counters = BTreeMap::<Key, u64>::new(); let mut ids = BTreeSet::new();
     for demand in demands {
         if !ids.insert(&demand.id) { return Err("Requester: duplicate patch demand".into()); }
@@ -169,6 +225,15 @@ pub(super) fn commit(index: &mut Index, metadata: &State, demands: &[Demand], op
         changes.insert(operator_key(id)?, Some(Vec::new()));
     }
     if !operators.is_empty() { changes.insert(OPERATOR_COUNT, Some(operator_count.to_le_bytes().to_vec())); }
+    if let Some((account, origins)) = poll {
+        if !poll_ready(index, account)? { return Err("Requester: previous complete poll cleanup is pending".into()); }
+        if origins.len() > super::MAX_POLL_ITEMS { return Err("Requester: poll batch origin bound exceeded".into()); }
+        let epoch = metadata.accounts.get(account).ok_or("Requester: poll account is missing")?.cursor.to_le_bytes();
+        changes.insert(prefix(POLL, &[&short(account)]), Some(epoch.to_vec()));
+        let mut cleanup = epoch.to_vec(); cleanup.push(0);
+        changes.insert(clean_key(account), Some(cleanup));
+        for origin in origins { changes.insert(prefix(ORIGIN, &[&short(account), &epoch, &sha256(origin.as_bytes())]), Some(origin.as_bytes().to_vec())); }
+    }
     let mut header = metadata.clone(); header.demands.clear(); header.operator_jobs.clear();
     changes.insert(HEADER, Some(json::stringify(&header.to_json()).into_bytes()));
     index.commit(changes.into_iter().map(|(key, value)| match value { None => Change::Delete(key), Some(value) if value.len() <= crate::inventory::MAX_INLINE_BYTES => Change::PutInline(key, value), Some(value) => Change::Put(key, value) }).collect())?;

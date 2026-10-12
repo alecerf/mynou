@@ -414,48 +414,34 @@ pub(crate) fn eligible(job: &Job) -> bool {
 pub(crate) fn waits_for_candidate(
     config: &Config,
     job: &Job,
-    requesters: &crate::requesters::State,
-) -> bool {
+    requesters: &impl crate::requesters::LedgerRead,
+) -> Result<bool> {
     // Plex jobs retain their ordinary availability check before waiting.
-    !config.plex.enabled && eligible(job) && selection_from_irc(config, job, requesters)
+    Ok(!config.plex.enabled && eligible(job) && selection_from_irc(config, job, requesters)?)
 }
-pub(crate) fn selection_from_irc(
-    config: &Config,
-    job: &Job,
-    requesters: &crate::requesters::State,
-) -> bool {
-    if !unselected(job) || !enabled(config) {
-        return false;
-    }
-    let Ok((name, profile)) = admitted_profile(config, job) else {
-        return false;
-    };
-    config.irc.rules.iter().any(|r| {
-        r.enabled
-            && matches!(r.action.as_str(), "grab" | "request")
-            && r.kind == job.request.kind
-            && r.profile == name
-            && selected_interest(config, r, job, requesters)
+pub(crate) fn selection_from_irc(config: &Config, job: &Job, requesters: &impl crate::requesters::LedgerRead) -> Result<bool> {
+    if !unselected(job) || !enabled(config) { return Ok(false); }
+    let Ok((name, profile)) = admitted_profile(config, job) else { return Ok(false); };
+    for rule in &config.irc.rules {
+        if rule.enabled && matches!(rule.action.as_str(), "grab" | "request") && rule.kind == job.request.kind && rule.profile == name
             && config.selection.profiles.get(name) == Some(profile)
-            && config
-                .irc
-                .sources
-                .iter()
-                .any(|s| s.id == r.source && s.enabled && s.magnet_template.is_some())
-    })
+            && config.irc.sources.iter().any(|source| source.id == rule.source && source.enabled && source.magnet_template.is_some())
+            && selected_interest(config, rule, job, requesters)? { return Ok(true); }
+    }
+    Ok(false)
 }
 
 fn selected_interest(
     config: &Config,
     rule: &super::Rule,
     job: &Job,
-    state: &crate::requesters::State,
-) -> bool {
+    state: &impl crate::requesters::LedgerRead,
+) -> Result<bool> {
     let Some(id) = &rule.requester else {
-        return true;
+        return Ok(true);
     };
-    let Some(record) = state.accounts.get(id) else {
-        return false;
+    let Some(record) = state.accounts().get(id) else {
+        return Ok(false);
     };
     if !config
         .requesters
@@ -463,13 +449,13 @@ fn selected_interest(
         .iter()
         .any(|a| &a.id == id && a.binding() == record.binding)
     {
-        return false;
+        return Ok(false);
     }
     let Some(provenance) = &job.requester else {
-        return false;
+        return Ok(false);
     };
     let demand_id = crate::requesters::Demand::identity(id, &job.request);
-    state.demands.get(&demand_id).is_some_and(|d| {
+    Ok(state.demand(&demand_id)?.is_some_and(|d| {
         &d.account_id == id
             && matches!(d.state.as_str(), "reserved" | "active" | "ready")
             && d.job_id.as_deref() == Some(job.id.as_str())
@@ -479,7 +465,7 @@ fn selected_interest(
                     super::admission::split_origin(o)
                         .is_some_and(|(source, _)| source == rule.source)
                 }))
-    })
+    }))
 }
 
 fn admitted_profile<'a>(
@@ -716,7 +702,7 @@ fn candidate(
     r: &Record,
     rule: &super::Rule,
     jobs: &mut Store,
-    requesters: &crate::requesters::State,
+    requesters: &impl crate::requesters::LedgerRead,
 ) -> Result<Job> {
     let matches = jobs.irc_candidates(&r.announcement.request)?;
     if matches.count == 0 && matches.available {
@@ -726,10 +712,10 @@ fn candidate(
         return Err("IRC: waiting for one eligible admitted job without existing ownership".into());
     }
     let job = matches.job.ok_or("IRC: missing eligible admitted job")?;
-    if !crate::requesters::engine::interest(requesters, &job, config) {
+    if !crate::requesters::engine::interest(requesters, &job, config)? {
         return Err("IRC: acquisition has no admitted demand".into());
     }
-    if !selected_interest(config, rule, &job, requesters) {
+    if !selected_interest(config, rule, &job, requesters)? {
         return Err("IRC: selected requester has no compatible admitted demand".into());
     }
     if rule.action == "request" {
@@ -737,9 +723,7 @@ fn candidate(
             .admission
             .as_ref()
             .ok_or("IRC: request acquisition has no committed origin")?;
-        if !requesters
-            .demands
-            .get(&a.demand_id)
+        if !requesters.demand(&a.demand_id)?
             .is_some_and(|d| d.origins.contains(&format!("irc:{}:{}", r.source_id, r.id)))
             || a.request.source_numbering != job.request.source_numbering
         {
@@ -838,7 +822,7 @@ impl Engine {
         let job = {
             let requesters = lock(&self.requester_store)?;
             let mut jobs = lock(&self.store)?;
-            candidate(&self.config, record, rule, &mut jobs, &requesters.state)?
+            candidate(&self.config, record, rule, &mut jobs, &*requesters)?
         };
         let source = self.config.irc.source(&record.source_id)?;
         let deadline = Instant::now() + Duration::from_secs(10);
@@ -863,7 +847,7 @@ impl Engine {
             }
             let requesters = lock(&self.requester_store)?;
             let mut jobs = lock(&self.store)?;
-            if candidate(&self.config, current, rule, &mut jobs, &requesters.state)? != job {
+            if candidate(&self.config, current, rule, &mut jobs, &*requesters)? != job {
                 return Err("IRC: admitted job changed during metadata inspection".into());
             }
             let mut fulfilled = job;
@@ -927,7 +911,7 @@ impl Engine {
             current,
             current_rule,
             &mut jobs,
-            &requesters.state,
+            &*requesters,
         )?;
         if current_job != job {
             return Err("IRC: admitted job changed during metadata inspection".into());

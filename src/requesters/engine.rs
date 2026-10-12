@@ -1,6 +1,6 @@
 //! Account I/O precedes admission. Snapshot reservations precede queued jobs.
 use super::{
-    Capture, ControlRequest, Demand, MAX_DEMANDS, MAX_POLL_ITEMS, Policy, Provenance, Record,
+    Capture, ControlRequest, Demand, LedgerRead, MAX_OFFSET, MAX_POLL_ITEMS, Policy, Provenance, Record,
     State, digest, valid_id,
 };
 use crate::{
@@ -68,41 +68,36 @@ fn compatible(config: &crate::config::Config, demand: &Demand, job: &Job) -> Res
             },
         ))
 }
-pub(crate) fn interest(state: &State, job: &Job, config: &crate::config::Config) -> bool {
-    if job.requester.is_none() || state.operator_jobs.contains(&job.id) {
-        return true;
+pub(crate) fn interest(ledger: &impl LedgerRead, job: &Job, config: &crate::config::Config) -> Result<bool> {
+    if job.requester.is_none() || ledger.operator_interest(&job.id)? { return Ok(true); }
+    let capture = &job.requester.as_ref().ok_or("Requester: missing provenance")?.capture;
+    for account in &config.requesters.accounts {
+        let Some(record) = ledger.accounts().get(&account.id) else { continue; };
+        if account.binding() != record.binding { continue; }
+        let id = Demand::identity(&account.id, &job.request);
+        if let Some(demand) = ledger.demand(&id)?
+            && matches!(demand.state.as_str(), "reserved" | "active" | "ready")
+            && &demand.capture == capture { return Ok(true); }
     }
-    let key = job.request.media_key();
-    state.demands.values().any(|d| {
-        d.request.media_key() == key
-            && matches!(d.state.as_str(), "reserved" | "active" | "ready")
-            && job
-                .requester
-                .as_ref()
-                .is_some_and(|p| p.capture == d.capture)
-            && config.requesters.accounts.iter().any(|a| {
-                a.id == d.account_id && a.binding() == state.accounts[&d.account_id].binding
-            })
-    })
+    Ok(false)
 }
-fn public_account(state: &State, record: &Record, config: &crate::config::Config) -> Value {
-    let mut v = record.to_json();
-    if let Value::Object(m) = &mut v {
-        m.remove("binding");
-    }
-    v.insert(
-        "configured",
-        config.requesters.accounts.iter().any(|a| a.id == record.id),
-    );
-    v.insert(
-        "pending",
-        state
-            .demands
-            .values()
-            .filter(|d| d.account_id == record.id && d.state == "pending")
-            .count() as u32,
-    );
-    v
+fn public_account(ledger: &super::RequesterStore, record: &Record, config: &crate::config::Config) -> Result<Value> {
+    let mut value = record.to_json();
+    if let Value::Object(fields) = &mut value { fields.remove("binding"); }
+    value.insert("configured", config.requesters.accounts.iter().any(|account| account.id == record.id));
+    value.insert("pending", ledger.count(&record.id, Some("pending"))?);
+    value.insert("origin_cleanup_pending", !ledger.poll_ready(&record.id)?);
+    Ok(value)
+}
+
+fn requester_value(ledger: &super::RequesterStore, id: &str, demands: Vec<Demand>, next: Option<crate::inventory::Key>, offset: usize, limit: usize, config: &crate::config::Config) -> Result<Value> {
+    if !valid_id(id) || limit == 0 || limit > 200 { return Err("Requester: invalid account or page bounds".into()); }
+    let record = ledger.accounts().get(id).ok_or("Requester: unknown account")?;
+    let mut value = public_account(ledger, record, config)?;
+    value.insert("total", ledger.count(id, None)?); value.insert("offset", offset); value.insert("limit", limit);
+    value.insert("next", next.map_or(Value::Null, |key| super::encode_cursor(&key).into()));
+    value.insert("sequence", ledger.sequence()?.to_string());
+    value.insert("demands", Value::Array(demands.iter().map(Demand::to_json).collect())); Ok(value)
 }
 
 impl Engine {
@@ -122,8 +117,8 @@ impl Engine {
                     .state
                     .accounts
                     .values()
-                    .map(|a| public_account(&ledger.state, a, &self.config))
-                    .collect(),
+                    .map(|a| public_account(&ledger, a, &self.config))
+                    .collect::<Result<Vec<_>>>()?,
             ),
         );
         v.insert(
@@ -147,39 +142,27 @@ impl Engine {
         );
         Ok(v)
     }
-    /// Bounded pages avoid unbounded API/browser response bodies.
+    /// Compatibility offsets are operation-bounded; cursors reach every row.
     pub fn requester(&self, id: &str, offset: usize, limit: usize) -> Result<Value> {
-        if !valid_id(id) || limit == 0 || limit > 200 || offset > MAX_DEMANDS {
-            return Err("Requester: invalid account or page bounds".into());
-        }
+        if offset > MAX_OFFSET { return Err("Requester: use a continuation cursor beyond the legacy offset range".into()); }
         let ledger = lock(&self.requester_store)?;
-        let record = ledger
-            .state
-            .accounts
-            .get(id)
-            .ok_or("Requester: unknown account")?;
-        let mut v = public_account(&ledger.state, record, &self.config);
-        let demands: Vec<_> = ledger
-            .state
-            .demands
-            .values()
-            .filter(|d| d.account_id == id)
-            .collect();
-        v.insert("total", demands.len() as u32);
-        v.insert("offset", offset as u32);
-        v.insert("limit", limit as u32);
-        v.insert(
-            "demands",
-            Value::Array(
-                demands
-                    .into_iter()
-                    .skip(offset)
-                    .take(limit)
-                    .map(Demand::to_json)
-                    .collect(),
-            ),
-        );
-        Ok(v)
+        let mut remaining = offset; let mut after = None;
+        while remaining > 0 {
+            let (page, next) = ledger.account_page(id, after, remaining.min(200))?;
+            if page.is_empty() { return requester_value(&ledger, id, Vec::new(), None, offset, limit, &self.config); }
+            remaining = remaining.saturating_sub(page.len());
+            after = page.last().map(|d| ledger.account_cursor(id, &d.id)).transpose()?;
+            if remaining > 0 && next.is_none() { return requester_value(&ledger, id, Vec::new(), None, offset, limit, &self.config); }
+        }
+        let (page, next) = ledger.account_page(id, after, limit)?;
+        requester_value(&ledger, id, page, next, offset, limit, &self.config)
+    }
+    pub fn requester_page(&self, id: &str, after: Option<&str>, limit: usize) -> Result<Value> {
+        if !valid_id(id) || limit == 0 || limit > 200 { return Err("Requester: invalid account or page bounds".into()); }
+        let ledger = lock(&self.requester_store)?;
+        let after = after.map(super::decode_cursor).transpose()?;
+        let (page, next) = ledger.account_page(id, after, limit)?;
+        requester_value(&ledger, id, page, next, 0, limit, &self.config)
     }
     pub fn requester_control(&self, id: &str, query: &ControlRequest) -> Result<Value> {
         query.validate()?;
@@ -218,28 +201,14 @@ impl Engine {
                 .revision
                 .checked_add(1)
                 .ok_or("Requester: policy revision overflow")?;
-            let (policy, revision) = (account.policy.clone(), account.revision);
-            // Unadmitted demand follows the reviewed policy; removed records do not.
-            for d in proposed.demands.values_mut().filter(|d| {
-                d.account_id == id
-                    && d.job_id.is_none()
-                    && d.admitted_at.is_none()
-                    && matches!(d.state.as_str(), "pending" | "conflict")
-            }) {
-                d.capture = Capture::new(&self.config, &policy, &d.request.kind)?;
-                d.revision = revision;
-                d.state = "pending".into();
-            }
+            // Unadmitted records adopt this revision in bounded admission.
         } else {
             let demand_id = query
                 .demand_id
                 .as_deref()
                 .ok_or("Requester: missing demand ID")?;
-            let d = proposed
-                .demands
-                .get_mut(demand_id)
-                .filter(|d| d.account_id == id)
-                .ok_or("Requester: demand belongs to another account or does not exist")?;
+            let mut demand = ledger.demand(demand_id)?.filter(|d| d.account_id == id).ok_or("Requester: demand belongs to another account or does not exist")?;
+            let d = &mut demand;
             match query.action.as_str() {
                 "remove" => {
                     d.state = "removed".into();
@@ -260,30 +229,21 @@ impl Engine {
                 }
                 _ => return Err("Requester: invalid action".into()),
             }
-            let outcome = proposed.demands[demand_id].state.clone();
-            proposed.record_outcome(demand_id, &outcome)?;
+            demand.outcome = demand.state.clone();
+            proposed.demands.insert(demand_id.to_owned(), demand);
         }
         let mut normalized = query.clone();
         normalized.apply = false;
         normalized.plan_id = None;
         let mut guard = Value::object();
         guard.insert("account", record.to_json());
-        guard.insert("ledger", ledger.state.to_json());
+        guard.insert("ledger_sequence", ledger.sequence()?.to_string());
         guard.insert("query", normalized.to_json());
-        // The acquisitions this account's demand points at (the ledger is
-        // bounded by its own snapshot limit).
-        let mut linked = Vec::new();
-        for demand in ledger.state.demands.values().filter(|d| d.account_id == id) {
-            if let Some(job) = demand
-                .job_id
-                .as_deref()
-                .map(|job| jobs.get(job))
-                .transpose()?
-            {
-                linked.push(job.map_or(Value::Null, |job| job.to_json()));
-            }
+        if let Some(id) = &query.demand_id {
+            let demand = ledger.demand(id)?;
+            guard.insert("demand", demand.as_ref().map_or(Value::Null, Demand::to_json));
+            if let Some(job) = demand.and_then(|d| d.job_id) { guard.insert("job", jobs.get(&job)?.map_or(Value::Null, |job| job.to_json())); }
         }
-        guard.insert("jobs", Value::Array(linked));
         guard.insert("jobs_sequence", Value::String(jobs.sequence()?.to_string()));
         guard.insert("profiles", self.config.selection.to_json());
         guard.insert(
@@ -314,15 +274,14 @@ impl Engine {
             if query.plan_id.as_deref() != Some(&plan_id) {
                 return Err("Requester review changed or expired; preview again".into());
             }
-            ledger.save(proposed)?;
+            ledger.save_patch(proposed)?;
             if query.action == "retry" {
                 let demand_id = query
                     .demand_id
                     .as_deref()
                     .ok_or("Requester: missing demand")?;
-                let job_id = ledger.state.demands[demand_id]
+                let job_id = ledger.demand(demand_id)?.ok_or("Requester: missing demand")?
                     .job_id
-                    .clone()
                     .ok_or("Requester: missing acquisition")?;
                 jobs.retry(&job_id)?;
                 // Same previous-transfer handling as `Engine::retry`.
@@ -345,170 +304,88 @@ impl Engine {
         if let Some(demand) = &query.demand_id {
             result.insert(
                 "demand",
-                ledger
-                    .state
-                    .demands
-                    .get(demand)
-                    .map_or(Value::Null, Demand::to_json),
+                ledger.demand(demand)?.as_ref().map_or(Value::Null, Demand::to_json),
             );
         }
         Ok(result)
     }
 
-    /// Mutex order everywhere is requester ledger, then request journal.
-    pub(crate) fn admit_requester_demand(
-        &self,
-        ledger: &mut super::RequesterStore,
-        jobs: &mut Store,
-    ) -> Result<()> {
+    /// Mutex order is requester ledger, then jobs. Reservation patches are
+    /// acknowledged before job creation; every pass examines at most200 rows.
+    pub(crate) fn admit_requester_demand(&self, ledger: &mut super::RequesterStore, jobs: &mut Store) -> Result<()> {
         let now = store::now();
-        let mut next = ledger.state.clone();
-        let mut planned: BTreeMap<_, _> = next
-            .demands
-            .values()
-            .filter(|d| d.state == "reserved")
-            .map(|d| (d.request.media_key(), d.capture.clone()))
-            .collect();
-        let mut ids: Vec<_> = next
-            .demands
-            .values()
-            .filter(|d| matches!(d.state.as_str(), "pending" | "conflict" | "reserved"))
-            .map(|d| d.id.clone())
-            .collect();
-        ids.sort_by_key(|id| {
-            (
-                next.demands[id].state != "reserved",
-                next.demands[id].request.season,
-                next.demands[id].request.episode,
-                id.clone(),
-            )
-        });
+        let mut patch = ledger.state.clone();
+        let mut planned = BTreeMap::new();
         let mut admitted = Vec::new();
-        for id in ids {
-            if admitted.len() >= 64 {
-                break;
-            }
-            let d = next.demands[&id].clone();
-            let record = &next.accounts[&d.account_id];
-            if !record.policy.enabled
-                || !self
-                    .config
-                    .requesters
-                    .accounts
-                    .iter()
-                    .any(|a| a.id == d.account_id)
-            {
-                continue;
-            }
-            if d.revision != record.revision && d.admitted_at.is_none() {
-                // Unadmitted demand waits for capture under the current policy.
-                next.demands
-                    .get_mut(&id)
-                    .ok_or("Requester: missing demand")?
-                    .state = "pending".into();
-                continue;
-            }
-            let existing = current_job(jobs, &d.request)?;
-            if planned
-                .get(&d.request.media_key())
-                .is_some_and(|p| p != &d.capture)
-                || existing
-                    .as_ref()
-                    .is_some_and(|j| !compatible(&self.config, &d, j).unwrap_or(false))
-            {
-                next.demands
-                    .get_mut(&id)
-                    .ok_or("Requester: missing demand")?
-                    .state = "conflict".into();
-                next.record_outcome(&id, "conflict")?;
-                continue;
-            }
-            let demand = next
-                .demands
-                .get_mut(&id)
-                .ok_or("Requester: missing demand")?;
-            demand.admitted_at.get_or_insert(now);
-            demand.state = "reserved".into();
-            planned.insert(d.request.media_key(), d.capture.clone());
-            next.record_outcome(&id, "reserved")?;
-            admitted.push((id, existing));
-        }
-        if next != ledger.state {
-            ledger.save(next)?;
-        }
-        // All provenance and reservations are durable before any new job can run.
-        let mut next = ledger.state.clone();
-        for (id, current) in admitted {
-            let demand = next.demands[&id].clone();
-            let job = if let Some(job) = current {
-                if !compatible(&self.config, &demand, &job)? {
-                    return Err("Requester: reservation conflicts with queued acquisition".into());
+        let names = ["reserved", "pending", "conflict"];
+        let mut state = ledger.admission_state;
+        let mut after = ledger.admission_cursor;
+        let mut examined = 0; let mut phases = 0;
+        while examined < 200 && admitted.len() < 64 && phases < 3 {
+            let name = names[state as usize];
+            let (page, next) = ledger.queue_page(name, after, 200 - examined)?;
+            let mut exhausted = true;
+            for original in page {
+                examined += 1;
+                after = Some(super::index::queue_cursor(name, &original)?);
+                let mut demand = original.clone();
+                if demand.state == "removed" { patch.demands.insert(demand.id.clone(), demand); continue; }
+                let record = ledger.state.accounts.get(&demand.account_id).ok_or("Requester: missing demand account")?;
+                if !record.policy.enabled || !self.config.requesters.accounts.iter().any(|a| a.id == demand.account_id && a.binding() == record.binding) { continue; }
+                if demand.revision != record.revision && demand.admitted_at.is_none() {
+                    demand.capture = Capture::new(&self.config, &record.policy, &demand.request.kind)?;
+                    demand.revision = record.revision; demand.state = "pending".into();
                 }
+                let media = demand.request.media_key();
+                let mut conflict = planned.get(&media).is_some_and(|capture| capture != &demand.capture);
+                for account in ledger.accounts().keys() {
+                    if let Some(reserved) = ledger.demand(&Demand::identity(account, &demand.request))?
+                        && reserved.state == "reserved" && reserved.capture != demand.capture { conflict = true; }
+                }
+                let existing = current_job(jobs, &demand.request)?;
+                if conflict || existing.as_ref().is_some_and(|job| !compatible(&self.config, &demand, job).unwrap_or(false)) {
+                    demand.state = "conflict".into(); demand.outcome = "conflict".into();
+                } else {
+                    demand.admitted_at.get_or_insert(now); demand.state = "reserved".into(); demand.outcome = "reserved".into();
+                    planned.insert(media, demand.capture.clone()); admitted.push((demand.clone(), existing));
+                }
+                if demand != original { patch.demands.insert(demand.id.clone(), demand); }
+                if admitted.len() == 64 || examined == 200 { exhausted = false; break; }
+            }
+            if exhausted && next.is_none() { state = (state + 1) % 3; after = None; phases += 1; } else { break; }
+        }
+        if !patch.demands.is_empty() { ledger.save_patch(patch)?; }
+        let mut linked = ledger.state.clone();
+        for (mut demand, existing) in admitted {
+            let job = if let Some(job) = existing {
+                if !compatible(&self.config, &demand, &job)? { return Err("Requester: reservation conflicts with queued acquisition".into()); }
                 job
-            } else {
-                jobs.submit_requester(
-                    demand.request.clone(),
-                    Provenance {
-                        account_id: demand.account_id.clone(),
-                        demand_id: id.clone(),
-                        policy_revision: demand.revision,
-                        capture: demand.capture.clone(),
-                    },
-                )?
-            };
-            let d = next
-                .demands
-                .get_mut(&id)
-                .ok_or("Requester: missing demand")?;
-            d.job_id = Some(job.id.clone());
-            d.state = if job.state == "ready" {
-                "ready"
-            } else {
-                "active"
+            } else { jobs.submit_requester(demand.request.clone(), Provenance { account_id: demand.account_id.clone(), demand_id: demand.id.clone(), policy_revision: demand.revision, capture: demand.capture.clone() })? };
+            demand.job_id = Some(job.id.clone()); demand.state = if job.state == "ready" { "ready" } else { "active" }.into();
+            demand.outcome = if matches!(job.state.as_str(), "ready" | "failed" | "cancelled") { job.state.clone() } else { "active".into() };
+            linked.demands.insert(demand.id.clone(), demand);
+        }
+        if !linked.demands.is_empty() { ledger.save_patch(linked)?; }
+        ledger.save_admission_cursor(state, after)?;
+        let (page, next) = ledger.demands_page(ledger.outcome_cursor, 200)?;
+        let mut outcomes = ledger.state.clone();
+        for original in page {
+            let mut demand = original.clone();
+            if let Some(id) = &demand.job_id && demand.state != "removed" {
+                let job = jobs.get(id)?.ok_or("Requester: recorded acquisition is missing")?;
+                let outcome = if job.state == "ready" { if compatible(&self.config, &demand, &job)? { "ready" } else { "conflict" } } else { &job.state };
+                if matches!(outcome, "ready" | "conflict") { demand.state = outcome.into(); }
+                if matches!(outcome, "ready" | "conflict" | "failed" | "cancelled") { demand.outcome = outcome.into(); }
             }
-            .into();
-            next.record_outcome(
-                &id,
-                if matches!(job.state.as_str(), "ready" | "failed" | "cancelled") {
-                    &job.state
-                } else {
-                    "active"
-                },
-            )?;
+            if demand != original { outcomes.demands.insert(demand.id.clone(), demand); }
         }
-        let mut outcomes = Vec::new();
-        for d in next.demands.values_mut() {
-            if let Some(id) = &d.job_id
-                && let Some(job) = jobs.get(id)?
-                && d.state != "removed"
-            {
-                let outcome = if job.state == "ready" {
-                    if compatible(&self.config, d, &job)? {
-                        "ready"
-                    } else {
-                        "conflict"
-                    }
-                } else {
-                    &job.state
-                };
-                if matches!(outcome, "ready" | "conflict") {
-                    d.state = outcome.into();
-                }
-                if matches!(outcome, "ready" | "conflict" | "failed" | "cancelled") {
-                    outcomes.push((d.id.clone(), outcome.to_owned()));
-                }
-            }
-        }
-        for (id, outcome) in outcomes {
-            next.record_outcome(&id, &outcome)?;
-        }
-        if next != ledger.state {
-            ledger.save(next)?;
-        }
-        cancel_unwanted(&ledger.state, jobs, &self.config, false)?;
-        self.pause_unwanted_transfers(jobs)?;
-        self.retire_previous_transfers(jobs)?;
-        Ok(())
+        if !outcomes.demands.is_empty() { ledger.save_patch(outcomes)?; }
+        ledger.save_outcome_cursor(next)?;
+        let accounts: Vec<_> = ledger.accounts().keys().cloned().collect();
+        let mut cleaned = 0;
+        for account in accounts { if !ledger.poll_ready(&account)? && cleaned < 4 { ledger.reconcile_origins(&account)?; cleaned += 1; } }
+        cancel_unwanted(ledger, jobs, &self.config, false)?;
+        self.pause_unwanted_transfers(jobs)?; self.retire_previous_transfers(jobs)?; Ok(())
     }
     pub(crate) fn requester_reconcile(&self) -> Result<()> {
         if self.config.requesters.accounts.is_empty()
@@ -526,8 +403,8 @@ impl Engine {
     pub(crate) fn claim_requester_job(&self) -> Result<Option<Job>> {
         let ledger = lock(&self.requester_store)?;
         lock(&self.store)?.claim_filtered(store::now(), self.config.lease_duration_secs, |job| {
-            interest(&ledger.state, job, &self.config)
-                && !crate::irc::routing::waits_for_candidate(&self.config, job, &ledger.state)
+            Ok(interest(&*ledger, job, &self.config)?
+                && !crate::irc::routing::waits_for_candidate(&self.config, job, &*ledger)?)
         })
     }
     pub(crate) fn requester_operator_interest(&self, jobs: &[Job]) -> Result<()> {
@@ -542,7 +419,7 @@ impl Engine {
             }
         }
         if next != ledger.state {
-            ledger.save(next)?;
+            ledger.save_patch(next)?;
         }
         Ok(())
     }
@@ -550,10 +427,10 @@ impl Engine {
         let ledger = lock(&self.requester_store)?;
         let mut jobs = lock(&self.store)?;
         let job = jobs.get(id)?.ok_or("Unknown job")?;
-        if job.requester.is_none() || ledger.state.operator_jobs.contains(id) {
+        if job.requester.is_none() || ledger.operator_interest(id)? {
             return Ok(());
         }
-        if !interest(&ledger.state, &job, &self.config) {
+        if !interest(&*ledger, &job, &self.config)? {
             return Err("Requester: acquisition has no admitted demand".into());
         }
         Ok(())
@@ -569,6 +446,13 @@ impl Engine {
         let mut accounts: Vec<_> = self.config.requesters.accounts.iter().collect();
         accounts.sort_by_key(|a| (attempted[&a.id].polled_at, a.id.clone()));
         for account in accounts {
+            {
+                let mut ledger = lock(&self.requester_store)?;
+                if !ledger.poll_ready(&account.id)? { ledger.reconcile_origins(&account.id)?; }
+                if !ledger.poll_ready(&account.id)? {
+                    let mut report = Value::object(); report.insert("account_id", account.id.clone()); report.insert("success", false); report.insert("error", "Previous complete poll origin cleanup is pending"); reports.push(report); continue;
+                }
+            }
             let previous = lock(&self.requester_store)?
                 .state
                 .accounts
@@ -600,71 +484,24 @@ impl Engine {
                 } else {
                     result
                 };
+            let mut completed = None;
             match result {
                 Ok(Watchlist { origins, requests }) => {
                     let policy = &previous.policy;
                     for (origin, request) in requests {
                         let id = Demand::identity(&account.id, &request);
-                        if !next.demands.contains_key(&id) {
-                            if next.demands.len() >= MAX_DEMANDS {
-                                return Err("Requester: demand capacity reached".into());
-                            }
-                            next.demands.insert(
-                                id.clone(),
-                                Demand {
-                                    id: id.clone(),
-                                    account_id: account.id.clone(),
-                                    origins: BTreeSet::from([origin.clone()]),
-                                    request: request.clone(),
-                                    revision: previous.revision,
-                                    capture: Capture::new(&self.config, policy, &request.kind)?,
-                                    state: "pending".into(),
-                                    job_id: None,
-                                    admitted_at: None,
-                                    outcome: String::new(),
-                                },
-                            );
-                            next.record_outcome(&id, "pending")?;
-                        } else if let Some(d) = next.demands.get_mut(&id) {
-                            d.origins.insert(origin);
-                            if d.job_id.is_none()
-                                && d.admitted_at.is_none()
-                                && d.revision != previous.revision
-                                && d.state != "removed"
-                            {
-                                d.capture = Capture::new(&self.config, policy, &d.request.kind)?;
-                                d.revision = previous.revision;
-                                d.state = "pending".into();
-                            }
+                        let mut demand = if let Some(known) = next.demands.remove(&id) { known }
+                            else if let Some(known) = ledger.demand(&id)? { known }
+                            else { Demand { id: id.clone(), account_id: account.id.clone(), origins: BTreeSet::new(), request: request.clone(), revision: previous.revision, capture: Capture::new(&self.config, policy, &request.kind)?, state: "pending".into(), job_id: None, admitted_at: None, outcome: "pending".into() } };
+                        demand.origins.retain(|known| known.starts_with("irc:") || origins.contains(known));
+                        demand.origins.insert(origin);
+                        if demand.job_id.is_none() && demand.admitted_at.is_none() && demand.revision != previous.revision && demand.state != "removed" {
+                            demand.capture = Capture::new(&self.config, policy, &request.kind)?;
+                            demand.revision = previous.revision; demand.state = "pending".into();
                         }
+                        next.demands.insert(id, demand);
                     }
-                    for d in next
-                        .demands
-                        .values_mut()
-                        .filter(|d| d.account_id == account.id)
-                    {
-                        d.origins.retain(|origin| {
-                            origin.starts_with("irc:") || origins.contains(origin)
-                        });
-                    }
-                    let removed: Vec<_> = next
-                        .demands
-                        .values()
-                        .filter(|d| {
-                            d.account_id == account.id
-                                && d.origins.is_empty()
-                                && d.state != "removed"
-                        })
-                        .map(|d| d.id.clone())
-                        .collect();
-                    for id in removed {
-                        let d = next
-                            .demands
-                            .get_mut(&id)
-                            .ok_or("Requester: missing demand")?;
-                        d.state = "removed".into();
-                        next.record_outcome(&id, "removed")?;
-                    }
+                    completed = Some(origins.clone());
                     let current = next
                         .accounts
                         .get_mut(&account.id)
@@ -708,7 +545,7 @@ impl Engine {
                     report.insert("success", false);
                 }
             }
-            ledger.save(next)?;
+            ledger.save_poll_patch(next, completed.as_ref().map(|origins| (account.id.as_str(), origins)))?;
             let mut jobs = lock(&self.store)?;
             self.admit_requester_demand(&mut ledger, &mut jobs)?;
             reports.push(report);
@@ -780,24 +617,17 @@ impl Engine {
     }
 }
 
-pub(crate) fn validate_storage(
-    state: &State,
-    jobs: &mut impl crate::store::RecoveryJobs,
-) -> Result<()> {
-    for d in state.demands.values() {
-        if let Some(id) = &d.job_id {
-            let job = jobs
-                .get(id)?
-                .ok_or("Requester: recorded acquisition is missing")?;
-            if job.request.media_key() != d.request.media_key()
-                || job
-                    .requester
-                    .as_ref()
-                    .is_some_and(|p| p.capture != d.capture)
-            {
-                return Err("Requester: acquisition differs from retained demand".into());
+pub(crate) fn validate_storage(ledger: &impl LedgerRead, jobs: &mut impl crate::store::RecoveryJobs) -> Result<()> {
+    let mut after = None;
+    loop {
+        let (page, next) = ledger.demands_page(after, 200)?;
+        for demand in page {
+            if let Some(id) = &demand.job_id {
+                let job = jobs.get(id)?.ok_or("Requester: recorded acquisition is missing")?;
+                if job.request.media_key() != demand.request.media_key() || job.requester.as_ref().is_some_and(|p| p.capture != demand.capture) { return Err("Requester: acquisition differs from retained demand".into()); }
             }
         }
+        after = next; if after.is_none() { break; }
     }
     // Every request that carries requester provenance, one page at a time.
     let mut after = None;
@@ -807,10 +637,7 @@ pub(crate) fn validate_storage(
             let Some(p) = &job.requester else {
                 continue;
             };
-            let d = state
-                .demands
-                .get(&p.demand_id)
-                .ok_or("Requester: queued provenance has no durable demand")?;
+            let d = ledger.demand(&p.demand_id)?.ok_or("Requester: queued provenance has no durable demand")?;
             if d.account_id != p.account_id
                 || d.capture != p.capture
                 || d.revision != p.policy_revision
@@ -834,7 +661,7 @@ const SWEEP_JOBS: usize = 512;
 /// examines at most `SWEEP_JOBS` requests, resuming where the last one stopped;
 /// `full` repeats until every request was examined once (service start).
 pub(crate) fn cancel_unwanted(
-    state: &State,
+    ledger: &impl LedgerRead,
     jobs: &mut Store,
     config: &crate::config::Config,
     full: bool,
@@ -845,13 +672,13 @@ pub(crate) fn cancel_unwanted(
             if job.requester.is_some()
                 && job.state != "ready"
                 && job.state != "cancelled"
-                && !interest(state, &job, config)
+                && !interest(ledger, &job, config)?
             {
                 if job.shared_file.is_some() {
                     let owners = jobs.shared_group(&job.id)?;
-                    if owners.iter().any(|j| interest(state, j, config)) {
-                        continue;
-                    }
+                    let mut wanted = false;
+                    for owner in &owners { wanted |= interest(ledger, owner, config)?; }
+                    if wanted { continue; }
                 }
                 jobs.cancel(&job.id)?;
             }

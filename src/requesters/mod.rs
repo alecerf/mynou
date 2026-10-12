@@ -36,8 +36,28 @@ use std::{
 };
 
 pub const MAX_ACCOUNTS: usize = 32;
-pub const MAX_DEMANDS: usize = 10_000;
+const LEGACY_MAX_DEMANDS: usize = 10_000;
+/// Compatibility offset work bound; continuation cursors have no total cap.
+pub const MAX_OFFSET: usize = 10_000;
 pub const MAX_POLL_ITEMS: usize = 512;
+
+pub(crate) fn encode_cursor(key: &crate::inventory::Key) -> String { key.iter().map(|byte| format!("{byte:02x}")).collect() }
+pub(crate) fn decode_cursor(text: &str) -> Result<crate::inventory::Key> {
+    if text.len() != 128 || !text.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) { return Err("Requester: invalid continuation cursor".into()); }
+    let mut key = [0; 64];
+    for (i, byte) in key.iter_mut().enumerate() { *byte = u8::from_str_radix(&text[i * 2..i * 2 + 2], 16).map_err(|_| "Requester: invalid continuation cursor")?; }
+    Ok(key)
+}
+pub fn cursor_page(query: &str) -> Result<(Option<String>, usize)> {
+    let mut after = None; let mut limit = 100; let mut seen = BTreeSet::new();
+    for pair in query.split('&').filter(|pair| !pair.is_empty()) {
+        let (key, value) = pair.split_once('=').ok_or("Requester: invalid page query")?;
+        if !seen.insert(key) { return Err("Requester: duplicate page field".into()); }
+        match key { "after" => { decode_cursor(value)?; after = Some(value.to_owned()); }, "limit" => { limit = value.parse().map_err(|_| "Requester: invalid page size")?; }, _ => return Err("Requester: unknown cursor page field".into()) }
+    }
+    if limit == 0 || limit > 200 { return Err("Requester: page size exceeded".into()); }
+    Ok((after, limit))
+}
 
 pub fn page(query: &str) -> Result<(usize, usize)> {
     let mut offset = 0;
@@ -65,7 +85,7 @@ pub fn page(query: &str) -> Result<(usize, usize)> {
             }
         }
     }
-    if offset > MAX_DEMANDS || limit == 0 || limit > 200 {
+    if offset > MAX_OFFSET || limit == 0 || limit > 200 {
         return Err("Requester: page bounds exceeded".into());
     }
     Ok((offset, limit))
@@ -736,7 +756,7 @@ impl State {
                 return Err("Requester: duplicate or orphaned demand".into());
             }
         }
-        if s.demands.len() > MAX_DEMANDS {
+        if s.demands.len() > LEGACY_MAX_DEMANDS {
             return Err("Requester: demand capacity reached".into());
         }
         for v in list("operator_jobs")? {
@@ -748,7 +768,7 @@ impl State {
                 return Err("Requester: invalid operator interest".into());
             }
         }
-        if s.operator_jobs.len() > MAX_DEMANDS {
+        if s.operator_jobs.len() > LEGACY_MAX_DEMANDS {
             return Err("Requester: operator interest capacity reached".into());
         }
         Ok(s)
