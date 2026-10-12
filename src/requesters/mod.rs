@@ -1,6 +1,25 @@
 //! Durable per-account demand and explicit acquisition policies.
 pub(crate) mod engine;
 mod persistence;
+mod index;
+
+/// Authoritative fallible reads shared by validated legacy migration and the
+/// live disk index. A bounded patch is never used as a complete read view.
+pub(crate) trait LedgerRead {
+    fn accounts(&self) -> &BTreeMap<String, Record>;
+    fn demand(&self, id: &str) -> Result<Option<Demand>>;
+    fn demands_page(&self, after: Option<crate::inventory::Key>, limit: usize) -> Result<(Vec<Demand>, Option<crate::inventory::Key>)>;
+    fn irc_demands_page(&self, after: Option<crate::inventory::Key>, limit: usize) -> Result<(Vec<Demand>, Option<crate::inventory::Key>)>;
+    fn operator_interest(&self, id: &str) -> Result<bool>;
+}
+
+impl LedgerRead for State {
+    fn accounts(&self) -> &BTreeMap<String, Record> { &self.accounts }
+    fn demand(&self, id: &str) -> Result<Option<Demand>> { Ok(self.demands.get(id).cloned()) }
+    fn demands_page(&self, after: Option<crate::inventory::Key>, limit: usize) -> Result<(Vec<Demand>, Option<crate::inventory::Key>)> { index::legacy_page(self, after, limit, false) }
+    fn irc_demands_page(&self, after: Option<crate::inventory::Key>, limit: usize) -> Result<(Vec<Demand>, Option<crate::inventory::Key>)> { index::legacy_page(self, after, limit, true) }
+    fn operator_interest(&self, id: &str) -> Result<bool> { Ok(self.operator_jobs.contains(id)) }
+}
 
 use crate::{
     Result,
