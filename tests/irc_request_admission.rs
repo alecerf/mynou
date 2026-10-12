@@ -641,7 +641,9 @@ fn missing_cross_store_provenance_and_semantic_format_downgrades_fail_closed() {
         let mut r = requester_support::read_snapshot(&cfg.store_dir);
         match corruption {
             "irc_magic" => write_checked(&hp, b"MYNOUI02", &h),
-            "requester_magic" => requester_support::write_snapshot_format(&cfg.store_dir, b"MYNOUR01", &r),
+            "requester_magic" => {
+                requester_support::write_snapshot_format(&cfg.store_dir, b"MYNOUR01", &r)
+            }
             "missing_record" => {
                 h.insert("records", Value::Array(Vec::new()));
                 write_checked(&hp, b"MYNOUI03", &h);
