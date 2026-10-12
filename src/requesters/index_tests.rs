@@ -367,7 +367,7 @@ fn uncertain_reservation_commit_requires_reopen_and_recovers_frozen_capture() {
         let mut index = Index::create(&directory.0.join("inventory")).unwrap();
         index::commit(&mut index, &metadata, &[], &[]).unwrap();
         index.inject(Some(fault));
-        assert!(index::commit(&mut index, &metadata, &[record.clone()], &[]).is_err());
+        assert!(index::commit(&mut index, &metadata, std::slice::from_ref(&record), &[]).is_err());
         assert!(!index.is_usable());
         assert!(index::get(&mut index, &record.id).is_err());
         drop(index);
@@ -378,7 +378,7 @@ fn uncertain_reservation_commit_requires_reopen_and_recovers_frozen_capture() {
         );
         assert_eq!(index::count(&mut recovered, "fixture", 0).unwrap(), 1);
         // An idempotent replay must not duplicate reservations or counters.
-        index::commit(&mut recovered, &metadata, &[record.clone()], &[]).unwrap();
+        index::commit(&mut recovered, &metadata, std::slice::from_ref(&record), &[]).unwrap();
         assert_eq!(index::count(&mut recovered, "fixture", 0).unwrap(), 1);
         assert_eq!(
             index::get(&mut recovered, &record.id).unwrap(),
