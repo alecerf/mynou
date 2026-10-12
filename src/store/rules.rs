@@ -6,7 +6,7 @@
 use super::{
     Job, JobLookup, Result,
     layout::*,
-    ops::{Db, array, key_part},
+    ops::{Db, key_part},
 };
 use crate::inventory::MAX_PAGE_ROWS;
 
@@ -333,8 +333,4 @@ impl Db<'_> {
         }
         Ok(jobs)
     }
-}
-
-pub(super) fn value_id(value: &[u8]) -> Result<[u8; 16]> {
-    array(value)
 }

@@ -6,8 +6,8 @@ use super::{
     Change, Event, Index, Job, Key, MAX_JOB_EVENTS, MAX_PAGE_ROWS, Query, Result, bounded_message,
     layout::*,
 };
-use crate::json::{self, Value};
-use std::collections::{BTreeMap, BTreeSet};
+use crate::json;
+use std::collections::BTreeMap;
 
 /// The history message of a lease renewal.
 pub(super) const RENEWED: &str = "processing lease renewed";
@@ -39,7 +39,7 @@ impl Counts {
         if bytes.len() != 32 {
             return Err("Invalid job index counters".into());
         }
-        for (slot, chunk) in values.iter_mut().zip(bytes.chunks_exact(8)) {
+        for (slot, chunk) in values.iter_mut().zip(bytes.as_chunks::<8>().0) {
             let mut word = [0_u8; 8];
             word.copy_from_slice(chunk);
             *slot = u64::from_le_bytes(word);
@@ -161,10 +161,28 @@ impl Db<'_> {
     }
 
     pub(super) fn job(&mut self, id: &[u8; 16]) -> Result<Option<Job>> {
-        self.0
-            .get(&job_key(id))?
-            .map(|bytes| decode_job(&bytes, &id_text(id)))
-            .transpose()
+        let Some(mut bytes) = self.0.get(&job_key(id))? else { return Ok(None); };
+        let value = json::parse(std::str::from_utf8(&bytes).map_err(|_| "Invalid job record")?)?;
+        if let Some(chunks) = value.get("job_chunks") {
+            let count = chunks.as_u64().ok_or("Invalid job chunk count")?;
+            let length = value.get("job_bytes").and_then(crate::json::Value::as_u64).ok_or("Missing job chunk length")?;
+            if !(2..=16).contains(&count) || length > super::legacy::MAX_RECORD as u64
+                || length <= crate::inventory::MAX_VALUE_BYTES as u64
+                || count != length.div_ceil(crate::inventory::MAX_VALUE_BYTES as u64)
+            { return Err("Invalid job chunk bounds".into()); }
+            bytes = Vec::with_capacity(length as usize);
+            for n in 0..count {
+                let chunk = self.0.get(&key(&[&[T_JOB_CHUNK], id, &(n as u32).to_be_bytes()]))?
+                    .ok_or("Missing job record chunk")?;
+                let expected = (length as usize - bytes.len()).min(crate::inventory::MAX_VALUE_BYTES);
+                if chunk.len() != expected { return Err("Invalid job record chunk length".into()); }
+                bytes.extend_from_slice(&chunk);
+            }
+            if value.get("job_digest").and_then(crate::json::Value::as_str) != Some(super::hex(&crate::crypto::sha256(&bytes)).as_str()) {
+                return Err("Invalid job record chunk digest".into());
+            }
+        }
+        decode_job(&bytes, &id_text(id)).map(Some)
     }
 
     pub(super) fn require(&mut self, id: &[u8; 16]) -> Result<Job> {
@@ -210,11 +228,11 @@ impl Db<'_> {
         Ok(Some(job))
     }
 
-    /// Jobs of one media identity in creation order, at most `limit`.
-    pub(super) fn media_jobs(&mut self, media: &str, limit: usize) -> Result<Vec<Job>> {
+    /// Jobs of one media identity in creation order, reading every page of this identity.
+    pub(super) fn media_jobs(&mut self, media: &str) -> Result<Vec<Job>> {
         let digest = digest_bytes(media)?;
         let mut jobs = Vec::new();
-        for key in self.keys(&[&[T_MEDIA][..], &digest].concat(), limit)? {
+        for key in self.all_keys(&[&[T_MEDIA][..], &digest].concat())? {
             let job = self.require(&key_part(&key, 41)?)?;
             if job.request.media_key() != media {
                 return Err("Job media index disagrees with its record".into());
@@ -293,10 +311,10 @@ impl Db<'_> {
     }
 
     /// Jobs that name a transfer through any of their bindings.
-    pub(super) fn transfer_jobs(&mut self, transfer: &str, limit: usize) -> Result<Vec<Job>> {
+    pub(super) fn transfer_jobs(&mut self, transfer: &str) -> Result<Vec<Job>> {
         let prefix = [&[T_TRANSFER][..], &short("transfer", &[transfer])].concat();
         let mut jobs = Vec::new();
-        for key in self.keys(&prefix, limit)? {
+        for key in self.all_keys(&prefix)? {
             let job = self.require(&key_part(&key, 17)?)?;
             if transfers(&job).contains(&transfer) {
                 jobs.push(job);
@@ -330,10 +348,9 @@ impl Db<'_> {
         path: &str,
         kind: &str,
         value: &str,
-        limit: usize,
     ) -> Result<Vec<Job>> {
         let mut jobs = Vec::new();
-        for key in self.keys(&packref_prefix(path, kind, value), limit)? {
+        for key in self.all_keys(&packref_prefix(path, kind, value))? {
             let job = self.require(&key_part(&key, 33)?)?;
             if job.pack_file.as_deref() == Some(path) {
                 jobs.push(job);
@@ -455,30 +472,66 @@ impl Db<'_> {
 
     fn stage_event(&mut self, event: &Event, staged: &mut Staged) -> Result<()> {
         let id = id_bytes(&event.job_id)?;
-        let mut log = self.events(&id)?;
-        // Heartbeats would push the meaningful history out of a bounded log:
-        // a renewal replaces the previous one instead of adding to it.
-        if event.message == RENEWED
-            && log.last().is_some_and(|last| last.message == RENEWED)
-            && let Some(replaced) = log.pop()
+        let metadata = self.0.get(&events_key(&id, 0))?;
+        let (mut count, last) = match metadata {
+            Some(bytes) if bytes.len() == 16 => (
+                u64::from_le_bytes(array(&bytes[..8])?),
+                u64::from_le_bytes(array(&bytes[8..])?),
+            ),
+            Some(_) => return Err("Invalid job history counters".into()),
+            None => (0, 0),
+        };
+        if count > MAX_JOB_EVENTS as u64 || (count == 0) != (last == 0) {
+            return Err("Invalid job history counters".into());
+        }
+        // Consecutive heartbeats replace only the previous heartbeat.
+        if event.message == RENEWED && last != 0
+            && self.event(&id, last)?.is_some_and(|old| old.message == RENEWED)
         {
-            staged.insert(sequence_key(replaced.id), None);
+            staged.insert(events_key(&id, last), None);
+            staged.insert(sequence_key(last), None);
+            count -= 1;
         }
-        log.push(event.clone());
-        while log.len() > MAX_JOB_EVENTS {
-            let dropped = log.remove(0);
-            staged.insert(sequence_key(dropped.id), None);
+        if count == MAX_JOB_EVENTS as u64 {
+            let first = self.0.page(&Query {
+                start: events_key(&id, 1),
+                end: prefix_range(&[&[T_EVENTS][..], &id].concat()).1,
+                after: None, limit: 1, sequence: None,
+            })?.entries.into_iter().next().ok_or("Missing job history row")?.0;
+            staged.insert(first, None);
+            staged.insert(sequence_key(u64::from_be_bytes(key_part(&first, 17)?)), None);
+            count -= 1;
         }
-        staged.insert(events_key(&id), Some(Entry::File(encode_events(&log))));
+        let mut metadata = (count + 1).to_le_bytes().to_vec();
+        metadata.extend_from_slice(&event.id.to_le_bytes());
+        staged.insert(events_key(&id, 0), Some(Entry::Inline(metadata)));
+        staged.insert(events_key(&id, event.id), Some(Entry::File(encode_event(event))));
         staged.insert(sequence_key(event.id), Some(Entry::Inline(id.to_vec())));
         Ok(())
     }
 
+    pub(super) fn event(&mut self, id: &[u8; 16], sequence: u64) -> Result<Option<Event>> {
+        self.0.get(&events_key(id, sequence))?
+            .map(|bytes| decode_event(&bytes, &id_text(id), sequence)).transpose()
+    }
+
     pub(super) fn events(&mut self, id: &[u8; 16]) -> Result<Vec<Event>> {
-        let Some(bytes) = self.0.get(&events_key(id))? else {
-            return Ok(Vec::new());
-        };
-        decode_events(&bytes, &id_text(id))
+        let mut events = Vec::new();
+        let mut after = None;
+        loop {
+            let page = self.scan(&[&[T_EVENTS][..], id].concat(), after, MAX_PAGE_ROWS)?;
+            for (key, bytes) in page.entries {
+                let sequence = u64::from_be_bytes(key_part(&key, 17)?);
+                if sequence != 0 {
+                    events.push(decode_event(&bytes, &id_text(id), sequence)?);
+                    if events.len() > MAX_JOB_EVENTS {
+                        return Err("Oversized job history".into());
+                    }
+                }
+            }
+            after = page.next;
+            if after.is_none() { return Ok(events); }
+        }
     }
 
     /// Updates which job is the library's current version of each media
@@ -500,20 +553,16 @@ impl Db<'_> {
             })
             .collect();
         for (media, members) in by_media {
-            let prefix = [&[T_CANDIDATE][..], &media].concat();
+            // The current winner is a point lookup. Updating an unrelated
+            // non-imported job never scans all ready lineages of this media.
+            let before = self.0.get(&media_tip_key(&media))?
+                .map(|bytes| array::<24>(&bytes)).transpose()?;
             let mut candidates: BTreeMap<Key, [u8; 24]> = BTreeMap::new();
-            let mut after = None;
-            loop {
-                let page = self.scan(&prefix, after, MAX_PAGE_ROWS)?;
-                for (key, value) in page.entries {
-                    candidates.insert(key, array(&value)?);
-                }
-                after = page.next;
-                if after.is_none() {
-                    break;
-                }
+            if let Some(value) = before {
+                let id = array(&value[..16])?;
+                let root = self.root(&id)?.ok_or("Missing library lineage root")?;
+                candidates.insert(candidate_key(&media, root.created_at, &root.id), value);
             }
-            let before = candidates.iter().next_back().map(|(_, value)| *value);
             for pair in &members {
                 if !imported(&pair.job) {
                     continue;
@@ -535,6 +584,9 @@ impl Db<'_> {
                 stage_put(staged, key, Entry::Inline(value.to_vec()));
             }
             let after_tip = candidates.iter().next_back().map(|(_, value)| *value);
+            if before != after_tip {
+                staged.insert(media_tip_key(&media), after_tip.map(|value| Entry::Inline(value.to_vec())));
+            }
             let holder = |value: &[u8; 24]| -> Result<([u8; 16], u64)> {
                 Ok((
                     array(&value[..16])?,
@@ -647,42 +699,15 @@ fn adjust(mut counts: Counts, pair: &Pair) -> Result<Counts> {
     Ok(counts)
 }
 
-pub(super) fn encode_events(events: &[Event]) -> Vec<u8> {
-    let mut value = Value::object();
-    value.insert("v", 1_u32);
-    value.insert(
-        "events",
-        Value::Array(events.iter().map(Event::to_json).collect()),
-    );
-    json::stringify(&value).into_bytes()
+pub(super) fn encode_event(event: &Event) -> Vec<u8> {
+    json::stringify(&event.to_json()).into_bytes()
 }
 
-pub(super) fn decode_events(bytes: &[u8], job: &str) -> Result<Vec<Event>> {
+pub(super) fn decode_event(bytes: &[u8], job: &str, sequence: u64) -> Result<Event> {
     let value = json::parse(std::str::from_utf8(bytes).map_err(|_| "Invalid job history")?)?;
-    if value.get("v").and_then(Value::as_u64) != Some(1) {
-        return Err("Unsupported job history version".into());
+    let event = Event::from_json(&value)?;
+    if event.job_id != job || event.id != sequence {
+        return Err("Job history disagrees with its key".into());
     }
-    let list = value
-        .get("events")
-        .and_then(Value::as_array)
-        .ok_or("Invalid job history")?;
-    if list.len() > MAX_JOB_EVENTS {
-        return Err("Oversized job history".into());
-    }
-    let mut events = Vec::with_capacity(list.len());
-    let mut last = 0_u64;
-    for item in list {
-        let event = Event::from_json(item)?;
-        if event.job_id != job || event.id <= last {
-            return Err("Job history disagrees with its job".into());
-        }
-        last = event.id;
-        events.push(event);
-    }
-    Ok(events)
-}
-
-/// The identifiers in a set of keys, for tests and verification.
-pub(super) fn ids_of(keys: &[Key], at: usize) -> Result<BTreeSet<[u8; 16]>> {
-    keys.iter().map(|key| key_part(key, at)).collect()
+    Ok(event)
 }

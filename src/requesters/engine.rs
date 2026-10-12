@@ -290,6 +290,7 @@ impl Engine {
             }
         }
         guard.insert("jobs", Value::Array(linked));
+        guard.insert("jobs_sequence", Value::String(jobs.sequence()?.to_string()));
         guard.insert("profiles", self.config.selection.to_json());
         guard.insert(
             "destinations",

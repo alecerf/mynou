@@ -12,12 +12,14 @@ use std::path::{Path, PathBuf};
 /// results mean no job record, entry or history row changed.
 pub fn fingerprint(store_dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     fn walk(root: &Path, directory: &Path, found: &mut Vec<(PathBuf, Vec<u8>)>) {
-        let Ok(entries) = fs::read_dir(directory) else {
-            return;
-        };
+        let directory = directory.canonicalize().unwrap();
+        assert!(directory.starts_with(root));
+        let entries = fs::read_dir(&directory).unwrap();
         for entry in entries {
             let path = entry.unwrap().path();
-            if path.is_dir() {
+            let metadata = fs::symlink_metadata(&path).unwrap();
+            assert!(!metadata.file_type().is_symlink());
+            if metadata.is_dir() {
                 walk(root, &path, found);
             } else if path.file_name().is_some_and(|name| name != ".lock") {
                 found.push((
@@ -27,7 +29,7 @@ pub fn fingerprint(store_dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
             }
         }
     }
-    let root = store_dir.join("jobs.idx");
+    let root = store_dir.join("jobs.idx").canonicalize().unwrap();
     let mut found = Vec::new();
     walk(&root, &root, &mut found);
     found.sort();
@@ -122,9 +124,10 @@ pub fn frame(
 
 /// Removes every job file, leaving an empty store directory.
 pub fn reset(store_dir: &Path) {
-    let _ = fs::remove_dir_all(store_dir.join("jobs.idx"));
-    let _ = fs::remove_file(store_dir.join("snapshot.bin"));
-    let _ = fs::remove_file(store_dir.join("journal.bin"));
+    let store_dir = store_dir.canonicalize().unwrap();
+    remove_owned(&store_dir, "jobs.idx", true);
+    remove_owned(&store_dir, "snapshot.bin", false);
+    remove_owned(&store_dir, "journal.bin", false);
 }
 
 /// Replaces a migrated store's files by the legacy snapshot of the same jobs,
@@ -135,7 +138,8 @@ pub fn downgrade(store_dir: &Path, jobs: &[Job]) {
 
 /// As `downgrade`, with an explicit (possibly too old) snapshot format.
 pub fn downgrade_as(store_dir: &Path, jobs: &[Job], magic: Option<&[u8; 8]>) {
-    let _ = fs::remove_dir_all(store_dir.join("jobs.idx"));
+    let store_dir = store_dir.canonicalize().unwrap();
+    remove_owned(&store_dir, "jobs.idx", true);
     let snapshot_magic = magic.unwrap_or_else(|| magics(jobs).1);
     let events: Vec<Event> = jobs
         .iter()
@@ -152,12 +156,32 @@ pub fn downgrade_as(store_dir: &Path, jobs: &[Job], magic: Option<&[u8; 8]>) {
         &store_dir.join("snapshot.bin"),
         &snapshot(jobs, &events, events.len() as u64, &[0; 32], snapshot_magic),
     );
-    let _ = fs::remove_file(store_dir.join("journal.bin"));
+    remove_owned(&store_dir, "journal.bin", false);
 }
 
 /// Writes a file as the earlier store did: readable by its owner only.
 pub fn write_private(path: &Path, bytes: &[u8]) {
     use std::os::unix::fs::PermissionsExt;
-    fs::write(path, bytes).unwrap();
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+    let root = path.parent().unwrap().canonicalize().unwrap();
+    let path = root.join(path.file_name().unwrap());
+    assert!(path.starts_with(&root));
+    if let Ok(metadata) = fs::symlink_metadata(&path) {
+        assert!(metadata.is_file() && !metadata.file_type().is_symlink());
+    }
+    fs::write(&path, bytes).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+}
+
+fn remove_owned(root: &Path, name: &str, directory: bool) {
+    let path = root.join(name);
+    let metadata = match fs::symlink_metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+        Err(error) => panic!("Cannot inspect fixture: {error}"),
+    };
+    assert!(!metadata.file_type().is_symlink());
+    let path = path.canonicalize().unwrap();
+    assert!(path.starts_with(root) && path != root);
+    if directory { fs::remove_dir_all(&path).unwrap(); }
+    else { fs::remove_file(&path).unwrap(); }
 }

@@ -42,6 +42,9 @@ pub(super) const T_TIP: u8 = 0x32;
 pub(super) const T_SEQUENCE: u8 = 0x33;
 pub(super) const T_DEMAND: u8 = 0x34;
 pub(super) const T_ACQUISITION: u8 = 0x35;
+pub(super) const T_IRC_ORIGIN: u8 = 0x36;
+pub(super) const T_MEDIA_TIP: u8 = 0x37;
+pub(super) const T_JOB_CHUNK: u8 = 0x38;
 
 pub(super) const FORMAT_KEY: Key = single(T_META, 0);
 pub(super) const COUNTS_KEY: Key = single(T_META, 1);
@@ -128,8 +131,11 @@ pub(super) fn short(domain: &str, parts: &[&str]) -> [u8; 16] {
 pub(super) fn job_key(id: &[u8; 16]) -> Key {
     key(&[&[T_JOB], id])
 }
-pub(super) fn events_key(id: &[u8; 16]) -> Key {
-    key(&[&[T_EVENTS], id])
+pub(super) fn events_key(id: &[u8; 16], sequence: u64) -> Key {
+    key(&[&[T_EVENTS], id, &sequence.to_be_bytes()])
+}
+pub(super) fn media_tip_key(media: &[u8; 32]) -> Key {
+    key(&[&[T_MEDIA_TIP], media])
 }
 /// Newest first: the creation time is stored inverted.
 pub(super) fn all_key(created: u64, id: &[u8; 16]) -> Key {
@@ -425,6 +431,7 @@ pub(super) fn owned(job: &Job, root: &Root) -> Result<BTreeMap<Key, Entry>> {
         inline(requester_key(job.created_at, &id), &[]);
     }
     if let Some(origin) = &job.irc_origin {
+        inline(key(&[&[T_IRC_ORIGIN], &id]), &[]);
         for alias in &origin.torrent_aliases {
             inline(irc_key(&origin.file, alias, &id), &[]);
         }
@@ -456,6 +463,22 @@ pub(super) fn owned(job: &Job, root: &Root) -> Result<BTreeMap<Key, Entry>> {
             &[],
         );
     }
-    entries.insert(job_key(&id), Entry::File(encode_job(job)));
+    let encoded = encode_job(job);
+    if encoded.len() > super::legacy::MAX_RECORD {
+        return Err("A job record exceeds the 16 MiB record limit".into());
+    }
+    if encoded.len() <= crate::inventory::MAX_VALUE_BYTES {
+        entries.insert(job_key(&id), Entry::File(encoded));
+    } else {
+        let mut manifest = json::Value::object();
+        let chunks = encoded.chunks(crate::inventory::MAX_VALUE_BYTES);
+        manifest.insert("job_chunks", chunks.len() as u32);
+        manifest.insert("job_bytes", encoded.len() as u32);
+        manifest.insert("job_digest", super::hex(&sha256(&encoded)));
+        entries.insert(job_key(&id), Entry::File(json::stringify(&manifest).into_bytes()));
+        for (n, chunk) in chunks.enumerate() {
+            entries.insert(key(&[&[T_JOB_CHUNK], &id, &(n as u32).to_be_bytes()]), Entry::File(chunk.to_vec()));
+        }
+    }
     Ok(entries)
 }

@@ -13,7 +13,7 @@
 use crate::Result;
 use crate::crypto::sha256;
 use crate::inventory::{Change, Index, Key, MAX_PAGE_ROWS, Query};
-use crate::json::{self, Value};
+use crate::json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::Read;
@@ -27,14 +27,15 @@ mod legacy;
 mod migration;
 mod ops;
 mod rules;
+mod replay;
 #[cfg(test)]
 mod tests;
 pub use groups::SharedUpgrade;
-use groups::{GroupAction, GroupState, group_format};
+use groups::group_format;
 pub use migration::MigrationReport;
 
 /// Events kept per job (a per-record bound); the total is not limited.
-pub const MAX_JOB_EVENTS: usize = 64;
+pub const MAX_JOB_EVENTS: usize = 1_000;
 /// Events the journal of earlier versions retained in total.
 const MAX_EVENTS: usize = 1_000;
 const MAX_EVENT_MESSAGE: usize = 4_096;
@@ -772,7 +773,6 @@ pub(crate) enum Backend {
 /// The job inventory. One owner holds the directory lock; the index owns its
 /// own directory (`jobs.idx`).
 pub struct Store {
-    directory: PathBuf,
     _lock: File,
     backend: Backend,
     read_only: bool,
@@ -783,6 +783,7 @@ pub struct Store {
     claim_cursor: Option<Key>,
     /// Where the next sweep for unwanted requester work resumes; in memory.
     sweep_cursor: Option<Key>,
+    route_cursor: Option<Key>,
     pub(crate) migration: Option<MigrationReport>,
 }
 
@@ -900,14 +901,13 @@ impl Store {
     }
 
     pub(super) fn from_parts(
-        directory: &Path,
+        _directory: &Path,
         lock: File,
         backend: Backend,
         read_only: bool,
         migration: Option<MigrationReport>,
     ) -> Self {
         Self {
-            directory: directory.to_owned(),
             _lock: lock,
             backend,
             read_only,
@@ -915,19 +915,16 @@ impl Store {
             maintenance_error: None,
             claim_cursor: None,
             sweep_cursor: None,
+            route_cursor: None,
             migration,
         }
-    }
-
-    pub(crate) fn directory(&self) -> &Path {
-        &self.directory
     }
 
     fn read<T>(&mut self, empty: T, work: impl FnOnce(&mut Db<'_>) -> Result<T>) -> Result<T> {
         match &mut self.backend {
             Backend::Absent => Ok(empty),
             Backend::Unmigrated => Err(UNMIGRATED.to_owned()),
-            Backend::Ready(index) => work(&mut Db(&mut **index)),
+            Backend::Ready(index) => work(&mut Db(index)),
         }
     }
 
@@ -941,7 +938,7 @@ impl Store {
         let Backend::Ready(index) = &mut self.backend else {
             return Err(UNMIGRATED.to_owned());
         };
-        let result = work(&mut Db(&mut **index));
+        let result = work(&mut Db(index));
         if result.is_err() && !index.is_usable() {
             self.poisoned = true;
         }
@@ -1117,10 +1114,7 @@ impl Store {
                 for (found, value) in &page.entries {
                     let sequence = u64::from_be_bytes(ops::key_part(found, 1)?);
                     let id: [u8; 16] = ops::array(value)?;
-                    let log = db.events(&id)?;
-                    let event = log
-                        .into_iter()
-                        .find(|event| event.id == sequence)
+                    let event = db.event(&id, sequence)?
                         .ok_or("Job history sequence refers to a missing event")?;
                     events.push(event);
                 }
@@ -1144,7 +1138,7 @@ impl Store {
             let mut states = BTreeMap::new();
             for key in keys {
                 let mut chosen: Option<Job> = None;
-                for job in db.media_jobs(key, MAX_PAGE_ROWS)? {
+                for job in db.media_jobs(key)? {
                     if chosen
                         .as_ref()
                         .is_none_or(|current| current.state != "ready")
@@ -1160,9 +1154,9 @@ impl Store {
         })
     }
 
-    /// Jobs of one media identity, oldest first (at most one page).
+    /// Jobs of one media identity, oldest first, scanning only this identity.
     pub(crate) fn media_jobs(&mut self, media_key: &str) -> Result<Vec<Job>> {
-        self.read(Vec::new(), |db| db.media_jobs(media_key, MAX_PAGE_ROWS))
+        self.read(Vec::new(), |db| db.media_jobs(media_key))
     }
 
     /// The job owning a canonical request key.
@@ -1177,15 +1171,7 @@ impl Store {
 
     /// Jobs that depend on a transfer through any binding.
     pub fn transfer_jobs(&mut self, transfer: &str) -> Result<Vec<Job>> {
-        self.read(Vec::new(), |db| db.transfer_jobs(transfer, MAX_PAGE_ROWS))
-    }
-
-    /// Whether another job than `except` depends on the same transfer.
-    pub(crate) fn transfer_shared(&mut self, transfer: &str, except: &str) -> Result<bool> {
-        let jobs = self.transfer_jobs(transfer)?;
-        Ok(jobs
-            .iter()
-            .any(|other| other.id != except && other.state != "cancelled"))
+        self.read(Vec::new(), |db| db.transfer_jobs(transfer))
     }
 
     /// Whether another request than `job` shares its native transfer, through
@@ -1327,21 +1313,30 @@ impl Store {
 
     /// Open jobs (not ready, cancelled or staged) in claim order after the
     /// jobs still waiting: the due queue first, then the wait list.
-    pub(crate) fn open_jobs(&mut self, limit: usize) -> Result<Vec<Job>> {
-        self.read(Vec::new(), |db| {
+    pub(crate) fn open_jobs_filtered(&mut self, limit: usize, eligible: impl Fn(&Job) -> bool) -> Result<Vec<Job>> {
+        let mut cursor = self.route_cursor;
+        let jobs = self.read(Vec::new(), |db| {
             let mut jobs = Vec::new();
-            let (keys, _) = db.due(None, limit)?;
-            for found in keys {
-                jobs.push(db.require(&ops::key_part(&found, 9)?)?);
-            }
-            if jobs.len() < limit {
-                let page = db.scan(&[layout::T_WAIT], None, limit - jobs.len())?;
-                for (found, _) in &page.entries {
-                    jobs.push(db.require(&ops::key_part(found, 17)?)?);
+            let mut examined = 0;
+            while examined < limit {
+                let page = db.0.page(&Query {
+                    start: layout::key(&[&[layout::T_QUEUE]]),
+                    end: Some(layout::key(&[&[layout::T_GROUP]])),
+                    after: cursor, limit: (limit - examined).min(MAX_PAGE_ROWS), sequence: None,
+                })?;
+                examined += page.entries.len();
+                for (key, _) in &page.entries {
+                    let at = if key[0] == layout::T_QUEUE { 9 } else { 17 };
+                    let job = db.require(&ops::key_part(key, at)?)?;
+                    if eligible(&job) { jobs.push(job); }
                 }
+                cursor = page.next;
+                if cursor.is_none() { break; }
             }
             Ok(jobs)
-        })
+        })?;
+        self.route_cursor = cursor;
+        Ok(jobs)
     }
 
     /// The shared-file binding recorded for one physical video, if any.
@@ -1351,7 +1346,7 @@ impl Store {
         file_path: &str,
     ) -> Result<Option<crate::pack::SharedFile>> {
         self.read(None, |db| {
-            for job in db.pack_holders(file_path, "t", torrent_id, MAX_PAGE_ROWS)? {
+            for job in db.pack_holders(file_path, "t", torrent_id)? {
                 if let Some(file) = job.shared_file
                     && file.torrent_id == torrent_id
                     && file.file_path == file_path

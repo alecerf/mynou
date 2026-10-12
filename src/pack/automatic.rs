@@ -210,7 +210,7 @@ pub(super) fn capture_scope(record: &Record, store: &mut Store, season: u32) -> 
     }
     let today = date::today();
     // An explicit on-demand pack action does not enable background series monitoring.
-    let mut episodes: Vec<_> = record
+    let episodes: Vec<_> = record
         .plan
         .episodes
         .iter()
