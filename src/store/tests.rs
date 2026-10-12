@@ -702,7 +702,7 @@ fn bulk(store: &mut Store, jobs: Vec<Job>) {
 // Independently proposed QA fixtures for the indexed monitoring window.
 fn monitored_fixture(n: u64, checked: u64) -> Job {
     let mut job = ready_job(n, 1_000 + n);
-    if n % 2 == 0 {
+    if n.is_multiple_of(2) {
         job.request.kind = "episode".into();
         job.request.season = 1;
         job.request.episode = 1;
