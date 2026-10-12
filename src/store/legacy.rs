@@ -384,7 +384,10 @@ fn replay(state: &mut State, journal: &[u8], snapshot_chain: [u8; 32]) -> Result
 fn apply_record(state: &mut State, magic: &[u8], payload: &[u8], sequence: u64) -> Result<()> {
     let value = json::parse(std::str::from_utf8(payload).map_err(|_| "journal is not UTF-8")?)?;
     let map = fields(&value)?;
-    let job = Job::from_json(super::field(map, "job")?)?;
+    let raw_job = super::field(map, "job")?;
+    let legacy_record = ["release", "upgrade_parent", "monitored", "monitor_checked_at"]
+        .iter().all(|field| raw_job.get(field).is_none());
+    let job = Job::from_json(raw_job)?;
     let requester_ok = magic == REQUESTER_JOURNAL_MAGIC || magic == IRC_JOURNAL_MAGIC;
     if job.irc_origin.is_some() && magic != IRC_JOURNAL_MAGIC {
         return Err("IRC provenance requires journal format 5".into());
@@ -411,11 +414,12 @@ fn apply_record(state: &mut State, magic: &[u8], payload: &[u8], sequence: u64) 
         return Err("Group owners require a journal action".into());
     }
     let mut owners = None;
+    let mut group_action = None;
     if let Some(action) = map.get("group_action") {
         if (magic != GROUP_JOURNAL_MAGIC && !requester_ok) || map.contains_key("shared_owners") {
             return Err("Group action requires journal format 3".into());
         }
-        super::groups::GroupAction::parse(action.as_str().ok_or("Invalid group action")?)?;
+        group_action = Some(super::groups::GroupAction::parse(action.as_str().ok_or("Invalid group action")?)?);
         owners = Some(
             map.get("group_jobs")
                 .and_then(Value::as_array)
@@ -441,13 +445,16 @@ fn apply_record(state: &mut State, magic: &[u8], payload: &[u8], sequence: u64) 
             jobs.push(Job::from_json(owner)?);
         }
     }
-    for job in jobs {
-        // An origin is attached to a job that was admitted earlier.
-        if job.irc_origin.is_some() && !state.jobs.contains_key(&job.id) {
-            return Err("IRC provenance requires a previously admitted job".into());
-        }
-        state.jobs.insert(job.id.clone(), job);
+    if jobs.iter().any(|job| job.requester.is_some()) && !requester_ok {
+        return Err("Requester provenance requires journal format 4".into());
     }
+    if jobs.iter().any(|job| job.irc_origin.is_some()) && magic != IRC_JOURNAL_MAGIC {
+        return Err("IRC provenance requires journal format 5".into());
+    }
+    let mut replay = super::replay::Replay::new(std::mem::take(&mut state.jobs));
+    replay.validate_record(&jobs, group_action, map.contains_key("shared_owners"), legacy_record)?;
+    for job in jobs { replay.insert(job); }
+    state.jobs = replay.jobs;
     push_event(&mut state.events, event);
     Ok(())
 }
@@ -712,20 +719,6 @@ fn check_irc_ownership(jobs: &BTreeMap<String, Job>, job: &Job) -> Result<()> {
 #[cfg(test)]
 pub(super) mod fixture {
     use super::*;
-
-    pub fn magics(jobs: &[Job], group: bool) -> (&'static [u8; 8], &'static [u8; 8]) {
-        if jobs.iter().any(|j| j.irc_origin.is_some()) {
-            (IRC_JOURNAL_MAGIC, IRC_SNAPSHOT_MAGIC)
-        } else if jobs.iter().any(|j| j.requester.is_some()) {
-            (REQUESTER_JOURNAL_MAGIC, REQUESTER_SNAPSHOT_MAGIC)
-        } else if group || jobs.iter().any(group_format) {
-            (GROUP_JOURNAL_MAGIC, GROUP_SNAPSHOT_MAGIC)
-        } else if jobs.iter().any(|j| j.shared_file.is_some()) {
-            (SHARED_JOURNAL_MAGIC, SHARED_SNAPSHOT_MAGIC)
-        } else {
-            (JOURNAL_MAGIC, SNAPSHOT_MAGIC)
-        }
-    }
 
     pub fn snapshot(
         jobs: &[Job],

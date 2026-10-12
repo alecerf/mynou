@@ -1006,7 +1006,7 @@ impl Drop for Heartbeat {
     }
 }
 
-/// Settles every recorded retirement: pause an unowned transfer, then clear the
+/// Settles one bounded batch of recorded retirements: pause an unowned transfer, then clear the
 /// record. Without a native client the records stay for a later run. User pause
 /// state is never touched, and no payload or metadata is removed. Each round
 /// reads a bounded batch, so memory does not grow with the backlog.
@@ -1014,7 +1014,6 @@ fn retire_transfers(client: Option<&Client>, store: &mut Store) -> Result<()> {
     let Some(client) = client else {
         return Ok(());
     };
-    loop {
         let pending = store.pending_retirements(RETIREMENT_BATCH)?;
         if pending.is_empty() {
             return Ok(());
@@ -1033,7 +1032,7 @@ fn retire_transfers(client: Option<&Client>, store: &mut Store) -> Result<()> {
             }
             store.complete_retirement(&job_id, &id)?;
         }
-    }
+    Ok(())
 }
 
 /// Requests examined per retirement round.

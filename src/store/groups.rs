@@ -69,15 +69,6 @@ pub(super) enum GroupAction {
     Retry,
 }
 impl GroupAction {
-    pub(super) fn name(self) -> &'static str {
-        match self {
-            Self::Baseline => "baseline",
-            Self::Create => "create",
-            Self::Promote => "promote",
-            Self::Cancel => "cancel",
-            Self::Retry => "retry",
-        }
-    }
     pub(super) fn parse(value: &str) -> Result<Self> {
         match value {
             "baseline" => Ok(Self::Baseline),
@@ -300,7 +291,7 @@ impl Db<'_> {
                 ("u", prototype.request.source_url.as_deref()),
             ] {
                 let Some(value) = value else { continue };
-                for job in self.pack_holders(&file.file_path, kind, value, 200)? {
+                for job in self.pack_holders(&file.file_path, kind, value)? {
                     found |= job.shared_file.is_none()
                         && (job.download_id.as_deref() == Some(&file.torrent_id)
                             || job.request.source_url == prototype.request.source_url);

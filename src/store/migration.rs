@@ -17,10 +17,10 @@
 //! `journal.bin` and moving `jobs.idx` aside; changes made after the migration
 //! exist only in the index and are not in that copy.
 use super::{
-    Backend, Change, Event, Index, Job, MAX_JOB_EVENTS, Result, Store,
+    Backend, Change, Event, Index, Result, Store,
     layout::{self, Entry, FORMAT, Root, id_bytes, owned},
     legacy::{self, Inspection, State},
-    ops::{Counts, Db, array, decode_events, encode_events},
+    ops::{Counts, Db, encode_event},
 };
 use crate::{
     crypto::{random_bytes, sha256},
@@ -91,7 +91,7 @@ pub(super) fn open_with(
 ) -> Result<Store> {
     let index_path = directory.join(INDEX);
     reject_symlinks(&index_path)?;
-    let inspection = legacy::inspect(directory, !read_only)?;
+    let inspection = legacy::inspect(directory, false)?;
     match (inspection, exists(&index_path)?) {
         // Nothing stored yet. A leftover staging directory holds only derived
         // data (or an unfinished empty index) and is replaced on first write.
@@ -251,15 +251,17 @@ fn migrate(
     let mut resumed = false;
     let mut staging = None;
     if exists(&staging_path)? {
-        // Derived data: reuse it only when it provably came from these files.
-        if let Ok(mut index) = Index::open(&staging_path, false)
-            && check_format(&mut index, false).is_ok()
-            && source_of(&mut index).ok().flatten().as_deref() == Some(&files.digest[..])
-        {
+        // Inspect without recovery writes. Unrecognized or corrupt data is
+        // preserved for the operator; it is never treated as disposable.
+        let mut index = Index::open(&staging_path, true)?;
+        check_format(&mut index, true)?;
+        let matches = source_of(&mut index)?.as_deref() == Some(&files.digest[..]);
+        drop(index);
+        if matches {
             resumed = true;
-            staging = Some(index);
+            staging = Some(Index::open(&staging_path, false)?);
         } else {
-            discard_staging(directory)?;
+            preserve_staging(directory)?;
         }
     }
     let mut staging = match staging {
@@ -351,8 +353,8 @@ impl Plan {
     fn new(state: &State) -> Result<Self> {
         // Every record must fit its bound before anything is written.
         for job in state.jobs.values() {
-            if layout::encode_job(job).len() > crate::inventory::MAX_VALUE_BYTES {
-                return Err("A job record exceeds the 1 MiB record limit".into());
+            if layout::encode_job(job).len() > legacy::MAX_RECORD {
+                return Err("A job record exceeds the 16 MiB record limit".into());
             }
         }
         let root_ids = legacy::roots(&state.jobs)?;
@@ -407,8 +409,7 @@ impl Plan {
         }
         for list in events.values_mut() {
             list.sort_by_key(|event| event.id);
-            let excess = list.len().saturating_sub(MAX_JOB_EVENTS);
-            list.drain(..excess);
+
         }
         Ok(Self {
             roots,
@@ -445,8 +446,8 @@ impl Plan {
     fn entries(&self, state: &State, id: &str, out: &mut BTreeMap<Key, Entry>) -> Result<()> {
         let job = state.jobs.get(id).ok_or("Missing legacy job")?;
         let root = self.roots.get(id).ok_or("Missing lineage root")?;
-        if layout::encode_job(job).len() > crate::inventory::MAX_VALUE_BYTES {
-            return Err("A job record exceeds the 1 MiB record limit".into());
+        if layout::encode_job(job).len() > legacy::MAX_RECORD {
+            return Err("A job record exceeds the 16 MiB record limit".into());
         }
         out.extend(owned(job, root)?);
         let raw = id_bytes(id)?;
@@ -457,6 +458,7 @@ impl Plan {
         {
             out.insert(key, Entry::Inline(value.to_vec()));
             if self.winners.get(&media) == Some(value) {
+                out.insert(layout::media_tip_key(&media), Entry::Inline(value.to_vec()));
                 out.insert(
                     layout::library_key(job.created_at, &raw),
                     Entry::Inline(Vec::new()),
@@ -471,8 +473,11 @@ impl Plan {
             }
         }
         if let Some(log) = self.events.get(id) {
-            out.insert(layout::events_key(&raw), Entry::File(encode_events(log)));
+            let mut metadata = (log.len() as u64).to_le_bytes().to_vec();
+            metadata.extend_from_slice(&log.last().map_or(0, |event| event.id).to_le_bytes());
+            out.insert(layout::events_key(&raw, 0), Entry::Inline(metadata));
             for event in log {
+                out.insert(layout::events_key(&raw, event.id), Entry::File(encode_event(event)));
                 out.insert(layout::sequence_key(event.id), Entry::Inline(raw.to_vec()));
             }
         }
@@ -543,7 +548,7 @@ fn verify(index: &mut Index, state: &State, plan: &Plan, counts: Counts) -> Resu
 fn create_fresh(directory: &Path) -> Result<Index> {
     let staging_path = directory.join(STAGING);
     if exists(&staging_path)? {
-        discard_staging(directory)?;
+        preserve_staging(directory)?;
     }
     let mut index = Index::create(&staging_path)?;
     initialize(&mut index)?;
@@ -557,18 +562,24 @@ fn create_fresh(directory: &Path) -> Result<Index> {
     Ok(index)
 }
 
-/// Removes an unfinished staging directory. It holds derived data only: the
-/// source files' content or an empty new index. Links and foreign files are
-/// refused.
-fn discard_staging(directory: &Path) -> Result<()> {
+/// Preserves a recognized unfinished index under a unique name before
+/// rebuilding. Even unexpected files inside it are retained, never deleted.
+fn preserve_staging(directory: &Path) -> Result<()> {
     let path = directory.join(STAGING);
-    reject_symlinks(&path)?;
-    let metadata = fs::symlink_metadata(&path)
-        .map_err(|_| "Cannot inspect the job staging directory".to_owned())?;
-    if !metadata.is_dir() {
-        return Err("The job staging path is not a directory".into());
+    let mut index = Index::open(&path, true)?;
+    match index.get(&layout::FORMAT_KEY)? {
+        Some(value) if value == FORMAT => {},
+        None if index.is_empty()? => {},
+        _ => return Err("Unrecognized job staging data; move it aside explicitly before retrying".into()),
     }
-    fs::remove_dir_all(&path).map_err(|_| "Cannot discard the job staging directory".to_owned())?;
+    drop(index);
+    let mut random = [0; 16];
+    random_bytes(&mut random)?;
+    let preserved = directory.join(format!("jobs.idx.abandoned-{}", super::hex(&random)));
+    if exists(&preserved)? {
+        return Err("Cannot choose a unique preserved staging name".into());
+    }
+    fs::rename(&path, &preserved).map_err(|_| "Cannot preserve unfinished job staging data".to_owned())?;
     sync_directory(directory)
 }
 
@@ -648,14 +659,4 @@ fn replace_file(directory: &Path, target: &Path, bytes: &[u8]) -> Result<()> {
         let _ = fs::remove_file(&temporary);
     }
     write
-}
-
-#[cfg(test)]
-pub(super) fn decode_log(bytes: &[u8], job: &str) -> Result<Vec<Event>> {
-    decode_events(bytes, job)
-}
-
-#[cfg(test)]
-pub(super) fn raw<const N: usize>(bytes: &[u8]) -> Result<[u8; N]> {
-    array(bytes)
 }

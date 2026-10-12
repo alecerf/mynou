@@ -5,7 +5,7 @@ use crate::{
     json::Value,
 };
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeSet,
     path::Path,
 };
 mod automatic;

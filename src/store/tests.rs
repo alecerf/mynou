@@ -372,7 +372,14 @@ fn history_is_bounded_per_job_keeps_sequence_ids_and_folds_heartbeats() {
     assert_eq!(store.events(&other.id).unwrap().len(), 1);
     // The bound never evicts another job's history, and the feed holds the
     // retained events only.
-    let feed = store.events("").unwrap();
+    let mut feed = Vec::new();
+    let mut cursor = None;
+    loop {
+        let (page, next) = store.event_feed(cursor, MAX_PAGE_ROWS).unwrap();
+        feed.extend(page);
+        cursor = next;
+        if cursor.is_none() { break; }
+    }
     assert_eq!(feed.len(), MAX_JOB_EVENTS + 1);
     assert!(feed.windows(2).all(|pair| pair[0].id < pair[1].id));
     drop(store);
@@ -462,9 +469,9 @@ fn an_oversized_record_is_refused_and_leaves_the_store_unchanged() {
     let mut store = Store::open(&directory.0).unwrap();
     let mut job = store.submit(request("Oversized")).unwrap();
     let before = store.get(&job.id).unwrap().unwrap();
-    job.files = vec!["x".repeat(900_000), "y".repeat(300_000)];
+    job.files = vec!["x".repeat(legacy::MAX_RECORD)];
     let error = store.update(job.clone()).unwrap_err();
-    assert!(error.contains("1 MiB"), "{error}");
+    assert!(error.contains("16 MiB"), "{error}");
     assert_eq!(store.get(&job.id).unwrap().unwrap(), before);
     job.files = vec!["x".repeat(1_000)];
     store.update(job).unwrap();
@@ -597,7 +604,7 @@ fn claim_work_per_attempt_is_bounded_and_the_cursor_reaches_every_job() {
     let mut attempts = 0;
     while claimed.is_none() && attempts < 8 {
         examined.set(0);
-        claimed = store.claim_filtered(now(), 60, &eligible).unwrap();
+        claimed = store.claim_filtered(now(), 60, eligible).unwrap();
         assert!(examined.get() <= CLAIM_SCAN, "examined {}", examined.get());
         attempts += 1;
     }
@@ -1153,7 +1160,7 @@ fn invalid_legacy_state_is_refused_without_writing_anything() {
     uppercase[0].id = uppercase[0].id.to_uppercase();
     uppercase[0].id.replace_range(..1, "A");
     let mut oversized = good.clone();
-    oversized[0].files = vec!["x".repeat(1_100_000)];
+    oversized[0].files = vec!["x".repeat(legacy::MAX_RECORD)];
     let mut orphan = good.clone();
     orphan[1].upgrade_parent = Some("f".repeat(32));
     orphan[1].release = Some(RecordedRelease {
@@ -1477,7 +1484,7 @@ fn no_error_text_contains_a_store_path_or_a_secret() {
         Store::open(&directory.0).err().unwrap(),
         Store::open_read_only(&directory.0)
             .err()
-            .map_or_else(String::new, |e| e),
+            .unwrap_or_default(),
     ] {
         assert!(!error.contains(&path), "{error}");
     }
