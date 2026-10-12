@@ -254,8 +254,10 @@ fn migrate(
         // Inspect without recovery writes. Unrecognized or corrupt data is
         // preserved for the operator; it is never treated as disposable.
         let reusable = match Index::open(&staging_path, true) {
-            Ok(mut index) => check_format(&mut index, true).is_ok()
-                && source_of(&mut index)?.as_deref() == Some(&files.digest[..]),
+            Ok(mut index) => {
+                check_format(&mut index, true).is_ok()
+                    && source_of(&mut index)?.as_deref() == Some(&files.digest[..])
+            }
             // A mid-commit staging index can require recovery. Keep the exact
             // artifacts and rebuild from the fully validated legacy originals.
             Err(_) => false,
@@ -574,7 +576,9 @@ fn preserve_staging(directory: &Path) -> Result<()> {
     reject_symlinks(&path)?;
     let metadata = fs::symlink_metadata(&path).map_err(|_| "Cannot inspect job staging data")?;
     if !metadata.is_dir() || metadata.permissions().mode() & 0o077 != 0 {
-        return Err("Job staging data must be a private regular directory; move it aside explicitly".into());
+        return Err(
+            "Job staging data must be a private regular directory; move it aside explicitly".into(),
+        );
     }
     let random = random_bytes::<16>()?;
     let preserved = directory.join(format!("jobs.idx.abandoned-{}", super::hex(&random)));
