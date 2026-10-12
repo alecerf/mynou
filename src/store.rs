@@ -1514,7 +1514,6 @@ impl Store {
         self.read(Vec::new(), |db| db.current_shared_group(id))
     }
 
-    #[cfg(test)]
     pub(crate) fn is_library_tip(&mut self, id: &str) -> Result<bool> {
         self.read(false, |db| db.is_tip(id))
     }
