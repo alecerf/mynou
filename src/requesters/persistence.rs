@@ -529,7 +529,11 @@ impl RequesterStore {
             let mut marker = MARKER.to_vec();
             marker.extend_from_slice(&identity);
             marker.extend_from_slice(&sha256(&marker));
-            replace(&self.directory, &self.directory.join("requesters.bin"), &marker)?;
+            replace(
+                &self.directory,
+                &self.directory.join("requesters.bin"),
+                &marker,
+            )?;
             return Index::open(&published, false);
         } else {
             let mut reusable = None;

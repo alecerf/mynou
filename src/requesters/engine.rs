@@ -115,7 +115,10 @@ fn public_account(
             .iter()
             .any(|account| account.id == record.id),
     );
-    value.insert("pending", Value::Number(ledger.count(&record.id, Some("pending"))? as f64));
+    value.insert(
+        "pending",
+        Value::Number(ledger.count(&record.id, Some("pending"))? as f64),
+    );
     value.insert("origin_cleanup_pending", !ledger.poll_ready(&record.id)?);
     Ok(value)
 }

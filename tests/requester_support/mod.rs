@@ -290,9 +290,10 @@ pub fn read_snapshot(directory: &Path) -> Value {
     if !bytes.starts_with(b"MYNOUR03") {
         return json::parse(std::str::from_utf8(&bytes[16..bytes.len() - 32]).unwrap()).unwrap();
     }
-    use mynou::inventory::{Index, Query, MAX_VALUE_BYTES};
+    use mynou::inventory::{Index, MAX_VALUE_BYTES, Query};
     let mut index = Index::open(&directory.join("requesters.idx"), true).unwrap();
-    let mut value = json::parse(std::str::from_utf8(&index.get(&[0; 64]).unwrap().unwrap()).unwrap()).unwrap();
+    let mut value =
+        json::parse(std::str::from_utf8(&index.get(&[0; 64]).unwrap().unwrap()).unwrap()).unwrap();
     let mut demands = Vec::new();
     let mut operators = Vec::new();
     for table in [1_u8, 7] {
@@ -302,10 +303,20 @@ pub fn read_snapshot(directory: &Path) -> Value {
         end[0] += 1;
         let mut after = None;
         loop {
-            let page = index.page(&Query { start, end: Some(end), after, limit: 200, sequence: None }).unwrap();
+            let page = index
+                .page(&Query {
+                    start,
+                    end: Some(end),
+                    after,
+                    limit: 200,
+                    sequence: None,
+                })
+                .unwrap();
             for (key, manifest) in page.entries {
                 if table == 7 {
-                    operators.push(Value::String(std::str::from_utf8(&key[1..33]).unwrap().into()));
+                    operators.push(Value::String(
+                        std::str::from_utf8(&key[1..33]).unwrap().into(),
+                    ));
                     continue;
                 }
                 let length = u64::from_le_bytes(manifest[8..16].try_into().unwrap()) as usize;
@@ -321,7 +332,9 @@ pub fn read_snapshot(directory: &Path) -> Value {
                 demands.push(json::parse(std::str::from_utf8(&payload).unwrap()).unwrap());
             }
             after = page.next;
-            if after.is_none() { break; }
+            if after.is_none() {
+                break;
+            }
         }
     }
     value.insert("demands", Value::Array(demands));
