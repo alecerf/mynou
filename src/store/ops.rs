@@ -302,16 +302,46 @@ impl Db<'_> {
             .is_some())
     }
 
+    pub(super) fn jobs_page(&mut self, prefix: &[u8], id_at: usize, after: Option<Key>, limit: usize) -> Result<(Vec<Job>, Option<Key>)> {
+        let page = self.scan(prefix, after, limit)?;
+        let mut jobs = Vec::new();
+        let mut bytes = 0;
+        let mut last = None;
+        let mut more = page.next.is_some();
+        for (key, _) in &page.entries {
+            let job = self.require(&key_part(key, id_at)?)?;
+            let length = encode_job(&job).len();
+            if !jobs.is_empty() && bytes + length > crate::inventory::MAX_PAGE_BYTES { more = true; break; }
+            bytes += length;
+            jobs.push(job);
+            last = Some(*key);
+        }
+        Ok((jobs, if more { last } else { None }))
+    }
+
+    pub(super) fn current_media_job(&mut self, media: &str) -> Result<Option<Job>> {
+        let digest = digest_bytes(media)?;
+        if let Some(value) = self.0.get(&media_tip_key(&digest))? {
+            let job = self.require(&array(value.get(..16).ok_or("Invalid media tip")?)?)?;
+            if job.request.media_key() != media { return Err("Media tip disagrees with its job".into()); }
+            return Ok(Some(job));
+        }
+        self.find_job(&[&[T_MEDIA][..], &digest].concat(), 41,
+            |job| job.upgrade_parent.is_none() && job.request.media_key() == media)
+    }
+
+    #[cfg(test)]
     /// Jobs of one media identity in creation order, reading every page of this identity.
     pub(super) fn media_jobs(&mut self, media: &str) -> Result<Vec<Job>> {
         let digest = digest_bytes(media)?;
         let mut jobs = Vec::new();
-        for key in self.all_keys(&[&[T_MEDIA][..], &digest].concat())? {
-            let job = self.require(&key_part(&key, 41)?)?;
-            if job.request.media_key() != media {
-                return Err("Job media index disagrees with its record".into());
-            }
-            jobs.push(job);
+        let prefix = [&[T_MEDIA][..], &digest].concat();
+        let mut after = None;
+        loop {
+            let (page, next) = self.jobs_page(&prefix, 41, after, MAX_PAGE_ROWS)?;
+            jobs.extend(page);
+            after = next;
+            if after.is_none() { break; }
         }
         Ok(jobs)
     }
@@ -385,14 +415,16 @@ impl Db<'_> {
     }
 
     /// Jobs that name a transfer through any of their bindings.
+    #[cfg(test)]
     pub(super) fn transfer_jobs(&mut self, transfer: &str) -> Result<Vec<Job>> {
         let prefix = [&[T_TRANSFER][..], &short("transfer", &[transfer])].concat();
         let mut jobs = Vec::new();
-        for key in self.all_keys(&prefix)? {
-            let job = self.require(&key_part(&key, 17)?)?;
-            if transfers(&job).contains(&transfer) {
-                jobs.push(job);
-            }
+        let mut after = None;
+        loop {
+            let (page, next) = self.jobs_page(&prefix, 17, after, MAX_PAGE_ROWS)?;
+            jobs.extend(page);
+            after = next;
+            if after.is_none() { break; }
         }
         Ok(jobs)
     }
@@ -416,34 +448,10 @@ impl Db<'_> {
         }
     }
 
-    /// Jobs mapped to a pack file through a source URL or a transfer.
-    pub(super) fn pack_holders(&mut self, path: &str, kind: &str, value: &str) -> Result<Vec<Job>> {
-        let mut jobs = Vec::new();
-        for key in self.all_keys(&packref_prefix(path, kind, value))? {
-            let job = self.require(&key_part(&key, 33)?)?;
-            if job.pack_file.as_deref() == Some(path) {
-                jobs.push(job);
-            }
-        }
-        Ok(jobs)
+    pub(super) fn pack_matches(&mut self, path: &str, kind: &str, value: &str, predicate: impl Fn(&Job) -> bool) -> Result<bool> {
+        Ok(self.find_job(&packref_prefix(path, kind, value), 33,
+            |job| job.pack_file.as_deref() == Some(path) && predicate(job))?.is_some())
     }
-
-    pub(super) fn children(&mut self, parent: &[u8; 16]) -> Result<Vec<([u8; 16], bool)>> {
-        let mut found = Vec::new();
-        let mut after = None;
-        loop {
-            let page = self.scan(&[&[T_CHILD][..], parent].concat(), after, MAX_PAGE_ROWS)?;
-            for (key, value) in &page.entries {
-                found.push((key_part::<16>(key, 17)?, value.first() == Some(&1)));
-            }
-            after = page.next;
-            if after.is_none() {
-                return Ok(found);
-            }
-        }
-    }
-
-    // -- staging ---------------------------------------------------------
 
     /// Everything one transaction changes: the jobs and their entries, the
     /// library tips, the counters and the history of the first job.

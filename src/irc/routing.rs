@@ -715,26 +715,14 @@ fn candidate(
     jobs: &mut Store,
     requesters: &crate::requesters::State,
 ) -> Result<Job> {
-    let matches = jobs.irc_jobs(&r.announcement.request)?;
-    let eligible: Vec<_> = matches.iter().filter(|j| eligible(j)).collect();
-    if eligible.is_empty()
-        && matches.iter().any(|j| {
-            j.state == "ready" && j.request.source_url.is_none() && j.request.source_path.is_none()
-        })
-    {
+    let matches = jobs.irc_candidates(&r.announcement.request)?;
+    if matches.count == 0 && matches.available {
         return Err("IRC: admitted media is already available".into());
     }
-    if eligible.len() != 1
-        || matches.iter().any(|j| {
-            j.state == "ready"
-                || j.shared_file.is_some()
-                || j.pack_file.is_some()
-                || j.upgrade_parent.is_some()
-        })
-    {
+    if matches.count != 1 || matches.blocked {
         return Err("IRC: waiting for one eligible admitted job without existing ownership".into());
     }
-    let job = (*eligible[0]).clone();
+    let job = matches.job.ok_or("IRC: missing eligible admitted job")?;
     if !crate::requesters::engine::interest(requesters, &job, config) {
         return Err("IRC: acquisition has no admitted demand".into());
     }

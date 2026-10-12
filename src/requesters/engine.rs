@@ -25,13 +25,7 @@ struct Watchlist {
 /// The job that currently represents a request's media: the library's current
 /// version, else the oldest request that is not an upgrade.
 fn current_job(store: &mut Store, request: &Request) -> Result<Option<Job>> {
-    let jobs = store.media_jobs(&request.media_key())?;
-    for job in &jobs {
-        if store.is_library_tip(&job.id)? {
-            return Ok(Some(job.clone()));
-        }
-    }
-    Ok(jobs.into_iter().find(|job| job.upgrade_parent.is_none()))
+    store.current_media_job(&request.media_key())
 }
 fn compatible(config: &crate::config::Config, demand: &Demand, job: &Job) -> Result<bool> {
     if let Some(p) = &job.requester {

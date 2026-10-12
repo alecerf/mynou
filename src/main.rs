@@ -734,6 +734,7 @@ fn execute(args: Args) -> Result<()> {
                 empty.insert("library", Value::Array(Vec::new()));
                 empty.insert("next", Value::Null);
                 empty.insert("total", 0_u32);
+                empty.insert("sequence", "0");
                 output(&empty);
             }
         }

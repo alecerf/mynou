@@ -250,9 +250,10 @@ previous globally bounded history, including maximum-size messages.
 
 `mynou jobs` and `mynou library` accept `--limit 1..200` and `--after CURSOR`.
 `GET /api/jobs` and `GET /api/library` accept `limit` and `after` and return
-`jobs`/`library`, `next` (null at the end), and `total`. WebSocket requests use the
+`jobs`/`library`, `next` (null at the end), and `total`, plus a string `sequence` identifying changes. WebSocket requests use the
 same routes; live topics send the first page, and the embedded interface loads
-older pages on demand. Loaded tails reset when live data changes or reconnects.
+older pages on demand. Loaded tails refresh in place when records change; page membership changes and
+reconnects reset the loaded window.
 Pages have a 4 MiB hydrated-job byte budget, except one larger record may appear
 alone. Existing network and JSON limits still apply; large individual records
 can require direct store inspection instead of an API response.

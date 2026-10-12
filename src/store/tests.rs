@@ -1727,3 +1727,26 @@ fn extra_secondary_keys_in_a_clean_staging_index_prevent_promotion() {
     assert!(!directory.0.join("jobs.idx").exists());
     assert!(directory.0.join("snapshot.bin").exists());
 }
+
+#[test]
+fn transfer_reference_pages_reach_every_owner() {
+    let directory = Directory::new();
+    let transfer = "b".repeat(40);
+    let jobs: Vec<Job> = (0..205).map(|n| {
+        let mut job = raw_job(n, 100 + n);
+        job.download_id = Some(transfer.clone());
+        job
+    }).collect();
+    let mut store = Store::open(&directory.0).unwrap();
+    bulk(&mut store, jobs.clone());
+    let mut seen = BTreeSet::new();
+    let mut after = None;
+    loop {
+        let (page, next) = store.transfer_jobs_page(&transfer, after.as_deref(), 200).unwrap();
+        assert!(!page.is_empty() && page.len() <= 200);
+        for job in page { assert!(seen.insert(job.id)); }
+        after = next;
+        if after.is_none() { break; }
+    }
+    assert_eq!(seen, jobs.iter().map(|job| job.id.clone()).collect());
+}

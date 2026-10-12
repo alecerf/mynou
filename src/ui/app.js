@@ -322,6 +322,7 @@ views.jobs = {
     wireJobRows($('#jobs'));
     $('#jobs-more').addEventListener('click', (e) =>
       act(e.currentTarget, async () => {
+        if (jobsTail.refreshing) return;
         const after = jobsTail.next ?? data.get('jobs')?.data?.next;
         if (!after) return;
         const page = await link.call('GET', `/api/jobs?limit=50&after=${encodeURIComponent(after)}`);
@@ -404,10 +405,46 @@ function cards(topic, container, empty, render, more = []) {
 }
 
 const libraryTail = { items: [], next: null };
+// Refresh loaded pages in place when jobs outside the first page change.
+// A progress update keeps the user's loaded window; membership changes reset it.
+function resetTail(tail) {
+  tail.items = []; tail.next = null;
+  tail.generation = (tail.generation ?? 0) + 1;
+}
+async function refreshTail(topic, tail, first) {
+  if (tail.refreshing || !tail.items.length) return;
+  tail.refreshing = true;
+  const generation = tail.generation ?? 0;
+  const wanted = tail.items.length;
+  const rows = [];
+  let after = first.next;
+  try {
+    while (after && rows.length < wanted) {
+      const page = await link.call('GET', `/api/${topic}?limit=50&after=${encodeURIComponent(after)}`);
+      if (page.sequence !== first.sequence) return;
+      rows.push(...itemsOf(page[topic]));
+      after = page.next;
+    }
+    if (generation === (tail.generation ?? 0) && data.get(topic)?.data?.sequence === first.sequence) {
+      tail.items = rows; tail.next = after;
+      if (current === topic) views[topic].render();
+    }
+  } catch (error) {
+    toast(error.message, 'bad');
+  } finally {
+    tail.refreshing = false;
+    const latest = data.get(topic)?.data;
+    if (latest && latest.sequence !== first.sequence && tail.items.length) refreshTail(topic, tail, latest);
+  }
+}
+function pageMembership(page, topic) {
+  return JSON.stringify([itemsOf(page?.[topic]).map((row) => row.id), page?.next]);
+}
 views.library = {
   init() {
     $('#library-more').addEventListener('click', (e) =>
       act(e.currentTarget, async () => {
+        if (libraryTail.refreshing) return;
         const after = libraryTail.next ?? data.get('library')?.data?.next;
         if (!after) return;
         const page = await link.call('GET', `/api/library?limit=50&after=${encodeURIComponent(after)}`);
@@ -620,8 +657,8 @@ function setup() {
     pill.dataset.state = detail;
     pill.textContent = { open: 'Live', connecting: 'Connecting', closed: 'Offline' }[detail];
     if (detail === 'open') {
-      jobsTail.items = []; jobsTail.next = null;
-      libraryTail.items = []; libraryTail.next = null;
+      resetTail(jobsTail);
+      resetTail(libraryTail);
       $('#login').close();
     }
   });
@@ -632,11 +669,10 @@ function setup() {
   let queued = false;
   link.addEventListener('topic', ({ detail }) => {
     const previous = data.get(detail.topic);
-    if (previous && JSON.stringify(previous.data) !== JSON.stringify(detail.data)) {
-      const tail = detail.topic === 'jobs' ? jobsTail : detail.topic === 'library' ? libraryTail : null;
-      if (tail) { tail.items = []; tail.next = null; }
-    }
+    const tail = detail.topic === 'jobs' ? jobsTail : detail.topic === 'library' ? libraryTail : null;
+    if (tail && previous && pageMembership(previous.data, detail.topic) !== pageMembership(detail.data, detail.topic)) resetTail(tail);
     data.set(detail.topic, { status: detail.status, data: detail.data, at: Date.now() });
+    if (tail && previous?.data?.sequence !== detail.data?.sequence) refreshTail(detail.topic, tail, detail.data);
     if (queued) return;
     queued = true;
     requestAnimationFrame(() => { queued = false; views[current]?.render?.(); });
