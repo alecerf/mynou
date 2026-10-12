@@ -773,14 +773,36 @@ pub(crate) enum Backend {
 /// Read-only job access shared by indexed state and bounded legacy preflight.
 pub(crate) trait RecoveryJobs {
     fn get(&mut self, id: &str) -> Result<Option<Job>>;
-    fn requester_jobs_page(&mut self, after: Option<Key>, limit: usize) -> Result<(Vec<Job>, Option<Key>)>;
-    fn irc_origin_page(&mut self, after: Option<Key>, limit: usize) -> Result<(Vec<Job>, Option<Key>)>;
+    fn requester_jobs_page(
+        &mut self,
+        after: Option<Key>,
+        limit: usize,
+    ) -> Result<(Vec<Job>, Option<Key>)>;
+    fn irc_origin_page(
+        &mut self,
+        after: Option<Key>,
+        limit: usize,
+    ) -> Result<(Vec<Job>, Option<Key>)>;
 }
 
 impl RecoveryJobs for Store {
-    fn get(&mut self, id: &str) -> Result<Option<Job>> { Store::get(self, id) }
-    fn requester_jobs_page(&mut self, after: Option<Key>, limit: usize) -> Result<(Vec<Job>, Option<Key>)> { Store::requester_jobs_page(self, after, limit) }
-    fn irc_origin_page(&mut self, after: Option<Key>, limit: usize) -> Result<(Vec<Job>, Option<Key>)> { Store::irc_origin_page(self, after, limit) }
+    fn get(&mut self, id: &str) -> Result<Option<Job>> {
+        Store::get(self, id)
+    }
+    fn requester_jobs_page(
+        &mut self,
+        after: Option<Key>,
+        limit: usize,
+    ) -> Result<(Vec<Job>, Option<Key>)> {
+        Store::requester_jobs_page(self, after, limit)
+    }
+    fn irc_origin_page(
+        &mut self,
+        after: Option<Key>,
+        limit: usize,
+    ) -> Result<(Vec<Job>, Option<Key>)> {
+        Store::irc_origin_page(self, after, limit)
+    }
 }
 
 /// The job inventory. One owner holds the directory lock; the index owns its
@@ -881,7 +903,10 @@ impl Store {
         Self::open_checked(directory, &mut |_| Ok(()))
     }
 
-    fn open_checked(directory: &Path, preflight: &mut dyn FnMut(&legacy::State) -> Result<()>) -> Result<Self> {
+    fn open_checked(
+        directory: &Path,
+        preflight: &mut dyn FnMut(&legacy::State) -> Result<()>,
+    ) -> Result<Self> {
         use std::os::unix::fs::PermissionsExt;
         clean_path(directory)?;
         create_private_directory(directory)?;
@@ -898,7 +923,7 @@ impl Store {
                 preflight(&state)?;
             }
             legacy::Inspection::Missing => preflight(&legacy::parse(None, &[])?)?,
-            legacy::Inspection::Marker { .. } => {},
+            legacy::Inspection::Marker { .. } => {}
         }
         migration::open(directory, lock, false)
     }
@@ -1279,7 +1304,11 @@ impl Store {
     pub fn has_co_owner(&mut self, job: &Job) -> Result<bool> {
         self.read(false, |db| {
             for transfer in layout::transfers(job) {
-                if db.transfer_matches(transfer, |other| other.id != job.id && other.state != "cancelled")? { return Ok(true); }
+                if db.transfer_matches(transfer, |other| {
+                    other.id != job.id && other.state != "cancelled"
+                })? {
+                    return Ok(true);
+                }
             }
             Ok(false)
         })

@@ -1781,33 +1781,32 @@ fn irc_origin_enumeration_returns_each_job_once_across_alias_pages() {
 }
 
 fn irc_fixture_job(n: u64) -> Job {
-            let mut job = raw_job(n, 100 + n);
-            let torrent = format!("{n:040x}");
-            let release = RecordedRelease {
-                title: format!("Synthetic movie {n} 2026 1080p"),
-                profile: "hd".into(),
-            };
-            let origin = crate::irc::Origin {
-                announcement_id: format!("{n:064x}"),
-                job_id: job.id.clone(),
-                source_id: "fixture".into(),
-                rule_id: "admitted".into(),
-                binding: "a".repeat(64),
-                fingerprint: "b".repeat(64),
-                media_key: job.request.media_key(),
-                torrent_id: torrent.clone(),
-                torrent_aliases: vec![torrent.clone(), format!("{}{:024x}", "e".repeat(40), n)],
-                magnet: format!("magnet:?xt=urn:btih:{torrent}"),
-                file: format!("Synthetic.movie.{n}.2026.1080p.mp4"),
-                file_length: 100,
-                release: release.clone(),
-            };
-            job.acquisition_url = Some(origin.magnet.clone());
-            job.release = Some(release);
-            origin.validate_job(&job).unwrap();
-            job.irc_origin = Some(origin);
-            job
-
+    let mut job = raw_job(n, 100 + n);
+    let torrent = format!("{n:040x}");
+    let release = RecordedRelease {
+        title: format!("Synthetic movie {n} 2026 1080p"),
+        profile: "hd".into(),
+    };
+    let origin = crate::irc::Origin {
+        announcement_id: format!("{n:064x}"),
+        job_id: job.id.clone(),
+        source_id: "fixture".into(),
+        rule_id: "admitted".into(),
+        binding: "a".repeat(64),
+        fingerprint: "b".repeat(64),
+        media_key: job.request.media_key(),
+        torrent_id: torrent.clone(),
+        torrent_aliases: vec![torrent.clone(), format!("{}{:024x}", "e".repeat(40), n)],
+        magnet: format!("magnet:?xt=urn:btih:{torrent}"),
+        file: format!("Synthetic.movie.{n}.2026.1080p.mp4"),
+        file_length: 100,
+        release: release.clone(),
+    };
+    job.acquisition_url = Some(origin.magnet.clone());
+    job.release = Some(release);
+    origin.validate_job(&job).unwrap();
+    job.irc_origin = Some(origin);
+    job
 }
 
 #[test]
@@ -1822,7 +1821,10 @@ fn management_preflight_rejects_missing_irc_reservations_before_migration_writes
     let config = crate::config::from_json(&value, &directory.0).unwrap();
     let before = contents(&directory.0);
     let error = Store::prepare(&directory.0, &config).err().unwrap();
-    assert!(error.contains("durable announcement reservation"), "{error}");
+    assert!(
+        error.contains("durable announcement reservation"),
+        "{error}"
+    );
     assert_eq!(contents(&directory.0), before);
     assert!(!directory.0.join("jobs.idx").exists());
     assert!(!directory.0.join("jobs.idx.migrating").exists());
@@ -1830,15 +1832,31 @@ fn management_preflight_rejects_missing_irc_reservations_before_migration_writes
 
 fn remove_historical_library_fields(mut bytes: Vec<u8>, snapshot: bool) -> Vec<u8> {
     let at = if snapshot { 16 } else { 84 };
-    let mut value = crate::json::parse(std::str::from_utf8(&bytes[at..bytes.len()-32]).unwrap()).unwrap();
+    let mut value =
+        crate::json::parse(std::str::from_utf8(&bytes[at..bytes.len() - 32]).unwrap()).unwrap();
     let remove = |job: &mut Value| {
-        let Value::Object(fields) = job else { panic!("Expected fixture job"); };
-        for field in ["release", "upgrade_parent", "monitored", "monitor_checked_at"] { fields.remove(field); }
+        let Value::Object(fields) = job else {
+            panic!("Expected fixture job");
+        };
+        for field in [
+            "release",
+            "upgrade_parent",
+            "monitored",
+            "monitor_checked_at",
+        ] {
+            fields.remove(field);
+        }
     };
     if snapshot {
-        let Value::Array(jobs) = value.get_mut("jobs").unwrap() else { panic!("Expected fixture jobs"); };
-        for job in jobs { remove(job); }
-    } else { remove(value.get_mut("job").unwrap()); }
+        let Value::Array(jobs) = value.get_mut("jobs").unwrap() else {
+            panic!("Expected fixture jobs");
+        };
+        for job in jobs {
+            remove(job);
+        }
+    } else {
+        remove(value.get_mut("job").unwrap());
+    }
     let payload = crate::json::stringify(&value).into_bytes();
     if snapshot {
         bytes.truncate(8);
@@ -1861,12 +1879,51 @@ fn historical_missing_fields_and_ready_cancellation_replay_without_weakening_new
         let mut cancelled = original.clone();
         cancelled.state = "cancelled".into();
         cancelled.updated_at = 101;
-        let first = Event { id: 1, job_id: original.id.clone(), state: "ready".into(), message: "old import".into(), at: 100 };
-        let second = Event { id: 2, job_id: original.id.clone(), state: "cancelled".into(), message: "old cancel".into(), at: 101 };
-        let snapshot = fixture::snapshot(std::slice::from_ref(&original), &[first], 1, [0;32], legacy::SNAPSHOT_MAGIC);
-        let (frame, _) = fixture::frame(std::slice::from_ref(&cancelled), &second, 2, &[0;32], legacy::JOURNAL_MAGIC, None);
-        private(&directory.0.join("snapshot.bin"), &if historical { remove_historical_library_fields(snapshot, true) } else { snapshot });
-        private(&directory.0.join("journal.bin"), &if historical { remove_historical_library_fields(frame, false) } else { frame });
+        let first = Event {
+            id: 1,
+            job_id: original.id.clone(),
+            state: "ready".into(),
+            message: "old import".into(),
+            at: 100,
+        };
+        let second = Event {
+            id: 2,
+            job_id: original.id.clone(),
+            state: "cancelled".into(),
+            message: "old cancel".into(),
+            at: 101,
+        };
+        let snapshot = fixture::snapshot(
+            std::slice::from_ref(&original),
+            &[first],
+            1,
+            [0; 32],
+            legacy::SNAPSHOT_MAGIC,
+        );
+        let (frame, _) = fixture::frame(
+            std::slice::from_ref(&cancelled),
+            &second,
+            2,
+            &[0; 32],
+            legacy::JOURNAL_MAGIC,
+            None,
+        );
+        private(
+            &directory.0.join("snapshot.bin"),
+            &if historical {
+                remove_historical_library_fields(snapshot, true)
+            } else {
+                snapshot
+            },
+        );
+        private(
+            &directory.0.join("journal.bin"),
+            &if historical {
+                remove_historical_library_fields(frame, false)
+            } else {
+                frame
+            },
+        );
         private(&directory.0.join(".lock"), b"");
         let before = contents(&directory.0);
         if historical {
@@ -1875,7 +1932,10 @@ fn historical_missing_fields_and_ready_cancellation_replay_without_weakening_new
             assert_eq!(store.events(&original.id).unwrap().len(), 2);
         } else {
             let error = Store::open(&directory.0).err().unwrap();
-            assert!(error.contains("ready import cannot change state"), "{error}");
+            assert!(
+                error.contains("ready import cannot change state"),
+                "{error}"
+            );
             assert_eq!(contents(&directory.0), before);
         }
     }
