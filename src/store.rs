@@ -1169,10 +1169,20 @@ impl Store {
         self.read(Vec::new(), |db| db.media_jobs(media_key))
     }
 
-    pub(crate) fn media_page(&mut self, media: &str, after: Option<Key>, limit: usize) -> Result<(Vec<Job>, Option<Key>)> {
+    pub(crate) fn media_page(
+        &mut self,
+        media: &str,
+        after: Option<Key>,
+        limit: usize,
+    ) -> Result<(Vec<Job>, Option<Key>)> {
         self.read((Vec::new(), None), |db| {
             let digest = layout::digest_bytes(media)?;
-            db.jobs_page(&[&[layout::T_MEDIA][..], &digest].concat(), 41, after, limit)
+            db.jobs_page(
+                &[&[layout::T_MEDIA][..], &digest].concat(),
+                41,
+                after,
+                limit,
+            )
         })
     }
 
@@ -1180,16 +1190,33 @@ impl Store {
         self.read(None, |db| db.current_media_job(media))
     }
 
-    pub(crate) fn transfer_jobs_page(&mut self, transfer: &str, after: Option<&str>, limit: usize) -> Result<(Vec<Job>, Option<String>)> {
+    pub(crate) fn transfer_jobs_page(
+        &mut self,
+        transfer: &str,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<(Vec<Job>, Option<String>)> {
         self.read((Vec::new(), None), |db| {
-            let prefix = [&[layout::T_TRANSFER][..], &layout::short("transfer", &[transfer])].concat();
-            let after = after.map(|text| {
-                let (created, id) = parse_cursor(text)?;
-                if created != 0 { return Err("Invalid transfer request cursor".to_owned()); }
-                Ok(layout::key(&[&prefix, &id]))
-            }).transpose()?;
+            let prefix = [
+                &[layout::T_TRANSFER][..],
+                &layout::short("transfer", &[transfer]),
+            ]
+            .concat();
+            let after = after
+                .map(|text| {
+                    let (created, id) = parse_cursor(text)?;
+                    if created != 0 {
+                        return Err("Invalid transfer request cursor".to_owned());
+                    }
+                    Ok(layout::key(&[&prefix, &id]))
+                })
+                .transpose()?;
             let (jobs, next) = db.jobs_page(&prefix, 17, after, limit)?;
-            Ok((jobs, next.map(|key| ops::key_part::<16>(&key, 17).map(|id| cursor_text(0, &id))).transpose()?))
+            Ok((
+                jobs,
+                next.map(|key| ops::key_part::<16>(&key, 17).map(|id| cursor_text(0, &id)))
+                    .transpose()?,
+            ))
         })
     }
 
@@ -1398,9 +1425,18 @@ impl Store {
         file_path: &str,
     ) -> Result<Option<crate::pack::SharedFile>> {
         self.read(None, |db| {
-            let known = db.find_job(&layout::packref_prefix(file_path, "t", torrent_id), 33,
-                |job| job.shared_file.as_ref().is_some_and(|file| file.torrent_id == torrent_id && file.file_path == file_path))?;
-            if let Some(job) = known { return Ok(job.shared_file); }
+            let known = db.find_job(
+                &layout::packref_prefix(file_path, "t", torrent_id),
+                33,
+                |job| {
+                    job.shared_file.as_ref().is_some_and(|file| {
+                        file.torrent_id == torrent_id && file.file_path == file_path
+                    })
+                },
+            )?;
+            if let Some(job) = known {
+                return Ok(job.shared_file);
+            }
             Ok(None)
         })
     }
@@ -1706,11 +1742,15 @@ impl Store {
                     ("t", Some(file.torrent_id.as_str())),
                 ] {
                     let Some(value) = value else { continue };
-                    if db.pack_matches(&file.file_path, kind, value, |job| job.shared_file.is_none()
-                        && (job.request.source_url == request.source_url
-                            || job.download_id.as_deref() == Some(file.torrent_id.as_str())))?
-                    { return Err("Physical video is already mapped without shared ownership".into()); }
-
+                    if db.pack_matches(&file.file_path, kind, value, |job| {
+                        job.shared_file.is_none()
+                            && (job.request.source_url == request.source_url
+                                || job.download_id.as_deref() == Some(file.torrent_id.as_str()))
+                    })? {
+                        return Err(
+                            "Physical video is already mapped without shared ownership".into()
+                        );
+                    }
                 }
             }
             if db

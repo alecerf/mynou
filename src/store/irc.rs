@@ -16,24 +16,45 @@ pub(crate) struct Candidates {
 impl Db<'_> {
     pub(super) fn irc_candidates(&mut self, request: &Request) -> Result<Candidates> {
         let mut found = Candidates::default();
-        if request.tmdb_id.is_none() { return Ok(found); }
-        let prefix = layout::identity_prefix(&request.kind, request.tmdb_id, request.season, request.episode);
+        if request.tmdb_id.is_none() {
+            return Ok(found);
+        }
+        let prefix = layout::identity_prefix(
+            &request.kind,
+            request.tmdb_id,
+            request.season,
+            request.episode,
+        );
         let mut after = None;
         loop {
             let page = self.scan(&prefix, after, crate::inventory::MAX_PAGE_ROWS)?;
             for (key, _) in &page.entries {
                 let job = self.require(&key_part(key, 17)?)?;
-                if job.request.kind != request.kind || job.request.tmdb_id != request.tmdb_id
-                    || job.request.season != request.season || job.request.episode != request.episode { continue; }
+                if job.request.kind != request.kind
+                    || job.request.tmdb_id != request.tmdb_id
+                    || job.request.season != request.season
+                    || job.request.episode != request.episode
+                {
+                    continue;
+                }
                 if crate::irc::routing::eligible(&job) {
                     found.count = found.count.saturating_add(1);
-                    if found.job.is_none() { found.job = Some(job.clone()); }
+                    if found.job.is_none() {
+                        found.job = Some(job.clone());
+                    }
                 }
-                found.available |= job.state == "ready" && job.request.source_url.is_none() && job.request.source_path.is_none();
-                found.blocked |= job.state == "ready" || job.shared_file.is_some() || job.pack_file.is_some() || job.upgrade_parent.is_some();
+                found.available |= job.state == "ready"
+                    && job.request.source_url.is_none()
+                    && job.request.source_path.is_none();
+                found.blocked |= job.state == "ready"
+                    || job.shared_file.is_some()
+                    || job.pack_file.is_some()
+                    || job.upgrade_parent.is_some();
             }
             after = page.next;
-            if after.is_none() { return Ok(found); }
+            if after.is_none() {
+                return Ok(found);
+            }
         }
     }
 

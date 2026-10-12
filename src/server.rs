@@ -553,7 +553,10 @@ pub(crate) fn route(
                 let id = id.to_ascii_lowercase();
                 if parts.len() == 1 && method == "GET" {
                     let query = crate::store::PageQuery::parse(query)?;
-                    return Ok((200, engine.transfer_page(&id, query.after.as_deref(), query.limit)?));
+                    return Ok((
+                        200,
+                        engine.transfer_page(&id, query.after.as_deref(), query.limit)?,
+                    ));
                 }
                 if parts.len() != 2 || method != "POST" || !query.is_empty() {
                     return Ok((404, error("Unknown transfer route")));

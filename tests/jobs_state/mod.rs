@@ -13,7 +13,9 @@ use std::path::{Path, PathBuf};
 pub fn fingerprint(store_dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     fn walk(root: &Path, directory: &Path, found: &mut Vec<(PathBuf, Vec<u8>)>) {
         let directory = fixture_root(directory);
-        if !directory.starts_with(root) { panic!("Fixture directory escaped its index"); }
+        if !directory.starts_with(root) {
+            panic!("Fixture directory escaped its index");
+        }
         let entries = fs::read_dir(&directory).unwrap();
         for entry in entries {
             let path = entry.unwrap().path();
@@ -184,8 +186,12 @@ fn remove_owned(root: &Path, name: &str, directory: bool) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
         Err(error) => panic!("Cannot normalize fixture: {error}"),
     };
-    if !path.starts_with(root) { panic!("Fixture removal escaped its root"); }
-    if path == root || path != requested { panic!("Fixture removal cannot follow links or remove its root"); }
+    if !path.starts_with(root) {
+        panic!("Fixture removal escaped its root");
+    }
+    if path == root || path != requested {
+        panic!("Fixture removal cannot follow links or remove its root");
+    }
     let metadata = fs::symlink_metadata(&path).unwrap();
     assert!(!metadata.file_type().is_symlink());
     if directory {
@@ -198,7 +204,11 @@ fn remove_owned(root: &Path, name: &str, directory: bool) {
 fn fixture_root(path: &Path) -> PathBuf {
     let temporary = std::env::temp_dir().canonicalize().unwrap();
     let path = path.canonicalize().unwrap();
-    if !path.starts_with(&temporary) { panic!("Fixture path escaped temporary storage"); }
-    if path == temporary { panic!("Fixture path must be below temporary storage"); }
+    if !path.starts_with(&temporary) {
+        panic!("Fixture path escaped temporary storage");
+    }
+    if path == temporary {
+        panic!("Fixture path must be below temporary storage");
+    }
     path
 }

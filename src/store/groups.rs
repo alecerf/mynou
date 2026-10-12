@@ -291,10 +291,11 @@ impl Db<'_> {
                 ("u", prototype.request.source_url.as_deref()),
             ] {
                 let Some(value) = value else { continue };
-                found |= self.pack_matches(&file.file_path, kind, value, |job| job.shared_file.is_none()
-                    && (job.download_id.as_deref() == Some(&file.torrent_id)
-                        || job.request.source_url == prototype.request.source_url))?;
-
+                found |= self.pack_matches(&file.file_path, kind, value, |job| {
+                    job.shared_file.is_none()
+                        && (job.download_id.as_deref() == Some(&file.torrent_id)
+                            || job.request.source_url == prototype.request.source_url)
+                })?;
             }
             found
         };
