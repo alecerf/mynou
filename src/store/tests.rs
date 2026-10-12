@@ -1750,3 +1750,39 @@ fn transfer_reference_pages_reach_every_owner() {
     }
     assert_eq!(seen, jobs.iter().map(|job| job.id.clone()).collect());
 }
+
+#[test]
+fn irc_origin_enumeration_returns_each_job_once_across_alias_pages() {
+    let directory = Directory::new();
+    let jobs: Vec<Job> = (1..=201_u64).map(|n| {
+        let mut job = raw_job(n, 100 + n);
+        let torrent = format!("{n:040x}");
+        let release = RecordedRelease { title: format!("Synthetic movie {n} 2026 1080p"), profile: "hd".into() };
+        let origin = crate::irc::Origin {
+            announcement_id: format!("{n:064x}"), job_id: job.id.clone(),
+            source_id: "fixture".into(), rule_id: "admitted".into(),
+            binding: "a".repeat(64), fingerprint: "b".repeat(64),
+            media_key: job.request.media_key(), torrent_id: torrent.clone(),
+            torrent_aliases: vec![torrent.clone(), format!("{}{:024x}", "e".repeat(40), n)],
+            magnet: format!("magnet:?xt=urn:btih:{torrent}"),
+            file: format!("Synthetic.movie.{n}.2026.1080p.mp4"), file_length: 100,
+            release: release.clone(),
+        };
+        job.acquisition_url = Some(origin.magnet.clone());
+        job.release = Some(release);
+        origin.validate_job(&job).unwrap();
+        job.irc_origin = Some(origin);
+        job
+    }).collect();
+    let mut store = Store::open(&directory.0).unwrap();
+    bulk(&mut store, jobs.clone());
+    let mut seen = BTreeSet::new();
+    let mut cursor = None;
+    loop {
+        let (page, next) = store.irc_origin_page(cursor, 200).unwrap();
+        for job in page { assert!(seen.insert(job.id)); }
+        cursor = next;
+        if cursor.is_none() { break; }
+    }
+    assert_eq!(seen, jobs.iter().map(|job| job.id.clone()).collect());
+}

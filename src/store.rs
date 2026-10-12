@@ -1119,6 +1119,9 @@ impl Store {
         after: Option<u64>,
         limit: usize,
     ) -> Result<(Vec<Event>, Option<u64>)> {
+        if limit == 0 || limit > MAX_PAGE_ROWS {
+            return Err("Event page limit must be 1 to 200".into());
+        }
         self.read((Vec::new(), None), |db| {
             let mut events = Vec::new();
             let mut cursor = after.map(layout::sequence_key);
