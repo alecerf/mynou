@@ -161,24 +161,39 @@ impl Db<'_> {
     }
 
     pub(super) fn job(&mut self, id: &[u8; 16]) -> Result<Option<Job>> {
-        let Some(mut bytes) = self.0.get(&job_key(id))? else { return Ok(None); };
+        let Some(mut bytes) = self.0.get(&job_key(id))? else {
+            return Ok(None);
+        };
         let value = json::parse(std::str::from_utf8(&bytes).map_err(|_| "Invalid job record")?)?;
         if let Some(chunks) = value.get("job_chunks") {
             let count = chunks.as_u64().ok_or("Invalid job chunk count")?;
-            let length = value.get("job_bytes").and_then(crate::json::Value::as_u64).ok_or("Missing job chunk length")?;
-            if !(2..=16).contains(&count) || length > super::legacy::MAX_RECORD as u64
+            let length = value
+                .get("job_bytes")
+                .and_then(crate::json::Value::as_u64)
+                .ok_or("Missing job chunk length")?;
+            if !(2..=16).contains(&count)
+                || length > super::legacy::MAX_RECORD as u64
                 || length <= crate::inventory::MAX_VALUE_BYTES as u64
                 || count != length.div_ceil(crate::inventory::MAX_VALUE_BYTES as u64)
-            { return Err("Invalid job chunk bounds".into()); }
+            {
+                return Err("Invalid job chunk bounds".into());
+            }
             bytes = Vec::with_capacity(length as usize);
             for n in 0..count {
-                let chunk = self.0.get(&key(&[&[T_JOB_CHUNK], id, &(n as u32).to_be_bytes()]))?
+                let chunk = self
+                    .0
+                    .get(&key(&[&[T_JOB_CHUNK], id, &(n as u32).to_be_bytes()]))?
                     .ok_or("Missing job record chunk")?;
-                let expected = (length as usize - bytes.len()).min(crate::inventory::MAX_VALUE_BYTES);
-                if chunk.len() != expected { return Err("Invalid job record chunk length".into()); }
+                let expected =
+                    (length as usize - bytes.len()).min(crate::inventory::MAX_VALUE_BYTES);
+                if chunk.len() != expected {
+                    return Err("Invalid job record chunk length".into());
+                }
                 bytes.extend_from_slice(&chunk);
             }
-            if value.get("job_digest").and_then(crate::json::Value::as_str) != Some(super::hex(&crate::crypto::sha256(&bytes)).as_str()) {
+            if value.get("job_digest").and_then(crate::json::Value::as_str)
+                != Some(super::hex(&crate::crypto::sha256(&bytes)).as_str())
+            {
                 return Err("Invalid job record chunk digest".into());
             }
         }
@@ -343,12 +358,7 @@ impl Db<'_> {
     }
 
     /// Jobs mapped to a pack file through a source URL or a transfer.
-    pub(super) fn pack_holders(
-        &mut self,
-        path: &str,
-        kind: &str,
-        value: &str,
-    ) -> Result<Vec<Job>> {
+    pub(super) fn pack_holders(&mut self, path: &str, kind: &str, value: &str) -> Result<Vec<Job>> {
         let mut jobs = Vec::new();
         for key in self.all_keys(&packref_prefix(path, kind, value))? {
             let job = self.require(&key_part(&key, 33)?)?;
@@ -485,34 +495,54 @@ impl Db<'_> {
             return Err("Invalid job history counters".into());
         }
         // Consecutive heartbeats replace only the previous heartbeat.
-        if event.message == RENEWED && last != 0
-            && self.event(&id, last)?.is_some_and(|old| old.message == RENEWED)
+        if event.message == RENEWED
+            && last != 0
+            && self
+                .event(&id, last)?
+                .is_some_and(|old| old.message == RENEWED)
         {
             staged.insert(events_key(&id, last), None);
             staged.insert(sequence_key(last), None);
             count -= 1;
         }
         if count == MAX_JOB_EVENTS as u64 {
-            let first = self.0.page(&Query {
-                start: events_key(&id, 1),
-                end: prefix_range(&[&[T_EVENTS][..], &id].concat()).1,
-                after: None, limit: 1, sequence: None,
-            })?.entries.into_iter().next().ok_or("Missing job history row")?.0;
+            let first = self
+                .0
+                .page(&Query {
+                    start: events_key(&id, 1),
+                    end: prefix_range(&[&[T_EVENTS][..], &id].concat()).1,
+                    after: None,
+                    limit: 1,
+                    sequence: None,
+                })?
+                .entries
+                .into_iter()
+                .next()
+                .ok_or("Missing job history row")?
+                .0;
             staged.insert(first, None);
-            staged.insert(sequence_key(u64::from_be_bytes(key_part(&first, 17)?)), None);
+            staged.insert(
+                sequence_key(u64::from_be_bytes(key_part(&first, 17)?)),
+                None,
+            );
             count -= 1;
         }
         let mut metadata = (count + 1).to_le_bytes().to_vec();
         metadata.extend_from_slice(&event.id.to_le_bytes());
         staged.insert(events_key(&id, 0), Some(Entry::Inline(metadata)));
-        staged.insert(events_key(&id, event.id), Some(Entry::File(encode_event(event))));
+        staged.insert(
+            events_key(&id, event.id),
+            Some(Entry::File(encode_event(event))),
+        );
         staged.insert(sequence_key(event.id), Some(Entry::Inline(id.to_vec())));
         Ok(())
     }
 
     pub(super) fn event(&mut self, id: &[u8; 16], sequence: u64) -> Result<Option<Event>> {
-        self.0.get(&events_key(id, sequence))?
-            .map(|bytes| decode_event(&bytes, &id_text(id), sequence)).transpose()
+        self.0
+            .get(&events_key(id, sequence))?
+            .map(|bytes| decode_event(&bytes, &id_text(id), sequence))
+            .transpose()
     }
 
     pub(super) fn events(&mut self, id: &[u8; 16]) -> Result<Vec<Event>> {
@@ -530,7 +560,9 @@ impl Db<'_> {
                 }
             }
             after = page.next;
-            if after.is_none() { return Ok(events); }
+            if after.is_none() {
+                return Ok(events);
+            }
         }
     }
 
@@ -555,8 +587,11 @@ impl Db<'_> {
         for (media, members) in by_media {
             // The current winner is a point lookup. Updating an unrelated
             // non-imported job never scans all ready lineages of this media.
-            let before = self.0.get(&media_tip_key(&media))?
-                .map(|bytes| array::<24>(&bytes)).transpose()?;
+            let before = self
+                .0
+                .get(&media_tip_key(&media))?
+                .map(|bytes| array::<24>(&bytes))
+                .transpose()?;
             let mut candidates: BTreeMap<Key, [u8; 24]> = BTreeMap::new();
             if let Some(value) = before {
                 let id = array(&value[..16])?;
@@ -585,7 +620,10 @@ impl Db<'_> {
             }
             let after_tip = candidates.iter().next_back().map(|(_, value)| *value);
             if before != after_tip {
-                staged.insert(media_tip_key(&media), after_tip.map(|value| Entry::Inline(value.to_vec())));
+                staged.insert(
+                    media_tip_key(&media),
+                    after_tip.map(|value| Entry::Inline(value.to_vec())),
+                );
             }
             let holder = |value: &[u8; 24]| -> Result<([u8; 16], u64)> {
                 Ok((

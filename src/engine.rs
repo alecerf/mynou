@@ -1014,24 +1014,24 @@ fn retire_transfers(client: Option<&Client>, store: &mut Store) -> Result<()> {
     let Some(client) = client else {
         return Ok(());
     };
-        let pending = store.pending_retirements(RETIREMENT_BATCH)?;
-        if pending.is_empty() {
-            return Ok(());
+    let pending = store.pending_retirements(RETIREMENT_BATCH)?;
+    if pending.is_empty() {
+        return Ok(());
+    }
+    let known: std::collections::BTreeSet<_> = client
+        .statuses()?
+        .into_iter()
+        .map(|status| status.id)
+        .collect();
+    for (job_id, id) in pending {
+        // A live request, including this one if it found the same release
+        // again, keeps the transfer. Cancelled requests do not; finished
+        // ones retain it.
+        if known.contains(&id) && !store.transfer_has_owner(&id)? {
+            client.cancel(&id)?;
         }
-        let known: std::collections::BTreeSet<_> = client
-            .statuses()?
-            .into_iter()
-            .map(|status| status.id)
-            .collect();
-        for (job_id, id) in pending {
-            // A live request, including this one if it found the same release
-            // again, keeps the transfer. Cancelled requests do not; finished
-            // ones retain it.
-            if known.contains(&id) && !store.transfer_has_owner(&id)? {
-                client.cancel(&id)?;
-            }
-            store.complete_retirement(&job_id, &id)?;
-        }
+        store.complete_retirement(&job_id, &id)?;
+    }
     Ok(())
 }
 

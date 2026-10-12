@@ -4,10 +4,7 @@ use crate::{
     engine::{Engine, lock, public_job},
     json::Value,
 };
-use std::{
-    collections::BTreeSet,
-    path::Path,
-};
+use std::{collections::BTreeSet, path::Path};
 mod automatic;
 mod shared;
 pub(crate) use automatic::season_title_matches;

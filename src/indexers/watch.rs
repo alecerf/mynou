@@ -281,8 +281,9 @@ impl Engine {
         let demand: Vec<Job> = {
             let requesters = lock(&self.requester_store)?;
             let mut jobs = lock(&self.store)?;
-            jobs.open_jobs_filtered(MAX_ROUTE_JOBS, |job|
-                routable(job) && interest(&requesters.state, job, &self.config))?
+            jobs.open_jobs_filtered(MAX_ROUTE_JOBS, |job| {
+                routable(job) && interest(&requesters.state, job, &self.config)
+            })?
         };
         for job in demand {
             if tally.routed as usize >= MAX_ROUTES_PER_POLL || self.stopped.load(Ordering::Acquire)

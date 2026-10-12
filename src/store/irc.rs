@@ -1,8 +1,6 @@
 //! Admission attaches an immutable verified candidate in one index transaction.
 use super::{
-    Job, Request, Result,
-    layout,
-    now,
+    Job, Request, Result, layout, now,
     ops::{Db, key_part},
 };
 use crate::irc::Origin;

@@ -378,7 +378,9 @@ fn history_is_bounded_per_job_keeps_sequence_ids_and_folds_heartbeats() {
         let (page, next) = store.event_feed(cursor, MAX_PAGE_ROWS).unwrap();
         feed.extend(page);
         cursor = next;
-        if cursor.is_none() { break; }
+        if cursor.is_none() {
+            break;
+        }
     }
     assert_eq!(feed.len(), MAX_JOB_EVENTS + 1);
     assert!(feed.windows(2).all(|pair| pair[0].id < pair[1].id));

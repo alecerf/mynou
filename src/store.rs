@@ -26,8 +26,8 @@ mod layout;
 mod legacy;
 mod migration;
 mod ops;
-mod rules;
 mod replay;
+mod rules;
 #[cfg(test)]
 mod tests;
 pub use groups::SharedUpgrade;
@@ -1114,7 +1114,8 @@ impl Store {
                 for (found, value) in &page.entries {
                     let sequence = u64::from_be_bytes(ops::key_part(found, 1)?);
                     let id: [u8; 16] = ops::array(value)?;
-                    let event = db.event(&id, sequence)?
+                    let event = db
+                        .event(&id, sequence)?
                         .ok_or("Job history sequence refers to a missing event")?;
                     events.push(event);
                 }
@@ -1313,7 +1314,11 @@ impl Store {
 
     /// Open jobs (not ready, cancelled or staged) in claim order after the
     /// jobs still waiting: the due queue first, then the wait list.
-    pub(crate) fn open_jobs_filtered(&mut self, limit: usize, eligible: impl Fn(&Job) -> bool) -> Result<Vec<Job>> {
+    pub(crate) fn open_jobs_filtered(
+        &mut self,
+        limit: usize,
+        eligible: impl Fn(&Job) -> bool,
+    ) -> Result<Vec<Job>> {
         let mut cursor = self.route_cursor;
         let jobs = self.read(Vec::new(), |db| {
             let mut jobs = Vec::new();
@@ -1322,16 +1327,22 @@ impl Store {
                 let page = db.0.page(&Query {
                     start: layout::key(&[&[layout::T_QUEUE]]),
                     end: Some(layout::key(&[&[layout::T_GROUP]])),
-                    after: cursor, limit: (limit - examined).min(MAX_PAGE_ROWS), sequence: None,
+                    after: cursor,
+                    limit: (limit - examined).min(MAX_PAGE_ROWS),
+                    sequence: None,
                 })?;
                 examined += page.entries.len();
                 for (key, _) in &page.entries {
                     let at = if key[0] == layout::T_QUEUE { 9 } else { 17 };
                     let job = db.require(&ops::key_part(key, at)?)?;
-                    if eligible(&job) { jobs.push(job); }
+                    if eligible(&job) {
+                        jobs.push(job);
+                    }
                 }
                 cursor = page.next;
-                if cursor.is_none() { break; }
+                if cursor.is_none() {
+                    break;
+                }
             }
             Ok(jobs)
         })?;

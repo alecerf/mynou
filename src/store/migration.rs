@@ -409,7 +409,6 @@ impl Plan {
         }
         for list in events.values_mut() {
             list.sort_by_key(|event| event.id);
-
         }
         Ok(Self {
             roots,
@@ -477,7 +476,10 @@ impl Plan {
             metadata.extend_from_slice(&log.last().map_or(0, |event| event.id).to_le_bytes());
             out.insert(layout::events_key(&raw, 0), Entry::Inline(metadata));
             for event in log {
-                out.insert(layout::events_key(&raw, event.id), Entry::File(encode_event(event)));
+                out.insert(
+                    layout::events_key(&raw, event.id),
+                    Entry::File(encode_event(event)),
+                );
                 out.insert(layout::sequence_key(event.id), Entry::Inline(raw.to_vec()));
             }
         }
@@ -568,9 +570,13 @@ fn preserve_staging(directory: &Path) -> Result<()> {
     let path = directory.join(STAGING);
     let mut index = Index::open(&path, true)?;
     match index.get(&layout::FORMAT_KEY)? {
-        Some(value) if value == FORMAT => {},
-        None if index.is_empty()? => {},
-        _ => return Err("Unrecognized job staging data; move it aside explicitly before retrying".into()),
+        Some(value) if value == FORMAT => {}
+        None if index.is_empty()? => {}
+        _ => {
+            return Err(
+                "Unrecognized job staging data; move it aside explicitly before retrying".into(),
+            );
+        }
     }
     drop(index);
     let mut random = [0; 16];
@@ -579,7 +585,8 @@ fn preserve_staging(directory: &Path) -> Result<()> {
     if exists(&preserved)? {
         return Err("Cannot choose a unique preserved staging name".into());
     }
-    fs::rename(&path, &preserved).map_err(|_| "Cannot preserve unfinished job staging data".to_owned())?;
+    fs::rename(&path, &preserved)
+        .map_err(|_| "Cannot preserve unfinished job staging data".to_owned())?;
     sync_directory(directory)
 }
 
