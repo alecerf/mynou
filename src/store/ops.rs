@@ -302,7 +302,13 @@ impl Db<'_> {
             .is_some())
     }
 
-    pub(super) fn jobs_page(&mut self, prefix: &[u8], id_at: usize, after: Option<Key>, limit: usize) -> Result<(Vec<Job>, Option<Key>)> {
+    pub(super) fn jobs_page(
+        &mut self,
+        prefix: &[u8],
+        id_at: usize,
+        after: Option<Key>,
+        limit: usize,
+    ) -> Result<(Vec<Job>, Option<Key>)> {
         let page = self.scan(prefix, after, limit)?;
         let mut jobs = Vec::new();
         let mut bytes = 0;
@@ -311,7 +317,10 @@ impl Db<'_> {
         for (key, _) in &page.entries {
             let job = self.require(&key_part(key, id_at)?)?;
             let length = encode_job(&job).len();
-            if !jobs.is_empty() && bytes + length > crate::inventory::MAX_PAGE_BYTES { more = true; break; }
+            if !jobs.is_empty() && bytes + length > crate::inventory::MAX_PAGE_BYTES {
+                more = true;
+                break;
+            }
             bytes += length;
             jobs.push(job);
             last = Some(*key);
@@ -323,11 +332,14 @@ impl Db<'_> {
         let digest = digest_bytes(media)?;
         if let Some(value) = self.0.get(&media_tip_key(&digest))? {
             let job = self.require(&array(value.get(..16).ok_or("Invalid media tip")?)?)?;
-            if job.request.media_key() != media { return Err("Media tip disagrees with its job".into()); }
+            if job.request.media_key() != media {
+                return Err("Media tip disagrees with its job".into());
+            }
             return Ok(Some(job));
         }
-        self.find_job(&[&[T_MEDIA][..], &digest].concat(), 41,
-            |job| job.upgrade_parent.is_none() && job.request.media_key() == media)
+        self.find_job(&[&[T_MEDIA][..], &digest].concat(), 41, |job| {
+            job.upgrade_parent.is_none() && job.request.media_key() == media
+        })
     }
 
     #[cfg(test)]
@@ -341,7 +353,9 @@ impl Db<'_> {
             let (page, next) = self.jobs_page(&prefix, 41, after, MAX_PAGE_ROWS)?;
             jobs.extend(page);
             after = next;
-            if after.is_none() { break; }
+            if after.is_none() {
+                break;
+            }
         }
         Ok(jobs)
     }
@@ -424,7 +438,9 @@ impl Db<'_> {
             let (page, next) = self.jobs_page(&prefix, 17, after, MAX_PAGE_ROWS)?;
             jobs.extend(page);
             after = next;
-            if after.is_none() { break; }
+            if after.is_none() {
+                break;
+            }
         }
         Ok(jobs)
     }
@@ -448,9 +464,18 @@ impl Db<'_> {
         }
     }
 
-    pub(super) fn pack_matches(&mut self, path: &str, kind: &str, value: &str, predicate: impl Fn(&Job) -> bool) -> Result<bool> {
-        Ok(self.find_job(&packref_prefix(path, kind, value), 33,
-            |job| job.pack_file.as_deref() == Some(path) && predicate(job))?.is_some())
+    pub(super) fn pack_matches(
+        &mut self,
+        path: &str,
+        kind: &str,
+        value: &str,
+        predicate: impl Fn(&Job) -> bool,
+    ) -> Result<bool> {
+        Ok(self
+            .find_job(&packref_prefix(path, kind, value), 33, |job| {
+                job.pack_file.as_deref() == Some(path) && predicate(job)
+            })?
+            .is_some())
     }
 
     /// Everything one transaction changes: the jobs and their entries, the

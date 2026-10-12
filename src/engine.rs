@@ -292,8 +292,11 @@ impl Engine {
     pub fn transfer_page(&self, id: &str, after: Option<&str>, limit: usize) -> Result<Value> {
         let mut value = self.native_client()?.transfer(id)?;
         let (jobs, next) = lock(&self.store)?.transfer_jobs_page(id, after, limit)?;
-        let requests = jobs.into_iter().filter(|job| job.download_id.as_deref() == Some(id))
-            .map(|job| Value::String(job.id)).collect();
+        let requests = jobs
+            .into_iter()
+            .filter(|job| job.download_id.as_deref() == Some(id))
+            .map(|job| Value::String(job.id))
+            .collect();
         value.insert("request_ids_next", next.map_or(Value::Null, Value::String));
         value.insert("request_ids", Value::Array(requests));
         Ok(value)
@@ -311,8 +314,11 @@ impl Engine {
                 .and_then(Value::as_str)
                 .ok_or("Missing native transfer identity")?;
             let (jobs, next) = lock(&self.store)?.transfer_jobs_page(id, None, 200)?;
-            let references = jobs.into_iter().filter(|job| job.download_id.as_deref() == Some(id))
-                .map(|job| Value::String(job.id)).collect();
+            let references = jobs
+                .into_iter()
+                .filter(|job| job.download_id.as_deref() == Some(id))
+                .map(|job| Value::String(job.id))
+                .collect();
             value.insert("request_ids_next", next.map_or(Value::Null, Value::String));
             value.insert("request_ids", Value::Array(references));
         }
