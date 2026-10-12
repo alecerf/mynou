@@ -257,7 +257,7 @@ fn api_exposes_owned_entries_and_requires_explicit_application_of_upgrades() {
         .unwrap();
     assert_eq!(child.upgrade_parent.as_deref(), Some(original.id.as_str()));
     assert_eq!(child.state, "queued");
-    assert_redacted(&library);
+    assert_redacted(library);
 }
 
 #[test]
