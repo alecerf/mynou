@@ -184,10 +184,10 @@ fn write_checked(path: &Path, bytes: &[u8]) -> mynou::Result<()> {
         Some("mynou.json") => root.join("mynou.json"),
         _ => return Err("Unsupported fixture file name".into()),
     };
-    if let Ok(metadata) = fs::symlink_metadata(&path) {
-        if !metadata.is_file() || metadata.file_type().is_symlink() {
-            return Err("Fixture file is not regular".into());
-        }
+    if let Ok(metadata) = fs::symlink_metadata(&path)
+        && (!metadata.is_file() || metadata.file_type().is_symlink())
+    {
+        return Err("Fixture file is not regular".into());
     }
     fs::write(&path, bytes).map_err(|error| error.to_string())?;
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
