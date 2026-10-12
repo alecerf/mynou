@@ -1,3 +1,4 @@
+use super::super::cookie::{Admission, Admit, Entropy, Load, mac};
 use super::*;
 use crate::json::{self, Value};
 use std::io::Read;
@@ -28,7 +29,9 @@ fn array(row: &Value, field: &str) -> [u8; 32] {
 }
 fn remac(packet: &mut Vec<u8>, recipient: [u8; 32]) {
     packet.truncate(packet.len() - 32);
-    append_macs(packet, recipient).unwrap();
+    let mac1 = mac(&mac1_key(&recipient).unwrap(), packet).unwrap();
+    packet.extend_from_slice(&mac1);
+    packet.extend_from_slice(&[0; 16]);
 }
 
 #[test]
@@ -137,7 +140,8 @@ fn os_random_handshakes_optional_psk_and_single_response_consumption() {
 fn every_packet_byte_tamper_preserves_pending_or_accepted_timestamp() {
     let (mut left, mut right) = pair(None);
     let initiation = left.initiate(wall(), 4, Duration::ZERO).unwrap();
-    for index in 0..initiation.len() {
+    // MAC2 (the last 16 bytes) is judged only by under-load admission, never here.
+    for index in 0..initiation.len() - 16 {
         let mut corrupted = initiation.clone();
         corrupted[index] ^= 1;
         assert!(
@@ -147,7 +151,7 @@ fn every_packet_byte_tamper_preserves_pending_or_accepted_timestamp() {
         assert!(right.accepted.is_none());
     }
     let response = right.respond(&initiation, 4, Duration::ZERO).unwrap();
-    for index in 0..response.packet.len() {
+    for index in 0..response.packet.len() - 16 {
         let mut corrupted = response.packet.clone();
         corrupted[index] ^= 1;
         assert!(
@@ -286,15 +290,12 @@ fn monotonic_expiry_generation_revoke_and_pending_replacement_are_terminal() {
 }
 
 #[test]
-fn framing_cookie_and_index_exhaustion_fail_before_state_publication() {
+fn framing_and_index_exhaustion_fail_before_state_publication() {
     let (mut left, mut right) = pair(None);
     for size in [0, 1, 4, 147, 149, 4096] {
         assert!(right.respond(&vec![0; size], 4, Duration::ZERO).is_err());
     }
     let first = left.initiate(wall(), 4, Duration::ZERO).unwrap();
-    let mut cookie = first.clone();
-    cookie[147] = 1;
-    assert!(right.respond(&cookie, 4, Duration::ZERO).is_err());
     right.next_index = u32::MAX;
     assert!(right.respond(&first, 4, Duration::ZERO).is_err());
     assert!(right.accepted.is_none());
@@ -367,6 +368,179 @@ fn authenticated_response_has_public_routing_index_and_fresh_session_age() {
     assert!(
         session
             .send(b"", 4, finish_time + Duration::from_secs(180))
+            .is_err()
+    );
+}
+
+struct Computed(u64);
+
+impl Entropy for Computed {
+    fn bytes<const N: usize>(&mut self) -> Result<[u8; N]> {
+        self.0 += 1;
+        let prk = blake2s(&self.0.to_le_bytes())?;
+        hkdf_blake2s_expand(&prk, &[], N)?
+            .try_into()
+            .map_err(|_| "computed length".into())
+    }
+}
+
+fn source() -> std::net::SocketAddr {
+    "192.0.2.10:51820".parse().unwrap()
+}
+
+#[test]
+fn mac2_is_ignored_without_load_and_never_alters_handshake_results() {
+    let (mut left, mut right) = pair(None);
+    let mut initiation = left.initiate(wall(), 4, Duration::ZERO).unwrap();
+    let length = initiation.len();
+    for byte in &mut initiation[length - 16..] {
+        *byte = 0xa5;
+    }
+    let mut response = right.respond(&initiation, 4, Duration::ZERO).unwrap();
+    let last = response.packet.len() - 1;
+    response.packet[last] ^= 0xff;
+    let mut session = left.finish(&response.packet, 4, Duration::ZERO).unwrap();
+    let keepalive = session.send(b"", 4, Duration::ZERO).unwrap();
+    assert!(
+        response
+            .session
+            .receive(&keepalive.bytes, 4, Duration::ZERO)
+            .is_ok()
+    );
+}
+
+#[test]
+fn loaded_responder_cookie_reply_then_retry_completes_without_immediate_resend() {
+    let (mut left, mut right) = pair(Some([53; 32]));
+    let public = right.credentials.as_ref().unwrap().public;
+    let mut admission = Admission::new(public, Computed(0), 4, Duration::ZERO).unwrap();
+    let first = left.initiate(wall(), 4, Duration::ZERO).unwrap();
+    assert_eq!(first[132..], [0; 16]);
+    let Admit::Reply(reply) = admission
+        .admit(&first, source(), Load::High, 4, Duration::ZERO)
+        .unwrap()
+    else {
+        panic!("a loaded responder must answer an unproven source with a cookie");
+    };
+    assert_eq!(reply[4..8], first[4..8]);
+    // The reply itself produces nothing to send; the owner keeps its pending state.
+    assert!(
+        left.receive_cookie_reply(&reply, 4, Duration::from_secs(1))
+            .is_ok()
+    );
+    assert!(left.pending.is_some());
+    let retry = left
+        .initiate(wall() + Duration::from_nanos(1), 4, Duration::from_secs(5))
+        .unwrap();
+    assert_ne!(retry[132..], [0; 16]);
+    assert_eq!(
+        admission
+            .admit(&retry, source(), Load::High, 4, Duration::from_secs(5))
+            .unwrap(),
+        Admit::Process
+    );
+    let mut response = right.respond(&retry, 4, Duration::from_secs(5)).unwrap();
+    let mut session = left
+        .finish(&response.packet, 4, Duration::from_secs(5))
+        .unwrap();
+    response
+        .session
+        .receive(
+            &session.send(b"", 4, Duration::from_secs(5)).unwrap().bytes,
+            4,
+            Duration::from_secs(5),
+        )
+        .unwrap();
+    // The cookie is bound to the source address: another source is asked again.
+    assert!(matches!(
+        admission.admit(
+            &retry,
+            "192.0.2.11:51820".parse().unwrap(),
+            Load::High,
+            4,
+            Duration::from_secs(6)
+        ),
+        Ok(Admit::Reply(_))
+    ));
+}
+
+#[test]
+fn loaded_initiator_cookies_the_responders_response_too() {
+    let (mut left, mut right) = pair(None);
+    let public = left.credentials.as_ref().unwrap().public;
+    let mut admission = Admission::new(public, Computed(7), 4, Duration::ZERO).unwrap();
+    let initiation = left.initiate(wall(), 4, Duration::ZERO).unwrap();
+    let first = right.respond(&initiation, 4, Duration::ZERO).unwrap();
+    let Admit::Reply(reply) = admission
+        .admit(&first.packet, source(), Load::High, 4, Duration::ZERO)
+        .unwrap()
+    else {
+        panic!("a loaded initiator answers with a cookie");
+    };
+    right
+        .receive_cookie_reply(&reply, 4, Duration::from_secs(1))
+        .unwrap();
+    let second = left
+        .initiate(wall() + Duration::from_nanos(1), 4, Duration::from_secs(5))
+        .unwrap();
+    let response = right.respond(&second, 4, Duration::from_secs(5)).unwrap();
+    assert_ne!(response.packet[76..], [0; 16]);
+    assert_eq!(
+        admission
+            .admit(
+                &response.packet,
+                source(),
+                Load::High,
+                4,
+                Duration::from_secs(5)
+            )
+            .unwrap(),
+        Admit::Process
+    );
+    assert!(
+        left.finish(&response.packet, 4, Duration::from_secs(5))
+            .is_ok()
+    );
+}
+
+#[test]
+fn cookie_replies_are_fenced_by_message_generation_clock_and_revocation() {
+    let (mut left, right) = pair(None);
+    let public = right.credentials.as_ref().unwrap().public;
+    let mut admission = Admission::new(public, Computed(3), 4, Duration::ZERO).unwrap();
+    assert!(
+        left.receive_cookie_reply(&[3; 64], 4, Duration::ZERO)
+            .is_err()
+    );
+    let first = left.initiate(wall(), 4, Duration::ZERO).unwrap();
+    let Admit::Reply(reply) = admission
+        .admit(&first, source(), Load::High, 4, Duration::ZERO)
+        .unwrap()
+    else {
+        panic!("expected a cookie reply");
+    };
+    // Replies to a replaced initiation no longer authenticate.
+    let second = left
+        .initiate(wall() + Duration::from_nanos(1), 4, Duration::from_secs(5))
+        .unwrap();
+    assert_ne!(first[116..132], second[116..132]);
+    assert!(
+        left.receive_cookie_reply(&reply, 4, Duration::from_secs(5))
+            .is_err()
+    );
+    let Admit::Reply(current) = admission
+        .admit(&second, source(), Load::High, 4, Duration::from_secs(5))
+        .unwrap()
+    else {
+        panic!("expected a cookie reply");
+    };
+    assert!(
+        left.receive_cookie_reply(&current, 5, Duration::from_secs(6))
+            .is_err()
+    );
+    assert!(left.credentials.is_none(), "a generation change revokes");
+    assert!(
+        left.receive_cookie_reply(&current, 4, Duration::from_secs(6))
             .is_err()
     );
 }

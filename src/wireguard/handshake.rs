@@ -1,9 +1,10 @@
 //! Noise IKpsk2 equations from the WireGuard protocol, independently authored.
+use super::cookie::{Cookies, mac1_key, verify_mac1};
 use super::{Role, Session, nonce};
 use crate::Result;
 use crate::crypto::{
     ChaCha20Poly1305, blake2s, constant_time_eq, hkdf_blake2s_expand, hkdf_blake2s_extract,
-    keyed_blake2s, random_bytes, x25519, x25519_public_key,
+    random_bytes, x25519, x25519_public_key,
 };
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -96,6 +97,7 @@ struct Pending {
 pub struct Handshake {
     credentials: Option<Credentials>,
     pending: Option<Pending>,
+    cookies: Cookies,
     issued: Option<[u8; 12]>,
     accepted: Option<[u8; 12]>,
     next_index: u32,
@@ -145,6 +147,7 @@ impl Handshake {
                 psk: psk.unwrap_or_default(),
             }),
             pending: None,
+            cookies: Cookies::new(&peer)?,
             issued: None,
             accepted: None,
             next_index: initial,
@@ -158,6 +161,20 @@ impl Handshake {
     pub fn revoke(&mut self) {
         self.credentials = None;
         self.pending = None;
+        self.cookies.clear();
+    }
+
+    /// Store the cookie of a type-3 reply to the last initiation or response this
+    /// owner sent. It never triggers a retransmission: the retry timer, owned by
+    /// the future driver, sends the next message, which then carries MAC2.
+    pub fn receive_cookie_reply(
+        &mut self,
+        packet: &[u8],
+        generation: u64,
+        now: Duration,
+    ) -> Result<()> {
+        self.admit(generation, now)?;
+        self.cookies.receive(packet, now)
     }
 
     fn admit(&mut self, generation: u64, now: Duration) -> Result<()> {
@@ -215,7 +232,7 @@ impl Handshake {
         packet.extend_from_slice(&public);
         packet.extend_from_slice(&identity);
         packet.extend_from_slice(&encrypted_time);
-        append_macs(&mut packet, keys.peer)?;
+        self.cookies.stamp(&mut packet, index, now)?;
         self.pending = Some(Pending {
             noise,
             ephemeral,
@@ -269,13 +286,12 @@ impl Handshake {
         noise.mix_hash(&output[1])?;
         let empty = noise.encrypt(output[2], &[])?;
         let directional = derive::<2>(&noise.chain, &[])?;
-        let peer = keys.peer;
         let index = self.index()?;
         let mut response = header(2, index);
         response.extend_from_slice(&remote_index.to_le_bytes());
         response.extend_from_slice(&public);
         response.extend_from_slice(&empty);
-        append_macs(&mut response, peer)?;
+        self.cookies.stamp(&mut response, index, now)?;
         let session = Session::from_handshake(
             [directional[1], directional[0]],
             [index, remote_index],
@@ -363,7 +379,7 @@ fn header(kind: u8, index: u32) -> Vec<u8> {
     header.extend_from_slice(&index.to_le_bytes());
     header
 }
-fn hash_pair(left: &[u8], right: &[u8]) -> Result<[u8; 32]> {
+pub(super) fn hash_pair(left: &[u8], right: &[u8]) -> Result<[u8; 32]> {
     let mut input = Vec::with_capacity(left.len() + right.len());
     input.extend_from_slice(left);
     input.extend_from_slice(right);
@@ -376,25 +392,13 @@ fn derive<const N: usize>(chain: &[u8; 32], input: &[u8]) -> Result<[[u8; 32]; N
         bytes[index * 32..(index + 1) * 32].try_into().unwrap()
     }))
 }
-fn append_macs(packet: &mut Vec<u8>, recipient: [u8; 32]) -> Result<()> {
-    let mac = keyed_blake2s(&hash_pair(b"mac1----", &recipient)?, packet, 16)?;
-    packet.extend_from_slice(&mac);
-    packet.extend_from_slice(&[0; 16]);
-    Ok(())
-}
+// MAC2 is deliberately not examined here: it matters only under load, where the
+// caller's `Admission` has already judged it. Without load the protocol ignores it.
 fn framing(packet: &[u8], kind: u8, length: usize, recipient: [u8; 32]) -> Result<()> {
     if packet.len() != length || packet[..4] != [kind, 0, 0, 0] {
         return Err("WireGuard: invalid handshake framing".into());
     }
-    if packet[length - 16..].iter().any(|byte| *byte != 0) {
-        return Err("WireGuard: cookies are not supported in this increment".into());
-    }
-    let offset = length - 32;
-    let expected = keyed_blake2s(&hash_pair(b"mac1----", &recipient)?, &packet[..offset], 16)?;
-    if !constant_time_eq(&expected, &packet[offset..offset + 16]) {
-        return Err("WireGuard: invalid handshake MAC1".into());
-    }
-    Ok(())
+    verify_mac1(&mac1_key(&recipient)?, packet)
 }
 
 #[cfg(test)]

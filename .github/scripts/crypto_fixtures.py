@@ -6,6 +6,7 @@ No Mynou implementation is imported or executed; all keys/messages are synthetic
 import argparse
 import hashlib
 import hmac
+import ipaddress
 import json
 from pathlib import Path
 
@@ -27,12 +28,13 @@ def expand(prk, info, length):
     return bytes(result[:length])
 
 
-def chacha_block(key, nonce, counter):
-    """Original scalar reference from RFC8439 equations, not product code."""
-    initial = [int.from_bytes(part, "little") for part in
-               (b"expand 32-byte k"[i:i+4] for i in range(0, 16, 4))]
-    initial += [int.from_bytes(key[i:i+4], "little") for i in range(0, 32, 4)]
-    initial += [counter] + [int.from_bytes(nonce[i:i+4], "little") for i in range(0, 12, 4)]
+def chacha_initial(key, nonce, counter):
+    constants = [int.from_bytes(b"expand 32-byte k"[i:i+4], "little") for i in range(0, 16, 4)]
+    return (constants + [int.from_bytes(key[i:i+4], "little") for i in range(0, 32, 4)]
+            + [counter] + [int.from_bytes(nonce[i:i+4], "little") for i in range(0, 12, 4)])
+
+
+def chacha_rounds(initial):
     working = initial.copy()
     for _ in range(10):
         for a, b, c, d in ((0, 4, 8, 12), (1, 5, 9, 13), (2, 6, 10, 14), (3, 7, 11, 15),
@@ -42,8 +44,28 @@ def chacha_block(key, nonce, counter):
                 working[left] = (working[left] + working[right]) & 0xffffffff
                 value = working[other] ^ working[left]
                 working[other] = ((value << rotation) | (value >> (32 - rotation))) & 0xffffffff
+    return working
+
+
+def chacha_block(key, nonce, counter):
+    """Original scalar reference from RFC8439 equations, not product code."""
+    initial = chacha_initial(key, nonce, counter)
+    working = chacha_rounds(initial)
     return b"".join(((a + b) & 0xffffffff).to_bytes(4, "little")
                     for a, b in zip(initial, working))
+
+
+def hchacha20(key, nonce):
+    """draft-irtf-cfrg-xchacha-03 section 2.2: rounds without feed-forward."""
+    # The 16-byte nonce fills state words 12..15, so reuse the layout with counter
+    # taken from its first word.
+    initial = chacha_initial(key, nonce[4:16], int.from_bytes(nonce[:4], "little"))
+    working = chacha_rounds(initial)
+    return b"".join(word.to_bytes(4, "little") for word in working[0:4] + working[12:16])
+
+
+def reference_xaead(key, nonce, message, aad=b""):
+    return reference_aead(hchacha20(key, nonce[:16]), bytes(4) + nonce[16:], message, aad)
 
 
 def reference_aead(key, nonce, message, aad=b""):
@@ -177,6 +199,41 @@ def handshake_vectors():
     return rows
 
 
+def cookie_vectors():
+    # draft-irtf-cfrg-xchacha-03 section 2.2.1 and appendix A.3.1 anchor the
+    # independent HChaCha20/XChaCha20-Poly1305 reference (also used by Rust tests).
+    assert hchacha20(bytes(range(32)), bytes.fromhex("000000090000004a0000000031415927")).hex() == (
+        "82413b4227b27bfed30e42508a877d73a0f9e4d58a74a853c12ec41326d3ecdc")
+    assert reference_xaead(
+        bytes(range(128, 160)), bytes(range(64, 88)),
+        b"Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.",
+        bytes.fromhex("50515253c0c1c2c3c4c5c6c7")).hex().endswith("c0875924c1c7987947deafd8780acf49")
+    base = bytes((9,)) + bytes(31)
+    digest = lambda data: hashlib.blake2s(data).digest()
+    blake_mac = lambda key, data: hashlib.blake2s(data, key=key, digest_size=16).digest()
+    rows = []
+    cases = ((1, 148, "192.0.2.33", 51820), (2, 92, "198.51.100.7", 1), (1, 148, "2001:db8::beef", 65535),
+             (2, 92, "2001:db8:1:2:3:4:5:6", 4242))
+    for number, (kind, length, host, port) in enumerate(cases):
+        responder = pattern(32, 61 + number)
+        public = reference_dh(responder, base)
+        secret = pattern(32, 67 + number)
+        nonce = pattern(24, 71 + number)
+        body = bytes((kind, 0, 0, 0)) + (1000 + number).to_bytes(4, "little")
+        body += pattern(length - 32 - len(body), 73 + number)
+        mac1 = blake_mac(digest(b"mac1----" + public), body)
+        address = ipaddress.ip_address(host)
+        cookie = blake_mac(secret, address.packed + port.to_bytes(2, "big"))
+        reply = bytes((3, 0, 0, 0)) + (1000 + number).to_bytes(4, "little") + nonce
+        reply += reference_xaead(digest(b"cookie--" + public), nonce, cookie, mac1)
+        assert len(reply) == 64
+        rows.append({"public": public.hex(), "secret": secret.hex(), "nonce": nonce.hex(),
+                     "host": host, "port": port, "body": body.hex(), "mac1": mac1.hex(),
+                     "cookie": cookie.hex(), "reply": reply.hex(),
+                     "retry_mac2": blake_mac(cookie, body + mac1).hex()})
+    return rows
+
+
 def vectors():
     # Fixed public RFC 7693 Appendix B anchors the independent reference.
     assert hashlib.blake2s(b"abc").hexdigest() == (
@@ -206,7 +263,8 @@ def vectors():
                                     "info": info.hex(), "prk": prk.hex(), "size": length,
                                     "output": expand(prk, info, length).hex()})
     return {"schema": 1, "blake2s": hashes, "hmac": hmacs, "hkdf": derivations,
-            "wireguard": transport_vectors(), "handshake": handshake_vectors()}
+            "wireguard": transport_vectors(), "handshake": handshake_vectors(),
+            "cookie": cookie_vectors()}
 
 
 def main():
@@ -219,7 +277,7 @@ def main():
     print("Generated independent std-only synthetic crypto vectors: "
           f"{len(data['blake2s'])} hashes, {len(data['hmac'])} HMACs, "
           f"{len(data['hkdf'])} HKDFs, {len(data['wireguard'])} transport packets, "
-          f"{len(data['handshake'])} Noise handshakes")
+          f"{len(data['handshake'])} Noise handshakes, {len(data['cookie'])} cookie exchanges")
 
 
 if __name__ == "__main__":
