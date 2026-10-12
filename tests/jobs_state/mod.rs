@@ -11,9 +11,15 @@ use std::path::{Path, PathBuf};
 /// Every file of the job index, with its path relative to the index. Equal
 /// results mean no job record, entry or history row changed.
 pub fn fingerprint(store_dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
-    fn walk(root: &Path, directory: &Path, found: &mut Vec<(PathBuf, Vec<u8>)>) -> mynou::Result<()> {
+    fn walk(
+        root: &Path,
+        directory: &Path,
+        found: &mut Vec<(PathBuf, Vec<u8>)>,
+    ) -> mynou::Result<()> {
         let directory = fixture_root(directory).unwrap();
-        if !directory.as_path().starts_with(root) { return Err("Fixture directory escaped its index".into()); }
+        if !directory.as_path().starts_with(root) {
+            return Err("Fixture directory escaped its index".into());
+        }
         let entries = fs::read_dir(&directory).unwrap();
         for entry in entries {
             let path = entry.unwrap().path();
@@ -169,7 +175,9 @@ fn write_checked(path: &Path, bytes: &[u8]) -> mynou::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let parent = path.parent().ok_or("Fixture file lacks parent")?;
     let root = fixture_root(parent)?;
-    if !root.as_path().starts_with(parent) { return Err("Fixture parent changed during normalization".into()); }
+    if !root.as_path().starts_with(parent) {
+        return Err("Fixture parent changed during normalization".into());
+    }
     let path = match path.file_name().and_then(|name| name.to_str()) {
         Some("snapshot.bin") => root.join("snapshot.bin"),
         Some("journal.bin") => root.join("journal.bin"),
@@ -177,10 +185,13 @@ fn write_checked(path: &Path, bytes: &[u8]) -> mynou::Result<()> {
         _ => return Err("Unsupported fixture file name".into()),
     };
     if let Ok(metadata) = fs::symlink_metadata(&path) {
-        if !metadata.is_file() || metadata.file_type().is_symlink() { return Err("Fixture file is not regular".into()); }
+        if !metadata.is_file() || metadata.file_type().is_symlink() {
+            return Err("Fixture file is not regular".into());
+        }
     }
     fs::write(&path, bytes).map_err(|error| error.to_string())?;
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).map_err(|error| error.to_string())?;
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
+        .map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -195,19 +206,34 @@ fn remove_checked(root: &Path, name: &str, directory: bool) -> mynou::Result<()>
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(error) => return Err(error.to_string()),
     };
-    if !path.as_path().starts_with(root) { return Err("Fixture removal escaped its root".into()); }
-    if path == root || path != requested { return Err("Fixture removal cannot follow links or remove its root".into()); }
+    if !path.as_path().starts_with(root) {
+        return Err("Fixture removal escaped its root".into());
+    }
+    if path == root || path != requested {
+        return Err("Fixture removal cannot follow links or remove its root".into());
+    }
     let metadata = fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
-    if metadata.file_type().is_symlink() { return Err("Fixture removal cannot follow links".into()); }
-    if directory { fs::remove_dir_all(&path).map_err(|error| error.to_string())?; }
-    else { fs::remove_file(&path).map_err(|error| error.to_string())?; }
+    if metadata.file_type().is_symlink() {
+        return Err("Fixture removal cannot follow links".into());
+    }
+    if directory {
+        fs::remove_dir_all(&path).map_err(|error| error.to_string())?;
+    } else {
+        fs::remove_file(&path).map_err(|error| error.to_string())?;
+    }
     Ok(())
 }
 
 fn fixture_root(path: &Path) -> mynou::Result<PathBuf> {
-    let temporary = std::env::temp_dir().canonicalize().map_err(|error| error.to_string())?;
+    let temporary = std::env::temp_dir()
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
     let normalized = path.canonicalize().map_err(|error| error.to_string())?;
-    if !normalized.as_path().starts_with(&temporary) { return Err("Fixture path escaped temporary storage".into()); }
-    if normalized == temporary { return Err("Fixture path must be below temporary storage".into()); }
+    if !normalized.as_path().starts_with(&temporary) {
+        return Err("Fixture path escaped temporary storage".into());
+    }
+    if normalized == temporary {
+        return Err("Fixture path must be below temporary storage".into());
+    }
     Ok(normalized)
 }

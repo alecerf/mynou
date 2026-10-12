@@ -1470,7 +1470,9 @@ fn execute(args: Args) -> Result<()> {
             } else {
                 let mut store = if matches!(args.command.as_str(), "show" | "events") {
                     Store::open_read_only(&config.store_dir)?
-                } else { Store::open_for_management(&config)? };
+                } else {
+                    Store::open_for_management(&config)?
+                };
                 let v = match args.command.as_str() {
                     "show" => public_job(&store.get(id)?.ok_or("Unknown job")?),
                     "events" => {

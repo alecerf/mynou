@@ -205,11 +205,26 @@ impl Db<'_> {
         }
         let group = job.shared_file.as_ref().ok_or("Missing shared file")?.id();
         for parent in &lineage.parent_jobs {
-            if self.find_job(&[&[layout::T_CHILD][..], &id_bytes(parent)?].concat(), 17, |other|
-                other.shared_file.as_ref().is_none_or(|file| file.id() != group)
-                    && layout::pending_upgrade(other)
-                    && other.upgrade_parent.as_ref().is_some_and(|id| lineage.parent_jobs.contains(id)))?.is_some()
-            { return Err("Another replacement already reserves this shared group".into()); }
+            if self
+                .find_job(
+                    &[&[layout::T_CHILD][..], &id_bytes(parent)?].concat(),
+                    17,
+                    |other| {
+                        other
+                            .shared_file
+                            .as_ref()
+                            .is_none_or(|file| file.id() != group)
+                            && layout::pending_upgrade(other)
+                            && other
+                                .upgrade_parent
+                                .as_ref()
+                                .is_some_and(|id| lineage.parent_jobs.contains(id))
+                    },
+                )?
+                .is_some()
+            {
+                return Err("Another replacement already reserves this shared group".into());
+            }
         }
         Ok(())
     }
