@@ -182,6 +182,9 @@ fn remove_owned(root: &Path, name: &str, directory: bool) {
     assert!(!metadata.file_type().is_symlink());
     let path = path.canonicalize().unwrap();
     assert!(path.starts_with(root) && path != root);
-    if directory { fs::remove_dir_all(&path).unwrap(); }
-    else { fs::remove_file(&path).unwrap(); }
+    if directory {
+        fs::remove_dir_all(&path).unwrap();
+    } else {
+        fs::remove_file(&path).unwrap();
+    }
 }

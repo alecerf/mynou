@@ -1,8 +1,8 @@
 //! Read-only compatibility rules retained from the former journal store.
 //! Migration validates each complete transaction before changing legacy state.
-use super::{Job, Result};
 use super::groups::GroupAction;
-use crate::pack::{SharedFile, MAX_PACK_EPISODES};
+use super::{Job, Result};
+use crate::pack::{MAX_PACK_EPISODES, SharedFile};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) struct Replay {
@@ -13,9 +13,15 @@ pub(super) struct Replay {
 }
 impl Replay {
     pub fn new(jobs: BTreeMap<String, Job>) -> Self {
-        let mut replay = Self { jobs: BTreeMap::new(), by_key: BTreeMap::new(),
-            shared_by_physical: BTreeMap::new(), shared_by_media: BTreeMap::new() };
-        for job in jobs.into_values() { replay.insert(job); }
+        let mut replay = Self {
+            jobs: BTreeMap::new(),
+            by_key: BTreeMap::new(),
+            shared_by_physical: BTreeMap::new(),
+            shared_by_media: BTreeMap::new(),
+        };
+        for job in jobs.into_values() {
+            replay.insert(job);
+        }
         replay
     }
     pub fn insert(&mut self, job: Job) {
@@ -23,7 +29,13 @@ impl Replay {
         self.by_key.insert(job.key.clone(), job.id.clone());
         self.jobs.insert(job.id.clone(), job);
     }
-    pub fn validate_record(&self, jobs: &[Job], action: Option<GroupAction>, shared: bool, legacy: bool) -> Result<()> {
+    pub fn validate_record(
+        &self,
+        jobs: &[Job],
+        action: Option<GroupAction>,
+        shared: bool,
+        legacy: bool,
+    ) -> Result<()> {
         match action {
             Some(action) => self.validate_group_operation(jobs, action),
             None if shared => self.validate_shared_batch(jobs),
@@ -744,9 +756,7 @@ impl Replay {
         if action == GroupAction::Promote && completing != 1 {
             return Err("Promotion requires exactly one final owner confirmation".into());
         }
-        if action == GroupAction::Create {
-            
-        }
+        if action == GroupAction::Create {}
         Ok(())
     }
 

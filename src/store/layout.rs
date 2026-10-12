@@ -475,9 +475,15 @@ pub(super) fn owned(job: &Job, root: &Root) -> Result<BTreeMap<Key, Entry>> {
         manifest.insert("job_chunks", chunks.len() as u32);
         manifest.insert("job_bytes", encoded.len() as u32);
         manifest.insert("job_digest", super::hex(&sha256(&encoded)));
-        entries.insert(job_key(&id), Entry::File(json::stringify(&manifest).into_bytes()));
+        entries.insert(
+            job_key(&id),
+            Entry::File(json::stringify(&manifest).into_bytes()),
+        );
         for (n, chunk) in chunks.enumerate() {
-            entries.insert(key(&[&[T_JOB_CHUNK], &id, &(n as u32).to_be_bytes()]), Entry::File(chunk.to_vec()));
+            entries.insert(
+                key(&[&[T_JOB_CHUNK], &id, &(n as u32).to_be_bytes()]),
+                Entry::File(chunk.to_vec()),
+            );
         }
     }
     Ok(entries)

@@ -385,8 +385,14 @@ fn apply_record(state: &mut State, magic: &[u8], payload: &[u8], sequence: u64) 
     let value = json::parse(std::str::from_utf8(payload).map_err(|_| "journal is not UTF-8")?)?;
     let map = fields(&value)?;
     let raw_job = super::field(map, "job")?;
-    let legacy_record = ["release", "upgrade_parent", "monitored", "monitor_checked_at"]
-        .iter().all(|field| raw_job.get(field).is_none());
+    let legacy_record = [
+        "release",
+        "upgrade_parent",
+        "monitored",
+        "monitor_checked_at",
+    ]
+    .iter()
+    .all(|field| raw_job.get(field).is_none());
     let job = Job::from_json(raw_job)?;
     let requester_ok = magic == REQUESTER_JOURNAL_MAGIC || magic == IRC_JOURNAL_MAGIC;
     if job.irc_origin.is_some() && magic != IRC_JOURNAL_MAGIC {
@@ -419,7 +425,9 @@ fn apply_record(state: &mut State, magic: &[u8], payload: &[u8], sequence: u64) 
         if (magic != GROUP_JOURNAL_MAGIC && !requester_ok) || map.contains_key("shared_owners") {
             return Err("Group action requires journal format 3".into());
         }
-        group_action = Some(super::groups::GroupAction::parse(action.as_str().ok_or("Invalid group action")?)?);
+        group_action = Some(super::groups::GroupAction::parse(
+            action.as_str().ok_or("Invalid group action")?,
+        )?);
         owners = Some(
             map.get("group_jobs")
                 .and_then(Value::as_array)
@@ -452,8 +460,15 @@ fn apply_record(state: &mut State, magic: &[u8], payload: &[u8], sequence: u64) 
         return Err("IRC provenance requires journal format 5".into());
     }
     let mut replay = super::replay::Replay::new(std::mem::take(&mut state.jobs));
-    replay.validate_record(&jobs, group_action, map.contains_key("shared_owners"), legacy_record)?;
-    for job in jobs { replay.insert(job); }
+    replay.validate_record(
+        &jobs,
+        group_action,
+        map.contains_key("shared_owners"),
+        legacy_record,
+    )?;
+    for job in jobs {
+        replay.insert(job);
+    }
     state.jobs = replay.jobs;
     push_event(&mut state.events, event);
     Ok(())
