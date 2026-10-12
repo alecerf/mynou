@@ -61,14 +61,16 @@ reviewed policy, a complete object such as:
 ```
 
 Profile names must exist in your [selection](selection.md) configuration. A
-reviewed policy change recaptures the account's pending or conflicting demand
-that has not been admitted, using the new profiles and destination. Already
+reviewed policy change fences new admissions; bounded reconciliation passes
+recapture pending or conflicting demand that has not been admitted, using the
+new profiles and destination. Already
 admitted requests keep their captured policy. Disabling an account stops new
 admissions; use `remove` to withdraw existing demand.
 
 ```sh
 mynou requesters --config ./mynou.json
-mynou requester alice --offset 0 --limit 100 --config ./mynou.json
+mynou requester alice --limit 100 --config ./mynou.json
+mynou requester alice --after CURSOR --limit 100 --config ./mynou.json
 mynou requester-sync --config ./mynou.json
 mynou requester-control alice --mapping policy.json --config ./mynou.json
 mynou requester-control alice --mapping policy.json --apply \
@@ -90,7 +92,7 @@ polls every account now and needs the service.
 | Route (Bearer token) | Purpose |
 | --- | --- |
 | `GET /api/requesters` | Accounts and poll results |
-| `GET /api/requesters/ACCOUNT?offset=0&limit=100` | One account and its demand |
+| `GET /api/requesters/ACCOUNT?limit=100&after=CURSOR` | One account and a page of demand (`next` continues; omit `after` first) |
 | `POST /api/requesters/sync` | Poll all accounts, with `{}` |
 | `POST /api/requesters/ACCOUNT/control` | Same object as the control file; add `"apply": true` and `"plan_id"` to apply |
 
@@ -117,10 +119,13 @@ polls every account now and needs the service.
   operator request needs. Ready files always stay, and operator submissions are
   never cancelled by requester changes.
 
-Requester demand lives in a private, checksummed `requesters.bin` beside the
-journal. Startup checks it against the journal before any transfer starts, and
-an interruption between the two writes is recovered without a duplicate job.
-Bounds are listed in [limits](limits.md#plex-requester-accounts).
+Requester demand lives in the private, checksummed `requesters.idx` beside the
+job index. Startup checks bidirectional job and IRC provenance before any
+transfer starts, and an interruption between reservation and job creation is
+recovered without a duplicate job. The first writable start migrates supported
+legacy snapshots and preserves their exact bytes; `requesters.bin` becomes an
+index identity marker. Read [migration and downgrade](inventory-storage.md#requester-storage)
+and the remaining per-operation [limits](limits.md#plex-requester-accounts).
 
 Snapshots saved before the approvals, quotas and notification removals are
 rejected at startup; there is no migration. Removing `requesters.bin` alone

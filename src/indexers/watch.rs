@@ -282,7 +282,7 @@ impl Engine {
             let requesters = lock(&self.requester_store)?;
             let mut jobs = lock(&self.store)?;
             jobs.open_jobs_filtered(MAX_ROUTE_JOBS, |job| {
-                routable(job) && interest(&requesters.state, job, &self.config)
+                Ok(routable(job) && interest(&*requesters, job, &self.config)?)
             })?
         };
         for job in demand {
@@ -338,7 +338,7 @@ impl Engine {
             || !source.options.watched()
             || &current != job
             || !routable(&current)
-            || !interest(&requesters.state, &current, &self.config)
+            || !interest(&*requesters, &current, &self.config)?
         {
             return Ok(Attach::Changed);
         }
@@ -392,7 +392,7 @@ impl Engine {
                 || parent.shared_file.is_some()
                 || !matches!(parent.request.kind.as_str(), "movie" | "episode")
                 || !crate::library::import_exists(&parent)
-                || !interest(&lock(&self.requester_store)?.state, &parent, &self.config)
+                || !interest(&*lock(&self.requester_store)?, &parent, &self.config)?
             {
                 continue;
             }

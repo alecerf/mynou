@@ -1,7 +1,7 @@
 //! Account I/O precedes admission. Snapshot reservations precede queued jobs.
 use super::{
     Capture, ControlRequest, Demand, LedgerRead, MAX_OFFSET, MAX_POLL_ITEMS, Policy, Provenance,
-    Record, State, digest, valid_id,
+    Record, digest, valid_id,
 };
 use crate::{
     Result, date,
@@ -115,7 +115,7 @@ fn public_account(
             .iter()
             .any(|account| account.id == record.id),
     );
-    value.insert("pending", ledger.count(&record.id, Some("pending"))?);
+    value.insert("pending", Value::Number(ledger.count(&record.id, Some("pending"))? as f64));
     value.insert("origin_cleanup_pending", !ledger.poll_ready(&record.id)?);
     Ok(value)
 }
@@ -137,9 +137,9 @@ fn requester_value(
         .get(id)
         .ok_or("Requester: unknown account")?;
     let mut value = public_account(ledger, record, config)?;
-    value.insert("total", ledger.count(id, None)?);
-    value.insert("offset", offset);
-    value.insert("limit", limit);
+    value.insert("total", Value::Number(ledger.count(id, None)? as f64));
+    value.insert("offset", Value::Number(offset as f64));
+    value.insert("limit", Value::Number(limit as f64));
     value.insert(
         "next",
         next.map_or(Value::Null, |key| super::encode_cursor(&key).into()),

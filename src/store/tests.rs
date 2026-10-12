@@ -1621,12 +1621,12 @@ fn routing_window_continues_past_an_ineligible_page() {
     bulk(&mut store, jobs.clone());
     assert!(
         store
-            .open_jobs_filtered(200, |job| job.id == jobs[204].id)
+            .open_jobs_filtered(200, |job| Ok(job.id == jobs[204].id))
             .unwrap()
             .is_empty()
     );
     let next = store
-        .open_jobs_filtered(200, |job| job.id == jobs[204].id)
+        .open_jobs_filtered(200, |job| Ok(job.id == jobs[204].id))
         .unwrap();
     assert_eq!(next.len(), 1);
     assert_eq!(next[0].id, jobs[204].id);

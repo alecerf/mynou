@@ -65,6 +65,7 @@ fn new_accounts_require_explicit_opt_in_before_queueing() {
     let queued = job(&engine, "alice");
     assert_eq!(queued.state, "queued");
     assert_eq!(queued.requester.as_ref().unwrap().account_id, "alice");
+    drop(engine);
     let ledger = read_snapshot(&cfg.store_dir);
     assert!(
         ledger.get("demands").unwrap().as_array().unwrap()[0]
@@ -74,7 +75,6 @@ fn new_accounts_require_explicit_opt_in_before_queueing() {
             .is_some()
     );
     no_credentials(&ledger);
-    drop(engine);
     let engine = Engine::open_for_management(cfg).unwrap();
     assert_eq!(job(&engine, "alice").requester, queued.requester);
     assert_eq!(
