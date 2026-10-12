@@ -501,7 +501,9 @@ fn verify(index: &mut Index, state: &State, plan: &Plan, counts: Counts) -> Resu
         return Err(failed("counters disagree"));
     }
     let mut expected = BTreeSet::from([
-        layout::FORMAT_KEY, layout::COUNTS_KEY, layout::LIBRARY_COUNT_KEY,
+        layout::FORMAT_KEY,
+        layout::COUNTS_KEY,
+        layout::LIBRARY_COUNT_KEY,
         layout::MIGRATION_SOURCE_KEY,
     ]);
     if index.get(&layout::MIGRATION_CURSOR_KEY)?.is_some() {
