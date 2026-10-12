@@ -3,6 +3,8 @@ pub(crate) mod engine;
 mod index;
 #[cfg(test)]
 mod index_tests;
+#[cfg(test)]
+mod ownership_tests;
 mod persistence;
 
 /// Authoritative fallible reads shared by validated legacy migration and the
