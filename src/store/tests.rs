@@ -733,6 +733,7 @@ fn monitoring_windows_reach_old_tips_beyond_inventory_prefixes() {
                 .iter()
                 .any(|job| job.id == format!("{:032x}", 1))
         );
+        let started = std::time::Instant::now();
         let window = store.monitoring_due(total + 1_000, 60, false, 4).unwrap();
         assert_eq!(window.total, total);
         assert_eq!(
@@ -750,6 +751,11 @@ fn monitoring_windows_reach_old_tips_beyond_inventory_prefixes() {
         assert!(
             reads <= 32,
             "{reads} tree pages for four monitoring rows with {total} tips"
+        );
+        eprintln!(
+            "monitoring-window size={total} rows={} tree_pages={reads} micros={}",
+            window.jobs.len(),
+            started.elapsed().as_micros()
         );
         assert!(
             store
