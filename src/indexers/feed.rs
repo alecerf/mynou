@@ -11,7 +11,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
 };
-pub(super) mod generation;
+pub(crate) mod generation;
 mod storage;
 
 const MAGIC: &[u8; 8] = b"MYNOUF01";
