@@ -43,15 +43,21 @@ indexers you want Mynou to search.
 
 ## How it works
 
-```mermaid
-flowchart LR
-    A["Request<br>Plex watchlist, CLI,<br>API or web"] --> B["Search<br>your indexers"]
-    B --> C["Select<br>the best release"]
-    C --> D["Download<br>built-in BitTorrent"]
-    D --> E["Analyze<br>the media file"]
-    E --> F["Import<br>into your library"]
-    F --> G["Confirm<br>in Plex"]
-```
+<p align="center">
+  <strong>Request</strong> → <strong>Search</strong> → <strong>Select</strong> →
+  <strong>Download</strong> → <strong>Analyze</strong> → <strong>Import</strong> →
+  <strong>Confirm</strong>
+</p>
+
+| Step | What Mynou does |
+| --- | --- |
+| 1. Request | Takes a title from a Plex watchlist, the command line, the API or the web interface. |
+| 2. Search | Asks the indexers you configured for matching releases. |
+| 3. Select | Picks the best release for your profile and records why the others lost. |
+| 4. Download | Fetches it with the built-in BitTorrent client and verifies every piece. |
+| 5. Analyze | Reads the media file's metadata to check what was downloaded. |
+| 6. Import | Files it in your library without overwriting anything. |
+| 7. Confirm | Asks Plex to scan and waits until Plex lists the title. |
 
 After that, Mynou can keep watching: new episodes of the series you follow are
 requested when they air, and better releases of titles you already own can be
