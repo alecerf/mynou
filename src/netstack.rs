@@ -1,8 +1,9 @@
-//! Offline inner IPv4/UDP codec, virtual UDP sockets and a bounded DNS stub client.
-//! Pure and std only: no sockets, threads, clock reads or tunnel coupling. The
-//! caller passes a captured generation and a monotonic elapsed time, and moves
-//! inner IP datagrams in and out. This is neither routing, host DNS, TCP nor VPN
-//! protection; see docs/netstack.md for the boundary and the remaining obligations.
+//! Offline inner IPv4/UDP/TCP codecs, virtual UDP sockets, a bounded DNS stub
+//! client and virtual TCP flows. Pure and std only: no sockets, threads, clock
+//! reads or tunnel coupling. The caller passes a captured generation and a
+//! monotonic elapsed time, and moves inner IP datagrams in and out. This is
+//! neither routing, host DNS nor VPN protection; see docs/netstack.md and
+//! docs/netstack-tcp.md for the boundary and the remaining obligations.
 
 use std::time::Duration;
 
@@ -12,6 +13,10 @@ mod dns;
 mod ipv4;
 #[path = "netstack/sockets.rs"]
 mod sockets;
+#[path = "netstack/stream.rs"]
+mod stream;
+#[path = "netstack/tcp.rs"]
+mod tcp;
 #[path = "netstack/udp.rs"]
 mod udp;
 
@@ -21,10 +26,18 @@ pub use dns::{
 };
 pub use ipv4::{
     BuildError, DEFAULT_TTL, HEADER_LEN as IPV4_HEADER_LEN, Ipv4Config, MAX_MTU, MAX_OPTION_BYTES,
-    MIN_MTU, PROTOCOL_UDP, Packet, PacketError, checksum, parse as parse_ipv4,
+    MIN_MTU, PROTOCOL_TCP, PROTOCOL_UDP, Packet, PacketError, checksum, parse as parse_ipv4,
 };
 pub use sockets::{
     Delivery, EPHEMERAL_START, Handle, Ingest, Limits, Received, SocketError, UdpSockets,
+};
+pub use stream::{
+    Discard, Failure as TcpFailure, FlowHandle, Ingest as TcpIngest, ListenerHandle, Poll as TcpPoll,
+    Read, State as TcpState, TcpConfig, TcpError, TcpStack,
+};
+pub use tcp::{
+    DEFAULT_PEER_MSS, HEADER_LEN as TCP_HEADER_LEN, Header as TcpHeader, MIN_PEER_MSS, Segment,
+    SegmentError, build as build_tcp, max_payload as max_tcp_payload, parse as parse_tcp,
 };
 pub use udp::{
     Datagram, DatagramError, HEADER_LEN as UDP_HEADER_LEN, build as build_udp, max_payload,

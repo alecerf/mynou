@@ -319,6 +319,66 @@ def inner_ip_vectors():
     return {"checksum": checksums, "ipv4": packets, "udp": udp}
 
 
+def tcp_segment(source, destination, source_port, destination_port, sequence, acknowledgment,
+                flags, window, payload=b"", options=b""):
+    # RFC 9293 section 3.1: the checksum covers the pseudo-header, header and payload and
+    # is mandatory; unlike UDP a computed zero is sent as zero.
+    assert len(options) % 4 == 0
+    offset = (20 + len(options)) // 4
+    segment = source_port.to_bytes(2, "big") + destination_port.to_bytes(2, "big")
+    segment += sequence.to_bytes(4, "big") + acknowledgment.to_bytes(4, "big")
+    segment += bytes((offset << 4, flags)) + window.to_bytes(2, "big") + b"\0\0\0\0"
+    segment += options + payload
+    pseudo = ipaddress.IPv4Address(source).packed + ipaddress.IPv4Address(destination).packed
+    pseudo += bytes((0, 6)) + len(segment).to_bytes(2, "big")
+    return segment[:16] + inet_checksum(pseudo + segment).to_bytes(2, "big") + segment[18:]
+
+
+def tcp_vectors():
+    FIN, SYN, RST, PSH, ACK = 1, 2, 4, 8, 16
+    mss = lambda value: bytes((2, 4)) + value.to_bytes(2, "big")
+    local, remote = "10.64.0.2", "203.0.113.9"
+    rows = []
+
+    def add(source_port, destination_port, sequence, acknowledgment, flags, window, payload=b"",
+            options=b"", mss_value=None, canonical=True):
+        segment = tcp_segment(remote, local, source_port, destination_port, sequence,
+                              acknowledgment, flags, window, payload, options)
+        rows.append({"source": remote, "destination": local, "source_port": source_port,
+                     "destination_port": destination_port, "sequence": sequence,
+                     "acknowledgment": acknowledgment, "flags": flags, "window": window,
+                     "mss": mss_value, "payload": payload.hex(),
+                     "packet": ip_packet(remote, local, 6, segment).hex(), "canonical": canonical})
+
+    add(443, 49152, 1000, 0, SYN, 65535, options=mss(1384), mss_value=1384)
+    add(443, 49152, 4294967295, 7, SYN | ACK, 8192, options=mss(536), mss_value=536)
+    add(443, 49152, 1, 2, ACK, 1000, pattern(100, 5))
+    add(443, 49152, 4294967290, 4294967295, PSH | ACK, 65535, pattern(1384, 7))
+    add(6881, 49152, 5, 6, ACK, 65535, pattern(1, 3))
+    add(6881, 49152, 5, 6, ACK, 65535, pattern(3, 3))
+    add(6881, 49152, 9, 10, FIN | ACK, 0)
+    add(6881, 49152, 11, 12, RST, 0)
+    add(6881, 49152, 11, 12, RST | ACK, 0)
+    # Options that are valid but not produced by the builder: NOP padding, window scale,
+    # SACK-permitted and timestamps are skipped by length; a stray MSS outside a SYN is ignored.
+    add(443, 49152, 20, 21, ACK, 100, pattern(4, 9), options=bytes((1, 1, 8, 10)) + bytes(8),
+        canonical=False)
+    add(443, 49152, 22, 0, SYN, 100, options=bytes((1, 3, 3, 7)) + bytes((4, 2, 1, 0)),
+        canonical=False)
+    add(443, 49152, 24, 25, ACK, 100, options=mss(1000), canonical=False)
+    add(443, 49152, 26, 27, ACK, 100, options=bytes((0, 0, 0, 0)), canonical=False)
+    # A payload whose checksum is computed as zero is sent as zero.
+    for first in range(65536):
+        payload = first.to_bytes(2, "big")
+        segment = tcp_segment(remote, local, 443, 49152, 30, 31, ACK, 100, payload)
+        if segment[16:18] == b"\0\0":
+            break
+    else:
+        raise AssertionError("no zero-checksum payload")
+    add(443, 49152, 30, 31, ACK, 100, payload)
+    return rows
+
+
 def dns_name(name):
     wire = b""
     for label in name.rstrip(".").split("."):
@@ -429,7 +489,7 @@ def vectors():
                                     "output": expand(prk, info, length).hex()})
     return {"schema": 1, "blake2s": hashes, "hmac": hmacs, "hkdf": derivations,
             "wireguard": transport_vectors(), "handshake": handshake_vectors(),
-            "cookie": cookie_vectors(), "inner": inner_ip_vectors(), "dns": dns_vectors()}
+            "cookie": cookie_vectors(), "inner": inner_ip_vectors(), "tcp": tcp_vectors(), "dns": dns_vectors()}
 
 
 def main():
