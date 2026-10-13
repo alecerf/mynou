@@ -241,8 +241,8 @@ impl Engine {
         let poll = integrations::poll_feed(source, Instant::now() + POLL_BUDGET)?;
         let ids: Vec<&str> = poll.entries.iter().map(|entry| entry.id.as_str()).collect();
         // The cursor and deduplication window are durable before anything is
-        // routed or reported. A failed commit leaves the previous window, so the
-        // same entries are observed again by the next poll.
+        // routed or reported. An uncertain commit requires writable restart;
+        // recovery determines whether this window became durable.
         let observation = {
             let mut feeds = lock(&self.feed_store).map_err(|_| "storage_failed")?;
             let current = feeds

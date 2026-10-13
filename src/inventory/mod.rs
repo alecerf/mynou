@@ -90,7 +90,16 @@ impl Index {
     }
 
     pub fn open(directory: &std::path::Path, read_only: bool) -> Result<Self> {
-        persistence::open(directory, read_only)
+        persistence::open(directory, read_only, None)
+    }
+
+    /// Bind a published marker before any writable transaction recovery.
+    pub(crate) fn open_bound(
+        directory: &std::path::Path,
+        read_only: bool,
+        identity: [u8; 32],
+    ) -> Result<Self> {
+        persistence::open(directory, read_only, Some(identity))
     }
 
     /// The random identity chosen when the store was created.
