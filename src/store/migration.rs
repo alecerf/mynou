@@ -75,6 +75,7 @@ fn ready(
     report: Option<MigrationReport>,
 ) -> Result<Store> {
     super::monitoring::upgrade(&mut index, read_only)?;
+    super::children::upgrade(&mut index, read_only)?;
     Ok(Store::from_parts(
         directory,
         lock,
@@ -163,7 +164,9 @@ fn check_format(index: &mut Index, read_only: bool) -> Result<()> {
         Some(value)
             if value == FORMAT
                 || value == super::monitoring::FORMAT
-                || value == super::monitoring::PENDING =>
+                || value == super::monitoring::PENDING
+                || value == super::children::FORMAT
+                || value == super::children::PENDING =>
         {
             Db(index).counts().map(|_| ())
         }

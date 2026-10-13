@@ -335,10 +335,17 @@ by this upgrade. Disk exhaustion leaves the pending marker and recovery data
 for a writable restart after storage is available. Read-only opening refuses
 an unfinished or required upgrade and never repairs it.
 
+After that, the same writable open upgrades `mynou-jobs/2` to `mynou-jobs/3`,
+which adds an index of ready imported upgrade children so a library-tip write
+asks one bounded question about a parent instead of reading every child it ever
+had. The pending marker `mynou-jobs/3-building` excludes older readers; each
+bounded page of derived entries commits with its cursor, reopening resumes it,
+and read-only opening refuses an unfinished upgrade without repairing it.
+
 Before upgrading, make a complete stopped-store backup if downgrade may be
-needed. Earlier binaries reject format 2 and the pending marker. Downgrade
-requires restoring that complete pre-upgrade backup, or the matching original
-legacy snapshots as described above; subsequent changes are only in the newer
+needed. Earlier binaries reject formats 2 and 3 and the pending marker.
+Downgrade requires restoring that complete pre-upgrade backup, or the matching
+original legacy snapshots as described above; subsequent changes are only in the newer
 index. Never edit the index marker to bypass this rejection. Feed routing still
 needs a durable captured routing generation: merely moving its library cursor
 would lose transient releases after the feed marks them seen.

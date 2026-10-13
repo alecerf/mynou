@@ -478,21 +478,31 @@ impl Db<'_> {
             .is_some())
     }
 
+    /// Whether a ready import is a child of `parent`, as it will be once
+    /// `pending` (child → imported) is applied. Only imported children are
+    /// indexed, so one page of `pending.len() + 1` rows is decisive: at most
+    /// `pending.len()` of them can be overridden to "not imported".
     pub(super) fn replaced_by_child(
         &mut self,
         parent: &[u8; 16],
         pending: &BTreeMap<[u8; 16], bool>,
     ) -> Result<bool> {
+        for (child, imported) in pending {
+            if *imported && self.exists(&child_key(parent, child))? {
+                return Ok(true);
+            }
+        }
+        let limit = pending
+            .len()
+            .checked_add(1)
+            .ok_or("Child index window overflow")?
+            .min(MAX_PAGE_ROWS);
         let mut after = None;
         loop {
-            let page = self.scan(&[&[T_CHILD][..], parent].concat(), after, MAX_PAGE_ROWS)?;
-            for (key, value) in &page.entries {
+            let page = self.scan(&[&[T_IMPORTED_CHILD][..], parent].concat(), after, limit)?;
+            for (key, _) in &page.entries {
                 let child = key_part::<16>(key, 17)?;
-                if pending
-                    .get(&child)
-                    .copied()
-                    .unwrap_or(value.first() == Some(&1))
-                {
+                if pending.get(&child) != Some(&false) {
                     return Ok(true);
                 }
             }

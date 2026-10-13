@@ -20,6 +20,7 @@ use std::io::Read;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+mod children;
 mod groups;
 mod irc;
 mod layout;

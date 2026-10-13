@@ -49,12 +49,14 @@ pub(super) const T_MONITOR_DUE: u8 = 0x39;
 pub(super) const T_MONITOR_REF: u8 = 0x3a;
 pub(super) const T_MONITOR_SHARED: u8 = 0x3b;
 pub(super) const T_MONITOR_UNCHECKED: u8 = 0x3c;
+pub(super) const T_IMPORTED_CHILD: u8 = 0x3d;
 
 pub(super) const FORMAT_KEY: Key = single(T_META, 0);
 pub(super) const COUNTS_KEY: Key = single(T_META, 1);
 pub(super) const LIBRARY_COUNT_KEY: Key = single(T_META, 2);
 pub(super) const MONITOR_COUNTS_KEY: Key = single(T_META, 3);
 pub(super) const MONITOR_CURSOR_KEY: Key = single(T_META, 4);
+pub(super) const CHILD_CURSOR_KEY: Key = single(T_META, 5);
 pub(super) const MIGRATION_SOURCE_KEY: Key = single(T_MIGRATION, 0);
 pub(super) const MIGRATION_CURSOR_KEY: Key = single(T_MIGRATION, 1);
 
@@ -224,6 +226,11 @@ pub(super) fn identity_prefix(kind: &str, tmdb: Option<u64>, season: u32, episod
 }
 pub(super) fn child_key(parent: &[u8; 16], child: &[u8; 16]) -> Key {
     key(&[&[T_CHILD], parent, child])
+}
+/// Present only for a ready import, so "does the parent have one" is a
+/// single-row read regardless of how many other children it ever had.
+pub(super) fn imported_child_key(parent: &[u8; 16], child: &[u8; 16]) -> Key {
+    key(&[&[T_IMPORTED_CHILD], parent, child])
 }
 pub(super) fn tip_key(id: &[u8; 16]) -> Key {
     key(&[&[T_TIP], id])
@@ -423,6 +430,9 @@ pub(super) fn owned(job: &Job, root: &Root) -> Result<BTreeMap<Key, Entry>> {
     if let Some(parent) = &job.upgrade_parent {
         let parent = id_bytes(parent)?;
         inline(child_key(&parent, &id), &[u8::from(imported(job))]);
+        if imported(job) {
+            inline(imported_child_key(&parent, &id), &[]);
+        }
     }
     for transfer in transfers(job) {
         inline(transfer_key(transfer, &id), &[]);
