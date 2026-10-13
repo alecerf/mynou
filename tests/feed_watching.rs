@@ -812,7 +812,10 @@ fn protected_status_and_offline_cli_expose_only_redacted_freshness() {
     let row = &report.get("sources").unwrap().as_array().unwrap()[0];
     assert_eq!(row.get("watch_enabled"), Some(&Value::Bool(true)));
     assert_eq!(text(row, "successes"), "0");
-    assert_eq!(server.call("GET", "/api/feeds/retained", &[], "").status, 401);
+    assert_eq!(
+        server.call("GET", "/api/feeds/retained", &[], "").status,
+        401
+    );
     let retained = server.call(
         "GET",
         "/api/feeds/retained?limit=1",
@@ -846,7 +849,11 @@ fn protected_status_and_offline_cli_expose_only_redacted_freshness() {
         .arg(&path)
         .output()
         .unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let retained = json::parse(std::str::from_utf8(&out.stdout).unwrap()).unwrap();
     no_private(&retained);
     assert_eq!(text(&retained, "total"), "1");

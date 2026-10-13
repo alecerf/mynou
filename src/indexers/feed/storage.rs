@@ -357,8 +357,11 @@ impl Storage {
                 if bytes.len() != 80 || !indexed {
                     return Err("Feed state: missing or invalid indexed storage".into());
                 }
-                let identity = bytes[16..48].try_into().map_err(|_| "Feed state: invalid marker identity")?;
-                let mut index = Index::open_bound(&directory.join("feeds.idx"), read_only, identity)?;
+                let identity = bytes[16..48]
+                    .try_into()
+                    .map_err(|_| "Feed state: invalid marker identity")?;
+                let mut index =
+                    Index::open_bound(&directory.join("feeds.idx"), read_only, identity)?;
                 check(&mut index)?;
                 if index.get(&CURSOR)?.is_some() {
                     return Err("Feed state: published index retains a migration cursor".into());
@@ -534,7 +537,10 @@ impl Storage {
         if let Some(original) = original {
             replace(
                 &self.directory,
-                &self.directory.join(format!("feeds.legacy-{}.bin", super::digest(&original.bytes))),
+                &self.directory.join(format!(
+                    "feeds.legacy-{}.bin",
+                    super::digest(&original.bytes)
+                )),
                 &original.bytes,
                 true,
             )?;
