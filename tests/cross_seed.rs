@@ -11,16 +11,16 @@ use mynou::{
 };
 use std::{
     fs,
-    io::{BufRead, BufReader, Read, Write},
+    io::{Read, Write},
     net::{TcpListener, TcpStream},
     path::PathBuf,
     process::Command,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use transfer_support::*;
 
@@ -71,65 +71,163 @@ fn failed(client: &Client, id: &str) {
     );
 }
 
+// Accepted sockets may inherit nonblocking mode on macOS. Handle WouldBlock
+// explicitly, retaining partial headers and servicing every pending peer fairly.
+struct TrackerConnection {
+    stream: TcpStream,
+    header: Vec<u8>,
+    response: Vec<u8>,
+    sent: usize,
+    event: Option<String>,
+    deadline: Instant,
+}
+impl TrackerConnection {
+    fn poll(&mut self) -> std::io::Result<bool> {
+        use std::io::{Error, ErrorKind};
+        if Instant::now() >= self.deadline {
+            return Err(Error::new(ErrorKind::TimedOut, "tracker request deadline"));
+        }
+        if self.response.is_empty() {
+            let mut bytes = [0; 1024];
+            match self.stream.read(&mut bytes) {
+                Ok(0) => {
+                    return Err(Error::new(
+                        ErrorKind::UnexpectedEof,
+                        "incomplete tracker headers",
+                    ));
+                }
+                Ok(size) => {
+                    if self.header.len() + size > 16_384 {
+                        return Err(Error::new(
+                            ErrorKind::InvalidData,
+                            "tracker headers exceed budget",
+                        ));
+                    }
+                    self.header.extend_from_slice(&bytes[..size]);
+                }
+                Err(error)
+                    if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::Interrupted) =>
+                {
+                    return Ok(false);
+                }
+                Err(error) => return Err(error),
+            }
+            if !self.header.windows(4).any(|part| part == b"\r\n\r\n") {
+                return Ok(false);
+            }
+            let header = std::str::from_utf8(&self.header).map_err(|_| {
+                Error::new(ErrorKind::InvalidData, "invalid tracker header encoding")
+            })?;
+            let first = header.split("\r\n").next().unwrap_or_default();
+            if !first.starts_with("GET ") || !first.ends_with(" HTTP/1.1") {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "invalid tracker request line",
+                ));
+            }
+            self.event = Some(first.to_owned());
+            let body = b"d8:intervali30e5:peers0:e";
+            self.response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            )
+            .into_bytes();
+            self.response.extend_from_slice(body);
+        }
+        match self.stream.write(&self.response[self.sent..]) {
+            Ok(0) => Err(Error::new(ErrorKind::WriteZero, "tracker response stalled")),
+            Ok(size) => {
+                self.sent += size;
+                Ok(self.sent == self.response.len())
+            }
+            Err(error)
+                if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::Interrupted) =>
+            {
+                Ok(false)
+            }
+            Err(error) => Err(error),
+        }
+    }
+}
+
 struct Tracker {
     url: String,
     events: Arc<Mutex<Vec<String>>>,
+    rejected: Arc<Mutex<Vec<std::io::ErrorKind>>>,
+    accepted: Arc<AtomicUsize>,
     stopped: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
 }
 impl Tracker {
     fn new() -> Self {
+        Self::with_deadline(Duration::from_secs(2))
+    }
+    fn with_deadline(deadline: Duration) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let url = format!("http://{}/announce", listener.local_addr().unwrap());
         let events = Arc::new(Mutex::new(Vec::new()));
+        let rejected = Arc::new(Mutex::new(Vec::new()));
         let stopped = Arc::new(AtomicBool::new(false));
+        let accepted = Arc::new(AtomicUsize::new(0));
+        let accepts = accepted.clone();
         let record = events.clone();
+        let errors = rejected.clone();
         let stop = stopped.clone();
         let worker = thread::spawn(move || {
+            let mut pending: Vec<TrackerConnection> = Vec::new();
             while !stop.load(Ordering::Acquire) {
-                let (mut stream, _) = match listener.accept() {
-                    Ok(pair) => pair,
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        thread::sleep(Duration::from_millis(3));
-                        continue;
+                // Accept at most one per turn; connection floods cannot starve
+                // already accepted requests or the stop flag.
+                if pending.len() < 64 {
+                    match listener.accept() {
+                        Ok((stream, _)) => {
+                            stream.set_nonblocking(true).unwrap();
+                            pending.push(TrackerConnection {
+                                stream,
+                                header: Vec::new(),
+                                response: Vec::new(),
+                                sent: 0,
+                                event: None,
+                                deadline: Instant::now() + deadline,
+                            });
+                            accepts.fetch_add(1, Ordering::Release);
+                        }
+                        Err(error)
+                            if matches!(
+                                error.kind(),
+                                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted
+                            ) => {}
+                        Err(error) => panic!("loopback tracker accept: {error}"),
                     }
-                    Err(error) => panic!("loopback tracker: {error}"),
-                };
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(2)))
-                    .unwrap();
-                stream
-                    .set_write_timeout(Some(Duration::from_secs(2)))
-                    .unwrap();
-                let mut reader = BufReader::new(stream.try_clone().unwrap());
-                let mut first = String::new();
-                reader.read_line(&mut first).unwrap();
-                record.lock().unwrap().push(first);
-                let mut size = 0;
-                loop {
-                    let mut line = String::new();
-                    reader.read_line(&mut line).unwrap();
-                    size += line.len();
-                    assert!(size < 16_384);
-                    if line == "\r\n" {
-                        break;
-                    }
-                    assert!(!line.is_empty());
                 }
-                let body = b"d8:intervali30e5:peers0:e";
-                write!(
-                    stream,
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                    body.len()
-                )
-                .unwrap();
-                stream.write_all(body).unwrap();
+                let mut index = 0;
+                while index < pending.len() {
+                    match pending[index].poll() {
+                        Ok(false) => index += 1,
+                        Ok(true) => {
+                            let finished = pending.swap_remove(index);
+                            record.lock().unwrap().push(finished.event.unwrap());
+                        }
+                        Err(error) => {
+                            let mut rejected = errors.lock().unwrap();
+                            assert!(
+                                rejected.len() < 64,
+                                "too many rejected tracker fixture connections"
+                            );
+                            rejected.push(error.kind());
+                            pending.swap_remove(index);
+                        }
+                    }
+                }
+                thread::sleep(Duration::from_millis(3));
             }
         });
         Self {
             url,
             events,
+            rejected,
+            accepted,
             stopped,
             worker: Some(worker),
         }
@@ -154,6 +252,118 @@ impl Drop for Tracker {
             worker.join().unwrap();
         }
     }
+}
+
+fn tracker_peer(tracker: &Tracker) -> TcpStream {
+    let address = tracker
+        .url
+        .strip_prefix("http://")
+        .unwrap()
+        .strip_suffix("/announce")
+        .unwrap();
+    let peer = TcpStream::connect(address).unwrap();
+    peer.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    peer.set_write_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    peer
+}
+
+fn tracker_reply(peer: &mut TcpStream) {
+    let mut reply = Vec::new();
+    peer.read_to_end(&mut reply).unwrap();
+    assert!(reply.starts_with(b"HTTP/1.1 200 OK\r\n"));
+    assert!(reply.ends_with(b"d8:intervali30e5:peers0:e"));
+}
+
+#[test]
+fn tracker_retains_fragmented_headers_without_blocking_another_peer() {
+    let tracker = Tracker::with_deadline(Duration::from_secs(30));
+    let mut partial = tracker_peer(&tracker);
+    partial
+        .write_all(b"GET /partial HTTP/1.1\r\nHost: loop")
+        .unwrap();
+    wait(|| tracker.accepted.load(Ordering::Acquire) == 1);
+    let mut healthy = tracker_peer(&tracker);
+    healthy
+        .write_all(b"GET /healthy HTTP/1.1\r\nHost: loopback\r\n\r\n")
+        .unwrap();
+    tracker_reply(&mut healthy);
+    assert_eq!(*tracker.events.lock().unwrap(), ["GET /healthy HTTP/1.1"]);
+    assert!(tracker.rejected.lock().unwrap().is_empty());
+    partial.write_all(b"back\r\n\r\n").unwrap();
+    tracker_reply(&mut partial);
+    assert_eq!(
+        *tracker.events.lock().unwrap(),
+        ["GET /healthy HTTP/1.1", "GET /partial HTTP/1.1"]
+    );
+}
+
+#[test]
+fn tracker_rejects_an_abandoned_request_and_serves_the_next_peer() {
+    let tracker = Tracker::new();
+    let mut abandoned = tracker_peer(&tracker);
+    abandoned.write_all(b"GET /abandoned HTTP/1.1\r\n").unwrap();
+    drop(abandoned);
+    wait(|| {
+        tracker
+            .rejected
+            .lock()
+            .unwrap()
+            .contains(&std::io::ErrorKind::UnexpectedEof)
+    });
+    assert!(tracker.events.lock().unwrap().is_empty());
+    let mut healthy = tracker_peer(&tracker);
+    healthy.write_all(b"GET /healthy HTTP/1.1\r\n\r\n").unwrap();
+    tracker_reply(&mut healthy);
+    assert_eq!(*tracker.events.lock().unwrap(), ["GET /healthy HTTP/1.1"]);
+}
+
+#[test]
+fn tracker_bounds_incomplete_headers_and_keeps_serving_after_the_deadline() {
+    let tracker = Tracker::with_deadline(Duration::from_millis(250));
+    let mut stalled = tracker_peer(&tracker);
+    stalled.write_all(b"GET /stalled HTTP/1.1\r\n").unwrap();
+    wait(|| {
+        tracker
+            .rejected
+            .lock()
+            .unwrap()
+            .contains(&std::io::ErrorKind::TimedOut)
+    });
+    let mut healthy = tracker_peer(&tracker);
+    healthy.write_all(b"GET /healthy HTTP/1.1\r\n\r\n").unwrap();
+    tracker_reply(&mut healthy);
+    assert_eq!(*tracker.events.lock().unwrap(), ["GET /healthy HTTP/1.1"]);
+}
+
+#[test]
+fn tracker_rejects_oversized_headers_without_recording_an_announcement() {
+    let tracker = Tracker::new();
+    let mut oversized = tracker_peer(&tracker);
+    oversized.write_all(&vec![b'x'; 16_385]).unwrap();
+    wait(|| {
+        tracker
+            .rejected
+            .lock()
+            .unwrap()
+            .contains(&std::io::ErrorKind::InvalidData)
+    });
+    assert!(tracker.events.lock().unwrap().is_empty());
+}
+
+#[test]
+fn tracker_shutdown_interrupts_a_pending_header() {
+    let tracker = Tracker::with_deadline(Duration::from_secs(30));
+    let mut stalled = tracker_peer(&tracker);
+    stalled.write_all(b"GET /stalled HTTP/1.1\r\n").unwrap();
+    wait(|| tracker.accepted.load(Ordering::Acquire) == 1);
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    let worker = thread::spawn(move || {
+        drop(tracker);
+        done_tx.send(()).unwrap();
+    });
+    done_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+    worker.join().unwrap();
 }
 
 #[test]

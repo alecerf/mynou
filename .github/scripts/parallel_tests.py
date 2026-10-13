@@ -1,4 +1,4 @@
-"""CI-only Rust test scheduler, using Python's standard library and Cargo JSON."""
+"""Local/CI Rust test scheduler with complete bounded library-module coverage."""
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -11,6 +11,7 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 
 
@@ -26,6 +27,54 @@ RESULT = re.compile(
 class Target:
     source: str
     executable: Path
+    tests: tuple[str, ...] = ()
+    total_tests: int = 0
+
+    @property
+    def label(self):
+        if not self.tests:
+            return self.source
+        return self.source + "::" + self.tests[0].split("::")[0]
+
+
+def library_shards(targets, root):
+    """Discover every library test; exact-name filters partition it once."""
+    planned = []
+    for target in targets:
+        if target.source != "src/lib.rs":
+            planned.append(target)
+            continue
+        with tempfile.TemporaryFile() as listing:
+            process = subprocess.Popen(
+                [str(target.executable), "--list", "--format", "terse"],
+                cwd=root, stdout=listing, stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            try:
+                code = process.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                terminate(process)
+                raise ValueError("Library test discovery timed out") from None
+            listing.seek(0)
+            data = listing.read(MAX_LOG_BYTES + 1)
+        if code != 0 or len(data) > MAX_LOG_BYTES:
+            raise ValueError("Library test discovery failed or exceeded its log budget")
+        names = []
+        for line in data.decode("utf-8").splitlines():
+            match = re.fullmatch(r"([A-Za-z_][\w]*(?:::[A-Za-z_][\w]*)*): test", line)
+            if not match:
+                raise ValueError("Malformed library test listing")
+            names.append(match[1])
+        if not names or len(names) > 10_000 or len(names) != len(set(names)):
+            raise ValueError("Library discovery must contain 1–10000 unique tests")
+        groups = {}
+        for name in names:
+            groups.setdefault(name.split("::")[0], []).append(name)
+        if len(groups) > 128:
+            raise ValueError("Library discovery exceeds 128 module groups")
+        for group in sorted(groups):
+            planned.append(Target(target.source, target.executable, tuple(sorted(groups[group])), len(names)))
+    return planned
 
 
 def expected_sources(metadata, root):
@@ -101,10 +150,15 @@ def terminate(process):
 def execute(target, root, log, threads, timeout):
     started = time.monotonic()
     timed_out = False
-    with log.open("wb") as stream:
+    with log.open("wb") as stream, tempfile.TemporaryDirectory(
+        prefix="mynou-test-", dir=root / "target"
+    ) as working_directory:
+        command = [str(target.executable), "--test-threads", str(threads), "--show-output", "--color", "never"]
+        if target.tests:
+            command += ["--exact", *target.tests]
         process = subprocess.Popen(
-            [str(target.executable), "--test-threads", str(threads), "--show-output", "--color", "never"],
-            cwd=root,
+            command,
+            cwd=working_directory,
             stdout=stream,
             stderr=subprocess.STDOUT,
             start_new_session=True,
@@ -130,11 +184,23 @@ def execute(target, root, log, threads, timeout):
             "passed": int(passed), "failed": int(failed),
             "ignored": int(ignored), "filtered": int(filtered),
         }
-        summary_ok = state == "ok" and not any(counts[key] for key in ("failed", "ignored", "filtered"))
+        if target.tests:
+            actual = re.findall(r"^test ([\w:]+)(?: - should panic)? \.\.\. ok$", text, re.MULTILINE)
+            summary_ok = (
+                state == "ok" and counts["failed"] == counts["ignored"] == 0
+                and counts["passed"] == len(target.tests)
+                and counts["filtered"] == target.total_tests - len(target.tests)
+                and len(actual) == len(target.tests) and set(actual) == set(target.tests)
+            )
+            # Other shards execute the filtered names; none are skipped overall.
+            if summary_ok:
+                counts["filtered"] = 0
+        else:
+            summary_ok = state == "ok" and not any(counts[key] for key in ("failed", "ignored", "filtered"))
     else:
         summary_ok = False
     return {
-        "source": target.source, "seconds": round(time.monotonic() - started, 3),
+        "source": target.label, "seconds": round(time.monotonic() - started, 3),
         "exit_code": code, "timed_out": timed_out, "log": log.name,
         "success": code == 0 and not timed_out and not oversized and summary_ok,
         "counts": counts,
@@ -142,8 +208,16 @@ def execute(target, root, log, threads, timeout):
 
 
 def schedule(targets, root, output, workers, threads, timeout, history):
+    if len({target.label for target in targets}) != len(targets):
+        raise ValueError("Duplicate scheduled target")
+    libraries = [target for target in targets if target.tests]
+    if libraries:
+        names = [name for target in libraries for name in target.tests]
+        totals = {target.total_tests for target in libraries}
+        if len(totals) != 1 or len(names) != next(iter(totals)) or len(names) != len(set(names)):
+            raise ValueError("Library groups must cover every discovered test exactly once")
     output.mkdir(parents=True, exist_ok=False)
-    ordered = sorted(targets, key=lambda target: (-history.get(target.source, 0), target.source))
+    ordered = sorted(targets, key=lambda target: (-history.get(target.label, history.get(target.source, 0)), target.label))
     started = time.monotonic()
     results = []
     with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -156,9 +230,9 @@ def schedule(targets, root, output, workers, threads, timeout, history):
             try:
                 result = future.result()
             except Exception as error:
-                result = {"source": target.source, "seconds": 0, "success": False, "error": str(error), "counts": None}
+                result = {"source": target.label, "seconds": 0, "success": False, "error": str(error), "counts": None}
             results.append(result)
-            print(f"{target.source}: {'passed' if result['success'] else 'FAILED'} ({result['seconds']:.3f}s)", flush=True)
+            print(f"{target.label}: {'passed' if result['success'] else 'FAILED'} ({result['seconds']:.3f}s)", flush=True)
     return {
         "schema_version": 1, "seconds": round(time.monotonic() - started, 3),
         "workers": workers, "threads_per_harness": threads,
@@ -189,7 +263,9 @@ def main():
     cached = root / "target/debug/mynou-ci-test-timings.json"
     history = weights([root / ".github/scripts/test_durations.json", cached])
     targets = discover(args.manifest, root, expected_sources(args.metadata, root))
-    print(f"Running all {len(targets)} Cargo test harnesses: {args.workers} processes, {args.threads} threads per harness", flush=True)
+    harnesses = len(targets)
+    targets = library_shards(targets, root)
+    print(f"Running all {harnesses} Cargo test harnesses in {len(targets)} groups: {args.workers} processes, {args.threads} threads per group", flush=True)
     report = schedule(targets, root, args.output, args.workers, args.threads, args.timeout, history)
     encoded = json.dumps(report, indent=2) + "\n"
     (args.output / "report.json").write_text(encoded)
@@ -203,7 +279,7 @@ def main():
         print("\n::endgroup::", flush=True)
     summary = [
         "### Rust test execution", "",
-        f"All **{len(targets)}** Cargo harnesses ran with **{args.workers}** processes and **{args.threads}** threads per harness.",
+        f"All **{harnesses}** Cargo harnesses ran in **{len(targets)}** groups with **{args.workers}** processes and **{args.threads}** threads per group.",
         f"Elapsed: **{report['seconds']:.3f}s**. Passed: **{report['counts']['passed']}**. Failed: **{report['counts']['failed']}**. Ignored: **{report['counts']['ignored']}**.",
         "", "| Target | Seconds | Result |", "| --- | ---: | --- |",
     ]
