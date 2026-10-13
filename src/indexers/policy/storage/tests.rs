@@ -42,7 +42,7 @@ fn snapshot(records: &[Record]) -> Vec<u8> {
     );
     frame(MAGIC, json::stringify(&value).as_bytes())
 }
-fn index(storage: &mut Storage) -> &mut Index {
+fn indexed(storage: &mut Storage) -> &mut Index {
     match &mut storage.backend {
         Backend::Ready(index) | Backend::Unpublished(index, _) => index,
         _ => panic!("indexed fixture"),
@@ -81,21 +81,21 @@ fn retained_growth_exceeds_both_old_limits_and_keeps_point_operations_bounded() 
             .iter()
             .map(|r| json::stringify(&r.to_json()).len())
             .sum::<usize>();
-        put(index(&mut storage), &batch, None).unwrap();
+        put(indexed(&mut storage), &batch, None).unwrap();
     }
     assert!(bytes > MAX_BYTES);
     assert_eq!(storage.total().unwrap(), 10_001);
     for n in [1, 999, 1001, 10_001] {
-        let before = index(&mut storage).requests();
+        let before = indexed(&mut storage).requests();
         assert_eq!(storage.row(&record(n).id).unwrap(), Some(record(n)));
-        assert_eq!(index(&mut storage).requests() - before, 1);
+        assert_eq!(indexed(&mut storage).requests() - before, 1);
     }
-    let before = index(&mut storage).requests();
+    let before = indexed(&mut storage).requests();
     let old_guard = storage.guard().unwrap();
     let mut changed = record(10_001);
     changed.enabled = true;
     storage.commit(changed.clone()).unwrap();
-    assert!(index(&mut storage).requests() - before <= 4);
+    assert!(indexed(&mut storage).requests() - before <= 4);
     assert_ne!(storage.guard().unwrap(), old_guard);
     assert_eq!(storage.total().unwrap(), 10_001);
     drop(storage);
@@ -171,7 +171,7 @@ fn migration_resumes_cursor_and_unmarked_promotion() {
         drop(readonly);
         let mut storage = Storage::open(&directory.0, false).unwrap();
         storage.initialize().unwrap();
-        assert_eq!(index(&mut storage).identity(), identity);
+        assert_eq!(indexed(&mut storage).identity(), identity);
         assert_eq!(storage.total().unwrap(), 250);
         for r in &records {
             assert_eq!(storage.row(&r.id).unwrap().as_ref(), Some(r));
@@ -232,7 +232,7 @@ fn uncertain_control_blocks_all_reads_until_writable_recovery() {
         let mut paused = record(1);
         paused.enabled = false;
         paused.revision = 2;
-        index(&mut storage).inject(Some(fault));
+        indexed(&mut storage).inject(Some(fault));
         assert!(storage.commit(paused.clone()).is_err());
         assert!(storage.row(&paused.id).is_err());
         assert!(storage.guard().is_err());
