@@ -454,3 +454,42 @@ resource/backlog diagnostics. Jobs, series and requester demand have left their
 fixed total inventory limits; IRC and source snapshots retain their documented
 bounds. Validation uses original synthetic fixtures in GitHub Actions on the
 supported macOS target.
+
+## Captured feed routing
+
+Feed format `mynou-feeds/2` adds one pending routing generation per configured
+watched source, with at most 200 private captured entries and 4 MiB of encoded
+payload. Each entry has its own checked object, binding source, generation and
+ordinal. Candidates include the titles and acquisition URLs necessary for replay;
+URLs may carry private access tokens, like saved job acquisition URLs. Headers,
+cookies and standalone credential values are never captured. CLI/API diagnostics
+show only counts, age and phase.
+
+Observation state and candidates commit together. A pending generation delays
+another source poll until its job/library scan finishes. Each source pass reads
+at most 200 jobs in 4 MiB hydrated windows (one larger existing job may appear
+alone), settles at most 32 acquisitions or
+upgrades and checks a ten-second routing deadline between decisions. One Plex
+availability request can run until its own ten-second deadline. Up to four sources
+run per watcher tick; a persisted round-robin source cursor prevents a busy source
+from continually displacing the others. Poll I/O retains its existing deadlines.
+
+Checkpoints record the last settled row, including nonmatches; unfinished page
+rows are never skipped. Creation-ordered scans are live: new rows before the
+cursor wait for a later generation. Older surviving eligible rows remain reachable.
+A crash after a job effect but before checkpoint replays through selection and
+upgrade ownership guards without resetting or duplicating the effect. Storage
+failures retain progress and block uncertain reads/writes until restart; a busy
+upgrade lock retains the library phase.
+
+Captured candidates grant no authority. Source policy revision, current requester
+interest, job state, library tip and release/profile baseline fence final mutations.
+Pause/re-enable changes invalidate the previous source revision; pause and removal
+cancel pending work while clearing the baseline. A failed cancellation after a
+persisted pause reports an error; startup settles it under the disabled policy.
+
+The format-1 upgrade atomically changes the header and adds empty routing/schedule
+metadata without enumerating retained records. Earlier binaries reject format 2.
+Before upgrading, keep a complete stopped-store backup if format-1 downgrade is
+needed; restoring it loses subsequent observations and captured work. Restoring
+legacy snapshots has the older limitations described above.

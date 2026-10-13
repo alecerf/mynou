@@ -16,7 +16,11 @@ use std::{
 };
 
 const MARKER: &[u8; 8] = b"MYNOUF02";
-const FORMAT: &[u8] = b"mynou-feeds/1";
+const OLD_FORMAT: &[u8] = b"mynou-feeds/1";
+const FORMAT: &[u8] = b"mynou-feeds/2";
+const ROUTING: Key = single(4);
+const SCHEDULE: Key = single(5);
+mod routing;
 const HEADER: Key = single(0);
 const COUNTS: Key = single(1);
 const SOURCE: Key = single(2);
@@ -53,6 +57,7 @@ pub(super) struct Storage {
     backend: Backend,
     read_only: bool,
     poisoned: bool,
+    upgrade: bool,
 }
 pub(super) struct Page {
     pub rows: Vec<Record>,
@@ -227,14 +232,22 @@ fn encode_counts(total: u64, active: u64) -> Vec<u8> {
     bytes
 }
 fn check(index: &mut Index) -> Result<()> {
-    if index.get(&HEADER)?.as_deref() != Some(FORMAT) {
+    let format = index.get(&HEADER)?.ok_or("Feed state: missing index format")?;
+    if format != FORMAT && format != OLD_FORMAT {
         return Err("Feed state: unsupported index format".into());
     }
     let (total, active) = counters(index)?;
-    let metadata = 3 + u64::from(index.get(&CURSOR)?.is_some());
+    let (metadata, generations, entries) = if format == FORMAT {
+        let (generations, entries) = routing::counts(index)?;
+        routing::schedule(index)?;
+        (5, generations, entries)
+    } else { (3, 0, 0) };
+    let metadata = metadata + u64::from(index.get(&CURSOR)?.is_some());
     let expected = metadata
         .checked_add(total)
         .and_then(|count| count.checked_add(active))
+        .and_then(|count| count.checked_add(generations))
+        .and_then(|count| count.checked_add(entries))
         .ok_or("Feed state: index cardinality overflow")?;
     if index.len()? != expected {
         return Err("Feed state: index cardinality disagrees with counts".into());
@@ -255,6 +268,9 @@ fn get(index: &mut Index, id: &str) -> Result<Option<Record>> {
 }
 
 fn put(index: &mut Index, records: &[Record], cursor: Option<&str>) -> Result<()> {
+    put_with(index, records, cursor, Vec::new())
+}
+fn put_with(index: &mut Index, records: &[Record], cursor: Option<&str>, extra: Vec<Change>) -> Result<()> {
     if records.len() > 200 {
         return Err("Feed state: transaction batch exceeds 200 records".into());
     }
@@ -307,6 +323,7 @@ fn put(index: &mut Index, records: &[Record], cursor: Option<&str>) -> Result<()
     if let Some(cursor) = cursor {
         changes.push(Change::Put(CURSOR, cursor.as_bytes().to_vec()));
     }
+    changes.extend(extra);
     index.commit(changes)?;
     Ok(())
 }
@@ -336,7 +353,11 @@ fn verify(index: &mut Index, original: Option<&Legacy>) -> Result<()> {
             }
         }
     }
-    let metadata = 3 + u64::from(index.get(&CURSOR)?.is_some());
+    let metadata = if index.get(&HEADER)?.as_deref() == Some(FORMAT) {
+        if routing::counts(index)? != (0, 0) || !routing::schedule(index)?.is_empty() { return Err("Feed state: migration contains runtime routing state".into()); }
+        5
+    } else { 3 };
+    let metadata = metadata + u64::from(index.get(&CURSOR)?.is_some());
     if index.len()? != metadata + total + active {
         return Err("Feed state: migration has unexpected entries".into());
     }
@@ -352,6 +373,7 @@ impl Storage {
         } else {
             None
         };
+        let mut upgrade = false;
         let backend = match image {
             Some(bytes) if &bytes[..8] == MARKER => {
                 if bytes.len() != 80 || !indexed {
@@ -363,6 +385,8 @@ impl Storage {
                 let mut index =
                     Index::open_bound(&directory.join("feeds.idx"), read_only, identity)?;
                 check(&mut index)?;
+                upgrade = index.get(&HEADER)?.as_deref() == Some(OLD_FORMAT);
+                if read_only && upgrade { return Err("Feed state: writable routing format upgrade required".into()); }
                 if index.get(&CURSOR)?.is_some() {
                     return Err("Feed state: published index retains a migration cursor".into());
                 }
@@ -393,6 +417,7 @@ impl Storage {
             backend,
             read_only,
             poisoned: false,
+            upgrade,
         })
     }
 
@@ -422,7 +447,7 @@ impl Storage {
         }
     }
     pub(super) fn needs_migration(&self) -> bool {
-        !matches!(self.backend, Backend::Ready(_))
+        self.upgrade || !matches!(self.backend, Backend::Ready(_))
     }
 
     pub(super) fn page(&mut self, after: Option<Key>, limit: usize) -> Result<Page> {
@@ -515,15 +540,18 @@ impl Storage {
         if self.read_only {
             return Ok(());
         }
-        if matches!(self.backend, Backend::Ready(_)) {
+        if let Backend::Ready(index) = &mut self.backend {
+            routing::upgrade(index)?;
+            self.upgrade = false;
             return Ok(());
         }
         if !matches!(self.backend, Backend::Unpublished(..)) {
             self.migrate()?;
         }
-        let Backend::Unpublished(index, original) = &self.backend else {
+        let Backend::Unpublished(index, original) = &mut self.backend else {
             return Err("Feed state: incomplete migration".into());
         };
+        routing::upgrade(index)?;
         let snapshot = self.directory.join("feeds.bin");
         match original {
             Some(original) if !exists(&snapshot)? || read(&snapshot)? != original.bytes => {
@@ -604,6 +632,7 @@ impl Storage {
         } else {
             create(&staging, source)?
         };
+        routing::upgrade(&mut index)?;
         let cursor = index
             .get(&CURSOR)?
             .map(|bytes| {
@@ -672,7 +701,11 @@ impl Storage {
         if &bytes[..8] != MARKER || bytes.len() != 80 || bytes[16..48] != index.identity() {
             return Err("Feed state: index marker changed; restart required".into());
         }
-        put(index, &[record], None)
+        let extra = if record.baselined {
+            if routing::header(index, &record.id)?.is_some() { return Err("Feed routing: pending generation must settle before another observation".into()); }
+            Vec::new()
+        } else { routing::cancel(index, &record.id)? };
+        put_with(index, &[record], None, extra)
     }
     pub(super) fn active(&mut self, after: Option<Key>) -> Result<(Vec<Record>, Option<Key>)> {
         self.available()?;
@@ -716,6 +749,8 @@ fn create(path: &Path, source: [u8; 32]) -> Result<Index> {
         Change::PutInline(HEADER, FORMAT.to_vec()),
         Change::PutInline(COUNTS, encode_counts(0, 0)),
         Change::PutInline(SOURCE, source.to_vec()),
+        Change::PutInline(ROUTING, encode_counts(0, 0)),
+        Change::PutInline(SCHEDULE, Vec::new()),
     ])?;
     Ok(index)
 }
