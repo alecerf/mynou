@@ -142,10 +142,7 @@ fn replace(directory: &Path, path: &Path, bytes: &[u8], preserved: bool) -> Resu
         }
         return Err("Indexer policy: a preserved copy has different bytes".into());
     }
-    let temporary = directory.join(format!(
-        ".indexers-{}.tmp",
-        digest(&random_bytes::<16>()?)
-    ));
+    let temporary = directory.join(format!(".indexers-{}.tmp", digest(&random_bytes::<16>()?)));
     let mut file = private_options()
         .write(true)
         .create_new(true)
@@ -160,15 +157,22 @@ fn replace(directory: &Path, path: &Path, bytes: &[u8], preserved: bool) -> Resu
 }
 
 fn total(index: &mut Index) -> Result<u64> {
-    let bytes = index.get(&COUNTS)?.ok_or("Indexer policy: missing index count")?;
-    Ok(u64::from_le_bytes(bytes.try_into().map_err(|_| "Indexer policy: invalid count")?))
+    let bytes = index
+        .get(&COUNTS)?
+        .ok_or("Indexer policy: missing index count")?;
+    Ok(u64::from_le_bytes(
+        bytes
+            .try_into()
+            .map_err(|_| "Indexer policy: invalid count")?,
+    ))
 }
 fn check(index: &mut Index) -> Result<()> {
     if index.get(&HEADER)?.as_deref() != Some(FORMAT) {
         return Err("Indexer policy: unsupported index format".into());
     }
     let cursor = u64::from(index.get(&CURSOR)?.is_some());
-    let expected = total(index)?.checked_add(3)
+    let expected = total(index)?
+        .checked_add(3)
         .and_then(|n| n.checked_add(cursor))
         .ok_or("Indexer policy: invalid index cardinality")?;
     if index.len()? != expected {
@@ -206,9 +210,14 @@ fn put(index: &mut Index, records: &[Record], cursor: Option<&str>) -> Result<()
                 return Err("Indexer policy: source binding is immutable".into());
             }
         } else {
-            count = count.checked_add(1).ok_or("Indexer policy: retained count overflow")?;
+            count = count
+                .checked_add(1)
+                .ok_or("Indexer policy: retained count overflow")?;
         }
-        changes.push(Change::Put(key(PRIMARY, &record.id), json::stringify(&record.to_json()).into_bytes()));
+        changes.push(Change::Put(
+            key(PRIMARY, &record.id),
+            json::stringify(&record.to_json()).into_bytes(),
+        ));
     }
     changes.push(Change::PutInline(COUNTS, count.to_le_bytes().to_vec()));
     if let Some(cursor) = cursor {
@@ -294,7 +303,8 @@ impl Storage {
     fn available(&self) -> Result<()> {
         if self.poisoned {
             return Err(
-                "Indexer policy: migration durability is uncertain; writable restart required".into(),
+                "Indexer policy: migration durability is uncertain; writable restart required"
+                    .into(),
             );
         }
         Ok(())
@@ -356,10 +366,9 @@ impl Storage {
         if let Some(original) = original {
             replace(
                 &self.directory,
-                &self.directory.join(format!(
-                    "indexers.legacy-{}.bin",
-                    digest(&original.bytes)
-                )),
+                &self
+                    .directory
+                    .join(format!("indexers.legacy-{}.bin", digest(&original.bytes))),
                 &original.bytes,
                 true,
             )?;
@@ -482,7 +491,9 @@ impl Storage {
     pub(super) fn commit(&mut self, record: Record) -> Result<()> {
         self.available()?;
         let result = self.commit_inner(record);
-        if result.is_err() && !self.read_only { self.poisoned = true; }
+        if result.is_err() && !self.read_only {
+            self.poisoned = true;
+        }
         result
     }
     fn commit_inner(&mut self, record: Record) -> Result<()> {

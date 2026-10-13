@@ -8,7 +8,11 @@ use crate::{
     requesters::{digest, valid_digest, valid_id},
     store,
 };
-use std::{path::Path, sync::atomic::Ordering, time::{Duration, Instant}};
+use std::{
+    path::Path,
+    sync::atomic::Ordering,
+    time::{Duration, Instant},
+};
 mod storage;
 const MAGIC: &[u8; 8] = b"MYNOUS01";
 const MAX_BYTES: usize = 2 * 1024 * 1024;
@@ -136,21 +140,30 @@ pub(crate) struct SourceStore {
 }
 impl SourceStore {
     fn row(&mut self, id: &str) -> Result<Record> {
-        self.storage.row(id)?.ok_or_else(|| "Indexer policy: source not configured".into())
+        self.storage
+            .row(id)?
+            .ok_or_else(|| "Indexer policy: source not configured".into())
     }
     pub(crate) fn authorization(&mut self, id: &str) -> Result<(bool, u64)> {
         let row = self.row(id)?;
         Ok((row.enabled, row.revision))
     }
     pub(crate) fn open(dir: &Path, config: &Config, read_only: bool) -> Result<Self> {
-        let mut store = Self { storage: storage::Storage::open(dir, read_only)?, read_only };
+        let mut store = Self {
+            storage: storage::Storage::open(dir, read_only)?,
+            read_only,
+        };
         let mut configured = std::collections::BTreeSet::new();
         for source in &config.sources {
             let id = source.options.identity(source);
             if !configured.insert(id.clone()) {
                 return Err("Indexer policy: duplicate configured source ID".into());
             }
-            if store.storage.row(&id)?.is_some_and(|r| r.binding != source.options.binding(source)) {
+            if store
+                .storage
+                .row(&id)?
+                .is_some_and(|r| r.binding != source.options.binding(source))
+            {
                 return Err("Indexer policy: source binding changed; use a new stable ID".into());
             }
         }
@@ -158,7 +171,9 @@ impl SourceStore {
     }
     fn configured(&mut self, source: &Source) -> Result<Record> {
         let id = source.options.identity(source);
-        if !self.read_only { return self.row(&id); }
+        if !self.read_only {
+            return self.row(&id);
+        }
         Ok(self.storage.row(&id)?.unwrap_or_else(|| Record {
             id,
             binding: source.options.binding(source),
@@ -170,7 +185,9 @@ impl SourceStore {
     }
     pub(crate) fn initialize(&mut self, config: &Config) -> Result<()> {
         self.storage.initialize()?;
-        if self.read_only { return Ok(()); }
+        if self.read_only {
+            return Ok(());
+        }
         for source in &config.sources {
             let id = source.options.identity(source);
             if self.storage.row(&id)?.is_none() {
@@ -252,7 +269,11 @@ impl Engine {
         if let Some(Value::Array(rows)) = report.get_mut("sources") {
             for v in rows {
                 let id = text(v, "id")?;
-                let source = self.config.sources.iter().find(|source| source.options.identity(source) == id)
+                let source = self
+                    .config
+                    .sources
+                    .iter()
+                    .find(|source| source.options.identity(source) == id)
                     .ok_or("Indexer policy: source not configured")?;
                 let r = s.configured(source)?;
                 v.insert("enabled", r.enabled);
@@ -315,9 +336,18 @@ impl Engine {
             // A failed persistence response can mean the control committed. Fence
             // configured runtime callers too; only reopen may restore policy.
             for configured in &self.config.sources {
-                configured.options.policy_enabled.store(false, Ordering::Release);
-                configured.options.generation.fetch_xor(u64::MAX, Ordering::AcqRel);
-                configured.options.policy_initialized.store(true, Ordering::Release);
+                configured
+                    .options
+                    .policy_enabled
+                    .store(false, Ordering::Release);
+                configured
+                    .options
+                    .generation
+                    .fetch_xor(u64::MAX, Ordering::AcqRel);
+                configured
+                    .options
+                    .policy_initialized
+                    .store(true, Ordering::Release);
             }
             return Err(error);
         }

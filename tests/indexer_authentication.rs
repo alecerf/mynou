@@ -13,8 +13,8 @@ use std::{
     fs,
     io::{Read, Write},
     net::TcpListener,
-    process::Command,
     path::Path,
+    process::Command,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -664,7 +664,12 @@ fn reset_discards_ephemeral_sessions_and_keeps_index_secret_free() {
                 inspect(&path);
             } else {
                 let bytes = fs::read(path).unwrap();
-                for secret in [b"test-password".as_slice(), b"mynou-fixture-cookie", b"PWD", b"PATH"] {
+                for secret in [
+                    b"test-password".as_slice(),
+                    b"mynou-fixture-cookie",
+                    b"PWD",
+                    b"PATH",
+                ] {
                     assert!(!bytes.windows(secret.len()).any(|window| window == secret));
                 }
             }
