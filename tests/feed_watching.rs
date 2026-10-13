@@ -866,27 +866,48 @@ fn captured_transient_entries_route_past_action_budget_after_restart_without_rep
     let feed = Feed::open(rss(&[]));
     let sources = || vec![source("feed-a", &feed, "rss")];
     let engine = open(&dir, sources());
-    let jobs: Vec<_> = (1..=65).map(|n| submit(&engine, movie(&format!("Fixture Movie {n}"), n))).collect();
+    let jobs: Vec<_> = (1..=65)
+        .map(|n| submit(&engine, movie(&format!("Fixture Movie {n}"), n)))
+        .collect();
     engine.feeds_poll(None, true).unwrap();
-    feed.set(rss(&(1..=65).map(|n| item(&format!("Fixture.Movie.{n}.2024.1080p.WEB-DL"), 100 + n, 5)).collect::<Vec<_>>()));
+    feed.set(rss(&(1..=65)
+        .map(|n| item(&format!("Fixture.Movie.{n}.2024.1080p.WEB-DL"), 100 + n, 5))
+        .collect::<Vec<_>>()));
     let first_pass = engine.feeds_poll(None, true).unwrap();
     assert!(num(first(&first_pass), "routed") <= 32);
     assert!(num(first(&first_pass), "routing_examined") <= 200);
     assert_eq!(feed.requests(), 2);
-    assert!(jobs.iter().filter(|job| stored(&engine, &job.id).acquisition_url.is_some()).count() <= 32);
+    assert!(
+        jobs.iter()
+            .filter(|job| stored(&engine, &job.id).acquisition_url.is_some())
+            .count()
+            <= 32
+    );
     feed.set(rss(&[]));
     drop(engine);
     let engine = open(&dir, sources());
     for _ in 0..8 {
-        if jobs.iter().all(|job| stored(&engine, &job.id).acquisition_url.is_some()) { break; }
+        if jobs
+            .iter()
+            .all(|job| stored(&engine, &job.id).acquisition_url.is_some())
+        {
+            break;
+        }
         let pass = engine.feeds_poll(None, true).unwrap();
         assert!(num(first(&pass), "routed") <= 32);
         assert!(num(first(&pass), "routing_examined") <= 200);
-        assert_eq!(feed.requests(), 2, "pending generation must backpressure source polling");
+        assert_eq!(
+            feed.requests(),
+            2,
+            "pending generation must backpressure source polling"
+        );
         no_private(&pass);
     }
     for (n, job) in (1..=65).zip(&jobs) {
-        assert_eq!(stored(&engine, &job.id).acquisition_url, Some(magnet(100 + n)));
+        assert_eq!(
+            stored(&engine, &job.id).acquisition_url,
+            Some(magnet(100 + n))
+        );
     }
     assert_eq!(lock(&engine.store).unwrap().counts().unwrap().jobs, 65);
     no_private(&engine.feeds().unwrap());
