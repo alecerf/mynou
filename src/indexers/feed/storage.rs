@@ -531,6 +531,14 @@ impl Storage {
             }
             _ => {}
         }
+        if let Some(original) = original {
+            replace(
+                &self.directory,
+                &self.directory.join(format!("feeds.legacy-{}.bin", super::digest(&original.bytes))),
+                &original.bytes,
+                true,
+            )?;
+        }
         replace(
             &self.directory,
             &self.directory.join("feeds.bin"),
