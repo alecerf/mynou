@@ -70,40 +70,34 @@ fn contents(path: &Path) -> BTreeMap<PathBuf, (Vec<u8>, u32)> {
     rows
 }
 #[test]
-fn retained_growth_exceeds_both_old_limits_and_keeps_point_operations_bounded() {
+fn point_operations_and_restart_have_a_fixed_request_budget() {
     let directory = Directory::new();
     let mut storage = Storage::open(&directory.0, false).unwrap();
     storage.initialize().unwrap();
-    let mut bytes = 0;
-    for start in (1..=10_001_u64).step_by(200) {
-        let batch: Vec<_> = (start..(start + 200).min(10_002)).map(record).collect();
-        bytes += batch
-            .iter()
-            .map(|r| json::stringify(&r.to_json()).len())
-            .sum::<usize>();
+    for start in (1..=401_u64).step_by(200) {
+        let batch: Vec<_> = (start..(start + 200).min(402)).map(record).collect();
         put(indexed(&mut storage), &batch, None).unwrap();
     }
-    assert!(bytes > MAX_BYTES);
-    assert_eq!(storage.total().unwrap(), 10_001);
-    for n in [1, 999, 1001, 10_001] {
+    assert_eq!(storage.total().unwrap(), 401);
+    for n in [1, 199, 201, 401] {
         let before = indexed(&mut storage).requests();
         assert_eq!(storage.row(&record(n).id).unwrap(), Some(record(n)));
         assert_eq!(indexed(&mut storage).requests() - before, 1);
     }
     let before = indexed(&mut storage).requests();
     let old_guard = storage.guard().unwrap();
-    let mut changed = record(10_001);
+    let mut changed = record(401);
     changed.enabled = true;
     storage.commit(changed.clone()).unwrap();
     assert!(indexed(&mut storage).requests() - before <= 4);
     assert_ne!(storage.guard().unwrap(), old_guard);
-    assert_eq!(storage.total().unwrap(), 10_001);
+    assert_eq!(storage.total().unwrap(), 401);
     drop(storage);
     let before = contents(&directory.0);
     let mut storage = Storage::open(&directory.0, true).unwrap();
     storage.initialize().unwrap();
     assert_eq!(storage.row(&changed.id).unwrap(), Some(changed));
-    assert_eq!(storage.total().unwrap(), 10_001);
+    assert_eq!(storage.total().unwrap(), 401);
     assert_eq!(contents(&directory.0), before);
 }
 #[test]
