@@ -1,9 +1,11 @@
 # CI, releases and download verification
 
-GitHub Actions is the only place where Mynou is tested, built and published.
-Contributors push commits and read the results; they never run tests, linters,
-builds or binaries locally (see [AGENTS.md](../AGENTS.md)). A run is evidence
-for its exact commit only: an earlier green run does not validate later changes.
+Contributors use isolated Git worktrees and validate locally first, using Docker
+wherever practical and native macOS for platform-specific checks. See the
+[local validation commands](../engineering/README.md#local-validation). Batch
+validated changes before pushing to minimize CI runs. GitHub Actions performs
+required final checks and publishes releases. A run is evidence for its exact
+commit only: an earlier green run does not validate later changes.
 
 ## Workflows
 

@@ -26,14 +26,16 @@ Keep at most five Ready agent-proposed product increments; client requests are
 not capped. Three is a planning trigger, never a quota to fill. For each
 proposal, record:
 - Who is affected, the concrete problem and expected user-visible outcome.
-- Exact current source/support or CI evidence, confidence and relevant limits.
-- A bounded acceptance, explicit exclusions and meaningful CI scenarios.
+- Exact current source/support or local/CI evidence, confidence and relevant limits.
+- A bounded acceptance, explicit exclusions and meaningful local validation
+  scenarios, plus CI for platform gaps.
 - Impact, effort, priority/risk/origin and the minimum useful role sequence.
 - Actual native prerequisites; unknown blockers stay Needs Triage, not fake Ready.
 
 Features use enhancement. A bug label requires actual reproduction, code or CI
-failure evidence; runtime reproduction belongs in CI. Use native labels and
-dependencies only when the API actually persists them. Do not invent failures,
+failure evidence; reproduce locally in Docker wherever practical, using native
+macOS for platform-specific behavior. Any code edits use the Issue Git worktree.
+Use native labels and dependencies only when the API actually persists them. Do not invent failures,
 dates or capabilities. Never publish credentials, private media, sensitive
 vulnerability details or other user data in public work.
 
