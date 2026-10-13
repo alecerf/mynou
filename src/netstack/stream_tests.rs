@@ -800,12 +800,13 @@ fn expired_unaccepted_flows_release_listener_entries() {
     pair.pump();
     let (key, serial) = pair.b.listeners[&PORT].ready[0];
     let server = FlowHandle { key, serial };
-    pair.a.close(G, T0, client).unwrap();
-    pair.pump();
     pair.b.close(G, T0, server).unwrap();
     pair.pump();
+    pair.a.close(G, T0, client).unwrap();
+    pair.pump();
+    assert_eq!(pair.b.state(G, server), Ok(State::TimeWait));
     assert_eq!(pair.b.listeners[&PORT].ready.len(), 1);
-    pair.now = pair.b.config.linger;
+    pair.now = pair.b.config.time_wait;
     pair.pump();
     assert_eq!(pair.b.flows(), 0);
     assert!(pair.b.listeners[&PORT].ready.is_empty());
