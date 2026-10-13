@@ -466,7 +466,9 @@ cookies and standalone credential values are never captured. CLI/API diagnostics
 show only counts, age and phase.
 
 Observation state and candidates commit together. A pending generation delays
-another source poll until its job/library scan finishes. Each source pass reads
+another source poll until its job/library scan finishes; it resumes on the next
+watcher tick while it advances and rests ten seconds after a pass that settled
+nothing (an unverifiable availability check or a busy upgrade). Each source pass reads
 at most 200 jobs in 4 MiB hydrated windows (one larger existing job may appear
 alone), settles at most 32 acquisitions or
 upgrades and checks a ten-second routing deadline between decisions. One Plex

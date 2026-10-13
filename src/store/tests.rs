@@ -2247,6 +2247,14 @@ fn captured_feed_routes_reach_jobs_and_library_beyond_the_former_prefix() {
             ))
             .unwrap(),
         );
+        // The default profile ranks every resolution alike; an upgrade needs an order.
+        value.insert(
+            "selection",
+            crate::json::parse(
+                r#"{"movie_profile":"hd","episode_profile":"hd","profiles":{"hd":{"resolutions":[1080,720],"languages":["en"]}}}"#,
+            )
+            .unwrap(),
+        );
         let config = crate::config::from_json(&value, &directory.0).unwrap();
         let engine = Engine::open_for_management(config).unwrap();
         let revision = lock(&engine.indexer_store)
@@ -2254,44 +2262,47 @@ fn captured_feed_routes_reach_jobs_and_library_beyond_the_former_prefix() {
             .authorization("capture")
             .unwrap()
             .1;
-        let mut feeds = lock(&engine.feed_store).unwrap();
-        let mut record = feeds.row("capture").unwrap().unwrap();
-        record.baselined = true;
-        record.revision = 1;
-        record.seen = vec!["a".repeat(32)];
-        record.cursor = record.seen[0].clone();
         let url = format!("magnet:?xt=urn:btih:{}", "a".repeat(40));
-        let generation = Generation::new(
-            &record,
-            revision,
-            vec![FeedEntry {
-                id: "a".repeat(32),
-                release: Release {
-                    title: "Synthetic.Movie.1.2026.1080p.BluRay.EN".into(),
-                    url: url.clone(),
-                    seeders: 5,
-                },
-            }],
-            now(),
-        )
-        .unwrap();
-        feeds.capture(record, generation).unwrap();
-        drop(feeds);
-        let mut passes = 0;
-        while lock(&engine.feed_store)
-            .unwrap()
-            .pending_header("capture")
-            .unwrap()
-            .is_some()
-        {
-            assert!(passes < 16);
-            let report = engine.feeds_poll(None, true).unwrap();
-            let row = &report.get("sources").unwrap().as_array().unwrap()[0];
-            assert_eq!(row.get("outcome").and_then(Value::as_str), Some("ok"));
-            assert!(row.get("routing_examined").unwrap().as_u64().unwrap() <= 200);
-            passes += 1;
+        // The second round replays the same candidate after its effect is durable.
+        for _ in 0..2 {
+            let mut feeds = lock(&engine.feed_store).unwrap();
+            let mut record = feeds.row("capture").unwrap().unwrap();
+            record.baselined = true;
+            record.revision += 1;
+            record.seen = vec!["a".repeat(32)];
+            record.cursor = record.seen[0].clone();
+            let generation = Generation::new(
+                &record,
+                revision,
+                vec![FeedEntry {
+                    id: "a".repeat(32),
+                    release: Release {
+                        title: "Synthetic.Movie.1.2026.1080p.BluRay.EN".into(),
+                        url: url.clone(),
+                        seeders: 5,
+                    },
+                }],
+                now(),
+            )
+            .unwrap();
+            feeds.capture(record, generation).unwrap();
+            drop(feeds);
+            let mut passes = 0;
+            while lock(&engine.feed_store)
+                .unwrap()
+                .pending_header("capture")
+                .unwrap()
+                .is_some()
+            {
+                assert!(passes < 16);
+                let report = engine.feeds_poll(None, true).unwrap();
+                let row = &report.get("sources").unwrap().as_array().unwrap()[0];
+                assert_eq!(row.get("outcome").and_then(Value::as_str), Some("ok"));
+                assert!(row.get("routing_examined").unwrap().as_u64().unwrap() <= 200);
+                passes += 1;
+            }
+            assert!(passes > 5);
         }
-        assert!(passes > 5);
         let mut store = lock(&engine.store).unwrap();
         if library {
             assert_eq!(store.counts().unwrap().jobs, 1003);

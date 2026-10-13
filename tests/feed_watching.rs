@@ -912,3 +912,115 @@ fn captured_transient_entries_route_past_action_budget_after_restart_without_rep
     assert_eq!(lock(&engine.store).unwrap().counts().unwrap().jobs, 65);
     no_private(&engine.feeds().unwrap());
 }
+
+fn announce(feed: &Feed, base: u64) {
+    feed.set(rss(&(1..=65)
+        .map(|n| item(&format!("Fixture.Movie.{n}.2024.1080p.WEB-DL"), base + n, 5))
+        .collect::<Vec<_>>()));
+}
+fn selected(engine: &Engine, jobs: &[Job]) -> usize {
+    jobs.iter()
+        .filter(|job| stored(engine, &job.id).acquisition_url.is_some())
+        .count()
+}
+
+#[test]
+fn pausing_or_disabling_a_source_cancels_captured_work_without_replay() {
+    let dir = Directory::new();
+    let feed = Feed::open(rss(&[]));
+    let engine = open(&dir, vec![source("feed-a", &feed, "rss")]);
+    let jobs: Vec<_> = (1..=65)
+        .map(|n| submit(&engine, movie(&format!("Fixture Movie {n}"), n)))
+        .collect();
+    engine.feeds_poll(None, true).unwrap();
+    announce(&feed, 100);
+    engine.feeds_poll(None, true).unwrap();
+    let row = status(&engine, 0);
+    assert_eq!(row.get("routing_pending"), Some(&Value::Bool(true)));
+    assert_eq!(num(&row, "captured_entries"), 65);
+    assert_eq!(text(&row, "routing_phase"), "jobs");
+    let before = selected(&engine, &jobs);
+    assert!((1..=32).contains(&before), "first pass selected {before}");
+
+    let pause = reviewed(&engine, "feed-a", "pause");
+    engine.indexer_control("feed-a", &pause).unwrap();
+    let row = status(&engine, 0);
+    assert_eq!(row.get("routing_pending"), Some(&Value::Bool(false)));
+    assert_eq!(num(&row, "captured_entries"), 0);
+    assert_eq!(row.get("baselined"), Some(&Value::Bool(false)));
+    let report = engine.feeds().unwrap();
+    assert_eq!(text(&report, "pending_generations"), "0");
+    assert_eq!(text(&report, "captured_entries"), "0");
+    let report = engine.feeds_poll(None, true).unwrap();
+    assert_eq!(report.get("polled").and_then(Value::as_u64), Some(0));
+    assert_eq!(selected(&engine, &jobs), before);
+
+    // Resuming baselines the source again: the cancelled candidates never replay.
+    let enable = reviewed(&engine, "feed-a", "enable");
+    engine.indexer_control("feed-a", &enable).unwrap();
+    let report = engine.feeds_poll(None, true).unwrap();
+    assert_eq!(first(&report).get("baseline"), Some(&Value::Bool(true)));
+    assert_eq!(selected(&engine, &jobs), before);
+    assert_eq!(
+        status(&engine, 0).get("routing_pending"),
+        Some(&Value::Bool(false))
+    );
+
+    // A generation left pending at shutdown is cancelled when watching is disabled.
+    announce(&feed, 300);
+    engine.feeds_poll(None, true).unwrap();
+    assert_eq!(
+        status(&engine, 0).get("routing_pending"),
+        Some(&Value::Bool(true))
+    );
+    let before = selected(&engine, &jobs);
+    assert!(before < jobs.len());
+    drop(engine);
+    let mut disabled = source("feed-a", &feed, "rss");
+    disabled.get_mut("watch").unwrap().insert("enabled", false);
+    let engine = open(&dir, vec![disabled]);
+    let row = status(&engine, 0);
+    assert_eq!(row.get("routing_pending"), Some(&Value::Bool(false)));
+    assert_eq!(row.get("baselined"), Some(&Value::Bool(false)));
+    assert_eq!(text(&engine.feeds().unwrap(), "pending_generations"), "0");
+    assert_eq!(selected(&engine, &jobs), before);
+    no_private(&engine.feeds().unwrap());
+}
+
+#[test]
+fn replay_never_selects_for_demand_cancelled_after_capture() {
+    let dir = Directory::new();
+    let feed = Feed::open(rss(&[]));
+    let engine = open(&dir, vec![source("feed-a", &feed, "rss")]);
+    let jobs: Vec<_> = (1..=65)
+        .map(|n| submit(&engine, movie(&format!("Fixture Movie {n}"), n)))
+        .collect();
+    engine.feeds_poll(None, true).unwrap();
+    announce(&feed, 100);
+    engine.feeds_poll(None, true).unwrap();
+    assert_eq!(
+        status(&engine, 0).get("routing_pending"),
+        Some(&Value::Bool(true))
+    );
+    let cancelled = jobs
+        .iter()
+        .find(|job| stored(&engine, &job.id).acquisition_url.is_none())
+        .unwrap();
+    engine.cancel(&cancelled.id).unwrap();
+    feed.set(rss(&[]));
+    for _ in 0..8 {
+        if status(&engine, 0).get("routing_pending") == Some(&Value::Bool(false)) {
+            break;
+        }
+        engine.feeds_poll(None, true).unwrap();
+    }
+    assert_eq!(
+        status(&engine, 0).get("routing_pending"),
+        Some(&Value::Bool(false))
+    );
+    assert_eq!(feed.requests(), 2);
+    let current = stored(&engine, &cancelled.id);
+    assert_eq!(current.state, "cancelled");
+    assert!(current.acquisition_url.is_none() && current.release.is_none());
+    assert_eq!(selected(&engine, &jobs), 64);
+}
