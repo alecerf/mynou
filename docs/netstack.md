@@ -6,9 +6,10 @@ inner IP datagrams: `Session::receive` of [the transport](/docs/wireguard-transp
 returns authenticated padded bytes, and this layer is what must validate them
 before any use. There is no socket, tunnel coupling, engine, profile or torrent
 caller, so **this is not routing, host DNS, TCP or VPN protection, and it is not
-independent interoperability evidence**. Parent #111 stays open; TCP is a later
-Issue. The code lives in `src/netstack.rs` and `src/netstack/`: pure, std only, with
-no clock reads, threads or I/O.
+independent interoperability evidence**. Parent #111 stays open; virtual TCP is its
+own layer, described in [the TCP guide](/docs/netstack-tcp.md). The code lives in
+`src/netstack.rs` and `src/netstack/`: pure, std only, with no clock reads, threads
+or I/O.
 
 ## IPv4 codec
 
@@ -79,9 +80,10 @@ resolver, search list, cache or TCP retry.
   unrelated owner is ignored. Unspecified, loopback, multicast and class E answers
   are dropped, at most 8 addresses are kept and a TTL with the top bit set is zero.
 - The answer TTL is the smallest used record TTL, capped by `max_ttl` (one hour by
-  default). A truncated reply is reported as `Failure::Truncated`: virtual TCP
-  retry arrives with the TCP Issue. NXDOMAIN, other server failures and an empty
-  answer are explicit `Failure` values.
+  default). A truncated reply is reported as `Failure::Truncated`: the retry needs
+  the virtual TCP of [its guide](/docs/netstack-tcp.md), which is not wired to DNS
+  yet. NXDOMAIN, other server failures and an empty answer are explicit `Failure`
+  values.
 - At most 16 queries are pending (1 to 64 by configuration). Attempts are spaced
   by `retry_interval` (2 s by default), rotate through the resolvers and give up
   with `Failure::Timeout` after 3 attempts. `poll` returns packets to send, finished
@@ -107,7 +109,7 @@ No independent stack or resolver is exercised.
 
 A driver that feeds decrypted session bytes in and encrypts what comes out, owns
 the clock and generations and revokes every piece together; ICMP and path-MTU
-handling; virtual TCP, including DNS over TCP; a DNS cache if wanted; the
+handling; DNS over the virtual TCP; a DNS cache if wanted; the
 transport, HTTP/TLS and torrent integration; profile controls; and the isolation
 evidence listed in [the design](/docs/wireguard-design.md). Nothing here changes
 user-visible behavior.

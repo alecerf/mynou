@@ -1,6 +1,7 @@
 //! Strict inner IPv4 header codec for the offline userspace stack. Only plain UDP
-//! datagrams for the configured inner address are accepted; IPv6, fragments,
-//! unknown options and everything else are rejected explicitly.
+//! datagrams or TCP segments (the caller names which) for the configured inner
+//! address are accepted; IPv6, fragments, unknown options and everything else are
+//! rejected explicitly.
 
 use std::net::Ipv4Addr;
 
@@ -8,6 +9,7 @@ pub const HEADER_LEN: usize = 20;
 /// Options are limited to End-of-Options and No-Operation padding.
 pub const MAX_OPTION_BYTES: usize = 12;
 pub const PROTOCOL_UDP: u8 = 17;
+pub const PROTOCOL_TCP: u8 = 6;
 pub const DEFAULT_TTL: u8 = 64;
 /// Every IPv4 host must accept 576 bytes; smaller budgets are refused.
 pub const MIN_MTU: usize = 576;
@@ -42,7 +44,7 @@ impl Ipv4Config {
         self.local
     }
 
-    fn allows(&self, source: Ipv4Addr) -> bool {
+    pub(super) fn allows(&self, source: Ipv4Addr) -> bool {
         let mask = u32::MAX
             .checked_shl(32 - u32::from(self.prefix))
             .unwrap_or(0);
@@ -122,6 +124,15 @@ pub fn checksum(bytes: &[u8]) -> u16 {
 }
 
 pub fn parse<'a>(config: &Ipv4Config, bytes: &'a [u8]) -> Result<Packet<'a>, PacketError> {
+    parse_protocol(config, bytes, PROTOCOL_UDP)
+}
+
+/// [`parse`] for one transport protocol; any other protocol number is rejected.
+pub(super) fn parse_protocol<'a>(
+    config: &Ipv4Config,
+    bytes: &'a [u8],
+    expected: u8,
+) -> Result<Packet<'a>, PacketError> {
     let first = *bytes.first().ok_or(PacketError::Truncated)?;
     match first >> 4 {
         4 => {}
@@ -158,7 +169,7 @@ pub fn parse<'a>(config: &Ipv4Config, bytes: &'a [u8]) -> Result<Packet<'a>, Pac
         return Err(PacketError::Fragment);
     }
     let protocol = bytes[9];
-    if protocol != PROTOCOL_UDP {
+    if protocol != expected {
         return Err(PacketError::Protocol(protocol));
     }
     let source = Ipv4Addr::new(bytes[12], bytes[13], bytes[14], bytes[15]);
