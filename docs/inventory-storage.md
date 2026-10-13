@@ -463,7 +463,9 @@ payload. Each entry has its own checked object, binding source, generation and
 ordinal. Candidates include the titles and acquisition URLs necessary for replay;
 URLs may carry private access tokens, like saved job acquisition URLs. Headers,
 cookies and standalone credential values are never captured. CLI/API diagnostics
-show only counts, age and phase.
+show only counts, age and phase. An announcement outside the capture bounds (a
+control character in its title, or a title and address too large once encoded)
+is counted as skipped and never blocks the entries polled with it.
 
 Observation state and candidates commit together. A pending generation delays
 another source poll until its job/library scan finishes; it resumes on the next

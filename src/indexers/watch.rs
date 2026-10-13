@@ -295,7 +295,14 @@ impl Engine {
                 .route_generation(source, &generation, tally)
                 .map_err(|_| "storage_failed");
         }
-        let poll = integrations::poll_feed(source, Instant::now() + POLL_BUDGET)?;
+        let mut poll = integrations::poll_feed(source, Instant::now() + POLL_BUDGET)?;
+        // An entry outside the capture bounds is skipped like a malformed item, so
+        // one announcement can never reject the window that holds the others.
+        let listed = poll.entries.len();
+        poll.entries.retain(feed::generation::capturable);
+        poll.skipped = poll
+            .skipped
+            .saturating_add((listed - poll.entries.len()) as u32);
         let ids: Vec<&str> = poll.entries.iter().map(|entry| entry.id.as_str()).collect();
         // The authoritative source policy fences a pause/re-enable during I/O.
         let generation = {

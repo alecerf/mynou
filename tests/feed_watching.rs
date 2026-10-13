@@ -1024,3 +1024,27 @@ fn replay_never_selects_for_demand_cancelled_after_capture() {
     assert!(current.acquisition_url.is_none() && current.release.is_none());
     assert_eq!(selected(&engine, &jobs), 64);
 }
+
+#[test]
+fn an_entry_outside_the_capture_bounds_is_skipped_without_blocking_its_window() {
+    let dir = Directory::new();
+    let feed = Feed::open(rss(&[]));
+    let engine = open(&dir, vec![source("feed-a", &feed, "rss")]);
+    let job = submit(&engine, movie("Fixture Movie", 7));
+    engine.feeds_poll(None, true).unwrap();
+    // A wrapped title keeps an interior line break and tab after trimming.
+    feed.set(rss(&[
+        item("Fixture.Movie.2024\n\t2160p.WEB-DL", 2, 9),
+        item("Fixture.Movie.2024.1080p.WEB-DL", 3, 5),
+    ]));
+    for _ in 0..2 {
+        let report = engine.feeds_poll(None, true).unwrap();
+        let row = first(&report);
+        assert_eq!(outcome(row), "ok");
+        assert_eq!(num(row, "skipped"), 1);
+        assert_eq!(row.get("routing_pending"), Some(&Value::Bool(false)));
+        no_private(&report);
+    }
+    assert_eq!(stored(&engine, &job.id).acquisition_url, Some(magnet(3)));
+    assert_eq!(text(&engine.feeds().unwrap(), "pending_generations"), "0");
+}
