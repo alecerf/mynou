@@ -338,7 +338,12 @@ fn promoted_index_resumes_publication_but_foreign_pending_indexes_are_untouched(
     assert!(!storage.needs_migration());
     let marker = read(&directory.0.join("feeds.bin")).unwrap();
     assert_eq!(
-        read(&directory.0.join(format!("feeds.legacy-{}.bin", super::super::digest(&bytes)))).unwrap(),
+        read(
+            &directory
+                .0
+                .join(format!("feeds.legacy-{}.bin", super::super::digest(&bytes)))
+        )
+        .unwrap(),
         bytes
     );
     drop(storage);
