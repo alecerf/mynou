@@ -121,7 +121,8 @@ fn round_trip_and_syn_mss() {
     assert_eq!(parsed.payload, b"hello");
     assert_eq!(parsed.space(), 5);
     assert_eq!(segment(&header(FIN | ACK), &[]).len(), 20);
-    let fin = parse(REMOTE, LOCAL, &segment(&header(FIN | ACK), b"ab")).unwrap();
+    let bytes = segment(&header(FIN | ACK), b"ab");
+    let fin = parse(REMOTE, LOCAL, &bytes).unwrap();
     assert_eq!(fin.space(), 3);
 }
 
