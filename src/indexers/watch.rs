@@ -364,7 +364,7 @@ impl Engine {
             } else {
                 progress.library = true; progress.after = None;
                 tally.pending = lock(&self.feed_store)?.checkpoint(&durable,Some(&progress))?;
-                if tally.pending && tally.examined < MAX_ROUTE_ROWS as u32 && tally.routed as usize + tally.upgrades as usize < MAX_ROUTES_PER_POLL && Instant::now() < deadline {
+                if tally.pending && tally.examined < MAX_ROUTE_ROWS as u32 && tally.routed + tally.upgrades < MAX_ROUTES_PER_POLL as u32 && Instant::now() < deadline {
                     self.route_window(source,&progress,entries,tally,deadline)?;
                 }
             }
