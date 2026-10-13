@@ -666,13 +666,13 @@ fn message_count_rekey_and_reject_keep_queue_truthful() {
     let data = a.send(b"threshold", clock(1)).unwrap().datagrams.remove(0);
     b.receive(&data, address(1), Load::Normal, clock(1))
         .unwrap();
-    assert_eq!(a.poll(clock(1)).unwrap().datagrams[0][0], 1);
+    assert_eq!(a.poll(clock(6)).unwrap().datagrams[0][0], 1);
     a.keys.current_mut().sent = super::super::REJECT_AFTER_MESSAGES;
-    assert!(a.send(b"cannot send", clock(2)).is_err());
+    assert!(a.send(b"cannot send", clock(7)).is_err());
     assert_eq!(a.queued_payloads(), 1);
     // The exhausted session is removed before returning the failed operation.
     assert_eq!(a.status(), PeerStatus::Expired);
-    a.poll(clock(2)).unwrap();
+    a.poll(clock(7)).unwrap();
     assert_eq!(a.status(), PeerStatus::Expired);
     assert!(a.keys.current_role().is_none());
 }
