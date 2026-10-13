@@ -11,6 +11,9 @@ use std::collections::BTreeSet;
 
 pub(super) const MAX_ENTRIES: usize = 200;
 pub(super) const MAX_BYTES: usize = 4 * 1024 * 1024;
+/// Encoded title and URL bytes of one entry: with its fixed fields, any
+/// `MAX_ENTRIES` capturable entries fit `MAX_BYTES`.
+const MAX_ENTRY_TEXT: usize = MAX_BYTES / MAX_ENTRIES - 1024;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Header {
     pub source: String,
@@ -145,6 +148,21 @@ impl Generation {
             .collect()
     }
 }
+fn bounded(id: &str, title: &str, url: &str) -> bool {
+    identity(id)
+        && !title.is_empty()
+        && title.len() <= 2048
+        && !title.chars().any(char::is_control)
+        && url.len() <= 8192
+        && crate::integrations::acquisition_url(url, "").is_ok_and(|checked| checked == url)
+        && json::stringify(&Value::from(title)).len() + json::stringify(&Value::from(url)).len()
+            <= MAX_ENTRY_TEXT
+}
+/// Whether a polled entry fits the bounds every captured entry is read back
+/// under. One that does not is skipped: it must never block its whole window.
+pub(crate) fn capturable(entry: &FeedEntry) -> bool {
+    bounded(&entry.id, &entry.release.title, &entry.release.url)
+}
 pub(crate) fn encode_entry(header: &Header, ordinal: usize, entry: &FeedEntry) -> Value {
     let mut value = Value::object();
     value.insert("source", header.source.clone());
@@ -176,12 +194,7 @@ pub(crate) fn decode_entry(header: &Header, ordinal: usize, value: &Value) -> Re
         || text(value, "generation")? != header.serial
         || num(value, "ordinal")? != ordinal as u64
         || ordinal >= header.count
-        || !identity(&id)
-        || title.is_empty()
-        || title.len() > 2048
-        || title.chars().any(char::is_control)
-        || url.len() > 8192
-        || crate::integrations::acquisition_url(&url, "")? != url
+        || !bounded(&id, &title, &url)
     {
         return Err("Feed routing: invalid captured entry or provenance".into());
     }
