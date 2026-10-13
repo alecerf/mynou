@@ -812,6 +812,18 @@ fn protected_status_and_offline_cli_expose_only_redacted_freshness() {
     let row = &report.get("sources").unwrap().as_array().unwrap()[0];
     assert_eq!(row.get("watch_enabled"), Some(&Value::Bool(true)));
     assert_eq!(text(row, "successes"), "0");
+    assert_eq!(server.call("GET", "/api/feeds/retained", &[], "").status, 401);
+    let retained = server.call(
+        "GET",
+        "/api/feeds/retained?limit=1",
+        &[("Authorization", &format!("Bearer {TOKEN}"))],
+        "",
+    );
+    assert_eq!(retained.status, 200);
+    let retained = json::parse(&retained.body).unwrap();
+    no_private(&retained);
+    assert_eq!(text(&retained, "total"), "1");
+    assert_eq!(retained.get("next"), Some(&Value::Null));
     v.insert("listen", server.authority.clone());
     drop(server);
     let path = dir.0.join("mynou.json");
@@ -828,5 +840,15 @@ fn protected_status_and_offline_cli_expose_only_redacted_freshness() {
         String::from_utf8_lossy(&out.stderr)
     );
     no_private(&json::parse(std::str::from_utf8(&out.stdout).unwrap()).unwrap());
+    let out = Command::new(env!("CARGO_BIN_EXE_mynou"))
+        .env_remove("MYNOU_API_TOKEN")
+        .args(["feeds", "--retained", "--limit", "1", "--config"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let retained = json::parse(std::str::from_utf8(&out.stdout).unwrap()).unwrap();
+    no_private(&retained);
+    assert_eq!(text(&retained, "total"), "1");
     assert_eq!(feed.requests(), 0);
 }

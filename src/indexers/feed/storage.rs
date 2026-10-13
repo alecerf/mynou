@@ -357,11 +357,12 @@ impl Storage {
                 if bytes.len() != 80 || !indexed {
                     return Err("Feed state: missing or invalid indexed storage".into());
                 }
-                let mut index = Index::open(&directory.join("feeds.idx"), read_only)?;
-                if bytes[16..48] != index.identity() {
-                    return Err("Feed state: marker names a different index".into());
-                }
+                let identity = bytes[16..48].try_into().map_err(|_| "Feed state: invalid marker identity")?;
+                let mut index = Index::open_bound(&directory.join("feeds.idx"), read_only, identity)?;
                 check(&mut index)?;
+                if index.get(&CURSOR)?.is_some() {
+                    return Err("Feed state: published index retains a migration cursor".into());
+                }
                 Backend::Ready(Box::new(index))
             }
             image => {

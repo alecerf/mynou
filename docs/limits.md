@@ -152,9 +152,11 @@ Watched feeds:
   (default 900), at most four per pass, with a 30-second budget per poll.
 - A poll reads at most 500 entries, considers 200 unseen ones, and routes at
   most 32 jobs and 32 upgrades. The window keeps 1,024 identities per source.
-- `feeds.bin` is private and checksummed, at most 4 MiB. A failed save reports
-  `storage_failed` and leaves the previous state; corruption, unsupported
-  formats, links and public permissions stop the service before workers start.
+- `feeds.idx` retains source state without a total count or aggregate byte cap;
+  retained listings and active reconciliation use 200-row, 4 MiB windows.
+  `feeds.bin` is an identity-bound marker; legacy reads remain bounded to 4 MiB.
+  A failed save reports `storage_failed`; uncertain writes require restart.
+  Corruption, unsupported formats, links and public permissions stop startup.
   A source not polled successfully for seven days is baselined again.
 
 IRC announcements:

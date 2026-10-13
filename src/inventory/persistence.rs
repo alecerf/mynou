@@ -369,7 +369,11 @@ fn clean_path(path: &Path) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn open(directory: &Path, read_only: bool) -> Result<Index> {
+pub(super) fn open(
+    directory: &Path,
+    read_only: bool,
+    expected_identity: Option<[u8; 32]>,
+) -> Result<Index> {
     clean_path(directory)?;
     private_directory(directory)?;
     // No new files, permission edits or legacy-format fallbacks during open.
@@ -384,6 +388,9 @@ pub(super) fn open(directory: &Path, read_only: bool) -> Result<Index> {
     let identity: [u8; 32] = identity[8..40]
         .try_into()
         .map_err(|_| "Invalid inventory identity")?;
+    if expected_identity.is_some_and(|expected| expected != identity) {
+        return Err("Inventory marker names a different index".into());
+    }
     let lock = private_file(&directory.join(".lock"), false)?;
     lock.try_lock().map_err(|error| {
         format!("Inventory storage is already open or cannot be locked: {error}")
