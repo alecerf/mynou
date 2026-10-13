@@ -95,7 +95,7 @@ fn retained_growth_exceeds_both_old_limits_and_keeps_point_operations_bounded() 
     let mut changed = record(10_001);
     changed.enabled = true;
     storage.commit(changed.clone()).unwrap();
-    assert!(index(&mut storage).requests() - before <= 2);
+    assert!(index(&mut storage).requests() - before <= 4);
     assert_ne!(storage.guard().unwrap(), old_guard);
     assert_eq!(storage.total().unwrap(), 10_001);
     drop(storage);

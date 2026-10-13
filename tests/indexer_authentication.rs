@@ -666,7 +666,7 @@ fn reset_discards_ephemeral_sessions_and_keeps_index_secret_free() {
                 let bytes = fs::read(path).unwrap();
                 for secret in [
                     b"test-password".as_slice(),
-                    b"mynou-fixture-cookie",
+                    b"private-session-fixture",
                     b"PWD",
                     b"PATH",
                 ] {
@@ -979,4 +979,32 @@ fn protected_source_controls_bind_bearer_and_one_use_reviews() {
     assert_eq!(server.call("POST", &route, &headers, &apply).status, 400);
     assert!(integrations::search(&server.engine.config, &movie()).is_err());
     assert_eq!(p.searches.load(Ordering::Acquire), 0);
+}
+
+#[test]
+fn failed_policy_persistence_fences_runtime_sources_until_restart() {
+    let d = Directory::new();
+    let p = Provider::open();
+    let c = cfg(&d, &p, "none");
+    let engine = mynou::engine::Engine::open_for_management(c.clone()).unwrap();
+    let id = policy_id(&engine);
+    let pause = reviewed(&engine, &id, "pause");
+    let path = c.store_dir.join("indexers.bin");
+    let original = fs::read(&path).unwrap();
+    let mut corrupt = original.clone();
+    corrupt[0] ^= 1;
+    fs::write(&path, corrupt).unwrap();
+    assert!(engine.indexer_control(&id, &pause).is_err());
+    assert!(engine.indexers().is_err());
+    assert!(engine.indexer_control(&id, &control("pause")).is_err());
+    assert!(integrations::search(&c, &movie()).is_err());
+    assert_eq!(p.searches.load(Ordering::Acquire), 0);
+    drop(engine);
+    fs::write(&path, original).unwrap();
+    let fresh = cfg(&d, &p, "none");
+    let engine = mynou::engine::Engine::open_for_management(fresh.clone()).unwrap();
+    assert_eq!(health(&fresh).get("enabled"), Some(&Value::Bool(true)));
+    assert!(engine.indexers().is_ok());
+    assert!(integrations::search(&fresh, &movie()).is_ok());
+    assert_eq!(p.searches.load(Ordering::Acquire), 1);
 }
