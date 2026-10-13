@@ -233,8 +233,31 @@ docker run --rm --network none \
   '
 ```
 
+For the portable Rust suite, use a non-root user so permission-denial fixtures
+actually deny writes. The image provides the Linux CA bundle required by TLS
+fixtures. Its Rust version must match `rust-toolchain.toml`. Give each Issue
+worktree its own target-cache volume (replace `<issue>` below):
+
+```sh
+docker build -t mynou-local-rust -f engineering/Dockerfile.rust engineering
+docker run --rm --network none \
+  --mount "type=bind,src=$(pwd -P),dst=/workspace,readonly" \
+  --mount "type=volume,src=mynou-rust-<issue>,dst=/workspace/target" \
+  mynou-local-rust sh -eu -c '
+    cargo fmt --all --check
+    cargo clippy --all-targets --offline --locked -- -D warnings
+    python3 .github/scripts/crypto_fixtures.py /tmp/mynou-crypto-vectors.json
+    export MYNOU_CRYPTO_FIXTURES=/tmp/mynou-crypto-vectors.json TMPDIR=/tmp
+    cargo metadata --offline --locked --format-version 1 > /tmp/mynou-metadata.json
+    cargo test --all-targets --no-run --offline --locked --message-format=json-render-diagnostics > target/mynou-local-test-build.jsonl
+    results="$(mktemp -d target/local-test-results.XXXXXX)"
+    rmdir "$results"
+    python3 .github/scripts/parallel_tests.py target/mynou-local-test-build.jsonl --metadata /tmp/mynou-metadata.json --output "$results" --timeout 480
+  '
+```
+
 Docker's Linux environment does not validate native Apple Silicon/macOS behavior.
-Run those checks locally on a compatible Mac when practical; otherwise identify
+Run platform-specific checks locally on a compatible Mac when practical; otherwise identify
 the gap and leave it to required macOS CI. Generate the crypto reference fixture
 with `.github/scripts/crypto_fixtures.py` and pass `MYNOU_CRYPTO_FIXTURES` for
 Rust tests that need it. Keep temporary test directories physical (no symlink)

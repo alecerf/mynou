@@ -75,11 +75,21 @@ acting:
 CI compiles all targets once, keeping Cargo's JSON build manifest. The
 [scheduler](../.github/scripts/parallel_tests.py) runs every test executable in
 that manifest, whose targets must match the current Cargo metadata graph. It
-does not filter tests or keep a manual target list. By default it runs up to four
-harness processes (no more than the CPU count) with two test threads each, and
-gives each harness 180 seconds before killing its process group. Every harness
-must exit successfully with exactly one complete summary and no failed, ignored
-or filtered tests; a missing summary or an oversized log fails the run.
+keeps no manual target or test list. It discovers all library test names, divides
+them by top-level module and uses exact-name filters so every test executes once.
+This gives each large persistence module its own finite deadline, rather than
+timing out the cumulative duration of unrelated library tests. Other harnesses
+run whole. By default it runs up to four group processes (no more than the CPU
+count) with two test threads each. CI gives each group 480 seconds before killing
+its process group (the standalone scheduler default is 180 seconds). Every group
+must exit successfully with one complete summary and no failed or ignored tests.
+Library groups must report exactly their discovered test names and counts; the
+groups together must cover the full library without overlap or omissions. Tests
+filtered from one library group execute in another. Whole harnesses may filter
+nothing. A missing summary, incomplete coverage or oversized log fails the run.
+Each group runs from its own writable temporary directory under `target/`, so
+relative-path fixtures do not modify the checkout or collide with other groups.
+Compiled-in fixture paths still point to the original source directory.
 
 Slower harnesses start first, using recorded timings. Timings change the order
 only, never the set of tests. Logs, `report.json` and a duration table are kept in
