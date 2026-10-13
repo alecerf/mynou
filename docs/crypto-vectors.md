@@ -55,6 +55,11 @@ The Rust tests require the fixture path supplied by CI, bound their input to
   tests exercise the inherited AEAD path. Counter overflow, invalid parameters
   and excessive HKDF output fail explicitly without huge allocations.
 
+- The same generator also writes RFC 1071 checksum, inner IPv4/UDP packet and DNS
+  query/reply vectors for [the offline inner stack](/docs/netstack.md) (13
+  checksums, 13 packets, 2 queries, 27 replies), computed from the RFCs with
+  Python's `struct`, never from Mynou code.
+
 All fixture keys and messages are synthetic. No credentials or real network
 traffic are required. Tests and validation run only in GitHub Actions, following
 the repository protocol. This evidence covers primitives; independent WireGuard
