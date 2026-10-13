@@ -337,6 +337,10 @@ fn promoted_index_resumes_publication_but_foreign_pending_indexes_are_untouched(
     storage.initialize().unwrap();
     assert!(!storage.needs_migration());
     let marker = read(&directory.0.join("feeds.bin")).unwrap();
+    assert_eq!(
+        read(&directory.0.join(format!("feeds.legacy-{}.bin", super::super::digest(&bytes)))).unwrap(),
+        bytes
+    );
     drop(storage);
     for marked in [false, true] {
         let other = Directory::new();
@@ -476,7 +480,9 @@ fn changed_configuration_fails_before_migration_publication() {
     options.id = Some("configured".into());
     options.watch.enabled = true;
     let source = crate::config::Source {
-        options, name: "Synthetic".into(), kind: "rss".into(),
+        options,
+        name: "Synthetic".into(),
+        kind: "rss".into(),
         url: "http://127.0.0.1:9/feed".into(),
         api_key_env: "MYNOU_ABSENT_FEED_FIXTURE_KEY_110".into(),
     };
@@ -489,7 +495,12 @@ fn changed_configuration_fails_before_migration_publication() {
     config.sources = vec![source];
     config.sources[0].url = "http://127.0.0.1:9/changed-feed".into();
     let before = contents(&directory.0);
-    assert!(super::super::FeedStore::open(&directory.0, &config, false).err().unwrap().contains("source binding changed"));
+    assert!(
+        super::super::FeedStore::open(&directory.0, &config, false)
+            .err()
+            .unwrap()
+            .contains("source binding changed")
+    );
     assert_eq!(contents(&directory.0), before);
     assert!(!directory.0.join("feeds.idx").exists());
 }
