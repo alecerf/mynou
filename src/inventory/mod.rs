@@ -79,6 +79,8 @@ pub struct Index {
     #[cfg(test)]
     last_page_reads: usize,
     #[cfg(test)]
+    requests: u64,
+    #[cfg(test)]
     last_staged_nodes: usize,
 }
 
@@ -104,6 +106,11 @@ impl Index {
     #[cfg(test)]
     pub(crate) fn last_page_reads(&self) -> usize {
         self.last_page_reads
+    }
+
+    #[cfg(test)]
+    pub(crate) fn requests(&self) -> u64 {
+        self.requests
     }
 
     #[cfg(test)]
@@ -138,6 +145,8 @@ impl Index {
 
     pub fn get(&mut self, key: &Key) -> Result<Option<Vec<u8>>> {
         self.available()?;
+        #[cfg(test)]
+        { self.requests += 1; }
         let value = Tree::new(&mut self.tree, self.header, &mut self.cache).find(key)?;
         value
             .map(|value| persistence::read_value(&self.directory, key, value))
@@ -146,6 +155,8 @@ impl Index {
 
     pub fn page(&mut self, query: &Query) -> Result<Page> {
         self.available()?;
+        #[cfg(test)]
+        { self.requests += 1; }
         if query.limit == 0
             || query.limit > MAX_PAGE_ROWS
             || query.end.is_some_and(|end| end <= query.start)
