@@ -481,8 +481,10 @@ fn changed_configuration_fails_before_migration_publication() {
     let mut value = crate::config::default_json();
     value.insert("indexers", json::Value::Array(Vec::new()));
     let mut config = crate::config::from_json(&value, &directory.0).unwrap();
-    let mut options = crate::indexers::Options::default();
-    options.id = Some("configured".into());
+    let mut options = crate::indexers::Options {
+        id: Some("configured".into()),
+        ..Default::default()
+    };
     options.watch.enabled = true;
     let source = crate::config::Source {
         options,
