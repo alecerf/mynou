@@ -32,8 +32,8 @@ pub use sockets::{
     Delivery, EPHEMERAL_START, Handle, Ingest, Limits, Received, SocketError, UdpSockets,
 };
 pub use stream::{
-    Discard, Failure as TcpFailure, FlowHandle, Ingest as TcpIngest, ListenerHandle, Poll as TcpPoll,
-    Read, State as TcpState, TcpConfig, TcpError, TcpStack,
+    Discard, Failure as TcpFailure, FlowHandle, Ingest as TcpIngest, ListenerHandle,
+    Poll as TcpPoll, Read, State as TcpState, TcpConfig, TcpError, TcpStack,
 };
 pub use tcp::{
     DEFAULT_PEER_MSS, HEADER_LEN as TCP_HEADER_LEN, Header as TcpHeader, MIN_PEER_MSS, Segment,
