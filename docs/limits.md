@@ -142,8 +142,10 @@ Indexers:
   to 60 seconds and is clamped to 1 to 3,600. A probe has a five-second budget;
   if the service crashes during a probe its outcome stays unknown, and probes
   are never replayed.
-- Source policy is kept in a private checksummed `indexers.bin` of up to 1,000
-  sources and 2 MiB, including removed sources. Corruption, unsupported
+- Retained source policy uses a private `indexers.idx/` with no fixed total
+  source count or aggregate byte cap, including removed sources. Reads and
+  controls address individual records; configuration and watched-source bounds
+  still apply. See [storage and downgrade](inventory-storage.md#source-policy-storage). Corruption, unsupported
   formats, links and public permissions stop the service before workers start.
 
 Watched feeds:

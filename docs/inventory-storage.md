@@ -3,7 +3,7 @@
 The `mynou::inventory::Index` Rust API is the storage foundation for
 [growing inventories](https://github.com/alecerf/mynou/issues/106). Series,
 episode and numbering storage uses it (see [Series storage](#series-storage)).
-Jobs and requester demand also use private disk indexes. Retained feed state uses its own index. IRC and source-policy
+Jobs and requester demand also use private disk indexes. Retained feed state and source policy use their own indexes. IRC
 snapshots retain their own files and fixed limits; see [limits](limits.md).
 
 ## Ownership and format
@@ -499,3 +499,35 @@ Until that first writable start, read-only commands refuse the format-1 index.
 Before upgrading, keep a complete stopped-store backup if format-1 downgrade is
 needed; restoring it loses subsequent observations and captured work. Restoring
 legacy snapshots has the older limitations described above.
+
+## Source policy storage
+
+Retained indexer policies live in private `indexers.idx/`, keyed by source ID,
+with immutable configuration binding, enabled state, revision, last action and
+time. Retired sources remain on disk without a fixed retained count or byte
+cap. Startup checks only configured IDs; authorization, reports and controls use
+point reads. Reports still cover configured sources, not retired history.
+A guarded preview binds the store identity and transaction sequence along with
+the target policy and action. Any durable policy mutation invalidates earlier
+previews, including controls on other sources, without scanning retained rows.
+Cookies, credentials and their environment values are never persisted.
+
+On the first writable startup, the old bounded `indexers.bin` is validated and
+preserved exactly as private `indexers.legacy-<digest>.bin`. Migration commits
+at most 100 rows and their continuation cursor together into
+`indexers.idx.migrating/`. Restart resumes valid staging; unexpected or
+interrupted derived staging is preserved as `indexers.idx.abandoned-<digest>/`
+before rebuilding. Every legacy row and the complete count are checked before
+promotion. The new `indexers.bin` is a checksummed marker bound to the index
+identity; old readers reject it. A crash after promotion but before marker
+publication verifies the promoted index against the unchanged legacy bytes
+before completing publication. Read-only inspection never migrates or repairs.
+
+A storage failure is an error, not an absent or default-enabled policy. After
+an uncertain control, runtime source access is blocked until a writable restart
+recovers durable state; a failed response may mean the change committed.
+To downgrade, stop Mynou, preserve a complete copy of the store including the
+index and recovery artifacts, then restore the exact legacy backup as
+`indexers.bin` and move the new index aside. This restores pre-migration policy;
+later controls cannot be represented by that backup. Do not downgrade using
+only the new marker or remove rollback artifacts while the service runs.

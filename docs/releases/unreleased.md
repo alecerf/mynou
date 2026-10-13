@@ -33,3 +33,9 @@ Job storage gains an index of ready upgrade children, so recording a library ver
 ## Changed: Resume feed routing across the complete inventory
 
 Watched announcements are now captured privately before their identities are marked seen, and routing resumes in bounded pages after restart. Pending routing delays the next source poll; pausing a source cancels its captured work. Existing feed indexes upgrade on the first writable start; keep a complete stopped-store backup for downgrade ([storage guide](/docs/inventory-storage.md#captured-feed-routing)).
+
+## Changed: Retained indexer source policies
+
+Removed the fixed limits on retained source policies, including removed sources.
+Existing policy migrates automatically on writable startup; see
+[storage and downgrade](/docs/inventory-storage.md#source-policy-storage).

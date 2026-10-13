@@ -3,20 +3,13 @@ use super::{Authentication, Options, Source};
 use crate::{
     Result,
     config::Config,
-    crypto::{random_bytes, sha256},
     engine::{Engine, lock},
     json::{self, Value},
     requesters::{digest, valid_digest, valid_id},
-    store::{self, private_options, reject_symlinks, sync_directory},
+    store,
 };
-use std::{
-    collections::BTreeMap,
-    fs,
-    io::{Read, Write},
-    path::{Path, PathBuf},
-    sync::atomic::Ordering,
-    time::{Duration, Instant},
-};
+use std::{path::Path, sync::atomic::Ordering, time::{Duration, Instant}};
+mod storage;
 const MAGIC: &[u8; 8] = b"MYNOUS01";
 const MAX_BYTES: usize = 2 * 1024 * 1024;
 fn text(v: &Value, k: &str) -> Result<String> {
@@ -138,205 +131,71 @@ impl Record {
     }
 }
 pub(crate) struct SourceStore {
-    rows: BTreeMap<String, Record>,
-    path: PathBuf,
+    storage: storage::Storage,
     read_only: bool,
-    dirty: bool,
-    poisoned: bool,
 }
 impl SourceStore {
-    pub(crate) fn authorization(&self, id: &str) -> Result<(bool, u64)> {
-        if self.poisoned {
-            return Err("Indexer policy: durability uncertain; restart required".into());
-        }
-        let row = self
-            .rows
-            .get(id)
-            .ok_or("Indexer policy: source not configured")?;
+    fn row(&mut self, id: &str) -> Result<Record> {
+        self.storage.row(id)?.ok_or_else(|| "Indexer policy: source not configured".into())
+    }
+    pub(crate) fn authorization(&mut self, id: &str) -> Result<(bool, u64)> {
+        let row = self.row(id)?;
         Ok((row.enabled, row.revision))
     }
     pub(crate) fn open(dir: &Path, config: &Config, read_only: bool) -> Result<Self> {
-        let path = dir.join("indexers.bin");
-        reject_symlinks(&path).map_err(|_| "Indexer policy: invalid snapshot path")?;
-        let mut rows = BTreeMap::new();
-        match fs::symlink_metadata(&path) {
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(_) => return Err("Indexer policy: cannot inspect snapshot".into()),
-            Ok(m) => {
-                if !m.is_file() || m.len() < 48 || m.len() > MAX_BYTES as u64 + 48 {
-                    return Err("Indexer policy: invalid snapshot size".into());
-                }
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::MetadataExt;
-                    if m.nlink() != 1 || m.mode() & 0o077 != 0 {
-                        return Err(
-                            "Indexer policy: snapshot must be private with one hard link".into(),
-                        );
-                    }
-                }
-                let file = private_options()
-                    .read(true)
-                    .open(&path)
-                    .map_err(|_| "Indexer policy: cannot read snapshot")?;
-                let opened = file
-                    .metadata()
-                    .map_err(|_| "Indexer policy: cannot inspect snapshot")?;
-                if !opened.is_file() || opened.len() != m.len() {
-                    return Err("Indexer policy: snapshot changed during opening".into());
-                }
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::MetadataExt;
-                    if opened.nlink() != 1
-                        || opened.mode() & 0o077 != 0
-                        || opened.dev() != m.dev()
-                        || opened.ino() != m.ino()
-                    {
-                        return Err("Indexer policy: snapshot changed during opening".into());
-                    }
-                }
-                let mut bytes = Vec::new();
-                file.take(MAX_BYTES as u64 + 49)
-                    .read_to_end(&mut bytes)
-                    .map_err(|_| "Indexer policy: cannot read snapshot")?;
-                if bytes.len() < 48
-                    || bytes.len() > MAX_BYTES + 48
-                    || &bytes[..8] != MAGIC
-                    || u64::from_le_bytes(
-                        bytes[8..16]
-                            .try_into()
-                            .map_err(|_| "Indexer policy: invalid length")?,
-                    ) != bytes.len() as u64 - 48
-                    || sha256(&bytes[..bytes.len() - 32]).as_slice() != &bytes[bytes.len() - 32..]
-                {
-                    return Err("Indexer policy: corrupt or unsupported snapshot".into());
-                }
-                rows = Self::parse(&json::parse(
-                    std::str::from_utf8(&bytes[16..bytes.len() - 32])
-                        .map_err(|_| "Indexer policy: invalid UTF-8")?,
-                )?)?;
-            }
-        }
-        let before = rows.clone();
+        let mut store = Self { storage: storage::Storage::open(dir, read_only)?, read_only };
         let mut configured = std::collections::BTreeSet::new();
         for source in &config.sources {
             let id = source.options.identity(source);
             if !configured.insert(id.clone()) {
                 return Err("Indexer policy: duplicate configured source ID".into());
             }
-            let binding = source.options.binding(source);
-            if rows.get(&id).is_some_and(|r| r.binding != binding) {
+            if store.storage.row(&id)?.is_some_and(|r| r.binding != source.options.binding(source)) {
                 return Err("Indexer policy: source binding changed; use a new stable ID".into());
             }
-            if !rows.contains_key(&id) {
-                rows.insert(
-                    id.clone(),
-                    Record {
-                        id,
-                        binding,
-                        enabled: source.options.enabled,
-                        revision: 1,
-                        action: "initial".into(),
-                        at: store::now(),
-                    },
-                );
-            }
         }
-        if rows.len() > 1000 {
-            return Err("Indexer policy: retained source capacity reached".into());
-        }
-        let dirty = rows != before;
-        Ok(Self {
-            rows,
-            path,
-            read_only,
-            dirty,
-            poisoned: false,
-        })
+        Ok(store)
     }
-    fn parse(v: &Value) -> Result<BTreeMap<String, Record>> {
-        crate::numbering::only(v, &["records"])?;
-        let mut rows = BTreeMap::new();
-        for v in v
-            .get("records")
-            .and_then(Value::as_array)
-            .filter(|a| a.len() <= 1000)
-            .ok_or("Indexer policy: invalid collection")?
-        {
-            let r = Record::from_json(v)?;
-            if rows.insert(r.id.clone(), r).is_some() {
-                return Err("Indexer policy: duplicate record".into());
-            }
-        }
-        Ok(rows)
-    }
-    fn json(rows: &BTreeMap<String, Record>) -> Value {
-        let mut v = Value::object();
-        v.insert(
-            "records",
-            Value::Array(rows.values().map(Record::to_json).collect()),
-        );
-        v
+    fn configured(&mut self, source: &Source) -> Result<Record> {
+        let id = source.options.identity(source);
+        if !self.read_only { return self.row(&id); }
+        Ok(self.storage.row(&id)?.unwrap_or_else(|| Record {
+            id,
+            binding: source.options.binding(source),
+            enabled: source.options.enabled,
+            revision: 1,
+            action: "initial".into(),
+            at: 0,
+        }))
     }
     pub(crate) fn initialize(&mut self, config: &Config) -> Result<()> {
-        if !self.read_only {
-            if self.dirty {
-                self.save(self.rows.clone())?
+        self.storage.initialize()?;
+        if self.read_only { return Ok(()); }
+        for source in &config.sources {
+            let id = source.options.identity(source);
+            if self.storage.row(&id)?.is_none() {
+                let mut row = Record {
+                    id: id.clone(),
+                    binding: source.options.binding(source),
+                    enabled: source.options.enabled,
+                    revision: 1,
+                    action: "initial".into(),
+                    at: 0,
+                };
+                row.at = store::now();
+                self.storage.commit(row)?;
             }
-            for s in &config.sources {
-                s.options.publish(&self.rows[&s.options.identity(s)]);
-            }
+            source.options.publish(&self.row(&id)?);
         }
         Ok(())
     }
-    fn save(&mut self, rows: BTreeMap<String, Record>) -> Result<()> {
-        if self.read_only || self.poisoned {
-            return Err("Indexer policy: writable recovery is required".into());
-        }
-        let v = Self::json(&rows);
-        Self::parse(&v)?;
-        let payload = json::stringify(&v).into_bytes();
-        if payload.len() > MAX_BYTES {
-            return Err("Indexer policy: snapshot too large".into());
-        }
-        let mut bytes = MAGIC.to_vec();
-        bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
-        bytes.extend_from_slice(&payload);
-        bytes.extend_from_slice(&sha256(&bytes));
-        reject_symlinks(&self.path).map_err(|_| "Indexer policy: invalid snapshot path")?;
-        let temp = self
-            .path
-            .with_file_name(format!(".indexers-{}.tmp", digest(&random_bytes::<16>()?)));
-        let result = (|| -> Result<()> {
-            let mut f = private_options()
-                .create_new(true)
-                .write(true)
-                .open(&temp)
-                .map_err(|_| "Indexer policy: cannot create snapshot")?;
-            f.write_all(&bytes)
-                .and_then(|()| f.sync_all())
-                .map_err(|_| "Indexer policy: cannot persist snapshot")?;
-            fs::rename(&temp, &self.path).map_err(|_| "Indexer policy: cannot replace snapshot")?;
-            if sync_directory(
-                self.path
-                    .parent()
-                    .ok_or("Indexer policy: missing directory")?,
-            )
-            .is_err()
-            {
-                self.poisoned = true;
-                return Err("Indexer policy: durability uncertain; restart required".into());
-            }
-            Ok(())
-        })();
-        if result.is_err() {
-            let _ = fs::remove_file(&temp);
-        }
-        result?;
-        self.rows = rows;
-        self.dirty = false;
-        Ok(())
+    fn guard(&mut self, row: &Record, action: &str) -> Result<String> {
+        let (identity, sequence) = self.storage.guard()?;
+        let mut scope = row.to_json();
+        scope.insert("action", action);
+        scope.insert("store", digest(&identity));
+        scope.insert("sequence", sequence.to_string());
+        Ok(digest(json::stringify(&scope).as_bytes()))
     }
 }
 #[derive(Clone, Debug)]
@@ -388,12 +247,14 @@ impl ControlRequest {
 }
 impl Engine {
     pub fn indexers(&self) -> Result<Value> {
-        let s = lock(&self.indexer_store)?;
+        let mut s = lock(&self.indexer_store)?;
         let mut report = super::report(&self.config.sources);
         if let Some(Value::Array(rows)) = report.get_mut("sources") {
             for v in rows {
                 let id = text(v, "id")?;
-                let r = &s.rows[&id];
+                let source = self.config.sources.iter().find(|source| source.options.identity(source) == id)
+                    .ok_or("Indexer policy: source not configured")?;
+                let r = s.configured(source)?;
                 v.insert("enabled", r.enabled);
                 v.insert("policy_revision", r.revision.to_string());
                 v.insert("last_action", r.action.clone());
@@ -413,20 +274,14 @@ impl Engine {
             .find(|s| s.options.identity(s) == id)
             .ok_or("Indexer policy: source not configured")?;
         let mut store = lock(&self.indexer_store)?;
-        let r = store
-            .rows
-            .get(id)
-            .ok_or("Indexer policy: source not found")?;
+        let r = store.configured(source)?;
         if (q.action == "enable" && r.enabled)
             || (q.action == "pause" && !r.enabled)
             || (q.action == "probe" && !r.enabled)
         {
             return Err("Indexer policy: action does not apply to the current state".into());
         }
-        let mut scope = SourceStore::json(&store.rows);
-        scope.insert("id", id);
-        scope.insert("action", q.action.clone());
-        let guard = digest(json::stringify(&scope).as_bytes());
+        let guard = store.guard(&r, &q.action)?;
         let mut report = Value::object();
         report.insert("id", id);
         report.insert("name", crate::integrations::report_text(&source.name, 128));
@@ -443,8 +298,7 @@ impl Engine {
         if q.plan_id.as_deref() != Some(&guard) {
             return Err("Indexer policy: review is stale; preview again".into());
         }
-        let mut next = store.rows.clone();
-        let row = next.get_mut(id).ok_or("Indexer policy: missing record")?;
+        let mut row = r;
         row.revision = row
             .revision
             .checked_add(1)
@@ -457,8 +311,16 @@ impl Engine {
         if q.action == "pause" {
             row.enabled = false
         }
-        let row = row.clone();
-        store.save(next)?;
+        if let Err(error) = store.storage.commit(row.clone()) {
+            // A failed persistence response can mean the control committed. Fence
+            // configured runtime callers too; only reopen may restore policy.
+            for configured in &self.config.sources {
+                configured.options.policy_enabled.store(false, Ordering::Release);
+                configured.options.generation.fetch_xor(u64::MAX, Ordering::AcqRel);
+                configured.options.policy_initialized.store(true, Ordering::Release);
+            }
+            return Err(error);
+        }
         source.options.publish(&row);
         if q.action == "pause" {
             lock(&self.feed_store)?.suspend(id)?;

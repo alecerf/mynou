@@ -271,7 +271,7 @@ impl Engine {
         tally: &mut Tally,
     ) -> std::result::Result<(), &'static str> {
         let policy_revision = {
-            let policy = lock(&self.indexer_store).map_err(|_| "storage_failed")?;
+            let mut policy = lock(&self.indexer_store).map_err(|_| "storage_failed")?;
             let (enabled, revision) = policy.authorization(id).map_err(|_| "storage_failed")?;
             if !enabled || !source.options.watched() {
                 return Err("disabled");
@@ -306,7 +306,7 @@ impl Engine {
         let ids: Vec<&str> = poll.entries.iter().map(|entry| entry.id.as_str()).collect();
         // The authoritative source policy fences a pause/re-enable during I/O.
         let generation = {
-            let policy = lock(&self.indexer_store).map_err(|_| "storage_failed")?;
+            let mut policy = lock(&self.indexer_store).map_err(|_| "storage_failed")?;
             let (enabled, revision) = policy.authorization(id).map_err(|_| "storage_failed")?;
             if !enabled || revision != policy_revision || !source.options.watched() {
                 return Err("disabled");
@@ -505,7 +505,7 @@ impl Engine {
             }
         }
         // Policy/control and requester locks fence the final job mutation.
-        let policy = lock(&self.indexer_store)?;
+        let mut policy = lock(&self.indexer_store)?;
         let (enabled, revision) = policy.authorization(&feed::source_id(source))?;
         if !enabled || revision != policy_revision || !source.options.watched() {
             return Ok(Attach::Revoked);
@@ -546,7 +546,7 @@ impl Engine {
         parent: &Job,
         fresh: &[&FeedEntry],
     ) -> Result<Attach> {
-        let policy = lock(&self.indexer_store)?;
+        let mut policy = lock(&self.indexer_store)?;
         let (enabled, revision) = policy.authorization(&feed::source_id(source))?;
         if !enabled || revision != policy_revision || !source.options.watched() {
             return Ok(Attach::Revoked);

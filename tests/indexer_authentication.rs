@@ -14,6 +14,7 @@ use std::{
     io::{Read, Write},
     net::TcpListener,
     process::Command,
+    path::Path,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -643,7 +644,7 @@ fn guards_cover_other_source_changes_and_cannot_be_replayed() {
     assert_eq!(p.searches.load(Ordering::Acquire), 0);
 }
 #[test]
-fn reset_discards_ephemeral_sessions_and_keeps_snapshot_secret_free() {
+fn reset_discards_ephemeral_sessions_and_keeps_index_secret_free() {
     let d = Directory::new();
     let p = Provider::open();
     let c = cfg(&d, &p, "form");
@@ -656,10 +657,20 @@ fn reset_discards_ephemeral_sessions_and_keeps_snapshot_secret_free() {
     assert_eq!(health(&c).get("session_active"), Some(&Value::Bool(false)));
     integrations::search(&c, &movie()).unwrap();
     assert_eq!(p.logins.load(Ordering::Acquire), 2);
-    let bytes = fs::read(c.store_dir.join("indexers.bin")).unwrap();
-    let payload = std::str::from_utf8(&bytes[16..bytes.len() - 32]).unwrap();
-    redacted(&json::parse(payload).unwrap());
-    assert!(!payload.contains("PWD") && !payload.contains("PATH"));
+    fn inspect(path: &Path) {
+        for entry in fs::read_dir(path).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                inspect(&path);
+            } else {
+                let bytes = fs::read(path).unwrap();
+                for secret in [b"test-password".as_slice(), b"mynou-fixture-cookie", b"PWD", b"PATH"] {
+                    assert!(!bytes.windows(secret.len()).any(|window| window == secret));
+                }
+            }
+        }
+    }
+    inspect(&c.store_dir.join("indexers.idx"));
 }
 #[test]
 fn policy_changes_fence_inflight_responses_without_waiting_for_provider() {
@@ -830,6 +841,7 @@ fn offline_source_previews_never_create_missing_snapshot_or_apply_control() {
     drop(mynou::engine::Engine::open_for_management(c.clone()).unwrap());
     let path = c.store_dir.join("indexers.bin");
     fs::remove_file(&path).unwrap();
+    fs::remove_dir_all(c.store_dir.join("indexers.idx")).unwrap();
     let preview = mynou::engine::Engine::open_for_preview(c).unwrap();
     let id = policy_id(&preview);
     let q = reviewed(&preview, &id, "pause");
