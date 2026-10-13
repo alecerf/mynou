@@ -192,9 +192,9 @@ impl Engine {
                 state.next_due = None;
                 continue;
             }
-            let pending = lock(&self.feed_store)?.pending_header(&id)?.is_some();
-            let due = pending
-                || force
+            // Captured work is due at once after a restart and while it advances;
+            // `poll_source` rests a pass that could not settle anything.
+            let due = force
                 || lock(&self.feed_runtime)?
                     .sources
                     .get(&id)
@@ -245,8 +245,16 @@ impl Engine {
             }
             state.routed = state.routed.saturating_add(u64::from(tally.routed));
             state.upgrades = state.upgrades.saturating_add(u64::from(tally.upgrades));
-            state.next_due =
-                Some(Instant::now() + delay(source, outcome, state.consecutive_failures.max(1)));
+            let wait = if outcome == "ok" && tally.pending {
+                if tally.examined > 0 && tally.unverified == 0 {
+                    Duration::ZERO
+                } else {
+                    BUSY_RETRY
+                }
+            } else {
+                delay(source, outcome, state.consecutive_failures.max(1))
+            };
+            state.next_due = Some(Instant::now() + wait);
         }
         let mut report = Value::object();
         report.insert("id", id);

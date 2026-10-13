@@ -608,12 +608,77 @@ fn routing_format_upgrade_is_atomic_and_never_rewrites_primary_records() {
         let requests = index(&mut storage).requests();
         index(&mut storage).inject(Some(fault));
         assert!(storage.initialize().is_err());
-        assert!(index(&mut storage).requests() - requests <= 5);
+        // Four format and counter reads, then one verified read per changed key.
+        assert!(index(&mut storage).requests() - requests <= 7);
         drop(storage);
         let mut storage = Storage::open(&directory.0, false).unwrap();
         storage.initialize().unwrap();
         assert_eq!(storage.row(&record(1).id).unwrap(), Some(record(1)));
         assert_eq!(storage.routing_counts().unwrap(), (0, 0));
         assert!(!storage.needs_migration());
+    }
+}
+
+#[test]
+fn checkpoints_keep_or_advance_the_settled_position_at_every_crash_boundary() {
+    use crate::indexers::feed::generation::Generation;
+    use crate::integrations::{FeedEntry, Release};
+    for fault in [
+        Fault::Staged,
+        Fault::Published,
+        Fault::FirstRecord,
+        Fault::FirstPage,
+        Fault::Applied,
+        Fault::Unlinked,
+    ] {
+        let directory = Directory::new();
+        let mut storage = Storage::open(&directory.0, false).unwrap();
+        storage.initialize().unwrap();
+        let mut observed = Record::new("capture".into(), "1".repeat(64));
+        observed.baselined = true;
+        observed.revision = 1;
+        observed.seen = vec!["a".repeat(32)];
+        observed.cursor = observed.seen[0].clone();
+        let generation = Generation::new(
+            &observed,
+            1,
+            vec![FeedEntry {
+                id: "a".repeat(32),
+                release: Release {
+                    title: "Synthetic.Movie.2024.1080p.WEB-DL".into(),
+                    url: format!("magnet:?xt=urn:btih:{}", "a".repeat(40)),
+                    seeders: 5,
+                },
+            }],
+            100,
+        )
+        .unwrap();
+        storage.capture(observed, generation.clone()).unwrap();
+        let mut advanced = generation.header.clone();
+        advanced.after = Some(format!("{:016x}{}", 7, "b".repeat(32)));
+        index(&mut storage).inject(Some(fault));
+        assert!(
+            storage
+                .checkpoint(&generation.header, Some(&advanced))
+                .is_err()
+        );
+        assert!(storage.pending("capture").is_err());
+        drop(storage);
+        let mut recovered = Storage::open(&directory.0, false).unwrap();
+        let (durable, stale) = if fault == Fault::Staged {
+            (generation.header.clone(), advanced)
+        } else {
+            (advanced, generation.header.clone())
+        };
+        let pending = recovered.pending("capture").unwrap().unwrap();
+        assert_eq!(pending.header, durable);
+        assert_eq!(pending.entries.len(), 1);
+        assert_eq!(recovered.routing_counts().unwrap(), (1, 1));
+        // Only the durable position may settle the generation.
+        assert!(recovered.checkpoint(&stale, None).is_err());
+        assert_eq!(recovered.routing_counts().unwrap(), (1, 1));
+        assert!(recovered.checkpoint(&durable, None).unwrap());
+        assert!(recovered.pending("capture").unwrap().is_none());
+        assert_eq!(recovered.routing_counts().unwrap(), (0, 0));
     }
 }
