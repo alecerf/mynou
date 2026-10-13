@@ -488,12 +488,14 @@ upgrade lock retains the library phase.
 
 Captured candidates grant no authority. Source policy revision, current requester
 interest, job state, library tip and release/profile baseline fence final mutations.
-Pause/re-enable changes invalidate the previous source revision; pause and removal
-cancel pending work while clearing the baseline. A failed cancellation after a
+Every applied source control action (pause, enable, probe or session reset) changes
+the source revision and so cancels work captured under the previous one; the source
+baselines again. Pause and removal cancel pending work while clearing the baseline. A failed cancellation after a
 persisted pause reports an error; startup settles it under the disabled policy.
 
 The format-1 upgrade atomically changes the header and adds empty routing/schedule
 metadata without enumerating retained records. Earlier binaries reject format 2.
+Until that first writable start, read-only commands refuse the format-1 index.
 Before upgrading, keep a complete stopped-store backup if format-1 downgrade is
 needed; restoring it loses subsequent observations and captured work. Restoring
 legacy snapshots has the older limitations described above.
