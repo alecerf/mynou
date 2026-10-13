@@ -46,7 +46,10 @@ pub enum ReplyError {
 /// What one validated reply says.
 #[derive(PartialEq, Eq, Debug)]
 pub enum Reply {
-    Addresses { addresses: Vec<Ipv4Addr>, ttl: u32 },
+    Addresses {
+        addresses: Vec<Ipv4Addr>,
+        ttl: u32,
+    },
     NameError,
     Failure(u8),
     /// The TC bit: the answer needs TCP, which this stack does not have yet.
@@ -150,9 +153,7 @@ pub fn parse_response(id: u16, question: &[u8], message: &[u8]) -> Result<Reply,
     let mut ttl: Option<u32> = None;
     for _ in 0..answers {
         let (owner, next) = read_name(message, position)?;
-        let header = message
-            .get(next..next + 10)
-            .ok_or(ReplyError::Truncated)?;
+        let header = message.get(next..next + 10).ok_or(ReplyError::Truncated)?;
         let start = next + 10;
         let end = start + usize::from(be16(&header[8..]));
         let data = message.get(start..end).ok_or(ReplyError::Truncated)?;

@@ -109,10 +109,17 @@ fn rejects_each_header_field() {
         (edited(|p| p[12] = 224), PacketError::Source),
         (edited(|p| p[12..16].fill(255)), PacketError::Source),
         (edited(|p| p[12..16].fill(0)), PacketError::Source),
-        (edited(|p| p[12..16].copy_from_slice(&[10, 64, 0, 2])), PacketError::Source),
+        (
+            edited(|p| p[12..16].copy_from_slice(&[10, 64, 0, 2])),
+            PacketError::Source,
+        ),
     ];
     for (index, (packet, expected)) in cases.iter().enumerate() {
-        assert_eq!(parse(&config, packet).unwrap_err(), *expected, "case {index}");
+        assert_eq!(
+            parse(&config, packet).unwrap_err(),
+            *expected,
+            "case {index}"
+        );
     }
     let mut broken = sample(b"x");
     broken[10] ^= 1;
@@ -125,7 +132,10 @@ fn rejects_each_header_field() {
 fn header_length_needs_its_own_bytes() {
     let mut short = sample(b"");
     short[0] = 0x46;
-    assert_eq!(parse(&config(), &short[..23]).unwrap_err(), PacketError::Truncated);
+    assert_eq!(
+        parse(&config(), &short[..23]).unwrap_err(),
+        PacketError::Truncated
+    );
 }
 
 #[test]
@@ -138,13 +148,25 @@ fn total_length_is_bounded_by_budget_and_input() {
     larger.push(0);
     larger[2..4].copy_from_slice(&((MAX_MTU + 1) as u16).to_be_bytes());
     reseal(&mut larger);
-    assert_eq!(parse(&config(), &larger).unwrap_err(), PacketError::TotalLength);
+    assert_eq!(
+        parse(&config(), &larger).unwrap_err(),
+        PacketError::TotalLength
+    );
 }
 
 #[test]
 fn only_padding_options_are_accepted() {
     let with_options = |options: &[u8]| {
-        let mut packet = vec![0x40 | (5 + (options.len() / 4) as u8), 0, 0, 0, 0, 0, 0x40, 0];
+        let mut packet = vec![
+            0x40 | (5 + (options.len() / 4) as u8),
+            0,
+            0,
+            0,
+            0,
+            0,
+            0x40,
+            0,
+        ];
         packet.extend_from_slice(&[64, PROTOCOL_UDP, 0, 0, 203, 0, 113, 9, 10, 64, 0, 2]);
         packet.extend_from_slice(options);
         packet.extend_from_slice(b"data");
@@ -193,7 +215,12 @@ fn source_must_be_in_the_allowed_network() {
 fn configuration_is_validated() {
     let any = Ipv4Addr::UNSPECIFIED;
     assert_eq!(Ipv4Config::new(LOCAL, any, 33), Err(PacketError::Config));
-    for local in [any, Ipv4Addr::LOCALHOST, Ipv4Addr::BROADCAST, Ipv4Addr::new(224, 0, 0, 1)] {
+    for local in [
+        any,
+        Ipv4Addr::LOCALHOST,
+        Ipv4Addr::BROADCAST,
+        Ipv4Addr::new(224, 0, 0, 1),
+    ] {
         assert_eq!(Ipv4Config::new(local, any, 0), Err(PacketError::Config));
     }
     assert_eq!(config().local(), LOCAL);
@@ -206,7 +233,10 @@ fn every_header_bit_flip_is_detected() {
         for bit in 0..8 {
             let mut tampered = packet.clone();
             tampered[byte] ^= 1 << bit;
-            assert!(parse(&config(), &tampered).is_err(), "byte {byte} bit {bit}");
+            assert!(
+                parse(&config(), &tampered).is_err(),
+                "byte {byte} bit {bit}"
+            );
         }
     }
 }
@@ -214,19 +244,31 @@ fn every_header_bit_flip_is_detected() {
 #[test]
 fn builder_is_bounded_by_the_mtu() {
     let exact = vec![0u8; 576 - HEADER_LEN];
-    assert_eq!(build(REMOTE, LOCAL, PROTOCOL_UDP, &exact, 576).unwrap().len(), 576);
+    assert_eq!(
+        build(REMOTE, LOCAL, PROTOCOL_UDP, &exact, 576)
+            .unwrap()
+            .len(),
+        576
+    );
     assert_eq!(
         build(REMOTE, LOCAL, PROTOCOL_UDP, &[0; 557], 576),
         Err(BuildError::TooLarge)
     );
     for mtu in [0, 575, MAX_MTU + 1, usize::MAX] {
-        assert_eq!(build(REMOTE, LOCAL, PROTOCOL_UDP, b"", mtu), Err(BuildError::Mtu));
+        assert_eq!(
+            build(REMOTE, LOCAL, PROTOCOL_UDP, b"", mtu),
+            Err(BuildError::Mtu)
+        );
     }
     assert_eq!(
         build(Ipv4Addr::UNSPECIFIED, LOCAL, PROTOCOL_UDP, b"", MAX_MTU),
         Err(BuildError::Source)
     );
-    for destination in [Ipv4Addr::BROADCAST, Ipv4Addr::LOCALHOST, Ipv4Addr::new(239, 1, 1, 1)] {
+    for destination in [
+        Ipv4Addr::BROADCAST,
+        Ipv4Addr::LOCALHOST,
+        Ipv4Addr::new(239, 1, 1, 1),
+    ] {
         assert_eq!(
             build(REMOTE, destination, PROTOCOL_UDP, b"", MAX_MTU),
             Err(BuildError::Destination)

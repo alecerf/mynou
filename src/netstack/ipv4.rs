@@ -43,7 +43,9 @@ impl Ipv4Config {
     }
 
     fn allows(&self, source: Ipv4Addr) -> bool {
-        let mask = u32::MAX.checked_shl(32 - u32::from(self.prefix)).unwrap_or(0);
+        let mask = u32::MAX
+            .checked_shl(32 - u32::from(self.prefix))
+            .unwrap_or(0);
         u32::from(source) & mask == u32::from(self.allowed) & mask
     }
 }
@@ -143,7 +145,10 @@ pub fn parse<'a>(config: &Ipv4Config, bytes: &'a [u8]) -> Result<Packet<'a>, Pac
     if fold(sum(&bytes[..header_len], 0)) != 0xffff {
         return Err(PacketError::Checksum);
     }
-    if bytes[HEADER_LEN..header_len].iter().any(|&option| option > 1) {
+    if bytes[HEADER_LEN..header_len]
+        .iter()
+        .any(|&option| option > 1)
+    {
         return Err(PacketError::Options);
     }
     if bytes[8] == 0 {

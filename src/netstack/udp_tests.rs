@@ -53,7 +53,10 @@ fn a_computed_zero_checksum_is_sent_as_ones() {
     let rows = vectors.get("inner").unwrap().get("udp").unwrap();
     let row = &rows.as_array().unwrap()[5];
     let packet = binary(row, "packet");
-    assert_eq!(&packet[IPV4_HEADER_LEN + 6..IPV4_HEADER_LEN + 8], &[0xff, 0xff]);
+    assert_eq!(
+        &packet[IPV4_HEADER_LEN + 6..IPV4_HEADER_LEN + 8],
+        &[0xff, 0xff]
+    );
 }
 
 #[test]
@@ -83,8 +86,14 @@ fn checksum_covers_the_pseudo_header() {
 #[test]
 fn length_and_ports_are_strict() {
     let data = segment(b"payload");
-    assert_eq!(parse(REMOTE, LOCAL, &data[..7]), Err(DatagramError::Truncated));
-    assert_eq!(parse(REMOTE, LOCAL, &data[..10]), Err(DatagramError::Length));
+    assert_eq!(
+        parse(REMOTE, LOCAL, &data[..7]),
+        Err(DatagramError::Truncated)
+    );
+    assert_eq!(
+        parse(REMOTE, LOCAL, &data[..10]),
+        Err(DatagramError::Length)
+    );
     let mut longer = data.clone();
     longer.push(0);
     assert_eq!(parse(REMOTE, LOCAL, &longer), Err(DatagramError::Length));
@@ -132,8 +141,14 @@ fn builder_honors_the_mtu_exactly() {
         build(REMOTE, LOCAL, 1, 2, &[7; 549], 576),
         Err(BuildError::TooLarge)
     );
-    assert_eq!(build(REMOTE, LOCAL, 0, 2, b"", MAX_MTU), Err(BuildError::Port));
-    assert_eq!(build(REMOTE, LOCAL, 1, 0, b"", MAX_MTU), Err(BuildError::Port));
+    assert_eq!(
+        build(REMOTE, LOCAL, 0, 2, b"", MAX_MTU),
+        Err(BuildError::Port)
+    );
+    assert_eq!(
+        build(REMOTE, LOCAL, 1, 0, b"", MAX_MTU),
+        Err(BuildError::Port)
+    );
     for mtu in [0, 575, MAX_MTU + 1] {
         assert_eq!(build(REMOTE, LOCAL, 1, 2, b"", mtu), Err(BuildError::Mtu));
         assert_eq!(max_payload(mtu), Err(BuildError::Mtu));

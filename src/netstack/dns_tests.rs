@@ -127,7 +127,9 @@ fn reply(count: u16, answers: &[Vec<u8>]) -> Vec<u8> {
     message.extend_from_slice(&[0; 4]);
     message.extend_from_slice(&wire(NAME));
     message.extend_from_slice(&[0, 1, 0, 1]);
-    answers.iter().for_each(|record| message.extend_from_slice(record));
+    answers
+        .iter()
+        .for_each(|record| message.extend_from_slice(record));
     message
 }
 
@@ -191,8 +193,16 @@ fn specific_rejection_reasons() {
         ("aaaa", vector("aaaa answer"), ReplyError::Type),
         ("class", vector("wrong class"), ReplyError::Class),
         ("self pointer", vector("self pointer"), ReplyError::Pointer),
-        ("forward pointer", vector("forward pointer"), ReplyError::Pointer),
-        ("reserved label", vector("reserved label"), ReplyError::Label),
+        (
+            "forward pointer",
+            vector("forward pointer"),
+            ReplyError::Pointer,
+        ),
+        (
+            "reserved label",
+            vector("reserved label"),
+            ReplyError::Label,
+        ),
         ("rdlength", vector("rdlength five"), ReplyError::Rdata),
         ("overrun", vector("rdata overrun"), ReplyError::Truncated),
         ("id", vector("other id"), ReplyError::Id),
@@ -202,11 +212,15 @@ fn specific_rejection_reasons() {
         ("echoed query", vector("query echoed"), ReplyError::Header),
         ("short", vector("short header"), ReplyError::Truncated),
         ("count", reply(33, &[]), ReplyError::Records),
-        ("opcode", {
-            let mut message = reply(1, &[a([192, 0, 2, 1])]);
-            message[2] = 0x89;
-            message
-        }, ReplyError::Header),
+        (
+            "opcode",
+            {
+                let mut message = reply(1, &[a([192, 0, 2, 1])]);
+                message[2] = 0x89;
+                message
+            },
+            ReplyError::Header,
+        ),
     ];
     for (label, message, expected) in cases {
         assert_eq!(parse(&message), Err(expected), "{label}");
@@ -230,7 +244,12 @@ fn answers_are_bounded_and_deduplicated() {
         panic!("expected addresses");
     };
     assert_eq!(addresses.len(), 1);
-    for special in [[0, 0, 0, 0], [127, 0, 0, 1], [224, 0, 0, 1], [255, 255, 255, 255]] {
+    for special in [
+        [0, 0, 0, 0],
+        [127, 0, 0, 1],
+        [224, 0, 0, 1],
+        [255, 255, 255, 255],
+    ] {
         let only = [record(&POINTER, TYPE_A, 30, &special)];
         assert_eq!(parse(&reply(1, &only)), Ok(Reply::NoAddress));
     }
@@ -259,7 +278,10 @@ fn cname_chains_are_followed_but_bounded() {
         record(&second, TYPE_A, 40, &[198, 51, 100, 1]),
     ];
     assert_eq!(parse(&reply(2, &outside)), Ok(Reply::NoAddress));
-    let unrelated = [cname(&first, &second), record(&second, TYPE_A, 9, &[198, 51, 100, 2])];
+    let unrelated = [
+        cname(&first, &second),
+        record(&second, TYPE_A, 9, &[198, 51, 100, 2]),
+    ];
     assert_eq!(parse(&reply(2, &unrelated)), Ok(Reply::NoAddress));
     let mut long = Vec::new();
     let mut owner = POINTER.to_vec();
@@ -302,7 +324,10 @@ fn name_compression_traps_are_refused() {
     assert_eq!(read_name(&[0xc0], 0), Err(ReplyError::Truncated));
     assert_eq!(read_name(&[], 0), Err(ReplyError::Truncated));
     assert_eq!(read_name(&[5, b'a', b'b'], 0), Err(ReplyError::Label));
-    assert_eq!(read_name(&[3, b'a', b'b', b'c'], 0), Err(ReplyError::Truncated));
+    assert_eq!(
+        read_name(&[3, b'a', b'b', b'c'], 0),
+        Err(ReplyError::Truncated)
+    );
     for reserved in [0x40u8, 0x80] {
         assert_eq!(read_name(&[reserved, 0], 0), Err(ReplyError::Label));
     }
@@ -360,7 +385,10 @@ fn spoofed_replies_never_complete_a_query() {
     let stranger = Ipv4Addr::new(203, 0, 113, 9);
     assert_eq!(rig.feed(stranger, 53, port, &vector("single")), filtered());
     assert_eq!(rig.feed(R1, 5353, port, &vector("single")), filtered());
-    assert_eq!(rig.feed(R1, 53, port.wrapping_add(1), &vector("single")), Ingest::Delivered(Delivery::NoSocket));
+    assert_eq!(
+        rig.feed(R1, 53, port.wrapping_add(1), &vector("single")),
+        Ingest::Delivered(Delivery::NoSocket)
+    );
     for case in ["other id", "other question", "aaaa answer", "query echoed"] {
         assert_eq!(rig.feed(R1, 53, port, &vector(case)), queued(), "{case}");
     }
@@ -399,7 +427,13 @@ fn retries_rotate_resolvers_until_the_scripted_timeout() {
     assert!(rig.poll(secs(5)).finished.is_empty());
     let poll = rig.poll(secs(6));
     assert!(poll.send.is_empty());
-    assert_eq!(poll.finished, vec![Finished { id, result: Err(Failure::Timeout) }]);
+    assert_eq!(
+        poll.finished,
+        vec![Finished {
+            id,
+            result: Err(Failure::Timeout)
+        }]
+    );
     assert_eq!(poll.next, None);
     assert!(rig.sockets.is_empty());
     assert_eq!(rig.client.pending(), 0);
@@ -410,7 +444,10 @@ fn a_reply_after_rotation_from_the_new_resolver_is_accepted() {
     let mut rig = Rig::new(&[TXID, 0], config(&[R1, R2]));
     let (_, first) = rig.start(NAME, Duration::ZERO);
     rig.poll(secs(2));
-    assert_eq!(rig.feed(R2, 53, source_port(&first), &vector("single")), queued());
+    assert_eq!(
+        rig.feed(R2, 53, source_port(&first), &vector("single")),
+        queued()
+    );
     let poll = rig.poll(secs(2));
     assert!(poll.finished[0].result.is_ok());
 }
@@ -440,13 +477,17 @@ fn pending_queries_and_transactions_are_bounded() {
     let mut rig = Rig::new(&[1, 100, 2, 200, 3, 300], limited);
     rig.start("a.example", Duration::ZERO);
     rig.start("b.example", Duration::ZERO);
-    let third = rig.client.start(&mut rig.sockets, G, "c.example", Duration::ZERO);
+    let third = rig
+        .client
+        .start(&mut rig.sockets, G, "c.example", Duration::ZERO);
     assert_eq!(third, Err(DnsError::Busy));
     assert_eq!((rig.client.pending(), rig.sockets.len()), (2, 2));
     // A source that only ever repeats one transaction id cannot start a second.
     let mut rig = Rig::one(&[5]);
     rig.start("a.example", Duration::ZERO);
-    let second = rig.client.start(&mut rig.sockets, G, "b.example", Duration::ZERO);
+    let second = rig
+        .client
+        .start(&mut rig.sockets, G, "b.example", Duration::ZERO);
     assert_eq!(second, Err(DnsError::Busy));
     assert_eq!((rig.client.pending(), rig.sockets.len()), (1, 1));
 }
@@ -477,7 +518,13 @@ fn names_are_validated_before_any_work() {
         assert_eq!(started, Err(DnsError::BadName), "{name:?}");
         assert!(rig.sockets.is_empty());
     }
-    for name in [&longest[..], "x.example.", "a_b.Example-1.NET", "1.2.3.4", "localhost"] {
+    for name in [
+        &longest[..],
+        "x.example.",
+        "a_b.Example-1.NET",
+        "1.2.3.4",
+        "localhost",
+    ] {
         let mut rig = Rig::one(&[TXID, 0]);
         let (_, packet) = rig.start(name, Duration::ZERO);
         assert!(packet.len() <= 28 + 12 + 255 + 4);
@@ -498,7 +545,9 @@ fn failures_do_not_fall_back_or_leak_sockets() {
     let mut rig = Rig::one(&[1, 100, 2, 200]);
     rig.sockets = UdpSockets::new(tiny, G);
     rig.start("a.example", Duration::ZERO);
-    let full = rig.client.start(&mut rig.sockets, G, "b.example", Duration::ZERO);
+    let full = rig
+        .client
+        .start(&mut rig.sockets, G, "b.example", Duration::ZERO);
     assert_eq!(full, Err(DnsError::Socket(SocketError::TableFull)));
     assert_eq!(rig.client.pending(), 1);
 }
@@ -547,7 +596,12 @@ fn cancel_frees_the_socket_and_is_idempotent() {
 
 #[test]
 fn configuration_is_validated() {
-    let too_many = vec![R1, R2, Ipv4Addr::new(10, 2, 0, 3), Ipv4Addr::new(10, 2, 0, 4)];
+    let too_many = vec![
+        R1,
+        R2,
+        Ipv4Addr::new(10, 2, 0, 3),
+        Ipv4Addr::new(10, 2, 0, 4),
+    ];
     for edit in 0..14 {
         let mut config = config(&[R1, R2]);
         match edit {

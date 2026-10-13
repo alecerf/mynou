@@ -185,11 +185,7 @@ impl UdpSockets {
         Err(SocketError::PortsExhausted)
     }
 
-    fn socket(
-        &mut self,
-        generation: u64,
-        handle: Handle,
-    ) -> Result<&mut Socket, SocketError> {
+    fn socket(&mut self, generation: u64, handle: Handle) -> Result<&mut Socket, SocketError> {
         if !self.admit(generation) {
             return Err(SocketError::Revoked);
         }
@@ -211,11 +207,7 @@ impl UdpSockets {
         Ok(())
     }
 
-    pub fn close(
-        &mut self,
-        generation: u64,
-        handle: Handle,
-    ) -> Result<(), SocketError> {
+    pub fn close(&mut self, generation: u64, handle: Handle) -> Result<(), SocketError> {
         let queued = self.socket(generation, handle)?.queue.len();
         self.sockets.remove(&handle.port);
         self.queued = self.queued.saturating_sub(queued);
@@ -249,8 +241,7 @@ impl UdpSockets {
         if socket.remote.is_some_and(|connected| connected != remote) {
             return Err(SocketError::Remote);
         }
-        udp::build(local, remote.0, handle.port, remote.1, payload, mtu)
-            .map_err(SocketError::Build)
+        udp::build(local, remote.0, handle.port, remote.1, payload, mtu).map_err(SocketError::Build)
     }
 
     /// Queues one validated datagram, within the per-socket and global bounds.

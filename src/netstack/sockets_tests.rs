@@ -24,7 +24,10 @@ fn explicit_and_ephemeral_binds() {
     let mut zero = Script::new(&[0]);
     let fixed = sockets.bind(G, 6881, &mut zero).unwrap();
     assert_eq!(fixed.port(), 6881);
-    assert_eq!(sockets.bind(G, 6881, &mut zero), Err(SocketError::PortInUse));
+    assert_eq!(
+        sockets.bind(G, 6881, &mut zero),
+        Err(SocketError::PortInUse)
+    );
     assert_eq!(zero.calls(), 0);
     let ephemeral = sockets.bind(G, 0, &mut zero).unwrap();
     assert_eq!(ephemeral.port(), EPHEMERAL_START);
@@ -64,7 +67,10 @@ fn table_size_is_limited() {
     let mut sockets = table(limits);
     let first = sockets.bind(G, 1000, &mut Failing).unwrap();
     sockets.bind(G, 1001, &mut Failing).unwrap();
-    assert_eq!(sockets.bind(G, 1002, &mut Failing), Err(SocketError::TableFull));
+    assert_eq!(
+        sockets.bind(G, 1002, &mut Failing),
+        Err(SocketError::TableFull)
+    );
     sockets.close(G, first).unwrap();
     assert!(sockets.bind(G, 1002, &mut Failing).is_ok());
 }
@@ -79,7 +85,10 @@ fn closed_handles_stay_dead_after_the_port_is_reused() {
     let new = sockets.bind(G, 4000, &mut Failing).unwrap();
     assert_ne!(old, new);
     assert_eq!(sockets.recv(G, old), Err(SocketError::Closed));
-    assert_eq!(sockets.connect(G, old, (PEER, 53)), Err(SocketError::Closed));
+    assert_eq!(
+        sockets.connect(G, old, (PEER, 53)),
+        Err(SocketError::Closed)
+    );
     assert_eq!(sockets.recv(G, new), Ok(None));
 }
 
@@ -88,7 +97,10 @@ fn datagrams_are_queued_in_order_and_accounted() {
     let mut sockets = table(Limits::default());
     let handle = sockets.bind(G, 4000, &mut Failing).unwrap();
     for payload in [&b"one"[..], b"two", b""] {
-        assert_eq!(sockets.deliver(G, PEER, 53, 4000, payload), Delivery::Queued);
+        assert_eq!(
+            sockets.deliver(G, PEER, 53, 4000, payload),
+            Delivery::Queued
+        );
     }
     assert_eq!(sockets.queued(), 3);
     let first = sockets.recv(G, handle).unwrap().unwrap();
@@ -99,7 +111,10 @@ fn datagrams_are_queued_in_order_and_accounted() {
     assert_eq!(sockets.queued(), 1);
     sockets.close(G, handle).unwrap();
     assert_eq!(sockets.queued(), 0);
-    assert_eq!(sockets.deliver(G, PEER, 53, 4000, b"late"), Delivery::NoSocket);
+    assert_eq!(
+        sockets.deliver(G, PEER, 53, 4000, b"late"),
+        Delivery::NoSocket
+    );
 }
 
 #[test]
@@ -130,7 +145,10 @@ fn a_connected_socket_filters_other_remotes() {
     let handle = sockets.bind(G, 4000, &mut Failing).unwrap();
     sockets.connect(G, handle, (PEER, 53)).unwrap();
     let other = Ipv4Addr::new(203, 0, 113, 10);
-    assert_eq!(sockets.deliver(G, other, 53, 4000, b"x"), Delivery::Filtered);
+    assert_eq!(
+        sockets.deliver(G, other, 53, 4000, b"x"),
+        Delivery::Filtered
+    );
     assert_eq!(sockets.deliver(G, PEER, 54, 4000, b"x"), Delivery::Filtered);
     assert_eq!(sockets.queued(), 0);
     assert_eq!(sockets.deliver(G, PEER, 53, 4000, b"x"), Delivery::Queued);
@@ -149,7 +167,10 @@ fn send_builds_a_checked_packet_from_the_socket_port() {
     let ip = ipv4::parse(&remote, &packet).unwrap();
     let datagram = udp::parse(ip.source, ip.destination, ip.payload).unwrap();
     assert_eq!((ip.source, ip.destination), (LOCAL, PEER));
-    assert_eq!((datagram.source_port, datagram.destination_port), (4000, 53));
+    assert_eq!(
+        (datagram.source_port, datagram.destination_port),
+        (4000, 53)
+    );
     assert_eq!(datagram.payload, b"query");
     sockets.connect(G, handle, (PEER, 53)).unwrap();
     assert_eq!(
@@ -206,7 +227,10 @@ fn a_different_generation_revokes_everything_irreversibly() {
     assert_eq!(sockets.recv(G + 1, handle), Err(SocketError::Revoked));
     assert_eq!((sockets.len(), sockets.queued()), (0, 0));
     assert_eq!(sockets.recv(G, handle), Err(SocketError::Revoked));
-    assert_eq!(sockets.bind(G, 4000, &mut Failing), Err(SocketError::Revoked));
+    assert_eq!(
+        sockets.bind(G, 4000, &mut Failing),
+        Err(SocketError::Revoked)
+    );
     assert_eq!(sockets.deliver(G, PEER, 1, 4000, b"x"), Delivery::Revoked);
     assert_eq!(
         sockets.ingest(G, &config(), &inbound(1, 4000, b"x")),
