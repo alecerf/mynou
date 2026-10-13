@@ -52,7 +52,10 @@ fn independent_reference_packets() {
             number(row, "destination_port")
         );
         assert_eq!(u64::from(parsed.sequence), number(row, "sequence"));
-        assert_eq!(u64::from(parsed.acknowledgment), number(row, "acknowledgment"));
+        assert_eq!(
+            u64::from(parsed.acknowledgment),
+            number(row, "acknowledgment")
+        );
         assert_eq!(u64::from(parsed.flags), number(row, "flags"));
         assert_eq!(u64::from(parsed.window), number(row, "window"));
         assert_eq!(parsed.mss.map(u64::from), row.get("mss").unwrap().as_u64());
@@ -83,10 +86,7 @@ fn a_computed_zero_checksum_is_sent_as_zero() {
     let vectors = fixtures();
     let rows = vectors.get("tcp").unwrap().as_array().unwrap();
     let packet = binary(rows.last().unwrap(), "packet");
-    assert_eq!(
-        &packet[IPV4_HEADER_LEN + 16..IPV4_HEADER_LEN + 18],
-        &[0, 0]
-    );
+    assert_eq!(&packet[IPV4_HEADER_LEN + 16..IPV4_HEADER_LEN + 18], &[0, 0]);
 }
 
 #[test]
@@ -266,7 +266,10 @@ fn builder_limits() {
     // The SYN option takes four bytes of the budget.
     let mut syn = header(SYN);
     syn.mss = Some(1384);
-    assert_eq!(build(REMOTE, LOCAL, &syn, &full, MAX_MTU), Err(BuildError::TooLarge));
+    assert_eq!(
+        build(REMOTE, LOCAL, &syn, &full, MAX_MTU),
+        Err(BuildError::TooLarge)
+    );
     assert!(build(REMOTE, LOCAL, &syn, &full[..full.len() - 4], MAX_MTU).is_ok());
     assert_eq!(
         build(Ipv4Addr::LOCALHOST, LOCAL, &header(ACK), &[], MAX_MTU),

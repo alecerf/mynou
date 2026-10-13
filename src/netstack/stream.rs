@@ -6,10 +6,8 @@
 //! read here: the caller moves inner datagrams in with [`TcpStack::ingest`] and
 //! out with [`TcpStack::poll`].
 
-use super::ipv4::{self, BuildError, Ipv4Config, PacketError, PROTOCOL_TCP, check_mtu, unroutable};
-use super::tcp::{
-    self, ACK, DEFAULT_PEER_MSS, FIN, Header, PSH, RST, SYN, Segment, SegmentError,
-};
+use super::ipv4::{self, BuildError, Ipv4Config, PROTOCOL_TCP, PacketError, check_mtu, unroutable};
+use super::tcp::{self, ACK, DEFAULT_PEER_MSS, FIN, Header, PSH, RST, SYN, Segment, SegmentError};
 use super::{EPHEMERAL_START, Fence};
 use crate::wireguard::Entropy;
 use std::collections::{BTreeMap, VecDeque};
@@ -411,7 +409,8 @@ impl<E: Entropy> TcpStack<E> {
         for _ in 0..PORT_ATTEMPTS {
             let raw = self.entropy.bytes::<2>().map_err(TcpError::Entropy)?;
             let port = EPHEMERAL_START + u16::from_be_bytes(raw) % EPHEMERAL_COUNT;
-            if !self.listeners.contains_key(&port) && !self.flows.contains_key(&(port, remote.0, remote.1))
+            if !self.listeners.contains_key(&port)
+                && !self.flows.contains_key(&(port, remote.0, remote.1))
             {
                 return Ok(port);
             }
@@ -620,7 +619,9 @@ impl<E: Entropy> TcpStack<E> {
                 *slot = byte;
             }
             // Announce a window that opened by a worthwhile amount.
-            let opened = capacity.saturating_sub(flow.recv.len()).saturating_sub(before);
+            let opened = capacity
+                .saturating_sub(flow.recv.len())
+                .saturating_sub(before);
             let worthwhile = flow.mss.min(capacity / 2);
             if flow.state != State::Closed && opened >= worthwhile {
                 flow.ack_due = true;
@@ -683,12 +684,7 @@ impl<E: Entropy> TcpStack<E> {
         free.min(MAX_WINDOW) as u16
     }
 
-    fn packet(
-        &self,
-        key: Key,
-        header: Header,
-        payload: &[u8],
-    ) -> Result<Vec<u8>, BuildError> {
+    fn packet(&self, key: Key, header: Header, payload: &[u8]) -> Result<Vec<u8>, BuildError> {
         tcp::build(
             self.config.ip.local(),
             key.1,
@@ -799,7 +795,13 @@ impl<E: Entropy> TcpStack<E> {
         Ingest::Handshake
     }
 
-    fn arrive(&mut self, key: Key, flow: &mut Flow, segment: &Segment<'_>, now: Duration) -> Ingest {
+    fn arrive(
+        &mut self,
+        key: Key,
+        flow: &mut Flow,
+        segment: &Segment<'_>,
+        now: Duration,
+    ) -> Ingest {
         match flow.state {
             State::SynSent => return self.arrive_syn_sent(key, flow, segment, now),
             State::Closed => {
@@ -830,7 +832,11 @@ impl<E: Entropy> TcpStack<E> {
         } else {
             window != 0
                 && (in_window(segment.sequence, flow.rcv_nxt, window)
-                    || in_window(segment.sequence.wrapping_add(space - 1), flow.rcv_nxt, window))
+                    || in_window(
+                        segment.sequence.wrapping_add(space - 1),
+                        flow.rcv_nxt,
+                        window,
+                    ))
         };
         if !acceptable {
             if segment.flags & RST == 0 && flow.state != State::SynReceived {
@@ -1150,7 +1156,13 @@ impl<E: Entropy> TcpStack<E> {
         Ok(poll)
     }
 
-    fn advance(&mut self, key: Key, flow: &mut Flow, now: Duration, out: &mut Vec<Vec<u8>>) -> Step {
+    fn advance(
+        &mut self,
+        key: Key,
+        flow: &mut Flow,
+        now: Duration,
+        out: &mut Vec<Vec<u8>>,
+    ) -> Step {
         if flow.expires.is_some_and(|expires| now >= expires) {
             return Step::Gone;
         }
@@ -1165,13 +1177,19 @@ impl<E: Entropy> TcpStack<E> {
         let mut more = false;
         match flow.state {
             State::SynSent | State::SynReceived => self.handshake(key, flow, now, out),
-            State::Established | State::CloseWait | State::FinWait1 | State::Closing
+            State::Established
+            | State::CloseWait
+            | State::FinWait1
+            | State::Closing
             | State::LastAck => more = self.transmit(key, flow, now, out),
             State::FinWait2 | State::TimeWait | State::Closed => {}
         }
         if flow.ack_due
             && out.len() == before
-            && !matches!(flow.state, State::SynSent | State::SynReceived | State::Closed)
+            && !matches!(
+                flow.state,
+                State::SynSent | State::SynReceived | State::Closed
+            )
         {
             let header = Header {
                 source_port: key.0,
@@ -1264,7 +1282,13 @@ impl<E: Entropy> TcpStack<E> {
 
     /// Sends data and the FIN within the congestion and peer windows. Returns
     /// whether the burst limit left more to do.
-    fn transmit(&mut self, key: Key, flow: &mut Flow, now: Duration, out: &mut Vec<Vec<u8>>) -> bool {
+    fn transmit(
+        &mut self,
+        key: Key,
+        flow: &mut Flow,
+        now: Duration,
+        out: &mut Vec<Vec<u8>>,
+    ) -> bool {
         let window = self.advertised(flow);
         let mut budget = self.config.burst;
         let mut more = false;
@@ -1273,10 +1297,7 @@ impl<E: Entropy> TcpStack<E> {
             let sent = flight.min(flow.send.len());
             let unsent = flow.send.len() - sent;
             let (flags, payload) = if unsent > 0 {
-                let usable = flow
-                    .cwnd
-                    .min(flow.snd_wnd as usize)
-                    .saturating_sub(flight);
+                let usable = flow.cwnd.min(flow.snd_wnd as usize).saturating_sub(flight);
                 let mut count = unsent.min(usable).min(flow.mss);
                 if count == 0 && flow.probe && flight == 0 {
                     count = 1;

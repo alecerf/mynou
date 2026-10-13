@@ -127,11 +127,7 @@ fn established_with(
 }
 
 fn established() -> (Pair, FlowHandle, FlowHandle, ListenerHandle) {
-    established_with(
-        config(CLIENT),
-        config(SERVER),
-        (CLIENT_ISS, SERVER_ISS),
-    )
+    established_with(config(CLIENT), config(SERVER), (CLIENT_ISS, SERVER_ISS))
 }
 
 fn read(stack: &mut Stack, handle: FlowHandle) -> Vec<u8> {
@@ -170,7 +166,12 @@ fn seen(packet: &[u8], to: Ipv4Addr) -> Seen {
 }
 
 /// A forged segment from `from` to `to`.
-fn forge(from: (Ipv4Addr, u16), to: (Ipv4Addr, u16), fields: (u32, u32, u8), payload: &[u8]) -> Vec<u8> {
+fn forge(
+    from: (Ipv4Addr, u16),
+    to: (Ipv4Addr, u16),
+    fields: (u32, u32, u8),
+    payload: &[u8],
+) -> Vec<u8> {
     let header = Header {
         source_port: from.1,
         destination_port: to.1,
@@ -202,25 +203,71 @@ fn configuration_is_validated() {
     let bad = [
         TcpConfig { mtu: 100, ..good },
         TcpConfig { flows: 0, ..good },
-        TcpConfig { flows: 1025, ..good },
-        TcpConfig { listeners: 0, ..good },
+        TcpConfig {
+            flows: 1025,
+            ..good
+        },
+        TcpConfig {
+            listeners: 0,
+            ..good
+        },
         TcpConfig { backlog: 0, ..good },
-        TcpConfig { send_buffer: 10, ..good },
-        TcpConfig { receive_buffer: 70000, ..good },
-        TcpConfig { receive_buffer: 100, ..good },
-        TcpConfig { total_buffer: 1000, ..good },
-        TcpConfig { reorder_segments: 65, ..good },
+        TcpConfig {
+            send_buffer: 10,
+            ..good
+        },
+        TcpConfig {
+            receive_buffer: 70000,
+            ..good
+        },
+        TcpConfig {
+            receive_buffer: 100,
+            ..good
+        },
+        TcpConfig {
+            total_buffer: 1000,
+            ..good
+        },
+        TcpConfig {
+            reorder_segments: 65,
+            ..good
+        },
         TcpConfig { burst: 0, ..good },
         TcpConfig { outbox: 0, ..good },
-        TcpConfig { initial_rto: Duration::ZERO, ..good },
-        TcpConfig { initial_rto: hour, max_rto: hour, ..good },
-        TcpConfig { initial_rto: second * 31, ..good },
+        TcpConfig {
+            initial_rto: Duration::ZERO,
+            ..good
+        },
+        TcpConfig {
+            initial_rto: hour,
+            max_rto: hour,
+            ..good
+        },
+        TcpConfig {
+            initial_rto: second * 31,
+            ..good
+        },
         TcpConfig { retries: 0, ..good },
-        TcpConfig { retries: 17, ..good },
-        TcpConfig { syn_retries: 9, ..good },
-        TcpConfig { time_wait: Duration::ZERO, ..good },
-        TcpConfig { linger: hour, ..good },
-        TcpConfig { persist_limit: Duration::ZERO, ..good },
+        TcpConfig {
+            retries: 17,
+            ..good
+        },
+        TcpConfig {
+            syn_retries: 9,
+            ..good
+        },
+        TcpConfig {
+            time_wait: Duration::ZERO,
+            ..good
+        },
+        TcpConfig {
+            linger: hour,
+            ..good
+        },
+        TcpConfig {
+            persist_limit: Duration::ZERO,
+            ..good
+        },
     ];
     for config in bad {
         let built = TcpStack::new(config, Draws::new(&[1]), G, T0);
@@ -308,7 +355,10 @@ fn a_refused_connection_fails_explicitly() {
     assert_eq!(pair.a.state(G, client), Ok(State::Closed));
     assert_eq!(pair.a.failure(G, client), Ok(Some(Failure::Refused)));
     let refused = TcpError::Failed(Failure::Refused);
-    assert_eq!(pair.a.send(G, client, b"x"), Err(TcpError::Failed(Failure::Refused)));
+    assert_eq!(
+        pair.a.send(G, client, b"x"),
+        Err(TcpError::Failed(Failure::Refused))
+    );
     assert_eq!(pair.a.recv(G, client, &mut [0u8; 4]), Err(refused));
     // The entry lingers for the configured time, then it is released.
     pair.now = Duration::from_secs(29);
@@ -393,15 +443,11 @@ fn a_repeated_fin_is_acknowledged_again_and_restarts_time_wait() {
     assert_eq!(seen(&poll.send[0], CLIENT).flags, ACK);
     assert_eq!(poll.next, Some(Duration::from_secs(40)));
     // A finished flow refuses whatever else arrives.
-    assert_eq!(
-        pair.a.ingest(G, pair.now, &server_fin[0]),
-        Ingest::Answered
-    );
+    assert_eq!(pair.a.ingest(G, pair.now, &server_fin[0]), Ingest::Answered);
 }
 
 fn transfer(iss: (u32, u32), total: usize) {
-    let (mut pair, client, server, _) =
-        established_with(config(CLIENT), config(SERVER), iss);
+    let (mut pair, client, server, _) = established_with(config(CLIENT), config(SERVER), iss);
     let data = pattern(total);
     let mut sent = 0;
     let mut got = Vec::new();
@@ -495,7 +541,10 @@ fn three_duplicate_acknowledgments_trigger_a_fast_retransmit() {
     for packet in &packets[1..] {
         pair.b.ingest(G, pair.now, packet);
         for ack in pair.b.poll(G, pair.now).unwrap().send {
-            assert_eq!(seen(&ack, CLIENT).acknowledgment, seen(&packets[0], SERVER).sequence);
+            assert_eq!(
+                seen(&ack, CLIENT).acknowledgment,
+                seen(&packets[0], SERVER).sequence
+            );
             pair.a.ingest(G, pair.now, &ack);
         }
     }
@@ -721,7 +770,10 @@ fn aborting_resets_the_peer_and_old_handles_stay_dead() {
     assert_eq!(pair.a.state(G, client), Err(TcpError::Closed));
     pair.pump();
     assert_eq!(pair.b.failure(G, server), Ok(Some(Failure::Reset)));
-    assert_eq!(pair.b.send(G, server, b"x"), Err(TcpError::Failed(Failure::Reset)));
+    assert_eq!(
+        pair.b.send(G, server, b"x"),
+        Err(TcpError::Failed(Failure::Reset))
+    );
     // The same port and remote later give a new flow; the old handle stays dead.
     let mut other = stack(config(CLIENT), &[0, 1]);
     let old = other.connect(G, T0, SERVER, PORT).unwrap();
@@ -747,7 +799,10 @@ fn calls_before_the_handshake_completes() {
 fn send_buffer_is_bounded() {
     let (mut pair, client, _, _) = established();
     let capacity = pair.a.config.send_buffer;
-    assert_eq!(pair.a.send(G, client, &vec![0u8; capacity + 10]), Ok(capacity));
+    assert_eq!(
+        pair.a.send(G, client, &vec![0u8; capacity + 10]),
+        Ok(capacity)
+    );
     assert_eq!(pair.a.send(G, client, b"more"), Ok(0));
     assert_eq!(pair.a.buffered(), capacity);
 }
@@ -811,7 +866,10 @@ fn a_peer_mss_limits_the_segments_sent() {
     let flow = server.accept(G, listener).unwrap().unwrap();
     server.send(G, flow, &pattern(300)).unwrap();
     let sent = server.poll(G, T0).unwrap().send;
-    let sizes: Vec<usize> = sent.iter().map(|packet| seen(packet, CLIENT).payload.len()).collect();
+    let sizes: Vec<usize> = sent
+        .iter()
+        .map(|packet| seen(packet, CLIENT).payload.len())
+        .collect();
     assert_eq!(sizes, [100, 100, 100]);
     // An MSS below the floor is refused by the codec before any state changes.
     syn.flags = SYN;
@@ -853,7 +911,12 @@ fn a_handshake_ack_must_match_the_syn_ack() {
     let again = server.poll(G, T0).unwrap().send;
     assert_eq!(seen(&again[0], CLIENT).flags, SYN | ACK);
     assert_eq!(server.flows(), 1);
-    let ack = forge((CLIENT, 40000), (SERVER, PORT), (101, SERVER_ISS + 1, ACK), b"");
+    let ack = forge(
+        (CLIENT, 40000),
+        (SERVER, PORT),
+        (101, SERVER_ISS + 1, ACK),
+        b"",
+    );
     assert_eq!(server.ingest(G, T0, &ack), Ingest::Delivered);
     assert!(server.accept(G, listener).unwrap().is_some());
 }
@@ -874,7 +937,10 @@ fn segments_for_no_flow_are_answered_with_a_reset() {
     assert_eq!(server.ingest(G, T0, &syn), Ingest::Answered);
     // An RST is never answered.
     let reset = forge(from, to, (10, 0, RST), b"");
-    assert_eq!(server.ingest(G, T0, &reset), Ingest::Dropped(Discard::Reset));
+    assert_eq!(
+        server.ingest(G, T0, &reset),
+        Ingest::Dropped(Discard::Reset)
+    );
     let sent = server.poll(G, T0).unwrap().send;
     assert_eq!(sent.len(), 3);
     let first = seen(&sent[0], CLIENT);
@@ -912,12 +978,21 @@ fn spoofed_segments_cannot_disturb_an_established_flow() {
     let snd = CLIENT_ISS + 1;
     // An RST that is in the window but not exact only draws a challenge ACK.
     let near = from_server(rcv + 1, snd, RST | ACK, b"");
-    assert_eq!(pair.a.ingest(G, now, &near), Ingest::Dropped(Discard::Reset));
+    assert_eq!(
+        pair.a.ingest(G, now, &near),
+        Ingest::Dropped(Discard::Reset)
+    );
     // Far outside the window it is ignored.
     let far = from_server(rcv.wrapping_add(200_000), snd, RST | ACK, b"");
-    assert_eq!(pair.a.ingest(G, now, &far), Ingest::Dropped(Discard::Window));
+    assert_eq!(
+        pair.a.ingest(G, now, &far),
+        Ingest::Dropped(Discard::Window)
+    );
     let data = from_server(rcv.wrapping_add(70_000), snd, ACK, b"x");
-    assert_eq!(pair.a.ingest(G, now, &data), Ingest::Dropped(Discard::Window));
+    assert_eq!(
+        pair.a.ingest(G, now, &data),
+        Ingest::Dropped(Discard::Window)
+    );
     // An acknowledgment of bytes never sent is refused and carries no data.
     let ahead = from_server(rcv, snd + 500, ACK, b"evil");
     assert_eq!(pair.a.ingest(G, now, &ahead), Ingest::Dropped(Discard::Ack));
@@ -947,7 +1022,10 @@ fn spoofed_segments_cannot_disturb_an_established_flow() {
     let exact = from_server(rcv + 2, snd, RST | ACK, b"");
     assert_eq!(pair.a.ingest(G, now, &exact), Ingest::Reset);
     assert_eq!(pair.a.failure(G, client), Ok(Some(Failure::Reset)));
-    assert_eq!(pair.a.send(G, client, b"x"), Err(TcpError::Failed(Failure::Reset)));
+    assert_eq!(
+        pair.a.send(G, client, b"x"),
+        Err(TcpError::Failed(Failure::Reset))
+    );
     let after = from_server(rcv + 2, snd, ACK, b"x");
     assert_eq!(pair.a.ingest(G, now, &after), Ingest::Answered);
 }
@@ -1008,7 +1086,10 @@ fn entropy_failure_creates_no_flow() {
     let mut server = TcpStack::new(config(SERVER), Failing, G, T0).unwrap();
     server.listen(G, PORT).unwrap();
     let syn = forge((CLIENT, 40000), (SERVER, PORT), (1, 0, SYN), b"");
-    assert_eq!(server.ingest(G, T0, &syn), Ingest::Dropped(Discard::Entropy));
+    assert_eq!(
+        server.ingest(G, T0, &syn),
+        Ingest::Dropped(Discard::Entropy)
+    );
     assert_eq!(server.flows(), 0);
 }
 
@@ -1023,7 +1104,11 @@ fn ephemeral_ports_are_bounded() {
     );
     assert_eq!(client.entropy.calls, 1 + 1 + PORT_ATTEMPTS);
     // A different remote may share the local port.
-    assert!(client.connect(G, T0, Ipv4Addr::new(203, 0, 113, 10), PORT).is_ok());
+    assert!(
+        client
+            .connect(G, T0, Ipv4Addr::new(203, 0, 113, 10), PORT)
+            .is_ok()
+    );
 }
 
 #[test]
@@ -1034,7 +1119,10 @@ fn a_new_generation_revokes_everything() {
     assert_eq!(pair.a.flows(), 0);
     assert_eq!(pair.a.send(G, client, b"x"), Err(TcpError::Revoked));
     assert_eq!(pair.a.poll(G, pair.now).err(), Some(TcpError::Revoked));
-    assert_eq!(pair.a.connect(G, pair.now, SERVER, PORT).err(), Some(TcpError::Revoked));
+    assert_eq!(
+        pair.a.connect(G, pair.now, SERVER, PORT).err(),
+        Some(TcpError::Revoked)
+    );
     // The other stack is unaffected until its own fence trips.
     assert_eq!(pair.b.accept(G, listener), Ok(None));
     assert_eq!(pair.b.accept(G + 1, listener), Err(TcpError::Revoked));
@@ -1046,13 +1134,19 @@ fn a_clock_moving_backwards_revokes_and_revoke_is_final() {
     let (mut pair, client, server, _) = established();
     pair.now = Duration::from_secs(5);
     pair.pump();
-    assert_eq!(pair.a.poll(G, Duration::from_secs(4)).err(), Some(TcpError::Revoked));
+    assert_eq!(
+        pair.a.poll(G, Duration::from_secs(4)).err(),
+        Some(TcpError::Revoked)
+    );
     assert_eq!(pair.a.flows(), 0);
     assert_eq!(pair.a.state(G, client), Err(TcpError::Revoked));
     pair.b.revoke();
     assert_eq!(pair.b.flows(), 0);
     assert_eq!(pair.b.buffered(), 0);
-    assert_eq!(pair.b.recv(G, server, &mut [0u8; 4]), Err(TcpError::Revoked));
+    assert_eq!(
+        pair.b.recv(G, server, &mut [0u8; 4]),
+        Err(TcpError::Revoked)
+    );
     assert_eq!(pair.b.listen(G, 81).err(), Some(TcpError::Revoked));
 }
 
