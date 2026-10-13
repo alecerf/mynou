@@ -3,7 +3,9 @@
 mod library_support;
 use library_support::Directory;
 use mynou::{
-    config, crypto::sha256, engine::Engine,
+    config,
+    crypto::sha256,
+    engine::Engine,
     indexers::ControlRequest,
     inventory::{Change, Index, Key},
     json::{self, Value},
@@ -63,11 +65,18 @@ fn retired_source_growth_above_both_old_limits_preserves_late_control_and_restar
     let id = format!("source-{:057x}", 10_001);
     let late = config(&directory, &id);
     let engine = Engine::open_for_management(late.clone()).unwrap();
-    let mut pause = ControlRequest { action: "pause".into(), apply: false, plan_id: None };
+    let mut pause = ControlRequest {
+        action: "pause".into(),
+        apply: false,
+        plan_id: None,
+    };
     let preview = engine.indexer_control(&id, &pause).unwrap();
     pause.plan_id = Some(preview.get("plan_id").unwrap().as_str().unwrap().into());
     pause.apply = true;
-    assert_eq!(engine.indexer_control(&id, &pause).unwrap().get("enabled"), Some(&Value::Bool(false)));
+    assert_eq!(
+        engine.indexer_control(&id, &pause).unwrap().get("enabled"),
+        Some(&Value::Bool(false))
+    );
     assert!(engine.indexer_control(&id, &pause).is_err());
     drop(engine);
     let readonly = Engine::open_for_preview(config(&directory, &id)).unwrap();
@@ -78,5 +87,8 @@ fn retired_source_growth_above_both_old_limits_preserves_late_control_and_restar
     drop(readonly);
     let mut index = Index::open(&late.store_dir.join("indexers.idx"), true).unwrap();
     assert_eq!(index.len().unwrap(), 10_002 + 3);
-    assert_eq!(index.get(&key(0x10, Some("first"))).unwrap().unwrap(), first_record);
+    assert_eq!(
+        index.get(&key(0x10, Some("first"))).unwrap().unwrap(),
+        first_record
+    );
 }
