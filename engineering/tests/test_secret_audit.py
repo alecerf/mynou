@@ -1,4 +1,5 @@
 """CI-only audit redaction, archive bounds and coverage regressions."""
+import http.client
 import io
 import json
 from pathlib import Path
@@ -211,6 +212,49 @@ class RequestBudgetTests(unittest.TestCase):
             self.assertEqual(result["api_budget"]["observed_rate"]["remaining"], 0)
             self.assertNotIn("synthetic-only", stdout.getvalue())
             self.assertNotIn("owner/repository", stdout.getvalue())
+
+
+class RetryTests(unittest.TestCase):
+    def api(self, outcomes):
+        api = audit.API("owner/repository", "synthetic")
+        calls = []
+
+        def once(path, archive, limit):
+            api.budget.begin()
+            calls.append(path)
+            outcome = outcomes[len(calls) - 1]
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+        api.get_once = once
+        return api, calls
+
+    def run_get(self, outcomes):
+        api, calls = self.api(outcomes)
+        with patch.object(audit.time, "sleep"):
+            return api, calls, api.get("/x")
+
+    def test_truncated_body_is_retried(self):
+        api, calls, value = self.run_get([http.client.IncompleteRead(b"", 5), {"ok": 1}])
+        self.assertEqual((value, len(calls), api.budget.calls), ({"ok": 1}, 2, 2))
+
+    def test_server_error_and_timeout_are_retried(self):
+        _, calls, value = self.run_get([audit.HTTPFailure(502), TimeoutError(), {"ok": 1}])
+        self.assertEqual((value, len(calls)), ({"ok": 1}, 3))
+
+    def test_exhausted_retries_still_fail_closed(self):
+        api, calls = self.api([http.client.IncompleteRead(b"")] * 3)
+        with patch.object(audit.time, "sleep"), self.assertRaises(http.client.IncompleteRead):
+            api.get("/x")
+        self.assertEqual(len(calls), audit.MAX_ATTEMPTS)
+
+    def test_client_errors_and_bounds_are_not_retried(self):
+        for error in (audit.HTTPFailure(404), audit.AuditError("Response exceeds audit bound")):
+            api, calls = self.api([error, {"ok": 1}])
+            with patch.object(audit.time, "sleep"), self.assertRaises(type(error)):
+                api.get("/x")
+            self.assertEqual(len(calls), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

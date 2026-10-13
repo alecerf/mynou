@@ -2,6 +2,7 @@
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+import http.client
 import io
 import json
 import os
@@ -9,6 +10,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 from threading import Lock
 import urllib.error
 import urllib.parse
@@ -24,6 +26,10 @@ MAX_API_REQUESTS = 2500
 API_RESERVE = 200
 # A bootstrap lists every run; routine audits stop at their window.
 MAX_PAGES = 1000
+# Transient transport failures (truncated bodies, resets, timeouts, 5xx) are
+# retried; each attempt still consumes request budget.
+MAX_ATTEMPTS = 3
+RETRY_DELAY = 2
 # Archives downloaded per run. A larger backlog continues in the next audit.
 MAX_SCANS = 1000
 # Bump whenever scanning semantics change (what is read or how rules apply), so
@@ -150,6 +156,18 @@ class API:
         self.budget = RequestBudget()
 
     def get(self, path, archive=False, limit=None):
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            try:
+                return self.get_once(path, archive, limit)
+            except HTTPFailure as error:
+                if error.status < 500 or attempt == MAX_ATTEMPTS:
+                    raise
+            except (http.client.HTTPException, OSError):
+                if attempt == MAX_ATTEMPTS:
+                    raise
+            time.sleep(RETRY_DELAY * attempt)
+
+    def get_once(self, path, archive, limit):
         self.budget.begin()
         headers = {"Accept": "application/vnd.github+json",
                    "Cache-Control": "no-cache", "User-Agent": "mynou-secret-audit",
