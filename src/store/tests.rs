@@ -2195,54 +2195,123 @@ fn ownership_and_media_checks_reach_beyond_the_first_page() {
 
 #[test]
 fn captured_feed_routes_reach_jobs_and_library_beyond_the_former_prefix() {
-    use crate::{engine::{Engine,lock}, indexers::feed::generation::Generation, integrations::{FeedEntry,Release}};
-    for library in [false,true] {
+    use crate::{
+        engine::{Engine, lock},
+        indexers::feed::generation::Generation,
+        integrations::{FeedEntry, Release},
+    };
+    for library in [false, true] {
         let directory = Directory::new();
         let imported = directory.0.join("synthetic-import.mp4");
-        fs::copy(Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/demo.mp4"),&imported).unwrap();
+        fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/demo.mp4"),
+            &imported,
+        )
+        .unwrap();
         let mut store = Store::open(&directory.0).unwrap();
-        let mut target = if library { ready_job(1,1000) } else { raw_job(1,1000) };
+        let mut target = if library {
+            ready_job(1, 1000)
+        } else {
+            raw_job(1, 1000)
+        };
         if library {
             target.imports = vec![imported.to_str().unwrap().into()];
-            target.release = Some(RecordedRelease { title:"Synthetic.Movie.1.2026.720p.WEB-DL.EN".into(), profile:"hd".into() });
+            target.release = Some(RecordedRelease {
+                title: "Synthetic.Movie.1.2026.720p.WEB-DL.EN".into(),
+                profile: "hd".into(),
+            });
         }
         let mut jobs = vec![target.clone()];
-        jobs.extend((2..=1002).map(|n| if library { ready_job(n,2000+n) } else { raw_job(n,2000+n) }));
-        bulk(&mut store,jobs);
-        let prefix = if library { store.library_page(None,200).unwrap() } else { store.page(None,200).unwrap() };
+        jobs.extend((2..=1002).map(|n| {
+            if library {
+                ready_job(n, 2000 + n)
+            } else {
+                raw_job(n, 2000 + n)
+            }
+        }));
+        bulk(&mut store, jobs);
+        let prefix = if library {
+            store.library_page(None, 200).unwrap()
+        } else {
+            store.page(None, 200).unwrap()
+        };
         assert!(prefix.jobs.iter().all(|row| row.id != target.id));
         drop(store);
         let mut value = crate::config::default_json();
-        value.insert("store_dir",directory.0.to_str().unwrap());
+        value.insert("store_dir", directory.0.to_str().unwrap());
         value.insert("indexers",Value::Array(vec![crate::json::parse(r#"{"id":"capture","name":"Synthetic","kind":"rss","url":"http://127.0.0.1:9/feed","api_key_env":"MYNOU_ABSENT_FEED_FIXTURE_KEY_110","watch":{"enabled":true,"interval_secs":60}}"#).unwrap()]));
-        value.insert("monitoring",crate::json::parse(&format!("{{\"enabled\":{library},\"interval_secs\":3600,\"max_checks\":8}}")).unwrap());
-        let config = crate::config::from_json(&value,&directory.0).unwrap();
+        value.insert(
+            "monitoring",
+            crate::json::parse(&format!(
+                "{{\"enabled\":{library},\"interval_secs\":3600,\"max_checks\":8}}"
+            ))
+            .unwrap(),
+        );
+        let config = crate::config::from_json(&value, &directory.0).unwrap();
         let engine = Engine::open_for_management(config).unwrap();
-        let revision = lock(&engine.indexer_store).unwrap().authorization("capture").unwrap().1;
+        let revision = lock(&engine.indexer_store)
+            .unwrap()
+            .authorization("capture")
+            .unwrap()
+            .1;
         let mut feeds = lock(&engine.feed_store).unwrap();
         let mut record = feeds.row("capture").unwrap().unwrap();
-        record.baselined = true; record.revision = 1; record.seen = vec!["a".repeat(32)]; record.cursor = record.seen[0].clone();
-        let url = format!("magnet:?xt=urn:btih:{}","a".repeat(40));
-        let generation = Generation::new(&record,revision,vec![FeedEntry { id:"a".repeat(32),release:Release { title:"Synthetic.Movie.1.2026.1080p.BluRay.EN".into(),url:url.clone(),seeders:5 } }],now()).unwrap();
-        feeds.capture(record,generation).unwrap();
+        record.baselined = true;
+        record.revision = 1;
+        record.seen = vec!["a".repeat(32)];
+        record.cursor = record.seen[0].clone();
+        let url = format!("magnet:?xt=urn:btih:{}", "a".repeat(40));
+        let generation = Generation::new(
+            &record,
+            revision,
+            vec![FeedEntry {
+                id: "a".repeat(32),
+                release: Release {
+                    title: "Synthetic.Movie.1.2026.1080p.BluRay.EN".into(),
+                    url: url.clone(),
+                    seeders: 5,
+                },
+            }],
+            now(),
+        )
+        .unwrap();
+        feeds.capture(record, generation).unwrap();
         drop(feeds);
         let mut passes = 0;
-        while lock(&engine.feed_store).unwrap().pending_header("capture").unwrap().is_some() {
+        while lock(&engine.feed_store)
+            .unwrap()
+            .pending_header("capture")
+            .unwrap()
+            .is_some()
+        {
             assert!(passes < 16);
-            let report = engine.feeds_poll(None,true).unwrap();
+            let report = engine.feeds_poll(None, true).unwrap();
             let row = &report.get("sources").unwrap().as_array().unwrap()[0];
-            assert_eq!(row.get("outcome").and_then(Value::as_str),Some("ok"));
+            assert_eq!(row.get("outcome").and_then(Value::as_str), Some("ok"));
             assert!(row.get("routing_examined").unwrap().as_u64().unwrap() <= 200);
             passes += 1;
         }
         assert!(passes > 5);
         let mut store = lock(&engine.store).unwrap();
         if library {
-            assert_eq!(store.counts().unwrap().jobs,1003);
-            let children: Vec<_> = store.list().unwrap().into_iter().filter(|row| row.upgrade_parent.as_deref() == Some(target.id.as_str())).collect();
-            assert_eq!(children.len(),1);
-            assert_eq!(children[0].request.source_url.as_deref(),Some(url.as_str()));
-        } else { assert_eq!(store.get(&target.id).unwrap().unwrap().acquisition_url,Some(url)); }
+            assert_eq!(store.counts().unwrap().jobs, 1003);
+            let children: Vec<_> = store
+                .list()
+                .unwrap()
+                .into_iter()
+                .filter(|row| row.upgrade_parent.as_deref() == Some(target.id.as_str()))
+                .collect();
+            assert_eq!(children.len(), 1);
+            assert_eq!(
+                children[0].request.source_url.as_deref(),
+                Some(url.as_str())
+            );
+        } else {
+            assert_eq!(
+                store.get(&target.id).unwrap().unwrap().acquisition_url,
+                Some(url)
+            );
+        }
     }
 }
 

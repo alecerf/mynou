@@ -169,7 +169,7 @@ impl Engine {
             .collect();
         sources.sort_by(|a, b| a.0.cmp(&b.0));
         let scheduled = lock(&self.feed_store)?.schedule_cursor()?;
-        let pivot = sources.partition_point(|(id,_)| id <= &scheduled);
+        let pivot = sources.partition_point(|(id, _)| id <= &scheduled);
         sources.rotate_left(pivot);
         if only.is_some_and(|id| !sources.iter().any(|(known, _)| known == id)) {
             return Err("Feeds: source is not watched".into());
@@ -193,7 +193,8 @@ impl Engine {
                 continue;
             }
             let pending = lock(&self.feed_store)?.pending_header(&id)?.is_some();
-            let due = pending || force
+            let due = pending
+                || force
                 || lock(&self.feed_runtime)?
                     .sources
                     .get(&id)
@@ -207,7 +208,12 @@ impl Engine {
                 break;
             }
             if lock(&self.feed_store)?.scheduled(&id).is_err() {
-                let mut failure = Value::object(); failure.insert("id",id); failure.insert("outcome","storage_failed"); Tally::default().insert_into(&mut failure); reports.push(failure); break;
+                let mut failure = Value::object();
+                failure.insert("id", id);
+                failure.insert("outcome", "storage_failed");
+                Tally::default().insert_into(&mut failure);
+                reports.push(failure);
+                break;
             }
             reports.push(self.poll_source(source, &id));
         }
@@ -259,17 +265,27 @@ impl Engine {
         let policy_revision = {
             let policy = lock(&self.indexer_store).map_err(|_| "storage_failed")?;
             let (enabled, revision) = policy.authorization(id).map_err(|_| "storage_failed")?;
-            if !enabled || !source.options.watched() { return Err("disabled"); }
+            if !enabled || !source.options.watched() {
+                return Err("disabled");
+            }
             revision
         };
-        let pending = lock(&self.feed_store).map_err(|_| "storage_failed")?.pending(id).map_err(|_| "storage_failed")?;
+        let pending = lock(&self.feed_store)
+            .map_err(|_| "storage_failed")?
+            .pending(id)
+            .map_err(|_| "storage_failed")?;
         if let Some(generation) = pending {
             tally.resumed = true;
             if generation.header.policy_revision != policy_revision {
-                lock(&self.feed_store).map_err(|_| "storage_failed")?.suspend(id).map_err(|_| "storage_failed")?;
+                lock(&self.feed_store)
+                    .map_err(|_| "storage_failed")?
+                    .suspend(id)
+                    .map_err(|_| "storage_failed")?;
                 return Ok(());
             }
-            return self.route_generation(source, &generation, tally).map_err(|_| "storage_failed");
+            return self
+                .route_generation(source, &generation, tally)
+                .map_err(|_| "storage_failed");
         }
         let poll = integrations::poll_feed(source, Instant::now() + POLL_BUDGET)?;
         let ids: Vec<&str> = poll.entries.iter().map(|entry| entry.id.as_str()).collect();
@@ -277,9 +293,14 @@ impl Engine {
         let generation = {
             let policy = lock(&self.indexer_store).map_err(|_| "storage_failed")?;
             let (enabled, revision) = policy.authorization(id).map_err(|_| "storage_failed")?;
-            if !enabled || revision != policy_revision || !source.options.watched() { return Err("disabled"); }
+            if !enabled || revision != policy_revision || !source.options.watched() {
+                return Err("disabled");
+            }
             let mut feeds = lock(&self.feed_store).map_err(|_| "storage_failed")?;
-            let current = feeds.row(id).map_err(|_| "storage_failed")?.ok_or("storage_failed")?;
+            let current = feeds
+                .row(id)
+                .map_err(|_| "storage_failed")?
+                .ok_or("storage_failed")?;
             let observation = feed::observe(&current, &ids, at, MAX_NEW_PER_POLL);
             tally.baseline = observation.baseline;
             tally.observed = poll.entries.len() as u32;
@@ -288,88 +309,161 @@ impl Engine {
             tally.skipped = poll.skipped;
             tally.truncated = poll.truncated;
             if observation.baseline || observation.fresh.is_empty() {
-                feeds.commit(observation.record).map_err(|_| "storage_failed")?;
+                feeds
+                    .commit(observation.record)
+                    .map_err(|_| "storage_failed")?;
                 None
             } else {
-                let entries = observation.fresh.iter().map(|index| poll.entries[*index].clone()).collect();
-                let generation = feed::generation::Generation::new(&observation.record,revision,entries,at).map_err(|_| "capture_rejected")?;
-                feeds.capture(observation.record,generation.clone()).map_err(|_| "storage_failed")?;
+                let entries = observation
+                    .fresh
+                    .iter()
+                    .map(|index| poll.entries[*index].clone())
+                    .collect();
+                let generation =
+                    feed::generation::Generation::new(&observation.record, revision, entries, at)
+                        .map_err(|_| "capture_rejected")?;
+                feeds
+                    .capture(observation.record, generation.clone())
+                    .map_err(|_| "storage_failed")?;
                 Some(generation)
             }
         };
-        if let Some(generation) = generation { self.route_generation(source,&generation,tally).map_err(|_| "storage_failed")?; }
+        if let Some(generation) = generation {
+            self.route_generation(source, &generation, tally)
+                .map_err(|_| "storage_failed")?;
+        }
         Ok(())
     }
 
-    fn route_generation(&self, source: &Source, generation: &feed::generation::Generation, tally: &mut Tally) -> Result<()> {
-        self.route_window(source,&generation.header,&generation.entries,tally,Instant::now() + ROUTE_BUDGET)?;
-        if tally.routed > 0 { self.requester_reconcile()?; }
+    fn route_generation(
+        &self,
+        source: &Source,
+        generation: &feed::generation::Generation,
+        tally: &mut Tally,
+    ) -> Result<()> {
+        self.route_window(
+            source,
+            &generation.header,
+            &generation.entries,
+            tally,
+            Instant::now() + ROUTE_BUDGET,
+        )?;
+        if tally.routed > 0 {
+            self.requester_reconcile()?;
+        }
         Ok(())
     }
-    fn route_window(&self, source: &Source, header: &feed::generation::Header, entries: &[FeedEntry], tally: &mut Tally, deadline: Instant) -> Result<()> {
+    fn route_window(
+        &self,
+        source: &Source,
+        header: &feed::generation::Header,
+        entries: &[FeedEntry],
+        tally: &mut Tally,
+        deadline: Instant,
+    ) -> Result<()> {
         tally.pending = true;
         let fresh: Vec<_> = entries.iter().collect();
         let mut durable = header.clone();
         let mut progress = durable.clone();
         let _upgrades = if progress.library {
             if !self.config.monitoring.enabled {
-                lock(&self.feed_store)?.checkpoint(&durable,None)?;
+                lock(&self.feed_store)?.checkpoint(&durable, None)?;
                 tally.pending = false;
                 return Ok(());
             }
-            match self.upgrade_lock.try_lock() { Ok(guard) => Some(guard), Err(_) => return Ok(()) }
-        } else { None };
+            match self.upgrade_lock.try_lock() {
+                Ok(guard) => Some(guard),
+                Err(_) => return Ok(()),
+            }
+        } else {
+            None
+        };
         let page = if progress.library {
-            lock(&self.store)?.library_page(progress.after.as_deref(),MAX_ROUTE_ROWS - tally.examined as usize)?
-        } else { lock(&self.store)?.page(progress.after.as_deref(),MAX_ROUTE_ROWS - tally.examined as usize)? };
+            lock(&self.store)?.library_page(
+                progress.after.as_deref(),
+                MAX_ROUTE_ROWS - tally.examined as usize,
+            )?
+        } else {
+            lock(&self.store)?.page(
+                progress.after.as_deref(),
+                MAX_ROUTE_ROWS - tally.examined as usize,
+            )?
+        };
         let mut settled = 0;
         for job in &page.jobs {
-            if tally.routed as usize + tally.upgrades as usize >= MAX_ROUTES_PER_POLL || Instant::now() >= deadline || self.stopped.load(Ordering::Acquire) { break; }
-            let eligible = if progress.library || !routable(job) { false } else {
+            if tally.routed as usize + tally.upgrades as usize >= MAX_ROUTES_PER_POLL
+                || Instant::now() >= deadline
+                || self.stopped.load(Ordering::Acquire)
+            {
+                break;
+            }
+            let eligible = if progress.library || !routable(job) {
+                false
+            } else {
                 let requesters = lock(&self.requester_store)?;
-                interest(&*requesters,job,&self.config)?
+                interest(&*requesters, job, &self.config)?
             };
             let action = if progress.library {
-                self.attach_upgrade(source,header.policy_revision,job,&fresh)?
+                self.attach_upgrade(source, header.policy_revision, job, &fresh)?
             } else if eligible {
                 let config = self.configuration_for(job);
-                match best(&config,&job.request,&fresh) {
-                    Some(candidate) => self.attach_release(source,header.policy_revision,job,&config,&candidate)?,
+                match best(&config, &job.request, &fresh) {
+                    Some(candidate) => self.attach_release(
+                        source,
+                        header.policy_revision,
+                        job,
+                        &config,
+                        &candidate,
+                    )?,
                     None => Attach::Changed,
                 }
-            } else { Attach::Changed };
+            } else {
+                Attach::Changed
+            };
             tally.examined += 1;
             match action {
                 Attach::Revoked => {
                     lock(&self.feed_store)?.suspend(&header.source)?;
-                    tally.pending = false; return Ok(());
+                    tally.pending = false;
+                    return Ok(());
                 }
-                Attach::Retry | Attach::Unverified => { tally.unverified += 1; break; }
+                Attach::Retry | Attach::Unverified => {
+                    tally.unverified += 1;
+                    break;
+                }
                 Attach::Routed => tally.routed += 1,
                 Attach::Upgraded => tally.upgrades += 1,
                 Attach::Available => tally.available += 1,
                 Attach::Changed => tally.changed += 1,
             }
-            progress.after = Some(format!("{:016x}{}",job.created_at,job.id));
+            progress.after = Some(format!("{:016x}{}", job.created_at, job.id));
             settled += 1;
-            if matches!(action,Attach::Routed | Attach::Upgraded) {
-                if !lock(&self.feed_store)?.checkpoint(&durable,Some(&progress))? { tally.pending = false; return Ok(()); }
+            if matches!(action, Attach::Routed | Attach::Upgraded) {
+                if !lock(&self.feed_store)?.checkpoint(&durable, Some(&progress))? {
+                    tally.pending = false;
+                    return Ok(());
+                }
                 durable.clone_from(&progress);
             }
         }
         if settled == page.jobs.len() && page.next.is_none() {
             if progress.library || !self.config.monitoring.enabled {
-                lock(&self.feed_store)?.checkpoint(&durable,None)?;
+                lock(&self.feed_store)?.checkpoint(&durable, None)?;
                 tally.pending = false;
             } else {
-                progress.library = true; progress.after = None;
-                tally.pending = lock(&self.feed_store)?.checkpoint(&durable,Some(&progress))?;
-                if tally.pending && tally.examined < MAX_ROUTE_ROWS as u32 && tally.routed + tally.upgrades < MAX_ROUTES_PER_POLL as u32 && Instant::now() < deadline {
-                    self.route_window(source,&progress,entries,tally,deadline)?;
+                progress.library = true;
+                progress.after = None;
+                tally.pending = lock(&self.feed_store)?.checkpoint(&durable, Some(&progress))?;
+                if tally.pending
+                    && tally.examined < MAX_ROUTE_ROWS as u32
+                    && tally.routed + tally.upgrades < MAX_ROUTES_PER_POLL as u32
+                    && Instant::now() < deadline
+                {
+                    self.route_window(source, &progress, entries, tally, deadline)?;
                 }
             }
         } else if progress != durable {
-            tally.pending = lock(&self.feed_store)?.checkpoint(&durable,Some(&progress))?;
+            tally.pending = lock(&self.feed_store)?.checkpoint(&durable, Some(&progress))?;
         }
         Ok(())
     }
@@ -397,14 +491,18 @@ impl Engine {
         }
         // Policy/control and requester locks fence the final job mutation.
         let policy = lock(&self.indexer_store)?;
-        let (enabled,revision) = policy.authorization(&feed::source_id(source))?;
-        if !enabled || revision != policy_revision || !source.options.watched() { return Ok(Attach::Revoked); }
+        let (enabled, revision) = policy.authorization(&feed::source_id(source))?;
+        if !enabled || revision != policy_revision || !source.options.watched() {
+            return Ok(Attach::Revoked);
+        }
         let requesters = lock(&self.requester_store)?;
         let mut jobs = lock(&self.store)?;
         let Some(current) = jobs.get(&job.id)? else {
             return Ok(Attach::Changed);
         };
-        if self.stopped.load(Ordering::Acquire) { return Ok(Attach::Retry); }
+        if self.stopped.load(Ordering::Acquire) {
+            return Ok(Attach::Retry);
+        }
         if !self.config.downloads_enabled
             || !source.options.watched()
             || &current != job
@@ -426,32 +524,80 @@ impl Engine {
         Ok(Attach::Routed)
     }
 
-    fn attach_upgrade(&self, source: &Source, policy_revision: u64, parent: &Job, fresh: &[&FeedEntry]) -> Result<Attach> {
+    fn attach_upgrade(
+        &self,
+        source: &Source,
+        policy_revision: u64,
+        parent: &Job,
+        fresh: &[&FeedEntry],
+    ) -> Result<Attach> {
         let policy = lock(&self.indexer_store)?;
-        let (enabled,revision) = policy.authorization(&feed::source_id(source))?;
-        if !enabled || revision != policy_revision || !source.options.watched() { return Ok(Attach::Revoked); }
-        if self.stopped.load(Ordering::Acquire) { return Ok(Attach::Retry); }
+        let (enabled, revision) = policy.authorization(&feed::source_id(source))?;
+        if !enabled || revision != policy_revision || !source.options.watched() {
+            return Ok(Attach::Revoked);
+        }
+        if self.stopped.load(Ordering::Acquire) {
+            return Ok(Attach::Retry);
+        }
         let requesters = lock(&self.requester_store)?;
         let mut jobs = lock(&self.store)?;
-        let Some(current) = jobs.get(&parent.id)? else { return Ok(Attach::Changed); };
-        if &current != parent || !current.monitored || current.shared_file.is_some() || !matches!(current.request.kind.as_str(),"movie" | "episode")
-            || !jobs.is_library_tip(&current.id)? || !crate::library::import_exists(&current) || !interest(&*requesters,&current,&self.config)? {
+        let Some(current) = jobs.get(&parent.id)? else {
+            return Ok(Attach::Changed);
+        };
+        if &current != parent
+            || !current.monitored
+            || current.shared_file.is_some()
+            || !matches!(current.request.kind.as_str(), "movie" | "episode")
+            || !jobs.is_library_tip(&current.id)?
+            || !crate::library::import_exists(&current)
+            || !interest(&*requesters, &current, &self.config)?
+        {
             return Ok(Attach::Changed);
         }
-        let Some(recorded) = &current.release else { return Ok(Attach::Changed); };
+        let Some(recorded) = &current.release else {
+            return Ok(Attach::Changed);
+        };
         let config = self.configuration_for(&current);
-        let Ok((_,profile)) = config.selection.profile(&current.request.kind) else { return Ok(Attach::Changed); };
-        let baseline = profile.assess(&recorded.title,&current.request.title);
-        if profile.cutoff_reached(&baseline) { return Ok(Attach::Changed); }
-        let mut request = current.request.clone(); request.source_path = None; request.source_url = None;
-        let Some(candidate) = best(&config,&request,fresh) else { return Ok(Attach::Changed); };
-        if (baseline.accepted && candidate.assessment.rank <= baseline.rank) || current.acquisition_url.as_deref() == Some(candidate.url.as_str()) || current.request.source_url.as_deref() == Some(candidate.url.as_str()) { return Ok(Attach::Changed); }
+        let Ok((_, profile)) = config.selection.profile(&current.request.kind) else {
+            return Ok(Attach::Changed);
+        };
+        let baseline = profile.assess(&recorded.title, &current.request.title);
+        if profile.cutoff_reached(&baseline) {
+            return Ok(Attach::Changed);
+        }
+        let mut request = current.request.clone();
+        request.source_path = None;
+        request.source_url = None;
+        let Some(candidate) = best(&config, &request, fresh) else {
+            return Ok(Attach::Changed);
+        };
+        if (baseline.accepted && candidate.assessment.rank <= baseline.rank)
+            || current.acquisition_url.as_deref() == Some(candidate.url.as_str())
+            || current.request.source_url.as_deref() == Some(candidate.url.as_str())
+        {
+            return Ok(Attach::Changed);
+        }
         request.source_url = Some(candidate.url.clone());
-        let release = RecordedRelease { title: candidate.title, profile: candidate.profile };
+        let release = RecordedRelease {
+            title: candidate.title,
+            profile: candidate.profile,
+        };
         let before = jobs.sequence()?;
-        match jobs.submit_upgrade(&current.id,request,release) {
-            Ok(_) => Ok(if jobs.sequence()? != before { Attach::Upgraded } else { Attach::Changed }),
-            Err(error) if matches!(error.as_str(), "an upgrade for this media is already pending" | "upgrade source URL is already owned by an unrelated request") => Ok(Attach::Changed),
+        match jobs.submit_upgrade(&current.id, request, release) {
+            Ok(_) => Ok(if jobs.sequence()? != before {
+                Attach::Upgraded
+            } else {
+                Attach::Changed
+            }),
+            Err(error)
+                if matches!(
+                    error.as_str(),
+                    "an upgrade for this media is already pending"
+                        | "upgrade source URL is already owned by an unrelated request"
+                ) =>
+            {
+                Ok(Attach::Changed)
+            }
             Err(error) => Err(error),
         }
     }
@@ -478,10 +624,24 @@ impl Engine {
                 source.options.watch.interval_secs.to_string(),
             );
             let pending = feeds.pending_header(&id)?;
-            v.insert("routing_pending",pending.is_some());
-            v.insert("captured_entries",pending.as_ref().map_or(0,|header| header.count as u32));
-            v.insert("routing_captured_at",pending.as_ref().map_or(0,|header| header.captured_at).to_string());
-            v.insert("routing_phase",pending.as_ref().map_or(Value::Null,|header| Value::from(if header.library { "library" } else { "jobs" })));
+            v.insert("routing_pending", pending.is_some());
+            v.insert(
+                "captured_entries",
+                pending.as_ref().map_or(0, |header| header.count as u32),
+            );
+            v.insert(
+                "routing_captured_at",
+                pending
+                    .as_ref()
+                    .map_or(0, |header| header.captured_at)
+                    .to_string(),
+            );
+            v.insert(
+                "routing_phase",
+                pending.as_ref().map_or(Value::Null, |header| {
+                    Value::from(if header.library { "library" } else { "jobs" })
+                }),
+            );
             let owned_row = feeds.row(&id)?;
             let row = owned_row.as_ref();
             v.insert("baselined", row.is_some_and(|row| row.baselined));
@@ -553,9 +713,9 @@ impl Engine {
         }
         let mut report = Value::object();
         report.insert("routing_enabled", self.config.downloads_enabled);
-        let (generations,entries) = feeds.routing_counts()?;
-        report.insert("pending_generations",generations.to_string());
-        report.insert("captured_entries",entries.to_string());
+        let (generations, entries) = feeds.routing_counts()?;
+        report.insert("pending_generations", generations.to_string());
+        report.insert("captured_entries", entries.to_string());
         report.insert("retained_sources", feeds.total()?.to_string());
         report.insert("needs_migration", feeds.needs_migration());
         report.insert("sources", Value::Array(rows));

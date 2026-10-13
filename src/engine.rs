@@ -98,7 +98,9 @@ impl Engine {
         feed_store.initialize()?;
         if !read_only {
             for source in &config.sources {
-                if !source.options.watched() { feed_store.suspend(&source.options.identity(source))?; }
+                if !source.options.watched() {
+                    feed_store.suspend(&source.options.identity(source))?;
+                }
             }
         }
         requester_store.initialize()?;

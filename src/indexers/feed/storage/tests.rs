@@ -516,59 +516,104 @@ fn changed_configuration_fails_before_migration_publication() {
 fn observation_and_capture_commit_atomically_at_every_crash_boundary() {
     use crate::indexers::feed::generation::Generation;
     use crate::integrations::{FeedEntry, Release};
-    for fault in [Fault::Staged,Fault::Published,Fault::FirstRecord,Fault::FirstPage,Fault::Applied,Fault::Unlinked] {
+    for fault in [
+        Fault::Staged,
+        Fault::Published,
+        Fault::FirstRecord,
+        Fault::FirstPage,
+        Fault::Applied,
+        Fault::Unlinked,
+    ] {
         let directory = Directory::new();
-        let mut storage = Storage::open(&directory.0,false).unwrap();
+        let mut storage = Storage::open(&directory.0, false).unwrap();
         storage.initialize().unwrap();
-        let original = Record::new("capture".into(),"1".repeat(64));
+        let original = Record::new("capture".into(), "1".repeat(64));
         storage.commit(original.clone()).unwrap();
         let mut next = original.clone();
-        next.baselined = true; next.revision = 1; next.seen = vec!["a".repeat(32)]; next.cursor = next.seen[0].clone();
-        let generation = Generation::new(&next,1,vec![FeedEntry { id: "a".repeat(32), release: Release { title: "Synthetic.Movie.2024.1080p.WEB-DL".into(), url: format!("magnet:?xt=urn:btih:{}","a".repeat(40)), seeders:5 } }],100).unwrap();
+        next.baselined = true;
+        next.revision = 1;
+        next.seen = vec!["a".repeat(32)];
+        next.cursor = next.seen[0].clone();
+        let generation = Generation::new(
+            &next,
+            1,
+            vec![FeedEntry {
+                id: "a".repeat(32),
+                release: Release {
+                    title: "Synthetic.Movie.2024.1080p.WEB-DL".into(),
+                    url: format!("magnet:?xt=urn:btih:{}", "a".repeat(40)),
+                    seeders: 5,
+                },
+            }],
+            100,
+        )
+        .unwrap();
         index(&mut storage).inject(Some(fault));
-        assert!(storage.capture(next.clone(),generation.clone()).is_err());
+        assert!(storage.capture(next.clone(), generation.clone()).is_err());
         assert!(storage.pending("capture").is_err());
         assert!(storage.row("capture").is_err());
-        assert!(storage.checkpoint(&generation.header,None).is_err());
+        assert!(storage.checkpoint(&generation.header, None).is_err());
         drop(storage);
-        let mut recovered = Storage::open(&directory.0,false).unwrap();
+        let mut recovered = Storage::open(&directory.0, false).unwrap();
         let committed = fault != Fault::Staged;
-        assert_eq!(recovered.row("capture").unwrap(),Some(if committed { next } else { original }));
-        assert_eq!(recovered.pending("capture").unwrap().is_some(),committed);
-        assert_eq!(recovered.routing_counts().unwrap(),if committed { (1,1) } else { (0,0) });
+        assert_eq!(
+            recovered.row("capture").unwrap(),
+            Some(if committed { next } else { original })
+        );
+        assert_eq!(recovered.pending("capture").unwrap().is_some(), committed);
+        assert_eq!(
+            recovered.routing_counts().unwrap(),
+            if committed { (1, 1) } else { (0, 0) }
+        );
         if committed {
             let pending = recovered.pending("capture").unwrap().unwrap();
-            assert_eq!(pending.header,generation.header);
-            assert_eq!(pending.entries[0].release.url,generation.entries[0].release.url);
-            assert!(recovered.checkpoint(&pending.header,None).unwrap());
+            assert_eq!(pending.header, generation.header);
+            assert_eq!(
+                pending.entries[0].release.url,
+                generation.entries[0].release.url
+            );
+            assert!(recovered.checkpoint(&pending.header, None).unwrap());
             assert!(recovered.pending("capture").unwrap().is_none());
-            assert_eq!(recovered.routing_counts().unwrap(),(0,0));
+            assert_eq!(recovered.routing_counts().unwrap(), (0, 0));
         }
     }
 }
 
 #[test]
 fn routing_format_upgrade_is_atomic_and_never_rewrites_primary_records() {
-    for fault in [Fault::Staged,Fault::Published,Fault::FirstRecord,Fault::FirstPage,Fault::Applied,Fault::Unlinked] {
+    for fault in [
+        Fault::Staged,
+        Fault::Published,
+        Fault::FirstRecord,
+        Fault::FirstPage,
+        Fault::Applied,
+        Fault::Unlinked,
+    ] {
         let directory = Directory::new();
-        let mut storage = Storage::open(&directory.0,false).unwrap();
+        let mut storage = Storage::open(&directory.0, false).unwrap();
         storage.initialize().unwrap();
         storage.commit(record(1)).unwrap();
-        index(&mut storage).commit(vec![Change::PutInline(HEADER,OLD_FORMAT.to_vec()),Change::Delete(ROUTING),Change::Delete(SCHEDULE)]).unwrap();
+        index(&mut storage)
+            .commit(vec![
+                Change::PutInline(HEADER, OLD_FORMAT.to_vec()),
+                Change::Delete(ROUTING),
+                Change::Delete(SCHEDULE),
+            ])
+            .unwrap();
         drop(storage);
         let before = contents(&directory.0);
-        assert!(Storage::open(&directory.0,true).is_err());
-        assert_eq!(contents(&directory.0),before);
-        let mut storage = Storage::open(&directory.0,false).unwrap();
+        assert!(Storage::open(&directory.0, true).is_err());
+        assert_eq!(contents(&directory.0), before);
+        let mut storage = Storage::open(&directory.0, false).unwrap();
         let requests = index(&mut storage).requests();
         index(&mut storage).inject(Some(fault));
         assert!(storage.initialize().is_err());
         assert!(index(&mut storage).requests() - requests <= 5);
         drop(storage);
-        let mut storage = Storage::open(&directory.0,false).unwrap();
+        let mut storage = Storage::open(&directory.0, false).unwrap();
         storage.initialize().unwrap();
-        assert_eq!(storage.row(&record(1).id).unwrap(),Some(record(1)));
-        assert_eq!(storage.routing_counts().unwrap(),(0,0));
+        assert_eq!(storage.row(&record(1).id).unwrap(), Some(record(1)));
+        assert_eq!(storage.routing_counts().unwrap(), (0, 0));
         assert!(!storage.needs_migration());
     }
 }

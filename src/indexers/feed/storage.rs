@@ -232,7 +232,9 @@ fn encode_counts(total: u64, active: u64) -> Vec<u8> {
     bytes
 }
 fn check(index: &mut Index) -> Result<()> {
-    let format = index.get(&HEADER)?.ok_or("Feed state: missing index format")?;
+    let format = index
+        .get(&HEADER)?
+        .ok_or("Feed state: missing index format")?;
     if format != FORMAT && format != OLD_FORMAT {
         return Err("Feed state: unsupported index format".into());
     }
@@ -241,7 +243,9 @@ fn check(index: &mut Index) -> Result<()> {
         let (generations, entries) = routing::counts(index)?;
         routing::schedule(index)?;
         (5, generations, entries)
-    } else { (3, 0, 0) };
+    } else {
+        (3, 0, 0)
+    };
     let metadata = metadata + u64::from(index.get(&CURSOR)?.is_some());
     let expected = metadata
         .checked_add(total)
@@ -270,7 +274,12 @@ fn get(index: &mut Index, id: &str) -> Result<Option<Record>> {
 fn put(index: &mut Index, records: &[Record], cursor: Option<&str>) -> Result<()> {
     put_with(index, records, cursor, Vec::new())
 }
-fn put_with(index: &mut Index, records: &[Record], cursor: Option<&str>, extra: Vec<Change>) -> Result<()> {
+fn put_with(
+    index: &mut Index,
+    records: &[Record],
+    cursor: Option<&str>,
+    extra: Vec<Change>,
+) -> Result<()> {
     if records.len() > 200 {
         return Err("Feed state: transaction batch exceeds 200 records".into());
     }
@@ -354,9 +363,13 @@ fn verify(index: &mut Index, original: Option<&Legacy>) -> Result<()> {
         }
     }
     let metadata = if index.get(&HEADER)?.as_deref() == Some(FORMAT) {
-        if routing::counts(index)? != (0, 0) || !routing::schedule(index)?.is_empty() { return Err("Feed state: migration contains runtime routing state".into()); }
+        if routing::counts(index)? != (0, 0) || !routing::schedule(index)?.is_empty() {
+            return Err("Feed state: migration contains runtime routing state".into());
+        }
         5
-    } else { 3 };
+    } else {
+        3
+    };
     let metadata = metadata + u64::from(index.get(&CURSOR)?.is_some());
     if index.len()? != metadata + total + active {
         return Err("Feed state: migration has unexpected entries".into());
@@ -386,7 +399,9 @@ impl Storage {
                     Index::open_bound(&directory.join("feeds.idx"), read_only, identity)?;
                 check(&mut index)?;
                 upgrade = index.get(&HEADER)?.as_deref() == Some(OLD_FORMAT);
-                if read_only && upgrade { return Err("Feed state: writable routing format upgrade required".into()); }
+                if read_only && upgrade {
+                    return Err("Feed state: writable routing format upgrade required".into());
+                }
                 if index.get(&CURSOR)?.is_some() {
                     return Err("Feed state: published index retains a migration cursor".into());
                 }
@@ -702,9 +717,16 @@ impl Storage {
             return Err("Feed state: index marker changed; restart required".into());
         }
         let extra = if record.baselined {
-            if routing::header(index, &record.id)?.is_some() { return Err("Feed routing: pending generation must settle before another observation".into()); }
+            if routing::header(index, &record.id)?.is_some() {
+                return Err(
+                    "Feed routing: pending generation must settle before another observation"
+                        .into(),
+                );
+            }
             Vec::new()
-        } else { routing::cancel(index, &record.id)? };
+        } else {
+            routing::cancel(index, &record.id)?
+        };
         put_with(index, &[record], None, extra)
     }
     pub(super) fn active(&mut self, after: Option<Key>) -> Result<(Vec<Record>, Option<Key>)> {
