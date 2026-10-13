@@ -950,7 +950,7 @@ fn pending_monitoring_upgrade_is_read_only_safe_and_recovers_each_crash_boundary
         };
         assert_eq!(
             index.get(&layout::FORMAT_KEY).unwrap().unwrap(),
-            monitoring::FORMAT
+            children::FORMAT
         );
         assert!(index.get(&layout::MONITOR_CURSOR_KEY).unwrap().is_none());
         for table in [layout::T_MONITOR_REF, layout::T_MONITOR_UNCHECKED] {
@@ -2536,4 +2536,186 @@ fn cancellation_preserves_owners_bound_only_by_an_irc_alias() {
             .transfer_has_owner(cancelled.download_id.as_deref().unwrap())
             .unwrap()
     );
+}
+
+fn child_fixture(number: u64, parent: &Job, imported: bool) -> Job {
+    let mut child = if imported {
+        ready_job(number, 5_000 + number)
+    } else {
+        raw_job(number, 5_000 + number)
+    };
+    child.upgrade_parent = Some(parent.id.clone());
+    child
+}
+
+#[test]
+fn imported_child_lookup_ignores_the_parents_other_children() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let parent = monitored_fixture(1, 0);
+    let bare = monitored_fixture(2, 0);
+    // Parents are committed first: a child resolves its parent's lineage root
+    // from the index, not from its own transaction.
+    bulk(&mut store, vec![parent.clone(), bare.clone()]);
+    let mut jobs = Vec::new();
+    jobs.extend((10..310).map(|n| child_fixture(n, &parent, false)));
+    jobs.extend((310..320).map(|n| child_fixture(n, &bare, false)));
+    jobs.push(child_fixture(400, &parent, true));
+    bulk(&mut store, jobs);
+    let (parent_id, bare_id) = (
+        layout::id_bytes(&parent.id).unwrap(),
+        layout::id_bytes(&bare.id).unwrap(),
+    );
+    let id = |n: u64| layout::id_bytes(&format!("{n:032x}")).unwrap();
+    store
+        .mutate(|db| {
+            let none = BTreeMap::new();
+            assert!(db.replaced_by_child(&parent_id, &none)?);
+            assert!(!db.replaced_by_child(&bare_id, &none)?);
+            // The stored import is overridden away; a stored non-import is
+            // overridden into one; an unrelated child changes nothing.
+            let away = BTreeMap::from([(id(400), false)]);
+            assert!(!db.replaced_by_child(&parent_id, &away)?);
+            let into = BTreeMap::from([(id(400), false), (id(12), true)]);
+            assert!(db.replaced_by_child(&parent_id, &into)?);
+            let both = BTreeMap::from([(id(400), false), (id(12), false)]);
+            assert!(!db.replaced_by_child(&parent_id, &both)?);
+            let other = BTreeMap::from([(id(312), true)]);
+            // Another parent's child never counts for this parent.
+            let foreign = BTreeMap::from([(id(400), false), (id(312), true)]);
+            assert!(!db.replaced_by_child(&parent_id, &foreign)?);
+            assert!(db.replaced_by_child(&bare_id, &other)?);
+            assert!(!db.replaced_by_child(&bare_id, &BTreeMap::from([(id(12), true)]))?);
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn imported_child_index_upgrade_rebuilds_after_interruption_and_refuses_read_only() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let parent = monitored_fixture(1, 0);
+    bulk(&mut store, vec![parent.clone()]);
+    let mut jobs = Vec::new();
+    jobs.extend((10..230).map(|n| child_fixture(n, &parent, n % 2 == 0)));
+    bulk(&mut store, jobs);
+    drop(store);
+    let count = |index: &mut Index| {
+        let mut count = 0;
+        let mut after = None;
+        loop {
+            let page = ops::Db(index)
+                .scan(&[layout::T_IMPORTED_CHILD], after, 200)
+                .unwrap();
+            count += page.entries.len();
+            after = page.next;
+            if after.is_none() {
+                return count;
+            }
+        }
+    };
+    let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
+    assert_eq!(count(&mut index), 110);
+    // Return to the previous format: drop every derived entry.
+    let mut changes = vec![Change::PutInline(
+        layout::FORMAT_KEY,
+        monitoring::FORMAT.to_vec(),
+    )];
+    let mut after = None;
+    loop {
+        let page = ops::Db(&mut index)
+            .scan(&[layout::T_IMPORTED_CHILD], after, 200)
+            .unwrap();
+        changes.extend(page.entries.iter().map(|(key, _)| Change::Delete(*key)));
+        after = page.next;
+        if after.is_none() {
+            break;
+        }
+    }
+    index.commit(changes).unwrap();
+    assert_eq!(count(&mut index), 0);
+    drop(index);
+    let before = contents(&directory.0);
+    let error = Store::open_read_only(&directory.0).err().unwrap();
+    assert!(error.contains("writable restart"), "{error}");
+    assert_eq!(contents(&directory.0), before);
+    let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
+    index.inject(Some(Fault::Applied));
+    assert!(children::upgrade(&mut index, false).is_err());
+    assert!(!index.is_usable());
+    drop(index);
+    let reopened = Store::open(&directory.0).unwrap();
+    drop(reopened);
+    let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
+    assert_eq!(
+        index.get(&layout::FORMAT_KEY).unwrap().unwrap(),
+        children::FORMAT
+    );
+    assert!(index.get(&layout::CHILD_CURSOR_KEY).unwrap().is_none());
+    assert_eq!(count(&mut index), 110);
+    drop(index);
+    assert!(Store::open_read_only(&directory.0).is_ok());
+}
+
+#[test]
+fn imported_child_upgrade_resumes_from_a_mid_upgrade_cursor() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let parent = monitored_fixture(1, 0);
+    bulk(&mut store, vec![parent.clone()]);
+    let jobs: Vec<Job> = (10..610).map(|n| child_fixture(n, &parent, true)).collect();
+    bulk(&mut store, jobs);
+    drop(store);
+    let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
+    let mut keys = Vec::new();
+    let mut after = None;
+    loop {
+        let page = ops::Db(&mut index)
+            .scan(&[layout::T_IMPORTED_CHILD], after, 200)
+            .unwrap();
+        keys.extend(page.entries.iter().map(|(key, _)| *key));
+        after = page.next;
+        if after.is_none() {
+            break;
+        }
+    }
+    assert_eq!(keys.len(), 600);
+    // A crash after the second page: its entries exist, the rest do not.
+    let mut changes: Vec<Change> = keys[400..].iter().map(|key| Change::Delete(*key)).collect();
+    let mut cursor = layout::key(&[&[layout::T_CHILD]]);
+    cursor[1..17].copy_from_slice(&keys[399][1..17]);
+    cursor[17..33].copy_from_slice(&keys[399][17..33]);
+    changes.push(Change::PutInline(
+        layout::FORMAT_KEY,
+        children::PENDING.to_vec(),
+    ));
+    changes.push(Change::Put(layout::CHILD_CURSOR_KEY, cursor.to_vec()));
+    index.commit(changes).unwrap();
+    drop(index);
+    assert!(Store::open_read_only(&directory.0).is_err());
+    drop(Store::open(&directory.0).unwrap());
+    let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
+    let mut count = 0;
+    let mut after = None;
+    loop {
+        let page = ops::Db(&mut index)
+            .scan(&[layout::T_IMPORTED_CHILD], after, 200)
+            .unwrap();
+        count += page.entries.len();
+        after = page.next;
+        if after.is_none() {
+            break;
+        }
+    }
+    assert_eq!(count, 600);
+    assert!(index.get(&layout::CHILD_CURSOR_KEY).unwrap().is_none());
+    // A cursor outside the child table is refused, not skipped over.
+    index
+        .commit(vec![
+            Change::PutInline(layout::FORMAT_KEY, children::PENDING.to_vec()),
+            Change::Put(layout::CHILD_CURSOR_KEY, layout::key(&[&[0xff]]).to_vec()),
+        ])
+        .unwrap();
+    assert!(children::upgrade(&mut index, false).is_err());
 }

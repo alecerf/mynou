@@ -25,3 +25,7 @@ Library checks now read a bounded oldest-check window and report inventory count
 ## Changed: Retain feed state without a total source limit
 
 Feed history now uses an on-disk index instead of the 1,000-source, 4 MiB snapshot. Use `mynou feeds --retained --limit 200 --after CURSOR` to page through retained sources; configured watching remains limited to 64 sources. The first writable start preserves the old snapshot; downgrading requires restoring that copy and loses later observations ([storage guide](/docs/inventory-storage.md#feed-storage)).
+
+## Changed: Faster library updates for repeatedly upgraded media
+
+Job storage gains an index of ready upgrade children, so recording a library version no longer reads every earlier upgrade attempt of its parent. The first writable start upgrades the job index in resumable pages; earlier binaries refuse it, so keep a stopped-store backup before downgrading ([storage guide](/docs/inventory-storage.md#job-storage)).
