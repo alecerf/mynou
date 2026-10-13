@@ -2,7 +2,8 @@
 
 The user supplies intent; agents own engineering. GitHub is the only shared
 state: Issues are the backlog, comments coordinate agents, PRs carry changes
-and Actions validates and publishes. Workers and local files are disposable.
+and Actions performs required final checks and publishes. Validate locally first,
+using Docker wherever practical. Workers and local files are disposable.
 Any number of agents may work at once, one per Issue.
 
 ## Start of a session
@@ -12,6 +13,23 @@ Any number of agents may work at once, one per Issue.
 2. Run `python3 engineering/board.py --agent <you>`. Agents without a shell read
    the same state from GitHub: open `agent-work` Issues, their comments and the
    open PRs. The board only reads; you post commands yourself.
+   The board needs `GH_TOKEN` or `GITHUB_TOKEN`. If neither is set, check
+   `gh auth status`: Git over SSH and GitHub CLI authentication are separate
+   from these environment variables. With a working CLI login, run the board
+   using the saved credential without displaying or persisting it:
+
+   ```sh
+   python3 - <<'PY'
+   import os, subprocess
+   session_env = os.environ.copy()
+   session_env['GH_TOKEN'] = subprocess.check_output(['gh', 'auth', 'token'], text=True).strip()
+   raise SystemExit(subprocess.run(['python3', 'engineering/board.py', '--agent', '<you>'], env=session_env).returncode)
+   PY
+   ```
+
+   Replace `<you>` with the session's actual agent name. Never print tokens,
+   write them into the repository or pass them to test containers. A missing
+   environment variable alone does not mean Git or GitHub access is unavailable.
 3. Act on the first item that applies:
    1. Your own claims (`mine`): resume them.
    2. A PR whose `waiting_for` is `merge` with `ci: success`: merge it.
@@ -65,11 +83,16 @@ with green checks goes to QA.
 
 1. Claim it. Triage first if it is not `status:ready`: clarify intent,
    acceptance, risk and priority in the Issue, then continue or release.
-2. Branch `work/<issue>-<slug>` from `trunk` and open a draft PR early with
-   `Closes #<issue>`. One Issue has exactly one branch and one PR; resume an
-   existing PR instead of opening another.
-3. Commit and push meaningful progress often. CI runs on every push; fix reds
-   with new commits. Never run tests, builds or linters locally.
+2. Create or resume `work/<issue>-<slug>` in a dedicated Git worktree before
+   changing code (see [Worktrees](#worktrees)), including tooling, release edits
+   and conflict fixes. One Issue has exactly one branch and one PR; resume an
+   existing PR instead of opening another. Open a draft PR with `Closes #<issue>`
+   after the first locally validated batch.
+3. Commit meaningful progress locally. Run relevant tests, lint and builds in
+   Docker wherever practical (see [Local validation](#local-validation)); fix
+   failures locally before pushing. Batch commits into a useful validated push
+   instead of triggering CI for each edit. Keep claims alive with comments at
+   least hourly; push a recovery checkpoint when stopping or handing off.
 4. User-visible changes append a section to `docs/releases/unreleased.md`:
    `## <Category>: <Title>` with a category of Added, Changed, Deprecated,
    Removed, Fixed or Security, then one to three lines for people who run Mynou
@@ -91,8 +114,11 @@ Rejections send the turn back to you: fix, push, answer the findings and post
 1. Claim the PR with `/assign <you>` (review claims are separate from the
    Issue's implementation claim).
 2. Read the Issue acceptance, the complete diff, earlier findings and the actual
-   CI results. Do not trust the author's description; run nothing locally.
-3. Post `/approve qa <head-sha>` with what you checked (acceptance, CI run), or
+   CI results and local evidence. Do not trust the author's description; reproduce
+   relevant checks locally in Docker, using an isolated worktree at the exact
+   PR head. Use native macOS for platform-only checks when available.
+3. Post `/approve qa <head-sha>` with what you checked (acceptance, local checks,
+   CI run and limits), or
    `/reject qa <head-sha>` with concrete findings.
 4. Security is required when the diff touches `AGENTS.md`, `engineering/`,
    `.agents/`, `.github/`, `src/crypto`, `src/tls` or `src/pki`, or the Issue is
@@ -118,6 +144,12 @@ available; never fabricate a review, an identity or a GitHub approval.
 `trunk` history stays linear: rebase merging is the only enabled method, so
 there are no merge commits and no squashes. Keep one meaningful commit per
 logical change on the branch, since each lands on `trunk` as is.
+Use Conventional Commits for all new commits: `<type>(<scope>): <summary>`
+(scope optional). Choose `feat` for functionality, `fix` for defects, `docs` for
+documentation, `test` for test changes and `chore` for engineering maintenance;
+use `refactor`, `perf`, `build` or `ci` when appropriate. For example:
+`chore(agents): require worktrees and local Docker validation`. Describe the
+change concisely in English; use `!` and a `BREAKING CHANGE:` footer when needed.
 
 Rebase on your own work branch with `git fetch origin && git rebase origin/trunk`
 then `git push --force-with-lease`; never rewrite `trunk` or another agent's
@@ -142,6 +174,80 @@ from any agent. It cannot see QA or Security verdicts: only this rule stops an
 agent from merging an unreviewed PR. Never use auto-merge (`--auto`) to get past a
 pending check or a missing verdict, unless the owner asks for it in their own
 session.
+
+## Worktrees
+
+Every agent making code changes must use `git worktree`, including changes to
+scripts, workflows and agent tooling. Keep the shared checkout for reading and
+coordination; never switch its branch or edit code there. Use one worktree per
+Issue branch, with its own build output, fixtures and temporary data.
+
+From the repository checkout, for a new Issue:
+
+```sh
+git fetch origin
+git worktree add -b work/<issue>-<slug> ../mynou-worktrees/<issue>-<slug> origin/trunk
+cd ../mynou-worktrees/<issue>-<slug>
+```
+
+For existing work, inspect `git worktree list` and reuse its worktree if you own
+the claim. If the branch has no worktree, fetch it and attach it with
+`git worktree add <path> <existing-local-branch>`; for a remote-only branch use
+`git worktree add --track -b <branch> <path> origin/<branch>`. Never force a
+branch into two worktrees or reuse another agent's active worktree. A reviewer
+uses a separate detached worktree at the exact fetched PR head:
+`git worktree add --detach <review-path> <head-sha>`.
+
+Rebase and resolve conflicts inside the Issue worktree. After merge or a
+completed review, check for uncommitted or unpushed work before
+`git worktree remove <path>`; preserve unfinished work for recovery. Never use
+`--force` to discard it. Remove the local work branch only after confirming its
+work was merged or otherwise preserved; rebase merging can change commit SHAs.
+
+## Local validation
+
+Use Docker for as much testable work as practical: Python engineering checks,
+fixture generation, portable Rust tests, format, Clippy and builds. Use the Rust
+version and components from `rust-toolchain.toml`, and Python 3.11 or newer for
+standard-library tooling. Reuse images and per-worktree Cargo caches; select
+checks relevant to the diff, then run the affected broader suite before handoff.
+Containers must use synthetic data and controlled peers, without production
+credentials, private media or real notifications. Bind host services to loopback.
+
+For the engineering suite, run this from the Issue or review worktree. Mount
+Git's common directory read-only at the same absolute path: a linked worktree's
+`.git` points outside the worktree, and the policy check reads tracked files.
+
+```sh
+docker build -t mynou-local-checks -f engineering/Dockerfile.local engineering
+worktree_path="$(pwd -P)"
+common_git_dir="$(git rev-parse --path-format=absolute --git-common-dir)"
+docker run --rm --network none \
+  --mount "type=bind,src=$worktree_path,dst=$worktree_path" \
+  --mount "type=bind,src=$common_git_dir,dst=$common_git_dir,readonly" \
+  --workdir "$worktree_path" --env PYTHONDONTWRITEBYTECODE=1 \
+  mynou-local-checks sh -eu -c '
+    python3 engineering/policy.py
+    python3 -m unittest discover -s engineering/tests -p "test_*.py" -v
+    python3 -m unittest discover -s .github/scripts -p "test_*.py" -v
+  '
+```
+
+Docker's Linux environment does not validate native Apple Silicon/macOS behavior.
+Run those checks locally on a compatible Mac when practical; otherwise identify
+the gap and leave it to required macOS CI. Generate the crypto reference fixture
+with `.github/scripts/crypto_fixtures.py` and pass `MYNOU_CRYPTO_FIXTURES` for
+Rust tests that need it. Keep temporary test directories physical (no symlink)
+on macOS, as in the CI workflow. Never claim container results prove macOS
+compatibility. If Docker is unavailable or a check cannot run in a container,
+use a suitable native local environment and record that limit.
+
+Record the checked commit, commands, environment, results and skipped checks in
+the PR. CI remains the required final gate and release publisher. Minimize runs
+by fixing failures locally, batching pushes and avoiding unnecessary rebases,
+manual dispatches and full reruns. For a platform failure, reproduce locally
+when possible before pushing the fix. Rerun failed jobs only for a diagnosed
+transient failure; required checks, Security audits and release gates still apply.
 
 ## Branches
 

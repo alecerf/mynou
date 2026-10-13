@@ -20,4 +20,7 @@ Review separately from implementation: claim the PR with `/assign`, then post
 `/approve security <head-sha>` or `/reject security <head-sha>` with actual
 findings. A verdict covers only that exact commit. Self-approval is neither
 available nor required; a rejection blocks merge until a correction is reviewed.
-All tests and scans stay in CI.
+Run relevant tests and scans locally in an isolated Git worktree, using Docker
+wherever practical and synthetic data without credentials. Use native macOS for
+platform-specific checks when available; record gaps and actual evidence. Avoid
+redundant CI runs while preserving every required security gate.

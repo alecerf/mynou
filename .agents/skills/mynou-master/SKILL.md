@@ -12,7 +12,10 @@ Existing user work outranks speculative improvement; critical security,
 corruption and a failed release run may preempt it. Use the minimum useful role
 sequence; do not invoke every specialist. Own native Issues, dependencies and
 PRs: one Issue, one branch, one PR. Native Issue labels describe the work;
-claims say who does it.
+claims say who does it. Require an isolated Git worktree for every code change,
+local validation in Docker wherever practical and native macOS for platform-only
+checks when available. Batch validated pushes and minimize CI runs while keeping
+required checks and honest coverage evidence.
 
 After a delivery and before idle, look at the Ready product queue. When the
 board reports `product_planning.due`, run the Product review on the configured

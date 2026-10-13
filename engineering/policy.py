@@ -1,4 +1,4 @@
-"""CI-only deterministic checks for organization contracts and obvious secrets."""
+"""Local and CI deterministic checks for organization contracts and obvious secrets."""
 import ast
 import json
 from pathlib import Path
@@ -55,8 +55,9 @@ def check(root=ROOT):
         assert text.startswith("---\nname: mynou-" + role + "\ndescription: ")
         assert "\n---\n" in text and len(text) < 8000
     instructions = (root / "AGENTS.md").read_text()
-    assert len(instructions.splitlines()) <= 65
-    assert "/assign" in instructions and "No local tests" in instructions
+    assert len(instructions.splitlines()) <= 70
+    assert "/assign" in instructions and "git worktree" in instructions
+    assert "Validate locally first" in instructions and "Docker" in instructions
     assert "zero Cargo dependencies" in instructions and "CI" in instructions
     cargo = tomllib.loads((root / "Cargo.toml").read_text())
     assert not any(cargo.get(k) for k in ["dependencies", "dev-dependencies", "build-dependencies"])

@@ -37,10 +37,14 @@ product-defining, destructive, sensitive or costly decisions.
 - Product code is Rust std only: **zero Cargo dependencies** of any kind, no
   `unsafe`, FFI, copied third-party code, external runtime helpers or Go
   fallback. Tooling uses Python std and GitHub, as existing CI does.
-- **No local tests, lint, builds, binaries or validation.** Source reads, edits,
-  formatting edits, Git operations and GitHub administration are allowed.
-  CI checks dependencies, format, Clippy, tests, release builds and tooling.
-  Fix reds through commits and CI.
+- **Use `git worktree` for every code change**, including tooling and conflict
+  fixes: one isolated worktree per Issue branch; never edit the shared checkout.
+- **Validate locally first, using Docker wherever practical.** Run relevant
+  tests, lint and builds before pushing; use native macOS for platform-only checks.
+  Batch validated commits into meaningful pushes to minimize CI; never use CI
+  as a debugging loop or bypass required checks. See the runbook for commands.
+- Use Conventional Commits: `<type>(<scope>): <summary>`, for example
+  `chore(agents): require worktrees and local Docker validation`.
 
 ## Releases
 

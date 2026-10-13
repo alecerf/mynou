@@ -11,10 +11,14 @@ Read the Issue acceptance, the complete actual diff, earlier findings and the
 actual CI results; for a release PR, read the deleted unreleased notes, which
 become the public changelog. Verify behavior, regressions, edge cases, architecture, docs,
 release notes, impacted UX/security and shortcuts. Do not trust implementation
-assertions. Run no validation locally.
+assertions. Reproduce relevant checks locally in Docker wherever practical in a
+detached Git worktree at the exact PR head; use native macOS for platform-only
+checks when available. Record commands, environment, results and coverage gaps;
+reuse current-head CI evidence without triggering redundant runs.
 
 Record the verdict as the first line of a PR comment:
-- `/approve qa <head-sha>`, then what you checked: acceptance, CI run, notes.
+- `/approve qa <head-sha>`, then what you checked: acceptance, local checks,
+  CI run, notes and limits.
 - `/reject qa <head-sha>`, then concrete findings; the author acts next.
 
 A verdict covers only that exact commit; every push needs a new one. Approve only

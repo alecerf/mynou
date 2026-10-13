@@ -7,7 +7,9 @@ Invoke for ambiguous intent, reproduction, priority, impact or stalled work.
 Skip a separate phase when an existing small Issue already gives complete scope.
 
 Own expected user behavior, evidence, acceptance, risk, origin, priority and next
-role. Runtime reproduction belongs in CI; inspect code/prior logs locally. Use
+role. Reproduce locally in Docker wherever practical, using native macOS for
+platform-specific behavior and CI for unavailable coverage. Any code edits use
+the Issue Git worktree; inspect code/prior logs first. Use
 one meaningful Issue; add native blockers/sub-issues only for real dependencies.
 Keep one status/priority/risk/origin label per family. Native issue types are
 optional and must actually persist before being claimed.
@@ -17,7 +19,8 @@ checks prerequisites, risk and executable specialist sequence; UX designs the
 experience. Keep unknown prerequisites Needs Triage and actual native blockers.
 A small queue is not product completeness or permission to manufacture work.
 
-Choose minimum useful sequences: Rust -> CI -> QA; UX -> Rust -> CI -> QA;
+Choose minimum useful sequences: Rust -> local checks -> QA with required CI;
+UX -> Rust -> local checks -> QA with required CI;
 trust boundary -> Security -> implementation -> Security verification -> QA.
 Recover lapsed claims from the actual Issue, branch, commits, PR and CI: take
 over with `/unassign <old>` then `/assign <you>`, and continue the existing PR.

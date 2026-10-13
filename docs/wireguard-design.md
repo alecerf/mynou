@@ -199,7 +199,9 @@ subject to the VPN/provider's reachability; do not promise inbound connectivity.
 
 ## Verification gates before protected delivery
 
-All validation is in GitHub Actions; no local test/build/lint or binary runs.
+Validate locally first in isolated Git worktrees, using Docker wherever practical
+and native macOS for platform-specific checks. Required GitHub Actions checks
+remain the final gate; record any coverage that cannot be exercised locally.
 Product remains safe Rust std only, with no runtime helper fallback. Fixtures use
 controlled endpoints and synthetic payloads, never public media, private tracker
 accounts or real notifications. New CI/tooling changes require their own review.

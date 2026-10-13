@@ -84,7 +84,9 @@ contact, loss/retry, duplication/reordering, load cookies, renewal, passive
 keepalive, simultaneous contact, restart and fresh keys, plus malformed/tampered
 packets, index confusion, queue limits, entropy failures and irreversible fences.
 CI also retains the independent Python-generated Noise, cookie and transport
-vectors used by the underlying components. No local test/build/lint is run.
+vectors used by the underlying components. These fixtures and portable tests
+can also run locally; follow the Docker-first
+[validation runbook](../engineering/README.md#local-validation).
 
 An actual outer-UDP driver, global multi-peer handshake/admission bounds, profiles,
 IP/TCP/UDP/DNS stack, HTTP/TLS and torrent integration, independent controlled
