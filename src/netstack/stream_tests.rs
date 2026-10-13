@@ -465,9 +465,10 @@ fn transfer(iss: (u32, u32), total: usize) {
     }
     assert!(got == data, "received {} of {total} bytes", got.len());
     // The reverse direction works on the same flow.
-    pair.b.send(G, server, &data[..5000]).unwrap();
+    let reply = total.min(5000);
+    pair.b.send(G, server, &data[..reply]).unwrap();
     pair.pump();
-    assert_eq!(read(&mut pair.a, client), data[..5000]);
+    assert_eq!(read(&mut pair.a, client), data[..reply]);
 }
 
 #[test]
