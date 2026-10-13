@@ -611,10 +611,10 @@ impl Storage {
                     .map_err(|_| "Feed state: invalid migration cursor".to_owned())
             })
             .transpose()?;
-        if let Some(cursor) = &cursor {
-            if original.is_none_or(|image| !image.rows.contains_key(cursor)) {
-                return Err("Feed state: cursor is absent from original snapshot".into());
-            }
+        if let Some(cursor) = &cursor
+            && original.is_none_or(|image| !image.rows.contains_key(cursor))
+        {
+            return Err("Feed state: cursor is absent from original snapshot".into());
         }
         if let Some(image) = original {
             let mut batch = Vec::new();
