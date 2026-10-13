@@ -240,6 +240,7 @@ worktree its own target-cache volume (replace `<issue>` below):
 
 ```sh
 docker build -t mynou-local-rust -f engineering/Dockerfile.rust engineering
+mkdir -p target
 docker run --rm --network none \
   --mount "type=bind,src=$(pwd -P),dst=/workspace,readonly" \
   --mount "type=volume,src=mynou-rust-<issue>,dst=/workspace/target" \
