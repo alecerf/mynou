@@ -402,3 +402,31 @@ fn retained_queries_reject_ambiguous_or_unbounded_fields() {
     let text = "a".repeat(64);
     assert_eq!(super::super::retained_query(&format!("limit=200&after={text}")).unwrap(), (Some(text), 200));
 }
+
+#[test]
+fn changed_configuration_fails_before_migration_publication() {
+    let directory = Directory::new();
+    let mut value = crate::config::default_json();
+    value.insert("indexers", json::Value::Array(Vec::new()));
+    let mut config = crate::config::from_json(&value, &directory.0).unwrap();
+    let mut options = crate::indexers::Options::default();
+    options.id = Some("configured".into());
+    options.watch.enabled = true;
+    let source = crate::config::Source {
+        options, name: "Synthetic".into(), kind: "rss".into(),
+        url: "http://127.0.0.1:9/feed".into(),
+        api_key_env: "MYNOU_ABSENT_FEED_FIXTURE_KEY_110".into(),
+    };
+    let row = Record::new("configured".into(), source.options.binding(&source));
+    let bytes = snapshot(std::slice::from_ref(&row));
+    private(&directory.0.join("feeds.bin"), &bytes);
+    let mut staging = create(&directory.0.join("feeds.idx.migrating"), sha256(&bytes)).unwrap();
+    put(&mut staging, std::slice::from_ref(&row), Some(&row.id)).unwrap();
+    drop(staging);
+    config.sources = vec![source];
+    config.sources[0].url = "http://127.0.0.1:9/changed-feed".into();
+    let before = contents(&directory.0);
+    assert!(super::super::FeedStore::open(&directory.0, &config, false).err().unwrap().contains("source binding changed"));
+    assert_eq!(contents(&directory.0), before);
+    assert!(!directory.0.join("feeds.idx").exists());
+}
