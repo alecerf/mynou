@@ -132,6 +132,10 @@ fn delay(source: &Source, outcome: &str, failures: u32) -> Duration {
 }
 
 impl Engine {
+    pub fn feeds_retained(&self, query: &str) -> Result<Value> {
+        let (after, limit) = feed::retained_query(query)?;
+        lock(&self.feed_store)?.retained(after.as_deref(), limit)
+    }
     /// One bounded pass over the sources that are due. `force` ignores only the
     /// watcher's own schedule: intervals, busy state and cooldowns still apply.
     pub fn feeds_poll(&self, only: Option<&str>, force: bool) -> Result<Value> {
@@ -241,7 +245,7 @@ impl Engine {
         // same entries are observed again by the next poll.
         let observation = {
             let mut feeds = lock(&self.feed_store).map_err(|_| "storage_failed")?;
-            let current = feeds.row(id).cloned().ok_or("storage_failed")?;
+            let current = feeds.row(id).map_err(|_| "storage_failed")?.ok_or("storage_failed")?;
             let observation = feed::observe(&current, &ids, at, MAX_NEW_PER_POLL);
             feeds
                 .commit(observation.record.clone())
@@ -433,7 +437,7 @@ impl Engine {
     /// Redacted freshness, counts and failure status of every RSS or Torznab
     /// source. It shows neither addresses, entries, titles nor credentials.
     pub fn feeds(&self) -> Result<Value> {
-        let feeds = lock(&self.feed_store)?;
+        let mut feeds = lock(&self.feed_store)?;
         let runtime = lock(&self.feed_runtime)?;
         let mut rows = Vec::new();
         for source in self
@@ -453,7 +457,8 @@ impl Engine {
                 "interval_secs",
                 source.options.watch.interval_secs.to_string(),
             );
-            let row = feeds.row(&id);
+            let owned_row = feeds.row(&id)?;
+            let row = owned_row.as_ref();
             v.insert("baselined", row.is_some_and(|row| row.baselined));
             v.insert(
                 "baselined_at",
@@ -523,6 +528,8 @@ impl Engine {
         }
         let mut report = Value::object();
         report.insert("routing_enabled", self.config.downloads_enabled);
+        report.insert("retained_sources", feeds.total()?.to_string());
+        report.insert("needs_migration", feeds.needs_migration());
         report.insert("sources", Value::Array(rows));
         Ok(report)
     }

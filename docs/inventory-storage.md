@@ -3,7 +3,7 @@
 The `mynou::inventory::Index` Rust API is the storage foundation for
 [growing inventories](https://github.com/alecerf/mynou/issues/106). Series,
 episode and numbering storage uses it (see [Series storage](#series-storage)).
-Jobs and requester demand also use private disk indexes. IRC and source
+Jobs and requester demand also use private disk indexes. Retained feed state uses its own index. IRC and source-policy
 snapshots retain their own files and fixed limits; see [limits](limits.md).
 
 ## Ownership and format
@@ -394,6 +394,50 @@ remove the marker only after moving the index aside. Restore matching job/IRC
 state as well: incompatible provenance is refused. This restores pre-migration
 state only; later demands, policy changes and operator interests remain solely
 in the preserved index. Never mix backup generations or downgrade live storage.
+
+## Feed storage
+
+`feeds.idx` retains baselines, checked counters and up to 1,024 opaque entry
+identities per source, without the former 1,000-source / 4 MiB aggregate limit.
+Historical sources stay on disk; startup checks configured bindings with point
+reads and reconciles only active baselines. Configuration still allows at most
+64 watched sources. Network, per-poll entry/routing and separate `indexers.bin`
+policy snapshot bounds remain in force.
+
+`mynou feeds --retained --limit 1..200 --after CURSOR` and
+`GET /api/feeds/retained?limit=200&after=CURSOR` list retained summaries, including
+unconfigured historical sources. Start without `after`, then follow `next` until
+null. `total` and `sequence` are decimal strings. These are live key scans:
+concurrent inserts before the cursor need a new listing. Pages hold at most
+200 records and 4 MiB of hydrated bytes. Summaries never expose bindings,
+retained identities, feed entry URLs or titles. Ordinary feed health also
+reports `retained_sources` and `needs_migration`.
+
+The first writable start validates the bounded legacy `MYNOUF01` snapshot and
+configured source bindings before publication. Exact private bytes are preserved
+as `feeds.legacy-DIGEST.bin`. `feeds.idx.migrating` binds its source digest and
+commits bounded batches with a migration cursor. A clean matching stage resumes;
+a foreign or unreadable stage is preserved intact under `feeds.idx.abandoned-*`
+before rebuilding. Unexpected contents and interrupted WAL are never recursively
+deleted. Every record, active reference and count is verified before promotion.
+`feeds.bin` then becomes an identity-bound `MYNOUF02` marker. Promotion interrupted
+before marker publication is verified against the unchanged original on reopen.
+An unmarked index with an unfinished transaction is refused without repair.
+
+Read-only opens create and change nothing. Legacy summaries remain available
+with `needs_migration`; pending indexed transactions require writable recovery.
+Uncertain writes block subsequent reads and changes until restart. Disk errors
+leave originals and recovery artifacts in place rather than evicting records.
+
+Earlier binaries reject `MYNOUF02`. To downgrade, stop Mynou, keep a complete
+stopped-store backup, move the index and staging aside, and restore the matching
+preserved original as `feeds.bin`. If no original existed, move the index aside
+before removing the marker. Later observations exist only in the index and are
+lost by restoring the old snapshot; keep it separately for recovery. Never mix
+backup generations or edit markers to bypass rejection.
+
+Durable captured routing generations are still required to route transient
+announcements across every inventory page.
 
 ## Remaining delivery
 

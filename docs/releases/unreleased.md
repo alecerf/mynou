@@ -21,3 +21,7 @@ Requester demands and operator interests now use an indexed on-disk ledger inste
 ## Changed: Schedule library checks without scanning the inventory
 
 Library checks now read a bounded oldest-check window and report inventory counts and window truncation. The first writable start resumes an indexed scheduling upgrade after interruption; earlier binaries reject its new format, so keep a stopped-store backup before upgrading if downgrade may be needed ([storage guide](/docs/inventory-storage.md#indexed-library-monitoring)).
+
+## Changed: Retain feed state without a total source limit
+
+Feed history now uses an on-disk index instead of the 1,000-source, 4 MiB snapshot. Use `mynou feeds --retained --limit 200 --after CURSOR` to page through retained sources; configured watching remains limited to 64 sources. The first writable start preserves the old snapshot; downgrading requires restoring that copy and loses later observations ([storage guide](/docs/inventory-storage.md#feed-storage)).
