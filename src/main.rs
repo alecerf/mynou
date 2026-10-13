@@ -62,7 +62,7 @@ const HELP: &str = "Mynou — media automation using Rust std only
   requester-sync [--config mynou.json]
   indexers [--config mynou.json]
   indexer-control SOURCE_ID --action enable|pause|reset_session|probe [--apply --plan-id ID] [--config mynou.json]
-  feeds [--config mynou.json]
+  feeds [--retained --limit N --after CURSOR] [--config mynou.json]
   irc [--config mynou.json]
   announcements [--offset N --limit N] [--config mynou.json]
   announcement ANNOUNCEMENT_ID [--config mynou.json]
@@ -99,6 +99,7 @@ impl Args {
                     "future-only",
                     "include-specials",
                     "unmonitored",
+                    "retained",
                 ]
                 .contains(&key)
                 {
@@ -120,7 +121,8 @@ impl Args {
             | "cancel" | "healthcheck" | "monitor" | "unmonitor" => &["config", "help"],
             "jobs" | "library" => &["config", "help", "after", "limit"],
             "requesters" | "requester-sync" => &["config", "help"],
-            "indexers" | "feeds" => &["config", "help"],
+            "indexers" => &["config", "help"],
+            "feeds" => &["config", "help", "retained", "after", "limit"],
             "indexer-control" => &["config", "help", "action", "apply", "plan-id"],
             "irc" | "announcement" => &["config", "help"],
             "announcements" => &["config", "help", "offset", "limit"],
@@ -790,7 +792,17 @@ fn execute(args: Args) -> Result<()> {
             }
         }
         "feeds" => {
-            if online {
+            if args.options.contains_key("retained") {
+                let fields: Vec<_> = ["limit", "after"].iter().filter_map(|name| args.options.get(*name).map(|value| format!("{name}={value}"))).collect();
+                let query = fields.join("&");
+                if online {
+                    output(&call(&config, &path, "GET", &format!("/api/feeds/retained?{query}"), None)?);
+                } else {
+                    output(&Engine::open_for_preview(config)?.feeds_retained(&query)?);
+                }
+            } else if args.options.contains_key("limit") || args.options.contains_key("after") {
+                return Err("Feed pages require --retained".into());
+            } else if online {
                 output(&call(&config, &path, "GET", "/api/feeds", None)?);
             } else {
                 output(&Engine::open_for_preview(config)?.feeds()?);

@@ -261,6 +261,7 @@ pub(crate) fn route(
         ("GET", "/api/status") => Ok((200, engine.status()?)),
         ("GET", "/api/indexers") => Ok((200, engine.indexers()?)),
         ("GET", "/api/feeds") => Ok((200, engine.feeds()?)),
+        ("GET", "/api/feeds/retained") => Ok((200, engine.feeds_retained("")?)),
         ("GET", "/api/transfers") => Ok((200, engine.transfers()?)),
         ("GET", "/api/requesters") => Ok((200, engine.requesters()?)),
         ("GET", "/api/irc") => Ok((200, engine.irc_sources()?)),
@@ -425,6 +426,9 @@ pub(crate) fn route(
                     ));
                 }
                 return Ok((404, error("Unknown requester route")));
+            }
+            if method == "GET" && path.starts_with("/api/feeds/retained?") {
+                return Ok((200, engine.feeds_retained(path.split_once('?').map_or("", |(_, query)| query))?));
             }
             for (route, library) in [("/api/jobs", false), ("/api/library", true)] {
                 if method == "GET" && (path == route || path.starts_with(&format!("{route}?"))) {

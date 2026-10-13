@@ -4,17 +4,11 @@ use super::Source;
 use crate::{
     Result,
     config::Config,
-    crypto::{random_bytes, sha256},
-    json::{self, Value},
+    json::Value,
     requesters::{digest, valid_digest, valid_id},
-    store::{private_options, reject_symlinks, sync_directory},
 };
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fs,
-    io::{Read, Write},
-    path::{Path, PathBuf},
-};
+use std::{collections::{BTreeMap, BTreeSet}, path::Path};
+mod storage;
 
 const MAGIC: &[u8; 8] = b"MYNOUF01";
 const MAX_BYTES: usize = 4 * 1024 * 1024;
@@ -216,227 +210,113 @@ pub(crate) fn observe(current: &Record, ids: &[&str], at: u64, max_new: usize) -
 }
 
 pub(crate) struct FeedStore {
-    rows: BTreeMap<String, Record>,
-    path: PathBuf,
+    storage: storage::Storage,
+    // Configuration, bounded by MAX_WATCHED; historical records remain on disk.
+    watched: BTreeMap<String, String>,
     read_only: bool,
-    dirty: bool,
-    poisoned: bool,
 }
 impl FeedStore {
     pub(crate) fn open(dir: &Path, config: &Config, read_only: bool) -> Result<Self> {
-        let path = dir.join("feeds.bin");
-        reject_symlinks(&path).map_err(|_| "Feed state: invalid snapshot path")?;
-        let mut rows = match fs::symlink_metadata(&path) {
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => BTreeMap::new(),
-            Err(_) => return Err("Feed state: cannot inspect snapshot".into()),
-            Ok(m) => Self::read(&path, &m)?,
-        };
-        let before = rows.clone();
-        let mut watched = BTreeSet::new();
+        let mut storage = storage::Storage::open(dir, read_only)?;
+        let mut watched = BTreeMap::new();
+        // Validate every configured binding before publishing any migration.
         for source in &config.sources {
             let id = source.options.identity(source);
             let binding = source.options.binding(source);
-            if rows.get(&id).is_some_and(|r| r.binding != binding) {
+            if storage.row(&id)?.is_some_and(|row| row.binding != binding) {
                 return Err("Feed state: source binding changed; use a new stable ID".into());
             }
-            if source.options.watch.enabled {
-                if !watched.insert(id.clone()) {
-                    return Err("Feed state: duplicate watched source ID".into());
-                }
-                rows.entry(id.clone())
-                    .or_insert_with(|| Record::new(id, binding));
+            if source.options.watch.enabled && watched.insert(id, binding).is_some() {
+                return Err("Feed state: duplicate watched source ID".into());
             }
         }
-        // A source that is not watched forgets its window: watching it again
-        // starts with a fresh baseline instead of replaying what it published.
-        for row in rows.values_mut() {
-            if !watched.contains(&row.id) && row.baselined {
-                row.baselined = false;
-                row.cursor.clear();
-                row.seen.clear();
-                row.revision = row.revision.saturating_add(1);
-            }
-        }
-        if rows.len() > MAX_ROWS {
-            return Err("Feed state: retained source capacity reached".into());
-        }
-        let dirty = rows != before;
-        Ok(Self {
-            rows,
-            path,
-            read_only,
-            dirty,
-            poisoned: false,
-        })
-    }
-    fn read(path: &Path, m: &fs::Metadata) -> Result<BTreeMap<String, Record>> {
-        if !m.is_file() || m.len() < 48 || m.len() > MAX_BYTES as u64 + 48 {
-            return Err("Feed state: invalid snapshot size".into());
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt;
-            if m.nlink() != 1 || m.mode() & 0o077 != 0 {
-                return Err("Feed state: snapshot must be private with one hard link".into());
-            }
-        }
-        let file = private_options()
-            .read(true)
-            .open(path)
-            .map_err(|_| "Feed state: cannot read snapshot")?;
-        let opened = file
-            .metadata()
-            .map_err(|_| "Feed state: cannot inspect snapshot")?;
-        if !opened.is_file() || opened.len() != m.len() {
-            return Err("Feed state: snapshot changed during opening".into());
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt;
-            if opened.nlink() != 1
-                || opened.mode() & 0o077 != 0
-                || opened.dev() != m.dev()
-                || opened.ino() != m.ino()
-            {
-                return Err("Feed state: snapshot changed during opening".into());
-            }
-        }
-        let mut bytes = Vec::new();
-        file.take(MAX_BYTES as u64 + 49)
-            .read_to_end(&mut bytes)
-            .map_err(|_| "Feed state: cannot read snapshot")?;
-        if bytes.len() < 48
-            || bytes.len() > MAX_BYTES + 48
-            || &bytes[..8] != MAGIC
-            || u64::from_le_bytes(
-                bytes[8..16]
-                    .try_into()
-                    .map_err(|_| "Feed state: invalid length")?,
-            ) != bytes.len() as u64 - 48
-            || sha256(&bytes[..bytes.len() - 32]).as_slice() != &bytes[bytes.len() - 32..]
-        {
-            return Err("Feed state: corrupt or unsupported snapshot".into());
-        }
-        Self::parse(&json::parse(
-            std::str::from_utf8(&bytes[16..bytes.len() - 32])
-                .map_err(|_| "Feed state: invalid UTF-8")?,
-        )?)
-    }
-    fn parse(v: &Value) -> Result<BTreeMap<String, Record>> {
-        crate::numbering::only(v, &["records"])?;
-        let mut rows = BTreeMap::new();
-        for v in v
-            .get("records")
-            .and_then(Value::as_array)
-            .filter(|a| a.len() <= MAX_ROWS)
-            .ok_or("Feed state: invalid collection")?
-        {
-            let r = Record::from_json(v)?;
-            if rows.insert(r.id.clone(), r).is_some() {
-                return Err("Feed state: duplicate record".into());
-            }
-        }
-        Ok(rows)
-    }
-    fn json(rows: &BTreeMap<String, Record>) -> Value {
-        let mut v = Value::object();
-        v.insert(
-            "records",
-            Value::Array(rows.values().map(Record::to_json).collect()),
-        );
-        v
+        if watched.len() > MAX_WATCHED { return Err("Feed state: too many configured watched sources".into()); }
+        Ok(Self { storage, watched, read_only })
     }
     pub(crate) fn initialize(&mut self) -> Result<()> {
-        if !self.read_only && self.dirty {
-            self.write()?;
+        if self.read_only { return Ok(()); }
+        self.storage.initialize()?;
+        // Only baselined sources need reconciliation, not retained history.
+        let mut after = None;
+        loop {
+            let (active, next) = self.storage.active(after)?;
+            for record in active {
+                if !self.watched.contains_key(&record.id) { self.suspend(&record.id)?; }
+            }
+            after = next;
+            if after.is_none() { break; }
+        }
+        let configured: Vec<_> = self.watched.iter().map(|(id, binding)| (id.clone(), binding.clone())).collect();
+        for (id, binding) in configured {
+            if self.storage.row(&id)?.is_none() { self.storage.commit(Record::new(id, binding))?; }
         }
         Ok(())
     }
-    pub(crate) fn row(&self, id: &str) -> Option<&Record> {
-        self.rows.get(id)
+    pub(crate) fn row(&mut self, id: &str) -> Result<Option<Record>> {
+        let mut record = self.storage.row(id)?;
+        if let Some(row) = &mut record {
+            if !self.watched.contains_key(id) && row.baselined {
+                row.baselined = false; row.cursor.clear(); row.seen.clear();
+                row.revision = row.revision.saturating_add(1);
+            }
+        } else if let Some(binding) = self.watched.get(id) {
+            record = Some(Record::new(id.into(), binding.clone()));
+        }
+        Ok(record)
     }
-    /// Replaces one record durably. Memory changes only after the synchronized
-    /// snapshot replaced the previous one.
     pub(crate) fn commit(&mut self, record: Record) -> Result<()> {
-        if self.read_only || self.poisoned {
-            return Err("Feed state: writable recovery is required".into());
+        if self.read_only { return Err("Feed state: storage is read-only".into()); }
+        if record.baselined && !self.watched.contains_key(&record.id) {
+            return Err("Feed state: only configured watched sources may establish a baseline".into());
         }
-        let id = record.id.clone();
-        let previous = self.rows.insert(id.clone(), record);
-        if self.rows.len() > MAX_ROWS {
-            self.restore(&id, previous);
-            return Err("Feed state: retained source capacity reached".into());
-        }
-        if let Err(error) = self.write() {
-            self.restore(&id, previous);
-            return Err(error);
-        }
-        Ok(())
+        self.storage.commit(record)
     }
-    fn restore(&mut self, id: &str, previous: Option<Record>) {
-        match previous {
-            Some(record) => {
-                self.rows.insert(id.to_owned(), record);
-            }
-            None => {
-                self.rows.remove(id);
-            }
-        }
-    }
-    /// Forgets the window of a source that stopped being watched. Returns
-    /// whether anything changed.
     pub(crate) fn suspend(&mut self, id: &str) -> Result<bool> {
-        let Some(row) = self.rows.get(id).filter(|row| row.baselined) else {
-            return Ok(false);
-        };
-        let mut next = row.clone();
-        next.baselined = false;
-        next.cursor.clear();
-        next.seen.clear();
-        next.revision = next.revision.saturating_add(1);
-        self.commit(next)?;
-        Ok(true)
+        let Some(mut row) = self.storage.row(id)?.filter(|row| row.baselined) else { return Ok(false); };
+        row.baselined = false; row.cursor.clear(); row.seen.clear();
+        row.revision = row.revision.saturating_add(1);
+        self.commit(row)?; Ok(true)
     }
-    fn write(&mut self) -> Result<()> {
-        if self.read_only || self.poisoned {
-            return Err("Feed state: writable recovery is required".into());
+    pub(crate) fn total(&mut self) -> Result<u64> { self.storage.total() }
+    pub(crate) fn needs_migration(&self) -> bool { self.storage.needs_migration() }
+    pub(crate) fn retained(&mut self, after: Option<&str>, limit: usize) -> Result<Value> {
+        let page = self.storage.page(after.map(storage::parse_cursor).transpose()?, limit)?;
+        let mut rows = Vec::new();
+        for row in page.rows {
+            let mut value = Value::object();
+            value.insert("id", row.id.clone());
+            value.insert("configured_watched", self.watched.contains_key(&row.id));
+            value.insert("baselined", row.baselined);
+            value.insert("last_success_at", row.last_success_at.to_string());
+            value.insert("successes", row.successes.to_string());
+            value.insert("retained_identities", row.seen.len() as u32);
+            value.insert("cursor_set", !row.cursor.is_empty());
+            rows.push(value);
         }
-        let v = Self::json(&self.rows);
-        let payload = json::stringify(&v).into_bytes();
-        if payload.len() > MAX_BYTES {
-            return Err("Feed state: snapshot too large".into());
-        }
-        let mut bytes = MAGIC.to_vec();
-        bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
-        bytes.extend_from_slice(&payload);
-        bytes.extend_from_slice(&sha256(&bytes));
-        reject_symlinks(&self.path).map_err(|_| "Feed state: invalid snapshot path")?;
-        let temp = self
-            .path
-            .with_file_name(format!(".feeds-{}.tmp", digest(&random_bytes::<16>()?)));
-        let result = (|| -> Result<()> {
-            let mut f = private_options()
-                .create_new(true)
-                .write(true)
-                .open(&temp)
-                .map_err(|_| "Feed state: cannot create snapshot")?;
-            f.write_all(&bytes)
-                .and_then(|()| f.sync_all())
-                .map_err(|_| "Feed state: cannot persist snapshot")?;
-            fs::rename(&temp, &self.path).map_err(|_| "Feed state: cannot replace snapshot")?;
-            if sync_directory(self.path.parent().ok_or("Feed state: missing directory")?).is_err() {
-                self.poisoned = true;
-                return Err("Feed state: durability uncertain; restart required".into());
-            }
-            Ok(())
-        })();
-        if result.is_err() {
-            let _ = fs::remove_file(&temp);
-        }
-        result?;
-        self.dirty = false;
-        Ok(())
+        let mut value = Value::object();
+        value.insert("sources", Value::Array(rows));
+        value.insert("next", page.next.map_or(Value::Null, |key| Value::String(storage::cursor(&key))));
+        value.insert("total", page.total.to_string());
+        value.insert("sequence", page.sequence.to_string());
+        value.insert("needs_migration", self.needs_migration());
+        Ok(value)
     }
+}
+
+pub(crate) fn retained_query(text: &str) -> Result<(Option<String>, usize)> {
+    if text.len() > 256 { return Err("Feed state: page query exceeds bounds".into()); }
+    let mut after = None; let mut limit = 50; let mut fields = BTreeSet::new();
+    for pair in text.split('&').filter(|pair| !pair.is_empty()) {
+        let (name, value) = pair.split_once('=').ok_or("Feed state: invalid query field")?;
+        if !fields.insert(name) { return Err("Feed state: duplicate query field".into()); }
+        match name {
+            "after" => { storage::parse_cursor(value)?; after = Some(value.to_owned()); }
+            "limit" => { limit = value.parse::<usize>().map_err(|_| "Feed state: invalid page limit")?;
+                if !(1..=200).contains(&limit) || limit.to_string() != value { return Err("Feed state: page limit must be 1 to 200".into()); } }
+            _ => return Err("Feed state: unknown query field".into()),
+        }
+    }
+    Ok((after, limit))
 }
 
 /// The stable public identity of a configured source.

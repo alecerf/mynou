@@ -400,19 +400,21 @@ fn a_failed_commit_reports_failure_and_the_entries_are_observed_again() {
         item("Fixture.Movie.2024.1080p.WEB-DL", 1, 5),
     ]));
     let directory = state_dir(&dir);
-    fs::set_permissions(&directory, fs::Permissions::from_mode(0o500)).unwrap();
+    let indexed = directory.join("feeds.idx");
+    fs::set_permissions(&indexed, fs::Permissions::from_mode(0o500)).unwrap();
     let report = engine.feeds_poll(None, true);
-    fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::set_permissions(&indexed, fs::Permissions::from_mode(0o700)).unwrap();
     let report = report.unwrap();
     let row = first(&report);
     assert_eq!(outcome(row), "storage_failed");
     assert_eq!(num(row, "routed"), 0);
     assert!(stored(&engine, &job.id).acquisition_url.is_none());
-    let health = status(&engine, 0);
-    assert_eq!(text(&health, "successes"), "1");
-    assert_eq!(text(&health, "last_outcome"), "storage_failed");
-    assert_eq!(num(&health, "consecutive_failures"), 1);
-
+    // A failed WAL transaction has uncertain durability: no stale health reads
+    // or retry in that process. Reopen to recover before observing again.
+    assert!(engine.feeds().is_err());
+    drop(engine);
+    let engine = open(&dir, vec![source("feed-a", &feed, "rss")]);
+    assert_eq!(text(&status(&engine, 0), "successes"), "1");
     let report = engine.feeds_poll(None, true).unwrap();
     let row = first(&report);
     assert_eq!(outcome(row), "ok");
