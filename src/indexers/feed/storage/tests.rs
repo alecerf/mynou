@@ -288,18 +288,38 @@ fn foreign_or_interrupted_staging_is_preserved_intact_before_rebuilding() {
         private(&directory.0.join("feeds.bin"), &bytes);
         let staging = directory.0.join("feeds.idx.migrating");
         let mut index = create(&staging, sha256(b"foreign original")).unwrap();
-        if interrupted { index.inject(Some(Fault::Published)); }
+        if interrupted {
+            index.inject(Some(Fault::Published));
+        }
         let result = put(&mut index, &[record(2)], Some(&record(2).id));
         assert_eq!(result.is_err(), interrupted);
         drop(index);
-        private(&staging.join("unexpected-private-evidence"), b"synthetic preservation evidence");
-        let before: BTreeMap<_, _> = contents(&staging).into_iter().map(|(path, bytes)| (path.strip_prefix(&staging).unwrap().to_owned(), bytes)).collect();
+        private(
+            &staging.join("unexpected-private-evidence"),
+            b"synthetic preservation evidence",
+        );
+        let before: BTreeMap<_, _> = contents(&staging)
+            .into_iter()
+            .map(|(path, bytes)| (path.strip_prefix(&staging).unwrap().to_owned(), bytes))
+            .collect();
         let mut storage = Storage::open(&directory.0, false).unwrap();
         storage.initialize().unwrap();
         assert_eq!(storage.row(&record(1).id).unwrap(), Some(record(1)));
         assert!(storage.row(&record(2).id).unwrap().is_none());
-        let abandoned = fs::read_dir(&directory.0).unwrap().map(|entry| entry.unwrap().path()).find(|path| path.file_name().unwrap().to_string_lossy().starts_with("feeds.idx.abandoned-")).unwrap();
-        let preserved: BTreeMap<_, _> = contents(&abandoned).into_iter().map(|(path, bytes)| (path.strip_prefix(&abandoned).unwrap().to_owned(), bytes)).collect();
+        let abandoned = fs::read_dir(&directory.0)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| {
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with("feeds.idx.abandoned-")
+            })
+            .unwrap();
+        let preserved: BTreeMap<_, _> = contents(&abandoned)
+            .into_iter()
+            .map(|(path, bytes)| (path.strip_prefix(&abandoned).unwrap().to_owned(), bytes))
+            .collect();
         assert_eq!(preserved, before);
     }
 }
@@ -320,7 +340,10 @@ fn promoted_index_resumes_publication_but_foreign_pending_indexes_are_untouched(
     drop(storage);
     for marked in [false, true] {
         let other = Directory::new();
-        private(&other.0.join("feeds.bin"), if marked { &marker } else { &bytes });
+        private(
+            &other.0.join("feeds.bin"),
+            if marked { &marker } else { &bytes },
+        );
         let mut index = create(&other.0.join("feeds.idx"), sha256(b"foreign original")).unwrap();
         index.inject(Some(Fault::Published));
         assert!(put(&mut index, &[record(2)], None).is_err());
@@ -337,7 +360,12 @@ fn conflicting_backup_and_corrupt_active_proof_are_never_overwritten() {
     let directory = Directory::new();
     let bytes = snapshot(&[record(1)]);
     private(&directory.0.join("feeds.bin"), &bytes);
-    private(&directory.0.join(format!("feeds.legacy-{}.bin", super::super::digest(&bytes))), &snapshot(&[record(2)]));
+    private(
+        &directory
+            .0
+            .join(format!("feeds.legacy-{}.bin", super::super::digest(&bytes))),
+        &snapshot(&[record(2)]),
+    );
     let before = contents(&directory.0);
     let mut storage = Storage::open(&directory.0, false).unwrap();
     assert!(storage.initialize().is_err());
@@ -349,11 +377,24 @@ fn conflicting_backup_and_corrupt_active_proof_are_never_overwritten() {
     let mut row = record(1);
     row.baselined = true;
     storage.commit(row.clone()).unwrap();
-    index(&mut storage).commit(vec![Change::Delete(key(ACTIVE, &row.id))]).unwrap();
-    assert!(storage.commit(row).err().unwrap().contains("active reference"));
+    index(&mut storage)
+        .commit(vec![Change::Delete(key(ACTIVE, &row.id))])
+        .unwrap();
+    assert!(
+        storage
+            .commit(row)
+            .err()
+            .unwrap()
+            .contains("active reference")
+    );
     drop(storage);
     let before = contents(&other.0);
-    assert!(Storage::open(&other.0, false).err().unwrap().contains("cardinality"));
+    assert!(
+        Storage::open(&other.0, false)
+            .err()
+            .unwrap()
+            .contains("cardinality")
+    );
     assert_eq!(contents(&other.0), before);
 }
 
@@ -362,13 +403,17 @@ fn active_full_windows_resume_after_hydrated_bytes_and_deleted_prior_pages() {
     let directory = Directory::new();
     let mut storage = Storage::open(&directory.0, false).unwrap();
     storage.initialize().unwrap();
-    let batch: Vec<_> = (1..=200).map(|n| {
-        let mut row = record(n);
-        row.baselined = true;
-        row.seen = (0..super::super::MAX_SEEN).map(|id| format!("{id:032x}")).collect();
-        row.cursor = row.seen[0].clone();
-        row
-    }).collect();
+    let batch: Vec<_> = (1..=200)
+        .map(|n| {
+            let mut row = record(n);
+            row.baselined = true;
+            row.seen = (0..super::super::MAX_SEEN)
+                .map(|id| format!("{id:032x}"))
+                .collect();
+            row.cursor = row.seen[0].clone();
+            row
+        })
+        .collect();
     put(index(&mut storage), &batch, None).unwrap();
     let mut seen = BTreeSet::new();
     let mut after = None;
@@ -376,17 +421,24 @@ fn active_full_windows_resume_after_hydrated_bytes_and_deleted_prior_pages() {
     loop {
         let (rows, next) = storage.active(after).unwrap();
         assert!(!rows.is_empty());
-        let bytes: usize = rows.iter().map(|row| json::stringify(&row.to_json()).len()).sum();
+        let bytes: usize = rows
+            .iter()
+            .map(|row| json::stringify(&row.to_json()).len())
+            .sum();
         assert!(bytes <= crate::inventory::MAX_PAGE_BYTES);
         for row in rows {
             assert!(seen.insert(row.id.clone()));
             let mut cleared = row;
-            cleared.baselined = false; cleared.seen.clear(); cleared.cursor.clear();
+            cleared.baselined = false;
+            cleared.seen.clear();
+            cleared.cursor.clear();
             storage.commit(cleared).unwrap();
         }
         pages += 1;
         after = next;
-        if after.is_none() { break; }
+        if after.is_none() {
+            break;
+        }
     }
     assert!(pages > 1);
     assert_eq!(seen.len(), 200);
@@ -395,12 +447,23 @@ fn active_full_windows_resume_after_hydrated_bytes_and_deleted_prior_pages() {
 
 #[test]
 fn retained_queries_reject_ambiguous_or_unbounded_fields() {
-    for query in ["limit=0", "limit=201", "limit=01", "limit=2&limit=2", "unknown=1", "after=bad", "after=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"] {
+    for query in [
+        "limit=0",
+        "limit=201",
+        "limit=01",
+        "limit=2&limit=2",
+        "unknown=1",
+        "after=bad",
+        "after=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    ] {
         assert!(super::super::retained_query(query).is_err(), "{query}");
     }
     assert!(super::super::retained_query(&"x".repeat(257)).is_err());
     let text = "a".repeat(64);
-    assert_eq!(super::super::retained_query(&format!("limit=200&after={text}")).unwrap(), (Some(text), 200));
+    assert_eq!(
+        super::super::retained_query(&format!("limit=200&after={text}")).unwrap(),
+        (Some(text), 200)
+    );
 }
 
 #[test]
