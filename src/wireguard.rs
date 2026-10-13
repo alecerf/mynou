@@ -2,7 +2,8 @@
 //! Session keys must come from a fresh authenticated handshake. See
 //! docs/wireguard-transport.md for provenance, ownership and integration gates,
 //! docs/wireguard-cookies.md for cookies and under-load admission, and
-//! docs/wireguard-timers.md for retry, rekey and keepalive timers and key sets.
+//! docs/wireguard-timers.md for retry, rekey and keepalive timers and key sets,
+//! and docs/wireguard-peer.md for the offline per-peer composition.
 
 use crate::Result;
 use crate::crypto::ChaCha20Poly1305;
@@ -12,12 +13,15 @@ use std::time::Duration;
 mod cookie;
 #[path = "wireguard/handshake.rs"]
 mod handshake;
+#[path = "wireguard/peer.rs"]
+mod peer;
 #[path = "wireguard/timers.rs"]
 mod timers;
 pub use cookie::{
     Admission, Admit, COOKIE_LIFETIME, Entropy, Load, MAX_SOURCES, OsEntropy, SECRET_LIFETIME,
 };
 pub use handshake::{Handshake, Response};
+pub use peer::{MAX_QUEUED_PAYLOADS, Peer, PeerClock, PeerOutput, PeerStatus};
 pub use timers::{
     DISCARD_AFTER, Due, KEEPALIVE_TIMEOUT, KeySets, MAX_JITTER, REJECT_AFTER_TIME,
     REKEY_AFTER_TIME, REKEY_ATTEMPT_TIME, REKEY_ON_RECEIVE, REKEY_TIMEOUT, Received, Timers,

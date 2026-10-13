@@ -126,7 +126,7 @@ impl Handshake {
         Self::configured(secret, peer, psk, generation, now, initial)
     }
 
-    fn configured(
+    pub(super) fn configured(
         secret: [u8; 32],
         peer: [u8; 32],
         psk: Option<[u8; 32]>,
@@ -154,6 +154,60 @@ impl Handshake {
             generation,
             observed: now,
         })
+    }
+
+    /// Peer-owned injected entropy and index allocation; no OS randomness here.
+    pub(super) fn initiate_allocated(
+        &mut self,
+        wall: SystemTime,
+        ephemeral: [u8; 32],
+        index: u32,
+        generation: u64,
+        now: Duration,
+    ) -> Result<Vec<u8>> {
+        self.admit(generation, now)?;
+        let timestamp = timestamp(wall)?;
+        if self.issued.is_some_and(|previous| timestamp <= previous) {
+            return Err("WireGuard: initiation clock did not advance".into());
+        }
+        self.initiate_indexed(timestamp, ephemeral, index, now)
+    }
+
+    pub(super) fn respond_allocated(
+        &mut self,
+        packet: &[u8],
+        ephemeral: [u8; 32],
+        index: u32,
+        generation: u64,
+        now: Duration,
+    ) -> Result<Response> {
+        self.admit(generation, now)?;
+        framing(packet, 1, 148, self.credentials.as_ref().unwrap().public)?;
+        self.respond_indexed(packet, ephemeral, index, now)
+    }
+
+    pub(super) fn expire_pending(&mut self, now: Duration) {
+        if self
+            .pending
+            .as_ref()
+            .is_some_and(|pending| now.saturating_sub(pending.created) >= PENDING_AGE)
+        {
+            self.pending = None;
+        }
+    }
+
+    pub(super) fn cancel_initiation(&mut self) {
+        self.pending = None;
+    }
+
+    pub(super) fn pending_index(&self) -> Option<u32> {
+        self.pending.as_ref().map(|pending| pending.index)
+    }
+
+    /// Forget ephemeral/cookie state while retaining timestamp replay fences.
+    pub(super) fn discard_pending(&mut self) {
+        self.pending = None;
+        self.cookies.clear();
     }
 
     /// The future driver must also revoke every returned Session and serialize
@@ -219,6 +273,16 @@ impl Handshake {
         now: Duration,
     ) -> Result<Vec<u8>> {
         let index = self.index()?;
+        self.initiate_indexed(timestamp, ephemeral, index, now)
+    }
+
+    fn initiate_indexed(
+        &mut self,
+        timestamp: [u8; 12],
+        ephemeral: [u8; 32],
+        index: u32,
+        now: Duration,
+    ) -> Result<Vec<u8>> {
         let keys = self.credentials.as_ref().unwrap();
         let mut noise = Noise::new(keys.peer)?;
         let public = x25519_public_key(ephemeral);
@@ -257,6 +321,22 @@ impl Handshake {
         ephemeral: [u8; 32],
         now: Duration,
     ) -> Result<Response> {
+        let next = self
+            .next_index
+            .checked_add(1)
+            .ok_or("WireGuard: local index space exhausted")?;
+        let response = self.respond_indexed(packet, ephemeral, self.next_index, now)?;
+        self.next_index = next;
+        Ok(response)
+    }
+
+    fn respond_indexed(
+        &mut self,
+        packet: &[u8],
+        ephemeral: [u8; 32],
+        index: u32,
+        now: Duration,
+    ) -> Result<Response> {
         let keys = self.credentials.as_ref().unwrap();
         let remote_index = u32::from_le_bytes(packet[4..8].try_into().unwrap());
         let remote_ephemeral: [u8; 32] = packet[8..40].try_into().unwrap();
@@ -286,7 +366,6 @@ impl Handshake {
         noise.mix_hash(&output[1])?;
         let empty = noise.encrypt(output[2], &[])?;
         let directional = derive::<2>(&noise.chain, &[])?;
-        let index = self.index()?;
         let mut response = header(2, index);
         response.extend_from_slice(&remote_index.to_le_bytes());
         response.extend_from_slice(&public);
