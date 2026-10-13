@@ -425,6 +425,14 @@ impl<E: Entropy> TcpStack<E> {
         }
     }
 
+    fn forget_ready(&mut self, key: Key, flow: &Flow) {
+        if let Some(port) = flow.listener
+            && let Some(listener) = self.listeners.get_mut(&port)
+        {
+            listener.ready.retain(|entry| *entry != (key, flow.serial));
+        }
+    }
+
     fn new_flow(&mut self, state: State, iss: u32, peer_mss: Option<u16>, window: u16) -> Flow {
         let mss = usize::from(peer_mss.unwrap_or(DEFAULT_PEER_MSS)).min(self.config.mss());
         let serial = self.next_serial();
@@ -749,6 +757,8 @@ impl<E: Entropy> TcpStack<E> {
                 let outcome = self.arrive(key, &mut flow, &segment, now);
                 if !flow.removable() {
                     self.flows.insert(key, flow);
+                } else {
+                    self.forget_ready(key, &flow);
                 }
                 outcome
             }
@@ -1143,7 +1153,7 @@ impl<E: Entropy> TcpStack<E> {
                 continue;
             };
             match self.advance(key, &mut flow, now, &mut poll.send) {
-                Step::Gone => {}
+                Step::Gone => self.forget_ready(key, &flow),
                 Step::Alive(wake) => {
                     next = [next, wake].into_iter().flatten().min();
                     self.flows.insert(key, flow);

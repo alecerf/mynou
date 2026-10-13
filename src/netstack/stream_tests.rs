@@ -765,6 +765,54 @@ fn a_flow_reset_before_it_is_accepted_is_never_handed_out() {
 }
 
 #[test]
+fn repeated_unaccepted_resets_do_not_accumulate_listener_entries() {
+    let server_config = TcpConfig {
+        backlog: 1,
+        flows: 1,
+        ..config(SERVER)
+    };
+    let mut pair = Pair::new(config(CLIENT), server_config);
+    let listener = pair.b.listen(G, PORT).unwrap();
+    for _ in 0..100 {
+        let client = pair.a.connect(G, T0, SERVER, PORT).unwrap();
+        pair.pump();
+        assert_eq!(pair.a.state(G, client), Ok(State::Established));
+        assert_eq!(pair.b.listeners[&PORT].ready.len(), 1);
+        pair.a.abort(G, client).unwrap();
+        pair.pump();
+        assert_eq!(pair.b.flows(), 0);
+        assert!(pair.b.listeners[&PORT].ready.is_empty());
+    }
+    let client = pair.a.connect(G, T0, SERVER, PORT).unwrap();
+    pair.pump();
+    let server = pair.b.accept(G, listener).unwrap().unwrap();
+    pair.a.send(G, client, b"live").unwrap();
+    pair.pump();
+    assert_eq!(read(&mut pair.b, server), b"live");
+    assert_eq!(pair.b.accept(G, listener), Ok(None));
+}
+
+#[test]
+fn expired_unaccepted_flows_release_listener_entries() {
+    let mut pair = Pair::new(config(CLIENT), config(SERVER));
+    let listener = pair.b.listen(G, PORT).unwrap();
+    let client = pair.a.connect(G, T0, SERVER, PORT).unwrap();
+    pair.pump();
+    let (key, serial) = pair.b.listeners[&PORT].ready[0];
+    let server = FlowHandle { key, serial };
+    pair.a.close(G, T0, client).unwrap();
+    pair.pump();
+    pair.b.close(G, T0, server).unwrap();
+    pair.pump();
+    assert_eq!(pair.b.listeners[&PORT].ready.len(), 1);
+    pair.now = pair.b.config.linger;
+    pair.pump();
+    assert_eq!(pair.b.flows(), 0);
+    assert!(pair.b.listeners[&PORT].ready.is_empty());
+    assert_eq!(pair.b.accept(G, listener), Ok(None));
+}
+
+#[test]
 fn aborting_resets_the_peer_and_old_handles_stay_dead() {
     let (mut pair, client, server, _) = established();
     pair.a.abort(G, client).unwrap();
