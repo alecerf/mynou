@@ -130,7 +130,7 @@ fn rejects_each_header_field() {
 
 #[test]
 fn header_length_needs_its_own_bytes() {
-    let mut short = sample(b"");
+    let mut short = sample(b"abc");
     short[0] = 0x46;
     assert_eq!(
         parse(&config(), &short[..23]).unwrap_err(),
