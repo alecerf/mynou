@@ -32,8 +32,8 @@ product-defining, destructive, sensitive or costly decisions.
 - Meaningful changes need a distinct QA pass over the actual diff. Changes to
   `AGENTS.md`, `engineering/`, `.agents/`, `.github/`, crypto/TLS/PKI or
   high-risk Issues also need Security. Never fabricate a review or approval.
-- Rebase-merge (`--match-head-commit`, no merge commit) a branch on `trunk` when
-  all required verdicts approve the head and checks are green; close the Issue.
+- Fast-forward signed commits onto `trunk` only with exact-head approvals and
+  green required checks. Preserve signatures and protection; close the Issue.
 - Product code is Rust std only: **zero Cargo dependencies** of any kind, no
   `unsafe`, FFI, copied third-party code, external runtime helpers or Go
   fallback. Tooling uses Python std and GitHub, as existing CI does.
@@ -43,8 +43,9 @@ product-defining, destructive, sensitive or costly decisions.
   tests, lint and builds before pushing; use native macOS for platform-only checks.
   Batch validated commits into meaningful pushes to minimize CI; never use CI
   as a debugging loop or bypass required checks. See the runbook for commands.
-- Use Conventional Commits: `<type>(<scope>): <summary>`, for example
-  `chore(agents): require worktrees and local Docker validation`.
+- Use signed Conventional Commits: `<type>(<scope>): <summary>`. Configure
+  a GitHub-verified committer email and signing key; confirm pushed commits
+  are `Verified` before review or integration.
 
 ## Releases
 

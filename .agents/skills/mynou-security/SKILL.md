@@ -24,3 +24,6 @@ Run relevant tests and scans locally in an isolated Git worktree, using Docker
 wherever practical and synthetic data without credentials. Use native macOS for
 platform-specific checks when available; record gaps and actual evidence. Avoid
 redundant CI runs while preserving every required security gate.
+Verify each PR commit's GitHub `Verified` status and that integration preserves
+the exact approved signed commits without overriding branch protection. A valid
+signature is not a substitute for source review or trusted-account commands.

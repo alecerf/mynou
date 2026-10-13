@@ -9,6 +9,7 @@ results and coverage gaps; link actual required Actions runs and behavior eviden
 Batch locally validated changes before pushing. Do not claim unfinished checks passed.
 
 Checklist: one Issue, one branch, one isolated worktree, this one PR. Commits use
-Conventional Commits (`<type>(<scope>): <summary>`). Work PRs keep the version and add
+signed Conventional Commits (`<type>(<scope>): <summary>`), with GitHub `Verified`
+status checked for every commit. Work PRs keep the version and add
 user-facing notes to `docs/releases/unreleased.md` (`## <Category>: <Title>`); only a PR labeled
 `release` bumps it. When ready, comment `/wait qa`.

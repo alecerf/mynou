@@ -125,7 +125,8 @@ Rejections send the turn back to you: fix, push, answer the findings and post
    `risk:high` or `risk:critical` (the board shows `security_required`). After a
    QA approval, post `/wait security`; Security records its own verdict.
 5. When every required verdict approves the head and checks are green, merge
-   and close the Issue; if CI is still running, post `/wait ci`. Then
+   integrate the signed commits as described below and close the Issue; if CI is
+   still running, post `/wait ci`. Then
    `/unassign` the PR.
 
 A distinct review pass re-reads the whole diff. Prefer another agent when one is
@@ -133,17 +134,37 @@ available; never fabricate a review, an identity or a GitHub approval.
 
 ## Merging
 
-`gh pr merge <pr> --rebase --match-head-commit <head-sha>`, only when:
+Integrate the exact signed PR head by a normal fast-forward push, only when:
 
 - the branch is rebased on the current `trunk` (no commit of `trunk` is missing
   from it);
 - the latest QA verdict (and Security, if required) approves that exact head;
 - every check on the head is green (`ci: success` on the board);
+- every PR commit is signed and GitHub reports `verification.verified: true`;
 - no review conversation is unresolved.
 
-`trunk` history stays linear: rebase merging is the only enabled method, so
-there are no merge commits and no squashes. Keep one meaningful commit per
-logical change on the branch, since each lands on `trunk` as is.
+GitHub's Rebase and Merge recreates commits without their signatures, as
+[GitHub documents](https://docs.github.com/en/authentication/managing-commit-signature-verification/about-commit-signature-verification#signature-verification-for-rebase-and-merge).
+Rebase and sign locally before the final push/reviews, then preserve those exact
+commits when advancing `trunk`. History stays linear, with no merge commit or
+squash. Keep one meaningful commit per logical change.
+
+From the Issue worktree, after the prerequisites above are satisfied:
+
+```sh
+git fetch origin
+git merge-base --is-ancestor origin/trunk HEAD
+# Confirm HEAD still equals the approved full head SHA and current PR head.
+git push origin HEAD:refs/heads/trunk
+```
+
+Use a normal push, never `--force`, `--admin` or a protection override. The
+protected branch must accept the already reviewed, verified head and required
+checks; if it refuses, retain the PR and diagnose the rejection. A concurrent
+advance of `trunk` that is not an ancestor rejects the push. Rebase/sign, validate
+and obtain new exact-head verdicts if the head must change. Confirm GitHub marks
+the PR merged and `trunk` contains that exact head; otherwise record the state
+and stop before closing the Issue. Recheck verification on integrated commits.
 Use Conventional Commits for all new commits: `<type>(<scope>): <summary>`
 (scope optional). Choose `feat` for functionality, `fix` for defects, `docs` for
 documentation, `test` for test changes and `chore` for engineering maintenance;
@@ -151,19 +172,37 @@ use `refactor`, `perf`, `build` or `ci` when appropriate. For example:
 `chore(agents): require worktrees and local Docker validation`. Describe the
 change concisely in English; use `!` and a `BREAKING CHANGE:` footer when needed.
 
-Rebase on your own work branch with `git fetch origin && git rebase origin/trunk`
+Sign all new commits, including amended and rebased commits. Use the contributor's
+own key registered for signing on their GitHub account and a verified committer
+email (their account's GitHub noreply email is suitable). Check effective
+`user.name`, `user.email`, `user.signingkey`, `gpg.format` and `commit.gpgsign`
+before committing; do not rely on Git's guessed local hostname/email. Prefer
+repository-local identity settings, `git commit -S` and `git rebase --gpg-sign`.
+Never use `--no-gpg-sign`, impersonate another account, generate a fake approval
+or persist private signing keys in repository files or test containers.
+
+After pushing, query each commit from `gh api repos/alecerf/mynou/pulls/<pr>/commits`
+and inspect `commit.verification.verified` and `reason`; local cryptographic
+validity alone does not establish GitHub's `Verified` status. Fix the actual
+reason (for example, `no_user` means the committer email is not associated with
+a GitHub account), re-sign and push the work branch with a lease before final
+review. Record verification evidence with the actual head SHA. Never rewrite
+`trunk` or published history to repair historical verification badges.
+
+Rebase on your own work branch with `git fetch origin && git rebase --gpg-sign origin/trunk`
 then `git push --force-with-lease`; never rewrite `trunk` or another agent's
-branch, with one exception: `gh pr update-branch --rebase` may move a PR that is
-behind `trunk` when the rebase has no conflict. Either way the rebase moves the
-head, so it needs a new verdict. Rebase once before `/wait qa`; do not chase
+branch. Do not use GitHub's unsigned server-side rebase/update-branch to move a
+reviewed work branch. A local signed rebase moves the head, so it needs a new
+verdict. Rebase once before `/wait qa`; do not chase
 `trunk` while the PR waits on QA or Security, since every push reruns the whole CI
 for nothing. If `trunk` moved by merge time, rebase then, wait for the one CI run,
 and a reviewer re-approves the new head (`git range-diff` against the approved head
 showing an unchanged patch is a quick pass). A PR that is behind `trunk` is not
 merged.
 
-Merging deletes the branch, but GitHub does not close the Issue in this
-repository: close it yourself (`gh issue close <issue> --reason completed`) with
+After confirmed integration, delete the work branch if GitHub did not remove it.
+GitHub does not close the Issue in this repository: close it yourself
+(`gh issue close <issue> --reason completed`) with
 a comment linking the merge. A release Issue stays open until the release is
 published (see [Releases](#releases)). If the head moved, a new verdict is needed. A failed
 release run publishes nothing and is fixed forward in a new PR.
@@ -202,7 +241,8 @@ Rebase and resolve conflicts inside the Issue worktree. After merge or a
 completed review, check for uncommitted or unpushed work before
 `git worktree remove <path>`; preserve unfinished work for recovery. Never use
 `--force` to discard it. Remove the local work branch only after confirming its
-work was merged or otherwise preserved; rebase merging can change commit SHAs.
+work was integrated or otherwise preserved; compare exact preserved heads rather
+than assuming patch equivalence proves signed commit preservation.
 
 ## Local validation
 
@@ -289,8 +329,8 @@ Merging to `trunk` neither releases nor runs Mynou CI again: the pull request
 already validated that tree and protection keeps it identical. A release starts
 when someone pushes the tag `v<version>`. The binary reports the `Cargo.toml`
 version, so Mynou CI refuses a tag that differs from it, or a commit that is not
-on `trunk`. It validates that commit again, since rebase merging gives `trunk`
-new commits without check results, then Actions alone publishes the assets.
+on `trunk`. It validates the tagged release commit again before publication,
+then Actions alone publishes the assets.
 Published assets are immutable.
 
 - **Cadence:** at most one release per `minimum_interval_days` (seven), and only
@@ -356,6 +396,7 @@ mark release Issues and PRs. Native dependencies mark real blockers.
 
 ### Branch protection
 
+The normal fast-forward integration still obeys all existing protections.
 `trunk` requires `validate`, `Build aarch64-apple-darwin`, `package`,
 `organization`, `release-policy`, `source-history` and `CodeQL` to pass before a
 merge. `CodeQL` is the code scanning result (GitHub Advanced Security); the other
@@ -369,6 +410,8 @@ settings refuse force pushes to `trunk` and its deletion.
 history bind administrators, and every agent is one, so `--admin` and a direct
 push no longer get around them. No workflow needs to push to `trunk`: the release
 job only publishes for a tag someone pushed, and format-source pushes `format/**` branches.
+The UI allows rebase merging only, but signed integration uses the normal
+protected fast-forward above; GitHub's UI would discard the signatures.
 Auto-merge is off (`allow_auto_merge`), since it would merge on green required
 checks without any QA or Security verdict: never turn it on or use it. Default
 workflow permissions are read; a job that writes declares it. If the rules

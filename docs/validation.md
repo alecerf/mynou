@@ -23,7 +23,7 @@ The workflow in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) has
 five jobs. Mynou ships for macOS on Apple Silicon only, so `validate` and `build`
 run on an Apple Silicon `macos-26` runner. A small Linux **decide** job runs
 beside the checks. Nothing runs for a commit pushed to `trunk`: protection
-requires an up-to-date branch and rebase merging, so `trunk` holds the tree its
+requires an up-to-date branch and signed fast-forward integration, so `trunk` holds the tree its
 pull request already validated. Pushing the tag `v<version>` runs every check
 again on the tagged commit, and the release job publishes only when the tag
 equals the `Cargo.toml` version (the binary reports that version), the commit is

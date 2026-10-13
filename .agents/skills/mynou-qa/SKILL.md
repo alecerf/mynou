@@ -15,6 +15,8 @@ assertions. Reproduce relevant checks locally in Docker wherever practical in a
 detached Git worktree at the exact PR head; use native macOS for platform-only
 checks when available. Record commands, environment, results and coverage gaps;
 reuse current-head CI evidence without triggering redundant runs.
+Before approving, verify every PR commit is `Verified` on GitHub, not merely
+cryptographically valid locally.
 
 Record the verdict as the first line of a PR comment:
 - `/approve qa <head-sha>`, then what you checked: acceptance, local checks,
@@ -25,8 +27,9 @@ A verdict covers only that exact commit; every push needs a new one. Approve onl
 with required CI green or running; never on red. When Security is required
 (sensitive paths or high/critical risk), post `/wait security` after approving.
 When every required verdict approves the head and all checks are green, merge
-with `gh pr merge --rebase --match-head-commit` (the branch must already be on
-the current `trunk`) and close the linked Issue as completed (GitHub does not
+by the runbook's protected normal fast-forward push of that exact signed head
+(the branch must already include current `trunk`) and confirm GitHub marks the
+PR merged. Then close the linked Issue as completed (GitHub does not
 close it here), except a release Issue, which stays open until published; if CI is still running, post `/wait ci`. If `trunk` moved, send
 the PR back to its author to rebase; never merge it behind. Then `/unassign`
 the PR. A verdict records what you checked, not proof of reasoning:
