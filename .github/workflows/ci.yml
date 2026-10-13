@@ -89,7 +89,7 @@ jobs:
     # passed, so only a run that really ended can leave it green.
     # Mynou ships for macOS Apple Silicon only, so its checks run there too.
     runs-on: macos-26
-    timeout-minutes: 10
+    timeout-minutes: 12
     env:
       CARGO_PROFILE_DEV_DEBUG: '0'
       CARGO_PROFILE_TEST_DEBUG: '0'
@@ -146,9 +146,9 @@ jobs:
           # macOS keeps its default temporary directory behind a symbolic link,
           # which Mynou refuses, so the tests use the physical runner directory.
           export TMPDIR="$(cd "$RUNNER_TEMP" && pwd -P)"
-          # Full migration and >10,000-record regressions exceed the old
-          # three-minute harness budget; retain every test with a finite limit.
-          python3 .github/scripts/parallel_tests.py target/debug/mynou-ci-test-build.jsonl --metadata "$RUNNER_TEMP/metadata.json" --output "$RUNNER_TEMP/mynou-test-results" --timeout 360
+          # Growing-inventory regressions measured 358 seconds in the library
+          # harness. Retain every case with a finite eight-minute budget.
+          python3 .github/scripts/parallel_tests.py target/debug/mynou-ci-test-build.jsonl --metadata "$RUNNER_TEMP/metadata.json" --output "$RUNNER_TEMP/mynou-test-results" --timeout 480
       - name: Preserve test timings and logs
         if: always()
         uses: actions/upload-artifact@v7.0.1

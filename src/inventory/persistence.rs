@@ -352,6 +352,8 @@ pub(super) fn create(directory: &Path) -> Result<Index> {
         #[cfg(test)]
         last_page_reads: 0,
         #[cfg(test)]
+        requests: 0,
+        #[cfg(test)]
         last_staged_nodes: 0,
     })
 }
@@ -448,6 +450,8 @@ pub(super) fn open(directory: &Path, read_only: bool) -> Result<Index> {
         fault: None,
         #[cfg(test)]
         last_page_reads: 0,
+        #[cfg(test)]
+        requests: 0,
         #[cfg(test)]
         last_staged_nodes: 0,
     })

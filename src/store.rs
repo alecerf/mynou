@@ -823,6 +823,14 @@ pub struct Store {
     pub(crate) migration: Option<MigrationReport>,
 }
 
+impl Drop for Store {
+    fn drop(&mut self) {
+        // A child spawned concurrently may inherit the open description until
+        // exec. Release this owner's lock without waiting for that descriptor.
+        let _ = self._lock.unlock();
+    }
+}
+
 /// One page of jobs ordered by creation time.
 #[derive(Debug)]
 pub struct JobPage {

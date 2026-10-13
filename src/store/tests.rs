@@ -733,6 +733,10 @@ fn monitoring_windows_reach_old_tips_beyond_inventory_prefixes() {
                 .iter()
                 .any(|job| job.id == format!("{:032x}", 1))
         );
+        let before_requests = match &store.backend {
+            Backend::Ready(index) => index.requests(),
+            _ => unreachable!(),
+        };
         let started = std::time::Instant::now();
         let window = store.monitoring_due(total + 1_000, 60, false, 4).unwrap();
         assert_eq!(window.total, total);
@@ -744,16 +748,16 @@ fn monitoring_windows_reach_old_tips_beyond_inventory_prefixes() {
                 .collect::<Vec<_>>(),
             (1..=4).map(|n| format!("{n:032x}")).collect::<Vec<_>>()
         );
-        let reads = match &store.backend {
-            Backend::Ready(index) => index.last_page_reads(),
+        let requests = match &store.backend {
+            Backend::Ready(index) => index.requests() - before_requests,
             _ => unreachable!(),
         };
         assert!(
-            reads <= 32,
-            "{reads} tree pages for four monitoring rows with {total} tips"
+            requests <= 32,
+            "{requests} index requests for four monitoring rows with {total} tips"
         );
         eprintln!(
-            "monitoring-window size={total} rows={} tree_pages={reads} micros={}",
+            "monitoring-window size={total} rows={} index_requests={requests} micros={}",
             window.jobs.len(),
             started.elapsed().as_micros()
         );
@@ -1114,6 +1118,54 @@ fn new_unchecked_imports_do_not_starve_old_due_checks() {
     let next = store.monitoring_due(at, 60, false, 1).unwrap();
     assert_ne!(next.jobs[0].id, old.id);
     assert_eq!(next.jobs[0].monitor_checked_at, 0);
+}
+
+#[test]
+fn closing_a_store_releases_ownership_with_an_inherited_descriptor() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let job = monitored_fixture(1, 0);
+    bulk(&mut store, vec![job.clone()]);
+    let inherited = store._lock.try_clone().unwrap();
+    assert!(Store::open(&directory.0).is_err());
+    drop(store);
+    let mut reopened = Store::open(&directory.0).unwrap();
+    assert_eq!(reopened.get(&job.id).unwrap().unwrap(), job);
+    assert_eq!(reopened.monitoring_counts().unwrap(), [1, 0, 0, 0, 0]);
+    drop(inherited);
+    assert!(Store::open_read_only(&directory.0).is_err());
+    drop(reopened);
+    let mut read_only = Store::open_read_only(&directory.0).unwrap();
+    assert_eq!(read_only.get(&job.id).unwrap().unwrap(), job);
+}
+
+#[test]
+fn rollback_correction_keeps_past_monotonicity_and_worker_metadata_guards() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let at = now();
+    let past = monitored_fixture(1, at - 120);
+    let future = monitored_fixture(2, at + 86_400);
+    bulk(&mut store, vec![past.clone(), future.clone()]);
+    let mut backwards = past.clone();
+    backwards.monitor_checked_at -= 1;
+    let error = store.mutate(|db| db.commit_jobs(vec![backwards], "synthetic backwards check")).unwrap_err();
+    assert_eq!(error, "monitor check timestamp moved backwards");
+    assert_eq!(store.get(&past.id).unwrap().unwrap(), past);
+    let mut still_future = future.clone();
+    still_future.monitor_checked_at -= 1;
+    let error = store.mutate(|db| db.commit_jobs(vec![still_future], "synthetic incomplete correction")).unwrap_err();
+    assert_eq!(error, "monitor check timestamp moved backwards");
+    assert_eq!(store.get(&future.id).unwrap().unwrap(), future);
+    let mut worker = future.clone();
+    worker.monitor_checked_at = at;
+    assert_eq!(store.update(worker).unwrap_err(), "library metadata cannot be changed by a worker");
+    assert_eq!(store.get(&future.id).unwrap().unwrap(), future);
+    store.record_monitor_check(&past.id, at - 121).unwrap();
+    assert_eq!(store.get(&past.id).unwrap().unwrap().monitor_checked_at, past.monitor_checked_at);
+    store.record_monitor_check(&future.id, at).unwrap();
+    assert_eq!(store.get(&future.id).unwrap().unwrap().monitor_checked_at, at);
+    assert_eq!(store.monitoring_counts().unwrap(), [2, 0, 0, 0, 0]);
 }
 
 #[test]
