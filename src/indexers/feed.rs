@@ -1,5 +1,5 @@
-//! Private checked feed cursors. Only opaque bounded identities are retained,
-//! never URLs, titles, credentials or media names.
+//! Private checked baseline identities and bounded captured routing work.
+//! Candidate payloads remain private; public summaries expose only progress.
 use super::Source;
 use crate::{
     Result,
@@ -11,6 +11,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
 };
+pub(super) mod generation;
 mod storage;
 
 const MAGIC: &[u8; 8] = b"MYNOUF01";
@@ -309,6 +310,16 @@ impl FeedStore {
         self.commit(row)?;
         Ok(true)
     }
+    pub(crate) fn pending(&mut self, id: &str) -> Result<Option<generation::Generation>> { self.storage.pending(id) }
+    pub(crate) fn pending_header(&mut self, id: &str) -> Result<Option<generation::Header>> { self.storage.pending_header(id) }
+    pub(crate) fn capture(&mut self, record: Record, generation: generation::Generation) -> Result<()> {
+        if !self.watched.contains_key(&record.id) { return Err("Feed routing: source is not configured for watching".into()); }
+        self.storage.capture(record,generation)
+    }
+    pub(crate) fn checkpoint(&mut self, expected: &generation::Header, next: Option<&generation::Header>) -> Result<bool> { self.storage.checkpoint(expected,next) }
+    pub(crate) fn routing_counts(&mut self) -> Result<(u64,u64)> { self.storage.routing_counts() }
+    pub(crate) fn schedule_cursor(&mut self) -> Result<String> { self.storage.schedule_cursor() }
+    pub(crate) fn scheduled(&mut self,id: &str) -> Result<()> { self.storage.scheduled(id) }
     pub(crate) fn total(&mut self) -> Result<u64> {
         self.storage.total()
     }

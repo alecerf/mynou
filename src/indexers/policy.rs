@@ -145,6 +145,11 @@ pub(crate) struct SourceStore {
     poisoned: bool,
 }
 impl SourceStore {
+    pub(crate) fn authorization(&self, id: &str) -> Result<(bool,u64)> {
+        if self.poisoned { return Err("Indexer policy: durability uncertain; restart required".into()); }
+        let row = self.rows.get(id).ok_or("Indexer policy: source not configured")?;
+        Ok((row.enabled,row.revision))
+    }
     pub(crate) fn open(dir: &Path, config: &Config, read_only: bool) -> Result<Self> {
         let path = dir.join("indexers.bin");
         reject_symlinks(&path).map_err(|_| "Indexer policy: invalid snapshot path")?;
@@ -450,6 +455,7 @@ impl Engine {
         let row = row.clone();
         store.save(next)?;
         source.options.publish(&row);
+        if q.action == "pause" { lock(&self.feed_store)?.suspend(id)?; }
         drop(store);
         report.insert("applied", true);
         report.insert("enabled", row.enabled);

@@ -29,3 +29,7 @@ Feed history now uses an on-disk index instead of the 1,000-source, 4 MiB snapsh
 ## Changed: Faster library updates for repeatedly upgraded media
 
 Job storage gains an index of ready upgrade children, so recording a library version no longer reads every earlier upgrade attempt of its parent. The first writable start upgrades the job index in resumable pages; earlier binaries refuse it, so keep a stopped-store backup before downgrading ([storage guide](/docs/inventory-storage.md#job-storage)).
+
+## Changed: Resume feed routing across the complete inventory
+
+Watched announcements are now captured privately before their identities are marked seen, and routing resumes in bounded pages after restart. Pending routing delays the next source poll; pausing a source cancels its captured work. Existing feed indexes upgrade on the first writable start; keep a complete stopped-store backup for downgrade ([storage guide](/docs/inventory-storage.md#captured-feed-routing)).

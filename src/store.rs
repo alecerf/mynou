@@ -820,7 +820,6 @@ pub struct Store {
     claim_cursor: Option<Key>,
     /// Where the next sweep for unwanted requester work resumes; in memory.
     sweep_cursor: Option<Key>,
-    route_cursor: Option<Key>,
     pub(crate) migration: Option<MigrationReport>,
 }
 
@@ -997,7 +996,6 @@ impl Store {
             maintenance_error: None,
             claim_cursor: None,
             sweep_cursor: None,
-            route_cursor: None,
             migration,
         }
     }
@@ -1447,44 +1445,6 @@ impl Store {
                 .map(|id| layout::requester_key(job.created_at, &id))
         }));
         Ok((jobs, next.is_none()))
-    }
-
-    /// Open jobs (not ready, cancelled or staged) in claim order after the
-    /// jobs still waiting: the due queue first, then the wait list.
-    pub(crate) fn open_jobs_filtered(
-        &mut self,
-        limit: usize,
-        eligible: impl Fn(&Job) -> Result<bool>,
-    ) -> Result<Vec<Job>> {
-        let mut cursor = self.route_cursor;
-        let jobs = self.read(Vec::new(), |db| {
-            let mut jobs = Vec::new();
-            let mut examined = 0;
-            while examined < limit {
-                let page = db.0.page(&Query {
-                    start: layout::key(&[&[layout::T_QUEUE]]),
-                    end: Some(layout::key(&[&[layout::T_GROUP]])),
-                    after: cursor,
-                    limit: (limit - examined).min(MAX_PAGE_ROWS),
-                    sequence: None,
-                })?;
-                examined += page.entries.len();
-                for (key, _) in &page.entries {
-                    let at = if key[0] == layout::T_QUEUE { 9 } else { 17 };
-                    let job = db.require(&ops::key_part(key, at)?)?;
-                    if eligible(&job)? {
-                        jobs.push(job);
-                    }
-                }
-                cursor = page.next;
-                if cursor.is_none() {
-                    break;
-                }
-            }
-            Ok(jobs)
-        })?;
-        self.route_cursor = cursor;
-        Ok(jobs)
     }
 
     /// The shared-file binding recorded for one physical video, if any.

@@ -946,7 +946,7 @@ pub fn expand(config: &Config, request: &Request) -> Result<Vec<Request>> {
     Ok(out)
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct Release {
     pub(crate) title: String,
     pub(crate) url: String,
@@ -1048,7 +1048,7 @@ pub fn release_identity_matches(request: &Request, title: &str) -> bool {
     release_matches(request, title)
 }
 
-fn acquisition_url(url: &str, base: &str) -> Result<String> {
+pub(crate) fn acquisition_url(url: &str, base: &str) -> Result<String> {
     if url.len() > 8_192 || url.chars().any(char::is_control) {
         return Err("Invalid acquisition URL".into());
     }
@@ -2011,7 +2011,7 @@ fn rss_releases(text: &str, base: &str) -> Result<Vec<Release>> {
 
 /// One entry observed on a watched feed. Its identity is an opaque, bounded
 /// digest that never reveals the title, URL or any credential.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct FeedEntry {
     pub(crate) id: String,
     pub(crate) release: Release,
