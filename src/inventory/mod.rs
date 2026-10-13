@@ -146,7 +146,9 @@ impl Index {
     pub fn get(&mut self, key: &Key) -> Result<Option<Vec<u8>>> {
         self.available()?;
         #[cfg(test)]
-        { self.requests += 1; }
+        {
+            self.requests += 1;
+        }
         let value = Tree::new(&mut self.tree, self.header, &mut self.cache).find(key)?;
         value
             .map(|value| persistence::read_value(&self.directory, key, value))
@@ -156,7 +158,9 @@ impl Index {
     pub fn page(&mut self, query: &Query) -> Result<Page> {
         self.available()?;
         #[cfg(test)]
-        { self.requests += 1; }
+        {
+            self.requests += 1;
+        }
         if query.limit == 0
             || query.limit > MAX_PAGE_ROWS
             || query.end.is_some_and(|end| end <= query.start)
