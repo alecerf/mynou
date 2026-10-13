@@ -234,6 +234,171 @@ def cookie_vectors():
     return rows
 
 
+def inet_checksum(data):
+    # RFC 1071 section 4.1: sum 16-bit big-endian words, fold carries, complement.
+    if len(data) % 2:
+        data += b"\0"
+    total = sum(int.from_bytes(data[index:index + 2], "big") for index in range(0, len(data), 2))
+    while total >> 16:
+        total = (total & 0xFFFF) + (total >> 16)
+    return (~total) & 0xFFFF
+
+
+def ip_packet(source, destination, protocol, payload, ttl=64, options=b"", flags=0x4000):
+    words = 5 + len(options) // 4
+    header = bytes((0x40 | words, 0)) + (words * 4 + len(payload)).to_bytes(2, "big")
+    header += (0).to_bytes(2, "big") + flags.to_bytes(2, "big") + bytes((ttl, protocol, 0, 0))
+    header += ipaddress.IPv4Address(source).packed + ipaddress.IPv4Address(destination).packed
+    header += options
+    return header[:10] + inet_checksum(header).to_bytes(2, "big") + header[12:] + payload
+
+
+def udp_segment(source, destination, source_port, destination_port, payload, checksum=True):
+    length = 8 + len(payload)
+    segment = source_port.to_bytes(2, "big") + destination_port.to_bytes(2, "big")
+    segment += length.to_bytes(2, "big") + b"\0\0" + payload
+    if not checksum:
+        return segment
+    pseudo = ipaddress.IPv4Address(source).packed + ipaddress.IPv4Address(destination).packed
+    pseudo += bytes((0, 17)) + length.to_bytes(2, "big")
+    value = inet_checksum(pseudo + segment) or 0xFFFF  # RFC 768: a computed zero is sent as ones
+    return segment[:6] + value.to_bytes(2, "big") + segment[8:]
+
+
+def inner_ip_vectors():
+    # RFC 1071 section 3 worked example and a widely published IPv4 header
+    # anchor the independent checksum before any vector is derived from it.
+    assert inet_checksum(bytes.fromhex("0001f203f4f5f6f7")) == 0x220D
+    assert inet_checksum(bytes.fromhex("450000730000400040110000c0a80001c0a800c7")) == 0xB861
+    checksums = [{"data": data.hex(), "checksum": f"{inet_checksum(data):04x}"}
+                 for data in [pattern(size, 13) for size in (0, 1, 2, 3, 19, 20, 21, 64, 1399, 1400)]
+                 + [bytes((255,)) * 8, bytes(8), bytes((255, 0, 0, 255, 1))]]
+    packets = []
+    cases = (("203.0.113.9", "10.64.0.2", 17, pattern(12, 5), 64, b""),
+             ("198.51.100.20", "10.64.0.2", 17, pattern(1, 5), 1, b""),
+             ("198.51.100.20", "10.64.0.2", 17, pattern(9, 7), 255, b""),
+             ("203.0.113.9", "10.64.0.2", 17, pattern(30, 9), 64, bytes((1, 1, 1, 0))),
+             ("203.0.113.9", "10.64.0.2", 17, pattern(30, 9), 64, bytes((1,) * 12)),
+             ("10.64.0.1", "10.64.0.2", 17, b"", 64, b""))
+    for source, destination, protocol, payload, ttl, options in cases:
+        packet = ip_packet(source, destination, protocol, payload, ttl, options)
+        packets.append({"source": source, "destination": destination, "protocol": protocol,
+                        "ttl": ttl, "payload": payload.hex(), "packet": packet.hex(),
+                        "padded": (packet + bytes(17)).hex(), "canonical": not options and ttl == 64})
+    udp = []
+    cases = (("203.0.113.9", "10.64.0.2", 53, 40000, b""),
+             ("203.0.113.9", "10.64.0.2", 53, 40000, pattern(1, 3)),
+             ("203.0.113.9", "10.64.0.2", 6881, 49152, pattern(2, 3)),
+             ("203.0.113.9", "10.64.0.2", 6881, 49152, pattern(511, 3)),
+             ("203.0.113.9", "10.64.0.2", 65535, 65535, pattern(1396, 3)))
+    for source, destination, source_port, destination_port, payload in cases:
+        segment = udp_segment(source, destination, source_port, destination_port, payload)
+        udp.append({"source": source, "destination": destination, "source_port": source_port,
+                    "destination_port": destination_port, "payload": payload.hex(),
+                    "packet": ip_packet(source, destination, 17, segment).hex(), "canonical": True})
+    # A payload whose checksum is computed as zero must be sent as 0xFFFF.
+    for first in range(65536):
+        payload = first.to_bytes(2, "big")
+        pseudo = (ipaddress.IPv4Address("203.0.113.9").packed + ipaddress.IPv4Address("10.64.0.2").packed
+                  + bytes((0, 17, 0, 10)))
+        segment = (53).to_bytes(2, "big") + (40000).to_bytes(2, "big") + (10).to_bytes(2, "big") + b"\0\0" + payload
+        if inet_checksum(pseudo + segment) == 0:
+            break
+    else:
+        raise AssertionError("no zero-checksum payload")
+    segment = udp_segment("203.0.113.9", "10.64.0.2", 53, 40000, payload)
+    assert segment[6:8] == b"\xff\xff"
+    udp.append({"source": "203.0.113.9", "destination": "10.64.0.2", "source_port": 53,
+                "destination_port": 40000, "payload": payload.hex(),
+                "packet": ip_packet("203.0.113.9", "10.64.0.2", 17, segment).hex(), "canonical": True})
+    # RFC 768: an all-zero checksum field means the sender computed none.
+    segment = udp_segment("203.0.113.9", "10.64.0.2", 53, 40000, pattern(7, 3), checksum=False)
+    udp.append({"source": "203.0.113.9", "destination": "10.64.0.2", "source_port": 53,
+                "destination_port": 40000, "payload": pattern(7, 3).hex(),
+                "packet": ip_packet("203.0.113.9", "10.64.0.2", 17, segment).hex(), "canonical": False})
+    return {"checksum": checksums, "ipv4": packets, "udp": udp}
+
+
+def dns_name(name):
+    wire = b""
+    for label in name.rstrip(".").split("."):
+        wire += bytes((len(label),)) + label.encode("ascii")
+    return wire + b"\0"
+
+
+def dns_message(txid, name, answers=b"", count=0, flags=0x8180, question=True, qtype=1):
+    message = txid.to_bytes(2, "big") + flags.to_bytes(2, "big") + (1 if question else 0).to_bytes(2, "big")
+    message += count.to_bytes(2, "big") + bytes(4)
+    if question:
+        message += dns_name(name) + qtype.to_bytes(2, "big") + (1).to_bytes(2, "big")
+    return message + answers
+
+
+def dns_record(owner, rtype, ttl, data, rclass=1):
+    return owner + rtype.to_bytes(2, "big") + rclass.to_bytes(2, "big") + ttl.to_bytes(4, "big") + len(data).to_bytes(2, "big") + data
+
+
+def dns_vectors():
+    pointer = bytes((0xC0, 12))
+    a = lambda address: ipaddress.IPv4Address(address).packed
+    name, txid = "tracker.example.net", 0x1A2B
+    queries = [{"id": txid, "name": name, "message": dns_message(txid, name, flags=0x0100).hex()},
+               {"id": 0, "name": "A.b-c.d_e.", "message": dns_message(0, "A.b-c.d_e", flags=0x0100).hex()}]
+    cname_owner = dns_name("edge.cdn.example.net")
+    responses = []
+
+    def case(label, message, expect, **extra):
+        responses.append({"case": label, "id": txid, "name": name, "message": message.hex(),
+                          "expect": expect, **extra})
+
+    case("single", dns_message(txid, name, dns_record(pointer, 1, 300, a("192.0.2.10")), 1),
+         "answers", addresses=["192.0.2.10"], ttl=300)
+    case("minimum ttl", dns_message(txid, name, dns_record(pointer, 1, 900, a("192.0.2.10"))
+                                    + dns_record(pointer, 1, 60, a("192.0.2.11")), 2),
+         "answers", addresses=["192.0.2.10", "192.0.2.11"], ttl=60)
+    chain = dns_record(pointer, 5, 120, cname_owner)
+    target = 12 + len(dns_name(name)) + 4 + 12  # the CNAME data starts after its 12 byte record header
+    chain_answer = dns_record(bytes((0xC0 | target >> 8, target & 255)), 1, 500, a("198.51.100.77"))
+    case("cname chain", dns_message(txid, name, chain + chain_answer, 2),
+         "answers", addresses=["198.51.100.77"], ttl=120)
+    case("zero ttl", dns_message(txid, name, dns_record(pointer, 1, 0x80000000, a("192.0.2.10")), 1),
+         "answers", addresses=["192.0.2.10"], ttl=0)
+    case("special addresses dropped", dns_message(txid, name, dns_record(pointer, 1, 30, a("127.0.0.1"))
+                                                  + dns_record(pointer, 1, 30, a("192.0.2.12")), 2),
+         "answers", addresses=["192.0.2.12"], ttl=30)
+    case("no address", dns_message(txid, name, b"", 0), "no_address")
+    case("unrelated owner", dns_message(txid, name, dns_record(dns_name("other.example.net"), 1, 30,
+                                                               a("192.0.2.13")), 1), "no_address")
+    case("nxdomain", dns_message(txid, name, flags=0x8183), "name_error")
+    case("servfail", dns_message(txid, name, flags=0x8182), "failure", code=2)
+    case("truncated", dns_message(txid, name, flags=0x8380), "truncated")
+    case("aaaa answer", dns_message(txid, name, dns_record(pointer, 28, 30, bytes(15) + b"\1"), 1), "reject")
+    case("other record type", dns_message(txid, name, dns_record(pointer, 16, 30, b"\3abc"), 1), "reject")
+    case("wrong class", dns_message(txid, name, dns_record(pointer, 1, 30, a("192.0.2.10"), rclass=3), 1), "reject")
+    own = 12 + len(dns_name(name)) + 4
+    case("self pointer", dns_message(txid, name, dns_record(bytes((0xC0 | own >> 8, own & 255)), 1, 30,
+                                                            a("192.0.2.10")), 1), "reject")
+    case("forward pointer", dns_message(txid, name, dns_record(bytes((0xC0, 0xF0)), 1, 30,
+                                                               a("192.0.2.10")), 1), "reject")
+    case("pointer loop", dns_message(txid, name, bytes((1, 97, 0xC0, own + 1)) + bytes(10), 1), "reject")
+    case("reserved label", dns_message(txid, name, dns_record(bytes((0x40, 0)), 1, 30, a("192.0.2.10")), 1),
+         "reject")
+    case("rdlength five", dns_message(txid, name, dns_record(pointer, 1, 30, a("192.0.2.10") + b"\0"), 1),
+         "reject")
+    case("rdata overrun", dns_message(txid, name, dns_record(pointer, 1, 30, a("192.0.2.10"))[:-2], 1), "reject")
+    case("missing answers", dns_message(txid, name, b"", 3), "reject")
+    case("query echoed", dns_message(txid, name, flags=0x0100), "reject")
+    case("other question", dns_message(txid, "other.example.net", dns_record(pointer, 1, 30, a("192.0.2.10")), 1),
+         "reject")
+    case("wrong qtype", dns_message(txid, name, dns_record(pointer, 1, 30, a("192.0.2.10")), 1, qtype=28), "reject")
+    case("no question", dns_message(txid, name, b"", 0, question=False), "reject")
+    case("other id", dns_message(txid + 1, name, dns_record(pointer, 1, 30, a("192.0.2.10")), 1), "reject")
+    case("short header", dns_message(txid, name)[:11], "reject")
+    long_label = "x" * 64
+    case("overlong label", dns_message(txid, name, bytes((64,)) + long_label.encode() + b"\0", 1), "reject")
+    return {"txid": txid, "name": name, "queries": queries, "responses": responses}
+
+
 def vectors():
     # Fixed public RFC 7693 Appendix B anchors the independent reference.
     assert hashlib.blake2s(b"abc").hexdigest() == (
@@ -264,7 +429,7 @@ def vectors():
                                     "output": expand(prk, info, length).hex()})
     return {"schema": 1, "blake2s": hashes, "hmac": hmacs, "hkdf": derivations,
             "wireguard": transport_vectors(), "handshake": handshake_vectors(),
-            "cookie": cookie_vectors()}
+            "cookie": cookie_vectors(), "inner": inner_ip_vectors(), "dns": dns_vectors()}
 
 
 def main():
@@ -277,7 +442,9 @@ def main():
     print("Generated independent std-only synthetic crypto vectors: "
           f"{len(data['blake2s'])} hashes, {len(data['hmac'])} HMACs, "
           f"{len(data['hkdf'])} HKDFs, {len(data['wireguard'])} transport packets, "
-          f"{len(data['handshake'])} Noise handshakes, {len(data['cookie'])} cookie exchanges")
+          f"{len(data['handshake'])} Noise handshakes, {len(data['cookie'])} cookie exchanges, "
+          f"{len(data['inner']['ipv4']) + len(data['inner']['udp'])} inner packets, "
+          f"{len(data['dns']['responses'])} DNS replies")
 
 
 if __name__ == "__main__":
