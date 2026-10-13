@@ -99,7 +99,7 @@ impl Engine {
         if !read_only {
             for source in &config.sources {
                 if !source.options.watched() {
-                    feed_store.suspend(&source.options.identity(source))?;
+                    feed_store.suspend(&crate::indexers::feed::source_id(source))?;
                 }
             }
         }
