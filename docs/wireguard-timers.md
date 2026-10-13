@@ -88,8 +88,10 @@ WireGuard peer.
 
 ## Remaining obligations
 
-A driver that owns the clock, generations, indexes, sockets and the glue between
-`Handshake`, `KeySets` and `Timers`, measures load and bounds handshakes globally;
+[The offline Peer](/docs/wireguard-peer.md) now composes `Handshake`, `Admission`,
+`KeySets` and `Timers`, with a shared index namespace, generation and injected
+clocks. An outer-socket driver still needs to supply clocks and load verdicts,
+serialize final network admission and bound handshakes globally;
 authenticated endpoint roaming; the IP/TCP/UDP/DNS stack; HTTP/TLS and torrent
 integration; profile controls; an independently implemented controlled peer; and
 observed ordinary-path attempts, as listed in [the design](/docs/wireguard-design.md).

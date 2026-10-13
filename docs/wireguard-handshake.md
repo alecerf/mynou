@@ -15,7 +15,9 @@ no compiler-level constant-time or guaranteed memory-zeroization claim.
 
 One non-Clone/non-Debug owner holds a private static identity, one pinned peer,
 optional PSK, one pending initiation, separate issued/accepted timestamps and
-one generation. The constructor is crate-private with no engine/profile caller.
+one generation. The standalone constructor is crate-private with no engine/profile caller.
+[The offline Peer composition](/docs/wireguard-peer.md) also owns this object
+using caller-injected entropy and a shared bounded random-index namespace.
 Ephemeral keys come exclusively from the OS random source in production; failures
 block the operation. Deterministic synthetic inputs are used only by internal
 tests. There are no exported private/session keys or public arbitrary-ephemeral

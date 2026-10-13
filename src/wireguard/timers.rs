@@ -220,6 +220,20 @@ impl<E: Entropy> Timers<E> {
         Ok(())
     }
 
+    pub(super) fn session_promoted(
+        &mut self,
+        born: Duration,
+        generation: u64,
+        now: Duration,
+    ) -> Result<()> {
+        self.session_established(Role::Responder, generation, now)?;
+        self.session = Some(Clock {
+            born,
+            role: Role::Responder,
+        });
+        Ok(())
+    }
+
     /// A data packet was sent. `rekey` is the flag of the send's [`Accepted`].
     pub fn data_sent(&mut self, rekey: bool, generation: u64, now: Duration) -> Result<()> {
         self.fence.admit(generation, now)?;
@@ -302,23 +316,7 @@ impl<E: Entropy> Timers<E> {
         } else {
             None
         };
-        let mut due = Due::default();
-        if self
-            .last_established
-            .is_some_and(|born| now.saturating_sub(born) >= DISCARD_AFTER)
-        {
-            self.clear();
-            due.discard = true;
-        }
-        if self
-            .session
-            .is_some_and(|clock| now.saturating_sub(clock.born) >= REJECT_AFTER_TIME)
-        {
-            self.session = None;
-            self.keepalive_at = None;
-            self.reply_by = None;
-            due.expired = true;
-        }
+        let mut due = self.retire(generation, now)?;
         if self.reply_by.is_some_and(|deadline| now >= deadline) {
             self.reply_by = None;
             self.start(now, false);
@@ -349,6 +347,29 @@ impl<E: Entropy> Timers<E> {
             due.keepalive = passive || self.persistent_deadline(clock).is_some_and(|d| now >= d);
         }
         due.next = self.next_deadline();
+        Ok(due)
+    }
+
+    /// Expire old clocks before a composed owner installs new handshake state.
+    pub(super) fn retire(&mut self, generation: u64, now: Duration) -> Result<Due> {
+        self.fence.admit(generation, now)?;
+        let mut due = Due::default();
+        if self
+            .last_established
+            .is_some_and(|born| now.saturating_sub(born) >= DISCARD_AFTER)
+        {
+            self.clear();
+            due.discard = true;
+        }
+        if self
+            .session
+            .is_some_and(|clock| now.saturating_sub(clock.born) >= REJECT_AFTER_TIME)
+        {
+            self.session = None;
+            self.keepalive_at = None;
+            self.reply_by = None;
+            due.expired = true;
+        }
         Ok(due)
     }
 
@@ -392,6 +413,8 @@ pub struct Received {
     /// session, which is now current. Report it with
     /// `Timers::session_established(Role::Responder, ..)`.
     pub promoted: bool,
+    /// False for a previous session; its traffic must not refresh current timers.
+    pub current: bool,
 }
 
 fn discard(slot: Option<Session>) {
@@ -496,6 +519,34 @@ impl KeySets {
         Ok(())
     }
 
+    pub(super) fn next_expiry(&self) -> Option<Duration> {
+        [&self.current, &self.previous, &self.next]
+            .into_iter()
+            .flatten()
+            .map(|session| session.created.saturating_add(REJECT_AFTER_TIME))
+            .min()
+    }
+
+    #[cfg(test)]
+    pub(super) fn current_mut(&mut self) -> &mut Session {
+        self.current.as_mut().unwrap()
+    }
+
+    pub(super) fn contains_index(&self, index: u32) -> bool {
+        [&self.current, &self.previous, &self.next]
+            .into_iter()
+            .flatten()
+            .any(|session| session.local_index == index)
+    }
+
+    pub(super) fn current_role(&self) -> Option<Role> {
+        self.current.as_ref().map(|session| session.role)
+    }
+
+    pub(super) fn current_created(&self) -> Option<Duration> {
+        self.current.as_ref().map(|session| session.created)
+    }
+
     /// Sends on the current session only; previous and next never send.
     pub fn send(&mut self, payload: &[u8], generation: u64, now: Duration) -> Result<Accepted> {
         self.fence.admit(generation, now)?;
@@ -520,6 +571,7 @@ impl KeySets {
             return Ok(Received {
                 accepted,
                 promoted: false,
+                current: true,
             });
         }
         if let Some(session) = self.previous.as_mut()
@@ -529,6 +581,7 @@ impl KeySets {
             return Ok(Received {
                 accepted,
                 promoted: false,
+                current: false,
             });
         }
         if let Some(session) = self.next.as_mut()
@@ -541,6 +594,7 @@ impl KeySets {
             return Ok(Received {
                 accepted,
                 promoted: true,
+                current: true,
             });
         }
         Err("WireGuard: unknown receiver index".into())
