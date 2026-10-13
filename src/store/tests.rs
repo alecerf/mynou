@@ -1149,22 +1149,35 @@ fn rollback_correction_keeps_past_monotonicity_and_worker_metadata_guards() {
     bulk(&mut store, vec![past.clone(), future.clone()]);
     let mut backwards = past.clone();
     backwards.monitor_checked_at -= 1;
-    let error = store.mutate(|db| db.commit_jobs(vec![backwards], "synthetic backwards check")).unwrap_err();
+    let error = store
+        .mutate(|db| db.commit_jobs(vec![backwards], "synthetic backwards check"))
+        .unwrap_err();
     assert_eq!(error, "monitor check timestamp moved backwards");
     assert_eq!(store.get(&past.id).unwrap().unwrap(), past);
     let mut still_future = future.clone();
     still_future.monitor_checked_at -= 1;
-    let error = store.mutate(|db| db.commit_jobs(vec![still_future], "synthetic incomplete correction")).unwrap_err();
+    let error = store
+        .mutate(|db| db.commit_jobs(vec![still_future], "synthetic incomplete correction"))
+        .unwrap_err();
     assert_eq!(error, "monitor check timestamp moved backwards");
     assert_eq!(store.get(&future.id).unwrap().unwrap(), future);
     let mut worker = future.clone();
     worker.monitor_checked_at = at;
-    assert_eq!(store.update(worker).unwrap_err(), "library metadata cannot be changed by a worker");
+    assert_eq!(
+        store.update(worker).unwrap_err(),
+        "library metadata cannot be changed by a worker"
+    );
     assert_eq!(store.get(&future.id).unwrap().unwrap(), future);
     store.record_monitor_check(&past.id, at - 121).unwrap();
-    assert_eq!(store.get(&past.id).unwrap().unwrap().monitor_checked_at, past.monitor_checked_at);
+    assert_eq!(
+        store.get(&past.id).unwrap().unwrap().monitor_checked_at,
+        past.monitor_checked_at
+    );
     store.record_monitor_check(&future.id, at).unwrap();
-    assert_eq!(store.get(&future.id).unwrap().unwrap().monitor_checked_at, at);
+    assert_eq!(
+        store.get(&future.id).unwrap().unwrap().monitor_checked_at,
+        at
+    );
     assert_eq!(store.monitoring_counts().unwrap(), [2, 0, 0, 0, 0]);
 }
 
