@@ -245,7 +245,10 @@ impl Engine {
         // same entries are observed again by the next poll.
         let observation = {
             let mut feeds = lock(&self.feed_store).map_err(|_| "storage_failed")?;
-            let current = feeds.row(id).map_err(|_| "storage_failed")?.ok_or("storage_failed")?;
+            let current = feeds
+                .row(id)
+                .map_err(|_| "storage_failed")?
+                .ok_or("storage_failed")?;
             let observation = feed::observe(&current, &ids, at, MAX_NEW_PER_POLL);
             feeds
                 .commit(observation.record.clone())

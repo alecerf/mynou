@@ -7,7 +7,10 @@ use crate::{
     json::Value,
     requesters::{digest, valid_digest, valid_id},
 };
-use std::{collections::{BTreeMap, BTreeSet}, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+};
 mod storage;
 
 const MAGIC: &[u8; 8] = b"MYNOUF01";
@@ -230,25 +233,43 @@ impl FeedStore {
                 return Err("Feed state: duplicate watched source ID".into());
             }
         }
-        if watched.len() > MAX_WATCHED { return Err("Feed state: too many configured watched sources".into()); }
-        Ok(Self { storage, watched, read_only })
+        if watched.len() > MAX_WATCHED {
+            return Err("Feed state: too many configured watched sources".into());
+        }
+        Ok(Self {
+            storage,
+            watched,
+            read_only,
+        })
     }
     pub(crate) fn initialize(&mut self) -> Result<()> {
-        if self.read_only { return Ok(()); }
+        if self.read_only {
+            return Ok(());
+        }
         self.storage.initialize()?;
         // Only baselined sources need reconciliation, not retained history.
         let mut after = None;
         loop {
             let (active, next) = self.storage.active(after)?;
             for record in active {
-                if !self.watched.contains_key(&record.id) { self.suspend(&record.id)?; }
+                if !self.watched.contains_key(&record.id) {
+                    self.suspend(&record.id)?;
+                }
             }
             after = next;
-            if after.is_none() { break; }
+            if after.is_none() {
+                break;
+            }
         }
-        let configured: Vec<_> = self.watched.iter().map(|(id, binding)| (id.clone(), binding.clone())).collect();
+        let configured: Vec<_> = self
+            .watched
+            .iter()
+            .map(|(id, binding)| (id.clone(), binding.clone()))
+            .collect();
         for (id, binding) in configured {
-            if self.storage.row(&id)?.is_none() { self.storage.commit(Record::new(id, binding))?; }
+            if self.storage.row(&id)?.is_none() {
+                self.storage.commit(Record::new(id, binding))?;
+            }
         }
         Ok(())
     }
@@ -256,7 +277,9 @@ impl FeedStore {
         let mut record = self.storage.row(id)?;
         if let Some(row) = &mut record {
             if !self.watched.contains_key(id) && row.baselined {
-                row.baselined = false; row.cursor.clear(); row.seen.clear();
+                row.baselined = false;
+                row.cursor.clear();
+                row.seen.clear();
                 row.revision = row.revision.saturating_add(1);
             }
         } else if let Some(binding) = self.watched.get(id) {
@@ -265,22 +288,37 @@ impl FeedStore {
         Ok(record)
     }
     pub(crate) fn commit(&mut self, record: Record) -> Result<()> {
-        if self.read_only { return Err("Feed state: storage is read-only".into()); }
+        if self.read_only {
+            return Err("Feed state: storage is read-only".into());
+        }
         if record.baselined && !self.watched.contains_key(&record.id) {
-            return Err("Feed state: only configured watched sources may establish a baseline".into());
+            return Err(
+                "Feed state: only configured watched sources may establish a baseline".into(),
+            );
         }
         self.storage.commit(record)
     }
     pub(crate) fn suspend(&mut self, id: &str) -> Result<bool> {
-        let Some(mut row) = self.storage.row(id)?.filter(|row| row.baselined) else { return Ok(false); };
-        row.baselined = false; row.cursor.clear(); row.seen.clear();
+        let Some(mut row) = self.storage.row(id)?.filter(|row| row.baselined) else {
+            return Ok(false);
+        };
+        row.baselined = false;
+        row.cursor.clear();
+        row.seen.clear();
         row.revision = row.revision.saturating_add(1);
-        self.commit(row)?; Ok(true)
+        self.commit(row)?;
+        Ok(true)
     }
-    pub(crate) fn total(&mut self) -> Result<u64> { self.storage.total() }
-    pub(crate) fn needs_migration(&self) -> bool { self.storage.needs_migration() }
+    pub(crate) fn total(&mut self) -> Result<u64> {
+        self.storage.total()
+    }
+    pub(crate) fn needs_migration(&self) -> bool {
+        self.storage.needs_migration()
+    }
     pub(crate) fn retained(&mut self, after: Option<&str>, limit: usize) -> Result<Value> {
-        let page = self.storage.page(after.map(storage::parse_cursor).transpose()?, limit)?;
+        let page = self
+            .storage
+            .page(after.map(storage::parse_cursor).transpose()?, limit)?;
         let mut rows = Vec::new();
         for row in page.rows {
             let mut value = Value::object();
@@ -295,7 +333,11 @@ impl FeedStore {
         }
         let mut value = Value::object();
         value.insert("sources", Value::Array(rows));
-        value.insert("next", page.next.map_or(Value::Null, |key| Value::String(storage::cursor(&key))));
+        value.insert(
+            "next",
+            page.next
+                .map_or(Value::Null, |key| Value::String(storage::cursor(&key))),
+        );
         value.insert("total", page.total.to_string());
         value.insert("sequence", page.sequence.to_string());
         value.insert("needs_migration", self.needs_migration());
@@ -304,15 +346,32 @@ impl FeedStore {
 }
 
 pub(crate) fn retained_query(text: &str) -> Result<(Option<String>, usize)> {
-    if text.len() > 256 { return Err("Feed state: page query exceeds bounds".into()); }
-    let mut after = None; let mut limit = 50; let mut fields = BTreeSet::new();
+    if text.len() > 256 {
+        return Err("Feed state: page query exceeds bounds".into());
+    }
+    let mut after = None;
+    let mut limit = 50;
+    let mut fields = BTreeSet::new();
     for pair in text.split('&').filter(|pair| !pair.is_empty()) {
-        let (name, value) = pair.split_once('=').ok_or("Feed state: invalid query field")?;
-        if !fields.insert(name) { return Err("Feed state: duplicate query field".into()); }
+        let (name, value) = pair
+            .split_once('=')
+            .ok_or("Feed state: invalid query field")?;
+        if !fields.insert(name) {
+            return Err("Feed state: duplicate query field".into());
+        }
         match name {
-            "after" => { storage::parse_cursor(value)?; after = Some(value.to_owned()); }
-            "limit" => { limit = value.parse::<usize>().map_err(|_| "Feed state: invalid page limit")?;
-                if !(1..=200).contains(&limit) || limit.to_string() != value { return Err("Feed state: page limit must be 1 to 200".into()); } }
+            "after" => {
+                storage::parse_cursor(value)?;
+                after = Some(value.to_owned());
+            }
+            "limit" => {
+                limit = value
+                    .parse::<usize>()
+                    .map_err(|_| "Feed state: invalid page limit")?;
+                if !(1..=200).contains(&limit) || limit.to_string() != value {
+                    return Err("Feed state: page limit must be 1 to 200".into());
+                }
+            }
             _ => return Err("Feed state: unknown query field".into()),
         }
     }

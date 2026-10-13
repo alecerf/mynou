@@ -793,10 +793,23 @@ fn execute(args: Args) -> Result<()> {
         }
         "feeds" => {
             if args.options.contains_key("retained") {
-                let fields: Vec<_> = ["limit", "after"].iter().filter_map(|name| args.options.get(*name).map(|value| format!("{name}={value}"))).collect();
+                let fields: Vec<_> = ["limit", "after"]
+                    .iter()
+                    .filter_map(|name| {
+                        args.options
+                            .get(*name)
+                            .map(|value| format!("{name}={value}"))
+                    })
+                    .collect();
                 let query = fields.join("&");
                 if online {
-                    output(&call(&config, &path, "GET", &format!("/api/feeds/retained?{query}"), None)?);
+                    output(&call(
+                        &config,
+                        &path,
+                        "GET",
+                        &format!("/api/feeds/retained?{query}"),
+                        None,
+                    )?);
                 } else {
                     output(&Engine::open_for_preview(config)?.feeds_retained(&query)?);
                 }
