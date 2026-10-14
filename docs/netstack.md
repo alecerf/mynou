@@ -107,8 +107,9 @@ No independent stack or resolver is exercised.
 
 ## Remaining obligations
 
-A driver that feeds decrypted session bytes in and encrypts what comes out, owns
-the clock and generations and revokes every piece together; ICMP and path-MTU
+The driver that feeds decrypted session bytes in, encrypts what comes out, owns
+the clock and generations and revokes every piece together is now
+[the tunnel runtime](/docs/tunnel.md). Still missing: ICMP and path-MTU
 handling; DNS over the virtual TCP; a DNS cache if wanted; the
 transport, HTTP/TLS and torrent integration; profile controls; and the isolation
 evidence listed in [the design](/docs/wireguard-design.md). Nothing here changes

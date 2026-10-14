@@ -35,6 +35,7 @@ pub trait Entropy {
 }
 
 /// Operating-system randomness, the only production entropy source.
+#[derive(Clone, Copy)]
 pub struct OsEntropy;
 
 impl Entropy for OsEntropy {

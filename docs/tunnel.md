@@ -1,0 +1,126 @@
+# Outer-UDP tunnel runtime
+
+[#218](https://github.com/alecerf/mynou/issues/218) composes the offline layers
+of [the design](/docs/wireguard-design.md): the [WireGuard peer](/docs/wireguard-peer.md),
+the [IPv4/UDP/DNS stack](/docs/netstack.md) and the [virtual TCP](/docs/netstack-tcp.md).
+`Tunnel` in `src/tunnel.rs` owns one physical UDP socket and drives all of them
+from it. **Nothing calls it outside its tests:** there is no torrent, HTTP/TLS,
+engine, profile or user-visible protection, and Mynou still has no VPN mode.
+Parent [#111](https://github.com/alecerf/mynou/issues/111) stays open.
+
+## Ownership
+
+One `Tunnel` is the single owner of:
+
+- the outer UDP socket, bound once to an IPv4 address (IPv6 is refused);
+- the pinned endpoint, resolved by `resolve_endpoint` only when the tunnel is
+  created or `set_endpoint` replaces it. A literal address needs no lookup; a
+  name uses the host resolver once and keeps only a usable IPv4 answer. This is
+  the runtime's only ordinary-path traffic besides the encrypted datagrams;
+- the clock (`Clock`: monotonic elapsed time and the wall time for handshake
+  timestamps; `SystemClock` in production);
+- the handshake load verdict: more than `handshake_load` handshake messages
+  (types 1 and 2, valid or not) in one second is `Load::High`, so new
+  initiations get a cookie reply until they prove their address with MAC2;
+- the live generation: one `Peer`, one virtual UDP table, one TCP stack and one
+  DNS client, all created with the same generation number.
+
+`Tunnel` holds `Rc` state through `Peer` and is not `Send`. It starts no thread:
+a caller drives it with `pump(max_wait)`, which waits at most `max_wait` (never
+past the next timer) for datagrams, handles at most `datagrams_per_pump` of
+them, and runs every due timer. Operations and revocation are therefore
+serialized by construction; a later integration owns it from one thread.
+
+## Data path
+
+Inbound, a datagram longer than a WireGuard data message or empty is dropped
+before any work. The rest goes to `Peer::receive` with the observed source and the
+load verdict. Authenticated plaintext is dispatched by its IPv4 protocol to the
+UDP table (17) or the TCP stack (6); each validates the whole packet and drops the
+transport padding. Every other protocol, including ICMP, is counted and refused.
+
+Outbound, every inner packet that a virtual socket, the DNS client or the TCP
+stack emits goes through `Peer::send`. Before a session exists the peer queues it
+(at most `peer_queue`, 32 by default); a full queue returns `QueueFull` for user
+sends and counts a drop for stack traffic, which retransmits. There is no other
+way out: no inner byte reaches the socket unencrypted.
+
+Outer datagrams go to the pinned endpoint until a packet authenticated by the
+peer arrives from another source. Only then does the runtime roam to that
+source. A cookie reply, a replayed data packet or anything unauthenticated
+never moves it. A new generation starts again from the pinned endpoint.
+
+## Generations, loss and reconnection
+
+Every handle (`VirtualUdp`, `VirtualFlow`, `VirtualListener`, `Lookup`) carries
+its generation. When the peer reports `GaveUp`, `Expired` or `Revoked`, the clock
+moves backwards, entropy fails, `set_endpoint` replaces the endpoint, or `cancel`
+is called, the runtime revokes the peer, every virtual socket and queued
+datagram, every flow and listener, and every pending or finished DNS lookup in one step.
+Afterwards each old handle returns `Revoked`. Delayed datagrams of the old session
+fail authentication against the fresh peer, so no old-generation result can be
+delivered.
+
+States are `Connecting`, `Protected` (an authenticated current session; not a
+reachability or isolation claim), `Reconnecting`, `Blocked` and `Closed`, with
+a reason (`GaveUp`, `Expired`, `Failed`, `EndpointChanged`, `Cancelled`,
+`Exhausted`). A lost generation is replaced after `reconnect_initial`, doubling up
+to `reconnect_max`. After `reconnect_attempts` consecutive generations without a
+session the runtime is `Blocked`. `cancel` stops reconnection, `reconnect` starts
+a fresh budget and `shutdown` revokes everything and closes the socket.
+
+The initiator (`initiate`) sends an empty keepalive every `keepalive` seconds
+while protected (25 by default). This also lets the peer start the time-based
+rekey on an idle tunnel. Without it an idle session expires after 180 seconds, and
+the generation with it. A silent endpoint is detected the same way: the session
+expires, the generation is revoked and reconnection starts.
+
+## Bounds
+
+| Bound | Default | Exhaustion |
+| --- | --- | --- |
+| Outer datagrams per `pump` | 64 | the rest wait for the next pump |
+| Outer datagram size | 1456 bytes | dropped and counted (`oversized`) |
+| Handshake messages per second before `Load::High` | 32 | cookie replies, no Noise work |
+| Peer queue without a session | 32 | `QueueFull`, or a counted drop |
+| Unclaimed plus pending DNS lookups | DNS `max_pending` (16) | `Busy` |
+| Reconnection delay | 1 s doubling to 60 s | capped |
+| Consecutive failed generations | 8 | `Blocked` |
+
+The virtual sockets, flows and DNS client keep their own bounds from their
+guides. `Stats` only counts; no packet content is retained.
+
+## Evidence and limits
+
+Tests in `src/tunnel_tests.rs` run two tunnels over real loopback UDP with
+scripted time, through a relay that can drop, duplicate, reorder, hold and
+re-source datagrams. They cover:
+
+- UDP, DNS and a 200 KB TCP transfer end to end, with no inner byte visible on the wire;
+- loss, reordering and duplication, with replays refused;
+- rekey under 300 seconds of traffic without a new generation;
+- cookie replies under a handshake flood, then MAC2 admission;
+- roaming on authenticated packets only;
+- endpoint silence, revocation and reconnection;
+- bounded backoff, exhaustion and cancellation;
+- delayed old-generation answers racing a new generation;
+- unauthenticated, oversized and inner floods;
+- the pre-session queue, clock and entropy failures, shutdown and configuration checks.
+
+Both ends are this same code, so **this is not interoperability evidence** and
+must not be reported as such; no independent WireGuard peer is involved.
+Throughput, CPU and memory are not measured. Docker on Linux runs these tests;
+macOS behavior of the socket is left to the required macOS CI.
+
+## Remaining gates
+
+ICMP, path-MTU, fragment policy and DNS over virtual TCP
+([#219](https://github.com/alecerf/mynou/issues/219)); an independent
+interoperability peer in CI ([#220](https://github.com/alecerf/mynou/issues/220));
+routing every torrent path through a transport abstraction with a network-inventory
+check ([#221](https://github.com/alecerf/mynou/issues/221)); the private profile,
+lifecycle states and controls ([#222](https://github.com/alecerf/mynou/issues/222));
+forwarded ports ([#223](https://github.com/alecerf/mynou/issues/223)); and the
+isolation, race and resource evidence with the macOS guide
+([#224](https://github.com/alecerf/mynou/issues/224)). Until then nothing here
+changes user-visible behavior.

@@ -26,6 +26,7 @@ pub mod server;
 pub mod store;
 pub mod tls;
 pub mod torrent;
+pub mod tunnel;
 pub mod ui;
 pub mod wireguard;
 pub mod ws;

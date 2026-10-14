@@ -88,7 +88,7 @@ vectors used by the underlying components. These fixtures and portable tests
 can also run locally; follow the Docker-first
 [validation runbook](../engineering/README.md#local-validation).
 
-An actual outer-UDP driver, global multi-peer handshake/admission bounds, profiles,
+The outer-UDP driver is now [the tunnel runtime](/docs/tunnel.md). Global multi-peer handshake/admission bounds, profiles,
 IP/TCP/UDP/DNS stack, HTTP/TLS and torrent integration, independent controlled
 WireGuard interoperability and observed leak-attempt testing remain obligations
 in [the design](/docs/wireguard-design.md). No deployment or user-facing VPN

@@ -132,9 +132,9 @@ are not measured or claimed.
 
 ## Remaining obligations
 
-A driver that feeds decrypted session bytes in and encrypts what comes out, owns
+The driver that feeds decrypted session bytes in, encrypts what comes out, owns
 the clock and generations and revokes the UDP table, the DNS client and this stack
-together; IP fragmentation and reassembly, ICMP and path-MTU handling; window
+together is now [the tunnel runtime](/docs/tunnel.md). Still missing: IP fragmentation and reassembly, ICMP and path-MTU handling; window
 scaling, selective acknowledgment, RTT estimation, simultaneous open and a TCP
 Keep-Alive if torrent peers need them; DNS over this TCP for truncated answers; the
 transport, HTTP/TLS and torrent integration; profile controls; an independently
