@@ -1,5 +1,5 @@
 //! Hash-pinned candidates attach only to existing, admitted canonical work.
-use super::{Record, State, hash, only, text, valid_id};
+use super::{AnnouncementStore, Record, hash, only, text, valid_id};
 use crate::{
     Result,
     config::Config,
@@ -561,68 +561,78 @@ fn choose_file(job: &Job, metadata: &TorrentMetadata) -> Result<(String, u64)> {
 }
 
 /// Validate both directions before any native workers can resume.
-pub(crate) fn recovered_state(
-    state: &State,
-    jobs: &mut impl crate::store::RecoveryJobs,
-) -> Result<State> {
-    let mut next = state.clone();
-    for r in state.records.values() {
-        if let Some(route) = &r.route {
-            let job = jobs
-                .get(&route.origin.job_id)?
-                .ok_or("IRC: reserved job is missing")?;
-            if route.phase == "aborted" {
-                if job
-                    .irc_origin
-                    .as_ref()
-                    .is_some_and(|o| o.announcement_id == r.id)
-                {
-                    return Err("IRC: aborted reservation has an acquisition".into());
-                }
-                continue;
+fn recovered_record(mut r: Record, jobs: &mut impl crate::store::RecoveryJobs) -> Result<Record> {
+    if let Some(route) = &r.route {
+        let job = jobs
+            .get(&route.origin.job_id)?
+            .ok_or("IRC: reserved job is missing")?;
+        if route.phase == "aborted" {
+            if job
+                .irc_origin
+                .as_ref()
+                .is_some_and(|o| o.announcement_id == r.id)
+            {
+                return Err("IRC: aborted reservation has an acquisition".into());
             }
-            if let Some(origin) = &job.irc_origin {
-                if origin != &route.origin
-                    && route.phase == "reserved"
-                    && origin.announcement_id != r.id
-                {
-                    next.records
-                        .get_mut(&r.id)
-                        .ok_or("IRC: missing recovery row")?
-                        .route
-                        .as_mut()
-                        .ok_or("IRC: missing recovery reservation")?
-                        .phase = "aborted".into();
-                    continue;
-                }
-                if origin != &route.origin {
-                    return Err("IRC: job and durable reservation disagree".into());
-                }
-                origin.validate_job(&job)?;
-                if route.phase == "reserved" {
-                    next.records
-                        .get_mut(&r.id)
-                        .ok_or("IRC: missing recovery row")?
-                        .route
-                        .as_mut()
-                        .ok_or("IRC: missing recovery reservation")?
-                        .phase = "routed".into();
-                }
-            } else if route.phase == "reserved" {
-                // Interrupted admission is never replayed into another acquisition.
-                next.records
-                    .get_mut(&r.id)
-                    .ok_or("IRC: missing recovery row")?
-                    .route
+            return Ok(r);
+        }
+        if let Some(origin) = &job.irc_origin {
+            if origin != &route.origin
+                && route.phase == "reserved"
+                && origin.announcement_id != r.id
+            {
+                r.route
                     .as_mut()
                     .ok_or("IRC: missing recovery reservation")?
                     .phase = "aborted".into();
-            } else if route.phase == "routed" {
-                return Err("IRC: routed job has lost its immutable origin".into());
+                return Ok(r);
             }
+            if origin != &route.origin {
+                return Err("IRC: job and durable reservation disagree".into());
+            }
+            origin.validate_job(&job)?;
+            if route.phase == "reserved" {
+                r.route
+                    .as_mut()
+                    .ok_or("IRC: missing recovery reservation")?
+                    .phase = "routed".into();
+            }
+        } else if route.phase == "reserved" {
+            // Interrupted admission is never replayed into another acquisition.
+            r.route
+                .as_mut()
+                .ok_or("IRC: missing recovery reservation")?
+                .phase = "aborted".into();
+        } else if route.phase == "routed" {
+            return Err("IRC: routed job has lost its immutable origin".into());
         }
     }
-    let mut physical = BTreeSet::new();
+    Record::from_json(&r.to_json())?;
+    Ok(r)
+}
+pub(crate) fn recover(
+    store: &mut AnnouncementStore,
+    jobs: &mut impl crate::store::RecoveryJobs,
+    apply: bool,
+) -> Result<()> {
+    let mut after = None;
+    loop {
+        let (rows, next) = store.page(4, after, 200)?;
+        let mut changed = Vec::new();
+        for r in rows {
+            let recovered = recovered_record(r.clone(), jobs)?;
+            if recovered != r {
+                changed.push(recovered);
+            }
+        }
+        if apply && !changed.is_empty() {
+            store.save_rows(&changed)?;
+        }
+        after = next;
+        if after.is_none() {
+            break;
+        }
+    }
     // Only jobs that carry an IRC origin are read, one page at a time.
     let mut after = None;
     loop {
@@ -632,18 +642,12 @@ pub(crate) fn recovered_state(
                 continue;
             };
             origin.validate_job(&job)?;
-            let route = state
-                .records
-                .get(&origin.announcement_id)
-                .and_then(|r| r.route.as_ref())
+            let route = store
+                .get(&origin.announcement_id)?
+                .and_then(|r| r.route)
                 .ok_or("IRC: acquisition has no durable announcement reservation")?;
-            if &route.origin != origin
-                || route.phase == "aborted"
-                || origin
-                    .torrent_aliases
-                    .iter()
-                    .any(|id| !physical.insert((id.clone(), origin.file.clone())))
-            {
+            jobs.check_irc_ownership(&job)?;
+            if &route.origin != origin || route.phase == "aborted" {
                 return Err("IRC: acquisition provenance or physical ownership conflicts".into());
             }
         }
@@ -652,14 +656,14 @@ pub(crate) fn recovered_state(
             break;
         }
     }
-    Ok(next)
+    Ok(())
 }
 
 #[derive(Default)]
 pub(crate) struct Runtime {
     outcomes: BTreeMap<String, String>,
     retry: BTreeMap<String, Instant>,
-    cursor: Option<String>,
+    cursor: Option<crate::inventory::Key>,
 }
 impl Runtime {
     pub(crate) fn annotate(&self, record: &Record) -> Value {
@@ -777,17 +781,27 @@ impl Engine {
         let now = Instant::now();
         let record = {
             let ledger = lock(&self.irc_store)?;
-            let runtime = lock(&self.irc_route_runtime)?;
-            let available = || {
-                ledger.state.records.values().filter(|r| {
-                    runtime.retry.get(&r.id).is_none_or(|at| now >= *at)
+            let mut runtime = lock(&self.irc_route_runtime)?;
+            let (mut rows, mut next) = ledger.page(3, runtime.cursor, 200)?;
+            if rows.is_empty() && runtime.cursor.is_some() {
+                (rows, next) = ledger.page(3, None, 200)?;
+            }
+            // One bounded scheduling page per turn, wrapping on the next turn.
+            runtime.retry.retain(|_, at| now < *at);
+            let record = if runtime.retry.len() < 200 {
+                rows.into_iter().find(|r| {
+                    !runtime.retry.contains_key(&r.id)
                         && matched_rule(&self.config, r, &fingerprint).is_ok()
                 })
+            } else {
+                None
             };
-            available()
-                .find(|r| runtime.cursor.as_ref().is_none_or(|cursor| &r.id > cursor))
-                .or_else(|| available().next())
-                .cloned()
+            runtime.cursor = record
+                .as_ref()
+                .map(super::index::pending_cursor)
+                .transpose()?
+                .or(next);
+            record
         };
         let mut report = Value::object();
         report.insert("routed", false);
@@ -798,7 +812,10 @@ impl Engine {
         report.insert("announcement_id", record.id.clone());
         let result = self.route_announcement(&record, &fingerprint);
         let mut runtime = lock(&self.irc_route_runtime)?;
-        runtime.cursor = Some(record.id.clone());
+        // Keep only one page of transient retry reports; durable history lives on disk.
+        if runtime.outcomes.len() >= 200 {
+            runtime.outcomes.clear();
+        }
         let outcome = match result.as_ref().map(|(_, routed)| *routed) {
             Ok(true) => "routed",
             Ok(false) => "already_available",
@@ -855,16 +872,14 @@ impl Engine {
         if already_available {
             let ledger = lock(&self.irc_store)?;
             let current = ledger
-                .state
-                .records
-                .get(&record.id)
+                .get(&record.id)?
                 .ok_or("IRC: missing availability claim")?;
-            if current != record || self.stopped.load(Ordering::Acquire) {
+            if &current != record || self.stopped.load(Ordering::Acquire) {
                 return Err("IRC: admission changed or stopped".into());
             }
             let requesters = lock(&self.requester_store)?;
             let mut jobs = lock(&self.store)?;
-            if candidate(&self.config, current, rule, &mut jobs, &*requesters)? != job {
+            if candidate(&self.config, &current, rule, &mut jobs, &*requesters)? != job {
                 return Err("IRC: admitted job changed during metadata inspection".into());
             }
             let mut fulfilled = job;
@@ -912,28 +927,26 @@ impl Engine {
             },
         };
         let mut ledger = lock(&self.irc_store)?;
-        let current = ledger
-            .state
-            .records
-            .get(&record.id)
-            .ok_or("IRC: missing claim")?;
-        if current != record || self.stopped.load(Ordering::Acquire) {
+        let current = ledger.get(&record.id)?.ok_or("IRC: missing claim")?;
+        if &current != record || self.stopped.load(Ordering::Acquire) {
             return Err("IRC: admission changed or stopped".into());
         }
-        let current_rule = matched_rule(&self.config, current, fingerprint)?;
+        let current_rule = matched_rule(&self.config, &current, fingerprint)?;
         let requesters = lock(&self.requester_store)?;
         let mut jobs = lock(&self.store)?;
-        let current_job = candidate(&self.config, current, current_rule, &mut jobs, &*requesters)?;
+        let current_job = candidate(
+            &self.config,
+            &current,
+            current_rule,
+            &mut jobs,
+            &*requesters,
+        )?;
         if current_job != job {
             return Err("IRC: admitted job changed during metadata inspection".into());
         }
-        origin.validate_record(current)?;
+        origin.validate_record(&current)?;
         jobs.check_irc_origin(&origin)?;
-        let mut next = ledger.state.clone();
-        let row = next
-            .records
-            .get_mut(&record.id)
-            .ok_or("IRC: missing admission row")?;
+        let mut row = current;
         row.route = Some(Route {
             phase: "reserved".into(),
             origin: origin.clone(),
@@ -943,18 +956,14 @@ impl Engine {
             .revision
             .checked_add(1)
             .ok_or("IRC: row revision overflow")?;
-        ledger.save(next)?;
+        ledger.save_rows(std::slice::from_ref(&row))?;
         // A crash between these checked writes leaves a recoverable, non-replayable intent.
         let job = jobs.attach_irc_origin(origin)?;
-        let mut next = ledger.state.clone();
-        next.records
-            .get_mut(&record.id)
-            .ok_or("IRC: missing committed row")?
-            .route
+        row.route
             .as_mut()
             .ok_or("IRC: missing committed reservation")?
             .phase = "routed".into();
-        ledger.save(next)?;
+        ledger.save_rows(std::slice::from_ref(&row))?;
         Ok((job, true))
     }
     pub(crate) fn irc_routing_json(&self) -> Result<Value> {

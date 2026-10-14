@@ -396,15 +396,10 @@ fn native_cli_sends_a_maximum_password_once_without_recording_or_logging_it() {
         &format!(":{SERVICE} NOTICE mynou :Identified as fixture"),
     );
     announce(&mut stream, SENDER, "#announces", &announcement(7));
-    wait(|| {
-        snapshot(&cfg.store_dir)
-            .get("records")
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .len()
-            == 1
-    });
+    // The live process owns the index lock. Its ordered PONG follows the
+    // synchronous durable receipt; inspect the history after stopping it.
+    send(&mut stream, "PING :durable-receipt");
+    assert_eq!(line(&mut stream), "PONG :durable-receipt");
     drop(child);
     let e = Engine::open_for_management(cfg.clone()).unwrap();
     assert_eq!(rows(&e).len(), 1);

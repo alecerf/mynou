@@ -358,7 +358,7 @@ fn checked_history_rejects_corruption_and_signed_semantic_changes_before_startup
         assert!(Engine::open_for_management(cfg.clone()).is_err());
         assert_eq!(bytes(&cfg.store_dir), before);
     }
-    fs::write(&path, &original).unwrap();
+    write_snapshot(&cfg.store_dir, &original_json);
     #[cfg(unix)]
     {
         let link = dir.0.join("history-link");
@@ -369,7 +369,7 @@ fn checked_history_rejects_corruption_and_signed_semantic_changes_before_startup
     assert!(Engine::open_for_management(cfg).is_ok());
 }
 #[test]
-fn full_history_keeps_duplicate_suppression_and_rejects_new_identities() {
+fn full_legacy_history_migrates_and_accepts_new_identities() {
     let dir = Directory::new();
     let cfg = config(&dir.0);
     let engine = Engine::open_for_management(cfg.clone()).unwrap();
@@ -405,12 +405,11 @@ fn full_history_keeps_duplicate_suppression_and_rejects_new_identities() {
         receive(&engine, 1).get("duplicate").unwrap().as_bool(),
         Some(true)
     );
-    assert!(
-        engine
-            .irc_receive("local", SENDER, "#announces", &announcement(1001))
-            .is_err()
-    );
     assert_eq!(bytes(&cfg.store_dir), before);
+    assert_eq!(
+        receive(&engine, 1001).get("duplicate").unwrap().as_bool(),
+        Some(false)
+    );
     assert_eq!(
         engine
             .irc_announcements(0, 1)
@@ -418,7 +417,7 @@ fn full_history_keeps_duplicate_suppression_and_rejects_new_identities() {
             .get("total")
             .unwrap()
             .as_u64(),
-        Some(1000)
+        Some(1001)
     );
     no_jobs(&engine);
 }
@@ -446,6 +445,10 @@ fn offline_reviews_do_not_initialize_repair_or_change_storage() {
     let legacy = config::from_json(&legacy, Path::new(".")).unwrap();
     let existing = cfg.store_dir.join("announcements.bin");
     fs::remove_file(existing).unwrap();
+    let before = bytes(&cfg.store_dir);
+    assert!(Engine::open_for_preview(legacy.clone()).is_err());
+    assert_eq!(bytes(&cfg.store_dir), before);
+    remove_index(&cfg.store_dir);
     let before = bytes(&cfg.store_dir);
     let preview = Engine::open_for_preview(legacy).unwrap();
     assert!(rows(&preview).is_empty());
@@ -511,6 +514,65 @@ fn conflicting_matching_rules_and_disabled_filters_are_explicit_without_acquisit
     assert_eq!(
         report.get("acquisition_started").unwrap().as_bool(),
         Some(false)
+    );
+    no_jobs(&engine);
+}
+
+#[test]
+fn cursor_pages_and_duplicates_survive_growth_review_and_restart() {
+    let dir = Directory::new();
+    let cfg = config(&dir.0);
+    let engine = Engine::open_for_management(cfg.clone()).unwrap();
+    let first = receive(&engine, 1);
+    let id = record_id(&first).to_owned();
+    let guard = reviewed(&engine, &id, "acknowledge");
+    for n in 2..=1201 {
+        receive(&engine, n);
+    }
+    engine.irc_control(&id, &guard).unwrap();
+    assert!(engine.irc_control(&id, &guard).is_err());
+    let mut seen = std::collections::BTreeSet::new();
+    let mut after = None;
+    loop {
+        let report = engine
+            .irc_announcements_page(after.as_deref(), 200)
+            .unwrap();
+        assert_eq!(report.get("total").unwrap().as_u64(), Some(1201));
+        let rows = report.get("announcements").unwrap().as_array().unwrap();
+        assert!(rows.len() <= 200);
+        for r in rows {
+            assert!(seen.insert(record_id(r).to_owned()));
+        }
+        after = report
+            .get("next_cursor")
+            .unwrap()
+            .as_str()
+            .map(str::to_owned);
+        if after.is_none() {
+            break;
+        }
+    }
+    assert_eq!(seen.len(), 1201);
+    assert!(seen.contains(&id));
+    no_jobs(&engine);
+    drop(engine);
+    let engine = Engine::open_for_management(cfg.clone()).unwrap();
+    let before = bytes(&cfg.store_dir);
+    for n in [1, 201, 1001, 1201] {
+        assert_eq!(
+            receive(&engine, n).get("duplicate").unwrap().as_bool(),
+            Some(true)
+        );
+    }
+    assert_eq!(bytes(&cfg.store_dir), before);
+    assert_eq!(
+        engine
+            .irc_announcement(&id)
+            .unwrap()
+            .get("decision")
+            .unwrap()
+            .as_str(),
+        Some("acknowledged")
     );
     no_jobs(&engine);
 }

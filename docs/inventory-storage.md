@@ -531,3 +531,55 @@ index and recovery artifacts, then restore the exact legacy backup as
 `indexers.bin` and move the new index aside. This restores pre-migration policy;
 later controls cannot be represented by that backup. Do not downgrade using
 only the new marker or remove rollback artifacts while the service runs.
+
+
+## IRC announcement storage
+
+`announcements.idx` stores immutable claims, decisions, admission intents and
+routing origins on disk. The former aggregate 1,000-identity / 8 MiB limits no
+longer apply. Bindings remain bounded metadata (32 retained source IDs); source,
+rule, line and rate limits remain as documented in [limits](limits.md).
+Duplicate checks and admission fences read the announcement by identity.
+Chronological, pending and recovery tables change atomically with each record;
+startup cross-checks reservations and requester/job provenance in bounded pages
+before downloads start. An announcement alone never creates demand.
+
+`mynou announcements --limit 200` and
+`GET /api/irc/announcements?limit=200` return newest-first pages with `total`,
+`announcements` and `next_cursor`. Pass that cursor with `--after CURSOR` or
+`after=CURSOR` until it is null. Pages hold at most 200 rows and 4 MiB of stored
+record data. These are live scans: new arrivals ahead of the cursor require a
+new listing. The older `--offset`/`offset` interface remains available up to
+1,000 rows; use a cursor for the complete history. A decision or receipt never
+requires a whole-history clone. Transient retry state stays bounded and is not
+part of retained duplicate suppression.
+
+The first writable start validates the old `MYNOUI01`/`02`/`03` snapshot and
+configured bindings, keeps an exact private `announcements.legacy-DIGEST.bin`,
+and commits migration batches with their cursor atomically. Staging is derived
+from the validated source digest (`announcements.idx.staging-DIGEST`); a private
+`announcements.migration-DIGEST.bin` binds the digest to the index identity
+before the staging directory is created or any transaction can be recovered.
+An interruption during creation preserves known private empty artifacts and
+recreates them with the bound identity; foreign or populated artifacts are
+refused. Restart validates the committed prefix
+before resuming; every original primary row, secondary entry, metadata value and
+count is verified before promotion. Extra, changed or foreign entries are
+refused. An interrupted promotion is reverified before publishing the marker.
+
+`announcements.bin` becomes a checked `MYNOUI04` marker bound to the index
+identity. Older binaries reject it. Read-only inspection never initializes,
+migrates, recovers redo, changes permissions or writes decisions. A pending
+index transaction requires writable recovery; corruption, public permissions,
+links or mismatched proofs stop the operation. Incomplete creation artifacts are preserved rather than silently deleted or
+adopted. Failed writes report errors, and an uncertain
+commit blocks decisions until storage is reopened.
+
+For downgrade, stop Mynou and preserve the complete current storage directory.
+Restore `announcements.bin` from its exact legacy backup in a separate copy,
+move the new index, staging and migration proofs aside, and use a binary that
+supports the restored snapshot format. Restoring the old copy loses later IRC
+receipts, decisions and origins; requester and job stores must come from the
+same stopped-store backup so their provenance still agrees. Merely restoring
+legacy bytes alongside an acknowledged index is refused. A full backup made
+before upgrade is the safest recovery point.

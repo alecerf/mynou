@@ -3,6 +3,7 @@ pub(crate) mod admission;
 pub(crate) mod client;
 mod engine;
 pub(crate) mod format;
+mod index;
 mod nickserv;
 mod persistence;
 pub mod protocol;
@@ -16,7 +17,8 @@ pub use routing::Origin;
 pub use sasl::Settings as Sasl;
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const MAX_RECORDS: usize = 1000;
+const MAX_LEGACY_RECORDS: usize = 1000;
+pub const MAX_OFFSET: usize = 1000;
 pub const MAX_SOURCES: usize = 8;
 pub const MAX_RULES: usize = 64;
 pub fn valid_id(s: &str) -> bool {
@@ -919,7 +921,7 @@ impl State {
         for v in v
             .get("records")
             .and_then(Value::as_array)
-            .filter(|a| a.len() <= MAX_RECORDS)
+            .filter(|a| a.len() <= MAX_LEGACY_RECORDS)
             .ok_or("IRC: announcement history is full")?
         {
             let r = Record::from_json(v)?;
@@ -974,8 +976,37 @@ impl ControlRequest {
 }
 pub fn page(query: &str) -> Result<(usize, usize)> {
     let p = crate::requesters::page(query)?;
-    if p.0 > MAX_RECORDS {
+    if p.0 > MAX_OFFSET {
         return Err("IRC: page offset exceeds history bounds".into());
     }
     Ok(p)
+}
+
+/// Strict chronological cursor query. Offset is supported separately for old callers.
+pub fn cursor_page(query: &str) -> Result<(Option<String>, usize)> {
+    let mut after = None;
+    let mut limit = 100;
+    let mut seen = BTreeSet::new();
+    if !query.is_empty() {
+        for pair in query.split('&') {
+            let (key, value) = pair.split_once('=').ok_or("IRC: invalid page query")?;
+            if !seen.insert(key) {
+                return Err("IRC: duplicate page field".into());
+            }
+            match key {
+                "after" => {
+                    index::parse_cursor(value)?;
+                    after = Some(value.to_owned());
+                }
+                "limit" if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) => {
+                    limit = value.parse().map_err(|_| "IRC: invalid page size")?;
+                }
+                _ => return Err("IRC: unknown cursor page field".into()),
+            }
+        }
+    }
+    if limit == 0 || limit > 200 {
+        return Err("IRC: page size exceeded".into());
+    }
+    Ok((after, limit))
 }

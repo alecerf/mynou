@@ -778,6 +778,9 @@ impl View<'_> {
     }
 }
 impl super::RecoveryJobs for View<'_> {
+    fn check_irc_ownership(&mut self, job: &Job) -> Result<()> {
+        check_irc_ownership(&self.0.jobs, job)
+    }
     fn get(&mut self, id: &str) -> Result<Option<Job>> {
         Ok(self.0.jobs.get(id).cloned())
     }

@@ -100,21 +100,79 @@ pub fn no_jobs(engine: &Engine) {
     assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
 }
 pub fn bytes(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
-    fs::read_dir(root)
-        .unwrap()
-        .filter_map(|e| {
-            let p = e.unwrap().path();
-            p.is_file().then(|| (p.clone(), fs::read(p).unwrap()))
-        })
-        .collect()
+    let mut files = BTreeMap::new();
+    for entry in fs::read_dir(root).unwrap() {
+        let path = entry.unwrap().path();
+        let metadata = fs::symlink_metadata(&path).unwrap();
+        if metadata.is_dir() {
+            files.extend(bytes(&path));
+        } else if metadata.is_file() {
+            files.insert(path.clone(), fs::read(path).unwrap());
+        }
+    }
+    files
 }
 pub fn snapshot(root: &Path) -> Value {
     let b = fs::read(root.join("announcements.bin")).unwrap();
-    json::parse(std::str::from_utf8(&b[16..b.len() - 32]).unwrap()).unwrap()
+    if b.starts_with(b"MYNOUI04") {
+        let mut index =
+            mynou::inventory::Index::open(&root.join("announcements.idx"), true).unwrap();
+        let mut v =
+            json::parse(std::str::from_utf8(&index.get(&[0; 64]).unwrap().unwrap()).unwrap())
+                .unwrap();
+        let mut rows = Vec::new();
+        let mut after = None;
+        let mut start = [0; 64];
+        start[0] = 1;
+        let mut end = [0; 64];
+        end[0] = 2;
+        loop {
+            let page = index
+                .page(&mynou::inventory::Query {
+                    start,
+                    end: Some(end),
+                    after,
+                    limit: 200,
+                    sequence: None,
+                })
+                .unwrap();
+            rows.extend(
+                page.entries
+                    .iter()
+                    .map(|(_, b)| json::parse(std::str::from_utf8(b).unwrap()).unwrap()),
+            );
+            after = page.next;
+            if after.is_none() {
+                break;
+            }
+        }
+        v.insert("records", Value::Array(rows));
+        v
+    } else {
+        json::parse(std::str::from_utf8(&b[16..b.len() - 32]).unwrap()).unwrap()
+    }
+}
+/// Deliberately replace the synthetic fixture with an earlier format for migration tests.
+pub fn remove_index(root: &Path) {
+    for e in fs::read_dir(root).unwrap() {
+        let path = e.unwrap().path();
+        let name = path.file_name().unwrap().to_str().unwrap();
+        if name == "announcements.idx" || name.starts_with("announcements.idx.staging") {
+            fs::remove_dir_all(path).unwrap();
+        } else if name.starts_with("announcements.migration-")
+            || name.starts_with("announcements.legacy-")
+        {
+            fs::remove_file(path).unwrap();
+        }
+    }
 }
 pub fn write_snapshot(root: &Path, v: &Value) {
+    write_snapshot_format(root, b"MYNOUI01", v);
+}
+pub fn write_snapshot_format(root: &Path, magic: &[u8; 8], v: &Value) {
+    remove_index(root);
     let p = json::stringify(v).into_bytes();
-    let mut b = b"MYNOUI01".to_vec();
+    let mut b = magic.to_vec();
     b.extend_from_slice(&(p.len() as u64).to_le_bytes());
     b.extend_from_slice(&p);
     b.extend_from_slice(&sha256(&b));

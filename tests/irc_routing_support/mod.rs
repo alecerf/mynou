@@ -90,10 +90,16 @@ pub fn no_private(report: &Value) {
     }
 }
 pub fn read_checked(path: &Path) -> Value {
+    if path.file_name().unwrap() == "announcements.bin" {
+        return crate::irc_support::snapshot(path.parent().unwrap());
+    }
     let b = fs::read(path).unwrap();
     json::parse(std::str::from_utf8(&b[16..b.len() - 32]).unwrap()).unwrap()
 }
 pub fn write_checked(path: &Path, magic: &[u8; 8], v: &Value) {
+    if path.file_name().unwrap() == "announcements.bin" {
+        return crate::irc_support::write_snapshot_format(path.parent().unwrap(), magic, v);
+    }
     let p = json::stringify(v).into_bytes();
     let mut b = magic.to_vec();
     b.extend_from_slice(&(p.len() as u64).to_le_bytes());

@@ -1,0 +1,460 @@
+//! Synthetic history growth, migration crash stages and storage-failure proofs.
+use super::super::{
+    Announcement, Evaluation, Record, Settings, State, digest, index,
+    persistence::{AnnouncementStore, Backend, INDEX, MARKER, STAGING},
+};
+use crate::{
+    crypto::{random_bytes, sha256},
+    inventory::{Change, Fault, Index, Key},
+    json::{self, Value},
+    store::private_options,
+};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    io::Write,
+    os::unix::fs::{DirBuilderExt, PermissionsExt, symlink},
+    path::{Path, PathBuf},
+};
+struct Directory(PathBuf);
+impl Directory {
+    fn new() -> Self {
+        let p = std::env::temp_dir().join(format!(
+            "mynou-irc-index-{}",
+            digest(&random_bytes::<16>().unwrap())
+        ));
+        fs::DirBuilder::new().mode(0o700).create(&p).unwrap();
+        Self(p)
+    }
+}
+impl Drop for Directory {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+fn row(n: u64, large: bool) -> Record {
+    let binding = "1".repeat(64);
+    let mut v = Value::object();
+    v.insert(
+        "title",
+        if large {
+            "Fixture.Movie.2024.".to_owned() + &"X".repeat(1900)
+        } else {
+            "Fixture.Movie.2024.1080p".into()
+        },
+    );
+    v.insert("media_title", "Fixture Movie");
+    v.insert("kind", "movie");
+    v.insert("year", 2024_u32);
+    v.insert("tmdb_id", n.to_string());
+    v.insert("info_hash", "1234567890abcdef1234567890abcdef12345678");
+    let announcement = Announcement::from_json(&v).unwrap();
+    Record {
+        id: announcement.id(&binding),
+        source_id: "local".into(),
+        binding,
+        announcement,
+        evaluations: if large {
+            (0..64)
+                .map(|i| Evaluation {
+                    rule_id: format!("r{i:02}{}", "x".repeat(60)),
+                    profile: "x".repeat(64),
+                    outcome: "matched".into(),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        },
+        fingerprint: "2".repeat(64),
+        decision: "pending".into(),
+        revision: 1,
+        first_seen: n,
+        decided_at: None,
+        route: None,
+        admission: None,
+    }
+}
+fn state(rows: Vec<Record>) -> State {
+    State {
+        revision: 17,
+        bindings: BTreeMap::from([("local".into(), "1".repeat(64))]),
+        records: rows.into_iter().map(|r| (r.id.clone(), r)).collect(),
+    }
+}
+fn legacy(dir: &Path, state: &State) -> Vec<u8> {
+    let payload = json::stringify(&state.to_json()).into_bytes();
+    let mut bytes = b"MYNOUI03".to_vec();
+    bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+    bytes.extend_from_slice(&payload);
+    bytes.extend_from_slice(&sha256(&bytes));
+    let mut file = private_options()
+        .write(true)
+        .create_new(true)
+        .open(dir.join("announcements.bin"))
+        .unwrap();
+    file.write_all(&bytes).unwrap();
+    file.sync_all().unwrap();
+    bytes
+}
+fn contents(path: &Path) -> Vec<(PathBuf, Vec<u8>, u32)> {
+    let mut found = Vec::new();
+    for e in fs::read_dir(path).unwrap() {
+        let p = e.unwrap().path();
+        let m = fs::symlink_metadata(&p).unwrap();
+        if m.is_dir() {
+            found.extend(contents(&p));
+        } else {
+            found.push((p.clone(), fs::read(p).unwrap(), m.permissions().mode()));
+        }
+    }
+    found.sort();
+    found
+}
+fn open(dir: &Path, read_only: bool) -> AnnouncementStore {
+    AnnouncementStore::open(dir, &Settings::default(), read_only).unwrap()
+}
+fn requests(store: &AnnouncementStore) -> u64 {
+    match &*store.backend.borrow() {
+        Backend::Ready(i) => i.requests(),
+        _ => 0,
+    }
+}
+#[test]
+fn disk_history_exceeds_both_caps_with_bounded_points_pages_and_restart() {
+    let dir = Directory::new();
+    let initial = state(vec![row(1, false)]);
+    legacy(&dir.0, &initial);
+    let mut store = open(&dir.0, false);
+    store.initialize().unwrap();
+    let mut payload = 0;
+    for start in (2..=1202).step_by(100) {
+        let rows: Vec<_> = (start..(start + 100).min(1203))
+            .map(|n| row(n, true))
+            .collect();
+        payload += rows
+            .iter()
+            .map(|r| json::stringify(&r.to_json()).len())
+            .sum::<usize>();
+        store.save_rows(&rows).unwrap();
+    }
+    assert!(payload > 8 * 1024 * 1024);
+    assert_eq!(store.count().unwrap(), 1202);
+    assert!(store.state.records.is_empty());
+    let before = requests(&store);
+    assert_eq!(store.get(&row(501, true).id).unwrap(), Some(row(501, true)));
+    assert!(requests(&store) - before <= 2);
+    drop(store);
+    let before = contents(&dir.0);
+    let store = open(&dir.0, true);
+    assert_eq!(store.count().unwrap(), 1202);
+    let mut seen = BTreeSet::new();
+    let mut after = None;
+    let mut previous = u64::MAX;
+    loop {
+        let before = requests(&store);
+        let (rows, next) = store.page(2, after, 200).unwrap();
+        assert!(!rows.is_empty() && rows.len() <= 200);
+        assert!(requests(&store) - before <= 202);
+        assert!(
+            rows.iter()
+                .map(|r| json::stringify(&r.to_json()).len())
+                .sum::<usize>()
+                <= crate::inventory::MAX_PAGE_BYTES
+        );
+        for r in rows {
+            assert!(seen.insert(r.id));
+            assert!(r.first_seen <= previous);
+            previous = r.first_seen;
+        }
+        after = next;
+        if after.is_none() {
+            break;
+        }
+    }
+    assert_eq!(seen.len(), 1202);
+    drop(store);
+    assert_eq!(contents(&dir.0), before);
+}
+#[test]
+fn every_migration_checkpoint_resumes_exactly_and_preview_is_inert() {
+    for stop in 1..=16 {
+        let dir = Directory::new();
+        let initial = state((1..=401).map(|n| row(n, false)).collect());
+        let bytes = legacy(&dir.0, &initial);
+        let mut store = open(&dir.0, false);
+        store.stop = Some(stop);
+        assert!(store.initialize().is_err());
+        drop(store);
+        let before = contents(&dir.0);
+        let preview = open(&dir.0, true);
+        assert_eq!(preview.count().unwrap(), 401);
+        assert_eq!(
+            preview.get(&row(401, false).id).unwrap(),
+            Some(row(401, false))
+        );
+        drop(preview);
+        assert_eq!(contents(&dir.0), before);
+        let mut store = open(&dir.0, false);
+        store.initialize().unwrap();
+        assert_eq!(store.state, super::header(&initial));
+        assert_eq!(store.count().unwrap(), 401);
+        for r in initial.records.values() {
+            assert_eq!(store.get(&r.id).unwrap().as_ref(), Some(r));
+        }
+        assert_eq!(
+            fs::read(dir.0.join(format!(
+                "announcements.legacy-{}.bin",
+                digest(&sha256(&bytes))
+            )))
+            .unwrap(),
+            bytes
+        );
+        assert!(
+            fs::read(dir.0.join("announcements.bin"))
+                .unwrap()
+                .starts_with(MARKER)
+        );
+        // Older snapshot decoders reject the marker.
+        assert!(super::parse(&fs::read(dir.0.join("announcements.bin")).unwrap()).is_err());
+    }
+}
+#[test]
+fn pending_migration_redo_is_bound_to_proof_and_resumes() {
+    let dir = Directory::new();
+    let initial = state((1..=201).map(|n| row(n, false)).collect());
+    let bytes = legacy(&dir.0, &initial);
+    let source = sha256(&bytes);
+    let mut store = open(&dir.0, false);
+    store.stop = Some(3);
+    assert!(store.initialize().is_err());
+    drop(store);
+    let staging = dir.0.join(format!("{STAGING}-{}", digest(&source)));
+    let mut index = Index::open(&staging, false).unwrap();
+    index.inject(Some(Fault::Published));
+    let rows: Vec<_> = initial.records.values().take(200).cloned().collect();
+    assert!(
+        index::commit(
+            &mut index,
+            &super::header(&initial),
+            &rows,
+            rows.last().map(|r| r.id.as_str())
+        )
+        .is_err()
+    );
+    drop(index);
+    let before = contents(&dir.0);
+    drop(open(&dir.0, true));
+    assert_eq!(contents(&dir.0), before);
+    let mut store = open(&dir.0, false);
+    store.initialize().unwrap();
+    assert_eq!(store.count().unwrap(), 201);
+    for r in initial.records.values() {
+        assert_eq!(store.get(&r.id).unwrap().as_ref(), Some(r));
+    }
+}
+#[test]
+fn save_failures_never_evict_or_claim_success_and_uncertainty_requires_restart() {
+    for fault in [
+        Fault::Staged,
+        Fault::Published,
+        Fault::FirstRecord,
+        Fault::FirstPage,
+        Fault::Applied,
+        Fault::Unlinked,
+    ] {
+        let dir = Directory::new();
+        legacy(&dir.0, &state(vec![row(1, false)]));
+        let mut store = open(&dir.0, false);
+        store.initialize().unwrap();
+        if let Backend::Ready(i) = &mut *store.backend.borrow_mut() {
+            i.inject(Some(fault));
+        }
+        assert!(store.save_rows(&[row(2, false)]).is_err());
+        if !matches!(fault, Fault::Staged) {
+            assert!(store.get(&row(1, false).id).is_err());
+            assert!(store.save_rows(&[row(3, false)]).is_err());
+        }
+        drop(store);
+        let store = open(&dir.0, false);
+        assert_eq!(store.get(&row(1, false).id).unwrap(), Some(row(1, false)));
+        assert_eq!(
+            store.get(&row(2, false).id).unwrap().is_some(),
+            !matches!(fault, Fault::Staged)
+        );
+        assert!(store.get(&row(3, false).id).unwrap().is_none());
+    }
+}
+#[test]
+fn markers_backups_proofs_and_foreign_staging_are_rejected_without_repair() {
+    for corruption in [
+        "backup",
+        "public_backup",
+        "linked_backup",
+        "foreign",
+        "source",
+        "extra",
+        "public_staging",
+        "symlink_staging",
+        "proof",
+    ] {
+        let dir = Directory::new();
+        let initial = state(vec![row(1, false)]);
+        let bytes = legacy(&dir.0, &initial);
+        let source = sha256(&bytes);
+        let mut store = open(&dir.0, false);
+        store.stop = Some(3);
+        assert!(store.initialize().is_err());
+        drop(store);
+        let backup = dir
+            .0
+            .join(format!("announcements.legacy-{}.bin", digest(&source)));
+        let staging = dir.0.join(format!("{STAGING}-{}", digest(&source)));
+        match corruption {
+            "backup" => fs::write(&backup, b"wrong").unwrap(),
+            "public_backup" => {
+                fs::set_permissions(&backup, fs::Permissions::from_mode(0o644)).unwrap()
+            }
+            "linked_backup" => fs::hard_link(&backup, dir.0.join("link")).unwrap(),
+            "foreign" => {
+                fs::remove_dir_all(&staging).unwrap();
+                drop(Index::create(&staging).unwrap());
+            }
+            "source" => {
+                let mut i = Index::open(&staging, false).unwrap();
+                i.commit(vec![Change::PutInline(index::SOURCE, vec![8; 32])])
+                    .unwrap();
+            }
+            "extra" => {
+                let mut i = Index::open(&staging, false).unwrap();
+                let mut k = [0; 64];
+                k[0] = 9;
+                i.commit(vec![Change::PutInline(k, vec![1])]).unwrap();
+            }
+            "public_staging" => {
+                fs::set_permissions(&staging, fs::Permissions::from_mode(0o755)).unwrap()
+            }
+            "symlink_staging" => {
+                fs::rename(&staging, dir.0.join("other")).unwrap();
+                symlink(dir.0.join("other"), &staging).unwrap();
+            }
+            "proof" => fs::write(
+                dir.0
+                    .join(format!("announcements.migration-{}.bin", digest(&source))),
+                b"wrong",
+            )
+            .unwrap(),
+            _ => unreachable!(),
+        }
+        let source_before = fs::read(dir.0.join("announcements.bin")).unwrap();
+        let mut store = open(&dir.0, false);
+        assert!(store.initialize().is_err());
+        assert_eq!(
+            fs::read(dir.0.join("announcements.bin")).unwrap(),
+            source_before
+        );
+    }
+}
+#[test]
+fn restored_legacy_bytes_cannot_overwrite_acknowledged_index_changes() {
+    let dir = Directory::new();
+    let initial = state(vec![row(1, false)]);
+    let bytes = legacy(&dir.0, &initial);
+    let mut store = open(&dir.0, false);
+    store.initialize().unwrap();
+    store.save_rows(&[row(2, false)]).unwrap();
+    drop(store);
+    fs::write(dir.0.join("announcements.bin"), bytes).unwrap();
+    let before = contents(&dir.0);
+    let mut store = open(&dir.0, false);
+    assert!(store.initialize().is_err());
+    drop(store);
+    assert_eq!(contents(&dir.0), before);
+    let mut index = Index::open(&dir.0.join(INDEX), true).unwrap();
+    assert_eq!(
+        index::get(&mut index, &row(2, false).id).unwrap(),
+        Some(row(2, false))
+    );
+}
+#[test]
+fn cursor_queries_reject_mixed_unknown_duplicate_or_foreign_inputs() {
+    for query in [
+        "after=x",
+        "after=",
+        "offset=0",
+        "limit=0",
+        "limit=201",
+        "limit=+1",
+        "limit=1&limit=2",
+        "after=x&offset=0",
+        "limit=1&",
+        "wat=1",
+    ] {
+        assert!(super::super::cursor_page(query).is_err(), "{query}");
+    }
+    let mut k: Key = [0; 64];
+    k[0] = 2;
+    let text = index::cursor(&k);
+    assert_eq!(
+        super::super::cursor_page(&format!("after={text}&limit=200")).unwrap(),
+        (Some(text), 200)
+    );
+}
+
+#[test]
+fn partial_creation_writes_resume_only_when_they_match_the_prepublished_identity() {
+    for artifact in [
+        "identity",
+        "tree",
+        "corrupt_identity",
+        "corrupt_tree",
+        "owned",
+    ] {
+        let dir = Directory::new();
+        let initial = state(vec![row(1, false)]);
+        let bytes = legacy(&dir.0, &initial);
+        let source = sha256(&bytes);
+        let mut store = open(&dir.0, false);
+        store.stop = Some(2);
+        assert!(store.initialize().is_err());
+        drop(store);
+        let stage = dir.0.join(format!("{STAGING}-{}", digest(&source)));
+        let mut held = None;
+        if artifact.contains("identity") {
+            fs::remove_file(stage.join("tree.bin")).unwrap();
+            fs::remove_dir(stage.join("objects")).unwrap();
+            let mut id = fs::read(stage.join("identity.bin")).unwrap();
+            id.truncate(23);
+            if artifact.starts_with("corrupt") {
+                id[10] ^= 1;
+            }
+            fs::write(stage.join("identity.bin"), id).unwrap();
+        } else {
+            let mut tree = fs::read(stage.join("tree.bin")).unwrap();
+            tree.truncate(128);
+            if artifact.starts_with("corrupt") {
+                tree[10] ^= 1;
+            }
+            fs::write(stage.join("tree.bin"), tree).unwrap();
+            if artifact == "owned" {
+                let f = private_options()
+                    .read(true)
+                    .write(true)
+                    .open(stage.join(".lock"))
+                    .unwrap();
+                f.try_lock().unwrap();
+                held = Some(f);
+            }
+        }
+        let before = contents(&dir.0);
+        let mut store = open(&dir.0, false);
+        if artifact.starts_with("corrupt") || artifact == "owned" {
+            assert!(store.initialize().is_err());
+            drop(store);
+            assert_eq!(contents(&dir.0), before);
+        } else {
+            store.initialize().unwrap();
+            assert_eq!(store.get(&row(1, false).id).unwrap(), Some(row(1, false)));
+        }
+        drop(held);
+    }
+}

@@ -330,8 +330,12 @@ pub(crate) fn route(
             if let Some(tail) = path.strip_prefix("/api/irc/") {
                 let (tail, query) = tail.split_once('?').unwrap_or((tail, ""));
                 if method == "GET" && tail == "announcements" {
-                    let (offset, limit) = crate::irc::page(query)?;
-                    return Ok((200, engine.irc_announcements(offset, limit)?));
+                    if query.split('&').any(|p| p.starts_with("offset=")) {
+                        let (offset, limit) = crate::irc::page(query)?;
+                        return Ok((200, engine.irc_announcements(offset, limit)?));
+                    }
+                    let (after, limit) = crate::irc::cursor_page(query)?;
+                    return Ok((200, engine.irc_announcements_page(after.as_deref(), limit)?));
                 }
                 if method == "POST" && tail == "preview" && query.is_empty() {
                     if body.len() > 8192 {

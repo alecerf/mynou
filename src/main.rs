@@ -64,7 +64,7 @@ const HELP: &str = "Mynou — media automation using Rust std only
   indexer-control SOURCE_ID --action enable|pause|reset_session|probe [--apply --plan-id ID] [--config mynou.json]
   feeds [--retained --limit N --after CURSOR] [--config mynou.json]
   irc [--config mynou.json]
-  announcements [--offset N --limit N] [--config mynou.json]
+  announcements [--offset N | --after CURSOR] [--limit N] [--config mynou.json]
   announcement ANNOUNCEMENT_ID [--config mynou.json]
   irc-preview SOURCE_ID --announcement FILE | --text FILE [--config mynou.json]
   irc-control ANNOUNCEMENT_ID --action acknowledge|dismiss|request [--apply --plan-id ID] [--config mynou.json]
@@ -125,7 +125,7 @@ impl Args {
             "feeds" => &["config", "help", "retained", "after", "limit"],
             "indexer-control" => &["config", "help", "action", "apply", "plan-id"],
             "irc" | "announcement" => &["config", "help"],
-            "announcements" => &["config", "help", "offset", "limit"],
+            "announcements" => &["config", "help", "offset", "after", "limit"],
             "irc-preview" => &["config", "help", "announcement", "text"],
             "irc-control" => &["config", "help", "action", "apply", "plan-id"],
             "requester" => &["config", "help", "offset", "after", "limit"],
@@ -860,12 +860,25 @@ fn execute(args: Args) -> Result<()> {
             }
         }
         "announcements" => {
-            let query = format!(
-                "offset={}&limit={}",
-                args.value("offset", "0"),
-                args.value("limit", "100")
-            );
-            let (offset, limit) = mynou::irc::page(&query)?;
+            if args.options.contains_key("after") && args.options.contains_key("offset") {
+                return Err("Use either --offset or --after".into());
+            }
+            let query = if let Some(after) = args.options.get("after") {
+                format!("after={after}&limit={}", args.value("limit", "100"))
+            } else if args.options.contains_key("offset") {
+                format!(
+                    "offset={}&limit={}",
+                    args.value("offset", "0"),
+                    args.value("limit", "100")
+                )
+            } else {
+                format!("limit={}", args.value("limit", "100"))
+            };
+            if args.options.contains_key("offset") {
+                mynou::irc::page(&query)?;
+            } else {
+                mynou::irc::cursor_page(&query)?;
+            }
             if online {
                 output(&call(
                     &config,
@@ -874,8 +887,15 @@ fn execute(args: Args) -> Result<()> {
                     &format!("/api/irc/announcements?{query}"),
                     None,
                 )?);
-            } else {
+            } else if args.options.contains_key("offset") {
+                let (offset, limit) = mynou::irc::page(&query)?;
                 output(&Engine::open_for_preview(config)?.irc_announcements(offset, limit)?);
+            } else {
+                let (after, limit) = mynou::irc::cursor_page(&query)?;
+                output(
+                    &Engine::open_for_preview(config)?
+                        .irc_announcements_page(after.as_deref(), limit)?,
+                );
             }
         }
         "announcement" => {

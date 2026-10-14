@@ -87,10 +87,8 @@ impl Engine {
         let mut irc_store =
             crate::irc::AnnouncementStore::open(&config.store_dir, &config.irc, read_only)?;
         crate::requesters::engine::validate_storage(&requester_store, &mut store)?;
-        let irc_admitted =
-            crate::irc::admission::recovered_state(&irc_store.state, &requester_store)?;
-        let irc_recovered = crate::irc::routing::recovered_state(&irc_admitted, &mut store)?;
-        let irc_recovery_changed = irc_recovered != irc_store.state;
+        crate::irc::admission::recover(&mut irc_store, &requester_store, false)?;
+        crate::irc::routing::recover(&mut irc_store, &mut store, false)?;
         if !read_only {
             store.initialize()?;
         }
@@ -105,8 +103,9 @@ impl Engine {
         }
         requester_store.initialize()?;
         irc_store.initialize()?;
-        if !read_only && irc_recovery_changed {
-            irc_store.save(irc_recovered)?;
+        if !read_only {
+            crate::irc::admission::recover(&mut irc_store, &requester_store, true)?;
+            crate::irc::routing::recover(&mut irc_store, &mut store, true)?;
         }
         if !read_only {
             crate::requesters::engine::cancel_unwanted(

@@ -169,9 +169,16 @@ IRC announcements:
   starting with a letter. Channels are `#` followed by 1 to 63 letters, digits,
   hyphens or underscores. Senders are an exact `nick!user@host` of at most 128
   bytes. Plain-text IRC is accepted only on loopback IP addresses.
-- The history (`announcements.bin`, checked, at most 8 MiB) keeps 1,000
-  announcement identities. When full, new identities are rejected rather than
-  pruned. Counters and source health reset when the service restarts.
+- Retained announcement identities live in `announcements.idx` without a total
+  record or byte limit. Duplicate suppression survives restart without pruning.
+  Point reads and listing pages (200 rows, 4 MiB) bound each operation; follow
+  `next_cursor` with `--after` or API `after` beyond the compatibility offset
+  window of 1,000 rows. Legacy snapshots remain bounded to 1,000 rows / 8 MiB
+  during migration. Counters and source health reset when the service restarts.
+  Routing scans one 200-row pending page per turn (plus an empty wrap probe),
+  with at most 200 attempts per 30-second retry window. Historical decisions
+  and reservations are skipped by the pending index; transient outcomes retain
+  at most 200 rows. Storage failures never discard identities.
 - Lines are limited to 8,192 bytes, reads to 4,096 bytes, batches to 128
   parsed messages and each source to 256 messages per second. Connection and
   registration (including authentication) must finish within ten seconds,

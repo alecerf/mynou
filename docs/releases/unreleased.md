@@ -39,3 +39,8 @@ Watched announcements are now captured privately before their identities are mar
 Removed the fixed limits on retained source policies, including removed sources.
 Existing policy migrates automatically on writable startup; see
 [storage and downgrade](/docs/inventory-storage.md#source-policy-storage).
+
+
+## Changed: Retain IRC announcements without a total history limit
+
+IRC history now lives in an on-disk index, removing the 1,000-identity / 8 MiB limits while retaining duplicate suppression across restart. Use `mynou announcements --limit 200 --after CURSOR` or the API’s `next_cursor` to page through the history. The first writable start preserves and migrates the old snapshot; older binaries reject the new marker, so downgrade requires a consistent stopped-store backup ([storage guide](/docs/inventory-storage.md#irc-announcement-storage)).

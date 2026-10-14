@@ -140,7 +140,7 @@ fn admitted_jobs_wait_for_irc_and_metadata_precedes_selective_payload_and_exact_
     assert_eq!(irc_support::bytes(&cfg.store_dir), before);
     assert_eq!(
         &fs::read(cfg.store_dir.join("announcements.bin")).unwrap()[..8],
-        b"MYNOUI02"
+        b"MYNOUI04"
     );
     drop(engine);
     let engine = Engine::open(cfg).unwrap();

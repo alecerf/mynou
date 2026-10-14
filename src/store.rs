@@ -774,6 +774,7 @@ pub(crate) enum Backend {
 
 /// Read-only job access shared by indexed state and bounded legacy preflight.
 pub(crate) trait RecoveryJobs {
+    fn check_irc_ownership(&mut self, job: &Job) -> Result<()>;
     fn get(&mut self, id: &str) -> Result<Option<Job>>;
     fn requester_jobs_page(
         &mut self,
@@ -788,6 +789,9 @@ pub(crate) trait RecoveryJobs {
 }
 
 impl RecoveryJobs for Store {
+    fn check_irc_ownership(&mut self, job: &Job) -> Result<()> {
+        self.read((), |db| db.check_irc_ownership(job))
+    }
     fn get(&mut self, id: &str) -> Result<Option<Job>> {
         Store::get(self, id)
     }
@@ -964,11 +968,11 @@ impl Store {
     pub(crate) fn prepare(directory: &Path, config: &crate::config::Config) -> Result<Self> {
         Self::open_checked(directory, &mut |state| {
             let requesters = crate::requesters::RequesterStore::open(directory, config, true)?;
-            let irc = crate::irc::AnnouncementStore::open(directory, &config.irc, true)?;
+            let mut irc = crate::irc::AnnouncementStore::open(directory, &config.irc, true)?;
             let mut jobs = legacy::View(state);
             crate::requesters::engine::validate_storage(&requesters, &mut jobs)?;
-            let admitted = crate::irc::admission::recovered_state(&irc.state, &requesters)?;
-            crate::irc::routing::recovered_state(&admitted, &mut jobs)?;
+            crate::irc::admission::recover(&mut irc, &requesters, false)?;
+            crate::irc::routing::recover(&mut irc, &mut jobs, false)?;
             Ok(())
         })
     }

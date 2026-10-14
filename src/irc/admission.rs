@@ -1,5 +1,5 @@
 //! Reviewed catalog demand uses checked intent, requester origin and ordinary admission.
-use super::{ControlRequest, Record, Rule, State, hash, integer, only, text, valid_id};
+use super::{AnnouncementStore, ControlRequest, Record, Rule, hash, integer, only, text, valid_id};
 use crate::requesters::LedgerRead;
 use crate::{
     Result,
@@ -147,45 +147,67 @@ fn demand_matches(a: &Admission, d: &Demand, state: &impl requesters::LedgerRead
 }
 
 /// Only a durable requester origin commits an intent. Absence aborts without replay.
-pub(crate) fn recovered_state(
-    state: &State,
-    requesters: &impl requesters::LedgerRead,
-) -> Result<State> {
-    let mut next = state.clone();
-    for r in next.records.values_mut() {
-        let o = origin(r);
-        let Some(a) = &mut r.admission else { continue };
-        let retained = requesters
-            .demand(&a.demand_id)?
-            .filter(|d| d.origins.contains(&o));
-        if retained
-            .as_ref()
-            .is_some_and(|d| !demand_matches(a, d, requesters))
-            || (a.phase == "committed" && retained.is_none())
-            || (a.phase == "aborted" && retained.is_some())
-        {
-            return Err("IRC: durable demand differs from its admission intent".into());
+fn recovered_record(mut r: Record, requesters: &impl requesters::LedgerRead) -> Result<Record> {
+    let o = origin(&r);
+    let Some(a) = &mut r.admission else {
+        return Ok(r);
+    };
+    let retained = requesters
+        .demand(&a.demand_id)?
+        .filter(|d| d.origins.contains(&o));
+    if retained
+        .as_ref()
+        .is_some_and(|d| !demand_matches(a, d, requesters))
+        || (a.phase == "committed" && retained.is_none())
+        || (a.phase == "aborted" && retained.is_some())
+    {
+        return Err("IRC: durable demand differs from its admission intent".into());
+    }
+    if a.phase == "prepared" {
+        let at = store::now().max(a.prepared_at);
+        a.phase = if retained.is_some() {
+            "committed"
+        } else {
+            "aborted"
         }
-        if a.phase == "prepared" {
-            let at = store::now().max(a.prepared_at);
-            a.phase = if retained.is_some() {
-                "committed"
-            } else {
-                "aborted"
+        .into();
+        a.committed_at = retained.as_ref().map(|_| at);
+        r.decision = if retained.is_some() {
+            "requested"
+        } else {
+            "dismissed"
+        }
+        .into();
+        r.decided_at = Some(at);
+        r.revision = r
+            .revision
+            .checked_add(1)
+            .ok_or("IRC: admission revision overflow")?;
+    }
+    Record::from_json(&r.to_json())?;
+    Ok(r)
+}
+pub(crate) fn recover(
+    store: &mut AnnouncementStore,
+    requesters: &impl requesters::LedgerRead,
+    apply: bool,
+) -> Result<()> {
+    let mut after = None;
+    loop {
+        let (rows, next) = store.page(4, after, 200)?;
+        let mut changed = Vec::new();
+        for r in rows {
+            let recovered = recovered_record(r.clone(), requesters)?;
+            if recovered != r {
+                changed.push(recovered);
             }
-            .into();
-            a.committed_at = retained.as_ref().map(|_| at);
-            r.decision = if retained.is_some() {
-                "requested"
-            } else {
-                "dismissed"
-            }
-            .into();
-            r.decided_at = Some(at);
-            r.revision = r
-                .revision
-                .checked_add(1)
-                .ok_or("IRC: admission revision overflow")?;
+        }
+        if apply && !changed.is_empty() {
+            store.save_rows(&changed)?;
+        }
+        after = next;
+        if after.is_none() {
+            break;
         }
     }
     let mut after = None;
@@ -194,9 +216,10 @@ pub(crate) fn recovered_state(
         for d in page {
             for o in &d.origins {
                 if let Some((source, id)) = split_origin(o) {
-                    let r = next
-                        .records
-                        .get(id)
+                    let r = store
+                        .get(id)?
+                        .map(|r| recovered_record(r, requesters))
+                        .transpose()?
                         .filter(|r| r.source_id == source)
                         .ok_or("IRC: explicit demand has no durable announcement")?;
                     let a = r
@@ -215,8 +238,7 @@ pub(crate) fn recovered_state(
             break;
         }
     }
-    State::from_json(&next.to_json())?;
-    Ok(next)
+    Ok(())
 }
 
 fn request_rule<'a>(config: &'a Config, r: &Record) -> Result<&'a Rule> {
@@ -272,9 +294,7 @@ impl Engine {
             return Err("IRC: request application requires a running writable service".into());
         }
         let record = lock(&self.irc_store)?
-            .state
-            .records
-            .get(id)
+            .get(id)?
             .ok_or("IRC: unknown announcement")?
             .clone();
         let rule = request_rule(&self.config, &record)?.clone();
@@ -324,7 +344,7 @@ impl Engine {
             return Err("IRC: source numbering changed during catalog verification".into());
         }
         let mut irc = lock(&self.irc_store)?;
-        if irc.state.records.get(id) != Some(&record)
+        if irc.get(id)?.as_ref() != Some(&record)
             || Instant::now() >= deadline
             || self.stopped.load(Ordering::Acquire)
         {
@@ -434,17 +454,13 @@ impl Engine {
             prepared_at: at,
             committed_at: None,
         };
-        let mut next_irc = irc.state.clone();
-        let row = next_irc
-            .records
-            .get_mut(id)
-            .ok_or("IRC: missing announcement")?;
+        let mut row = record.clone();
         row.admission = Some(admission);
         row.revision = row
             .revision
             .checked_add(1)
             .ok_or("IRC: admission revision overflow")?;
-        irc.save(next_irc)?;
+        irc.save_rows(std::slice::from_ref(&row))?;
 
         let mut next = ledger.state.clone();
         let o = origin(&record);
@@ -471,11 +487,7 @@ impl Engine {
         }
         // The canonical origin is durable before ordinary admission can reserve a job.
         ledger.save_patch(next)?;
-        let mut committed = irc.state.clone();
-        let row = committed
-            .records
-            .get_mut(id)
-            .ok_or("IRC: missing announcement")?;
+
         let a = row
             .admission
             .as_mut()
@@ -489,12 +501,12 @@ impl Engine {
             .revision
             .checked_add(1)
             .ok_or("IRC: admission revision overflow")?;
-        irc.save(committed)?;
+        irc.save_rows(std::slice::from_ref(&row))?;
         if !self.stopped.load(Ordering::Acquire) {
             self.admit_requester_demand(&mut ledger, &mut jobs)?;
         }
         report.insert("applied", true);
-        report.insert("announcement", irc.state.records[id].public_json());
+        report.insert("announcement", row.public_json());
         let demand = ledger
             .demand(&demand_id)?
             .ok_or("IRC: durable admitted demand is missing")?;

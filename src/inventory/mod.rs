@@ -89,6 +89,18 @@ impl Index {
         persistence::create(directory)
     }
 
+    /// Create a new index with an identity already bound by the caller's durable migration proof.
+    pub(crate) fn create_bound(directory: &std::path::Path, identity: [u8; 32]) -> Result<Self> {
+        persistence::create_bound(directory, identity)
+    }
+    pub(crate) fn valid_creation_prefix(identity: [u8; 32], bytes: &[u8]) -> bool {
+        tree::Header::empty(identity).encode().starts_with(bytes)
+    }
+    #[cfg(test)]
+    pub(crate) fn inject_creation(stage: Option<u8>) {
+        persistence::CREATE_STOP.with(|s| s.set(stage));
+    }
+
     pub fn open(directory: &std::path::Path, read_only: bool) -> Result<Self> {
         persistence::open(directory, read_only, None)
     }

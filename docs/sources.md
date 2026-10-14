@@ -415,9 +415,14 @@ and waits for a matching announcement to download.
 
 ### Review announcements
 
+History is stored on disk without a total identity limit. Follow `next_cursor`
+with `mynou announcements --after CURSOR --limit 50` or the API `after` parameter
+for later pages. Each page holds at most 200 rows; `--offset` remains available
+up to 1,000 rows. See [migration and downgrade](inventory-storage.md#irc-announcement-storage).
+
 ```sh
 mynou irc --config ./mynou.json
-mynou announcements --offset 0 --limit 50 --config ./mynou.json
+mynou announcements --limit 50 --config ./mynou.json
 mynou announcement ANNOUNCEMENT_ID --config ./mynou.json
 mynou irc-control ANNOUNCEMENT_ID --action dismiss --config ./mynou.json
 mynou irc-control ANNOUNCEMENT_ID --action dismiss --apply \
@@ -433,7 +438,7 @@ cancel its job. Listing and previews work offline without writing.
 | Route (Bearer token) | Purpose |
 | --- | --- |
 | `GET /api/irc` | Sources, health and rules |
-| `GET /api/irc/announcements?offset=0&limit=50` | Announcement history |
+| `GET /api/irc/announcements?limit=50&after=CURSOR` | Announcement history (`next_cursor`; omit `after` for the first page) |
 | `GET /api/irc/announcements/ID` | One announcement |
 | `POST /api/irc/preview` | Parse a sample announcement |
 | `POST /api/irc/announcements/ID/control` | `acknowledge`, `dismiss` or `request`; add `"apply": true` and `"plan_id"` to apply |

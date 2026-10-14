@@ -301,7 +301,20 @@ fn present(path: &Path) -> Result<bool> {
     }
 }
 
+#[cfg(test)]
+thread_local! { pub(super) static CREATE_STOP: std::cell::Cell<Option<u8>> = const { std::cell::Cell::new(None) }; }
+fn creation_checkpoint(stage: u8) -> Result<()> {
+    #[cfg(test)]
+    if CREATE_STOP.with(|s| s.get()) == Some(stage) {
+        return Err("Inventory creation interrupted by fixture".into());
+    }
+    let _ = stage;
+    Ok(())
+}
 pub(super) fn create(directory: &Path) -> Result<Index> {
+    create_bound(directory, random_bytes::<32>()?)
+}
+pub(super) fn create_bound(directory: &Path, identity: [u8; 32]) -> Result<Index> {
     clean_path(directory)?;
     reject_symlinks(directory)?;
     // create, not create_dir_all or chmod: existing/legacy directories are inert.
@@ -309,28 +322,34 @@ pub(super) fn create(directory: &Path) -> Result<Index> {
         .mode(0o700)
         .create(directory)
         .map_err(|error| format!("Inventory creation requires a new directory: {error}"))?;
+    creation_checkpoint(1)?;
     let lock = new_file(&directory.join(".lock"))?;
     lock.try_lock()
         .map_err(|error| format!("Cannot lock inventory: {error}"))?;
-    let identity = random_bytes::<32>()?;
+    creation_checkpoint(2)?;
     let mut bytes = Vec::from(ID_MAGIC.as_slice());
     bytes.extend_from_slice(&identity);
     bytes.extend_from_slice(&sha256(&bytes));
     let mut id_file = new_file(&directory.join("identity.bin"))?;
+    creation_checkpoint(6)?;
     id_file
         .write_all(&bytes)
         .and_then(|()| id_file.sync_all())
         .map_err(|error| error.to_string())?;
+    creation_checkpoint(3)?;
     fs::DirBuilder::new()
         .mode(0o700)
         .create(directory.join("objects"))
         .map_err(|error| error.to_string())?;
     sync_directory(&directory.join("objects"))?;
+    creation_checkpoint(4)?;
     let header = Header::empty(identity);
     let mut tree = new_file(&directory.join("tree.bin"))?;
+    creation_checkpoint(7)?;
     tree.write_all(&header.encode())
         .and_then(|()| tree.sync_all())
         .map_err(|error| error.to_string())?;
+    creation_checkpoint(5)?;
     lock.sync_all().map_err(|error| error.to_string())?;
     sync_directory(directory)?;
     sync_directory(

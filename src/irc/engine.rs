@@ -1,5 +1,5 @@
 //! Pure previews and row-scoped audit reviews remain separate from routing.
-use super::{Announcement, ControlRequest, MAX_RECORDS, Record, digest, evaluate, hash, valid_id};
+use super::{Announcement, ControlRequest, Record, digest, evaluate, hash, valid_id};
 use crate::{
     Result,
     engine::{Engine, lock},
@@ -46,26 +46,51 @@ impl Engine {
         Ok(v)
     }
     pub fn irc_announcements(&self, offset: usize, limit: usize) -> Result<Value> {
-        if offset > MAX_RECORDS || limit == 0 || limit > 200 {
-            return Err("IRC: invalid page bounds".into());
+        if offset > super::MAX_OFFSET || limit == 0 || limit > 200 {
+            return Err("IRC: invalid page bounds; use a cursor beyond offset 1000".into());
         }
         let ledger = lock(&self.irc_store)?;
+        let mut after = None;
+        let mut remaining = offset;
+        while remaining > 0 {
+            let (rows, next) = ledger.page(2, after, remaining.min(200))?;
+            remaining -= rows.len();
+            if next.is_none() {
+                return self.irc_history_report(&ledger, Vec::new(), None, Some(offset), limit);
+            }
+            after = next;
+        }
+        let (rows, next) = ledger.page(2, after, limit)?;
+        self.irc_history_report(&ledger, rows, next, Some(offset), limit)
+    }
+    pub fn irc_announcements_page(&self, after: Option<&str>, limit: usize) -> Result<Value> {
+        let after = after.map(super::index::parse_cursor).transpose()?;
+        let ledger = lock(&self.irc_store)?;
+        let (rows, next) = ledger.page(2, after, limit)?;
+        self.irc_history_report(&ledger, rows, next, None, limit)
+    }
+    fn irc_history_report(
+        &self,
+        ledger: &super::AnnouncementStore,
+        rows: Vec<Record>,
+        next: Option<crate::inventory::Key>,
+        offset: Option<usize>,
+        limit: usize,
+    ) -> Result<Value> {
         let runtime = lock(&self.irc_route_runtime)?;
-        let mut rows: Vec<_> = ledger.state.records.values().collect();
-        rows.sort_by(|a, b| (&b.first_seen, &b.id).cmp(&(&a.first_seen, &a.id)));
         let mut v = Value::object();
-        v.insert("total", rows.len() as u32);
-        v.insert("offset", offset as u32);
+        v.insert("total", Value::Number(ledger.count()? as f64));
+        if let Some(offset) = offset {
+            v.insert("offset", Value::Number(offset as f64));
+        }
         v.insert("limit", limit as u32);
         v.insert(
+            "next_cursor",
+            next.map_or(Value::Null, |k| Value::from(super::index::cursor(&k))),
+        );
+        v.insert(
             "announcements",
-            Value::Array(
-                rows.into_iter()
-                    .skip(offset)
-                    .take(limit)
-                    .map(|r| runtime.annotate(r))
-                    .collect(),
-            ),
+            Value::Array(rows.iter().map(|r| runtime.annotate(r)).collect()),
         );
         Ok(v)
     }
@@ -74,12 +99,8 @@ impl Engine {
             return Err("IRC: invalid announcement ID".into());
         }
         let ledger = lock(&self.irc_store)?;
-        let record = ledger
-            .state
-            .records
-            .get(id)
-            .ok_or("IRC: unknown announcement")?;
-        Ok(lock(&self.irc_route_runtime)?.annotate(record))
+        let record = ledger.get(id)?.ok_or("IRC: unknown announcement")?;
+        Ok(lock(&self.irc_route_runtime)?.annotate(&record))
     }
     pub fn irc_preview(&self, source_id: &str, value: &Value) -> Result<Value> {
         super::preview(&self.config, source_id, value)
@@ -135,14 +156,11 @@ impl Engine {
         let binding = source.binding();
         let id = a.id(&binding);
         let mut ledger = lock(&self.irc_store)?;
-        if let Some(r) = ledger.state.records.get(&id) {
+        if let Some(r) = ledger.get(&id)? {
             let mut v = r.public_json();
             v.insert("duplicate", true);
             v.insert("claim_changed", r.announcement != a);
             return Ok(v);
-        }
-        if ledger.state.records.len() == MAX_RECORDS {
-            return Err("IRC: announcement history is full; no identity was discarded".into());
         }
         let now = store::now();
         let evaluations = evaluate(&self.config.irc, &self.config.selection, source_id, &a)?;
@@ -160,9 +178,7 @@ impl Engine {
             route: None,
             admission: None,
         };
-        let mut next = ledger.state.clone();
-        next.records.insert(id, record.clone());
-        ledger.save(next)?;
+        ledger.save_rows(std::slice::from_ref(&record))?;
         let mut v = record.public_json();
         v.insert("duplicate", false);
         v.insert("claim_changed", false);
@@ -177,12 +193,7 @@ impl Engine {
             return self.irc_request_control(id, query);
         }
         let mut ledger = lock(&self.irc_store)?;
-        let r = ledger
-            .state
-            .records
-            .get(id)
-            .ok_or("IRC: unknown announcement")?
-            .clone();
+        let r = ledger.get(id)?.ok_or("IRC: unknown announcement")?;
         let source = self.config.irc.source(&r.source_id)?;
         if !valid_id(&source.id) || source.binding() != r.binding {
             return Err("IRC: source identity changed".into());
@@ -207,11 +218,7 @@ impl Engine {
             if query.plan_id.as_deref() != Some(&plan) {
                 return Err("IRC: review is stale; preview again".into());
             }
-            let mut next = ledger.state.clone();
-            let row = next
-                .records
-                .get_mut(id)
-                .ok_or("IRC: missing announcement")?;
+            let mut row = r.clone();
             row.decision = if query.action == "acknowledge" {
                 "acknowledged"
             } else {
@@ -224,7 +231,7 @@ impl Engine {
                 .ok_or("IRC: decision revision overflow")?;
             row.decided_at = Some(store::now());
             let result = row.public_json();
-            ledger.save(next)?;
+            ledger.save_rows(&[row])?;
             report.insert("announcement", result);
         }
         Ok(report)

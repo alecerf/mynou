@@ -524,15 +524,10 @@ fn the_native_cli_sends_an_exact_400_byte_response_and_its_required_terminator()
     assert!(payload == format!("\0{username}\0{password}").into_bytes());
     welcome(&mut stream);
     announce(&mut stream, SENDER, "#announces", &announcement(7));
-    wait(|| {
-        snapshot(&cfg.store_dir)
-            .get("records")
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .len()
-            == 1
-    });
+    // The live process owns the index lock. Its ordered PONG follows the
+    // synchronous durable receipt; inspect the history after stopping it.
+    send(&mut stream, "PING :durable-receipt");
+    assert_eq!(line(&mut stream), "PONG :durable-receipt");
     drop(process);
     let engine = Engine::open_for_management(cfg.clone()).unwrap();
     assert_eq!(rows(&engine).len(), 1);
