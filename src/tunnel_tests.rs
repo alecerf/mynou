@@ -254,11 +254,18 @@ impl World {
         }
     }
 
+    /// One exchange round. Loopback delivery can lag a send slightly (macOS),
+    /// so each hop waits a little real time before reading.
     fn step(&mut self) {
+        let hop = || std::thread::sleep(Duration::from_micros(300));
         self.client.pump(Duration::ZERO).unwrap();
+        hop();
         self.relay.step();
+        hop();
         self.server.pump(Duration::ZERO).unwrap();
+        hop();
         self.relay.step();
+        hop();
         self.client.pump(Duration::ZERO).unwrap();
     }
 
