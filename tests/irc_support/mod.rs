@@ -99,17 +99,69 @@ pub fn rows(engine: &Engine) -> Vec<Value> {
 pub fn no_jobs(engine: &Engine) {
     assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
 }
-pub fn bytes(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
-    let mut files = BTreeMap::new();
-    for entry in fs::read_dir(root).unwrap() {
-        let path = entry.unwrap().path();
-        let metadata = fs::symlink_metadata(&path).unwrap();
-        if metadata.is_dir() {
-            files.extend(bytes(&path));
-        } else if metadata.is_file() {
-            files.insert(path.clone(), fs::read(path).unwrap());
-        }
+fn fixture_path(path: &Path) -> mynou::Result<PathBuf> {
+    let declared_temporary = std::env::temp_dir();
+    let temporary = declared_temporary
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    let relative = path
+        .strip_prefix(&declared_temporary)
+        .or_else(|_| path.strip_prefix(&temporary))
+        .map_err(|_| "Fixture path escaped temporary storage")?;
+    if relative.as_os_str().is_empty()
+        || relative
+            .components()
+            .any(|c| !matches!(c, std::path::Component::Normal(_)))
+    {
+        return Err("Fixture path must be strictly inside temporary storage".into());
     }
+    // Permit only the system temporary-root alias. Any other symbolic link
+    // changes this expected physical identity and is refused without statting
+    // the original caller-supplied path.
+    let expected = temporary.join(relative);
+    let normalized = path.canonicalize().map_err(|error| error.to_string())?;
+    if !normalized.as_path().starts_with(&temporary) {
+        return Err("Fixture path escaped temporary storage".into());
+    }
+    if normalized == temporary {
+        return Err("Fixture path must be strictly inside temporary storage".into());
+    }
+    if normalized != expected {
+        return Err("Fixture path contains a symbolic link".into());
+    }
+    Ok(normalized)
+}
+
+pub fn bytes(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    fn walk(
+        root: &Path,
+        directory: &Path,
+        files: &mut BTreeMap<PathBuf, Vec<u8>>,
+    ) -> mynou::Result<()> {
+        let directory = fixture_path(directory)?;
+        if !directory.as_path().starts_with(root) {
+            return Err("Fixture directory escaped its root".into());
+        }
+        for entry in fs::read_dir(&directory).map_err(|error| error.to_string())? {
+            let path = entry.map_err(|error| error.to_string())?.path();
+            let metadata = fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
+            if metadata.file_type().is_symlink() {
+                return Err("Fixture entry must not be a symbolic link".into());
+            }
+            if metadata.is_dir() {
+                walk(root, &path, files)?;
+            } else if metadata.is_file() {
+                files.insert(
+                    path.clone(),
+                    fs::read(path).map_err(|error| error.to_string())?,
+                );
+            }
+        }
+        Ok(())
+    }
+    let root = fixture_path(root).unwrap();
+    let mut files = BTreeMap::new();
+    walk(&root, &root, &mut files).unwrap();
     files
 }
 pub fn snapshot(root: &Path) -> Value {
