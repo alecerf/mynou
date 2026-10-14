@@ -45,18 +45,28 @@ stack emits goes through `Peer::send`. Before a session exists the peer queues i
 sends and counts a drop for stack traffic, which retransmits. There is no other
 way out: no inner byte reaches the socket unencrypted.
 
-Outer datagrams go to the pinned endpoint until a packet authenticated by the
-peer arrives from another source. Only then does the runtime roam to that
-source. A cookie reply, a replayed data packet or anything unauthenticated
-never moves it. A new generation starts again from the pinned endpoint.
+Outer datagrams go to the pinned endpoint until an authenticated handshake
+response or transport data packet arrives from another source. Only then does
+the runtime roam to that source. Both are bound to a fresh session and cannot be
+replayed. A handshake initiation never moves the remote, even when it
+authenticates: a fresh generation's peer has forgotten the previous timestamp
+fence, so an old initiation could be replayed. A cookie reply, a replayed data
+packet or anything unauthenticated never moves it either. A new generation
+starts again from the pinned endpoint. Under `Load::High` the cookie reply goes
+to the current remote, so a peer that moved cannot complete a handshake until
+the load drops. The responder role exists for tests; Mynou is the initiator.
 
 ## Generations, loss and reconnection
 
 Every handle (`VirtualUdp`, `VirtualFlow`, `VirtualListener`, `Lookup`) carries
-its generation. When the peer reports `GaveUp`, `Expired` or `Revoked`, the clock
+its generation. When the peer reports `GaveUp`, `Expired` or `Revoked`, a
+protected generation's peer is no longer `ProtectedReady` (it can expire its keys
+and start a new handshake within one call), the clock
 moves backwards, entropy fails, `set_endpoint` replaces the endpoint, or `cancel`
 is called, the runtime revokes the peer, every virtual socket and queued
 datagram, every flow and listener, and every pending or finished DNS lookup in one step.
+Nothing the peer emitted in the call that lost the session is sent or delivered,
+and a send in that call returns `Revoked`.
 Afterwards each old handle returns `Revoked`. Delayed datagrams of the old session
 fail authentication against the fresh peer, so no old-generation result can be
 delivered.
@@ -69,9 +79,9 @@ to `reconnect_max`. After `reconnect_attempts` consecutive generations without a
 session the runtime is `Blocked`. `cancel` stops reconnection, `reconnect` starts
 a fresh budget and `shutdown` revokes everything and closes the socket.
 
-The initiator (`initiate`) sends an empty keepalive every `keepalive` seconds
-while protected (25 by default). This also lets the peer start the time-based
-rekey on an idle tunnel. Without it an idle session expires after 180 seconds, and
+While protected, either role with `keepalive` set sends an empty keepalive at
+that interval (25 seconds by default; the test responder disables it). On the
+initiator this also lets the peer start the time-based rekey on an idle tunnel. Without it an idle session expires after 180 seconds, and
 the generation with it. A silent endpoint is detected the same way: the session
 expires, the generation is revoked and reconnection starts.
 
@@ -100,7 +110,9 @@ re-source datagrams. They cover:
 - loss, reordering and duplication, with replays refused;
 - rekey under 300 seconds of traffic without a new generation;
 - cookie replies under a handshake flood, then MAC2 admission;
-- roaming on authenticated packets only;
+- roaming on authenticated responses and data only, including an initiation
+  replayed after a new generation;
+- an expiry seen only by a late pump or a send, which still revokes;
 - endpoint silence, revocation and reconnection;
 - bounded backoff, exhaustion and cancellation;
 - delayed old-generation answers racing a new generation;

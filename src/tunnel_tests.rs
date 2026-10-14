@@ -988,3 +988,83 @@ fn clock_and_entropy_failures_revoke_without_fallback() {
     world.relay.quiesce();
     assert_eq!(world.relay.seen.len(), seen + 1);
 }
+
+#[test]
+fn an_expiry_seen_late_still_revokes_the_generation() {
+    let mut world = World::new(|_, _| {});
+    world.connect(Duration::from_millis(100), 20);
+    let old = world.client.udp_bind(0).unwrap();
+    world.relay.block = true;
+    // The pump comes late: the peer expires its keys and starts a new
+    // handshake within the same call.
+    world.clock.advance(Duration::from_secs(200));
+    world.client.pump(Duration::ZERO).unwrap();
+    let status = world.client.status();
+    assert_eq!(status.state, TunnelState::Reconnecting);
+    assert_eq!(status.reason, Some(Reason::Expired));
+    assert_eq!(world.client.udp_recv(old), Err(TunnelError::Revoked));
+    world.relay.block = false;
+    world.connect(Duration::from_millis(500), 200);
+    assert_eq!(world.client.status().generation, Some(2));
+    assert_eq!(world.client.udp_recv(old), Err(TunnelError::Revoked));
+}
+
+#[test]
+fn a_send_after_idle_expiry_is_refused_and_revokes() {
+    let mut world = World::new(|client, _| client.keepalive = None);
+    world.connect(Duration::from_millis(100), 20);
+    let old = world.client.udp_bind(0).unwrap();
+    world.relay.quiesce();
+    let seen = world.relay.seen.len();
+    world.clock.advance(Duration::from_secs(200));
+    assert_eq!(
+        world.client.udp_send_to(old, (SERVER_IP, 7000), b"x"),
+        Err(TunnelError::Revoked)
+    );
+    let status = world.client.status();
+    assert_eq!(status.state, TunnelState::Reconnecting);
+    assert_eq!(status.reason, Some(Reason::Expired));
+    assert_eq!(world.client.udp_recv(old), Err(TunnelError::Revoked));
+    // The doomed generation published nothing, not even its new initiation.
+    world.relay.quiesce();
+    assert_eq!(world.relay.seen.len(), seen);
+}
+
+#[test]
+fn a_replayed_initiation_never_moves_the_remote() {
+    let mut world = World::new(|_, _| {});
+    world.connect(Duration::from_millis(100), 20);
+    let initiation = world
+        .relay
+        .seen
+        .iter()
+        .find(|(datagram, to_client)| !to_client && datagram[0] == 1)
+        .unwrap()
+        .0
+        .clone();
+    // A fresh generation forgets the timestamp fence of the old one.
+    world
+        .server
+        .set_endpoint(Endpoint::Address(world.relay.address(0)))
+        .unwrap();
+    let spoof = UdpSocket::bind(loopback()).unwrap();
+    spoof.set_nonblocking(true).unwrap();
+    spoof
+        .send_to(&initiation, world.server.local_addr().unwrap())
+        .unwrap();
+    for _ in 0..20 {
+        world.server.pump(Duration::ZERO).unwrap();
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let mut buffer = [0u8; 2048];
+    assert!(spoof.recv_from(&mut buffer).is_err());
+    assert_eq!(world.server.status().remote, Some(world.relay.address(0)));
+    assert_eq!(world.server.stats().roamed, 0);
+    // The real client still reconnects the server's new generation.
+    world
+        .client
+        .set_endpoint(Endpoint::Address(world.relay.address(0)))
+        .unwrap();
+    world.connect(Duration::from_millis(500), 100);
+    assert_eq!(world.server.status().remote, Some(world.relay.address(0)));
+}

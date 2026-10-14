@@ -114,8 +114,9 @@ pub struct TunnelConfig {
     pub mtu: usize,
     /// Start a handshake at once and keep the session fresh, or only answer.
     pub initiate: bool,
-    /// Interval of the initiator's empty keepalive while protected. It also
-    /// drives the time-based rekey, so `None` lets an idle session expire.
+    /// Interval of the empty keepalive while protected, in either role. On the
+    /// initiator it also drives the time-based rekey, so `None` lets an idle
+    /// session expire.
     pub keepalive: Option<Duration>,
     pub peer_queue: usize,
     pub udp: Limits,
@@ -517,12 +518,33 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
         self.state = TunnelState::Reconnecting;
     }
 
+    /// Whether the session this generation relied on is gone. The peer can
+    /// expire its keys and start a new handshake within one call, so a
+    /// protected generation that is no longer `ProtectedReady` lost its session
+    /// whatever the final status says.
+    fn lost(&self, status: PeerStatus) -> bool {
+        matches!(
+            status,
+            PeerStatus::GaveUp | PeerStatus::Expired | PeerStatus::Revoked
+        ) || (self.state == TunnelState::Protected && status != PeerStatus::ProtectedReady)
+    }
+
     /// Follows the peer status; any loss of the session revokes the generation.
     fn observe(&mut self, now: Duration) {
+        let Some(live) = self.live.as_ref() else {
+            return;
+        };
+        let status = live.peer.status();
+        if self.state == TunnelState::Protected
+            && matches!(status, PeerStatus::NoSession | PeerStatus::Handshaking)
+        {
+            self.fail(Reason::Expired, now);
+            return;
+        }
         let Some(live) = self.live.as_mut() else {
             return;
         };
-        match live.peer.status() {
+        match status {
             PeerStatus::ProtectedReady => {
                 if self.state != TunnelState::Protected {
                     live.keepalive_at = self.config.keepalive.map(|every| now + every);
@@ -540,11 +562,25 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
         }
     }
 
-    fn deliver(&mut self, output: PeerOutput, now: Duration) {
-        let Some(live) = self.live.as_mut() else {
-            return;
+    /// Publishes one peer output: datagrams to the remote, plaintext to the
+    /// stacks. Nothing of an output that lost the session is published; the
+    /// generation is revoked instead and `false` is returned. `roam` is true
+    /// only for handshake responses and transport data: both are bound to a
+    /// fresh session and cannot be replayed, while an initiation can be once a
+    /// new generation has forgotten its timestamp fence.
+    fn deliver(&mut self, output: PeerOutput, now: Duration, roam: bool) -> bool {
+        let Some(live) = self.live.as_ref() else {
+            return false;
         };
-        if let Some(source) = output.authenticated_source
+        if self.lost(live.peer.status()) {
+            self.observe(now);
+            return false;
+        }
+        let Some(live) = self.live.as_mut() else {
+            return false;
+        };
+        if roam
+            && let Some(source) = output.authenticated_source
             && source != live.remote
         {
             live.remote = source;
@@ -555,6 +591,7 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
         for payload in output.inner_payloads {
             dispatch(live, &self.config.ip, payload, now, &mut self.stats);
         }
+        true
     }
 
     /// Encrypts one inner packet. Without a session the peer queues it; a full
@@ -568,8 +605,11 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
         };
         match live.peer.send(&packet, clock) {
             Ok(output) => {
-                self.deliver(output, now);
-                Ok(())
+                if self.deliver(output, now, false) {
+                    Ok(())
+                } else {
+                    Err(TunnelError::Revoked)
+                }
             }
             Err(error) => {
                 if live.peer.status() == PeerStatus::Revoked {
@@ -622,7 +662,9 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
             wall,
         };
         match live.peer.receive(packet, source, load, clock) {
-            Ok(output) => self.deliver(output, now),
+            Ok(output) => {
+                self.deliver(output, now, matches!(packet[0], 2 | 4));
+            }
             Err(_) => self.stats.rejected += 1,
         }
         self.observe(now);
@@ -682,7 +724,7 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
         // A failed poll (entropy) revokes the peer, which `observe` turns into
         // the loss of the whole generation.
         if let Ok(output) = live.peer.poll(clock) {
-            self.deliver(output, now);
+            self.deliver(output, now, false);
         }
         self.observe(now);
     }
