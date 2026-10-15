@@ -7,7 +7,7 @@
 mod persistence;
 mod tree;
 #[cfg(test)]
-pub(crate) use persistence::Fault;
+pub(crate) use persistence::{Fault, damage_record};
 
 use crate::Result;
 use std::{collections::BTreeSet, fs::File, path::PathBuf};
@@ -82,6 +82,9 @@ pub struct Index {
     requests: u64,
     #[cfg(test)]
     last_staged_nodes: usize,
+    /// Writes puts as record files, as releases before the value log did.
+    #[cfg(test)]
+    legacy_records: bool,
 }
 
 impl Index {
@@ -172,7 +175,7 @@ impl Index {
         }
         let value = Tree::new(&mut self.tree, self.header, &mut self.cache).find(key)?;
         value
-            .map(|value| persistence::read_value(&self.directory, key, value))
+            .map(|value| persistence::read_value(&self.directory, &self.header, key, value))
             .transpose()
     }
 
@@ -211,7 +214,7 @@ impl Index {
                 more = true;
                 break;
             }
-            let data = persistence::read_value(&self.directory, &key, value)?;
+            let data = persistence::read_value(&self.directory, &self.header, &key, value)?;
             bytes += data.len();
             entries.push((key, data));
         }
@@ -271,6 +274,7 @@ impl Index {
             return Err("Inventory transaction exceeds its byte budget".into());
         }
         let before = self.header;
+        let mut log = Log::new(before);
         // Existing values are verified before staging; replacement is not a
         // silent repair of corrupt storage, and preparation changes no files.
         let mut actions = Vec::with_capacity(changes.len());
@@ -281,22 +285,36 @@ impl Index {
                 Change::Delete(key) => (key, None, false),
             };
             let existed = self.get(&key)?.is_some();
+            if let Some(old) = Tree::new(&mut self.tree, before, &mut self.cache).find(&key)? {
+                log.release(old)?;
+            }
             persistence::check_value_path(&self.directory, &key)?;
+            #[cfg(test)]
+            let legacy = self.legacy_records;
+            #[cfg(not(test))]
+            let legacy = false;
+            let segment = match &data {
+                Some(data) if !inline && !legacy => Some(log.append(data)?),
+                _ => None,
+            };
             actions.push(persistence::Action {
                 key,
                 data,
                 inline,
                 existed,
+                segment,
             });
         }
         let mut staged = Tree::new(&mut self.tree, before, &mut self.cache);
         for action in &actions {
             staged.change(&action.key, action.reference()?, action.existed)?;
         }
+        log.clean(&self.directory, &mut staged, &mut actions)?;
         staged.header.sequence = before
             .sequence
             .checked_add(1)
             .ok_or("Inventory sequence overflow")?;
+        log.finish(&mut staged.header)?;
         #[cfg(test)]
         {
             self.last_staged_nodes = staged.dirty.len();
@@ -316,6 +334,189 @@ impl Index {
     }
 }
 
+/// Log garbage tolerated before the cleaner runs, beyond twice the live bytes.
+const CLEAN_SLACK: u64 = 8 * 1024 * 1024;
+/// Least segment bytes the cleaner reads in one commit; it reads at least as
+/// much as the commit appends, so the log cannot outgrow it.
+const CLEAN_BUDGET: u64 = 4 * 1024 * 1024;
+/// Room kept for one more tree path when deciding whether to relocate a value.
+const CLEAN_PAGE_MARGIN: usize = 128;
+
+#[cfg(test)]
+thread_local! { pub(crate) static CLEAN_SLACK_OVERRIDE: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) }; }
+
+/// Value-log bookkeeping for one commit: where new envelopes go in this
+/// commit's segment, the live byte total and the cleaner's progress.
+struct Log {
+    before: Header,
+    number: u64,
+    end: u64,
+    appended: u64,
+    live_bytes: u64,
+    tail: u64,
+    tail_offset: u64,
+    log_bytes: u64,
+}
+
+impl Log {
+    fn new(before: Header) -> Self {
+        Self {
+            before,
+            number: before.head,
+            end: persistence::SEGMENT_HEADER_BYTES,
+            appended: 0,
+            live_bytes: before.live_bytes,
+            tail: before.tail,
+            tail_offset: before.tail_offset,
+            log_bytes: before.log_bytes,
+        }
+    }
+
+    fn envelope_bytes(length: usize) -> u64 {
+        persistence::ENVELOPE_BYTES + length as u64
+    }
+
+    /// Accounts for a value this commit replaces or deletes.
+    fn release(&mut self, old: tree::ValueRef) -> Result<()> {
+        if old.segment {
+            self.live_bytes = self
+                .live_bytes
+                .checked_sub(Self::envelope_bytes(old.length as usize))
+                .ok_or("Inventory live byte count underflow")?;
+        }
+        Ok(())
+    }
+
+    /// Places a value in this commit's segment.
+    fn append(&mut self, data: &[u8]) -> Result<(u64, u32)> {
+        let offset = u32::try_from(self.end).map_err(|_| "Inventory segment too large")?;
+        let size = Self::envelope_bytes(data.len());
+        self.end = self
+            .end
+            .checked_add(size)
+            .filter(|end| *end <= u64::from(u32::MAX))
+            .ok_or("Inventory segment too large")?;
+        self.appended += size;
+        self.live_bytes = self
+            .live_bytes
+            .checked_add(size)
+            .ok_or("Inventory live byte count overflow")?;
+        Ok((self.number, offset))
+    }
+
+    /// Relocates live values out of the oldest segments once garbage exceeds
+    /// the live bytes plus slack, reading a bounded slice per commit. A segment
+    /// fully read leaves the log once this commit's root is durable.
+    fn clean(
+        &mut self,
+        directory: &std::path::Path,
+        staged: &mut Tree,
+        actions: &mut Vec<persistence::Action>,
+    ) -> Result<()> {
+        #[cfg(test)]
+        let slack = CLEAN_SLACK_OVERRIDE
+            .with(|value| value.get())
+            .unwrap_or(CLEAN_SLACK);
+        #[cfg(not(test))]
+        let slack = CLEAN_SLACK;
+        let total = self.log_bytes + self.segment_size();
+        if total <= self.live_bytes.saturating_mul(2).saturating_add(slack) {
+            return Ok(());
+        }
+        let budget = CLEAN_BUDGET.max(self.appended);
+        let mut read = 0;
+        // Same per-item sizes as `Transaction::encode`, kept clear of its limit.
+        let page_bytes = (tree::PAGE_SIZE + 8) as u64;
+        let mut wal_bytes = actions.iter().try_fold(3 * page_bytes, |total, action| {
+            total.checked_add(82 + action.data.as_ref().map_or(0, Vec::len) as u64)
+        });
+        while self.tail < self.before.head && read < budget {
+            let mut segment =
+                persistence::Segment::open(directory, self.before.identity, self.tail)?;
+            let mut offset = if self.tail_offset == 0 {
+                persistence::SEGMENT_HEADER_BYTES
+            } else {
+                self.tail_offset
+            };
+            loop {
+                let pages = (staged.dirty.len() + CLEAN_PAGE_MARGIN) as u64;
+                if actions.len() >= MAX_CHANGES
+                    || pages > tree::MAX_DIRTY_PAGES as u64
+                    || wal_bytes
+                        .and_then(|bytes| bytes.checked_add(pages * page_bytes))
+                        .is_none_or(|bytes| {
+                            bytes + 82 + MAX_VALUE_BYTES as u64 > persistence::MAX_WAL_BYTES as u64
+                        })
+                    || read >= budget
+                {
+                    self.tail_offset = offset;
+                    return Ok(());
+                }
+                let Some((key, data)) = segment.envelope(offset)? else {
+                    break;
+                };
+                let size = Self::envelope_bytes(data.len());
+                let current = tree::ValueRef::segment(self.tail, offset as u32, &data);
+                if staged.find(&key)? == Some(current) {
+                    self.release(current)?;
+                    let location = self.append(&data)?;
+                    let action = persistence::Action {
+                        key,
+                        data: Some(data),
+                        inline: false,
+                        existed: true,
+                        segment: Some(location),
+                    };
+                    staged.change(&key, action.reference()?, true)?;
+                    wal_bytes = wal_bytes.and_then(|bytes| bytes.checked_add(82 + size));
+                    actions.push(action);
+                }
+                offset += size;
+                read += size;
+            }
+            self.log_bytes = self
+                .log_bytes
+                .checked_sub(segment.length)
+                .ok_or("Inventory log byte count underflow")?;
+            read += persistence::SEGMENT_HEADER_BYTES;
+            self.tail += 1;
+            self.tail_offset = 0;
+        }
+        Ok(())
+    }
+
+    fn segment_size(&self) -> u64 {
+        if self.end > persistence::SEGMENT_HEADER_BYTES {
+            self.end
+        } else {
+            0
+        }
+    }
+
+    fn finish(&self, header: &mut Header) -> Result<()> {
+        let size = self.segment_size();
+        header.head = if size > 0 {
+            self.number
+                .checked_add(1)
+                .ok_or("Inventory segment number overflow")?
+        } else {
+            self.number
+        };
+        header.tail = self.tail;
+        header.tail_offset = if self.tail == header.head {
+            0
+        } else {
+            self.tail_offset
+        };
+        header.log_bytes = self
+            .log_bytes
+            .checked_add(size)
+            .ok_or("Inventory log byte count overflow")?;
+        header.live_bytes = self.live_bytes;
+        Ok(())
+    }
+}
+
 impl Drop for Index {
     fn drop(&mut self) {
         // A concurrently spawned child can briefly inherit the locked open
@@ -327,5 +528,7 @@ impl Drop for Index {
 
 #[cfg(test)]
 mod flush_tests;
+#[cfg(test)]
+mod log_tests;
 #[cfg(test)]
 mod tests;

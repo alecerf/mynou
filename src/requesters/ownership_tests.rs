@@ -98,13 +98,7 @@ fn corrupt_ownership_object_stops_cancellation_and_preserves_the_queued_job() {
     ledger.save_patch(patch).unwrap();
     assert!(super::engine::interest(&*ledger, &job, &config).unwrap());
     let key = super::index::primary_cursor(&record.id).unwrap();
-    let name: String = key.iter().map(|byte| format!("{byte:02x}")).collect();
-    let object = config
-        .store_dir
-        .join("requesters.idx/objects")
-        .join(&name[..2])
-        .join(&name[2..]);
-    fs::remove_file(object).unwrap();
+    assert!(crate::inventory::damage_record(&config.store_dir.join("requesters.idx"), &key) > 0);
     assert!(ledger.demand(&record.id).is_err());
     assert!(super::engine::interest(&*ledger, &job, &config).is_err());
     assert!(super::engine::cancel_unwanted(&*ledger, &mut jobs, &config, true).is_err());

@@ -280,6 +280,7 @@ fn io_write_failure_keeps_published_proof_and_blocks_reads_until_recovery() {
 fn published_redo_repairs_covered_torn_root_pages_and_records_only() {
     let directory = Directory::new();
     let mut index = Index::create(&directory.0).unwrap();
+    index.legacy_records = true;
     index.commit((0..40).map(put).collect()).unwrap();
     index.fault = Some(Fault::Published);
     assert!(
@@ -392,6 +393,7 @@ fn legacy_directories_links_private_permissions_and_owner_exclusion_are_preserve
     assert_eq!(contents(&directory.0), before);
     let directory = Directory::new();
     let mut index = Index::create(&directory.0).unwrap();
+    index.legacy_records = true;
     index.commit(vec![put(1)]).unwrap();
     assert!(Index::open(&directory.0, true).is_err());
     drop(index);
@@ -563,6 +565,7 @@ fn unordered_churn_matches_independent_ordered_reference_and_range_scans() {
 fn record_envelopes_bind_the_exact_key_even_when_payloads_are_identical() {
     let directory = Directory::new();
     let mut index = Index::create(&directory.0).unwrap();
+    index.legacy_records = true;
     index
         .commit(vec![
             Change::Put(key(1), Vec::new()),
@@ -606,6 +609,7 @@ fn inline(id: u64, data: &[u8]) -> Change {
 fn inline_values_live_in_the_tree_and_switch_kinds_without_orphan_files() {
     let directory = Directory::new();
     let mut index = Index::create(&directory.0).unwrap();
+    index.legacy_records = true;
     index
         .commit(vec![
             inline(1, b"abc"),
@@ -673,7 +677,10 @@ fn inline_values_recover_at_every_commit_boundary_without_leftover_files() {
         index
             .commit((0..40).map(|id| inline(id, &id.to_be_bytes())).collect())
             .unwrap();
+        // A record file from before the value log, replaced by an inline value.
+        index.legacy_records = true;
         index.commit(vec![put(100)]).unwrap();
+        index.legacy_records = false;
         index.fault = Some(fault);
         assert!(
             index
@@ -706,11 +713,10 @@ fn inline_values_recover_at_every_commit_boundary_without_leftover_files() {
             assert!(!object_exists(&directory.0, 100));
             assert_eq!(index.get(&key(70)).unwrap(), Some(vec![1; 64]));
         }
-        assert!(
-            contents(&directory.0)
-                .iter()
-                .all(|(path, _, _)| !path.to_string_lossy().contains(".record-"))
-        );
+        assert!(contents(&directory.0).iter().all(|(path, _, _)| {
+            let path = path.to_string_lossy();
+            !path.contains(".record-") && !path.contains(".segment-")
+        }));
         assert_eq!(index.len().unwrap(), 41);
     }
 }

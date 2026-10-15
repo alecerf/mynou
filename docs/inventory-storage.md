@@ -27,11 +27,50 @@ Offsets/counts use checked arithmetic, supported offsets fit a signed 64-bit
 file offset, and there is no configured total inventory cap.
 
 Keys are 64-byte ordered binary values. Callers must define table/range
-prefixes and identity encodings. Values have at most 1 MiB. An object is
-addressed by its full key under `objects/XX/REMAINING_HEX`; reads do not list
-the object directory. Its envelope binds the key, length and checksum, and
-the tree records its content digest. Checksums detect corruption, not malicious
-rewrites by somebody who can replace state and its checksums.
+prefixes and identity encodings. Values have at most 1 MiB. Each value is
+written in an envelope that binds the key, length and checksum, inside the
+value log described below. Stores written before the value log keep their
+values as one file per key under `objects/XX/REMAINING_HEX`; those files stay
+readable, and replacing or deleting such a key removes its file. Reads never
+list a directory. Checksums detect corruption, not malicious rewrites by
+somebody who can replace state and its checksums.
+
+## Value log
+
+On Apple platforms every durability flush is an `F_FULLFSYNC`, which flushes
+the whole drive cache and costs milliseconds; std offers no cheaper flush. One
+file per value therefore made a commit's cost grow with its record count. Each
+commit now writes all of its values into a single segment,
+`segments/<16 hex digits>`, numbered by the header's `head` counter. A segment
+starts with a magic, the store identity, its number and their SHA-256, followed
+by the envelopes in transaction order. The tree leaf keeps the segment number,
+the envelope offset and the first 20 bytes of the value's SHA-256 in the slot a
+record file used for its full digest, flagged in the length field, so page
+layout is unchanged. A read checks the segment header, the envelope checksum,
+its key and length, and the digest prefix. Segments are never rewritten after
+publication, so a location names exactly one envelope.
+
+The header also records the oldest segment still in use (`tail`), how far the
+cleaner has read into it, the bytes of all segments and the bytes of envelopes
+still referenced. Once the segments exceed twice the referenced bytes plus
+8 MiB, each commit reads at least 4 MiB (or as much as it appends) from the
+oldest segments and rewrites every still-referenced envelope into its own
+segment, as an ordinary replacement in the same transaction. The cleaner stops
+before the commit would approach its change, page or WAL bounds, so it never
+makes a caller's commit fail. A segment read to its end leaves the log; its
+file is deleted after the root that no longer references it is durable.
+
+A commit flushes the WAL, the store directory, its segment and the `segments`
+directory, the tree, and the store directory again when it retires the WAL: six
+flushes whatever its record count. Deleting legacy record files adds a flush
+per affected object directory, and retiring cleaned segments adds one.
+`inventory::flush_tests` measures and enforces this.
+
+Existing stores need no migration: their record files are read in place and
+leave as their keys change. Releases before the value log refuse a store once
+any commit has written a segment, reporting invalid header padding. To keep a
+downgrade path, make a complete stopped-store backup before upgrading;
+restoring it loses changes made afterwards.
 
 The API validates the root at open and each referenced page/value on access;
 opening does not audit the entire inventory. Corruption on an untouched path
@@ -48,10 +87,13 @@ records, stages tree changes in memory and validates the resulting key changes.
    the file. This unpublished staging artifact has never applied any data.
 2. Rename it to `transaction.bin` and synchronize the store directory. Only
    after this publication is durable may any record or tree page change.
-3. Write private temporary objects, synchronize them and rename them to their
-   exact key paths; apply deletions. Synchronize every affected object directory
-   and `objects`. Apply page images and the root, then synchronize the tree and
-   store directory.
+3. Write the transaction's segment under a private temporary name, synchronize
+   it, rename it to its number and synchronize `segments`. Remove legacy record
+   files of replaced or deleted keys and synchronize their directories (a WAL
+   from before the value log instead writes and synchronizes one record file
+   per put, and synchronizes `objects` when it created a directory). Apply page
+   images and the root, then synchronize the tree. Delete segments the cleaner
+   retired and synchronize `segments`.
 4. Remove the published WAL and synchronize the store directory before
    acknowledging or preparing another transaction.
 
@@ -61,8 +103,10 @@ a failed commit response can mean a committed transaction. Validation failures
 before staging leave the existing store usable and unchanged.
 
 Writable open reads and validates the entire bounded published WAL before any
-repair. Its store identity, old/new metadata, sequence, page images, actions
-and resulting key references must agree. A valid redo may replace torn root,
+repair. Its store identity, old/new metadata, sequence, page images, actions,
+segment locations and resulting key references must agree. Replay rebuilds
+the same segment bytes from the WAL, so a torn or missing segment of the
+interrupted transaction is rewritten. A valid redo may replace torn root,
 page or object content only for the images/keys it covers. Links, wrong types
 and public permissions remain errors. Complete corruption, truncated published
 WALs, cross-store WALs and stale roots are errors, with no repair. Replaying a
@@ -96,8 +140,9 @@ map. Action/value buffers, WAL encoding/decoding buffers and response values
 are also bounded. The height bound is 63; page allocation checks the file-offset
 representation. These are source-level bounds, not measured RSS or throughput.
 
-Unreachable old page slots and interrupted temporary object files are not
-reclaimed by this first increment. Repeated churn can therefore consume extra
+Unreachable old page slots and interrupted temporary object or segment files
+are not reclaimed by this first increment; segment space is reclaimed by the
+cleaner described under [Value log](#value-log). Repeated churn can therefore consume extra
 disk space. Compaction/reclamation must be designed and verified before the
 integration claims scalable routine operation. The index API itself has no
 automatic cleanup or backup; migration and downgrade of series data are described
@@ -106,12 +151,11 @@ including any recovery artifacts; a partial copy is not a backup.
 
 ## Inline values and the page cache
 
-A key stores either a record file (up to 1 MiB, one file per key) or an inline
-value of at most 32 bytes in its tree leaf (`Change::PutInline`). Inline values
-need no object file and no per-record synchronization, so secondary index
-entries that carry little or no payload cost one leaf slot. A key may change
-between the two kinds; the record file is removed or created in the same
-transaction, and recovery replays that idempotently. Inline lengths and zero
+A key stores either a logged value (up to 1 MiB, see [Value log](#value-log)) or
+an inline value of at most 32 bytes in its tree leaf (`Change::PutInline`).
+Inline values take no segment space, so secondary index entries that carry
+little or no payload cost one leaf slot. A key may change between the two
+kinds in one transaction, and recovery replays that idempotently. Inline lengths and zero
 padding are validated like any other tree field.
 
 Decoded, checksum-verified pages are cached (at most 2,048, about 8 MiB) and the

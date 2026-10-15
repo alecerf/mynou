@@ -21,6 +21,14 @@ pub(super) struct Header {
     pub next: u64,
     pub count: u64,
     pub level: u8,
+    /// Value log: segments `tail..head` exist; `tail_offset` is how far the
+    /// cleaner has read into `tail`; byte totals count whole segment files and
+    /// the envelopes still referenced by the tree.
+    pub head: u64,
+    pub tail: u64,
+    pub tail_offset: u64,
+    pub log_bytes: u64,
+    pub live_bytes: u64,
 }
 
 impl Header {
@@ -32,6 +40,11 @@ impl Header {
             next: 1,
             count: 0,
             level: 0,
+            head: 0,
+            tail: 0,
+            tail_offset: 0,
+            log_bytes: 0,
+            live_bytes: 0,
         }
     }
     pub fn encode(self) -> [u8; PAGE_SIZE] {
@@ -47,12 +60,21 @@ impl Header {
         }
         bytes[40] = self.level;
         bytes[41..73].copy_from_slice(&self.identity);
+        for (offset, value) in [
+            (73, self.head),
+            (81, self.tail),
+            (89, self.tail_offset),
+            (97, self.log_bytes),
+            (105, self.live_bytes),
+        ] {
+            bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
         seal(&mut bytes);
         bytes
     }
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         check(bytes, HEADER_MAGIC)?;
-        if bytes[73..PAGE_SIZE - 32].iter().any(|byte| *byte != 0) {
+        if bytes[113..PAGE_SIZE - 32].iter().any(|byte| *byte != 0) {
             return Err("Invalid inventory header padding".into());
         }
         let header = Self {
@@ -64,7 +86,18 @@ impl Header {
             next: integer(bytes, 24)?,
             count: integer(bytes, 32)?,
             level: bytes[40],
+            head: integer(bytes, 73)?,
+            tail: integer(bytes, 81)?,
+            tail_offset: integer(bytes, 89)?,
+            log_bytes: integer(bytes, 97)?,
+            live_bytes: integer(bytes, 105)?,
         };
+        if header.tail > header.head
+            || header.live_bytes > header.log_bytes
+            || (header.tail == header.head && (header.tail_offset != 0 || header.log_bytes != 0))
+        {
+            return Err("Invalid inventory value log metadata".into());
+        }
         if header.next == 0
             || header.root >= header.next
             || header.level > 63
@@ -78,17 +111,20 @@ impl Header {
     }
 }
 
-/// A leaf reference either names a separate record file (`length` bytes whose
-/// SHA-256 is `digest`) or carries at most 32 bytes inline in the tree page
-/// itself, zero-padded in the digest field.
+/// A leaf reference names a legacy record file (`length` bytes whose SHA-256
+/// is `digest`), an envelope in a value-log segment (segment number, offset
+/// and the first 20 bytes of the SHA-256 in `digest`), or carries at most 32
+/// bytes inline in the tree page itself, zero-padded in the digest field.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct ValueRef {
     pub length: u32,
     pub digest: [u8; 32],
     pub inline: bool,
+    pub segment: bool,
 }
 
 const INLINE_FLAG: u32 = 0x8000_0000;
+const SEGMENT_FLAG: u32 = 0x4000_0000;
 pub(super) const MAX_INLINE_BYTES: usize = 32;
 
 impl ValueRef {
@@ -97,7 +133,27 @@ impl ValueRef {
             length: data.len() as u32,
             digest: sha256(data),
             inline: false,
+            segment: false,
         }
+    }
+    pub fn segment(number: u64, offset: u32, data: &[u8]) -> Self {
+        let mut digest = [0; 32];
+        digest[..8].copy_from_slice(&number.to_le_bytes());
+        digest[8..12].copy_from_slice(&offset.to_le_bytes());
+        digest[12..].copy_from_slice(&sha256(data)[..20]);
+        Self {
+            length: data.len() as u32,
+            digest,
+            inline: false,
+            segment: true,
+        }
+    }
+    /// Segment number and envelope offset of a segment reference.
+    pub fn location(&self) -> (u64, u32) {
+        (
+            u64::from_le_bytes(self.digest[..8].try_into().unwrap_or_default()),
+            u32::from_le_bytes(self.digest[8..12].try_into().unwrap_or_default()),
+        )
     }
     pub fn inline(data: &[u8]) -> Result<Self> {
         if data.len() > MAX_INLINE_BYTES {
@@ -109,6 +165,7 @@ impl ValueRef {
             length: data.len() as u32,
             digest,
             inline: true,
+            segment: false,
         })
     }
     pub fn inline_data(&self) -> &[u8] {
@@ -117,6 +174,8 @@ impl ValueRef {
     fn stored_length(self) -> u32 {
         if self.inline {
             self.length | INLINE_FLAG
+        } else if self.segment {
+            self.length | SEGMENT_FLAG
         } else {
             self.length
         }
@@ -231,7 +290,8 @@ impl Node {
                         .map_err(|_| "Invalid value length")?,
                 );
                 let inline = stored & INLINE_FLAG != 0;
-                let length = stored & !INLINE_FLAG;
+                let segment = stored & SEGMENT_FLAG != 0;
+                let length = stored & !(INLINE_FLAG | SEGMENT_FLAG);
                 let digest: [u8; 32] = bytes[cursor + 68..cursor + 100]
                     .try_into()
                     .map_err(|_| "Invalid value digest")?;
@@ -241,6 +301,7 @@ impl Node {
                     } else {
                         MAX_VALUE_BYTES
                     }
+                    || (inline && segment)
                     || (inline && digest[length as usize..].iter().any(|byte| *byte != 0))
                 {
                     return Err("Oversized or malformed inventory value reference".into());
@@ -251,6 +312,7 @@ impl Node {
                         length,
                         digest,
                         inline,
+                        segment,
                     },
                 ));
                 cursor += 100;

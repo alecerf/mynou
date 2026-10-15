@@ -305,8 +305,7 @@ fn corrupt_and_linked_series_storage_fails_before_series_data_is_used() {
         fs::rename(directory.0.join("original-marker"), &path).unwrap();
     }
     // A damaged record is an error wherever it is read, never an empty result.
-    let objects = cfg.store_dir.join("series.idx/objects");
-    let damaged: Vec<_> = walk(&objects);
+    let damaged: Vec<_> = walk(&cfg.store_dir.join("series.idx/segments"));
     assert!(!damaged.is_empty());
     let saved: Vec<_> = damaged
         .iter()
@@ -335,6 +334,32 @@ fn corrupt_and_linked_series_storage_fails_before_series_data_is_used() {
             .as_str(),
         Some(id.as_str())
     );
+}
+
+/// Flips one value byte in every envelope stored for the hex-encoded key, by
+/// reading value-log segments as docs/inventory-storage.md describes them:
+/// an 80-byte header, then magic, 64-byte key, length, value and checksum.
+fn damage_record(index: &std::path::Path, key: &str) -> usize {
+    let key: Vec<u8> = (0..key.len())
+        .step_by(2)
+        .map(|at| u8::from_str_radix(&key[at..at + 2], 16).unwrap())
+        .collect();
+    let mut damaged = 0;
+    for path in walk(&index.join("segments")) {
+        let mut bytes = fs::read(&path).unwrap();
+        let mut offset = 80;
+        while offset + 108 <= bytes.len() {
+            let length =
+                u32::from_le_bytes(bytes[offset + 72..offset + 76].try_into().unwrap()) as usize;
+            if bytes[offset + 8..offset + 72] == key[..] {
+                bytes[offset + 76 + length / 2] ^= 0x55;
+                damaged += 1;
+            }
+            offset += 108 + length;
+        }
+        fs::write(&path, bytes).unwrap();
+    }
+    damaged
 }
 
 fn walk(path: &std::path::Path) -> Vec<std::path::PathBuf> {
@@ -648,15 +673,7 @@ fn unreadable_scopes_are_skipped_and_reported_without_starving_due_work() {
     // Damage the header record of each broken scope.
     for n in 1..=5u64 {
         let name = format!("10{}{}", record_id(n), "00".repeat(47));
-        let path = cfg
-            .store_dir
-            .join("series.idx/objects")
-            .join(&name[..2])
-            .join(&name[2..]);
-        let mut bytes = fs::read(&path).unwrap();
-        let middle = bytes.len() / 2;
-        bytes[middle] ^= 0x55;
-        fs::write(&path, bytes).unwrap();
+        assert!(damage_record(&cfg.store_dir.join("series.idx"), &name) > 0);
     }
     let engine = Engine::open_for_management(cfg).unwrap();
     assert_eq!(engine.series_unreadable_count(), 0);

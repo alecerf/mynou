@@ -19,6 +19,11 @@ pub(super) const MAX_WAL_BYTES: usize = 128 * 1024 * 1024;
 const WAL_MAGIC: &[u8; 8] = b"MYNOUIW1";
 const VALUE_MAGIC: &[u8; 8] = b"MYNOUIV1";
 const ID_MAGIC: &[u8; 8] = b"MYNOUID1";
+const SEGMENT_MAGIC: &[u8; 8] = b"MYNOUIS1";
+/// Magic, store identity, segment number and their SHA-256.
+pub(super) const SEGMENT_HEADER_BYTES: u64 = 80;
+/// Magic, key and length before a value, its SHA-256 after.
+pub(super) const ENVELOPE_BYTES: u64 = 108;
 
 pub(super) struct Action {
     pub key: Key,
@@ -26,6 +31,9 @@ pub(super) struct Action {
     /// Inline values live in the tree leaf and have no record file.
     pub inline: bool,
     pub existed: bool,
+    /// Segment number and offset of a put written to the value log. Puts
+    /// without it come only from WALs written before the log existed.
+    pub segment: Option<(u64, u32)>,
 }
 
 impl Action {
@@ -35,6 +43,8 @@ impl Action {
             .map(|data| {
                 if self.inline {
                     ValueRef::inline(data)
+                } else if let Some((number, offset)) = self.segment {
+                    Ok(ValueRef::segment(number, offset, data))
                 } else {
                     Ok(ValueRef::file(data))
                 }
@@ -55,7 +65,14 @@ impl Transaction {
             2 * PAGE_SIZE + 8 + self.pages.len() * (PAGE_SIZE + 8),
             |length, action| {
                 length
-                    .checked_add(70 + action.data.as_ref().map_or(0, Vec::len))
+                    .checked_add(
+                        70 + action.data.as_ref().map_or(0, Vec::len)
+                            + if action.segment.is_some() && !action.inline {
+                                12
+                            } else {
+                                0
+                            },
+                    )
                     .ok_or("Inventory WAL length overflow")
             },
         )?;
@@ -75,15 +92,20 @@ impl Transaction {
         bytes.extend_from_slice(&(self.actions.len() as u32).to_le_bytes());
         for action in &self.actions {
             bytes.extend_from_slice(&action.key);
-            bytes.push(match (&action.data, action.inline) {
-                (None, _) => 0,
-                (Some(_), false) => 1,
-                (Some(_), true) => 2,
+            bytes.push(match (&action.data, action.inline, action.segment) {
+                (None, _, _) => 0,
+                (Some(_), true, _) => 2,
+                (Some(_), false, None) => 1,
+                (Some(_), false, Some(_)) => 3,
             });
             bytes.push(u8::from(action.existed));
             bytes.extend_from_slice(
                 &(action.data.as_ref().map_or(0, Vec::len) as u32).to_le_bytes(),
             );
+            if let Some((number, offset)) = action.segment.filter(|_| !action.inline) {
+                bytes.extend_from_slice(&number.to_le_bytes());
+                bytes.extend_from_slice(&offset.to_le_bytes());
+            }
             if let Some(data) = &action.data {
                 bytes.extend_from_slice(data);
             }
@@ -113,6 +135,9 @@ impl Transaction {
             || after.identity != identity
             || before.sequence.checked_add(1) != Some(after.sequence)
             || after.next < before.next
+            || after.tail < before.tail
+            || after.tail > before.head
+            || !(after.head == before.head || before.head.checked_add(1) == Some(after.head))
         {
             return Err("Inventory WAL identity, sequence or allocation mismatch".into());
         }
@@ -139,6 +164,7 @@ impl Transaction {
         let mut actions = Vec::new();
         let mut keys = BTreeSet::new();
         let mut expected = before.count;
+        let mut segment_end = SEGMENT_HEADER_BYTES;
         for _ in 0..count {
             let key: Key = reader.take(64)?.try_into().map_err(|_| "Invalid WAL key")?;
             if !keys.insert(key) {
@@ -147,7 +173,7 @@ impl Transaction {
             let put = reader.byte()?;
             let existed = reader.byte()?;
             let length = reader.u32()? as usize;
-            if put > 2
+            if put > 3
                 || existed > 1
                 || length
                     > if put == 2 {
@@ -159,6 +185,23 @@ impl Transaction {
             {
                 return Err("Invalid inventory WAL value or action".into());
             }
+            let segment = if put == 3 {
+                let number = reader.u64()?;
+                let offset = u64::from(reader.u32()?);
+                if before.head.checked_add(1) != Some(after.head)
+                    || number != before.head
+                    || offset != segment_end
+                {
+                    return Err("Inventory WAL segment location mismatch".into());
+                }
+                segment_end = segment_end
+                    .checked_add(ENVELOPE_BYTES + length as u64)
+                    .filter(|end| *end <= u64::from(u32::MAX))
+                    .ok_or("Inventory WAL segment overflow")?;
+                Some((number, offset as u32))
+            } else {
+                None
+            };
             let data = if put != 0 {
                 Some(reader.take(length)?.to_vec())
             } else {
@@ -178,7 +221,11 @@ impl Transaction {
                 data,
                 inline: put == 2,
                 existed: existed == 1,
+                segment,
             });
+        }
+        if (segment_end != SEGMENT_HEADER_BYTES) != (after.head != before.head) {
+            return Err("Inventory WAL segment and value log disagree".into());
         }
         if expected != after.count || reader.position != reader.bytes.len() {
             return Err("Inventory WAL count or trailing-data mismatch".into());
@@ -374,6 +421,8 @@ pub(super) fn create_bound(directory: &Path, identity: [u8; 32]) -> Result<Index
         requests: 0,
         #[cfg(test)]
         last_staged_nodes: 0,
+        #[cfg(test)]
+        legacy_records: false,
     })
 }
 
@@ -481,6 +530,8 @@ pub(super) fn open(
         requests: 0,
         #[cfg(test)]
         last_staged_nodes: 0,
+        #[cfg(test)]
+        legacy_records: false,
     })
 }
 
@@ -517,27 +568,132 @@ pub(super) fn check_value_path(directory: &Path, key: &Key) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn read_value(directory: &Path, key: &Key, reference: ValueRef) -> Result<Vec<u8>> {
+pub(super) fn read_value(
+    directory: &Path,
+    header: &Header,
+    key: &Key,
+    reference: ValueRef,
+) -> Result<Vec<u8>> {
     if reference.inline {
         return Ok(reference.inline_data().to_vec());
+    }
+    if reference.segment {
+        let (number, offset) = reference.location();
+        if number < header.tail || number >= header.head {
+            return Err("Inventory record names a segment outside the value log".into());
+        }
+        let mut segment = Segment::open(directory, header.identity, number)?;
+        let (stored, data) = segment
+            .envelope(u64::from(offset))?
+            .ok_or("Inventory record lies past the end of its segment")?;
+        if stored != *key
+            || data.len() != reference.length as usize
+            || sha256(&data)[..20] != reference.digest[12..]
+        {
+            return Err("Inventory record identity, length or checksum mismatch".into());
+        }
+        return Ok(data);
     }
     check_value_path(directory, key)?;
     let mut file = private_file(&value_path(directory, key), false)?;
     let bytes = read_bounded(&mut file, reference.length as usize + 108)?;
-    if bytes.len() != reference.length as usize + 108
+    let (stored, data) = open_envelope(&bytes)?;
+    if stored != *key || data.len() != reference.length as usize || sha256(data) != reference.digest
+    {
+        return Err("Inventory record identity, length or checksum mismatch".into());
+    }
+    Ok(data.to_vec())
+}
+
+fn envelope(key: &Key, data: &[u8]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(data.len() + ENVELOPE_BYTES as usize);
+    bytes.extend_from_slice(VALUE_MAGIC);
+    bytes.extend_from_slice(key);
+    bytes.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(data);
+    bytes.extend_from_slice(&sha256(&bytes));
+    bytes
+}
+
+/// Checks a complete envelope and returns its key and value.
+fn open_envelope(bytes: &[u8]) -> Result<(Key, &[u8])> {
+    if bytes.len() < ENVELOPE_BYTES as usize
         || &bytes[..8] != VALUE_MAGIC
-        || &bytes[8..72] != key
         || u32::from_le_bytes(
             bytes[72..76]
                 .try_into()
                 .map_err(|_| "Invalid object length")?,
-        ) != reference.length
+        ) as usize
+            != bytes.len() - ENVELOPE_BYTES as usize
         || sha256(&bytes[..bytes.len() - 32]).as_slice() != &bytes[bytes.len() - 32..]
-        || sha256(&bytes[76..bytes.len() - 32]) != reference.digest
     {
         return Err("Inventory record identity, length or checksum mismatch".into());
     }
-    Ok(bytes[76..bytes.len() - 32].to_vec())
+    let key = bytes[8..72].try_into().map_err(|_| "Invalid record key")?;
+    Ok((key, &bytes[76..bytes.len() - 32]))
+}
+
+fn segment_path(directory: &Path, number: u64) -> PathBuf {
+    directory.join("segments").join(format!("{number:016x}"))
+}
+
+fn segment_header(identity: [u8; 32], number: u64) -> Vec<u8> {
+    let mut bytes = Vec::from(SEGMENT_MAGIC.as_slice());
+    bytes.extend_from_slice(&identity);
+    bytes.extend_from_slice(&number.to_le_bytes());
+    bytes.extend_from_slice(&sha256(&bytes));
+    bytes
+}
+
+/// One open, identity-checked value-log segment.
+pub(super) struct Segment {
+    file: File,
+    pub length: u64,
+}
+
+impl Segment {
+    pub(super) fn open(directory: &Path, identity: [u8; 32], number: u64) -> Result<Self> {
+        private_directory(&directory.join("segments"))?;
+        let mut file = private_file(&segment_path(directory, number), false)?;
+        let length = file.metadata().map_err(|error| error.to_string())?.len();
+        let mut header = [0; SEGMENT_HEADER_BYTES as usize];
+        file.read_exact(&mut header)
+            .map_err(|error| format!("Cannot read inventory segment: {error}"))?;
+        if header[..] != segment_header(identity, number)[..] {
+            return Err("Inventory segment identity or checksum mismatch".into());
+        }
+        Ok(Self { file, length })
+    }
+
+    /// The envelope at `offset`, or `None` at the exact end of the segment.
+    pub(super) fn envelope(&mut self, offset: u64) -> Result<Option<(Key, Vec<u8>)>> {
+        if offset == self.length {
+            return Ok(None);
+        }
+        let mut prefix = [0; 76];
+        if offset < SEGMENT_HEADER_BYTES || offset > self.length - ENVELOPE_BYTES.min(self.length) {
+            return Err("Inventory segment offset out of range".into());
+        }
+        self.file
+            .seek(SeekFrom::Start(offset))
+            .and_then(|_| self.file.read_exact(&mut prefix))
+            .map_err(|error| format!("Cannot read inventory segment: {error}"))?;
+        let length = u32::from_le_bytes(
+            prefix[72..76]
+                .try_into()
+                .map_err(|_| "Invalid object length")?,
+        ) as u64;
+        if length > MAX_VALUE_BYTES as u64 || offset + ENVELOPE_BYTES + length > self.length {
+            return Err("Inventory segment envelope exceeds its segment".into());
+        }
+        let mut bytes = vec![0; (ENVELOPE_BYTES + length) as usize];
+        bytes[..76].copy_from_slice(&prefix);
+        self.file
+            .read_exact(&mut bytes[76..])
+            .map_err(|error| format!("Cannot read inventory segment: {error}"))?;
+        let (key, data) = open_envelope(&bytes)?;
+        Ok(Some((key, data.to_vec())))
+    }
 }
 
 fn preflight(directory: &Path, transaction: &Transaction) -> Result<()> {
@@ -606,10 +762,16 @@ fn apply(
     // Recovery cannot tell whether an interrupted apply made its new object
     // directories durable, so it always synchronizes `objects`.
     let mut created = recovering;
+    write_segment(directory, transaction)?;
     for (number, action) in transaction.actions.iter().enumerate() {
         let path = value_path(directory, &action.key);
         let parent = path.parent().ok_or("Missing inventory object directory")?;
-        if let Some(data) = action.data.as_ref().filter(|_| !action.inline) {
+        // Only WALs from before the value log carry record-file puts.
+        if let Some(data) = action
+            .data
+            .as_ref()
+            .filter(|_| !action.inline && action.segment.is_none())
+        {
             if !present(parent)? {
                 fs::DirBuilder::new()
                     .mode(0o700)
@@ -625,12 +787,7 @@ fn apply(
             let result = (|| -> Result<()> {
                 let mut file = new_file(&temporary)?;
                 owns_temporary = true;
-                let mut bytes = Vec::from(VALUE_MAGIC.as_slice());
-                bytes.extend_from_slice(&action.key);
-                bytes.extend_from_slice(&(data.len() as u32).to_le_bytes());
-                bytes.extend_from_slice(data);
-                bytes.extend_from_slice(&sha256(&bytes));
-                file.write_all(&bytes)
+                file.write_all(&envelope(&action.key, data))
                     .and_then(|()| sync_file(&file))
                     .map_err(|error| format!("Cannot persist inventory record: {error}"))?;
                 fs::rename(&temporary, &path)
@@ -677,11 +834,103 @@ fn apply(
         .and_then(|_| tree.write_all(&transaction.after.encode()))
         .and_then(|()| sync_file(tree))
         .map_err(|error| format!("Cannot persist inventory root: {error}"))?;
+    // The durable root no longer references segments the cleaner emptied.
+    if transaction.after.tail > transaction.before.tail {
+        for number in transaction.before.tail..transaction.after.tail {
+            let path = segment_path(directory, number);
+            if present(&path)? {
+                fs::remove_file(&path)
+                    .map_err(|error| format!("Cannot retire inventory segment: {error}"))?;
+            }
+        }
+        sync_directory(&directory.join("segments"))?;
+    }
     #[cfg(test)]
     if fault == Some(Fault::Applied) {
         return Err("Injected interruption after durable apply".into());
     }
     Ok(())
+}
+
+/// Writes the transaction's value-log segment, if it has one, under a
+/// temporary name, flushes it once and publishes it at its number. Replay
+/// rebuilds identical bytes from the WAL.
+fn write_segment(directory: &Path, transaction: &Transaction) -> Result<()> {
+    let number = transaction.before.head;
+    let mut bytes = Vec::new();
+    for action in &transaction.actions {
+        let (Some((segment, offset)), Some(data)) = (action.segment, action.data.as_ref()) else {
+            continue;
+        };
+        if bytes.is_empty() {
+            bytes = segment_header(transaction.after.identity, number);
+        }
+        if segment != number || offset as usize != bytes.len() {
+            return Err("Inventory segment layout disagrees with its WAL".into());
+        }
+        bytes.extend_from_slice(&envelope(&action.key, data));
+    }
+    if bytes.is_empty() {
+        return Ok(());
+    }
+    let segments = directory.join("segments");
+    if !present(&segments)? {
+        fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&segments)
+            .map_err(|error| format!("Cannot create inventory segments: {error}"))?;
+        sync_directory(directory)?;
+    }
+    private_directory(&segments)?;
+    let temporary = segments.join(format!(".segment-{}.tmp", hex(&random_bytes::<16>()?)));
+    let mut owns_temporary = false;
+    let result = (|| -> Result<()> {
+        let mut file = new_file(&temporary)?;
+        owns_temporary = true;
+        file.write_all(&bytes)
+            .and_then(|()| sync_file(&file))
+            .map_err(|error| format!("Cannot persist inventory segment: {error}"))?;
+        fs::rename(&temporary, segment_path(directory, number))
+            .map_err(|error| format!("Cannot publish inventory segment: {error}"))?;
+        sync_directory(&segments)
+    })();
+    if result.is_err() && owns_temporary {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
+/// Test fixture: flips one byte inside every stored envelope of `key` (in any
+/// segment or legacy record file) and returns how many it damaged.
+#[cfg(test)]
+pub(crate) fn damage_record(directory: &Path, key: &Key) -> usize {
+    let mut damaged = 0;
+    let legacy = value_path(directory, key);
+    if let Ok(mut bytes) = fs::read(&legacy) {
+        let middle = bytes.len() / 2;
+        bytes[middle] ^= 0x55;
+        fs::write(&legacy, bytes).unwrap();
+        damaged += 1;
+    }
+    let Ok(entries) = fs::read_dir(directory.join("segments")) else {
+        return damaged;
+    };
+    for entry in entries {
+        let path = entry.unwrap().path();
+        let mut bytes = fs::read(&path).unwrap();
+        let mut offset = SEGMENT_HEADER_BYTES as usize;
+        while offset + ENVELOPE_BYTES as usize <= bytes.len() {
+            let length =
+                u32::from_le_bytes(bytes[offset + 72..offset + 76].try_into().unwrap()) as usize;
+            if bytes[offset + 8..offset + 72] == key[..] {
+                bytes[offset + 76 + length / 2] ^= 0x55;
+                damaged += 1;
+            }
+            offset += ENVELOPE_BYTES as usize + length;
+        }
+        fs::write(&path, bytes).unwrap();
+    }
+    damaged
 }
 
 fn hex(bytes: &[u8]) -> String {

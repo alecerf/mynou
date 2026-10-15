@@ -104,7 +104,7 @@ fn measure(shape: Shape, records: u64) -> Cost {
 }
 
 #[test]
-fn commit_flushes_stay_bounded_as_records_per_commit_grow() {
+fn commit_flushes_stay_constant_as_records_per_commit_grow() {
     let shapes = [
         ("files", Shape::Files),
         ("spread files", Shape::SpreadFiles),
@@ -113,12 +113,62 @@ fn commit_flushes_stay_bounded_as_records_per_commit_grow() {
     ];
     eprintln!("shape          records  flushes/commit  ms/commit");
     for (name, shape) in shapes {
+        let mut counts = Vec::new();
         for records in [1, 10, 100, 1000] {
             let cost = measure(shape, records);
             eprintln!(
                 "{name:<14} {records:>7} {:>15} {:>10.2}",
                 cost.flushes_per_commit, cost.millis_per_commit
             );
+            counts.push(cost.flushes_per_commit);
         }
+        // WAL, store directory, one segment and its directory, tree, and
+        // WAL retirement: the record count never adds a flush.
+        assert!(
+            counts
+                .iter()
+                .all(|count| *count == counts[0] && *count <= 6),
+            "{name}: {counts:?}"
+        );
+    }
+}
+
+#[test]
+fn a_cleaning_commit_adds_one_flush_for_retired_segments() {
+    let slack = Slack::set(u64::MAX / 4);
+    let directory = Directory::new();
+    let mut index = Index::create(&directory.0).unwrap();
+    let value = vec![0x33; 600];
+    for _ in 0..3 {
+        index
+            .commit(
+                (0..200)
+                    .map(|id| Change::Put(key(false, id), value.clone()))
+                    .collect(),
+            )
+            .unwrap();
+    }
+    drop(slack);
+    let _slack = Slack::set(0);
+    let before = flushes();
+    let tail = index.header.tail;
+    index
+        .commit(vec![Change::Put(key(false, 0), value.clone())])
+        .unwrap();
+    assert!(index.header.tail > tail);
+    assert!(flushes() - before <= 7);
+}
+
+/// Restores the production cleaning threshold when a test ends.
+struct Slack;
+impl Slack {
+    fn set(bytes: u64) -> Self {
+        super::CLEAN_SLACK_OVERRIDE.with(|value| value.set(Some(bytes)));
+        Self
+    }
+}
+impl Drop for Slack {
+    fn drop(&mut self) {
+        super::CLEAN_SLACK_OVERRIDE.with(|value| value.set(None));
     }
 }

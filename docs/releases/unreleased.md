@@ -71,3 +71,7 @@ return `transfers`, `next` and `total` instead of a complete array; the web
 interface loads more on demand. The first start preserves and migrates legacy
 state; older binaries reject the indexed format. Read the [transfer guide](/docs/transfers.md#storage-migration-and-downgrade)
 before downgrading.
+
+## Changed: Much faster storage writes on macOS
+
+Each save of jobs, requester demand, feeds, transfers, series or IRC state now writes its records into one file instead of one file per record. On macOS, where every durable write flushes the whole drive cache, a save of 100 records takes about 40 ms instead of 470 ms. Existing data is read in place without migration, but earlier versions refuse a store once Mynou has saved to it: keep a stopped backup before upgrading if you may need to downgrade ([storage guide](/docs/inventory-storage.md#value-log)).
