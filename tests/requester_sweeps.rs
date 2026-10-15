@@ -109,8 +109,9 @@ fn pass(engine: &Engine, id: &str) -> Value {
     let report = engine.sync_requesters().unwrap();
     no_credentials(&report);
     let pages = counter(&report, id, "pages");
-    assert!(pages <= 8, "{pages} pages in one pass");
-    assert!(counter(&report, id, "requests") <= 2 * pages + pages);
+    assert!(pages <= 8);
+    // An identity check and at most two listing reads per page.
+    assert!(counter(&report, id, "requests") <= 3 * pages);
     assert!(counter(&report, id, "rows") <= 200 * pages);
     report
 }
