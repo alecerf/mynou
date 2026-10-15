@@ -375,7 +375,7 @@ rows and admits at most 64 per pass; outcome reconciliation and origin retiremen
 continue through persisted cursors. Each account keeps one watchlist sweep
 record: its position, the anchor item that detects a shifted listing, the
 upstream total and a staged origin generation. Every page commits its demands,
-origins and the new position in one transaction of at most 512 demands. Only a
+origins and the new position in transactions of at most 512 demands each. Only a
 sweep that reached the end of an unchanged listing publishes its generation,
 and the next sweep waits until the retirement pass finishes. Failed, partial or
 shifted reads never authorize removing an unseen origin. Origin rows of

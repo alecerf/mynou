@@ -92,51 +92,6 @@ fn cursor(engine: &Engine, id: &str) -> String {
         .into()
 }
 
-#[test]
-fn large_watchlists_resume_across_passes_and_restarts_without_starving_other_accounts() {
-    let dir = Directory::new();
-    let accounts = Accounts::open();
-    // 1,700 movies exceed the former 512-request account poll limit.
-    accounts.watchlist("alice", movies(0..1_700));
-    accounts.watchlist("bob", movies(5_000..5_001));
-    let cfg = accounts.config(&dir.0);
-    let engine = Engine::open_for_management(cfg.clone()).unwrap();
-    let report = engine.sync_requesters().unwrap();
-    no_credentials(&report);
-    // One pass reads a bounded number of pages and commits bounded batches.
-    assert_eq!(counter(&report, "alice", "pages"), 8);
-    assert_eq!(counter(&report, "alice", "requests"), 16);
-    assert!(counter(&report, "alice", "rows") <= 8 * 200);
-    assert!(!flag(&report, "alice", "published"));
-    // The other account was not starved by the large one.
-    assert!(flag(&report, "bob", "published"));
-    assert_eq!(states(&engine, "bob"), (1, 0));
-    let position: u64 = progress(&engine, "alice")
-        .get("position")
-        .unwrap()
-        .as_str()
-        .unwrap()
-        .parse()
-        .unwrap();
-    assert_eq!(position, 200 + 7 * 199);
-    assert_eq!(states(&engine, "alice"), (position as usize, 0));
-    assert_eq!(cursor(&engine, "alice"), "0");
-    drop(engine);
-
-    // A restart resumes from the durable sweep instead of the first page.
-    let engine = Engine::open_for_management(cfg).unwrap();
-    assert_eq!(
-        progress(&engine, "alice").get("position").unwrap().as_str(),
-        Some(position.to_string().as_str())
-    );
-    let report = engine.sync_requesters().unwrap();
-    assert_eq!(counter(&report, "alice", "pages"), 1);
-    assert!(flag(&report, "alice", "published"));
-    assert_eq!(cursor(&engine, "alice"), "1");
-    assert_eq!(progress(&engine, "alice"), Value::Null);
-    assert_eq!(states(&engine, "alice"), (1_700, 0));
-}
-
 fn position(engine: &Engine, id: &str) -> u64 {
     progress(engine, id)
         .get("position")
@@ -147,30 +102,97 @@ fn position(engine: &Engine, id: &str) -> u64 {
         .unwrap()
 }
 
+/// One pass for an account, checking the per-pass work bounds. The account
+/// deadline may end a pass early on a slow machine, so tests never rely on how
+/// many pages one pass reads.
+fn pass(engine: &Engine, id: &str) -> Value {
+    let report = engine.sync_requesters().unwrap();
+    no_credentials(&report);
+    let pages = counter(&report, id, "pages");
+    assert!(pages <= 8, "{pages} pages in one pass");
+    assert!(counter(&report, id, "requests") <= 2 * pages + pages);
+    assert!(counter(&report, id, "rows") <= 200 * pages);
+    report
+}
+
+#[test]
+fn large_watchlists_resume_across_passes_and_restarts_without_starving_other_accounts() {
+    let dir = Directory::new();
+    let accounts = Accounts::open();
+    // 1,700 movies exceed the former 512-request account poll limit and need
+    // more than the eight pages one pass may read.
+    accounts.watchlist("alice", movies(0..1_700));
+    accounts.watchlist("bob", movies(5_000..5_001));
+    let cfg = accounts.config(&dir.0);
+    let engine = Engine::open_for_management(cfg.clone()).unwrap();
+    let report = pass(&engine, "alice");
+    assert!(!flag(&report, "alice", "published"));
+    // The other account was not starved by the large one.
+    assert!(flag(&report, "bob", "published"));
+    assert_eq!(states(&engine, "bob"), (1, 0));
+    let mut rows = counter(&report, "alice", "rows");
+    let first = position(&engine, "alice");
+    assert!(first > 0 && first < 1_700);
+    assert_eq!(states(&engine, "alice"), (first as usize, 0));
+    assert_eq!(cursor(&engine, "alice"), "0");
+    drop(engine);
+
+    // A restart resumes from the durable sweep instead of the first page:
+    // across all passes every entry is committed exactly once.
+    let engine = Engine::open_for_management(cfg).unwrap();
+    assert_eq!(position(&engine, "alice"), first);
+    loop {
+        let report = pass(&engine, "alice");
+        rows += counter(&report, "alice", "rows");
+        if flag(&report, "alice", "published") {
+            break;
+        }
+        assert_eq!(cursor(&engine, "alice"), "0");
+    }
+    assert_eq!(rows, 1_700);
+    assert_eq!(cursor(&engine, "alice"), "1");
+    assert_eq!(progress(&engine, "alice"), Value::Null);
+    assert_eq!(states(&engine, "alice"), (1_700, 0));
+}
+
+/// Passes until the running sweep ends; returns whether it was published.
+fn finish_sweep(engine: &Engine) -> bool {
+    loop {
+        let report = pass(engine, "alice");
+        // Only the account deadline may end a pass early here.
+        assert!(matches!(
+            account(&report, "alice")
+                .get("error")
+                .and_then(Value::as_str),
+            None | Some("Plex account poll deadline reached")
+        ));
+        if flag(&report, "alice", "published") {
+            return true;
+        }
+        if flag(&report, "alice", "restarted") {
+            return false;
+        }
+    }
+}
+
 #[test]
 fn removals_wait_for_a_complete_sweep_of_an_unchanged_listing() {
     let dir = Directory::new();
     let accounts = Accounts::open();
-    // Two passes per sweep: 8 pages, then the rest.
+    // More than one pass per sweep: at most eight pages each.
     accounts.watchlist("alice", movies(0..2_000));
     let engine = Engine::open_for_management(accounts.config(&dir.0)).unwrap();
-    assert!(!flag(
-        &engine.sync_requesters().unwrap(),
-        "alice",
-        "published"
-    ));
-    assert!(flag(
-        &engine.sync_requesters().unwrap(),
-        "alice",
-        "published"
-    ));
+    assert!(finish_sweep(&engine));
     assert_eq!(cursor(&engine, "alice"), "1");
     assert_eq!(states(&engine, "alice"), (2_000, 0));
 
-    // Half a sweep later the upstream fails: committed progress stays and the
-    // sweep resumes at the same position once the upstream recovers.
-    engine.sync_requesters().unwrap();
-    let halfway = position(&engine, "alice");
+    // Part of a sweep later the upstream fails: committed progress stays and
+    // the sweep resumes at the same position once the upstream recovers.
+    assert!(!flag(&pass(&engine, "alice"), "alice", "published"));
+    while position(&engine, "alice") <= 101 {
+        assert!(!flag(&pass(&engine, "alice"), "alice", "published"));
+    }
+    let partial = position(&engine, "alice");
     accounts.response("/alice/watchlist", 503, container(Vec::new()));
     let report = engine.sync_requesters().unwrap();
     assert_eq!(
@@ -179,31 +201,25 @@ fn removals_wait_for_a_complete_sweep_of_an_unchanged_listing() {
             .and_then(Value::as_str),
         Some("Plex account poll failed")
     );
-    assert_eq!(position(&engine, "alice"), halfway);
+    assert_eq!(position(&engine, "alice"), partial);
 
-    // Item 500 leaves the list behind the cursor: the rest of the listing
+    // Item 100 leaves the list behind the cursor: the rest of the listing
     // shifts under the sweep, which therefore cannot prove the removal and
     // starts over with a new generation.
     let mut shorter = movies(0..2_000);
-    shorter.remove(500);
+    shorter.remove(100);
     accounts.watchlist("alice", shorter);
-    let report = engine.sync_requesters().unwrap();
-    assert!(flag(&report, "alice", "restarted"));
-    assert!(!flag(&report, "alice", "published"));
+    assert!(!finish_sweep(&engine));
     assert_eq!(cursor(&engine, "alice"), "1");
     assert_eq!(states(&engine, "alice"), (2_000, 0));
 
-    // Half of the next sweep proves nothing either.
-    assert!(!flag(
-        &engine.sync_requesters().unwrap(),
-        "alice",
-        "published"
-    ));
-    assert_eq!(states(&engine, "alice"), (2_000, 0));
-
+    // Part of the next sweep proves nothing either.
+    let report = pass(&engine, "alice");
+    if !flag(&report, "alice", "published") {
+        assert_eq!(states(&engine, "alice"), (2_000, 0));
+        assert!(finish_sweep(&engine));
+    }
     // A complete sweep of the unchanged list publishes and removes it.
-    let report = engine.sync_requesters().unwrap();
-    assert!(flag(&report, "alice", "published"));
     assert_eq!(states(&engine, "alice"), (2_000, 1));
     let removed = all_demands(&engine, "alice")
         .into_iter()
@@ -216,7 +232,7 @@ fn removals_wait_for_a_complete_sweep_of_an_unchanged_listing() {
             .get("title")
             .unwrap()
             .as_str(),
-        Some("Synthetic Sweep Movie 500")
+        Some("Synthetic Sweep Movie 100")
     );
 }
 

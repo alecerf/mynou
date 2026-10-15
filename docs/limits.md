@@ -306,7 +306,7 @@ IRC announcements:
 ## Plex requester accounts
 
 - At most 32 account aliases and 32 destinations, and 64 new requests per
-  pass. Watchlists have no total entry, page or expanded-request count: each
+  admission step (one step follows each committed watchlist batch). Watchlists have no total entry, page or expanded-request count: each
   pass reads up to eight pages of 200 entries per account and commits at most
   512 demands at a time, and the sweep resumes there in the next pass.
   Retained demands and operator

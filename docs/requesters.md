@@ -105,7 +105,9 @@ polls every account now and needs the service.
   starting again from the first page. Accounts that waited longest are polled
   first, so one large watchlist does not hold up the others.
 - Entries that left the watchlist are removed only after a sweep reads the
-  whole list without it changing in between. If the list changes during a
+  whole list without noticing a change. Each page re-reads the entry before it
+  and compares the reported total, so ordinary additions and removals are
+  noticed; a rare combination of edits that keeps both unchanged is not. If the list changes during a
   sweep, nothing is removed and a new sweep starts; a failed page removes
   nothing either. `GET /api/requesters` shows an unfinished sweep under
   `sweep` (`position`, the upstream `total` and whether the list has stayed
