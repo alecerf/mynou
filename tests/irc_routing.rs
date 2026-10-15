@@ -898,16 +898,18 @@ fn a_full_retry_table_still_routes_an_eligible_announcement() {
             "waiting_for_admitted_job"
         );
     }
-    // Backoff lasts 30 seconds; the check only holds while none has expired.
-    if started.elapsed().as_secs() < 25 {
-        assert_eq!(retry_entries(&engine), 200);
-    }
-    let admitted = engine.submit(request(7)).unwrap().remove(0);
+    let Ok(mut admitted) = engine.submit(request(7)) else {
+        panic!("the fixture request is admitted");
+    };
+    let admitted = admitted.remove(0);
     let row = receive(&engine, &torrent.id, 7);
-    let turns = (1..=3)
+    // Backoff lasts 30 seconds: the strict bounds hold only while none expired.
+    let full = started.elapsed().as_secs() < 25 && retry_entries(&engine) == 200;
+    let turns = (1..=202)
         .find(|_| routing(&engine.irc_route_pending().unwrap()))
-        .expect("an eligible announcement waits behind a full retry table");
-    assert!(turns <= 2, "{turns}");
+        .expect("an eligible announcement is never routed");
+    assert!(!full || turns <= 2, "{turns}");
+    assert!(full || started.elapsed().as_secs() >= 25);
     assert_eq!(
         job(&engine, &admitted.id)
             .irc_origin

@@ -407,8 +407,9 @@ records the magnet and that file, and downloads only it. A retry reuses the same
 torrent and never searches. An announcement that cannot be routed yet (no
 waiting job, unavailable metadata) is retried after 30 seconds without holding
 up the others; `GET /api/irc` reports `routing.retry_entries` against
-`retry_limit` (200) and `retry_dropped`, the backoffs shortened while full. Catalog IDs in announcements remain claims: a
-matching hash and labels do not prove which film or episode the video shows.
+`retry_limit` (200) and `retry_dropped`, the backoffs shortened while full.
+Catalog IDs in announcements remain claims: a matching hash and labels do not
+prove which film or episode the video shows.
 
 A request review checks the account's current Plex identity and fresh TMDB
 details (complete ID, title, year and release dates; episodes also need an

@@ -715,6 +715,10 @@ impl Runtime {
         self.retry.insert(id, now + RETRY_DELAY);
     }
     #[cfg(test)]
+    pub(super) fn dropped(&self) -> u64 {
+        self.retry_dropped
+    }
+    #[cfg(test)]
     pub(super) fn backing_off(&self, id: &str, now: Instant) -> bool {
         self.retry.get(id).is_some_and(|at| now < *at)
     }

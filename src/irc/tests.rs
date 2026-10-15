@@ -503,7 +503,11 @@ fn a_full_retry_table_never_blocks_announcements_outside_it() {
     assert_eq!(selected(&mut runtime, &store, now), Some(eligible.clone()));
     // Remembering it keeps the bound by dropping the entry closest to expiry.
     let later = now + Duration::from_secs(1);
+    assert_eq!(runtime.dropped(), 0);
     runtime.back_off(eligible.clone(), later);
+    assert_eq!(runtime.dropped(), 1);
+    runtime.back_off(eligible.clone(), later);
+    assert_eq!(runtime.dropped(), 1);
     assert!(runtime.backing_off(&eligible, later));
     assert!(!runtime.backing_off(&attempted[0], later));
     assert_eq!(

@@ -55,4 +55,4 @@ Search previews no longer stop at 1,000 rows or fail beyond 16 MiB of candidates
 
 ## Fixed: IRC routing no longer stalls behind failing announcements
 
-Up to 200 announcements that kept failing to route (for example with no waiting job) could pause IRC routing for everyone until their 30-second backoff ended. Eligible announcements are now routed regardless, and `GET /api/irc` shows the backoff table under `routing` ([limits](/docs/limits.md)).
+Up to 200 announcements that kept failing to route (for example with no waiting job) could pause IRC routing for everyone until their 30-second backoff ended. Eligible announcements are now routed regardless, and `GET /api/irc` reports how many backoffs are held, the limit and how many were shortened under `routing` ([limits](/docs/limits.md)).
