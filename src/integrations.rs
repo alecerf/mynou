@@ -21,8 +21,6 @@ const MAX_ITEMS: usize = 100_000;
 /// Items requested per Plex page. Listings are read page by page under a
 /// deadline, so no total item or page count applies.
 const PAGE_SIZE: usize = 200;
-const MAX_REPORTED_CANDIDATES: usize = 1_000;
-const MAX_CANDIDATE_BYTES: usize = 16 * 1024 * 1024;
 const SEARCH_BUDGET: Duration = Duration::from_secs(90);
 const CATALOG_CACHE_TTL: Duration = Duration::from_secs(3_600);
 const CATALOG_CACHE_BYTES: usize = 32 * 1024 * 1024;
@@ -1384,6 +1382,7 @@ fn source_releases(source: &Source, request: &Request, deadline: Instant) -> Res
     Ok(releases)
 }
 
+#[derive(Clone)]
 struct Candidate {
     release: Release,
     source: String,
@@ -1433,62 +1432,172 @@ pub(crate) fn report_text(text: &str, limit: usize) -> String {
     result
 }
 
-fn candidate_id(profile: &str, source: &str, release: &Release) -> String {
+fn candidate_digest(profile: &str, source: &str, release: &Release) -> [u8; 32] {
     let mut hash = Sha256::new();
     for field in [profile, source, &release.title, &release.url] {
         hash.update(&(field.len() as u64).to_be_bytes());
         hash.update(field.as_bytes());
     }
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut id = String::with_capacity(64);
-    for byte in hash.finalize() {
-        id.push(HEX[(byte >> 4) as usize] as char);
-        id.push(HEX[(byte & 15) as usize] as char);
-    }
-    id
+    hash.finalize()
 }
 
+fn hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut text = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        text.push(HEX[(byte >> 4) as usize] as char);
+        text.push(HEX[(byte & 15) as usize] as char);
+    }
+    text
+}
+
+fn candidate_id(profile: &str, source: &str, release: &Release) -> String {
+    hex(&candidate_digest(profile, source, release))
+}
+
+/// A candidate's report position: accepted first, then higher rank, more
+/// seeders and finally the candidate ID. Byte order is report order, so a
+/// position doubles as an opaque cursor that reveals no title or URL.
+type Position = [u8; POSITION_BYTES];
+const POSITION_BYTES: usize = 1 + 5 * 4 + 8 + 32;
+const DEFAULT_REPORT_PAGE: usize = 100;
+const MAX_REPORT_PAGE: usize = 200;
+/// Accepted season-pack releases whose metadata a pack search may inspect.
+const PACK_CANDIDATES: usize = 8;
+
+fn position(assessment: &Assessment, seeders: u64, digest: &[u8; 32]) -> Position {
+    let rank = &assessment.rank;
+    let mut bytes = [0; POSITION_BYTES];
+    bytes[0] = u8::from(!assessment.accepted);
+    // Descending fields are inverted; the signed score is biased first.
+    for (at, value) in [
+        rank.custom_score.cast_unsigned() ^ 0x8000_0000,
+        rank.resolution,
+        rank.source,
+        rank.codec,
+        rank.language,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        bytes[1 + at * 4..5 + at * 4].copy_from_slice(&(!value).to_be_bytes());
+    }
+    bytes[21..29].copy_from_slice(&(!seeders).to_be_bytes());
+    bytes[29..].copy_from_slice(digest);
+    bytes
+}
+
+fn decode_position(text: &str) -> Result<Position> {
+    if text.len() != POSITION_BYTES * 2
+        || !text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    {
+        return Err("Search: invalid candidate cursor".into());
+    }
+    let mut position = [0; POSITION_BYTES];
+    for (i, byte) in position.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&text[i * 2..i * 2 + 2], 16)
+            .map_err(|_| "Search: invalid candidate cursor")?;
+    }
+    if position[0] > 1 {
+        return Err("Search: invalid candidate cursor".into());
+    }
+    Ok(position)
+}
+
+/// One page of a search report: at most `limit` candidates after the
+/// exclusive `after` cursor, in report order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SearchPage {
+    pub after: Option<String>,
+    pub limit: usize,
+}
+
+impl Default for SearchPage {
+    fn default() -> Self {
+        Self {
+            after: None,
+            limit: DEFAULT_REPORT_PAGE,
+        }
+    }
+}
+
+impl SearchPage {
+    /// Parses `after=CURSOR&limit=N` (1 to 200, 100 by default).
+    pub fn parse(text: &str) -> Result<Self> {
+        if text.len() > 256 {
+            return Err("Search: page query is too large".into());
+        }
+        let mut page = Self::default();
+        let mut seen = BTreeSet::new();
+        for pair in text.split('&').filter(|pair| !pair.is_empty()) {
+            let (name, value) = pair.split_once('=').ok_or("Search: invalid page query")?;
+            if !seen.insert(name) {
+                return Err("Search: duplicate page query field".into());
+            }
+            match name {
+                "after" => {
+                    decode_position(value)?;
+                    page.after = Some(value.to_owned());
+                }
+                "limit" => {
+                    page.limit = value
+                        .parse()
+                        .ok()
+                        .filter(|limit| {
+                            (1..=MAX_REPORT_PAGE).contains(limit) && !value.starts_with('0')
+                        })
+                        .ok_or("Search: page limit must be 1 to 200")?;
+                }
+                _ => return Err("Search: unknown page query field".into()),
+            }
+        }
+        Ok(page)
+    }
+}
+
+/// Bounded state of one search. Candidates are assessed as each indexer
+/// response arrives; only the selection, the requested report window and the
+/// accepted pack shortlist are retained, so no total caps the candidates.
 struct SearchResult {
     profile: String,
-    candidates: Vec<Candidate>,
+    total: u64,
+    best: Option<(Position, Candidate)>,
+    after: Option<Position>,
+    /// Report page size; the window keeps one more to know a next page exists.
+    limit: usize,
+    window: BTreeMap<Position, Candidate>,
+    pack_limit: usize,
+    packs: BTreeMap<Position, Candidate>,
     configured: usize,
     successful: usize,
 }
 
-fn candidate_allocation_bytes(
-    release: &Release,
-    source_len: usize,
-    assessment: &Assessment,
-) -> usize {
-    let attributes = &assessment.attributes;
-    let string_bytes = assessment
-        .reasons
-        .iter()
-        .chain(&attributes.languages)
-        .chain(&attributes.issues)
-        .chain(attributes.source.iter())
-        .chain(attributes.codec.iter())
-        .map(String::capacity)
-        .sum::<usize>();
-    let vector_bytes = (assessment.reasons.capacity()
-        + attributes.languages.capacity()
-        + attributes.issues.capacity())
-        * std::mem::size_of::<String>();
-    // Fixed allowance covers the candidate, vector growth, its opaque ID and
-    // allocation metadata. Counting capacities also covers spare string space.
-    release.title.capacity()
-        + release.url.capacity()
-        + source_len
-        + string_bytes
-        + vector_bytes
-        + 512
-}
-
 impl SearchResult {
+    fn offer(&mut self, position: Position, candidate: Candidate) {
+        self.total = self.total.saturating_add(1);
+        if candidate.assessment.accepted {
+            if self.pack_limit > 0 {
+                self.packs.insert(position, candidate.clone());
+                if self.packs.len() > self.pack_limit {
+                    self.packs.pop_last();
+                }
+            }
+            if self.best.as_ref().is_none_or(|(best, _)| position < *best) {
+                self.best = Some((position, candidate.clone()));
+            }
+        }
+        if self.limit > 0 && self.after.is_none_or(|after| position > after) {
+            self.window.insert(position, candidate);
+            if self.window.len() > self.limit + 1 {
+                self.window.pop_last();
+            }
+        }
+    }
+
     fn report(&self) -> Value {
         let mut accepted = Vec::new();
         let mut rejected = Vec::new();
-        for candidate in self.candidates.iter().take(MAX_REPORTED_CANDIDATES) {
+        for candidate in self.window.values().take(self.limit) {
             if candidate.assessment.accepted {
                 accepted.push(candidate.to_json());
             } else {
@@ -1508,21 +1617,27 @@ impl SearchResult {
         report.insert("indexers", indexers);
         report.insert("accepted", Value::Array(accepted));
         report.insert("rejected", Value::Array(rejected));
-        report.insert(
-            "candidate_count",
-            Value::Number(self.candidates.len() as f64),
-        );
+        report.insert("candidate_count", Value::Number(self.total as f64));
         report.insert(
             "reported_count",
-            Value::Number(self.candidates.len().min(MAX_REPORTED_CANDIDATES) as f64),
+            Value::Number(self.window.len().min(self.limit) as f64),
         );
-        report.insert("truncated", self.candidates.len() > MAX_REPORTED_CANDIDATES);
+        report.insert(
+            "next",
+            if self.window.len() > self.limit {
+                self.window
+                    .keys()
+                    .nth(self.limit - 1)
+                    .map_or(Value::Null, |position| hex(position).into())
+            } else {
+                Value::Null
+            },
+        );
         report.insert(
             "selected_candidate_id",
-            self.candidates
-                .first()
-                .filter(|candidate| candidate.assessment.accepted)
-                .map_or(Value::Null, |candidate| candidate.id.clone().into()),
+            self.best
+                .as_ref()
+                .map_or(Value::Null, |(_, candidate)| candidate.id.clone().into()),
         );
         report
     }
@@ -1595,14 +1710,18 @@ fn search_candidates_before(
     request: &Request,
     deadline: Instant,
 ) -> Result<SearchResult> {
-    search_candidates_mode(config, request, deadline, false)
+    search_candidates_mode(config, request, deadline, false, None, 0)
 }
 
+/// A search keeps the selection, at most `limit + 1` report candidates after
+/// `after` and, for packs, the accepted shortlist; `limit` 0 only selects.
 fn search_candidates_mode(
     config: &Config,
     request: &Request,
     deadline: Instant,
     pack: bool,
+    after: Option<Position>,
+    limit: usize,
 ) -> Result<SearchResult> {
     remaining_search_time(deadline)?;
     request.validate()?;
@@ -1621,13 +1740,22 @@ fn search_candidates_mode(
     if config.sources.len() > 1_000 {
         return Err("Search: too many indexers".into());
     }
-    let mut candidates = Vec::new();
-    let mut candidate_bytes = 0usize;
-    let mut successful = 0;
+    let mut result = SearchResult {
+        profile: profile_name.into(),
+        total: 0,
+        best: None,
+        after,
+        limit,
+        window: BTreeMap::new(),
+        pack_limit: if pack { PACK_CANDIDATES } else { 0 },
+        packs: BTreeMap::new(),
+        configured: config.sources.len(),
+        successful: 0,
+    };
     for source in &config.sources {
         remaining_search_time(deadline)?;
         if let Ok(releases) = source_releases(source, request, deadline) {
-            successful += 1;
+            result.successful += 1;
             // Hash and bound source metadata once, rather than duplicating an
             // arbitrarily long configured label for every indexer result.
             let source_identity = candidate_id(
@@ -1644,50 +1772,26 @@ fn search_candidates_mode(
                 if index % 64 == 0 {
                     remaining_search_time(deadline)?;
                 }
-                if candidates.len() >= MAX_ITEMS {
-                    return Err("Search: too many candidates".into());
-                }
                 let assessment =
                     assess_release(config, profile_name, profile, request, &release, pack);
-                candidate_bytes = candidate_bytes.saturating_add(candidate_allocation_bytes(
-                    &release,
-                    source_label.len(),
-                    &assessment,
-                ));
-                if candidate_bytes > MAX_CANDIDATE_BYTES {
-                    return Err("Search: candidate data exceeds the memory limit".into());
-                }
-                candidates.push(Candidate {
-                    id: candidate_id(profile_name, &source_identity, &release),
-                    source: source_label.clone(),
-                    release,
-                    assessment,
-                });
+                let digest = candidate_digest(profile_name, &source_identity, &release);
+                result.offer(
+                    position(&assessment, release.seeders, &digest),
+                    Candidate {
+                        id: hex(&digest),
+                        source: source_label.clone(),
+                        release,
+                        assessment,
+                    },
+                );
             }
         }
     }
     remaining_search_time(deadline)?;
-    if successful == 0 {
+    if result.successful == 0 {
         return Err("Search: no indexer returned a usable response".into());
     }
-    candidates.sort_by(|a, b| {
-        b.assessment
-            .accepted
-            .cmp(&a.assessment.accepted)
-            .then_with(|| b.assessment.rank.cmp(&a.assessment.rank))
-            .then_with(|| b.release.seeders.cmp(&a.release.seeders))
-            .then_with(|| a.release.title.cmp(&b.release.title))
-            .then_with(|| a.release.url.cmp(&b.release.url))
-            .then_with(|| a.source.cmp(&b.source))
-            .then_with(|| a.id.cmp(&b.id))
-    });
-    remaining_search_time(deadline)?;
-    Ok(SearchResult {
-        profile: profile_name.into(),
-        candidates,
-        configured: config.sources.len(),
-        successful,
-    })
+    Ok(result)
 }
 
 fn remaining_search_time(deadline: Instant) -> Result<Duration> {
@@ -1700,7 +1804,18 @@ fn remaining_search_time(deadline: Instant) -> Result<Duration> {
 /// Explains source selection without downloading, storing or exposing URLs.
 /// Usable indexers with no accepted release produce an empty selection.
 pub fn search_report(config: &Config, request: &Request) -> Result<Value> {
+    search_report_page(config, request, &SearchPage::default())
+}
+
+/// One page of the report. Each page repeats the live search, so it reflects
+/// the indexers at that moment; the selection always considers every
+/// candidate, not only those of the page.
+pub fn search_report_page(config: &Config, request: &Request, page: &SearchPage) -> Result<Value> {
     request.validate()?;
+    if page.limit == 0 || page.limit > MAX_REPORT_PAGE {
+        return Err("Search: page limit must be 1 to 200".into());
+    }
+    let after = page.after.as_deref().map(decode_position).transpose()?;
     if request.source_path.is_some() || request.source_url.is_some() {
         if let Some(source) = &request.source_url {
             acquisition_url(source, &config.plex.url)?;
@@ -1712,7 +1827,7 @@ pub fn search_report(config: &Config, request: &Request) -> Result<Value> {
         report.insert("rejected", Value::Array(Vec::new()));
         report.insert("candidate_count", Value::Number(0.0));
         report.insert("reported_count", Value::Number(0.0));
-        report.insert("truncated", false);
+        report.insert("next", Value::Null);
         report.insert("selected_candidate_id", Value::Null);
         let mut indexers = Value::object();
         indexers.insert("configured", Value::Number(config.sources.len() as f64));
@@ -1721,7 +1836,11 @@ pub fn search_report(config: &Config, request: &Request) -> Result<Value> {
         report.insert("indexers", indexers);
         return Ok(report);
     }
-    search_candidates(config, request).map(|result| result.report())
+    let deadline = Instant::now()
+        .checked_add(SEARCH_BUDGET)
+        .ok_or("Search: invalid search time budget")?;
+    search_candidates_mode(config, request, deadline, false, after, page.limit)
+        .map(|result| result.report())
 }
 
 /// Exact identity and profile preferences precede seed count. A manually
@@ -1745,10 +1864,8 @@ pub struct SelectedRelease {
 }
 
 fn selected_release(result: SearchResult) -> Result<SelectedRelease> {
-    let candidate = result
-        .candidates
-        .into_iter()
-        .find(|candidate| candidate.assessment.accepted)
+    let (_, candidate) = result
+        .best
         .ok_or("Search: no release satisfies the identity, seed count and selection profile")?;
     Ok(SelectedRelease {
         url: candidate.release.url,
@@ -1759,23 +1876,25 @@ fn selected_release(result: SearchResult) -> Result<SelectedRelease> {
     })
 }
 
-/// Separate season-pack identity rules retain the episode profile and normal ranking.
+/// Separate season-pack identity rules retain the episode profile and normal
+/// ranking. The report is the first page; the shortlist holds the best
+/// `PACK_CANDIDATES` accepted releases.
 pub(crate) fn search_pack_candidates(
     config: &Config,
     request: &Request,
     deadline: Instant,
 ) -> Result<(Value, Vec<SelectedRelease>)> {
-    let result = search_candidates_mode(config, request, deadline, true)?;
+    let result =
+        search_candidates_mode(config, request, deadline, true, None, DEFAULT_REPORT_PAGE)?;
     let report = result.report();
+    let profile = result.profile;
     let candidates = result
-        .candidates
-        .into_iter()
-        .filter(|candidate| candidate.assessment.accepted)
-        .take(8)
+        .packs
+        .into_values()
         .map(|candidate| SelectedRelease {
             url: candidate.release.url,
             title: candidate.release.title,
-            profile: result.profile.clone(),
+            profile: profile.clone(),
             assessment: candidate.assessment,
             id: candidate.id,
         })
@@ -2354,6 +2473,35 @@ pub(crate) fn assess_feed_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn candidate_positions_order_like_reports_and_round_trip_as_cursors() {
+        let assessment = |accepted: bool, custom_score: i32, resolution: u32| Assessment {
+            accepted,
+            reasons: Vec::new(),
+            rank: crate::selection::Rank {
+                custom_score,
+                resolution,
+                ..Default::default()
+            },
+            attributes: Default::default(),
+        };
+        let low = [0; 32];
+        let high = [255; 32];
+        let ordered = [
+            position(&assessment(true, 7, 0), 0, &low),
+            position(&assessment(true, -3, 9), u64::MAX, &low),
+            position(&assessment(true, -3, 1), 9, &low),
+            position(&assessment(true, -3, 1), 2, &low),
+            position(&assessment(true, -3, 1), 2, &high),
+            position(&assessment(false, i32::MAX, u32::MAX), u64::MAX, &low),
+            position(&assessment(false, i32::MIN, 0), 0, &high),
+        ];
+        assert!(ordered.windows(2).all(|pair| pair[0] < pair[1]));
+        for position in ordered {
+            assert_eq!(decode_position(&hex(&position)).unwrap(), position);
+        }
+    }
 
     #[test]
     fn feed_identities_ignore_order_prefer_guids_and_count_invalid_items() {

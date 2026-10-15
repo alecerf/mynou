@@ -109,12 +109,17 @@ A preview contacts your sources but records no request, writes nothing to the
 journal and starts no download. The report lists accepted and rejected
 candidates with their attributes, ranks and reasons, opaque candidate IDs and
 `selected_candidate_id` for the proposed winner. It never includes acquisition
-URLs or credentials. `candidate_count`, `reported_count` and `truncated` show
-whether every row is displayed; the winner is always chosen from the full set.
+URLs or credentials. Candidates are listed best first in pages of 100
+(`--limit` 1 to 200): `candidate_count` is the total, `reported_count` the rows
+of this page and `next` an opaque cursor for the following page, passed back as
+`--after CURSOR` (`null` on the last page). Each page repeats the live search,
+so a candidate can move between pages if a source changed meanwhile; the winner
+is always chosen from every candidate, not only the page.
 Per-source counts show configured, successful and failed responses, and a
 partially failed search can still choose from the sources that answered.
 
-The API equivalent is `POST /api/search` with the same object as
+The API equivalent is `POST /api/search` (optionally
+`POST /api/search?limit=N&after=CURSOR`) with the same object as
 `POST /api/jobs`, for example
 `{"kind": "episode", "title": "Example Series", "year": 2026, "season": 1, "episode": 2}`.
 A body containing `source_url` or `source_path` returns `manual_override: true`

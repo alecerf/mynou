@@ -29,7 +29,8 @@ const HELP: &str = "Mynou — media automation using Rust std only
          [--season N --episode N] [--path FILE | --url MAGNET_OR_TORRENT]
          [--tmdb-id N] [--source-numbering JSON] [--config mynou.json]
   search --title TITLE [--kind movie|episode] [--year YEAR]
-         [--season N --episode N] [--tmdb-id N] [--source-numbering JSON] [--config mynou.json]
+         [--season N --episode N] [--tmdb-id N] [--source-numbering JSON]
+         [--limit N --after CURSOR] [--config mynou.json]   (a page of 100 candidates by default)
   track-series --title TITLE [--year YEAR --tmdb-id N --season N]
                [--future-only] [--include-specials] [--unmonitored] [--config mynou.json]
   series-pack ID --url MAGNET_OR_TORRENT --mapping FILE [--config mynou.json]
@@ -153,6 +154,8 @@ impl Args {
             ],
             "search" => &[
                 "config",
+                "after",
+                "limit",
                 "title",
                 "kind",
                 "year",
@@ -1159,16 +1162,30 @@ fn execute(args: Args) -> Result<()> {
         }
         "search" => {
             let r = request(&args)?;
+            let query: Vec<_> = ["after", "limit"]
+                .iter()
+                .filter_map(|name| {
+                    args.options
+                        .get(*name)
+                        .map(|value| format!("{name}={value}"))
+                })
+                .collect();
+            let query = query.join("&");
+            let page = integrations::SearchPage::parse(&query)?;
             if online {
                 output(&call(
                     &config,
                     &path,
                     "POST",
-                    "/api/search",
+                    &if query.is_empty() {
+                        "/api/search".to_owned()
+                    } else {
+                        format!("/api/search?{query}")
+                    },
                     Some(&r.to_json()),
                 )?);
             } else {
-                output(&integrations::search_report(&config, &r)?);
+                output(&integrations::search_report_page(&config, &r, &page)?);
             }
         }
         "series-numbering" => {

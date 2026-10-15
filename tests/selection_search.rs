@@ -295,10 +295,22 @@ fn repeated_reports_and_tie_breaks_are_deterministic_and_redacted() {
         .unwrap();
     assert_eq!(id.len(), 64);
     assert!(id.bytes().all(|byte| byte.is_ascii_hexdigit()));
-    assert_eq!(
-        integrations::search(&config, &request).unwrap(),
-        "https://private.example/a?apikey=never-leak-token"
+    // Equal rank and seeders fall back to the opaque candidate ID.
+    let smallest = entries(&first, "accepted")
+        .iter()
+        .filter_map(|candidate| candidate.get("id").and_then(Value::as_str))
+        .min()
+        .unwrap();
+    assert_eq!(id, smallest);
+    let chosen = integrations::search(&config, &request).unwrap();
+    assert!(
+        [
+            "https://private.example/a?apikey=never-leak-token",
+            "https://private.example/z?apikey=never-leak-token"
+        ]
+        .contains(&chosen.as_str())
     );
+    assert_eq!(integrations::search(&config, &request).unwrap(), chosen);
 }
 
 #[test]
@@ -346,13 +358,38 @@ fn failed_indexers_do_not_block_a_usable_source_or_leak_response_bodies() {
     );
 }
 
+fn page(config: &Config, request: &Request, query: &str) -> Value {
+    integrations::search_report_page(
+        config,
+        request,
+        &integrations::SearchPage::parse(query).unwrap(),
+    )
+    .unwrap()
+}
+
+fn ids(report: &Value) -> Vec<String> {
+    ["accepted", "rejected"]
+        .iter()
+        .flat_map(|key| entries(report, key))
+        .map(|candidate| candidate.get("id").unwrap().as_str().unwrap().to_owned())
+        .collect()
+}
+
 #[test]
-fn preview_bounds_keep_the_winner_and_indicate_omitted_candidates() {
-    let releases = (0..1_001)
+fn cursor_pages_reach_every_candidate_beyond_the_former_report_limit() {
+    // 1,001 accepted plus 200 rejected candidates exceed the former 1,000-entry report.
+    let releases = (0..1_201)
         .map(|number| {
             let mut release = Value::object();
-            release.insert("title", "Fixture.Movie.2024.1080p");
-            release.insert("seeders", Value::Number((number + 1) as f64));
+            release.insert(
+                "title",
+                if number < 1_001 {
+                    "Fixture.Movie.2024.1080p"
+                } else {
+                    "Other.Movie.2024.1080p"
+                },
+            );
+            release.insert("seeders", Value::Number((number % 977 + 1) as f64));
             release.insert("url", format!("magnet:?xt=urn:btih:fixture{number}"));
             release
         })
@@ -360,34 +397,125 @@ fn preview_bounds_keep_the_winner_and_indicate_omitted_candidates() {
     let indexer = Indexer::open(200, json::stringify(&Value::Array(releases)));
     let mut config = configured("{}");
     config.sources.push(indexer.source("fixture"));
-    let report = integrations::search_report(&config, &movie("Fixture Movie")).unwrap();
-    assert_eq!(entries(&report, "accepted").len(), 1_000);
-    assert_eq!(report.get("truncated").and_then(Value::as_bool), Some(true));
+    let request = movie("Fixture Movie");
+    let first = integrations::search_report(&config, &request).unwrap();
+    assert_eq!(first.get("truncated"), None);
     assert_eq!(
-        report.get("candidate_count").and_then(Value::as_u64),
-        Some(1_001)
+        first.get("candidate_count").and_then(Value::as_u64),
+        Some(1_201)
     );
     assert_eq!(
-        report.get("reported_count").and_then(Value::as_u64),
-        Some(1_000)
+        first.get("reported_count").and_then(Value::as_u64),
+        Some(100)
     );
+    let selected = first.get("selected_candidate_id").unwrap().clone();
     assert_eq!(
-        entries(&report, "accepted")[0]
-            .get("seeders")
-            .and_then(Value::as_u64),
-        Some(1_001)
+        entries(&first, "accepted")[0].get("id"),
+        Some(&selected),
+        "the first candidate of the first page is the selection"
     );
-    assert!(selected_title(&report).is_some());
+    let mut seen = std::collections::BTreeSet::new();
+    let mut order = Vec::new();
+    let mut query = "limit=200".to_owned();
+    let mut pages = 0;
+    loop {
+        let report = page(&config, &request, &query);
+        pages += 1;
+        assert_eq!(report.get("selected_candidate_id"), Some(&selected));
+        assert_eq!(
+            report.get("candidate_count").and_then(Value::as_u64),
+            Some(1_201)
+        );
+        let page_ids = ids(&report);
+        assert_eq!(
+            report.get("reported_count").and_then(Value::as_u64),
+            Some(page_ids.len() as u64)
+        );
+        assert!(page_ids.len() <= 200);
+        for candidate in entries(&report, "accepted")
+            .iter()
+            .chain(entries(&report, "rejected"))
+        {
+            order.push((
+                candidate
+                    .get("assessment")
+                    .and_then(|a| a.get("accepted"))
+                    .and_then(Value::as_bool)
+                    .unwrap(),
+                candidate.get("seeders").and_then(Value::as_u64).unwrap(),
+            ));
+        }
+        for id in page_ids {
+            assert!(seen.insert(id), "a candidate repeated across pages");
+        }
+        match report.get("next") {
+            Some(Value::String(next)) => query = format!("limit=200&after={next}"),
+            Some(Value::Null) => break,
+            other => panic!("unexpected next cursor {other:?}"),
+        }
+    }
+    assert_eq!(pages, 7);
+    assert_eq!(seen.len(), 1_201);
+    // Accepted candidates first, each group by descending seeders.
+    assert!(order.windows(2).all(|pair| {
+        let ((accepted_a, seeders_a), (accepted_b, seeders_b)) = (pair[0], pair[1]);
+        (accepted_a && !accepted_b) || (accepted_a == accepted_b && seeders_a >= seeders_b)
+    }));
+    assert_eq!(
+        order.iter().filter(|(accepted, _)| *accepted).count(),
+        1_001
+    );
 }
 
 #[test]
-fn candidate_payload_budget_bounds_combined_indexer_responses() {
+fn malformed_cursors_and_page_limits_are_rejected() {
+    for query in [
+        "limit=0",
+        "limit=201",
+        "limit=01",
+        "limit=x",
+        "after=zz",
+        "after=",
+        "limit=5&limit=6",
+        "offset=3",
+        "after",
+    ] {
+        assert!(
+            integrations::SearchPage::parse(query).is_err(),
+            "{query} must be refused"
+        );
+    }
+    let valid = "0".repeat(122);
+    assert_eq!(
+        integrations::SearchPage::parse(&format!("after={valid}&limit=200"))
+            .unwrap()
+            .limit,
+        200
+    );
+    assert_eq!(
+        integrations::SearchPage::parse(&format!("after={}", "0".repeat(120))).unwrap_err(),
+        "Search: invalid candidate cursor"
+    );
+    assert_eq!(
+        integrations::SearchPage::parse(&format!("after=02{}", "0".repeat(120))).unwrap_err(),
+        "Search: invalid candidate cursor"
+    );
+    assert_eq!(
+        integrations::SearchPage::parse(&format!("after={}", "A".repeat(122))).unwrap_err(),
+        "Search: invalid candidate cursor"
+    );
+    assert_eq!(integrations::SearchPage::parse("").unwrap().limit, 100);
+}
+
+#[test]
+fn combined_candidates_beyond_former_totals_are_streamed_not_refused() {
+    // Three responses of about 8 MiB exceed the former 16 MiB candidate budget.
     let url = format!("https://private.example/{}", "x".repeat(7_950));
     let releases = (0..1_000)
-        .map(|_| {
+        .map(|number| {
             let mut release = Value::object();
             release.insert("title", "Fixture.Movie.2024.1080p");
-            release.insert("seeders", Value::Number(1.0));
+            release.insert("seeders", Value::Number((number + 1) as f64));
             release.insert("url", url.clone());
             release
         })
@@ -396,11 +524,57 @@ fn candidate_payload_budget_bounds_combined_indexer_responses() {
     assert!(body.len() < 8 * 1024 * 1024);
     let indexer = Indexer::open(200, body);
     let mut config = configured("{}");
-    config.sources.push(indexer.source("first"));
-    config.sources.push(indexer.source("second"));
+    for name in ["first", "second", "third"] {
+        config.sources.push(indexer.source(name));
+    }
+    let report = integrations::search_report(&config, &movie("Fixture Movie")).unwrap();
     assert_eq!(
-        integrations::search_report(&config, &movie("Fixture Movie")).unwrap_err(),
-        "Search: candidate data exceeds the memory limit"
+        report.get("candidate_count").and_then(Value::as_u64),
+        Some(3_000)
+    );
+    assert_eq!(entries(&report, "accepted").len(), 100);
+    assert_eq!(
+        entries(&report, "accepted")[0]
+            .get("seeders")
+            .and_then(Value::as_u64),
+        Some(1_000)
+    );
+    assert!(report.get("next").unwrap().as_str().is_some());
+    assert!(!json::stringify(&report).contains("private.example"));
+    assert_eq!(
+        integrations::search(&config, &movie("Fixture Movie")).unwrap(),
+        url
+    );
+
+    // More results than the former 100,000-candidate total, across responses.
+    let small = (0..40_000)
+        .map(|number| {
+            let mut release = Value::object();
+            release.insert("title", "Fixture.Movie.2024.1080p");
+            release.insert("seeders", Value::Number((number % 5_000 + 1) as f64));
+            release.insert("url", format!("magnet:?xt=urn:btih:f{number}"));
+            release
+        })
+        .collect();
+    let indexer = Indexer::open(200, json::stringify(&Value::Array(small)));
+    let mut config = configured("{}");
+    for name in ["first", "second", "third"] {
+        config.sources.push(indexer.source(name));
+    }
+    let report = page(&config, &movie("Fixture Movie"), "limit=200");
+    assert_eq!(
+        report.get("candidate_count").and_then(Value::as_u64),
+        Some(120_000)
+    );
+    assert_eq!(entries(&report, "accepted").len(), 200);
+    let next = report.get("next").unwrap().as_str().unwrap().to_owned();
+    let second = page(&config, &movie("Fixture Movie"), &format!("after={next}"));
+    assert_eq!(entries(&second, "accepted").len(), 100);
+    let first_ids = ids(&report);
+    assert!(ids(&second).iter().all(|id| !first_ids.contains(id)));
+    assert_eq!(
+        second.get("selected_candidate_id"),
+        report.get("selected_candidate_id")
     );
 }
 

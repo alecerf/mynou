@@ -308,7 +308,8 @@ fn assert_preferred(report: &Value, configured: u64, failed: u64) {
         report.get("reported_count").and_then(Value::as_u64),
         Some(6)
     );
-    assert_eq!(report.get("truncated"), Some(&Value::Bool(false)));
+    assert_eq!(report.get("truncated"), None);
+    assert_eq!(report.get("next"), Some(&Value::Null));
     let accepted = report.get("accepted").unwrap().as_array().unwrap();
     let rejected = report.get("rejected").unwrap().as_array().unwrap();
     assert_eq!(accepted.len(), 2);
@@ -459,6 +460,9 @@ fn cli_preview_rejects_invalid_options_without_indexer_requests_or_state_creatio
             "magnet:?xt=urn:btih:override",
         ],
         &["search", "--title", "Fixture Movie", "--unknown", "value"],
+        &["search", "--title", "Fixture Movie", "--limit", "0"],
+        &["search", "--title", "Fixture Movie", "--limit", "201"],
+        &["search", "--title", "Fixture Movie", "--after", "invalid"],
     ];
     for args in cases {
         let output = command(&directory.0, args);
@@ -514,8 +518,65 @@ fn authenticated_api_and_online_cli_preview_work_while_the_engine_journal_is_loc
         ],
     ));
     assert_eq!(online, report);
-    assert_eq!(indexer.requests.load(Ordering::Relaxed), 2);
-    assert_eq!(failed.requests.load(Ordering::Relaxed), 2);
+    // Cursor pages concatenate to the full report in the same order.
+    let ids = |report: &Value| -> Vec<Value> {
+        ["accepted", "rejected"]
+            .iter()
+            .flat_map(|key| report.get(key).unwrap().as_array().unwrap())
+            .map(|candidate| candidate.get("id").unwrap().clone())
+            .collect()
+    };
+    let (status, first) = server.call(
+        "POST",
+        "/api/search?limit=2",
+        Some(TOKEN),
+        Some(&movie().to_json()),
+    );
+    assert_eq!(status, 200, "{}", json::stringify(&first));
+    assert_eq!(first.get("reported_count").and_then(Value::as_u64), Some(2));
+    assert_eq!(
+        first.get("selected_candidate_id"),
+        report.get("selected_candidate_id")
+    );
+    let next = first.get("next").unwrap().as_str().unwrap().to_owned();
+    let (status, rest) = server.call(
+        "POST",
+        &format!("/api/search?after={next}&limit=200"),
+        Some(TOKEN),
+        Some(&movie().to_json()),
+    );
+    assert_eq!(status, 200, "{}", json::stringify(&rest));
+    assert_eq!(rest.get("next"), Some(&Value::Null));
+    let mut paged = ids(&first);
+    paged.extend(ids(&rest));
+    assert_eq!(paged, ids(&report));
+    assert_eq!(paged.len(), 6);
+    let online_page = successful(command(
+        &directory.0,
+        &[
+            "search",
+            "--title",
+            "Fixture Movie",
+            "--kind",
+            "movie",
+            "--year",
+            "2024",
+            "--tmdb-id",
+            "42",
+            "--limit",
+            "2",
+        ],
+    ));
+    assert_eq!(online_page, first);
+    let (status, error) = server.call(
+        "POST",
+        "/api/search?after=invalid",
+        Some(TOKEN),
+        Some(&movie().to_json()),
+    );
+    assert_eq!(status, 400, "{}", json::stringify(&error));
+    assert_eq!(indexer.requests.load(Ordering::Relaxed), 5);
+    assert_eq!(failed.requests.load(Ordering::Relaxed), 5);
     assert!(store.list().unwrap().is_empty());
     assert_eq!(files(&directory.0), before);
 }

@@ -540,23 +540,51 @@ views.requests = {
     if (request.kind === 'episode') { request.season = number('season') ?? 0; request.episode = number('episode') ?? 0; }
     return request;
   },
+  // The first page arrives with the search; further candidate pages repeat the
+  // live search after the last cursor, so the list has no fixed length.
   show(request, report) {
     const accepted = itemsOf(report.accepted);
     const rejected = itemsOf(report.rejected);
     const out = $('#search-out');
-    const submit = h('button', { type: 'button', class: 'primary', disabled: !accepted.length }, 'Submit request');
+    const submit = h('button', { type: 'button', class: 'primary', disabled: !report.selected_candidate_id }, 'Submit request');
     submit.addEventListener('click', () => act(submit, async () => {
       await link.call('POST', '/api/jobs', request);
       out.replaceChildren(h('p', { class: 'empty' }, 'Request submitted.'));
       location.hash = '#jobs';
     }, 'Request submitted'));
+    const total = Number(report.candidate_count) || 0;
+    const summary = h('span', { class: 'muted' });
+    const acceptedList = h('ol', { class: 'list' }, accepted.map((c) => candidateRow(c)),
+      report.selected_candidate_id ? null : h('li', { class: 'empty' }, 'No acceptable release was found. Nothing will be submitted unless you try again.'));
+    const rejectedList = h('ol', { class: 'list' }, rejected.map((c) => candidateRow(c)));
+    const rejectedSummary = h('summary');
+    const more = h('button', { type: 'button' });
+    let next = report.next;
+    const update = () => {
+      summary.textContent = `${accepted.length} acceptable · ${rejected.length} rejected · ${accepted.length + rejected.length} of ${total} candidates`;
+      rejectedSummary.textContent = `${rejected.length} rejected`;
+      more.hidden = !next;
+      more.textContent = 'Load more candidates';
+    };
+    more.addEventListener('click', (e) =>
+      act(e.currentTarget, async () => {
+        if (!next) return;
+        const page = await link.call('POST', `/api/search?limit=100&after=${encodeURIComponent(next)}`, request);
+        const moreAccepted = itemsOf(page.accepted);
+        const moreRejected = itemsOf(page.rejected);
+        accepted.push(...moreAccepted);
+        rejected.push(...moreRejected);
+        acceptedList.append(...moreAccepted.map((c) => candidateRow(c)));
+        rejectedList.append(...moreRejected.map((c) => candidateRow(c)));
+        next = page.next;
+        update();
+      }));
+    update();
     out.replaceChildren(
-      h('div', { class: 'actions' }, submit,
-        h('span', { class: 'muted' }, `${accepted.length} acceptable · ${rejected.length} rejected${report.truncated ? ' · list truncated' : ''}`)),
-      h('ol', { class: 'list' }, accepted.slice(0, 50).map((c) => candidateRow(c)),
-        accepted.length ? null : h('li', { class: 'empty' }, 'No acceptable release was found. Nothing will be submitted unless you try again.')),
-      rejected.length ? h('details', {}, h('summary', {}, `${rejected.length} rejected`),
-        h('ol', { class: 'list' }, rejected.slice(0, 50).map((c) => candidateRow(c)))) : null);
+      h('div', { class: 'actions' }, submit, summary),
+      acceptedList,
+      h('details', {}, rejectedSummary, rejectedList),
+      h('div', { class: 'actions' }, more));
   },
 };
 

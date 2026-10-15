@@ -48,3 +48,7 @@ IRC history now lives in an on-disk index, removing the 1,000-identity / 8 MiB l
 ## Changed: Read Plex watchlists and libraries of any size
 
 Watchlists are now read in resumable sweeps of 200-entry pages, up to eight pages per account in each pass, so the 512-entry requester watchlist limit and the 100,000-item and 1,000-page Plex limits are gone. A sweep resumes after errors and restarts, and entries that left a requester watchlist are removed only after a sweep that saw the whole list unchanged; `GET /api/requesters` shows the progress of an unfinished sweep ([guide](/docs/requesters.md#how-demand-is-handled)).
+
+## Changed: Page search previews without a candidate limit
+
+Search previews no longer stop at 1,000 rows or fail beyond 16 MiB of candidates: candidates are assessed as each source answers, and the winner is still chosen from all of them. `mynou search` and `POST /api/search` return pages of 100 candidates (`--limit` up to 200) with a `next` cursor for `--after`, replacing `truncated`; the web interface loads more on demand ([guide](/docs/selection.md#preview-a-search)).

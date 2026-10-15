@@ -228,10 +228,14 @@ IRC announcements:
   languages or decode video: `VOSTFR` does not mean French audio and `MULTI`
   does not say which languages are present. Automatic selection requires a
   strict title match and, for episodes, an identified file.
-- Search, upgrade and series refresh passes have a 90-second budget. Reports
-  show at most 1,000 candidate rows; retained candidate data is limited to
-  16 MiB, beyond which the search fails rather than choosing from an incomplete
-  set.
+- Search, upgrade and series refresh passes have a 90-second budget. There is
+  no total candidate count or candidate memory limit: each indexer response
+  (at most 8 MiB, 100,000 results) is assessed as it arrives and only the
+  winner, the requested report page and eight season-pack candidates are kept.
+  Reports are pages of 1 to 200 candidates (100 by default) continued with an
+  opaque `next` cursor; each page repeats the live search, so a page can differ
+  if an indexer changed in between. Identical results from one source share a
+  candidate ID and are listed once, while `candidate_count` counts every result.
 - Explicit `--url` and `--path` sources are not searched or ranked.
 
 ## Library and upgrades

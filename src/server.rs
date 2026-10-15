@@ -297,12 +297,18 @@ pub(crate) fn route(
             };
             Ok((200, engine.check_upgrades(apply)?))
         }
-        ("POST", "/api/search") => {
+        ("POST", path) if path == "/api/search" || path.starts_with("/api/search?") => {
+            let page = integrations::SearchPage::parse(
+                path.split_once('?').map_or("", |(_, query)| query),
+            )?;
             let value = json::parse(
                 std::str::from_utf8(body).map_err(|_| "Request body is not valid UTF-8")?,
             )?;
             let request = Request::from_json(&value)?;
-            Ok((200, integrations::search_report(&engine.config, &request)?))
+            Ok((
+                200,
+                integrations::search_report_page(&engine.config, &request, &page)?,
+            ))
         }
         ("GET", "/api/profiles") => Ok((200, engine.config.selection.to_json())),
         ("POST", "/api/jobs") => {
