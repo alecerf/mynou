@@ -433,6 +433,7 @@ pub(super) fn open(
             directory,
             &mut tree,
             &transaction,
+            true,
             #[cfg(test)]
             None,
         )?;
@@ -580,6 +581,7 @@ pub(super) fn publish_and_apply(
         &index.directory,
         &mut index.tree,
         transaction,
+        false,
         #[cfg(test)]
         index.fault,
     )?;
@@ -597,9 +599,13 @@ fn apply(
     directory: &Path,
     tree: &mut File,
     transaction: &Transaction,
+    recovering: bool,
     #[cfg(test)] fault: Option<Fault>,
 ) -> Result<()> {
     let mut affected = BTreeSet::new();
+    // Recovery cannot tell whether an interrupted apply made its new object
+    // directories durable, so it always synchronizes `objects`.
+    let mut created = recovering;
     for (number, action) in transaction.actions.iter().enumerate() {
         let path = value_path(directory, &action.key);
         let parent = path.parent().ok_or("Missing inventory object directory")?;
@@ -611,6 +617,7 @@ fn apply(
                     .map_err(|error| {
                         format!("Cannot create inventory object directory: {error}")
                     })?;
+                created = true;
             }
             private_directory(parent)?;
             let temporary = parent.join(format!(".record-{}.tmp", hex(&random_bytes::<16>()?)));
@@ -650,7 +657,9 @@ fn apply(
     for path in affected {
         sync_directory(&path)?;
     }
-    sync_directory(&directory.join("objects"))?;
+    if created {
+        sync_directory(&directory.join("objects"))?;
+    }
     for (number, (id, node)) in transaction.pages.iter().enumerate() {
         tree.seek(SeekFrom::Start(tree::offset(*id)?))
             .and_then(|_| tree.write_all(&node.encode().map_err(std::io::Error::other)?))
@@ -668,7 +677,6 @@ fn apply(
         .and_then(|_| tree.write_all(&transaction.after.encode()))
         .and_then(|()| sync_file(tree))
         .map_err(|error| format!("Cannot persist inventory root: {error}"))?;
-    sync_directory(directory)?;
     #[cfg(test)]
     if fault == Some(Fault::Applied) {
         return Err("Injected interruption after durable apply".into());
