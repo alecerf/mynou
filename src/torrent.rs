@@ -236,6 +236,9 @@ impl Source {
         Self::parse_with_deadline(source, None)
     }
     fn parse_with_deadline(source: &str, deadline: Option<Instant>) -> Result<Self> {
+        if source.starts_with("magnet:?") {
+            return Self::parse_magnet_with_deadline(source, deadline);
+        }
         if deadline.is_some_and(|end| Instant::now() >= end) {
             return Err("Torrent metadata deadline exceeded".into());
         }
@@ -250,92 +253,118 @@ impl Source {
             peers: Vec::new(),
             meta: None,
         };
-        if let Some(query) = source.strip_prefix("magnet:?") {
-            for part in query.split('&') {
-                if deadline.is_some_and(|end| Instant::now() >= end) {
-                    return Err("Torrent metadata deadline exceeded".into());
-                }
-                let Some((key, value)) = part.split_once('=') else {
-                    continue;
-                };
-                let value = url_decode(value)?;
-                match key {
-                    "xt" => {
-                        if let Some(hash) = value.strip_prefix("urn:btih:") {
-                            let hash = if hash.len() == 32 {
-                                decode_base32(hash)?
-                            } else {
-                                decode_hex(hash)?
-                            };
-                            if result.v1.is_some_and(|v| v != hash) {
-                                return Err("Magnet contains conflicting v1 hashes".into());
-                            }
-                            result.v1 = Some(hash);
-                        } else if let Some(hash) = value.strip_prefix("urn:btmh:1220") {
-                            let hash = decode_hex(hash)?;
-                            if result.v2.is_some_and(|v| v != hash) {
-                                return Err("Magnet contains conflicting v2 hashes".into());
-                            }
-                            result.v2 = Some(hash);
-                        }
-                    }
-                    "tr" => {
-                        if result.trackers.len() >= 256 {
-                            return Err("Too many magnet trackers".into());
-                        }
-                        if value.starts_with("http://")
-                            || value.starts_with("https://")
-                            || value.starts_with("udp://")
-                        {
-                            result.trackers.push(value);
-                        }
-                    }
-                    "x.pe" => {
-                        if result.peers.len() >= 256 {
-                            return Err("Too many magnet peers".into());
-                        }
-                        result.peers.extend(
-                            value
-                                .to_socket_addrs()
-                                .map_err(|_| "Invalid x.pe address")?
-                                .take(4),
-                        );
-                    }
-                    _ => {}
-                }
+        let encoded = if source.starts_with("http://") || source.starts_with("https://") {
+            let mut client = crate::net::HttpClient::new().with_max_body(MAX_META);
+            if let Some(end) = deadline {
+                client = client.with_timeout(
+                    end.checked_duration_since(Instant::now())
+                        .filter(|remaining| !remaining.is_zero())
+                        .ok_or("Torrent metadata deadline exceeded")?
+                        .min(Duration::from_secs(20)),
+                );
             }
-            if result.v1.is_none() && result.v2.is_none() {
-                return Err("Magnet has no valid btih or btmh hash".into());
+            let r = client.get(source)?;
+            if r.status != 200 {
+                return Err("Metadata download was rejected".into());
             }
+            r.body
         } else {
-            let encoded = if source.starts_with("http://") || source.starts_with("https://") {
-                let mut client = crate::net::HttpClient::new().with_max_body(MAX_META);
-                if let Some(end) = deadline {
-                    client = client.with_timeout(
-                        end.checked_duration_since(Instant::now())
-                            .filter(|remaining| !remaining.is_zero())
-                            .ok_or("Torrent metadata deadline exceeded")?
-                            .min(Duration::from_secs(20)),
+            let file = File::open(source).map_err(|_| "Torrent file not found")?;
+            let mut data = Vec::new();
+            file.take((MAX_META + 1) as u64)
+                .read_to_end(&mut data)
+                .map_err(|_| "Could not read torrent file")?;
+            data
+        };
+        let meta = Meta::parse(&encoded)?;
+        result.v1 = meta.v1;
+        result.v2 = meta.v2;
+        result.trackers = meta.trackers.clone();
+        result.meta = Some(meta);
+        if result.v1.is_some_and(|h| h == [0; 20]) || result.v2.is_some_and(|h| h[..20] == [0; 20])
+        {
+            return Err("Zero torrent hash is not allowed".into());
+        }
+        if deadline.is_some_and(|end| Instant::now() >= end) {
+            return Err("Torrent metadata deadline exceeded".into());
+        }
+        Ok(result)
+    }
+    // Restored magnet state has no metadata-fetch branch. Keeping this parser
+    // separate makes the local-state trust boundary explicit.
+    fn parse_magnet_with_deadline(source: &str, deadline: Option<Instant>) -> Result<Self> {
+        if deadline.is_some_and(|end| Instant::now() >= end) {
+            return Err("Torrent metadata deadline exceeded".into());
+        }
+        if source.len() > 64 * 1024 {
+            return Err("Torrent source is too long".into());
+        }
+        let query = source
+            .strip_prefix("magnet:?")
+            .ok_or("Persisted source must be a magnet")?;
+        let mut result = Self {
+            original: source.to_owned(),
+            v1: None,
+            v2: None,
+            trackers: Vec::new(),
+            peers: Vec::new(),
+            meta: None,
+        };
+        for part in query.split('&') {
+            if deadline.is_some_and(|end| Instant::now() >= end) {
+                return Err("Torrent metadata deadline exceeded".into());
+            }
+            let Some((key, value)) = part.split_once('=') else {
+                continue;
+            };
+            let value = url_decode(value)?;
+            match key {
+                "xt" => {
+                    if let Some(hash) = value.strip_prefix("urn:btih:") {
+                        let hash = if hash.len() == 32 {
+                            decode_base32(hash)?
+                        } else {
+                            decode_hex(hash)?
+                        };
+                        if result.v1.is_some_and(|v| v != hash) {
+                            return Err("Magnet contains conflicting v1 hashes".into());
+                        }
+                        result.v1 = Some(hash);
+                    } else if let Some(hash) = value.strip_prefix("urn:btmh:1220") {
+                        let hash = decode_hex(hash)?;
+                        if result.v2.is_some_and(|v| v != hash) {
+                            return Err("Magnet contains conflicting v2 hashes".into());
+                        }
+                        result.v2 = Some(hash);
+                    }
+                }
+                "tr" => {
+                    if result.trackers.len() >= 256 {
+                        return Err("Too many magnet trackers".into());
+                    }
+                    if value.starts_with("http://")
+                        || value.starts_with("https://")
+                        || value.starts_with("udp://")
+                    {
+                        result.trackers.push(value);
+                    }
+                }
+                "x.pe" => {
+                    if result.peers.len() >= 256 {
+                        return Err("Too many magnet peers".into());
+                    }
+                    result.peers.extend(
+                        value
+                            .to_socket_addrs()
+                            .map_err(|_| "Invalid x.pe address")?
+                            .take(4),
                     );
                 }
-                let r = client.get(source)?;
-                if r.status != 200 {
-                    return Err("Metadata download was rejected".into());
-                }
-                r.body
-            } else {
-                let file = File::open(source).map_err(|_| "Torrent file not found")?;
-                let mut data = Vec::new();
-                file.take((MAX_META + 1) as u64)
-                    .read_to_end(&mut data)
-                    .map_err(|_| "Could not read torrent file")?;
-                data
-            };
-            let meta = Meta::parse(&encoded)?;
-            result.v1 = meta.v1;
-            result.v2 = meta.v2;
-            result.trackers = meta.trackers.clone();
-            result.meta = Some(meta);
+                _ => {}
+            }
+        }
+        if result.v1.is_none() && result.v2.is_none() {
+            return Err("Magnet has no valid btih or btmh hash".into());
         }
         if result.v1.is_some_and(|h| h == [0; 20]) || result.v2.is_some_and(|h| h[..20] == [0; 20])
         {
@@ -916,7 +945,7 @@ fn load_job(config: &DownloadConfig, id: &str) -> Result<Job> {
                 .into_owned()
         };
         let mut source = if original.starts_with("magnet:?") {
-            Source::parse(&original)?
+            Source::parse_magnet_with_deadline(&original, None)?
         } else {
             Source {
                 original: original.clone(),
@@ -993,7 +1022,7 @@ fn load_job(config: &DownloadConfig, id: &str) -> Result<Job> {
         if !original.starts_with("magnet:?") {
             return Err("Missing persisted metadata for this source".into());
         }
-        let source = Source::parse(&original)?;
+        let source = Source::parse_magnet_with_deadline(&original, None)?;
         if source.id() != id {
             return Err("BitTorrent queue hash mismatch".into());
         }
@@ -3755,6 +3784,71 @@ fn serve_peer(
 #[cfg(test)]
 mod control_runtime_tests {
     use super::*;
+
+    #[test]
+    fn restored_magnet_parser_cannot_fetch_metadata_locations() {
+        let root = std::env::temp_dir().join(format!(
+            "mynou-restored-magnet-{}",
+            hex(&crate::crypto::random_bytes::<16>().unwrap())
+        ));
+        mkdir_private(&root).unwrap();
+        let path = root.join("valid.torrent");
+        let info = Value::Dict(BTreeMap::from([
+            (b"name".to_vec(), Value::Bytes(b"empty.bin".to_vec())),
+            (b"length".to_vec(), Value::Int(0)),
+            (b"piece length".to_vec(), Value::Int(16_384)),
+            (b"pieces".to_vec(), Value::Bytes(Vec::new())),
+        ]));
+        fs::write(
+            &path,
+            crate::bencode::encode(&Value::Dict(BTreeMap::from([(b"info".to_vec(), info)]))),
+        )
+        .unwrap();
+        assert!(
+            Source::parse(path.to_str().unwrap())
+                .unwrap()
+                .meta
+                .is_some()
+        );
+        let trap = TcpListener::bind("127.0.0.1:0").unwrap();
+        trap.set_nonblocking(true).unwrap();
+        for location in [
+            path.to_str().unwrap().to_owned(),
+            format!("http://{}/metadata", trap.local_addr().unwrap()),
+            format!("https://{}/metadata", trap.local_addr().unwrap()),
+        ] {
+            assert!(
+                Source::parse_magnet_with_deadline(
+                    &location,
+                    Some(Instant::now() + Duration::from_millis(100))
+                )
+                .is_err()
+            );
+        }
+        assert!(
+            matches!(trap.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock)
+        );
+        let magnet = format!("magnet:?xt=urn:btih:{}", "1".repeat(40));
+        let parsed = Source::parse_magnet_with_deadline(&magnet, None).unwrap();
+        assert_eq!(parsed.v1, Some([0x11; 20]));
+        assert!(parsed.meta.is_none());
+        assert!(Source::parse_magnet_with_deadline(&magnet, Some(Instant::now())).is_err());
+        assert!(
+            Source::parse_magnet_with_deadline(
+                &format!("{magnet}&dn={}", "x".repeat(64 * 1024)),
+                None
+            )
+            .is_err()
+        );
+        assert!(
+            Source::parse_magnet_with_deadline(
+                &format!("magnet:?xt=urn:btih:{}", "0".repeat(40)),
+                None
+            )
+            .is_err()
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
     use metainfo::MediaFile;
 
     fn geometry(lengths: &[(u64, bool)]) -> Meta {
