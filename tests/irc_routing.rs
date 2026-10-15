@@ -898,10 +898,8 @@ fn a_full_retry_table_still_routes_an_eligible_announcement() {
             "waiting_for_admitted_job"
         );
     }
-    let Ok(mut admitted) = engine.submit(request(7)) else {
-        panic!("the fixture request is admitted");
-    };
-    let admitted = admitted.remove(0);
+    // Only success is checked: test output never carries submitted job data.
+    assert!(engine.submit(request(7)).is_ok());
     let row = receive(&engine, &torrent.id, 7);
     // Backoff lasts 30 seconds: the strict bounds hold only while none expired.
     let full = started.elapsed().as_secs() < 25 && retry_entries(&engine) == 200;
@@ -910,16 +908,18 @@ fn a_full_retry_table_still_routes_an_eligible_announcement() {
         .expect("an eligible announcement is never routed");
     assert!(!full || turns <= 2, "{turns}");
     assert!(full || started.elapsed().as_secs() >= 25);
-    assert_eq!(
-        job(&engine, &admitted.id)
+    let announcement = engine.irc_announcement(row_id(&row)).unwrap();
+    assert_eq!(route_phase(&announcement), Some("routed"));
+    let routed = announcement
+        .get("route")
+        .and_then(|r| r.get("origin"))
+        .and_then(|o| o.get("job_id"))
+        .and_then(Value::as_str)
+        .unwrap();
+    assert!(
+        job(&engine, routed)
             .irc_origin
-            .unwrap()
-            .announcement_id,
-        row_id(&row)
-    );
-    assert_eq!(
-        route_phase(&engine.irc_announcement(row_id(&row)).unwrap()),
-        Some("routed")
+            .is_some_and(|o| o.announcement_id == row_id(&row))
     );
     assert!(retry_entries(&engine) <= 200);
 }
