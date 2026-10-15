@@ -404,7 +404,10 @@ torrent metadata and authenticates the announced hash. The metadata must
 contain exactly one video whose title, year and episode labels match the
 waiting job; packs, ranges and several videos are rejected. The job then
 records the magnet and that file, and downloads only it. A retry reuses the same
-torrent and never searches. Catalog IDs in announcements remain claims: a
+torrent and never searches. An announcement that cannot be routed yet (no
+waiting job, unavailable metadata) is retried after 30 seconds without holding
+up the others; `GET /api/irc` reports `routing.retry_entries` against
+`retry_limit` (200) and `retry_dropped`, the backoffs shortened while full. Catalog IDs in announcements remain claims: a
 matching hash and labels do not prove which film or episode the video shows.
 
 A request review checks the account's current Plex identity and fresh TMDB

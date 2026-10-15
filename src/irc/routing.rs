@@ -659,13 +659,65 @@ pub(crate) fn recover(
     Ok(())
 }
 
+/// Transient backoff memory; selection never depends on how full it is.
+pub(crate) const RETRY_ENTRIES: usize = 200;
+const RETRY_SECS: u32 = 30;
+const RETRY_DELAY: Duration = Duration::from_secs(RETRY_SECS as u64);
+
 #[derive(Default)]
 pub(crate) struct Runtime {
     outcomes: BTreeMap<String, String>,
     retry: BTreeMap<String, Instant>,
+    retry_dropped: u64,
     cursor: Option<crate::inventory::Key>,
 }
 impl Runtime {
+    /// Read one pending page from the cursor, wrapping once when it is past the
+    /// end, and select the first routable row that is not backing off. The
+    /// cursor moves past that row, or past the whole page when every row waits,
+    /// so each pending row is reached within a bounded number of turns.
+    pub(super) fn select(
+        &mut self,
+        ledger: &AnnouncementStore,
+        now: Instant,
+        routable: impl Fn(&Record) -> bool,
+    ) -> Result<Option<Record>> {
+        let (mut rows, mut next) = ledger.page(3, self.cursor, 200)?;
+        if rows.is_empty() && self.cursor.is_some() {
+            (rows, next) = ledger.page(3, None, 200)?;
+        }
+        self.retry.retain(|_, at| now < *at);
+        let record = rows
+            .into_iter()
+            .find(|r| !self.retry.contains_key(&r.id) && routable(r));
+        self.cursor = record
+            .as_ref()
+            .map(super::index::pending_cursor)
+            .transpose()?
+            .or(next);
+        Ok(record)
+    }
+    /// Remember a transient failure. A full table drops the entry closest to
+    /// expiry, which only shortens that announcement's backoff.
+    pub(super) fn back_off(&mut self, id: String, now: Instant) {
+        self.retry.retain(|_, at| now < *at);
+        if self.retry.len() >= RETRY_ENTRIES
+            && !self.retry.contains_key(&id)
+            && let Some(oldest) = self
+                .retry
+                .iter()
+                .min_by_key(|(_, at)| **at)
+                .map(|(k, _)| k.clone())
+        {
+            self.retry.remove(&oldest);
+            self.retry_dropped = self.retry_dropped.saturating_add(1);
+        }
+        self.retry.insert(id, now + RETRY_DELAY);
+    }
+    #[cfg(test)]
+    pub(super) fn backing_off(&self, id: &str, now: Instant) -> bool {
+        self.retry.get(id).is_some_and(|at| now < *at)
+    }
     pub(crate) fn annotate(&self, record: &Record) -> Value {
         let mut v = record.public_json();
         v.insert(
@@ -781,27 +833,10 @@ impl Engine {
         let now = Instant::now();
         let record = {
             let ledger = lock(&self.irc_store)?;
-            let mut runtime = lock(&self.irc_route_runtime)?;
-            let (mut rows, mut next) = ledger.page(3, runtime.cursor, 200)?;
-            if rows.is_empty() && runtime.cursor.is_some() {
-                (rows, next) = ledger.page(3, None, 200)?;
-            }
             // One bounded scheduling page per turn, wrapping on the next turn.
-            runtime.retry.retain(|_, at| now < *at);
-            let record = if runtime.retry.len() < 200 {
-                rows.into_iter().find(|r| {
-                    !runtime.retry.contains_key(&r.id)
-                        && matched_rule(&self.config, r, &fingerprint).is_ok()
-                })
-            } else {
-                None
-            };
-            runtime.cursor = record
-                .as_ref()
-                .map(super::index::pending_cursor)
-                .transpose()?
-                .or(next);
-            record
+            lock(&self.irc_route_runtime)?.select(&ledger, now, |r| {
+                matched_rule(&self.config, r, &fingerprint).is_ok()
+            })?
         };
         let mut report = Value::object();
         report.insert("routed", false);
@@ -840,9 +875,7 @@ impl Engine {
             },
         };
         runtime.outcomes.insert(record.id.clone(), outcome.into());
-        runtime
-            .retry
-            .insert(record.id, Instant::now() + Duration::from_secs(30));
+        runtime.back_off(record.id, Instant::now());
         report.insert("outcome", outcome);
         if let Ok((job, routed)) = result {
             report.insert("routed", routed);
@@ -967,9 +1000,14 @@ impl Engine {
         Ok((job, true))
     }
     pub(crate) fn irc_routing_json(&self) -> Result<Value> {
-        let runtime = lock(&self.irc_route_runtime)?;
+        let mut runtime = lock(&self.irc_route_runtime)?;
+        let now = Instant::now();
+        runtime.retry.retain(|_, at| now < *at);
         let mut v = Value::object();
-        v.insert("retry_secs", 30_u32);
+        v.insert("retry_secs", RETRY_SECS);
+        v.insert("retry_entries", runtime.retry.len() as u32);
+        v.insert("retry_limit", RETRY_ENTRIES as u32);
+        v.insert("retry_dropped", runtime.retry_dropped.to_string());
         v.insert(
             "outcomes",
             Value::Object(

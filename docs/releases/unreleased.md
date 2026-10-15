@@ -52,3 +52,7 @@ Watchlists are now read in resumable sweeps of 200-entry pages, up to eight page
 ## Changed: Page search previews without a candidate limit
 
 Search previews no longer stop at 1,000 rows or fail beyond 16 MiB of candidates: candidates are assessed as each source answers, and the winner is still chosen from all of them. `mynou search` and `POST /api/search` return pages of 100 candidates (`--limit` up to 200) with a `next` cursor for `--after`, replacing `truncated`; the web interface loads more on demand ([guide](/docs/selection.md#preview-a-search)).
+
+## Fixed: IRC routing no longer stalls behind failing announcements
+
+Up to 200 announcements that kept failing to route (for example with no waiting job) could pause IRC routing for everyone until their 30-second backoff ended. Eligible announcements are now routed regardless, and `GET /api/irc` shows the backoff table under `routing` ([limits](/docs/limits.md)).

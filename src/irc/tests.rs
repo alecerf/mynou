@@ -2,6 +2,7 @@
 use super::super::{
     Announcement, Evaluation, Record, Settings, State, digest, index,
     persistence::{AnnouncementStore, Backend, INDEX, MARKER, STAGING},
+    routing::{RETRY_ENTRIES, Runtime},
 };
 use crate::{
     crypto::{random_bytes, sha256},
@@ -15,6 +16,7 @@ use std::{
     io::Write,
     os::unix::fs::{DirBuilderExt, PermissionsExt, symlink},
     path::{Path, PathBuf},
+    time::{Duration, Instant},
 };
 struct Directory(PathBuf);
 impl Directory {
@@ -457,4 +459,94 @@ fn partial_creation_writes_resume_only_when_they_match_the_prepublished_identity
         }
         drop(held);
     }
+}
+
+/// A store whose pending table holds rows 1..=n, with ids in pending order.
+fn pending(dir: &Path, n: u64) -> (AnnouncementStore, Vec<String>) {
+    legacy(dir, &state(vec![row(1, false)]));
+    let mut store = open(dir, false);
+    store.initialize().unwrap();
+    let rows: Vec<_> = (2..=n).map(|n| row(n, false)).collect();
+    for chunk in rows.chunks(100) {
+        store.save_rows(chunk).unwrap();
+    }
+    let mut ids: Vec<_> = (1..=n).map(|n| row(n, false).id).collect();
+    ids.sort();
+    (store, ids)
+}
+fn selected(runtime: &mut Runtime, store: &AnnouncementStore, at: Instant) -> Option<String> {
+    runtime.select(store, at, |_| true).unwrap().map(|r| r.id)
+}
+
+#[test]
+fn a_full_retry_table_never_blocks_announcements_outside_it() {
+    let dir = Directory::new();
+    let (store, ids) = pending(&dir.0, RETRY_ENTRIES as u64 + 1);
+    let eligible = row(RETRY_ENTRIES as u64 + 1, false).id;
+    let mut runtime = Runtime::default();
+    let now = Instant::now();
+    // Every other announcement fails once, one attempt per turn, in pending order.
+    let mut attempted = Vec::new();
+    for _ in 0..RETRY_ENTRIES {
+        let r = runtime
+            .select(&store, now, |r| r.id != eligible)
+            .unwrap()
+            .unwrap();
+        runtime.back_off(r.id.clone(), now);
+        attempted.push(r.id);
+    }
+    let mut failing: Vec<_> = ids.iter().filter(|id| **id != eligible).cloned().collect();
+    assert_eq!(attempted, failing);
+    failing.retain(|id| runtime.backing_off(id, now));
+    assert_eq!(failing.len(), RETRY_ENTRIES);
+    // The full table holds no slot for it, yet the eligible row is reached at once.
+    assert_eq!(selected(&mut runtime, &store, now), Some(eligible.clone()));
+    // Remembering it keeps the bound by dropping the entry closest to expiry.
+    let later = now + Duration::from_secs(1);
+    runtime.back_off(eligible.clone(), later);
+    assert!(runtime.backing_off(&eligible, later));
+    assert!(!runtime.backing_off(&attempted[0], later));
+    assert_eq!(
+        ids.iter()
+            .filter(|id| runtime.backing_off(id, later))
+            .count(),
+        RETRY_ENTRIES
+    );
+    let retried: Vec<_> = (0..2)
+        .filter_map(|_| selected(&mut runtime, &store, later))
+        .collect();
+    assert_eq!(retried, [attempted[0].clone()]);
+    // Expired entries are forgotten and every row is routable again.
+    let expired = now + Duration::from_secs(32);
+    assert!(ids.iter().all(|id| !runtime.backing_off(id, expired)));
+    runtime.back_off(ids[0].clone(), expired);
+    assert_eq!(
+        ids.iter()
+            .filter(|id| runtime.backing_off(id, expired))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn a_page_that_is_entirely_backing_off_never_hides_later_rows() {
+    let dir = Directory::new();
+    let (store, ids) = pending(&dir.0, 2 * RETRY_ENTRIES as u64 + 1);
+    let mut runtime = Runtime::default();
+    let now = Instant::now();
+    for id in &ids[..RETRY_ENTRIES] {
+        runtime.back_off(id.clone(), now);
+    }
+    // One idle turn skips the waiting page; later rows then follow in order.
+    let turns: Vec<_> = (0..3)
+        .map(|_| selected(&mut runtime, &store, now))
+        .collect();
+    assert_eq!(
+        turns,
+        [
+            None,
+            Some(ids[RETRY_ENTRIES].clone()),
+            Some(ids[RETRY_ENTRIES + 1].clone())
+        ]
+    );
 }

@@ -179,10 +179,14 @@ IRC announcements:
   `next_cursor` with `--after` or API `after` beyond the compatibility offset
   window of 1,000 rows. Legacy snapshots remain bounded to 1,000 rows / 8 MiB
   during migration. Counters and source health reset when the service restarts.
-  Routing scans one 200-row pending page per turn (plus an empty wrap probe),
-  with at most 200 attempts per 30-second retry window. Historical decisions
-  and reservations are skipped by the pending index; transient outcomes retain
-  at most 200 rows. Storage failures never discard identities.
+  Routing scans one 200-row pending page per turn (plus an empty wrap probe)
+  and makes at most one attempt per turn. A transient failure backs off for 30
+  seconds; at most 200 backoffs are remembered, and a full table drops the one
+  closest to expiry instead of pausing routing, so failing announcements never
+  block others. A page whose rows all back off costs one idle turn and the
+  cursor moves on. Historical decisions and reservations are skipped by the
+  pending index; transient outcomes retain at most 200 rows. Storage failures
+  never discard identities.
 - Lines are limited to 8,192 bytes, reads to 4,096 bytes, batches to 128
   parsed messages and each source to 256 messages per second. Connection and
   registration (including authentication) must finish within ten seconds,

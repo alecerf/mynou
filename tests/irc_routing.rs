@@ -867,6 +867,61 @@ fn negative_plex_checks_wait_without_selecting_a_source_and_routing_wakes_the_jo
     assert!(engine.transfers().unwrap().as_array().unwrap().is_empty());
 }
 
+fn retry_entries(engine: &Engine) -> u64 {
+    let sources = engine.irc_sources().unwrap();
+    let routing = sources.get("routing").unwrap();
+    assert_eq!(
+        routing.get("retry_limit").and_then(Value::as_u64),
+        Some(200)
+    );
+    routing
+        .get("retry_entries")
+        .and_then(Value::as_u64)
+        .unwrap()
+}
+
+#[test]
+fn a_full_retry_table_still_routes_an_eligible_announcement() {
+    let dir = Directory::new();
+    let torrent = movie(&dir, "Fixture.Movie.2024.1080p.mp4");
+    let seed = Seeder::open(&dir.0.join("seed"), &[&torrent]);
+    let cfg = configuration(&dir.0.join("engine"), seed.client.listen_port());
+    let engine = Engine::open(cfg).unwrap();
+    // Claims for media nobody admitted fail transiently and back off.
+    for id in 1000..1200_u64 {
+        receive(&engine, &format!("{id:040x}"), id);
+    }
+    let started = std::time::Instant::now();
+    for _ in 0..200 {
+        assert_eq!(
+            outcome(&engine.irc_route_pending().unwrap()),
+            "waiting_for_admitted_job"
+        );
+    }
+    // Backoff lasts 30 seconds; the check only holds while none has expired.
+    if started.elapsed().as_secs() < 25 {
+        assert_eq!(retry_entries(&engine), 200);
+    }
+    let admitted = engine.submit(request(7)).unwrap().remove(0);
+    let row = receive(&engine, &torrent.id, 7);
+    let turns = (1..=3)
+        .find(|_| routing(&engine.irc_route_pending().unwrap()))
+        .expect("an eligible announcement waits behind a full retry table");
+    assert!(turns <= 2, "{turns}");
+    assert_eq!(
+        job(&engine, &admitted.id)
+            .irc_origin
+            .unwrap()
+            .announcement_id,
+        row_id(&row)
+    );
+    assert_eq!(
+        route_phase(&engine.irc_announcement(row_id(&row)).unwrap()),
+        Some("routed")
+    );
+    assert!(retry_entries(&engine) <= 200);
+}
+
 #[test]
 fn an_origin_cannot_create_its_own_admission_in_journal_replay() {
     let dir = Directory::new();
