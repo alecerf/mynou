@@ -124,7 +124,7 @@ pub struct TunnelConfig {
     pub dns: Option<DnsConfig>,
     /// Handshake messages per `LOAD_WINDOW` above which the load is `High`.
     pub handshake_load: u32,
-    /// Outer datagrams read by one `pump`.
+    /// Outer socket reads attempted by one `pump`, including socket errors.
     pub datagrams_per_pump: usize,
     pub reconnect_initial: Duration,
     pub reconnect_max: Duration,
@@ -547,7 +547,12 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
         match status {
             PeerStatus::ProtectedReady => {
                 if self.state != TunnelState::Protected {
-                    live.keepalive_at = self.config.keepalive.map(|every| now + every);
+                    // No representable full interval remains on overflow. Disable
+                    // this timer rather than send early at Duration::MAX.
+                    live.keepalive_at = self
+                        .config
+                        .keepalive
+                        .and_then(|every| now.checked_add(every));
                 }
                 self.state = TunnelState::Protected;
                 self.reason = None;
@@ -700,7 +705,10 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
             }
         }
         if self.state == TunnelState::Protected && live.keepalive_at.is_some_and(|at| now >= at) {
-            live.keepalive_at = self.config.keepalive.map(|every| now + every);
+            live.keepalive_at = self
+                .config
+                .keepalive
+                .and_then(|every| now.checked_add(every));
             packets.push(Vec::new());
         }
         if failed {
@@ -741,9 +749,19 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
     }
 
     /// Waits at most `max_wait` (and no longer than the next deadline) for
-    /// outer datagrams, handles at most `datagrams_per_pump` of them, then runs
-    /// every due timer.
+    /// outer datagrams, attempts at most `datagrams_per_pump` reads (including
+    /// socket errors), then runs every due timer.
     pub fn pump(&mut self, max_wait: Duration) -> Result<Pumped, TunnelError> {
+        self.pump_with_receive(max_wait, |socket, buffer| socket.recv_from(buffer))
+    }
+
+    // Keep read accounting testable independently of platform-specific ICMP
+    // delivery, while production always reads from the one owned UDP socket.
+    fn pump_with_receive(
+        &mut self,
+        max_wait: Duration,
+        mut receive: impl FnMut(&UdpSocket, &mut [u8]) -> std::io::Result<(usize, SocketAddr)>,
+    ) -> Result<Pumped, TunnelError> {
         if self.state == TunnelState::Closed {
             return Err(TunnelError::Unavailable);
         }
@@ -754,14 +772,14 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
             .map_or(max_wait, |at| at.saturating_sub(now).min(max_wait));
         let mut buffer = [0u8; RECEIVE_BUFFER];
         let mut received = 0;
-        while received < self.config.datagrams_per_pump {
-            let blocking = received == 0 && !wait.is_zero();
+        for attempt in 0..self.config.datagrams_per_pump {
+            let blocking = attempt == 0 && !wait.is_zero();
             let io = |error: std::io::Error| TunnelError::Io(error.to_string());
             self.socket.set_nonblocking(!blocking).map_err(io)?;
             if blocking {
                 self.socket.set_read_timeout(Some(wait)).map_err(io)?;
             }
-            match self.socket.recv_from(&mut buffer) {
+            match receive(&self.socket, &mut buffer) {
                 Ok((length, source)) => {
                     received += 1;
                     self.inbound(&buffer[..length], source);
@@ -779,7 +797,7 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
                     ) =>
                 {
                     self.stats.send_errors += 1;
-                    if received == 0 && blocking {
+                    if blocking {
                         break;
                     }
                 }

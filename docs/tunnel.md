@@ -27,9 +27,10 @@ One `Tunnel` is the single owner of:
 
 `Tunnel` holds `Rc` state through `Peer` and is not `Send`. It starts no thread:
 a caller drives it with `pump(max_wait)`, which waits at most `max_wait` (never
-past the next timer) for datagrams, handles at most `datagrams_per_pump` of
-them, and runs every due timer. Operations and revocation are therefore
-serialized by construction; a later integration owns it from one thread.
+past the next timer) for datagrams, attempts at most `datagrams_per_pump` reads
+(including socket errors), and runs every due timer. Operations and revocation
+are therefore serialized by construction; a later integration owns it from one
+thread.
 
 ## Data path
 
@@ -89,7 +90,7 @@ expires, the generation is revoked and reconnection starts.
 
 | Bound | Default | Exhaustion |
 | --- | --- | --- |
-| Outer datagrams per `pump` | 64 | the rest wait for the next pump |
+| Outer reads per `pump` (including socket errors) | 64 | the rest wait for the next pump |
 | Outer datagram size | 1456 bytes | dropped and counted (`oversized`) |
 | Handshake messages per second before `Load::High` | 32 | cookie replies, no Noise work |
 | Peer queue without a session | 32 | `QueueFull`, or a counted drop |

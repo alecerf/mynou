@@ -1075,3 +1075,149 @@ fn a_replayed_initiation_never_moves_the_remote() {
     world.connect(Duration::from_millis(500), 100);
     assert_eq!(world.server.status().remote, Some(world.relay.address(0)));
 }
+
+#[test]
+fn every_read_attempt_consumes_the_pump_budget() {
+    let mut world = World::new(|_, server| server.datagrams_per_pump = 4);
+    // Exhaustively mix datagrams, refused sends and connection resets. These
+    // injected reads exercise the production pump loop without relying on how
+    // a platform reports ICMP errors on an unconnected UDP socket.
+    for mut pattern in 0..3usize.pow(4) {
+        let before = world.server.stats();
+        let mut reads = 0;
+        let mut datagrams = 0;
+        let pumped = world
+            .server
+            .pump_with_receive(Duration::ZERO, |_, buffer| {
+                reads += 1;
+                assert!(reads <= 4, "the pump attempted a read beyond its budget");
+                let outcome = pattern % 3;
+                pattern /= 3;
+                match outcome {
+                    0 => {
+                        datagrams += 1;
+                        buffer[0] = 0;
+                        Ok((1, loopback()))
+                    }
+                    1 => Err(std::io::Error::from(ErrorKind::ConnectionRefused)),
+                    _ => Err(std::io::Error::from(ErrorKind::ConnectionReset)),
+                }
+            })
+            .unwrap();
+        assert_eq!(reads, 4);
+        assert_eq!(pumped.received, datagrams);
+        let after = world.server.stats();
+        assert_eq!(after.received - before.received, datagrams as u64);
+        assert_eq!(
+            after.send_errors - before.send_errors,
+            (4 - datagrams) as u64
+        );
+    }
+
+    // A blocking first read still returns promptly on an ICMP error, and an
+    // empty socket stops immediately regardless of the remaining budget.
+    for (wait, error) in [
+        (Duration::from_secs(1), ErrorKind::ConnectionRefused),
+        (Duration::from_secs(1), ErrorKind::ConnectionReset),
+        (Duration::ZERO, ErrorKind::WouldBlock),
+        (Duration::from_secs(1), ErrorKind::TimedOut),
+    ] {
+        let mut reads = 0;
+        let pumped = world
+            .server
+            .pump_with_receive(wait, |_, _| {
+                reads += 1;
+                Err(std::io::Error::from(error))
+            })
+            .unwrap();
+        assert_eq!(reads, 1);
+        assert_eq!(pumped.received, 0);
+    }
+}
+
+/// Huge monotonic values must not overflow the independent wall clock: the
+/// injectable Clock contract does not require these two epochs to coincide.
+#[derive(Clone)]
+struct LimitClock(Manual);
+
+impl Clock for LimitClock {
+    fn now(&self) -> Duration {
+        self.0.now()
+    }
+
+    fn wall(&self) -> SystemTime {
+        UNIX_EPOCH + Duration::from_secs(1_000_000)
+    }
+}
+
+#[test]
+fn keepalive_overflow_never_sends_early_or_panics() {
+    // Cover overflow on becoming protected, overflow on rescheduling, and a
+    // deadline exactly at MAX (which is representable and fires just once).
+    for interval in [25, 5, 6] {
+        // Leave room for the peer's initial handshake retry deadline.
+        let start = Duration::MAX - Duration::from_secs(6);
+        let clock = LimitClock(Manual(Rc::new(Cell::new(start))));
+        let mut relay = Relay::new();
+        let mut server = Tunnel::new(
+            server_config(relay.address(0)),
+            Stream::new(1_000_000),
+            clock.clone(),
+        )
+        .unwrap();
+        relay.server = Some(server.local_addr().unwrap());
+        let mut config = client_config(relay.address(0));
+        config.keepalive = Some(Duration::from_secs(interval));
+        let mut client = Tunnel::new(config, Stream::new(10), clock.clone()).unwrap();
+        for _ in 0..20 {
+            relay.step();
+            server.pump(Duration::ZERO).unwrap();
+            relay.step();
+            client.pump(Duration::ZERO).unwrap();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(client.status().state, TunnelState::Protected);
+        assert_eq!(client.status().generation, Some(1));
+        let expected = start.checked_add(Duration::from_secs(interval));
+        assert_eq!(client.live.as_ref().unwrap().keepalive_at, expected);
+        let sent = client.stats().sent;
+        if let Some(deadline) = expected {
+            clock.0.0.set(deadline - Duration::from_nanos(1));
+            client.pump(Duration::ZERO).unwrap();
+            assert_eq!(client.stats().sent, sent);
+            clock.0.0.set(deadline);
+            client.pump(Duration::ZERO).unwrap();
+            assert_eq!(client.stats().sent, sent + 1);
+            assert_eq!(client.live.as_ref().unwrap().keepalive_at, None);
+        }
+        let sent = client.stats().sent;
+        clock.0.0.set(Duration::MAX);
+        for _ in 0..3 {
+            client.pump(Duration::ZERO).unwrap();
+        }
+        assert_eq!(client.stats().sent, sent, "no truncated keepalive interval");
+        assert_eq!(client.status().generation, Some(1));
+        assert_eq!(client.status().state, TunnelState::Protected);
+        let local = client.udp_bind(0).unwrap();
+        client
+            .udp_send_to(local, (SERVER_IP, 7000), b"at the clock limit")
+            .unwrap();
+        assert_eq!(client.stats().sent, sent + 1);
+        assert_eq!(client.status().generation, Some(1));
+
+        // An extreme clock still obeys the generation fence: moving backwards
+        // revokes every old handle and publishes nothing from the lost session.
+        let sent = client.stats().sent;
+        clock.0.0.set(Duration::MAX - Duration::from_secs(1));
+        client.pump(Duration::ZERO).unwrap();
+        assert_eq!(client.status().state, TunnelState::Reconnecting);
+        assert_eq!(client.status().reason, Some(Reason::Failed));
+        assert_eq!(client.status().generation, None);
+        assert_eq!(client.stats().sent, sent);
+        assert_eq!(client.udp_recv(local), Err(TunnelError::Revoked));
+        assert_eq!(
+            client.udp_send_to(local, (SERVER_IP, 7000), b"revoked"),
+            Err(TunnelError::Revoked)
+        );
+    }
+}
