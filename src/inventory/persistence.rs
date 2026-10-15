@@ -5,7 +5,7 @@ use super::{
 use crate::{
     Result,
     crypto::{random_bytes, sha256},
-    store::{private_options, reject_symlinks, sync_directory},
+    store::{private_options, reject_symlinks, sync_directory, sync_file},
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -334,7 +334,7 @@ pub(super) fn create_bound(directory: &Path, identity: [u8; 32]) -> Result<Index
     creation_checkpoint(6)?;
     id_file
         .write_all(&bytes)
-        .and_then(|()| id_file.sync_all())
+        .and_then(|()| sync_file(&id_file))
         .map_err(|error| error.to_string())?;
     creation_checkpoint(3)?;
     fs::DirBuilder::new()
@@ -347,10 +347,10 @@ pub(super) fn create_bound(directory: &Path, identity: [u8; 32]) -> Result<Index
     let mut tree = new_file(&directory.join("tree.bin"))?;
     creation_checkpoint(7)?;
     tree.write_all(&header.encode())
-        .and_then(|()| tree.sync_all())
+        .and_then(|()| sync_file(&tree))
         .map_err(|error| error.to_string())?;
     creation_checkpoint(5)?;
-    lock.sync_all().map_err(|error| error.to_string())?;
+    sync_file(&lock).map_err(|error| error.to_string())?;
     sync_directory(directory)?;
     sync_directory(
         directory
@@ -563,7 +563,7 @@ pub(super) fn publish_and_apply(
     index.poisoned = true;
     let mut wal = new_file(&staging)?;
     wal.write_all(bytes)
-        .and_then(|()| wal.sync_all())
+        .and_then(|()| sync_file(&wal))
         .map_err(|error| format!("Cannot stage inventory transaction: {error}"))?;
     #[cfg(test)]
     if index.fault == Some(Fault::Staged) {
@@ -624,7 +624,7 @@ fn apply(
                 bytes.extend_from_slice(data);
                 bytes.extend_from_slice(&sha256(&bytes));
                 file.write_all(&bytes)
-                    .and_then(|()| file.sync_all())
+                    .and_then(|()| sync_file(&file))
                     .map_err(|error| format!("Cannot persist inventory record: {error}"))?;
                 fs::rename(&temporary, &path)
                     .map_err(|error| format!("Cannot publish inventory record: {error}"))?;
@@ -666,7 +666,7 @@ fn apply(
         .map_err(|error| error.to_string())?;
     tree.seek(SeekFrom::Start(0))
         .and_then(|_| tree.write_all(&transaction.after.encode()))
-        .and_then(|()| tree.sync_all())
+        .and_then(|()| sync_file(tree))
         .map_err(|error| format!("Cannot persist inventory root: {error}"))?;
     sync_directory(directory)?;
     #[cfg(test)]

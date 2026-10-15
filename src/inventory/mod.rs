@@ -326,4 +326,6 @@ impl Drop for Index {
 }
 
 #[cfg(test)]
+mod flush_tests;
+#[cfg(test)]
 mod tests;

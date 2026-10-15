@@ -589,7 +589,7 @@ impl TransferIndex {
             let path = snapshots.join(hex(&old_digest));
             fs::remove_file(path).map_err(|_| "Cannot remove superseded transfer snapshot")?;
             File::open(&snapshots)
-                .and_then(|f| f.sync_all())
+                .and_then(|f| crate::store::sync_file(&f))
                 .map_err(|_| "Cannot synchronize transfer snapshots")?;
         }
         Ok(())
@@ -1005,7 +1005,7 @@ fn open_bound_catalog(path: &Path, identity: [u8; 32]) -> Result<Index> {
     ));
     fs::rename(path, &preserved).map_err(|_| "Cannot preserve interrupted transfer index")?;
     File::open(parent)
-        .and_then(|f| f.sync_all())
+        .and_then(|f| crate::store::sync_file(&f))
         .map_err(|_| "Cannot synchronize transfer creation recovery")?;
     let index = Index::create_bound(path, identity);
     drop(lock);

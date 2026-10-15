@@ -25,7 +25,7 @@ use super::{
 use crate::{
     crypto::{random_bytes, sha256},
     inventory::Key,
-    store::{private_options, reject_symlinks, sync_directory},
+    store::{private_options, reject_symlinks, sync_directory, sync_file},
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -230,7 +230,7 @@ fn settle_journal(directory: &Path, index: &mut Index, read_only: bool) -> Resul
         .open(&path)
         .map_err(|_| "Cannot open the legacy journal".to_owned())?;
     file.set_len(0)
-        .and_then(|()| file.sync_all())
+        .and_then(|()| sync_file(&file))
         .map_err(|_| "Cannot empty the legacy journal".to_owned())?;
     sync_directory(directory)
 }
@@ -651,7 +651,7 @@ fn replace_file(directory: &Path, target: &Path, bytes: &[u8]) -> Result<()> {
             .open(&temporary)
             .map_err(|_| "Cannot create a job storage file".to_owned())?;
         file.write_all(bytes)
-            .and_then(|()| file.sync_all())
+            .and_then(|()| sync_file(&file))
             .map_err(|_| "Cannot persist a job storage file".to_owned())?;
         fs::rename(&temporary, target)
             .map_err(|_| "Cannot replace a job storage file".to_owned())?;

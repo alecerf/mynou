@@ -654,8 +654,26 @@ pub(crate) fn reject_symlinks(path: &Path) -> Result<()> {
 
 pub(crate) fn sync_directory(path: &Path) -> Result<()> {
     File::open(path)
-        .and_then(|file| file.sync_all())
+        .and_then(|file| sync_file(&file))
         .map_err(|error| format!("cannot synchronize directory: {error}"))
+}
+
+/// Every store durability flush goes through here. On Apple platforms std
+/// issues `F_FULLFSYNC`, which flushes the whole drive cache, so tests count
+/// flushes per operation to keep that cost bounded.
+pub(crate) fn sync_file(file: &File) -> std::io::Result<()> {
+    #[cfg(test)]
+    FLUSHES.with(|count| count.set(count.get() + 1));
+    file.sync_all()
+}
+
+#[cfg(test)]
+thread_local! { static FLUSHES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) }; }
+
+/// Durability flushes issued so far by the calling test thread.
+#[cfg(test)]
+pub(crate) fn flushes() -> u64 {
+    FLUSHES.with(std::cell::Cell::get)
 }
 
 fn secure_file(path: &Path) -> Result<File> {

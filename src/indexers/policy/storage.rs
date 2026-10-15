@@ -6,7 +6,7 @@ use crate::{
     crypto::{random_bytes, sha256},
     inventory::{Change, Index, Key},
     json,
-    store::{private_options, reject_symlinks, sync_directory},
+    store::{private_options, reject_symlinks, sync_directory, sync_file},
 };
 use std::{
     collections::BTreeMap,
@@ -149,7 +149,7 @@ fn replace(directory: &Path, path: &Path, bytes: &[u8], preserved: bool) -> Resu
         .open(&temporary)
         .map_err(|_| "Indexer policy: cannot create private storage file")?;
     file.write_all(bytes)
-        .and_then(|()| file.sync_all())
+        .and_then(|()| sync_file(&file))
         .map_err(|_| "Indexer policy: cannot persist storage file")?;
     reject_symlinks(path)?;
     fs::rename(&temporary, path).map_err(|_| "Indexer policy: cannot publish storage file")?;

@@ -6,7 +6,7 @@ use crate::{
     crypto::{random_bytes, sha256},
     inventory::{Change, Index, Key, MAX_PAGE_ROWS},
     json,
-    store::{private_options, reject_symlinks, sync_directory},
+    store::{private_options, reject_symlinks, sync_directory, sync_file},
 };
 use std::{
     cell::RefCell,
@@ -119,7 +119,7 @@ fn replace(directory: &Path, path: &Path, bytes: &[u8]) -> Result<()> {
             .open(&temp)
             .map_err(|_| "Requester: cannot create storage file")?;
         file.write_all(bytes)
-            .and_then(|()| file.sync_all())
+            .and_then(|()| sync_file(&file))
             .map_err(|_| "Requester: cannot persist storage file")?;
         fs::rename(&temp, path).map_err(|_| "Requester: cannot publish storage file")?;
         sync_directory(directory)

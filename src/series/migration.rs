@@ -24,7 +24,7 @@ use crate::{
     Result,
     crypto::{random_bytes, sha256},
     inventory::{Index, Query},
-    store::{private_options, reject_symlinks, sync_directory},
+    store::{private_options, reject_symlinks, sync_directory, sync_file},
 };
 use std::{
     fs,
@@ -375,7 +375,7 @@ fn replace_file(directory: &Path, target: &Path, bytes: &[u8]) -> Result<()> {
             .open(&temporary)
             .map_err(|error| format!("Cannot create series file: {error}"))?;
         file.write_all(bytes)
-            .and_then(|()| file.sync_all())
+            .and_then(|()| sync_file(&file))
             .map_err(|error| format!("Cannot persist series file: {error}"))?;
         fs::rename(&temporary, target)
             .map_err(|error| format!("Cannot replace series file: {error}"))?;

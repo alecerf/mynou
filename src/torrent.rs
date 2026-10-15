@@ -456,11 +456,11 @@ fn atomic_write(path: &Path, data: &[u8]) -> Result<()> {
             .open(&temporary)
             .map_err(|_| "Could not create state file")?;
         file.write_all(data)
-            .and_then(|()| file.sync_all())
+            .and_then(|()| crate::store::sync_file(&file))
             .map_err(|_| "Could not write state file")?;
         fs::rename(&temporary, path).map_err(|_| "Could not publish state file")?;
         File::open(parent)
-            .and_then(|f| f.sync_all())
+            .and_then(|f| crate::store::sync_file(&f))
             .map_err(|_| "Could not synchronize directory")?;
         Ok(())
     })();
@@ -2130,7 +2130,7 @@ fn resume_job(config: &DownloadConfig, job: &mut Job) -> Result<()> {
         if fs::symlink_metadata(&marker).is_ok() {
             fs::remove_file(marker).map_err(|_| "Could not resume download")?;
             File::open(&config.state_dir)
-                .and_then(|f| f.sync_all())
+                .and_then(|f| crate::store::sync_file(&f))
                 .map_err(|_| "Could not synchronize resumed state")?;
         }
         job.paused = false;
@@ -3240,12 +3240,12 @@ fn sync_selected_files(
             OpenOptions::new()
                 .write(true)
                 .open(path)
-                .and_then(|f| f.sync_all())
+                .and_then(|f| crate::store::sync_file(&f))
                 .map_err(|_| "Could not synchronize media files")?;
         }
     }
     File::open(base)
-        .and_then(|f| f.sync_all())
+        .and_then(|f| crate::store::sync_file(&f))
         .map_err(|_| "Could not synchronize download")?;
     Ok(())
 }
