@@ -89,7 +89,9 @@ jobs:
     # passed, so only a run that really ended can leave it green.
     # Mynou ships for macOS Apple Silicon only, so its checks run there too.
     runs-on: macos-26
-    timeout-minutes: 12
+    # No job deadline: the suite needs about ten minutes of three-core runner
+    # time and grows with coverage, so a fixed deadline kept cancelling green
+    # runs (#237). parallel_tests.py still bounds each group at 480 seconds.
     env:
       CARGO_PROFILE_DEV_DEBUG: '0'
       CARGO_PROFILE_TEST_DEBUG: '0'
@@ -143,9 +145,16 @@ jobs:
         env:
           MYNOU_CRYPTO_FIXTURES: ${{ runner.temp }}/mynou-crypto-vectors.json
         run: |
-          # macOS keeps its default temporary directory behind a symbolic link,
-          # which Mynou refuses, so the tests use the physical runner directory.
-          export TMPDIR="$(cd "$RUNNER_TEMP" && pwd -P)"
+          # On macOS, sync_all is F_FULLFSYNC (a whole-drive cache flush), and
+          # the growing-inventory tests issue tens of thousands of them (#238).
+          # A RAM disk keeps every durability call while making it cheap. The
+          # suite peaked near 170 MiB of temporary data; allocate 2 GiB. Its
+          # /Volumes mount point is physical, unlike macOS's symlinked default
+          # temporary directory, which Mynou refuses.
+          ram_disk=$(hdiutil attach -nomount ram://4194304 | awk 'NR == 1 { print $1 }')
+          diskutil erasevolume APFS mynou-tests "$ram_disk" > /dev/null
+          export TMPDIR="$(cd /Volumes/mynou-tests && pwd -P)"
+          test "$TMPDIR" = /Volumes/mynou-tests
           # Growing-inventory regressions measured 358 seconds in the library
           # harness. Retain every case with a finite eight-minute budget.
           python3 .github/scripts/parallel_tests.py target/debug/mynou-ci-test-build.jsonl --metadata "$RUNNER_TEMP/metadata.json" --output "$RUNNER_TEMP/mynou-test-results" --timeout 480
