@@ -50,7 +50,8 @@ const HELP: &str = "Mynou — media automation using Rust std only
   upgrades [--apply] [--config mynou.json]
   monitor | unmonitor ID [--config mynou.json]
   baseline ID --release-title TITLE [--config mynou.json]
-  torrents | torrent ID [--config mynou.json]
+  torrents [--limit N --after CURSOR] [--config mynou.json]   (a page of 50 by default)
+  torrent ID [--config mynou.json]
   cross-seed SOURCE_ID --torrent FILE [--mapping '[0,2]'] [--config mynou.json]
   pause | resume ID [--config mynou.json]
   torrent-priority ID --priority N [--config mynou.json]
@@ -131,7 +132,8 @@ impl Args {
             "irc-control" => &["config", "help", "action", "apply", "plan-id"],
             "requester" => &["config", "help", "offset", "after", "limit"],
             "requester-control" => &["config", "help", "mapping", "apply", "plan-id"],
-            "torrents" | "torrent" | "pause" | "resume" => &["config", "help"],
+            "torrents" => &["config", "help", "limit", "after"],
+            "torrent" | "pause" | "resume" => &["config", "help"],
             "torrent-priority" => &["config", "help", "priority"],
             "file-priority" => &["config", "help", "file", "priority"],
             "torrent-policy" => &["config", "help", "policy"],
@@ -634,7 +636,22 @@ fn execute(args: Args) -> Result<()> {
             if !online {
                 return Err("Native transfer management requires the running Mynou service".into());
             }
-            output(&call(&config, &path, "GET", "/api/transfers", None)?);
+            let query = ["limit", "after"]
+                .iter()
+                .filter_map(|name| {
+                    args.options
+                        .get(*name)
+                        .map(|value| format!("{name}={value}"))
+                })
+                .collect::<Vec<_>>()
+                .join("&");
+            mynou::engine::TransferPageQuery::parse(&query)?;
+            let route = if query.is_empty() {
+                "/api/transfers".to_owned()
+            } else {
+                format!("/api/transfers?{query}")
+            };
+            output(&call(&config, &path, "GET", &route, None)?);
         }
         "torrent" | "pause" | "resume" | "torrent-priority" | "file-priority"
         | "torrent-policy" | "torrent-select" => {

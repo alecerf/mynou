@@ -394,7 +394,13 @@ fn symlink_download_and_symlink_metadata_are_rejected() {
     let state = root.join("state").join(format!("{id}.torrent"));
     fs::remove_file(&state).expect("remove");
     symlink(&source, &state).expect("meta symlink");
-    assert!(Client::open(config(&root, false)).is_err());
+    let client =
+        Client::open(config(&root, false)).expect("cold inventory opens without enumeration");
+    assert!(
+        client.check(&id).is_err(),
+        "point hydration must reject linked metadata"
+    );
+    assert_eq!(fs::read(&outside).expect("outside"), b"protected");
 }
 #[test]
 fn v1_multifile_utf8_and_empty_file_transfer() {

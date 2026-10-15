@@ -589,7 +589,7 @@ fn unsafe_or_truncated_sources_fail_without_repairing_or_linking() {
 }
 
 #[test]
-fn corrupt_or_conflicting_seed_state_refuses_restart_before_any_download() {
+fn corrupt_or_conflicting_seed_state_refuses_point_hydration_before_any_download() {
     for corruption in [
         "damaged",
         "ordinary-metadata",
@@ -639,9 +639,16 @@ fn corrupt_or_conflicting_seed_state_refuses_restart_before_any_download() {
             }
             _ => unreachable!(),
         }
-        let reopened = Client::open(cfg.clone());
-        assert!(reopened.is_err(), "{corruption}");
+        let reopened =
+            Client::open(cfg.clone()).expect("cold indexed startup does not enumerate every seed");
+        assert!(reopened.check(&target.id).is_err(), "{corruption}");
         assert!(!cfg.data_dir.join(&target.id).exists());
+        for (path, expected) in &source.files {
+            assert_eq!(
+                fs::read(cfg.data_dir.join(&source.id).join(path)).unwrap(),
+                *expected
+            );
+        }
     }
 }
 

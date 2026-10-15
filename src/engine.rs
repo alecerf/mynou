@@ -21,14 +21,58 @@ use std::{
 /// Watchlist pages read by one single-account sync pass.
 const WATCHLIST_PAGES: usize = 8;
 
+/// Bounded native-transfer list query. Transfer cursors belong to the transfer
+/// index, independently of job and request-reference cursors.
+pub struct TransferPageQuery {
+    pub after: Option<String>,
+    pub limit: usize,
+}
+
+impl TransferPageQuery {
+    pub fn parse(text: &str) -> Result<Self> {
+        if text.len() > 256 {
+            return Err("Transfer page query is too large".into());
+        }
+        let mut query = Self {
+            after: None,
+            limit: 50,
+        };
+        let mut seen = std::collections::BTreeSet::new();
+        for pair in text.split('&').filter(|pair| !pair.is_empty()) {
+            let (name, value) = pair.split_once('=').ok_or("Invalid transfer page query")?;
+            if !seen.insert(name) {
+                return Err("Duplicate transfer page query field".into());
+            }
+            match name {
+                "after"
+                    if value.len() == 128 && value.bytes().all(|byte| byte.is_ascii_hexdigit()) =>
+                {
+                    query.after = Some(value.to_owned());
+                }
+                "limit" => {
+                    query.limit = value
+                        .parse()
+                        .ok()
+                        .filter(|limit| (1..=200).contains(limit) && !value.starts_with('0'))
+                        .ok_or("Transfer page limit must be 1 to 200")?;
+                }
+                "after" => return Err("Invalid transfer page cursor".into()),
+                _ => return Err("Unknown transfer page query field".into()),
+            }
+        }
+        Ok(query)
+    }
+}
+
 pub struct Engine {
     pub config: Config,
-    pub store: Mutex<Store>,
+    pub store: Arc<Mutex<Store>>,
     pub(crate) series_store: Mutex<crate::series::SeriesStore>,
     pub(crate) series_refresh_lock: Mutex<()>,
     /// Scopes whose records could not be read, skipped until the instant.
     pub(crate) series_unreadable: Mutex<std::collections::BTreeMap<String, std::time::Instant>>,
     downloads: Option<Client>,
+    transfer_sweep: Mutex<Option<String>>,
     pub(crate) sync_lock: Mutex<()>,
     pub(crate) requester_store: Mutex<crate::requesters::RequesterStore>,
     pub(crate) irc_store: Mutex<crate::irc::AnnouncementStore>,
@@ -118,26 +162,45 @@ impl Engine {
                 true,
             )?;
         }
+        let store = Arc::new(Mutex::new(store));
+        let mut transfer_sweep = None;
         let downloads = if start_downloads && config.downloads_enabled {
-            let client =
-                Client::open_with_policy(config.downloads.clone(), config.download_policy.clone())?;
-            cancel_orphaned_transfers(&client, &mut store)?;
+            let admission_store = store.clone();
+            let client = Client::open_with_policy_and_admission(
+                config.downloads.clone(),
+                config.download_policy.clone(),
+                Arc::new(move |id| {
+                    // Client workers must never wait for the request journal
+                    // while holding their own state lock: request mutations
+                    // can call native controls while holding the journal.
+                    let mut store = match admission_store.try_lock() {
+                        Ok(store) => store,
+                        Err(std::sync::TryLockError::WouldBlock) => return Ok(false),
+                        Err(std::sync::TryLockError::Poisoned(_)) => {
+                            return Err("Request journal lock is poisoned".into());
+                        }
+                    };
+                    Ok(!store.transfer_cancelled(id)? || store.transfer_has_owner(id)?)
+                }),
+            )?;
+            cancel_orphaned_transfers(&client, &mut *lock(&store)?, &mut transfer_sweep)?;
             Some(client)
         } else {
             None
         };
         if !read_only {
             // Finish retirements a previous run recorded but did not complete.
-            retire_transfers(downloads.as_ref(), &mut store)?;
+            retire_transfers(downloads.as_ref(), &mut *lock(&store)?)?;
         }
         let irc_runtime = crate::irc::client::Runtime::new(&config.irc.sources);
         Ok(Arc::new(Self {
             config,
-            store: Mutex::new(store),
+            store,
             series_store: Mutex::new(series_store),
             series_refresh_lock: Mutex::new(()),
             series_unreadable: Mutex::new(std::collections::BTreeMap::new()),
             downloads,
+            transfer_sweep: Mutex::new(transfer_sweep),
             sync_lock: Mutex::new(()),
             requester_store: Mutex::new(requester_store),
             irc_store: Mutex::new(irc_store),
@@ -267,7 +330,7 @@ impl Engine {
         });
         if !shared
             && let (Some(client), Some(id)) = (&self.downloads, transfer_id)
-            && client.statuses()?.iter().any(|transfer| transfer.id == id)
+            && client.contains(id)?
         {
             client.cancel(id)?;
         }
@@ -282,7 +345,7 @@ impl Engine {
         if job.irc_origin.is_some() {
             drop(store);
             if let (Some(client), Some(id)) = (&self.downloads, &job.download_id)
-                && client.statuses()?.iter().any(|s| &s.id == id)
+                && client.contains(id)?
             {
                 client.resume_if_allowed(id)?;
             }
@@ -297,10 +360,7 @@ impl Engine {
                 .clone();
             drop(store);
             if let Some(client) = &self.downloads
-                && client
-                    .statuses()?
-                    .iter()
-                    .any(|status| status.id == transfer_id)
+                && client.contains(&transfer_id)?
             {
                 client.resume_if_allowed(&transfer_id)?;
             }
@@ -335,13 +395,25 @@ impl Engine {
         Ok(value)
     }
 
+    /// Compatibility array for the first 50 transfers. Use `transfers_page`
+    /// to enumerate retained transfers and obtain a continuation cursor.
     pub fn transfers(&self) -> Result<Value> {
-        let snapshots = self.native_client()?.transfers()?;
-        let mut snapshots = snapshots
-            .as_array()
-            .ok_or("Invalid native transfer snapshot")?
-            .to_vec();
-        for value in &mut snapshots {
+        self.transfers_page(None, 50)?
+            .get("transfers")
+            .cloned()
+            .ok_or_else(|| "Invalid native transfer page".into())
+    }
+
+    /// One priority/FIFO-ordered page, with point-indexed request references.
+    pub fn transfers_page(&self, after: Option<&str>, limit: usize) -> Result<Value> {
+        let mut page = self.native_client()?.transfers_page(limit, after)?;
+        let Value::Array(snapshots) = page
+            .get_mut("transfers")
+            .ok_or("Invalid native transfer page")?
+        else {
+            return Err("Invalid native transfer page".into());
+        };
+        for value in snapshots {
             let id = value
                 .get("id")
                 .and_then(Value::as_str)
@@ -355,7 +427,7 @@ impl Engine {
             value.insert("request_ids_next", next.map_or(Value::Null, Value::String));
             value.insert("request_ids", Value::Array(references));
         }
-        Ok(Value::Array(snapshots))
+        Ok(page)
     }
 
     pub fn pause_transfer(&self, id: &str) -> Result<Value> {
@@ -453,15 +525,8 @@ impl Engine {
         );
         if let Some(client) = &self.downloads {
             v.insert("peer_port", client.listen_port() as u32);
-            let statuses = client.statuses()?;
-            v.insert("torrents", Value::Number(statuses.len() as f64));
-            let mut downloaded = 0_u64;
-            let mut uploaded = 0_u64;
-            for status in statuses {
-                let (d, u) = client.transfer_stats(&status.id)?;
-                downloaded = downloaded.saturating_add(d);
-                uploaded = uploaded.saturating_add(u);
-            }
+            let (total, downloaded, uploaded) = client.aggregate_stats()?;
+            v.insert("torrents", Value::Number(total as f64));
             v.insert("downloaded_bytes", downloaded.to_string());
             v.insert("uploaded_bytes", uploaded.to_string());
         }
@@ -593,7 +658,7 @@ impl Engine {
         let Some(client) = &self.downloads else {
             return Ok(());
         };
-        cancel_orphaned_transfers(client, store)
+        cancel_orphaned_transfers(client, store, &mut *lock(&self.transfer_sweep)?)
     }
 
     fn import_version(
@@ -1057,16 +1122,11 @@ fn retire_transfers(client: Option<&Client>, store: &mut Store) -> Result<()> {
     if pending.is_empty() {
         return Ok(());
     }
-    let known: std::collections::BTreeSet<_> = client
-        .statuses()?
-        .into_iter()
-        .map(|status| status.id)
-        .collect();
     for (job_id, id) in pending {
         // A live request, including this one if it found the same release
         // again, keeps the transfer. Cancelled requests do not; finished
         // ones retain it.
-        if known.contains(&id) && !store.transfer_has_owner(&id)? {
+        if client.contains(&id)? && !store.transfer_has_owner(&id)? {
             client.cancel(&id)?;
         }
         store.complete_retirement(&job_id, &id)?;
@@ -1078,14 +1138,20 @@ fn retire_transfers(client: Option<&Client>, store: &mut Store) -> Result<()> {
 const RETIREMENT_BATCH: usize = 64;
 
 /// Cancels a native transfer that only cancelled requests still name. The
-/// native client lists its transfers; each one is checked against the
-/// transfer's own index entries, never against the whole job inventory.
-fn cancel_orphaned_transfers(client: &Client, store: &mut Store) -> Result<()> {
-    for status in client.statuses()? {
+/// native client reads one identity page; successive reconciliation rounds
+/// continue the sweep. Each identity uses the request store's transfer index.
+fn cancel_orphaned_transfers(
+    client: &Client,
+    store: &mut Store,
+    after: &mut Option<String>,
+) -> Result<()> {
+    let (statuses, next) = client.statuses_page(after.as_deref(), RETIREMENT_BATCH)?;
+    for status in statuses {
         if !store.transfer_has_owner(&status.id)? && store.transfer_cancelled(&status.id)? {
             client.cancel(&status.id)?;
         }
     }
+    *after = next;
     Ok(())
 }
 

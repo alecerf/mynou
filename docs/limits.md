@@ -97,6 +97,13 @@ a DHT client and PEX reception. Peer data uses TCP only.
   increments; counters are not equivalent to a tracker's records. Older
   transfers start their counters at zero.
 - Native transfer state written by 0.14 or later is refused by 0.13 and earlier.
+- Retained transfers use an on-disk index with no fixed total-count limit.
+  Routine startup and scheduling read bounded windows, not the complete transfer
+  directory. Transfer lists return cursor pages of 50 rows by default, at most
+  200; every retained identity remains reachable. Paused and finished entries do
+  not each require a resident worker. The first indexed startup migrates legacy
+  state and keeps a private backup; old binaries reject the new format. See
+  [transfer storage and downgrade](transfers.md#storage-migration-and-downgrade).
 
 ## Network, HTTP and TLS
 

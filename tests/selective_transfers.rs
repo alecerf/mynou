@@ -411,6 +411,9 @@ fn corrupted_selected_bytes_are_reverified_on_restart_before_their_path_is_avail
     proxy.payloads_enabled.store(false, Ordering::Release);
     proxy.requests.lock().unwrap().clear();
     let restored = Client::open(cfg).unwrap();
+    // Finished selections remain cold at startup; this point read requests
+    // their bounded recheck without hydrating the complete retained inventory.
+    assert!(!restored.check(&torrent.id).unwrap().selected_ready);
     wait(|| !proxy.requests.lock().unwrap().is_empty());
     let pending = restored.check(&torrent.id).unwrap();
     assert!(!pending.ready && !pending.selected_ready);

@@ -312,6 +312,11 @@ fn queued(
 ) -> Result<Job> {
     let control = TorrentControl::new(id.clone(), order)?;
     Ok(Job {
+        index: None,
+        persistence_failed: AtomicBool::new(false),
+        retiring: false,
+        admitted: true,
+        needs_rehash: false,
         source: Source {
             original: "cross-seed".into(),
             v1: meta.v1,
@@ -365,34 +370,53 @@ impl Client {
         let meta = candidate(&request.metadata)?;
         let id = hex(&meta.v1.ok_or("Missing v1 cross-seed identity")?);
         // State filenames contain only the authenticated hash, never metadata paths.
-        if id.len() != 40 || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        if id.len() != 40
+            || id == "0000000000000000000000000000000000000000"
+            || !id.bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
             return Err("Invalid cross-seed candidate identity".into());
         }
         let mut jobs = self
             .jobs
             .lock()
             .map_err(|_| "BitTorrent state lock is poisoned")?;
-        if jobs.values().any(|job| {
-            job.source.v1 == meta.v1
-                || job.source.v2.is_some_and(|hash| {
-                    Some(&hash[..20]) == meta.v1.as_ref().map(|hash| hash.as_slice())
-                })
-        }) {
+        self.load(&mut jobs, source_id)?;
+        if self
+            .index
+            .lock()
+            .map_err(|_| "Native transfer index lock is poisoned")?
+            .wire_alias(meta.v1.ok_or("Missing seed wire identity")?)?
+            .is_some()
+            || jobs.values().any(|job| {
+                job.source.v1 == meta.v1
+                    || job.source.v2.is_some_and(|hash| {
+                        Some(&hash[..20]) == meta.v1.as_ref().map(|hash| hash.as_slice())
+                    })
+            })
+        {
             return Err("Candidate swarm already exists; inspect its transfer instead".into());
         }
-        let reserved = ["torrent", "source", "seed"].map(|suffix| format!("{id}.{suffix}"));
-        // Compare names already present in the private directory. Candidate
-        // metadata never supplies a filesystem path for an existence probe.
-        for entry in fs::read_dir(state_directory(&self.config)?)
-            .map_err(|_| "Could not inspect cross-seed state directory")?
-        {
-            let entry = entry.map_err(|_| "Could not inspect cross-seed state entry")?;
-            if entry.file_name().to_str().is_some_and(|name| {
-                reserved
-                    .iter()
-                    .any(|reserved| reserved.eq_ignore_ascii_case(name))
-            }) {
-                return Err("Candidate swarm already exists; inspect its transfer instead".into());
+        state_directory(&self.config)?;
+        for suffix in ["torrent", "source", "seed"] {
+            for name in [
+                format!("{id}.{suffix}"),
+                format!("{}.{suffix}", id.to_ascii_uppercase()),
+                format!("{id}.{}", suffix.to_ascii_uppercase()),
+                format!(
+                    "{}.{}",
+                    id.to_ascii_uppercase(),
+                    suffix.to_ascii_uppercase()
+                ),
+            ] {
+                match fs::symlink_metadata(self.config.state_dir.join(name)) {
+                    Ok(_) => {
+                        return Err(
+                            "Candidate swarm already exists; inspect its transfer instead".into(),
+                        );
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(_) => return Err("Cannot inspect candidate swarm state".into()),
+                }
             }
         }
         let source = jobs
@@ -407,13 +431,15 @@ impl Client {
             &meta,
             request.mapping.as_deref(),
         )?;
-        let order = jobs
-            .values()
-            .map(|job| job.control.queue_order)
-            .max()
-            .unwrap_or(0)
-            .checked_add(1)
-            .ok_or("Transfer queue order exhausted")?;
+        trim_jobs(&self.config, &mut jobs, self.config.max_active + 31)?;
+        if jobs.len() >= self.config.max_active + 64 {
+            return Err("Native transfer working set is busy; retry later".into());
+        }
+        let order = self
+            .index
+            .lock()
+            .map_err(|_| "Native transfer index lock is poisoned")?
+            .next_order()?;
         let encoded = reuse.encode(&meta);
         let mut job = queued(meta, reuse, id.clone(), order, &self.config)?;
         job.saved_control = job.control.encode()?;
@@ -424,102 +450,105 @@ impl Client {
             &job.saved_control,
         )?;
         atomic_write(&self.config.state_dir.join(format!("{id}.seed")), &encoded)?;
+        job.index = Some(self.index.clone());
+        job.admitted = self
+            .admission
+            .as_ref()
+            .is_none_or(|gate| gate(&id).unwrap_or(false));
+        persist_index(&job)?;
         let status = job.status.clone();
         jobs.insert(id, job);
         Ok(status)
     }
 }
 
-pub(super) fn restore(config: &DownloadConfig, jobs: &mut BTreeMap<String, Job>) -> Result<()> {
-    for entry in fs::read_dir(&config.state_dir).map_err(|_| "Could not read cross-seed state")? {
-        let entry = entry.map_err(|_| "Could not read cross-seed state")?;
-        let name = entry.file_name();
-        let Some(id) = name.to_str().and_then(|name| name.strip_suffix(".seed")) else {
-            continue;
-        };
-        // Seed records require the same physical root binding as registration;
-        // ordinary legacy queue entries retain their existing startup behavior.
-        state_directory(config)?;
-        let identity = decode_hex::<20>(id).map_err(|_| "Invalid persisted cross-seed identity")?;
-        if id != id.to_ascii_lowercase()
-            || jobs.values().any(|job| {
-                job.source.v1 == Some(identity)
-                    || job.source.v2.is_some_and(|hash| hash[..20] == identity)
-            })
-            || ["torrent", "source"].iter().any(|suffix| {
-                fs::symlink_metadata(config.state_dir.join(format!("{id}.{suffix}"))).is_ok()
-            })
-        {
-            return Err("Cross-seed state conflicts with an ordinary transfer".into());
-        }
-        let stat =
-            fs::symlink_metadata(entry.path()).map_err(|_| "Could not inspect cross-seed state")?;
-        private_state_file(&stat)?;
-        let control = fs::symlink_metadata(config.state_dir.join(format!("{id}.control")))
-            .map_err(|_| "Cross-seed controls are missing; refusing to reset seeding permission")?;
-        private_state_file(&control)?;
-        if stat.len() > MAX_RECORD as u64 {
-            return Err("Cross-seed state exceeds limits".into());
-        }
-        let mut encoded = Vec::new();
-        File::open(entry.path())
-            .and_then(|file| file.take((MAX_RECORD + 1) as u64).read_to_end(&mut encoded))
-            .map_err(|_| "Could not read cross-seed state")?;
-        if encoded.len() > MAX_RECORD {
-            return Err("Cross-seed state exceeds limits".into());
-        }
-        let Value::Dict(fields) = crate::bencode::parse(&encoded)? else {
-            return Err("Invalid cross-seed state".into());
-        };
-        if fields.len() != 4 || fields.get(b"schema".as_slice()) != Some(&Value::Int(1)) {
-            return Err("Invalid cross-seed schema".into());
-        }
-        let bytes = |key: &[u8]| -> Result<&[u8]> {
-            metainfo::bytes(fields.get(key).ok_or("Missing cross-seed field")?)
-        };
-        let source_id = std::str::from_utf8(bytes(b"source")?)
-            .map_err(|_| "Invalid cross-seed source identity")?;
-        let meta = candidate(bytes(b"metadata")?)?;
-        if meta.v1 != Some(identity) {
-            return Err("Cross-seed state hash mismatch".into());
-        }
-        let Value::List(mapping) = fields
-            .get(b"mapping".as_slice())
-            .ok_or("Missing cross-seed mapping")?
-        else {
-            return Err("Invalid cross-seed mapping".into());
-        };
-        if mapping.len() > MAX_FILES {
-            return Err("Cross-seed mapping exceeds limits".into());
-        }
-        let mapping = mapping
-            .iter()
-            .map(|value| {
-                usize::try_from(metainfo::integer(value)?)
-                    .map_err(|_| "Invalid cross-seed mapping".into())
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let source = jobs
-            .get(source_id)
-            .ok_or("Cross-seed source state is missing")?;
-        if source.cross_seed.is_some() {
-            return Err("Chained cross-seeding is not supported".into());
-        }
-        let reuse = CrossSeed::bind(
-            source_id,
-            source
-                .meta
-                .clone()
-                .ok_or("Cross-seed source metadata is missing")?,
-            &meta,
-            Some(&mapping),
-        )?;
-        jobs.insert(
-            id.to_owned(),
-            queued(meta, reuse, id.to_owned(), 1, config)?,
-        );
+pub(super) fn load(config: &DownloadConfig, id: &str) -> Result<Job> {
+    // Seed records require the same physical root binding as registration;
+    // ordinary legacy queue entries retain their existing startup behavior.
+    state_directory(config)?;
+    let identity = decode_hex::<20>(id).map_err(|_| "Invalid persisted cross-seed identity")?;
+    if id != id.to_ascii_lowercase()
+        || ["torrent", "source"].iter().any(|suffix| {
+            fs::symlink_metadata(config.state_dir.join(format!("{id}.{suffix}"))).is_ok()
+        })
+    {
+        return Err("Cross-seed state conflicts with an ordinary transfer".into());
     }
-    Ok(())
+    let stat = fs::symlink_metadata(config.state_dir.join(format!("{id}.seed")))
+        .map_err(|_| "Could not inspect cross-seed state")?;
+    private_state_file(&stat)?;
+    let control = fs::symlink_metadata(config.state_dir.join(format!("{id}.control")))
+        .map_err(|_| "Cross-seed controls are missing; refusing to reset seeding permission")?;
+    private_state_file(&control)?;
+    if stat.len() > MAX_RECORD as u64 {
+        return Err("Cross-seed state exceeds limits".into());
+    }
+    let mut encoded = Vec::new();
+    File::open(config.state_dir.join(format!("{id}.seed")))
+        .and_then(|file| file.take((MAX_RECORD + 1) as u64).read_to_end(&mut encoded))
+        .map_err(|_| "Could not read cross-seed state")?;
+    if encoded.len() > MAX_RECORD {
+        return Err("Cross-seed state exceeds limits".into());
+    }
+    let Value::Dict(fields) = crate::bencode::parse(&encoded)? else {
+        return Err("Invalid cross-seed state".into());
+    };
+    if fields.len() != 4 || fields.get(b"schema".as_slice()) != Some(&Value::Int(1)) {
+        return Err("Invalid cross-seed schema".into());
+    }
+    let bytes = |key: &[u8]| -> Result<&[u8]> {
+        metainfo::bytes(fields.get(key).ok_or("Missing cross-seed field")?)
+    };
+    let source_id =
+        std::str::from_utf8(bytes(b"source")?).map_err(|_| "Invalid cross-seed source identity")?;
+    let meta = candidate(bytes(b"metadata")?)?;
+    if meta.v1 != Some(identity) {
+        return Err("Cross-seed state hash mismatch".into());
+    }
+    let Value::List(mapping) = fields
+        .get(b"mapping".as_slice())
+        .ok_or("Missing cross-seed mapping")?
+    else {
+        return Err("Invalid cross-seed mapping".into());
+    };
+    if mapping.len() > MAX_FILES {
+        return Err("Cross-seed mapping exceeds limits".into());
+    }
+    let mapping = mapping
+        .iter()
+        .map(|value| {
+            usize::try_from(metainfo::integer(value)?)
+                .map_err(|_| "Invalid cross-seed mapping".into())
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if ![40, 64].contains(&source_id.len())
+        || !source_id.bytes().all(|b| b.is_ascii_hexdigit())
+        || source_id != source_id.to_ascii_lowercase()
+    {
+        return Err("Invalid cross-seed source identity".into());
+    }
+    if config
+        .state_dir
+        .join(format!("{source_id}.seed"))
+        .try_exists()
+        .map_err(|_| "Could not inspect cross-seed source")?
+    {
+        return Err("Chained cross-seeding is not supported".into());
+    }
+    let source = super::load_job(config, source_id)?;
+    if source.cross_seed.is_some() {
+        return Err("Chained cross-seeding is not supported".into());
+    }
+    let reuse = CrossSeed::bind(
+        source_id,
+        source
+            .meta
+            .clone()
+            .ok_or("Cross-seed source metadata is missing")?,
+        &meta,
+        Some(&mapping),
+    )?;
+    queued(meta, reuse, id.to_owned(), 1, config)
 }
 
 pub(super) fn verify(
@@ -622,10 +651,11 @@ pub(super) fn verify(
 }
 
 pub(super) fn gate(client: &Client, id: &str) -> Result<Option<Arc<Mutex<()>>>> {
-    let map = client
+    let mut map = client
         .jobs
         .lock()
         .map_err(|_| "BitTorrent state lock is poisoned")?;
+    client.load(&mut map, id)?;
     Ok(map
         .get(id)
         .ok_or("Unknown download")?

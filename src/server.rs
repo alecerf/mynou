@@ -262,7 +262,6 @@ pub(crate) fn route(
         ("GET", "/api/indexers") => Ok((200, engine.indexers()?)),
         ("GET", "/api/feeds") => Ok((200, engine.feeds()?)),
         ("GET", "/api/feeds/retained") => Ok((200, engine.feeds_retained("")?)),
-        ("GET", "/api/transfers") => Ok((200, engine.transfers()?)),
         ("GET", "/api/requesters") => Ok((200, engine.requesters()?)),
         ("GET", "/api/irc") => Ok((200, engine.irc_sources()?)),
         ("POST", "/api/requesters/sync") => {
@@ -457,6 +456,16 @@ pub(crate) fn route(
                         },
                     ));
                 }
+            }
+            if method == "GET" && (path == "/api/transfers" || path.starts_with("/api/transfers?"))
+            {
+                let query = crate::engine::TransferPageQuery::parse(
+                    path.split_once('?').map_or("", |(_, query)| query),
+                )?;
+                return Ok((
+                    200,
+                    engine.transfers_page(query.after.as_deref(), query.limit)?,
+                ));
             }
             if method == "GET" && (path == "/api/series" || path.starts_with("/api/series?")) {
                 let query = crate::series::SeriesPageQuery::parse(

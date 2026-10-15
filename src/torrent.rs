@@ -5,6 +5,8 @@ mod control;
 mod cross_seed;
 #[path = "torrent/discovery.rs"]
 mod discovery;
+#[path = "torrent/index.rs"]
+mod index;
 #[path = "torrent/inspection.rs"]
 mod inspection;
 #[path = "torrent/metainfo.rs"]
@@ -96,6 +98,11 @@ impl Default for AnnounceState {
     }
 }
 struct Job {
+    persistence_failed: AtomicBool,
+    retiring: bool,
+    admitted: bool,
+    needs_rehash: bool,
+    index: Option<Arc<Mutex<index::TransferIndex>>>,
     cross_seed: Option<Arc<cross_seed::CrossSeed>>,
     source: Source,
     meta: Option<Arc<Meta>>,
@@ -130,9 +137,12 @@ pub(crate) fn add_payload(counter: &AtomicU64, bytes: u64) {
         Some(value.saturating_add(bytes))
     });
 }
+type AdmissionGate = Arc<dyn Fn(&str) -> Result<bool> + Send + Sync>;
 type Jobs = Arc<Mutex<BTreeMap<String, Job>>>;
 pub struct Client {
+    admission: Option<AdmissionGate>,
     config: DownloadConfig,
+    index: Arc<Mutex<index::TransferIndex>>,
     jobs: Jobs,
     stop: Arc<AtomicBool>,
     manager: Option<JoinHandle<()>>,
@@ -546,6 +556,22 @@ fn settle_seed_clock(job: &mut Job) {
     job.seed_partial = partial;
     job.seed_clock = None;
 }
+fn persist_index(job: &Job) -> Result<()> {
+    if let Some(index) = &job.index {
+        let result = index
+            .lock()
+            .map_err(|_| "Native transfer index lock is poisoned".to_owned())
+            .and_then(|mut catalog| catalog.save(job));
+        if let Err(error) = result {
+            job.persistence_failed.store(true, Ordering::Release);
+            job.cancel.store(true, Ordering::Release);
+            return Err(error);
+        }
+        job.persistence_failed.store(false, Ordering::Release);
+    }
+    Ok(())
+}
+
 fn persist_control(config: &DownloadConfig, job: &mut Job) -> Result<()> {
     let control = snapshot_control(job);
     let encoded = control.encode()?;
@@ -557,7 +583,7 @@ fn persist_control(config: &DownloadConfig, job: &mut Job) -> Result<()> {
         job.saved_control = encoded;
     }
     job.control = control;
-    Ok(())
+    persist_index(job)
 }
 fn commit_control(config: &DownloadConfig, job: &mut Job, control: TorrentControl) -> Result<()> {
     let encoded = control.encode()?;
@@ -582,11 +608,9 @@ fn commit_control(config: &DownloadConfig, job: &mut Job, control: TorrentContro
             .as_ref()
             .map_or(0, |policy| policy.upload_limit_bps),
     )?;
-    Ok(())
+    persist_index(job)
 }
 fn restore_controls(config: &DownloadConfig, jobs: &mut BTreeMap<String, Job>) -> Result<()> {
-    let mut next = 0u64;
-    let mut orders = BTreeSet::new();
     for (id, job) in jobs.iter_mut() {
         let path = config.state_dir.join(format!("{id}.control"));
         match fs::symlink_metadata(&path) {
@@ -600,28 +624,18 @@ fn restore_controls(config: &DownloadConfig, jobs: &mut BTreeMap<String, Job>) -
                     .and_then(|file| file.take(4 * 1024 * 1024 + 45).read_to_end(&mut encoded))
                     .map_err(|_| "Could not read native transfer controls")?;
                 let control = TorrentControl::decode(&encoded)?;
-                if control.id != *id || !orders.insert(control.queue_order) {
+                if control.id != *id {
                     return Err("Native transfer control identity or queue order mismatch".into());
                 }
-                next = next.max(control.queue_order);
                 job.control = control;
             }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                job.control.queue_order = 0;
+            }
             Err(_) => return Err("Could not inspect native transfer controls".into()),
         }
     }
     for job in jobs.values_mut() {
-        if !orders.contains(&job.control.queue_order)
-            || !config
-                .state_dir
-                .join(format!("{}.control", job.status.id))
-                .exists()
-        {
-            next = next
-                .checked_add(1)
-                .ok_or("Transfer queue order is exhausted")?;
-            job.control.queue_order = next;
-        }
         if let Some(meta) = &job.meta {
             if job
                 .control
@@ -653,7 +667,6 @@ fn restore_controls(config: &DownloadConfig, jobs: &mut BTreeMap<String, Job>) -
                 .as_ref()
                 .map_or(0, |policy| policy.upload_limit_bps),
         )?;
-        persist_control(config, job)?;
     }
     Ok(())
 }
@@ -704,6 +717,8 @@ fn limit_seed(job: &mut Job) {
 }
 fn apply_seed_limits(job: &mut Job, config: &DownloadConfig, defaults: &TransferPolicy) {
     if !job.status.ready
+        || job.retiring
+        || job.needs_rehash
         || !config.seed
         || job.paused
         || job.control.user_paused
@@ -835,11 +850,388 @@ fn transfer_value(
     value
 }
 
+// A single authenticated transfer and, for cross-seeds, its original metadata.
+// This deliberately never enumerates the state directory.
+fn load_job(config: &DownloadConfig, id: &str) -> Result<Job> {
+    if ![40, 64].contains(&id.len())
+        || !id.bytes().all(|b| b.is_ascii_hexdigit())
+        || id != id.to_ascii_lowercase()
+    {
+        return Err("Invalid native transfer identity".into());
+    }
+    let mut map = BTreeMap::new();
+    if config
+        .state_dir
+        .join(format!("{id}.seed"))
+        .try_exists()
+        .map_err(|_| "Could not inspect seed state")?
+    {
+        let job = cross_seed::load(config, id)?;
+        map.insert(id.to_owned(), job);
+    } else if config
+        .state_dir
+        .join(format!("{id}.torrent"))
+        .try_exists()
+        .map_err(|_| "Could not inspect transfer metadata")?
+    {
+        private_state_file(
+            &fs::symlink_metadata(config.state_dir.join(format!("{id}.torrent")))
+                .map_err(|_| "Persisted metadata is inaccessible")?,
+        )?;
+        let file = File::open(config.state_dir.join(format!("{id}.torrent")))
+            .map_err(|_| "Could not read persisted metadata")?;
+        let mut encoded = Vec::new();
+        file.take((MAX_META + 1) as u64)
+            .read_to_end(&mut encoded)
+            .map_err(|_| "Could not read persisted metadata")?;
+        let meta = Meta::parse(&encoded)?;
+        if ![meta.v1.map(|h| hex(&h)), meta.v2.map(|h| hex(&h))]
+            .into_iter()
+            .flatten()
+            .any(|h| h == id)
+        {
+            return Err("BitTorrent state hash mismatch".into());
+        }
+        let original_path = config.state_dir.join(format!("{id}.source"));
+        let original_metadata = match fs::symlink_metadata(&original_path) {
+            Ok(metadata) => Some(metadata),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(_) => return Err("Persisted source is inaccessible".into()),
+        };
+        let original = if let Some(m) = original_metadata {
+            private_state_file(&m)?;
+            let mut value = String::new();
+            File::open(&original_path)
+                .and_then(|f| f.take(64 * 1024 + 1).read_to_string(&mut value))
+                .map_err(|_| "Could not read persisted source")?;
+            if value.len() > 64 * 1024 {
+                return Err("Persisted source is too large".into());
+            }
+            value
+        } else {
+            config
+                .state_dir
+                .join(format!("{id}.torrent"))
+                .to_string_lossy()
+                .into_owned()
+        };
+        let mut source = if original.starts_with("magnet:?") {
+            Source::parse(&original)?
+        } else {
+            Source {
+                original: original.clone(),
+                v1: meta.v1,
+                v2: meta.v2,
+                trackers: meta.trackers.clone(),
+                peers: Vec::new(),
+                meta: None,
+            }
+        };
+        if source.v1.is_some_and(|h| Some(h) != meta.v1)
+            || source.v2.is_some_and(|h| Some(h) != meta.v2)
+        {
+            return Err("Persisted source and metadata are incompatible".into());
+        }
+        source.v1 = meta.v1;
+        source.v2 = meta.v2;
+        let status = DownloadStatus {
+            id: id.to_owned(),
+            progress: 0.0,
+            ready: false,
+            selected_ready: false,
+            available_files: Vec::new(),
+            files: meta
+                .files
+                .iter()
+                .filter(|f| !f.padding)
+                .map(|f| config.data_dir.join(id).join(&f.path))
+                .collect(),
+            message: "Verifying persisted data".into(),
+        };
+        map.insert(
+            id.to_owned(),
+            Job {
+                index: None,
+                persistence_failed: AtomicBool::new(false),
+                retiring: false,
+                admitted: true,
+                needs_rehash: false,
+                source,
+                cross_seed: None,
+                meta: Some(Arc::new(meta)),
+                status,
+                running: false,
+                paused: persisted_pause(config, id)?,
+                failed: false,
+                cancel: Arc::new(AtomicBool::new(false)),
+                peers: Vec::new(),
+                tracker_peers: BTreeSet::new(),
+                counters: Arc::new(TransferCounters::default()),
+                announcements: BTreeMap::new(),
+                announce_hash: None,
+                dht_next: Instant::now(),
+                dht_in_flight: false,
+                control: TorrentControl::new(id.to_owned(), 1)?,
+                piece_order: Arc::new(Vec::new()),
+                download_gate: Arc::new(RateGate::default()),
+                upload_gate: Arc::new(RateGate::default()),
+                seed_clock: None,
+                seed_partial: Duration::ZERO,
+                upload_reserved: 0,
+                saved_control: Vec::new(),
+            },
+        );
+    } else {
+        private_state_file(
+            &fs::symlink_metadata(config.state_dir.join(format!("{id}.source")))
+                .map_err(|_| "Persisted source is inaccessible")?,
+        )?;
+        let mut original = String::new();
+        File::open(config.state_dir.join(format!("{id}.source")))
+            .and_then(|f| f.take(64 * 1024 + 1).read_to_string(&mut original))
+            .map_err(|_| "Invalid persisted source")?;
+        if !original.starts_with("magnet:?") {
+            return Err("Missing persisted metadata for this source".into());
+        }
+        let source = Source::parse(&original)?;
+        if source.id() != id {
+            return Err("BitTorrent queue hash mismatch".into());
+        }
+        map.insert(
+            id.to_owned(),
+            Job {
+                index: None,
+                persistence_failed: AtomicBool::new(false),
+                retiring: false,
+                admitted: true,
+                needs_rehash: false,
+                meta: None,
+                cross_seed: None,
+                source,
+                status: DownloadStatus {
+                    id: id.to_owned(),
+                    progress: 0.0,
+                    ready: false,
+                    selected_ready: false,
+                    available_files: Vec::new(),
+                    files: Vec::new(),
+                    message: "Resuming metadata discovery".into(),
+                },
+                running: false,
+                paused: persisted_pause(config, id)?,
+                failed: false,
+                cancel: Arc::new(AtomicBool::new(false)),
+                peers: Vec::new(),
+                tracker_peers: BTreeSet::new(),
+                counters: Arc::new(TransferCounters::default()),
+                announcements: BTreeMap::new(),
+                announce_hash: None,
+                dht_next: Instant::now(),
+                dht_in_flight: false,
+                control: TorrentControl::new(id.to_owned(), 1)?,
+                piece_order: Arc::new(Vec::new()),
+                download_gate: Arc::new(RateGate::default()),
+                upload_gate: Arc::new(RateGate::default()),
+                seed_clock: None,
+                seed_partial: Duration::ZERO,
+                upload_reserved: 0,
+                saved_control: Vec::new(),
+            },
+        );
+    }
+    restore_controls(config, &mut map)?;
+    let mut job = map.remove(id).ok_or("Missing native transfer state")?;
+    if job.paused || job.control.user_paused {
+        job.status.message = "Download paused".into();
+    }
+    Ok(job)
+}
+
+fn record_status(config: &DownloadConfig, record: &index::Record) -> Result<DownloadStatus> {
+    let mut status = record.status.clone();
+    if !record.current {
+        status.ready = false;
+        status.selected_ready = false;
+        status.available_files.clear();
+        status.progress = 0.0;
+        if !record.failed {
+            status.message = "Verification required after restart".into();
+        }
+    }
+    if record.paused || record.control.user_paused || persisted_pause(config, &status.id)? {
+        status.message = "Download paused".into();
+    }
+    Ok(status)
+}
+fn conservative_policy(
+    left: Option<TransferPolicy>,
+    right: Option<TransferPolicy>,
+    defaults: &TransferPolicy,
+) -> Option<TransferPolicy> {
+    fn rate(a: u64, b: u64) -> u64 {
+        match (a, b) {
+            (0, v) | (v, 0) => v,
+            _ => a.min(b),
+        }
+    }
+    fn optional<T: Ord>(a: Option<T>, b: Option<T>) -> Option<T> {
+        match (a, b) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
+    }
+    if left == right {
+        return left;
+    }
+    let a = left.as_ref().unwrap_or(defaults);
+    let b = right.as_ref().unwrap_or(defaults);
+    Some(TransferPolicy {
+        download_limit_bps: rate(a.download_limit_bps, b.download_limit_bps),
+        upload_limit_bps: rate(a.upload_limit_bps, b.upload_limit_bps),
+        seed_ratio_milli: optional(a.seed_ratio_milli, b.seed_ratio_milli),
+        seed_time_secs: optional(a.seed_time_secs, b.seed_time_secs),
+    })
+}
+fn indexed_job(
+    config: &DownloadConfig,
+    index: &Arc<Mutex<index::TransferIndex>>,
+    id: &str,
+    defaults: &TransferPolicy,
+) -> Result<Job> {
+    let record = index
+        .lock()
+        .map_err(|_| "Native transfer index lock is poisoned")?
+        .get(id)?
+        .ok_or("Unknown download")?;
+    let mut job = load_job(config, id)?;
+    let status = record_status(config, &record)?;
+    let needs_rehash = record.status.ready || record.status.selected_ready;
+    let disk_control = job.control;
+    job.control = record.control;
+    // Offline pauses and a stricter control write interrupted before catalog
+    // publication remain safety fences, even when the catalog is older.
+    job.control.user_paused |= disk_control.user_paused;
+    job.control.seed_limited |= disk_control.seed_limited;
+    job.control.downloaded_bytes = job
+        .control
+        .downloaded_bytes
+        .max(disk_control.downloaded_bytes);
+    job.control.uploaded_bytes = job.control.uploaded_bytes.max(disk_control.uploaded_bytes);
+    job.control.seed_elapsed_secs = job
+        .control
+        .seed_elapsed_secs
+        .max(disk_control.seed_elapsed_secs);
+    job.control.policy = conservative_policy(job.control.policy, disk_control.policy, defaults);
+    job.status = status;
+    job.needs_rehash = needs_rehash;
+    job.paused |= record.paused;
+    job.failed = record.failed;
+    job.counters
+        .downloaded
+        .store(job.control.downloaded_bytes, Ordering::Relaxed);
+    job.counters
+        .uploaded
+        .store(job.control.uploaded_bytes, Ordering::Relaxed);
+    job.saved_control = job.control.encode()?;
+    job.index = Some(index.clone());
+    job.admitted = false;
+    if let Some(meta) = &job.meta {
+        job.piece_order = Arc::new(piece_order(meta, &job.control.file_priorities));
+    }
+    job.download_gate.set_limit(
+        job.control
+            .policy
+            .as_ref()
+            .map_or(0, |p| p.download_limit_bps),
+    )?;
+    job.upload_gate.set_limit(
+        job.control
+            .policy
+            .as_ref()
+            .map_or(0, |p| p.upload_limit_bps),
+    )?;
+    Ok(job)
+}
+fn trim_jobs(
+    config: &DownloadConfig,
+    jobs: &mut BTreeMap<String, Job>,
+    ceiling: usize,
+) -> Result<()> {
+    if jobs.len() <= ceiling {
+        return Ok(());
+    }
+    let mut candidates: Vec<_> = jobs
+        .iter()
+        .filter(|(_, j)| {
+            !j.running
+                && j.cross_seed
+                    .as_ref()
+                    .is_none_or(|reuse| Arc::strong_count(&reuse.activity) == 1)
+                && j.upload_reserved == 0
+                && !j.dht_in_flight
+                && j.announcements.values().all(|a| !a.in_flight)
+                && Arc::strong_count(&j.cancel) == 1
+        })
+        .collect();
+    candidates.sort_by(|(aid, a), (bid, b)| {
+        let rank = |job: &Job| {
+            if !job.admitted || job.paused || job.control.user_paused || job.failed {
+                0
+            } else if job.status.ready || job.status.selected_ready {
+                1
+            } else {
+                2
+            }
+        };
+        rank(a)
+            .cmp(&rank(b))
+            .then_with(|| a.control.priority.cmp(&b.control.priority))
+            .then_with(|| b.control.queue_order.cmp(&a.control.queue_order))
+            .then_with(|| aid.cmp(bid))
+    });
+    let ids: Vec<_> = candidates
+        .into_iter()
+        .take(jobs.len() - ceiling)
+        .map(|(id, _)| id.clone())
+        .collect();
+    for id in ids {
+        let job = jobs.get_mut(&id).ok_or("Missing resident transfer")?;
+        settle_seed_clock(job);
+        if job
+            .announcements
+            .values()
+            .any(|state| state.started && !state.stopped)
+        {
+            job.retiring = true;
+            job.cancel.store(true, Ordering::Release);
+            continue;
+        }
+        persist_control(config, job)?;
+        job.cancel.store(true, Ordering::Release);
+        jobs.remove(&id);
+    }
+    Ok(())
+}
+
 impl Client {
     pub fn open(config: DownloadConfig) -> Result<Self> {
         Self::open_with_policy(config, TransferPolicy::default())
     }
-    pub fn open_with_policy(mut config: DownloadConfig, policy: TransferPolicy) -> Result<Self> {
+    pub fn open_with_policy(config: DownloadConfig, policy: TransferPolicy) -> Result<Self> {
+        Self::open_internal(config, policy, None)
+    }
+    pub fn open_with_policy_and_admission(
+        config: DownloadConfig,
+        policy: TransferPolicy,
+        admission: AdmissionGate,
+    ) -> Result<Self> {
+        Self::open_internal(config, policy, Some(admission))
+    }
+    fn open_internal(
+        mut config: DownloadConfig,
+        policy: TransferPolicy,
+        admission: Option<AdmissionGate>,
+    ) -> Result<Self> {
         policy.validate()?;
         let policy = Arc::new(PolicyRuntime {
             download: Arc::new(RateGate::new(policy.download_limit_bps)?),
@@ -863,215 +1255,39 @@ impl Client {
         listener
             .set_nonblocking(true)
             .map_err(|_| "Could not configure the BitTorrent port")?;
-        let mut map = BTreeMap::new();
-        for entry in
-            fs::read_dir(&config.state_dir).map_err(|_| "Could not read BitTorrent state")?
-        {
-            let entry = entry.map_err(|_| "Could not read BitTorrent state")?;
-            let name = entry.file_name();
-            let Some(name) = name.to_str() else { continue };
-            let Some(id) = name.strip_suffix(".torrent") else {
-                continue;
-            };
-            if !((id.len() == 40 || id.len() == 64) && id.bytes().all(|b| b.is_ascii_hexdigit())) {
-                continue;
-            }
-            private_state_file(
-                &fs::symlink_metadata(entry.path())
-                    .map_err(|_| "Persisted metadata is inaccessible")?,
-            )?;
-            let file = File::open(entry.path()).map_err(|_| "Could not read persisted metadata")?;
-            let mut encoded = Vec::new();
-            file.take((MAX_META + 1) as u64)
-                .read_to_end(&mut encoded)
-                .map_err(|_| "Could not read persisted metadata")?;
-            let meta = Meta::parse(&encoded)?;
-            if ![meta.v1.map(|h| hex(&h)), meta.v2.map(|h| hex(&h))]
-                .into_iter()
-                .flatten()
-                .any(|h| h == id)
-            {
-                return Err("BitTorrent state hash mismatch".into());
-            }
-            let original_path = config.state_dir.join(format!("{id}.source"));
-            let original_metadata = match fs::symlink_metadata(&original_path) {
-                Ok(metadata) => Some(metadata),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-                Err(_) => return Err("Persisted source is inaccessible".into()),
-            };
-            let original = if let Some(m) = original_metadata {
-                private_state_file(&m)?;
-                let mut value = String::new();
-                File::open(&original_path)
-                    .and_then(|f| f.take(64 * 1024 + 1).read_to_string(&mut value))
-                    .map_err(|_| "Could not read persisted source")?;
-                if value.len() > 64 * 1024 {
-                    return Err("Persisted source is too large".into());
-                }
-                value
-            } else {
-                entry.path().to_string_lossy().into_owned()
-            };
-            let mut source = if original.starts_with("magnet:?") {
-                Source::parse(&original)?
-            } else {
-                Source {
-                    original: original.clone(),
-                    v1: meta.v1,
-                    v2: meta.v2,
-                    trackers: meta.trackers.clone(),
-                    peers: Vec::new(),
-                    meta: None,
-                }
-            };
-            if source.v1.is_some_and(|h| Some(h) != meta.v1)
-                || source.v2.is_some_and(|h| Some(h) != meta.v2)
-            {
-                return Err("Persisted source and metadata are incompatible".into());
-            }
-            source.v1 = meta.v1;
-            source.v2 = meta.v2;
-            let status = DownloadStatus {
-                id: id.to_owned(),
-                progress: 0.0,
-                ready: false,
-                selected_ready: false,
-                available_files: Vec::new(),
-                files: meta
-                    .files
-                    .iter()
-                    .filter(|f| !f.padding)
-                    .map(|f| config.data_dir.join(id).join(&f.path))
-                    .collect(),
-                message: "Verifying persisted data".into(),
-            };
-            map.insert(
-                id.to_owned(),
-                Job {
-                    source,
-                    cross_seed: None,
-                    meta: Some(Arc::new(meta)),
-                    status,
-                    running: false,
-                    paused: persisted_pause(&config, id)?,
-                    failed: false,
-                    cancel: Arc::new(AtomicBool::new(false)),
-                    peers: Vec::new(),
-                    tracker_peers: BTreeSet::new(),
-                    counters: Arc::new(TransferCounters::default()),
-                    announcements: BTreeMap::new(),
-                    announce_hash: None,
-                    dht_next: Instant::now(),
-                    dht_in_flight: false,
-                    control: TorrentControl::new(id.to_owned(), 1)?,
-                    piece_order: Arc::new(Vec::new()),
-                    download_gate: Arc::new(RateGate::default()),
-                    upload_gate: Arc::new(RateGate::default()),
-                    seed_clock: None,
-                    seed_partial: Duration::ZERO,
-                    upload_reserved: 0,
-                    saved_control: Vec::new(),
-                },
-            );
-        }
-        // Persisted magnets without metadata are also durable queue entries.
-        for entry in
-            fs::read_dir(&config.state_dir).map_err(|_| "Could not read BitTorrent queue")?
-        {
-            let entry = entry.map_err(|_| "Could not read BitTorrent queue")?;
-            let name = entry.file_name();
-            let Some(name) = name.to_str() else { continue };
-            let Some(id) = name.strip_suffix(".source") else {
-                continue;
-            };
-            if map.contains_key(id)
-                || !((id.len() == 40 || id.len() == 64)
-                    && id.bytes().all(|b| b.is_ascii_hexdigit()))
-            {
-                continue;
-            }
-            private_state_file(
-                &fs::symlink_metadata(entry.path())
-                    .map_err(|_| "Persisted source is inaccessible")?,
-            )?;
-            let mut original = String::new();
-            File::open(entry.path())
-                .and_then(|f| f.take(64 * 1024 + 1).read_to_string(&mut original))
-                .map_err(|_| "Invalid persisted source")?;
-            if !original.starts_with("magnet:?") {
-                return Err("Missing persisted metadata for this source".into());
-            }
-            let source = Source::parse(&original)?;
-            if source.id() != id {
-                return Err("BitTorrent queue hash mismatch".into());
-            }
-            map.insert(
-                id.to_owned(),
-                Job {
-                    meta: None,
-                    cross_seed: None,
-                    source,
-                    status: DownloadStatus {
-                        id: id.to_owned(),
-                        progress: 0.0,
-                        ready: false,
-                        selected_ready: false,
-                        available_files: Vec::new(),
-                        files: Vec::new(),
-                        message: "Resuming metadata discovery".into(),
-                    },
-                    running: false,
-                    paused: persisted_pause(&config, id)?,
-                    failed: false,
-                    cancel: Arc::new(AtomicBool::new(false)),
-                    peers: Vec::new(),
-                    tracker_peers: BTreeSet::new(),
-                    counters: Arc::new(TransferCounters::default()),
-                    announcements: BTreeMap::new(),
-                    announce_hash: None,
-                    dht_next: Instant::now(),
-                    dht_in_flight: false,
-                    control: TorrentControl::new(id.to_owned(), 1)?,
-                    piece_order: Arc::new(Vec::new()),
-                    download_gate: Arc::new(RateGate::default()),
-                    upload_gate: Arc::new(RateGate::default()),
-                    seed_clock: None,
-                    seed_partial: Duration::ZERO,
-                    upload_reserved: 0,
-                    saved_control: Vec::new(),
-                },
-            );
-        }
-        cross_seed::restore(&config, &mut map)?;
-        restore_controls(&config, &mut map)?;
-        for job in map.values_mut() {
-            if job.paused || job.control.user_paused {
-                job.status.message = "Download paused".into();
-            }
-        }
+        let index = Arc::new(Mutex::new(index::TransferIndex::open(&mut config)?));
+        let map = BTreeMap::new();
         let jobs = Arc::new(Mutex::new(map));
         let stop = Arc::new(AtomicBool::new(false));
         let id = peer_id()?;
         let manager = {
+            let admission = admission.clone();
             let jobs = jobs.clone();
+            let index = index.clone();
             let stop = stop.clone();
             let cfg = config.clone();
             {
                 let policy = policy.clone();
-                thread::spawn(move || manager_loop(cfg, jobs, stop, id, policy))
+                thread::spawn(move || manager_loop(cfg, jobs, stop, id, policy, index, admission))
             }
         };
         let listener = {
+            let admission = admission.clone();
             let jobs = jobs.clone();
+            let index = index.clone();
             let stop = stop.clone();
             let cfg = config.clone();
             {
                 let policy = policy.clone();
-                thread::spawn(move || listen_loop(listener, cfg, jobs, stop, id, policy))
+                thread::spawn(move || {
+                    listen_loop(listener, cfg, jobs, stop, id, policy, (index, admission))
+                })
             }
         };
         Ok(Self {
+            admission,
             config,
+            index,
             jobs,
             stop,
             manager: Some(manager),
@@ -1105,10 +1321,11 @@ impl Client {
         expected: &str,
     ) -> Result<DownloadStatus> {
         {
-            let jobs = self
+            let mut jobs = self
                 .jobs
                 .lock()
                 .map_err(|_| "BitTorrent state lock is poisoned")?;
+            self.load(&mut jobs, id)?;
             let job = jobs.get(id).ok_or("Unknown download")?;
             if !job.source.matches_identity(expected) {
                 return Err("Torrent identity differs from the accepted pack metadata".into());
@@ -1131,10 +1348,46 @@ impl Client {
             selection.validate_metadata(meta)?;
         }
         let id = source.id();
+        if id == "0000000000000000000000000000000000000000" {
+            return Err(
+                "Torrent identity is reserved for the native transfer format marker".into(),
+            );
+        }
         let mut jobs = self
             .jobs
             .lock()
             .map_err(|_| "BitTorrent state lock is poisoned")?;
+        if let Some(hash) = source.v2 {
+            let wire: [u8; 20] = hash[..20]
+                .try_into()
+                .map_err(|_| "Invalid v2 wire identity")?;
+            let wire_owner = self
+                .index
+                .lock()
+                .map_err(|_| "Native transfer index lock is poisoned")?
+                .wire_alias(wire)?;
+            if let Some(owner) = wire_owner {
+                let seed_only = self
+                    .index
+                    .lock()
+                    .map_err(|_| "Native transfer index lock is poisoned")?
+                    .get(&owner)?
+                    .is_some_and(|r| r.cross_seed);
+                if seed_only {
+                    return Err(
+                        "Seed-only cross-seed wire identity cannot be used for acquisition".into(),
+                    );
+                }
+            }
+        }
+        let existing = self
+            .index
+            .lock()
+            .map_err(|_| "Native transfer index lock is poisoned")?
+            .alias(source.v1, source.v2)?;
+        if let Some(existing) = existing {
+            self.load(&mut jobs, &existing)?;
+        }
         if jobs.values().any(|job| {
             job.cross_seed.is_some()
                 && source.v2.is_some_and(|hash| {
@@ -1168,7 +1421,12 @@ impl Client {
             if !job.control.user_paused {
                 resume_job(&self.config, job)?;
             }
+            persist_index(job)?;
             return Ok(job.status.clone());
+        }
+        trim_jobs(&self.config, &mut jobs, self.config.max_active + 31)?;
+        if jobs.len() >= self.config.max_active + 64 {
+            return Err("Native transfer working set is busy; retry later".into());
         }
         let status = DownloadStatus {
             id: id.clone(),
@@ -1190,13 +1448,11 @@ impl Client {
             message: "Download queued".into(),
         };
         let metadata = source.meta.take().map(Arc::new);
-        let order = jobs
-            .values()
-            .map(|job| job.control.queue_order)
-            .max()
-            .unwrap_or(0)
-            .checked_add(1)
-            .ok_or("Transfer queue order is exhausted")?;
+        let order = self
+            .index
+            .lock()
+            .map_err(|_| "Native transfer index lock is poisoned")?
+            .next_order()?;
         let mut control = TorrentControl::new(id.clone(), order)?;
         control.file_selection = selection;
         // A queue-visible source/metadata file must never survive a crash
@@ -1218,6 +1474,11 @@ impl Client {
         jobs.insert(
             id.clone(),
             Job {
+                index: None,
+                persistence_failed: AtomicBool::new(false),
+                retiring: false,
+                admitted: true,
+                needs_rehash: false,
                 meta: metadata,
                 cross_seed: None,
                 source,
@@ -1250,6 +1511,17 @@ impl Client {
             }
             job.saved_control = job.control.encode()?;
         }
+        if let Some(job) = jobs.get_mut(&id) {
+            job.index = Some(self.index.clone());
+            job.admitted = self
+                .admission
+                .as_ref()
+                .is_none_or(|gate| gate(&id).unwrap_or(false));
+            if let Err(error) = persist_index(job) {
+                jobs.remove(&id);
+                return Err(error);
+            }
+        }
         Ok(status)
     }
 
@@ -1258,6 +1530,7 @@ impl Client {
             .jobs
             .lock()
             .map_err(|_| "BitTorrent state lock is poisoned")?;
+        self.load(&mut jobs, id)?;
         let job = jobs.get_mut(id).ok_or("Unknown download")?;
         if job.cross_seed.is_some() {
             return Err("Seed-only cross-seed selection cannot change".into());
@@ -1291,6 +1564,7 @@ impl Client {
         expand_selection(&self.config, job, &selection)?;
         // Expansion never undoes a user pause. A later explicit resume or
         // ordinary acquisition retry observes the retained policy.
+        persist_index(job)?;
         Ok(job.status.clone())
     }
 
@@ -1307,6 +1581,7 @@ impl Client {
             .jobs
             .lock()
             .map_err(|_| "BitTorrent state lock is poisoned")?;
+        self.load(&mut jobs, id)?;
         let job = jobs.get_mut(id).ok_or("Unknown download")?;
         if job.cross_seed.is_some() {
             return Err("Seed-only cross-seed identity cannot supply acquisition files".into());
@@ -1321,12 +1596,14 @@ impl Client {
                 }),
             }
         {
+            persist_index(job)?;
             return Ok(job.status.clone());
         }
         expand_selection(&self.config, job, selection)?;
         if job.failed {
             return Err(job.status.message.clone());
         }
+        persist_index(job)?;
         Ok(job.status.clone())
     }
     /// Pause a native transfer without removing its verified files or metadata.
@@ -1343,6 +1620,7 @@ impl Client {
             .jobs
             .lock()
             .map_err(|_| "BitTorrent state lock is poisoned")?;
+        self.load(&mut jobs, id)?;
         let job = jobs.get_mut(id).ok_or("Unknown download")?;
         atomic_write(
             &self.config.state_dir.join(format!("{id}.paused")),
@@ -1369,6 +1647,7 @@ impl Client {
             .jobs
             .lock()
             .map_err(|_| "BitTorrent state lock is poisoned")?;
+        self.load(&mut jobs, id)?;
         let job = jobs.get_mut(id).ok_or("Unknown download")?;
         let user_paused = job.control.user_paused;
         let mut control = snapshot_control(job);
@@ -1390,6 +1669,7 @@ impl Client {
             .into();
         }
         cross_seed::retire_proof(job);
+        persist_index(job)?;
         Ok(job.status.clone())
     }
     pub fn resume_if_allowed(&self, id: &str) -> Result<DownloadStatus> {
@@ -1405,11 +1685,13 @@ impl Client {
             .jobs
             .lock()
             .map_err(|_| "BitTorrent state lock is poisoned")?;
+        self.load(&mut jobs, id)?;
         let job = jobs.get_mut(id).ok_or("Unknown download")?;
         if !job.control.user_paused {
             resume_job(&self.config, job)?;
             cross_seed::retire_proof(job);
         }
+        persist_index(job)?;
         Ok(job.status.clone())
     }
     pub fn pause(&self, id: &str) -> Result<()> {
@@ -1425,6 +1707,7 @@ impl Client {
             .jobs
             .lock()
             .map_err(|_| "BitTorrent state lock is poisoned")?;
+        self.load(&mut jobs, id)?;
         let job = jobs.get_mut(id).ok_or("Unknown download")?;
         let (mut control, partial) = clock_control(job);
         control.user_paused = true;
@@ -1439,13 +1722,14 @@ impl Client {
         job.seed_clock = None;
         job.cancel.store(true, Ordering::Release);
         job.status.message = "Download paused".into();
-        Ok(())
+        persist_index(job)
     }
     pub fn controls(&self, id: &str) -> Result<TorrentControl> {
-        let jobs = self
+        let mut jobs = self
             .jobs
             .lock()
             .map_err(|_| "BitTorrent state lock is poisoned")?;
+        self.load(&mut jobs, id)?;
         Ok(snapshot_control(jobs.get(id).ok_or("Unknown download")?))
     }
     fn change_control(
@@ -1457,6 +1741,7 @@ impl Client {
             .jobs
             .lock()
             .map_err(|_| "BitTorrent state lock is poisoned")?;
+        self.load(&mut jobs, id)?;
         let job = jobs.get_mut(id).ok_or("Unknown download")?;
         let mut control = snapshot_control(job);
         edit(&mut control, job.meta.as_deref())?;
@@ -1501,6 +1786,7 @@ impl Client {
                 .jobs
                 .lock()
                 .map_err(|_| "BitTorrent state lock is poisoned")?;
+            self.load(&mut jobs, id)?;
             let job = jobs.get_mut(id).ok_or("Unknown download")?;
             if !job.status.ready {
                 let mut control = snapshot_control(job);
@@ -1516,10 +1802,11 @@ impl Client {
         // Their guards release the reserved budget without holding this lock.
         loop {
             let outstanding = {
-                let jobs = self
+                let mut jobs = self
                     .jobs
                     .lock()
                     .map_err(|_| "BitTorrent state lock is poisoned")?;
+                self.load(&mut jobs, id)?;
                 let job = jobs.get(id).ok_or("Unknown download")?;
                 if !Arc::ptr_eq(&job.cancel, &retiring) {
                     return Err(
@@ -1537,6 +1824,7 @@ impl Client {
             .jobs
             .lock()
             .map_err(|_| "BitTorrent state lock is poisoned")?;
+        self.load(&mut jobs, id)?;
         let job = jobs.get_mut(id).ok_or("Unknown download")?;
         if !Arc::ptr_eq(&job.cancel, &retiring) || job.upload_reserved != 0 {
             return Err("Transfer activity changed while updating the seeding policy".into());
@@ -1564,80 +1852,219 @@ impl Client {
         persist_control(&self.config, job)
     }
     pub fn transfer(&self, id: &str) -> Result<crate::json::Value> {
-        let jobs = self
+        let mut jobs = self
             .jobs
             .lock()
             .map_err(|_| "BitTorrent state lock is poisoned")?;
-        let mut ordered: Vec<_> = jobs.values().collect();
-        ordered.sort_by(|a, b| {
-            b.control
-                .priority
-                .cmp(&a.control.priority)
-                .then_with(|| a.control.queue_order.cmp(&b.control.queue_order))
-        });
-        let position = ordered
-            .iter()
-            .position(|job| job.status.id == id)
-            .ok_or("Unknown download")?;
+        self.load(&mut jobs, id)?;
         Ok(transfer_value(
-            ordered[position],
-            position,
+            jobs.get(id).ok_or("Unknown download")?,
+            0,
             &self.policy.policy,
             &self.config,
         ))
     }
     pub fn transfers(&self) -> Result<crate::json::Value> {
+        Ok(self
+            .transfers_page(50, None)?
+            .get("transfers")
+            .cloned()
+            .ok_or("Missing transfer page")?)
+    }
+    pub fn transfers_page(&self, limit: usize, after: Option<&str>) -> Result<crate::json::Value> {
+        use crate::json::Value as Json;
         let jobs = self
             .jobs
             .lock()
             .map_err(|_| "BitTorrent state lock is poisoned")?;
-        let mut ordered: Vec<_> = jobs.values().collect();
-        ordered.sort_by(|a, b| {
-            b.control
-                .priority
-                .cmp(&a.control.priority)
-                .then_with(|| a.control.queue_order.cmp(&b.control.queue_order))
-        });
-        Ok(crate::json::Value::Array(
-            ordered
-                .into_iter()
-                .enumerate()
-                .map(|(position, job)| {
-                    transfer_value(job, position, &self.policy.policy, &self.config)
-                })
-                .collect(),
-        ))
+        let (ids, next, total, sequence) = self
+            .index
+            .lock()
+            .map_err(|_| "Native transfer index lock is poisoned")?
+            .page(after, limit)?;
+        let mut values = Vec::with_capacity(ids.len());
+        for (position, id) in ids.iter().enumerate() {
+            if let Some(job) = jobs.get(id) {
+                values.push(transfer_value(
+                    job,
+                    position,
+                    &self.policy.policy,
+                    &self.config,
+                ));
+            } else {
+                match indexed_job(&self.config, &self.index, id, &self.policy.policy) {
+                    Ok(job) => values.push(transfer_value(
+                        &job,
+                        position,
+                        &self.policy.policy,
+                        &self.config,
+                    )),
+                    Err(error) => {
+                        // A damaged inactive metadata file must not hide every
+                        // following transfer by preventing a continuation page.
+                        // The descriptor remains authenticated by the index;
+                        // reporting it grants no payload or network authority.
+                        let record = self
+                            .index
+                            .lock()
+                            .map_err(|_| "Native transfer index lock is poisoned")?
+                            .get(id)?
+                            .ok_or("Missing indexed transfer")?;
+                        let mut value = record.control.to_json();
+                        value.insert("ready", false);
+                        value.insert("selected_ready", false);
+                        value.insert("running", false);
+                        value.insert("failed", true);
+                        value.insert("paused", record.paused || record.control.user_paused);
+                        value.insert("status", "failed");
+                        value.insert("seed_only", record.cross_seed);
+                        value.insert("cross_seed_source_id", Json::Null);
+                        value.insert("queue_position", Json::Number(position as f64));
+                        value.insert("progress", Json::Number(0.0));
+                        value.insert("verified_bytes", "0");
+                        value.insert("message", error);
+                        value.insert("files", Json::Array(Vec::new()));
+                        values.push(value);
+                    }
+                }
+            }
+        }
+        let mut page = Json::object();
+        page.insert("transfers", Json::Array(values));
+        page.insert("next", next.map(Json::String).unwrap_or(Json::Null));
+        page.insert("total", Json::Number(total as f64));
+        page.insert("sequence", sequence.to_string());
+        page.insert(
+            "revision",
+            self.index
+                .lock()
+                .map_err(|_| "Native transfer index lock is poisoned")?
+                .revision()?
+                .to_string(),
+        );
+        Ok(page)
     }
     pub fn check(&self, id: &str) -> Result<DownloadStatus> {
-        let jobs = self
+        let mut jobs = self
             .jobs
             .lock()
             .map_err(|_| "BitTorrent state lock is poisoned")?;
+        self.load(&mut jobs, id)?;
         let job = jobs.get(id).ok_or("Unknown download")?;
         if job.failed {
             return Err(job.status.message.clone());
         }
-        Ok(job.status.clone())
+        let mut status = job.status.clone();
+        if !job.admitted {
+            status.ready = false;
+            status.selected_ready = false;
+            status.available_files.clear();
+        }
+        Ok(status)
     }
     pub fn statuses(&self) -> Result<Vec<DownloadStatus>> {
-        Ok(self
+        Ok(self.statuses_page(None, 50)?.0)
+    }
+    pub fn statuses_page(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<(Vec<DownloadStatus>, Option<String>)> {
+        let jobs = self
             .jobs
             .lock()
-            .map_err(|_| "BitTorrent state lock is poisoned")?
-            .values()
-            .map(|j| j.status.clone())
-            .collect())
+            .map_err(|_| "BitTorrent state lock is poisoned")?;
+        let mut index = self
+            .index
+            .lock()
+            .map_err(|_| "Native transfer index lock is poisoned")?;
+        let (ids, next, _, _) = index.primary_page(after, limit)?;
+        let mut values = Vec::with_capacity(ids.len());
+        for id in ids {
+            values.push(if let Some(job) = jobs.get(&id) {
+                job.status.clone()
+            } else {
+                record_status(
+                    &self.config,
+                    &index.get(&id)?.ok_or("Missing indexed transfer")?,
+                )?
+            });
+        }
+        Ok((values, next))
+    }
+    pub fn contains(&self, id: &str) -> Result<bool> {
+        Ok(self
+            .index
+            .lock()
+            .map_err(|_| "Native transfer index lock is poisoned")?
+            .get(id)?
+            .is_some())
+    }
+    pub fn aggregate_stats(&self) -> Result<(u64, u64, u64)> {
+        let jobs = self
+            .jobs
+            .lock()
+            .map_err(|_| "BitTorrent state lock is poisoned")?;
+        let mut index = self
+            .index
+            .lock()
+            .map_err(|_| "Native transfer index lock is poisoned")?;
+        let (total, mut down, mut up) = index.aggregates()?;
+        for (id, job) in jobs.iter() {
+            if let Some(record) = index.get(id)? {
+                down = down.saturating_add(
+                    job.counters
+                        .downloaded
+                        .load(Ordering::Relaxed)
+                        .saturating_sub(record.control.downloaded_bytes),
+                );
+                up = up.saturating_add(
+                    job.counters
+                        .uploaded
+                        .load(Ordering::Relaxed)
+                        .saturating_sub(record.control.uploaded_bytes),
+                );
+            }
+        }
+        Ok((total, down, up))
     }
     pub fn transfer_stats(&self, id: &str) -> Result<(u64, u64)> {
         let jobs = self
             .jobs
             .lock()
             .map_err(|_| "BitTorrent state lock is poisoned")?;
-        let counters = &jobs.get(id).ok_or("Unknown download")?.counters;
+        if let Some(job) = jobs.get(id) {
+            return Ok((
+                job.counters.downloaded.load(Ordering::Relaxed),
+                job.counters.uploaded.load(Ordering::Relaxed),
+            ));
+        }
+        let record = self
+            .index
+            .lock()
+            .map_err(|_| "Native transfer index lock is poisoned")?
+            .get(id)?
+            .ok_or("Unknown download")?;
         Ok((
-            counters.downloaded.load(Ordering::Relaxed),
-            counters.uploaded.load(Ordering::Relaxed),
+            record.control.downloaded_bytes,
+            record.control.uploaded_bytes,
         ))
+    }
+    fn load(&self, jobs: &mut BTreeMap<String, Job>, id: &str) -> Result<()> {
+        if !jobs.contains_key(id) {
+            trim_jobs(&self.config, jobs, self.config.max_active + 31)?;
+            if jobs.len() >= self.config.max_active + 64 {
+                return Err("Native transfer working set is busy; retry later".into());
+            }
+            let mut job = indexed_job(&self.config, &self.index, id, &self.policy.policy)?;
+            job.admitted = self
+                .admission
+                .as_ref()
+                .is_none_or(|gate| gate(id).unwrap_or(false));
+            persist_index(&job)?;
+            jobs.insert(id.to_owned(), job);
+        }
+        Ok(())
     }
     pub fn listen_port(&self) -> u16 {
         self.config.listen_port
@@ -1745,6 +2172,11 @@ fn select_announce(
                 continue;
             }
             let inactive = job.paused
+                || job.retiring
+                || !job.admitted
+                || job.persistence_failed.load(Ordering::Acquire)
+                || job.cancel.load(Ordering::Acquire)
+                || job.needs_rehash
                 || (job.cross_seed.is_some() && !job.status.ready)
                 || job.control.user_paused
                 || job.control.seed_limited
@@ -1904,6 +2336,11 @@ fn select_seed_dht(
     for id in ids[split..].iter().chain(&ids[..split]) {
         let job = jobs.get_mut(id)?;
         if !job.status.ready
+            || !job.admitted
+            || job.persistence_failed.load(Ordering::Acquire)
+            || job.retiring
+            || job.cancel.load(Ordering::Acquire)
+            || job.needs_rehash
             || job.paused
             || job.control.user_paused
             || job.control.seed_limited
@@ -1984,6 +2421,8 @@ fn manager_loop(
     stop: Arc<AtomicBool>,
     peer_id: [u8; 20],
     policy: Arc<PolicyRuntime>,
+    index: Arc<Mutex<index::TransferIndex>>,
+    admission: Option<AdmissionGate>,
 ) {
     let mut flushed = Instant::now();
     let mut workers: Vec<JoinHandle<()>> = Vec::new();
@@ -1991,7 +2430,19 @@ fn manager_loop(
     let mut tracker_cursor = None;
     let mut dht_cursor = None;
     let mut dht_turn = false;
+    let mut queue_cursor = None;
+    let mut seed_cursor = None;
+    let mut seed_rotation = Instant::now();
     while !stop.load(Ordering::Acquire) {
+        if index
+            .lock()
+            .map_err(|_| "Native transfer index lock is poisoned".to_owned())
+            .and_then(|catalog| catalog.revision())
+            .is_err()
+        {
+            stop.store(true, Ordering::Release);
+            break;
+        }
         let mut n = 0;
         while n < workers.len() {
             if workers[n].is_finished() {
@@ -2001,17 +2452,148 @@ fn manager_loop(
                 n += 1;
             }
         }
+        if let Ok(mut map) = jobs.lock() {
+            if let Err(error) = trim_jobs(&config, &mut map, config.max_active + 32) {
+                eprintln!("Could not retire indexed transfer: {error}");
+            }
+            if config.seed && seed_rotation.elapsed() >= Duration::from_secs(30) {
+                // Retire a bounded seed window. Existing peer/announcement guards
+                // pin jobs until cancellation has drained their activity.
+                let ids: Vec<_> = map
+                    .iter()
+                    .filter(|(_, j)| j.status.ready && !j.running && j.upload_reserved == 0)
+                    .map(|(id, _)| id.clone())
+                    .collect();
+                for id in ids {
+                    if let Some(job) = map.get_mut(&id) {
+                        settle_seed_clock(job);
+                        job.retiring = true;
+                        job.cancel.store(true, Ordering::Release);
+                    }
+                }
+                seed_rotation = Instant::now();
+            }
+            let retired: Vec<_> = map
+                .iter()
+                .filter(|(_, j)| {
+                    j.retiring
+                        && !j.running
+                        && j.upload_reserved == 0
+                        && j.cross_seed
+                            .as_ref()
+                            .is_none_or(|reuse| Arc::strong_count(&reuse.activity) == 1)
+                        && Arc::strong_count(&j.cancel) == 1
+                        && !j.dht_in_flight
+                        && j.announcements
+                            .values()
+                            .all(|a| !a.in_flight && (!a.started || a.stopped))
+                })
+                .map(|(id, _)| id.clone())
+                .collect();
+            for id in retired {
+                if let Some(mut job) = map.remove(&id)
+                    && let Err(error) = persist_control(&config, &mut job)
+                {
+                    eprintln!("Could not save retired seed: {error}");
+                    map.insert(id, job);
+                }
+            }
+            let candidates = index
+                .lock()
+                .map_err(|_| "Native transfer index lock is poisoned".to_owned())
+                .and_then(|mut catalog| {
+                    // Refresh the leading window on every scheduling turn so
+                    // completed jobs cannot leave holes in priority/FIFO order.
+                    let (mut head, _) = catalog.queue_page(None, config.max_active + 32)?;
+                    let (tail, next) = catalog.queue_page(queue_cursor.as_deref(), 32)?;
+                    let mut present: BTreeSet<_> = head.iter().cloned().collect();
+                    head.extend(tail.into_iter().filter(|id| present.insert(id.clone())));
+                    Ok((head, next))
+                });
+            match candidates {
+                Ok((ids, next)) => {
+                    queue_cursor = next;
+                    for id in ids {
+                        if map.len() >= config.max_active + 64 {
+                            break;
+                        }
+                        if let std::collections::btree_map::Entry::Vacant(slot) =
+                            map.entry(id.clone())
+                        {
+                            match indexed_job(&config, &index, &id, &policy.policy) {
+                                Ok(job) => {
+                                    slot.insert(job);
+                                }
+                                Err(error) => {
+                                    eprintln!("Could not load indexed transfer: {error}");
+                                    if let Ok(mut catalog) = index.lock() {
+                                        let _ = catalog.mark_failed(&id, &error);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(error) => eprintln!("Could not read indexed queue: {error}"),
+            }
+            if config.seed && map.len() < config.max_active + 32 {
+                let candidates = index
+                    .lock()
+                    .map_err(|_| "Native transfer index lock is poisoned".to_owned())
+                    .and_then(|mut catalog| {
+                        catalog.seeds_page(
+                            seed_cursor.as_deref(),
+                            (config.max_active + 32 - map.len()).min(32),
+                        )
+                    });
+                match candidates {
+                    Ok((ids, next)) => {
+                        seed_cursor = next;
+                        for id in ids {
+                            if let std::collections::btree_map::Entry::Vacant(slot) =
+                                map.entry(id.clone())
+                            {
+                                match indexed_job(&config, &index, &id, &policy.policy) {
+                                    Ok(job) => {
+                                        slot.insert(job);
+                                    }
+                                    Err(error) => {
+                                        eprintln!("Could not load retained seed: {error}");
+                                        if let Ok(mut catalog) = index.lock() {
+                                            let _ = catalog.mark_failed(&id, &error);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(error) => eprintln!("Could not read indexed seeds: {error}"),
+                }
+            }
+        }
+        if let Ok(mut map) = jobs.lock() {
+            for (id, job) in map.iter_mut() {
+                if !job.admitted {
+                    job.admitted = admission
+                        .as_ref()
+                        .is_none_or(|gate| gate(id).unwrap_or(false));
+                }
+            }
+        }
         if workers.len() < config.max_active {
             let selected = jobs.lock().ok().and_then(|mut jobs| {
                 let id = jobs
                     .iter()
                     .filter(|(_, j)| {
-                        !j.running
+                        j.admitted
+                            && !j.persistence_failed.load(Ordering::Acquire)
+                            && !j.retiring
+                            && !j.running
                             && !j.paused
                             && !j.control.user_paused
                             && !j.failed
-                            && !j.status.ready
-                            && !j.status.selected_ready
+                            && ((!j.status.ready && !j.status.selected_ready)
+                                || (j.needs_rehash && config.seed && !j.control.seed_limited))
                     })
                     .min_by(|(aid, a), (bid, b)| {
                         b.control
@@ -2022,6 +2604,14 @@ fn manager_loop(
                     })
                     .map(|(id, _)| id.clone())?;
                 let job = jobs.get_mut(&id)?;
+                if job.needs_rehash {
+                    job.needs_rehash = false;
+                    job.status.ready = false;
+                    job.status.selected_ready = false;
+                    job.status.available_files.clear();
+                    job.status.progress = 0.0;
+                    job.status.message = "Verifying persisted data".into();
+                }
                 job.running = true;
                 if job.cancel.load(Ordering::Acquire) {
                     job.cancel.store(true, Ordering::Release);
@@ -2735,7 +3325,9 @@ fn listen_loop(
     stop: Arc<AtomicBool>,
     peer_id: [u8; 20],
     policy: Arc<PolicyRuntime>,
+    catalog: (Arc<Mutex<index::TransferIndex>>, Option<AdmissionGate>),
 ) {
+    let (index, admission) = catalog;
     let mut peers: Vec<JoinHandle<()>> = Vec::new();
     while !stop.load(Ordering::Acquire) {
         let mut i = 0;
@@ -2753,8 +3345,18 @@ fn listen_loop(
                 let js = jobs.clone();
                 let st = stop.clone();
                 let policy = policy.clone();
+                let index = index.clone();
+                let admission = admission.clone();
                 peers.push(thread::spawn(move || {
-                    let _ = serve_peer(stream, &cfg, &js, &st, &peer_id, &policy);
+                    let _ = serve_peer(
+                        stream,
+                        &cfg,
+                        &js,
+                        &st,
+                        &peer_id,
+                        &policy,
+                        (&index, admission.as_ref()),
+                    );
                 }));
             }
             Ok(_) => {}
@@ -2789,6 +3391,12 @@ fn peer_available(
     cancel: &Arc<AtomicBool>,
 ) -> Result<()> {
     apply_seed_limits(job, config, defaults);
+    if job.persistence_failed.load(Ordering::Acquire) {
+        return Err("Native transfer persistence is unavailable".into());
+    }
+    if !job.admitted {
+        return Err("Transfer ownership has not been admitted".into());
+    }
     if job.paused
         || job.control.user_paused
         || job.control.seed_limited
@@ -2840,7 +3448,9 @@ fn serve_peer(
     stop: &AtomicBool,
     peer_id: &[u8; 20],
     policy: &PolicyRuntime,
+    catalog: (&Arc<Mutex<index::TransferIndex>>, Option<&AdmissionGate>),
 ) -> Result<()> {
+    let (index, admission) = catalog;
     crate::net::blocking(&stream)?;
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
@@ -2860,6 +3470,32 @@ fn serve_peer(
     }
     let mut hash = [0; 20];
     hash.copy_from_slice(&incoming[28..48]);
+    if config.seed {
+        let owner = index
+            .lock()
+            .map_err(|_| "Native transfer index lock is poisoned")?
+            .wire_alias(hash)?;
+        if let Some(id) = owner {
+            let mut map = jobs
+                .lock()
+                .map_err(|_| "BitTorrent state lock is poisoned")?;
+            if !map.contains_key(&id) {
+                trim_jobs(config, &mut map, config.max_active + 31)?;
+                if map.len() >= config.max_active + 64 {
+                    return Err("Native transfer working set is busy".into());
+                }
+                let mut job = indexed_job(config, index, &id, &policy.policy)?;
+                job.admitted = admission.is_none_or(|gate| gate(&id).unwrap_or(false));
+                if job.needs_rehash {
+                    job.status.ready = false;
+                    job.status.selected_ready = false;
+                    job.status.available_files.clear();
+                    persist_index(&job)?;
+                }
+                map.insert(id, job);
+            }
+        }
+    }
     let (torrent_id, meta, ready, known_peers, cancel, counters, upload_gate, reuse) = {
         let mut jobs = jobs
             .lock()
@@ -2868,6 +3504,10 @@ fn serve_peer(
             .find_map(|(id, job)| {
                 apply_seed_limits(job, config, &policy.policy);
                 if job.paused
+                    || !job.admitted
+                    || job.persistence_failed.load(Ordering::Acquire)
+                    || job.retiring
+                    || job.needs_rehash
                     || (job.cross_seed.is_some() && (!job.status.ready || !config.seed))
                     || job.control.user_paused
                     || job.control.seed_limited
@@ -3198,6 +3838,11 @@ mod control_runtime_tests {
         let mut meta = geometry(&[(BLOCK as u64, false)]);
         meta.v1 = Some([byte; 20]);
         Job {
+            index: None,
+            persistence_failed: AtomicBool::new(false),
+            retiring: false,
+            admitted: true,
+            needs_rehash: false,
             cross_seed: None,
             source: Source {
                 original: format!("magnet:?xt=urn:btih:{id}"),
@@ -3313,5 +3958,144 @@ mod control_runtime_tests {
             select_seed_dht(&config, &jobs, &mut cursor).unwrap().id,
             ids[1]
         );
+    }
+    #[test]
+    fn retained_inventory_stays_cold_and_pages_survive_mutations_and_restart() {
+        let root = std::env::temp_dir().join(format!(
+            "mynou-transfer-cold-{}-{}",
+            std::process::id(),
+            hex(&crate::crypto::random_bytes::<8>().unwrap())
+        ));
+        let state = root.join("state");
+        mkdir_private(&root).unwrap();
+        mkdir_private(&state).unwrap();
+        let config = DownloadConfig {
+            data_dir: root.join("data"),
+            state_dir: state.clone(),
+            listen_port: 0,
+            seed: false,
+            dht: false,
+            pex: false,
+            max_active: 1,
+            max_peers: 1,
+        };
+        const RETAINED: usize = 384;
+        for n in 1..=RETAINED {
+            let id = format!("{n:040x}");
+            atomic_write(
+                &state.join(format!("{id}.source")),
+                format!("magnet:?xt=urn:btih:{id}").as_bytes(),
+            )
+            .unwrap();
+            let mut control = TorrentControl::new(id.clone(), n as u64).unwrap();
+            control.user_paused = true;
+            control.downloaded_bytes = n as u64;
+            atomic_write(
+                &state.join(format!("{id}.control")),
+                &control.encode().unwrap(),
+            )
+            .unwrap();
+        }
+        let mut client = Client::open(config.clone()).unwrap();
+        assert_eq!(
+            client.jobs.lock().unwrap().len(),
+            0,
+            "startup must not hydrate retained paused transfers"
+        );
+        let mut cursor = None;
+        let mut seen = BTreeSet::new();
+        loop {
+            let (page, next) = client.statuses_page(cursor.as_deref(), 31).unwrap();
+            assert!(page.len() <= 31);
+            for status in page {
+                assert!(seen.insert(status.id.clone()));
+                client.set_priority(&status.id, 7).unwrap();
+                assert!(client.controls(&status.id).unwrap().user_paused);
+            }
+            cursor = next;
+            if cursor.is_none() {
+                break;
+            }
+        }
+        assert_eq!(seen.len(), RETAINED);
+        assert!(client.jobs.lock().unwrap().len() <= config.max_active + 33);
+        assert_eq!(
+            client.aggregate_stats().unwrap(),
+            (RETAINED as u64, (RETAINED * (RETAINED + 1) / 2) as u64, 0)
+        );
+        client.stop.store(true, Ordering::Release);
+        if let Some(manager) = client.manager.take() {
+            manager.join().unwrap();
+        }
+        drop(client);
+        // Routine open must ignore unrelated legacy-looking files after publication.
+        atomic_write(
+            &state.join("ffffffffffffffffffffffffffffffffffffffff.source"),
+            b"invalid ignored stale legacy file",
+        )
+        .unwrap();
+        let client = Client::open(config).unwrap();
+        assert_eq!(client.jobs.lock().unwrap().len(), 0);
+        let id = format!("{:040x}", RETAINED);
+        assert_eq!(client.controls(&id).unwrap().priority, 7);
+        assert!(client.contains(&id).unwrap());
+        assert_eq!(client.transfer_stats(&id).unwrap(), (RETAINED as u64, 0));
+        drop(client);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn offline_pause_fences_cold_admission_and_reserved_marker_identity_never_writes() {
+        let root = std::env::temp_dir().join(format!(
+            "mynou-transfer-offline-{}-{}",
+            std::process::id(),
+            hex(&crate::crypto::random_bytes::<8>().unwrap())
+        ));
+        let config = DownloadConfig {
+            data_dir: root.join("data"),
+            state_dir: root.join("state"),
+            listen_port: 0,
+            seed: false,
+            dht: false,
+            pex: false,
+            max_active: 1,
+            max_peers: 1,
+        };
+        let denied: AdmissionGate = Arc::new(|_| Ok(false));
+        let client = Client::open_with_policy_and_admission(
+            config.clone(),
+            TransferPolicy::default(),
+            denied,
+        )
+        .unwrap();
+        let id = "0123456789012345678901234567890123456789";
+        client.ensure(&format!("magnet:?xt=urn:btih:{id}")).unwrap();
+        let reserved = "0000000000000000000000000000000000000000";
+        assert!(
+            client
+                .ensure(&format!("magnet:?xt=urn:btih:{reserved}"))
+                .is_err()
+        );
+        assert!(!config.state_dir.join(format!("{reserved}.source")).exists());
+        assert!(
+            !config
+                .state_dir
+                .join(format!("{reserved}.control"))
+                .exists()
+        );
+        drop(client);
+        pause_persisted(&config, id).unwrap();
+        let client = Client::open(config.clone()).unwrap();
+        let status = client.check(id).unwrap();
+        assert_eq!(status.message, "Download paused");
+        assert!(!client.controls(id).unwrap().user_paused);
+        thread::sleep(Duration::from_millis(75));
+        let map = client.jobs.lock().unwrap();
+        let job = map.get(id).unwrap();
+        assert!(job.paused);
+        assert!(!job.running);
+        drop(map);
+        drop(client);
+        fs::remove_dir_all(root).unwrap();
     }
 }

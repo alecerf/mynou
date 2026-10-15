@@ -28,6 +28,19 @@ single-peer baseline. Restart the service after a change. The peer count is a
 ceiling, not a promise: a transfer needs reachable peers that have the pieces it
 needs, and global worker and memory budgets can lower it further.
 
+Retained transfers live in an on-disk index. Startup and routine scheduling read
+bounded windows rather than enumerating the entire transfer directory; inactive
+transfers remain available through point lookups and cursor pages. Retention has
+no fixed transfer-count limit. Storage and the configured worker limits still
+bound what can run at once.
+
+Large seeding inventories rotate through bounded resident windows, with a
+rotation requested every 30 seconds; existing operations must drain before
+eviction. Retained seeds are rehashed before joining an active window. A
+finished transfer can also be reverified on demand by a point status check,
+without rechecking the entire retained inventory. If all resident slots are
+busy, an operation reports that it should be retried.
+
 Each transfer has one coordinator that gives every in-flight piece to a single
 peer, verifies returned data before writing it, and hands failed or corrupt
 pieces to another peer. Corrupt peers are set aside for the rest of that
@@ -39,7 +52,8 @@ known.
 ## Inspect, pause and prioritize
 
 ```sh
-mynou torrents --config ./mynou.json
+mynou torrents --limit 50 --config ./mynou.json
+mynou torrents --limit 50 --after CURSOR --config ./mynou.json
 mynou torrent ID --config ./mynou.json
 mynou pause ID --config ./mynou.json
 mynou resume ID --config ./mynou.json
@@ -55,6 +69,19 @@ mynou file-priority ID --file 0 --priority high --config ./mynou.json
 | `file-priority ID --file N --priority P` | `POST /api/transfers/ID/files` with `{"index": 0, "priority": "high"}` |
 | `torrent-select ID --selection JSON` | `POST /api/transfers/ID/selection` |
 | `torrent-policy ID --policy JSON` | `POST /api/transfers/ID/policy` |
+
+`torrents` and `GET /api/transfers` return an object with `transfers`, `next`,
+`total` and `sequence`, replacing the former complete array. A page has 50
+transfers by default; `limit` accepts 1 to 200. Continue with `--after` or
+`GET /api/transfers?limit=50&after=CURSOR` until `next` is null. Transfers are
+ordered by priority, then FIFO. The web interface offers **Load more transfers**.
+Point controls work for retained transfers outside the displayed page. Request
+references have their own independent cursor, described below.
+`sequence` changes when membership or priority/FIFO ordering changes; restart
+from the first page if it changes during a scan. Progress and control updates
+change `revision` without invalidating that ordering. `queue_position` is the
+zero-based position within the displayed page, not a global queue rank; a point
+response uses zero.
 
 - **Pause** is durable: restarts, request retries and repeated checks never undo
   it; only `resume` does. A pause waits for the current disk write. Pausing a
@@ -157,10 +184,10 @@ its canonical path must remain bound to the configured root.
 A private atomic `.seed` record binds metadata/source/mapping independently
 of ordinary queue files. Restart always rehashes before seeding. Damaged seed
 state, missing source state or seed controls, or conflicting ordinary entries
-refuse startup
-explicitly, never convert into a download. Older versions ignore `.seed`
-records, so these seeds do not run after downgrade. Keep the source media and
-native state while seeding.
+are refused when migration, scheduling or point lookup reads that identity;
+they never convert into a download. The indexed transfer format rejects
+older binaries; follow the migration and downgrade procedure below. Keep the
+source media and native state while seeding.
 
 ## Bandwidth and seeding
 
@@ -210,6 +237,40 @@ ratio. Seeding time counts time online while ready, enabled, unpaused and not
 yet limited, including idle time. Counters and seeding time survive a clean
 restart; transfers created before accounting existed start at zero. Reaching a
 limit stops seeding only: files, imports and Plex availability stay.
+
+## Storage migration and downgrade
+
+The first writable startup indexes the existing native state. This one-time
+migration reads the legacy directory, preserves its transfer files privately in
+`.transfers-legacy`, and records each migrated identity durably. An interrupted
+migration resumes on the next start; errors leave the backup and recovery state
+in place. Later starts use the index rather than enumerating legacy files.
+Indexed identities and their canonical lowercase filenames are authoritative;
+manually adding files after migration does not register new transfers. Use the
+service's submission or cross-seed controls instead.
+Corrupt inactive metadata is therefore reported when that transfer is read or
+scheduled, rather than by scanning every retained file at startup. Such errors
+never authorize a transfer. Every restart still requires rehashing before
+verified availability or seeding is restored.
+
+Successful snapshot updates reclaim the superseded snapshot. A crash before
+the index references a newly written snapshot can leave an unreferenced private
+file; it does not become an accepted transfer or restore availability.
+
+Keep the complete native state directory together: `transfers.idx`,
+`transfer-snapshots`, the individual metadata/source/control/seed files and the
+format marker are one store. The marker occupies a reserved all-zero torrent
+identity and deliberately makes older binaries refuse the directory. Do not
+delete it to force an old binary to open indexed state.
+
+Before upgrading, stop Mynou and back up its configuration, application state,
+native transfer state and payload directories together. To downgrade, stop
+Mynou and restore that complete matching backup. The migration's
+`.transfers-legacy` copies preserve only the native state at migration time;
+they do not include later controls, new transfers or the application request
+journal. Never combine a journal from one date with transfer state from another.
+Restoring an earlier backup loses later changes. Payloads are not deleted by
+migration, pause, cancellation or downgrade preparation.
 
 ### Paged request references
 

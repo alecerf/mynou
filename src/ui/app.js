@@ -242,12 +242,11 @@ views.dashboard = {
   init() { wireJobRows($('#recent')); },
   render() {
     const status = data.get('status')?.data;
-    const transfers = itemsOf(data.get('transfers')?.data);
     const stats = $('#stats');
     if (!status) { stats.replaceChildren(h('p', { class: 'empty' }, 'Loading…')); return; }
     const cards = [
       ['Active jobs', status.active], ['Ready', status.ready], ['Total jobs', status.jobs],
-      ['Transfers', transfers.length], ['Monitored series', status.monitored_series], ['Version', status.version],
+      ['Transfers', status.torrents], ['Monitored series', status.monitored_series], ['Version', status.version],
     ];
     reconcile(stats, cards, (c) => c[0],
       () => h('div', { class: 'stat' }, h('b'), h('span')),
@@ -363,8 +362,22 @@ views.jobs = {
   },
 };
 
+const transfersTail = { items: [], next: null };
 views.transfers = {
   init() {
+    $('#transfers-more').addEventListener('click', (event) =>
+      act(event.currentTarget, async () => {
+        if (transfersTail.refreshing) return;
+        const after = transfersTail.next ?? data.get('transfers')?.data?.next;
+        if (!after) return;
+        const generation = transfersTail.generation ?? 0;
+        const sequence = data.get('transfers')?.data?.sequence;
+        const page = await link.call('GET', `/api/transfers?limit=50&after=${encodeURIComponent(after)}`);
+        if (generation !== (transfersTail.generation ?? 0) || sequence !== data.get('transfers')?.data?.sequence || page.sequence !== sequence) return;
+        transfersTail.items.push(...itemsOf(page.transfers));
+        transfersTail.next = page.next;
+        views.transfers.render();
+      }));
     $('#transfers').addEventListener('click', (event) => {
       const button = event.target.closest('button[data-act]');
       const row = event.target.closest('.row');
@@ -375,8 +388,15 @@ views.transfers = {
   },
   render() {
     const list = $('#transfers');
+    const entry = data.get('transfers')?.data;
+    const next = transfersTail.items.length ? transfersTail.next : entry?.next;
+    const button = $('#transfers-more');
+    button.hidden = !next;
+    button.textContent = entry?.total ? `Load more transfers (${itemsOf(entry).length + transfersTail.items.length} of ${entry.total})` : 'Load more transfers';
     if (emptyOrError('transfers', list, 'No native transfers are active.')) return;
-    reconcile(list, itemsOf(data.get('transfers').data), (t) => t.id,
+    const first = itemsOf(entry);
+    const seen = new Set(first.map((item) => item.id));
+    reconcile(list, [...first, ...transfersTail.items.filter((item) => !seen.has(item.id))], (t) => t.id,
       () => h('li', { class: 'row' },
         h('div', {}, h('div', { class: 'title' }), h('div', { class: 'sub' })),
         h('div', { class: 'buttons' }, h('span', { class: 'badge' }), h('button', { type: 'button', dataset: { act: 'pause' } }, 'Pause'),
@@ -437,7 +457,8 @@ async function refreshTail(topic, tail, first) {
   } finally {
     tail.refreshing = false;
     const latest = data.get(topic)?.data;
-    if (latest && latest.sequence !== first.sequence && tail.items.length) refreshTail(topic, tail, latest);
+    if (latest && tail.items.length && (latest.sequence !== first.sequence ||
+      (topic === 'transfers' && latest.revision !== first.revision))) refreshTail(topic, tail, latest);
   }
 }
 function pageMembership(page, topic) {
@@ -693,6 +714,7 @@ function setup() {
     if (detail === 'open') {
       resetTail(jobsTail);
       resetTail(libraryTail);
+      resetTail(transfersTail);
       $('#login').close();
     }
   });
@@ -703,10 +725,11 @@ function setup() {
   let queued = false;
   link.addEventListener('topic', ({ detail }) => {
     const previous = data.get(detail.topic);
-    const tail = detail.topic === 'jobs' ? jobsTail : detail.topic === 'library' ? libraryTail : null;
+    const tail = detail.topic === 'jobs' ? jobsTail : detail.topic === 'library' ? libraryTail : detail.topic === 'transfers' ? transfersTail : null;
     if (tail && previous && pageMembership(previous.data, detail.topic) !== pageMembership(detail.data, detail.topic)) resetTail(tail);
     data.set(detail.topic, { status: detail.status, data: detail.data, at: Date.now() });
-    if (tail && previous?.data?.sequence !== detail.data?.sequence) refreshTail(detail.topic, tail, detail.data);
+    if (tail && (previous?.data?.sequence !== detail.data?.sequence ||
+      (detail.topic === 'transfers' && previous?.data?.revision !== detail.data?.revision))) refreshTail(detail.topic, tail, detail.data);
     if (queued) return;
     queued = true;
     requestAnimationFrame(() => { queued = false; views[current]?.render?.(); });

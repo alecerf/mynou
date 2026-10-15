@@ -128,7 +128,11 @@ impl Parser<'_> {
     }
 }
 pub fn parse_prefix(data: &[u8]) -> Result<(Value, usize)> {
-    if data.len() > 16 * 1024 * 1024 {
+    parse_prefix_bounded(data, 16 * 1024 * 1024)
+}
+
+fn parse_prefix_bounded(data: &[u8], max_bytes: usize) -> Result<(Value, usize)> {
+    if data.len() > max_bytes {
         return Err("Bencode: document too large".into());
     }
     let mut p = Parser {
@@ -140,7 +144,13 @@ pub fn parse_prefix(data: &[u8]) -> Result<(Value, usize)> {
     Ok((v, p.at))
 }
 pub fn parse(data: &[u8]) -> Result<Value> {
-    let (v, end) = parse_prefix(data)?;
+    parse_bounded(data, 16 * 1024 * 1024)
+}
+
+/// A caller-owned storage byte budget; network entry points keep their default
+/// 16 MiB limit. Depth and item-count limits still apply.
+pub(crate) fn parse_bounded(data: &[u8], max_bytes: usize) -> Result<Value> {
+    let (v, end) = parse_prefix_bounded(data, max_bytes)?;
     if end != data.len() {
         return Err("Bencode: data after the document".into());
     }

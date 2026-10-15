@@ -1222,8 +1222,9 @@ fn shared_requests_expose_one_transfer_and_apply_controls_to_both_requests() {
     wait(|| !proxy.requests.lock().unwrap().is_empty());
     let (status, list) = server.call("GET", "/api/transfers", Some(TOKEN), None);
     assert_eq!(status, 200);
-    assert_eq!(list.as_array().unwrap().len(), 1);
-    let snapshot = &list.as_array().unwrap()[0];
+    assert_eq!(list.get("total").and_then(Value::as_u64), Some(1));
+    assert_eq!(list.get("transfers").unwrap().as_array().unwrap().len(), 1);
+    let snapshot = &list.get("transfers").unwrap().as_array().unwrap()[0];
     let mut observed: Vec<_> = snapshot
         .get("request_ids")
         .unwrap()
@@ -1350,7 +1351,15 @@ fn online_cli_controls_the_existing_native_service_and_validates_file_priorities
     )
     .unwrap();
     let transfers = successful(command(&engine_root, &["torrents"]));
-    assert_eq!(transfers.as_array().unwrap().len(), 1);
+    assert_eq!(
+        transfers
+            .get("transfers")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
     let transfer = successful(command(&engine_root, &["torrent", &torrent.id]));
     assert_eq!(
         transfer.get("request_ids").unwrap().as_array().unwrap(),
@@ -1489,4 +1498,176 @@ fn transfer_cli_requires_a_running_service_without_creating_local_state() {
     }
     // Parsing a valid policy does not change the read-only configuration either.
     assert!(config::load(&cfg).unwrap().downloads_enabled);
+}
+
+#[test]
+fn retained_transfer_pages_and_point_controls_reach_beyond_the_resident_window() {
+    let scratch = Scratch::new();
+    let root = scratch.0.join("engine");
+    let cfg = engine_config(&root);
+    let client = Client::open(cfg.downloads.clone()).unwrap();
+    let mut expected = Vec::new();
+    for number in 1..=63 {
+        let id = client
+            .ensure(&format!("magnet:?xt=urn:btih:{number:040x}"))
+            .unwrap()
+            .id;
+        client.pause(&id).unwrap();
+        expected.push(id);
+    }
+    drop(client);
+    let server = Server::open(cfg);
+    let mut after = None;
+    let mut observed = Vec::new();
+    let mut first_cursor = None;
+    loop {
+        let route = after.as_ref().map_or_else(
+            || "/api/transfers?limit=7".to_owned(),
+            |cursor| format!("/api/transfers?limit=7&after={cursor}"),
+        );
+        let (status, page) = server.call("GET", &route, Some(TOKEN), None);
+        assert_eq!(status, 200, "{page:?}");
+        assert_eq!(page.get("total").and_then(Value::as_u64), Some(63));
+        let rows = page.get("transfers").unwrap().as_array().unwrap();
+        assert!(rows.len() <= 7);
+        for row in rows {
+            assert_eq!(row.get("user_paused"), Some(&Value::Bool(true)));
+            observed.push(row.get("id").unwrap().as_str().unwrap().to_owned());
+        }
+        after = page.get("next").and_then(Value::as_str).map(str::to_owned);
+        if first_cursor.is_none() {
+            first_cursor = after.clone();
+        }
+        if after.is_none() {
+            break;
+        }
+        assert!(observed.len() < 63);
+    }
+    assert_eq!(observed, expected);
+    let last = expected.last().unwrap();
+    let (status, transfer) =
+        server.call("GET", &format!("/api/transfers/{last}"), Some(TOKEN), None);
+    assert_eq!(status, 200);
+    assert_eq!(
+        transfer.get("id").and_then(Value::as_str),
+        Some(last.as_str())
+    );
+    let (status, transfer) = server.call(
+        "POST",
+        &format!("/api/transfers/{last}/priority"),
+        Some(TOKEN),
+        Some(&json::parse(r#"{"priority":100}"#).unwrap()),
+    );
+    assert_eq!(status, 200);
+    assert_eq!(transfer.get("priority").and_then(Value::as_i64), Some(100));
+    let (status, metrics) = server.call("GET", "/api/status", Some(TOKEN), None);
+    assert_eq!(status, 200);
+    assert_eq!(metrics.get("torrents").and_then(Value::as_u64), Some(63));
+
+    let mut config = configuration();
+    config.insert("listen", server.origin.strip_prefix("http://").unwrap());
+    fs::write(root.join("mynou.json"), json::stringify(&config)).unwrap();
+    fs::write(root.join(".env"), format!("MYNOU_API_TOKEN={TOKEN}\n")).unwrap();
+    // Fresh first-page cursor after the priority mutation.
+    let (_, first) = server.call("GET", "/api/transfers?limit=7", Some(TOKEN), None);
+    let cursor = first.get("next").unwrap().as_str().unwrap();
+    let page = successful(command(
+        &root,
+        &["torrents", "--limit", "7", "--after", cursor],
+    ));
+    assert_eq!(page.get("transfers").unwrap().as_array().unwrap().len(), 7);
+    for query in [
+        "limit=0",
+        "limit=201",
+        "limit=01",
+        "limit=1&limit=2",
+        "after=",
+        "after=invalid",
+        "unknown=1",
+    ] {
+        assert_eq!(
+            server
+                .call("GET", &format!("/api/transfers?{query}"), Some(TOKEN), None)
+                .0,
+            400
+        );
+    }
+    assert!(first_cursor.is_some());
+}
+
+#[test]
+fn restart_checks_cancelled_ownership_before_network_even_beyond_the_first_page() {
+    use std::net::TcpListener;
+    let scratch = Scratch::new();
+    let root = scratch.0.join("engine");
+    let cfg = engine_config(&root);
+    let trap = TcpListener::bind("127.0.0.1:0").unwrap();
+    trap.set_nonblocking(true).unwrap();
+    let id = "f".repeat(40);
+    let magnet = format!(
+        "magnet:?xt=urn:btih:{id}&x.pe={}",
+        trap.local_addr().unwrap()
+    );
+    let management = Engine::open_for_management(cfg.clone()).unwrap();
+    let mut store = lock(&management.store).unwrap();
+    let mut cancelled = store
+        .submit(request(&magnet, "Cancelled before native pause"))
+        .unwrap();
+    cancelled.download_id = Some(id.clone());
+    store.update(cancelled.clone()).unwrap();
+    store.cancel(&cancelled.id).unwrap();
+    drop(store);
+    drop(management);
+    fs::create_dir_all(&cfg.downloads.state_dir).unwrap();
+    let private_write = |name: String, bytes: &[u8]| {
+        let path = cfg.downloads.state_dir.join(name);
+        fs::write(&path, bytes).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+        }
+    };
+    for number in 1..=70 {
+        let retained = format!("{number:040x}");
+        let mut control = TorrentControl::new(retained.clone(), number).unwrap();
+        control.user_paused = true;
+        private_write(
+            format!("{retained}.source"),
+            format!("magnet:?xt=urn:btih:{retained}").as_bytes(),
+        );
+        private_write(format!("{retained}.control"), &control.encode().unwrap());
+    }
+    let mut control = TorrentControl::new(id.clone(), 71).unwrap();
+    control.priority = 100;
+    private_write(format!("{id}.source"), magnet.as_bytes());
+    private_write(format!("{id}.control"), &control.encode().unwrap());
+    let server = Server::open(cfg);
+    // Point hydration also must not bypass admission before the background
+    // cancellation sweep reaches this identity.
+    server.engine.transfer(&id).unwrap();
+    let until = Instant::now() + Duration::from_millis(350);
+    while Instant::now() < until {
+        assert!(
+            matches!(trap.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock),
+            "Cancelled retained transfer attempted a peer connection"
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
+    let mut store = lock(&server.engine.store).unwrap();
+    let mut owner = store
+        .submit(request(&format!("{magnet}&dn=co-owner"), "Live co-owner"))
+        .unwrap();
+    owner.download_id = Some(id.clone());
+    store.update(owner).unwrap();
+    drop(store);
+    // A live co-owner retains acquisition authority for the shared transfer.
+    wait(|| match trap.accept() {
+        Ok((stream, _)) => {
+            drop(stream);
+            true
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => false,
+        Err(error) => panic!("Synthetic peer trap failed: {error}"),
+    });
 }
