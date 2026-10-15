@@ -249,6 +249,44 @@ fn invalid_framing_and_mac1_stay_silent_and_stateless_under_load() {
 }
 
 #[test]
+fn screen_agrees_with_admission_framing_and_mac1_without_state() {
+    let (mut admission, local) = loaded("screen", 4);
+    let source = address("203.0.113.9:7");
+    for size in 0..=200 {
+        assert!(admission.screen(&vec![1; size]).is_err());
+        assert!(admission.screen(&vec![2; size]).is_err());
+    }
+    for kind in [1, 2] {
+        let (packet, _) = message(kind, 77, &local);
+        assert!(admission.screen(&packet).is_ok(), "kind {kind}");
+        for index in 0..packet.len() - 16 {
+            let mut corrupted = packet.clone();
+            corrupted[index] ^= 1;
+            assert!(
+                admission.screen(&corrupted).is_err(),
+                "kind {kind} byte {index}"
+            );
+        }
+        // MAC2 is not screened: only admission under load weighs it.
+        let mut mac2 = packet.clone();
+        let last = mac2.len() - 1;
+        mac2[last] ^= 1;
+        assert!(admission.screen(&mac2).is_ok());
+        let (other, _) = message(kind, 77, &public("someone else"));
+        assert!(admission.screen(&other).is_err());
+    }
+    assert_eq!(admission.entropy.calls, 0);
+    assert_eq!(admission.tracked_sources(), 0);
+    assert!(admission.secret.is_none());
+    // Screening never touches the fence: admission still accepts the message.
+    let (packet, _) = message(1, 78, &local);
+    assert!(matches!(
+        admission.admit(&packet, source, Load::Normal, 4, ZERO),
+        Ok(Admit::Process)
+    ));
+}
+
+#[test]
 fn reply_is_bound_to_message_peer_and_every_byte() {
     let (mut admission, local) = loaded("binding", 4);
     let source = address("198.51.100.20:9000");

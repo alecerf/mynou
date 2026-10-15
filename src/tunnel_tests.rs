@@ -1,5 +1,5 @@
 use super::*;
-use crate::crypto::{blake2s, x25519_public_key};
+use crate::crypto::{blake2s, keyed_blake2s, x25519_public_key};
 use crate::netstack::TcpState;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -305,16 +305,43 @@ impl World {
         self.settle();
     }
 
-    fn flood(&self, count: usize) {
+    /// Sends `count` copies of each datagram to the server from a stranger.
+    fn flood(&self, datagrams: &[Vec<u8>], count: usize) {
         let spoof = UdpSocket::bind(loopback()).unwrap();
-        let mut bogus = vec![0u8; 148];
-        bogus[0] = 1;
         for _ in 0..count {
-            spoof
-                .send_to(&bogus, self.server.local_addr().unwrap())
-                .unwrap();
+            for datagram in datagrams {
+                spoof
+                    .send_to(datagram, self.server.local_addr().unwrap())
+                    .unwrap();
+            }
         }
     }
+}
+
+/// Handshake-type datagrams that fail framing or MAC1 at the server.
+fn junk_handshakes() -> Vec<Vec<u8>> {
+    let mut initiation = vec![0u8; 148];
+    initiation[0] = 1;
+    let mut response = vec![0u8; 92];
+    response[0] = 2;
+    // Framing is checked on its own: these two carry a valid MAC1.
+    let reserved = mac1_valid_initiation([1, 1, 0, 0]);
+    let mut short = mac1_valid_initiation([1, 0, 0, 0]);
+    short.truncate(147);
+    vec![initiation, response, reserved, short]
+}
+
+/// An initiation with a valid MAC1 for the server but no valid Noise content,
+/// as anyone who knows the server's public key can send.
+fn mac1_valid_initiation(header: [u8; 4]) -> Vec<u8> {
+    let mut label = b"mac1----".to_vec();
+    label.extend_from_slice(&x25519_public_key(SERVER_SECRET));
+    let key = blake2s(&label).unwrap();
+    let mut initiation = vec![7u8; 148];
+    initiation[..4].copy_from_slice(&header);
+    let mac = keyed_blake2s(&key, &initiation[..116], 16).unwrap();
+    initiation[116..132].copy_from_slice(&mac);
+    initiation
 }
 
 fn drain(tunnel: &mut Tunnel<Stream, Manual>, socket: VirtualUdp) -> Vec<Received> {
@@ -545,14 +572,45 @@ fn cookie_reply_under_load_then_mac2_admission() {
         if world.protected() {
             break;
         }
-        world.flood(3);
+        world.flood(&[mac1_valid_initiation([1, 0, 0, 0])], 3);
         world.advance(Duration::from_millis(500));
     }
     assert!(world.protected());
     assert!(world.relay.kinds(3) >= 1);
-    assert!(world.server.stats().high_load >= 3);
-    assert!(world.server.stats().rejected >= 3);
+    let stats = world.server.stats();
+    assert!(stats.high_load >= 3);
+    assert!(stats.rejected >= 2);
+    assert_eq!(stats.handshake_invalid, 0);
     assert_eq!(world.server.status().generation, Some(1));
+}
+
+#[test]
+fn junk_handshakes_are_refused_without_counting_as_load() {
+    let mut world = World::new(|_, server| server.handshake_load = 2);
+    // The flood lands before the genuine initiation, in the same load window.
+    world.flood(&junk_handshakes(), 10);
+    world.connect(Duration::from_millis(100), 20);
+    let stats = world.server.stats();
+    assert_eq!(stats.handshake_invalid, 40);
+    assert!(stats.rejected >= 40);
+    assert_eq!(stats.high_load, 0);
+    assert_eq!(world.relay.kinds(3), 0);
+    assert_eq!(world.relay.kinds(1), 1);
+    assert_eq!(world.client.status().generation, Some(1));
+    assert_eq!(world.server.status().generation, Some(1));
+
+    // Under a continuing flood the protected session still carries traffic.
+    let service = world.server.udp_bind(7000).unwrap();
+    let local = world.client.udp_bind(0).unwrap();
+    world.flood(&junk_handshakes(), 10);
+    world
+        .client
+        .udp_send_to(local, (SERVER_IP, 7000), b"through")
+        .unwrap();
+    world.settle();
+    assert_eq!(drain(&mut world.server, service).len(), 1);
+    assert_eq!(world.server.stats().handshake_invalid, 80);
+    assert_eq!(world.server.stats().high_load, 0);
 }
 
 #[test]

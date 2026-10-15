@@ -122,7 +122,8 @@ pub struct TunnelConfig {
     pub udp: Limits,
     pub tcp: TcpConfig,
     pub dns: Option<DnsConfig>,
-    /// Handshake messages per `LOAD_WINDOW` above which the load is `High`.
+    /// Framed, MAC1-valid handshake messages per `LOAD_WINDOW` above which
+    /// the load is `High`.
     pub handshake_load: u32,
     /// Outer socket reads attempted by one `pump`, including socket errors.
     pub datagrams_per_pump: usize,
@@ -273,7 +274,11 @@ pub struct Stats {
     /// Valid inner packets lost to a full queue, in either direction.
     pub inner_dropped: u64,
     pub roamed: u64,
+    /// Handshake messages metered while the load was `High`.
     pub high_load: u64,
+    /// Type 1/2 datagrams with invalid framing or MAC1, refused before any
+    /// Noise work and never metered as load. Also counted in `rejected`.
+    pub handshake_invalid: u64,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -631,10 +636,9 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
         }
     }
 
-    fn meter(&mut self, kind: u8, now: Duration) -> Load {
-        if !matches!(kind, 1 | 2) {
-            return Load::Normal;
-        }
+    /// Weighs one handshake message that passed framing and MAC1: only those
+    /// could cost Noise work, so junk cannot hold the runtime under load.
+    fn meter(&mut self, now: Duration) -> Load {
         if now.saturating_sub(self.window) >= LOAD_WINDOW {
             self.window = now;
             self.handshakes = 0;
@@ -655,10 +659,22 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
             self.stats.oversized += 1;
             return;
         }
-        let load = self.meter(packet[0], now);
         let wall = self.clock.wall();
         let Some(live) = self.live.as_mut() else {
             self.stats.unowned += 1;
+            return;
+        };
+        let load = if matches!(packet[0], 1 | 2) {
+            if live.peer.screen(packet).is_err() {
+                self.stats.handshake_invalid += 1;
+                self.stats.rejected += 1;
+                return;
+            }
+            self.meter(now)
+        } else {
+            Load::Normal
+        };
+        let Some(live) = self.live.as_mut() else {
             return;
         };
         let clock = PeerClock {

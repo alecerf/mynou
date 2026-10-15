@@ -152,6 +152,15 @@ impl<E: Entropy> Admission<E> {
         self.limiter.len()
     }
 
+    /// Exact framing and a valid MAC1 for this identity, nothing else: no
+    /// state, entropy or clock. The owner uses it to weigh only messages that
+    /// could reach Noise when it judges the load; any sender who knows the
+    /// public key passes it, so it is evidence of load, not of identity.
+    pub fn screen(&self, packet: &[u8]) -> Result<()> {
+        frame(packet)?;
+        verify_mac1(&self.mac1_key, packet)
+    }
+
     fn fence(&mut self, generation: u64, now: Duration) -> Result<()> {
         if self.revoked {
             return Err("WireGuard: admission is revoked".into());
@@ -179,8 +188,7 @@ impl<E: Entropy> Admission<E> {
         now: Duration,
     ) -> Result<Admit> {
         self.fence(generation, now)?;
-        frame(packet)?;
-        verify_mac1(&self.mac1_key, packet)?;
+        self.screen(packet)?;
         if load == Load::Normal {
             return Ok(Admit::Process);
         }

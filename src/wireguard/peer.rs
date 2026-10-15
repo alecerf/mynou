@@ -132,6 +132,12 @@ impl<E: Entropy> Peer<E> {
         self.status
     }
 
+    /// Whether a handshake initiation or response is framed and MAC1-valid
+    /// for this peer's local identity; see [`Admission::screen`].
+    pub fn screen(&self, packet: &[u8]) -> Result<()> {
+        self.admission.screen(packet)
+    }
+
     pub fn queued_payloads(&self) -> usize {
         self.queue.len()
     }

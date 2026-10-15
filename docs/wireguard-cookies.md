@@ -41,6 +41,9 @@ load every message first spends the source's budget, then MAC2 is compared in
 constant time: valid means `Admit::Process`, otherwise `Admit::Reply`, and an
 exhausted budget is `Admit::Limited` (silent drop after the MAC1 check, no entropy and no cookie MAC work).
 The load verdict is a driver obligation: the whitepaper defines no threshold.
+`Admission::screen` (and `Peer::screen`) runs the same framing and MAC1 check
+alone, with no state, entropy or clock, so the driver can weigh only messages
+that would reach Noise; the tunnel runtime meters nothing else as load.
 
 The rate limit is repository policy, not a whitepaper constant: a generic
 cell-rate limiter of 20 messages per second per source with a burst of five,

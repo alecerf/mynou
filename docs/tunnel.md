@@ -20,8 +20,14 @@ One `Tunnel` is the single owner of:
 - the clock (`Clock`: monotonic elapsed time and the wall time for handshake
   timestamps; `SystemClock` in production);
 - the handshake load verdict: more than `handshake_load` handshake messages
-  (types 1 and 2, valid or not) in one second is `Load::High`, so new
-  initiations get a cookie reply until they prove their address with MAC2;
+  in one second is `Load::High`, so new initiations get a cookie reply until
+  they prove their address with MAC2. Only an initiation or response (types 1
+  and 2) with its exact length (148 or 92 bytes), zero reserved bytes and a
+  valid MAC1 for the local public key counts: that is the work a cookie
+  defends. Any other type 1 or 2 datagram is refused before any Noise work,
+  counted in `handshake_invalid` (and `rejected`) and never metered, so a
+  flood of junk cannot force genuine peers into cookie round trips. The check
+  is one fixed-size MAC per datagram and keeps no per-source state;
 - the live generation: one `Peer`, one virtual UDP table, one TCP stack and one
   DNS client, all created with the same generation number.
 
@@ -92,7 +98,7 @@ expires, the generation is revoked and reconnection starts.
 | --- | --- | --- |
 | Outer reads per `pump` (including socket errors) | 64 | the rest wait for the next pump |
 | Outer datagram size | 1456 bytes | dropped and counted (`oversized`) |
-| Handshake messages per second before `Load::High` | 32 | cookie replies, no Noise work |
+| Framed, MAC1-valid handshake messages per second before `Load::High` | 32 | cookie replies, no Noise work |
 | Peer queue without a session | 32 | `QueueFull`, or a counted drop |
 | Unclaimed plus pending DNS lookups | DNS `max_pending` (16) | `Busy` |
 | Reconnection delay | 1 s doubling to 60 s | capped |
@@ -110,7 +116,9 @@ re-source datagrams. They cover:
 - UDP, DNS and a 200 KB TCP transfer end to end, with no inner byte visible on the wire;
 - loss, reordering and duplication, with replays refused;
 - rekey under 300 seconds of traffic without a new generation;
-- cookie replies under a handshake flood, then MAC2 admission;
+- cookie replies under a flood of MAC1-valid initiations, then MAC2 admission;
+- a junk handshake flood (bad MAC1, length or reserved bytes) that is refused
+  and counted while a genuine initiator connects at once, with no cookie reply;
 - roaming on authenticated responses and data only, including an initiation
   replayed after a new generation;
 - an expiry seen only by a late pump or a send, which still revokes;
