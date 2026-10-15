@@ -69,7 +69,9 @@ pub const MAX_ACCOUNTS: usize = 32;
 const LEGACY_MAX_DEMANDS: usize = 10_000;
 /// Compatibility offset work bound; continuation cursors have no total cap.
 pub const MAX_OFFSET: usize = 10_000;
-pub const MAX_POLL_ITEMS: usize = 512;
+/// Demands or origins of one committed batch, and origins of one demand. A
+/// watchlist sweep commits as many batches as its listing needs.
+pub const MAX_BATCH_ITEMS: usize = 512;
 
 pub(crate) fn encode_cursor(key: &crate::inventory::Key) -> String {
     key.iter().map(|byte| format!("{byte:02x}")).collect()
@@ -638,7 +640,7 @@ impl Demand {
         };
         if !valid_id(&d.account_id)
             || (d.origins.is_empty() && d.state != "removed")
-            || d.origins.len() > MAX_POLL_ITEMS
+            || d.origins.len() > MAX_BATCH_ITEMS
             || d.origins.iter().any(|origin| {
                 origin.is_empty()
                     || origin.len() > 4096

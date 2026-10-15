@@ -98,10 +98,18 @@ polls every account now and needs the service.
 
 ## How demand is handled
 
-- A poll verifies the account, reads its complete watchlist and resolves each
-  entry to a catalog identity before recording anything. A successful poll
-  removes only the entries that left the watchlist; a failed poll changes
-  nothing for that account. Accounts that waited longest are polled first.
+- A poll verifies the account and continues its watchlist sweep: up to eight
+  pages of 200 entries per pass, each resolved to catalog identities and
+  recorded before the next page is read. The sweep position survives errors
+  and restarts, so a large watchlist is read over several passes without
+  starting again from the first page. Accounts that waited longest are polled
+  first, so one large watchlist does not hold up the others.
+- Entries that left the watchlist are removed only after a sweep reads the
+  whole list without it changing in between. If the list changes during a
+  sweep, nothing is removed and a new sweep starts; a failed page removes
+  nothing either. `GET /api/requesters` shows an unfinished sweep under
+  `sweep` (`position`, the upstream `total` and whether the list has stayed
+  `consistent`), and each sync reports the pages, requests and rows it used.
 - A series entry requests its aired, identified, regular episodes one by one.
   The series record created for it starts unmonitored, and automatic packs are
   not used for this demand.

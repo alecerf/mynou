@@ -114,7 +114,11 @@ a DHT client and PEX reception. Peer data uses TCP only.
   The primitives are checked with test vectors and local protocol tests, not an
   independent audit.
 - Plex, TMDB and sources need valid addresses and credentials. Plex
-  availability confirmation always uses a fresh response. Catalog responses used
+  availability confirmation always uses a fresh response. Plex watchlists and
+  library sections are read 200 items per request with no total item or page
+  count; availability checks stop at the first match within their 90-second
+  budget, and the single-account watchlist sync reads up to eight pages per
+  pass, resuming from a saved position. Catalog responses used
   for ordinary requests are cached for one hour (at most 256 entries and 32
   MiB); series planning bypasses that cache.
 
@@ -297,14 +301,20 @@ IRC announcements:
 
 ## Plex requester accounts
 
-- At most 32 account aliases and 32 destinations, 512 watchlist and expanded
-  items per account and 64 new requests per pass. Retained demands and operator
+- At most 32 account aliases and 32 destinations, and 64 new requests per
+  pass. Watchlists have no total entry, page or expanded-request count: each
+  pass reads up to eight pages of 200 entries per account and commits at most
+  512 demands at a time, and the sweep resumes there in the next pass.
+  Retained demands and operator
   interests have no total count or aggregate-byte cap in `requesters.idx`.
   Demand records keep a 16 MiB bound; pages hold up to 200 rows and 4 MiB,
   except one larger demand may appear alone. Legacy offsets stop at 10,000;
   `after` cursors reach further rows ([storage guide](inventory-storage.md#requester-storage)).
 - A poll pass has 90 seconds, with ten seconds per account for identity,
-  watchlist and catalog. Control files are limited to 64 KiB.
+  watchlist pages, catalog and retiring entries a finished sweep did not see.
+  Removals need a complete sweep during which the watchlist did not change, so
+  a list that changes during every sweep keeps its removed entries until it
+  stays still for one. Control files are limited to 64 KiB.
 - Requester demand is acquired episode by episode; automatic packs keep their
   separate operator rules.
 - Requester data uses job storage format 4, which earlier versions refuse.

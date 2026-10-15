@@ -1,5 +1,8 @@
 //! Independently authored synthetic requester inventory fixtures; CI only.
-use super::{Account, Capture, Demand, LedgerRead, Policy, RequesterStore, State, index};
+use super::{
+    Account, Capture, Demand, LedgerRead, Policy, RequesterStore, State,
+    index::{self, Progress, Stage, Sweep},
+};
 use crate::{
     config::{self, Config},
     crypto::{random_bytes, sha256},
@@ -443,7 +446,7 @@ fn only_a_completed_poll_generation_authorizes_removing_unseen_origins() {
     patch.accounts.get_mut("fixture").unwrap().cursor = 1;
     let origins = first.origins.clone();
     store
-        .save_poll_patch(patch, Some(("fixture", &origins)))
+        .save_poll_patch(patch, Some(publish("fixture", &origins, 1)))
         .unwrap();
     assert_eq!(store.demand(&first.id).unwrap(), Some(first.clone()));
     let removed = store.demand(&second.id).unwrap().unwrap();
@@ -455,4 +458,135 @@ fn only_a_completed_poll_generation_authorizes_removing_unseen_origins() {
     assert_eq!(store.demand(&first.id).unwrap(), Some(first));
     assert_eq!(store.demand(&second.id).unwrap().unwrap().state, "removed");
     assert!(!store.poll_ready("fixture").unwrap());
+}
+
+fn publish<'a>(account: &'a str, origins: &'a BTreeSet<String>, epoch: u64) -> Stage<'a> {
+    Stage {
+        account,
+        origins,
+        progress: Progress::Publish(Sweep::new(epoch, 1)),
+    }
+}
+
+fn staged<'a>(account: &'a str, origins: &'a BTreeSet<String>, epoch: u64) -> Stage<'a> {
+    let mut sweep = Sweep::new(epoch, 1);
+    sweep.cursor.position = 7;
+    sweep.cursor.anchor = Some([7; 32]);
+    Stage {
+        account,
+        origins,
+        progress: Progress::Continue(sweep),
+    }
+}
+
+fn origin_rows(directory: &Path) -> usize {
+    let mut index = Index::open(&directory.join("requesters.idx"), true).unwrap();
+    let (start, end) = index::range(14, &[]);
+    let mut after = None;
+    let mut rows = 0;
+    loop {
+        let page = index
+            .page(&crate::inventory::Query {
+                start,
+                end: Some(end),
+                after,
+                limit: MAX_PAGE_ROWS,
+                sequence: None,
+            })
+            .unwrap();
+        rows += page.entries.len();
+        after = page.next;
+        if after.is_none() {
+            return rows;
+        }
+    }
+}
+
+#[test]
+fn a_running_sweep_never_removes_and_keeps_new_origins_visible() {
+    let directory = Directory::new();
+    let config = config(&directory.0);
+    let mut store = RequesterStore::open(&directory.0, &config, false).unwrap();
+    store.initialize().unwrap();
+    let first = demand(&config, 1, 10);
+    let second = demand(&config, 2, 10);
+    let mut patch = store.state.clone();
+    patch.demands.insert(first.id.clone(), first.clone());
+    patch.accounts.get_mut("fixture").unwrap().cursor = 1;
+    store
+        .save_poll_patch(patch, Some(publish("fixture", &first.origins, 1)))
+        .unwrap();
+    while !store.poll_ready("fixture").unwrap() {
+        store.reconcile_origins("fixture").unwrap();
+    }
+    // Generation 2 stages only the second demand: the first keeps its origin
+    // because the sweep has not finished, and the new one is not removed by
+    // the still-published generation 1.
+    let mut patch = store.state.clone();
+    patch.demands.insert(second.id.clone(), second.clone());
+    store
+        .save_poll_patch(patch, Some(staged("fixture", &second.origins, 2)))
+        .unwrap();
+    assert_eq!(store.demand(&first.id).unwrap(), Some(first.clone()));
+    assert_eq!(store.demand(&second.id).unwrap(), Some(second.clone()));
+    let sweep = store.sweep("fixture").unwrap().unwrap();
+    assert_eq!((sweep.epoch, sweep.cursor.position), (2, 7));
+    drop(store);
+    // The sweep survives a restart and publishing it removes the unseen origin.
+    let mut store = RequesterStore::open(&directory.0, &config, false).unwrap();
+    store.initialize().unwrap();
+    assert_eq!(store.sweep("fixture").unwrap().unwrap().epoch, 2);
+    let mut patch = store.state.clone();
+    patch.accounts.get_mut("fixture").unwrap().cursor = 2;
+    store
+        .save_poll_patch(patch, Some(publish("fixture", &BTreeSet::new(), 2)))
+        .unwrap();
+    assert!(store.sweep("fixture").unwrap().is_none());
+    assert_eq!(store.demand(&first.id).unwrap().unwrap().state, "removed");
+    assert_eq!(store.demand(&second.id).unwrap(), Some(second));
+}
+
+#[test]
+fn sweep_generations_only_advance_and_stale_origin_rows_are_collected() {
+    let directory = Directory::new();
+    let config = config(&directory.0);
+    let mut store = RequesterStore::open(&directory.0, &config, false).unwrap();
+    store.initialize().unwrap();
+    let origins: BTreeSet<String> = (0..300).map(|n| format!("movie:synthetic-{n}")).collect();
+    // A generation at or below the published cursor is refused.
+    let patch = store.state.clone();
+    assert!(
+        store
+            .save_poll_patch(patch, Some(staged("fixture", &origins, 0)))
+            .is_err()
+    );
+    let mut peak = 0;
+    for epoch in 1..=12_u64 {
+        // Each generation stages its origins, then is published.
+        let patch = store.state.clone();
+        store
+            .save_poll_patch(patch, Some(staged("fixture", &origins, epoch)))
+            .unwrap();
+        let mut patch = store.state.clone();
+        patch.accounts.get_mut("fixture").unwrap().cursor = epoch;
+        store
+            .save_poll_patch(patch, Some(publish("fixture", &BTreeSet::new(), epoch)))
+            .unwrap();
+        while !store.poll_ready("fixture").unwrap() {
+            store.reconcile_origins("fixture").unwrap();
+        }
+        drop(store);
+        peak = peak.max(origin_rows(&directory.0));
+        store = RequesterStore::open(&directory.0, &config, false).unwrap();
+        store.initialize().unwrap();
+    }
+    // Without collection twelve generations would retain 3,600 rows; each
+    // commit examines a bounded window, so at most a few generations remain.
+    assert!(peak <= 4 * origins.len(), "{peak} origin rows retained");
+    let patch = store.state.clone();
+    assert!(
+        store
+            .save_poll_patch(patch, Some(staged("fixture", &origins, 12)))
+            .is_err()
+    );
 }

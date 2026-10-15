@@ -2,7 +2,7 @@
 use crate::{
     Result,
     config::Config,
-    integrations,
+    integrations::{self, SweepCursor},
     json::Value,
     media, organizer,
     store::{self, Job, RecordedRelease, Request, Store},
@@ -15,8 +15,11 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
+
+/// Watchlist pages read by one single-account sync pass.
+const WATCHLIST_PAGES: usize = 8;
 
 pub struct Engine {
     pub config: Config,
@@ -208,13 +211,37 @@ impl Engine {
             return Ok(lock(&self.store)?.counts()?.jobs.saturating_sub(before) as usize);
         }
         let _guard = lock(&self.sync_lock)?;
-        let requests = integrations::watchlist_identities(&self.config)?;
+        let deadline = Instant::now() + Duration::from_secs(90);
         let before = lock(&self.store)?.counts()?.jobs;
-        for request in requests {
-            if request.kind == "series" {
-                self.track_series(&request, false, false)?;
+        let mut cursor = lock(&self.store)?
+            .watchlist_cursor()?
+            .unwrap_or_else(SweepCursor::start);
+        // A bounded number of pages per pass; the durable cursor resumes the
+        // sweep in the next pass or after a restart.
+        for _ in 0..WATCHLIST_PAGES {
+            if self.stopped.load(Ordering::Acquire) || Instant::now() >= deadline {
+                break;
+            }
+            let page = integrations::watchlist_page_before(&self.config, &cursor, deadline)?;
+            // Submissions are idempotent, so an interrupted page is read again.
+            for (_, request) in page.entries {
+                if request.kind == "series" {
+                    self.track_series(&request, false, false)?;
+                } else {
+                    self.submit(request)?;
+                }
+            }
+            // Nothing is removed without requester accounts, so a changed
+            // listing only means the next sweep reads it again from the top.
+            let finished = page.complete;
+            cursor = if finished {
+                SweepCursor::start()
             } else {
-                self.submit(request)?;
+                page.next
+            };
+            lock(&self.store)?.save_watchlist_cursor(&cursor)?;
+            if finished {
+                break;
             }
         }
         Ok(lock(&self.store)?.counts()?.jobs.saturating_sub(before) as usize)

@@ -8,8 +8,9 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use mynou::config::{self, Config, Source};
-use mynou::integrations;
+use mynou::integrations::{self, SweepCursor};
 use mynou::store::Request;
+use std::sync::Mutex;
 
 struct Fixture {
     url: String,
@@ -74,6 +75,53 @@ impl Drop for Fixture {
 
 fn config() -> Config {
     config::from_json(&config::default_json(), Path::new(".")).unwrap()
+}
+
+/// Reads a whole watchlist sweep page by page, as the service does in passes.
+fn sweep(config: &Config) -> Result<(Vec<Request>, SweepCursor), String> {
+    let mut cursor = SweepCursor::start();
+    let mut requests = Vec::new();
+    loop {
+        let page = integrations::watchlist_page(config, &cursor)?;
+        requests.extend(page.entries.into_iter().map(|(_, request)| request));
+        if page.complete {
+            return Ok((requests, page.next));
+        }
+        assert!(
+            page.next.position > cursor.position,
+            "sweep made no progress"
+        );
+        cursor = page.next;
+    }
+}
+
+/// A Plex listing that honors `X-Plex-Container-Start` and serves at most
+/// `page` items per response, whatever size was requested.
+fn listing(path: &str, items: &[String], page: usize) -> String {
+    let start = path
+        .split(['?', '&'])
+        .find_map(|pair| pair.strip_prefix("X-Plex-Container-Start="))
+        .map_or(0, |start| start.parse::<usize>().unwrap());
+    let size = path
+        .split(['?', '&'])
+        .find_map(|pair| pair.strip_prefix("X-Plex-Container-Size="))
+        .map_or(page, |size| size.parse::<usize>().unwrap())
+        .min(page);
+    let end = items.len().min(start + size);
+    let slice = &items[start.min(end)..end];
+    format!(
+        r#"{{"MediaContainer":{{"size":{},"totalSize":{},"Metadata":[{}]}}}}"#,
+        slice.len(),
+        items.len(),
+        slice.join(",")
+    )
+}
+
+fn watchlist_movie(id: usize) -> String {
+    format!(
+        r#"{{"type":"movie","title":"Synthetic {id}","year":2024,"ratingKey":"{id}","Guid":[{{"id":"tmdb://{}"}}]}}"#,
+        id + 1
+    )
 }
 
 fn movie() -> Request {
@@ -143,7 +191,8 @@ fn plex_watchlist_deduplicates_and_verifies_playable_library_entry() {
     config.plex.url = fixture.url.clone();
     config.plex.watchlist_url = format!("{}/watchlist", fixture.url);
     config.plex.token_override = Some("fixture-secret".into());
-    let requests = integrations::watchlist(&config).unwrap();
+    let (requests, end) = sweep(&config).unwrap();
+    assert!(end.consistent);
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].tmdb_id, Some(42));
     integrations::refresh(&config, &requests[0]).unwrap();
@@ -219,7 +268,8 @@ fn plex_pagination_fetches_remaining_items_and_rejects_ignored_offset() {
     config.plex.enabled = true;
     config.plex.watchlist_url = format!("{}/watchlist", fixture.url);
     config.plex.token_override = Some("fixture".into());
-    let requests = integrations::watchlist(&config).unwrap();
+    let (requests, end) = sweep(&config).unwrap();
+    assert!(end.consistent);
     assert_eq!(requests.len(), 2);
     assert_eq!(requests[1].tmdb_id, Some(43));
 
@@ -227,11 +277,7 @@ fn plex_pagination_fetches_remaining_items_and_rejects_ignored_offset() {
         (200, r#"{"MediaContainer":{"size":1,"totalSize":2,"Metadata":[{"type":"movie","title":"Fixture","year":2024}]}}"#.into())
     });
     config.plex.watchlist_url = ignored.url.clone();
-    assert!(
-        integrations::watchlist(&config)
-            .unwrap_err()
-            .contains("pagination")
-    );
+    assert!(sweep(&config).unwrap_err().contains("pagination"));
 }
 
 #[test]
@@ -403,4 +449,143 @@ fn catalog_http_errors_and_malformed_json_are_never_cached() {
         assert!(integrations::expand(&config, &series).is_err());
     }
     assert_eq!(requests.load(Ordering::Relaxed), 4);
+}
+
+#[test]
+fn watchlist_sweep_reaches_every_item_beyond_former_item_and_page_limits() {
+    // 100,100 items served 100 per response: more items than the former
+    // 100,000-item total and more pages than the former 1,000-page total.
+    let items: Arc<Vec<String>> = Arc::new((0..100_100).map(watchlist_movie).collect());
+    let served = Arc::new(AtomicUsize::new(0));
+    let largest = Arc::new(AtomicUsize::new(0));
+    let (listing_items, requests, widest) = (items.clone(), served.clone(), largest.clone());
+    let fixture = Fixture::open(move |path, _| {
+        requests.fetch_add(1, Ordering::AcqRel);
+        let body = listing(path, &listing_items, 100);
+        widest.fetch_max(body.matches(r#""type":"movie""#).count(), Ordering::AcqRel);
+        (200, body)
+    });
+    let mut config = config();
+    config.plex.enabled = true;
+    config.plex.watchlist_url = format!("{}/watchlist", fixture.url);
+    config.plex.token_override = Some("fixture".into());
+    let (requests, end) = sweep(&config).unwrap();
+    assert!(end.consistent);
+    assert_eq!(end.position, 100_100);
+    assert_eq!(requests.len(), 100_100);
+    let ids: std::collections::BTreeSet<_> = requests.iter().map(|r| r.tmdb_id).collect();
+    assert_eq!(ids.len(), 100_100);
+    // Every response held one page; each later page re-reads one anchor item.
+    assert_eq!(largest.load(Ordering::Acquire), 100);
+    let pages = served.load(Ordering::Acquire);
+    assert!((1_001..=1_012).contains(&pages), "{pages} requests");
+}
+
+#[test]
+fn watchlist_sweeps_resume_after_errors_and_flag_changed_or_shrinking_listings() {
+    let items = Arc::new(Mutex::new((0..10).map(watchlist_movie).collect::<Vec<_>>()));
+    let failing = Arc::new(AtomicBool::new(false));
+    let (served, fail) = (items.clone(), failing.clone());
+    let fixture = Fixture::open(move |path, _| {
+        if fail.load(Ordering::Acquire) {
+            return (503, String::new());
+        }
+        (200, listing(path, &served.lock().unwrap(), 4))
+    });
+    let mut config = config();
+    config.plex.enabled = true;
+    config.plex.watchlist_url = format!("{}/watchlist", fixture.url);
+    config.plex.token_override = Some("fixture".into());
+    let read = |cursor: &SweepCursor| integrations::watchlist_page(&config, cursor);
+
+    // An upstream error leaves the cursor usable: the sweep resumes where it
+    // stopped and still sees every item exactly once.
+    let first = read(&SweepCursor::start()).unwrap();
+    assert_eq!((first.entries.len(), first.complete), (4, false));
+    failing.store(true, Ordering::Release);
+    assert!(read(&first.next).is_err());
+    failing.store(false, Ordering::Release);
+    let mut cursor = first.next.clone();
+    let mut seen: Vec<_> = first.entries.iter().map(|(_, r)| r.tmdb_id).collect();
+    loop {
+        let page = read(&cursor).unwrap();
+        seen.extend(page.entries.iter().map(|(_, r)| r.tmdb_id));
+        cursor = page.next;
+        if page.complete {
+            break;
+        }
+    }
+    assert!(cursor.consistent);
+    assert_eq!(seen, (1..=10).map(Some).collect::<Vec<_>>());
+    // Each entry carries the cursor that resumes right after it.
+    assert_eq!(first.entries[1].0.position, 2);
+    let resumed = read(&first.entries[1].0).unwrap();
+    assert_eq!(resumed.entries[0].1.tmdb_id, Some(3));
+
+    // An item added before the cursor shifts the listing: the sweep still
+    // reads on, but may not prove anything about removals.
+    let first = read(&SweepCursor::start()).unwrap();
+    items.lock().unwrap().insert(0, watchlist_movie(99));
+    let mut cursor = first.next;
+    let end = loop {
+        let page = read(&cursor).unwrap();
+        cursor = page.next;
+        if page.complete {
+            break cursor;
+        }
+    };
+    assert!(!end.consistent);
+
+    // A listing that shrank below the cursor ends the sweep inconsistently.
+    let first = read(&SweepCursor::start()).unwrap();
+    items.lock().unwrap().truncate(2);
+    let page = read(&first.next).unwrap();
+    assert!(page.complete && !page.next.consistent);
+
+    // An unchanged listing ends consistently.
+    let (all, end) = sweep(&config).unwrap();
+    assert_eq!(all.len(), 2);
+    assert!(end.consistent);
+}
+
+#[test]
+fn plex_availability_scans_listings_beyond_the_former_item_limit_one_page_at_a_time() {
+    let matching = r#"{"title":"Fixture Movie","year":2024,"Guid":[{"id":"tmdb://42"}],"Media":[{"Part":[{"file":"/media/fixture.mp4"}]}]}"#;
+    let mut items: Vec<String> = (0..100_000)
+        .map(|n| {
+            format!(
+                r#"{{"title":"Fixture Movie","year":2024,"Guid":[{{"id":"tmdb://{}"}}]}}"#,
+                n + 100
+            )
+        })
+        .collect();
+    items.push(matching.into());
+    let items = Arc::new(Mutex::new(items));
+    let served = Arc::new(AtomicUsize::new(0));
+    let (listing_items, requests) = (items.clone(), served.clone());
+    let fixture = Fixture::open(move |path, _| {
+        assert!(path.starts_with("/library/sections/1/all"));
+        requests.fetch_add(1, Ordering::AcqRel);
+        (200, listing(path, &listing_items.lock().unwrap(), 200))
+    });
+    let mut config = config();
+    config.plex.enabled = true;
+    config.plex.url = fixture.url.clone();
+    config.plex.token_override = Some("fixture".into());
+    // The only playable copy is item 100,001: every page is read in turn.
+    assert!(integrations::available(&config, &movie()).unwrap());
+    assert_eq!(served.load(Ordering::Acquire), 501);
+    let mut absent = movie();
+    absent.tmdb_id = Some(7);
+    served.store(0, Ordering::Release);
+    assert!(!integrations::available(&config, &absent).unwrap());
+    assert_eq!(served.load(Ordering::Acquire), 501);
+    // A match on the first page stops reading at once.
+    let mut listing_now = items.lock().unwrap();
+    let last = listing_now.pop().unwrap();
+    listing_now.insert(0, last);
+    drop(listing_now);
+    served.store(0, Ordering::Release);
+    assert!(integrations::available(&config, &movie()).unwrap());
+    assert_eq!(served.load(Ordering::Acquire), 1);
 }

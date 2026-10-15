@@ -16,8 +16,10 @@ use crate::selection::{Assessment, Profile, tokens};
 use crate::store::{RecordedRelease, Request};
 use crate::xml::{MAX_XML, parse_xml};
 
+/// Items of one parsed response or one catalog plan; never an inventory total.
 const MAX_ITEMS: usize = 100_000;
-const MAX_PAGES: usize = 1_000;
+/// Items requested per Plex page. Listings are read page by page under a
+/// deadline, so no total item or page count applies.
 const PAGE_SIZE: usize = 200;
 const MAX_REPORTED_CANDIDATES: usize = 1_000;
 const MAX_CANDIDATE_BYTES: usize = 16 * 1024 * 1024;
@@ -225,44 +227,67 @@ fn metadata_page(value: &Value) -> Result<(&[Value], Option<u64>)> {
     Ok((items, integer(container, "totalSize")))
 }
 
-fn plex_items_before(
+/// One Plex listing page read from an absolute item offset.
+fn plex_page_before(
+    url: &str,
+    headers: &[(String, String)],
+    start: u64,
+    deadline: Instant,
+) -> Result<(Vec<Value>, Option<u64>)> {
+    let url = query(
+        url,
+        &[
+            ("X-Plex-Container-Start", start.to_string()),
+            ("X-Plex-Container-Size", PAGE_SIZE.to_string()),
+            ("includeGuids", "1".into()),
+        ],
+    )?;
+    let value = fetch_json_before(&url, headers, deadline)?;
+    let (items, total) = metadata_page(&value)?;
+    Ok((items.to_vec(), total))
+}
+
+/// Whether a page ends the listing: the reported total is reached, or a short
+/// page ends a listing without a total.
+fn last_page(end: u64, total: Option<u64>, returned: usize) -> bool {
+    total.map_or(returned < PAGE_SIZE, |total| end >= total)
+}
+
+/// Visits a Plex listing one page at a time until `visit` returns true. Only
+/// one page is held; the deadline, not an item or page count, ends a listing
+/// that keeps growing.
+fn plex_find_before(
     url: &str,
     headers: &[(String, String)],
     deadline: Instant,
-    limit: usize,
-) -> Result<Vec<Value>> {
-    let mut out = Vec::new();
-    for page in 0..MAX_PAGES {
-        let url = query(
-            url,
-            &[
-                ("X-Plex-Container-Start", out.len().to_string()),
-                ("X-Plex-Container-Size", PAGE_SIZE.to_string()),
-                ("includeGuids", "1".into()),
-            ],
-        )?;
-        let value = fetch_json_before(&url, headers, deadline)?;
-        let (items, total) = metadata_page(&value)?;
-        if out.len() + items.len() > limit || total.is_some_and(|n| n > limit as u64) {
-            return Err("Plex: too many items".into());
-        }
+    mut visit: impl FnMut(&Value) -> Result<bool>,
+) -> Result<bool> {
+    let mut start = 0_u64;
+    let mut previous: Option<Value> = None;
+    loop {
+        let (items, total) = plex_page_before(url, headers, start, deadline)?;
         if items.is_empty() {
-            if total.is_some_and(|n| n > out.len() as u64) {
+            if total.is_some_and(|n| n > start) {
                 return Err("Plex: incomplete pagination".into());
             }
-            return Ok(out);
+            return Ok(false);
         }
-        if page > 0 && out.last() == items.last() {
+        if previous.is_some() && previous.as_ref() == items.last() {
             return Err("Plex: pagination ignored by the server".into());
         }
-        out.extend_from_slice(items);
-        if total.is_some_and(|n| out.len() as u64 >= n)
-            || (total.is_none() && items.len() < PAGE_SIZE)
-        {
-            return Ok(out);
+        for item in &items {
+            if visit(item)? {
+                return Ok(true);
+            }
         }
+        start = start
+            .checked_add(items.len() as u64)
+            .ok_or("Plex: item offset overflow")?;
+        if last_page(start, total, items.len()) {
+            return Ok(false);
+        }
+        previous = items.into_iter().last();
     }
-    Err("Plex: page count exceeds the limit".into())
 }
 
 fn tmdb_guid(item: &Value) -> Option<u64> {
@@ -278,88 +303,243 @@ fn tmdb_guid(item: &Value) -> Option<u64> {
     })
 }
 
-/// Reads the watchlist and expands series into episodes that have already aired.
-pub fn watchlist(config: &Config) -> Result<Vec<Request>> {
-    let mut out = Vec::new();
-    let mut seen = BTreeSet::new();
-    for request in watchlist_identities(config)? {
-        for expanded in expand(config, &request)? {
-            if out.len() >= MAX_ITEMS {
-                return Err("Watchlist: too many episodes".into());
-            }
-            if seen.insert(expanded.canonical_key()) {
-                out.push(expanded);
-            }
-        }
-    }
-    Ok(out)
+/// Durable position of a watchlist sweep. `anchor` identifies the item just
+/// before `position`; the next page re-reads it to detect a shifted listing.
+/// A sweep is `consistent` while no shift or total change was observed, and
+/// only a consistent complete sweep may prove that an item left the list.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SweepCursor {
+    pub position: u64,
+    pub total: Option<u64>,
+    pub anchor: Option<[u8; 32]>,
+    pub consistent: bool,
 }
 
-pub(crate) fn watchlist_identities(config: &Config) -> Result<Vec<Request>> {
-    watchlist_identities_before(config, Instant::now() + Duration::from_secs(90), MAX_ITEMS)
+impl SweepCursor {
+    pub const ENCODED_LEN: usize = 51;
+
+    /// The start of a new sweep.
+    pub fn start() -> Self {
+        Self {
+            consistent: true,
+            ..Self::default()
+        }
+    }
+
+    pub fn encode(&self) -> [u8; Self::ENCODED_LEN] {
+        let mut bytes = [0; Self::ENCODED_LEN];
+        bytes[..8].copy_from_slice(&self.position.to_be_bytes());
+        if let Some(total) = self.total {
+            bytes[8] = 1;
+            bytes[9..17].copy_from_slice(&total.to_be_bytes());
+        }
+        if let Some(anchor) = self.anchor {
+            bytes[17] = 1;
+            bytes[18..50].copy_from_slice(&anchor);
+        }
+        bytes[50] = u8::from(self.consistent);
+        bytes
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self> {
+        let invalid = || "Watchlist: invalid sweep cursor".to_owned();
+        if bytes.len() != Self::ENCODED_LEN
+            || bytes[8] > 1
+            || bytes[17] > 1
+            || bytes[50] > 1
+            || (bytes[8] == 0 && bytes[9..17].iter().any(|b| *b != 0))
+            || (bytes[17] == 0 && bytes[18..50].iter().any(|b| *b != 0))
+        {
+            return Err(invalid());
+        }
+        let cursor = Self {
+            position: u64::from_be_bytes(bytes[..8].try_into().map_err(|_| invalid())?),
+            total: (bytes[8] == 1)
+                .then(|| bytes[9..17].try_into().map(u64::from_be_bytes))
+                .transpose()
+                .map_err(|_| invalid())?,
+            anchor: (bytes[17] == 1)
+                .then(|| bytes[18..50].try_into())
+                .transpose()
+                .map_err(|_| invalid())?,
+            consistent: bytes[50] == 1,
+        };
+        // An anchor names the item before a nonzero position.
+        if cursor.anchor.is_some() != (cursor.position > 0) {
+            return Err(invalid());
+        }
+        Ok(cursor)
+    }
 }
-fn watchlist_identities_before(
+
+/// One watchlist page. Each supported item carries the cursor that resumes
+/// right after it, so a caller may commit part of a page and resume later.
+pub struct WatchlistPage {
+    pub entries: Vec<(SweepCursor, Request)>,
+    pub next: SweepCursor,
+    /// The page reached the end of the listing; `next.consistent` says whether
+    /// the whole sweep saw one unchanged listing.
+    pub complete: bool,
+    /// Plex requests made for this page.
+    pub requests: u32,
+}
+
+/// Stable identity of a listing item; volatile fields such as view counts are
+/// excluded so that an unchanged list keeps its anchors.
+fn item_anchor(item: &Value) -> [u8; 32] {
+    let mut hash = Sha256::new();
+    for field in ["type", "ratingKey", "guid", "key", "title"] {
+        let text = string(item, field).unwrap_or_default();
+        hash.update(&(text.len() as u64).to_be_bytes());
+        hash.update(text.as_bytes());
+    }
+    hash.finalize()
+}
+
+/// A watchlist item as a request identity; other item types are skipped.
+fn watchlist_request(item: &Value) -> Result<Option<Request>> {
+    let kind = match string(item, "type") {
+        Some("movie") => "movie",
+        Some("show") => "series",
+        Some("episode") => "episode",
+        _ => return Ok(None),
+    };
+    let title = if kind == "episode" {
+        string(item, "grandparentTitle").or_else(|| string(item, "title"))
+    } else {
+        string(item, "title")
+    }
+    .ok_or("Plex: missing title")?;
+    let request = Request {
+        kind: kind.into(),
+        title: title.into(),
+        year: u32::try_from(
+            integer(
+                item,
+                if kind == "episode" {
+                    "grandparentYear"
+                } else {
+                    "year"
+                },
+            )
+            .unwrap_or(0),
+        )
+        .map_err(|_| "Plex: invalid year")?,
+        season: u32::try_from(integer(item, "parentIndex").unwrap_or(0))
+            .map_err(|_| "Plex: invalid season")?,
+        episode: u32::try_from(integer(item, "index").unwrap_or(0))
+            .map_err(|_| "Plex: invalid episode")?,
+        source_path: None,
+        source_url: None,
+        source_numbering: None,
+        tmdb_id: if kind == "episode" {
+            None
+        } else {
+            tmdb_guid(item)
+        },
+    };
+    request.validate()?;
+    Ok(Some(request))
+}
+
+/// Reads the next watchlist page of a sweep. Movies, series and episodes keep
+/// their watchlist identity; series are expanded by the caller.
+pub fn watchlist_page(config: &Config, cursor: &SweepCursor) -> Result<WatchlistPage> {
+    watchlist_page_before(config, cursor, Instant::now() + Duration::from_secs(90))
+}
+
+pub(crate) fn watchlist_page_before(
     config: &Config,
+    cursor: &SweepCursor,
     deadline: Instant,
-    limit: usize,
-) -> Result<Vec<Request>> {
+) -> Result<WatchlistPage> {
     if !config.plex.enabled {
-        return Ok(Vec::new());
+        return Ok(WatchlistPage {
+            entries: Vec::new(),
+            next: SweepCursor::start(),
+            complete: true,
+            requests: 0,
+        });
     }
     let headers = plex_headers(config)?;
-    let items = plex_items_before(&config.plex.watchlist_url, &headers, deadline, limit)?;
-    let mut out = Vec::new();
-    let mut seen = BTreeSet::new();
-    for item in items {
-        let kind = match string(&item, "type") {
-            Some("movie") => "movie",
-            Some("show") => "series",
-            Some("episode") => "episode",
-            _ => continue,
-        };
-        let title = if kind == "episode" {
-            string(&item, "grandparentTitle").or_else(|| string(&item, "title"))
+    let url = &config.plex.watchlist_url;
+    let mut consistent = cursor.consistent;
+    let mut requests = 1;
+    // Re-read the anchor so that a listing that moved since the previous page
+    // is noticed instead of silently skipping items.
+    let (mut start, (mut items, mut total)) = match cursor.anchor {
+        Some(_) => {
+            let start = cursor.position - 1;
+            (start, plex_page_before(url, &headers, start, deadline)?)
+        }
+        None => (
+            cursor.position,
+            plex_page_before(url, &headers, cursor.position, deadline)?,
+        ),
+    };
+    let mut skip = 0;
+    if let Some(anchor) = cursor.anchor {
+        if items.first().map(item_anchor) == Some(anchor) {
+            skip = 1;
+            // A server that returns fewer items than requested may answer
+            // with the anchor alone; read on from the position itself.
+            if items.len() == 1 && !last_page(cursor.position, total, PAGE_SIZE) {
+                requests += 1;
+                start = cursor.position;
+                (items, total) = plex_page_before(url, &headers, start, deadline)?;
+                skip = 0;
+            }
         } else {
-            string(&item, "title")
+            consistent = false;
         }
-        .ok_or("Plex: missing title")?;
-        let request = Request {
-            kind: kind.into(),
-            title: title.into(),
-            year: u32::try_from(
-                integer(
-                    &item,
-                    if kind == "episode" {
-                        "grandparentYear"
-                    } else {
-                        "year"
-                    },
-                )
-                .unwrap_or(0),
-            )
-            .map_err(|_| "Plex: invalid year")?,
-            season: u32::try_from(integer(&item, "parentIndex").unwrap_or(0))
-                .map_err(|_| "Plex: invalid season")?,
-            episode: u32::try_from(integer(&item, "index").unwrap_or(0))
-                .map_err(|_| "Plex: invalid episode")?,
-            source_path: None,
-            source_url: None,
-            source_numbering: None,
-            tmdb_id: if kind == "episode" {
-                None
-            } else {
-                tmdb_guid(&item)
-            },
-        };
-        request.validate()?;
-        if out.len() >= MAX_ITEMS {
-            return Err("Watchlist: too many requests".into());
-        }
-        if seen.insert(request.canonical_key()) {
-            out.push(request);
+        // The page that ended at the anchor came back again.
+        if items.len() > skip && items.last().map(item_anchor) == Some(anchor) {
+            return Err("Plex: pagination ignored by the server".into());
         }
     }
-    Ok(out)
+    let sweep_total = if cursor.position == 0 {
+        total
+    } else {
+        cursor.total
+    };
+    if total != sweep_total {
+        consistent = false;
+    }
+    let end = start
+        .checked_add(items.len() as u64)
+        .ok_or("Plex: item offset overflow")?;
+    if items.len() <= skip && total.is_some_and(|n| n > start.saturating_add(skip as u64)) {
+        // The listing shrank below the cursor or the server stopped early.
+        consistent = false;
+    }
+    let complete = items.len() <= skip || last_page(end, total, items.len());
+    let mut entries = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut after = SweepCursor {
+        position: cursor.position,
+        total: sweep_total,
+        anchor: cursor.anchor,
+        consistent,
+    };
+    for (index, item) in items.iter().enumerate().skip(skip) {
+        after = SweepCursor {
+            position: start + index as u64 + 1,
+            total: sweep_total,
+            anchor: Some(item_anchor(item)),
+            consistent,
+        };
+        if let Some(request) = watchlist_request(item)?
+            && seen.insert(request.canonical_key())
+        {
+            entries.push((after.clone(), request));
+        }
+    }
+    Ok(WatchlistPage {
+        entries,
+        next: after,
+        complete,
+        requests,
+    })
 }
 
 fn fetch_json_before(url: &str, headers: &[(String, String)], deadline: Instant) -> Result<Value> {
@@ -377,13 +557,18 @@ fn fetch_json_before(url: &str, headers: &[(String, String)], deadline: Instant)
     json::parse(std::str::from_utf8(&response.body).map_err(|_| "Plex: invalid UTF-8")?)
         .map_err(|_| "Plex: invalid JSON response".into())
 }
-pub(crate) fn requester_watchlist(
+/// The next page of a requester account's watchlist sweep, after confirming
+/// that the account token still belongs to the expected Plex user.
+pub(crate) fn requester_watchlist_page(
     config: &Config,
     account: &crate::requesters::Account,
+    cursor: &SweepCursor,
     deadline: Instant,
-) -> Result<Vec<Request>> {
+) -> Result<WatchlistPage> {
     let cfg = verified_requester_config_before(config, account, deadline)?;
-    watchlist_identities_before(&cfg, deadline, crate::requesters::MAX_POLL_ITEMS)
+    let mut page = watchlist_page_before(&cfg, cursor, deadline)?;
+    page.requests += 1;
+    Ok(page)
 }
 
 pub(crate) fn requester_identity_before(
@@ -1784,8 +1969,9 @@ pub fn available_import(config: &Config, request: &Request, imports: &[String]) 
     if !matches!(request.kind.as_str(), "movie" | "episode") {
         return Err("Plex: import confirmation requires a movie or episode".into());
     }
-    if imports.len() > MAX_ITEMS || config.plex.path_mappings.len() > 32 {
-        return Err("Plex: too many import paths or path mappings".into());
+    // Import paths are bounded by their total bytes below, not by a count.
+    if config.plex.path_mappings.len() > 32 {
+        return Err("Plex: too many path mappings".into());
     }
     let mut mappings = Vec::new();
     let mut prefixes = BTreeSet::new();
@@ -1891,14 +2077,13 @@ fn plex_available_before(
             ("title", request.title.clone()),
         ],
     )?;
-    let items = plex_items_before(&url, &headers, deadline, MAX_ITEMS)?;
-    for item in items.iter().filter(|item| identity_matches(item, request)) {
+    plex_find_before(&url, &headers, deadline, |item| {
+        if !identity_matches(item, request) {
+            return Ok(false);
+        }
         remaining_search_time(deadline)?;
         if !episode {
-            if matches(item) {
-                return Ok(true);
-            }
-            continue;
+            return Ok(matches(item));
         }
         let key = string(item, "ratingKey").ok_or("Plex: missing series ratingKey")?;
         if key.is_empty() || !key.bytes().all(|b| b.is_ascii_digit()) {
@@ -1908,17 +2093,15 @@ fn plex_available_before(
             &config.plex.url,
             &format!("library/metadata/{key}/allLeaves"),
         )?;
-        for episode in plex_items_before(&leaves, &headers, deadline, MAX_ITEMS)? {
+        plex_find_before(&leaves, &headers, deadline, |episode| {
             remaining_search_time(deadline)?;
-            if integer(&episode, "parentIndex") == Some(u64::from(request.season))
-                && integer(&episode, "index") == Some(u64::from(request.episode))
-                && matches(&episode)
-            {
-                return Ok(true);
-            }
-        }
-    }
-    Ok(false)
+            Ok(
+                integer(episode, "parentIndex") == Some(u64::from(request.season))
+                    && integer(episode, "index") == Some(u64::from(request.episode))
+                    && matches(episode),
+            )
+        })
+    })
 }
 
 struct RssItem {

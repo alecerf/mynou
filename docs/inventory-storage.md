@@ -372,10 +372,16 @@ captured configuration without loading the inventory. Policy revisions fence
 new admissions; unadmitted demand adopts current policy during bounded admission
 passes. Durable reservation precedes job creation. Admission examines up to 200
 rows and admits at most 64 per pass; outcome reconciliation and origin retirement
-continue through persisted cursors. A successful complete upstream poll publishes
-an origin generation, and a later poll waits until its retirement pass finishes.
-Failed or partial reads never authorize removing an unseen origin. The upstream
-512-item/expanded-request batch limit remains.
+continue through persisted cursors. Each account keeps one watchlist sweep
+record: its position, the anchor item that detects a shifted listing, the
+upstream total and a staged origin generation. Every page commits its demands,
+origins and the new position in one transaction of at most 512 demands. Only a
+sweep that reached the end of an unchanged listing publishes its generation,
+and the next sweep waits until the retirement pass finishes. Failed, partial or
+shifted reads never authorize removing an unseen origin. Origin rows of
+generations that are neither published nor staged are deleted a bounded window
+at a time. Earlier binaries ignore the sweep record and poll as before; after
+upgrading again, a sweep older than their last poll is discarded.
 
 ### Requester migration and downgrade
 

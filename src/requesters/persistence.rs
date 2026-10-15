@@ -275,7 +275,7 @@ impl RequesterStore {
     pub(crate) fn save_poll_patch(
         &mut self,
         mut patch: State,
-        poll: Option<(&str, &BTreeSet<String>)>,
+        stage: Option<index::Stage<'_>>,
     ) -> Result<()> {
         self.available()?;
         if self.read_only {
@@ -306,7 +306,7 @@ impl RequesterStore {
             return Err("Requester: checked migration must precede a patch".into());
         };
         let metadata = header(&patch);
-        let result = index::commit_poll(index, &metadata, &demands, &operators, poll);
+        let result = index::commit_poll(index, &metadata, &demands, &operators, stage);
         if result.is_err() && !index.is_usable() {
             self.poisoned = true;
         }
@@ -425,6 +425,14 @@ impl RequesterStore {
                         && state_name.is_none_or(|name| name == d.state)
                 })
                 .count() as u64),
+        }
+    }
+    /// The unfinished watchlist sweep of an account, if any.
+    pub(crate) fn sweep(&self, account: &str) -> Result<Option<index::Sweep>> {
+        self.available()?;
+        match &mut *self.backend.borrow_mut() {
+            Backend::Ready(index) => index::sweep(index, account),
+            Backend::Legacy { .. } => Ok(None),
         }
     }
     pub(crate) fn poll_ready(&self, account: &str) -> Result<bool> {

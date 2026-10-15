@@ -40,6 +40,31 @@ pub fn container(items: Vec<Value>) -> Value {
     v.insert("MediaContainer", c);
     v
 }
+/// Serves the requested window of a listing as Plex does, at most 200 items.
+fn paginate(mut value: Value, target: &str) -> Value {
+    let field = |name: &str| {
+        target
+            .split(['?', '&'])
+            .find_map(|pair| pair.strip_prefix(name)?.strip_prefix('='))
+            .map(|n| n.parse::<usize>().unwrap())
+    };
+    let (Some(start), Some(size)) = (
+        field("X-Plex-Container-Start"),
+        field("X-Plex-Container-Size"),
+    ) else {
+        return value;
+    };
+    let Some(Value::Object(container)) = value.get_mut("MediaContainer") else {
+        return value;
+    };
+    if let Some(Value::Array(items)) = container.get_mut("Metadata") {
+        let end = items.len().min(start + size.min(200));
+        *items = items[start.min(end)..end].to_vec();
+        let size = items.len();
+        container.insert("size".into(), Value::Number(size as f64));
+    }
+    value
+}
 impl Accounts {
     pub fn open() -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -113,7 +138,7 @@ impl Accounts {
                     .get(path)
                     .cloned()
                     .unwrap_or((404, Value::Null));
-                let body = json::stringify(&value);
+                let body = json::stringify(&paginate(value, target));
                 write!(stream,"HTTP/1.1 {status} Fixture\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
             }
         });

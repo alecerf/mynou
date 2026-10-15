@@ -1,7 +1,9 @@
 //! Account I/O precedes admission. Snapshot reservations precede queued jobs.
 use super::{
-    Capture, ControlRequest, Demand, LedgerRead, MAX_OFFSET, MAX_POLL_ITEMS, Policy, Provenance,
-    Record, digest, valid_id,
+    Capture, ControlRequest, Demand, LedgerRead, MAX_BATCH_ITEMS, MAX_OFFSET, Policy, Provenance,
+    Record, digest,
+    index::{Progress, Stage, Sweep},
+    valid_id,
 };
 use crate::{
     Result, date,
@@ -16,11 +18,6 @@ use std::{
     sync::atomic::Ordering,
     time::{Duration, Instant},
 };
-
-struct Watchlist {
-    origins: BTreeSet<String>,
-    requests: Vec<(String, Request)>,
-}
 
 /// The job that currently represents a request's media: the library's current
 /// version, else the oldest request that is not an upgrade.
@@ -120,6 +117,7 @@ fn public_account(
         Value::Number(ledger.count(&record.id, Some("pending"))? as f64),
     );
     value.insert("origin_cleanup_pending", !ledger.poll_ready(&record.id)?);
+    value.insert("sweep", sweep_value(ledger.sweep(&record.id)?.as_ref()));
     Ok(value)
 }
 
@@ -622,6 +620,9 @@ impl Engine {
         }
         Ok(())
     }
+    /// Advances every account's watchlist sweep by a bounded number of pages.
+    /// Accounts polled least recently go first, so one large watchlist resumes
+    /// in later passes instead of starving the others.
     pub fn sync_requesters(&self) -> Result<Value> {
         if self.read_only {
             return Err("Requester polling requires a running writable service".into());
@@ -633,11 +634,18 @@ impl Engine {
         let mut accounts: Vec<_> = self.config.requesters.accounts.iter().collect();
         accounts.sort_by_key(|a| (attempted[&a.id].polled_at, a.id.clone()));
         for account in accounts {
+            let account_deadline = deadline.min(Instant::now() + Duration::from_secs(10));
             {
-                let mut ledger = lock(&self.requester_store)?;
-                if !ledger.poll_ready(&account.id)? {
+                // Retiring the origins a published sweep did not see shares the
+                // account's time budget, one bounded page per lock.
+                for _ in 0..CLEANUP_PAGES {
+                    let mut ledger = lock(&self.requester_store)?;
+                    if ledger.poll_ready(&account.id)? || Instant::now() >= account_deadline {
+                        break;
+                    }
                     ledger.reconcile_origins(&account.id)?;
                 }
+                let ledger = lock(&self.requester_store)?;
                 if !ledger.poll_ready(&account.id)? {
                     let mut report = Value::object();
                     report.insert("account_id", account.id.clone());
@@ -647,94 +655,35 @@ impl Engine {
                     continue;
                 }
             }
-            let previous = lock(&self.requester_store)?
-                .state
-                .accounts
-                .get(&account.id)
-                .ok_or("Requester: missing account")?
-                .clone();
-            let account_deadline = deadline.min(Instant::now() + Duration::from_secs(10));
-            let result = if self.stopped.load(Ordering::Acquire) || Instant::now() >= deadline {
-                Err("Plex account poll deadline reached".into())
-            } else {
-                integrations::requester_watchlist(&self.config, account, account_deadline)
-                    .and_then(|items| self.expand_requester_items(&items, account_deadline))
-                    .and_then(|items| {
-                        previous.policy.validate_config(&self.config)?;
-                        Ok(items)
-                    })
+            let mut progress = SweepReport::default();
+            let result = loop {
+                if progress.pages == SWEEP_PAGES {
+                    break Ok(());
+                }
+                if self.stopped.load(Ordering::Acquire) || Instant::now() >= account_deadline {
+                    break if progress.pages == 0 {
+                        Err("Plex account poll deadline reached".to_owned())
+                    } else {
+                        Ok(())
+                    };
+                }
+                match self.sweep_requester_page(account, account_deadline, &mut progress) {
+                    Ok(true) => break Ok(()),
+                    Ok(false) => {}
+                    Err(error) => break Err(error),
+                }
             };
             let mut report = Value::object();
             report.insert("account_id", account.id.clone());
             let mut ledger = lock(&self.requester_store)?;
-            let mut next = ledger.state.clone();
-            let current = next
-                .accounts
-                .get(&account.id)
-                .ok_or("Requester: missing account")?;
-            let result =
-                if current.revision != previous.revision || current.binding != previous.binding {
-                    Err("Plex account policy changed during poll".into())
-                } else {
-                    result
-                };
-            let mut completed = None;
             match result {
-                Ok(Watchlist { origins, requests }) => {
-                    let policy = &previous.policy;
-                    for (origin, request) in requests {
-                        let id = Demand::identity(&account.id, &request);
-                        let mut demand = if let Some(known) = next.demands.remove(&id) {
-                            known
-                        } else if let Some(known) = ledger.demand(&id)? {
-                            known
-                        } else {
-                            Demand {
-                                id: id.clone(),
-                                account_id: account.id.clone(),
-                                origins: BTreeSet::new(),
-                                request: request.clone(),
-                                revision: previous.revision,
-                                capture: Capture::new(&self.config, policy, &request.kind)?,
-                                state: "pending".into(),
-                                job_id: None,
-                                admitted_at: None,
-                                outcome: "pending".into(),
-                            }
-                        };
-                        demand
-                            .origins
-                            .retain(|known| known.starts_with("irc:") || origins.contains(known));
-                        demand.origins.insert(origin);
-                        if demand.job_id.is_none()
-                            && demand.admitted_at.is_none()
-                            && demand.revision != previous.revision
-                            && demand.state != "removed"
-                        {
-                            demand.capture = Capture::new(&self.config, policy, &request.kind)?;
-                            demand.revision = previous.revision;
-                            demand.state = "pending".into();
-                        }
-                        next.demands.insert(id, demand);
-                    }
-                    completed = Some(origins.clone());
-                    let current = next
+                Ok(()) => {
+                    let record = ledger
+                        .state
                         .accounts
-                        .get_mut(&account.id)
+                        .get(&account.id)
                         .ok_or("Requester: missing account")?;
-                    current.cursor = current
-                        .cursor
-                        .checked_add(1)
-                        .ok_or("Requester: cursor overflow")?;
-                    current.polled_at = store::now();
-                    current.last_error = None;
-                    current.snapshot = Some(digest(
-                        json::stringify(&Value::Array(
-                            origins.iter().cloned().map(Value::String).collect(),
-                        ))
-                        .as_bytes(),
-                    ));
-                    report.insert("cursor", current.cursor.to_string());
+                    report.insert("cursor", record.cursor.to_string());
                     report.insert("success", true);
                 }
                 Err(error) => {
@@ -749,6 +698,7 @@ impl Engine {
                     } else {
                         "Plex account poll failed".into()
                     };
+                    let mut next = ledger.state.clone();
                     let current = next
                         .accounts
                         .get_mut(&account.id)
@@ -757,16 +707,16 @@ impl Engine {
                         current.polled_at = store::now();
                     }
                     current.last_error = Some(error.clone());
+                    // Committed batches stay; the sweep resumes from its cursor.
+                    ledger.save_patch(next)?;
                     report.insert("error", error);
                     report.insert("success", false);
                 }
             }
-            ledger.save_poll_patch(
-                next,
-                completed
-                    .as_ref()
-                    .map(|origins| (account.id.as_str(), origins)),
-            )?;
+            report.insert(
+                "sweep",
+                progress.to_json(ledger.sweep(&account.id)?.as_ref()),
+            );
             let mut jobs = lock(&self.store)?;
             self.admit_requester_demand(&mut ledger, &mut jobs)?;
             reports.push(report);
@@ -775,67 +725,304 @@ impl Engine {
         v.insert("accounts", Value::Array(reports));
         Ok(v)
     }
-    fn expand_requester_items(&self, items: &[Request], deadline: Instant) -> Result<Watchlist> {
-        let mut origins = BTreeSet::new();
-        let mut requests = Vec::new();
-        for item in items {
-            if Instant::now() >= deadline {
-                return Err("Plex account poll deadline reached".into());
-            }
+    /// Reads, expands and commits one watchlist page of an account's sweep.
+    /// Returns true when the sweep ended: published, or restarted because the
+    /// listing changed while it was read.
+    fn sweep_requester_page(
+        &self,
+        account: &crate::requesters::Account,
+        deadline: Instant,
+        progress: &mut SweepReport,
+    ) -> Result<bool> {
+        let (previous, mut sweep) = {
+            let ledger = lock(&self.requester_store)?;
+            let previous = ledger
+                .state
+                .accounts
+                .get(&account.id)
+                .ok_or("Requester: missing account")?
+                .clone();
+            // A sweep at or below the published generation is left over from
+            // a binary that polled without sweeps; it cannot be resumed.
+            let sweep = match ledger.sweep(&account.id)? {
+                Some(sweep) if sweep.epoch > previous.cursor => sweep,
+                _ => Sweep::new(
+                    previous
+                        .cursor
+                        .checked_add(1)
+                        .ok_or("Requester: cursor overflow")?,
+                    store::now(),
+                ),
+            };
+            (previous, sweep)
+        };
+        let page =
+            integrations::requester_watchlist_page(&self.config, account, &sweep.cursor, deadline)?;
+        progress.pages += 1;
+        progress.requests += u64::from(page.requests);
+        previous.policy.validate_config(&self.config)?;
+        let mut batch = Vec::new();
+        for (after, item) in page.entries {
             let origin = item.media_key();
-            origins.insert(origin.clone());
-            if item.kind == "movie" {
-                requests.push((
-                    origin,
-                    integrations::requester_movie_before(&self.config, item, deadline)?,
-                ));
+            let expanded = if Instant::now() >= deadline {
+                Err("Plex account poll deadline reached".to_owned())
             } else {
-                let mut identity = item.clone();
-                identity.kind = "series".into();
-                identity.validate()?;
-                let matches = lock(&self.series_store)?.matching(&identity)?;
-                if matches.len() > 1 {
-                    return Err("Requester: ambiguous retained catalog identity".into());
+                self.expand_requester_item(&origin, &item, deadline)
+            };
+            let expanded = match expanded {
+                Ok(expanded) => expanded,
+                Err(error) => {
+                    // Keep the items already resolved, so that a slow or
+                    // failing entry cannot make the sweep repeat its page.
+                    self.commit_sweep_batch(
+                        account,
+                        &previous,
+                        batch,
+                        Progress::Continue(sweep),
+                        progress,
+                    )?;
+                    return Err(error);
                 }
-                let previous = matches.into_iter().next();
-                let fetched_identity = previous.as_ref().map_or(&identity, |r| &r.plan.request);
-                let plan = integrations::series_plan_before(
-                    &self.config,
-                    fetched_identity,
-                    false,
-                    deadline,
+            };
+            if !batch.is_empty() && batch.len() + expanded.len() > MAX_BATCH_ITEMS {
+                let full = std::mem::take(&mut batch);
+                self.commit_sweep_batch(
+                    account,
+                    &previous,
+                    full,
+                    Progress::Continue(sweep.clone()),
+                    progress,
                 )?;
-                let record = if let Some(previous) = previous {
-                    let normalized = previous.normalize_catalog(plan)?;
-                    let mut checked = previous.clone();
-                    checked.accept_catalog(normalized)?;
-                    let mut series = lock(&self.series_store)?;
-                    if series.get(&previous.id)?.as_ref() != Some(&previous) {
-                        return Err("Requester: captured series scope changed during poll".into());
-                    }
-                    series.save(checked.clone())?;
-                    checked
-                } else {
-                    lock(&self.series_store)?.subscribe(plan, false, false, false, store::now())?
-                };
-                let today = date::today();
-                for e in &record.plan.episodes {
-                    if e.catalog_id.is_some()
-                        && e.season != 0
-                        && e.air_date
-                            .as_deref()
-                            .is_some_and(|date| date <= today.as_str())
-                    {
-                        requests.push((origin.clone(), record.episode_request(e)));
-                    }
-                }
             }
-            if requests.len() > MAX_POLL_ITEMS {
-                return Err("Requester: expanded account scope exceeds 512 requests".into());
+            // One item may expand beyond a batch; its earlier chunks keep the
+            // cursor before the item, so an interruption repeats the item.
+            let mut expanded = expanded;
+            while expanded.len() > MAX_BATCH_ITEMS {
+                let rest = expanded.split_off(MAX_BATCH_ITEMS);
+                let chunk = std::mem::replace(&mut expanded, rest);
+                self.commit_sweep_batch(
+                    account,
+                    &previous,
+                    chunk,
+                    Progress::Continue(sweep.clone()),
+                    progress,
+                )?;
             }
+            batch.extend(expanded);
+            sweep.cursor = after;
+            sweep.observe(&origin);
         }
-        Ok(Watchlist { origins, requests })
+        let mut finished = false;
+        let next = if page.complete && page.next.consistent {
+            finished = true;
+            sweep.cursor = page.next;
+            progress.published = true;
+            Progress::Publish(sweep)
+        } else if page.complete {
+            // The listing moved under the sweep: nothing may be inferred from
+            // it, so a new sweep with a new generation starts from the top.
+            finished = true;
+            progress.restarted = true;
+            Progress::Continue(Sweep::new(
+                sweep
+                    .epoch
+                    .checked_add(1)
+                    .ok_or("Requester: cursor overflow")?,
+                store::now(),
+            ))
+        } else {
+            sweep.cursor = page.next;
+            Progress::Continue(sweep)
+        };
+        self.commit_sweep_batch(account, &previous, batch, next, progress)?;
+        Ok(finished)
     }
+    /// Commits one bounded batch of demands together with the sweep progress.
+    fn commit_sweep_batch(
+        &self,
+        account: &crate::requesters::Account,
+        previous: &Record,
+        batch: Vec<(String, Request)>,
+        stage: Progress,
+        progress: &mut SweepReport,
+    ) -> Result<()> {
+        let mut ledger = lock(&self.requester_store)?;
+        let mut next = ledger.state.clone();
+        let current = next
+            .accounts
+            .get(&account.id)
+            .ok_or("Requester: missing account")?;
+        if current.revision != previous.revision || current.binding != previous.binding {
+            return Err("Plex account policy changed during poll".into());
+        }
+        let policy = &previous.policy;
+        let mut origins = BTreeSet::new();
+        progress.rows += batch.len() as u64;
+        for (origin, request) in batch {
+            let id = Demand::identity(&account.id, &request);
+            let mut demand = if let Some(known) = next.demands.remove(&id) {
+                known
+            } else if let Some(known) = ledger.demand(&id)? {
+                known
+            } else {
+                Demand {
+                    id: id.clone(),
+                    account_id: account.id.clone(),
+                    origins: BTreeSet::new(),
+                    request: request.clone(),
+                    revision: previous.revision,
+                    capture: Capture::new(&self.config, policy, &request.kind)?,
+                    state: "pending".into(),
+                    job_id: None,
+                    admitted_at: None,
+                    outcome: "pending".into(),
+                }
+            };
+            // Origins the published generation no longer holds were already
+            // dropped on read; the sweep only adds what it sees.
+            demand.origins.insert(origin.clone());
+            if demand.job_id.is_none()
+                && demand.admitted_at.is_none()
+                && demand.revision != previous.revision
+                && demand.state != "removed"
+            {
+                demand.capture = Capture::new(&self.config, policy, &request.kind)?;
+                demand.revision = previous.revision;
+                demand.state = "pending".into();
+            }
+            next.demands.insert(id, demand);
+            origins.insert(origin);
+        }
+        let current = next
+            .accounts
+            .get_mut(&account.id)
+            .ok_or("Requester: missing account")?;
+        current.polled_at = store::now();
+        current.last_error = None;
+        if let Progress::Publish(sweep) = &stage {
+            current.cursor = sweep.epoch;
+            current.snapshot = Some(
+                sweep
+                    .digest
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect(),
+            );
+        }
+        ledger.save_poll_patch(
+            next,
+            Some(Stage {
+                account: &account.id,
+                origins: &origins,
+                progress: stage,
+            }),
+        )?;
+        progress.commits += 1;
+        let mut jobs = lock(&self.store)?;
+        self.admit_requester_demand(&mut ledger, &mut jobs)
+    }
+    /// Requests one watchlist item stands for: a movie, or the aired episodes
+    /// of a series, all under the item's origin.
+    fn expand_requester_item(
+        &self,
+        origin: &str,
+        item: &Request,
+        deadline: Instant,
+    ) -> Result<Vec<(String, Request)>> {
+        if item.kind == "movie" {
+            return Ok(vec![(
+                origin.to_owned(),
+                integrations::requester_movie_before(&self.config, item, deadline)?,
+            )]);
+        }
+        let mut identity = item.clone();
+        identity.kind = "series".into();
+        identity.validate()?;
+        let matches = lock(&self.series_store)?.matching(&identity)?;
+        if matches.len() > 1 {
+            return Err("Requester: ambiguous retained catalog identity".into());
+        }
+        let previous = matches.into_iter().next();
+        let fetched_identity = previous.as_ref().map_or(&identity, |r| &r.plan.request);
+        let plan =
+            integrations::series_plan_before(&self.config, fetched_identity, false, deadline)?;
+        let record = if let Some(previous) = previous {
+            let normalized = previous.normalize_catalog(plan)?;
+            let mut checked = previous.clone();
+            checked.accept_catalog(normalized)?;
+            let mut series = lock(&self.series_store)?;
+            if series.get(&previous.id)?.as_ref() != Some(&previous) {
+                return Err("Requester: captured series scope changed during poll".into());
+            }
+            series.save(checked.clone())?;
+            checked
+        } else {
+            lock(&self.series_store)?.subscribe(plan, false, false, false, store::now())?
+        };
+        let today = date::today();
+        Ok(record
+            .plan
+            .episodes
+            .iter()
+            .filter(|e| {
+                e.catalog_id.is_some()
+                    && e.season != 0
+                    && e.air_date
+                        .as_deref()
+                        .is_some_and(|date| date <= today.as_str())
+            })
+            .map(|e| (origin.to_owned(), record.episode_request(e)))
+            .collect())
+    }
+}
+
+/// Watchlist pages read per account in one pass; the account deadline may
+/// stop it earlier.
+const SWEEP_PAGES: usize = 8;
+/// Retained-demand pages whose unseen origins one pass may retire.
+const CLEANUP_PAGES: usize = 64;
+
+/// What one pass did for an account: work counters bound the pass.
+#[derive(Default)]
+struct SweepReport {
+    pages: usize,
+    requests: u64,
+    rows: u64,
+    commits: u64,
+    published: bool,
+    restarted: bool,
+}
+impl SweepReport {
+    fn to_json(&self, sweep: Option<&Sweep>) -> Value {
+        let mut v = Value::object();
+        v.insert("pages", Value::Number(self.pages as f64));
+        v.insert("requests", Value::Number(self.requests as f64));
+        v.insert("rows", Value::Number(self.rows as f64));
+        v.insert("commits", Value::Number(self.commits as f64));
+        v.insert("published", self.published);
+        v.insert("restarted", self.restarted);
+        v.insert("progress", sweep_value(sweep));
+        v
+    }
+}
+/// The unfinished sweep of an account: how far it got in the listing.
+fn sweep_value(sweep: Option<&Sweep>) -> Value {
+    let Some(sweep) = sweep else {
+        return Value::Null;
+    };
+    let mut v = Value::object();
+    v.insert("generation", sweep.epoch.to_string());
+    v.insert("position", sweep.cursor.position.to_string());
+    v.insert(
+        "total",
+        sweep
+            .cursor
+            .total
+            .map_or(Value::Null, |total| total.to_string().into()),
+    );
+    v.insert("consistent", sweep.cursor.consistent);
+    v.insert("started_at", sweep.started_at.to_string());
+    v
 }
 
 pub(crate) fn validate_storage(

@@ -57,6 +57,8 @@ pub(super) const LIBRARY_COUNT_KEY: Key = single(T_META, 2);
 pub(super) const MONITOR_COUNTS_KEY: Key = single(T_META, 3);
 pub(super) const MONITOR_CURSOR_KEY: Key = single(T_META, 4);
 pub(super) const CHILD_CURSOR_KEY: Key = single(T_META, 5);
+/// Resume point of the single-account Plex watchlist sweep.
+pub(super) const WATCHLIST_CURSOR_KEY: Key = single(T_META, 6);
 pub(super) const MIGRATION_SOURCE_KEY: Key = single(T_MIGRATION, 0);
 pub(super) const MIGRATION_CURSOR_KEY: Key = single(T_MIGRATION, 1);
 

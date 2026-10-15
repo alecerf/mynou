@@ -44,3 +44,7 @@ Existing policy migrates automatically on writable startup; see
 ## Changed: Retain IRC announcements without a total history limit
 
 IRC history now lives in an on-disk index, removing the 1,000-identity / 8 MiB limits while retaining duplicate suppression across restart. Use `mynou announcements --limit 200 --after CURSOR` or the API’s `next_cursor` to page through the history. The first writable start preserves and migrates the old snapshot; older binaries reject the new marker, so downgrade requires a consistent stopped-store backup ([storage guide](/docs/inventory-storage.md#irc-announcement-storage)).
+
+## Changed: Read Plex watchlists and libraries of any size
+
+Watchlists are now read in resumable sweeps of 200-entry pages, up to eight pages per account in each pass, so the 512-entry requester watchlist limit and the 100,000-item and 1,000-page Plex limits are gone. A sweep resumes after errors and restarts, and entries that left a requester watchlist are removed only after a sweep that saw the whole list unchanged; `GET /api/requesters` shows the progress of an unfinished sweep ([guide](/docs/requesters.md#how-demand-is-handled)).

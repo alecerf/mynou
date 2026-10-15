@@ -1078,6 +1078,33 @@ impl Store {
         self.read(None, |db| db.get(id))
     }
 
+    /// Where the single-account watchlist sweep resumes; absent at the start.
+    pub(crate) fn watchlist_cursor(&mut self) -> Result<Option<crate::integrations::SweepCursor>> {
+        self.read(None, |db| {
+            db.0.get(&layout::WATCHLIST_CURSOR_KEY)?
+                .map(|bytes| crate::integrations::SweepCursor::decode(&bytes))
+                .transpose()
+        })
+    }
+
+    /// Records sweep progress. Before the first request creates the index
+    /// there is nothing to resume, so an absent store keeps no cursor.
+    pub(crate) fn save_watchlist_cursor(
+        &mut self,
+        cursor: &crate::integrations::SweepCursor,
+    ) -> Result<()> {
+        if matches!(self.backend, Backend::Absent) {
+            return Ok(());
+        }
+        self.mutate(|db| {
+            db.0.commit(vec![Change::Put(
+                layout::WATCHLIST_CURSOR_KEY,
+                cursor.encode().to_vec(),
+            )])
+            .map(|_| ())
+        })
+    }
+
     /// Identifies the stored state for stale-plan fences; changes on every commit.
     pub fn sequence(&mut self) -> Result<u64> {
         match &mut self.backend {

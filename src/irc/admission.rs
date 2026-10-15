@@ -379,7 +379,7 @@ impl Engine {
                 "IRC: retained demand differs from the claim or is a removal tombstone".into(),
             );
         }
-        if existing.is_some_and(|d| d.origins.len() >= requesters::MAX_POLL_ITEMS) {
+        if existing.is_some_and(|d| d.origins.len() >= requesters::MAX_BATCH_ITEMS) {
             return Err("IRC: requester origin capacity reached".into());
         }
         let capture = match existing {

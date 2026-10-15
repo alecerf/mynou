@@ -2,7 +2,8 @@
 use super::{Demand, State, valid_digest};
 use crate::{
     Result,
-    crypto::sha256,
+    crypto::{Sha256, sha256},
+    integrations::SweepCursor,
     inventory::{Change, Index, Key, MAX_PAGE_BYTES, MAX_PAGE_ROWS, MAX_VALUE_BYTES, Query},
     json,
 };
@@ -28,6 +29,12 @@ const CLEAN: u8 = 15;
 const PLEX: u8 = 16;
 pub(super) const ADMISSION_CURSOR: Key = key_const(17);
 pub(super) const OUTCOME_CURSOR: Key = key_const(18);
+const SWEEP: u8 = 19;
+const COLLECT: u8 = 20;
+const SWEEP_FORMAT: &[u8; 8] = b"MYNOUS01";
+const SWEEP_LEN: usize = 8 + 8 + SweepCursor::ENCODED_LEN + 32 + 8;
+/// Index rows of stale origin generations examined per staged commit.
+const COLLECT_ROWS: usize = 2 * MAX_PAGE_ROWS;
 pub(super) fn account_cursor(account: &str, id: &str) -> Result<Key> {
     Ok(prefix(ACCOUNT, &[&short(account), &raw(id)?]))
 }
@@ -118,6 +125,144 @@ pub(super) fn decode_count(bytes: Option<Vec<u8>>) -> Result<u64> {
 }
 pub(super) fn count(index: &mut Index, account: &str, state: u8) -> Result<u64> {
     decode_count(index.get(&counter(account, state))?)
+}
+
+/// Durable progress of one account's watchlist sweep. Origins seen by the
+/// sweep are staged under `epoch`, which is published only when the sweep
+/// reaches the end of a listing that did not change while it was read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Sweep {
+    pub epoch: u64,
+    pub cursor: SweepCursor,
+    /// Chained digest of the origins in the order the sweep saw them.
+    pub digest: [u8; 32],
+    pub started_at: u64,
+}
+impl Sweep {
+    pub(crate) fn new(epoch: u64, started_at: u64) -> Self {
+        Self {
+            epoch,
+            cursor: SweepCursor::start(),
+            digest: [0; 32],
+            started_at,
+        }
+    }
+    pub(crate) fn observe(&mut self, origin: &str) {
+        let mut hash = Sha256::new();
+        hash.update(&self.digest);
+        hash.update(&(origin.len() as u64).to_be_bytes());
+        hash.update(origin.as_bytes());
+        self.digest = hash.finalize();
+    }
+    fn encode(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(SWEEP_LEN);
+        bytes.extend_from_slice(SWEEP_FORMAT);
+        bytes.extend_from_slice(&self.epoch.to_be_bytes());
+        bytes.extend_from_slice(&self.cursor.encode());
+        bytes.extend_from_slice(&self.digest);
+        bytes.extend_from_slice(&self.started_at.to_be_bytes());
+        bytes
+    }
+    fn decode(bytes: &[u8]) -> Result<Self> {
+        let invalid = || "Requester: invalid watchlist sweep".to_owned();
+        if bytes.len() != SWEEP_LEN || &bytes[..8] != SWEEP_FORMAT {
+            return Err(invalid());
+        }
+        let cursor_end = 16 + SweepCursor::ENCODED_LEN;
+        let sweep = Self {
+            epoch: u64::from_be_bytes(bytes[8..16].try_into().map_err(|_| invalid())?),
+            cursor: SweepCursor::decode(&bytes[16..cursor_end])?,
+            digest: bytes[cursor_end..cursor_end + 32]
+                .try_into()
+                .map_err(|_| invalid())?,
+            started_at: u64::from_be_bytes(
+                bytes[cursor_end + 32..].try_into().map_err(|_| invalid())?,
+            ),
+        };
+        if sweep.epoch == 0 {
+            return Err(invalid());
+        }
+        Ok(sweep)
+    }
+}
+/// What a staged commit does with the account's sweep.
+pub(crate) enum Progress {
+    /// Records how far the sweep got; a restarted sweep uses a new epoch.
+    Continue(Sweep),
+    /// The sweep completed consistently: its epoch becomes the published
+    /// generation, which authorizes removing every origin it did not see.
+    Publish(Sweep),
+}
+/// One bounded batch of a watchlist sweep.
+pub(crate) struct Stage<'a> {
+    pub account: &'a str,
+    pub origins: &'a BTreeSet<String>,
+    pub progress: Progress,
+}
+pub(super) fn sweep(index: &mut Index, account: &str) -> Result<Option<Sweep>> {
+    index
+        .get(&prefix(SWEEP, &[&short(account)]))?
+        .map(|bytes| Sweep::decode(&bytes))
+        .transpose()
+}
+fn published(index: &mut Index, account: &str) -> Result<Option<[u8; 8]>> {
+    index
+        .get(&prefix(POLL, &[&short(account)]))?
+        .map(|epoch| {
+            epoch
+                .as_slice()
+                .try_into()
+                .map_err(|_| "Requester: invalid completed poll generation".to_owned())
+        })
+        .transpose()
+}
+/// Deletes origin rows of generations that neither the published poll nor the
+/// running sweep uses, resuming a rotating cursor so that each commit examines
+/// a bounded number of rows.
+fn collect(
+    index: &mut Index,
+    account: &str,
+    keep: &[[u8; 8]],
+    changes: &mut BTreeMap<Key, Option<Vec<u8>>>,
+) -> Result<()> {
+    let account_key = short(account);
+    let marker = prefix(COLLECT, &[&account_key]);
+    let (start, end) = range(ORIGIN, &[&account_key]);
+    let mut after = match index.get(&marker)? {
+        None => None,
+        Some(bytes) => {
+            let key: Key = bytes
+                .as_slice()
+                .try_into()
+                .map_err(|_| "Requester: invalid origin collection cursor")?;
+            if key < start || key >= end {
+                return Err("Requester: invalid origin collection cursor".into());
+            }
+            Some(key)
+        }
+    };
+    let mut examined = 0;
+    while examined < COLLECT_ROWS {
+        let page = index.page(&Query {
+            start,
+            end: Some(end),
+            after,
+            limit: MAX_PAGE_ROWS.min(COLLECT_ROWS - examined),
+            sequence: None,
+        })?;
+        examined += page.entries.len().max(1);
+        for (key, _) in &page.entries {
+            if !keep.iter().any(|epoch| key[17..25] == epoch[..]) {
+                changes.entry(*key).or_insert(None);
+            }
+        }
+        after = page.next;
+        if after.is_none() {
+            break;
+        }
+    }
+    changes.insert(marker, after.map(|key| key.to_vec()));
+    Ok(())
 }
 
 /// Owned entries of one record. The primary manifest binds all checked chunks.
@@ -453,9 +598,9 @@ pub(super) fn commit_poll(
     metadata: &State,
     demands: &[Demand],
     operators: &[String],
-    poll: Option<(&str, &BTreeSet<String>)>,
+    stage: Option<Stage<'_>>,
 ) -> Result<()> {
-    if demands.len() > super::MAX_POLL_ITEMS || operators.len() > MAX_PAGE_ROWS {
+    if demands.len() > super::MAX_BATCH_ITEMS || operators.len() > MAX_PAGE_ROWS {
         return Err("Requester: patch row bound exceeded".into());
     }
     let mut hydrated = 0_usize;
@@ -537,32 +682,63 @@ pub(super) fn commit_poll(
     if !operators.is_empty() {
         changes.insert(OPERATOR_COUNT, Some(operator_count.to_le_bytes().to_vec()));
     }
-    if let Some((account, origins)) = poll {
+    if let Some(Stage {
+        account,
+        origins,
+        progress,
+    }) = stage
+    {
         if !poll_ready(index, account)? {
             return Err("Requester: previous complete poll cleanup is pending".into());
         }
-        if origins.len() > super::MAX_POLL_ITEMS {
+        if origins.len() > super::MAX_BATCH_ITEMS {
             return Err("Requester: poll batch origin bound exceeded".into());
         }
-        let epoch = metadata
+        let record = metadata
             .accounts
             .get(account)
-            .ok_or("Requester: poll account is missing")?
-            .cursor
-            .to_le_bytes();
-        changes.insert(prefix(POLL, &[&short(account)]), Some(epoch.to_vec()));
-        let mut cleanup = epoch.to_vec();
-        cleanup.push(0);
-        changes.insert(clean_key(account), Some(cleanup));
-        for origin in origins {
-            changes.insert(
-                prefix(
-                    ORIGIN,
-                    &[&short(account), &epoch, &sha256(origin.as_bytes())],
-                ),
-                Some(origin.as_bytes().to_vec()),
-            );
+            .ok_or("Requester: poll account is missing")?;
+        let previous = published(index, account)?;
+        let (sweep, publish) = match &progress {
+            Progress::Continue(sweep) => (sweep, false),
+            Progress::Publish(sweep) => (sweep, true),
+        };
+        // Continuing sweeps stage above the published cursor; a publication
+        // moves the cursor to the sweep in the same commit.
+        if sweep.epoch <= previous.map_or(0, u64::from_le_bytes)
+            || (publish && record.cursor != sweep.epoch)
+            || (!publish && sweep.epoch <= record.cursor)
+        {
+            return Err("Requester: sweep generation does not advance".into());
         }
+        let staged = sweep.epoch.to_le_bytes();
+        // A running sweep also adds what it sees to the published generation:
+        // an origin present now must not read as removed before publication.
+        let mut generations = vec![staged];
+        if !publish && let Some(previous) = previous {
+            generations.push(previous);
+        }
+        for origin in origins {
+            for epoch in &generations {
+                changes.insert(
+                    prefix(
+                        ORIGIN,
+                        &[&short(account), epoch, &sha256(origin.as_bytes())],
+                    ),
+                    Some(origin.as_bytes().to_vec()),
+                );
+            }
+        }
+        if publish {
+            changes.insert(prefix(POLL, &[&short(account)]), Some(staged.to_vec()));
+            let mut cleanup = staged.to_vec();
+            cleanup.push(0);
+            changes.insert(clean_key(account), Some(cleanup));
+            changes.insert(prefix(SWEEP, &[&short(account)]), None);
+        } else {
+            changes.insert(prefix(SWEEP, &[&short(account)]), Some(sweep.encode()));
+        }
+        collect(index, account, &generations, &mut changes)?;
     }
     let mut header = metadata.clone();
     header.demands.clear();
