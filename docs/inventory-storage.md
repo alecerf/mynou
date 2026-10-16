@@ -470,7 +470,13 @@ claim and cancellation checks and the shared-file binding lookup read at most
 two index entries and verify each against its job record, instead of every
 attempt or pack mapping that ever named the transfer or file; an entry its
 record contradicts is a storage error, never an absent owner. IRC physical-video
-conflict checks likewise read at most two entries per alias. The upgrade walks the creation-ordered job table in
+conflict checks likewise read at most two entries per alias. The same format
+indexes pack mappings by file and source URL or download (with the shared flag
+and TMDB identity), the ready, newest and non-upgrade versions of each media
+identity, and pending upgrade children, so pack conflict checks, the media
+state shown for requests and the series calendar, requester media reuse and
+shared replacement reservations each read at most two verified entries. The
+upgrade walks the creation-ordered job table in
 pages of 200 under `mynou-jobs/4-building`, committing each page with its
 cursor; reopening resumes it and read-only opening refuses it.
 

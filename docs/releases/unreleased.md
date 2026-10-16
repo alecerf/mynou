@@ -87,5 +87,5 @@ A Plex request cut off by an account's time budget now reports `Plex account pol
 ## Fixed: Resume bounded scheduling after restart
 
 Job claims and routine requester cancellation resume their scan position after restart, and series monitoring visits at most 400 due scopes per pass, including unreadable scopes. Storage status includes counters for the latest claim, requester sweep and series due pass.
-Transfer ownership checks no longer read every earlier attempt of a transfer.
+Transfer ownership, pack mapping and media state checks no longer read every earlier attempt of a transfer, file or media.
 The first writable start upgrades the job index in resumable pages and earlier binaries refuse it; keep a stopped-store backup before upgrading if you may need to downgrade ([storage guide](/docs/inventory-storage.md#job-storage)).
