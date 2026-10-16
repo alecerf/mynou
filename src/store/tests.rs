@@ -3806,3 +3806,143 @@ fn media_versions_read_a_fixed_window_beyond_former_limits() {
         .unwrap_err();
     assert!(error.contains("disagrees"), "{error}");
 }
+
+#[test]
+fn a_filtered_search_reaches_rows_beyond_every_former_page_with_bounded_scans() {
+    let directory = Directory::new();
+    // 2,500 jobs: a match near the oldest end lies beyond any first page and
+    // beyond one scan window, so it is reached only by following `next`.
+    let jobs: Vec<Job> = (0..2_500)
+        .map(|n| {
+            let mut job = if n % 500 == 7 {
+                ready_job(n, 1_000 + n)
+            } else {
+                raw_job(n, 1_000 + n)
+            };
+            if n == 3 {
+                job.request.title = "Needle In The Haystack".into();
+            }
+            job
+        })
+        .collect();
+    let mut store = Store::open(&directory.0).unwrap();
+    bulk(&mut store, jobs);
+    let filter = JobFilter {
+        text: Some("needle in".into()),
+        state: None,
+    };
+    let mut after: Option<String> = None;
+    let mut found = Vec::new();
+    let mut requests = 0;
+    loop {
+        let (page, scanned) = store.search(&filter, false, after.as_deref(), 50).unwrap();
+        assert!(scanned as usize <= SEARCH_SCAN_ROWS);
+        assert_eq!(page.total, 2_500);
+        found.extend(page.jobs.into_iter().map(|job| job.id));
+        requests += 1;
+        after = page.next;
+        if after.is_none() {
+            break;
+        }
+    }
+    assert_eq!(found, vec![format!("{:032x}", 3)]);
+    assert_eq!(requests, 3, "2,500 rows in windows of 1,000");
+    // A state filter over the library index, and the limit ends a page early.
+    let ready = JobFilter {
+        text: None,
+        state: Some("ready".into()),
+    };
+    let (page, scanned) = store.search(&ready, true, None, 2).unwrap();
+    assert_eq!(page.jobs.len(), 2);
+    assert_eq!(scanned, 2);
+    let (rest, _) = store
+        .search(&ready, true, page.next.as_deref(), 50)
+        .unwrap();
+    assert_eq!(rest.jobs.len(), 3);
+    assert!(rest.next.is_none());
+    // Identifiers and states match too; nothing matches an absent text.
+    let by_id = JobFilter {
+        text: Some(format!("{:032x}", 1_234)),
+        state: Some("queued".into()),
+    };
+    let mut after: Option<String> = None;
+    let mut hits = 0;
+    loop {
+        let (page, _) = store.search(&by_id, false, after.as_deref(), 200).unwrap();
+        hits += page.jobs.len();
+        after = page.next;
+        if after.is_none() {
+            break;
+        }
+    }
+    assert_eq!(hits, 1);
+}
+
+#[test]
+fn job_cursors_stay_stable_under_writes_and_reject_invalid_or_stale_positions() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    bulk(
+        &mut store,
+        (0..120).map(|n| raw_job(n, 1_000 + n)).collect(),
+    );
+    let first = store.page(None, 50).unwrap();
+    // Newer jobs written between pages do not shift the continuation.
+    bulk(
+        &mut store,
+        (120..140).map(|n| raw_job(n, 5_000 + n)).collect(),
+    );
+    let mut seen: BTreeSet<_> = first.jobs.iter().map(|job| job.id.clone()).collect();
+    let mut after = first.next;
+    while let Some(cursor) = after {
+        let page = store.page(Some(&cursor), 50).unwrap();
+        assert_eq!(page.total, 140);
+        for job in page.jobs {
+            assert!(
+                job.created_at < 5_000,
+                "a later write never enters an older page"
+            );
+            assert!(seen.insert(job.id));
+        }
+        after = page.next;
+    }
+    assert_eq!(seen.len(), 120);
+    for invalid in ["", "zz", &"0".repeat(47), &"g".repeat(48)] {
+        assert!(store.page(Some(invalid), 10).is_err(), "{invalid}");
+    }
+    // A well-formed cursor naming no job of this store is stale.
+    let stale = format!("{:016x}{:032x}", 1_005_u64, 999_u64);
+    let error = store.page(Some(&stale), 10).unwrap_err();
+    assert!(error.contains("Stale job page cursor"), "{error}");
+    assert!(store.library_page(Some(&stale), 10).is_err());
+    let filter = JobFilter {
+        text: Some("movie".into()),
+        state: None,
+    };
+    assert!(store.search(&filter, false, Some(&stale), 10).is_err());
+    // A job cursor names a creation time and identifier together.
+    let moved = format!("{:016x}{:032x}", 1_006_u64, 5_u64);
+    assert!(store.page(Some(&moved), 10).is_err());
+}
+
+#[test]
+fn job_queries_parse_filters_strictly() {
+    let query = JobQuery::parse("limit=20&q=Needle%20in%2Bhay&state=ready").unwrap();
+    assert_eq!(query.limit, 20);
+    assert_eq!(query.filter.text.as_deref(), Some("needle in+hay"));
+    assert_eq!(query.filter.state.as_deref(), Some("ready"));
+    assert!(JobQuery::parse("q=").unwrap().filter.is_empty());
+    for invalid in [
+        "state=unknown",
+        "q=a&q=b",
+        "state=ready&state=failed",
+        "q=%ff",
+        "q=%0a",
+        "q=%2",
+        "limit=0",
+        "unknown=1",
+        &format!("q={}", "a".repeat(129)),
+    ] {
+        assert!(JobQuery::parse(invalid).is_err(), "{invalid}");
+    }
+}

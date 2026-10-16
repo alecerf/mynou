@@ -293,6 +293,11 @@ impl Engine {
         Ok(jobs_value(page))
     }
 
+    /// A page of jobs, filtered on the server by `q` and `state`.
+    pub fn jobs_query(&self, query: &crate::store::JobQuery) -> Result<Value> {
+        jobs_query_value(&mut *lock(&self.store)?, query)
+    }
+
     pub fn cancel(&self, id: &str) -> Result<Job> {
         let (job, shared) = {
             let mut store = lock(&self.store)?;
@@ -1223,6 +1228,23 @@ pub fn jobs_value(page: crate::store::JobPage) -> Value {
     value.insert("total", Value::Number(page.total as f64));
     value.insert("sequence", Value::String(page.sequence.to_string()));
     value
+}
+
+/// One page of jobs for `query`. A filtered page also reports `scanned`, the
+/// rows it examined: it may hold fewer matches than its limit while `next`
+/// continues the search.
+pub fn jobs_query_value(
+    store: &mut crate::store::Store,
+    query: &crate::store::JobQuery,
+) -> Result<Value> {
+    if query.filter.is_empty() {
+        return Ok(jobs_value(store.page(query.after.as_deref(), query.limit)?));
+    }
+    let (page, scanned) =
+        store.search(&query.filter, false, query.after.as_deref(), query.limit)?;
+    let mut value = jobs_value(page);
+    value.insert("scanned", Value::Number(scanned as f64));
+    Ok(value)
 }
 
 pub fn public_job(job: &Job) -> Value {

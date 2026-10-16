@@ -1072,6 +1072,15 @@ impl SeriesStore {
                 total: 0,
             });
         };
+        // Series are never deleted, so a cursor naming none was not issued here.
+        if let Some(key) = &after
+            && index.get(key)?.is_none()
+        {
+            return Err(
+                "Stale series cursor: no series has this identifier; start from the first page"
+                    .into(),
+            );
+        }
         let total = counts(index)?.series;
         let page = scan(index, &[T_HEADER], after, limit)?;
         let mut series = Vec::new();

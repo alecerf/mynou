@@ -455,15 +455,15 @@ pub(crate) fn route(
             }
             for (route, library) in [("/api/jobs", false), ("/api/library", true)] {
                 if method == "GET" && (path == route || path.starts_with(&format!("{route}?"))) {
-                    let query = crate::store::PageQuery::parse(
+                    let query = crate::store::JobQuery::parse(
                         path.split_once('?').map_or("", |(_, query)| query),
                     )?;
                     return Ok((
                         200,
                         if library {
-                            engine.library(query.after.as_deref(), query.limit)?
+                            engine.library_query(&query)?
                         } else {
-                            engine.jobs_page(query.after.as_deref(), query.limit)?
+                            engine.jobs_query(&query)?
                         },
                     ));
                 }

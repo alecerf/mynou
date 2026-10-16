@@ -75,6 +75,21 @@ pub fn describe_page(store: &mut Store, after: Option<&str>, limit: usize) -> Re
     Ok(value)
 }
 
+/// One library page, filtered on the server when the query has a filter.
+pub fn describe_query(store: &mut Store, query: &crate::store::JobQuery) -> Result<Value> {
+    if query.filter.is_empty() {
+        return describe_page(store, query.after.as_deref(), query.limit);
+    }
+    let (page, scanned) = store.search(&query.filter, true, query.after.as_deref(), query.limit)?;
+    let mut value = Value::object();
+    value.insert("library", describe(store, &page.jobs)?);
+    value.insert("next", page.next.map_or(Value::Null, Value::String));
+    value.insert("total", Value::Number(page.total as f64));
+    value.insert("sequence", Value::String(page.sequence.to_string()));
+    value.insert("scanned", Value::Number(scanned as f64));
+    Ok(value)
+}
+
 fn report(apply: bool, entries: Vec<Value>, queued: u32, limited: bool, counts: [u32; 3]) -> Value {
     let mut skipped = Value::object();
     skipped.insert("unmonitored", counts[0]);
@@ -134,6 +149,11 @@ impl Engine {
     /// replace its parent.
     pub fn library(&self, after: Option<&str>, limit: usize) -> Result<Value> {
         describe_page(&mut *lock(&self.store)?, after, limit)
+    }
+
+    /// A library page, filtered on the server by `q` and `state`.
+    pub fn library_query(&self, query: &crate::store::JobQuery) -> Result<Value> {
+        describe_query(&mut *lock(&self.store)?, query)
     }
 
     pub fn set_monitored(&self, id: &str, enabled: bool) -> Result<Job> {

@@ -46,7 +46,8 @@ const HELP: &str = "Mynou — media automation using Rust std only
   episode-monitor | episode-unmonitor ID --season N --episode N [--config mynou.json]
   calendar [--from YYYY-MM-DD --to YYYY-MM-DD --series-id ID]
            [--offset N | --after CURSOR] [--limit N] [--config mynou.json]
-  library [--limit N --after CURSOR] [--config mynou.json]   (a page of 50 by default)
+  library [--limit N --after CURSOR] [--query TEXT --state STATE] [--config mynou.json]
+      (a page of 50 by default; a filtered page examines at most 1,000 entries)
   upgrades [--apply] [--config mynou.json]
   monitor | unmonitor ID [--config mynou.json]
   baseline ID --release-title TITLE [--config mynou.json]
@@ -70,7 +71,8 @@ const HELP: &str = "Mynou — media automation using Rust std only
   announcement ANNOUNCEMENT_ID [--config mynou.json]
   irc-preview SOURCE_ID --announcement FILE | --text FILE [--config mynou.json]
   irc-control ANNOUNCEMENT_ID --action acknowledge|dismiss|request [--apply --plan-id ID] [--config mynou.json]
-  jobs [--limit N --after CURSOR] [--config mynou.json]   (a page of 50, newest first)
+  jobs [--limit N --after CURSOR] [--query TEXT --state STATE] [--config mynou.json]
+      (a page of 50, newest first; a filtered page examines at most 1,000 jobs)
   status | sync [--config mynou.json]
   show | events | retry | cancel ID [--config mynou.json]
   healthcheck [--config mynou.json]
@@ -121,7 +123,7 @@ impl Args {
         let allowed: &[&str] = match command.as_str() {
             "init" | "doctor" | "serve" | "status" | "sync" | "show" | "events" | "retry"
             | "cancel" | "healthcheck" | "monitor" | "unmonitor" => &["config", "help"],
-            "jobs" | "library" => &["config", "help", "after", "limit"],
+            "jobs" | "library" => &["config", "help", "after", "limit", "query", "state"],
             "requesters" | "requester-sync" => &["config", "help"],
             "indexers" => &["config", "help"],
             "feeds" => &["config", "help", "retained", "after", "limit"],
@@ -735,7 +737,7 @@ fn execute(args: Args) -> Result<()> {
         }
         "library" => {
             let query = page_query(&args)?;
-            let page = mynou::store::PageQuery::parse(&query)?;
+            let page = mynou::store::JobQuery::parse(&query)?;
             if online {
                 output(&call(
                     &config,
@@ -746,11 +748,7 @@ fn execute(args: Args) -> Result<()> {
                 )?);
             } else if Store::directory_exists(&config.store_dir)? {
                 let mut store = Store::open_read_only(&config.store_dir)?;
-                output(&mynou::library::describe_page(
-                    &mut store,
-                    page.after.as_deref(),
-                    page.limit,
-                )?);
+                output(&mynou::library::describe_query(&mut store, &page)?);
             } else {
                 let mut empty = Value::object();
                 empty.insert("library", Value::Array(Vec::new()));
@@ -1506,7 +1504,7 @@ fn execute(args: Args) -> Result<()> {
         }
         "jobs" => {
             let query = page_query(&args)?;
-            let page = mynou::store::PageQuery::parse(&query)?;
+            let page = mynou::store::JobQuery::parse(&query)?;
             if online {
                 output(&call(
                     &config,
@@ -1517,9 +1515,7 @@ fn execute(args: Args) -> Result<()> {
                 )?);
             } else if Store::directory_exists(&config.store_dir)? {
                 let mut store = Store::open_read_only(&config.store_dir)?;
-                output(&mynou::engine::jobs_value(
-                    store.page(page.after.as_deref(), page.limit)?,
-                ));
+                output(&mynou::engine::jobs_query_value(&mut store, &page)?);
             } else {
                 output(&mynou::engine::jobs_value(mynou::store::JobPage {
                     sequence: 0,
@@ -1613,7 +1609,7 @@ fn execute(args: Args) -> Result<()> {
 }
 /// The `after` and `limit` options as a validated page query string.
 fn page_query(args: &Args) -> Result<String> {
-    let fields: Vec<_> = ["limit", "after"]
+    let mut fields: Vec<_> = ["limit", "after", "state"]
         .iter()
         .filter_map(|name| {
             args.options
@@ -1621,8 +1617,19 @@ fn page_query(args: &Args) -> Result<String> {
                 .map(|value| format!("{name}={value}"))
         })
         .collect();
+    if let Some(text) = args.options.get("query") {
+        let mut encoded = String::from("q=");
+        for byte in text.bytes() {
+            if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+                encoded.push(char::from(byte));
+            } else {
+                encoded.push_str(&format!("%{byte:02X}"));
+            }
+        }
+        fields.push(encoded);
+    }
     let query = fields.join("&");
-    mynou::store::PageQuery::parse(&query)?;
+    mynou::store::JobQuery::parse(&query)?;
     Ok(query)
 }
 

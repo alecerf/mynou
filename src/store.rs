@@ -1048,6 +1048,129 @@ impl PageQuery {
     }
 }
 
+/// Job states a filter may name.
+pub const JOB_STATES: [&str; 7] = [
+    "queued",
+    "processing",
+    "downloading",
+    "importing",
+    "ready",
+    "failed",
+    "cancelled",
+];
+
+/// Index rows one filtered page may examine, so a search costs the same
+/// whatever the inventory size; `next` resumes after the last examined row.
+pub const SEARCH_SCAN_ROWS: usize = 1_000;
+
+/// A server-side filter of jobs or library entries: a case-insensitive text
+/// matched against the title, release name, state and identifier, and a state.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct JobFilter {
+    pub text: Option<String>,
+    pub state: Option<String>,
+}
+
+impl JobFilter {
+    pub fn is_empty(&self) -> bool {
+        self.text.is_none() && self.state.is_none()
+    }
+
+    pub fn matches(&self, job: &Job) -> bool {
+        if self
+            .state
+            .as_deref()
+            .is_some_and(|state| state != job.state)
+        {
+            return false;
+        }
+        let Some(needle) = &self.text else {
+            return true;
+        };
+        [
+            Some(job.request.title.as_str()),
+            job.release.as_ref().map(|release| release.title.as_str()),
+            Some(job.state.as_str()),
+            Some(job.id.as_str()),
+        ]
+        .into_iter()
+        .flatten()
+        .any(|field| field.to_lowercase().contains(needle.as_str()))
+    }
+}
+
+/// Query of `GET /api/jobs` and `GET /api/library`: a cursor page, optionally
+/// filtered by `q` (percent-encoded text) and `state`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JobQuery {
+    pub after: Option<String>,
+    pub limit: usize,
+    pub filter: JobFilter,
+}
+
+impl JobQuery {
+    pub fn parse(text: &str) -> Result<Self> {
+        // Room for 128 percent-encoded four-byte characters and a cursor.
+        if text.len() > 2048 {
+            return Err("Page query is too large".into());
+        }
+        let mut page = Vec::new();
+        let mut filter = JobFilter::default();
+        let mut seen = BTreeSet::new();
+        for pair in text.split('&').filter(|pair| !pair.is_empty()) {
+            let (name, value) = pair.split_once('=').ok_or("Invalid page query")?;
+            match name {
+                "q" | "state" if !seen.insert(name) => {
+                    return Err("Duplicate page query field".into());
+                }
+                "q" => {
+                    let decoded = crate::torrent::url_decode(value)
+                        .map_err(|_| "Search text must be percent-encoded UTF-8")?;
+                    if decoded.chars().any(char::is_control) {
+                        return Err("Search text must not contain control characters".into());
+                    }
+                    let trimmed = decoded.trim();
+                    if trimmed.chars().count() > 128 {
+                        return Err("Search text must be at most 128 characters".into());
+                    }
+                    if !trimmed.is_empty() {
+                        filter.text = Some(trimmed.to_lowercase());
+                    }
+                }
+                "state" => {
+                    if !JOB_STATES.contains(&value) {
+                        return Err(format!(
+                            "Unknown job state; use one of {}",
+                            JOB_STATES.join(", ")
+                        ));
+                    }
+                    filter.state = Some(value.to_owned());
+                }
+                _ => page.push(pair),
+            }
+        }
+        let page = PageQuery::parse(&page.join("&"))?;
+        Ok(Self {
+            after: page.after,
+            limit: page.limit,
+            filter,
+        })
+    }
+}
+
+/// The index position of a job page cursor. Jobs are never deleted, so a
+/// cursor naming no job comes from another store or was altered: it is
+/// rejected instead of silently restarting or skipping rows.
+fn checked_cursor(db: &mut ops::Db<'_>, table: u8, created: u64, id: &[u8; 16]) -> Result<Key> {
+    let created = (!created).to_be_bytes();
+    if !db.exists(&layout::key(&[&[layout::T_ALL], &created, id]))? {
+        return Err(
+            "Stale job page cursor: no job has this position; start from the first page".into(),
+        );
+    }
+    Ok(layout::key(&[&[table], &created, id]))
+}
+
 fn clean_path(directory: &Path) -> Result<()> {
     if directory.file_name().is_none()
         || directory
@@ -1315,12 +1438,7 @@ impl Store {
         if limit == 0 || limit > MAX_PAGE_ROWS {
             return Err("Job page limit must be 1 to 200".into());
         }
-        let after = after
-            .map(|text| {
-                parse_cursor(text)
-                    .map(|(created, id)| layout::key(&[&[table], &(!created).to_be_bytes(), &id]))
-            })
-            .transpose()?;
+        let after = after.map(parse_cursor).transpose()?;
         let empty = JobPage {
             sequence: 0,
             jobs: Vec::new(),
@@ -1330,6 +1448,9 @@ impl Store {
         self.read(empty, |db| {
             let counts = db.counts()?;
             let total = if library { counts.library } else { counts.jobs };
+            let after = after
+                .map(|(created, id)| checked_cursor(db, table, created, &id))
+                .transpose()?;
             let page = db.scan(&[table], after, limit)?;
             let mut jobs = Vec::with_capacity(page.entries.len());
             let mut last = None;
@@ -1354,6 +1475,93 @@ impl Store {
                 next: if more { last } else { None },
                 total,
             })
+        })
+    }
+
+    /// Jobs (or current library versions) matching `filter`, newest first.
+    /// One call examines at most `SEARCH_SCAN_ROWS` rows after the exclusive
+    /// `after` cursor, so `next` may be set on a page with few or no matches;
+    /// it is the cursor of the last examined row and null after the last row.
+    /// Returns the page and the number of examined rows.
+    pub fn search(
+        &mut self,
+        filter: &JobFilter,
+        library: bool,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<(JobPage, u64)> {
+        if limit == 0 || limit > MAX_PAGE_ROWS {
+            return Err("Job page limit must be 1 to 200".into());
+        }
+        let table = if library {
+            layout::T_LIBRARY
+        } else {
+            layout::T_ALL
+        };
+        let after = after.map(parse_cursor).transpose()?;
+        let empty = JobPage {
+            sequence: 0,
+            jobs: Vec::new(),
+            next: None,
+            total: 0,
+        };
+        self.read((empty, 0), |db| {
+            let counts = db.counts()?;
+            let total = if library { counts.library } else { counts.jobs };
+            let mut position = after
+                .map(|(created, id)| checked_cursor(db, table, created, &id))
+                .transpose()?;
+            let mut jobs = Vec::new();
+            let mut bytes = 0_usize;
+            let mut examined = 0_usize;
+            let mut last = None;
+            'scan: loop {
+                let page = db.scan(
+                    &[table],
+                    position,
+                    (SEARCH_SCAN_ROWS - examined).min(MAX_PAGE_ROWS),
+                )?;
+                let exhausted = page.next.is_none();
+                let rows = page.entries.len();
+                if rows == 0 && !exhausted {
+                    return Err("Job index returned an empty page before its end".into());
+                }
+                for (index, (found, _)) in page.entries.into_iter().enumerate() {
+                    let created = !u64::from_be_bytes(ops::key_part(&found, 1)?);
+                    let id: [u8; 16] = ops::key_part(&found, 9)?;
+                    let job = db.require(&id)?;
+                    if filter.matches(&job) {
+                        let length = layout::encode_job(&job).len();
+                        if !jobs.is_empty() && bytes + length > crate::inventory::MAX_PAGE_BYTES {
+                            break 'scan;
+                        }
+                        bytes += length;
+                        jobs.push(job);
+                    }
+                    examined += 1;
+                    last = Some(cursor_text(created, &id));
+                    position = Some(found);
+                    if jobs.len() == limit || examined == SEARCH_SCAN_ROWS {
+                        if exhausted && index + 1 == rows {
+                            last = None;
+                        }
+                        break 'scan;
+                    }
+                }
+                if exhausted {
+                    last = None;
+                    break;
+                }
+            }
+            Ok((
+                JobPage {
+                    sequence: db.0.sequence()?,
+                    jobs,
+                    next: last,
+                    total,
+                },
+                examined as u64,
+            ))
         })
     }
 

@@ -84,10 +84,10 @@ impl Engine {
             v.insert("offset", Value::Number(offset as f64));
         }
         v.insert("limit", limit as u32);
-        v.insert(
-            "next_cursor",
-            next.map_or(Value::Null, |k| Value::from(super::index::cursor(&k))),
-        );
+        let next = next.map_or(Value::Null, |k| Value::from(super::index::cursor(&k)));
+        // `next` is the field of every other cursor page; `next_cursor` stays for old callers.
+        v.insert("next", next.clone());
+        v.insert("next_cursor", next);
         v.insert(
             "announcements",
             Value::Array(rows.iter().map(|r| runtime.annotate(r)).collect()),

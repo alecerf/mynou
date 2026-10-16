@@ -617,6 +617,11 @@ fn inventories_above_every_former_limit_page_completely_and_survive_restart() {
     }
     let ids: Vec<String> = expected.iter().map(|r| r.id.clone()).collect();
     assert_eq!(seen, ids);
+    // A well-formed cursor naming no series is stale and rejected explicitly.
+    let unknown = "f".repeat(32);
+    assert!(!ids.contains(&unknown));
+    let error = store.page(Some(&unknown), 10).unwrap_err();
+    assert!(error.contains("Stale series cursor"), "{error}");
     // Lookups and scheduling touch only their own entries.
     let wanted = &records[77];
     assert_eq!(

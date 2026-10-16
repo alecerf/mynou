@@ -316,11 +316,55 @@ const jobsLoaded = () => {
   const seen = new Set(first.map((j) => j.id));
   return [...first, ...jobsTail.items.filter((j) => !seen.has(j.id))];
 };
+// The filter and state run on the server, so they find jobs on pages that are
+// not loaded. Each request examines a bounded window of jobs; a search reads a
+// few windows at once and "Search further" continues from its cursor.
+const JOB_STATES = ['queued', 'processing', 'downloading', 'importing', 'ready', 'failed', 'cancelled'];
+const SEARCH_WINDOWS = 4;
+const jobSearch = { query: '', items: [], next: null, scanned: 0, total: null, generation: 0, busy: false };
+function jobQuery() {
+  const params = new URLSearchParams();
+  const needle = $('#job-filter').value.trim();
+  if (needle) params.set('q', needle);
+  const [state] = jobStates;
+  if (state) params.set('state', state);
+  return params.toString();
+}
+async function searchJobs(more) {
+  const query = jobQuery();
+  if (!more) {
+    jobSearch.generation += 1;
+    Object.assign(jobSearch, { query, items: [], next: null, scanned: 0, total: null, busy: false });
+    if (!query) { views.jobs.render(); return; }
+  }
+  if (jobSearch.busy || (more && !jobSearch.next)) return;
+  const generation = jobSearch.generation;
+  jobSearch.busy = true;
+  views.jobs.render();
+  try {
+    let windows = 0;
+    do {
+      const after = jobSearch.next ? `&after=${encodeURIComponent(jobSearch.next)}` : '';
+      const page = await link.call('GET', `/api/jobs?limit=50&${query}${after}`);
+      if (generation !== jobSearch.generation) return;
+      jobSearch.items.push(...itemsOf(page.jobs));
+      jobSearch.next = page.next;
+      jobSearch.scanned += Number(page.scanned) || 0;
+      jobSearch.total = page.total;
+      windows += 1;
+    } while (jobSearch.next && jobSearch.items.length < 50 && windows < SEARCH_WINDOWS);
+  } catch (error) {
+    if (generation === jobSearch.generation) toast(error.message, 'bad');
+  } finally {
+    if (generation === jobSearch.generation) { jobSearch.busy = false; views.jobs.render(); }
+  }
+}
 views.jobs = {
   init() {
     wireJobRows($('#jobs'));
     $('#jobs-more').addEventListener('click', (e) =>
       act(e.currentTarget, async () => {
+        if (jobSearch.query) { await searchJobs(true); return; }
         if (jobsTail.refreshing) return;
         const after = jobsTail.next ?? data.get('jobs')?.data?.next;
         if (!after) return;
@@ -332,33 +376,43 @@ views.jobs = {
         jobsTail.next = page.next;
         views.jobs.render();
       }));
-    $('#job-filter').addEventListener('input', () => views.jobs.render());
+    let typing = 0;
+    $('#job-filter').addEventListener('input', () => { clearTimeout(typing); typing = setTimeout(() => searchJobs(false), 250); });
     $('#job-states').addEventListener('click', (event) => {
       const button = event.target.closest('button');
       if (!button) return;
-      jobStates.has(button.dataset.state) ? jobStates.delete(button.dataset.state) : jobStates.add(button.dataset.state);
-      views.jobs.render();
+      const state = button.dataset.state;
+      const active = jobStates.has(state);
+      jobStates = new Set(active ? [] : [state]);
+      searchJobs(false);
     });
   },
   render() {
     const list = $('#jobs');
-    const all = jobsLoaded();
     const entry = data.get('jobs')?.data;
-    const next = jobsTail.items.length ? jobsTail.next : entry?.next;
     const more = $('#jobs-more');
+    reconcile($('#job-states'), JOB_STATES, (s) => s,
+      (s) => h('button', { type: 'button', dataset: { state: s }, 'aria-pressed': 'false' }, s),
+      (el, s) => el.setAttribute('aria-pressed', String(jobStates.has(s))));
+    if (jobSearch.query) {
+      // Live rows replace their stale search copies; membership stays the search's.
+      const live = new Map(jobsLoaded().map((j) => [j.id, j]));
+      const shown = jobSearch.items.map((j) => live.get(j.id) ?? j);
+      more.hidden = !jobSearch.next || jobSearch.busy;
+      more.textContent = `Search further (${jobSearch.scanned} of ${jobSearch.total ?? '?'} jobs searched)`;
+      if (!shown.length) {
+        list.replaceChildren(h('li', { class: 'empty' }, jobSearch.busy ? 'Searching…' : jobSearch.next ? 'No match yet; search further.' : 'No job matches the filter.'));
+      } else { list.querySelector('.empty')?.remove(); reconcile(list, shown, (j) => j.id, createJobRow, updateJobRow); }
+      return;
+    }
+    const all = jobsLoaded();
+    const next = jobsTail.items.length ? jobsTail.next : entry?.next;
     more.hidden = !next;
     more.textContent = entry?.total ? `Load more jobs (${all.length} of ${entry.total})` : 'Load more jobs';
-    const states = [...new Set(all.map((j) => j.state))].sort();
-    reconcile($('#job-states'), states, (s) => s,
-      (s) => h('button', { type: 'button', dataset: { state: s }, 'aria-pressed': 'false' }, s),
-      (el, s) => { el.setAttribute('aria-pressed', String(jobStates.has(s))); el.textContent = `${s} ${all.filter((j) => j.state === s).length}`; });
     if (emptyOrError('jobs', list, 'No jobs yet.')) return;
-    const needle = $('#job-filter').value.trim().toLowerCase();
-    const shown = all
-      .filter((j) => (!jobStates.size || jobStates.has(j.state)) && (!needle || `${titleOf(j)} ${j.state} ${j.id}`.toLowerCase().includes(needle)))
-      .toSorted((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
-    if (!shown.length) list.replaceChildren(h('li', { class: 'empty' }, 'No job matches the filter.'));
-    else { list.querySelector('.empty')?.remove(); reconcile(list, shown, (j) => j.id, createJobRow, updateJobRow); }
+    const shown = all.toSorted((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
+    list.querySelector('.empty')?.remove();
+    reconcile(list, shown, (j) => j.id, createJobRow, updateJobRow);
   },
 };
 

@@ -542,6 +542,68 @@ fn jobs_above_the_old_total_cap_reach_http_websocket_and_cli_pages() {
         assert_eq!(seen.len(), 10_001, "{transport}");
         assert_eq!(seen, jobs.iter().map(|job| job.id.clone()).collect());
     }
+    // A server-side search reaches a job far beyond the first page: each
+    // request examines a bounded window and `next` resumes the search.
+    let needle = format!("{:032x}", 5);
+    for transport in ["http", "cli"] {
+        let mut after: Option<String> = None;
+        let mut found = Vec::new();
+        let mut requests = 0;
+        loop {
+            let page = if transport == "http" {
+                let route = format!(
+                    "/api/jobs?limit=50&q={needle}&state=queued{}",
+                    after
+                        .as_ref()
+                        .map_or_else(String::new, |cursor| format!("&after={cursor}"))
+                );
+                let reply = server.call("GET", &route, &[("Authorization", &auth)], "");
+                assert_eq!(reply.status, 200, "{}", reply.body);
+                json::parse(&reply.body).unwrap()
+            } else {
+                let mut command = Command::new(env!("CARGO_BIN_EXE_mynou"));
+                command
+                    .current_dir(&root)
+                    .env("MYNOU_API_TOKEN", TOKEN)
+                    .args(["jobs", "--config", config_path.to_str().unwrap()])
+                    .args(["--query", &needle.to_uppercase(), "--state", "queued"]);
+                if let Some(cursor) = &after {
+                    command.args(["--after", cursor]);
+                }
+                let output = command.output().unwrap();
+                assert!(
+                    output.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                json::parse(std::str::from_utf8(&output.stdout).unwrap().trim()).unwrap()
+            };
+            assert!(page.get("scanned").and_then(json::Value::as_u64).unwrap() <= 1_000);
+            for row in page.get("jobs").unwrap().as_array().unwrap() {
+                found.push(row.get("id").unwrap().as_str().unwrap().to_owned());
+            }
+            requests += 1;
+            after = page
+                .get("next")
+                .and_then(json::Value::as_str)
+                .map(str::to_owned);
+            if after.is_none() {
+                break;
+            }
+        }
+        assert_eq!(found, vec![needle.clone()], "{transport}");
+        assert_eq!(requests, 11, "{transport}");
+    }
+    let stale = format!("{:016x}{:032x}", 1_u64, 1_u64);
+    for route in [
+        "/api/jobs?state=unknown".to_owned(),
+        format!("/api/jobs?after={stale}"),
+        format!("/api/library?q=x&after={stale}"),
+        "/api/jobs?after=not-a-cursor".to_owned(),
+    ] {
+        let reply = server.call("GET", &route, &[("Authorization", &auth)], "");
+        assert_eq!(reply.status, 400, "{route}: {}", reply.body);
+    }
     // The inventory keeps growing past the old limit: no capacity error remains.
     let created = server.call(
         "POST",

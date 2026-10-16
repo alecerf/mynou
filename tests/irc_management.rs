@@ -215,6 +215,7 @@ fn protected_api_and_offline_cli_follow_the_same_chronological_cursor() {
         .as_str()
         .unwrap()
         .to_owned();
+    assert_eq!(first.get("next"), first.get("next_cursor"));
     let second = get(&format!("/api/irc/announcements?after={cursor}&limit=1"));
     assert_eq!(second.status, 200);
     let second = json::parse(&second.body).unwrap();
