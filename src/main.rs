@@ -581,7 +581,7 @@ fn execute(args: Args) -> Result<()> {
     }
     if args.command == "serve" {
         let token = api_token(&config, &path)?;
-        let engine = Engine::open(config)?;
+        let engine = Engine::open_serving(config)?;
         let api = Api::bind(engine.clone(), token)?;
         eprintln!(
             "mynou {} — API http://{}",

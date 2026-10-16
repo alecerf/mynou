@@ -615,9 +615,33 @@ pub(crate) fn recover(
     jobs: &mut impl crate::store::RecoveryJobs,
     apply: bool,
 ) -> Result<()> {
-    let mut after = None;
-    loop {
+    for stage in 0..RECOVERY_STAGES {
+        let mut after = None;
+        loop {
+            after = recover_page(store, jobs, apply, stage, after)?.1;
+            if after.is_none() {
+                break;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Stages of route recovery: announcements with a route (aborting
+/// interrupted reservations when `apply`), then IRC-origin requests.
+pub(crate) const RECOVERY_STAGES: u8 = 2;
+
+/// One page of route recovery: the rows read and the next cursor.
+pub(crate) fn recover_page(
+    store: &mut AnnouncementStore,
+    jobs: &mut impl crate::store::RecoveryJobs,
+    apply: bool,
+    stage: u8,
+    after: Option<crate::inventory::Key>,
+) -> Result<(usize, Option<crate::inventory::Key>)> {
+    if stage == 0 {
         let (rows, next) = store.page(4, after, 200)?;
+        let read = rows.len();
         let mut changed = Vec::new();
         for r in rows {
             let recovered = recovered_record(r.clone(), jobs)?;
@@ -628,35 +652,29 @@ pub(crate) fn recover(
         if apply && !changed.is_empty() {
             store.save_rows(&changed)?;
         }
-        after = next;
-        if after.is_none() {
-            break;
+        return Ok((read, next));
+    }
+    if stage != 1 {
+        return Err("IRC: unknown route recovery stage".into());
+    }
+    // Only jobs that carry an IRC origin are read.
+    let (page, next) = jobs.irc_origin_page(after, 200)?;
+    let read = page.len();
+    for job in page {
+        let Some(origin) = &job.irc_origin else {
+            continue;
+        };
+        origin.validate_job(&job)?;
+        let route = store
+            .get(&origin.announcement_id)?
+            .and_then(|r| r.route)
+            .ok_or("IRC: acquisition has no durable announcement reservation")?;
+        jobs.check_irc_ownership(&job)?;
+        if &route.origin != origin || route.phase == "aborted" {
+            return Err("IRC: acquisition provenance or physical ownership conflicts".into());
         }
     }
-    // Only jobs that carry an IRC origin are read, one page at a time.
-    let mut after = None;
-    loop {
-        let (page, next_page) = jobs.irc_origin_page(after, 200)?;
-        for job in page {
-            let Some(origin) = &job.irc_origin else {
-                continue;
-            };
-            origin.validate_job(&job)?;
-            let route = store
-                .get(&origin.announcement_id)?
-                .and_then(|r| r.route)
-                .ok_or("IRC: acquisition has no durable announcement reservation")?;
-            jobs.check_irc_ownership(&job)?;
-            if &route.origin != origin || route.phase == "aborted" {
-                return Err("IRC: acquisition provenance or physical ownership conflicts".into());
-            }
-        }
-        after = next_page;
-        if after.is_none() {
-            break;
-        }
-    }
-    Ok(())
+    Ok((read, next))
 }
 
 /// Transient backoff memory; selection never depends on how full it is.

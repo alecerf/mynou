@@ -192,9 +192,33 @@ pub(crate) fn recover(
     requesters: &impl requesters::LedgerRead,
     apply: bool,
 ) -> Result<()> {
-    let mut after = None;
-    loop {
+    for stage in 0..RECOVERY_STAGES {
+        let mut after = None;
+        loop {
+            after = recover_page(store, requesters, apply, stage, after)?.1;
+            if after.is_none() {
+                break;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Stages of admission recovery: announcements with an admission (settling
+/// prepared ones when `apply`), then explicit IRC demands against them.
+pub(crate) const RECOVERY_STAGES: u8 = 2;
+
+/// One page of admission recovery: the rows read and the next cursor.
+pub(crate) fn recover_page(
+    store: &mut AnnouncementStore,
+    requesters: &impl requesters::LedgerRead,
+    apply: bool,
+    stage: u8,
+    after: Option<crate::inventory::Key>,
+) -> Result<(usize, Option<crate::inventory::Key>)> {
+    if stage == 0 {
         let (rows, next) = store.page(4, after, 200)?;
+        let read = rows.len();
         let mut changed = Vec::new();
         for r in rows {
             let recovered = recovered_record(r.clone(), requesters)?;
@@ -205,40 +229,34 @@ pub(crate) fn recover(
         if apply && !changed.is_empty() {
             store.save_rows(&changed)?;
         }
-        after = next;
-        if after.is_none() {
-            break;
-        }
+        return Ok((read, next));
     }
-    let mut after = None;
-    loop {
-        let (page, cursor) = requesters.irc_demands_page(after, 200)?;
-        for d in page {
-            for o in &d.origins {
-                if let Some((source, id)) = split_origin(o) {
-                    let r = store
-                        .get(id)?
-                        .map(|r| recovered_record(r, requesters))
-                        .transpose()?
-                        .filter(|r| r.source_id == source)
-                        .ok_or("IRC: explicit demand has no durable announcement")?;
-                    let a = r
-                        .admission
-                        .as_ref()
-                        .filter(|a| a.phase == "committed")
-                        .ok_or("IRC: explicit demand has no committed admission")?;
-                    if !demand_matches(a, &d, requesters) {
-                        return Err("IRC: explicit demand differs from committed admission".into());
-                    }
+    if stage != 1 {
+        return Err("IRC: unknown admission recovery stage".into());
+    }
+    let (page, cursor) = requesters.irc_demands_page(after, 200)?;
+    let read = page.len();
+    for d in page {
+        for o in &d.origins {
+            if let Some((source, id)) = split_origin(o) {
+                let r = store
+                    .get(id)?
+                    .map(|r| recovered_record(r, requesters))
+                    .transpose()?
+                    .filter(|r| r.source_id == source)
+                    .ok_or("IRC: explicit demand has no durable announcement")?;
+                let a = r
+                    .admission
+                    .as_ref()
+                    .filter(|a| a.phase == "committed")
+                    .ok_or("IRC: explicit demand has no committed admission")?;
+                if !demand_matches(a, &d, requesters) {
+                    return Err("IRC: explicit demand differs from committed admission".into());
                 }
             }
         }
-        after = cursor;
-        if after.is_none() {
-            break;
-        }
     }
-    Ok(())
+    Ok((read, cursor))
 }
 
 fn request_rule<'a>(config: &'a Config, r: &Record) -> Result<&'a Rule> {

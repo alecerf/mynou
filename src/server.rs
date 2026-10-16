@@ -199,25 +199,26 @@ fn connection(stream: &mut TcpStream, engine: &Arc<Engine>, token: &str) -> Resu
         Err(e) => return respond(stream, 400, error(&e)),
     };
     if method == "GET" && (path == "/healthz" || path == "/readyz") {
+        let stopped = engine.stopped.load(Ordering::Acquire);
+        // Liveness stays healthy while startup validation runs; readiness
+        // waits for it.
+        let starting = path == "/readyz" && engine.starting.load(Ordering::Acquire);
         let mut v = Value::object();
         v.insert(
             "status",
-            if engine.stopped.load(Ordering::Acquire) {
+            if stopped {
                 "stopping"
+            } else if starting {
+                match engine.startup_state() {
+                    Ok("failed") | Err(_) => "failed",
+                    _ => "starting",
+                }
             } else {
                 "ok"
             },
         );
         v.insert("version", env!("CARGO_PKG_VERSION"));
-        return respond(
-            stream,
-            if engine.stopped.load(Ordering::Acquire) {
-                503
-            } else {
-                200
-            },
-            v,
-        );
+        return respond(stream, if stopped || starting { 503 } else { 200 }, v);
     }
     if method == "GET"
         && let Some(asset) = ui::asset(&path)
@@ -257,6 +258,16 @@ pub(crate) fn route(
     path: &str,
     body: &[u8],
 ) -> Result<(u16, Value)> {
+    // Until every startup stage passed, only reads and shutdown are served.
+    if method != "GET"
+        && (method, path) != ("POST", "/api/shutdown")
+        && engine.starting.load(Ordering::Acquire)
+    {
+        return Ok((
+            503,
+            error("Mynou is still validating storage; see startup in status"),
+        ));
+    }
     match (method, path) {
         ("GET", "/api/status") => Ok((200, engine.status()?)),
         ("GET", "/api/indexers") => Ok((200, engine.indexers()?)),

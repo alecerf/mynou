@@ -89,3 +89,7 @@ A Plex request cut off by an account's time budget now reports `Plex account pol
 Job claims and routine requester cancellation resume their scan position after restart, and series monitoring visits at most 400 due scopes per pass, including unreadable scopes. Storage status includes counters for the latest claim, requester sweep and series due pass.
 Transfer ownership, pack mapping and media state checks no longer read every earlier attempt of a transfer, file or media.
 The first writable start upgrades the job index in resumable pages and earlier binaries refuse it; keep a stopped-store backup before upgrading if you may need to downgrade ([storage guide](/docs/inventory-storage.md#job-storage)).
+
+## Changed: Serve the API while startup validation runs
+
+`mynou serve` now answers reads immediately and validates requester and IRC storage in bounded steps afterwards. Until it finishes, other requests get 503, workers and transfers wait, `/readyz` answers `starting` and `startup` in `/api/status` shows progress; an inconsistency is reported there as `failed` instead of stopping the process ([storage guide](/docs/inventory-storage.md#startup-validation)).

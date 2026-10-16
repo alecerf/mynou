@@ -1050,9 +1050,33 @@ pub(crate) fn validate_storage(
     ledger: &impl LedgerRead,
     jobs: &mut impl crate::store::RecoveryJobs,
 ) -> Result<()> {
-    let mut after = None;
-    loop {
+    for stage in 0..VALIDATION_STAGES {
+        let mut after = None;
+        loop {
+            after = validate_storage_page(ledger, jobs, stage, after)?.1;
+            if after.is_none() {
+                break;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Stages of requester provenance validation: retained demands against
+/// their acquisitions, then requests against durable admission.
+pub(crate) const VALIDATION_STAGES: u8 = 2;
+
+/// One page of requester provenance validation: the rows read and the
+/// cursor of the next page in this stage.
+pub(crate) fn validate_storage_page(
+    ledger: &impl LedgerRead,
+    jobs: &mut impl crate::store::RecoveryJobs,
+    stage: u8,
+    after: Option<crate::inventory::Key>,
+) -> Result<(usize, Option<crate::inventory::Key>)> {
+    if stage == 0 {
         let (page, next) = ledger.demands_page(after, 200)?;
+        let rows = page.len();
         for demand in page {
             if let Some(id) = &demand.job_id {
                 let job = jobs
@@ -1068,36 +1092,31 @@ pub(crate) fn validate_storage(
                 }
             }
         }
-        after = next;
-        if after.is_none() {
-            break;
-        }
+        return Ok((rows, next));
+    }
+    if stage != 1 {
+        return Err("Requester: unknown validation stage".into());
     }
     // Every request that carries requester provenance, one page at a time.
-    let mut after = None;
-    loop {
-        let (page, next) = jobs.requester_jobs_page(after, 200)?;
-        for job in page {
-            let Some(p) = &job.requester else {
-                continue;
-            };
-            let d = ledger
-                .demand(&p.demand_id)?
-                .ok_or("Requester: queued provenance has no durable demand")?;
-            if d.account_id != p.account_id
-                || d.capture != p.capture
-                || d.revision != p.policy_revision
-                || d.request.media_key() != job.request.media_key()
-                || d.admitted_at.is_none()
-            {
-                return Err("Requester: queued provenance differs from durable admission".into());
-            }
-        }
-        after = next;
-        if after.is_none() {
-            return Ok(());
+    let (page, next) = jobs.requester_jobs_page(after, 200)?;
+    let rows = page.len();
+    for job in page {
+        let Some(p) = &job.requester else {
+            continue;
+        };
+        let d = ledger
+            .demand(&p.demand_id)?
+            .ok_or("Requester: queued provenance has no durable demand")?;
+        if d.account_id != p.account_id
+            || d.capture != p.capture
+            || d.revision != p.policy_revision
+            || d.request.media_key() != job.request.media_key()
+            || d.admitted_at.is_none()
+        {
+            return Err("Requester: queued provenance differs from durable admission".into());
         }
     }
+    Ok((rows, next))
 }
 
 /// Requests examined by one sweep for work no demand wants any more.
@@ -1105,8 +1124,8 @@ const SWEEP_JOBS: usize = 200;
 
 /// Cancels unfinished requester work that no admitted demand needs. One call
 /// examines at most `SWEEP_JOBS` requests during routine reconciliation.
-/// The durable cursor advances only after the page settles. Startup still
-/// drains the complete inventory before native transfers can start.
+/// The durable cursor advances only after the page settles. A full sweep
+/// restarts from the beginning and repeats bounded pages until the end.
 pub(crate) fn cancel_unwanted(
     ledger: &impl LedgerRead,
     jobs: &mut Store,
@@ -1117,29 +1136,41 @@ pub(crate) fn cancel_unwanted(
         jobs.finish_requester_sweep(None)?;
     }
     loop {
-        let (page, next) = jobs.sweep_requester_jobs(SWEEP_JOBS)?;
-        for job in page {
-            if job.requester.is_some()
-                && job.state != "ready"
-                && job.state != "cancelled"
-                && !interest(ledger, &job, config)?
-            {
-                if job.shared_file.is_some() {
-                    let owners = jobs.shared_group(&job.id)?;
-                    let mut wanted = false;
-                    for owner in &owners {
-                        wanted |= interest(ledger, owner, config)?;
-                    }
-                    if wanted {
-                        continue;
-                    }
-                }
-                jobs.cancel(&job.id)?;
-            }
-        }
-        jobs.finish_requester_sweep(next)?;
-        if !full || next.is_none() {
+        let (_, done) = cancel_unwanted_page(ledger, jobs, config)?;
+        if !full || done {
             return Ok(());
         }
     }
+}
+
+/// One settled page of the requester cancellation sweep: the requests
+/// examined and whether the sweep reached the end of the inventory.
+pub(crate) fn cancel_unwanted_page(
+    ledger: &impl LedgerRead,
+    jobs: &mut Store,
+    config: &crate::config::Config,
+) -> Result<(usize, bool)> {
+    let (page, next) = jobs.sweep_requester_jobs(SWEEP_JOBS)?;
+    let rows = page.len();
+    for job in page {
+        if job.requester.is_some()
+            && job.state != "ready"
+            && job.state != "cancelled"
+            && !interest(ledger, &job, config)?
+        {
+            if job.shared_file.is_some() {
+                let owners = jobs.shared_group(&job.id)?;
+                let mut wanted = false;
+                for owner in &owners {
+                    wanted |= interest(ledger, owner, config)?;
+                }
+                if wanted {
+                    continue;
+                }
+            }
+            jobs.cancel(&job.id)?;
+        }
+    }
+    jobs.finish_requester_sweep(next)?;
+    Ok((rows, next.is_none()))
 }

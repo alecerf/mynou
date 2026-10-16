@@ -161,3 +161,157 @@ fn coowner_beyond_the_first_inventory_page_keeps_a_removed_sources_job_queued() 
     super::engine::cancel_unwanted(&*ledger, &mut jobs, &config, true).unwrap();
     assert_eq!(jobs.get(&job.id).unwrap().unwrap().state, "queued");
 }
+
+/// Admits `count` demands with their requests, as requester sync records them.
+fn admitted(engine: &Engine, config: &crate::config::Config, count: u64) -> Vec<Demand> {
+    let mut ledger = lock(&engine.requester_store).unwrap();
+    let mut records: Vec<Demand> = (0..count)
+        .map(|number| {
+            let mut record = demand(config, "source", 1_000 + number);
+            record.state = "reserved".into();
+            record.outcome = "reserved".into();
+            record.admitted_at = Some(1234);
+            record
+        })
+        .collect();
+    let mut patch = ledger.state.clone();
+    for record in &records {
+        patch.demands.insert(record.id.clone(), record.clone());
+    }
+    ledger.save_patch(patch).unwrap();
+    let mut jobs = lock(&engine.store).unwrap();
+    let mut patch = ledger.state.clone();
+    for record in &mut records {
+        let job = jobs
+            .submit_requester(record.request.clone(), provenance(record))
+            .unwrap();
+        record.state = "active".into();
+        record.outcome = "active".into();
+        record.job_id = Some(job.id.clone());
+        patch.demands.insert(record.id.clone(), record.clone());
+    }
+    ledger.save_patch(patch).unwrap();
+    records
+}
+
+fn startup_number(engine: &Engine, field: &str) -> u64 {
+    engine
+        .startup_status()
+        .unwrap()
+        .get(field)
+        .and_then(crate::json::Value::as_str)
+        .unwrap()
+        .parse()
+        .unwrap()
+}
+
+#[test]
+fn serving_startup_validates_in_bounded_steps_behind_a_closed_gate() {
+    let directory = Directory::new();
+    let config = config(&directory);
+    let engine = Engine::open_for_management(config.clone()).unwrap();
+    // More than two 200-row pages in every requester stage.
+    let records = admitted(&engine, &config, 450);
+    drop(engine);
+    let engine = Engine::open_serving(config.clone()).unwrap();
+    assert!(engine.starting.load(std::sync::atomic::Ordering::Acquire));
+    // Reads are served; every mutation waits for validation.
+    let (status, value) = crate::server::route(&engine, "GET", "/api/status", &[]).unwrap();
+    assert_eq!(status, 200);
+    let startup = value.get("startup").unwrap();
+    assert_eq!(
+        startup.get("state").and_then(crate::json::Value::as_str),
+        Some("validating")
+    );
+    assert_eq!(
+        crate::server::route(&engine, "POST", "/api/jobs", b"{}")
+            .unwrap()
+            .0,
+        503
+    );
+    let mut steps = 0;
+    loop {
+        let rows = startup_number(&engine, "rows");
+        let pages = startup_number(&engine, "pages");
+        let done = engine.startup_step().unwrap();
+        assert_eq!(startup_number(&engine, "pages"), pages + 1);
+        assert!(startup_number(&engine, "rows") - rows <= 200);
+        steps += 1;
+        if done {
+            break;
+        }
+        assert!(engine.starting.load(std::sync::atomic::Ordering::Acquire));
+    }
+    // Three pages for each requester stage, one per remaining stage, plus
+    // the empty page that ends each paged stage.
+    assert!(steps <= 3 * 4 + 13, "{steps} startup steps");
+    assert!(startup_number(&engine, "rows") >= 450 * 3);
+    assert!(!engine.starting.load(std::sync::atomic::Ordering::Acquire));
+    assert_ne!(
+        crate::server::route(&engine, "POST", "/api/jobs", b"{}").map_or(400, |(status, _)| status),
+        503
+    );
+    // Wanted work survived the startup cancellation sweep.
+    let mut jobs = lock(&engine.store).unwrap();
+    for record in &records {
+        let job = jobs.get(record.job_id.as_ref().unwrap()).unwrap().unwrap();
+        assert_eq!(job.state, "queued");
+    }
+}
+
+#[test]
+fn failed_serving_startup_keeps_the_gate_shut_and_reports_the_error() {
+    let directory = Directory::new();
+    let config = config(&directory);
+    let engine = Engine::open_for_management(config.clone()).unwrap();
+    let records = admitted(&engine, &config, 3);
+    drop(engine);
+    // A damaged demand record must stop startup before any effect.
+    let key = super::index::primary_cursor(&records[1].id).unwrap();
+    assert!(crate::inventory::damage_record(&config.store_dir.join("requesters.idx"), &key) > 0);
+    let error = Engine::open_for_management(config.clone()).err().unwrap();
+    let engine = Engine::open_serving(config).unwrap();
+    let workers = engine.start();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while engine.startup_state().unwrap() == "validating" {
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(engine.startup_state().unwrap(), "failed");
+    assert!(engine.starting.load(std::sync::atomic::Ordering::Acquire));
+    let status = engine.startup_status().unwrap();
+    assert!(
+        status
+            .get("error")
+            .and_then(crate::json::Value::as_str)
+            .unwrap()
+            .contains(&error)
+    );
+    assert_eq!(
+        crate::server::route(&engine, "POST", "/api/jobs", b"{}")
+            .unwrap()
+            .0,
+        503
+    );
+    assert!(engine.startup_step().is_err());
+    drop(workers);
+}
+
+#[test]
+fn serving_start_runs_workers_only_after_startup() {
+    let directory = Directory::new();
+    let config = config(&directory);
+    let engine = Engine::open_for_management(config.clone()).unwrap();
+    admitted(&engine, &config, 250);
+    drop(engine);
+    let engine = Engine::open_serving(config).unwrap();
+    assert_eq!(engine.startup_state().unwrap(), "validating");
+    let workers = engine.start();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while engine.starting.load(std::sync::atomic::Ordering::Acquire) {
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(engine.startup_state().unwrap(), "ready");
+    drop(workers);
+}

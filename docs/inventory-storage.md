@@ -598,6 +598,22 @@ backup generations or edit markers to bypass rejection.
 Durable captured routing generations are still required to route transient
 announcements across every inventory page.
 
+## Startup validation
+
+`mynou serve` answers the API at once and checks requester and IRC provenance
+afterwards in bounded steps of at most one 200-row page: retained demands and
+requester requests, IRC admissions, demands, routes and IRC-origin requests,
+then store initialization, settlement of interrupted IRC admissions and
+routes, the requester cancellation sweep and native transfers. Nothing is
+written before every read-only stage passes. Until the last stage, only reads
+and shutdown are served (other requests get 503), workers and native
+transfers wait, `/readyz` answers `starting` and `startup` in `/api/status`
+reports the stage, pages and rows. An inconsistency leaves the service in
+`failed` with the error and no effects. A restart validates from the first
+stage again, since the stores may have changed while Mynou was stopped.
+Command-line management and previews still complete the same stages before
+they act.
+
 ## Remaining delivery
 
 Issue #106 still needs fair bounded scheduling across remaining

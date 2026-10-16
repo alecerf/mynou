@@ -141,9 +141,13 @@ mynou jobs --config ./mynou.json
 
 ## Everyday use
 
-The API listens on `127.0.0.1:8787`. `/healthz` and `/readyz` report
-health, and `mynou healthcheck --config ./mynou.json` exits with an error unless
-the running service answers `/readyz` (it bypasses any proxy). `/api` routes need
+The API listens on `127.0.0.1:8787`. `/healthz` reports liveness. While
+Mynou validates its storage after a start, `/readyz` answers 503 `starting`
+(`failed` if validation found an inconsistency), only reads are served and
+`startup` in `/api/status` shows the stage and rows checked; requests, workers
+and transfers begin once it is `ready`. `mynou healthcheck --config
+./mynou.json` exits with an error unless the running service answers `/readyz`
+(it bypasses any proxy). `/api` routes need
 `Authorization: Bearer` with the API token. For remote access, put a TLS reverse
 proxy in front and keep the plain listener private.
 

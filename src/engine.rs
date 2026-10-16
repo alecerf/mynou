@@ -1,4 +1,6 @@
 //! Durable orchestration. Locks never cover imports or Plex requests.
+mod startup;
+
 use crate::{
     Result,
     config::Config,
@@ -11,7 +13,7 @@ use crate::{
 use std::{
     path::Path,
     sync::{
-        Arc, Mutex, MutexGuard,
+        Arc, Mutex, MutexGuard, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
     thread::{self, JoinHandle},
@@ -71,7 +73,11 @@ pub struct Engine {
     pub(crate) series_refresh_lock: Mutex<()>,
     /// Scopes whose records could not be read, skipped until the instant.
     pub(crate) series_unreadable: Mutex<std::collections::BTreeMap<String, std::time::Instant>>,
-    downloads: Option<Client>,
+    downloads: OnceLock<Client>,
+    start_downloads: bool,
+    startup: Mutex<startup::Startup>,
+    /// Startup validation has not completed: mutations stay refused.
+    pub(crate) starting: AtomicBool,
     transfer_sweep: Mutex<Option<String>>,
     pub(crate) sync_lock: Mutex<()>,
     pub(crate) requester_store: Mutex<crate::requesters::RequesterStore>,
@@ -119,97 +125,51 @@ impl Engine {
     /// Loads existing storage without creating, repairing, or changing its permissions.
     pub fn open_for_preview(config: Config) -> Result<Arc<Self>> {
         let store = Store::open_read_only(&config.store_dir)?;
-        Self::from_store(config, store, false, true)
+        Self::from_store(config, store, false, true, false)
     }
 
     fn open_with_downloads(config: Config, start_downloads: bool) -> Result<Arc<Self>> {
         let store = Store::prepare(&config.store_dir, &config)?;
-        Self::from_store(config, store, start_downloads, false)
+        Self::from_store(config, store, start_downloads, false, false)
+    }
+
+    /// Opens the service journal without waiting for startup validation:
+    /// the API answers reads at once, while mutations, workers and native
+    /// transfers wait until `start` has completed every bounded startup stage.
+    pub fn open_serving(config: Config) -> Result<Arc<Self>> {
+        let store = Store::prepare(&config.store_dir, &config)?;
+        Self::from_store(config, store, true, false, true)
     }
 
     fn from_store(
         config: Config,
-        mut store: Store,
+        store: Store,
         start_downloads: bool,
         read_only: bool,
+        defer: bool,
     ) -> Result<Arc<Self>> {
-        let mut indexer_store =
+        let indexer_store =
             crate::indexers::policy::SourceStore::open(&config.store_dir, &config, read_only)?;
-        let mut feed_store =
+        let feed_store =
             crate::indexers::feed::FeedStore::open(&config.store_dir, &config, read_only)?;
         let series_store = crate::series::SeriesStore::open(&config.store_dir, read_only)?;
-        let mut requester_store =
+        let requester_store =
             crate::requesters::RequesterStore::open(&config.store_dir, &config, read_only)?;
-        let mut irc_store =
+        let irc_store =
             crate::irc::AnnouncementStore::open(&config.store_dir, &config.irc, read_only)?;
-        crate::requesters::engine::validate_storage(&requester_store, &mut store)?;
-        crate::irc::admission::recover(&mut irc_store, &requester_store, false)?;
-        crate::irc::routing::recover(&mut irc_store, &mut store, false)?;
-        if !read_only {
-            store.initialize()?;
-        }
-        indexer_store.initialize(&config)?;
-        feed_store.initialize()?;
-        if !read_only {
-            for source in &config.sources {
-                if !source.options.watched() {
-                    feed_store.suspend(&crate::indexers::feed::source_id(source))?;
-                }
-            }
-        }
-        requester_store.initialize()?;
-        irc_store.initialize()?;
-        if !read_only {
-            crate::irc::admission::recover(&mut irc_store, &requester_store, true)?;
-            crate::irc::routing::recover(&mut irc_store, &mut store, true)?;
-        }
-        if !read_only {
-            crate::requesters::engine::cancel_unwanted(
-                &requester_store,
-                &mut store,
-                &config,
-                true,
-            )?;
-        }
         let store = Arc::new(Mutex::new(store));
-        let mut transfer_sweep = None;
-        let downloads = if start_downloads && config.downloads_enabled {
-            let admission_store = store.clone();
-            let client = Client::open_with_policy_and_admission(
-                config.downloads.clone(),
-                config.download_policy.clone(),
-                Arc::new(move |id| {
-                    // Client workers must never wait for the request journal
-                    // while holding their own state lock: request mutations
-                    // can call native controls while holding the journal.
-                    let mut store = match admission_store.try_lock() {
-                        Ok(store) => store,
-                        Err(std::sync::TryLockError::WouldBlock) => return Ok(false),
-                        Err(std::sync::TryLockError::Poisoned(_)) => {
-                            return Err("Request journal lock is poisoned".into());
-                        }
-                    };
-                    Ok(!store.transfer_cancelled(id)? || store.transfer_has_owner(id)?)
-                }),
-            )?;
-            cancel_orphaned_transfers(&client, &mut *lock(&store)?, &mut transfer_sweep)?;
-            Some(client)
-        } else {
-            None
-        };
-        if !read_only {
-            // Finish retirements a previous run recorded but did not complete.
-            retire_transfers(downloads.as_ref(), &mut *lock(&store)?)?;
-        }
         let irc_runtime = crate::irc::client::Runtime::new(&config.irc.sources);
-        Ok(Arc::new(Self {
+        let engine = Arc::new(Self {
             config,
             store,
             series_store: Mutex::new(series_store),
             series_refresh_lock: Mutex::new(()),
             series_unreadable: Mutex::new(std::collections::BTreeMap::new()),
-            downloads,
-            transfer_sweep: Mutex::new(transfer_sweep),
+            downloads: OnceLock::new(),
+            start_downloads,
+            startup: Mutex::new(startup::Startup::default()),
+            starting: AtomicBool::new(true),
+            transfer_sweep: Mutex::new(None),
             sync_lock: Mutex::new(()),
             requester_store: Mutex::new(requester_store),
             irc_store: Mutex::new(irc_store),
@@ -226,7 +186,11 @@ impl Engine {
             last_sync_error: Mutex::new(None),
             last_upgrade_error: Mutex::new(None),
             last_series_error: Mutex::new(None),
-        }))
+        });
+        if !defer {
+            engine.finish_startup()?;
+        }
+        Ok(engine)
     }
 
     pub fn submit(&self, request: Request) -> Result<Vec<Job>> {
@@ -338,7 +302,7 @@ impl Engine {
                 .map(|file| file.torrent_id.as_str())
         });
         if !shared
-            && let (Some(client), Some(id)) = (&self.downloads, transfer_id)
+            && let (Some(client), Some(id)) = (self.downloads.get(), transfer_id)
             && client.contains(id)?
         {
             client.cancel(id)?;
@@ -353,7 +317,7 @@ impl Engine {
         let job = store.retry(id)?;
         if job.irc_origin.is_some() {
             drop(store);
-            if let (Some(client), Some(id)) = (&self.downloads, &job.download_id)
+            if let (Some(client), Some(id)) = (self.downloads.get(), &job.download_id)
                 && client.contains(id)?
             {
                 client.resume_if_allowed(id)?;
@@ -368,7 +332,7 @@ impl Engine {
                 .torrent_id
                 .clone();
             drop(store);
-            if let Some(client) = &self.downloads
+            if let Some(client) = self.downloads.get()
                 && client.contains(&transfer_id)?
             {
                 client.resume_if_allowed(&transfer_id)?;
@@ -382,7 +346,7 @@ impl Engine {
 
     fn native_client(&self) -> Result<&Client> {
         self.downloads
-            .as_ref()
+            .get()
             .ok_or_else(|| "Native downloads are disabled".to_owned())
     }
 
@@ -507,6 +471,7 @@ impl Engine {
         v.insert("active", count(|counts| counts.active));
         v.insert("ready", count(|counts| counts.ready));
         v.insert("stopped", self.stopped.load(Ordering::Acquire));
+        v.insert("startup", self.startup_status()?);
         v.insert(
             "maintenance_error",
             maintenance_error.map_or(Value::Null, Value::String),
@@ -547,7 +512,7 @@ impl Engine {
                 .map_or(Value::Null, Value::String),
         );
         v.insert("storage", self.storage()?);
-        if let Some(client) = &self.downloads {
+        if let Some(client) = self.downloads.get() {
             v.insert("peer_port", client.listen_port() as u32);
             let stats = client
                 .try_aggregate_stats()
@@ -592,7 +557,7 @@ impl Engine {
         v.insert("feeds", read(&self.feed_store, |s| s.storage())?);
         v.insert(
             "transfers",
-            match &self.downloads {
+            match self.downloads.get() {
                 Some(client) => client.storage()?,
                 None => crate::inventory::report("not_open", None),
             },
@@ -600,11 +565,36 @@ impl Engine {
         Ok(v)
     }
 
+    /// Completes any remaining startup stages on a launcher thread, then
+    /// starts the workers there. A startup failure keeps every worker,
+    /// mutation and native transfer stopped and is reported by status.
     pub fn start(self: &Arc<Self>) -> Workers {
-        let mut handles = Vec::new();
-        crate::irc::client::start(self, &mut handles);
-        crate::irc::routing::start(self, &mut handles);
-        crate::indexers::watch::start(self, &mut handles);
+        let engine = self.clone();
+        let launcher = thread::spawn(move || {
+            match engine.finish_startup() {
+                Ok(true) => {}
+                Ok(false) => return,
+                Err(error) => {
+                    eprintln!("mynou: startup validation failed: {error}");
+                    return;
+                }
+            }
+            let mut handles = Vec::new();
+            engine.spawn_workers(&mut handles);
+            for handle in handles {
+                let _ = handle.join();
+            }
+        });
+        Workers {
+            engine: self.clone(),
+            handles: vec![launcher],
+        }
+    }
+
+    fn spawn_workers(self: &Arc<Self>, handles: &mut Vec<JoinHandle<()>>) {
+        crate::irc::client::start(self, handles);
+        crate::irc::routing::start(self, handles);
+        crate::indexers::watch::start(self, handles);
         if self.config.catalog.enabled {
             let engine = self.clone();
             handles.push(thread::spawn(move || {
@@ -655,10 +645,6 @@ impl Engine {
                     engine.wait(60_000);
                 }
             }));
-        }
-        Workers {
-            engine: self.clone(),
-            handles,
         }
     }
 
@@ -718,11 +704,11 @@ impl Engine {
     /// the record until this finishes, so an interruption is repaired by the next
     /// call: after any retry, requester reconciliation and startup.
     pub(crate) fn retire_previous_transfers(&self, store: &mut Store) -> Result<()> {
-        retire_transfers(self.downloads.as_ref(), store)
+        retire_transfers(self.downloads.get(), store)
     }
 
     pub(crate) fn pause_unwanted_transfers(&self, store: &mut Store) -> Result<()> {
-        let Some(client) = &self.downloads else {
+        let Some(client) = self.downloads.get() else {
             return Ok(());
         };
         cancel_orphaned_transfers(client, store, &mut *lock(&self.transfer_sweep)?)
@@ -773,7 +759,7 @@ impl Engine {
             && let Some(id) = &job.download_id
         {
             self.downloads
-                .as_ref()
+                .get()
                 .ok_or("Downloads are disabled")?
                 .resume_if_allowed(id)?;
         }
@@ -830,7 +816,7 @@ impl Engine {
             return Ok(());
         }
         if job.imports.is_empty() && !job.files.is_empty() && job.download_id.is_some() {
-            let client = self.downloads.as_ref().ok_or("Downloads are disabled")?;
+            let client = self.downloads.get().ok_or("Downloads are disabled")?;
             let id = job.download_id.as_deref().ok_or("Missing download")?;
             let status = if let Some(origin) = &job.irc_origin {
                 client.require_bound_files(
@@ -864,7 +850,7 @@ impl Engine {
             if let Some(path) = &job.request.source_path {
                 job.files.push(path.clone());
             } else {
-                let client = self.downloads.as_ref().ok_or("Downloads are disabled")?;
+                let client = self.downloads.get().ok_or("Downloads are disabled")?;
                 if job.acquisition_url.is_none() {
                     job.acquisition_url = Some(match &job.request.source_url {
                         Some(url) => url.clone(),
