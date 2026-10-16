@@ -1087,15 +1087,12 @@ impl Store {
         })
     }
 
-    /// Records sweep progress. Before the first request creates the index
-    /// there is nothing to resume, so an absent store keeps no cursor.
+    /// Records sweep progress even when no watchlist item has created a job.
+    /// Writable opens create the index; read-only stores must reject writes.
     pub(crate) fn save_watchlist_cursor(
         &mut self,
         cursor: &crate::integrations::SweepCursor,
     ) -> Result<()> {
-        if matches!(self.backend, Backend::Absent) {
-            return Ok(());
-        }
         self.mutate(|db| {
             db.0.commit(vec![Change::Put(
                 layout::WATCHLIST_CURSOR_KEY,

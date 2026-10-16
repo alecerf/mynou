@@ -53,6 +53,12 @@ Watchlists are now read in resumable sweeps of 200-entry pages, up to eight page
 
 Search previews no longer stop at 1,000 rows or fail beyond 16 MiB of candidates: candidates are assessed as each source answers, and the winner is still chosen from all of them. `mynou search` and `POST /api/search` return pages of 100 candidates (`--limit` up to 200) with a `next` cursor for `--after`, replacing `truncated`; the web interface loads more on demand ([guide](/docs/selection.md#preview-a-search)).
 
+Exactly tied candidates now use their identity digest as the deterministic tie-breaker, which can select a different release than the former title/URL ordering.
+
+## Fixed: Confirm large requester watchlists before removing demand
+
+Watchlists spanning several polling passes now need two complete sweeps with matching identity digests before absent entries are removed, protecting demand from reorders that keep page anchors and totals unchanged. Confirmation and single-account progress before the first job survive restarts; large-list removals take longer ([guide](/docs/requesters.md#how-demand-is-handled)).
+
 ## Fixed: IRC routing no longer stalls behind failing announcements
 
 Up to 200 announcements that kept failing to route (for example with no waiting job) could pause IRC routing for everyone until their 30-second backoff ended. Eligible announcements are now routed regardless, and `GET /api/irc` reports how many backoffs are held, the limit and how many were shortened under `routing` ([limits](/docs/limits.md)).

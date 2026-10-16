@@ -139,7 +139,7 @@ fn large_watchlists_resume_across_passes_and_restarts_without_starving_other_acc
     drop(engine);
 
     // A restart resumes from the durable sweep instead of the first page:
-    // across all passes every entry is committed exactly once.
+    // each of the two confirming traversals commits every entry exactly once.
     let engine = Engine::open_for_management(cfg).unwrap();
     assert_eq!(position(&engine, "alice"), first);
     loop {
@@ -150,8 +150,8 @@ fn large_watchlists_resume_across_passes_and_restarts_without_starving_other_acc
         }
         assert_eq!(cursor(&engine, "alice"), "0");
     }
-    assert_eq!(rows, 1_700);
-    assert_eq!(cursor(&engine, "alice"), "1");
+    assert_eq!(rows, 3_400);
+    assert_eq!(cursor(&engine, "alice"), "2");
     assert_eq!(progress(&engine, "alice"), Value::Null);
     assert_eq!(states(&engine, "alice"), (1_700, 0));
 }
@@ -184,7 +184,7 @@ fn removals_wait_for_a_complete_sweep_of_an_unchanged_listing() {
     accounts.watchlist("alice", movies(0..2_000));
     let engine = Engine::open_for_management(accounts.config(&dir.0)).unwrap();
     assert!(finish_sweep(&engine));
-    assert_eq!(cursor(&engine, "alice"), "1");
+    assert_eq!(cursor(&engine, "alice"), "2");
     assert_eq!(states(&engine, "alice"), (2_000, 0));
 
     // Part of a sweep later the upstream fails: committed progress stays and
@@ -211,7 +211,7 @@ fn removals_wait_for_a_complete_sweep_of_an_unchanged_listing() {
     shorter.remove(100);
     accounts.watchlist("alice", shorter);
     assert!(!finish_sweep(&engine));
-    assert_eq!(cursor(&engine, "alice"), "1");
+    assert_eq!(cursor(&engine, "alice"), "2");
     assert_eq!(states(&engine, "alice"), (2_000, 0));
 
     // Part of the next sweep proves nothing either.
@@ -292,4 +292,78 @@ fn the_single_account_watchlist_resumes_its_sweep_across_passes_and_restarts() {
     // The next sweep starts from the top; submissions are idempotent.
     assert_eq!(engine.sync().unwrap(), 0);
     assert_eq!(reads(), 17);
+}
+
+#[test]
+fn same_total_reorders_require_a_matching_traversal_before_retiring_origins() {
+    let dir = Directory::new();
+    let accounts = Accounts::open();
+    accounts.watchlist("alice", movies(0..1_700));
+    let cfg = accounts.config(&dir.0);
+    let engine = Engine::open_for_management(cfg.clone()).unwrap();
+    assert!(finish_sweep(&engine));
+    let published = cursor(&engine, "alice");
+    assert!(!flag(&pass(&engine, "alice"), "alice", "published"));
+    let boundary = position(&engine, "alice") as usize;
+    assert!(boundary > 0 && boundary + 10 < 1_700);
+
+    // Remove a previously seen item, move a known unseen item before the
+    // cursor, and append a replacement. Both total and boundary anchor stay
+    // unchanged, so the old anchor-only heuristic skipped the moved origin.
+    let moved_title = format!("Synthetic Sweep Movie {}", boundary + 10);
+    let mut edited = movies(0..1_700);
+    let moved = edited.remove(boundary + 10);
+    edited.remove(0);
+    edited.insert(0, moved);
+    edited.extend(movies(1_700..1_701));
+    accounts.watchlist("alice", edited);
+
+    // Finishing the misleading traversal must start verification, never
+    // publish its incomplete set of origins. All request/row bounds still hold.
+    loop {
+        let report = pass(&engine, "alice");
+        assert!(!flag(&report, "alice", "published"));
+        assert_eq!(cursor(&engine, "alice"), published);
+        assert_eq!(states(&engine, "alice").1, 0);
+        if progress(&engine, "alice")
+            .get("verifying")
+            .and_then(Value::as_bool)
+            == Some(true)
+        {
+            break;
+        }
+    }
+    drop(engine);
+    // Verification survives a service restart, including its candidate digest.
+    let engine = Engine::open_for_management(cfg.clone()).unwrap();
+    assert!(finish_sweep(&engine));
+    let demands = all_demands(&engine, "alice");
+    let removed: Vec<_> = demands
+        .iter()
+        .filter(|d| d.get("state").and_then(Value::as_str) == Some("removed"))
+        .collect();
+    assert_eq!(removed.len(), 1);
+    assert_eq!(
+        removed[0]
+            .get("request")
+            .unwrap()
+            .get("title")
+            .and_then(Value::as_str),
+        Some("Synthetic Sweep Movie 0")
+    );
+    let moved = demands
+        .iter()
+        .find(|d| {
+            d.get("request")
+                .unwrap()
+                .get("title")
+                .and_then(Value::as_str)
+                == Some(moved_title.as_str())
+        })
+        .unwrap();
+    assert_ne!(moved.get("state").and_then(Value::as_str), Some("removed"));
+    // Reopening preserves the true removal and the moved origin.
+    drop(engine);
+    let engine = Engine::open_for_management(cfg).unwrap();
+    assert_eq!(states(&engine, "alice"), (1_701, 1));
 }

@@ -16,6 +16,47 @@ use std::{
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
+#[test]
+fn watchlist_cursor_is_durable_before_the_first_job() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let cursor = crate::integrations::SweepCursor {
+        position: 1_593,
+        total: Some(1_700),
+        anchor: Some([7; 32]),
+        consistent: true,
+    };
+    store.save_watchlist_cursor(&cursor).unwrap();
+    assert_eq!(store.counts().unwrap().jobs, 0);
+    drop(store);
+    let mut store = Store::open(&directory.0).unwrap();
+    assert_eq!(store.watchlist_cursor().unwrap(), Some(cursor.clone()));
+    assert_eq!(store.counts().unwrap().jobs, 0);
+    drop(store);
+    let mut store = Store::open_read_only(&directory.0).unwrap();
+    assert_eq!(store.watchlist_cursor().unwrap(), Some(cursor.clone()));
+    assert_eq!(
+        store.save_watchlist_cursor(&cursor).unwrap_err(),
+        "storage is read-only"
+    );
+}
+
+#[test]
+fn an_absent_read_only_store_cannot_acknowledge_a_watchlist_cursor() {
+    let directory = Directory::new();
+    let lock = secure_file(&directory.0.join(".lock")).unwrap();
+    drop(lock);
+    let mut store = Store::open_read_only(&directory.0).unwrap();
+    assert_eq!(store.watchlist_cursor().unwrap(), None);
+    assert_eq!(
+        store
+            .save_watchlist_cursor(&crate::integrations::SweepCursor::start())
+            .unwrap_err(),
+        "storage is read-only"
+    );
+    assert!(!directory.0.join("jobs.idx").exists());
+}
+
 struct Directory(PathBuf);
 impl Directory {
     fn new() -> Self {

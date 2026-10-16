@@ -87,7 +87,10 @@ Accepted candidates are ranked by:
 
 1. the highest custom score;
 2. resolution, source, codec and language preferences, in that order;
-3. more seeds, then a deterministic tie-breaker.
+3. more seeds, then the smallest candidate identity digest for exact ties.
+
+The digest tie-breaker is deterministic but can choose a different release
+than earlier versions, which compared the title and URL on an exact tie.
 
 With an unrestricted profile and no score rules, seed count decides. Source
 order never bypasses a profile, and when nothing is accepted Mynou does not

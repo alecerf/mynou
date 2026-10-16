@@ -106,12 +106,18 @@ polls every account now and needs the service.
   first, so one large watchlist does not hold up the others.
 - Entries that left the watchlist are removed only after a sweep reads the
   whole list without noticing a change. Each page re-reads the entry before it
-  and compares the reported total, so ordinary additions and removals are
-  noticed; a rare combination of edits that keeps both unchanged is not. If the list changes during a
-  sweep, nothing is removed and a new sweep starts; a failed page removes
-  nothing either. `GET /api/requesters` shows an unfinished sweep under
+  and compares the reported total. A sweep resumed in another polling pass
+  also needs a second complete sweep with the same ordered identity digest
+  before it can remove demand. This catches reorders that preserve both the
+  total and the page anchor; a stable large list therefore takes two sweeps
+  to publish. Changed digests need another confirmation, and progress survives
+  restarts. Continuously changing upstream lists may delay removals; Plex does
+  not provide an atomic snapshot, so matching traversals cannot prove that no
+  concurrent edits occurred. A detected change or failed page removes nothing.
+  `GET /api/requesters` shows an unfinished sweep under
   `sweep` (`position`, the upstream `total` and whether the list has stayed
-  `consistent`), and each sync reports the pages, requests and rows it used.
+  `consistent`, plus `verifying` while confirming a prior traversal), and each
+  sync reports the pages, requests and rows it used.
 - A series entry requests its aired, identified, regular episodes one by one.
   The series record created for it starts unmonitored, and automatic packs are
   not used for this demand.

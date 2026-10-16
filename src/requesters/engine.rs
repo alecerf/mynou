@@ -756,6 +756,9 @@ impl Engine {
             };
             (previous, sweep)
         };
+        if progress.pages == 0 && sweep.cursor.position > 0 {
+            sweep.multipass = true;
+        }
         let page =
             integrations::requester_watchlist_page(&self.config, account, &sweep.cursor, deadline)?;
         progress.pages += 1;
@@ -816,8 +819,25 @@ impl Engine {
         let next = if page.complete && page.next.consistent {
             finished = true;
             sweep.cursor = page.next;
-            progress.published = true;
-            Progress::Publish(sweep)
+            if (sweep.multipass || sweep.verification.is_some())
+                && sweep.verification != Some(sweep.digest)
+            {
+                // Anchors and totals cannot detect every same-total reorder.
+                // Confirm the entire traversal before allowing any absence to
+                // become a durable tombstone. Each pass keeps its usual bounds.
+                let mut confirmation = Sweep::new(
+                    sweep
+                        .epoch
+                        .checked_add(1)
+                        .ok_or("Requester: cursor overflow")?,
+                    store::now(),
+                );
+                confirmation.verification = Some(sweep.digest);
+                Progress::Continue(confirmation)
+            } else {
+                progress.published = true;
+                Progress::Publish(sweep)
+            }
         } else if page.complete {
             // The listing moved under the sweep: nothing may be inferred from
             // it, so a new sweep with a new generation starts from the top.
@@ -1021,6 +1041,7 @@ fn sweep_value(sweep: Option<&Sweep>) -> Value {
             .map_or(Value::Null, |total| total.to_string().into()),
     );
     v.insert("consistent", sweep.cursor.consistent);
+    v.insert("verifying", sweep.verification.is_some());
     v.insert("started_at", sweep.started_at.to_string());
     v
 }

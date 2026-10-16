@@ -137,6 +137,10 @@ pub(crate) struct Sweep {
     /// Chained digest of the origins in the order the sweep saw them.
     pub digest: [u8; 32],
     pub started_at: u64,
+    /// A sweep resumed in another polling pass must confirm its full digest.
+    pub multipass: bool,
+    /// Completed sweep digest awaiting an independent complete traversal.
+    pub verification: Option<[u8; 32]>,
 }
 impl Sweep {
     pub(crate) fn new(epoch: u64, started_at: u64) -> Self {
@@ -145,6 +149,8 @@ impl Sweep {
             cursor: SweepCursor::start(),
             digest: [0; 32],
             started_at,
+            multipass: false,
+            verification: None,
         }
     }
     pub(crate) fn observe(&mut self, origin: &str) {
@@ -161,13 +167,32 @@ impl Sweep {
         bytes.extend_from_slice(&self.cursor.encode());
         bytes.extend_from_slice(&self.digest);
         bytes.extend_from_slice(&self.started_at.to_be_bytes());
+        bytes.push(u8::from(self.multipass));
+        bytes.push(u8::from(self.verification.is_some()));
+        bytes.extend_from_slice(&self.verification.unwrap_or([0; 32]));
         bytes
     }
     fn decode(bytes: &[u8]) -> Result<Self> {
         let invalid = || "Requester: invalid watchlist sweep".to_owned();
-        if bytes.len() != SWEEP_LEN || &bytes[..8] != SWEEP_FORMAT {
+        if ![SWEEP_LEN, SWEEP_LEN + 34].contains(&bytes.len()) || &bytes[..8] != SWEEP_FORMAT {
             return Err(invalid());
         }
+        let (multipass, verification) = if bytes.len() == SWEEP_LEN {
+            // Existing cursors may already span several passes. Confirm them.
+            (true, None)
+        } else {
+            let extra = &bytes[SWEEP_LEN..];
+            if extra[0] > 1
+                || extra[1] > 1
+                || (extra[1] == 0 && extra[2..].iter().any(|byte| *byte != 0))
+            {
+                return Err(invalid());
+            }
+            (
+                extra[0] == 1,
+                (extra[1] == 1).then(|| extra[2..].try_into().expect("fixed digest width")),
+            )
+        };
         let cursor_end = 16 + SweepCursor::ENCODED_LEN;
         let sweep = Self {
             epoch: u64::from_be_bytes(bytes[8..16].try_into().map_err(|_| invalid())?),
@@ -176,8 +201,12 @@ impl Sweep {
                 .try_into()
                 .map_err(|_| invalid())?,
             started_at: u64::from_be_bytes(
-                bytes[cursor_end + 32..].try_into().map_err(|_| invalid())?,
+                bytes[cursor_end + 32..SWEEP_LEN]
+                    .try_into()
+                    .map_err(|_| invalid())?,
             ),
+            multipass,
+            verification,
         };
         if sweep.epoch == 0 {
             return Err(invalid());
@@ -760,4 +789,40 @@ pub(super) fn commit_poll(
             .collect(),
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod sweep_tests {
+    use super::*;
+
+    #[test]
+    fn confirmation_progress_round_trips_and_legacy_progress_requires_confirmation() {
+        let mut sweep = Sweep::new(7, 42);
+        sweep.cursor.position = 200;
+        sweep.cursor.anchor = Some([3; 32]);
+        sweep.observe("movie:synthetic");
+        let encoded = sweep.encode();
+        let legacy = Sweep::decode(&encoded[..SWEEP_LEN]).unwrap();
+        assert!(legacy.multipass);
+        assert_eq!(legacy.verification, None);
+        assert_eq!(legacy.cursor, sweep.cursor);
+        assert_eq!(legacy.digest, sweep.digest);
+        sweep.multipass = true;
+        sweep.verification = Some([8; 32]);
+        assert_eq!(Sweep::decode(&sweep.encode()).unwrap(), sweep);
+    }
+
+    #[test]
+    fn malformed_confirmation_progress_is_rejected() {
+        let encoded = Sweep::new(1, 42).encode();
+        for at in [SWEEP_LEN, SWEEP_LEN + 1] {
+            let mut corrupt = encoded.clone();
+            corrupt[at] = 2;
+            assert!(Sweep::decode(&corrupt).is_err());
+        }
+        let mut corrupt = encoded.clone();
+        corrupt[SWEEP_LEN + 2] = 1;
+        assert!(Sweep::decode(&corrupt).is_err());
+        assert!(Sweep::decode(&encoded[..encoded.len() - 1]).is_err());
+    }
 }
