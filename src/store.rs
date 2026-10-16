@@ -1450,6 +1450,12 @@ impl Store {
         self.read(Vec::new(), |db| db.media_jobs(media_key))
     }
 
+    /// The inventory key of a job record, so tests can damage it.
+    #[cfg(test)]
+    pub(crate) fn record_key(id: &str) -> Result<crate::inventory::Key> {
+        Ok(layout::job_key(&layout::id_bytes(id)?))
+    }
+
     pub(crate) fn media_page(
         &mut self,
         media: &str,

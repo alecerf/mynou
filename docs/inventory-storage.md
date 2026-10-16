@@ -609,7 +609,9 @@ written before every read-only stage passes. Until the last stage, only reads
 and shutdown are served (other requests get 503), workers and native
 transfers wait, `/readyz` answers `starting` and `startup` in `/api/status`
 reports the stage, pages and rows. An inconsistency leaves the service in
-`failed` with the error and no effects. A restart validates from the first
+`failed` with the error and no effects: a native client opened for the last
+stage is published only after its retirement checks pass, and closed
+otherwise. A restart validates from the first
 stage again, since the stores may have changed while Mynou was stopped.
 Command-line management and previews still complete the same stages before
 they act.

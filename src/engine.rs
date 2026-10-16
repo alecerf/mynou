@@ -1,5 +1,7 @@
 //! Durable orchestration. Locks never cover imports or Plex requests.
 mod startup;
+#[cfg(test)]
+mod startup_tests;
 
 use crate::{
     Result,

@@ -238,11 +238,15 @@ impl Engine {
             let mut sweep = lock(&self.transfer_sweep)?;
             cancel_orphaned_transfers(&client, &mut *lock(&self.store)?, &mut sweep)?;
             drop(sweep);
+            // Publish the client only after every check that can fail: an
+            // error drops it, stopping its listener and transfers.
+            if !self.read_only {
+                retire_transfers(Some(&client), &mut *lock(&self.store)?)?;
+            }
             self.downloads
                 .set(client)
                 .map_err(|_| "Native transfers already started")?;
-        }
-        if !self.read_only {
+        } else if !self.read_only {
             retire_transfers(self.downloads.get(), &mut *lock(&self.store)?)?;
         }
         Ok(())
