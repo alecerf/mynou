@@ -25,7 +25,10 @@ use super::{
 use crate::{
     crypto::{random_bytes, sha256},
     inventory::Key,
-    store::{private_options, reject_symlinks, sync_directory, sync_file},
+    store::{
+        before_private_open, private_options, reject_symlinks, same_inode, sync_directory,
+        sync_file,
+    },
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -225,16 +228,36 @@ fn settle_journal(directory: &Path, index: &mut Index, read_only: bool) -> Resul
     if read_only {
         return Ok(());
     }
-    let file = private_options()
+    reject_symlinks(&path)?;
+    let inspected =
+        fs::symlink_metadata(&path).map_err(|_| "Cannot inspect the legacy journal".to_owned())?;
+    if !inspected.is_file() {
+        return Err("The legacy journal must be a regular file".into());
+    }
+    before_private_open(&path);
+    let mut file = private_options()
+        .read(true)
         .write(true)
         .open(&path)
         .map_err(|_| "Cannot open the legacy journal".to_owned())?;
-    if !file
+    let opened = file
         .metadata()
-        .map_err(|_| "Cannot inspect the legacy journal".to_owned())?
-        .is_file()
-    {
+        .map_err(|_| "Cannot inspect the legacy journal".to_owned())?;
+    if !opened.is_file() {
         return Err("The legacy journal must be a regular file".into());
+    }
+    if opened.nlink() != 1 || !same_inode(&inspected, &opened) {
+        return Err("The legacy journal changed while opening".into());
+    }
+    // Only the bytes proven equal to the preserved copy may be emptied, so
+    // they are read again through the descriptor that truncates them.
+    let mut current = Vec::new();
+    (&mut file)
+        .take(legacy::MAX_JOURNAL_BYTES + 1)
+        .read_to_end(&mut current)
+        .map_err(|_| "Cannot read the legacy journal".to_owned())?;
+    if sha256(&current) != sha256(&bytes) {
+        return Err("The legacy journal changed while it was settled".into());
     }
     file.set_len(0)
         .and_then(|()| sync_file(&file))

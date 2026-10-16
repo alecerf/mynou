@@ -28,11 +28,14 @@ creation locks and the persisted `.torrent`, `.source`, `.control`, `.paused`
 and `.seed` files). If the final path component is swapped for a symbolic link
 after inspection, the open itself refuses it, so the target is never read. A
 FIFO or device returns at once instead of blocking, and the descriptor is
-refused unless it is the inspected regular file. Directory synchronization opens
-without blocking and refuses non-directories. `O_NOFOLLOW` covers only the final
-component. A parent directory swapped for a symbolic link between inspection and
-open is still followed, which stays within the private-directory trust model
-above. The inode, link-count and permission checks remain as defense in depth.
+refused unless it is the inspected regular file (same device and inode). A
+missing job store lock is created exclusively, and a leftover legacy journal is
+checked against its preserved copy again through the descriptor that empties it.
+Directory synchronization opens without blocking and refuses non-directories.
+`O_NOFOLLOW` covers only the final component. A parent directory swapped for a
+symbolic link between inspection and open is still followed, which stays within
+the private-directory trust model above. The link-count and permission checks
+remain as defense in depth.
 
 `identity.bin` holds a random 256-bit store identity and checksum. `tree.bin`
 contains 4 KiB checksummed pages. Page zero holds the identity, sequence,

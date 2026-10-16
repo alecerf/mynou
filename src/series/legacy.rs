@@ -10,7 +10,7 @@ use crate::{
     Result,
     crypto::{constant_time_eq, sha256},
     json::{self, Value},
-    store::{private_options, reject_symlinks},
+    store::{before_private_open, private_options, reject_symlinks, same_inode},
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -57,15 +57,17 @@ pub(super) fn marker_binding(identity: &[u8; 32]) -> String {
 /// Reads and checksum-validates `series.json` without interpreting records.
 pub(super) fn inspect(path: &Path, repair_permissions: bool) -> Result<Snapshot> {
     reject_symlinks(path)?;
-    match fs::symlink_metadata(path) {
+    let inspected = match fs::symlink_metadata(path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Snapshot::Missing),
         Err(error) => return Err(format!("Cannot inspect series snapshot: {error}")),
         Ok(metadata) => {
             if !metadata.is_file() || metadata.len() > MAX_LEGACY_SNAPSHOT as u64 {
                 return Err("Invalid or oversized series snapshot".into());
             }
+            metadata
         }
-    }
+    };
+    before_private_open(path);
     let mut file = private_options()
         .read(true)
         .open(path)
@@ -76,6 +78,9 @@ pub(super) fn inspect(path: &Path, repair_permissions: bool) -> Result<Snapshot>
     }
     if opened.nlink() != 1 {
         return Err("Series snapshots cannot share hard links".into());
+    }
+    if !same_inode(&inspected, &opened) {
+        return Err("Series snapshot changed while opening".into());
     }
     if repair_permissions {
         file.set_permissions(fs::Permissions::from_mode(0o600))

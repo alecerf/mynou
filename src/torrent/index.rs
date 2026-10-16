@@ -1350,7 +1350,7 @@ mod tests {
             ("source", 0, "Cannot open private transfer state"),
         ];
         for (name, skip, opened) in cases {
-            for swap in [Swap::Symlink, Swap::Fifo] {
+            for swap in [Swap::Symlink, Swap::Fifo, Swap::Replaced] {
                 let fixture = Fixture::new();
                 let id = fixture.source(1, Some(1));
                 let mut config = fixture.config.clone();
@@ -1372,6 +1372,13 @@ mod tests {
                             || error == "Special state files are not allowed"
                             || error == "Invalid or changed transfer ownership lock",
                         "{name} {skip}: {error}"
+                    ),
+                    Swap::Replaced if skip == 1 => {
+                        assert_eq!(error, "Invalid or changed transfer ownership lock")
+                    }
+                    Swap::Replaced => assert_eq!(
+                        error, "Transfer state changed during opening",
+                        "{name} {skip}"
                     ),
                 }
             }

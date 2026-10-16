@@ -2069,6 +2069,39 @@ fn a_journal_left_after_the_marker_is_emptied_only_when_it_matches_the_preserved
     );
 }
 
+/// A leftover journal swapped after its inspection is refused before it is
+/// emptied, so no other file is ever truncated.
+#[test]
+fn a_journal_swapped_before_it_is_emptied_is_refused_and_kept() {
+    use super::open_tests::{Swap, swapped};
+    for swap in [Swap::Symlink, Swap::Fifo, Swap::Replaced] {
+        let jobs: Vec<Job> = (0..3).map(|n| raw_job(n, 100 + n)).collect();
+        let directory = Directory::new();
+        write_legacy(&directory.0, &[], &jobs, 0);
+        interrupted(&directory.0, |stage| stage == Stage::MarkerWritten)
+            .err()
+            .unwrap();
+        let journal = directory.0.join("journal.bin");
+        let bytes = fs::read(&journal).unwrap();
+        assert!(!bytes.is_empty());
+        let path = directory.0.clone();
+        let error = swapped("journal.bin", 0, swap, move || Store::open(&path).map(drop));
+        let expected = match swap {
+            Swap::Symlink => "Cannot open the legacy journal",
+            Swap::Fifo => "The legacy journal must be a regular file",
+            Swap::Replaced => "The legacy journal changed while opening",
+        };
+        assert!(error.contains(expected), "{swap:?}: {error}");
+        assert_eq!(
+            fs::read(directory.0.join("journal.bin.moved")).unwrap(),
+            bytes
+        );
+        if matches!(swap, Swap::Replaced) {
+            assert_eq!(fs::read(&journal).unwrap(), bytes);
+        }
+    }
+}
+
 #[test]
 fn a_store_that_never_held_jobs_is_created_atomically() {
     let directory = Directory::new();

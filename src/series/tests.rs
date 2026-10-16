@@ -1272,3 +1272,23 @@ fn a_preserved_copy_must_be_a_private_regular_file_of_the_exact_size() {
     let mut store = SeriesStore::open(&directory.0, false).unwrap();
     assert_consistent(&mut store, &records);
 }
+
+/// The legacy snapshot, swapped after inspection, is refused at open time
+/// without blocking, including for another regular file with the same bytes.
+#[test]
+fn a_swapped_legacy_snapshot_is_refused_at_open_without_blocking() {
+    use crate::store::open_tests::{Swap, swapped};
+    for swap in [Swap::Symlink, Swap::Fifo, Swap::Replaced] {
+        let dir = Directory::new();
+        write_legacy(&dir.0, &sample(), 2);
+        let path = dir.0.join("series.json");
+        let error = swapped("series.json", 0, swap, move || {
+            super::legacy::inspect(&path, false).map(drop)
+        });
+        match swap {
+            Swap::Symlink => assert!(error.starts_with("Cannot open series snapshot"), "{error}"),
+            Swap::Fifo => assert_eq!(error, "Invalid or oversized series snapshot"),
+            Swap::Replaced => assert_eq!(error, "Series snapshot changed while opening"),
+        }
+    }
+}

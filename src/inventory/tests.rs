@@ -833,7 +833,7 @@ fn swapped_index_files_are_refused_at_open_without_blocking() {
         "transaction.tmp",
         "segment",
     ] {
-        for swap in [Swap::Symlink, Swap::Fifo] {
+        for swap in [Swap::Symlink, Swap::Fifo, Swap::Replaced] {
             let directory = Directory::new();
             let mut index = Index::create(&directory.0).unwrap();
             // Too large to inline, so the value lives in a log segment.
@@ -874,6 +874,9 @@ fn swapped_index_files_are_refused_at_open_without_blocking() {
                         || error.starts_with("Inventory files must be private regular files"),
                     "{name}: {error}"
                 ),
+                Swap::Replaced => {
+                    assert_eq!(error, "Inventory file changed while opening", "{name}")
+                }
             }
         }
     }

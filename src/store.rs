@@ -680,17 +680,22 @@ thread_local! {
 /// symbolic link and never blocks; the descriptor must be the inspected regular
 /// file.
 pub(crate) fn open_inspected(path: &Path, inspected: &fs::Metadata) -> Result<File> {
-    use std::os::unix::fs::MetadataExt;
     before_private_open(path);
     let file = private_options()
         .read(true)
         .open(path)
         .map_err(|error| format!("cannot open private file: {error}"))?;
     let opened = file.metadata().map_err(|error| error.to_string())?;
-    if !opened.is_file() || opened.dev() != inspected.dev() || opened.ino() != inspected.ino() {
+    if !opened.is_file() || !same_inode(inspected, &opened) {
         return Err("private file changed while opening".to_owned());
     }
     Ok(file)
+}
+
+/// Whether `opened` is the inode that `inspected` described.
+pub(crate) fn same_inode(inspected: &fs::Metadata, opened: &fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    inspected.dev() == opened.dev() && inspected.ino() == opened.ino()
 }
 
 pub(crate) fn before_private_open(path: &Path) {
@@ -754,26 +759,46 @@ pub(crate) fn flushes() -> u64 {
 }
 
 fn secure_file(path: &Path) -> Result<File> {
-    reject_symlinks(path)?;
-    match fs::symlink_metadata(path) {
-        Ok(metadata) if !metadata.is_file() => {
+    // An existing file must be the inspected inode; a missing one is created
+    // exclusively. A creator racing this one is inspected again, once.
+    let mut attempts = 0;
+    let (file, metadata) = loop {
+        attempts += 1;
+        reject_symlinks(path)?;
+        let inspected = match fs::symlink_metadata(path) {
+            Ok(metadata) if !metadata.is_file() => {
+                return Err("storage must be a regular file".to_owned());
+            }
+            Ok(metadata) => Some(metadata),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error.to_string()),
+        };
+        before_private_open(path);
+        let mut options = private_options();
+        options.read(true).write(true);
+        if inspected.is_none() {
+            options.create_new(true);
+        }
+        let file = match options.open(path) {
+            Ok(file) => file,
+            Err(error)
+                if attempts < 2
+                    && inspected.is_none()
+                    && error.kind() == std::io::ErrorKind::AlreadyExists =>
+            {
+                continue;
+            }
+            Err(error) => return Err(format!("cannot open storage: {error}")),
+        };
+        let metadata = file.metadata().map_err(|error| error.to_string())?;
+        if !metadata.is_file() {
             return Err("storage must be a regular file".to_owned());
         }
-        Ok(_) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error.to_string()),
-    }
-    let file = private_options()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(path)
-        .map_err(|error| format!("cannot open storage: {error}"))?;
-    let metadata = file.metadata().map_err(|error| error.to_string())?;
-    if !metadata.is_file() {
-        return Err("storage must be a regular file".to_owned());
-    }
+        if inspected.is_some_and(|inspected| !same_inode(&inspected, &metadata)) {
+            return Err("storage changed while opening".to_owned());
+        }
+        break (file, metadata);
+    };
     #[cfg(unix)]
     {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
@@ -788,12 +813,12 @@ fn secure_file(path: &Path) -> Result<File> {
 
 fn read_only_file(path: &Path) -> Result<File> {
     reject_symlinks(path)?;
-    if !fs::symlink_metadata(path)
-        .map_err(|error| format!("cannot access existing storage: {error}"))?
-        .is_file()
-    {
+    let inspected = fs::symlink_metadata(path)
+        .map_err(|error| format!("cannot access existing storage: {error}"))?;
+    if !inspected.is_file() {
         return Err("storage must be a regular file".to_owned());
     }
+    before_private_open(path);
     let file = private_options()
         .read(true)
         .open(path)
@@ -801,6 +826,9 @@ fn read_only_file(path: &Path) -> Result<File> {
     let metadata = file.metadata().map_err(|error| error.to_string())?;
     if !metadata.is_file() {
         return Err("storage must be a regular file".to_owned());
+    }
+    if !same_inode(&inspected, &metadata) {
+        return Err("storage changed while opening".to_owned());
     }
     #[cfg(unix)]
     {

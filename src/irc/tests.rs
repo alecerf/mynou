@@ -561,7 +561,7 @@ fn a_page_that_is_entirely_backing_off_never_hides_later_rows() {
 fn swapped_migration_files_are_refused_at_open_without_blocking() {
     use crate::store::open_tests::{Swap, swapped};
     for path in ["snapshot", "backup", "lock"] {
-        for swap in [Swap::Symlink, Swap::Fifo] {
+        for swap in [Swap::Symlink, Swap::Fifo, Swap::Replaced] {
             let dir = Directory::new();
             let bytes = legacy(&dir.0, &state(vec![row(1, false)]));
             let source = sha256(&bytes);
@@ -609,6 +609,10 @@ fn swapped_migration_files_are_refused_at_open_without_blocking() {
             match swap {
                 Swap::Symlink => assert_eq!(error, opened, "{path}"),
                 Swap::Fifo => assert!(error == opened || error == special, "{path}: {error}"),
+                Swap::Replaced if path == "lock" => {
+                    assert_eq!(error, "IRC: creation lock changed during open")
+                }
+                Swap::Replaced => assert_eq!(error, "IRC: history changed during open", "{path}"),
             }
             if path != "snapshot" {
                 assert_eq!(fs::read(dir.0.join("announcements.bin")).unwrap(), bytes);

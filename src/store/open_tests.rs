@@ -2,7 +2,8 @@
 //! even when the path is swapped after its inspection. The swap fixture is
 //! shared with the inventory and IRC store tests.
 use super::{
-    BEFORE_PRIVATE_OPEN, O_NOFOLLOW, O_NONBLOCK, open_inspected, private_options, sync_directory,
+    BEFORE_PRIVATE_OPEN, O_NOFOLLOW, O_NONBLOCK, open_inspected, private_options, read_only_file,
+    secure_file, sync_directory,
 };
 use crate::crypto::random_bytes;
 use std::{
@@ -53,12 +54,29 @@ pub(crate) fn fifo(path: &Path) {
     assert!(status.success(), "mkfifo failed");
 }
 
+/// Writes a private copy of `original` beside `path`, then renames it over
+/// `path`.
+fn replace_with_copy(original: &Path, path: &Path) {
+    let mut copy = path.as_os_str().to_owned();
+    copy.push(".copy");
+    let mut file = private_options()
+        .write(true)
+        .create_new(true)
+        .open(&copy)
+        .unwrap();
+    file.write_all(&fs::read(original).unwrap()).unwrap();
+    fs::rename(&copy, path).unwrap();
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Swap {
     /// A symbolic link to the original, still private regular file.
     Symlink,
     /// A FIFO that no process writes.
     Fifo,
+    /// Another private regular file with the same bytes, renamed over the
+    /// path: only an inode comparison tells it apart.
+    Replaced,
 }
 
 /// Runs `work` on its own thread and panics if it has not returned within
@@ -111,6 +129,7 @@ pub(crate) fn swapped(
                 match swap {
                     Swap::Symlink => symlink(&moved, path).unwrap(),
                     Swap::Fifo => fifo(path),
+                    Swap::Replaced => replace_with_copy(Path::new(&moved), path),
                 }
                 *seen.lock().unwrap() = Some(path.to_owned());
             }));
@@ -192,7 +211,7 @@ fn an_inspected_open_refuses_a_swapped_symlink_or_fifo() {
     let mut bytes = Vec::new();
     std::io::Read::read_to_end(&mut file, &mut bytes).unwrap();
     assert_eq!(bytes, b"state");
-    for swap in [Swap::Symlink, Swap::Fifo] {
+    for swap in [Swap::Symlink, Swap::Fifo, Swap::Replaced] {
         let path = directory.0.join(format!("{swap:?}"));
         fs::write(&path, b"state").unwrap();
         let inspected = fs::symlink_metadata(&path).unwrap();
@@ -202,7 +221,65 @@ fn an_inspected_open_refuses_a_swapped_symlink_or_fifo() {
         });
         match swap {
             Swap::Symlink => assert!(error.starts_with("cannot open private file"), "{error}"),
-            Swap::Fifo => assert_eq!(error, "private file changed while opening"),
+            Swap::Fifo | Swap::Replaced => assert_eq!(error, "private file changed while opening"),
         }
     }
+}
+
+#[test]
+fn job_store_locks_refuse_a_file_swapped_after_inspection() {
+    for swap in [Swap::Symlink, Swap::Fifo, Swap::Replaced] {
+        for writable in [true, false] {
+            let directory = Directory::new();
+            let path = directory.0.join(".lock");
+            let mut file = private_options()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+                .unwrap();
+            file.write_all(b"lock").unwrap();
+            let error = swapped(".lock", 0, swap, move || {
+                if writable {
+                    secure_file(&path).map(drop)
+                } else {
+                    read_only_file(&path).map(drop)
+                }
+            });
+            match swap {
+                Swap::Symlink => assert!(error.starts_with("cannot open"), "{error}"),
+                Swap::Fifo => assert_eq!(error, "storage must be a regular file"),
+                Swap::Replaced => assert_eq!(error, "storage changed while opening"),
+            }
+        }
+    }
+}
+
+#[test]
+fn a_missing_job_store_lock_is_created_exclusively() {
+    let directory = Directory::new();
+    let path = directory.0.join(".lock");
+    secure_file(&path).unwrap();
+    let mode = fs::symlink_metadata(&path).unwrap().permissions();
+    assert_eq!(
+        std::os::unix::fs::PermissionsExt::mode(&mode) & 0o777,
+        0o600
+    );
+    // A file that appears between inspection and creation is inspected again.
+    let racing = Arc::new(Mutex::new(Some(path.clone())));
+    let creator = Arc::clone(&racing);
+    let path = directory.0.join(".lock-raced");
+    BEFORE_PRIVATE_OPEN.with(|hook| {
+        *hook.borrow_mut() = Some(Box::new(move |opened: &Path| {
+            if creator.lock().unwrap().take().is_some() {
+                fs::write(opened, b"").unwrap();
+                let mut permissions = fs::symlink_metadata(opened).unwrap().permissions();
+                std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o600);
+                fs::set_permissions(opened, permissions).unwrap();
+            }
+        }));
+    });
+    let opened = secure_file(&path);
+    BEFORE_PRIVATE_OPEN.with(|hook| *hook.borrow_mut() = None);
+    opened.unwrap();
+    assert!(racing.lock().unwrap().is_none(), "the race never happened");
 }
