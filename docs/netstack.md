@@ -88,6 +88,10 @@ shared virtual TCP stack, to the same resolver and port 53.
   by `retry_interval` (2 s by default), rotate through the resolvers and give up
   with `Failure::Timeout` after 3 attempts. `poll` returns packets to send, finished
   queries and the next deadline, so scripted time is fully deterministic.
+- Validated ICMP unreachable advice for a query's last datagram ends only that
+  attempt: the next `poll` sends the next attempt at once, to the next resolver,
+  within the same attempt budget. If it answers the final attempt, the query
+  fails with `Failure::Unreachable(code)` instead of waiting for `Timeout`.
 - TCP uses a two-byte network-order length prefix, accepts split prefixes and
   bodies, and rejects lengths above 4096 before reading a body or allocating from
   the advertised length.
@@ -116,7 +120,8 @@ length and fragment checks as data. The complete ICMP checksum must verify.
 The embedded quote must contain our canonical option-free, DF-set header and
 at least eight transport bytes, with a valid quoted IP checksum, our local
 source and a permitted unicast remote. No allocation uses the quoted IP length.
-Unsupported messages, echo, unmatched or unsolicited advice are dropped.
+Unsupported messages, echo, unmatched or unsolicited advice are dropped, as are
+messages with nonzero unused bytes 4–5, including RFC 4884 extension lengths.
 
 Connected UDP sockets match the remote tuple, source address, IP length and
 all eight bytes of their **last sent** UDP header, including its checksum. Each
@@ -155,6 +160,7 @@ timeout. The generator and the Rust code are by the same authors from the same
 RFCs, so the vectors catch implementation slips, not misreadings shared by both.
 Additional deterministic cases cover ICMP header/quote truncation and corruption,
 forged tuples and sequences, stale advice, the MTU floor and resegmented delivery,
+DNS failover on ICMP unreachable,
 all 65,536 IPv4 flag/offset patterns, split TCP DNS framing, invalid frames,
 oversize prefixes, timeout, EOF, cancellation and shared-table exhaustion.
 An encrypted loopback tunnel test exercises truncated UDP DNS through virtual TCP.

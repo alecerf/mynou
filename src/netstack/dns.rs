@@ -319,6 +319,9 @@ pub enum Failure {
     NoAddress,
     /// The virtual socket failed unexpectedly.
     Aborted,
+    /// Validated ICMP destination-unreachable (this code) answered the last
+    /// UDP attempt; earlier unreachable attempts moved on to the next resolver.
+    Unreachable(u8),
     /// A TCP response length exceeded the fixed message budget.
     TooLarge,
 }
@@ -570,6 +573,7 @@ impl<E: Entropy> DnsClient<E> {
         if query.tcp.is_some() {
             return self.advance_tcp(tcp, generation, query, now);
         }
+        let mut unreachable = None;
         loop {
             match sockets.recv(generation, query.socket) {
                 Ok(Some(datagram)) => {
@@ -588,6 +592,12 @@ impl<E: Entropy> DnsClient<E> {
                 }
                 Ok(None) => break,
                 Err(SocketError::Revoked) => return Step::Revoked,
+                // ICMP ends only the current attempt: the next one is due now,
+                // within the same attempt budget.
+                Err(SocketError::Unreachable(code)) => {
+                    unreachable = Some(code);
+                    query.next = now;
+                }
                 Err(_) => return Step::Done(Err(Failure::Aborted)),
             }
         }
@@ -595,7 +605,8 @@ impl<E: Entropy> DnsClient<E> {
             return Step::Pending;
         }
         if query.sent >= self.config.attempts {
-            return Step::Done(Err(Failure::Timeout));
+            let failure = unreachable.map_or(Failure::Timeout, Failure::Unreachable);
+            return Step::Done(Err(failure));
         }
         let resolver = self.config.resolvers[query.sent as usize % self.config.resolvers.len()];
         match self.transmit(sockets, generation, query.socket, resolver, &query.message) {

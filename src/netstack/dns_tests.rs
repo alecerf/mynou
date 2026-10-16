@@ -1,7 +1,9 @@
 use super::*;
 use crate::json::Value;
-use crate::netstack::support::{Failing, Script, binary, fixtures, number, text};
-use crate::netstack::{Delivery, EPHEMERAL_START, Ingest, Limits, MAX_MTU, build_udp};
+use crate::netstack::support::{Failing, Script, binary, fixtures, icmp_unreachable, number, text};
+use crate::netstack::{
+    Delivery, EPHEMERAL_START, IcmpEffect, IcmpIngest, Ingest, Limits, MAX_MTU, build_udp,
+};
 use std::sync::OnceLock;
 
 const G: u64 = 3;
@@ -73,6 +75,12 @@ impl Rig {
         self.client
             .poll(&mut self.sockets, &mut self.tcp, G, now)
             .unwrap()
+    }
+
+    /// Answers one sent query packet with ICMP port unreachable from its resolver.
+    fn refuse(&mut self, packet: &[u8]) -> IcmpIngest {
+        let advice = icmp_unreachable(destination(packet), packet, 3, 0);
+        self.sockets.ingest_icmp(G, &ip(), &advice)
     }
 
     /// Delivers one reply datagram to the virtual UDP port.
@@ -447,6 +455,69 @@ fn retries_rotate_resolvers_until_the_scripted_timeout() {
     assert_eq!(poll.next, None);
     assert!(rig.sockets.is_empty());
     assert_eq!(rig.client.pending(), 0);
+}
+
+#[test]
+fn an_unreachable_resolver_fails_over_to_the_next_at_once() {
+    let applied = IcmpIngest::Applied(IcmpEffect::Unreachable(3));
+    let mut rig = Rig::new(&[TXID, 0], config(&[R1, R2]));
+    let (id, first) = rig.start(NAME, Duration::ZERO);
+    assert_eq!(rig.refuse(&first), applied);
+    let poll = rig.poll(secs(1));
+    assert!(poll.finished.is_empty());
+    assert_eq!(poll.send.len(), 1);
+    assert_eq!(destination(&poll.send[0]), R2);
+    assert_eq!(dns_part(&poll.send[0]), dns_part(&first));
+    assert_eq!(poll.next, Some(secs(3)));
+    rig.feed(R2, 53, source_port(&first), &vector("single"));
+    let poll = rig.poll(secs(1));
+    assert_eq!(poll.finished.len(), 1);
+    assert_eq!(poll.finished[0].id, id);
+    assert!(poll.finished[0].result.is_ok());
+    assert!(rig.sockets.is_empty());
+}
+
+#[test]
+fn only_an_unreachable_last_attempt_ends_the_query_as_unreachable() {
+    let applied = IcmpIngest::Applied(IcmpEffect::Unreachable(3));
+    // The last attempt is refused: the query ends at once with the ICMP code.
+    let mut rig = Rig::new(&[TXID, 0], config(&[R1, R2]));
+    let (id, first) = rig.start(NAME, Duration::ZERO);
+    rig.refuse(&first);
+    let second = rig.poll(Duration::ZERO).send.remove(0);
+    assert_eq!(destination(&second), R2);
+    let third = rig.poll(secs(2)).send.remove(0);
+    assert_eq!(destination(&third), R1);
+    assert_eq!(rig.refuse(&third), applied);
+    let poll = rig.poll(secs(2));
+    assert!(poll.send.is_empty());
+    assert_eq!(
+        poll.finished,
+        vec![Finished {
+            id,
+            result: Err(Failure::Unreachable(3))
+        }]
+    );
+    assert!(rig.sockets.is_empty());
+
+    // An earlier refusal only spends its attempt; a silent last one times out.
+    let mut rig = Rig::one(&[TXID, 0]);
+    let (id, first) = rig.start(NAME, Duration::ZERO);
+    assert_eq!(rig.refuse(&first), applied);
+    let poll = rig.poll(secs(1));
+    assert_eq!(destination(&poll.send[0]), R1);
+    assert_eq!(poll.next, Some(secs(3)));
+    assert_eq!(rig.poll(secs(3)).send.len(), 1);
+    let poll = rig.poll(secs(5));
+    assert!(poll.send.is_empty());
+    assert_eq!(
+        poll.finished,
+        vec![Finished {
+            id,
+            result: Err(Failure::Timeout)
+        }]
+    );
+    assert!(rig.sockets.is_empty());
 }
 
 #[test]
