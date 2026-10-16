@@ -2,8 +2,8 @@
 //! even when the path is swapped after its inspection. The swap fixture is
 //! shared with the inventory and IRC store tests.
 use super::{
-    BEFORE_PRIVATE_OPEN, O_NOFOLLOW, O_NONBLOCK, open_inspected, private_options, read_only_file,
-    secure_file, sync_directory,
+    BEFORE_PRIVATE_OPEN, O_NOFOLLOW, O_NONBLOCK, SPAWNING, open_inspected, private_options,
+    read_only_file, secure_file, sync_directory,
 };
 use crate::crypto::random_bytes;
 use std::{
@@ -12,7 +12,7 @@ use std::{
     os::unix::fs::{FileTypeExt, symlink},
     path::{Path, PathBuf},
     process::Command,
-    sync::{Arc, Mutex, mpsc},
+    sync::{Arc, Mutex, PoisonError, mpsc},
     time::Duration,
 };
 
@@ -44,13 +44,18 @@ impl Drop for Directory {
     }
 }
 
-/// Test-only: std has no `mkfifo`.
+/// Test-only: std has no `mkfifo`. Until the child execs it shares every
+/// descriptor, including other tests' store locks, so no lock is taken
+/// meanwhile ([`SPAWNING`]).
 pub(crate) fn fifo(path: &Path) {
-    let status = Command::new("mkfifo")
-        .args(["-m", "600"])
-        .arg(path)
-        .status()
-        .unwrap();
+    let status = {
+        let _spawning = SPAWNING.write().unwrap_or_else(PoisonError::into_inner);
+        Command::new("mkfifo")
+            .args(["-m", "600"])
+            .arg(path)
+            .status()
+            .unwrap()
+    };
     assert!(status.success(), "mkfifo failed");
 }
 

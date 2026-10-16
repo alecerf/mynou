@@ -1010,8 +1010,7 @@ fn open_bound_catalog(path: &Path, identity: [u8; 32]) -> Result<Index> {
             .open(&lock_path)
             .map_err(|_| "Cannot create initial transfer lock")?
     };
-    lock.try_lock()
-        .map_err(|_| "Transfer index creation is already owned")?;
+    crate::store::try_lock_file(&lock).map_err(|_| "Transfer index creation is already owned")?;
     check_creation(path, identity)?;
     let parent = path.parent().ok_or("Transfer index has no parent")?;
     let preserved = parent.join(format!(
@@ -1060,8 +1059,7 @@ fn state_lock(directory: &Path) -> Result<File> {
     if opened.len() != 0 {
         return Err("Invalid transfer ownership lock contents".into());
     }
-    file.try_lock()
-        .map_err(|_| "Native transfer state is already owned")?;
+    crate::store::try_lock_file(&file).map_err(|_| "Native transfer state is already owned")?;
     Ok(file)
 }
 

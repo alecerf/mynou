@@ -1,7 +1,7 @@
 //! Atomic import preserves the download and refuses to overwrite existing files.
 
 use crate::Result;
-use crate::store::{Request, private_options, reject_symlinks, sync_directory};
+use crate::store::{Request, private_options, reject_symlinks, sync_directory, try_lock_file};
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
@@ -426,8 +426,7 @@ fn import_destination(
         {
             return Err("import lock must be a regular file".to_owned());
         }
-        lock.try_lock()
-            .map_err(|error| format!("another import is in progress: {error}"))?;
+        try_lock_file(&lock).map_err(|error| format!("another import is in progress: {error}"))?;
         let directory = destination
             .parent()
             .ok_or_else(|| "missing destination directory".to_owned())?;

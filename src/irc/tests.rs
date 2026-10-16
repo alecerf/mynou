@@ -443,7 +443,7 @@ fn partial_creation_writes_resume_only_when_they_match_the_prepublished_identity
                     .write(true)
                     .open(stage.join(".lock"))
                     .unwrap();
-                f.try_lock().unwrap();
+                crate::store::try_lock_file(&f).unwrap();
                 held = Some(f);
             }
         }

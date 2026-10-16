@@ -12,7 +12,6 @@ use std::{
     fs,
     os::unix::fs::{MetadataExt, PermissionsExt, symlink},
     path::{Path, PathBuf},
-    process::Command,
 };
 
 struct Directory(PathBuf);
@@ -261,15 +260,7 @@ fn make_unsafe(directory: &Path, path: &Path, kind: UnsafeEntry) {
                 fs::create_dir(path).unwrap();
                 fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
             }
-            UnsafeEntry::Fifo => assert!(
-                Command::new("mkfifo")
-                    .arg("-m")
-                    .arg("600")
-                    .arg(path)
-                    .status()
-                    .unwrap()
-                    .success()
-            ),
+            UnsafeEntry::Fifo => crate::store::open_tests::fifo(path),
             _ => unreachable!(),
         }
     }

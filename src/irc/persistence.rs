@@ -5,7 +5,10 @@ use crate::{
     crypto::{random_bytes, sha256},
     inventory::{Change, Index, Key, MAX_PAGE_ROWS},
     json,
-    store::{before_private_open, private_options, reject_symlinks, sync_directory, sync_file},
+    store::{
+        before_private_open, private_options, reject_symlinks, sync_directory, sync_file,
+        try_lock_file,
+    },
 };
 use std::{
     cell::RefCell,
@@ -558,8 +561,7 @@ fn open_staging(directory: &Path, staging: &Path, identity: [u8; 32]) -> Result<
             .map_err(|_| "IRC: cannot create initial staging lock")?,
         Err(_) => return Err("IRC: cannot inspect creation lock".into()),
     };
-    lock.try_lock()
-        .map_err(|_| "IRC: initial staging is already owned")?;
+    try_lock_file(&lock).map_err(|_| "IRC: initial staging is already owned")?;
     // A creator may have advanced since preflight. Recheck under ownership.
     check_creation_artifacts(staging, identity)?;
     let preserved = directory.join(format!(

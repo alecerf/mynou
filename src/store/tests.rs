@@ -1866,7 +1866,7 @@ fn read_only_open_never_migrates_or_writes() {
 /// Opens with a hook that interrupts at one migration stage.
 fn interrupted(directory: &Path, stop: impl Fn(Stage) -> bool) -> Result<Store> {
     let lock = secure_file(&directory.join(".lock"))?;
-    lock.try_lock().map_err(|error| error.to_string())?;
+    try_lock_file(&lock).map_err(|error| error.to_string())?;
     migration::open_with(directory, lock, false, &mut |stage| {
         if stop(stage) {
             Err(format!("interrupted at {stage:?}"))
@@ -2100,6 +2100,61 @@ fn a_journal_swapped_before_it_is_emptied_is_refused_and_kept() {
             assert_eq!(fs::read(&journal).unwrap(), bytes);
         }
     }
+}
+
+/// Interrupts a migration after its marker, then reopens the store with
+/// `change` applied to the leftover journal between its inspection and its
+/// open for emptying. Returns the directory, the journal's bytes before
+/// `change` and the open error.
+fn settle_changed(change: fn(&Path)) -> (Directory, Vec<u8>, String) {
+    let jobs: Vec<Job> = (0..3).map(|n| raw_job(n, 100 + n)).collect();
+    let directory = Directory::new();
+    write_legacy(&directory.0, &[], &jobs, 0);
+    interrupted(&directory.0, |stage| stage == Stage::MarkerWritten)
+        .err()
+        .unwrap();
+    let bytes = fs::read(directory.0.join("journal.bin")).unwrap();
+    assert!(!bytes.is_empty());
+    let mut pending = true;
+    BEFORE_PRIVATE_OPEN.with(|hook| {
+        *hook.borrow_mut() = Some(Box::new(move |path: &Path| {
+            if pending && path.file_name().and_then(|name| name.to_str()) == Some("journal.bin") {
+                pending = false;
+                change(path);
+            }
+        }));
+    });
+    let opened = Store::open(&directory.0);
+    BEFORE_PRIVATE_OPEN.with(|hook| *hook.borrow_mut() = None);
+    let error = opened.err().expect("a changed journal was settled");
+    (directory, bytes, error)
+}
+
+/// A second link to the leftover journal is never emptied through it, even
+/// when it appears after the journal was read and inspected.
+#[test]
+fn a_journal_linked_before_it_is_emptied_is_refused_and_kept() {
+    let (directory, bytes, error) = settle_changed(|path| {
+        fs::hard_link(path, path.with_file_name("journal.link")).unwrap();
+    });
+    assert_eq!(error, "The legacy journal changed while opening");
+    for name in ["journal.bin", "journal.link"] {
+        assert_eq!(fs::read(directory.0.join(name)).unwrap(), bytes, "{name}");
+    }
+}
+
+/// The emptied bytes are read again through the truncating descriptor, so
+/// content written in place after the first read is refused and kept.
+#[test]
+fn a_journal_rewritten_before_it_is_emptied_is_refused_and_kept() {
+    let (directory, bytes, error) = settle_changed(|path| {
+        let mut file = OpenOptions::new().write(true).open(path).unwrap();
+        std::io::Write::write_all(&mut file, b"rewritten").unwrap();
+    });
+    assert_eq!(error, "The legacy journal changed while it was settled");
+    let mut expected = b"rewritten".to_vec();
+    expected.extend_from_slice(&bytes[expected.len()..]);
+    assert_eq!(fs::read(directory.0.join("journal.bin")).unwrap(), expected);
 }
 
 #[test]

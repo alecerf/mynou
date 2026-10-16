@@ -708,6 +708,21 @@ pub(crate) fn before_private_open(path: &Path) {
     let _ = path;
 }
 
+/// Takes `file`'s exclusive lock without waiting. A test build first waits for
+/// any process a test is spawning: until it execs, the child shares every
+/// descriptor, so a lock its parent just released by closing one stays held.
+pub(crate) fn try_lock_file(file: &File) -> std::result::Result<(), fs::TryLockError> {
+    #[cfg(test)]
+    let _spawns = SPAWNING
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    file.try_lock()
+}
+
+/// Held for writing while a test spawns a process; see [`try_lock_file`].
+#[cfg(test)]
+pub(crate) static SPAWNING: std::sync::RwLock<()> = std::sync::RwLock::new(());
+
 pub(crate) fn reject_symlinks(path: &Path) -> Result<()> {
     for ancestor in path.ancestors() {
         match fs::symlink_metadata(ancestor) {
@@ -1049,7 +1064,7 @@ impl Store {
         fs::set_permissions(directory, fs::Permissions::from_mode(0o700))
             .map_err(|error| format!("cannot set storage permissions: {error}"))?;
         let lock = secure_file(&directory.join(".lock"))?;
-        lock.try_lock()
+        try_lock_file(&lock)
             .map_err(|error| format!("storage is already open or cannot be locked: {error}"))?;
         sync_directory(directory)?;
         match legacy::inspect(directory, false)? {
@@ -1083,7 +1098,7 @@ impl Store {
             return Err("storage must be a directory".to_owned());
         }
         let lock = read_only_file(&directory.join(".lock"))?;
-        lock.try_lock()
+        try_lock_file(&lock)
             .map_err(|error| format!("storage is already open or cannot be locked: {error}"))?;
         migration::open(directory, lock, true)
     }

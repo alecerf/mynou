@@ -5,7 +5,10 @@ use super::{
 use crate::{
     Result,
     crypto::{random_bytes, sha256},
-    store::{before_private_open, private_options, reject_symlinks, sync_directory, sync_file},
+    store::{
+        before_private_open, private_options, reject_symlinks, sync_directory, sync_file,
+        try_lock_file,
+    },
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -375,8 +378,7 @@ pub(super) fn create_bound(directory: &Path, identity: [u8; 32]) -> Result<Index
         .map_err(|error| format!("Inventory creation requires a new directory: {error}"))?;
     creation_checkpoint(1)?;
     let lock = new_file(&directory.join(".lock"))?;
-    lock.try_lock()
-        .map_err(|error| format!("Cannot lock inventory: {error}"))?;
+    try_lock_file(&lock).map_err(|error| format!("Cannot lock inventory: {error}"))?;
     creation_checkpoint(2)?;
     let mut bytes = Vec::from(ID_MAGIC.as_slice());
     bytes.extend_from_slice(&identity);
@@ -464,7 +466,7 @@ pub(super) fn open(
         return Err("Inventory marker names a different index".into());
     }
     let lock = private_file(&directory.join(".lock"), false)?;
-    lock.try_lock().map_err(|error| {
+    try_lock_file(&lock).map_err(|error| {
         format!("Inventory storage is already open or cannot be locked: {error}")
     })?;
     private_directory(&directory.join("objects"))?;
