@@ -1101,19 +1101,23 @@ pub(crate) fn validate_storage(
 }
 
 /// Requests examined by one sweep for work no demand wants any more.
-const SWEEP_JOBS: usize = 512;
+const SWEEP_JOBS: usize = 200;
 
 /// Cancels unfinished requester work that no admitted demand needs. One call
-/// examines at most `SWEEP_JOBS` requests, resuming where the last one stopped;
-/// `full` repeats until every request was examined once (service start).
+/// examines at most `SWEEP_JOBS` requests during routine reconciliation.
+/// The durable cursor advances only after the page settles. Startup still
+/// drains the complete inventory before native transfers can start.
 pub(crate) fn cancel_unwanted(
     ledger: &impl LedgerRead,
     jobs: &mut Store,
     config: &crate::config::Config,
     full: bool,
 ) -> Result<()> {
+    if full {
+        jobs.finish_requester_sweep(None)?;
+    }
     loop {
-        let (page, wrapped) = jobs.sweep_requester_jobs(SWEEP_JOBS)?;
+        let (page, next) = jobs.sweep_requester_jobs(SWEEP_JOBS)?;
         for job in page {
             if job.requester.is_some()
                 && job.state != "ready"
@@ -1133,7 +1137,8 @@ pub(crate) fn cancel_unwanted(
                 jobs.cancel(&job.id)?;
             }
         }
-        if !full || wrapped {
+        jobs.finish_requester_sweep(next)?;
+        if !full || next.is_none() {
             return Ok(());
         }
     }

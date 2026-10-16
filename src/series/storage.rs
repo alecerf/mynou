@@ -62,6 +62,7 @@ pub struct SeriesStore {
     read_only: bool,
     poisoned: bool,
     pub(crate) migration: Option<MigrationReport>,
+    pub(crate) due_pass: [usize; 3],
 }
 
 #[derive(Debug)]
@@ -201,6 +202,12 @@ const COUNTS_KEY: [u8; 64] = {
     let mut key = [0; 64];
     key[0] = T_META;
     key[1] = 1;
+    key
+};
+const DUE_CURSOR_KEY: Key = {
+    let mut key = [0; 64];
+    key[0] = T_META;
+    key[1] = 2;
     key
 };
 pub(super) const MIGRATION_SOURCE_KEY: [u8; 64] = {
@@ -926,6 +933,7 @@ impl SeriesStore {
             read_only,
             poisoned: false,
             migration,
+            due_pass: [0; 3],
         }
     }
 
@@ -999,6 +1007,14 @@ impl SeriesStore {
         };
         let mut value = Value::object();
         value.insert("state", state);
+        let mut due = Value::object();
+        for (name, count) in ["pages", "examined", "attempted"]
+            .into_iter()
+            .zip(self.due_pass)
+        {
+            due.insert(name, Value::Number(count as f64));
+        }
+        value.insert("due_pass", due);
         match self.counts() {
             Ok(counts) => {
                 value.insert("series", Value::Number(counts.series as f64));
@@ -1160,6 +1176,56 @@ impl SeriesStore {
     #[cfg(test)]
     pub(crate) fn due(&mut self, now: u64, limit: usize) -> Result<Vec<Due>> {
         self.due_after(now, None, limit)
+    }
+
+    /// Durable position in the due index. A position whose timestamp is now
+    /// in the future (clock rollback) restarts the due range conservatively.
+    pub(crate) fn due_cursor(&mut self, now: u64) -> Result<Option<Due>> {
+        let Some(index) = self.reader()? else {
+            return Ok(None);
+        };
+        index
+            .get(&DUE_CURSOR_KEY)?
+            .map(|bytes| {
+                if bytes.len() != 24 {
+                    return Err("Invalid series scheduling cursor".into());
+                }
+                let next_check_at = u64::from_be_bytes(bytes[..8].try_into().expect("eight bytes"));
+                Ok((next_check_at <= now).then(|| Due {
+                    id: id_text(&bytes[8..]),
+                    next_check_at,
+                }))
+            })
+            .transpose()
+            .map(Option::flatten)
+    }
+
+    /// An interrupted pass replays its last uncheckpointed rows. Refreshes
+    /// retain their revision fences and already-rescheduled scopes leave the
+    /// old due range, so checkpoints never grant acquisition authority.
+    pub(crate) fn save_due_cursor(&mut self, due: Option<&Due>) -> Result<()> {
+        self.check_writable()?;
+        let bytes = due
+            .map(|due| {
+                let mut bytes = due.next_check_at.to_be_bytes().to_vec();
+                bytes.extend_from_slice(&id_bytes(&due.id)?);
+                Ok::<_, String>(bytes)
+            })
+            .transpose()?;
+        let previous = match self.reader()? {
+            Some(index) => index.get(&DUE_CURSOR_KEY)?,
+            None => None,
+        };
+        if previous != bytes {
+            self.guarded(|index| {
+                index.commit(vec![match bytes {
+                    Some(bytes) => Change::PutInline(DUE_CURSOR_KEY, bytes),
+                    None => Change::Delete(DUE_CURSOR_KEY),
+                }])?;
+                Ok(())
+            })?;
+        }
+        Ok(())
     }
 
     /// The same order continued after an earlier entry (`after` is exclusive).

@@ -83,3 +83,9 @@ Each save of jobs, requester demand, feeds, transfers, series or IRC state now w
 ## Fixed: Plex requests cut off by the time budget no longer report a failed poll
 
 A Plex request cut off by an account's time budget now reports `Plex account poll deadline reached` and keeps the account due, as when the budget ran out between requests. Catalog (TMDB) lookups cut off by the budget still report `Plex account poll failed`.
+
+## Fixed: Resume bounded scheduling after restart
+
+Job claims and routine requester cancellation resume their scan position after restart.
+Series monitoring visits at most 400 due scopes per pass, including unreadable scopes, and resumes beyond damaged prefixes.
+Storage status includes counters for the latest claim, requester sweep and series due pass.

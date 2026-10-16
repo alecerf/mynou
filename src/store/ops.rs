@@ -119,6 +119,30 @@ impl super::JobLookup for Db<'_> {
 }
 
 impl Db<'_> {
+    pub(super) fn cursor(&mut self, metadata: &Key, table: u8) -> Result<Option<Key>> {
+        self.0
+            .get(metadata)?
+            .map(|bytes| {
+                let cursor: Key = array(&bytes)?;
+                if cursor[0] != table || cursor[25..].iter().any(|b| *b != 0) {
+                    return Err("Invalid job scheduling cursor".into());
+                }
+                Ok(cursor)
+            })
+            .transpose()
+    }
+
+    pub(super) fn save_cursor(&mut self, metadata: Key, cursor: Option<Key>) -> Result<()> {
+        let bytes = cursor.map(|cursor| cursor.to_vec());
+        if self.0.get(&metadata)? != bytes {
+            self.0.commit(vec![match bytes {
+                Some(bytes) => Change::Put(metadata, bytes),
+                None => Change::Delete(metadata),
+            }])?;
+        }
+        Ok(())
+    }
+
     pub(super) fn scan(
         &mut self,
         prefix: &[u8],

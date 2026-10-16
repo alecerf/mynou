@@ -3043,3 +3043,130 @@ fn status_reports_held_and_failed_stores_without_waiting_or_failing() {
     assert!(!error.contains(directory.0.to_str().unwrap()), "{error}");
     assert_eq!(state(&status, "series"), "empty");
 }
+
+#[test]
+fn claim_scan_resumes_after_restart_and_reaches_past_new_old_entries() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    // Above the former 10,000-job limit, with an ineligible oldest prefix.
+    bulk(
+        &mut store,
+        (1..=10_101).map(|n| raw_job(n, n + 100)).collect(),
+    );
+    let mut reached = false;
+    // Allow one complete promotion phase plus one complete queue sweep.
+    let max_turns = 10_101_u64.div_ceil(200) + 10_101_u64.div_ceil(CLAIM_SCAN as u64) + 2;
+    for turn in 0..max_turns {
+        let before = match &store.backend {
+            Backend::Ready(index) => index.requests(),
+            _ => unreachable!(),
+        };
+        let job = store
+            .claim_filtered(50_000, 60, |job| Ok(job.id == format!("{:032x}", 10_101)))
+            .unwrap();
+        let requests = match &store.backend {
+            Backend::Ready(index) => index.requests() - before,
+            _ => unreachable!(),
+        };
+        assert!(store.claim_pass[1] <= 2);
+        assert!(store.claim_pass[2] <= CLAIM_SCAN);
+        assert!(requests <= 1024, "{requests} index requests in turn {turn}");
+        if let Some(job) = job {
+            assert_eq!(job.id, format!("{:032x}", 10_101));
+            reached = true;
+            break;
+        }
+        // New work before the cursor must wait for the next sweep rather
+        // than displacing the older eligible tail on every restart.
+        bulk(&mut store, vec![raw_job(20_000 + turn, 1)]);
+        drop(store);
+        store = Store::open(&directory.0).unwrap();
+    }
+    assert!(reached, "eligible tail was starved across restarts");
+    // Successful lease and cursor reset are committed together.
+    drop(store);
+    let mut store = Store::open(&directory.0).unwrap();
+    assert!(
+        store
+            .read(None, |db| db
+                .cursor(&layout::CLAIM_CURSOR_KEY, layout::T_QUEUE))
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        store
+            .get(&format!("{:032x}", 10_101))
+            .unwrap()
+            .unwrap()
+            .lease_id
+            .is_some()
+    );
+}
+
+#[test]
+fn requester_sweep_checkpoint_replays_errors_and_survives_restart() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    // The sweep indexes requester jobs. Build genuine provenance from the
+    // default policy without needing an upstream peer.
+    let config = crate::config::from_json(&crate::config::default_json(), &directory.0).unwrap();
+    let capture = crate::requesters::Capture::new(
+        &config,
+        &crate::requesters::Policy::initial(&config),
+        "movie",
+    )
+    .unwrap();
+    let owned = |n, created| {
+        let mut job = raw_job(n, created);
+        job.requester = Some(crate::requesters::Provenance {
+            account_id: "synthetic".into(),
+            demand_id: crate::requesters::Demand::identity("synthetic", &job.request),
+            policy_revision: 1,
+            capture: capture.clone(),
+        });
+        job
+    };
+    bulk(
+        &mut store,
+        (1..=10_101).map(|n| owned(n, n + 100)).collect(),
+    );
+    let mut seen = BTreeSet::new();
+    for turn in 0..60 {
+        let before = match &store.backend {
+            Backend::Ready(index) => index.requests(),
+            _ => unreachable!(),
+        };
+        let (page, next) = store.sweep_requester_jobs(200).unwrap();
+        let requests = match &store.backend {
+            Backend::Ready(index) => index.requests() - before,
+            _ => unreachable!(),
+        };
+        assert!(page.len() <= 200);
+        assert!(requests <= 202, "{requests} sweep reads");
+        if turn == 0 {
+            // No acknowledgement models a failed ownership lookup. Reopen
+            // must return the same page, not silently skip its cancellation.
+            drop(store);
+            store = Store::open(&directory.0).unwrap();
+            assert_eq!(store.sweep_requester_jobs(200).unwrap().0, page);
+        }
+        seen.extend(page.iter().map(|job| job.id.clone()));
+        store.finish_requester_sweep(next).unwrap();
+        bulk(&mut store, vec![owned(20_000 + turn, 1)]);
+        drop(store);
+        store = Store::open(&directory.0).unwrap();
+        if next.is_none() {
+            break;
+        }
+    }
+    assert!((1..=10_101).all(|n| seen.contains(&format!("{n:032x}"))));
+    // A wrap reaches newly inserted entries before the previous cursor.
+    assert!(
+        store
+            .sweep_requester_jobs(200)
+            .unwrap()
+            .0
+            .iter()
+            .any(|job| job.created_at == 1)
+    );
+}

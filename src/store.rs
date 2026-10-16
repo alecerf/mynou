@@ -973,11 +973,9 @@ pub struct Store {
     read_only: bool,
     poisoned: bool,
     maintenance_error: Option<String>,
-    /// Where the next claim attempt resumes when the head of the queue is not
-    /// claimable; in memory only.
-    claim_cursor: Option<Key>,
-    /// Where the next sweep for unwanted requester work resumes; in memory.
-    sweep_cursor: Option<Key>,
+    /// Most recent bounded queue and requester sweep work, for diagnostics.
+    claim_pass: [usize; 3],
+    requester_sweep_rows: usize,
     pub(crate) migration: Option<MigrationReport>,
 }
 
@@ -1152,8 +1150,8 @@ impl Store {
             read_only,
             poisoned: false,
             maintenance_error: None,
-            claim_cursor: None,
-            sweep_cursor: None,
+            claim_pass: [0; 3],
+            requester_sweep_rows: 0,
             migration,
         }
     }
@@ -1209,6 +1207,16 @@ impl Store {
         };
         let mut value = Value::object();
         value.insert("state", state);
+        let mut scheduling = Value::object();
+        for (name, count) in [
+            ("claim_promoted", self.claim_pass[0]),
+            ("claim_pages", self.claim_pass[1]),
+            ("claim_examined", self.claim_pass[2]),
+            ("requester_sweep_rows", self.requester_sweep_rows),
+        ] {
+            scheduling.insert(name, Value::Number(count as f64));
+        }
+        value.insert("scheduling", scheduling);
         match self.counts() {
             Ok(counts) => {
                 value.insert("jobs", Value::Number(counts.jobs as f64));
@@ -1626,18 +1634,19 @@ impl Store {
         })
     }
 
-    /// The next window of unfinished requester requests, resuming after the
-    /// previous call. The flag says the window reached the end and the sweep
-    /// starts over next time.
-    pub(crate) fn sweep_requester_jobs(&mut self, limit: usize) -> Result<(Vec<Job>, bool)> {
-        let after = self.sweep_cursor;
-        let (jobs, next) = self.requester_open_page(after, limit)?;
-        self.sweep_cursor = next.and(jobs.last().and_then(|job| {
-            layout::id_bytes(&job.id)
-                .ok()
-                .map(|id| layout::requester_key(job.created_at, &id))
-        }));
-        Ok((jobs, next.is_none()))
+    /// Read a bounded window without acknowledging it. Progress is committed
+    /// only after every returned row has settled, so an error replays the page.
+    pub(crate) fn sweep_requester_jobs(&mut self, limit: usize) -> Result<(Vec<Job>, Option<Key>)> {
+        let after = self.read(None, |db| {
+            db.cursor(&layout::REQUESTER_SWEEP_CURSOR_KEY, layout::T_REQUESTER)
+        })?;
+        let page = self.requester_open_page(after, limit)?;
+        self.requester_sweep_rows = page.0.len();
+        Ok(page)
+    }
+
+    pub(crate) fn finish_requester_sweep(&mut self, next: Option<Key>) -> Result<()> {
+        self.mutate(|db| db.save_cursor(layout::REQUESTER_SWEEP_CURSOR_KEY, next))
     }
 
     /// The shared-file binding recorded for one physical video, if any.
@@ -2188,17 +2197,20 @@ impl Store {
         let deadline = at
             .checked_add(ttl)
             .ok_or_else(|| "lease duration too large".to_owned())?;
-        let mut cursor = self.claim_cursor;
+        let mut stats = [0; 3];
         let outcome = self.mutate(|db| {
-            db.promote(at)?;
+            let mut cursor = db.cursor(&layout::CLAIM_CURSOR_KEY, layout::T_QUEUE)?;
+            stats[0] = db.promote(at)?;
             let mut examined = 0;
             loop {
                 let (keys, more) = db.due(
                     cursor,
                     CLAIM_SCAN.saturating_sub(examined).min(MAX_PAGE_ROWS),
                 )?;
+                stats[1] += 1;
                 for found in &keys {
                     examined += 1;
+                    stats[2] = examined;
                     let id: [u8; 16] = ops::key_part(found, 9)?;
                     let job = db.require(&id)?;
                     if !db.claimable(&job, at, &eligible)? {
@@ -2211,20 +2223,27 @@ impl Store {
                     job.lease_id = Some(random_id()?);
                     job.lease_until = deadline;
                     job.updated_at = at;
-                    db.commit_jobs(vec![job.clone()], "processing lease acquired")?;
-                    return Ok((Some(job), None));
+                    db.validate_group_single(&job)?;
+                    db.validate_transaction(&job)?;
+                    let mut changes =
+                        db.stage(std::slice::from_ref(&job), "processing lease acquired")?;
+                    changes.push(Change::Delete(layout::CLAIM_CURSOR_KEY));
+                    db.0.commit(changes)?;
+                    return Ok(Some(job));
                 }
                 cursor = keys.last().copied().or(cursor);
                 if !more {
-                    return Ok((None, None));
+                    db.save_cursor(layout::CLAIM_CURSOR_KEY, None)?;
+                    return Ok(None);
                 }
                 if examined >= CLAIM_SCAN {
-                    return Ok((None, cursor));
+                    db.save_cursor(layout::CLAIM_CURSOR_KEY, cursor)?;
+                    return Ok(None);
                 }
             }
-        })?;
-        self.claim_cursor = outcome.1;
-        Ok(outcome.0)
+        });
+        self.claim_pass = stats;
+        outcome
     }
 
     pub fn renew(&mut self, id: &str, lease_id: &str, at: u64, ttl: u64) -> Result<Job> {

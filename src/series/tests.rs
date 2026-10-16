@@ -1292,3 +1292,87 @@ fn a_swapped_legacy_snapshot_is_refused_at_open_without_blocking() {
         }
     }
 }
+
+#[test]
+fn series_due_pass_bounds_corrupt_prefix_and_resumes_after_restart() {
+    use crate::engine::{Engine, lock};
+    let directory = Directory::new();
+    let mut config =
+        crate::config::from_json(&crate::config::default_json(), &directory.0).unwrap();
+    config.downloads_enabled = false;
+    let mut records: Vec<_> = (1..=1201).map(|n| record(n, 1, 1, 1)).collect();
+    for (offset, record) in records.iter_mut().enumerate() {
+        record.next_check_at = offset as u64 + 1;
+    }
+    let healthy = records.last().unwrap().id.clone();
+    let mut engine = Engine::open_for_management(config.clone()).unwrap();
+    {
+        let mut store = lock(&engine.series_store).unwrap();
+        store.save(records[0].clone()).unwrap();
+        insert_many(ready(&mut store), &records[1..]).unwrap();
+    }
+    drop(engine);
+    // More damaged scopes than both the former 128-scope inventory limit
+    // and the unreadable-cache capacity. Each pass must still be bounded.
+    for record in &records[..1200] {
+        let mut key = [0; 64];
+        key[0] = 0x10;
+        for (slot, pair) in key[1..17]
+            .iter_mut()
+            .zip(record.id.as_bytes().as_chunks::<2>().0)
+        {
+            *slot = u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap();
+        }
+        assert!(crate::inventory::damage_record(&config.store_dir.join("series.idx"), &key) > 0);
+    }
+    for turn in 0..3 {
+        engine = Engine::open_for_management(config.clone()).unwrap();
+        let before = ready(&mut lock(&engine.series_store).unwrap()).requests();
+        assert!(engine.refresh_series_due().is_err());
+        let mut series = lock(&engine.series_store).unwrap();
+        assert_eq!(series.due_pass, [8, 400, 0]);
+        let requests = ready(&mut series).requests() - before;
+        assert!(
+            requests <= 415,
+            "{requests} requests in corrupt pass {turn}"
+        );
+        assert_eq!(
+            series.due_cursor(u64::MAX).unwrap().unwrap().next_check_at,
+            (turn + 1) * 400
+        );
+        // Newly added earlier-due scopes wait for the next sweep and do
+        // not continually displace the older tail behind this checkpoint.
+        let mut added = record(20_000 + turn, 1, 1, 1);
+        added.next_check_at = 0;
+        series.save(added).unwrap();
+        drop(series);
+        drop(engine);
+    }
+    // With no catalog credentials this produces an explicit local error;
+    // it must nevertheless reach and reschedule the healthy tail scope.
+    engine = Engine::open_for_management(config.clone()).unwrap();
+    assert!(engine.refresh_series_due().is_err());
+    {
+        let mut series = lock(&engine.series_store).unwrap();
+        assert_eq!(series.due_pass, [1, 1, 1]);
+        assert!(series.get(&healthy).unwrap().unwrap().checked_at > 10);
+        assert!(series.due_cursor(u64::MAX).unwrap().is_none());
+    }
+    drop(engine);
+    // A new sweep wraps back to retry the original damaged prefix.
+    engine = Engine::open_for_management(config).unwrap();
+    assert!(engine.refresh_series_due().is_err());
+    // New rows before the cursor get their own turn on wrap.
+    assert!(lock(&engine.series_store).unwrap().due_pass[2] >= 3);
+    // A cached unreadable prefix must consume the same budget. Otherwise a
+    // second pass could walk an entire inventory without probing any record.
+    lock(&engine.series_store)
+        .unwrap()
+        .save_due_cursor(None)
+        .unwrap();
+    let before = ready(&mut lock(&engine.series_store).unwrap()).requests();
+    assert!(engine.refresh_series_due().is_err());
+    let mut series = lock(&engine.series_store).unwrap();
+    assert_eq!(series.due_pass, [8, 400, 0]);
+    assert!(ready(&mut series).requests() - before <= 20);
+}

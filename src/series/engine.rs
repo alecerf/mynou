@@ -140,31 +140,32 @@ impl Engine {
                 return Err("Series refresh coordination unavailable".into());
             }
         };
-        // The due index is ordered by (next check, identifier): the oldest
-        // work comes first and a processed scope moves to the back, so no scope
-        // starves however many are due. One pass reads one tree path per
-        // page of at most `SCAN_PAGE` entries. A scope whose record cannot be
-        // read is skipped, reported and retried later; it neither counts
-        // toward the pass budget nor holds back the scopes behind it, and at
-        // most `MAX_SCANNED` readable due entries are examined per pass.
+        // Every visited due row consumes the scan budget, including cached
+        // unreadable scopes. The durable cursor continues past a bad prefix
+        // on the next pass and after restart, then wraps at the end.
         let now = store::now();
         let deadline = Instant::now() + Duration::from_secs(90);
         let mut reports = Vec::new();
         let mut first_error = None;
         let mut attempts = 0;
         let mut scanned = 0;
-        let mut cursor = None;
+        let mut pages = 0;
+        let mut cursor = lock(&self.series_store)?.due_cursor(now)?;
         'pass: loop {
             let page = lock(&self.series_store)?.due_after(now, cursor.as_ref(), SCAN_PAGE)?;
+            pages += 1;
             for record in &page {
-                cursor = Some(record.clone());
                 if self.stopped.load(Ordering::Acquire) || Instant::now() >= deadline {
                     break 'pass;
                 }
+                if scanned == MAX_SCANNED {
+                    break 'pass;
+                }
+                cursor = Some(record.clone());
+                scanned += 1;
                 if self.series_is_unreadable(&record.id) {
                     continue;
                 }
-                scanned += 1;
                 let probe = lock(&self.series_store)?.get(&record.id);
                 if !matches!(probe, Ok(Some(_))) {
                     let error = match probe {
@@ -202,9 +203,18 @@ impl Engine {
                     break 'pass;
                 }
             }
-            if page.len() < SCAN_PAGE || scanned >= MAX_SCANNED {
+            if page.len() < SCAN_PAGE {
+                cursor = None;
                 break;
             }
+            if scanned >= MAX_SCANNED {
+                break;
+            }
+        }
+        {
+            let mut series = lock(&self.series_store)?;
+            series.due_pass = [pages, scanned, attempts];
+            series.save_due_cursor(cursor.as_ref())?;
         }
         if let Some(error) = first_error {
             return Err(error);
