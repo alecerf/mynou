@@ -276,3 +276,60 @@ fn explicit_revocation_drops_queues() {
     assert_eq!((sockets.len(), sockets.queued()), (0, 0));
     assert_eq!(sockets.deliver(G, PEER, 1, 4000, b"x"), Delivery::Revoked);
 }
+
+#[test]
+fn icmp_udp_matches_only_the_last_connected_transmission_and_caps_mtu() {
+    use crate::netstack::support::icmp_unreachable;
+    use crate::netstack::{IcmpEffect, IcmpIngest, MAX_MTU};
+    let local = Ipv4Addr::new(10, 64, 0, 2);
+    let remote = Ipv4Addr::new(192, 0, 2, 1);
+    let router = Ipv4Addr::new(192, 0, 2, 2);
+    let ip = Ipv4Config::new(local, Ipv4Addr::UNSPECIFIED, 0).unwrap();
+    let mut sockets = UdpSockets::new(Limits::default(), 1);
+    let mut entropy = Script::new(&[1]);
+    let socket = sockets.bind(1, 10000, &mut entropy).unwrap();
+    sockets.connect(1, socket, (remote, 53)).unwrap();
+    let packet = sockets
+        .send(1, socket, local, (remote, 53), &[7; 1200], MAX_MTU)
+        .unwrap();
+    let advice = icmp_unreachable(router, &packet, 4, 800);
+    for length in 0..advice.len() {
+        assert!(!matches!(
+            sockets.ingest_icmp(1, &ip, &advice[..length]),
+            IcmpIngest::Applied(_)
+        ));
+    }
+    for index in 0..advice.len() {
+        let mut corrupt = advice.clone();
+        corrupt[index] ^= 1;
+        assert!(!matches!(
+            sockets.ingest_icmp(1, &ip, &corrupt),
+            IcmpIngest::Applied(_)
+        ));
+    }
+    assert_eq!(
+        sockets.ingest_icmp(1, &ip, &advice),
+        IcmpIngest::Applied(IcmpEffect::PathMtu(800))
+    );
+    assert_eq!(sockets.ingest_icmp(1, &ip, &advice), IcmpIngest::Dropped);
+    assert_eq!(
+        sockets.send(1, socket, local, (remote, 53), &[7; 773], MAX_MTU),
+        Err(SocketError::Build(ipv4::BuildError::TooLarge))
+    );
+    let packet = sockets
+        .send(1, socket, local, (remote, 53), b"query", MAX_MTU)
+        .unwrap();
+    let error = icmp_unreachable(router, &packet, 3, 0);
+    assert_eq!(
+        sockets.ingest_icmp(1, &ip, &error),
+        IcmpIngest::Applied(IcmpEffect::Unreachable(3))
+    );
+    assert_eq!(sockets.recv(1, socket), Err(SocketError::Unreachable(3)));
+    assert_eq!(sockets.recv(1, socket), Ok(None));
+    sockets.close(1, socket).unwrap();
+    let socket = sockets.bind(1, 10000, &mut entropy).unwrap();
+    sockets.connect(1, socket, (remote, 53)).unwrap();
+    assert_eq!(sockets.ingest_icmp(1, &ip, &error), IcmpIngest::Dropped);
+    assert_eq!(sockets.ingest_icmp(2, &ip, &error), IcmpIngest::Revoked);
+    assert!(sockets.is_empty());
+}

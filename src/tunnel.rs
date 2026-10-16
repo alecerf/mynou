@@ -1110,7 +1110,20 @@ fn dispatch<E: Entropy>(
             TcpIngest::Dropped(_) | TcpIngest::Revoked => stats.inner_dropped += 1,
             _ => {}
         },
-        // ICMP and every other protocol are not handled yet.
+        crate::netstack::PROTOCOL_ICMP => {
+            use crate::netstack::IcmpIngest;
+            let tcp = live.tcp.ingest_icmp(live.generation, now, &packet);
+            let outcome = if tcp == IcmpIngest::Dropped {
+                live.udp.ingest_icmp(live.generation, ip, &packet)
+            } else {
+                tcp
+            };
+            match outcome {
+                IcmpIngest::Applied(_) => {}
+                IcmpIngest::Invalid(_) => stats.inner_rejected += 1,
+                IcmpIngest::Dropped | IcmpIngest::Revoked => stats.inner_dropped += 1,
+            }
+        }
         _ => stats.inner_rejected += 1,
     }
 }

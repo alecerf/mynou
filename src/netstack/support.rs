@@ -83,3 +83,20 @@ impl Entropy for Failing {
         Err("entropy failed".into())
     }
 }
+
+/// Synthetic RFC 792 short quote, independent of the ICMP parser under test.
+pub fn icmp_unreachable(router: Ipv4Addr, original: &[u8], code: u8, mtu: u16) -> Vec<u8> {
+    let mut message = vec![3, code, 0, 0, 0, 0];
+    message.extend_from_slice(&mtu.to_be_bytes());
+    message.extend_from_slice(&original[..28]);
+    let check = super::checksum(&message);
+    message[2..4].copy_from_slice(&check.to_be_bytes());
+    super::ipv4::build(
+        router,
+        Ipv4Addr::new(original[12], original[13], original[14], original[15]),
+        super::PROTOCOL_ICMP,
+        &message,
+        super::MAX_MTU,
+    )
+    .unwrap()
+}

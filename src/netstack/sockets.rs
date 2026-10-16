@@ -2,6 +2,7 @@
 //! the caller's captured generation; a different one irreversibly revokes the
 //! table, so a stale worker cannot touch a newer generation's sockets.
 
+use super::icmp::{self, Effect as IcmpEffect, Ingest as IcmpIngest};
 use super::udp::{self, DatagramError};
 use super::{Fence, Ipv4Config, PacketError, ipv4};
 use crate::wireguard::Entropy;
@@ -43,6 +44,8 @@ pub enum SocketError {
     Closed,
     /// The socket is connected to a different remote.
     Remote,
+    /// Matched ICMP advice for the last connected datagram, consumed by recv.
+    Unreachable(u8),
     Entropy(String),
     Build(ipv4::BuildError),
 }
@@ -91,6 +94,9 @@ struct Socket {
     serial: u64,
     remote: Option<(Ipv4Addr, u16)>,
     queue: VecDeque<Received>,
+    path_mtu: usize,
+    sent: Option<(Ipv4Addr, [u8; 8], usize)>,
+    unreachable: Option<u8>,
 }
 
 pub struct UdpSockets {
@@ -163,6 +169,9 @@ impl UdpSockets {
                 serial: self.serial,
                 remote: None,
                 queue: VecDeque::new(),
+                path_mtu: ipv4::MAX_MTU,
+                sent: None,
+                unreachable: None,
             },
         );
         Ok(Handle {
@@ -203,7 +212,13 @@ impl UdpSockets {
         handle: Handle,
         remote: (Ipv4Addr, u16),
     ) -> Result<(), SocketError> {
-        self.socket(generation, handle)?.remote = Some(remote);
+        let socket = self.socket(generation, handle)?;
+        if socket.remote != Some(remote) {
+            socket.path_mtu = ipv4::MAX_MTU;
+            socket.sent = None;
+            socket.unreachable = None;
+        }
+        socket.remote = Some(remote);
         Ok(())
     }
 
@@ -219,7 +234,11 @@ impl UdpSockets {
         generation: u64,
         handle: Handle,
     ) -> Result<Option<Received>, SocketError> {
-        let received = self.socket(generation, handle)?.queue.pop_front();
+        let socket = self.socket(generation, handle)?;
+        if let Some(code) = socket.unreachable.take() {
+            return Err(SocketError::Unreachable(code));
+        }
+        let received = socket.queue.pop_front();
         if received.is_some() {
             self.queued = self.queued.saturating_sub(1);
         }
@@ -241,7 +260,67 @@ impl UdpSockets {
         if socket.remote.is_some_and(|connected| connected != remote) {
             return Err(SocketError::Remote);
         }
-        udp::build(local, remote.0, handle.port, remote.1, payload, mtu).map_err(SocketError::Build)
+        // Validate the caller's MTU before applying the learned per-socket cap.
+        ipv4::check_mtu(mtu).map_err(SocketError::Build)?;
+        let packet = udp::build(
+            local,
+            remote.0,
+            handle.port,
+            remote.1,
+            payload,
+            mtu.min(socket.path_mtu),
+        )
+        .map_err(SocketError::Build)?;
+        if socket.remote == Some(remote) {
+            socket.sent = Some((
+                local,
+                packet[20..28].try_into().expect("UDP header"),
+                packet.len(),
+            ));
+        }
+        Ok(packet)
+    }
+
+    /// Applies advice only to the most recent connected datagram, with an exact
+    /// UDP header (including its checksum/length), source and remote match. No
+    /// destination cache or error queue can grow from unsolicited traffic.
+    pub fn ingest_icmp(
+        &mut self,
+        generation: u64,
+        config: &Ipv4Config,
+        bytes: &[u8],
+    ) -> IcmpIngest {
+        if !self.admit(generation) {
+            return IcmpIngest::Revoked;
+        }
+        let advice = match icmp::parse(config, bytes) {
+            Ok(advice) => advice,
+            Err(error) => return IcmpIngest::Invalid(error),
+        };
+        if advice.protocol != ipv4::PROTOCOL_UDP {
+            return IcmpIngest::Dropped;
+        }
+        let (local_port, remote_port) = advice.ports();
+        let Some(socket) = self.sockets.get_mut(&local_port) else {
+            return IcmpIngest::Dropped;
+        };
+        if socket.remote != Some((advice.remote, remote_port))
+            || socket.sent != Some((config.local(), advice.transport, advice.total))
+        {
+            return IcmpIngest::Dropped;
+        }
+        if advice.code == 4 {
+            let Some(mtu) = advice.reduction(socket.path_mtu) else {
+                return IcmpIngest::Dropped;
+            };
+            socket.path_mtu = mtu;
+            socket.sent = None;
+            IcmpIngest::Applied(IcmpEffect::PathMtu(mtu))
+        } else {
+            socket.unreachable = Some(advice.code);
+            socket.sent = None;
+            IcmpIngest::Applied(IcmpEffect::Unreachable(advice.code))
+        }
     }
 
     /// Queues one validated datagram, within the per-socket and global bounds.

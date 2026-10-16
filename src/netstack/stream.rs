@@ -6,6 +6,7 @@
 //! read here: the caller moves inner datagrams in with [`TcpStack::ingest`] and
 //! out with [`TcpStack::poll`].
 
+use super::icmp::{self, Effect as IcmpEffect, Ingest as IcmpIngest};
 use super::ipv4::{self, BuildError, Ipv4Config, PROTOCOL_TCP, PacketError, check_mtu, unroutable};
 use super::tcp::{self, ACK, DEFAULT_PEER_MSS, FIN, Header, PSH, RST, SYN, Segment, SegmentError};
 use super::{EPHEMERAL_START, Fence};
@@ -132,6 +133,8 @@ pub enum Failure {
     Refused,
     /// Retransmission, handshake or zero-window limits were exhausted.
     Timeout,
+    /// Validated ICMP during an outstanding active open.
+    Unreachable(u8),
 }
 
 #[derive(PartialEq, Eq, Debug)]
@@ -248,6 +251,8 @@ struct Flow {
     failure: Option<Failure>,
     /// The effective send MSS: the peer's, capped by ours.
     mss: usize,
+    path_mtu: usize,
+    network_error: Option<u8>,
     iss: u32,
     irs: u32,
     snd_una: u32,
@@ -443,6 +448,8 @@ impl<E: Entropy> TcpStack<E> {
             state,
             failure: None,
             mss,
+            path_mtu: self.config.mtu,
+            network_error: None,
             iss,
             irs: 0,
             snd_una: iss,
@@ -730,6 +737,73 @@ impl<E: Entropy> TcpStack<E> {
             let acknowledgment = segment.sequence.wrapping_add(segment.space());
             self.control(key, 0, acknowledgment, RST | ACK);
         }
+    }
+
+    /// The most recent validated unreachable advice. Established streams retain
+    /// their retransmission policy: ICMP cannot reset an established connection.
+    pub fn network_error(
+        &mut self,
+        generation: u64,
+        handle: FlowHandle,
+    ) -> Result<Option<u8>, TcpError> {
+        self.admit_generation(generation)?;
+        Ok(self.flow(handle)?.network_error)
+    }
+
+    pub fn path_mtu(&mut self, generation: u64, handle: FlowHandle) -> Result<usize, TcpError> {
+        self.admit_generation(generation)?;
+        Ok(self.flow(handle)?.path_mtu)
+    }
+
+    /// Matches the quoted tuple and a sequence within actually transmitted,
+    /// unacknowledged sequence space before any effect (RFC 5927). No new table.
+    pub fn ingest_icmp(&mut self, generation: u64, now: Duration, bytes: &[u8]) -> IcmpIngest {
+        if self.admit(generation, now).is_err() {
+            return IcmpIngest::Revoked;
+        }
+        let advice = match icmp::parse(&self.config.ip, bytes) {
+            Ok(advice) => advice,
+            Err(error) => return IcmpIngest::Invalid(error),
+        };
+        if advice.protocol != PROTOCOL_TCP {
+            return IcmpIngest::Dropped;
+        }
+        let (local_port, remote_port) = advice.ports();
+        let key = (local_port, advice.remote, remote_port);
+        let Some(mut flow) = self.flows.remove(&key) else {
+            return IcmpIngest::Dropped;
+        };
+        let sequence = u32::from_be_bytes(advice.transport[4..8].try_into().expect("sequence"));
+        let outstanding = in_window(
+            sequence,
+            flow.snd_una,
+            flow.snd_max.wrapping_sub(flow.snd_una),
+        );
+        let sent = !matches!(flow.state, State::Closed | State::TimeWait)
+            && !(flow.state == State::SynSent && flow.syn_pending && flow.deadline.is_none());
+        let outcome = if !sent || !outstanding {
+            IcmpIngest::Dropped
+        } else if advice.code == 4 {
+            match advice.reduction(flow.path_mtu) {
+                Some(mtu) => {
+                    flow.path_mtu = mtu;
+                    flow.mss = flow.mss.min(mtu - HEADERS);
+                    // Re-segment queued bytes at the new MSS, preserving stream
+                    // offsets, congestion/window bounds and retransmission caps.
+                    self.collapse(&mut flow);
+                    IcmpIngest::Applied(IcmpEffect::PathMtu(mtu))
+                }
+                None => IcmpIngest::Dropped,
+            }
+        } else {
+            flow.network_error = Some(advice.code);
+            if flow.state == State::SynSent {
+                self.fail(&mut flow, Failure::Unreachable(advice.code), now);
+            }
+            IcmpIngest::Applied(IcmpEffect::Unreachable(advice.code))
+        };
+        self.flows.insert(key, flow);
+        outcome
     }
 
     /// Parses one inbound inner IPv4 packet and applies its TCP segment.

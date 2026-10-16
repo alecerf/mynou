@@ -9,6 +9,8 @@ use std::time::Duration;
 
 #[path = "netstack/dns.rs"]
 mod dns;
+#[path = "netstack/icmp.rs"]
+mod icmp;
 #[path = "netstack/ipv4.rs"]
 mod ipv4;
 #[path = "netstack/sockets.rs"]
@@ -24,6 +26,7 @@ pub use dns::{
     Answer, DnsClient, DnsConfig, DnsError, Failure, Finished, MAX_ADDRESSES, MAX_NAME,
     MAX_RESOLVERS, Poll, QueryId, Reply, ReplyError, parse_response,
 };
+pub use icmp::{Effect as IcmpEffect, Error as IcmpError, Ingest as IcmpIngest, PROTOCOL_ICMP};
 pub use ipv4::{
     BuildError, DEFAULT_TTL, HEADER_LEN as IPV4_HEADER_LEN, Ipv4Config, MAX_MTU, MAX_OPTION_BYTES,
     MIN_MTU, PROTOCOL_TCP, PROTOCOL_UDP, Packet, PacketError, checksum, parse as parse_ipv4,

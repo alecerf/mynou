@@ -1208,3 +1208,102 @@ fn a_standing_clock_is_allowed() {
     assert!(pair.a.poll(G, pair.now).is_ok());
     assert_eq!(pair.a.state(G, client), Ok(State::Established));
 }
+
+#[test]
+fn icmp_requires_an_outstanding_flow_and_resegments_at_the_reduced_mtu() {
+    use crate::netstack::support::icmp_unreachable;
+    use crate::netstack::{IcmpEffect, IcmpIngest};
+    let (mut pair, client, server, _) = established();
+    let data = pattern(4000);
+    pair.a.send(G, client, &data).unwrap();
+    let packets = pair.a.poll(G, T0).unwrap().send;
+    let original = &packets[0];
+    let router = Ipv4Addr::new(192, 0, 2, 1);
+    let advice = icmp_unreachable(router, original, 4, 900);
+    // Tuple alone is insufficient: random sequence, wrong remote and source
+    // quotes must not change either flow state or path MTU.
+    for index in [12, 16, 20, 22, 24, 25, 26, 27] {
+        let mut forged = original.clone();
+        forged[index] ^= 0x80;
+        forged[10..12].fill(0);
+        let check = ipv4::checksum(&forged[..20]);
+        forged[10..12].copy_from_slice(&check.to_be_bytes());
+        assert!(!matches!(
+            pair.a
+                .ingest_icmp(G, T0, &icmp_unreachable(router, &forged, 4, 600)),
+            IcmpIngest::Applied(_)
+        ));
+        assert_eq!(pair.a.path_mtu(G, client), Ok(MAX_MTU));
+    }
+    assert_eq!(
+        pair.a.ingest_icmp(G, T0, &advice),
+        IcmpIngest::Applied(IcmpEffect::PathMtu(900))
+    );
+    let replacement = pair.a.poll(G, T0).unwrap().send;
+    assert!(!replacement.is_empty());
+    for packet in replacement {
+        assert!(packet.len() <= 900);
+        assert_eq!(&packet[6..8], &[0x40, 0]);
+        pair.b.ingest(G, T0, &packet);
+    }
+    pair.pump();
+    assert_eq!(read(&mut pair.b, server), data);
+    // Already acknowledged bytes, an increase and a zero legacy MTU cannot
+    // alter the path; established unreachable advice cannot reset a stream.
+    assert_eq!(pair.a.ingest_icmp(G, T0, &advice), IcmpIngest::Dropped);
+    pair.a.send(G, client, &[9; 1000]).unwrap();
+    let packet = pair.a.poll(G, T0).unwrap().send.remove(0);
+    for mtu in [0, 1000, 900] {
+        assert_eq!(
+            pair.a
+                .ingest_icmp(G, T0, &icmp_unreachable(router, &packet, 4, mtu)),
+            IcmpIngest::Dropped
+        );
+    }
+    assert_eq!(
+        pair.a
+            .ingest_icmp(G, T0, &icmp_unreachable(router, &packet, 1, 0)),
+        IcmpIngest::Applied(IcmpEffect::Unreachable(1))
+    );
+    assert_eq!(pair.a.network_error(G, client), Ok(Some(1)));
+    assert_eq!(pair.a.state(G, client), Ok(State::Established));
+    assert_eq!(
+        pair.a
+            .ingest_icmp(G, T0, &icmp_unreachable(router, &packet, 4, 1)),
+        IcmpIngest::Applied(IcmpEffect::PathMtu(576))
+    );
+    for packet in pair.a.poll(G, T0).unwrap().send {
+        assert!(packet.len() <= 576);
+    }
+    assert_eq!(pair.a.ingest_icmp(G + 1, T0, &advice), IcmpIngest::Revoked);
+    assert_eq!(pair.a.flows(), 0);
+}
+
+#[test]
+fn icmp_cannot_refuse_an_unsent_syn_or_reset_a_recycled_flow() {
+    use crate::netstack::support::icmp_unreachable;
+    use crate::netstack::{IcmpEffect, IcmpIngest};
+    let mut a = stack(config(CLIENT), &[0, CLIENT_ISS]);
+    let client = a.connect(G, T0, SERVER, PORT).unwrap();
+    let hypothetical = forge(
+        (CLIENT, CLIENT_PORT),
+        (SERVER, PORT),
+        (CLIENT_ISS, 0, SYN),
+        &[],
+    );
+    let router = Ipv4Addr::new(192, 0, 2, 1);
+    let premature = icmp_unreachable(router, &hypothetical, 3, 0);
+    assert_eq!(a.ingest_icmp(G, T0, &premature), IcmpIngest::Dropped);
+    let syn = a.poll(G, T0).unwrap().send.remove(0);
+    let error = icmp_unreachable(router, &syn, 3, 0);
+    assert_eq!(
+        a.ingest_icmp(G, T0, &error),
+        IcmpIngest::Applied(IcmpEffect::Unreachable(3))
+    );
+    assert_eq!(
+        a.send(G, client, b"x"),
+        Err(TcpError::Failed(Failure::Unreachable(3)))
+    );
+    a.close(G, T0, client).unwrap();
+    assert_eq!(a.ingest_icmp(G, T0, &error), IcmpIngest::Dropped);
+}
