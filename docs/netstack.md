@@ -98,8 +98,13 @@ shared virtual TCP stack, to the same resolver and port 53.
   It retains one fixed 4098-byte framing buffer per TCP query; at most one
   response and two bounded reads are processed per poll. Invalid IDs/questions
   and malformed frames are discarded and counted, preserving the pending query.
-  Zero-length frames are discarded; EOF/reset fails with `Aborted`; an excessive
-  length fails with `TooLarge`. TC over TCP fails with `Truncated`, without a loop.
+  Zero-length frames are discarded; EOF before a complete response fails with
+  `Aborted`; an excessive length fails with `TooLarge`. TC over TCP fails with
+  `Truncated`, without a loop.
+- The flow's own outcome keeps its meaning: an RST from the resolver, to the SYN
+  or later, fails with `Refused`; validated ICMP unreachable advice for the flow
+  fails with `Unreachable(code)`, as over UDP; exhausted TCP retransmissions fail
+  with `Timeout`. `Aborted` is kept for local faults and early EOF.
 - Each fallback uses one flow from the shared `TcpConfig::flows` limit and keeps
   its UDP socket until completion. The existing pending-query cap also bounds
   framing state (at most 64 buffers), and a full TCP table reports `Aborted`.
@@ -127,9 +132,10 @@ Connected UDP sockets match the remote tuple, source address, IP length and
 all eight bytes of their **last sent** UDP header, including its checksum. Each
 socket retains one such fingerprint, one MTU and one pending unreachable code;
 there is no destination cache or growing error queue. An unreachable is consumed
-once as `SocketError::Unreachable(code)` by `recv`. Closing/reconnecting resets
-this state. Unconnected UDP sockets ignore ICMP; older datagrams are deliberately
-ineligible. A fingerprint does not authenticate the router and is not cryptographic
+once as `SocketError::Unreachable(code)` by `recv`. Closing the socket or
+connecting it to a different remote resets this state; connecting again to the
+same remote keeps it, including a reduced MTU. Unconnected UDP sockets ignore
+ICMP; older datagrams are deliberately ineligible. A fingerprint does not authenticate the router and is not cryptographic
 protection against an observer or an attacker who guesses the packet correctly.
 
 Fragmentation-needed (code 4) can only lower the connected socket's MTU when

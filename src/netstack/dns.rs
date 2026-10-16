@@ -4,7 +4,7 @@
 
 use super::ipv4::{check_mtu, unroutable};
 use super::sockets::{Handle, SocketError, UdpSockets};
-use super::{Fence, FlowHandle, Ipv4Config, Read, TcpError, TcpStack};
+use super::{Fence, FlowHandle, Ipv4Config, Read, TcpError, TcpFailure, TcpStack};
 use crate::wireguard::Entropy;
 use std::net::Ipv4Addr;
 use std::time::Duration;
@@ -317,11 +317,15 @@ pub enum Failure {
     /// The resolver still set TC on its TCP response.
     Truncated,
     NoAddress,
-    /// The virtual socket failed unexpectedly.
+    /// A local virtual-socket fault (a full flow table, entropy) or a TCP
+    /// response cut short by EOF.
     Aborted,
     /// Validated ICMP destination-unreachable (this code) answered the last
-    /// UDP attempt; earlier unreachable attempts moved on to the next resolver.
+    /// UDP attempt, where earlier unreachable attempts moved on to the next
+    /// resolver, or the TCP fallback connection.
     Unreachable(u8),
+    /// The resolver answered the TCP fallback with an RST, to the SYN or later.
+    Refused,
     /// A TCP response length exceeded the fixed message budget.
     TooLarge,
 }
@@ -670,8 +674,7 @@ impl<E: Entropy> DnsClient<E> {
             match tcp.send(generation, stream.flow, &request[stream.sent..]) {
                 Ok(count) => stream.sent += count,
                 Err(TcpError::NotConnected) => return Step::Pending,
-                Err(TcpError::Revoked) => return Step::Revoked,
-                Err(_) => return Step::Done(Err(Failure::Aborted)),
+                Err(error) => return tcp_step(error),
             }
         }
         // At most one framed response per poll, and two bounded reads: prefix
@@ -687,8 +690,8 @@ impl<E: Entropy> DnsClient<E> {
             ) {
                 Ok(Read::Data(count)) => stream.received.extend_from_slice(&bytes[..count]),
                 Ok(Read::WouldBlock) => return Step::Pending,
-                Err(TcpError::Revoked) => return Step::Revoked,
-                _ => return Step::Done(Err(Failure::Aborted)),
+                Ok(Read::Eof) => return Step::Done(Err(Failure::Aborted)),
+                Err(error) => return tcp_step(error),
             }
             if stream.received.len() != target {
                 return Step::Pending;
@@ -733,6 +736,20 @@ impl<E: Entropy> DnsClient<E> {
             Reply::NoAddress => Err(Failure::NoAddress),
         }
     }
+}
+
+/// Reports why the TCP fallback flow ended. The resolver's own refusal, ICMP
+/// advice and TCP retransmission limits keep their meaning; anything else is a
+/// local fault.
+fn tcp_step(error: TcpError) -> Step {
+    let failure = match error {
+        TcpError::Revoked => return Step::Revoked,
+        TcpError::Failed(TcpFailure::Unreachable(code)) => Failure::Unreachable(code),
+        TcpError::Failed(TcpFailure::Refused | TcpFailure::Reset) => Failure::Refused,
+        TcpError::Failed(TcpFailure::Timeout) => Failure::Timeout,
+        _ => Failure::Aborted,
+    };
+    Step::Done(Err(failure))
 }
 
 #[cfg(test)]

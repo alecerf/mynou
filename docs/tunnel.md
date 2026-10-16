@@ -44,7 +44,13 @@ Inbound, a datagram longer than a WireGuard data message or empty is dropped
 before any work. The rest goes to `Peer::receive` with the observed source and the
 load verdict. Authenticated plaintext is dispatched by its IPv4 protocol to the
 UDP table (17) or the TCP stack (6); each validates the whole packet and drops the
-transport padding. Every other protocol, including ICMP, is counted and refused.
+transport padding. ICMP (1) is offered to the TCP stack first, then to the UDP
+table if no flow matched; only validated destination-unreachable advice that
+quotes a packet we sent applies (see [ICMP advice](/docs/netstack.md#icmp-advice-and-fragment-policy)).
+Invalid ICMP is counted in `inner_rejected`, unmatched or revoked advice in
+`inner_dropped`. Every other protocol is counted in `inner_rejected` and refused.
+The DNS client falls back to the shared TCP stack when a resolver sets TC, using
+one of its flows.
 
 Outbound, every inner packet that a virtual socket, the DNS client or the TCP
 stack emits goes through `Peer::send`. Before a session exists the peer queues it
@@ -135,9 +141,7 @@ macOS behavior of the socket is left to the required macOS CI.
 
 ## Remaining gates
 
-ICMP, path-MTU, fragment policy and DNS over virtual TCP
-([#219](https://github.com/alecerf/mynou/issues/219)); an independent
-interoperability peer in CI ([#220](https://github.com/alecerf/mynou/issues/220));
+An independent interoperability peer in CI ([#220](https://github.com/alecerf/mynou/issues/220));
 routing every torrent path through a transport abstraction with a network-inventory
 check ([#221](https://github.com/alecerf/mynou/issues/221)); the private profile,
 lifecycle states and controls ([#222](https://github.com/alecerf/mynou/issues/222));

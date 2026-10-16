@@ -879,3 +879,100 @@ fn tcp_fallback_respects_the_shared_flow_limit_and_the_message_bound() {
         Err(ReplyError::TooLarge)
     );
 }
+
+/// Starts a query whose UDP reply set TC, so its TCP fallback SYN is queued.
+fn truncated_rig(config: DnsConfig) -> (Rig, QueryId) {
+    let mut rig = Rig::new(&[TXID, 0], config);
+    let (id, packet) = rig.start(NAME, Duration::ZERO);
+    rig.feed(R1, 53, source_port(&packet), &vector("truncated"));
+    assert!(rig.poll(Duration::ZERO).finished.is_empty());
+    assert_eq!(rig.tcp.flows(), 1);
+    (rig, id)
+}
+
+#[test]
+fn a_resolver_refusing_tcp_reports_refused_not_aborted() {
+    // No listener: the resolver answers the SYN with an RST.
+    let (mut rig, id) = truncated_rig(config(&[R1]));
+    let server_ip = Ipv4Config::new(R1, Ipv4Addr::UNSPECIFIED, 0).unwrap();
+    let mut server = TcpStack::new(
+        crate::netstack::TcpConfig::new(server_ip, MAX_MTU),
+        Script::new(&[456]),
+        G,
+        Duration::ZERO,
+    )
+    .unwrap();
+    let poll = pump_tcp_dns(&mut rig, &mut server, Duration::ZERO);
+    assert_eq!(
+        poll.finished,
+        vec![Finished {
+            id,
+            result: Err(Failure::Refused)
+        }]
+    );
+    assert_eq!(
+        (rig.client.pending(), rig.tcp.flows(), rig.sockets.len()),
+        (0, 0, 0)
+    );
+
+    // A reset after the query was sent is the resolver's refusal too.
+    let (mut rig, mut server, flow, id) = fallback();
+    server.abort(G, flow).unwrap();
+    let poll = pump_tcp_dns(&mut rig, &mut server, Duration::ZERO);
+    assert_eq!(
+        poll.finished,
+        vec![Finished {
+            id,
+            result: Err(Failure::Refused)
+        }]
+    );
+    assert_eq!((rig.tcp.flows(), rig.sockets.len()), (0, 0));
+}
+
+#[test]
+fn tcp_unreachable_and_handshake_timeout_keep_their_meaning() {
+    // Validated ICMP port-unreachable for the SYN, as over UDP.
+    let (mut rig, id) = truncated_rig(config(&[R1]));
+    let syn = rig.tcp.poll(G, Duration::ZERO).unwrap().send.remove(0);
+    let advice = icmp_unreachable(R1, &syn, 3, 0);
+    assert_eq!(
+        rig.tcp.ingest_icmp(G, Duration::ZERO, &advice),
+        IcmpIngest::Applied(IcmpEffect::Unreachable(3))
+    );
+    let poll = rig.poll(Duration::ZERO);
+    assert_eq!(
+        poll.finished,
+        vec![Finished {
+            id,
+            result: Err(Failure::Unreachable(3))
+        }]
+    );
+    assert_eq!(
+        (rig.client.pending(), rig.tcp.flows(), rig.sockets.len()),
+        (0, 0, 0)
+    );
+
+    // A silent resolver exhausts the SYN retries before the DNS deadline.
+    let mut slow = config(&[R1]);
+    slow.retry_interval = secs(60);
+    let (mut rig, id) = truncated_rig(slow);
+    let mut finished = Vec::new();
+    let mut at = Duration::ZERO;
+    while finished.is_empty() && at < secs(180) {
+        at += secs(1);
+        rig.tcp.poll(G, at).unwrap();
+        finished = rig.poll(at).finished;
+    }
+    assert!(at < secs(180), "the TCP handshake limit must end it first");
+    assert_eq!(
+        finished,
+        vec![Finished {
+            id,
+            result: Err(Failure::Timeout)
+        }]
+    );
+    assert_eq!(
+        (rig.client.pending(), rig.tcp.flows(), rig.sockets.len()),
+        (0, 0, 0)
+    );
+}
