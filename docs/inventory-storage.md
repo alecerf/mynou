@@ -462,8 +462,18 @@ had. The pending marker `mynou-jobs/3-building` excludes older readers; each
 bounded page of derived entries commits with its cursor, reopening resumes it,
 and read-only opening refuses an unfinished upgrade without repairing it.
 
+Then `mynou-jobs/3` becomes `mynou-jobs/4`, which indexes the live owners of
+each transfer (split into direct download or shared-file claims and pack or
+IRC references), cancelled downloads and live acquisition addresses. Transfer
+ownership, co-ownership, claim and cancellation checks read at most two index
+entries and verify each against its job record, instead of every attempt that
+ever named the transfer; an entry its record contradicts is a storage error,
+never an absent owner. The upgrade walks the creation-ordered job table in
+pages of 200 under `mynou-jobs/4-building`, committing each page with its
+cursor; reopening resumes it and read-only opening refuses it.
+
 Before upgrading, make a complete stopped-store backup if downgrade may be
-needed. Earlier binaries reject formats 2 and 3 and the pending marker.
+needed. Earlier binaries reject formats 2 to 4 and the pending markers.
 Downgrade requires restoring that complete pre-upgrade backup, or the matching
 original legacy snapshots as described above; subsequent changes are only in the newer
 index. Never edit the index marker to bypass this rejection. Feed routing still

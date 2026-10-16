@@ -30,6 +30,7 @@ mod monitoring;
 #[cfg(test)]
 pub(crate) mod open_tests;
 mod ops;
+mod ownership;
 mod replay;
 mod rules;
 #[cfg(test)]
@@ -1517,13 +1518,16 @@ impl Store {
     }
 
     /// Whether another request than `job` shares its native transfer, through
-    /// its own download or its shared-file binding.
+    /// its own download or its shared-file binding. Each transfer reads at
+    /// most two live-owner entries, one of which may be `job` itself.
     pub fn has_co_owner(&mut self, job: &Job) -> Result<bool> {
         self.read(false, |db| {
             for transfer in layout::transfers(job) {
-                if db.transfer_matches(transfer, |other| {
-                    other.id != job.id && other.state != "cancelled"
-                })? {
+                if db
+                    .live_owners(transfer, 2)?
+                    .iter()
+                    .any(|other| other.id != job.id)
+                {
                     return Ok(true);
                 }
             }
@@ -1533,9 +1537,11 @@ impl Store {
 
     pub(crate) fn transfer_cancelled(&mut self, transfer: &str) -> Result<bool> {
         self.read(false, |db| {
-            db.transfer_matches(transfer, |job| {
-                job.state == "cancelled" && job.download_id.as_deref() == Some(transfer)
-            })
+            Ok(!db
+                .owners(&layout::transfer_cancelled_prefix(transfer), 17, 1, |job| {
+                    job.state == "cancelled" && job.download_id.as_deref() == Some(transfer)
+                })?
+                .is_empty())
         })
     }
 
@@ -1546,24 +1552,27 @@ impl Store {
         acquisition: Option<&str>,
     ) -> Result<bool> {
         self.read(false, |db| {
-            if db.transfer_matches(transfer, |job| {
-                job.state != "cancelled"
-                    && (job.download_id.as_deref() == Some(transfer)
-                        || job
-                            .shared_file
-                            .as_ref()
-                            .is_some_and(|file| file.torrent_id == transfer))
-            })? {
+            let claims = [
+                &layout::transfer_live_prefix(transfer)[..],
+                &[layout::CLAIMS],
+            ]
+            .concat();
+            if !db
+                .owners(&claims, 18, 1, |job| {
+                    job.state != "cancelled" && layout::claims(job, transfer)
+                })?
+                .is_empty()
+            {
                 return Ok(true);
             }
             let Some(url) = acquisition else {
                 return Ok(false);
             };
-            Ok(db
-                .find_job(&layout::acquisition_prefix(url), 17, |job| {
+            Ok(!db
+                .owners(&layout::acquisition_live_prefix(url), 17, 1, |job| {
                     job.state != "cancelled" && job.acquisition_url.as_deref() == Some(url)
                 })?
-                .is_some())
+                .is_empty())
         })
     }
 

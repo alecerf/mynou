@@ -313,19 +313,6 @@ impl Db<'_> {
         }
     }
 
-    pub(super) fn transfer_matches(
-        &mut self,
-        transfer: &str,
-        predicate: impl Fn(&Job) -> bool,
-    ) -> Result<bool> {
-        let prefix = [&[T_TRANSFER][..], &short("transfer", &[transfer])].concat();
-        Ok(self
-            .find_job(&prefix, 17, |job| {
-                transfers(job).contains(&transfer) && predicate(job)
-            })?
-            .is_some())
-    }
-
     pub(super) fn jobs_page(
         &mut self,
         prefix: &[u8],
@@ -469,23 +456,37 @@ impl Db<'_> {
         Ok(jobs)
     }
 
+    /// At most `limit` jobs under an ownership prefix, each checked against
+    /// its record. An entry its record does not justify is an error rather
+    /// than a silent "absent", which could authorize a duplicate owner.
+    pub(super) fn owners(
+        &mut self,
+        prefix: &[u8],
+        id_at: usize,
+        limit: usize,
+        valid: impl Fn(&Job) -> bool,
+    ) -> Result<Vec<Job>> {
+        let mut jobs = Vec::new();
+        for key in self.keys(prefix, limit)? {
+            let job = self.require(&key_part(&key, id_at)?)?;
+            if !valid(&job) {
+                return Err("Transfer ownership index disagrees with its record".into());
+            }
+            jobs.push(job);
+        }
+        Ok(jobs)
+    }
+
+    /// Up to `limit` jobs that are not cancelled and depend on the transfer.
+    pub(super) fn live_owners(&mut self, transfer: &str, limit: usize) -> Result<Vec<Job>> {
+        self.owners(&transfer_live_prefix(transfer), 18, limit, |job| {
+            job.state != "cancelled" && transfers(job).contains(&transfer)
+        })
+    }
+
     /// Whether a job that is not cancelled still depends on the transfer.
     pub(super) fn transfer_has_owner(&mut self, transfer: &str) -> Result<bool> {
-        let prefix = [&[T_TRANSFER][..], &short("transfer", &[transfer])].concat();
-        let mut after = None;
-        loop {
-            let page = self.scan(&prefix, after, MAX_PAGE_ROWS)?;
-            for (key, _) in &page.entries {
-                let job = self.require(&key_part(key, 17)?)?;
-                if job.state != "cancelled" && transfers(&job).contains(&transfer) {
-                    return Ok(true);
-                }
-            }
-            after = page.next;
-            if after.is_none() {
-                return Ok(false);
-            }
-        }
+        Ok(!self.live_owners(transfer, 1)?.is_empty())
     }
 
     pub(super) fn pack_matches(

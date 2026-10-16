@@ -991,7 +991,7 @@ fn pending_monitoring_upgrade_is_read_only_safe_and_recovers_each_crash_boundary
         };
         assert_eq!(
             index.get(&layout::FORMAT_KEY).unwrap().unwrap(),
-            children::FORMAT
+            ownership::FORMAT
         );
         assert!(index.get(&layout::MONITOR_CURSOR_KEY).unwrap().is_none());
         for table in [layout::T_MONITOR_REF, layout::T_MONITOR_UNCHECKED] {
@@ -2893,7 +2893,7 @@ fn imported_child_index_upgrade_rebuilds_after_interruption_and_refuses_read_onl
     let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
     assert_eq!(
         index.get(&layout::FORMAT_KEY).unwrap().unwrap(),
-        children::FORMAT
+        ownership::FORMAT
     );
     assert!(index.get(&layout::CHILD_CURSOR_KEY).unwrap().is_none());
     assert_eq!(count(&mut index), 110);
@@ -3169,4 +3169,242 @@ fn requester_sweep_checkpoint_replays_errors_and_survives_restart() {
             .iter()
             .any(|job| job.created_at == 1)
     );
+}
+
+fn index_requests(store: &Store) -> u64 {
+    match &store.backend {
+        Backend::Ready(index) => index.requests(),
+        _ => unreachable!(),
+    }
+}
+
+/// Live-ownership entries of every derived ownership table.
+fn ownership_entries(index: &mut Index) -> BTreeSet<Key> {
+    let mut found = BTreeSet::new();
+    for table in [
+        layout::T_TRANSFER_LIVE,
+        layout::T_TRANSFER_CANCELLED,
+        layout::T_ACQUISITION_LIVE,
+    ] {
+        let mut after = None;
+        loop {
+            let page = ops::Db(index).scan(&[table], after, 200).unwrap();
+            found.extend(page.entries.iter().map(|(key, _)| *key));
+            after = page.next;
+            if after.is_none() {
+                break;
+            }
+        }
+    }
+    found
+}
+
+#[test]
+fn transfer_ownership_reads_a_fixed_window_beyond_former_limits() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    // A pack/IRC reference alone neither claims the transfer nor counts as
+    // its cancelled download, but it is a live owner.
+    let referrer = irc_fixture_job(30_000);
+    let transfer = format!("{:040x}", 30_000);
+    let url = "magnet:?xt=urn:btih:retried-acquisition";
+    // Above the former 10,000-job limit: every older attempt was cancelled.
+    let history: Vec<Job> = (1..=10_101)
+        .map(|n| {
+            let mut job = raw_job(n, 100 + n);
+            job.download_id = Some(transfer.clone());
+            job.acquisition_url = Some(url.into());
+            job.state = "cancelled".into();
+            job
+        })
+        .collect();
+    bulk(&mut store, history.clone());
+    let measure = |store: &mut Store, check: &dyn Fn(&mut Store) -> bool| {
+        let before = index_requests(store);
+        let answer = check(store);
+        let requests = index_requests(store) - before;
+        assert!(requests <= 6, "{requests} index requests");
+        answer
+    };
+    let has_owner = |store: &mut Store| store.transfer_has_owner(&transfer).unwrap();
+    let cancelled = |store: &mut Store| store.transfer_cancelled(&transfer).unwrap();
+    let claimed = |store: &mut Store| store.transfer_claimed(&transfer, Some(url)).unwrap();
+    let co_owned = |store: &mut Store| store.has_co_owner(&history[0]).unwrap();
+    assert!(!measure(&mut store, &has_owner));
+    assert!(measure(&mut store, &cancelled));
+    assert!(!measure(&mut store, &claimed));
+    assert!(!measure(&mut store, &co_owned));
+    bulk(&mut store, vec![referrer.clone()]);
+    assert!(measure(&mut store, &has_owner));
+    assert!(!measure(&mut store, &claimed));
+    assert!(measure(&mut store, &co_owned));
+    assert!(
+        !store.has_co_owner(&referrer).unwrap(),
+        "only cancelled attempts share it"
+    );
+    // A new live attempt that claims it is found ahead of nothing older.
+    let mut newest = raw_job(10_200, 20_000);
+    newest.download_id = Some(transfer.clone());
+    bulk(&mut store, vec![newest.clone()]);
+    assert!(measure(&mut store, &claimed));
+    assert!(store.has_co_owner(&referrer).unwrap());
+    drop(store);
+    // Restart keeps every answer: nothing is held in memory.
+    let mut store = Store::open(&directory.0).unwrap();
+    assert!(measure(&mut store, &has_owner));
+    assert!(measure(&mut store, &claimed));
+    assert!(measure(&mut store, &cancelled));
+    newest.state = "cancelled".into();
+    let mut gone = referrer.clone();
+    gone.state = "cancelled".into();
+    bulk(&mut store, vec![newest, gone]);
+    assert!(!measure(&mut store, &has_owner));
+    assert!(!measure(&mut store, &claimed));
+    assert!(measure(&mut store, &cancelled));
+    // Retrying an attempt makes it live again without its old download, so
+    // only its acquisition address still claims the work.
+    let mut retried = history[5_000].clone();
+    retried.state = "queued".into();
+    retried.download_id = None;
+    bulk(&mut store, vec![retried]);
+    assert!(!measure(&mut store, &has_owner));
+    assert!(measure(&mut store, &claimed));
+    assert!(!store.transfer_claimed(&transfer, None).unwrap());
+}
+
+#[test]
+fn an_ownership_entry_without_a_matching_record_is_an_error() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let mut job = raw_job(1, 101);
+    job.download_id = Some("c".repeat(40));
+    job.state = "cancelled".into();
+    bulk(&mut store, vec![job.clone()]);
+    store
+        .mutate(|db| {
+            let id = layout::id_bytes(&job.id)?;
+            db.0.commit(vec![Change::PutInline(
+                layout::transfer_live_key(&job.download_id.clone().unwrap(), layout::CLAIMS, &id),
+                Vec::new(),
+            )])?;
+            Ok(())
+        })
+        .unwrap();
+    let error = store.transfer_has_owner(&"c".repeat(40)).unwrap_err();
+    assert!(error.contains("disagrees"), "{error}");
+}
+
+#[test]
+fn transfer_ownership_upgrade_resumes_and_refuses_read_only() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let jobs: Vec<Job> = (1..=450)
+        .map(|n| {
+            // IRC origins stay exactly as verified; they reference transfers.
+            if n % 5 == 0 {
+                return irc_fixture_job(n);
+            }
+            let mut job = raw_job(n, 100 + n);
+            job.download_id = Some(format!("{:040x}", n % 7));
+            job.acquisition_url = Some(format!("magnet:?xt=urn:btih:{n}"));
+            if n % 3 == 0 {
+                job.state = "cancelled".into();
+            }
+            job
+        })
+        .collect();
+    bulk(&mut store, jobs.clone());
+    drop(store);
+    let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
+    let expected = ownership_entries(&mut index);
+    let derived: BTreeSet<Key> = jobs
+        .iter()
+        .flat_map(|job| layout::ownership(job).unwrap())
+        .collect();
+    assert_eq!(expected, derived);
+    // Return to the previous format: drop every derived entry.
+    let mut changes: Vec<Change> = expected.iter().map(|key| Change::Delete(*key)).collect();
+    changes.push(Change::PutInline(
+        layout::FORMAT_KEY,
+        children::FORMAT.to_vec(),
+    ));
+    index.commit(changes).unwrap();
+    drop(index);
+    let before = contents(&directory.0);
+    let error = Store::open_read_only(&directory.0).err().unwrap();
+    assert!(error.contains("writable restart"), "{error}");
+    assert_eq!(contents(&directory.0), before);
+    // A crash while publishing the first page leaves the pending marker.
+    let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
+    index.inject(Some(Fault::Applied));
+    assert!(ownership::upgrade(&mut index, false).is_err());
+    assert!(!index.is_usable());
+    drop(index);
+    drop(Store::open(&directory.0).unwrap());
+    let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
+    assert_eq!(
+        index.get(&layout::FORMAT_KEY).unwrap().unwrap(),
+        ownership::FORMAT
+    );
+    assert!(index.get(&layout::OWNERSHIP_CURSOR_KEY).unwrap().is_none());
+    assert_eq!(ownership_entries(&mut index), expected);
+    // A crash after the second page: only the remaining jobs lack entries.
+    let mut keys = Vec::new();
+    let mut after = None;
+    loop {
+        let page = ops::Db(&mut index)
+            .scan(&[layout::T_ALL], after, 200)
+            .unwrap();
+        keys.extend(page.entries.iter().map(|(key, _)| *key));
+        after = page.next;
+        if after.is_none() {
+            break;
+        }
+    }
+    assert_eq!(keys.len(), 450);
+    let mut changes = Vec::new();
+    for key in &keys[400..] {
+        let job = ops::Db(&mut index)
+            .require(&ops::key_part(key, 9).unwrap())
+            .unwrap();
+        changes.extend(
+            layout::ownership(&job)
+                .unwrap()
+                .into_iter()
+                .map(Change::Delete),
+        );
+    }
+    assert!(!changes.is_empty());
+    changes.push(Change::PutInline(
+        layout::FORMAT_KEY,
+        ownership::PENDING.to_vec(),
+    ));
+    changes.push(Change::Put(
+        layout::OWNERSHIP_CURSOR_KEY,
+        keys[399].to_vec(),
+    ));
+    index.commit(changes).unwrap();
+    drop(index);
+    assert!(Store::open_read_only(&directory.0).is_err());
+    let mut store = Store::open(&directory.0).unwrap();
+    for job in &jobs {
+        assert_eq!(store.get(&job.id).unwrap().unwrap(), *job);
+    }
+    drop(store);
+    let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
+    assert_eq!(ownership_entries(&mut index), expected);
+    assert!(index.get(&layout::OWNERSHIP_CURSOR_KEY).unwrap().is_none());
+    // A cursor outside the job table is refused, not skipped over.
+    index
+        .commit(vec![
+            Change::PutInline(layout::FORMAT_KEY, ownership::PENDING.to_vec()),
+            Change::Put(
+                layout::OWNERSHIP_CURSOR_KEY,
+                layout::key(&[&[0xff]]).to_vec(),
+            ),
+        ])
+        .unwrap();
+    assert!(ownership::upgrade(&mut index, false).is_err());
+    drop(index);
+    assert!(Store::open_read_only(&directory.0).is_err());
 }

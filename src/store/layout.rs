@@ -2,7 +2,8 @@
 //!
 //! A job is one record plus small inline entries in the same ordered index:
 //! creation order, canonical identity, media identity, the claim queue, shared
-//! ownership, transfer ownership, lineage and requester/IRC ownership. Every
+//! ownership, transfer ownership (every binding, plus live owners and
+//! cancelled downloads), lineage and requester/IRC ownership. Every
 //! entry is derived from the job itself, so one commit replaces the job and
 //! its entries together. No table is enumerated to answer a routine question.
 use super::{Job, Result};
@@ -50,6 +51,9 @@ pub(super) const T_MONITOR_REF: u8 = 0x3a;
 pub(super) const T_MONITOR_SHARED: u8 = 0x3b;
 pub(super) const T_MONITOR_UNCHECKED: u8 = 0x3c;
 pub(super) const T_IMPORTED_CHILD: u8 = 0x3d;
+pub(super) const T_TRANSFER_LIVE: u8 = 0x3e;
+pub(super) const T_TRANSFER_CANCELLED: u8 = 0x3f;
+pub(super) const T_ACQUISITION_LIVE: u8 = 0x40;
 
 pub(super) const FORMAT_KEY: Key = single(T_META, 0);
 pub(super) const COUNTS_KEY: Key = single(T_META, 1);
@@ -61,6 +65,7 @@ pub(super) const CHILD_CURSOR_KEY: Key = single(T_META, 5);
 pub(super) const WATCHLIST_CURSOR_KEY: Key = single(T_META, 6);
 pub(super) const CLAIM_CURSOR_KEY: Key = single(T_META, 7);
 pub(super) const REQUESTER_SWEEP_CURSOR_KEY: Key = single(T_META, 8);
+pub(super) const OWNERSHIP_CURSOR_KEY: Key = single(T_META, 9);
 pub(super) const MIGRATION_SOURCE_KEY: Key = single(T_MIGRATION, 0);
 pub(super) const MIGRATION_CURSOR_KEY: Key = single(T_MIGRATION, 1);
 
@@ -250,6 +255,62 @@ pub(super) fn acquisition_key(url: &str, id: &[u8; 16]) -> Key {
 }
 pub(super) fn demand_key(demand: &[u8; 32], id: &[u8; 16]) -> Key {
     key(&[&[T_DEMAND], demand, id])
+}
+
+/// Live owners of a transfer that claim it directly: their download or
+/// shared-file binding names it.
+pub(super) const CLAIMS: u8 = 0;
+/// Live owners that reach the transfer only through a pack or IRC origin.
+pub(super) const REFERS: u8 = 1;
+
+/// Jobs that are not cancelled and depend on a transfer, so ownership is
+/// one bounded read however many cancelled attempts the transfer had.
+pub(super) fn transfer_live_prefix(transfer: &str) -> Vec<u8> {
+    [&[T_TRANSFER_LIVE][..], &short("transfer", &[transfer])].concat()
+}
+pub(super) fn transfer_live_key(transfer: &str, class: u8, id: &[u8; 16]) -> Key {
+    key(&[&transfer_live_prefix(transfer), &[class], id])
+}
+/// Cancelled jobs whose own download is the transfer.
+pub(super) fn transfer_cancelled_prefix(transfer: &str) -> Vec<u8> {
+    [&[T_TRANSFER_CANCELLED][..], &short("transfer", &[transfer])].concat()
+}
+/// Jobs that are not cancelled and recorded this acquisition address.
+pub(super) fn acquisition_live_prefix(url: &str) -> Vec<u8> {
+    [&[T_ACQUISITION_LIVE][..], &short("acquisition", &[url])].concat()
+}
+
+/// Whether a job's own download or shared-file binding names the transfer.
+pub(super) fn claims(job: &Job, transfer: &str) -> bool {
+    job.download_id.as_deref() == Some(transfer)
+        || job
+            .shared_file
+            .as_ref()
+            .is_some_and(|file| file.torrent_id == transfer)
+}
+
+/// The live-ownership entries of a job, derived from the record alone.
+pub(super) fn ownership(job: &Job) -> Result<Vec<Key>> {
+    let id = id_bytes(&job.id)?;
+    let mut keys = Vec::new();
+    if job.state == "cancelled" {
+        if let Some(transfer) = &job.download_id {
+            keys.push(key(&[&transfer_cancelled_prefix(transfer), &id]));
+        }
+        return Ok(keys);
+    }
+    for transfer in transfers(job) {
+        let class = if claims(job, transfer) {
+            CLAIMS
+        } else {
+            REFERS
+        };
+        keys.push(transfer_live_key(transfer, class, &id));
+    }
+    if let Some(url) = &job.acquisition_url {
+        keys.push(key(&[&acquisition_live_prefix(url), &id]));
+    }
+    Ok(keys)
 }
 
 /// Every transfer identity a job depends on.
@@ -443,6 +504,9 @@ pub(super) fn owned(job: &Job, root: &Root) -> Result<BTreeMap<Key, Entry>> {
     }
     if let Some(url) = &job.acquisition_url {
         inline(acquisition_key(url, &id), &[]);
+    }
+    for key in ownership(job)? {
+        inline(key, &[]);
     }
     if !job.retiring_transfers.is_empty() {
         inline(retire_key(&id), &[]);

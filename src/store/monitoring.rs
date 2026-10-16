@@ -125,7 +125,12 @@ fn entries(job: &Job, round: u64) -> Result<Vec<Change>> {
 /// Called only after primary format/provenance checks and journal settlement.
 pub(super) fn upgrade(index: &mut Index, read_only: bool) -> Result<()> {
     let format = index.get(&FORMAT_KEY)?.ok_or("Missing job index format")?;
-    if format == FORMAT || format == super::children::FORMAT || format == super::children::PENDING {
+    if format == FORMAT
+        || format == super::children::FORMAT
+        || format == super::children::PENDING
+        || format == super::ownership::FORMAT
+        || format == super::ownership::PENDING
+    {
         return verify_counts(index);
     }
     if format != super::layout::FORMAT && format != PENDING {
