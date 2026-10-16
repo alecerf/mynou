@@ -464,11 +464,13 @@ and read-only opening refuses an unfinished upgrade without repairing it.
 
 Then `mynou-jobs/3` becomes `mynou-jobs/4`, which indexes the live owners of
 each transfer (split into direct download or shared-file claims and pack or
-IRC references), cancelled downloads and live acquisition addresses. Transfer
-ownership, co-ownership, claim and cancellation checks read at most two index
-entries and verify each against its job record, instead of every attempt that
-ever named the transfer; an entry its record contradicts is a storage error,
-never an absent owner. The upgrade walks the creation-ordered job table in
+IRC references), cancelled downloads, live acquisition addresses and the
+shared-file owners of each physical video. Transfer ownership, co-ownership,
+claim and cancellation checks and the shared-file binding lookup read at most
+two index entries and verify each against its job record, instead of every
+attempt or pack mapping that ever named the transfer or file; an entry its
+record contradicts is a storage error, never an absent owner. IRC physical-video
+conflict checks likewise read at most two entries per alias. The upgrade walks the creation-ordered job table in
 pages of 200 under `mynou-jobs/4-building`, committing each page with its
 cursor; reopening resumes it and read-only opening refuses it.
 

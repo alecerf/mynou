@@ -236,23 +236,18 @@ impl Db<'_> {
 
     /// Physical-video ownership by an IRC acquisition, a pack mapping or a
     /// shared file, through the ownership entries of the file and its aliases.
+    /// Each entry is derived from exactly the binding the check asks about, so
+    /// two entries per prefix decide it: at most one of them is `job` itself.
     pub(super) fn check_irc_ownership(&mut self, job: &Job) -> Result<()> {
         let Some(origin) = &job.irc_origin else {
             if let Some(file) = &job.pack_file {
                 for transfer in pack_transfers(job) {
-                    if self
-                        .find_job(&irc_prefix(file, transfer), 33, |other| {
-                            other.id != job.id
-                                && other.irc_origin.as_ref().is_some_and(|known| {
-                                    &known.file == file
-                                        && known
-                                            .torrent_aliases
-                                            .iter()
-                                            .any(|alias| alias == transfer)
-                                })
-                        })?
-                        .is_some()
-                    {
+                    if self.other_owner(&irc_prefix(file, transfer), 33, &job.id, |other| {
+                        other.irc_origin.as_ref().is_some_and(|known| {
+                            &known.file == file
+                                && known.torrent_aliases.iter().any(|alias| alias == transfer)
+                        })
+                    })? {
                         return Err(
                             "IRC: pack mapping conflicts with retained announcement ownership"
                                 .into(),
@@ -263,31 +258,22 @@ impl Db<'_> {
             return Ok(());
         };
         for alias in &origin.torrent_aliases {
-            if self
-                .find_job(&irc_prefix(&origin.file, alias), 33, |other| {
-                    other.id != job.id
-                        && other.irc_origin.as_ref().is_some_and(|known| {
-                            known.file == origin.file
-                                && known
-                                    .torrent_aliases
-                                    .iter()
-                                    .any(|other| origin.torrent_aliases.contains(other))
-                        })
-                })?
-                .is_some()
-            {
+            if self.other_owner(&irc_prefix(&origin.file, alias), 33, &job.id, |other| {
+                other.irc_origin.as_ref().is_some_and(|known| {
+                    known.file == origin.file && known.torrent_aliases.contains(alias)
+                })
+            })? {
                 return Err("IRC: physical video already belongs to another acquisition".into());
             }
-            if self
-                .find_job(&packref_prefix(&origin.file, "t", alias), 33, |other| {
-                    other.id != job.id
-                        && other.pack_file.as_ref() == Some(&origin.file)
-                        && pack_transfers(other)
-                            .iter()
-                            .any(|transfer| origin.torrent_aliases.iter().any(|a| a == transfer))
-                })?
-                .is_some()
-            {
+            if self.other_owner(
+                &packref_prefix(&origin.file, "t", alias),
+                33,
+                &job.id,
+                |other| {
+                    other.pack_file.as_ref() == Some(&origin.file)
+                        && pack_transfers(other).contains(&alias.as_str())
+                },
+            )? {
                 return Err("IRC: candidate conflicts with retained pack ownership".into());
             }
         }

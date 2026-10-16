@@ -54,6 +54,7 @@ pub(super) const T_IMPORTED_CHILD: u8 = 0x3d;
 pub(super) const T_TRANSFER_LIVE: u8 = 0x3e;
 pub(super) const T_TRANSFER_CANCELLED: u8 = 0x3f;
 pub(super) const T_ACQUISITION_LIVE: u8 = 0x40;
+pub(super) const T_SHARED_PHYSICAL: u8 = 0x41;
 
 pub(super) const FORMAT_KEY: Key = single(T_META, 0);
 pub(super) const COUNTS_KEY: Key = single(T_META, 1);
@@ -280,6 +281,16 @@ pub(super) fn acquisition_live_prefix(url: &str) -> Vec<u8> {
     [&[T_ACQUISITION_LIVE][..], &short("acquisition", &[url])].concat()
 }
 
+/// Jobs, in any state, whose shared-file binding is this physical video and
+/// whose pack mapping names its file.
+pub(super) fn shared_physical_prefix(torrent: &str, path: &str) -> Vec<u8> {
+    [
+        &[T_SHARED_PHYSICAL][..],
+        &short("shared-physical", &[torrent, path]),
+    ]
+    .concat()
+}
+
 /// Whether a job's own download or shared-file binding names the transfer.
 pub(super) fn claims(job: &Job, transfer: &str) -> bool {
     job.download_id.as_deref() == Some(transfer)
@@ -293,6 +304,14 @@ pub(super) fn claims(job: &Job, transfer: &str) -> bool {
 pub(super) fn ownership(job: &Job) -> Result<Vec<Key>> {
     let id = id_bytes(&job.id)?;
     let mut keys = Vec::new();
+    if let Some(file) = &job.shared_file
+        && job.pack_file.as_deref() == Some(file.file_path.as_str())
+    {
+        keys.push(key(&[
+            &shared_physical_prefix(&file.torrent_id, &file.file_path),
+            &id,
+        ]));
+    }
     if job.state == "cancelled" {
         if let Some(transfer) = &job.download_id {
             keys.push(key(&[&transfer_cancelled_prefix(transfer), &id]));

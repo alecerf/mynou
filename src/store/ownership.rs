@@ -1,5 +1,6 @@
 //! Derived live-ownership index: transfers with an owner that is not
-//! cancelled, cancelled downloads and live acquisition addresses. The upgrade
+//! cancelled, cancelled downloads, live acquisition addresses and shared-file
+//! owners of each physical video. The upgrade
 //! only writes secondary entries; each resumable page of the creation-ordered
 //! job table and its cursor share one inventory transaction.
 use super::{

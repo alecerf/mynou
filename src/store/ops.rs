@@ -470,11 +470,34 @@ impl Db<'_> {
         for key in self.keys(prefix, limit)? {
             let job = self.require(&key_part(&key, id_at)?)?;
             if !valid(&job) {
-                return Err("Transfer ownership index disagrees with its record".into());
+                return Err("Ownership index disagrees with its record".into());
             }
             jobs.push(job);
         }
         Ok(jobs)
+    }
+
+    /// Whether a job other than `except` holds an entry under `prefix`. A job
+    /// has at most one entry per prefix, so two entries decide it; the other
+    /// holder must be justified by its record.
+    pub(super) fn other_owner(
+        &mut self,
+        prefix: &[u8],
+        id_at: usize,
+        except: &str,
+        valid: impl Fn(&Job) -> bool,
+    ) -> Result<bool> {
+        for key in self.keys(prefix, 2)? {
+            let id = key_part::<16>(&key, id_at)?;
+            if id_text(&id) == except {
+                continue;
+            }
+            if !valid(&self.require(&id)?) {
+                return Err("Ownership index disagrees with its record".into());
+            }
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     /// Up to `limit` jobs that are not cancelled and depend on the transfer.

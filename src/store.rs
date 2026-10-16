@@ -1658,26 +1658,26 @@ impl Store {
         self.mutate(|db| db.save_cursor(layout::REQUESTER_SWEEP_CURSOR_KEY, next))
     }
 
-    /// The shared-file binding recorded for one physical video, if any.
+    /// The shared-file binding recorded for one physical video, if any: one
+    /// verified entry, however many pack mappings ever named the file.
     pub(crate) fn shared_binding(
         &mut self,
         torrent_id: &str,
         file_path: &str,
     ) -> Result<Option<crate::pack::SharedFile>> {
         self.read(None, |db| {
-            let known = db.find_job(
-                &layout::packref_prefix(file_path, "t", torrent_id),
-                33,
+            let known = db.owners(
+                &layout::shared_physical_prefix(torrent_id, file_path),
+                17,
+                1,
                 |job| {
-                    job.shared_file.as_ref().is_some_and(|file| {
-                        file.torrent_id == torrent_id && file.file_path == file_path
-                    })
+                    job.pack_file.as_deref() == Some(file_path)
+                        && job.shared_file.as_ref().is_some_and(|file| {
+                            file.torrent_id == torrent_id && file.file_path == file_path
+                        })
                 },
             )?;
-            if let Some(job) = known {
-                return Ok(job.shared_file);
-            }
-            Ok(None)
+            Ok(known.into_iter().next().and_then(|job| job.shared_file))
         })
     }
 

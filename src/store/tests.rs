@@ -3185,6 +3185,7 @@ fn ownership_entries(index: &mut Index) -> BTreeSet<Key> {
         layout::T_TRANSFER_LIVE,
         layout::T_TRANSFER_CANCELLED,
         layout::T_ACQUISITION_LIVE,
+        layout::T_SHARED_PHYSICAL,
     ] {
         let mut after = None;
         loop {
@@ -3407,4 +3408,85 @@ fn transfer_ownership_upgrade_resumes_and_refuses_read_only() {
     assert!(ownership::upgrade(&mut index, false).is_err());
     drop(index);
     assert!(Store::open_read_only(&directory.0).is_err());
+}
+
+#[test]
+fn shared_binding_reads_one_entry_beyond_former_limits() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let file = shared_file();
+    // Above the former 10,000-job limit: unshared pack mappings of the same
+    // physical video all precede the shared owner in the pack-file entries.
+    let history: Vec<Job> = (1..=10_101)
+        .map(|n| {
+            let mut job = raw_job(n, 100 + n);
+            job.pack_file = Some(file.file_path.clone());
+            job.download_id = Some(file.torrent_id.clone());
+            job.state = "cancelled".into();
+            job
+        })
+        .collect();
+    bulk(&mut store, history);
+    let measure = |store: &mut Store| {
+        let before = index_requests(store);
+        let found = store
+            .shared_binding(&file.torrent_id, &file.file_path)
+            .unwrap();
+        let requests = index_requests(store) - before;
+        assert!(requests <= 4, "{requests} index requests");
+        found
+    };
+    assert_eq!(measure(&mut store), None);
+    // Owners staged as a validated shared group would store them.
+    let mut owners: Vec<Job> = shared_requests(&file)
+        .into_iter()
+        .enumerate()
+        .map(|(n, request)| {
+            let mut job = raw_job(20_000 + n as u64, 20_000);
+            job.key = request.canonical_key();
+            job.request = request;
+            job.shared_file = Some(file.clone());
+            job.pack_file = Some(file.file_path.clone());
+            file.validate_job(&job).unwrap();
+            job
+        })
+        .collect();
+    bulk(&mut store, owners.clone());
+    assert_eq!(measure(&mut store), Some(file.clone()));
+    drop(store);
+    let mut store = Store::open(&directory.0).unwrap();
+    assert_eq!(measure(&mut store), Some(file.clone()));
+    // Cancelled shared owners still bind the physical video, as before.
+    for owner in &mut owners {
+        owner.state = "cancelled".into();
+    }
+    bulk(&mut store, owners);
+    assert_eq!(measure(&mut store), Some(file));
+}
+
+#[test]
+fn irc_ownership_conflicts_read_at_most_two_entries_per_alias() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let first = irc_fixture_job(1);
+    bulk(&mut store, vec![first.clone()]);
+    // A second acquisition of the same physical video and alias conflicts.
+    let mut second = irc_fixture_job(2);
+    let mut origin = second.irc_origin.take().unwrap();
+    origin.file = first.irc_origin.as_ref().unwrap().file.clone();
+    origin.torrent_aliases = first.irc_origin.as_ref().unwrap().torrent_aliases.clone();
+    origin.torrent_id = origin.torrent_aliases[0].clone();
+    second.irc_origin = Some(origin);
+    let aliases = second.irc_origin.as_ref().unwrap().torrent_aliases.len() as u64;
+    let error = store
+        .mutate(|db| {
+            let before = db.0.requests();
+            let result = db.check_irc_ownership(&second);
+            assert!(db.0.requests() - before <= 2 * aliases);
+            result
+        })
+        .unwrap_err();
+    assert!(error.contains("already belongs"), "{error}");
+    // The job itself is never its own conflict.
+    store.mutate(|db| db.check_irc_ownership(&first)).unwrap();
 }
