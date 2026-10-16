@@ -419,6 +419,13 @@ fn import_destination(
             .truncate(false)
             .open(&lock_path)
             .map_err(|error| error.to_string())?;
+        if !lock
+            .metadata()
+            .map_err(|error| error.to_string())?
+            .is_file()
+        {
+            return Err("import lock must be a regular file".to_owned());
+        }
         lock.try_lock()
             .map_err(|error| format!("another import is in progress: {error}"))?;
         let directory = destination

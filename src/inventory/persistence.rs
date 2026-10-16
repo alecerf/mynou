@@ -5,7 +5,7 @@ use super::{
 use crate::{
     Result,
     crypto::{random_bytes, sha256},
-    store::{private_options, reject_symlinks, sync_directory, sync_file},
+    store::{before_private_open, private_options, reject_symlinks, sync_directory, sync_file},
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -314,15 +314,18 @@ fn private_file(path: &Path, writable: bool) -> Result<File> {
     if !metadata.is_file() || metadata.nlink() != 1 || metadata.permissions().mode() & 0o077 != 0 {
         return Err("Inventory files must be private regular files without hard links".into());
     }
+    before_private_open(path);
     let file = private_options()
         .read(true)
         .write(writable)
         .open(path)
         .map_err(|error| format!("Cannot open inventory file: {error}"))?;
     let opened = file.metadata().map_err(|error| error.to_string())?;
+    if !opened.is_file() {
+        return Err("Inventory files must be private regular files without hard links".into());
+    }
     if opened.dev() != metadata.dev()
         || opened.ino() != metadata.ino()
-        || !opened.is_file()
         || opened.nlink() != 1
         || opened.permissions().mode() & 0o077 != 0
     {
@@ -550,7 +553,7 @@ fn read_bounded(file: &mut File, maximum: usize) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn value_path(directory: &Path, key: &Key) -> PathBuf {
+pub(super) fn value_path(directory: &Path, key: &Key) -> PathBuf {
     let name: String = key.iter().map(|byte| format!("{byte:02x}")).collect();
     directory.join("objects").join(&name[..2]).join(&name[2..])
 }

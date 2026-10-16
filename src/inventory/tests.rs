@@ -819,3 +819,62 @@ fn cached_pages_never_outlive_a_commit_or_a_recovery() {
     let mut index = Index::open(&directory.0, false).unwrap();
     assert!(index.get(&key(1)).unwrap().is_none());
 }
+
+/// Each private index file, swapped after inspection for a symlink to its
+/// regular original or for a FIFO, is refused at open time without blocking.
+#[test]
+fn swapped_index_files_are_refused_at_open_without_blocking() {
+    use crate::store::open_tests::{Swap, swapped};
+    for name in [
+        "identity.bin",
+        ".lock",
+        "tree.bin",
+        "transaction.bin",
+        "transaction.tmp",
+        "segment",
+    ] {
+        for swap in [Swap::Symlink, Swap::Fifo] {
+            let directory = Directory::new();
+            let mut index = Index::create(&directory.0).unwrap();
+            // Too large to inline, so the value lives in a log segment.
+            let value = vec![7; super::MAX_INLINE_BYTES + 1];
+            index.commit(vec![Change::Put(key(1), value)]).unwrap();
+            let fault = match name {
+                "transaction.bin" => Some(Fault::Published),
+                "transaction.tmp" => Some(Fault::Staged),
+                _ => None,
+            };
+            if let Some(fault) = fault {
+                index.fault = Some(fault);
+                assert!(index.commit(vec![put(2)]).is_err());
+            }
+            drop(index);
+            assert!(directory.0.join(name).exists() || name == "segment");
+            let path = directory.0.clone();
+            let error = if name == "segment" {
+                let mut index = Index::open(&directory.0, false).unwrap();
+                let segments: Vec<_> = fs::read_dir(directory.0.join("segments"))
+                    .unwrap()
+                    .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+                    .collect();
+                let [segment] = segments.as_slice() else {
+                    panic!("expected one value segment, found {segments:?}");
+                };
+                swapped(segment, 0, swap, move || index.get(&key(1)).map(drop))
+            } else {
+                swapped(name, 0, swap, move || Index::open(&path, false).map(drop))
+            };
+            match swap {
+                Swap::Symlink => assert!(
+                    error.starts_with("Cannot open inventory file"),
+                    "{name}: {error}"
+                ),
+                Swap::Fifo => assert!(
+                    error.starts_with("Cannot open inventory file")
+                        || error.starts_with("Inventory files must be private regular files"),
+                    "{name}: {error}"
+                ),
+            }
+        }
+    }
+}

@@ -27,6 +27,8 @@ mod layout;
 mod legacy;
 mod migration;
 mod monitoring;
+#[cfg(test)]
+pub(crate) mod open_tests;
 mod ops;
 mod replay;
 mod rules;
@@ -630,12 +632,58 @@ impl Event {
     }
 }
 
+// `open(2)` flags std does not name, from each target's `<fcntl.h>`. Tests pin
+// the values per target; another target must add its own before it builds.
+#[cfg(target_os = "macos")]
+pub(crate) const O_NOFOLLOW: i32 = 0x0100;
+#[cfg(target_os = "macos")]
+pub(crate) const O_NONBLOCK: i32 = 0x0004;
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+pub(crate) const O_NOFOLLOW: i32 = 0o400_000;
+#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+pub(crate) const O_NOFOLLOW: i32 = 0o100_000;
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+pub(crate) const O_NONBLOCK: i32 = 0o4_000;
+#[cfg(not(any(
+    target_os = "macos",
+    all(
+        target_os = "linux",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )
+)))]
+compile_error!("private store opens need this target's O_NOFOLLOW and O_NONBLOCK values");
+
+/// Private store opens refuse a final symbolic link and never wait on a FIFO
+/// or device swapped in after inspection. `O_NONBLOCK` has no effect on regular
+/// files; callers still refuse anything else after opening.
 #[cfg(unix)]
 pub(crate) fn private_options() -> OpenOptions {
     use std::os::unix::fs::OpenOptionsExt;
     let mut options = OpenOptions::new();
-    options.mode(0o600);
+    options.mode(0o600).custom_flags(O_NOFOLLOW | O_NONBLOCK);
     options
+}
+
+#[cfg(test)]
+type OpenHook = Box<dyn FnMut(&Path)>;
+#[cfg(test)]
+thread_local! {
+    /// Runs between a private path's inspection and its open, so tests can
+    /// swap the path inside that window.
+    pub(crate) static BEFORE_PRIVATE_OPEN: std::cell::RefCell<Option<OpenHook>> =
+        const { std::cell::RefCell::new(None) };
+}
+pub(crate) fn before_private_open(path: &Path) {
+    #[cfg(test)]
+    BEFORE_PRIVATE_OPEN.with(|hook| {
+        if let Some(hook) = hook.borrow_mut().as_mut() {
+            hook(path);
+        }
+    });
+    let _ = path;
 }
 
 pub(crate) fn reject_symlinks(path: &Path) -> Result<()> {
@@ -653,9 +701,21 @@ pub(crate) fn reject_symlinks(path: &Path) -> Result<()> {
 }
 
 pub(crate) fn sync_directory(path: &Path) -> Result<()> {
-    File::open(path)
-        .and_then(|file| sync_file(&file))
-        .map_err(|error| format!("cannot synchronize directory: {error}"))
+    use std::os::unix::fs::OpenOptionsExt;
+    // A FIFO swapped in for the directory must not block the open.
+    let directory = OpenOptions::new()
+        .read(true)
+        .custom_flags(O_NONBLOCK)
+        .open(path)
+        .map_err(|error| format!("cannot synchronize directory: {error}"))?;
+    if !directory
+        .metadata()
+        .map_err(|error| format!("cannot synchronize directory: {error}"))?
+        .is_dir()
+    {
+        return Err("cannot synchronize directory: not a directory".to_owned());
+    }
+    sync_file(&directory).map_err(|error| format!("cannot synchronize directory: {error}"))
 }
 
 /// Every store durability flush goes through here. On Apple platforms std

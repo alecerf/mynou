@@ -5,7 +5,7 @@ use crate::{
     crypto::{random_bytes, sha256},
     inventory::{Change, Index, Key, MAX_PAGE_ROWS},
     json,
-    store::{private_options, reject_symlinks, sync_directory, sync_file},
+    store::{before_private_open, private_options, reject_symlinks, sync_directory, sync_file},
 };
 use std::{
     cell::RefCell,
@@ -52,6 +52,7 @@ fn read(path: &Path) -> Result<Option<Vec<u8>>> {
     {
         return Err("IRC: invalid history file, permissions or size".into());
     }
+    before_private_open(path);
     let mut f = private_options()
         .read(true)
         .open(path)
@@ -59,6 +60,9 @@ fn read(path: &Path) -> Result<Option<Vec<u8>>> {
     let opened = f
         .metadata()
         .map_err(|_| "IRC: cannot inspect open history")?;
+    if !opened.is_file() {
+        return Err("IRC: invalid history file, permissions or size".into());
+    }
     if m.dev() != opened.dev() || m.ino() != opened.ino() {
         return Err("IRC: history changed during open".into());
     }
@@ -529,6 +533,7 @@ fn open_staging(directory: &Path, staging: &Path, identity: [u8; 32]) -> Result<
     let lock_path = staging.join(".lock");
     let lock = match fs::symlink_metadata(&lock_path) {
         Ok(metadata) => {
+            before_private_open(&lock_path);
             let file = private_options()
                 .read(true)
                 .write(true)
@@ -537,6 +542,9 @@ fn open_staging(directory: &Path, staging: &Path, identity: [u8; 32]) -> Result<
             let opened = file
                 .metadata()
                 .map_err(|_| "IRC: cannot inspect creation lock")?;
+            if !opened.is_file() || opened.nlink() != 1 {
+                return Err("IRC: creation lock must be a regular file".into());
+            }
             if metadata.dev() != opened.dev() || metadata.ino() != opened.ino() {
                 return Err("IRC: creation lock changed during open".into());
             }

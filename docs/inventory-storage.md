@@ -18,6 +18,16 @@ state files, and checks an opened file against the inspected inode. This is
 the existing private-directory trust model, not protection against an actor
 who can rewrite the owner's directory while it is in use.
 
+Open policy: every private store file and lock (index files, WALs, record
+files, staging locks, legacy snapshots and their preserved copies, in every
+store and migration) is opened with `O_NOFOLLOW | O_NONBLOCK`, named per target
+in `src/store.rs` (macOS, and Linux on x86-64 and arm64; other targets do not
+build). A path swapped for a symbolic link after inspection is refused by the
+open itself, so the target is never read; a FIFO or device returns at once
+instead of blocking, and the descriptor is refused unless it is a regular file.
+Directory synchronization opens without blocking and refuses non-directories.
+The inode, link-count and permission checks remain as defense in depth.
+
 `identity.bin` holds a random 256-bit store identity and checksum. `tree.bin`
 contains 4 KiB checksummed pages. Page zero holds the identity, sequence,
 root, allocation counter and record count; remaining pages hold ordered keys

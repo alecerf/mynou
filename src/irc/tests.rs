@@ -554,3 +554,65 @@ fn a_page_that_is_entirely_backing_off_never_hides_later_rows() {
         ]
     );
 }
+
+/// The legacy snapshot, its preserved backup and the initial staging lock,
+/// swapped after inspection, are refused at open time without blocking.
+#[test]
+fn swapped_migration_files_are_refused_at_open_without_blocking() {
+    use crate::store::open_tests::{Swap, swapped};
+    for path in ["snapshot", "backup", "lock"] {
+        for swap in [Swap::Symlink, Swap::Fifo] {
+            let dir = Directory::new();
+            let bytes = legacy(&dir.0, &state(vec![row(1, false)]));
+            let source = sha256(&bytes);
+            let (name, skip, opened, special) = match path {
+                "snapshot" => (
+                    "announcements.bin".to_owned(),
+                    0,
+                    "IRC: cannot open history",
+                    "IRC: invalid history file, permissions or size",
+                ),
+                "backup" => {
+                    let mut store = open(&dir.0, false);
+                    store.stop = Some(1);
+                    assert!(store.initialize().is_err());
+                    (
+                        format!("announcements.legacy-{}.bin", digest(&source)),
+                        0,
+                        "IRC: cannot open history",
+                        "IRC: invalid history file, permissions or size",
+                    )
+                }
+                _ => {
+                    // An unpopulated initial staging, as in the resume test.
+                    let mut store = open(&dir.0, false);
+                    store.stop = Some(2);
+                    assert!(store.initialize().is_err());
+                    drop(store);
+                    let stage = dir.0.join(format!("{STAGING}-{}", digest(&source)));
+                    let mut tree = fs::read(stage.join("tree.bin")).unwrap();
+                    tree.truncate(128);
+                    fs::write(stage.join("tree.bin"), tree).unwrap();
+                    // The preflight reads the lock twice before opening it.
+                    (
+                        ".lock".to_owned(),
+                        2,
+                        "IRC: cannot open creation lock",
+                        "IRC: creation lock must be a regular file",
+                    )
+                }
+            };
+            let directory = dir.0.clone();
+            let error = swapped(&name, skip, swap, move || {
+                AnnouncementStore::open(&directory, &Settings::default(), false)?.initialize()
+            });
+            match swap {
+                Swap::Symlink => assert_eq!(error, opened, "{path}"),
+                Swap::Fifo => assert!(error == opened || error == special, "{path}: {error}"),
+            }
+            if path != "snapshot" {
+                assert_eq!(fs::read(dir.0.join("announcements.bin")).unwrap(), bytes);
+            }
+        }
+    }
+}

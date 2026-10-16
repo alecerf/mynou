@@ -229,6 +229,13 @@ fn settle_journal(directory: &Path, index: &mut Index, read_only: bool) -> Resul
         .write(true)
         .open(&path)
         .map_err(|_| "Cannot open the legacy journal".to_owned())?;
+    if !file
+        .metadata()
+        .map_err(|_| "Cannot inspect the legacy journal".to_owned())?
+        .is_file()
+    {
+        return Err("The legacy journal must be a regular file".into());
+    }
     file.set_len(0)
         .and_then(|()| sync_file(&file))
         .map_err(|_| "Cannot empty the legacy journal".to_owned())?;

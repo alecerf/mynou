@@ -70,7 +70,11 @@ pub(super) fn inspect(path: &Path, repair_permissions: bool) -> Result<Snapshot>
         .read(true)
         .open(path)
         .map_err(|error| format!("Cannot open series snapshot: {error}"))?;
-    if file.metadata().map_err(|error| error.to_string())?.nlink() != 1 {
+    let opened = file.metadata().map_err(|error| error.to_string())?;
+    if !opened.is_file() {
+        return Err("Invalid or oversized series snapshot".into());
+    }
+    if opened.nlink() != 1 {
         return Err("Series snapshots cannot share hard links".into());
     }
     if repair_permissions {
