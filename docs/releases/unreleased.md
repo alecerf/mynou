@@ -93,3 +93,11 @@ The first writable start upgrades the job index in resumable pages and earlier b
 ## Changed: Serve the API while startup validation runs
 
 `mynou serve` now answers reads immediately and validates requester and IRC storage in bounded steps afterwards. Until it finishes, other requests get 503, workers and transfers wait, `/readyz` answers `starting` and `startup` in `/api/status` shows progress; an inconsistency is reported there as `failed` instead of stopping the process ([storage guide](/docs/inventory-storage.md#startup-validation)).
+
+## Added: Search every job and library entry
+
+The jobs search box and state buttons in the web interface now search the whole inventory on the server instead of only the loaded rows; "Search further" continues past the first matches. Use `mynou jobs --query TEXT --state STATE` (also `mynou library`) or `q` and `state` on `GET /api/jobs` and `GET /api/library`. Each request examines at most 1,000 entries and its `next` cursor continues the search; a cursor that names no job of this store is now refused ([guide](/docs/inventory-storage.md#searching-jobs-and-the-library)).
+
+## Added: Follow storage migration progress
+
+Storage migrations and index upgrades now report their stage and records done out of the known total, and whether they resumed. Commands print it on standard error; while `mynou serve` opens or migrates storage, `mynou status` and `GET /api/status` already answer with this progress and other routes report that the service is starting ([guide](/docs/inventory-storage.md#migration-progress)).

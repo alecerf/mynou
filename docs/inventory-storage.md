@@ -225,6 +225,77 @@ automatic cleanup or backup; migration and downgrade of series data are describe
 under [Series storage](#series-storage). A backup is a stopped-store copy,
 including any recovery artifacts; a partial copy is not a backup.
 
+## Listings and cursors
+
+Every inventory listing returns a cursor page: pass the previous page's `next`
+as `after` (CLI `--after`) and stop when `next` is null. `limit` is 1 to 200
+(50 by default, 100 for search candidates and IRC history), and each page also
+stops at its byte budget. Order is stable: a later write never moves rows of an
+older page, so following `next` under concurrent writes visits each remaining
+row once (rows written meanwhile before the cursor are not revisited). A
+malformed cursor is rejected with an error. Jobs, library entries and series
+are never deleted, so their cursors are also checked against the store: a
+well-formed cursor naming no row (from another store, or altered) is rejected as
+stale rather than silently restarting. Other cursors are positions: removing the
+row they name does not invalidate them. `total` counts the whole listing when its
+index keeps a counter.
+
+| Listing | API / CLI | Order | Count |
+| --- | --- | --- | --- |
+| Jobs | `GET /api/jobs`, `mynou jobs` | newest first; `q`, `state` filters | `total` |
+| Library | `GET /api/library`, `mynou library` | newest first; `q`, `state` filters | `total` |
+| Series | `GET /api/series`, `mynou series` | identifier | `total` |
+| Calendar | `GET /api/calendar`, `mynou calendar` | air date, at most 367 days | `total`, null when not cheap |
+| Requester demand | `GET /api/requesters/ID`, `mynou requester` | ledger order | `total` |
+| Retained feeds | `GET /api/feeds/retained`, `mynou feeds --retained` | identifier | `total` (string) |
+| IRC history | `GET /api/irc/announcements`, `mynou announcements` | chronological | `total` |
+| Transfers | `GET /api/transfers`, `mynou torrents` | priority, then FIFO | `total` |
+| Requests of a transfer | `GET /api/transfers/ID` | identifier (`request_ids_next`) | — |
+| Search candidates | `POST /api/search`, `mynou search` | live search ranking | — |
+
+The requester and IRC history listings still accept a legacy `offset` (at most
+10,000 and 1,000) for old callers; only `after` reaches every row. IRC history
+also repeats `next` as `next_cursor`. Other lists are bounded by configuration
+or retention and are returned whole: configured indexers (`GET /api/indexers`),
+feeds (`GET /api/feeds`), IRC sources and rules (`GET /api/irc`) and requester
+accounts (`GET /api/requesters`), and a job's retained history of at most 1,000
+events (`GET /api/jobs/ID/events`). A library check (`POST /api/upgrades`)
+examines a bounded oldest-first window and reports `limited` when more remain.
+
+### Searching jobs and the library
+
+`GET /api/jobs` and `GET /api/library` accept `q`, a percent-encoded text of at
+most 128 characters matched case-insensitively against the title, release name,
+state and identifier, and `state` (`queued`, `processing`, `downloading`,
+`importing`, `ready`, `failed` or `cancelled`). On the command line they are
+`--query TEXT` and `--state STATE`. A filtered request examines at most 1,000
+rows after its cursor and returns the matches, `scanned` (rows examined) and
+`next`, the cursor of the last examined row. A page can therefore hold fewer
+matches than its limit, or none, while `next` continues the search: follow it
+until it is null to search the whole inventory. The web interface searches this
+way, reads a few windows at a time and offers "Search further".
+
+### Migration progress
+
+Each migration of an earlier storage format, and each resumable job index
+upgrade, reports its progress: `store` (`jobs`, `series`, `requesters`, `irc`,
+`feeds`, `indexers`, `transfers`, or the job index upgrades `library_schedule`
+and `upgrade_children`), `stage` (`validating`, `preserving`, `copying`,
+`indexing`, `verifying`, `promoting`, `complete`, or `failed` when it stopped
+with an error), `done` and `total` records (null when unknown in advance) and
+`resumed` when it continued an interrupted attempt. Reports never contain paths,
+titles or identifiers.
+
+Commands that open storage with write access print progress on standard error
+(each stage change, then about once a second). `mynou serve` binds the API
+before opening storage: while it opens and migrates, `/healthz` answers
+`starting`, `/readyz` answers 503, an authenticated `GET /api/status` (or
+`mynou status`) returns `{"status":"starting","migrations":[...]}`, and every
+other route, including the web interface and `/ws`, answers 401 without the API
+token and 503 with it. Once storage is open, `GET /api/status` keeps the
+`migrations` of this start. An interrupted migration resumes from its last
+durable batch on the next writable start, which then reports `resumed`.
+
 ## Inline values and the page cache
 
 A key stores either a logged value (up to 1 MiB, see [Value log](#value-log)) or
@@ -368,8 +439,9 @@ latest 1,000 events are retained per job; consecutive lease-renewal events fold
 into the latest heartbeat. Migration preserves every event retained by the
 previous globally bounded history, including maximum-size messages.
 
-`mynou jobs` and `mynou library` accept `--limit 1..200` and `--after CURSOR`.
-`GET /api/jobs` and `GET /api/library` accept `limit` and `after` and return
+`mynou jobs` and `mynou library` accept `--limit 1..200` and `--after CURSOR`,
+and `--query`/`--state` to [search](#searching-jobs-and-the-library).
+`GET /api/jobs` and `GET /api/library` accept `limit`, `after`, `q` and `state` and return
 `jobs`/`library`, `next` (null at the end), and `total`, plus a string `sequence` identifying changes. WebSocket requests use the
 same routes; live topics send the first page, and the embedded interface loads
 older pages on demand. Loaded tails refresh in place when records change; page membership changes and

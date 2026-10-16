@@ -348,7 +348,9 @@ IRC announcements:
   consecutive processing heartbeats are folded. History is not an unlimited
   archive. Job/library listings return cursor pages of up to 200 rows and a
   4 MiB job-byte budget; one larger job is returned alone within its record
-  bound. Network/JSON response limits still apply to unusually large records.
+  bound. A filtered job or library page examines at most 1,000 rows and may
+  hold fewer matches while its cursor continues
+  ([listings](inventory-storage.md#listings-and-cursors)). Network/JSON response limits still apply to unusually large records.
   The configuration file remains limited to 1 MiB. See
   [job migration and recovery](inventory-storage.md#job-storage).
 - Offline listings and previews open storage read-only: they create nothing,
