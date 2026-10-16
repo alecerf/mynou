@@ -12,7 +12,11 @@ use std::{
     collections::BTreeMap,
     io::{Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
-    sync::{Arc, atomic::Ordering},
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
@@ -29,16 +33,145 @@ pub struct Api {
     token: String,
     engine: Arc<Engine>,
 }
+fn listen(address: &str, token: &str) -> Result<TcpListener> {
+    if token.len() < 32 || token.len() > 4096 || token.chars().any(char::is_control) {
+        return Err("The API token must contain 32 to 4096 bytes and no control characters".into());
+    }
+    let listener =
+        TcpListener::bind(address).map_err(|e| format!("Cannot bind the API listener: {e}"))?;
+    listener.set_nonblocking(true).map_err(|e| e.to_string())?;
+    Ok(listener)
+}
+
+/// The API listener bound before storage opens. While storage migrations run,
+/// it answers health checks and an authenticated `GET /api/status` with their
+/// progress, and refuses every other route as unavailable.
+pub struct Startup {
+    listener: TcpListener,
+    token: String,
+    ready: Arc<AtomicBool>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl Startup {
+    pub fn bind(config: &crate::config::Config, token: String) -> Result<Self> {
+        let listener = listen(&config.listen, &token)?;
+        let ready = Arc::new(AtomicBool::new(false));
+        let thread = {
+            let listener = listener.try_clone().map_err(|e| e.to_string())?;
+            let token = token.clone();
+            let ready = ready.clone();
+            let directories = vec![config.store_dir.clone(), config.downloads.state_dir.clone()];
+            thread::spawn(move || starting(&listener, &token, &directories, &ready))
+        };
+        Ok(Self {
+            listener,
+            token,
+            ready,
+            thread: Some(thread),
+        })
+    }
+
+    pub fn address(&self) -> Result<SocketAddr> {
+        self.listener.local_addr().map_err(|e| e.to_string())
+    }
+
+    /// Hands the listener to the full API once storage is open.
+    pub fn serve(mut self, engine: Arc<Engine>) -> Result<Api> {
+        self.stop();
+        Ok(Api {
+            listener: self.listener.try_clone().map_err(|e| e.to_string())?,
+            token: self.token.clone(),
+            engine,
+        })
+    }
+
+    fn stop(&mut self) {
+        self.ready.store(true, Ordering::Release);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+impl Drop for Startup {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+fn starting(listener: &TcpListener, token: &str, directories: &[PathBuf], ready: &AtomicBool) {
+    let mut threads: Vec<JoinHandle<()>> = Vec::new();
+    while !ready.load(Ordering::Acquire) {
+        threads.retain(|thread| !thread.is_finished());
+        match listener.accept() {
+            Ok((mut stream, _)) if threads.len() < 8 => {
+                let token = token.to_owned();
+                let directories = directories.to_vec();
+                threads.push(thread::spawn(move || {
+                    let _ = starting_connection(&mut stream, &token, &directories);
+                }));
+            }
+            Ok((mut stream, _)) => {
+                let _ = crate::net::blocking(&stream);
+                let _ = respond_within(
+                    &mut stream,
+                    503,
+                    error("API busy"),
+                    Duration::from_millis(100),
+                );
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(20));
+            }
+            Err(_) => thread::sleep(Duration::from_millis(100)),
+        }
+    }
+    for thread in threads {
+        let _ = thread.join();
+    }
+}
+
+fn starting_connection(stream: &mut TcpStream, token: &str, directories: &[PathBuf]) -> Result<()> {
+    let HttpRequest {
+        method,
+        target: path,
+        headers,
+        ..
+    } = match read_request(stream) {
+        Ok(v) => v,
+        Err(e) => return respond(stream, 400, error(&e)),
+    };
+    let mut status = Value::object();
+    status.insert("status", "starting");
+    status.insert("version", env!("CARGO_PKG_VERSION"));
+    if method == "GET" && (path == "/healthz" || path == "/readyz") {
+        return respond(stream, if path == "/healthz" { 200 } else { 503 }, status);
+    }
+    let bearer = headers
+        .get("authorization")
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .unwrap_or("");
+    if !constant_time_eq(bearer.as_bytes(), token.as_bytes()) {
+        return respond(stream, 401, error("Authentication required"));
+    }
+    if method == "GET" && path == "/api/status" {
+        let directories: Vec<_> = directories.iter().map(PathBuf::as_path).collect();
+        status.insert("migrations", crate::progress::report(&directories));
+        return respond(stream, 200, status);
+    }
+    respond(
+        stream,
+        503,
+        error(
+            "Mynou is starting: storage is being opened or migrated; GET /api/status shows the progress",
+        ),
+    )
+}
+
 impl Api {
     pub fn bind(engine: Arc<Engine>, token: String) -> Result<Self> {
-        if token.len() < 32 || token.len() > 4096 || token.chars().any(char::is_control) {
-            return Err(
-                "The API token must contain 32 to 4096 bytes and no control characters".into(),
-            );
-        }
-        let listener = TcpListener::bind(&engine.config.listen)
-            .map_err(|e| format!("Cannot bind the API listener: {e}"))?;
-        listener.set_nonblocking(true).map_err(|e| e.to_string())?;
+        let listener = listen(&engine.config.listen, &token)?;
         Ok(Self {
             listener,
             token,
@@ -997,5 +1130,65 @@ mod tests {
         assert!(head.contains(&format!("Content-Length: {}", body.len())));
         assert!(body.starts_with("{\"data\":\"aaaa"));
         assert!(body.ends_with("\"}"));
+    }
+    #[test]
+    fn the_startup_listener_reports_migration_progress_and_refuses_other_routes() {
+        let root = std::env::temp_dir().join(format!("mynou-startup-{}", std::process::id()));
+        let mut value = crate::config::default_json();
+        value.insert("listen", "127.0.0.1:0");
+        value.insert("store_dir", root.join("store").to_str().unwrap().to_owned());
+        let config = crate::config::from_json(&value, &root).unwrap();
+        let token = "s".repeat(32);
+        let startup = Startup::bind(&config, token.clone()).unwrap();
+        let address = startup.address().unwrap();
+        let tracker = crate::progress::Tracker::start(&config.store_dir, "series", Some(10));
+        tracker.stage("copying", 4);
+        let get = |path: &str, bearer: &str| {
+            let mut stream = TcpStream::connect(address).unwrap();
+            write!(
+                stream,
+                "GET {path} HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {bearer}\r\n\r\n"
+            )
+            .unwrap();
+            let mut text = String::new();
+            stream.read_to_string(&mut text).unwrap();
+            let (head, body) = text.split_once("\r\n\r\n").unwrap();
+            let status: u16 = head[9..12].parse().unwrap();
+            (status, json::parse(body).unwrap())
+        };
+        let (status, body) = get("/healthz", "");
+        assert_eq!(
+            (status, body.get("status").and_then(Value::as_str)),
+            (200, Some("starting"))
+        );
+        assert_eq!(get("/readyz", "").0, 503);
+        assert_eq!(get("/api/status", "wrong").0, 401);
+        let (status, body) = get("/api/status", &token);
+        assert_eq!(status, 200);
+        assert_eq!(
+            json::stringify(body.get("migrations").unwrap()),
+            r#"[{"done":4,"resumed":false,"stage":"copying","store":"series","total":10}]"#
+        );
+        let (status, body) = get("/api/jobs", &token);
+        assert_eq!(status, 503);
+        assert!(
+            body.get("error")
+                .and_then(Value::as_str)
+                .unwrap()
+                .contains("starting")
+        );
+        tracker.finish();
+        drop(startup);
+        // Once stopped, the startup listener no longer answers.
+        assert!(
+            TcpStream::connect_timeout(&address, Duration::from_millis(200))
+                .and_then(|mut stream| {
+                    stream.set_read_timeout(Some(Duration::from_millis(300)))?;
+                    write!(stream, "GET /healthz HTTP/1.1\r\n\r\n")?;
+                    let mut byte = [0];
+                    stream.read_exact(&mut byte)
+                })
+                .is_err()
+        );
     }
 }

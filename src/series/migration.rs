@@ -147,7 +147,11 @@ fn migrate(
     schema: u64,
     hook: &mut dyn FnMut(Stage) -> Result<()>,
 ) -> Result<SeriesStore> {
+    let progress = crate::progress::Tracker::start(directory, "series", None);
     let records = legacy::records(bytes, schema)?;
+    let total = records.len() as u64;
+    progress.total(total);
+    progress.stage("preserving", 0);
     let backup = format!("series.legacy-{}.json", super::hex(&digest[..8]));
     write_backup(directory, &backup, bytes)?;
     hook(Stage::BackupWritten)?;
@@ -162,6 +166,7 @@ fn migrate(
             && source_of(&mut index).ok().flatten().as_deref() == Some(&digest[..])
         {
             resumed = true;
+            progress.resumed();
             staging = Some(index);
         } else {
             discard_staging(directory)?;
@@ -179,6 +184,7 @@ fn migrate(
     hook(Stage::StagingCreated)?;
 
     let cursor = cursor_of(&mut staging)?;
+    progress.stage("copying", 0);
     for (position, record) in records.iter().enumerate() {
         if cursor.as_ref().is_some_and(|done| record.id <= *done) {
             continue;
@@ -188,8 +194,10 @@ fn migrate(
             record,
             migration_changes(None, Some(&record.id))?,
         )?;
+        progress.stage("copying", position as u64 + 1);
         hook(Stage::Record(position as u64 + 1))?;
     }
+    progress.stage("verifying", total);
 
     let counts = counts_of(&mut staging)?;
     if counts.series != records.len() as u64
@@ -226,6 +234,7 @@ fn migrate(
     hook(Stage::Verified)?;
     drop(staging);
 
+    progress.stage("promoting", total);
     let index_path = directory.join(INDEX);
     fs::rename(&staging_path, &index_path)
         .map_err(|error| format!("Cannot promote the series index: {error}"))?;
@@ -234,6 +243,7 @@ fn migrate(
     let index = Index::open(&index_path, false)?;
     write_marker(directory, &index)?;
     hook(Stage::MarkerWritten)?;
+    progress.finish();
     let report = MigrationReport {
         records: records.len() as u64,
         episodes: records

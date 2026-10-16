@@ -964,7 +964,7 @@ fn pending_monitoring_upgrade_is_read_only_safe_and_recovers_each_crash_boundary
         assert_eq!(contents(&directory.0), before);
         let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
         index.inject(Some(fault));
-        assert!(monitoring::upgrade(&mut index, false).is_err());
+        assert!(monitoring::upgrade(&mut index, false, Path::new("/nonexistent")).is_err());
         assert!(!index.is_usable());
         drop(index);
         let mut reopened = Store::open(&directory.0).unwrap();
@@ -1864,7 +1864,7 @@ fn read_only_open_never_migrates_or_writes() {
 }
 
 /// Opens with a hook that interrupts at one migration stage.
-fn interrupted(directory: &Path, stop: impl Fn(Stage) -> bool) -> Result<Store> {
+fn interrupted(directory: &Path, mut stop: impl FnMut(Stage) -> bool) -> Result<Store> {
     let lock = secure_file(&directory.join(".lock"))?;
     try_lock_file(&lock).map_err(|error| error.to_string())?;
     migration::open_with(directory, lock, false, &mut |stage| {
@@ -2885,7 +2885,7 @@ fn imported_child_index_upgrade_rebuilds_after_interruption_and_refuses_read_onl
     assert_eq!(contents(&directory.0), before);
     let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
     index.inject(Some(Fault::Applied));
-    assert!(children::upgrade(&mut index, false).is_err());
+    assert!(children::upgrade(&mut index, false, Path::new("/nonexistent")).is_err());
     assert!(!index.is_usable());
     drop(index);
     let reopened = Store::open(&directory.0).unwrap();
@@ -2960,7 +2960,7 @@ fn imported_child_upgrade_resumes_from_a_mid_upgrade_cursor() {
             Change::Put(layout::CHILD_CURSOR_KEY, layout::key(&[&[0xff]]).to_vec()),
         ])
         .unwrap();
-    assert!(children::upgrade(&mut index, false).is_err());
+    assert!(children::upgrade(&mut index, false, Path::new("/nonexistent")).is_err());
 }
 
 #[test]
@@ -3945,4 +3945,82 @@ fn job_queries_parse_filters_strictly() {
     ] {
         assert!(JobQuery::parse(invalid).is_err(), "{invalid}");
     }
+}
+
+#[test]
+fn a_staged_migration_reports_resumable_progress_while_it_runs() {
+    use crate::progress::{Migration, migrations};
+    let jobs: Vec<Job> = (0..150).map(|n| raw_job(n, 100 + n)).collect();
+    let directory = Directory::new();
+    write_legacy(&directory.0, &jobs, &[], 0);
+    // The second of three chunks is durable when the hook observes it.
+    let mut during = Vec::new();
+    let error = interrupted(&directory.0, |stage| {
+        if stage == Stage::Chunk(2) {
+            during = migrations(&[&directory.0]);
+        }
+        stage == Stage::Chunk(2)
+    })
+    .err()
+    .unwrap();
+    assert!(error.contains("interrupted"), "{error}");
+    let copying = Migration {
+        store: "jobs",
+        stage: "copying",
+        done: 128,
+        total: Some(150),
+        resumed: false,
+    };
+    assert_eq!(during, vec![copying.clone()]);
+    // The interrupted attempt stays visible at the count it reached.
+    let failed = Migration {
+        stage: "failed",
+        ..copying
+    };
+    assert_eq!(migrations(&[&directory.0]), vec![failed.clone()]);
+    // The next writable start resumes after the durable chunks.
+    let mut resumed_during = Vec::new();
+    let store = migration::open_with(
+        &directory.0,
+        {
+            let lock = secure_file(&directory.0.join(".lock")).unwrap();
+            lock.try_lock().unwrap();
+            lock
+        },
+        false,
+        &mut |stage| {
+            if stage == Stage::Chunk(3) {
+                resumed_during = migrations(&[&directory.0]);
+            }
+            Ok(())
+        },
+    )
+    .unwrap();
+    drop(store);
+    assert_eq!(
+        resumed_during.last(),
+        Some(&Migration {
+            store: "jobs",
+            stage: "copying",
+            done: 150,
+            total: Some(150),
+            resumed: true,
+        })
+    );
+    assert_eq!(
+        migrations(&[&directory.0]),
+        vec![
+            failed,
+            Migration {
+                store: "jobs",
+                stage: "complete",
+                done: 150,
+                total: Some(150),
+                resumed: true,
+            }
+        ]
+    );
+    let report = crate::json::stringify(&crate::progress::report(&[&directory.0]));
+    assert!(!report.contains(directory.0.to_str().unwrap()));
+    assert!(!report.contains("Synthetic"));
 }

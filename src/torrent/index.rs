@@ -729,7 +729,9 @@ impl TransferIndex {
     }
     fn migrate(&mut self, config: &DownloadConfig) -> Result<()> {
         let backup = self.directory.join(".transfers-legacy");
+        let resumed = fs::symlink_metadata(&backup).is_ok();
         ensure_private_directory(&backup)?;
+        let mut legacy = 0_u64;
         // Freeze and verify each original independently. This is migration-only
         // enumeration; normal opens read only the root, marker and queue window.
         let mut max_order = self.counts()?.order;
@@ -751,6 +753,7 @@ impl TransferIndex {
                 continue;
             }
             let bytes = checked_read_with_permissions(&entry.path(), SNAPSHOT_LIMIT, false)?;
+            legacy += 1;
             let saved = backup.join(name);
             // A prior imported row may have materialized a previously absent
             // compatibility control. It is derived state, not legacy backup.
@@ -776,6 +779,13 @@ impl TransferIndex {
                 max_order = max_order.max(TorrentControl::decode(&bytes)?.queue_order);
             }
         }
+        // A first start finds no legacy file: creating the catalog is not a migration.
+        let progress =
+            crate::progress::Tracker::start_if(legacy > 0, &self.directory, "transfers", None);
+        if resumed {
+            progress.resumed();
+        }
+        progress.stage("preserving", 0);
         let mut counts = self.counts()?;
         counts.order = max_order;
         self.index
@@ -808,6 +818,8 @@ impl TransferIndex {
         if !pending.is_empty() {
             self.index.commit(pending.into_values().collect())?;
         }
+        let mut done = 0_u64;
+        progress.stage("copying", 0);
         loop {
             let page = self.index.page(&Query {
                 start: single(DISCOVERY),
@@ -841,10 +853,15 @@ impl TransferIndex {
                     return Err("Transfer migration interrupted by fixture".into());
                 }
                 self.index.commit(vec![Change::Delete(staged)])?;
+                done += 1;
+                progress.stage("copying", done);
             }
         }
+        progress.stage("promoting", done);
         self.index
             .commit(vec![Change::Put(HEADER, FORMAT.to_vec())])?;
+        progress.total(done);
+        progress.finish();
         Ok(())
     }
 }

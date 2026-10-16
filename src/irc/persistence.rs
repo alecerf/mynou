@@ -356,6 +356,14 @@ impl AnnouncementStore {
         Ok(())
     }
     fn migrate(&self, legacy: &State, bytes: Option<&[u8]>) -> Result<Index> {
+        let total = legacy.records.len() as u64;
+        let progress = crate::progress::Tracker::start_if(
+            bytes.is_some(),
+            &self.directory,
+            "irc",
+            Some(total),
+        );
+        progress.stage("preserving", 0);
         let source = sha256(bytes.unwrap_or_default());
         if let Some(bytes) = bytes {
             let backup = self
@@ -383,6 +391,9 @@ impl AnnouncementStore {
             .try_exists()
             .map_err(|_| "IRC: cannot inspect promotion")?;
         let proof = read(&proof_path)?;
+        if proof.is_some() {
+            progress.resumed();
+        }
         let identity = if let Some(proof) = proof {
             if proof.len() != 104
                 || &proof[..8] != b"MYNOUIM1"
@@ -457,7 +468,10 @@ impl AnnouncementStore {
                 return Err("IRC: migration cursor is not a legacy identity".into());
             }
             let mut batch = Vec::new();
+            let mut done = 0_u64;
+            progress.stage("copying", 0);
             for r in legacy.records.values() {
+                done += 1;
                 if cursor.is_some_and(|cursor| index::primary(&r.id).is_ok_and(|k| k <= cursor)) {
                     continue;
                 }
@@ -469,6 +483,7 @@ impl AnnouncementStore {
                         &batch,
                         batch.last().map(|r| r.id.as_str()),
                     )?;
+                    progress.stage("copying", done);
                     self.checkpoint(4)?;
                     batch.clear();
                 }
@@ -483,6 +498,7 @@ impl AnnouncementStore {
             }
             index::commit(&mut index, &header(legacy), &[], None)?;
         }
+        progress.stage("verifying", total);
         verify(&mut index, legacy, &source)?;
         self.checkpoint(5)?;
         if promoted && index.get(&index::CURSOR)?.is_some() {
@@ -494,6 +510,7 @@ impl AnnouncementStore {
         self.checkpoint(6)?;
         let identity = index.identity();
         drop(index);
+        progress.stage("promoting", total);
         if !promoted {
             fs::rename(&staging, &published).map_err(|_| "IRC: cannot promote checked history")?;
             sync_directory(&self.directory)?;
@@ -508,7 +525,9 @@ impl AnnouncementStore {
             &marker,
         )?;
         self.checkpoint(8)?;
-        Index::open_bound(&published, false, identity)
+        let index = Index::open_bound(&published, false, identity)?;
+        progress.finish();
+        Ok(index)
     }
 }
 /// A prepublished identity proof permits recreating only an unpopulated initial

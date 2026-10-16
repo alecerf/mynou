@@ -8,7 +8,6 @@ use mynou::{
     json::{self, Value},
     media,
     net::HttpClient,
-    server::Api,
     store::{Request, Store},
 };
 use std::{
@@ -583,13 +582,15 @@ fn execute(args: Args) -> Result<()> {
     }
     if args.command == "serve" {
         let token = api_token(&config, &path)?;
-        let engine = Engine::open_serving(config)?;
-        let api = Api::bind(engine.clone(), token)?;
+        // The listener answers health and migration progress while storage opens.
+        let startup = mynou::server::Startup::bind(&config, token)?;
         eprintln!(
             "mynou {} — API http://{}",
             env!("CARGO_PKG_VERSION"),
-            api.address()?
+            startup.address()?
         );
+        let engine = Engine::open_serving(config)?;
+        let api = startup.serve(engine.clone())?;
         let _workers = engine.start();
         return api.run();
     }
@@ -1634,6 +1635,7 @@ fn page_query(args: &Args) -> Result<String> {
 }
 
 fn main() {
+    mynou::progress::set_reporter(|migration| eprintln!("mynou: {}", migration.describe()));
     if let Err(error) = Args::parse().and_then(execute) {
         eprintln!("mynou: {error}");
         std::process::exit(1);

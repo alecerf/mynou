@@ -476,6 +476,13 @@ impl Engine {
         };
         let mut v = Value::object();
         v.insert("version", env!("CARGO_PKG_VERSION"));
+        v.insert(
+            "migrations",
+            crate::progress::report(&[
+                self.config.store_dir.as_path(),
+                self.config.downloads.state_dir.as_path(),
+            ]),
+        );
         v.insert("jobs", count(|counts| counts.jobs));
         v.insert("active", count(|counts| counts.active));
         v.insert("ready", count(|counts| counts.ready));

@@ -487,6 +487,14 @@ impl RequesterStore {
         Ok(())
     }
     fn migrate(&self, state: &State, bytes: Option<&[u8]>) -> Result<Index> {
+        let total = (state.demands.len() + state.operator_jobs.len()) as u64;
+        let progress = crate::progress::Tracker::start_if(
+            bytes.is_some(),
+            &self.directory,
+            "requesters",
+            Some(total),
+        );
+        progress.stage("preserving", 0);
         let source = sha256(bytes.unwrap_or_default());
         if let Some(bytes) = bytes {
             let backup = self
@@ -544,6 +552,7 @@ impl RequesterStore {
                     && inspect.get(&index::SOURCE)?.as_deref() == Some(source.as_slice())
                 {
                     drop(inspect);
+                    progress.resumed();
                     reusable = Some(Index::open(&staging, false)?);
                 } else {
                     let metadata = fs::symlink_metadata(&staging)
@@ -570,7 +579,10 @@ impl RequesterStore {
         };
         let cursor = index.get(&index::CURSOR)?;
         let mut batch = Vec::new();
+        let mut done = 0_u64;
+        progress.stage("copying", 0);
         for demand in state.demands.values() {
+            done += 1;
             if cursor
                 .as_deref()
                 .is_some_and(|done| demand.id.as_bytes() <= done)
@@ -581,22 +593,28 @@ impl RequesterStore {
             if batch.len() == MAX_PAGE_ROWS {
                 write_migration_batch(&mut index, &self.state, &batch)?;
                 batch.clear();
+                progress.stage("copying", done);
             }
         }
         if !batch.is_empty() {
             write_migration_batch(&mut index, &self.state, &batch)?;
         }
+        progress.stage("copying", done);
         let operators: Vec<_> = state.operator_jobs.iter().cloned().collect();
         for batch in operators.chunks(MAX_PAGE_ROWS) {
             index::commit(&mut index, &self.state, &[], batch)?;
+            done += batch.len() as u64;
+            progress.stage("copying", done);
         }
         index::commit(&mut index, &self.state, &[], &[])?;
+        progress.stage("verifying", total);
         verify(&mut index, state, &self.state, &source)?;
         if index.get(&index::CURSOR)?.is_some() {
             index.commit(vec![Change::Delete(index::CURSOR)])?;
         }
         let identity = index.identity();
         drop(index);
+        progress.stage("promoting", total);
         if !published
             .try_exists()
             .map_err(|_| "Requester: cannot inspect promotion")?
@@ -613,7 +631,9 @@ impl RequesterStore {
             &self.directory.join("requesters.bin"),
             &marker,
         )?;
-        Index::open(&published, false)
+        let index = Index::open(&published, false)?;
+        progress.finish();
+        Ok(index)
     }
 }
 fn write_migration_batch(index: &mut Index, metadata: &State, batch: &[Demand]) -> Result<()> {

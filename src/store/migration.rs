@@ -77,8 +77,8 @@ fn ready(
     read_only: bool,
     report: Option<MigrationReport>,
 ) -> Result<Store> {
-    super::monitoring::upgrade(&mut index, read_only)?;
-    super::children::upgrade(&mut index, read_only)?;
+    super::monitoring::upgrade(&mut index, read_only, directory)?;
+    super::children::upgrade(&mut index, read_only, directory)?;
     super::ownership::upgrade(&mut index, read_only)?;
     Ok(Store::from_parts(
         directory,
@@ -274,9 +274,13 @@ fn migrate(
     files: legacy::Files,
     hook: &mut dyn FnMut(Stage) -> Result<()>,
 ) -> Result<Store> {
+    let progress = crate::progress::Tracker::start(directory, "jobs", None);
     let state = legacy::parse(files.snapshot.as_deref(), &files.journal)?;
     legacy::validate(&state)?;
     let plan = Plan::new(&state)?;
+    let total = state.jobs.len() as u64;
+    progress.total(total);
+    progress.stage("preserving", 0);
     let tag = super::hex(&files.digest[..8]);
     if let Some(snapshot) = &files.snapshot {
         write_backup(directory, &format!("snapshot.legacy-{tag}.bin"), snapshot)?;
@@ -307,6 +311,7 @@ fn migrate(
         };
         if reusable {
             resumed = true;
+            progress.resumed();
             staging = Some(Index::open(&staging_path, false)?);
         } else {
             preserve_staging(directory)?;
@@ -329,10 +334,14 @@ fn migrate(
     let cursor = cursor_of(&mut staging)?;
     let ids: Vec<&String> = state.jobs.keys().collect();
     let mut written = 0_u64;
+    let mut copied = 0_u64;
+    progress.stage("copying", 0);
     for chunk in ids.chunks(CHUNK) {
         written += 1;
+        copied += chunk.len() as u64;
         let last = chunk.last().map(|id| id.as_str()).unwrap_or_default();
         if cursor.as_deref().is_some_and(|done| last <= done) {
+            progress.stage("copying", copied);
             continue;
         }
         let mut entries: BTreeMap<Key, Entry> = BTreeMap::new();
@@ -348,8 +357,10 @@ fn migrate(
             id_bytes(last)?.to_vec(),
         ));
         staging.commit(changes)?;
+        progress.stage("copying", copied);
         hook(Stage::Chunk(written))?;
     }
+    progress.stage("verifying", total);
     // Counters and the format marker are written last, together, so a
     // half-built staging index is never taken for a complete one.
     let counts = plan.counts(&state);
@@ -367,6 +378,7 @@ fn migrate(
     hook(Stage::Verified)?;
     drop(staging);
 
+    progress.stage("promoting", total);
     let index_path = directory.join(INDEX);
     fs::rename(&staging_path, &index_path)
         .map_err(|_| "Cannot promote the job index".to_owned())?;
@@ -377,6 +389,7 @@ fn migrate(
     hook(Stage::MarkerWritten)?;
     settle_journal(directory, &mut index, false)?;
     hook(Stage::JournalCleared)?;
+    progress.finish();
     let report = MigrationReport {
         jobs: state.jobs.len() as u64,
         events: plan.events.values().map(|list| list.len() as u64).sum(),

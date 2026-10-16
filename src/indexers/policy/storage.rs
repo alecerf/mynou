@@ -402,6 +402,14 @@ impl Storage {
             Backend::Absent => None,
             _ => return Err("Indexer policy: migration already published".into()),
         };
+        let total = original.map_or(0, |image| image.rows.len() as u64);
+        let progress = crate::progress::Tracker::start_if(
+            original.is_some(),
+            &self.directory,
+            "indexers",
+            Some(total),
+        );
+        progress.stage("preserving", 0);
         let source = sha256(original.map_or(&[][..], |image| image.bytes.as_slice()));
         if let Some(image) = original {
             replace(
@@ -424,7 +432,10 @@ impl Storage {
                 Index::open(&staging, false)
             });
             match reuse {
-                Ok(index) => index,
+                Ok(index) => {
+                    progress.resumed();
+                    index
+                }
                 Err(_) => {
                     // Staging is derived and has never acknowledged a runtime control.
                     // Keep all unexpected contents, including interrupted writes.
@@ -455,7 +466,10 @@ impl Storage {
         }
         if let Some(image) = original {
             let mut batch = Vec::new();
+            let mut done = 0_u64;
+            progress.stage("copying", 0);
             for (id, record) in &image.rows {
+                done += 1;
                 if cursor.as_ref().is_some_and(|cursor| id <= cursor) {
                     continue;
                 }
@@ -467,6 +481,7 @@ impl Storage {
                         .id
                         .clone();
                     put(&mut index, &batch, Some(&last))?;
+                    progress.stage("copying", done);
                     batch.clear();
                 }
             }
@@ -475,11 +490,13 @@ impl Storage {
                 put(&mut index, &batch, Some(&last))?;
             }
         }
+        progress.stage("verifying", total);
         verify(&mut index, original)?;
         if index.get(&CURSOR)?.is_some() {
             index.commit(vec![Change::Delete(CURSOR)])?;
         }
         drop(index);
+        progress.stage("promoting", total);
         if exists(&self.directory.join("indexers.idx"))? {
             return Err("Indexer policy: index appeared before promotion".into());
         }
@@ -494,6 +511,7 @@ impl Storage {
             _ => return Err("Indexer policy: unexpected migration backend".into()),
         };
         self.backend = Backend::Unpublished(Box::new(index), original);
+        progress.finish();
         Ok(())
     }
 

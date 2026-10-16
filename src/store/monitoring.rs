@@ -6,6 +6,7 @@ use super::{
     ops::{self, Db, Staged},
 };
 use crate::inventory::{Change, Index, Key, MAX_PAGE_ROWS, Query};
+use std::path::Path;
 
 pub(super) const FORMAT: &[u8] = b"mynou-jobs/2";
 pub(super) const PENDING: &[u8] = b"mynou-jobs/2-building";
@@ -123,7 +124,7 @@ fn entries(job: &Job, round: u64) -> Result<Vec<Change>> {
 }
 
 /// Called only after primary format/provenance checks and journal settlement.
-pub(super) fn upgrade(index: &mut Index, read_only: bool) -> Result<()> {
+pub(super) fn upgrade(index: &mut Index, read_only: bool, directory: &Path) -> Result<()> {
     let format = index.get(&FORMAT_KEY)?.ok_or("Missing job index format")?;
     if format == FORMAT
         || format == super::children::FORMAT
@@ -141,7 +142,17 @@ pub(super) fn upgrade(index: &mut Index, read_only: bool) -> Result<()> {
             "Library scheduling index needs a writable restart to complete its upgrade".into(),
         );
     }
-    if format != PENDING {
+    let library = Db(index).counts()?.library;
+    // A new or empty store upgrades without anything to report.
+    let progress = crate::progress::Tracker::start_if(
+        format == PENDING || library > 0,
+        directory,
+        "library_schedule",
+        Some(library),
+    );
+    if format == PENDING {
+        progress.resumed();
+    } else {
         index.commit(vec![
             Change::PutInline(FORMAT_KEY, PENDING.to_vec()),
             Change::Put(MONITOR_COUNTS_KEY, encode([0; 5])),
@@ -162,6 +173,7 @@ pub(super) fn upgrade(index: &mut Index, read_only: bool) -> Result<()> {
         }
     }
     let mut totals = counts(index)?;
+    progress.stage("indexing", totals.iter().sum());
     loop {
         let page = Db(index).scan(&[T_LIBRARY], cursor, MAX_PAGE_ROWS)?;
         if page.entries.is_empty() {
@@ -192,15 +204,18 @@ pub(super) fn upgrade(index: &mut Index, read_only: bool) -> Result<()> {
             cursor.ok_or("Missing scheduling cursor")?.to_vec(),
         ));
         index.commit(changes)?;
+        progress.stage("indexing", totals.iter().sum());
         if page.next.is_none() {
             break;
         }
     }
+    progress.stage("verifying", library);
     verify_counts(index)?;
     index.commit(vec![
         Change::PutInline(FORMAT_KEY, FORMAT.to_vec()),
         Change::Delete(MONITOR_CURSOR_KEY),
     ])?;
+    progress.finish();
     Ok(())
 }
 
