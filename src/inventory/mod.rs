@@ -339,6 +339,8 @@ const CLEAN_SLACK: u64 = 8 * 1024 * 1024;
 /// Least segment bytes the cleaner reads in one commit; it reads at least as
 /// much as the commit appends, so the log cannot outgrow it.
 const CLEAN_BUDGET: u64 = 4 * 1024 * 1024;
+/// Bounds segment metadata checks and removals in a commit and its replay.
+const MAX_RETIRED_SEGMENTS: u64 = 256;
 /// Room kept for one more tree path when deciding whether to relocate a value.
 const CLEAN_PAGE_MARGIN: usize = 128;
 
@@ -430,7 +432,10 @@ impl Log {
         let mut wal_bytes = actions.iter().try_fold(3 * page_bytes, |total, action| {
             total.checked_add(82 + action.data.as_ref().map_or(0, Vec::len) as u64)
         });
-        while self.tail < self.before.head && read < budget {
+        while self.tail < self.before.head
+            && self.tail - self.before.tail < MAX_RETIRED_SEGMENTS
+            && read < budget
+        {
             let mut segment =
                 persistence::Segment::open(directory, self.before.identity, self.tail)?;
             let mut offset = if self.tail_offset == 0 {

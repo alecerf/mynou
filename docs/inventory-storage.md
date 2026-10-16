@@ -53,18 +53,23 @@ publication, so a location names exactly one envelope.
 The header also records the oldest segment still in use (`tail`), how far the
 cleaner has read into it, the bytes of all segments and the bytes of envelopes
 still referenced. Once the segments exceed twice the referenced bytes plus
-8 MiB, each commit reads at least 4 MiB (or as much as it appends) from the
+8 MiB, each commit targets 4 MiB (or as much as it appends) from the
 oldest segments and rewrites every still-referenced envelope into its own
 segment, as an ordinary replacement in the same transaction. The cleaner stops
-before the commit would approach its change, page or WAL bounds, so it never
-makes a caller's commit fail. A segment read to its end leaves the log; its
+before the commit would approach its change, page or WAL bounds, or retire
+more than 256 segments. A later commit resumes cleaning; corrupt or unsafe
+segment files are explicit errors. A segment read to its end leaves the log; its
 file is deleted after the root that no longer references it is durable.
 
-A commit flushes the WAL, the store directory, its segment and the `segments`
-directory, the tree, and the store directory again when it retires the WAL: six
-flushes whatever its record count. Deleting legacy record files adds a flush
+An ordinary non-inline commit flushes the WAL, the store directory, its segment
+and the `segments` directory, the tree, and the store directory again when it
+retires the WAL: six flushes after the segment directory exists. The first
+non-inline commit also flushes the parent when it creates that directory, for
+seven flushes. Inline and deletion-only commits need fewer flushes. These costs
+do not grow with the record count. Deleting legacy record files adds a flush
 per affected object directory, and retiring cleaned segments adds one.
-`inventory::flush_tests` measures and enforces this.
+`inventory::flush_tests` enforces each commit's bound and reports the initial,
+steady and mean costs separately.
 
 Existing stores need no migration: their record files are read in place and
 leave as their keys change. Releases before the value log refuse a store once
@@ -108,7 +113,11 @@ segment locations and resulting key references must agree. Replay rebuilds
 the same segment bytes from the WAL, so a torn or missing segment of the
 interrupted transaction is rewritten. A valid redo may replace torn root,
 page or object content only for the images/keys it covers. Links, wrong types
-and public permissions remain errors. Complete corruption, truncated published
+and public permissions remain errors. Existing segment directories, publication
+destinations and retirement candidates are checked before any replay mutation;
+inline-only commits also check an existing segment directory. Retirement is
+bounded to 256 segments both for normal commits and published redo.
+Complete corruption, truncated published
 WALs, cross-store WALs and stale roots are errors, with no repair. Replaying a
 valid transaction is idempotent. Only unpublished staging may be discarded.
 

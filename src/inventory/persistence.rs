@@ -137,6 +137,7 @@ impl Transaction {
             || after.next < before.next
             || after.tail < before.tail
             || after.tail > before.head
+            || after.tail.saturating_sub(before.tail) > super::MAX_RETIRED_SEGMENTS
             || !(after.head == before.head || before.head.checked_add(1) == Some(after.head))
         {
             return Err("Inventory WAL identity, sequence or allocation mismatch".into());
@@ -698,8 +699,36 @@ impl Segment {
 
 fn preflight(directory: &Path, transaction: &Transaction) -> Result<()> {
     private_directory(directory)?;
+    // Inspect all segment paths before publishing a WAL or applying any redo.
+    // Recovery may replace a torn private file, but never an unsafe entry.
+    let segments = directory.join("segments");
+    if present(&segments)? {
+        private_directory(&segments)?;
+    }
+    if transaction
+        .after
+        .tail
+        .saturating_sub(transaction.before.tail)
+        > super::MAX_RETIRED_SEGMENTS
+    {
+        return Err("Inventory transaction exceeds its segment retirement budget".into());
+    }
+    if transaction.after.head != transaction.before.head {
+        check_segment_path(directory, transaction.before.head)?;
+    }
+    for number in transaction.before.tail..transaction.after.tail {
+        check_segment_path(directory, number)?;
+    }
     for action in &transaction.actions {
         check_value_path(directory, &action.key)?;
+    }
+    Ok(())
+}
+
+fn check_segment_path(directory: &Path, number: u64) -> Result<()> {
+    let path = segment_path(directory, number);
+    if present(&path)? {
+        private_file(&path, false)?;
     }
     Ok(())
 }
@@ -839,6 +868,7 @@ fn apply(
         for number in transaction.before.tail..transaction.after.tail {
             let path = segment_path(directory, number);
             if present(&path)? {
+                private_file(&path, false)?;
                 fs::remove_file(&path)
                     .map_err(|error| format!("Cannot retire inventory segment: {error}"))?;
             }
@@ -890,6 +920,7 @@ fn write_segment(directory: &Path, transaction: &Transaction) -> Result<()> {
         file.write_all(&bytes)
             .and_then(|()| sync_file(&file))
             .map_err(|error| format!("Cannot persist inventory segment: {error}"))?;
+        check_segment_path(directory, number)?;
         fs::rename(&temporary, segment_path(directory, number))
             .map_err(|error| format!("Cannot publish inventory segment: {error}"))?;
         sync_directory(&segments)

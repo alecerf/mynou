@@ -6,12 +6,13 @@ use super::{
     persistence::{ENVELOPE_BYTES, Fault, SEGMENT_HEADER_BYTES},
     tree::Header,
 };
-use crate::crypto::random_bytes;
+use crate::crypto::{random_bytes, sha256};
 use std::{
     collections::BTreeMap,
     fs,
-    os::unix::fs::PermissionsExt,
+    os::unix::fs::{MetadataExt, PermissionsExt, symlink},
     path::{Path, PathBuf},
+    process::Command,
 };
 
 struct Directory(PathBuf);
@@ -222,6 +223,166 @@ fn published_redo_rewrites_a_torn_or_missing_segment() {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+enum UnsafeEntry {
+    Symlink,
+    DanglingSymlink,
+    HardLink,
+    Public,
+    Directory,
+    Fifo,
+}
+
+const UNSAFE_ENTRIES: [UnsafeEntry; 6] = [
+    UnsafeEntry::Symlink,
+    UnsafeEntry::DanglingSymlink,
+    UnsafeEntry::HardLink,
+    UnsafeEntry::Public,
+    UnsafeEntry::Directory,
+    UnsafeEntry::Fifo,
+];
+
+fn make_unsafe(directory: &Path, path: &Path, kind: UnsafeEntry) {
+    let other = directory.join("untouched-target");
+    if matches!(kind, UnsafeEntry::HardLink) {
+        fs::hard_link(path, other).unwrap();
+    } else if matches!(kind, UnsafeEntry::Public) {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o644)).unwrap();
+    } else {
+        fs::remove_file(path).unwrap();
+        match kind {
+            UnsafeEntry::Symlink => {
+                fs::write(&other, b"synthetic untouched bytes").unwrap();
+                fs::set_permissions(&other, fs::Permissions::from_mode(0o600)).unwrap();
+                symlink(other, path).unwrap();
+            }
+            UnsafeEntry::DanglingSymlink => symlink(other, path).unwrap(),
+            UnsafeEntry::Directory => {
+                fs::create_dir(path).unwrap();
+                fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
+            }
+            UnsafeEntry::Fifo => assert!(
+                Command::new("mkfifo")
+                    .arg("-m")
+                    .arg("600")
+                    .arg(path)
+                    .status()
+                    .unwrap()
+                    .success()
+            ),
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct SavedEntry {
+    mode: u32,
+    inode: u64,
+    links: u64,
+    bytes: Option<Vec<u8>>,
+    target: Option<PathBuf>,
+}
+
+/// Captures every entry without following links or opening special files.
+fn saved_entries(directory: &Path) -> BTreeMap<PathBuf, SavedEntry> {
+    fn visit(root: &Path, path: &Path, entries: &mut BTreeMap<PathBuf, SavedEntry>) {
+        let metadata = fs::symlink_metadata(path).unwrap();
+        entries.insert(
+            path.strip_prefix(root).unwrap().to_owned(),
+            SavedEntry {
+                mode: metadata.mode(),
+                inode: metadata.ino(),
+                links: metadata.nlink(),
+                bytes: metadata.is_file().then(|| fs::read(path).unwrap()),
+                target: metadata.is_symlink().then(|| fs::read_link(path).unwrap()),
+            },
+        );
+        if metadata.is_dir() {
+            for entry in fs::read_dir(path).unwrap() {
+                visit(root, &entry.unwrap().path(), entries);
+            }
+        }
+    }
+    let mut entries = BTreeMap::new();
+    visit(directory, directory, &mut entries);
+    entries
+}
+
+#[test]
+fn redo_rejects_unsafe_segment_targets_before_changing_any_file() {
+    for kind in UNSAFE_ENTRIES {
+        let directory = Directory::new();
+        let mut index = Index::create(&directory.0).unwrap();
+        index.inject(Some(Fault::FirstRecord));
+        assert!(
+            index
+                .commit(vec![Change::Put(key(1), value(1, 0))])
+                .is_err()
+        );
+        drop(index);
+        make_unsafe(&directory.0, &segment(&directory.0, 0), kind);
+        let before = saved_entries(&directory.0);
+        assert!(Index::open(&directory.0, false).is_err(), "{kind:?}");
+        assert_eq!(saved_entries(&directory.0), before, "{kind:?}");
+    }
+}
+
+#[test]
+fn redo_rejects_unsafe_retired_segments_before_changing_any_file() {
+    let _slack = Slack::set(u64::MAX / 4);
+    for kind in UNSAFE_ENTRIES {
+        CLEAN_SLACK_OVERRIDE.with(|value| value.set(Some(u64::MAX / 4)));
+        let directory = Directory::new();
+        let mut index = Index::create(&directory.0).unwrap();
+        for round in 0..3 {
+            index
+                .commit(
+                    (0..12)
+                        .map(|id| Change::Put(key(id), value(id, round)))
+                        .collect(),
+                )
+                .unwrap();
+        }
+        CLEAN_SLACK_OVERRIDE.with(|value| value.set(Some(0)));
+        index.inject(Some(Fault::Published));
+        assert!(
+            index
+                .commit(vec![Change::Put(key(99), value(99, 0))])
+                .is_err()
+        );
+        drop(index);
+        let wal = fs::read(directory.0.join("transaction.bin")).unwrap();
+        let page_size = super::tree::PAGE_SIZE;
+        let after = Header::decode(&wal[16 + page_size..16 + 2 * page_size]).unwrap();
+        assert!(after.tail >= 2, "the fixture must retire multiple segments");
+        make_unsafe(&directory.0, &segment(&directory.0, 1), kind);
+        let before = saved_entries(&directory.0);
+        assert!(Index::open(&directory.0, false).is_err(), "{kind:?}");
+        assert_eq!(saved_entries(&directory.0), before, "{kind:?}");
+    }
+}
+
+#[test]
+fn inline_commits_reject_an_unsafe_segments_directory_without_mutation() {
+    let directory = Directory::new();
+    let mut index = Index::create(&directory.0).unwrap();
+    index
+        .commit(vec![Change::Put(key(1), value(1, 0))])
+        .unwrap();
+    let segments = directory.0.join("segments");
+    fs::rename(&segments, directory.0.join("original-segments")).unwrap();
+    symlink(directory.0.join("original-segments"), &segments).unwrap();
+    let before = saved_entries(&directory.0);
+    assert!(
+        index
+            .commit(vec![Change::PutInline(key(2), vec![1])])
+            .is_err()
+    );
+    assert_eq!(saved_entries(&directory.0), before);
+    assert!(index.is_usable(), "preflight must precede WAL publication");
+}
+
 /// Overwrites and deletes keys for `rounds` commits, mirroring them in `model`.
 fn churn(index: &mut Index, model: &mut BTreeMap<u64, Vec<u8>>, rounds: u64) {
     for round in 1..=rounds {
@@ -406,6 +567,29 @@ fn inconsistent_value_log_metadata_is_rejected() {
     for invalid in [
         Header { tail: 4, ..valid },
         Header {
+            head: u64::MAX,
+            ..valid
+        },
+        Header {
+            log_bytes: 0,
+            live_bytes: 0,
+            tail_offset: 0,
+            ..valid
+        },
+        Header {
+            tail_offset: 79,
+            ..valid
+        },
+        Header {
+            tail_offset: 901,
+            ..valid
+        },
+        Header {
+            tail_offset: u64::from(u32::MAX) + 1,
+            log_bytes: u64::from(u32::MAX) + 2,
+            ..valid
+        },
+        Header {
             live_bytes: 901,
             ..valid
         },
@@ -424,4 +608,66 @@ fn inconsistent_value_log_metadata_is_rejected() {
     ] {
         assert!(Header::decode(&invalid.encode()).is_err(), "{invalid:?}");
     }
+}
+
+#[test]
+fn segment_retirement_is_bounded_in_live_commits_and_published_redo() {
+    let _slack = Slack::set(u64::MAX / 4);
+    let directory = Directory::new();
+    let mut index = Index::create(&directory.0).unwrap();
+    for round in 0..300 {
+        index
+            .commit(vec![Change::Put(key(1), value(1, round))])
+            .unwrap();
+    }
+    let before = index.header;
+    assert_eq!(before.head, 300);
+    assert_eq!(before.tail, 0);
+    CLEAN_SLACK_OVERRIDE.with(|value| value.set(Some(0)));
+    index.inject(Some(Fault::Published));
+    let latest = value(1, 300);
+    assert!(
+        index
+            .commit(vec![Change::Put(key(1), latest.clone())])
+            .is_err()
+    );
+    drop(index);
+
+    let wal_path = directory.0.join("transaction.bin");
+    let wal = fs::read(&wal_path).unwrap();
+    let page_size = super::tree::PAGE_SIZE;
+    let header_start = 16 + page_size;
+    let header_end = header_start + page_size;
+    let mut after = Header::decode(&wal[header_start..header_end]).unwrap();
+    assert_eq!(after.tail - before.tail, super::MAX_RETIRED_SEGMENTS);
+    // A correctly checksummed but excessive retirement must reject before
+    // probing paths or replaying any of the transaction's effects.
+    after.tail += 1;
+    Header::decode(&after.encode()).unwrap();
+    let mut excessive = wal.clone();
+    excessive[header_start..header_end].copy_from_slice(&after.encode());
+    let checksum_at = excessive.len() - 32;
+    let checksum = sha256(&excessive[..checksum_at]);
+    excessive[checksum_at..].copy_from_slice(&checksum);
+    fs::write(&wal_path, excessive).unwrap();
+    let saved = saved_entries(&directory.0);
+    assert!(Index::open(&directory.0, false).is_err());
+    assert_eq!(saved_entries(&directory.0), saved);
+
+    fs::write(&wal_path, wal).unwrap();
+    let mut index = Index::open(&directory.0, false).unwrap();
+    assert_eq!(index.header.tail - before.tail, super::MAX_RETIRED_SEGMENTS);
+    let model = BTreeMap::from([(1, latest)]);
+    assert_values(&mut index, &model);
+    assert_accounting(&index, &directory.0, &model);
+    let tail = index.header.tail;
+    index
+        .commit(vec![Change::PutInline(key(2), b"x".to_vec())])
+        .unwrap();
+    assert!(
+        index.header.tail > tail,
+        "a later bounded pass must continue cleaning"
+    );
+    assert!(index.header.tail - tail <= super::MAX_RETIRED_SEGMENTS);
+    assert_eq!(index.get(&key(1)).unwrap().as_ref(), model.get(&1));
 }

@@ -95,6 +95,14 @@ impl Header {
         if header.tail > header.head
             || header.live_bytes > header.log_bytes
             || (header.tail == header.head && (header.tail_offset != 0 || header.log_bytes != 0))
+            || header.head.saturating_sub(header.tail)
+                > header.log_bytes
+                    / (super::persistence::SEGMENT_HEADER_BYTES
+                        + super::persistence::ENVELOPE_BYTES)
+            || (header.tail_offset != 0
+                && (header.tail_offset < super::persistence::SEGMENT_HEADER_BYTES
+                    || header.tail_offset > u64::from(u32::MAX)
+                    || header.tail_offset > header.log_bytes))
         {
             return Err("Invalid inventory value log metadata".into());
         }

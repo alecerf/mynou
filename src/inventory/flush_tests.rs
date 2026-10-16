@@ -29,7 +29,7 @@ impl Drop for Directory {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum Shape {
     /// Record files sharing one object directory, as table-prefixed keys do.
     Files,
@@ -41,7 +41,7 @@ enum Shape {
 }
 
 struct Cost {
-    flushes_per_commit: u64,
+    flushes: Vec<u64>,
     millis_per_commit: f64,
 }
 
@@ -70,9 +70,9 @@ fn measure(shape: Shape, records: u64) -> Cost {
     let spread = matches!(shape, Shape::SpreadFiles);
     let value = vec![0x5a; 600];
     let mut next = 0;
-    let mut total_flushes = 0;
+    let mut measured_flushes = Vec::new();
     let mut elapsed = std::time::Duration::ZERO;
-    for _ in 0..commits {
+    for commit in 0..commits {
         let ids = next..next + records;
         next += records;
         let changes: Vec<_> = match shape {
@@ -95,10 +95,23 @@ fn measure(shape: Shape, records: u64) -> Cost {
         let began = Instant::now();
         index.commit(changes).unwrap();
         elapsed += began.elapsed();
-        total_flushes += flushes() - before;
+        let count = flushes() - before;
+        // The first value-log commit also makes its segments directory
+        // durable. Later commits reuse that directory; averaging must never
+        // conceal an individual commit that exceeds its own bound.
+        let limit = if commit == 0 && matches!(shape, Shape::Files | Shape::SpreadFiles) {
+            7
+        } else {
+            6
+        };
+        assert!(
+            count <= limit,
+            "{shape:?}, {records} records, commit {commit}: {count} flushes exceed {limit}"
+        );
+        measured_flushes.push(count);
     }
     Cost {
-        flushes_per_commit: total_flushes / commits,
+        flushes: measured_flushes,
         millis_per_commit: elapsed.as_secs_f64() * 1000.0 / commits as f64,
     }
 }
@@ -111,23 +124,29 @@ fn commit_flushes_stay_constant_as_records_per_commit_grow() {
         ("inline", Shape::Inline),
         ("delete files", Shape::DeleteFiles),
     ];
-    eprintln!("shape          records  flushes/commit  ms/commit");
+    eprintln!("shape          records  first  steady min/max  mean flushes/commit  ms/commit");
     for (name, shape) in shapes {
         let mut counts = Vec::new();
         for records in [1, 10, 100, 1000] {
             let cost = measure(shape, records);
+            let steady = match (
+                cost.flushes[1..].iter().min(),
+                cost.flushes[1..].iter().max(),
+            ) {
+                (Some(min), Some(max)) => format!("{min}/{max}"),
+                _ => "-".into(),
+            };
+            let mean = cost.flushes.iter().sum::<u64>() as f64 / cost.flushes.len() as f64;
             eprintln!(
-                "{name:<14} {records:>7} {:>15} {:>10.2}",
-                cost.flushes_per_commit, cost.millis_per_commit
+                "{name:<14} {records:>7} {:>6} {steady:>15} {mean:>20.3} {:>10.2}",
+                cost.flushes[0], cost.millis_per_commit
             );
-            counts.push(cost.flushes_per_commit);
+            counts.push(cost.flushes);
         }
-        // WAL, store directory, one segment and its directory, tree, and
-        // WAL retirement: the record count never adds a flush.
+        // Compare each commit separately across record counts, including
+        // the initial directory creation: more records never add a flush.
         assert!(
-            counts
-                .iter()
-                .all(|count| *count == counts[0] && *count <= 6),
+            counts.iter().all(|count| *count == counts[0]),
             "{name}: {counts:?}"
         );
     }
