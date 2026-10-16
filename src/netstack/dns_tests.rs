@@ -43,6 +43,7 @@ fn config(resolvers: &[Ipv4Addr]) -> DnsConfig {
 struct Rig {
     client: DnsClient<Script>,
     sockets: UdpSockets,
+    tcp: TcpStack<Script>,
 }
 
 impl Rig {
@@ -50,6 +51,13 @@ impl Rig {
         Self {
             client: DnsClient::new(config, Script::new(values), G, Duration::ZERO).unwrap(),
             sockets: UdpSockets::new(Limits::default(), G),
+            tcp: TcpStack::new(
+                crate::netstack::TcpConfig::new(ip(), MAX_MTU),
+                Script::new(&[123]),
+                G,
+                Duration::ZERO,
+            )
+            .unwrap(),
         }
     }
 
@@ -62,7 +70,9 @@ impl Rig {
     }
 
     fn poll(&mut self, now: Duration) -> Poll {
-        self.client.poll(&mut self.sockets, G, now).unwrap()
+        self.client
+            .poll(&mut self.sockets, &mut self.tcp, G, now)
+            .unwrap()
     }
 
     /// Delivers one reply datagram to the virtual UDP port.
@@ -457,7 +467,6 @@ fn server_failures_are_reported_explicitly() {
     let cases = [
         ("nxdomain", Failure::NameError),
         ("servfail", Failure::ServerFailure(2)),
-        ("truncated", Failure::Truncated),
         ("no address", Failure::NoAddress),
     ];
     for (case, failure) in cases {
@@ -556,26 +565,28 @@ fn failures_do_not_fall_back_or_leak_sockets() {
 fn generation_clock_and_table_revocation_are_irreversible() {
     let mut rig = Rig::one(&[TXID, 0]);
     rig.start(NAME, secs(5));
-    let stale = rig.client.poll(&mut rig.sockets, G + 1, secs(5));
+    let stale = rig
+        .client
+        .poll(&mut rig.sockets, &mut rig.tcp, G + 1, secs(5));
     assert_eq!(stale.unwrap_err(), DnsError::Revoked);
     assert_eq!(rig.client.pending(), 0);
-    let again = rig.client.poll(&mut rig.sockets, G, secs(5));
+    let again = rig.client.poll(&mut rig.sockets, &mut rig.tcp, G, secs(5));
     assert_eq!(again.unwrap_err(), DnsError::Revoked);
     let started = rig.client.start(&mut rig.sockets, G, NAME, secs(5));
     assert_eq!(started, Err(DnsError::Revoked));
 
     let mut rig = Rig::one(&[TXID, 0]);
     rig.start(NAME, secs(5));
-    let backwards = rig.client.poll(&mut rig.sockets, G, secs(4));
+    let backwards = rig.client.poll(&mut rig.sockets, &mut rig.tcp, G, secs(4));
     assert_eq!(backwards.unwrap_err(), DnsError::Revoked);
     assert_eq!(rig.client.pending(), 0);
 
     let mut rig = Rig::one(&[TXID, 0]);
     let (id, _) = rig.start(NAME, secs(5));
     rig.sockets.revoke();
-    let revoked = rig.client.poll(&mut rig.sockets, G, secs(5));
+    let revoked = rig.client.poll(&mut rig.sockets, &mut rig.tcp, G, secs(5));
     assert_eq!(revoked.unwrap_err(), DnsError::Revoked);
-    let cancel = rig.client.cancel(&mut rig.sockets, G, id);
+    let cancel = rig.client.cancel(&mut rig.sockets, &mut rig.tcp, G, id);
     assert_eq!(cancel, Err(DnsError::Revoked));
     let started = rig.client.start(&mut rig.sockets, G, NAME, secs(5));
     assert_eq!(started, Err(DnsError::Revoked));
@@ -585,12 +596,18 @@ fn generation_clock_and_table_revocation_are_irreversible() {
 fn cancel_frees_the_socket_and_is_idempotent() {
     let mut rig = Rig::one(&[TXID, 0]);
     let (id, _) = rig.start(NAME, Duration::ZERO);
-    assert_eq!(rig.client.cancel(&mut rig.sockets, G, id), Ok(true));
-    assert_eq!(rig.client.cancel(&mut rig.sockets, G, id), Ok(false));
+    assert_eq!(
+        rig.client.cancel(&mut rig.sockets, &mut rig.tcp, G, id),
+        Ok(true)
+    );
+    assert_eq!(
+        rig.client.cancel(&mut rig.sockets, &mut rig.tcp, G, id),
+        Ok(false)
+    );
     assert!(rig.sockets.is_empty());
     let poll = rig.poll(secs(100));
     assert_eq!(poll, Poll::default());
-    let stale = rig.client.cancel(&mut rig.sockets, G + 1, id);
+    let stale = rig.client.cancel(&mut rig.sockets, &mut rig.tcp, G + 1, id);
     assert_eq!(stale, Err(DnsError::Revoked));
 }
 
@@ -624,4 +641,170 @@ fn configuration_is_validated() {
         let expected = (edit != 0).then_some(DnsError::BadConfig);
         assert_eq!(client.err(), expected, "edit {edit}");
     }
+}
+
+fn pump_tcp_dns(rig: &mut Rig, server: &mut TcpStack<Script>, now: Duration) -> Poll {
+    let mut result = Poll::default();
+    for _ in 0..16 {
+        let dns = rig.poll(now);
+        result.finished.extend(dns.finished);
+        result.next = dns.next;
+        let outbound = rig.tcp.poll(G, now).unwrap();
+        let inbound = server.poll(G, now).unwrap();
+        let quiet = outbound.send.is_empty() && inbound.send.is_empty();
+        for packet in outbound.send {
+            server.ingest(G, now, &packet);
+        }
+        for packet in inbound.send {
+            rig.tcp.ingest(G, now, &packet);
+        }
+        if quiet {
+            break;
+        }
+    }
+    result
+}
+
+fn fallback() -> (Rig, TcpStack<Script>, FlowHandle, QueryId) {
+    let mut rig = Rig::one(&[TXID, 0]);
+    let (id, packet) = rig.start(NAME, Duration::ZERO);
+    rig.feed(R1, 53, source_port(&packet), &vector("truncated"));
+    let poll = rig.poll(Duration::ZERO);
+    assert!(poll.finished.is_empty());
+    assert_eq!(rig.client.pending(), 1);
+    let server_ip = Ipv4Config::new(R1, Ipv4Addr::UNSPECIFIED, 0).unwrap();
+    let mut server = TcpStack::new(
+        crate::netstack::TcpConfig::new(server_ip, MAX_MTU),
+        Script::new(&[456]),
+        G,
+        Duration::ZERO,
+    )
+    .unwrap();
+    let listener = server.listen(G, 53).unwrap();
+    assert!(
+        pump_tcp_dns(&mut rig, &mut server, Duration::ZERO)
+            .finished
+            .is_empty()
+    );
+    let flow = server.accept(G, listener).unwrap().unwrap();
+    let mut request = [0; 512];
+    let Read::Data(length) = server.recv(G, flow, &mut request).unwrap() else {
+        panic!("missing TCP query")
+    };
+    assert_eq!(be16(&request) as usize, length - 2);
+    assert_eq!(&request[2..length], dns_part(&packet));
+    (rig, server, flow, id)
+}
+
+fn frame(message: &[u8]) -> Vec<u8> {
+    let mut frame = (message.len() as u16).to_be_bytes().to_vec();
+    frame.extend_from_slice(message);
+    frame
+}
+
+#[test]
+fn truncated_udp_uses_virtual_tcp_with_split_prefix_and_body() {
+    let (mut rig, mut server, flow, id) = fallback();
+    let response = frame(&vector("single"));
+    for (index, byte) in response.iter().enumerate() {
+        assert_eq!(server.send(G, flow, &[*byte]), Ok(1));
+        let poll = pump_tcp_dns(&mut rig, &mut server, Duration::ZERO);
+        if index + 1 == response.len() {
+            assert_eq!(poll.finished.len(), 1);
+            assert_eq!(poll.finished[0].id, id);
+            assert!(poll.finished[0].result.is_ok());
+        } else {
+            assert!(poll.finished.is_empty());
+        }
+    }
+    assert_eq!(
+        (rig.client.pending(), rig.sockets.len(), rig.tcp.flows()),
+        (0, 0, 0)
+    );
+}
+
+#[test]
+fn tcp_spoofed_and_malformed_frames_never_finish_the_query() {
+    let (mut rig, mut server, flow, _) = fallback();
+    let mut wrong_id = vector("single");
+    wrong_id[0] ^= 1;
+    let mut wrong_question = vector("single");
+    wrong_question[13] ^= 1;
+    for invalid in [wrong_id, wrong_question, vector("pointer loop"), vec![]] {
+        server.send(G, flow, &frame(&invalid)).unwrap();
+        assert!(
+            pump_tcp_dns(&mut rig, &mut server, Duration::ZERO)
+                .finished
+                .is_empty()
+        );
+        assert_eq!(rig.client.pending(), 1);
+    }
+    assert_eq!(rig.client.rejected(), 4);
+    server.send(G, flow, &frame(&vector("single"))).unwrap();
+    let poll = pump_tcp_dns(&mut rig, &mut server, Duration::ZERO);
+    assert!(poll.finished[0].result.is_ok());
+    assert_eq!(rig.tcp.flows(), 0);
+}
+
+#[test]
+fn tcp_lengths_timeout_eof_truncation_and_cancel_release_the_flow() {
+    let (mut rig, mut server, flow, _) = fallback();
+    server
+        .send(G, flow, &((MAX_DNS_MESSAGE + 1) as u16).to_be_bytes())
+        .unwrap();
+    let poll = pump_tcp_dns(&mut rig, &mut server, Duration::ZERO);
+    assert_eq!(poll.finished[0].result, Err(Failure::TooLarge));
+    assert_eq!((rig.tcp.flows(), rig.sockets.len()), (0, 0));
+
+    let (mut rig, mut server, flow, _) = fallback();
+    server.send(G, flow, &[0]).unwrap(); // Partial length cannot extend deadline.
+    assert!(
+        pump_tcp_dns(&mut rig, &mut server, secs(5))
+            .finished
+            .is_empty()
+    );
+    let poll = rig.poll(secs(6));
+    assert_eq!(poll.finished[0].result, Err(Failure::Timeout));
+    assert_eq!((rig.tcp.flows(), rig.sockets.len()), (0, 0));
+
+    let (mut rig, mut server, flow, _) = fallback();
+    server.close(G, Duration::ZERO, flow).unwrap();
+    let poll = pump_tcp_dns(&mut rig, &mut server, Duration::ZERO);
+    assert_eq!(poll.finished[0].result, Err(Failure::Aborted));
+    assert_eq!(rig.tcp.flows(), 0);
+
+    let (mut rig, mut server, flow, _) = fallback();
+    server.send(G, flow, &frame(&vector("truncated"))).unwrap();
+    let poll = pump_tcp_dns(&mut rig, &mut server, Duration::ZERO);
+    assert_eq!(poll.finished[0].result, Err(Failure::Truncated));
+    assert_eq!(rig.tcp.flows(), 0);
+
+    let (mut rig, _, _, id) = fallback();
+    assert_eq!(
+        rig.client.cancel(&mut rig.sockets, &mut rig.tcp, G, id),
+        Ok(true)
+    );
+    assert_eq!(
+        (rig.client.pending(), rig.tcp.flows(), rig.sockets.len()),
+        (0, 0, 0)
+    );
+}
+
+#[test]
+fn tcp_fallback_respects_the_shared_flow_limit_and_the_message_bound() {
+    let mut rig = Rig::one(&[TXID, 0]);
+    let mut tcp_config = crate::netstack::TcpConfig::new(ip(), MAX_MTU);
+    tcp_config.flows = 1;
+    rig.tcp = TcpStack::new(tcp_config, Script::new(&[123]), G, Duration::ZERO).unwrap();
+    rig.tcp.connect(G, Duration::ZERO, R2, 80).unwrap();
+    let (_, packet) = rig.start(NAME, Duration::ZERO);
+    rig.feed(R1, 53, source_port(&packet), &vector("truncated"));
+    let poll = rig.poll(Duration::ZERO);
+    assert_eq!(poll.finished[0].result, Err(Failure::Aborted));
+    assert_eq!(rig.tcp.flows(), 1);
+    assert!(rig.sockets.is_empty());
+    assert_eq!(
+        parse_response(TXID, &wire(NAME), &vec![0; MAX_DNS_MESSAGE + 1]),
+        Err(ReplyError::TooLarge)
+    );
 }

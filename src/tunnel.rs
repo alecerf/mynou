@@ -703,15 +703,8 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
         let generation = live.generation;
         let mut packets = Vec::new();
         let mut failed = false;
-        match live.tcp.poll(generation, now) {
-            Ok(poll) => {
-                packets.extend(poll.send);
-                live.next[1] = poll.next;
-            }
-            Err(_) => failed = true,
-        }
         if let Some(dns) = live.dns.as_mut() {
-            match dns.poll(&mut live.udp, generation, now) {
+            match dns.poll(&mut live.udp, &mut live.tcp, generation, now) {
                 Ok(poll) => {
                     packets.extend(poll.send);
                     live.results.extend(poll.finished);
@@ -719,6 +712,13 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
                 }
                 Err(_) => failed = true,
             }
+        }
+        match live.tcp.poll(generation, now) {
+            Ok(poll) => {
+                packets.extend(poll.send);
+                live.next[1] = poll.next;
+            }
+            Err(_) => failed = true,
         }
         if self.state == TunnelState::Protected && live.keepalive_at.is_some_and(|at| now >= at) {
             live.keepalive_at = self
@@ -979,7 +979,7 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
         let live = self.current(lookup.generation)?;
         live.results.retain(|done| done.id != lookup.id);
         if let Some(dns) = live.dns.as_mut() {
-            dns.cancel(&mut live.udp, live.generation, lookup.id)
+            dns.cancel(&mut live.udp, &mut live.tcp, live.generation, lookup.id)
                 .map_err(TunnelError::Dns)?;
         }
         Ok(())

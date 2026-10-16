@@ -1279,3 +1279,44 @@ fn keepalive_overflow_never_sends_early_or_panics() {
         );
     }
 }
+
+#[test]
+fn truncated_dns_falls_back_to_tcp_inside_the_encrypted_tunnel() {
+    let mut world = World::new(|_, _| {});
+    world.connect(Duration::from_millis(100), 20);
+    let udp = world.server.udp_bind(53).unwrap();
+    let listener = world.server.tcp_listen(53).unwrap();
+    let lookup = world.client.resolve("Tracker.Example").unwrap();
+    world.settle();
+    let question = drain(&mut world.server, udp).remove(0);
+    let mut truncated = question.payload.clone();
+    truncated[2..4].copy_from_slice(&[0x83, 0x80]);
+    world
+        .server
+        .udp_send_to(udp, (CLIENT_IP, question.source_port), &truncated)
+        .unwrap();
+    world.settle();
+    let flow = world.server.tcp_accept(listener).unwrap().unwrap();
+    let mut request = [0; 512];
+    let Read::Data(length) = world.server.tcp_recv(flow, &mut request).unwrap() else {
+        panic!("no virtual TCP question")
+    };
+    assert_eq!(
+        u16::from_be_bytes([request[0], request[1]]) as usize,
+        length - 2
+    );
+    assert_eq!(&request[2..length], &question.payload);
+    let response = answer(&request[2..length], [10, 9, 8, 7]);
+    let mut framed = (response.len() as u16).to_be_bytes().to_vec();
+    framed.extend_from_slice(&response);
+    world.server.tcp_send(flow, &framed).unwrap();
+    world.settle();
+    let result = world
+        .client
+        .lookup_result(lookup)
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(result.addresses, vec![Ipv4Addr::new(10, 9, 8, 7)]);
+    assert_eq!(world.client.stats().inner_rejected, 0);
+}

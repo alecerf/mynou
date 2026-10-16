@@ -23,8 +23,8 @@ mod tcp;
 mod udp;
 
 pub use dns::{
-    Answer, DnsClient, DnsConfig, DnsError, Failure, Finished, MAX_ADDRESSES, MAX_NAME,
-    MAX_RESOLVERS, Poll, QueryId, Reply, ReplyError, parse_response,
+    Answer, DnsClient, DnsConfig, DnsError, Failure, Finished, MAX_ADDRESSES, MAX_DNS_MESSAGE,
+    MAX_NAME, MAX_RESOLVERS, Poll, QueryId, Reply, ReplyError, parse_response,
 };
 pub use icmp::{Effect as IcmpEffect, Error as IcmpError, Ingest as IcmpIngest, PROTOCOL_ICMP};
 pub use ipv4::{

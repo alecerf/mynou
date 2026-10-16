@@ -1,10 +1,10 @@
-//! Bounded DNS stub client over virtual UDP. It asks configured inner resolver
+//! Bounded DNS stub client over virtual UDP with virtual TCP fallback. It asks configured inner resolver
 //! IPv4 addresses only, for A records, with one virtual socket per query. There
-//! is no host resolver, search list, cache or TCP retry: truncation is reported.
+//! is no host resolver, search list or cache. TCP shares the caller's bounded flow table.
 
 use super::ipv4::{check_mtu, unroutable};
 use super::sockets::{Handle, SocketError, UdpSockets};
-use super::{Fence, Ipv4Config};
+use super::{Fence, FlowHandle, Ipv4Config, Read, TcpError, TcpStack};
 use crate::wireguard::Entropy;
 use std::net::Ipv4Addr;
 use std::time::Duration;
@@ -14,6 +14,8 @@ pub const MAX_NAME: usize = 253;
 pub const MAX_RESOLVERS: usize = 3;
 /// Addresses kept from one answer; further ones are ignored.
 pub const MAX_ADDRESSES: usize = 8;
+/// Response limit for either transport, before allocation from a TCP prefix.
+pub const MAX_DNS_MESSAGE: usize = 4096;
 const MAX_LABEL: usize = 63;
 const MAX_WIRE_NAME: usize = 255;
 const MAX_POINTERS: usize = 16;
@@ -41,6 +43,7 @@ pub enum ReplyError {
     /// Any answer record other than A and CNAME, so also AAAA.
     Type,
     Class,
+    TooLarge,
 }
 
 /// What one validated reply says.
@@ -52,7 +55,7 @@ pub enum Reply {
     },
     NameError,
     Failure(u8),
-    /// The TC bit: the answer needs TCP, which this stack does not have yet.
+    /// The TC bit: retry over virtual TCP.
     Truncated,
     NoAddress,
 }
@@ -112,6 +115,9 @@ fn be16(bytes: &[u8]) -> u16 {
 /// name or an alias are used; unrelated owners are ignored, any other type is an
 /// error. Addresses that are never valid unicast peers are dropped.
 pub fn parse_response(id: u16, question: &[u8], message: &[u8]) -> Result<Reply, ReplyError> {
+    if message.len() > MAX_DNS_MESSAGE {
+        return Err(ReplyError::TooLarge);
+    }
     if message.len() < 12 {
         return Err(ReplyError::Truncated);
     }
@@ -308,11 +314,13 @@ pub enum Failure {
     Timeout,
     NameError,
     ServerFailure(u8),
-    /// The answer did not fit UDP; virtual TCP retry is not implemented.
+    /// The resolver still set TC on its TCP response.
     Truncated,
     NoAddress,
     /// The virtual socket failed unexpectedly.
     Aborted,
+    /// A TCP response length exceeded the fixed message budget.
+    TooLarge,
 }
 
 #[derive(PartialEq, Eq, Debug)]
@@ -338,6 +346,15 @@ struct Pending {
     socket: Handle,
     sent: u32,
     next: Duration,
+    tcp: Option<TcpQuery>,
+}
+
+struct TcpQuery {
+    flow: FlowHandle,
+    deadline: Duration,
+    sent: usize,
+    received: Vec<u8>,
+    expected: Option<usize>,
 }
 
 enum Step {
@@ -475,6 +492,7 @@ impl<E: Entropy> DnsClient<E> {
             socket,
             sent: 1,
             next: now.saturating_add(self.config.retry_interval),
+            tcp: None,
         });
         Ok((id, packet))
     }
@@ -483,6 +501,7 @@ impl<E: Entropy> DnsClient<E> {
     pub fn cancel(
         &mut self,
         sockets: &mut UdpSockets,
+        tcp: &mut TcpStack<impl Entropy>,
         generation: u64,
         id: QueryId,
     ) -> Result<bool, DnsError> {
@@ -494,6 +513,9 @@ impl<E: Entropy> DnsClient<E> {
             return Ok(false);
         };
         let query = self.pending.remove(index);
+        if let Some(stream) = query.tcp {
+            let _ = tcp.abort(generation, stream.flow);
+        }
         let _ = sockets.close(generation, query.socket);
         Ok(true)
     }
@@ -503,6 +525,7 @@ impl<E: Entropy> DnsClient<E> {
     pub fn poll(
         &mut self,
         sockets: &mut UdpSockets,
+        tcp: &mut TcpStack<impl Entropy>,
         generation: u64,
         now: Duration,
     ) -> Result<Poll, DnsError> {
@@ -510,9 +533,12 @@ impl<E: Entropy> DnsClient<E> {
         let mut poll = Poll::default();
         let mut keep = Vec::new();
         for mut query in std::mem::take(&mut self.pending) {
-            match self.advance(sockets, generation, &mut query, now, &mut poll.send) {
+            match self.advance(sockets, tcp, generation, &mut query, now, &mut poll.send) {
                 Step::Pending => keep.push(query),
                 Step::Done(result) => {
+                    if let Some(stream) = query.tcp {
+                        let _ = tcp.abort(generation, stream.flow);
+                    }
                     let _ = sockets.close(generation, query.socket);
                     poll.finished.push(Finished {
                         id: query.id,
@@ -533,11 +559,15 @@ impl<E: Entropy> DnsClient<E> {
     fn advance(
         &mut self,
         sockets: &mut UdpSockets,
+        tcp: &mut TcpStack<impl Entropy>,
         generation: u64,
         query: &mut Pending,
         now: Duration,
         send: &mut Vec<Vec<u8>>,
     ) -> Step {
+        if query.tcp.is_some() {
+            return self.advance_tcp(tcp, generation, query, now);
+        }
         loop {
             match sockets.recv(generation, query.socket) {
                 Ok(Some(datagram)) => {
@@ -547,6 +577,9 @@ impl<E: Entropy> DnsClient<E> {
                         continue;
                     }
                     match parse_response(query.txid, &query.wire, &datagram.payload) {
+                        Ok(Reply::Truncated) => {
+                            return self.start_tcp(tcp, generation, query, datagram.source, now);
+                        }
                         Ok(reply) => return Step::Done(self.finish(reply)),
                         Err(_) => self.rejected = self.rejected.saturating_add(1),
                     }
@@ -573,6 +606,106 @@ impl<E: Entropy> DnsClient<E> {
             Err(SocketError::Revoked) => Step::Revoked,
             Err(_) => Step::Done(Err(Failure::Aborted)),
         }
+    }
+
+    fn start_tcp(
+        &mut self,
+        tcp: &mut TcpStack<impl Entropy>,
+        generation: u64,
+        query: &mut Pending,
+        resolver: Ipv4Addr,
+        now: Duration,
+    ) -> Step {
+        let flow = match tcp.connect(generation, now, resolver, PORT) {
+            Ok(flow) => flow,
+            Err(TcpError::Revoked) => return Step::Revoked,
+            Err(_) => return Step::Done(Err(Failure::Aborted)),
+        };
+        // One TCP attempt to the resolver that set TC, under a fixed total
+        // deadline. Neither incoming bytes nor invalid frames extend it.
+        let deadline = now.saturating_add(
+            self.config
+                .retry_interval
+                .saturating_mul(self.config.attempts),
+        );
+        query.next = deadline;
+        query.tcp = Some(TcpQuery {
+            flow,
+            deadline,
+            sent: 0,
+            received: Vec::new(),
+            expected: None,
+        });
+        Step::Pending
+    }
+
+    fn advance_tcp(
+        &mut self,
+        tcp: &mut TcpStack<impl Entropy>,
+        generation: u64,
+        query: &mut Pending,
+        now: Duration,
+    ) -> Step {
+        let stream = query.tcp.as_mut().expect("TCP query");
+        if now >= stream.deadline {
+            return Step::Done(Err(Failure::Timeout));
+        }
+        query.next = stream.deadline;
+        let mut request = (query.message.len() as u16).to_be_bytes().to_vec();
+        request.extend_from_slice(&query.message);
+        if stream.sent < request.len() {
+            match tcp.send(generation, stream.flow, &request[stream.sent..]) {
+                Ok(count) => stream.sent += count,
+                Err(TcpError::NotConnected) => return Step::Pending,
+                Err(TcpError::Revoked) => return Step::Revoked,
+                Err(_) => return Step::Done(Err(Failure::Aborted)),
+            }
+        }
+        // At most one framed response per poll, and two bounded reads: prefix
+        // then body. A forged ID/question or malformed response is discarded,
+        // never a reason to accept data or fail the pending query.
+        for _ in 0..2 {
+            let target = stream.expected.map_or(2, |length| length + 2);
+            let mut bytes = [0; MAX_DNS_MESSAGE + 2];
+            match tcp.recv(
+                generation,
+                stream.flow,
+                &mut bytes[..target - stream.received.len()],
+            ) {
+                Ok(Read::Data(count)) => stream.received.extend_from_slice(&bytes[..count]),
+                Ok(Read::WouldBlock) => return Step::Pending,
+                Err(TcpError::Revoked) => return Step::Revoked,
+                _ => return Step::Done(Err(Failure::Aborted)),
+            }
+            if stream.received.len() != target {
+                return Step::Pending;
+            }
+            if stream.expected.is_none() {
+                let length = usize::from(be16(&stream.received));
+                if length > MAX_DNS_MESSAGE {
+                    return Step::Done(Err(Failure::TooLarge));
+                }
+                if length == 0 {
+                    self.rejected = self.rejected.saturating_add(1);
+                    stream.received.clear();
+                    query.next = now;
+                    return Step::Pending;
+                }
+                stream.expected = Some(length);
+            } else {
+                match parse_response(query.txid, &query.wire, &stream.received[2..]) {
+                    Ok(reply) => return Step::Done(self.finish(reply)),
+                    Err(_) => {
+                        self.rejected = self.rejected.saturating_add(1);
+                        stream.received.clear();
+                        stream.expected = None;
+                        query.next = now;
+                        return Step::Pending;
+                    }
+                }
+            }
+        }
+        Step::Pending
     }
 
     fn finish(&self, reply: Reply) -> Result<Answer, Failure> {
