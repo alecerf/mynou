@@ -18,15 +18,21 @@ state files, and checks an opened file against the inspected inode. This is
 the existing private-directory trust model, not protection against an actor
 who can rewrite the owner's directory while it is in use.
 
-Open policy: every private store file and lock (index files, WALs, record
-files, staging locks, legacy snapshots and their preserved copies, in every
-store and migration) is opened with `O_NOFOLLOW | O_NONBLOCK`, named per target
-in `src/store.rs` (macOS, and Linux on x86-64 and arm64; other targets do not
-build). A path swapped for a symbolic link after inspection is refused by the
-open itself, so the target is never read; a FIFO or device returns at once
-instead of blocking, and the descriptor is refused unless it is a regular file.
-Directory synchronization opens without blocking and refuses non-directories.
-The inode, link-count and permission checks remain as defense in depth.
+Open policy: private store files and locks are opened with
+`O_NOFOLLOW | O_NONBLOCK`, named per target in `src/store.rs` (macOS, and Linux
+on x86-64 and arm64; other targets do not build). This covers index files, WALs,
+record files, value-log segments, staging locks, legacy snapshots and their
+preserved copies in the job, series, requester, feed, source-policy and IRC
+stores and their migrations, and the native transfer state (ownership and
+creation locks and the persisted `.torrent`, `.source`, `.control`, `.paused`
+and `.seed` files). If the final path component is swapped for a symbolic link
+after inspection, the open itself refuses it, so the target is never read. A
+FIFO or device returns at once instead of blocking, and the descriptor is
+refused unless it is the inspected regular file. Directory synchronization opens
+without blocking and refuses non-directories. `O_NOFOLLOW` covers only the final
+component. A parent directory swapped for a symbolic link between inspection and
+open is still followed, which stays within the private-directory trust model
+above. The inode, link-count and permission checks remain as defense in depth.
 
 `identity.bin` holds a random 256-bit store identity and checksum. `tree.bin`
 contains 4 KiB checksummed pages. Page zero holds the identity, sequence,

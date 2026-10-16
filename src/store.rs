@@ -676,6 +676,23 @@ thread_local! {
     pub(crate) static BEFORE_PRIVATE_OPEN: std::cell::RefCell<Option<OpenHook>> =
         const { std::cell::RefCell::new(None) };
 }
+/// Opens an inspected private file for reading. The open refuses a final
+/// symbolic link and never blocks; the descriptor must be the inspected regular
+/// file.
+pub(crate) fn open_inspected(path: &Path, inspected: &fs::Metadata) -> Result<File> {
+    use std::os::unix::fs::MetadataExt;
+    before_private_open(path);
+    let file = private_options()
+        .read(true)
+        .open(path)
+        .map_err(|error| format!("cannot open private file: {error}"))?;
+    let opened = file.metadata().map_err(|error| error.to_string())?;
+    if !opened.is_file() || opened.dev() != inspected.dev() || opened.ino() != inspected.ino() {
+        return Err("private file changed while opening".to_owned());
+    }
+    Ok(file)
+}
+
 pub(crate) fn before_private_open(path: &Path) {
     #[cfg(test)]
     BEFORE_PRIVATE_OPEN.with(|hook| {

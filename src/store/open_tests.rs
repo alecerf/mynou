@@ -1,7 +1,9 @@
 //! Private store opens refuse a final symbolic link and never block on a FIFO,
 //! even when the path is swapped after its inspection. The swap fixture is
 //! shared with the inventory and IRC store tests.
-use super::{BEFORE_PRIVATE_OPEN, O_NOFOLLOW, O_NONBLOCK, private_options, sync_directory};
+use super::{
+    BEFORE_PRIVATE_OPEN, O_NOFOLLOW, O_NONBLOCK, open_inspected, private_options, sync_directory,
+};
 use crate::crypto::random_bytes;
 use std::{
     fs::{self, OpenOptions},
@@ -178,4 +180,29 @@ fn private_opens_refuse_a_final_symlink_and_return_at_once_on_a_fifo() {
         sync_directory(&pipe).unwrap_err()
     });
     assert!(error.contains("not a directory"), "{error}");
+}
+
+#[test]
+fn an_inspected_open_refuses_a_swapped_symlink_or_fifo() {
+    let directory = Directory::new();
+    let path = directory.0.join("state");
+    fs::write(&path, b"state").unwrap();
+    let inspected = fs::symlink_metadata(&path).unwrap();
+    let mut file = open_inspected(&path, &inspected).unwrap();
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut file, &mut bytes).unwrap();
+    assert_eq!(bytes, b"state");
+    for swap in [Swap::Symlink, Swap::Fifo] {
+        let path = directory.0.join(format!("{swap:?}"));
+        fs::write(&path, b"state").unwrap();
+        let inspected = fs::symlink_metadata(&path).unwrap();
+        let name = format!("{swap:?}");
+        let error = swapped(&name, 0, swap, move || {
+            open_inspected(&path, &inspected).map(drop)
+        });
+        match swap {
+            Swap::Symlink => assert!(error.starts_with("cannot open private file"), "{error}"),
+            Swap::Fifo => assert_eq!(error, "private file changed while opening"),
+        }
+    }
 }

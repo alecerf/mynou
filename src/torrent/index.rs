@@ -588,8 +588,7 @@ impl TransferIndex {
         if let Some(old_digest) = old_digest {
             let path = snapshots.join(hex(&old_digest));
             fs::remove_file(path).map_err(|_| "Cannot remove superseded transfer snapshot")?;
-            File::open(&snapshots)
-                .and_then(|f| crate::store::sync_file(&f))
+            crate::store::sync_directory(&snapshots)
                 .map_err(|_| "Cannot synchronize transfer snapshots")?;
         }
         Ok(())
@@ -863,10 +862,15 @@ fn checked_read_with_permissions(path: &Path, limit: usize, private: bool) -> Re
     if metadata.len() > limit as u64 {
         return Err("Transfer state exceeds limit".into());
     }
-    let file = File::open(path).map_err(|_| "Cannot open private transfer state")?;
+    crate::store::before_private_open(path);
+    let file = crate::store::private_options()
+        .read(true)
+        .open(path)
+        .map_err(|_| "Cannot open private transfer state")?;
     let opened = file
         .metadata()
         .map_err(|_| "Cannot inspect opened transfer state")?;
+    private_state_file(&opened)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -874,7 +878,6 @@ fn checked_read_with_permissions(path: &Path, limit: usize, private: bool) -> Re
             return Err("Transfer state changed during opening".into());
         }
     }
-    private_state_file(&opened)?;
     let mut bytes = Vec::new();
     file.take(limit as u64 + 1)
         .read_to_end(&mut bytes)
@@ -978,20 +981,32 @@ fn open_bound_catalog(path: &Path, identity: [u8; 32]) -> Result<Index> {
     check_creation(path, identity)?;
     let lock_path = path.join(".lock");
     let lock = if optional_read(&lock_path, 0)?.is_some() {
-        OpenOptions::new()
+        let inspected =
+            fs::symlink_metadata(&lock_path).map_err(|_| "Cannot inspect initial transfer lock")?;
+        private_state_file(&inspected)?;
+        crate::store::before_private_open(&lock_path);
+        let lock = crate::store::private_options()
             .read(true)
             .write(true)
             .open(&lock_path)
-            .map_err(|_| "Cannot open initial transfer lock")?
-    } else {
-        let mut options = OpenOptions::new();
-        options.read(true).write(true).create_new(true);
+            .map_err(|_| "Cannot open initial transfer lock")?;
+        let opened = lock
+            .metadata()
+            .map_err(|_| "Cannot inspect initial transfer lock")?;
+        private_state_file(&opened)?;
         #[cfg(unix)]
         {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
+            use std::os::unix::fs::MetadataExt;
+            if opened.dev() != inspected.dev() || opened.ino() != inspected.ino() {
+                return Err("Initial transfer lock changed during opening".into());
+            }
         }
-        options
+        lock
+    } else {
+        crate::store::private_options()
+            .read(true)
+            .write(true)
+            .create_new(true)
             .open(&lock_path)
             .map_err(|_| "Cannot create initial transfer lock")?
     };
@@ -1004,8 +1019,7 @@ fn open_bound_catalog(path: &Path, identity: [u8; 32]) -> Result<Index> {
         hex(&crate::crypto::random_bytes::<16>()?)
     ));
     fs::rename(path, &preserved).map_err(|_| "Cannot preserve interrupted transfer index")?;
-    File::open(parent)
-        .and_then(|f| crate::store::sync_file(&f))
+    crate::store::sync_directory(parent)
         .map_err(|_| "Cannot synchronize transfer creation recovery")?;
     let index = Index::create_bound(path, identity);
     drop(lock);
@@ -1022,14 +1036,12 @@ fn state_lock(directory: &Path) -> Result<File> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
         Err(_) => return Err("Cannot inspect transfer ownership lock".into()),
     };
-    let mut options = OpenOptions::new();
-    options.read(true).write(true).create(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let file = options
+    crate::store::before_private_open(&path);
+    let file = crate::store::private_options()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
         .open(&path)
         .map_err(|_| "Cannot open transfer ownership lock")?;
     let opened = file
@@ -1324,5 +1336,45 @@ mod tests {
             checked_read(&other.config.state_dir.join("transfers.idx/foreign"), 8).unwrap(),
             b"preserve"
         );
+    }
+
+    /// The ownership lock and persisted transfer state, swapped after
+    /// inspection, are refused at open time without blocking.
+    #[test]
+    fn swapped_transfer_state_is_refused_at_open_without_blocking() {
+        use crate::store::open_tests::{Swap, swapped};
+        // The lock is read empty (first open), then opened for ownership.
+        let cases = [
+            (".transfers.lock", 0, "Cannot open private transfer state"),
+            (".transfers.lock", 1, "Cannot open transfer ownership lock"),
+            ("source", 0, "Cannot open private transfer state"),
+        ];
+        for (name, skip, opened) in cases {
+            for swap in [Swap::Symlink, Swap::Fifo] {
+                let fixture = Fixture::new();
+                let id = fixture.source(1, Some(1));
+                let mut config = fixture.config.clone();
+                if name == ".transfers.lock" {
+                    drop(TransferIndex::open(&mut config).unwrap());
+                }
+                let name = if name == "source" {
+                    format!("{id}.source")
+                } else {
+                    name.to_owned()
+                };
+                let error = swapped(&name, skip, swap, move || {
+                    TransferIndex::open(&mut config).map(drop)
+                });
+                match swap {
+                    Swap::Symlink => assert_eq!(error, opened, "{name} {skip}"),
+                    Swap::Fifo => assert!(
+                        error == opened
+                            || error == "Special state files are not allowed"
+                            || error == "Invalid or changed transfer ownership lock",
+                        "{name} {skip}: {error}"
+                    ),
+                }
+            }
+        }
     }
 }

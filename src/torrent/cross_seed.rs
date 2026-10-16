@@ -484,8 +484,12 @@ pub(super) fn load(config: &DownloadConfig, id: &str) -> Result<Job> {
         return Err("Cross-seed state exceeds limits".into());
     }
     let mut encoded = Vec::new();
-    File::open(config.state_dir.join(format!("{id}.seed")))
-        .and_then(|file| file.take((MAX_RECORD + 1) as u64).read_to_end(&mut encoded))
+    crate::store::open_inspected(&config.state_dir.join(format!("{id}.seed")), &stat)
+        .and_then(|file| {
+            file.take((MAX_RECORD + 1) as u64)
+                .read_to_end(&mut encoded)
+                .map_err(|error| error.to_string())
+        })
         .map_err(|_| "Could not read cross-seed state")?;
     if encoded.len() > MAX_RECORD {
         return Err("Cross-seed state exceeds limits".into());

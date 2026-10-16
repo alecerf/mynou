@@ -445,23 +445,16 @@ fn atomic_write(path: &Path, data: &[u8]) -> Result<()> {
         TEMPORARY.fetch_add(1, Ordering::Relaxed)
     ));
     let result = (|| {
-        let mut options = OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut file = options
+        let mut file = crate::store::private_options()
+            .write(true)
+            .create_new(true)
             .open(&temporary)
             .map_err(|_| "Could not create state file")?;
         file.write_all(data)
             .and_then(|()| crate::store::sync_file(&file))
             .map_err(|_| "Could not write state file")?;
         fs::rename(&temporary, path).map_err(|_| "Could not publish state file")?;
-        File::open(parent)
-            .and_then(|f| crate::store::sync_file(&f))
-            .map_err(|_| "Could not synchronize directory")?;
+        crate::store::sync_directory(parent).map_err(|_| "Could not synchronize directory")?;
         Ok(())
     })();
     if result.is_err() {
@@ -498,8 +491,12 @@ fn persisted_pause(config: &DownloadConfig, id: &str) -> Result<bool> {
                 return Err("Invalid persisted pause marker".into());
             }
             let mut marker = Vec::new();
-            File::open(path)
-                .and_then(|file| file.take(8).read_to_end(&mut marker))
+            crate::store::open_inspected(&path, &metadata)
+                .and_then(|file| {
+                    file.take(8)
+                        .read_to_end(&mut marker)
+                        .map_err(|error| error.to_string())
+                })
                 .map_err(|_| "Could not read persisted pause marker")?;
             if marker != b"paused\n" {
                 return Err("Invalid persisted pause marker".into());
@@ -649,8 +646,12 @@ fn restore_controls(config: &DownloadConfig, jobs: &mut BTreeMap<String, Job>) -
                     return Err("Invalid native transfer control file".into());
                 }
                 let mut encoded = Vec::new();
-                File::open(path)
-                    .and_then(|file| file.take(4 * 1024 * 1024 + 45).read_to_end(&mut encoded))
+                crate::store::open_inspected(&path, &metadata)
+                    .and_then(|file| {
+                        file.take(4 * 1024 * 1024 + 45)
+                            .read_to_end(&mut encoded)
+                            .map_err(|error| error.to_string())
+                    })
                     .map_err(|_| "Could not read native transfer controls")?;
                 let control = TorrentControl::decode(&encoded)?;
                 if control.id != *id {
@@ -903,11 +904,11 @@ fn load_job(config: &DownloadConfig, id: &str) -> Result<Job> {
         .try_exists()
         .map_err(|_| "Could not inspect transfer metadata")?
     {
-        private_state_file(
-            &fs::symlink_metadata(config.state_dir.join(format!("{id}.torrent")))
-                .map_err(|_| "Persisted metadata is inaccessible")?,
-        )?;
-        let file = File::open(config.state_dir.join(format!("{id}.torrent")))
+        let meta_path = config.state_dir.join(format!("{id}.torrent"));
+        let meta_metadata =
+            fs::symlink_metadata(&meta_path).map_err(|_| "Persisted metadata is inaccessible")?;
+        private_state_file(&meta_metadata)?;
+        let file = crate::store::open_inspected(&meta_path, &meta_metadata)
             .map_err(|_| "Could not read persisted metadata")?;
         let mut encoded = Vec::new();
         file.take((MAX_META + 1) as u64)
@@ -930,8 +931,12 @@ fn load_job(config: &DownloadConfig, id: &str) -> Result<Job> {
         let original = if let Some(m) = original_metadata {
             private_state_file(&m)?;
             let mut value = String::new();
-            File::open(&original_path)
-                .and_then(|f| f.take(64 * 1024 + 1).read_to_string(&mut value))
+            crate::store::open_inspected(&original_path, &m)
+                .and_then(|f| {
+                    f.take(64 * 1024 + 1)
+                        .read_to_string(&mut value)
+                        .map_err(|error| error.to_string())
+                })
                 .map_err(|_| "Could not read persisted source")?;
             if value.len() > 64 * 1024 {
                 return Err("Persisted source is too large".into());
@@ -1011,13 +1016,17 @@ fn load_job(config: &DownloadConfig, id: &str) -> Result<Job> {
             },
         );
     } else {
-        private_state_file(
-            &fs::symlink_metadata(config.state_dir.join(format!("{id}.source")))
-                .map_err(|_| "Persisted source is inaccessible")?,
-        )?;
+        let source_path = config.state_dir.join(format!("{id}.source"));
+        let source_metadata =
+            fs::symlink_metadata(&source_path).map_err(|_| "Persisted source is inaccessible")?;
+        private_state_file(&source_metadata)?;
         let mut original = String::new();
-        File::open(config.state_dir.join(format!("{id}.source")))
-            .and_then(|f| f.take(64 * 1024 + 1).read_to_string(&mut original))
+        crate::store::open_inspected(&source_path, &source_metadata)
+            .and_then(|f| {
+                f.take(64 * 1024 + 1)
+                    .read_to_string(&mut original)
+                    .map_err(|error| error.to_string())
+            })
             .map_err(|_| "Invalid persisted source")?;
         if !original.starts_with("magnet:?") {
             return Err("Missing persisted metadata for this source".into());
@@ -2129,8 +2138,7 @@ fn resume_job(config: &DownloadConfig, job: &mut Job) -> Result<()> {
         let marker = config.state_dir.join(format!("{}.paused", job.status.id));
         if fs::symlink_metadata(&marker).is_ok() {
             fs::remove_file(marker).map_err(|_| "Could not resume download")?;
-            File::open(&config.state_dir)
-                .and_then(|f| crate::store::sync_file(&f))
+            crate::store::sync_directory(&config.state_dir)
                 .map_err(|_| "Could not synchronize resumed state")?;
         }
         job.paused = false;
