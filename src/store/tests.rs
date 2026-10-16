@@ -3104,6 +3104,98 @@ fn claim_scan_resumes_after_restart_and_reaches_past_new_old_entries() {
 }
 
 #[test]
+fn claim_cursor_is_checkpointed_at_most_once_per_interval() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    // Unclaimable jobs four scans long, ahead of the only eligible one.
+    bulk(
+        &mut store,
+        (1..=1_001).map(|n| raw_job(n, n + 100)).collect(),
+    );
+    let at = 50_000;
+    let durable = |store: &mut Store| {
+        store
+            .read(None, |db| {
+                db.cursor(&layout::CLAIM_CURSOR_KEY, layout::T_QUEUE)
+            })
+            .unwrap()
+    };
+    // Promotion moves the backlog into the queue in its own transactions.
+    loop {
+        store.claim_filtered(at, 60, |_| Ok(false)).unwrap();
+        if store.claim_pass[0] == 0 {
+            break;
+        }
+    }
+    drop(store);
+    let mut store = Store::open(&directory.0).unwrap();
+    // A fresh process checkpoints its first attempt.
+    assert!(
+        store
+            .claim_filtered(at, 60, |_| Ok(false))
+            .unwrap()
+            .is_none()
+    );
+    let first = store.claim_cursor.unwrap();
+    assert!(first.is_some());
+    assert_eq!(durable(&mut store), first);
+    // Within the interval the position advances, and wraps, only in memory.
+    let before = flushes();
+    let mut second = None;
+    for pass in 0..10 {
+        assert!(
+            store
+                .claim_filtered(at + CLAIM_CHECKPOINT_SECS - 1, 60, |_| Ok(false))
+                .unwrap()
+                .is_none()
+        );
+        assert!(store.claim_pass[2] <= CLAIM_SCAN);
+        if pass == 0 {
+            second = store.claim_cursor.unwrap();
+        }
+    }
+    assert_eq!(flushes() - before, 0, "claim attempts flushed storage");
+    assert_eq!(durable(&mut store), first);
+    assert_ne!(second, first);
+    // A restart resumes from the checkpoint, not from the queue head.
+    drop(store);
+    let mut store = Store::open(&directory.0).unwrap();
+    let at = at + CLAIM_CHECKPOINT_SECS;
+    store.claim_filtered(at, 60, |_| Ok(false)).unwrap();
+    assert_eq!(store.claim_cursor.unwrap(), second);
+    assert_eq!(durable(&mut store), second);
+    for _ in 0..2 {
+        store.claim_filtered(at + 1, 60, |_| Ok(false)).unwrap();
+    }
+    assert_eq!(durable(&mut store), second);
+    // Once the interval elapses the live position is written again.
+    store
+        .claim_filtered(at + CLAIM_CHECKPOINT_SECS, 60, |_| Ok(false))
+        .unwrap();
+    assert_ne!(store.claim_cursor.unwrap(), second);
+    assert_eq!(durable(&mut store), store.claim_cursor.unwrap());
+    // The live position still reaches the eligible tail within one sweep,
+    // and the lease clears the checkpoint in its own transaction.
+    let target = format!("{:032x}", 1_001);
+    let mut reached = false;
+    for _ in 0..=1_001_usize.div_ceil(CLAIM_SCAN) {
+        if let Some(job) = store
+            .claim_filtered(at + CLAIM_CHECKPOINT_SECS + 1, 60, |job| {
+                Ok(job.id == target)
+            })
+            .unwrap()
+        {
+            assert_eq!(job.id, target);
+            reached = true;
+            break;
+        }
+    }
+    assert!(reached, "eligible tail was not reached within one sweep");
+    assert_eq!(store.claim_cursor, Some(None));
+    assert_eq!(durable(&mut store), None);
+}
+
+#[test]
 fn requester_sweep_checkpoint_replays_errors_and_survives_restart() {
     let directory = Directory::new();
     let mut store = Store::open(&directory.0).unwrap();

@@ -378,7 +378,10 @@ Pages have a 4 MiB hydrated-job byte budget, except one larger record may appear
 alone. Existing network and JSON limits still apply; large individual records
 can require direct store inspection instead of an API response.
 
-Claims examine bounded queue windows and resume past ineligible jobs. Feed
+Claims examine bounded queue windows and resume past ineligible jobs. Their
+position is written at most once a minute, so a backlog of ineligible jobs does
+not cost a durable commit per attempt; a restart resumes from the last
+checkpoint, which a new process writes on its first attempt. Feed
 routing and requester cancellation sweeps also retain an in-memory cursor.
 Transfer retirement settles at most 64 jobs (up to eight transfer debts each)
 per pass. Indexed ownership

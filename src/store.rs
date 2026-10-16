@@ -916,6 +916,10 @@ use ops::{Db, cursor_text, parse_cursor};
 /// Jobs examined by one claim attempt. Work per attempt is bounded by this,
 /// not by how many jobs are open; a rotating cursor reaches the rest.
 const CLAIM_SCAN: usize = 256;
+/// Seconds of claim clock between durable claim cursor checkpoints. The live
+/// cursor advances in memory on every attempt; a restart resumes from the
+/// last checkpoint, and a fresh process checkpoints its first attempt.
+const CLAIM_CHECKPOINT_SECS: u64 = 60;
 const UNMIGRATED: &str =
     "Job storage has not been migrated; start the service or any command with write access once";
 
@@ -976,6 +980,10 @@ pub struct Store {
     maintenance_error: Option<String>,
     /// Most recent bounded queue and requester sweep work, for diagnostics.
     claim_pass: [usize; 3],
+    /// The live claim cursor once loaded, and the claim clock of its last
+    /// durable checkpoint in this process.
+    claim_cursor: Option<Option<Key>>,
+    claim_saved: Option<u64>,
     requester_sweep_rows: usize,
     pub(crate) migration: Option<MigrationReport>,
 }
@@ -1152,6 +1160,8 @@ impl Store {
             poisoned: false,
             maintenance_error: None,
             claim_pass: [0; 3],
+            claim_cursor: None,
+            claim_saved: None,
             requester_sweep_rows: 0,
             migration,
         }
@@ -2183,7 +2193,9 @@ impl Store {
     /// batch plus at most `CLAIM_SCAN` queue entries, however many jobs exist;
     /// when the head of the queue is not claimable the next attempt resumes
     /// after the entries already examined, so no job waits forever behind
-    /// jobs that cannot run.
+    /// jobs that cannot run. That position is written at most once per
+    /// `CLAIM_CHECKPOINT_SECS`, so a backlog of unclaimable jobs does not cost
+    /// a durable commit on every attempt.
     pub(crate) fn claim_filtered(
         &mut self,
         at: u64,
@@ -2197,8 +2209,18 @@ impl Store {
             .checked_add(ttl)
             .ok_or_else(|| "lease duration too large".to_owned())?;
         let mut stats = [0; 3];
+        let live = self.claim_cursor;
+        let checkpoint = self
+            .claim_saved
+            .is_none_or(|saved| at.abs_diff(saved) >= CLAIM_CHECKPOINT_SECS);
+        // The position after this attempt, and whether it is now durable.
+        let mut next = None;
+        let mut saved = false;
         let outcome = self.mutate(|db| {
-            let mut cursor = db.cursor(&layout::CLAIM_CURSOR_KEY, layout::T_QUEUE)?;
+            let mut cursor = match live {
+                Some(cursor) => cursor,
+                None => db.cursor(&layout::CLAIM_CURSOR_KEY, layout::T_QUEUE)?,
+            };
             stats[0] = db.promote(at)?;
             let mut examined = 0;
             loop {
@@ -2228,20 +2250,27 @@ impl Store {
                         db.stage(std::slice::from_ref(&job), "processing lease acquired")?;
                     changes.push(Change::Delete(layout::CLAIM_CURSOR_KEY));
                     db.0.commit(changes)?;
+                    (next, saved) = (Some(None), true);
                     return Ok(Some(job));
                 }
                 cursor = keys.last().copied().or(cursor);
-                if !more {
-                    db.save_cursor(layout::CLAIM_CURSOR_KEY, None)?;
-                    return Ok(None);
-                }
-                if examined >= CLAIM_SCAN {
-                    db.save_cursor(layout::CLAIM_CURSOR_KEY, cursor)?;
+                if !more || examined >= CLAIM_SCAN {
+                    let position = more.then_some(cursor).flatten();
+                    if checkpoint {
+                        db.save_cursor(layout::CLAIM_CURSOR_KEY, position)?;
+                    }
+                    (next, saved) = (Some(position), checkpoint);
                     return Ok(None);
                 }
             }
         });
         self.claim_pass = stats;
+        if next.is_some() {
+            self.claim_cursor = next;
+        }
+        if saved {
+            self.claim_saved = Some(at);
+        }
         outcome
     }
 
