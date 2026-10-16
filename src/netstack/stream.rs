@@ -71,7 +71,7 @@ impl TcpConfig {
             burst: 16,
             outbox: 64,
             initial_rto: Duration::from_secs(1),
-            max_rto: Duration::from_secs(30),
+            max_rto: Duration::from_secs(60),
             retries: 8,
             syn_retries: 5,
             time_wait: Duration::from_secs(30),
@@ -98,7 +98,9 @@ impl TcpConfig {
             && (1..=64).contains(&self.burst)
             && (1..=1024).contains(&self.outbox)
             && timer(self.initial_rto)
+            && self.initial_rto >= Duration::from_secs(1)
             && timer(self.max_rto)
+            && self.max_rto >= Duration::from_secs(60)
             && self.initial_rto <= self.max_rto
             && (1..=16).contains(&self.retries)
             && (1..=8).contains(&self.syn_retries)
@@ -278,6 +280,11 @@ struct Flow {
     ssthresh: usize,
     dup_acks: u32,
     rto: Duration,
+    srtt: Option<Duration>,
+    rttvar: Duration,
+    sample: Option<(u32, Duration)>,
+    /// Karn: no measurement until all possibly retransmitted bytes settle.
+    ambiguous_until: Option<u32>,
     deadline: Option<Duration>,
     retries: u32,
     stalled: Option<Duration>,
@@ -472,6 +479,10 @@ impl<E: Entropy> TcpStack<E> {
             ssthresh: usize::MAX,
             dup_acks: 0,
             rto: self.config.initial_rto,
+            srtt: None,
+            rttvar: Duration::ZERO,
+            sample: None,
+            ambiguous_until: None,
             deadline: None,
             retries: 0,
             stalled: None,
@@ -780,7 +791,9 @@ impl<E: Entropy> TcpStack<E> {
             flow.snd_max.wrapping_sub(flow.snd_una),
         );
         let sent = !matches!(flow.state, State::Closed | State::TimeWait)
-            && !(flow.state == State::SynSent && flow.syn_pending && flow.deadline.is_none());
+            && !(matches!(flow.state, State::SynSent | State::SynReceived)
+                && flow.syn_pending
+                && flow.deadline.is_none());
         let outcome = if !sent || !outstanding {
             IcmpIngest::Dropped
         } else if advice.code == 4 {
@@ -958,8 +971,11 @@ impl<E: Entropy> TcpStack<E> {
             flow.wl1 = segment.sequence;
             flow.wl2 = acknowledgment;
             flow.state = State::Established;
+            self.sample_rtt(flow, acknowledgment, now);
+            if flow.retries > 0 {
+                flow.rto = flow.rto.max(Duration::from_secs(3));
+            }
             flow.retries = 0;
-            flow.rto = self.config.initial_rto;
             flow.deadline = None;
             flow.syn_pending = false;
             let port = flow.listener.unwrap_or(0);
@@ -1018,8 +1034,11 @@ impl<E: Entropy> TcpStack<E> {
         flow.cwnd = (4 * flow.mss).min(self.config.send_buffer);
         flow.state = State::Established;
         flow.syn_pending = false;
+        self.sample_rtt(flow, segment.acknowledgment, now);
+        if flow.retries > 0 {
+            flow.rto = flow.rto.max(Duration::from_secs(3));
+        }
         flow.retries = 0;
-        flow.rto = self.config.initial_rto;
         flow.deadline = None;
         flow.ack_due = true;
         Ingest::Delivered
@@ -1055,6 +1074,55 @@ impl<E: Entropy> TcpStack<E> {
         flow.expires = Some(now.saturating_add(self.config.linger));
     }
 
+    /// One outstanding timing sample per flow; never time retransmitted bytes,
+    /// including fast retransmit, path-MTU resegmentation and zero-window probes.
+    fn time_segment(&self, flow: &mut Flow, sequence: u32, end: u32, now: Duration) {
+        if lt(sequence, flow.snd_max) {
+            flow.sample = None;
+            flow.ambiguous_until = Some(flow.snd_max);
+        } else if flow.sample.is_none() && flow.ambiguous_until.is_none() {
+            flow.sample = Some((end, now));
+        }
+    }
+
+    fn sample_rtt(&self, flow: &mut Flow, acknowledgment: u32, now: Duration) {
+        if let Some(end) = flow.ambiguous_until {
+            if le(end, acknowledgment) {
+                flow.ambiguous_until = None;
+            }
+            return;
+        }
+        let Some((end, sent)) = flow.sample else {
+            return;
+        };
+        if !le(end, acknowledgment) {
+            return;
+        }
+        flow.sample = None;
+        let sample = now.saturating_sub(sent);
+        match flow.srtt {
+            None => {
+                flow.srtt = Some(sample);
+                flow.rttvar = sample / 2;
+            }
+            Some(previous) => {
+                flow.rttvar = flow
+                    .rttvar
+                    .saturating_mul(3)
+                    .saturating_add(previous.abs_diff(sample))
+                    / 4;
+                flow.srtt = Some(previous.saturating_mul(7).saturating_add(sample) / 8);
+            }
+        }
+        // RFC 6298 coefficients, 1 ms clock granularity, one-second floor.
+        flow.rto = flow
+            .srtt
+            .unwrap_or_default()
+            .saturating_add(flow.rttvar.saturating_mul(4).max(Duration::from_millis(1)))
+            .max(Duration::from_secs(1))
+            .min(self.config.max_rto);
+    }
+
     fn acknowledge(&mut self, flow: &mut Flow, segment: &Segment<'_>, now: Duration) {
         let acknowledgment = segment.acknowledgment;
         if lt(flow.snd_una, acknowledgment) {
@@ -1066,7 +1134,7 @@ impl<E: Entropy> TcpStack<E> {
             }
             flow.snd_una = acknowledgment;
             flow.retries = 0;
-            flow.rto = self.config.initial_rto;
+            self.sample_rtt(flow, acknowledgment, now);
             flow.dup_acks = 0;
             flow.probe = false;
             let mss = flow.mss;
@@ -1117,6 +1185,8 @@ impl<E: Entropy> TcpStack<E> {
     /// Loss response: halve the threshold, restart slow start and resend from
     /// the first unacknowledged byte.
     fn collapse(&self, flow: &mut Flow) {
+        flow.sample = None;
+        flow.ambiguous_until = Some(flow.snd_max);
         let flight = flow.snd_max.wrapping_sub(flow.snd_una) as usize;
         flow.ssthresh = (flight / 2).max(2 * flow.mss);
         flow.cwnd = flow.mss;
@@ -1355,9 +1425,15 @@ impl<E: Entropy> TcpStack<E> {
             acknowledgment: if synchronized { flow.rcv_nxt } else { 0 },
             flags: if synchronized { SYN | ACK } else { SYN },
             window: self.advertised(flow),
-            mss: Some(self.config.mss() as u16),
+            mss: Some((flow.path_mtu - HEADERS) as u16),
         };
         if let Ok(packet) = self.packet(key, header, &[]) {
+            if flow.retries == 0 && flow.deadline.is_none() {
+                flow.sample = Some((flow.iss.wrapping_add(1), now));
+            } else {
+                flow.sample = None;
+                flow.ambiguous_until = Some(flow.snd_max);
+            }
             out.push(packet);
         }
         flow.syn_pending = false;
@@ -1414,6 +1490,13 @@ impl<E: Entropy> TcpStack<E> {
             let Ok(packet) = self.packet(key, header, &payload) else {
                 break;
             };
+            self.time_segment(
+                flow,
+                flow.snd_nxt,
+                flow.snd_nxt
+                    .wrapping_add(payload.len() as u32 + u32::from(flags & FIN != 0)),
+                now,
+            );
             out.push(packet);
             budget -= 1;
             flow.ack_due = false;

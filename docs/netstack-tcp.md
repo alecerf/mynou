@@ -5,8 +5,8 @@ userspace IP stack described in [the design](/docs/wireguard-design.md), on top 
 the strict inner IPv4 codec of [the IPv4/UDP/DNS guide](/docs/netstack.md). It only
 sees inner IP datagrams: what `Session::receive` of [the transport](/docs/wireguard-transport.md)
 returns goes in through `TcpStack::ingest`, and what `TcpStack::poll` returns is
-what a driver would encrypt and send. There is no socket, tunnel coupling, engine,
-profile, DNS-over-TCP or torrent caller, so **this is not routing, host networking
+what a driver would encrypt and send. There is no host socket, engine,
+profile or torrent caller in this layer, so **this is not routing, host networking
 or VPN protection, and it is not independent interoperability evidence**. Parent
 #111 stays open. The code lives in `src/netstack/tcp.rs` (segments) and
 `src/netstack/stream.rs` (flows): pure, std only, with no clock reads, threads or
@@ -49,7 +49,7 @@ control packet; every later call returns `Revoked`.
 | `ingest`, `poll` | Segments in, segments and the next wake-up time out. |
 
 State and failure are visible: `State` follows RFC 9293 (SYN-SENT to TIME-WAIT) plus
-`Closed`, and `Failure` is `Reset`, `Refused` or `Timeout`.
+`Closed`, and `Failure` is `Reset`, `Refused`, `Timeout` or `Unreachable(code)`.
 A closed or failed flow keeps its entry for `linger` so the caller sees the reason
 and can drain received bytes, then it is released.
 
@@ -76,9 +76,13 @@ and can drain received bytes, then it is released.
   Loss is handled go-back-N from the first unacknowledged byte: three duplicate
   acknowledgments or a timeout set the threshold to half the flight (at least two
   segments) and restart slow start (Tahoe); the timeout doubles up to `max_rto` and
-  the flow fails with `Timeout` and an RST after `retries` tries. There is no RTT
-  estimation, no delayed or selective acknowledgment, no Nagle and no timestamps:
-  the retransmission timeout starts at `initial_rto` and only backs off.
+  the flow fails with `Timeout` and an RST after `retries` tries. RTT samples use
+  the RFC 6298 smoothed mean and variance, with 1 ms granularity and a 1 s floor.
+  Karn's rule suppresses samples until all retransmitted sequence space is
+  acknowledged (including fast retransmit, PMTU resegmentation and probes).
+  ACKs of ambiguous bytes preserve the backed-off timer; a fresh sample can
+  reduce it. A retransmitted handshake starts data with at least 3 s RTO.
+  There is no delayed or selective acknowledgment, Nagle or timestamps.
 - **Zero window**: queued data waits and a one-byte probe is sent with backoff; the
   flow fails with `Timeout` if the window stays closed for `persist_limit`.
 - **Closing**: FIN and the full RFC 9293 closing states, including simultaneous
@@ -98,13 +102,63 @@ and can drain received bytes, then it is released.
 | Segments per flow per poll | 16 | `poll` reports an immediate wake-up |
 | Queued control packets | 64 | the packet is dropped and counted |
 | Retransmissions / SYN retransmissions | 8 / 5 | the flow fails with `Timeout` |
-| Retransmission timeout | 1 s to 30 s | backoff stops at the cap |
+| Retransmission timeout | 1 s to 60 s | backoff stops at the cap |
 | TIME-WAIT, closed linger, zero-window stall | 30 s, 30 s, 120 s | the flow is released or fails |
 
 `TcpConfig::new` takes the same `Ipv4Config` as the UDP layer and an MTU, validates
-every bound and rejects values outside the documented ranges. The initial sequence
+every bound and rejects values outside the documented ranges, including an initial
+RTO below 1 s or a maximum below 60 s. The initial sequence
 number and ephemeral port come from the injectable `Entropy`; if it fails the
 operation fails and no predictable value is used.
+
+## ICMP and path MTU
+
+`TcpStack::ingest_icmp` first applies the bounded checks in
+[the IPv4 guide](/docs/netstack.md#icmp-advice-and-fragment-policy), then requires
+an existing flow with the quoted local port, remote address and remote port.
+The quoted TCP sequence must be within actually transmitted, unacknowledged
+sequence space, including wraparound. An unsent SYN, acknowledged bytes, closed
+flows and unknown tuples cannot be affected. This follows the sequence-checking
+mitigation in [RFC 5927](https://www.rfc-editor.org/rfc/rfc5927#section-4.1);
+it does not authenticate a router or defeat an observer or a correct sequence guess.
+
+An eligible fragmentation-needed quote can only lower `path_mtu`, down to 576,
+when the quoted datagram exceeded that MTU. The send MSS becomes the smaller of
+the peer's MSS and the path's `mtu - 40`, and outstanding bytes are resegmented
+from `snd_una` under the existing congestion, peer-window and retry limits.
+Zero legacy MTUs and increases are ignored. No destination cache or new table is
+created; the state is a few fixed fields within each bounded flow.
+
+Other unreachable codes fail an outstanding active open with
+`TcpFailure::Unreachable(code)`. Established connections retain their normal loss
+recovery: `network_error` exposes advisory information without allowing ICMP to
+reset the connection. `path_mtu` exposes the current per-flow budget. The tunnel
+runtime dispatches ICMP through these same APIs and its generation fence.
+
+## TCP option decision and measured limits
+
+For #219, implement RTT estimation now; retain the unscaled window and cumulative
+ACKs. Trackers and bounded DNS exchanges can use this stream, but **bulk torrent
+throughput is not accepted as production-ready**. There is no torrent caller yet;
+window scaling and SACK need a separate measured bulk-transfer implementation
+before claiming good performance across high-delay or lossy paths. Simultaneous
+open and TCP keep-alive also remain unsupported.
+
+The deterministic warm-window test sends 2 MiB to grow congestion credit above
+the advertised window, then queues 131070 bytes with a 1 MiB send buffer and a
+64-segment burst. Exactly 65535 bytes can be in flight before acknowledgment.
+At 100 ms RTT that window alone limits one stream to 655350 B/s (5.2428 Mbit/s),
+before other overhead; this is an arithmetic ceiling from measured flight, not
+an Internet throughput benchmark. The two-gap loss test loses segments one and
+three of a four-MSS flight: seven MSS are emitted in total, including one
+unnecessary retransmission of already-held data without SACK. Both are explicit
+limitations, not evidence that scaling or SACK have no value.
+
+The scripted RTT test measures a 400 ms handshake, then a 600 ms data round trip:
+SRTT moves to 425 ms, variance to 200 ms and RTO to 1225 ms. Timeout doubles RTO
+to 2450 ms; the ambiguous ACK leaves that backoff unchanged; a fresh 200 ms sample
+moves it to 1221.875 ms. These exercise the estimator and Karn behavior, alongside
+existing deterministic loss, reorder, corruption and zero-window cases.
 
 ## Evidence and limits
 
@@ -127,16 +181,16 @@ clock fences, and entropy failure.
 The generator and the Rust code are by the same authors from the same RFCs, and
 the state machine is only ever exercised against itself, so these tests catch
 implementation slips, not misreadings shared by both, and no independent TCP stack
-is involved. Throughput, congestion behavior against real paths and interoperability
-are not measured or claimed.
+is involved. Only the deterministic flight/loss measurements above are claimed; real-path
+throughput, congestion behavior and interoperability are not measured.
 
 ## Remaining obligations
 
 The driver that feeds decrypted session bytes in, encrypts what comes out, owns
 the clock and generations and revokes the UDP table, the DNS client and this stack
-together is now [the tunnel runtime](/docs/tunnel.md). Still missing: IP fragmentation and reassembly, ICMP and path-MTU handling; window
-scaling, selective acknowledgment, RTT estimation, simultaneous open and a TCP
-Keep-Alive if torrent peers need them; DNS over this TCP for truncated answers; the
+together is now [the tunnel runtime](/docs/tunnel.md). IP fragmentation is refused
+and IPv6 remains blocked, as documented above. Still missing: window scaling,
+selective acknowledgment, simultaneous open and TCP keep-alive for bulk peers; the
 transport, HTTP/TLS and torrent integration; profile controls; an independently
 implemented peer in CI; and the isolation evidence listed in
 [the design](/docs/wireguard-design.md). Nothing here changes user-visible behavior.

@@ -284,3 +284,21 @@ fn checksum_handles_odd_lengths_and_carries() {
     assert_eq!(checksum(&[0xab]), !0xab00);
     assert_eq!(fold(u64::MAX), 0xffff);
 }
+
+#[test]
+fn every_fragment_offset_and_reserved_flag_is_refused_without_retained_state() {
+    let config = config();
+    for bits in 0u16..=u16::MAX {
+        let mut packet = sample(b"synthetic");
+        packet[6..8].copy_from_slice(&bits.to_be_bytes());
+        reseal(&mut packet);
+        if bits == 0 || bits == 0x4000 {
+            assert!(parse(&config, &packet).is_ok());
+        } else {
+            assert_eq!(parse(&config, &packet), Err(PacketError::Fragment));
+        }
+    }
+    let mut ipv6 = sample(b"synthetic");
+    ipv6[0] = 0x60;
+    assert_eq!(parse(&config, &ipv6), Err(PacketError::Ipv6));
+}

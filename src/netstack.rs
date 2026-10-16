@@ -90,4 +90,4 @@ impl Fence {
 
 #[cfg(test)]
 #[path = "netstack/support.rs"]
-mod support;
+pub(crate) mod support;

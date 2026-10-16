@@ -394,7 +394,7 @@ impl<E: Entropy> DnsClient<E> {
         self.pending.len()
     }
 
-    /// Datagrams dropped for wrong source, id, question or malformed content.
+    /// Responses dropped for wrong source, id, question or malformed content.
     pub fn rejected(&self) -> u64 {
         self.rejected
     }
@@ -408,8 +408,8 @@ impl<E: Entropy> DnsClient<E> {
         }
     }
 
-    /// Irreversibly forgets every query. Revoke the socket table as well; it owns
-    /// the virtual sockets.
+    /// Irreversibly forgets every query. Revoke both the UDP socket table and
+    /// TCP stack as well; the caller owns those transports.
     pub fn revoke(&mut self) {
         self.fence.revoke();
         self.pending.clear();
@@ -497,7 +497,8 @@ impl<E: Entropy> DnsClient<E> {
         Ok((id, packet))
     }
 
-    /// Abandons a query and frees its socket. `false` if it already finished.
+    /// Abandons a query and frees its UDP socket and any TCP flow. `false` if it
+    /// already finished.
     pub fn cancel(
         &mut self,
         sockets: &mut UdpSockets,
@@ -521,7 +522,8 @@ impl<E: Entropy> DnsClient<E> {
     }
 
     /// Reads delivered replies, finishes answered or timed-out queries and
-    /// retransmits due ones to the next resolver.
+    /// retransmits due UDP attempts to the next resolver. A validated TC reply
+    /// starts one TCP attempt; poll the shared TCP stack after this call.
     pub fn poll(
         &mut self,
         sockets: &mut UdpSockets,
@@ -633,7 +635,7 @@ impl<E: Entropy> DnsClient<E> {
             flow,
             deadline,
             sent: 0,
-            received: Vec::new(),
+            received: Vec::with_capacity(MAX_DNS_MESSAGE + 2),
             expected: None,
         });
         Step::Pending

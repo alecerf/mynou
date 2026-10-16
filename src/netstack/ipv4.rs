@@ -17,7 +17,8 @@ pub const MIN_MTU: usize = 576;
 /// (`wireguard::MAX_PAYLOAD`, asserted equal by a test). Longer input is rejected.
 pub const MAX_MTU: usize = 1424;
 const DONT_FRAGMENT: u16 = 0x4000;
-const FRAGMENT_BITS: u16 = 0x3fff;
+// Reserved flag, more-fragments and offset: only DF may be set.
+const FRAGMENT_BITS: u16 = 0xbfff;
 
 /// The inner address this stack owns and the sources it accepts, which is the
 /// peer's `AllowedIPs` network (`0.0.0.0/0` for the default route).

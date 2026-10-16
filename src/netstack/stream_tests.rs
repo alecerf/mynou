@@ -244,7 +244,7 @@ fn configuration_is_validated() {
             ..good
         },
         TcpConfig {
-            initial_rto: second * 31,
+            initial_rto: second * 61,
             ..good
         },
         TcpConfig { retries: 0, ..good },
@@ -1306,4 +1306,193 @@ fn icmp_cannot_refuse_an_unsent_syn_or_reset_a_recycled_flow() {
     );
     a.close(G, T0, client).unwrap();
     assert_eq!(a.ingest_icmp(G, T0, &error), IcmpIngest::Dropped);
+}
+
+#[test]
+fn rtt_adapts_to_delay_and_karn_preserves_backoff_until_a_fresh_sample() {
+    let mut pair = Pair::new(config(CLIENT), config(SERVER));
+    let listener = pair.b.listen(G, PORT).unwrap();
+    let client = pair.a.connect(G, T0, SERVER, PORT).unwrap();
+    let syn = pair.a.poll(G, T0).unwrap().send.remove(0);
+    pair.b.ingest(G, Duration::from_millis(200), &syn);
+    let syn_ack = pair
+        .b
+        .poll(G, Duration::from_millis(200))
+        .unwrap()
+        .send
+        .remove(0);
+    pair.a.ingest(G, Duration::from_millis(400), &syn_ack);
+    let ack = pair
+        .a
+        .poll(G, Duration::from_millis(400))
+        .unwrap()
+        .send
+        .remove(0);
+    pair.b.ingest(G, Duration::from_millis(600), &ack);
+    let server = pair.b.accept(G, listener).unwrap().unwrap();
+    let flow = &pair.a.flows[&client.key];
+    assert_eq!(flow.srtt, Some(Duration::from_millis(400)));
+    assert_eq!(flow.rttvar, Duration::from_millis(200));
+    assert_eq!(flow.rto, Duration::from_millis(1200));
+
+    pair.a.send(G, client, b"first sample").unwrap();
+    let packet = pair
+        .a
+        .poll(G, Duration::from_millis(400))
+        .unwrap()
+        .send
+        .remove(0);
+    pair.b.ingest(G, Duration::from_millis(700), &packet);
+    let ack = pair
+        .b
+        .poll(G, Duration::from_millis(700))
+        .unwrap()
+        .send
+        .remove(0);
+    pair.a.ingest(G, Duration::from_secs(1), &ack);
+    assert_eq!(read(&mut pair.b, server), b"first sample");
+    let flow = &pair.a.flows[&client.key];
+    assert_eq!(flow.srtt, Some(Duration::from_millis(425)));
+    assert_eq!(flow.rttvar, Duration::from_millis(200));
+    assert_eq!(flow.rto, Duration::from_millis(1225));
+
+    pair.a.send(G, client, b"lost sample").unwrap();
+    let first = pair.a.poll(G, Duration::from_secs(1)).unwrap();
+    let at = first.next.unwrap();
+    assert!(
+        pair.a
+            .poll(G, at - Duration::from_nanos(1))
+            .unwrap()
+            .send
+            .is_empty()
+    );
+    let retransmit = pair.a.poll(G, at).unwrap().send.remove(0);
+    assert_eq!(retransmit, first.send[0]);
+    pair.b
+        .ingest(G, at + Duration::from_millis(100), &retransmit);
+    let ack = pair
+        .b
+        .poll(G, at + Duration::from_millis(100))
+        .unwrap()
+        .send
+        .remove(0);
+    pair.a.ingest(G, at + Duration::from_millis(200), &ack);
+    let flow = &pair.a.flows[&client.key];
+    assert_eq!(flow.srtt, Some(Duration::from_millis(425)));
+    assert_eq!(flow.rto, Duration::from_millis(2450));
+    assert!(flow.sample.is_none());
+    assert!(flow.ambiguous_until.is_none());
+
+    pair.a.send(G, client, b"fresh sample").unwrap();
+    let packet = pair
+        .a
+        .poll(G, at + Duration::from_millis(200))
+        .unwrap()
+        .send
+        .remove(0);
+    pair.b.ingest(G, at + Duration::from_millis(300), &packet);
+    let ack = pair
+        .b
+        .poll(G, at + Duration::from_millis(300))
+        .unwrap()
+        .send
+        .remove(0);
+    pair.a.ingest(G, at + Duration::from_millis(400), &ack);
+    let flow = &pair.a.flows[&client.key];
+    assert_eq!(flow.srtt, Some(Duration::from_micros(396875)));
+    assert_eq!(flow.rttvar, Duration::from_micros(206250));
+    assert_eq!(flow.rto, Duration::from_micros(1221875));
+}
+
+#[test]
+fn the_unscaled_window_caps_flight_after_congestion_warmup() {
+    let mut a = config(CLIENT);
+    a.send_buffer = 1 << 20;
+    a.burst = 64;
+    let (mut pair, client, server, _) =
+        established_with(a, config(SERVER), (CLIENT_ISS, SERVER_ISS));
+    for _ in 0..64 {
+        pair.a.send(G, client, &[1; 32768]).unwrap();
+        pair.pump();
+        assert_eq!(read(&mut pair.b, server).len(), 32768);
+        pair.pump();
+    }
+    assert!(pair.a.flows[&client.key].cwnd > 65535);
+    pair.a.send(G, client, &[7; 131070]).unwrap();
+    let burst = pair.a.poll(G, T0).unwrap().send;
+    let flight: usize = burst
+        .iter()
+        .map(|packet| seen(packet, SERVER).payload.len())
+        .sum();
+    assert_eq!(flight, 65535);
+    assert!(
+        pair.a
+            .poll(G, Duration::from_millis(99))
+            .unwrap()
+            .send
+            .is_empty()
+    );
+    // With 100 ms RTT, this window alone caps one stream at 655350 B/s
+    // (5.2428 Mbit/s), regardless of a larger send buffer or burst setting.
+    assert_eq!(flight * 10, 655350);
+}
+
+#[test]
+fn two_losses_in_a_flight_measure_the_cost_of_no_sack() {
+    let (mut pair, client, server, _) = established();
+    let mss = pair.a.flows[&client.key].mss;
+    let data = pattern(4 * mss);
+    pair.a.send(G, client, &data).unwrap();
+    let mut packets = 0;
+    let mut emitted = 0;
+    let mut link = |direction, packet: Vec<u8>| {
+        if direction == Dir::AToB {
+            let payload = seen(&packet, SERVER).payload.len();
+            emitted += payload;
+            if payload > 0 {
+                packets += 1;
+                if packets == 1 || packets == 3 {
+                    return vec![];
+                }
+            }
+        }
+        vec![packet]
+    };
+    pair.now = pair.pump_with(&mut link).unwrap();
+    pair.pump_with(&mut link);
+    assert_eq!(read(&mut pair.b, server), data);
+    // Four original segments plus three retransmissions for two lost segments:
+    // one already-held segment is sent twice without SACK feedback.
+    assert_eq!(emitted, 7 * mss);
+}
+
+#[test]
+fn a_syn_ack_repeated_for_a_duplicate_syn_is_not_an_rtt_sample() {
+    let mut pair = Pair::new(config(CLIENT), config(SERVER));
+    let listener = pair.b.listen(G, PORT).unwrap();
+    pair.a.connect(G, T0, SERVER, PORT).unwrap();
+    let syn = pair.a.poll(G, T0).unwrap().send.remove(0);
+    pair.b.ingest(G, T0, &syn);
+    let first = pair.b.poll(G, T0).unwrap().send.remove(0);
+    pair.b.ingest(G, Duration::from_millis(100), &syn);
+    let again = pair
+        .b
+        .poll(G, Duration::from_millis(100))
+        .unwrap()
+        .send
+        .remove(0);
+    assert_eq!(first, again);
+    pair.a.ingest(G, Duration::from_millis(200), &first);
+    let ack = pair
+        .a
+        .poll(G, Duration::from_millis(200))
+        .unwrap()
+        .send
+        .remove(0);
+    pair.b.ingest(G, Duration::from_millis(300), &ack);
+    let server = pair.b.accept(G, listener).unwrap().unwrap();
+    let flow = &pair.b.flows[&server.key];
+    assert!(flow.srtt.is_none());
+    assert!(flow.sample.is_none());
+    assert!(flow.ambiguous_until.is_none());
 }

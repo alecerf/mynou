@@ -1320,3 +1320,53 @@ fn truncated_dns_falls_back_to_tcp_inside_the_encrypted_tunnel() {
     assert_eq!(result.addresses, vec![Ipv4Addr::new(10, 9, 8, 7)]);
     assert_eq!(world.client.stats().inner_rejected, 0);
 }
+
+#[test]
+fn authenticated_icmp_advice_reaches_a_connected_udp_socket() {
+    let mut world = World::new(|_, _| {});
+    world.connect(Duration::from_millis(100), 20);
+    let service = world.server.udp_bind(7000).unwrap();
+    let socket = world.client.udp_bind(0).unwrap();
+    world.client.udp_connect(socket, (SERVER_IP, 7000)).unwrap();
+    world
+        .client
+        .udp_send_to(socket, (SERVER_IP, 7000), &[7; 1200])
+        .unwrap();
+    world.settle();
+    assert_eq!(drain(&mut world.server, service).len(), 1);
+    let original = crate::netstack::build_udp(
+        CLIENT_IP,
+        SERVER_IP,
+        socket.port(),
+        7000,
+        &[7; 1200],
+        MAX_MTU,
+    )
+    .unwrap();
+    let advice = crate::netstack::support::icmp_unreachable(SERVER_IP, &original, 4, 800);
+    world.server.encrypt(advice, world.clock.now()).unwrap();
+    world.settle();
+    assert_eq!(
+        world
+            .client
+            .udp_send_to(socket, (SERVER_IP, 7000), &[7; 773]),
+        Err(TunnelError::Udp(SocketError::Build(
+            crate::netstack::BuildError::TooLarge
+        )))
+    );
+    world
+        .client
+        .udp_send_to(socket, (SERVER_IP, 7000), b"query")
+        .unwrap();
+    let original =
+        crate::netstack::build_udp(CLIENT_IP, SERVER_IP, socket.port(), 7000, b"query", MAX_MTU)
+            .unwrap();
+    let advice = crate::netstack::support::icmp_unreachable(SERVER_IP, &original, 3, 0);
+    world.server.encrypt(advice, world.clock.now()).unwrap();
+    world.settle();
+    assert_eq!(
+        world.client.udp_recv(socket),
+        Err(TunnelError::Udp(SocketError::Unreachable(3)))
+    );
+    assert_eq!(world.client.stats().inner_rejected, 0);
+}
