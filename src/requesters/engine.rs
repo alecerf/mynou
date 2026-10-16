@@ -662,7 +662,7 @@ impl Engine {
                 }
                 if self.stopped.load(Ordering::Acquire) || Instant::now() >= account_deadline {
                     break if progress.pages == 0 {
-                        Err("Plex account poll deadline reached".to_owned())
+                        Err(integrations::PLEX_POLL_DEADLINE.to_owned())
                     } else {
                         Ok(())
                     };
@@ -690,7 +690,7 @@ impl Engine {
                     let error = if [
                         "Plex account identity changed",
                         "Plex account policy changed during poll",
-                        "Plex account poll deadline reached",
+                        integrations::PLEX_POLL_DEADLINE,
                     ]
                     .contains(&error.as_str())
                     {
@@ -703,7 +703,7 @@ impl Engine {
                         .accounts
                         .get_mut(&account.id)
                         .ok_or("Requester: missing account")?;
-                    if error != "Plex account poll deadline reached" {
+                    if error != integrations::PLEX_POLL_DEADLINE {
                         current.polled_at = store::now();
                     }
                     current.last_error = Some(error.clone());
@@ -768,7 +768,7 @@ impl Engine {
         for (after, item) in page.entries {
             let origin = item.media_key();
             let expanded = if Instant::now() >= deadline {
-                Err("Plex account poll deadline reached".to_owned())
+                Err(integrations::PLEX_POLL_DEADLINE.to_owned())
             } else {
                 self.expand_requester_item(&origin, &item, deadline)
             };

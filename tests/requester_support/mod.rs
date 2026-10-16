@@ -27,6 +27,9 @@ pub struct Accounts {
     pub calls: Arc<Mutex<Vec<String>>>,
     responses: Arc<Mutex<BTreeMap<String, (u16, Value)>>>,
     pub blocked: Arc<AtomicBool>,
+    /// A route answered only after the client hung up, like a server that
+    /// responds after the client's deadline.
+    pub held: Arc<Mutex<Option<String>>>,
     pub remove_on_request: Arc<Mutex<Option<(String, PathBuf)>>>,
     stopped: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
@@ -73,12 +76,14 @@ impl Accounts {
         let responses = Arc::new(Mutex::new(BTreeMap::<String, (u16, Value)>::new()));
         let calls = Arc::new(Mutex::new(Vec::new()));
         let blocked = Arc::new(AtomicBool::new(false));
+        let held = Arc::new(Mutex::new(None::<String>));
         let stopped = Arc::new(AtomicBool::new(false));
         let remove_on_request = Arc::new(Mutex::new(None::<(String, PathBuf)>));
         let removal = remove_on_request.clone();
         let values = responses.clone();
         let requests = calls.clone();
         let delay = blocked.clone();
+        let hold = held.clone();
         let stop = stopped.clone();
         let thread = thread::spawn(move || {
             while !stop.load(Ordering::Acquire) {
@@ -132,6 +137,25 @@ impl Accounts {
                         thread::sleep(Duration::from_millis(2));
                     }
                 }
+                if hold.lock().unwrap().as_deref() == Some(path) {
+                    let deadline = Instant::now() + Duration::from_secs(30);
+                    stream
+                        .set_read_timeout(Some(Duration::from_millis(20)))
+                        .unwrap();
+                    loop {
+                        assert!(Instant::now() < deadline, "Held request never hung up");
+                        match stream.read(&mut [0; 64]) {
+                            Ok(0) => break,
+                            Ok(_) => {}
+                            Err(e)
+                                if matches!(
+                                    e.kind(),
+                                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                                ) => {}
+                            Err(_) => break,
+                        }
+                    }
+                }
                 let (status, value) = values
                     .lock()
                     .unwrap()
@@ -139,7 +163,12 @@ impl Accounts {
                     .cloned()
                     .unwrap_or((404, Value::Null));
                 let body = json::stringify(&paginate(value, target));
-                write!(stream,"HTTP/1.1 {status} Fixture\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+                // A client that reached its deadline may have hung up already.
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 {status} Fixture\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
             }
         });
         let server = Self {
@@ -147,6 +176,7 @@ impl Accounts {
             calls,
             responses,
             blocked,
+            held,
             remove_on_request,
             stopped,
             thread: Some(thread),

@@ -367,3 +367,47 @@ fn same_total_reorders_require_a_matching_traversal_before_retiring_origins() {
     let engine = Engine::open_for_management(cfg).unwrap();
     assert_eq!(states(&engine, "alice"), (1_701, 1));
 }
+
+fn record(engine: &Engine, id: &str, name: &str) -> Value {
+    engine
+        .requester(id, 0, 1)
+        .unwrap()
+        .get(name)
+        .unwrap()
+        .clone()
+}
+
+#[test]
+fn a_request_cut_off_by_the_account_deadline_reports_the_deadline() {
+    let dir = Directory::new();
+    let accounts = Accounts::open();
+    accounts.watchlist("alice", movies(0..3));
+    accounts.watchlist("bob", movies(10..11));
+    let engine = Engine::open_for_management(accounts.config(&dir.0)).unwrap();
+    let polled_at = record(&engine, "alice", "polled_at");
+
+    // The identity response arrives only after the account deadline.
+    *accounts.held.lock().unwrap() = Some("/alice/identity".into());
+    let report = engine.sync_requesters().unwrap();
+    no_credentials(&report);
+    assert_eq!(
+        account(&report, "alice")
+            .get("error")
+            .and_then(Value::as_str),
+        Some("Plex account poll deadline reached")
+    );
+    assert_eq!(
+        record(&engine, "alice", "last_error").as_str(),
+        Some("Plex account poll deadline reached")
+    );
+    // Running out of time is not a poll: the account stays due.
+    assert_eq!(record(&engine, "alice", "polled_at"), polled_at);
+    assert_eq!(states(&engine, "alice"), (0, 0));
+    // The other account keeps its own budget.
+    assert!(flag(&report, "bob", "published"));
+
+    *accounts.held.lock().unwrap() = None;
+    assert!(finish_sweep(&engine));
+    assert_eq!(states(&engine, "alice"), (3, 0));
+    assert_eq!(record(&engine, "alice", "last_error"), Value::Null);
+}

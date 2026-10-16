@@ -22,6 +22,10 @@ const MAX_ITEMS: usize = 100_000;
 /// deadline, so no total item or page count applies.
 const PAGE_SIZE: usize = 200;
 const SEARCH_BUDGET: Duration = Duration::from_secs(90);
+const SEARCH_EXPIRED: &str = "Search: indexer search exceeded its time budget";
+/// The outcome of a requester account poll that ran out of time, before or
+/// during a Plex request.
+pub(crate) const PLEX_POLL_DEADLINE: &str = "Plex account poll deadline reached";
 const CATALOG_CACHE_TTL: Duration = Duration::from_secs(3_600);
 const CATALOG_CACHE_BYTES: usize = 32 * 1024 * 1024;
 const CATALOG_CACHE_ENTRIES: usize = 256;
@@ -231,6 +235,7 @@ fn plex_page_before(
     headers: &[(String, String)],
     start: u64,
     deadline: Instant,
+    expired: &str,
 ) -> Result<(Vec<Value>, Option<u64>)> {
     let url = query(
         url,
@@ -240,7 +245,7 @@ fn plex_page_before(
             ("includeGuids", "1".into()),
         ],
     )?;
-    let value = fetch_json_before(&url, headers, deadline)?;
+    let value = fetch_json_before(&url, headers, deadline, expired)?;
     let (items, total) = metadata_page(&value)?;
     Ok((items.to_vec(), total))
 }
@@ -263,7 +268,7 @@ fn plex_find_before(
     let mut start = 0_u64;
     let mut previous: Option<Value> = None;
     loop {
-        let (items, total) = plex_page_before(url, headers, start, deadline)?;
+        let (items, total) = plex_page_before(url, headers, start, deadline, SEARCH_EXPIRED)?;
         if items.is_empty() {
             if total.is_some_and(|n| n > start) {
                 return Err("Plex: incomplete pagination".into());
@@ -468,11 +473,12 @@ pub(crate) fn watchlist_page_before(
     let (mut start, (mut items, mut total)) = match cursor.anchor {
         Some(_) => {
             let start = cursor.position - 1;
-            (start, plex_page_before(url, &headers, start, deadline)?)
+            let page = plex_page_before(url, &headers, start, deadline, PLEX_POLL_DEADLINE)?;
+            (start, page)
         }
         None => (
             cursor.position,
-            plex_page_before(url, &headers, cursor.position, deadline)?,
+            plex_page_before(url, &headers, cursor.position, deadline, PLEX_POLL_DEADLINE)?,
         ),
     };
     let mut skip = 0;
@@ -484,7 +490,8 @@ pub(crate) fn watchlist_page_before(
             if items.len() == 1 && !last_page(cursor.position, total, PAGE_SIZE) {
                 requests += 1;
                 start = cursor.position;
-                (items, total) = plex_page_before(url, &headers, start, deadline)?;
+                (items, total) =
+                    plex_page_before(url, &headers, start, deadline, PLEX_POLL_DEADLINE)?;
                 skip = 0;
             }
         } else {
@@ -540,15 +547,29 @@ pub(crate) fn watchlist_page_before(
     })
 }
 
-fn fetch_json_before(url: &str, headers: &[(String, String)], deadline: Instant) -> Result<Value> {
+/// One Plex JSON request bounded by `deadline`. A request that cannot start,
+/// or fails once the deadline has passed (its timeout is the time left), ends
+/// with `expired` rather than as a network failure.
+fn fetch_json_before(
+    url: &str,
+    headers: &[(String, String)],
+    deadline: Instant,
+    expired: &str,
+) -> Result<Value> {
     let timeout = deadline
         .checked_duration_since(Instant::now())
         .filter(|d| !d.is_zero())
-        .ok_or("Plex: account poll deadline reached")?;
+        .ok_or(expired)?;
     let response = client()
         .with_timeout(timeout.min(Duration::from_secs(10)))
         .request("GET", url, headers, &[])
-        .map_err(|_| "Plex: network request failed")?;
+        .map_err(|_| {
+            if Instant::now() >= deadline {
+                expired
+            } else {
+                "Plex: network request failed"
+            }
+        })?;
     if !(200..300).contains(&response.status) {
         return Err(format!("Plex: HTTP response {}", response.status));
     }
@@ -589,7 +610,12 @@ fn verified_requester_config_before(
     cfg.plex.enabled = true;
     cfg.plex.watchlist_url = account.watchlist_url.clone();
     let headers = plex_headers(&cfg)?;
-    let identity = fetch_json_before(&account.identity_url, &headers, deadline)?;
+    let identity = fetch_json_before(
+        &account.identity_url,
+        &headers,
+        deadline,
+        PLEX_POLL_DEADLINE,
+    )?;
     if integer(&identity, "id").map(|n| n.to_string()).as_deref() != Some(&account.expected_user_id)
     {
         return Err("Plex account identity changed".into());
@@ -1798,7 +1824,7 @@ fn remaining_search_time(deadline: Instant) -> Result<Duration> {
     deadline
         .checked_duration_since(Instant::now())
         .filter(|remaining| !remaining.is_zero())
-        .ok_or_else(|| "Search: indexer search exceeded its time budget".into())
+        .ok_or_else(|| SEARCH_EXPIRED.into())
 }
 
 /// Explains source selection without downloading, storing or exposing URLs.
@@ -2637,6 +2663,67 @@ mod tests {
         };
         assert_eq!(error, "Search: indexer search exceeded its time budget");
         assert!(!error.contains("private-indexer-label"));
+        assert!(matches!(
+            listener.accept(),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock
+        ));
+    }
+
+    /// A loopback Plex peer for one request: it hangs up at once, or holds
+    /// the request unanswered until the client hangs up.
+    fn plex_peer(hold: bool) -> (String, std::thread::JoinHandle<()>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/identity", listener.local_addr().unwrap());
+        let peer = std::thread::spawn(move || {
+            use std::io::Read;
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(30)))
+                .unwrap();
+            let mut head = Vec::new();
+            while !head.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                stream.read_exact(&mut byte).unwrap();
+                head.push(byte[0]);
+            }
+            if hold {
+                assert!(matches!(stream.read(&mut [0; 64]), Ok(0) | Err(_)));
+            }
+        });
+        (url, peer)
+    }
+
+    #[test]
+    fn a_plex_request_cut_off_by_its_deadline_reports_the_deadline() {
+        let expired = "Fixture deadline reached";
+        let (url, peer) = plex_peer(true);
+        let started = Instant::now();
+        let deadline = started + Duration::from_millis(200);
+        assert_eq!(
+            fetch_json_before(&url, &[], deadline, expired).unwrap_err(),
+            expired
+        );
+        assert!(Instant::now() >= deadline);
+        assert!(started.elapsed() < Duration::from_secs(10));
+        peer.join().unwrap();
+
+        // A failure before the deadline is still a network failure.
+        let (url, peer) = plex_peer(false);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        assert_eq!(
+            fetch_json_before(&url, &[], deadline, expired).unwrap_err(),
+            "Plex: network request failed"
+        );
+        peer.join().unwrap();
+
+        // A deadline already reached contacts nobody.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/identity", listener.local_addr().unwrap());
+        assert_eq!(
+            fetch_json_before(&url, &[], Instant::now(), expired).unwrap_err(),
+            expired
+        );
         assert!(matches!(
             listener.accept(),
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock
