@@ -3879,6 +3879,51 @@ fn a_filtered_search_reaches_rows_beyond_every_former_page_with_bounded_scans() 
 }
 
 #[test]
+fn a_job_beyond_the_first_pages_enters_and_leaves_a_state_search_when_it_changes() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    bulk(
+        &mut store,
+        (0..2_500).map(|n| raw_job(n, 1_000 + n)).collect(),
+    );
+    let cancelled = JobFilter {
+        text: None,
+        state: Some("cancelled".into()),
+    };
+    // Every window of a search from the start, as the web UI rereads it after
+    // a live change, with the sequence the change produced.
+    let search = |store: &mut Store| {
+        let mut after: Option<String> = None;
+        let mut found = Vec::new();
+        loop {
+            let (page, _) = store
+                .search(&cancelled, false, after.as_deref(), 50)
+                .unwrap();
+            found.extend(page.jobs.into_iter().map(|job| (job.id, job.state)));
+            after = page.next;
+            if after.is_none() {
+                return (found, page.sequence);
+            }
+        }
+    };
+    let (found, before) = search(&mut store);
+    assert!(found.is_empty());
+    // Job 3 is among the oldest: beyond any first page and the first window.
+    let id = format!("{:032x}", 3);
+    store.cancel(&id).unwrap();
+    let (found, entered) = search(&mut store);
+    assert_eq!(found, vec![(id.clone(), "cancelled".to_owned())]);
+    assert!(
+        entered > before,
+        "the change advances the sequence clients watch"
+    );
+    store.retry(&id).unwrap();
+    let (found, left) = search(&mut store);
+    assert!(found.is_empty());
+    assert!(left > entered);
+}
+
+#[test]
 fn job_cursors_stay_stable_under_writes_and_reject_invalid_or_stale_positions() {
     let directory = Directory::new();
     let mut store = Store::open(&directory.0).unwrap();

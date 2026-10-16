@@ -318,10 +318,16 @@ const jobsLoaded = () => {
 };
 // The filter and state run on the server, so they find jobs on pages that are
 // not loaded. Each request examines a bounded window of jobs; a search reads a
-// few windows at once and "Search further" continues from its cursor.
+// few windows at once and "Search further" continues from its cursor. A live
+// change can move any job into or out of the search, so the part already
+// searched is read again, at most once per second, and replaces the results.
 const JOB_STATES = ['queued', 'processing', 'downloading', 'importing', 'ready', 'failed', 'cancelled'];
 const SEARCH_WINDOWS = 4;
-const jobSearch = { query: '', items: [], next: null, scanned: 0, total: null, generation: 0, busy: false };
+const jobSearch = {
+  query: '', items: [], next: null, scanned: 0, total: null, requests: 0,
+  generation: 0, busy: false, refreshing: false, stale: false, timer: 0,
+};
+const searchStart = () => ({ items: [], next: null, scanned: 0, total: null, requests: 0 });
 function jobQuery() {
   const params = new URLSearchParams();
   const needle = $('#job-filter').value.trim();
@@ -330,34 +336,68 @@ function jobQuery() {
   if (state) params.set('state', state);
   return params.toString();
 }
-async function searchJobs(more) {
-  const query = jobQuery();
-  if (!more) {
-    jobSearch.generation += 1;
-    Object.assign(jobSearch, { query, items: [], next: null, scanned: 0, total: null, busy: false });
-    if (!query) { views.jobs.render(); return; }
-  }
-  if (jobSearch.busy || (more && !jobSearch.next)) return;
+// Reads windows into `result` until it holds a page of matches or made
+// SEARCH_WINDOWS requests, and in any case until it examined `reach` jobs,
+// within `budget` requests. Only the latest read of the latest search is shown.
+async function readJobSearch(result, reach, budget, refreshing) {
   const generation = jobSearch.generation;
-  jobSearch.busy = true;
+  Object.assign(jobSearch, { busy: true, refreshing });
   views.jobs.render();
   try {
     let windows = 0;
     do {
-      const after = jobSearch.next ? `&after=${encodeURIComponent(jobSearch.next)}` : '';
-      const page = await link.call('GET', `/api/jobs?limit=50&${query}${after}`);
+      const after = result.next ? `&after=${encodeURIComponent(result.next)}` : '';
+      const page = await link.call('GET', `/api/jobs?limit=50&${jobSearch.query}${after}`);
       if (generation !== jobSearch.generation) return;
-      jobSearch.items.push(...itemsOf(page.jobs));
-      jobSearch.next = page.next;
-      jobSearch.scanned += Number(page.scanned) || 0;
-      jobSearch.total = page.total;
+      result.items.push(...itemsOf(page.jobs));
+      result.next = page.next;
+      result.scanned += Number(page.scanned) || 0;
+      result.total = page.total;
+      result.requests += 1;
       windows += 1;
-    } while (jobSearch.next && jobSearch.items.length < 50 && windows < SEARCH_WINDOWS);
+    } while (result.next && windows < budget && (result.scanned < reach || (result.items.length < 50 && windows < SEARCH_WINDOWS)));
+    Object.assign(jobSearch, result);
   } catch (error) {
     if (generation === jobSearch.generation) toast(error.message, 'bad');
   } finally {
-    if (generation === jobSearch.generation) { jobSearch.busy = false; views.jobs.render(); }
+    if (generation === jobSearch.generation) {
+      Object.assign(jobSearch, { busy: false, refreshing: false });
+      if (jobSearch.stale) refreshJobSearch();
+      views.jobs.render();
+    }
   }
+}
+async function searchJobs(more) {
+  if (!more) {
+    clearTimeout(jobSearch.timer);
+    jobSearch.generation += 1;
+    Object.assign(jobSearch, { query: jobQuery(), ...searchStart(), busy: false, refreshing: false, stale: false, timer: 0 });
+    if (!jobSearch.query) { views.jobs.render(); return; }
+    await readJobSearch(searchStart(), 0, SEARCH_WINDOWS, false);
+    return;
+  }
+  if (!jobSearch.next || (jobSearch.busy && !jobSearch.refreshing)) return;
+  if (jobSearch.refreshing) {
+    // The user's request goes first; the refresh runs again after it.
+    jobSearch.generation += 1;
+    jobSearch.stale = true;
+  }
+  const { items, next, scanned, total, requests } = jobSearch;
+  await readJobSearch({ items: [...items], next, scanned, total, requests }, 0, SEARCH_WINDOWS, false);
+}
+function refreshJobSearch() {
+  if (!jobSearch.query) return;
+  if (jobSearch.busy) { jobSearch.stale = true; return; }
+  if (jobSearch.timer) return;
+  jobSearch.timer = setTimeout(() => {
+    jobSearch.timer = 0;
+    if (!jobSearch.query) return;
+    if (jobSearch.busy) { jobSearch.stale = true; return; }
+    jobSearch.stale = false;
+    // New jobs come first, so the searched part grew by the jobs added since.
+    const added = Math.max(0, (Number(data.get('jobs')?.data?.total) || 0) - (Number(jobSearch.total) || 0));
+    readJobSearch(searchStart(), jobSearch.scanned + added, jobSearch.requests + SEARCH_WINDOWS, true);
+  }, 1000);
 }
 views.jobs = {
   init() {
@@ -395,13 +435,16 @@ views.jobs = {
       (s) => h('button', { type: 'button', dataset: { state: s }, 'aria-pressed': 'false' }, s),
       (el, s) => el.setAttribute('aria-pressed', String(jobStates.has(s))));
     if (jobSearch.query) {
-      // Live rows replace their stale search copies; membership stays the search's.
+      // Live rows replace their stale search copies until the refresh lands;
+      // a row that left the selected state is hidden meanwhile.
       const live = new Map(jobsLoaded().map((j) => [j.id, j]));
-      const shown = jobSearch.items.map((j) => live.get(j.id) ?? j);
-      more.hidden = !jobSearch.next || jobSearch.busy;
+      const [state] = jobStates;
+      const shown = jobSearch.items.map((j) => live.get(j.id) ?? j).filter((j) => !state || j.state === state);
+      const searching = jobSearch.busy && !jobSearch.refreshing;
+      more.hidden = !jobSearch.next || searching;
       more.textContent = `Search further (${jobSearch.scanned} of ${jobSearch.total ?? '?'} jobs searched)`;
       if (!shown.length) {
-        list.replaceChildren(h('li', { class: 'empty' }, jobSearch.busy ? 'Searching…' : jobSearch.next ? 'No match yet; search further.' : 'No job matches the filter.'));
+        list.replaceChildren(h('li', { class: 'empty' }, searching ? 'Searching…' : jobSearch.next ? 'No match yet; search further.' : 'No job matches the filter.'));
       } else { list.querySelector('.empty')?.remove(); reconcile(list, shown, (j) => j.id, createJobRow, updateJobRow); }
       return;
     }
@@ -769,6 +812,7 @@ function setup() {
       resetTail(jobsTail);
       resetTail(libraryTail);
       resetTail(transfersTail);
+      refreshJobSearch();
       $('#login').close();
     }
   });
@@ -782,6 +826,7 @@ function setup() {
     const tail = detail.topic === 'jobs' ? jobsTail : detail.topic === 'library' ? libraryTail : detail.topic === 'transfers' ? transfersTail : null;
     if (tail && previous && pageMembership(previous.data, detail.topic) !== pageMembership(detail.data, detail.topic)) resetTail(tail);
     data.set(detail.topic, { status: detail.status, data: detail.data, at: Date.now() });
+    if (detail.topic === 'jobs' && previous?.data?.sequence !== detail.data?.sequence) refreshJobSearch();
     if (tail && (previous?.data?.sequence !== detail.data?.sequence ||
       (detail.topic === 'transfers' && previous?.data?.revision !== detail.data?.revision))) refreshTail(detail.topic, tail, detail.data);
     if (queued) return;

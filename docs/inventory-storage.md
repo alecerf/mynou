@@ -273,7 +273,9 @@ rows after its cursor and returns the matches, `scanned` (rows examined) and
 `next`, the cursor of the last examined row. A page can therefore hold fewer
 matches than its limit, or none, while `next` continues the search: follow it
 until it is null to search the whole inventory. The web interface searches this
-way, reads a few windows at a time and offers "Search further".
+way, reads a few windows at a time and offers "Search further". When jobs change
+or the connection reopens, it reads the part already searched again, at most
+once per second, so jobs entering or leaving the filter appear or disappear.
 
 ### Migration progress
 
