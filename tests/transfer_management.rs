@@ -1563,6 +1563,45 @@ fn retained_transfer_pages_and_point_controls_reach_beyond_the_resident_window()
     let (status, metrics) = server.call("GET", "/api/status", Some(TOKEN), None);
     assert_eq!(status, 200);
     assert_eq!(metrics.get("torrents").and_then(Value::as_u64), Some(63));
+    // Storage diagnostics come from each index root; a store held by a
+    // running operation reports `busy` rather than blocking the request.
+    let mut transfers = None;
+    for _ in 0..100 {
+        let (_, metrics) = server.call("GET", "/api/status", Some(TOKEN), None);
+        let storage = metrics.get("storage").unwrap().clone();
+        for store in [
+            "jobs",
+            "series",
+            "requesters",
+            "announcements",
+            "sources",
+            "feeds",
+        ] {
+            assert!(
+                storage.get(store).unwrap().get("state").is_some(),
+                "{store}"
+            );
+        }
+        let report = storage.get("transfers").unwrap().clone();
+        if report.get("state").and_then(Value::as_str) == Some("index") {
+            transfers = Some(report);
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    let transfers = transfers.expect("transfer index stayed busy");
+    assert!(transfers.get("entries").and_then(Value::as_u64).unwrap() >= 63);
+    assert!(
+        transfers
+            .get("index_bytes")
+            .and_then(Value::as_u64)
+            .unwrap()
+            > 0
+    );
+    assert_eq!(
+        transfers.get("commit_uncertain").and_then(Value::as_bool),
+        Some(false)
+    );
 
     let mut config = configuration();
     config.insert("listen", server.origin.strip_prefix("http://").unwrap());

@@ -68,6 +68,8 @@ pub struct Page {
 /// Use `create` for a new directory and `open` for this format only.
 pub struct Index {
     directory: PathBuf,
+    /// English store name for operator errors, derived from the directory.
+    name: &'static str,
     _lock: File,
     tree: File,
     header: Header,
@@ -144,12 +146,24 @@ impl Index {
 
     fn available(&self) -> Result<()> {
         if self.poisoned {
-            Err(
-                "Inventory commit outcome is uncertain; reopen storage before reading or writing"
-                    .into(),
-            )
+            Err(format!(
+                "{}: an earlier change failed, so reads and writes are paused; {RECOVER}",
+                self.name
+            ))
         } else {
             Ok(())
+        }
+    }
+
+    /// Size and state from the durable root alone: no tree walk or scan.
+    pub fn stats(&self) -> Stats {
+        Stats {
+            entries: self.header.count,
+            index_bytes: tree::offset(self.header.next).unwrap_or(0),
+            log_bytes: self.header.log_bytes,
+            live_bytes: self.header.live_bytes,
+            sequence: self.header.sequence,
+            uncertain: self.poisoned,
         }
     }
 
@@ -233,13 +247,23 @@ impl Index {
 
     /// Puts and deletes are one recoverable commit. A failed commit may have
     /// taken effect; reopen and inspect state, rather than blindly retrying.
+    /// Every error names the store and says whether the change was saved.
     pub fn commit(&mut self, changes: Vec<Change>) -> Result<u64> {
         self.available()?;
+        let name = self.name;
         if self.read_only {
-            return Err("Inventory storage is read-only".into());
+            return Err(format!(
+                "{name} is open read-only; the change was not saved"
+            ));
         }
-        if changes.is_empty() || changes.len() > MAX_CHANGES {
-            return Err("Invalid inventory transaction size".into());
+        if changes.is_empty() {
+            return Err(format!("{name}: empty change; nothing was saved"));
+        }
+        if changes.len() > MAX_CHANGES {
+            return Err(format!(
+                "{name}: one change touches more than {MAX_CHANGES} entries, its operation bound \
+                 (not an inventory limit); it was not saved and existing records are unchanged. {REPORT}"
+            ));
         }
         let mut keys = BTreeSet::new();
         let mut bytes = 0usize;
@@ -253,26 +277,44 @@ impl Index {
                     };
                     if value.len() > limit {
                         return Err(if limit == MAX_VALUE_BYTES {
-                            "Inventory value exceeds 1 MiB"
+                            format!(
+                                "{name}: a single record is larger than 1 MiB; it was not saved \
+                                 and existing records are unchanged. {REPORT}"
+                            )
                         } else {
-                            "Inline inventory value exceeds 32 bytes"
-                        }
-                        .into());
+                            format!("{name}: inline value exceeds 32 bytes; nothing was saved")
+                        });
                     }
-                    bytes = bytes
-                        .checked_add(value.len())
-                        .ok_or("Inventory transaction size overflow")?;
+                    bytes = bytes.saturating_add(value.len());
                     key
                 }
                 Change::Delete(key) => key,
             };
             if !keys.insert(*key) {
-                return Err("Duplicate inventory transaction key".into());
+                return Err(format!(
+                    "{name}: duplicate key in one change; nothing was saved"
+                ));
             }
         }
         if bytes > persistence::MAX_WAL_BYTES {
-            return Err("Inventory transaction exceeds its byte budget".into());
+            return Err(format!(
+                "{name}: one change holds more than 128 MiB, its operation bound (not an \
+                 inventory limit); it was not saved and existing records are unchanged. {REPORT}"
+            ));
         }
+        let (transaction, bytes) = self
+            .stage(changes)
+            .map_err(|error| format!("{name}: the change was not saved: {error}"))?;
+        // Applying rewrites pages in place: nothing cached may outlive it.
+        self.cache.clear();
+        persistence::publish_and_apply(self, &transaction, &bytes)
+            .map_err(|failure| failure.explain(name))?;
+        self.header = transaction.after;
+        Ok(self.header.sequence)
+    }
+
+    /// Prepares a validated change without touching any file.
+    fn stage(&mut self, changes: Vec<Change>) -> Result<(persistence::Transaction, Vec<u8>)> {
         let before = self.header;
         let mut log = Log::new(before);
         // Existing values are verified before staging; replacement is not a
@@ -326,11 +368,70 @@ impl Index {
             actions,
         };
         let bytes = transaction.encode()?;
-        // Applying rewrites pages in place: nothing cached may outlive it.
-        self.cache.clear();
-        persistence::publish_and_apply(self, &transaction, &bytes)?;
-        self.header = transaction.after;
-        Ok(self.header.sequence)
+        Ok((transaction, bytes))
+    }
+}
+
+/// Operator action after an uncertain commit or interrupted recovery.
+pub(crate) const RECOVER: &str = "existing records and recovery files are kept; \
+restart Mynou to finish recovery and do not delete files in the data directory";
+/// Operator action after a change refused by an operation bound.
+const REPORT: &str = "Report the item that produced it; Mynou cannot store it";
+
+/// Durable size and state of one index, read from its root in constant time.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Stats {
+    /// Index entries, including the store's own secondary keys.
+    pub entries: u64,
+    /// Bytes of the tree file.
+    pub index_bytes: u64,
+    /// Bytes of value-log segments, including garbage awaiting cleaning.
+    pub log_bytes: u64,
+    /// Value-log bytes still referenced by the tree.
+    pub live_bytes: u64,
+    pub sequence: u64,
+    /// A commit failed with an uncertain outcome; recovery runs on reopen.
+    pub uncertain: bool,
+}
+
+impl Stats {
+    pub fn to_value(self) -> crate::json::Value {
+        let mut value = crate::json::Value::object();
+        let number = |n: u64| crate::json::Value::Number(n as f64);
+        value.insert("entries", number(self.entries));
+        value.insert("index_bytes", number(self.index_bytes));
+        value.insert("log_bytes", number(self.log_bytes));
+        value.insert("live_bytes", number(self.live_bytes));
+        value.insert("sequence", number(self.sequence));
+        value.insert("commit_uncertain", self.uncertain);
+        value
+    }
+}
+
+/// Storage report for status: the backend state and, when an index is open,
+/// its root statistics. Never reads records, so it cannot fail.
+pub(crate) fn report(state: &str, index: Option<&Index>) -> crate::json::Value {
+    let mut value = index.map_or_else(crate::json::Value::object, |index| index.stats().to_value());
+    value.insert("state", state);
+    value
+}
+
+/// English name of the store that owns an index directory, for errors.
+/// Directories are `<store>.idx`, optionally with a migration suffix.
+pub(crate) fn store_name(directory: &std::path::Path) -> &'static str {
+    let name = directory
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    match name.split_once(".idx").map_or(name, |(store, _)| store) {
+        "jobs" => "Job storage",
+        "series" => "Series storage",
+        "requesters" => "Requester storage",
+        "announcements" => "IRC announcement storage",
+        "indexers" => "Source policy storage",
+        "feeds" => "Feed storage",
+        "transfers" => "Transfer storage",
+        _ => "Inventory storage",
     }
 }
 

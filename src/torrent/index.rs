@@ -284,6 +284,10 @@ pub(super) struct TransferIndex {
     _ownership: File,
 }
 impl TransferIndex {
+    /// Index size and state for diagnostics, from the durable root only.
+    pub(super) fn storage(&self) -> crate::json::Value {
+        crate::inventory::report("index", Some(&self.index))
+    }
     pub fn open(config: &mut DownloadConfig) -> Result<Self> {
         let ownership = state_lock(&config.state_dir)?;
         let path = config.state_dir.join("transfers.idx");

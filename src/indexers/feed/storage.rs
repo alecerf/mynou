@@ -378,6 +378,15 @@ fn verify(index: &mut Index, original: Option<&Legacy>) -> Result<()> {
 }
 
 impl Storage {
+    /// Index size and state for diagnostics, from the durable root only.
+    pub(super) fn report(&self) -> crate::json::Value {
+        match &self.backend {
+            Backend::Absent => crate::inventory::report("empty", None),
+            Backend::Legacy(_) => crate::inventory::report("legacy", None),
+            Backend::Unpublished(index, _) => crate::inventory::report("migrating", Some(index)),
+            Backend::Ready(index) => crate::inventory::report("index", Some(index)),
+        }
+    }
     pub(super) fn open(directory: &Path, read_only: bool) -> Result<Self> {
         let path = directory.join("feeds.bin");
         let indexed = exists(&directory.join("feeds.idx"))?;

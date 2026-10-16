@@ -220,6 +220,9 @@ pub(crate) struct FeedStore {
     read_only: bool,
 }
 impl FeedStore {
+    pub(crate) fn storage(&self) -> crate::json::Value {
+        self.storage.report()
+    }
     pub(crate) fn open(dir: &Path, config: &Config, read_only: bool) -> Result<Self> {
         let mut storage = storage::Storage::open(dir, read_only)?;
         let mut watched = BTreeMap::new();

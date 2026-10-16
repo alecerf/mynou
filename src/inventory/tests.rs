@@ -881,3 +881,160 @@ fn swapped_index_files_are_refused_at_open_without_blocking() {
         }
     }
 }
+
+#[test]
+fn stats_follow_growth_deletion_restart_and_never_read_records() {
+    let directory = Directory::new();
+    let mut index = Index::create(&directory.0).unwrap();
+    let empty = index.stats();
+    assert_eq!(
+        (empty.entries, empty.log_bytes, empty.live_bytes),
+        (0, 0, 0)
+    );
+    for batch in 0..3u64 {
+        index
+            .commit((batch * 200..(batch + 1) * 200).map(put).collect())
+            .unwrap();
+    }
+    let grown = index.stats();
+    assert_eq!(grown.entries, 600);
+    assert!(grown.live_bytes > 0 && grown.log_bytes >= grown.live_bytes);
+    assert_eq!(
+        grown.index_bytes,
+        fs::metadata(directory.0.join("tree.bin")).unwrap().len()
+    );
+    index
+        .commit((0..150).map(|id| Change::Delete(key(id))).collect())
+        .unwrap();
+    let shrunk = index.stats();
+    assert_eq!(shrunk.entries, 450);
+    assert!(shrunk.live_bytes < grown.live_bytes);
+    assert!(!shrunk.uncertain);
+    let reads = index.requests();
+    let _ = index.stats();
+    assert_eq!(index.requests(), reads);
+    drop(index);
+    let reopened = Index::open(&directory.0, true).unwrap();
+    assert_eq!(reopened.stats(), shrunk);
+    let report = super::report("index", Some(&reopened));
+    assert_eq!(
+        report.get("entries").and_then(crate::json::Value::as_u64),
+        Some(450)
+    );
+    assert_eq!(
+        report.get("state").and_then(crate::json::Value::as_str),
+        Some("index")
+    );
+}
+
+#[test]
+fn a_full_disk_at_each_commit_stage_keeps_every_committed_record() {
+    use super::persistence::Stage;
+    for (stage, legacy) in [
+        (Stage::Wal, false),
+        (Stage::Objects, false),
+        (Stage::Objects, true),
+        (Stage::Tree, false),
+        (Stage::Directory, false),
+    ] {
+        let parent = Directory::new();
+        fs::create_dir(&parent.0).unwrap();
+        let path = parent.0.join("jobs.idx");
+        let mut index = Index::create(&path).unwrap();
+        index.legacy_records = legacy;
+        index.commit((0..40).map(put).collect()).unwrap();
+        index.fault = Some(Fault::Full(stage));
+        let error = index
+            .commit(vec![Change::Delete(key(3)), put(70)])
+            .unwrap_err();
+        assert!(error.starts_with("Job storage: "), "{error}");
+        assert!(error.contains("disk"), "{error}");
+        assert!(!error.contains(parent.0.to_str().unwrap()), "{error}");
+        let saved = stage != Stage::Wal;
+        if saved {
+            assert!(
+                error.contains("uncertain") && error.contains("restart"),
+                "{error}"
+            );
+        } else {
+            assert!(error.contains("was not saved"), "{error}");
+        }
+        assert!(index.stats().uncertain);
+        let paused = index.get(&key(1)).unwrap_err();
+        assert!(paused.starts_with("Job storage: "), "{paused}");
+        drop(index);
+        // Space is free again: recovery replays a published change or
+        // discards an unpublished one, and nothing committed is lost.
+        let mut index = Index::open(&path, false).unwrap();
+        for id in (0..40).filter(|id| *id != 3) {
+            assert_eq!(
+                index.get(&key(id)).unwrap(),
+                Some(id.to_be_bytes().to_vec())
+            );
+        }
+        assert_eq!(index.get(&key(3)).unwrap().is_none(), saved, "{stage:?}");
+        assert_eq!(index.get(&key(70)).unwrap().is_some(), saved, "{stage:?}");
+        assert_eq!(index.len().unwrap(), 40);
+        assert!(!index.stats().uncertain);
+        index.commit(vec![put(71)]).unwrap();
+    }
+}
+
+#[test]
+fn operation_bounds_have_distinct_errors_and_change_nothing() {
+    let parent = Directory::new();
+    fs::create_dir(&parent.0).unwrap();
+    let mut index = Index::create(&parent.0.join("series.idx.migrating")).unwrap();
+    index.commit(vec![put(1)]).unwrap();
+    let before = index.stats();
+    let oversized = index
+        .commit(vec![Change::Put(
+            key(2),
+            vec![0; super::MAX_VALUE_BYTES + 1],
+        )])
+        .unwrap_err();
+    assert!(oversized.starts_with("Series storage: a single record is larger than 1 MiB"));
+    let bound = index
+        .commit((0..super::MAX_CHANGES as u64 + 1).map(put).collect())
+        .unwrap_err();
+    assert!(bound.contains("operation bound") && bound.contains("not an inventory limit"));
+    assert_ne!(oversized, bound);
+    for error in [&oversized, &bound] {
+        assert!(error.contains("not saved") && error.contains("existing records are unchanged"));
+    }
+    assert!(index.is_usable());
+    assert_eq!(index.stats(), before);
+    drop(index);
+    let read_only = Index::open(&parent.0.join("series.idx.migrating"), true).unwrap();
+    assert_eq!(read_only.stats(), before);
+}
+
+#[test]
+fn store_names_come_from_the_index_directory() {
+    for (directory, name) in [
+        ("jobs.idx", "Job storage"),
+        ("jobs.idx.migrating", "Job storage"),
+        ("series.idx", "Series storage"),
+        ("requesters.idx.staging", "Requester storage"),
+        ("announcements.idx", "IRC announcement storage"),
+        ("indexers.idx", "Source policy storage"),
+        ("feeds.idx.migrating", "Feed storage"),
+        ("transfers.idx", "Transfer storage"),
+        ("mynou-inventory-0011", "Inventory storage"),
+    ] {
+        assert_eq!(super::store_name(Path::new(directory)), name);
+    }
+    let full = super::persistence::explain_open(
+        Path::new("/private/media/feeds.idx"),
+        format!(
+            "Cannot apply inventory page: {}",
+            crate::store::STORAGE_FULL
+        ),
+    );
+    assert!(full.starts_with("Feed storage: the disk is full"));
+    assert!(!full.contains("/private"));
+    assert_eq!(
+        super::persistence::explain_open(Path::new("feeds.idx"), "other".into()),
+        "other"
+    );
+}

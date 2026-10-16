@@ -130,6 +130,13 @@ fn replace(directory: &Path, path: &Path, bytes: &[u8]) -> Result<()> {
     result
 }
 impl RequesterStore {
+    /// Index size and state for diagnostics, from the durable root only.
+    pub(crate) fn storage(&self) -> crate::json::Value {
+        match &*self.backend.borrow() {
+            Backend::Legacy { .. } => crate::inventory::report("legacy", None),
+            Backend::Ready(index) => crate::inventory::report("index", Some(index)),
+        }
+    }
     pub(crate) fn open(directory: &Path, config: &Config, read_only: bool) -> Result<Self> {
         let bytes = read(&directory.join("requesters.bin"))?;
         let (backend, mut state) = if let Some(bytes) = &bytes

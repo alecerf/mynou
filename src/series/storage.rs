@@ -979,6 +979,17 @@ impl SeriesStore {
         self.reader()?.map_or(Ok(0), |index| index.sequence())
     }
 
+    /// Index size and state for diagnostics, from the durable root only.
+    pub(crate) fn storage(&self) -> Value {
+        let mut value = match &self.backend {
+            Backend::Absent => crate::inventory::report("empty", None),
+            Backend::Unmigrated => crate::inventory::report("needs_migration", None),
+            Backend::Ready(index) => crate::inventory::report("index", Some(index)),
+        };
+        value.insert("migrated_at_start", self.migration.is_some());
+        value
+    }
+
     /// Storage state for status reports; never fails on an unreadable store.
     pub fn describe(&mut self) -> Value {
         let state = match &self.backend {

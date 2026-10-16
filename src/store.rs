@@ -737,6 +737,21 @@ pub(crate) fn reject_symlinks(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Error text marking a full disk or exhausted quota; inventory errors test
+/// for it to tell the operator to free space rather than retry.
+pub(crate) const STORAGE_FULL: &str = "no space left on the storage device";
+
+/// Describes an I/O error without paths, naming exhaustion uniformly.
+pub(crate) fn io_text(error: &std::io::Error) -> String {
+    use std::io::ErrorKind;
+    match error.kind() {
+        ErrorKind::StorageFull | ErrorKind::QuotaExceeded | ErrorKind::FileTooLarge => {
+            STORAGE_FULL.to_owned()
+        }
+        _ => error.to_string(),
+    }
+}
+
 pub(crate) fn sync_directory(path: &Path) -> Result<()> {
     use std::os::unix::fs::OpenOptionsExt;
     // A FIFO swapped in for the directory must not block the open.
@@ -744,15 +759,16 @@ pub(crate) fn sync_directory(path: &Path) -> Result<()> {
         .read(true)
         .custom_flags(O_NONBLOCK)
         .open(path)
-        .map_err(|error| format!("cannot synchronize directory: {error}"))?;
+        .map_err(|error| format!("cannot synchronize directory: {}", io_text(&error)))?;
     if !directory
         .metadata()
-        .map_err(|error| format!("cannot synchronize directory: {error}"))?
+        .map_err(|error| format!("cannot synchronize directory: {}", io_text(&error)))?
         .is_dir()
     {
         return Err("cannot synchronize directory: not a directory".to_owned());
     }
-    sync_file(&directory).map_err(|error| format!("cannot synchronize directory: {error}"))
+    sync_file(&directory)
+        .map_err(|error| format!("cannot synchronize directory: {}", io_text(&error)))
 }
 
 /// Every store durability flush goes through here. On Apple platforms std
@@ -1171,6 +1187,17 @@ impl Store {
     /// Writes with uncertain outcomes block further storage operations.
     pub fn maintenance_error(&self) -> Option<&str> {
         self.maintenance_error.as_deref()
+    }
+
+    /// Index size and state for diagnostics, from the durable root only.
+    pub(crate) fn storage(&self) -> Value {
+        let mut value = match &self.backend {
+            Backend::Absent => crate::inventory::report("empty", None),
+            Backend::Unmigrated => crate::inventory::report("needs_migration", None),
+            Backend::Ready(index) => crate::inventory::report("index", Some(index)),
+        };
+        value.insert("migrated_at_start", self.migration.is_some());
+        value
     }
 
     /// Storage state for status reports; never fails on an unreadable store.

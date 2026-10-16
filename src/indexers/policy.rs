@@ -139,6 +139,9 @@ pub(crate) struct SourceStore {
     read_only: bool,
 }
 impl SourceStore {
+    pub(crate) fn storage(&self) -> crate::json::Value {
+        self.storage.report()
+    }
     fn row(&mut self, id: &str) -> Result<Record> {
         self.storage
             .row(id)?

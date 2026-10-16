@@ -523,6 +523,7 @@ impl Engine {
                 .clone()
                 .map_or(Value::Null, Value::String),
         );
+        v.insert("storage", self.storage()?);
         if let Some(client) = &self.downloads {
             v.insert("peer_port", client.listen_port() as u32);
             let (total, downloaded, uploaded) = client.aggregate_stats()?;
@@ -530,6 +531,38 @@ impl Engine {
             v.insert("downloaded_bytes", downloaded.to_string());
             v.insert("uploaded_bytes", uploaded.to_string());
         }
+        Ok(v)
+    }
+
+    /// Per-store index sizes and states, read from each durable root in
+    /// constant time; no record is read, so a large inventory costs nothing.
+    /// A store busy with a long operation reports `busy` instead of blocking.
+    pub fn storage(&self) -> Result<Value> {
+        fn read<T>(mutex: &Mutex<T>, report: impl FnOnce(&T) -> Value) -> Result<Value> {
+            match mutex.try_lock() {
+                Ok(store) => Ok(report(&store)),
+                Err(std::sync::TryLockError::WouldBlock) => {
+                    Ok(crate::inventory::report("busy", None))
+                }
+                Err(std::sync::TryLockError::Poisoned(_)) => {
+                    Err("Internal lock poisoned".to_owned())
+                }
+            }
+        }
+        let mut v = Value::object();
+        v.insert("jobs", read(&self.store, Store::storage)?);
+        v.insert("series", read(&self.series_store, |s| s.storage())?);
+        v.insert("requesters", read(&self.requester_store, |s| s.storage())?);
+        v.insert("announcements", read(&self.irc_store, |s| s.storage())?);
+        v.insert("sources", read(&self.indexer_store, |s| s.storage())?);
+        v.insert("feeds", read(&self.feed_store, |s| s.storage())?);
+        v.insert(
+            "transfers",
+            match &self.downloads {
+                Some(client) => client.storage()?,
+                None => crate::inventory::report("not_open", None),
+            },
+        );
         Ok(v)
     }
 

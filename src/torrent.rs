@@ -2038,6 +2038,17 @@ impl Client {
             .get(id)?
             .is_some())
     }
+    /// Transfer index size and state for diagnostics; `busy` while another
+    /// operation holds the index, so status never waits on it.
+    pub fn storage(&self) -> Result<crate::json::Value> {
+        match self.index.try_lock() {
+            Ok(index) => Ok(index.storage()),
+            Err(std::sync::TryLockError::WouldBlock) => Ok(crate::inventory::report("busy", None)),
+            Err(std::sync::TryLockError::Poisoned(_)) => {
+                Err("Native transfer index lock is poisoned".into())
+            }
+        }
+    }
     pub fn aggregate_stats(&self) -> Result<(u64, u64, u64)> {
         let jobs = self
             .jobs

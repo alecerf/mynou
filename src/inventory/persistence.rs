@@ -6,8 +6,8 @@ use crate::{
     Result,
     crypto::{random_bytes, sha256},
     store::{
-        before_private_open, private_options, reject_symlinks, sync_directory, sync_file,
-        try_lock_file,
+        STORAGE_FULL, before_private_open, io_text, private_options, reject_symlinks, sync_directory,
+        sync_file, try_lock_file,
     },
 };
 use std::{
@@ -250,7 +250,7 @@ impl Transaction {
         {
             return Err("Stale inventory WAL disagrees with the live root".into());
         }
-        let length = file.metadata().map_err(|error| error.to_string())?.len();
+        let length = file.metadata().map_err(|error| io_text(&error))?.len();
         if length < tree::offset(self.before.next)? || length > tree::offset(self.after.next)? {
             return Err("Inventory file length disagrees with recovery".into());
         }
@@ -303,7 +303,7 @@ impl<'a> Reader<'a> {
 fn private_directory(path: &Path) -> Result<()> {
     reject_symlinks(path)?;
     let metadata = fs::symlink_metadata(path)
-        .map_err(|error| format!("Cannot inspect inventory directory: {error}"))?;
+        .map_err(|error| format!("Cannot inspect inventory directory: {}", io_text(&error)))?;
     if !metadata.is_dir() || metadata.permissions().mode() & 0o077 != 0 {
         return Err("Inventory directory must be private and regular".into());
     }
@@ -313,7 +313,7 @@ fn private_directory(path: &Path) -> Result<()> {
 fn private_file(path: &Path, writable: bool) -> Result<File> {
     reject_symlinks(path)?;
     let metadata = fs::symlink_metadata(path)
-        .map_err(|error| format!("Cannot inspect inventory file: {error}"))?;
+        .map_err(|error| format!("Cannot inspect inventory file: {}", io_text(&error)))?;
     if !metadata.is_file() || metadata.nlink() != 1 || metadata.permissions().mode() & 0o077 != 0 {
         return Err("Inventory files must be private regular files without hard links".into());
     }
@@ -322,8 +322,8 @@ fn private_file(path: &Path, writable: bool) -> Result<File> {
         .read(true)
         .write(writable)
         .open(path)
-        .map_err(|error| format!("Cannot open inventory file: {error}"))?;
-    let opened = file.metadata().map_err(|error| error.to_string())?;
+        .map_err(|error| format!("Cannot open inventory file: {}", io_text(&error)))?;
+    let opened = file.metadata().map_err(|error| io_text(&error))?;
     if !opened.is_file() {
         return Err("Inventory files must be private regular files without hard links".into());
     }
@@ -344,14 +344,17 @@ fn new_file(path: &Path) -> Result<File> {
         .write(true)
         .create_new(true)
         .open(path)
-        .map_err(|error| format!("Cannot create inventory file: {error}"))
+        .map_err(|error| format!("Cannot create inventory file: {}", io_text(&error)))
 }
 
 fn present(path: &Path) -> Result<bool> {
     match fs::symlink_metadata(path) {
         Ok(_) => Ok(true),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(format!("Cannot inspect inventory state: {error}")),
+        Err(error) => Err(format!(
+            "Cannot inspect inventory state: {}",
+            io_text(&error)
+        )),
     }
 }
 
@@ -375,7 +378,12 @@ pub(super) fn create_bound(directory: &Path, identity: [u8; 32]) -> Result<Index
     fs::DirBuilder::new()
         .mode(0o700)
         .create(directory)
-        .map_err(|error| format!("Inventory creation requires a new directory: {error}"))?;
+        .map_err(|error| {
+            format!(
+                "Inventory creation requires a new directory: {}",
+                io_text(&error)
+            )
+        })?;
     creation_checkpoint(1)?;
     let lock = new_file(&directory.join(".lock"))?;
     try_lock_file(&lock).map_err(|error| format!("Cannot lock inventory: {error}"))?;
@@ -388,12 +396,12 @@ pub(super) fn create_bound(directory: &Path, identity: [u8; 32]) -> Result<Index
     id_file
         .write_all(&bytes)
         .and_then(|()| sync_file(&id_file))
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| io_text(&error))?;
     creation_checkpoint(3)?;
     fs::DirBuilder::new()
         .mode(0o700)
         .create(directory.join("objects"))
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| io_text(&error))?;
     sync_directory(&directory.join("objects"))?;
     creation_checkpoint(4)?;
     let header = Header::empty(identity);
@@ -401,9 +409,9 @@ pub(super) fn create_bound(directory: &Path, identity: [u8; 32]) -> Result<Index
     creation_checkpoint(7)?;
     tree.write_all(&header.encode())
         .and_then(|()| sync_file(&tree))
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| io_text(&error))?;
     creation_checkpoint(5)?;
-    sync_file(&lock).map_err(|error| error.to_string())?;
+    sync_file(&lock).map_err(|error| io_text(&error))?;
     sync_directory(directory)?;
     sync_directory(
         directory
@@ -413,6 +421,7 @@ pub(super) fn create_bound(directory: &Path, identity: [u8; 32]) -> Result<Index
     )?;
     Ok(Index {
         directory: directory.to_owned(),
+        name: super::store_name(directory),
         _lock: lock,
         tree,
         header,
@@ -444,6 +453,15 @@ fn clean_path(path: &Path) -> Result<()> {
 }
 
 pub(super) fn open(
+    directory: &Path,
+    read_only: bool,
+    expected_identity: Option<[u8; 32]>,
+) -> Result<Index> {
+    open_checked(directory, read_only, expected_identity)
+        .map_err(|error| explain_open(directory, error))
+}
+
+fn open_checked(
     directory: &Path,
     read_only: bool,
     expected_identity: Option<[u8; 32]>,
@@ -491,14 +509,16 @@ pub(super) fn open(
             true,
             #[cfg(test)]
             None,
+            #[cfg(not(test))]
+            (),
         )?;
         fs::remove_file(&published)
-            .map_err(|error| format!("Cannot retire inventory WAL: {error}"))?;
+            .map_err(|error| format!("Cannot retire inventory WAL: {}", io_text(&error)))?;
         sync_directory(directory)?;
     }
     let header = Header::decode(&tree::read_page(&mut tree, 0)?)?;
     if header.identity != identity
-        || tree.metadata().map_err(|error| error.to_string())?.len() != tree::offset(header.next)?
+        || tree.metadata().map_err(|error| io_text(&error))?.len() != tree::offset(header.next)?
     {
         return Err("Inventory identity or file length mismatch".into());
     }
@@ -517,11 +537,12 @@ pub(super) fn open(
             return Err("Inventory has unpublished staging; writable recovery is required".into());
         }
         private_file(&staging, false)?;
-        fs::remove_file(&staging).map_err(|error| error.to_string())?;
+        fs::remove_file(&staging).map_err(|error| io_text(&error))?;
         sync_directory(directory)?;
     }
     Ok(Index {
         directory: directory.to_owned(),
+        name: super::store_name(directory),
         _lock: lock,
         tree,
         header,
@@ -542,13 +563,13 @@ pub(super) fn open(
 }
 
 fn read_bounded(file: &mut File, maximum: usize) -> Result<Vec<u8>> {
-    if file.metadata().map_err(|error| error.to_string())?.len() > maximum as u64 {
+    if file.metadata().map_err(|error| io_text(&error))?.len() > maximum as u64 {
         return Err("Inventory file exceeds its byte limit".into());
     }
     let mut bytes = Vec::new();
     file.take(maximum as u64 + 1)
         .read_to_end(&mut bytes)
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| io_text(&error))?;
     if bytes.len() > maximum {
         return Err("Inventory file grew beyond its byte limit".into());
     }
@@ -661,10 +682,10 @@ impl Segment {
     pub(super) fn open(directory: &Path, identity: [u8; 32], number: u64) -> Result<Self> {
         private_directory(&directory.join("segments"))?;
         let mut file = private_file(&segment_path(directory, number), false)?;
-        let length = file.metadata().map_err(|error| error.to_string())?.len();
+        let length = file.metadata().map_err(|error| io_text(&error))?.len();
         let mut header = [0; SEGMENT_HEADER_BYTES as usize];
         file.read_exact(&mut header)
-            .map_err(|error| format!("Cannot read inventory segment: {error}"))?;
+            .map_err(|error| format!("Cannot read inventory segment: {}", io_text(&error)))?;
         if header[..] != segment_header(identity, number)[..] {
             return Err("Inventory segment identity or checksum mismatch".into());
         }
@@ -683,7 +704,7 @@ impl Segment {
         self.file
             .seek(SeekFrom::Start(offset))
             .and_then(|_| self.file.read_exact(&mut prefix))
-            .map_err(|error| format!("Cannot read inventory segment: {error}"))?;
+            .map_err(|error| format!("Cannot read inventory segment: {}", io_text(&error)))?;
         let length = u32::from_le_bytes(
             prefix[72..76]
                 .try_into()
@@ -696,7 +717,7 @@ impl Segment {
         bytes[..76].copy_from_slice(&prefix);
         self.file
             .read_exact(&mut bytes[76..])
-            .map_err(|error| format!("Cannot read inventory segment: {error}"))?;
+            .map_err(|error| format!("Cannot read inventory segment: {}", io_text(&error)))?;
         let (key, data) = open_envelope(&bytes)?;
         Ok(Some((key, data.to_vec())))
     }
@@ -738,49 +759,145 @@ fn check_segment_path(directory: &Path, number: u64) -> Result<()> {
     Ok(())
 }
 
+/// Why a commit failed and whether its WAL was already published, which
+/// makes its outcome uncertain until recovery replays or discards it.
+pub(super) struct Failure {
+    published: bool,
+    error: String,
+}
+
+impl Failure {
+    fn before(error: String) -> Self {
+        Self {
+            published: false,
+            error,
+        }
+    }
+    fn after(error: String) -> Self {
+        Self {
+            published: true,
+            error,
+        }
+    }
+
+    /// An English error that names the store and the operator action.
+    pub(super) fn explain(self, name: &str) -> String {
+        let full = self.error.contains(STORAGE_FULL);
+        let recover = super::RECOVER;
+        match (self.published, full) {
+            (false, true) => format!(
+                "{name}: the disk is full, so the change was not saved and existing records are \
+                 unchanged; free disk space, then restart Mynou"
+            ),
+            (false, false) => format!(
+                "{name}: the change was not saved and existing records are unchanged ({}); \
+                 restart Mynou before retrying",
+                self.error
+            ),
+            (true, true) => format!(
+                "{name}: the disk filled up while a change was being saved, so its outcome is \
+                 uncertain; {recover} once disk space is free"
+            ),
+            (true, false) => format!(
+                "{name}: the outcome of a change is uncertain ({}); {recover}",
+                self.error
+            ),
+        }
+    }
+}
+
+/// Explains an open whose recovery ran out of space: the WAL is kept, so a
+/// restart after freeing space completes it. Other errors are unchanged.
+pub(super) fn explain_open(directory: &Path, error: String) -> String {
+    if error.contains(STORAGE_FULL) {
+        format!(
+            "{}: the disk is full, so recovery could not finish; {} once disk space is free",
+            super::store_name(directory),
+            super::RECOVER
+        )
+    } else {
+        error
+    }
+}
+
+#[cfg(test)]
+fn inject(fault: Option<Fault>, stage: Stage) -> std::io::Result<()> {
+    if fault == Some(Fault::Full(stage)) {
+        Err(std::io::ErrorKind::StorageFull.into())
+    } else {
+        Ok(())
+    }
+}
+#[cfg(not(test))]
+fn inject(_: (), _: Stage) -> std::io::Result<()> {
+    Ok(())
+}
+
 pub(super) fn publish_and_apply(
     index: &mut Index,
     transaction: &Transaction,
     bytes: &[u8],
-) -> Result<()> {
-    transaction.validate_overlay(&mut index.tree)?;
-    preflight(&index.directory, transaction)?;
+) -> std::result::Result<(), Failure> {
+    #[cfg(test)]
+    let fault = index.fault;
+    #[cfg(not(test))]
+    let fault = ();
+    transaction
+        .validate_overlay(&mut index.tree)
+        .map_err(Failure::before)?;
+    preflight(&index.directory, transaction).map_err(Failure::before)?;
     let staging = index.directory.join("transaction.tmp");
     let published = index.directory.join("transaction.bin");
-    if present(&staging)? || present(&published)? {
-        return Err("Inventory recovery artifacts already exist; reopen storage".into());
+    if present(&staging).map_err(Failure::before)?
+        || present(&published).map_err(Failure::before)?
+    {
+        return Err(Failure::before(
+            "Inventory recovery artifacts already exist; reopen storage".into(),
+        ));
     }
-    // Any error from creating the staging file onward has an uncertain outcome.
+    // From the staging file onward, storage needs a reopen: recovery removes
+    // unpublished staging and replays a published WAL.
     index.poisoned = true;
-    let mut wal = new_file(&staging)?;
-    wal.write_all(bytes)
+    let mut wal = new_file(&staging).map_err(Failure::before)?;
+    inject(fault, Stage::Wal)
+        .and_then(|()| wal.write_all(bytes))
         .and_then(|()| sync_file(&wal))
-        .map_err(|error| format!("Cannot stage inventory transaction: {error}"))?;
+        .map_err(|error| {
+            Failure::before(format!(
+                "Cannot stage inventory transaction: {}",
+                io_text(&error)
+            ))
+        })?;
     #[cfg(test)]
     if index.fault == Some(Fault::Staged) {
-        return Err("Injected interruption before WAL publication".into());
+        return Err(Failure::before(
+            "Injected interruption before WAL publication".into(),
+        ));
     }
-    fs::rename(&staging, &published)
-        .map_err(|error| format!("Cannot publish inventory WAL: {error}"))?;
-    sync_directory(&index.directory)?;
+    fs::rename(&staging, &published).map_err(|error| {
+        Failure::before(format!("Cannot publish inventory WAL: {}", io_text(&error)))
+    })?;
+    inject(fault, Stage::Directory)
+        .map_err(|error| format!("cannot synchronize directory: {}", io_text(&error)))
+        .and_then(|()| sync_directory(&index.directory))
+        .map_err(Failure::after)?;
     #[cfg(test)]
     if index.fault == Some(Fault::Published) {
-        return Err("Injected interruption after WAL publication".into());
+        return Err(Failure::after(
+            "Injected interruption after WAL publication".into(),
+        ));
     }
-    apply(
-        &index.directory,
-        &mut index.tree,
-        transaction,
-        false,
-        #[cfg(test)]
-        index.fault,
-    )?;
-    fs::remove_file(&published).map_err(|error| format!("Cannot retire inventory WAL: {error}"))?;
+    apply(&index.directory, &mut index.tree, transaction, false, fault).map_err(Failure::after)?;
+    fs::remove_file(&published)
+        .map_err(|error| format!("Cannot retire inventory WAL: {}", io_text(&error)))
+        .map_err(Failure::after)?;
     #[cfg(test)]
     if index.fault == Some(Fault::Unlinked) {
-        return Err("Injected interruption before WAL retirement sync".into());
+        return Err(Failure::after(
+            "Injected interruption before WAL retirement sync".into(),
+        ));
     }
-    sync_directory(&index.directory)?;
+    sync_directory(&index.directory).map_err(Failure::after)?;
     index.poisoned = false;
     Ok(())
 }
@@ -791,12 +908,13 @@ fn apply(
     transaction: &Transaction,
     recovering: bool,
     #[cfg(test)] fault: Option<Fault>,
+    #[cfg(not(test))] fault: (),
 ) -> Result<()> {
     let mut affected = BTreeSet::new();
     // Recovery cannot tell whether an interrupted apply made its new object
     // directories durable, so it always synchronizes `objects`.
     let mut created = recovering;
-    write_segment(directory, transaction)?;
+    write_segment(directory, transaction, fault)?;
     for (number, action) in transaction.actions.iter().enumerate() {
         let path = value_path(directory, &action.key);
         let parent = path.parent().ok_or("Missing inventory object directory")?;
@@ -811,7 +929,10 @@ fn apply(
                     .mode(0o700)
                     .create(parent)
                     .map_err(|error| {
-                        format!("Cannot create inventory object directory: {error}")
+                        format!(
+                            "Cannot create inventory object directory: {}",
+                            io_text(&error)
+                        )
                     })?;
                 created = true;
             }
@@ -821,11 +942,15 @@ fn apply(
             let result = (|| -> Result<()> {
                 let mut file = new_file(&temporary)?;
                 owns_temporary = true;
-                file.write_all(&envelope(&action.key, data))
+                inject(fault, Stage::Objects)
+                    .and_then(|()| file.write_all(&envelope(&action.key, data)))
                     .and_then(|()| sync_file(&file))
-                    .map_err(|error| format!("Cannot persist inventory record: {error}"))?;
-                fs::rename(&temporary, &path)
-                    .map_err(|error| format!("Cannot publish inventory record: {error}"))?;
+                    .map_err(|error| {
+                        format!("Cannot persist inventory record: {}", io_text(&error))
+                    })?;
+                fs::rename(&temporary, &path).map_err(|error| {
+                    format!("Cannot publish inventory record: {}", io_text(&error))
+                })?;
                 Ok(())
             })();
             if result.is_err() && owns_temporary {
@@ -835,7 +960,7 @@ fn apply(
             affected.insert(parent.to_owned());
         } else if present(&path)? {
             fs::remove_file(&path)
-                .map_err(|error| format!("Cannot delete inventory record: {error}"))?;
+                .map_err(|error| format!("Cannot delete inventory record: {}", io_text(&error)))?;
             affected.insert(parent.to_owned());
         }
         #[cfg(test)]
@@ -853,8 +978,9 @@ fn apply(
     }
     for (number, (id, node)) in transaction.pages.iter().enumerate() {
         tree.seek(SeekFrom::Start(tree::offset(*id)?))
-            .and_then(|_| tree.write_all(&node.encode().map_err(std::io::Error::other)?))
-            .map_err(|error| format!("Cannot apply inventory page: {error}"))?;
+            .and_then(|_| inject(fault, Stage::Tree))
+            .and_then(|()| tree.write_all(&node.encode().map_err(std::io::Error::other)?))
+            .map_err(|error| format!("Cannot apply inventory page: {}", io_text(&error)))?;
         #[cfg(test)]
         if number == 0 && fault == Some(Fault::FirstPage) {
             return Err("Injected interruption during page apply".into());
@@ -863,19 +989,20 @@ fn apply(
         let _ = number;
     }
     tree.set_len(tree::offset(transaction.after.next)?)
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| io_text(&error))?;
     tree.seek(SeekFrom::Start(0))
         .and_then(|_| tree.write_all(&transaction.after.encode()))
         .and_then(|()| sync_file(tree))
-        .map_err(|error| format!("Cannot persist inventory root: {error}"))?;
+        .map_err(|error| format!("Cannot persist inventory root: {}", io_text(&error)))?;
     // The durable root no longer references segments the cleaner emptied.
     if transaction.after.tail > transaction.before.tail {
         for number in transaction.before.tail..transaction.after.tail {
             let path = segment_path(directory, number);
             if present(&path)? {
                 private_file(&path, false)?;
-                fs::remove_file(&path)
-                    .map_err(|error| format!("Cannot retire inventory segment: {error}"))?;
+                fs::remove_file(&path).map_err(|error| {
+                    format!("Cannot retire inventory segment: {}", io_text(&error))
+                })?;
             }
         }
         sync_directory(&directory.join("segments"))?;
@@ -890,7 +1017,12 @@ fn apply(
 /// Writes the transaction's value-log segment, if it has one, under a
 /// temporary name, flushes it once and publishes it at its number. Replay
 /// rebuilds identical bytes from the WAL.
-fn write_segment(directory: &Path, transaction: &Transaction) -> Result<()> {
+fn write_segment(
+    directory: &Path,
+    transaction: &Transaction,
+    #[cfg(test)] fault: Option<Fault>,
+    #[cfg(not(test))] fault: (),
+) -> Result<()> {
     let number = transaction.before.head;
     let mut bytes = Vec::new();
     for action in &transaction.actions {
@@ -913,7 +1045,7 @@ fn write_segment(directory: &Path, transaction: &Transaction) -> Result<()> {
         fs::DirBuilder::new()
             .mode(0o700)
             .create(&segments)
-            .map_err(|error| format!("Cannot create inventory segments: {error}"))?;
+            .map_err(|error| format!("Cannot create inventory segments: {}", io_text(&error)))?;
         sync_directory(directory)?;
     }
     private_directory(&segments)?;
@@ -922,12 +1054,13 @@ fn write_segment(directory: &Path, transaction: &Transaction) -> Result<()> {
     let result = (|| -> Result<()> {
         let mut file = new_file(&temporary)?;
         owns_temporary = true;
-        file.write_all(&bytes)
+        inject(fault, Stage::Objects)
+            .and_then(|()| file.write_all(&bytes))
             .and_then(|()| sync_file(&file))
-            .map_err(|error| format!("Cannot persist inventory segment: {error}"))?;
+            .map_err(|error| format!("Cannot persist inventory segment: {}", io_text(&error)))?;
         check_segment_path(directory, number)?;
         fs::rename(&temporary, segment_path(directory, number))
-            .map_err(|error| format!("Cannot publish inventory segment: {error}"))?;
+            .map_err(|error| format!("Cannot publish inventory segment: {}", io_text(&error)))?;
         sync_directory(&segments)
     })();
     if result.is_err() && owns_temporary {
@@ -982,4 +1115,19 @@ pub(crate) enum Fault {
     FirstPage,
     Applied,
     Unlinked,
+    /// The storage device reports no space at this stage.
+    Full(Stage),
+}
+
+/// Commit stages where tests inject a full disk.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Stage {
+    /// Writing the staged WAL, before publication.
+    Wal,
+    /// Writing the value-log segment or a legacy record file.
+    Objects,
+    /// Rewriting tree pages in place.
+    Tree,
+    /// Synchronizing the store directory after publication.
+    Directory,
 }

@@ -146,6 +146,47 @@ An interrupted initial creation is an explicit error, not a reason to initialize
 over an existing directory. Legacy journal/snapshot directories are never
 accepted as empty instances of this format.
 
+## Storage diagnostics and errors
+
+`mynou status` and `GET /api/status` include `storage`, one entry per index:
+`jobs`, `series`, `requesters`, `announcements`, `sources`, `feeds` and
+`transfers`. Each entry has a `state` (`index`, `empty`, `needs_migration`,
+`legacy`, `migrating`, `not_open`, or `busy` when a long operation holds the
+store, so the status request never waits for it) and, for an open index:
+
+- `entries`: index entries, including the store's own secondary keys, so it
+  is larger than the number of jobs or series shown elsewhere in the status;
+- `index_bytes` and `log_bytes`: bytes of the tree file and of the value-log
+  segments, which include garbage the cleaner has not yet reclaimed, and
+  `live_bytes`, the value-log bytes still in use;
+- `sequence`, the commit counter, and `commit_uncertain`, true after a failed
+  commit until Mynou restarts and recovery finishes.
+
+The job and series entries add `migrated_at_start`. These readings come from
+each index root, maintained by every commit; producing them reads no record.
+They are sizes, not limits: Mynou reports no maximum inventory size, and
+available disk space remains the physical bound.
+
+Every failed commit names its store (for example `Job storage`) and says what
+happened and what to do. The error carries no path, credential or media title.
+
+- **Full disk or quota.** Before publication the change was not saved and
+  nothing else changed: free disk space, then restart Mynou. After publication
+  the outcome is uncertain: existing records and recovery files are kept, and
+  the next start after freeing space finishes the change. A start that still
+  cannot recover for lack of space says so and keeps the WAL.
+- **Single record above 1 MiB**, and **a change above its operation bound**
+  (16,384 entries or 128 MiB): the change was not saved, existing records are
+  unchanged, and the store remains usable. Report the item that produced it.
+- **Other write failures.** Before publication the change was not saved; after
+  it the outcome is uncertain. Either way reads and writes of that store pause
+  until restart, which finishes recovery; keep the data directory intact.
+
+No error evicts records, falls back to another store or deletes recovery
+files. Tests inject a full disk while writing the WAL, the value-log segment
+or a legacy record file, the tree pages, and while synchronizing the store
+directory; each store reopens with every committed record.
+
 ## Pagination and bounds
 
 Queries use an inclusive start, exclusive end and exclusive last-key cursor.
@@ -536,7 +577,8 @@ announcements across every inventory page.
 
 Issue #106 still needs fair bounded scheduling across remaining
 admission/monitoring paths, upstream paging and IRC inventory migration, and
-resource/backlog diagnostics. Jobs, series and requester demand have left their
+backlog and freshness diagnostics (due backlog, oldest unserved entry, last
+completed pass) beyond the [storage diagnostics](#storage-diagnostics-and-errors). Jobs, series and requester demand have left their
 fixed total inventory limits; IRC and source snapshots retain their documented
 bounds. Validation uses original synthetic fixtures in GitHub Actions on the
 supported macOS target.
