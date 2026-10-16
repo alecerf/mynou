@@ -797,7 +797,13 @@ impl<E: Entropy> TcpStack<E> {
         let outcome = if !sent || !outstanding {
             IcmpIngest::Dropped
         } else if advice.code == 4 {
-            match advice.reduction(flow.path_mtu) {
+            // The sender controls the quoted length: trust it only up to a
+            // segment this flow could have sent. No SYN or SYN-ACK exceeds the
+            // 576-byte floor, so handshakes are never resegmented; rewinding
+            // one would leave its sequence space outstanding with no timer.
+            let handshake = matches!(flow.state, State::SynSent | State::SynReceived);
+            let plausible = !handshake && advice.total <= HEADERS + flow.mss;
+            match advice.reduction(flow.path_mtu).filter(|_| plausible) {
                 Some(mtu) => {
                     flow.path_mtu = mtu;
                     flow.mss = flow.mss.min(mtu - HEADERS);

@@ -1308,6 +1308,118 @@ fn icmp_cannot_refuse_an_unsent_syn_or_reset_a_recycled_flow() {
     assert_eq!(a.ingest_icmp(G, T0, &error), IcmpIngest::Dropped);
 }
 
+/// `packet` with its IPv4 total length rewritten, as a forged ICMP quote.
+fn inflated(packet: &[u8], total: u16) -> Vec<u8> {
+    let mut forged = packet.to_vec();
+    forged[2..4].copy_from_slice(&total.to_be_bytes());
+    forged[10..12].fill(0);
+    let check = ipv4::checksum(&forged[..20]);
+    forged[10..12].copy_from_slice(&check.to_be_bytes());
+    forged
+}
+
+#[test]
+fn an_inflated_fragmentation_quote_cannot_silence_an_active_open() {
+    use crate::netstack::IcmpIngest;
+    use crate::netstack::support::icmp_unreachable;
+    let router = Ipv4Addr::new(192, 0, 2, 1);
+    // The SYN was lost: its retries still run and end in Timeout.
+    let mut client = stack(config(CLIENT), &[0, CLIENT_ISS]);
+    let handle = client.connect(G, T0, SERVER, PORT).unwrap();
+    let syn = client.poll(G, T0).unwrap().send.remove(0);
+    let forged = icmp_unreachable(router, &inflated(&syn, 1400), 4, 600);
+    assert_eq!(client.ingest_icmp(G, T0, &forged), IcmpIngest::Dropped);
+    assert_eq!(client.path_mtu(G, handle), Ok(MAX_MTU));
+    let mut now = T0;
+    let mut syns = 1;
+    for _ in 0..50 {
+        let poll = client.poll(G, now).unwrap();
+        syns += poll.send.len();
+        if client.state(G, handle) == Ok(State::Closed) {
+            break;
+        }
+        now = poll.next.unwrap();
+    }
+    assert_eq!(syns, 6);
+    assert_eq!(client.failure(G, handle), Ok(Some(Failure::Timeout)));
+
+    // The SYN was delivered: the real SYN-ACK still completes the handshake.
+    let mut pair = Pair::new(config(CLIENT), config(SERVER));
+    let listener = pair.b.listen(G, PORT).unwrap();
+    let client = pair.a.connect(G, T0, SERVER, PORT).unwrap();
+    let syn = pair.a.poll(G, T0).unwrap().send.remove(0);
+    pair.b.ingest(G, T0, &syn);
+    let syn_ack = pair.b.poll(G, T0).unwrap().send.remove(0);
+    let forged = icmp_unreachable(router, &inflated(&syn, 1400), 4, 600);
+    assert_eq!(pair.a.ingest_icmp(G, T0, &forged), IcmpIngest::Dropped);
+    assert_eq!(pair.a.ingest(G, T0, &syn_ack), Ingest::Delivered);
+    pair.pump();
+    assert_eq!(pair.a.state(G, client), Ok(State::Established));
+    assert!(pair.b.accept(G, listener).unwrap().is_some());
+    pair.a.send(G, client, b"x").unwrap();
+}
+
+#[test]
+fn inflated_fragmentation_quotes_cannot_fill_a_listener_backlog() {
+    use crate::netstack::IcmpIngest;
+    use crate::netstack::support::icmp_unreachable;
+    let router = Ipv4Addr::new(192, 0, 2, 1);
+    let mut server = stack(config(SERVER), &[SERVER_ISS]);
+    let listener = server.listen(G, PORT).unwrap();
+    for port in 40000..40016 {
+        let syn = forge((CLIENT, port), (SERVER, PORT), (1, 0, SYN), b"");
+        assert_eq!(server.ingest(G, T0, &syn), Ingest::Handshake);
+        let syn_ack = server.poll(G, T0).unwrap().send.remove(0);
+        let forged = icmp_unreachable(router, &inflated(&syn_ack, 1400), 4, 600);
+        assert_eq!(server.ingest_icmp(G, T0, &forged), IcmpIngest::Dropped);
+    }
+    assert_eq!(server.flows(), 16);
+    // Every half-open flow still retries its SYN-ACK and is then released.
+    let mut now = T0;
+    for _ in 0..50 {
+        match server.poll(G, now).unwrap().next {
+            Some(next) => now = next,
+            None => break,
+        }
+    }
+    assert_eq!(server.flows(), 0);
+    let honest = forge(
+        (Ipv4Addr::new(10, 64, 0, 3), 40000),
+        (SERVER, PORT),
+        (1, 0, SYN),
+        b"",
+    );
+    assert_eq!(server.ingest(G, now, &honest), Ingest::Handshake);
+    assert_eq!(server.poll(G, now).unwrap().send.len(), 1);
+    assert_eq!(server.accept(G, listener), Ok(None));
+}
+
+#[test]
+fn a_fragmentation_quote_cannot_claim_more_than_the_flow_sent() {
+    use crate::netstack::support::icmp_unreachable;
+    use crate::netstack::{IcmpEffect, IcmpIngest};
+    let (mut pair, client, _, _) = established();
+    let router = Ipv4Addr::new(192, 0, 2, 1);
+    pair.a.send(G, client, &pattern(4000)).unwrap();
+    let packet = pair.a.poll(G, T0).unwrap().send.remove(0);
+    assert_eq!(
+        pair.a
+            .ingest_icmp(G, T0, &icmp_unreachable(router, &packet, 4, 900)),
+        IcmpIngest::Applied(IcmpEffect::PathMtu(900))
+    );
+    let packet = pair.a.poll(G, T0).unwrap().send.remove(0);
+    assert_eq!(packet.len(), 900);
+    // A quote longer than any segment at the current MSS is not believed.
+    let forged = icmp_unreachable(router, &inflated(&packet, 1400), 4, 600);
+    assert_eq!(pair.a.ingest_icmp(G, T0, &forged), IcmpIngest::Dropped);
+    assert_eq!(pair.a.path_mtu(G, client), Ok(900));
+    assert_eq!(
+        pair.a
+            .ingest_icmp(G, T0, &icmp_unreachable(router, &packet, 4, 600)),
+        IcmpIngest::Applied(IcmpEffect::PathMtu(600))
+    );
+}
+
 #[test]
 fn rtt_adapts_to_delay_and_karn_preserves_backoff_until_a_fresh_sample() {
     let mut pair = Pair::new(config(CLIENT), config(SERVER));

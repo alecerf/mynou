@@ -123,7 +123,11 @@ mitigation in [RFC 5927](https://www.rfc-editor.org/rfc/rfc5927#section-4.1);
 it does not authenticate a router or defeat an observer or a correct sequence guess.
 
 An eligible fragmentation-needed quote can only lower `path_mtu`, down to 576,
-when the quoted datagram exceeded that MTU. The send MSS becomes the smaller of
+when the quoted datagram exceeded that MTU. The quoted length is chosen by the
+sender, so it must also fit a segment the flow could have sent (`40 + MSS`), and
+handshake states ignore fragmentation-needed entirely: no SYN or SYN-ACK exceeds
+576 bytes, and a forged quote must not rewind or silence a handshake, whose
+retries still end in `Timeout`. The send MSS becomes the smaller of
 the peer's MSS and the path's `mtu - 40`, and outstanding bytes are resegmented
 from `snd_una` under the existing congestion, peer-window and retry limits.
 Zero legacy MTUs and increases are ignored. No destination cache or new table is
