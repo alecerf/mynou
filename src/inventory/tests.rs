@@ -1010,6 +1010,47 @@ fn operation_bounds_have_distinct_errors_and_change_nothing() {
 }
 
 #[test]
+fn a_change_over_the_wal_bound_only_with_its_pages_is_an_operation_bound() {
+    let parent = Directory::new();
+    fs::create_dir(&parent.0).unwrap();
+    let path = parent.0.join("series.idx");
+    let mut index = Index::create(&path).unwrap();
+    index.commit(vec![put(1)]).unwrap();
+    let before = index.stats();
+    // The values alone fill the bound exactly, which the check before
+    // staging accepts; tree pages and WAL framing then exceed it.
+    let count = (super::persistence::MAX_WAL_BYTES / super::MAX_VALUE_BYTES) as u64;
+    let error = index
+        .commit(
+            (100..100 + count)
+                .map(|id| Change::Put(key(id), vec![0; super::MAX_VALUE_BYTES]))
+                .collect(),
+        )
+        .unwrap_err();
+    assert!(
+        error.starts_with("Series storage: one change needs more than 128 MiB"),
+        "{error}"
+    );
+    for part in [
+        "operation bound",
+        "not an inventory limit",
+        "not saved",
+        "existing records are unchanged",
+        "Report the item",
+    ] {
+        assert!(error.contains(part), "{error}");
+    }
+    assert!(!error.contains(parent.0.to_str().unwrap()), "{error}");
+    assert!(index.is_usable());
+    assert_eq!(index.stats(), before);
+    index.commit(vec![put(2)]).unwrap();
+    drop(index);
+    let mut reopened = Index::open(&path, true).unwrap();
+    assert_eq!(reopened.len().unwrap(), 2);
+    assert!(reopened.get(&key(100)).unwrap().is_none());
+}
+
+#[test]
 fn store_names_come_from_the_index_directory() {
     for (directory, name) in [
         ("jobs.idx", "Job storage"),

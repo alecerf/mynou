@@ -78,4 +78,4 @@ Each save of jobs, requester demand, feeds, transfers, series or IRC state now w
 
 ## Added: Storage sizes and clearer storage errors
 
-`mynou status` and `GET /api/status` now report each store's entries, index and value-log bytes and whether a failed write awaits recovery, without reading the inventory. Storage errors name the store and say whether the change was saved and what to do, for example freeing disk space and restarting Mynou; existing records are never discarded ([storage guide](/docs/inventory-storage.md#storage-diagnostics-and-errors)).
+`mynou status` and `GET /api/status` now report each store's entries, index and value-log bytes and whether a failed write awaits recovery, without reading the inventory; the status still answers while a store is busy or failing, with that store's counts left empty. Storage errors name the store and say whether the change was saved and what to do, for example freeing disk space and restarting Mynou; existing records are never discarded ([storage guide](/docs/inventory-storage.md#storage-diagnostics-and-errors)).

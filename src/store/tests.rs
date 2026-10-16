@@ -2962,3 +2962,84 @@ fn imported_child_upgrade_resumes_from_a_mid_upgrade_cursor() {
         .unwrap();
     assert!(children::upgrade(&mut index, false).is_err());
 }
+
+#[test]
+fn status_reports_held_and_failed_stores_without_waiting_or_failing() {
+    use crate::engine::{Engine, lock};
+    let directory = Directory::new();
+    let mut value = crate::config::default_json();
+    value.insert("store_dir", directory.0.to_str().unwrap());
+    let config = crate::config::from_json(&value, &directory.0).unwrap();
+    let engine = Engine::open_for_management(config).unwrap();
+    engine.submit(request("Kept")).unwrap();
+    let state = |status: &Value, store: &str| {
+        let storage = status.get("storage").unwrap().get(store).unwrap();
+        storage
+            .get("state")
+            .and_then(Value::as_str)
+            .unwrap()
+            .to_owned()
+    };
+    let status = engine.status().unwrap();
+    assert_eq!(status.get("jobs").and_then(Value::as_u64), Some(1));
+    assert_eq!(state(&status, "jobs"), "index");
+    assert_eq!(
+        status.get("storage_errors"),
+        Some(&Value::Array(Vec::new()))
+    );
+
+    // A long operation holds the job and series stores: status answers at
+    // once, with their readings unavailable and the stores marked busy.
+    let held = (
+        lock(&engine.store).unwrap(),
+        lock(&engine.series_store).unwrap(),
+    );
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let reader = std::sync::Arc::clone(&engine);
+    let waiting = std::thread::spawn(move || sender.send(reader.status()).unwrap());
+    let status = receiver
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("status waited for a held store")
+        .unwrap();
+    waiting.join().unwrap();
+    drop(held);
+    for reading in ["jobs", "active", "ready", "monitored_series"] {
+        assert_eq!(status.get(reading), Some(&Value::Null), "{reading}");
+    }
+    assert_eq!(state(&status, "jobs"), "busy");
+    assert_eq!(state(&status, "series"), "busy");
+    assert_eq!(
+        status
+            .get("series_storage")
+            .and_then(|storage| storage.get("state"))
+            .and_then(Value::as_str),
+        Some("busy")
+    );
+    assert_eq!(state(&status, "requesters"), "index");
+
+    // A failed write pauses the job store: status still answers, and its
+    // storage report shows the change awaiting recovery.
+    let index = directory.0.join("jobs.idx");
+    fs::set_permissions(&index, fs::Permissions::from_mode(0o500)).unwrap();
+    let outcome = engine.submit(request("Refused"));
+    fs::set_permissions(&index, fs::Permissions::from_mode(0o700)).unwrap();
+    if outcome.is_ok() {
+        // Running as a user that ignores permissions (for example root).
+        return;
+    }
+    let status = engine.status().unwrap();
+    assert_eq!(status.get("jobs"), Some(&Value::Null));
+    let jobs = status.get("storage").unwrap().get("jobs").unwrap();
+    assert_eq!(
+        jobs.get("commit_uncertain").and_then(Value::as_bool),
+        Some(true)
+    );
+    assert_eq!(jobs.get("state").and_then(Value::as_str), Some("index"));
+    let Some(Value::Array(errors)) = status.get("storage_errors") else {
+        panic!("storage_errors is not a list");
+    };
+    let error = errors[0].as_str().unwrap();
+    assert!(error.starts_with("Job storage: "), "{error}");
+    assert!(!error.contains(directory.0.to_str().unwrap()), "{error}");
+    assert_eq!(state(&status, "series"), "empty");
+}

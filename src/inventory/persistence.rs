@@ -6,8 +6,8 @@ use crate::{
     Result,
     crypto::{random_bytes, sha256},
     store::{
-        STORAGE_FULL, before_private_open, io_text, private_options, reject_symlinks, sync_directory,
-        sync_file, try_lock_file,
+        STORAGE_FULL, before_private_open, io_text, private_options, reject_symlinks,
+        sync_directory, sync_file, try_lock_file,
     },
 };
 use std::{
@@ -19,6 +19,8 @@ use std::{
 };
 
 pub(super) const MAX_WAL_BYTES: usize = 128 * 1024 * 1024;
+/// Error of a change whose WAL, with its tree pages, exceeds `MAX_WAL_BYTES`.
+pub(super) const WAL_BUDGET: &str = "Inventory transaction exceeds its WAL byte budget";
 const WAL_MAGIC: &[u8; 8] = b"MYNOUIW1";
 const VALUE_MAGIC: &[u8; 8] = b"MYNOUIV1";
 const ID_MAGIC: &[u8; 8] = b"MYNOUID1";
@@ -80,7 +82,7 @@ impl Transaction {
             },
         )?;
         if length > MAX_WAL_BYTES {
-            return Err("Inventory transaction exceeds its WAL byte budget".into());
+            return Err(WAL_BUDGET.into());
         }
         let mut bytes = Vec::with_capacity(length + 48);
         bytes.extend_from_slice(WAL_MAGIC);

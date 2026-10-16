@@ -1560,14 +1560,13 @@ fn retained_transfer_pages_and_point_controls_reach_beyond_the_resident_window()
     );
     assert_eq!(status, 200);
     assert_eq!(transfer.get("priority").and_then(Value::as_i64), Some(100));
-    let (status, metrics) = server.call("GET", "/api/status", Some(TOKEN), None);
-    assert_eq!(status, 200);
-    assert_eq!(metrics.get("torrents").and_then(Value::as_u64), Some(63));
     // Storage diagnostics come from each index root; a store held by a
-    // running operation reports `busy` rather than blocking the request.
+    // running operation reports `busy`, and its totals null, rather than
+    // blocking the request.
     let mut transfers = None;
     for _ in 0..100 {
-        let (_, metrics) = server.call("GET", "/api/status", Some(TOKEN), None);
+        let (status, metrics) = server.call("GET", "/api/status", Some(TOKEN), None);
+        assert_eq!(status, 200);
         let storage = metrics.get("storage").unwrap().clone();
         for store in [
             "jobs",
@@ -1583,7 +1582,9 @@ fn retained_transfer_pages_and_point_controls_reach_beyond_the_resident_window()
             );
         }
         let report = storage.get("transfers").unwrap().clone();
-        if report.get("state").and_then(Value::as_str) == Some("index") {
+        let torrents = metrics.get("torrents").and_then(Value::as_u64);
+        if report.get("state").and_then(Value::as_str) == Some("index") && torrents.is_some() {
+            assert_eq!(torrents, Some(63));
             transfers = Some(report);
             break;
         }

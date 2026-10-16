@@ -296,15 +296,25 @@ impl Index {
                 ));
             }
         }
+        // Values alone may exceed the bound; with WAL pages and framing,
+        // staging finds the rest. Both are the same operator error.
+        let too_large = || {
+            format!(
+                "{name}: one change needs more than 128 MiB of write-ahead log, its operation \
+                 bound (not an inventory limit); it was not saved and existing records are \
+                 unchanged. {REPORT}"
+            )
+        };
         if bytes > persistence::MAX_WAL_BYTES {
-            return Err(format!(
-                "{name}: one change holds more than 128 MiB, its operation bound (not an \
-                 inventory limit); it was not saved and existing records are unchanged. {REPORT}"
-            ));
+            return Err(too_large());
         }
-        let (transaction, bytes) = self
-            .stage(changes)
-            .map_err(|error| format!("{name}: the change was not saved: {error}"))?;
+        let (transaction, bytes) = self.stage(changes).map_err(|error| {
+            if error == persistence::WAL_BUDGET {
+                too_large()
+            } else {
+                format!("{name}: the change was not saved: {error}")
+            }
+        })?;
         // Applying rewrites pages in place: nothing cached may outlive it.
         self.cache.clear();
         persistence::publish_and_apply(self, &transaction, &bytes)

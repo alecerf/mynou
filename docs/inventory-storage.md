@@ -167,6 +167,12 @@ each index root, maintained by every commit; producing them reads no record.
 They are sizes, not limits: Mynou reports no maximum inventory size, and
 available disk space remains the physical bound.
 
+The status never waits for a busy store and never fails because one store
+cannot be read. Readings from such a store (`jobs`, `active`, `ready`,
+`monitored_series`, `torrents` and the transfer byte totals) are `null`; its
+`storage` entry says `busy` or shows `commit_uncertain`, and `storage_errors`
+lists the store-named error of each reading that failed.
+
 Every failed commit names its store (for example `Job storage`) and says what
 happened and what to do. The error carries no path, credential or media title.
 
@@ -176,7 +182,8 @@ happened and what to do. The error carries no path, credential or media title.
   the next start after freeing space finishes the change. A start that still
   cannot recover for lack of space says so and keeps the WAL.
 - **Single record above 1 MiB**, and **a change above its operation bound**
-  (16,384 entries or 128 MiB): the change was not saved, existing records are
+  (16,384 entries, or 128 MiB of write-ahead log including the index pages it
+  rewrites): the change was not saved, existing records are
   unchanged, and the store remains usable. Report the item that produced it.
 - **Other write failures.** Before publication the change was not saved; after
   it the outcome is uncertain. Either way reads and writes of that store pause

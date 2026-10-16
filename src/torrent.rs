@@ -2058,24 +2058,27 @@ impl Client {
             .index
             .lock()
             .map_err(|_| "Native transfer index lock is poisoned")?;
-        let (total, mut down, mut up) = index.aggregates()?;
-        for (id, job) in jobs.iter() {
-            if let Some(record) = index.get(id)? {
-                down = down.saturating_add(
-                    job.counters
-                        .downloaded
-                        .load(Ordering::Relaxed)
-                        .saturating_sub(record.control.downloaded_bytes),
-                );
-                up = up.saturating_add(
-                    job.counters
-                        .uploaded
-                        .load(Ordering::Relaxed)
-                        .saturating_sub(record.control.uploaded_bytes),
-                );
+        aggregate(&jobs, &mut index)
+    }
+    /// As `aggregate_stats`, but `None` while another operation holds the
+    /// transfer state, so status never waits on it.
+    pub fn try_aggregate_stats(&self) -> Result<Option<(u64, u64, u64)>> {
+        use std::sync::TryLockError;
+        let jobs = match self.jobs.try_lock() {
+            Ok(jobs) => jobs,
+            Err(TryLockError::WouldBlock) => return Ok(None),
+            Err(TryLockError::Poisoned(_)) => {
+                return Err("BitTorrent state lock is poisoned".into());
             }
-        }
-        Ok((total, down, up))
+        };
+        let mut index = match self.index.try_lock() {
+            Ok(index) => index,
+            Err(TryLockError::WouldBlock) => return Ok(None),
+            Err(TryLockError::Poisoned(_)) => {
+                return Err("Native transfer index lock is poisoned".into());
+            }
+        };
+        aggregate(&jobs, &mut index).map(Some)
     }
     pub fn transfer_stats(&self, id: &str) -> Result<(u64, u64)> {
         let jobs = self
@@ -2119,6 +2122,33 @@ impl Client {
         self.config.listen_port
     }
 }
+
+/// Transfer count and byte totals: durable index counters plus each live
+/// job's progress since its last saved record.
+fn aggregate(
+    jobs: &BTreeMap<String, Job>,
+    index: &mut index::TransferIndex,
+) -> Result<(u64, u64, u64)> {
+    let (total, mut down, mut up) = index.aggregates()?;
+    for (id, job) in jobs.iter() {
+        if let Some(record) = index.get(id)? {
+            down = down.saturating_add(
+                job.counters
+                    .downloaded
+                    .load(Ordering::Relaxed)
+                    .saturating_sub(record.control.downloaded_bytes),
+            );
+            up = up.saturating_add(
+                job.counters
+                    .uploaded
+                    .load(Ordering::Relaxed)
+                    .saturating_sub(record.control.uploaded_bytes),
+            );
+        }
+    }
+    Ok((total, down, up))
+}
+
 impl Drop for Client {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);

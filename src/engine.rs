@@ -97,6 +97,15 @@ pub fn lock<T>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>> {
         .map_err(|_| "Internal lock poisoned".to_owned())
 }
 
+/// `None` while another thread holds the lock, for reports that must not wait.
+fn try_lock<T>(mutex: &Mutex<T>) -> Result<Option<MutexGuard<'_, T>>> {
+    match mutex.try_lock() {
+        Ok(guard) => Ok(Some(guard)),
+        Err(std::sync::TryLockError::WouldBlock) => Ok(None),
+        Err(std::sync::TryLockError::Poisoned(_)) => Err("Internal lock poisoned".to_owned()),
+    }
+}
+
 impl Engine {
     pub fn open(config: Config) -> Result<Arc<Self>> {
         Self::open_with_downloads(config, true)
@@ -475,19 +484,28 @@ impl Engine {
         self.transfer(id)
     }
 
+    /// Service status. Readings of a store that a long operation holds, or
+    /// whose index failed, are null instead of waiting or failing the whole
+    /// report; `storage` says why and `storage_errors` lists the failures.
     pub fn status(&self) -> Result<Value> {
-        let (counts, maintenance_error) = {
-            let mut store = lock(&self.store)?;
-            (
-                store.counts()?,
+        let mut errors = Vec::new();
+        let (counts, maintenance_error) = match try_lock(&self.store)? {
+            Some(mut store) => (
+                store.counts().map_err(|error| errors.push(error)).ok(),
                 store.maintenance_error().map(str::to_owned),
-            )
+            ),
+            None => (None, None),
+        };
+        let count = |read: fn(&store::Counts) -> u64| {
+            counts
+                .as_ref()
+                .map_or(Value::Null, |counts| Value::Number(read(counts) as f64))
         };
         let mut v = Value::object();
         v.insert("version", env!("CARGO_PKG_VERSION"));
-        v.insert("jobs", Value::Number(counts.jobs as f64));
-        v.insert("active", Value::Number(counts.active as f64));
-        v.insert("ready", Value::Number(counts.ready as f64));
+        v.insert("jobs", count(|counts| counts.jobs));
+        v.insert("active", count(|counts| counts.active));
+        v.insert("ready", count(|counts| counts.ready));
         v.insert("stopped", self.stopped.load(Ordering::Acquire));
         v.insert(
             "maintenance_error",
@@ -500,13 +518,18 @@ impl Engine {
                 .map_or(Value::Null, Value::String),
         );
         v.insert("monitoring_enabled", self.config.monitoring.enabled);
-        v.insert(
-            "monitored_series",
-            lock(&self.series_store)?
-                .counts()
-                .map_or(Value::Null, |counts| Value::Number(counts.monitored as f64)),
-        );
-        v.insert("series_storage", lock(&self.series_store)?.describe());
+        let (monitored, series_storage) = match try_lock(&self.series_store)? {
+            Some(mut series) => (
+                series
+                    .counts()
+                    .map_err(|error| errors.push(error))
+                    .map_or(Value::Null, |counts| Value::Number(counts.monitored as f64)),
+                series.describe(),
+            ),
+            None => (Value::Null, crate::inventory::report("busy", None)),
+        };
+        v.insert("monitored_series", monitored);
+        v.insert("series_storage", series_storage);
         v.insert(
             "series_unreadable",
             Value::Number(self.series_unreadable_count() as f64),
@@ -526,11 +549,27 @@ impl Engine {
         v.insert("storage", self.storage()?);
         if let Some(client) = &self.downloads {
             v.insert("peer_port", client.listen_port() as u32);
-            let (total, downloaded, uploaded) = client.aggregate_stats()?;
-            v.insert("torrents", Value::Number(total as f64));
-            v.insert("downloaded_bytes", downloaded.to_string());
-            v.insert("uploaded_bytes", uploaded.to_string());
+            let stats = client
+                .try_aggregate_stats()
+                .map_err(|error| errors.push(error))
+                .ok()
+                .flatten();
+            let total = stats.map_or(Value::Null, |(total, _, _)| Value::Number(total as f64));
+            v.insert("torrents", total);
+            for (name, bytes) in [
+                ("downloaded_bytes", stats.map(|(_, down, _)| down)),
+                ("uploaded_bytes", stats.map(|(_, _, up)| up)),
+            ] {
+                v.insert(
+                    name,
+                    bytes.map_or(Value::Null, |bytes| bytes.to_string().into()),
+                );
+            }
         }
+        v.insert(
+            "storage_errors",
+            Value::Array(errors.into_iter().map(Value::String).collect()),
+        );
         Ok(v)
     }
 
@@ -539,15 +578,10 @@ impl Engine {
     /// A store busy with a long operation reports `busy` instead of blocking.
     pub fn storage(&self) -> Result<Value> {
         fn read<T>(mutex: &Mutex<T>, report: impl FnOnce(&T) -> Value) -> Result<Value> {
-            match mutex.try_lock() {
-                Ok(store) => Ok(report(&store)),
-                Err(std::sync::TryLockError::WouldBlock) => {
-                    Ok(crate::inventory::report("busy", None))
-                }
-                Err(std::sync::TryLockError::Poisoned(_)) => {
-                    Err("Internal lock poisoned".to_owned())
-                }
-            }
+            Ok(try_lock(mutex)?.map_or_else(
+                || crate::inventory::report("busy", None),
+                |store| report(&store),
+            ))
         }
         let mut v = Value::object();
         v.insert("jobs", read(&self.store, Store::storage)?);
