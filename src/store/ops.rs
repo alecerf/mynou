@@ -289,28 +289,56 @@ impl Db<'_> {
         }
     }
 
+    /// The job representing a media identity: the oldest ready version,
+    /// otherwise the newest. Two entries at most, each re-derived from its
+    /// record.
     pub(super) fn media_state(&mut self, media: &str) -> Result<Option<Job>> {
         let digest = digest_bytes(media)?;
-        let prefix = [&[T_MEDIA][..], &digest].concat();
-        let mut after = None;
-        let mut chosen = None;
-        loop {
-            let page = self.scan(&prefix, after, MAX_PAGE_ROWS)?;
-            for (key, _) in &page.entries {
-                let job = self.require(&key_part(key, 41)?)?;
-                if job.request.media_key() != media {
-                    return Err("Job media index disagrees with its record".into());
-                }
-                if job.state == "ready" {
-                    return Ok(Some(job));
-                }
-                chosen = Some(job);
+        if let Some(job) = self.derived(&media_ready_prefix(&digest), MEDIA_ID_AT, false)? {
+            return Ok(Some(job));
+        }
+        self.derived(&media_recent_prefix(&digest), MEDIA_ID_AT, true)
+    }
+
+    /// The first job under `prefix`, whose record must derive exactly that
+    /// entry; a stale or foreign entry is an error, never a silent miss.
+    pub(super) fn derived(
+        &mut self,
+        prefix: &[u8],
+        id_at: usize,
+        inverted: bool,
+    ) -> Result<Option<Job>> {
+        let Some(key) = self.keys(prefix, 1)?.pop() else {
+            return Ok(None);
+        };
+        let id = key_part::<16>(&key, id_at)?;
+        let job = self.require(&if inverted { invert(id) } else { id })?;
+        if !ownership(&job)?.contains(&key) {
+            return Err("Job lookup index disagrees with its record".into());
+        }
+        Ok(Some(job))
+    }
+
+    /// Whether a job other than `except` holds an entry under `prefix`. A job
+    /// has at most one entry per prefix, so two entries decide it; each must
+    /// be derived from its record.
+    pub(super) fn other_derived(
+        &mut self,
+        prefix: &[u8],
+        id_at: usize,
+        except: Option<&str>,
+    ) -> Result<bool> {
+        for key in self.keys(prefix, 2)? {
+            let id = key_part::<16>(&key, id_at)?;
+            let job = self.require(&id)?;
+            if !ownership(&job)?.contains(&key) {
+                return Err("Job lookup index disagrees with its record".into());
             }
-            after = page.next;
-            if after.is_none() {
-                return Ok(chosen);
+            if except != Some(job.id.as_str()) {
+                return Ok(true);
             }
         }
+        Ok(false)
     }
 
     pub(super) fn jobs_page(
@@ -348,9 +376,7 @@ impl Db<'_> {
             }
             return Ok(Some(job));
         }
-        self.find_job(&[&[T_MEDIA][..], &digest].concat(), 41, |job| {
-            job.upgrade_parent.is_none() && job.request.media_key() == media
-        })
+        self.derived(&media_base_prefix(&digest), MEDIA_ID_AT, false)
     }
 
     #[cfg(test)]
@@ -512,18 +538,41 @@ impl Db<'_> {
         Ok(!self.live_owners(transfer, 1)?.is_empty())
     }
 
-    pub(super) fn pack_matches(
+    /// Whether a pack request without shared ownership already maps the file
+    /// for this source URL or with this transfer as its download. A pack
+    /// mapping always has a source URL, so one without it never matches by
+    /// URL alone.
+    pub(super) fn unshared_pack_mapping(
         &mut self,
         path: &str,
-        kind: &str,
-        value: &str,
-        predicate: impl Fn(&Job) -> bool,
+        url: Option<&str>,
+        transfer: &str,
     ) -> Result<bool> {
-        Ok(self
-            .find_job(&packref_prefix(path, kind, value), 33, |job| {
-                job.pack_file.as_deref() == Some(path) && predicate(job)
-            })?
-            .is_some())
+        for (class, value) in pack_lookups(url, Some(transfer)) {
+            let prefix = [&pack_mapping_prefix(path, class, value)[..], &[0]].concat();
+            if self.derived(&prefix, PACK_MAPPING_ID_AT, false)?.is_some() {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Whether another request of the same TMDB identity maps `path` for
+    /// this job's source URL or download, shared or not.
+    pub(super) fn pack_mapping_conflict(&mut self, job: &Job, path: &str) -> Result<bool> {
+        let tmdb = job.request.tmdb_id;
+        for (class, value) in pack_lookups(
+            job.request.source_url.as_deref(),
+            job.download_id.as_deref(),
+        ) {
+            for shared in [false, true] {
+                let prefix = pack_mapping_scope(path, class, value, shared, tmdb);
+                if self.other_derived(&prefix, PACK_MAPPING_ID_AT, Some(&job.id))? {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
     }
 
     /// Whether a ready import is a child of `parent`, as it will be once

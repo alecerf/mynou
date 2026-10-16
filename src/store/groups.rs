@@ -207,7 +207,7 @@ impl Db<'_> {
         for parent in &lineage.parent_jobs {
             if self
                 .find_job(
-                    &[&[layout::T_CHILD][..], &id_bytes(parent)?].concat(),
+                    &layout::pending_child_prefix(&id_bytes(parent)?),
                     17,
                     |other| {
                         other
@@ -289,21 +289,11 @@ impl Db<'_> {
             }
             return Ok(jobs);
         }
-        let mapped_elsewhere = {
-            let mut found = false;
-            for (kind, value) in [
-                ("t", Some(file.torrent_id.as_str())),
-                ("u", prototype.request.source_url.as_deref()),
-            ] {
-                let Some(value) = value else { continue };
-                found |= self.pack_matches(&file.file_path, kind, value, |job| {
-                    job.shared_file.is_none()
-                        && (job.download_id.as_deref() == Some(&file.torrent_id)
-                            || job.request.source_url == prototype.request.source_url)
-                })?;
-            }
-            found
-        };
+        let mapped_elsewhere = self.unshared_pack_mapping(
+            &file.file_path,
+            prototype.request.source_url.as_deref(),
+            &file.torrent_id,
+        )?;
         let mut owned_request = false;
         for request in requests {
             owned_request |= self.exists(&layout::canonical_key(&digest_bytes(

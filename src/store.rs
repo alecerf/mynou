@@ -1984,20 +1984,12 @@ impl Store {
                 } else if known.is_empty() && db.media_exists(&request.media_key())? {
                     return Err("Shared-file owner already has an unrelated episode request".into());
                 }
-                for (kind, value) in [
-                    ("u", request.source_url.as_deref()),
-                    ("t", Some(file.torrent_id.as_str())),
-                ] {
-                    let Some(value) = value else { continue };
-                    if db.pack_matches(&file.file_path, kind, value, |job| {
-                        job.shared_file.is_none()
-                            && (job.request.source_url == request.source_url
-                                || job.download_id.as_deref() == Some(file.torrent_id.as_str()))
-                    })? {
-                        return Err(
-                            "Physical video is already mapped without shared ownership".into()
-                        );
-                    }
+                if db.unshared_pack_mapping(
+                    &file.file_path,
+                    request.source_url.as_deref(),
+                    &file.torrent_id,
+                )? {
+                    return Err("Physical video is already mapped without shared ownership".into());
                 }
             }
             if db
@@ -2088,15 +2080,7 @@ impl Store {
             {
                 return Err("Mapping correction requires a failed or cancelled pack request without imports or an active lease".into());
             }
-            let mut conflict = false;
-            for (kind, value) in [("u", job.request.source_url.as_deref()), ("t", job.download_id.as_deref())] {
-                if let Some(value) = value {
-                    conflict |= db.pack_matches(&path, kind, value, |other| other.id != job.id
-                        && other.request.tmdb_id == job.request.tmdb_id
-                        && (other.request.source_url == job.request.source_url
-                            || (job.download_id.is_some() && other.download_id == job.download_id)))?;
-                }
-            }
+            let conflict = db.pack_mapping_conflict(&job, &path)?;
             if conflict {
                 return Err("Mapped file already belongs to another episode in this pack".into());
             }

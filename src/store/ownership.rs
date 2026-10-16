@@ -1,6 +1,7 @@
-//! Derived live-ownership index: transfers with an owner that is not
-//! cancelled, cancelled downloads, live acquisition addresses and shared-file
-//! owners of each physical video. The upgrade
+//! Derived bounded-lookup index: transfers with an owner that is not
+//! cancelled, cancelled downloads, live acquisition addresses, shared-file
+//! owners of each physical video, pack mappings, the ready/newest/base
+//! versions of each media identity and pending upgrade children. The upgrade
 //! only writes secondary entries; each resumable page of the creation-ordered
 //! job table and its cursor share one inventory transaction.
 use super::{

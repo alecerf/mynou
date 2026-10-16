@@ -3,7 +3,8 @@
 //! A job is one record plus small inline entries in the same ordered index:
 //! creation order, canonical identity, media identity, the claim queue, shared
 //! ownership, transfer ownership (every binding, plus live owners and
-//! cancelled downloads), lineage and requester/IRC ownership. Every
+//! cancelled downloads), pack mappings, ready/newest/base media versions,
+//! lineage and requester/IRC ownership. Every
 //! entry is derived from the job itself, so one commit replaces the job and
 //! its entries together. No table is enumerated to answer a routine question.
 use super::{Job, Result};
@@ -55,6 +56,11 @@ pub(super) const T_TRANSFER_LIVE: u8 = 0x3e;
 pub(super) const T_TRANSFER_CANCELLED: u8 = 0x3f;
 pub(super) const T_ACQUISITION_LIVE: u8 = 0x40;
 pub(super) const T_SHARED_PHYSICAL: u8 = 0x41;
+pub(super) const T_PACK_MAPPING: u8 = 0x42;
+pub(super) const T_MEDIA_READY: u8 = 0x43;
+pub(super) const T_MEDIA_RECENT: u8 = 0x44;
+pub(super) const T_MEDIA_BASE: u8 = 0x45;
+pub(super) const T_PENDING_CHILD: u8 = 0x46;
 
 pub(super) const FORMAT_KEY: Key = single(T_META, 0);
 pub(super) const COUNTS_KEY: Key = single(T_META, 1);
@@ -291,6 +297,83 @@ pub(super) fn shared_physical_prefix(torrent: &str, path: &str) -> Vec<u8> {
     .concat()
 }
 
+/// A pack mapping found by its source URL (`u`) or its own download (`d`);
+/// every pack mapping is an episode torrent request with a source URL. The
+/// entry also carries whether the job is shared and its TMDB identity, so
+/// each conflict question is one prefix however many mappings share a file.
+pub(super) fn pack_mapping_prefix(path: &str, class: &str, value: &str) -> Vec<u8> {
+    [
+        &[T_PACK_MAPPING][..],
+        &short("pack-mapping", &[path, class, value]),
+    ]
+    .concat()
+}
+/// Where the job identifier starts in a pack-mapping key.
+pub(super) const PACK_MAPPING_ID_AT: usize = 1 + 16 + 1 + 9;
+pub(super) fn pack_mapping_scope(
+    path: &str,
+    class: &str,
+    value: &str,
+    shared: bool,
+    tmdb: Option<u64>,
+) -> Vec<u8> {
+    let mut prefix = pack_mapping_prefix(path, class, value);
+    prefix.push(u8::from(shared));
+    prefix.push(u8::from(tmdb.is_some()));
+    prefix.extend(tmdb.unwrap_or(0).to_be_bytes());
+    prefix
+}
+
+/// The pack-mapping lookups that decide whether a physical file is already
+/// mapped for this source URL or with this transfer as its download.
+pub(super) fn pack_lookups<'a>(
+    url: Option<&'a str>,
+    transfer: Option<&'a str>,
+) -> Vec<(&'static str, &'a str)> {
+    let mut lookups = Vec::new();
+    if let Some(url) = url {
+        lookups.push(("u", url));
+    }
+    if let Some(transfer) = transfer {
+        lookups.push(("d", transfer));
+    }
+    lookups
+}
+
+fn pack_mappings(job: &Job) -> Vec<(&'static str, &str)> {
+    if job.pack_file.is_none() {
+        return Vec::new();
+    }
+    pack_lookups(
+        job.request.source_url.as_deref(),
+        job.download_id.as_deref(),
+    )
+}
+
+/// Ready versions of a media identity in creation order.
+pub(super) fn media_ready_prefix(media: &[u8; 32]) -> Vec<u8> {
+    [&[T_MEDIA_READY][..], media].concat()
+}
+/// Every version of a media identity, newest first: creation time and
+/// identifier are both inverted so the first entry is the last `T_MEDIA` one.
+pub(super) fn media_recent_prefix(media: &[u8; 32]) -> Vec<u8> {
+    [&[T_MEDIA_RECENT][..], media].concat()
+}
+/// Versions of a media identity that are not upgrades, in creation order.
+pub(super) fn media_base_prefix(media: &[u8; 32]) -> Vec<u8> {
+    [&[T_MEDIA_BASE][..], media].concat()
+}
+/// Upgrade children of a parent that are still pending, however many
+/// finished or cancelled attempts the parent had.
+pub(super) fn pending_child_prefix(parent: &[u8; 16]) -> Vec<u8> {
+    [&[T_PENDING_CHILD][..], parent].concat()
+}
+/// Where the (possibly inverted) job identifier starts in media version keys.
+pub(super) const MEDIA_ID_AT: usize = 1 + 32 + 8;
+pub(super) fn invert<const N: usize>(bytes: [u8; N]) -> [u8; N] {
+    bytes.map(|byte| !byte)
+}
+
 /// Whether a job's own download or shared-file binding names the transfer.
 pub(super) fn claims(job: &Job, transfer: &str) -> bool {
     job.download_id.as_deref() == Some(transfer)
@@ -300,10 +383,41 @@ pub(super) fn claims(job: &Job, transfer: &str) -> bool {
             .is_some_and(|file| file.torrent_id == transfer)
 }
 
-/// The live-ownership entries of a job, derived from the record alone.
+/// The bounded-lookup entries of a job (`mynou-jobs/4`), derived from the
+/// record alone.
 pub(super) fn ownership(job: &Job) -> Result<Vec<Key>> {
     let id = id_bytes(&job.id)?;
-    let mut keys = Vec::new();
+    let media = digest_bytes(&job.request.media_key())?;
+    let created = job.created_at.to_be_bytes();
+    let mut keys = vec![key(&[
+        &media_recent_prefix(&media),
+        &(!job.created_at).to_be_bytes(),
+        &invert(id),
+    ])];
+    if job.state == "ready" {
+        keys.push(key(&[&media_ready_prefix(&media), &created, &id]));
+    }
+    match &job.upgrade_parent {
+        None => keys.push(key(&[&media_base_prefix(&media), &created, &id])),
+        Some(parent) if pending_upgrade(job) => {
+            keys.push(key(&[&pending_child_prefix(&id_bytes(parent)?), &id]));
+        }
+        Some(_) => {}
+    }
+    if let Some(path) = &job.pack_file {
+        for (class, value) in pack_mappings(job) {
+            keys.push(key(&[
+                &pack_mapping_scope(
+                    path,
+                    class,
+                    value,
+                    job.shared_file.is_some(),
+                    job.request.tmdb_id,
+                ),
+                &id,
+            ]));
+        }
+    }
     if let Some(file) = &job.shared_file
         && job.pack_file.as_deref() == Some(file.file_path.as_str())
     {

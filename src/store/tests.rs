@@ -3178,7 +3178,7 @@ fn index_requests(store: &Store) -> u64 {
     }
 }
 
-/// Live-ownership entries of every derived ownership table.
+/// Entries of every derived `mynou-jobs/4` lookup table.
 fn ownership_entries(index: &mut Index) -> BTreeSet<Key> {
     let mut found = BTreeSet::new();
     for table in [
@@ -3186,6 +3186,11 @@ fn ownership_entries(index: &mut Index) -> BTreeSet<Key> {
         layout::T_TRANSFER_CANCELLED,
         layout::T_ACQUISITION_LIVE,
         layout::T_SHARED_PHYSICAL,
+        layout::T_PACK_MAPPING,
+        layout::T_MEDIA_READY,
+        layout::T_MEDIA_RECENT,
+        layout::T_MEDIA_BASE,
+        layout::T_PENDING_CHILD,
     ] {
         let mut after = None;
         loop {
@@ -3489,4 +3494,223 @@ fn irc_ownership_conflicts_read_at_most_two_entries_per_alias() {
     assert!(error.contains("already belongs"), "{error}");
     // The job itself is never its own conflict.
     store.mutate(|db| db.check_irc_ownership(&first)).unwrap();
+}
+
+/// A pack episode request; its episode number keeps canonical keys apart.
+fn pack_episode(n: u64, created: u64) -> Job {
+    let mut job = raw_job(n, created);
+    job.request.kind = "episode".into();
+    job.request.season = 1;
+    job.request.episode = u32::try_from(n).unwrap();
+    job.request.source_url = Some("http://127.0.0.1/pack.torrent".into());
+    job.key = job.request.canonical_key();
+    job
+}
+
+#[test]
+fn pack_mapping_checks_read_a_fixed_window_beyond_former_limits() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let path = "Show/S01E02.mkv";
+    let url = "http://127.0.0.1/pack.torrent";
+    let transfer = "b".repeat(40);
+    // Above the former 10,000-job limit: every earlier mapping of the file
+    // for this source and transfer belongs to another TMDB identity.
+    let history: Vec<Job> = (1..=10_101)
+        .map(|n| {
+            let mut job = pack_episode(n, 100 + n);
+            job.pack_file = Some(path.into());
+            job.request.source_url = Some(url.into());
+            job.key = job.request.canonical_key();
+            job.download_id = Some(transfer.clone());
+            job.state = "cancelled".into();
+            job
+        })
+        .collect();
+    bulk(&mut store, history.clone());
+    let mut moved = pack_episode(20_000, 20_000);
+    moved.pack_file = Some("Show/wrong.mkv".into());
+    moved.request.source_url = Some(url.into());
+    moved.key = moved.request.canonical_key();
+    moved.download_id = Some(transfer.clone());
+    moved.state = "failed".into();
+    let mut clash = pack_episode(20_001, 20_001);
+    clash.request.tmdb_id = history[5_000].request.tmdb_id;
+    clash.pack_file = Some("Show/wrong.mkv".into());
+    clash.request.source_url = Some("http://127.0.0.1/other.torrent".into());
+    clash.key = clash.request.canonical_key();
+    clash.download_id = Some(transfer.clone());
+    clash.state = "failed".into();
+    bulk(&mut store, vec![moved.clone(), clash.clone()]);
+    let measure = |store: &mut Store, check: &dyn Fn(&mut ops::Db) -> Result<bool>| {
+        store
+            .read(false, |db| {
+                let before = db.0.requests();
+                let answer = check(db)?;
+                let requests = db.0.requests() - before;
+                assert!(requests <= 16, "{requests} index requests");
+                Ok(answer)
+            })
+            .unwrap()
+    };
+    assert!(!measure(&mut store, &|db| db.pack_mapping_conflict(&moved, path)));
+    assert!(measure(&mut store, &|db| db.pack_mapping_conflict(&clash, path)));
+    assert!(measure(&mut store, &|db| db.unshared_pack_mapping(
+        path,
+        Some(url),
+        &transfer
+    )));
+    let other = "c".repeat(40);
+    assert!(measure(&mut store, &|db| db.unshared_pack_mapping(
+        path,
+        Some("http://127.0.0.1/other.torrent"),
+        &transfer
+    )));
+    assert!(!measure(&mut store, &|db| db.unshared_pack_mapping(
+        path,
+        Some("http://127.0.0.1/other.torrent"),
+        &other
+    )));
+    drop(store);
+    // Nothing is held in memory: a restart gives the same answers.
+    let mut store = Store::open(&directory.0).unwrap();
+    assert!(measure(&mut store, &|db| db.pack_mapping_conflict(&clash, path)));
+    let error = store.remap_pack(&clash.id, path.into()).unwrap_err();
+    assert!(error.contains("already belongs"), "{error}");
+    let remapped = store.remap_pack(&moved.id, path.into()).unwrap();
+    assert_eq!(remapped.pack_file.as_deref(), Some(path));
+    // Remapping onto the file it already names does not conflict with itself.
+    let mut again = remapped.clone();
+    again.state = "failed".into();
+    bulk(&mut store, vec![again.clone()]);
+    assert!(!measure(&mut store, &|db| db.pack_mapping_conflict(&again, path)));
+}
+
+#[test]
+fn shared_owners_are_not_unshared_pack_mappings() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let file = shared_file();
+    let owners: Vec<Job> = shared_requests(&file)
+        .into_iter()
+        .enumerate()
+        .map(|(n, request)| {
+            let mut job = raw_job(n as u64 + 1, 100);
+            job.key = request.canonical_key();
+            job.request = request;
+            job.shared_file = Some(file.clone());
+            job.pack_file = Some(file.file_path.clone());
+            job.download_id = Some(file.torrent_id.clone());
+            file.validate_job(&job).unwrap();
+            job
+        })
+        .collect();
+    let url = owners[0].request.source_url.clone();
+    bulk(&mut store, owners);
+    let unshared = |store: &mut Store| {
+        store
+            .read(false, |db| {
+                db.unshared_pack_mapping(&file.file_path, url.as_deref(), &file.torrent_id)
+            })
+            .unwrap()
+    };
+    assert!(!unshared(&mut store));
+    let mut single = pack_episode(100, 200);
+    single.request.source_url = url.clone();
+    single.key = single.request.canonical_key();
+    single.pack_file = Some(file.file_path.clone());
+    single.download_id = Some(file.torrent_id.clone());
+    bulk(&mut store, vec![single]);
+    assert!(unshared(&mut store));
+}
+
+#[test]
+fn media_versions_read_a_fixed_window_beyond_former_limits() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let media = request("One media");
+    let key = media.media_key();
+    let version = |n: u64, created: u64| {
+        let mut job = raw_job(n, created);
+        job.request = media.clone();
+        job.request.source_url = Some(format!("http://127.0.0.1/{n}"));
+        job.key = job.request.canonical_key();
+        job
+    };
+    // Above the former 10,000-job limit: cancelled upgrade attempts precede
+    // the only base request and none of them is ready.
+    let parent = raw_job(99_999, 50);
+    bulk(&mut store, vec![parent.clone()]);
+    let parent = parent.id;
+    let history: Vec<Job> = (1..=10_101)
+        .map(|n| {
+            let mut job = version(n, 100 + n);
+            job.upgrade_parent = Some(parent.clone());
+            job.state = "cancelled".into();
+            job
+        })
+        .collect();
+    bulk(&mut store, history.clone());
+    let base = version(20_000, 20_000);
+    bulk(&mut store, vec![base.clone()]);
+    let measure = |store: &mut Store, check: &dyn Fn(&mut Store) -> Option<Job>| {
+        let before = index_requests(store);
+        let answer = check(store);
+        let requests = index_requests(store) - before;
+        assert!(requests <= 6, "{requests} index requests");
+        answer.map(|job| job.id)
+    };
+    let state = |store: &mut Store| {
+        store
+            .states_for(&BTreeSet::from([key.clone()]))
+            .unwrap()
+            .remove(&key)
+    };
+    let current = |store: &mut Store| store.current_media_job(&key).unwrap();
+    assert_eq!(measure(&mut store, &state), Some(base.id.clone()));
+    assert_eq!(measure(&mut store, &current), Some(base.id.clone()));
+    // The oldest ready version wins over newer ones and over the newest.
+    let mut ready = history[5_000].clone();
+    ready.state = "ready".into();
+    ready.progress = 1.0;
+    ready.imports = vec!["/library/one.mkv".into()];
+    let mut later = history[7_000].clone();
+    later.state = "ready".into();
+    later.progress = 1.0;
+    later.imports = vec!["/library/two.mkv".into()];
+    bulk(&mut store, vec![later.clone(), ready.clone()]);
+    assert_eq!(measure(&mut store, &state), Some(ready.id.clone()));
+    drop(store);
+    let mut store = Store::open(&directory.0).unwrap();
+    assert_eq!(measure(&mut store, &state), Some(ready.id.clone()));
+    ready.state = "cancelled".into();
+    later.state = "cancelled".into();
+    let newest = version(30_000, 30_000);
+    bulk(&mut store, vec![ready, later, newest.clone()]);
+    assert_eq!(measure(&mut store, &state), Some(newest.id.clone()));
+    // Same creation time: the larger identifier is the newer, as in the
+    // creation-ordered media entries.
+    let twin = version(30_001, 30_000);
+    bulk(&mut store, vec![twin.clone()]);
+    assert_eq!(measure(&mut store, &state), Some(twin.id.clone()));
+    // An entry its record does not derive is an error, never a silent pick.
+    store
+        .mutate(|db| {
+            let digest = layout::digest_bytes(&key)?;
+            let id = layout::id_bytes(&newest.id)?;
+            db.0.commit(vec![Change::PutInline(
+                layout::key(&[
+                    &layout::media_ready_prefix(&digest),
+                    &newest.created_at.to_be_bytes(),
+                    &id,
+                ]),
+                Vec::new(),
+            )])?;
+            Ok(())
+        })
+        .unwrap();
+    let error = store
+        .states_for(&BTreeSet::from([key.clone()]))
+        .unwrap_err();
+    assert!(error.contains("disagrees"), "{error}");
 }
