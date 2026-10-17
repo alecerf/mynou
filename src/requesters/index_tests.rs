@@ -590,3 +590,60 @@ fn sweep_generations_only_advance_and_stale_origin_rows_are_collected() {
             .is_err()
     );
 }
+
+#[test]
+fn full_disk_at_every_migration_flush_preserves_legacy_and_restarts() {
+    for boundary in 0..1000 {
+        let directory = Directory::new();
+        let config = config(&directory.0);
+        let mut initial = RequesterStore::open(&directory.0, &config, true)
+            .unwrap()
+            .state
+            .clone();
+        for n in 0..3 {
+            let row = demand(&config, n, 10);
+            initial.demands.insert(row.id.clone(), row);
+        }
+        let original = legacy_bytes(&initial);
+        write_private(&directory.0.join("requesters.bin"), &original);
+        let result = crate::store::with_full_disk_after(boundary, || {
+            RequesterStore::open(&directory.0, &config, false).and_then(|mut s| s.initialize())
+        });
+        let error = match result {
+            Ok(()) => {
+                assert!(boundary > 10);
+                return;
+            }
+            Err(error) => error,
+        };
+        assert!(
+            error.starts_with("Requester storage: "),
+            "boundary {boundary}: {error}"
+        );
+        assert!(
+            error.contains("disk") || error.contains(crate::store::STORAGE_FULL),
+            "boundary {boundary}: {error}"
+        );
+        assert!(!error.contains(directory.0.to_str().unwrap()), "{error}");
+        // The original remains at its live name until marker publication;
+        // afterwards the exact private backup must already exist.
+        let live = fs::read(directory.0.join("requesters.bin")).unwrap();
+        if live != original {
+            assert!(
+                fs::read_dir(&directory.0).unwrap().any(|entry| {
+                    let path = entry.unwrap().path();
+                    path.file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .contains(".legacy-")
+                        && fs::read(path).is_ok_and(|bytes| bytes == original)
+                }),
+                "boundary {boundary}: original snapshot lost"
+            );
+        }
+        let mut store = RequesterStore::open(&directory.0, &config, false).unwrap();
+        store.initialize().unwrap();
+        assert_eq!(all_ids(&store).len(), 3);
+    }
+    panic!("migration fixture exceeded its durability boundary budget");
+}

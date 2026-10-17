@@ -117,12 +117,14 @@ fn replace(directory: &Path, path: &Path, bytes: &[u8]) -> Result<()> {
             .write(true)
             .create_new(true)
             .open(&temp)
-            .map_err(|_| "Requester: cannot create storage file")?;
+            .map_err(|error| crate::store::migration_io("Requester storage", "write", &error))?;
         file.write_all(bytes)
             .and_then(|()| sync_file(&file))
-            .map_err(|_| "Requester: cannot persist storage file")?;
-        fs::rename(&temp, path).map_err(|_| "Requester: cannot publish storage file")?;
+            .map_err(|error| crate::store::migration_io("Requester storage", "write", &error))?;
+        fs::rename(&temp, path)
+            .map_err(|error| crate::store::migration_io("Requester storage", "write", &error))?;
         sync_directory(directory)
+            .map_err(|error| crate::store::migration_sync("Requester storage", &error))
     })();
     if result.is_err() {
         let _ = fs::remove_file(temp);
@@ -516,7 +518,7 @@ impl RequesterStore {
         reject_symlinks(&staging)?;
         let mut index = if published
             .try_exists()
-            .map_err(|_| "Requester: cannot inspect published index")?
+            .map_err(|error| crate::store::migration_io("Requester storage", "write", &error))?
         {
             let mut index = Index::open(&published, false)?;
             if index.get(&index::SOURCE)?.as_deref() != Some(source.as_slice()) {
@@ -564,9 +566,12 @@ impl RequesterStore {
                         "requesters.idx.abandoned-{}",
                         super::digest(&random_bytes::<16>()?)
                     ));
-                    fs::rename(&staging, &preserved)
-                        .map_err(|_| "Requester: cannot preserve interrupted staging")?;
-                    sync_directory(&self.directory)?;
+                    fs::rename(&staging, &preserved).map_err(|error| {
+                        crate::store::migration_io("Requester storage", "write", &error)
+                    })?;
+                    sync_directory(&self.directory).map_err(|error| {
+                        crate::store::migration_sync("Requester storage", &error)
+                    })?;
                 }
             }
             if let Some(index) = reusable {
@@ -619,9 +624,11 @@ impl RequesterStore {
             .try_exists()
             .map_err(|_| "Requester: cannot inspect promotion")?
         {
-            fs::rename(&staging, &published)
-                .map_err(|_| "Requester: cannot promote checked index")?;
-            sync_directory(&self.directory)?;
+            fs::rename(&staging, &published).map_err(|error| {
+                crate::store::migration_io("Requester storage", "write", &error)
+            })?;
+            sync_directory(&self.directory)
+                .map_err(|error| crate::store::migration_sync("Requester storage", &error))?;
         }
         let mut marker = MARKER.to_vec();
         marker.extend_from_slice(&identity);

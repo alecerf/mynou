@@ -195,13 +195,14 @@ fn replace(directory: &Path, path: &Path, bytes: &[u8], preserved: bool) -> Resu
         .write(true)
         .create_new(true)
         .open(&temporary)
-        .map_err(|_| "Feed state: cannot create private storage file")?;
+        .map_err(|error| crate::store::migration_io("Feed storage", "write", &error))?;
     file.write_all(bytes)
         .and_then(|()| sync_file(&file))
-        .map_err(|_| "Feed state: cannot persist storage file")?;
+        .map_err(|error| crate::store::migration_io("Feed storage", "write", &error))?;
     reject_symlinks(path)?;
-    fs::rename(&temporary, path).map_err(|_| "Feed state: cannot publish storage file")?;
-    sync_directory(directory)
+    fs::rename(&temporary, path)
+        .map_err(|error| crate::store::migration_io("Feed storage", "write", &error))?;
+    sync_directory(directory).map_err(|error| crate::store::migration_sync("Feed storage", &error))
 }
 
 fn counters(index: &mut Index) -> Result<(u64, u64)> {
@@ -658,9 +659,11 @@ impl Storage {
                         "feeds.idx.abandoned-{}",
                         super::digest(&random_bytes::<16>()?)
                     ));
-                    fs::rename(&staging, abandoned)
-                        .map_err(|_| "Feed state: cannot preserve interrupted staging")?;
-                    sync_directory(&self.directory)?;
+                    fs::rename(&staging, abandoned).map_err(|error| {
+                        crate::store::migration_io("Feed storage", "write", &error)
+                    })?;
+                    sync_directory(&self.directory)
+                        .map_err(|error| crate::store::migration_sync("Feed storage", &error))?;
                     create(&staging, source)?
                 }
             }
@@ -717,8 +720,9 @@ impl Storage {
             return Err("Feed state: index appeared before promotion".into());
         }
         fs::rename(&staging, self.directory.join("feeds.idx"))
-            .map_err(|_| "Feed state: cannot promote verified index")?;
-        sync_directory(&self.directory)?;
+            .map_err(|error| crate::store::migration_io("Feed storage", "write", &error))?;
+        sync_directory(&self.directory)
+            .map_err(|error| crate::store::migration_sync("Feed storage", &error))?;
         let index = Index::open(&self.directory.join("feeds.idx"), false)?;
         let backend = std::mem::replace(&mut self.backend, Backend::Absent);
         let original = match backend {

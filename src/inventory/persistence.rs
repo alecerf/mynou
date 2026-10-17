@@ -374,6 +374,9 @@ pub(super) fn create(directory: &Path) -> Result<Index> {
     create_bound(directory, random_bytes::<32>()?)
 }
 pub(super) fn create_bound(directory: &Path, identity: [u8; 32]) -> Result<Index> {
+    create_bound_checked(directory, identity).map_err(|error| explain_open(directory, error))
+}
+fn create_bound_checked(directory: &Path, identity: [u8; 32]) -> Result<Index> {
     clean_path(directory)?;
     reject_symlinks(directory)?;
     // create, not create_dir_all or chmod: existing/legacy directories are inert.

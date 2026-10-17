@@ -449,12 +449,14 @@ fn atomic_write(path: &Path, data: &[u8]) -> Result<()> {
             .write(true)
             .create_new(true)
             .open(&temporary)
-            .map_err(|_| "Could not create state file")?;
+            .map_err(|error| crate::store::migration_io("Transfer storage", "write", &error))?;
         file.write_all(data)
             .and_then(|()| crate::store::sync_file(&file))
-            .map_err(|_| "Could not write state file")?;
-        fs::rename(&temporary, path).map_err(|_| "Could not publish state file")?;
-        crate::store::sync_directory(parent).map_err(|_| "Could not synchronize directory")?;
+            .map_err(|error| crate::store::migration_io("Transfer storage", "write", &error))?;
+        fs::rename(&temporary, path)
+            .map_err(|error| crate::store::migration_io("Transfer storage", "write", &error))?;
+        crate::store::sync_directory(parent)
+            .map_err(|error| crate::store::migration_sync("Transfer storage", &error))?;
         Ok(())
     })();
     if result.is_err() {

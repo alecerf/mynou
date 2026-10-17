@@ -620,3 +620,54 @@ fn swapped_migration_files_are_refused_at_open_without_blocking() {
         }
     }
 }
+
+#[test]
+fn full_disk_at_every_migration_flush_preserves_legacy_and_restarts() {
+    for boundary in 0..1000 {
+        let directory = Directory::new();
+        let initial = state((1..=3).map(|n| row(n, false)).collect());
+        let original = legacy(&directory.0, &initial);
+        let result = crate::store::with_full_disk_after(boundary, || {
+            AnnouncementStore::open(&directory.0, &Settings::default(), false)
+                .and_then(|mut s| s.initialize())
+        });
+        let error = match result {
+            Ok(()) => {
+                assert!(boundary > 10);
+                return;
+            }
+            Err(error) => error,
+        };
+        assert!(
+            error.starts_with("IRC announcement storage: "),
+            "boundary {boundary}: {error}"
+        );
+        assert!(
+            error.contains("disk") || error.contains(crate::store::STORAGE_FULL),
+            "boundary {boundary}: {error}"
+        );
+        assert!(!error.contains(directory.0.to_str().unwrap()), "{error}");
+        // The original remains at its live name until marker publication;
+        // afterwards the exact private backup must already exist.
+        let live = fs::read(directory.0.join("announcements.bin")).unwrap();
+        if live != original {
+            assert!(
+                fs::read_dir(&directory.0).unwrap().any(|entry| {
+                    let path = entry.unwrap().path();
+                    path.file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .contains(".legacy-")
+                        && fs::read(path).is_ok_and(|bytes| bytes == original)
+                }),
+                "boundary {boundary}: original snapshot lost"
+            );
+        }
+        let mut store = open(&directory.0, false);
+        store.initialize().unwrap();
+        for r in initial.records.values() {
+            assert_eq!(store.get(&r.id).unwrap().as_ref(), Some(r));
+        }
+    }
+    panic!("migration fixture exceeded its durability boundary budget");
+}

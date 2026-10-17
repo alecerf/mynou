@@ -4069,3 +4069,51 @@ fn a_staged_migration_reports_resumable_progress_while_it_runs() {
     assert!(!report.contains(directory.0.to_str().unwrap()));
     assert!(!report.contains("Synthetic"));
 }
+
+#[test]
+fn full_disk_at_every_migration_flush_preserves_legacy_and_restarts() {
+    for boundary in 0..1000 {
+        let directory = Directory::new();
+        let jobs: Vec<_> = (0..70).map(|n| raw_job(n, 100 + n)).collect();
+        write_legacy(&directory.0, &jobs[..65], &jobs[65..], 0);
+        let original = fs::read(directory.0.join("snapshot.bin")).unwrap();
+        let result = crate::store::with_full_disk_after(boundary, || Store::open(&directory.0));
+        let error = match result {
+            Ok(value) => {
+                drop(value);
+                assert!(boundary > 10);
+                return;
+            }
+            Err(error) => error,
+        };
+        assert!(
+            error.starts_with("Job storage: "),
+            "boundary {boundary}: {error}"
+        );
+        assert!(
+            error.contains("disk") || error.contains(crate::store::STORAGE_FULL),
+            "boundary {boundary}: {error}"
+        );
+        assert!(!error.contains(directory.0.to_str().unwrap()), "{error}");
+        // The original remains at its live name until marker publication;
+        // afterwards the exact private backup must already exist.
+        let live = fs::read(directory.0.join("snapshot.bin")).unwrap();
+        if live != original {
+            assert!(
+                fs::read_dir(&directory.0).unwrap().any(|entry| {
+                    let path = entry.unwrap().path();
+                    path.file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .contains(".legacy-")
+                        && fs::read(path).is_ok_and(|bytes| bytes == original)
+                }),
+                "boundary {boundary}: original snapshot lost"
+            );
+        }
+        let store = Store::open(&directory.0).unwrap();
+        drop(store);
+        expect_migrated(&directory.0, &jobs);
+    }
+    panic!("migration fixture exceeded its durability boundary budget");
+}
