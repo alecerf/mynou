@@ -30,8 +30,8 @@ product-defining, destructive, sensitive or costly decisions.
 - Roles live in [the catalog](engineering/roles.json); read only the needed
   `.agents/skills/mynou-*/SKILL.md` and [the runbook](engineering/README.md).
 - Meaningful changes need a distinct QA pass over the actual diff. Changes to
-  `AGENTS.md`, `engineering/`, `.agents/`, `.github/`, crypto/TLS/PKI or
-  high-risk Issues also need Security. Never fabricate a review or approval.
+  `AGENTS.md`, `engineering/`, `.agents/`, `.github/`, `.claude/`, `.trail/` (except `.trail/learnings/`),
+  `opencode.json`, `node_modules/`, `dist/claude/`, crypto/TLS/PKI or high-risk Issues also need Security. Never fabricate a review or approval.
 - Fast-forward signed commits onto `trunk` only with exact-head approvals and
   green required checks. Preserve signatures and protection; close the Issue.
 - Product code is Rust std only: **zero Cargo dependencies** of any kind, no

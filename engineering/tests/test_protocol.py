@@ -119,6 +119,31 @@ class PullRequestTurns(unittest.TestCase):
         self.assertTrue(protocol.security_required(["src/views.rs"], {"risk:high"}))
         self.assertFalse(protocol.security_required(["src/views.rs", "docs/views.md"], {"risk:medium"}))
 
+    def test_host_executed_agent_tooling_requires_security(self):
+        for path in [".claude/settings.json", ".claude/hooks/start.sh",
+                     ".trail/hook.cjs", ".trail/README.md", ".trail/.gitignore",
+                     "opencode.json", "node_modules/trail/index.js", "dist/claude/hooks.js"]:
+            with self.subTest(path=path):
+                self.assertTrue(protocol.security_required([path], {"risk:low"}))
+
+    def test_agent_tooling_path_boundaries_do_not_capture_unrelated_files(self):
+        for path in ["opencode.json.bak", "opencode.json/hooks.js", "docs/opencode.json",
+                     ".claude-other/settings.json", ".trail-other/hook.cjs",
+                     "node_modules-other/index.js", "dist/claude-other/hooks.js"]:
+            with self.subTest(path=path):
+                self.assertFalse(protocol.security_required([path], {"risk:low"}))
+
+    def test_trail_learnings_exemption_preserves_other_security_requirements(self):
+        learnings = [".trail/learnings/session.md", ".trail/learnings/nested/session.md"]
+        self.assertFalse(protocol.security_required(learnings, {"risk:low"}))
+        self.assertTrue(protocol.security_required([".trail/learnings-other/session.md"], set()))
+        for sensitive in [".trail/hook.cjs", "engineering/protocol.py", "opencode.json"]:
+            with self.subTest(path=sensitive):
+                self.assertTrue(protocol.security_required(learnings + [sensitive], set()))
+        for risk in ["risk:high", "risk:critical"]:
+            with self.subTest(risk=risk):
+                self.assertTrue(protocol.security_required(learnings, {risk}))
+
     def test_ci_is_green_only_when_every_latest_check_completed_cleanly(self):
         done = {"status": "completed", "conclusion": "success"}
         self.assertEqual(protocol.ci_state([]), "missing")
