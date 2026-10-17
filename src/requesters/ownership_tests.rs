@@ -260,6 +260,45 @@ fn serving_startup_validates_in_bounded_steps_behind_a_closed_gate() {
 }
 
 #[test]
+fn status_answers_while_a_startup_step_waits_for_a_busy_store() {
+    let directory = Directory::new();
+    let config = config(&directory);
+    let engine = Engine::open_for_management(config.clone()).unwrap();
+    admitted(&engine, &config, 3);
+    drop(engine);
+    let engine = Engine::open_serving(config).unwrap();
+    // A long operation holds the job store, so the first requester page waits.
+    let held = lock(&engine.store).unwrap();
+    let stepper = std::sync::Arc::clone(&engine);
+    let step = std::thread::spawn(move || stepper.startup_step());
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let reader = std::sync::Arc::clone(&engine);
+    let waiting = std::thread::spawn(move || {
+        sender
+            .send((reader.status(), reader.startup_state()))
+            .unwrap()
+    });
+    let (status, state) = receiver
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("status waited for a startup step");
+    waiting.join().unwrap();
+    assert_eq!(state.unwrap(), "validating");
+    let status = status.unwrap();
+    assert_eq!(status.get("jobs"), Some(&crate::json::Value::Null));
+    assert_eq!(
+        status
+            .get("startup")
+            .and_then(|startup| startup.get("state"))
+            .and_then(crate::json::Value::as_str),
+        Some("validating")
+    );
+    drop(held);
+    assert!(!step.join().unwrap().unwrap());
+    assert_eq!(startup_number(&engine, "pages"), 1);
+}
+
+#[test]
 fn failed_serving_startup_keeps_the_gate_shut_and_reports_the_error() {
     let directory = Directory::new();
     let config = config(&directory);

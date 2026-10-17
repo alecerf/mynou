@@ -78,6 +78,7 @@ pub struct Engine {
     downloads: OnceLock<Client>,
     start_downloads: bool,
     startup: Mutex<startup::Startup>,
+    startup_runner: Mutex<()>,
     /// Startup validation has not completed: mutations stay refused.
     pub(crate) starting: AtomicBool,
     transfer_sweep: Mutex<Option<String>>,
@@ -170,6 +171,7 @@ impl Engine {
             downloads: OnceLock::new(),
             start_downloads,
             startup: Mutex::new(startup::Startup::default()),
+            startup_runner: Mutex::new(()),
             starting: AtomicBool::new(true),
             transfer_sweep: Mutex::new(None),
             sync_lock: Mutex::new(()),

@@ -25,7 +25,7 @@ pub(crate) const STAGES: [&str; 13] = [
     "transfers",
 ];
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct Startup {
     stage: usize,
     after: Option<Key>,
@@ -74,12 +74,18 @@ impl Engine {
     /// Runs one bounded startup step; true once startup is complete. A
     /// failure is kept: every later call returns it and the gate stays shut.
     pub(crate) fn startup_step(&self) -> Result<bool> {
-        let mut startup = lock(&self.startup)?;
-        if let Some(error) = &startup.error {
-            return Err(error.clone());
+        // One step runs at a time. The progress lock is held only to read and
+        // record progress, never across a page, so status and readiness
+        // answer while a page waits for a busy store.
+        let _step = lock(&self.startup_runner)?;
+        let current = lock(&self.startup)?.clone();
+        if let Some(error) = current.error {
+            return Err(error);
         }
-        if startup.stage < STAGES.len() {
-            match self.startup_page(&startup) {
+        if current.stage < STAGES.len() {
+            let page = self.startup_page(&current);
+            let mut startup = lock(&self.startup)?;
+            match page {
                 Ok((rows, next)) => {
                     startup.pages += 1;
                     startup.stage_pages += 1;
@@ -97,7 +103,7 @@ impl Engine {
                 }
             }
         }
-        if startup.stage < STAGES.len() {
+        if lock(&self.startup)?.stage < STAGES.len() {
             return Ok(false);
         }
         self.starting.store(false, Ordering::Release);
