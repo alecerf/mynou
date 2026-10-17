@@ -1,7 +1,9 @@
 # CI, releases and download verification
 
-Contributors use isolated Git worktrees and validate locally first, using Docker
-wherever practical and native macOS for platform-specific checks. See the
+Contributors use isolated Git worktrees and validate Rust locally first with the
+installed toolchain pinned by `rust-toolchain.toml`. Python engineering checks
+use Docker; Docker is optional for Rust Linux reproduction or fallback. Record
+the host platform and unavailable coverage. See the
 [local validation commands](../engineering/README.md#local-validation). Batch
 validated changes before pushing to minimize CI runs. GitHub Actions performs
 required final checks and publishes releases. A run is evidence for its exact

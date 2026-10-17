@@ -11,10 +11,11 @@ Read the Issue acceptance, the complete actual diff, earlier findings and the
 actual CI results; for a release PR, read the deleted unreleased notes, which
 become the public changelog. Verify behavior, regressions, edge cases, architecture, docs,
 release notes, impacted UX/security and shortcuts. Do not trust implementation
-assertions. Reproduce relevant checks locally in Docker wherever practical in a
-detached Git worktree at the exact PR head; use native macOS for platform-only
-checks when available. Record commands, environment, results and coverage gaps;
-reuse current-head CI evidence without triggering redundant runs.
+assertions. Reproduce relevant checks in a detached Git worktree at the exact
+PR head: use the installed pinned native Rust toolchain and Docker for Python
+checks, optionally Docker for Linux reproduction. Record the checked commit,
+toolchain/platform, commands, results and coverage gaps; reuse current-head CI
+evidence without triggering redundant runs.
 Before approving, verify every PR commit is `Verified` on GitHub, not merely
 cryptographically valid locally.
 

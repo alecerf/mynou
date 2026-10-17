@@ -20,10 +20,10 @@ Review separately from implementation: claim the PR with `/assign`, then post
 `/approve security <head-sha>` or `/reject security <head-sha>` with actual
 findings. A verdict covers only that exact commit. Self-approval is neither
 available nor required; a rejection blocks merge until a correction is reviewed.
-Run relevant tests and scans locally in an isolated Git worktree, using Docker
-wherever practical and synthetic data without credentials. Use native macOS for
-platform-specific checks when available; record gaps and actual evidence. Avoid
-redundant CI runs while preserving every required security gate.
+Run relevant tests and scans locally in an isolated Git worktree, using the
+installed pinned native Rust toolchain and Docker for Python checks. Use synthetic
+data without credentials; Docker is optional for Linux reproduction. Record
+platform gaps and actual evidence. Avoid redundant CI runs while preserving every required security gate.
 Verify each PR commit's GitHub `Verified` status and that integration preserves
 the exact approved signed commits without overriding branch protection. A valid
 signature is not a substitute for source review or trusted-account commands.

@@ -12,8 +12,9 @@ Prefer explicit types/errors, bounded allocation, narrow locks, immutable captur
 policy, checked recovery and scoped effects. Inspect relevant code once. Preserve
 existing changes/data compatibility. Commit meaningful progress, use independently
 authored synthetic edge-case fixtures, and work in the Issue Git worktree.
-Validate tests, format, Clippy and builds locally in Docker wherever practical;
-use native macOS for platform-specific checks and record unavailable coverage.
+Validate tests, format, Clippy and builds locally with the installed toolchain
+pinned by rust-toolchain.toml, following the runbook native commands. Docker is
+optional for Linux reproduction or fallback; record unavailable platform coverage.
 Fix failures locally, then push validated batches to minimize CI runs. Required
 checks must still pass before merge.
 Never change the package version; add user-facing notes to

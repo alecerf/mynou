@@ -33,8 +33,9 @@ proposal, record:
 - Actual native prerequisites; unknown blockers stay Needs Triage, not fake Ready.
 
 Features use enhancement. A bug label requires actual reproduction, code or CI
-failure evidence; reproduce locally in Docker wherever practical, using native
-macOS for platform-specific behavior. Any code edits use the Issue Git worktree.
+failure evidence; reproduce Rust behavior with the installed pinned native
+toolchain, using Docker for Python checks or optional Linux reproduction and
+recording platform gaps. Any code edits use the Issue Git worktree.
 Use native labels and dependencies only when the API actually persists them. Do not invent failures,
 dates or capabilities. Never publish credentials, private media, sensitive
 vulnerability details or other user data in public work.

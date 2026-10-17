@@ -39,10 +39,10 @@ product-defining, destructive, sensitive or costly decisions.
   fallback. Tooling uses Python std and GitHub, as existing CI does.
 - **Use `git worktree` for every code change**, including tooling and conflict
   fixes: one isolated worktree per Issue branch; never edit the shared checkout.
-- **Validate locally first, using Docker wherever practical.** Run relevant
-  tests, lint and builds before pushing; use native macOS for platform-only checks.
-  Batch validated commits into meaningful pushes to minimize CI; never use CI
-  as a debugging loop or bypass required checks. See the runbook for commands.
+- **Validate locally first, using the installed pinned Rust toolchain.** Run
+  tests, lint and builds before pushing; keep Docker for Python checks and optional
+  Linux reproduction. Record platform gaps. Batch validated pushes to minimize CI;
+  never use CI as a debugging loop or bypass required checks. See the runbook.
 - Use signed Conventional Commits: `<type>(<scope>): <summary>`. Configure
   a GitHub-verified committer email and signing key; confirm pushed commits
   are `Verified` before review or integration.

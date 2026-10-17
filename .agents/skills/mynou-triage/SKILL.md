@@ -7,8 +7,9 @@ Invoke for ambiguous intent, reproduction, priority, impact or stalled work.
 Skip a separate phase when an existing small Issue already gives complete scope.
 
 Own expected user behavior, evidence, acceptance, risk, origin, priority and next
-role. Reproduce locally in Docker wherever practical, using native macOS for
-platform-specific behavior and CI for unavailable coverage. Any code edits use
+role. Reproduce Rust behavior locally with the installed pinned native toolchain,
+and use Docker for Python checks or optional Linux reproduction. Record platform
+gaps and use required CI for unavailable coverage. Any code edits use
 the Issue Git worktree; inspect code/prior logs first. Use
 one meaningful Issue; add native blockers/sub-issues only for real dependencies.
 Keep one status/priority/risk/origin label per family. Native issue types are

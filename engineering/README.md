@@ -3,7 +3,8 @@
 The user supplies intent; agents own engineering. GitHub is the only shared
 state: Issues are the backlog, comments coordinate agents, PRs carry changes
 and Actions performs required final checks and publishes. Validate locally first,
-using Docker wherever practical. Workers and local files are disposable.
+using the installed pinned Rust toolchain for Rust and Docker for Python checks.
+Workers and local files are disposable.
 Any number of agents may work at once, one per Issue.
 
 ## Start of a session
@@ -88,8 +89,8 @@ with green checks goes to QA.
    and conflict fixes. One Issue has exactly one branch and one PR; resume an
    existing PR instead of opening another. Open a draft PR with `Closes #<issue>`
    after the first locally validated batch.
-3. Commit meaningful progress locally. Run relevant tests, lint and builds in
-   Docker wherever practical (see [Local validation](#local-validation)); fix
+3. Commit meaningful progress locally. Run relevant Rust tests, lint and builds
+   with the installed pinned toolchain and Python checks in Docker (see [Local validation](#local-validation)); fix
    failures locally before pushing. Batch commits into a useful validated push
    instead of triggering CI for each edit. Keep claims alive with comments at
    least hourly; push a recovery checkpoint when stopping or handing off.
@@ -115,8 +116,8 @@ Rejections send the turn back to you: fix, push, answer the findings and post
    Issue's implementation claim).
 2. Read the Issue acceptance, the complete diff, earlier findings and the actual
    CI results and local evidence. Do not trust the author's description; reproduce
-   relevant checks locally in Docker, using an isolated worktree at the exact
-   PR head. Use native macOS for platform-only checks when available.
+   relevant checks locally using the pinned native Rust toolchain and Docker for
+   Python checks, in an isolated worktree at the exact PR head. Record platform gaps.
 3. Post `/approve qa <head-sha>` with what you checked (acceptance, local checks,
    CI run and limits), or
    `/reject qa <head-sha>` with concrete findings.
@@ -169,7 +170,7 @@ Use Conventional Commits for all new commits: `<type>(<scope>): <summary>`
 (scope optional). Choose `feat` for functionality, `fix` for defects, `docs` for
 documentation, `test` for test changes and `chore` for engineering maintenance;
 use `refactor`, `perf`, `build` or `ci` when appropriate. For example:
-`chore(agents): require worktrees and local Docker validation`. Describe the
+`chore(agents): document pinned native Rust validation`. Describe the
 change concisely in English; use `!` and a `BREAKING CHANGE:` footer when needed.
 
 Sign all new commits, including amended and rebased commits. Use the contributor's
@@ -246,13 +247,47 @@ than assuming patch equivalence proves signed commit preservation.
 
 ## Local validation
 
-Use Docker for as much testable work as practical: Python engineering checks,
-fixture generation, portable Rust tests, format, Clippy and builds. Use the Rust
-version and components from `rust-toolchain.toml`, and Python 3.11 or newer for
-standard-library tooling. Reuse images and per-worktree Cargo caches; select
-checks relevant to the diff, then run the affected broader suite before handoff.
-Containers must use synthetic data and controlled peers, without production
-credentials, private media or real notifications. Bind host services to loopback.
+Use the installed native Rust toolchain for local Rust format, Clippy, builds
+and tests. Run commands from the isolated Issue or review worktree so rustup
+selects the version and components pinned in `rust-toolchain.toml`; install that
+exact toolchain and its components before validation if unavailable. Use Python
+3.11 or newer for standard-library tooling. Keep build output and fixtures in
+each worktree; select checks relevant to the diff, then run the affected broader
+suite before handoff. Use synthetic data and controlled loopback peers, without
+production credentials, private media or real notifications, on hosts and in
+containers. Bind host services to loopback.
+
+Run the native Rust suite as a non-root user so permission-denial fixtures
+actually deny writes. This creates a physical temporary directory (including on
+macOS, where the system temporary path may contain symlinks), generates the
+synthetic crypto vectors, builds offline with the lockfile, and runs tests with
+the existing bounded runner. Results remain under `target/` for review.
+
+```sh
+(
+  set -eu
+  test "$(id -u)" -ne 0
+  python3 -c 'import sys; assert sys.version_info >= (3, 11), "Python 3.11+ required"'
+  rustc --version
+  cargo --version
+  mkdir -p target
+  validation_dir="$(mktemp -d "$(pwd -P)/target/local-validation.XXXXXX")"
+  export TMPDIR="$(cd "$validation_dir" && pwd -P)"
+  export MYNOU_CRYPTO_FIXTURES="$TMPDIR/crypto-vectors.json"
+  cargo fmt --all --check
+  cargo clippy --all-targets --offline --locked -- -D warnings
+  python3 .github/scripts/crypto_fixtures.py "$MYNOU_CRYPTO_FIXTURES"
+  cargo build --offline --locked
+  cargo metadata --offline --locked --format-version 1 > "$TMPDIR/metadata.json"
+  cargo test --all-targets --no-run --offline --locked --message-format=json-render-diagnostics > "$TMPDIR/test-build.jsonl"
+  python3 .github/scripts/parallel_tests.py "$TMPDIR/test-build.jsonl" --metadata "$TMPDIR/metadata.json" --output "$TMPDIR/results" --timeout 480
+)
+```
+
+Native results cover the host platform only: macOS does not establish Linux
+coverage, and Linux does not establish Apple Silicon/macOS coverage. Record the
+host architecture and OS, `rustc --version`, commands and unavailable coverage;
+required CI remains the final platform gate.
 
 For the engineering suite, run this from the Issue or review worktree. Mount
 Git's common directory read-only at the same absolute path: a linked worktree's
@@ -273,10 +308,11 @@ docker run --rm --network none \
   '
 ```
 
-For the portable Rust suite, use a non-root user so permission-denial fixtures
-actually deny writes. The image provides the Linux CA bundle required by TLS
-fixtures. Its Rust version must match `rust-toolchain.toml`. Give each Issue
-worktree its own target-cache volume (replace `<issue>` below):
+Docker is optional for Linux Rust reproduction or as a fallback when the native
+environment is unavailable. The portable Rust image runs as a non-root user and
+provides the Linux CA bundle required by TLS fixtures. Its Rust version must
+match `rust-toolchain.toml`. Give each Issue worktree its own target-cache volume
+(replace `<issue>` below):
 
 ```sh
 docker build -t mynou-local-rust -f engineering/Dockerfile.rust engineering
@@ -298,13 +334,8 @@ docker run --rm --network none \
 ```
 
 Docker's Linux environment does not validate native Apple Silicon/macOS behavior.
-Run platform-specific checks locally on a compatible Mac when practical; otherwise identify
-the gap and leave it to required macOS CI. Generate the crypto reference fixture
-with `.github/scripts/crypto_fixtures.py` and pass `MYNOU_CRYPTO_FIXTURES` for
-Rust tests that need it. Keep temporary test directories physical (no symlink)
-on macOS, as in the CI workflow. Never claim container results prove macOS
-compatibility. If Docker is unavailable or a check cannot run in a container,
-use a suitable native local environment and record that limit.
+If Docker is unavailable for Python checks, use Python 3.11 or newer locally and
+record that limit. Never pass credentials into validation containers.
 
 Record the checked commit, commands, environment, results and skipped checks in
 the PR. CI remains the required final gate and release publisher. Minimize runs

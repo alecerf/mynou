@@ -11,9 +11,10 @@ full scans on every session. Use incremental deterministic signals/prior CI firs
 Before deleting code, verify references, reachability and public contracts; a
 compiler warning alone does not justify removing a public API. Safe cleanup uses
 the normal Issue/PR/QA flow with required CI; large changes go back to Triage.
-Make code changes in the Issue Git worktree and validate locally in Docker
-wherever practical. Batch fixes before pushing; minimize CI reruns. Do not
-invent work to remain active.
+Make code changes in the Issue Git worktree and validate Rust locally with the
+installed pinned toolchain and Python checks in Docker. Use Docker optionally for
+Linux reproduction and record platform gaps. Batch fixes before pushing; minimize
+CI reruns. Do not invent work to remain active.
 
 No ghost branches (owner rule): a branch lives only while it heads an open PR or
 its Issue has an active claim. Delete the board's `ghost_branches` after checking

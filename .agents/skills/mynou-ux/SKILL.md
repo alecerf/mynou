@@ -14,8 +14,8 @@ and explicit destructive actions. Independently identify worthwhile confusing or
 inaccessible behavior; create a bounded UX Issue with impact and acceptance.
 
 Record concise decisions in the Issue for Rust before implementation takes
-over. Any code edits use the Issue Git worktree. Verify locally in Docker where
-practical, or native macOS for platform-specific behavior; reserve CI for
-required final checks and record coverage gaps. Do not fabricate interaction
+over. Any code edits use the Issue Git worktree. Verify Rust locally with the
+installed pinned native toolchain; use Docker for Python checks and optional
+Linux reproduction. Reserve CI for required final checks and record coverage gaps. Do not fabricate interaction
 evidence. Existing user work normally outranks speculative polish. Escalate only fundamental product
 direction that cannot be inferred, never ordinary design choices.

@@ -85,7 +85,7 @@ keepalive, simultaneous contact, restart and fresh keys, plus malformed/tampered
 packets, index confusion, queue limits, entropy failures and irreversible fences.
 CI also retains the independent Python-generated Noise, cookie and transport
 vectors used by the underlying components. These fixtures and portable tests
-can also run locally; follow the Docker-first
+can also run locally with the installed pinned Rust toolchain; follow the
 [validation runbook](../engineering/README.md#local-validation).
 
 The outer-UDP driver is now [the tunnel runtime](/docs/tunnel.md). Global multi-peer handshake/admission bounds, profiles,
