@@ -9,3 +9,6 @@
 /library/
 *.tmp
 **/__pycache__/
+/opencode.json
+/opencode.jsonc
+/.opencode/
