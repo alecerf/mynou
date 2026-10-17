@@ -216,6 +216,11 @@ accounts or real notifications. New CI/tooling changes require their own review.
 | Races and restart | Concurrent new operations with session loss/expiry, route changes, roaming, reconnect, configuration revocation/restart and delayed old-generation results. Ordinary path sees only authorized outer VPN UDP; unsupported flows stay blocked. Verify retained bytes, durable pause/selection, no fallback acquisition and no duplicate listeners. |
 | Resources and claims | Measured increasing-load CPU/memory/timing and explicit queue/flow limits on macOS arm64. Independent QA/Security read the real current-head CI and supported-subset limits before a protected mode or installation guide ships. |
 
+The [independent peer fixture](/docs/wireguard-interop.md) records the approved
+wireguard-go pin, confinement, scenarios and evidence limits. Its separate CI job
+is not a required branch check. This gate remains unresolved until a real green
+Actions run is recorded and reviewed.
+
 Include separate isolation/revocation fixtures for pack inspection, library
 group replacement previews and IRC-triggered metadata lookup, including their
 no-transfer-worker and delayed-result paths. Check the authorization fences on
