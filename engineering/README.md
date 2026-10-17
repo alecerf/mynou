@@ -121,11 +121,12 @@ Rejections send the turn back to you: fix, push, answer the findings and post
    CI run and limits), or
    `/reject qa <head-sha>` with concrete findings.
 4. Security is required when the diff touches `AGENTS.md`, `engineering/`,
-   `.agents/`, `.github/`, `.claude/`, `.trail/` (except `.trail/learnings/`),
-   `opencode.json`, `node_modules/`, `dist/claude/`, `src/crypto`, `src/tls` or
-   `src/pki`, or the Issue is `risk:high` or `risk:critical` (the board shows
-   `security_required`). After a
-   QA approval, post `/wait security`; Security records its own verdict.
+   `.agents/`, `.github/`, `.claude/`, `.opencode/`, `.trail/` (except
+   `.trail/learnings/`), `opencode.json(c)`, `node_modules/`, `dist/claude/`,
+   `src/crypto`, `src/tls` or `src/pki`, or the Issue is `risk:high` or
+   `risk:critical` (the board shows `security_required`; a tracked symlink at
+   one of those paths counts too). After a QA approval, post `/wait security`;
+   Security records its own verdict.
 5. When every required verdict approves the head and checks are green, merge
    integrate the signed commits as described below and close the Issue; if CI is
    still running, post `/wait ci`. Then

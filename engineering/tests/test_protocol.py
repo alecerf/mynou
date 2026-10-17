@@ -121,20 +121,38 @@ class PullRequestTurns(unittest.TestCase):
 
     def test_host_executed_agent_tooling_requires_security(self):
         for path in [".claude/settings.json", ".claude/hooks/start.sh",
+                     ".opencode/plugins/start.ts", ".opencode/opencode.json",
+                     ".opencode/opencode.jsonc",
                      ".trail/hook.cjs", ".trail/README.md", ".trail/.gitignore",
-                     "opencode.json", "node_modules/trail/index.js", "dist/claude/hooks.js"]:
+                     "opencode.json", "opencode.jsonc", "node_modules/trail/index.js",
+                     "dist/claude/hooks.js", ".Claude/settings.json", ".OpenCode/plugins/x.js",
+                     ".Trail/hook.cjs", "opencode.JSON", "AGENTS.MD", "dist/Claude/hooks.js"]:
+            with self.subTest(path=path):
+                self.assertTrue(protocol.security_required([path], {"risk:low"}))
+
+    def test_sensitive_directory_entries_require_security(self):
+        # A tracked symlink (`node_modules -> vendor`) is the same host code
+        # without the trailing slash, so the bare entry needs Security too.
+        for path in ["node_modules", ".claude", ".opencode", ".trail", "dist",
+                     "dist/claude", "engineering", ".agents", ".github",
+                     "src/crypto", "src/tls", "src/pki", "NODE_MODULES",
+                     "src/crypto.rs", "src/tls.rs", "src/pki.rs"]:
             with self.subTest(path=path):
                 self.assertTrue(protocol.security_required([path], {"risk:low"}))
 
     def test_agent_tooling_path_boundaries_do_not_capture_unrelated_files(self):
-        for path in ["opencode.json.bak", "opencode.json/hooks.js", "docs/opencode.json",
-                     ".claude-other/settings.json", ".trail-other/hook.cjs",
-                     "node_modules-other/index.js", "dist/claude-other/hooks.js"]:
+        for path in ["opencode.json.bak", "opencode.json/hooks.js", "opencode.jsonc.bak",
+                     "docs/opencode.json", "docs/opencode.jsonc",
+                     ".claude-other/settings.json", ".opencode-other/plugins/x.js",
+                     ".trail-other/hook.cjs", "node_modules-other/index.js",
+                     "node_modules2/index.js", "dist2/claude/hooks.js", "dist/claude-other/hooks.js",
+                     "engineering2/x.py"]:
             with self.subTest(path=path):
                 self.assertFalse(protocol.security_required([path], {"risk:low"}))
 
     def test_trail_learnings_exemption_preserves_other_security_requirements(self):
-        learnings = [".trail/learnings/session.md", ".trail/learnings/nested/session.md"]
+        learnings = [".trail/learnings/session.md", ".trail/learnings/nested/session.md",
+                     ".Trail/Learnings/session.md"]
         self.assertFalse(protocol.security_required(learnings, {"risk:low"}))
         self.assertTrue(protocol.security_required([".trail/learnings-other/session.md"], set()))
         for sensitive in [".trail/hook.cjs", "engineering/protocol.py", "opencode.json"]:
