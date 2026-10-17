@@ -1,0 +1,40 @@
+# Independent WireGuard peer for the interoperability test only (Issue #220).
+# Upstream wireguard-go by the WireGuard project, fetched through the Go module
+# proxy and verified against the public checksum database. Nothing here is
+# linked into Mynou, built by Cargo, shipped or released. See
+# docs/wireguard-interop.md for the provenance and the confinement of the peer.
+FROM golang:1.26.4-alpine3.22@sha256:727cfc3c40be55cd1bc9a4a059406b28a059857e3be752aa9d09531e12c20c56 AS build
+
+ENV CGO_ENABLED=0 \
+    GOFLAGS=-trimpath \
+    GOTOOLCHAIN=local \
+    GOPROXY=https://proxy.golang.org,off \
+    GOSUMDB=sum.golang.org \
+    GONOSUMDB= \
+    GOPRIVATE= \
+    GOINSECURE=
+
+RUN go install golang.zx2c4.com/wireguard@v0.0.0-20250521234502-f333402bd9cb \
+    && go version -m /go/bin/wireguard \
+        | awk '$1 == "mod" || $1 == "dep" || $1 == "=>" { print $1, $2, $3, $4 }' > /tmp/modules \
+    && printf '%s\n' \
+        'mod golang.zx2c4.com/wireguard v0.0.0-20250521234502-f333402bd9cb h1:whnFRlWMcXI9d+ZbWg+4sHnLp52d5yiIPUxMBSt4X9A=' \
+        'dep golang.org/x/crypto v0.37.0 h1:kJNSjF/Xp7kU0iB2Z+9viTPMW4EqqsrywMXLJOOsXSE=' \
+        'dep golang.org/x/net v0.39.0 h1:ZCu7HMWDxpXpaiKdhzIfaltL9Lp31x/3fCP11bc6/fY=' \
+        'dep golang.org/x/sys v0.32.0 h1:s77OFDvIQeibCmezSnk/q6iAfkdiQaJi4VzroCFrN20=' > /tmp/expected \
+    && sort /tmp/modules > /tmp/modules.sorted \
+    && sort /tmp/expected > /tmp/expected.sorted \
+    && cmp /tmp/modules.sorted /tmp/expected.sorted \
+    && go version -m /go/bin/wireguard | head -n 1 | grep -qx '/go/bin/wireguard: go1.26.4' \
+    && install -m 0755 /go/bin/wireguard /wireguard-go
+
+FROM alpine:3.22.6@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8
+
+# BusyBox `ip` from the base image configures the namespaced interface; no
+# package is installed and wg-quick is deliberately absent.
+COPY --from=build /wireguard-go /usr/local/bin/wireguard-go
+ENV WG_PROCESS_FOREGROUND=1 \
+    LOG_LEVEL=verbose
+# The verbose log goes straight to a file in the run's anonymous volume, where the
+# test reads it without any relay or host mount.
+ENTRYPOINT ["/bin/sh", "-c", "exec /usr/local/bin/wireguard-go -f wg0 >> /var/log/wireguard/peer.log 2>&1"]
