@@ -1,0 +1,38 @@
+name: WireGuard interoperability
+on:
+  pull_request:
+    paths:
+      - 'src/wireguard.rs'
+      - 'src/wireguard/**'
+      - 'src/tunnel*.rs'
+      - 'src/netstack.rs'
+      - 'src/netstack/**'
+      - 'src/crypto.rs'
+      - 'src/crypto/**'
+      - 'tests/wireguard_interop.rs'
+      - 'engineering/wireguard_interop.py'
+      - 'engineering/tests/test_wireguard_interop.py'
+      - 'engineering/Dockerfile.wireguard-peer'
+      - 'engineering/Dockerfile.rust'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/wireguard-interop.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: wireguard-interop-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  independent-peer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the checksum-verified independent peer and Rust test image
+        run: |
+          docker build -t mynou-wireguard-peer -f engineering/Dockerfile.wireguard-peer engineering
+          docker build -t mynou-local-rust -f engineering/Dockerfile.rust engineering
+      - name: Exercise every required interoperability scenario
+        run: python3 engineering/wireguard_interop.py --target-volume mynou-rust-220
