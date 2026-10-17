@@ -381,12 +381,14 @@ can require direct store inspection instead of an API response.
 Claims examine bounded queue windows and resume past ineligible jobs. Their
 position is written at most once a minute, so a backlog of ineligible jobs does
 not cost a durable commit per attempt; a restart resumes from the last
-checkpoint, which a new process writes on its first attempt. Feed
-routing and requester cancellation sweeps also retain an in-memory cursor.
-Transfer retirement settles at most 64 jobs (up to eight transfer debts each)
-per pass. Indexed ownership
-predicates page through the matching physical identity before concluding it is
-unowned; a response page is never used as an exhaustive ownership proof.
+checkpoint, which a new process writes on its first attempt. Requester
+cancellation sweeps keep a durable cursor that advances only after a page
+settles, so a restart resumes where the last settled page ended; feed routing
+retains an in-memory cursor. Transfer retirement settles at most 64 jobs (up to
+eight transfer debts each) per pass. Ownership lookups read at most two index
+entries and verify each against its job record (see
+[Job migration and downgrade](#job-migration-and-downgrade)); an entry its
+record contradicts is a storage error, never proof that nothing owns it.
 
 ### Job migration and downgrade
 

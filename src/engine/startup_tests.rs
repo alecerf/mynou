@@ -20,7 +20,7 @@ impl Drop for Directory {
     }
 }
 
-/// Native transfers on a loopback-only, peerless client.
+/// Native transfers on a peerless client (no DHT or PEX) with a loopback API.
 fn config(directory: &Directory) -> crate::config::Config {
     let mut value = config::default_json();
     value.insert("listen", "127.0.0.1:0");
