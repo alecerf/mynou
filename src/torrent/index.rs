@@ -1403,4 +1403,38 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn full_disk_at_every_migration_flush_preserves_legacy_and_restarts() {
+        for boundary in 0..1000 {
+            let mut fixture = Fixture::new();
+            let id = fixture.source(1, Some(42));
+            let path = fixture.config.state_dir.join(format!("{id}.source"));
+            let original = fs::read(&path).unwrap();
+            let result = crate::store::with_full_disk_after(boundary, || {
+                TransferIndex::open(&mut fixture.config)
+            });
+            let error = match result {
+                Ok(value) => {
+                    drop(value);
+                    assert!(boundary > 10);
+                    return;
+                }
+                Err(error) => error,
+            };
+            assert!(
+                error.starts_with("Transfer storage: "),
+                "boundary {boundary}: {error}"
+            );
+            assert!(
+                error.contains("disk") || error.contains(crate::store::STORAGE_FULL),
+                "boundary {boundary}: {error}"
+            );
+            assert!(!error.contains(fixture.root.to_str().unwrap()), "{error}");
+            assert_eq!(fs::read(path).unwrap(), original);
+            let mut index = TransferIndex::open(&mut fixture.config).unwrap();
+            assert_eq!(index.get(&id).unwrap().unwrap().control.queue_order, 42);
+            assert_eq!(index.aggregates().unwrap().0, 1);
+        }
+        panic!("migration fixture exceeded its durability boundary budget");
+    }
 }

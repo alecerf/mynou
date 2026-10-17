@@ -237,8 +237,9 @@ fn migrate(
     progress.stage("promoting", total);
     let index_path = directory.join(INDEX);
     fs::rename(&staging_path, &index_path)
-        .map_err(|error| format!("Cannot promote the series index: {error}"))?;
-    sync_directory(directory)?;
+        .map_err(|error| crate::store::migration_io("Series storage", "write", &error))?;
+    sync_directory(directory)
+        .map_err(|error| crate::store::migration_sync("Series storage", &error))?;
     hook(Stage::Promoted)?;
     let index = Index::open(&index_path, false)?;
     write_marker(directory, &index)?;
@@ -289,7 +290,8 @@ pub(super) fn create_fresh(directory: &Path) -> Result<Index> {
     let index_path = directory.join(INDEX);
     fs::rename(&staging_path, &index_path)
         .map_err(|error| format!("Cannot publish the series index: {error}"))?;
-    sync_directory(directory)?;
+    sync_directory(directory)
+        .map_err(|error| crate::store::migration_sync("Series storage", &error))?;
     let index = Index::open(&index_path, false)?;
     write_marker(directory, &index)?;
     Ok(index)
@@ -308,6 +310,7 @@ fn discard_staging(directory: &Path) -> Result<()> {
     fs::remove_dir_all(&path)
         .map_err(|error| format!("Cannot discard the series staging directory: {error}"))?;
     sync_directory(directory)
+        .map_err(|error| crate::store::migration_sync("Series storage", &error))
 }
 
 fn open_index(path: &Path, read_only: bool) -> Result<Index> {
@@ -383,13 +386,14 @@ fn replace_file(directory: &Path, target: &Path, bytes: &[u8]) -> Result<()> {
             .write(true)
             .create_new(true)
             .open(&temporary)
-            .map_err(|error| format!("Cannot create series file: {error}"))?;
+            .map_err(|error| crate::store::migration_io("Series storage", "write", &error))?;
         file.write_all(bytes)
             .and_then(|()| sync_file(&file))
-            .map_err(|error| format!("Cannot persist series file: {error}"))?;
+            .map_err(|error| crate::store::migration_io("Series storage", "write", &error))?;
         fs::rename(&temporary, target)
-            .map_err(|error| format!("Cannot replace series file: {error}"))?;
+            .map_err(|error| crate::store::migration_io("Series storage", "write", &error))?;
         sync_directory(directory)
+            .map_err(|error| crate::store::migration_sync("Series storage", &error))
     })();
     if write.is_err() {
         let _ = fs::remove_file(&temporary);

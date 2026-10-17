@@ -1381,3 +1381,50 @@ fn series_due_pass_bounds_corrupt_prefix_and_resumes_after_restart() {
     assert_eq!(series.due_pass, [8, 400, 0]);
     assert!(ready(&mut series).requests() - before <= 20);
 }
+
+#[test]
+fn full_disk_at_every_migration_flush_preserves_legacy_and_restarts() {
+    for boundary in 0..1000 {
+        let directory = Directory::new();
+        let records = sample();
+        let original = write_legacy(&directory.0, &records, 2);
+        let result =
+            crate::store::with_full_disk_after(boundary, || SeriesStore::open(&directory.0, false));
+        let error = match result {
+            Ok(value) => {
+                drop(value);
+                assert!(boundary > 10);
+                return;
+            }
+            Err(error) => error,
+        };
+        assert!(
+            error.starts_with("Series storage: "),
+            "boundary {boundary}: {error}"
+        );
+        assert!(
+            error.contains("disk") || error.contains(crate::store::STORAGE_FULL),
+            "boundary {boundary}: {error}"
+        );
+        assert!(!error.contains(directory.0.to_str().unwrap()), "{error}");
+        // The original remains at its live name until marker publication;
+        // afterwards the exact private backup must already exist.
+        let live = fs::read(directory.0.join("series.json")).unwrap();
+        if live != original {
+            assert!(
+                fs::read_dir(&directory.0).unwrap().any(|entry| {
+                    let path = entry.unwrap().path();
+                    path.file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .contains(".legacy-")
+                        && fs::read(path).is_ok_and(|bytes| bytes == original)
+                }),
+                "boundary {boundary}: original snapshot lost"
+            );
+        }
+        let mut store = SeriesStore::open(&directory.0, false).unwrap();
+        assert_consistent(&mut store, &records);
+    }
+    panic!("migration fixture exceeded its durability boundary budget");
+}

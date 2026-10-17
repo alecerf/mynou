@@ -109,3 +109,9 @@ repository checks, custom source-history/log audits and local agent delegation
 hooks. CodeQL remains the required code security analysis in CI.
 The isolated independent WireGuard peer remains an optional manually run fixture;
 product dependencies, runtime and release version are unchanged.
+
+## Fixed: Keep disk-full diagnostics during storage migration
+
+When a storage migration runs out of disk space, the error now names the affected
+store and asks you to free space and restart. Legacy data remains preserved so
+the migration can resume after the storage problem is fixed.

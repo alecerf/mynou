@@ -264,8 +264,8 @@ fn settle_journal(directory: &Path, index: &mut Index, read_only: bool) -> Resul
     }
     file.set_len(0)
         .and_then(|()| sync_file(&file))
-        .map_err(|_| "Cannot empty the legacy journal".to_owned())?;
-    sync_directory(directory)
+        .map_err(|error| crate::store::migration_io("Job storage", "settle journal", &error))?;
+    sync_directory(directory).map_err(|error| crate::store::migration_sync("Job storage", &error))
 }
 
 fn migrate(
@@ -381,8 +381,9 @@ fn migrate(
     progress.stage("promoting", total);
     let index_path = directory.join(INDEX);
     fs::rename(&staging_path, &index_path)
-        .map_err(|_| "Cannot promote the job index".to_owned())?;
-    sync_directory(directory)?;
+        .map_err(|error| crate::store::migration_io("Job storage", "write", &error))?;
+    sync_directory(directory)
+        .map_err(|error| crate::store::migration_sync("Job storage", &error))?;
     hook(Stage::Promoted)?;
     let mut index = Index::open(&index_path, false)?;
     write_marker(directory, &index)?;
@@ -603,8 +604,9 @@ fn create_fresh(directory: &Path) -> Result<Index> {
     drop(index);
     let index_path = directory.join(INDEX);
     fs::rename(&staging_path, &index_path)
-        .map_err(|_| "Cannot publish the job index".to_owned())?;
-    sync_directory(directory)?;
+        .map_err(|error| crate::store::migration_io("Job storage", "write", &error))?;
+    sync_directory(directory)
+        .map_err(|error| crate::store::migration_sync("Job storage", &error))?;
     let index = Index::open(&index_path, false)?;
     write_marker(directory, &index)?;
     Ok(index)
@@ -628,7 +630,7 @@ fn preserve_staging(directory: &Path) -> Result<()> {
     }
     fs::rename(&path, &preserved)
         .map_err(|_| "Cannot preserve unfinished job staging data".to_owned())?;
-    sync_directory(directory)
+    sync_directory(directory).map_err(|error| crate::store::migration_sync("Job storage", &error))
 }
 
 fn exists(path: &Path) -> Result<bool> {
@@ -695,13 +697,14 @@ fn replace_file(directory: &Path, target: &Path, bytes: &[u8]) -> Result<()> {
             .write(true)
             .create_new(true)
             .open(&temporary)
-            .map_err(|_| "Cannot create a job storage file".to_owned())?;
+            .map_err(|error| crate::store::migration_io("Job storage", "write", &error))?;
         file.write_all(bytes)
             .and_then(|()| sync_file(&file))
-            .map_err(|_| "Cannot persist a job storage file".to_owned())?;
+            .map_err(|error| crate::store::migration_io("Job storage", "write", &error))?;
         fs::rename(&temporary, target)
-            .map_err(|_| "Cannot replace a job storage file".to_owned())?;
+            .map_err(|error| crate::store::migration_io("Job storage", "write", &error))?;
         sync_directory(directory)
+            .map_err(|error| crate::store::migration_sync("Job storage", &error))
     })();
     if write.is_err() {
         let _ = fs::remove_file(&temporary);

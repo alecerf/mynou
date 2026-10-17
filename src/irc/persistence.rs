@@ -119,12 +119,19 @@ fn replace(directory: &Path, path: &Path, bytes: &[u8]) -> Result<()> {
             .write(true)
             .create_new(true)
             .open(&temp)
-            .map_err(|_| "IRC: cannot create storage file")?;
+            .map_err(|error| {
+                crate::store::migration_io("IRC announcement storage", "write", &error)
+            })?;
         f.write_all(bytes)
             .and_then(|()| sync_file(&f))
-            .map_err(|_| "IRC: cannot persist history")?;
-        fs::rename(&temp, path).map_err(|_| "IRC: cannot publish history")?;
+            .map_err(|error| {
+                crate::store::migration_io("IRC announcement storage", "write", &error)
+            })?;
+        fs::rename(&temp, path).map_err(|error| {
+            crate::store::migration_io("IRC announcement storage", "write", &error)
+        })?;
         sync_directory(directory)
+            .map_err(|error| crate::store::migration_sync("IRC announcement storage", &error))
     })();
     if result.is_err() {
         let _ = fs::remove_file(temp);
@@ -512,8 +519,12 @@ impl AnnouncementStore {
         drop(index);
         progress.stage("promoting", total);
         if !promoted {
-            fs::rename(&staging, &published).map_err(|_| "IRC: cannot promote checked history")?;
-            sync_directory(&self.directory)?;
+            fs::rename(&staging, &published).map_err(|error| {
+                crate::store::migration_io("IRC announcement storage", "write", &error)
+            })?;
+            sync_directory(&self.directory).map_err(|error| {
+                crate::store::migration_sync("IRC announcement storage", &error)
+            })?;
         }
         self.checkpoint(7)?;
         let mut marker = MARKER.to_vec();
@@ -584,7 +595,9 @@ fn open_staging(directory: &Path, staging: &Path, identity: [u8; 32]) -> Result<
             .write(true)
             .create_new(true)
             .open(&lock_path)
-            .map_err(|_| "IRC: cannot create initial staging lock")?,
+            .map_err(|error| {
+                crate::store::migration_io("IRC announcement storage", "write", &error)
+            })?,
         Err(_) => return Err("IRC: cannot inspect creation lock".into()),
     };
     try_lock_file(&lock).map_err(|_| "IRC: initial staging is already owned")?;
@@ -596,7 +609,8 @@ fn open_staging(directory: &Path, staging: &Path, identity: [u8; 32]) -> Result<
     ));
     fs::rename(staging, &preserved)
         .map_err(|_| "IRC: cannot preserve incomplete initial staging")?;
-    sync_directory(directory)?;
+    sync_directory(directory)
+        .map_err(|error| crate::store::migration_sync("IRC announcement storage", &error))?;
     let created = Index::create_bound(staging, identity);
     drop(lock);
     created

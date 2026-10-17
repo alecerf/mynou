@@ -778,7 +778,69 @@ pub(crate) fn sync_directory(path: &Path) -> Result<()> {
 pub(crate) fn sync_file(file: &File) -> std::io::Result<()> {
     #[cfg(test)]
     FLUSHES.with(|count| count.set(count.get() + 1));
+    #[cfg(test)]
+    FULL_DISK_AFTER.with(|remaining| -> std::io::Result<()> {
+        if let Some(left) = remaining.get() {
+            remaining.set(left.checked_sub(1));
+            if left == 0 {
+                return Err(std::io::ErrorKind::StorageFull.into());
+            }
+        }
+        Ok(())
+    })?;
     file.sync_all()
+}
+
+/// Stable, private migration I/O diagnostics. Never include an OS path or title.
+pub(crate) fn migration_io(store: &str, action: &str, error: &std::io::Error) -> String {
+    if matches!(
+        error.kind(),
+        std::io::ErrorKind::StorageFull
+            | std::io::ErrorKind::QuotaExceeded
+            | std::io::ErrorKind::FileTooLarge
+    ) {
+        format!(
+            "{store}: {} during migration; free space, then restart; preserved legacy data is kept",
+            STORAGE_FULL
+        )
+    } else {
+        format!(
+            "{store}: cannot {action} migration data; preserved legacy data is kept; restart after fixing storage"
+        )
+    }
+}
+
+/// Directory flushing already classifies exhaustion before returning its error.
+pub(crate) fn migration_sync(store: &str, error: &str) -> String {
+    if error.contains(STORAGE_FULL) {
+        migration_io(
+            store,
+            "synchronize",
+            &std::io::ErrorKind::StorageFull.into(),
+        )
+    } else {
+        format!(
+            "{store}: cannot synchronize migration data; preserved legacy data is kept; restart after fixing storage"
+        )
+    }
+}
+
+#[cfg(test)]
+thread_local! { static FULL_DISK_AFTER: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) }; }
+
+/// Fail one durability boundary on this test thread, then restore normal I/O,
+/// including on panic. Fixtures iterate until they pass every boundary.
+#[cfg(test)]
+pub(crate) fn with_full_disk_after<T>(after: u64, work: impl FnOnce() -> T) -> T {
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            FULL_DISK_AFTER.with(|left| left.set(None));
+        }
+    }
+    FULL_DISK_AFTER.with(|left| left.set(Some(after)));
+    let _reset = Reset;
+    work()
 }
 
 #[cfg(test)]
@@ -1212,7 +1274,7 @@ impl Store {
         let lock = secure_file(&directory.join(".lock"))?;
         try_lock_file(&lock)
             .map_err(|error| format!("storage is already open or cannot be locked: {error}"))?;
-        sync_directory(directory)?;
+        sync_directory(directory).map_err(|error| migration_sync("Job storage", &error))?;
         match legacy::inspect(directory, false)? {
             legacy::Inspection::Legacy(files) => {
                 let state = legacy::parse(files.snapshot.as_deref(), &files.journal)?;

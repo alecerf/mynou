@@ -255,3 +255,52 @@ fn published_marker_rejects_wrong_identity_and_foreign_unmarked_index() {
     private(&first.0.join("indexers.bin"), &snapshot(&[record(99)]));
     assert!(Storage::open(&first.0, false).is_err());
 }
+
+#[test]
+fn full_disk_at_every_migration_flush_preserves_legacy_and_restarts() {
+    for boundary in 0..1000 {
+        let directory = Directory::new();
+        let records: Vec<_> = (1..=3).map(record).collect();
+        let original = snapshot(&records);
+        private(&directory.0.join("indexers.bin"), &original);
+        let result = crate::store::with_full_disk_after(boundary, || {
+            Storage::open(&directory.0, false).and_then(|mut s| s.initialize())
+        });
+        let error = match result {
+            Ok(()) => {
+                assert!(boundary > 10);
+                return;
+            }
+            Err(error) => error,
+        };
+        assert!(
+            error.starts_with("Source policy storage: "),
+            "boundary {boundary}: {error}"
+        );
+        assert!(
+            error.contains("disk") || error.contains(crate::store::STORAGE_FULL),
+            "boundary {boundary}: {error}"
+        );
+        assert!(!error.contains(directory.0.to_str().unwrap()), "{error}");
+        let live = fs::read(directory.0.join("indexers.bin")).unwrap();
+        if live != original {
+            assert!(
+                fs::read_dir(&directory.0).unwrap().any(|entry| {
+                    let path = entry.unwrap().path();
+                    path.file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .contains(".legacy-")
+                        && fs::read(path).is_ok_and(|bytes| bytes == original)
+                }),
+                "boundary {boundary}: original snapshot lost"
+            );
+        }
+        let mut storage = Storage::open(&directory.0, false).unwrap();
+        storage.initialize().unwrap();
+        for r in &records {
+            assert_eq!(storage.row(&r.id).unwrap().as_ref(), Some(r));
+        }
+    }
+    panic!("migration fixture exceeded its durability boundary budget");
+}
