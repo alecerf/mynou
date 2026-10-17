@@ -12,7 +12,15 @@ PATTERNS = (
     (re.compile(r"/wait (" + "|".join(WAIT) + r")"), lambda m: ("wait", m[1])),
     (re.compile(r"/(approve|reject) (qa|security) ([0-9a-f]{40})"), lambda m: (m[1], m[2], m[3])),
 )
-SENSITIVE = ("AGENTS.md", "engineering/", ".agents/", ".github/", "src/crypto", "src/tls", "src/pki")
+# Lowercased: paths are matched case-insensitively, because a macOS checkout
+# treats `.Claude/` and `.claude/` as the same file.
+SENSITIVE = ("agents.md", "engineering/", ".agents/", ".github/", "src/crypto", "src/tls", "src/pki",
+             ".claude/", ".opencode/", ".trail/", "node_modules/", "dist/claude/")
+# Exact entries: the config files, and the bare names of sensitive directories,
+# because a tracked symlink such as `node_modules -> vendor` reaches the same
+# host code without a trailing slash.
+SENSITIVE_FILES = ("opencode.json", "opencode.jsonc", "dist")
+SENSITIVE_ENTRIES = SENSITIVE_FILES + tuple(item.rstrip("/") for item in SENSITIVE)
 CLOSING = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#([1-9][0-9]*)\b", re.I)
 CLEAN = ("success", "skipped", "neutral")
 # `work/<issue>-<slug>`, or an older `<prefix>/<slug>-<issue>` name.
@@ -110,7 +118,11 @@ def turn(comments, actors, head, draft, security_required, ci=None):
 
 
 def security_required(paths, issue_labels):
-    return (any(path.startswith(SENSITIVE) for path in paths)
+    # Recorded learnings are data; the remaining Trail files steer host code.
+    return (any(path.lower() in SENSITIVE_ENTRIES
+                or (path.lower().startswith(SENSITIVE)
+                    and not path.lower().startswith(".trail/learnings/"))
+                for path in paths)
             or bool(set(issue_labels) & {"risk:high", "risk:critical"}))
 
 
