@@ -304,3 +304,78 @@ fn full_disk_at_every_migration_flush_preserves_legacy_and_restarts() {
     }
     panic!("migration fixture exceeded its durability boundary budget");
 }
+
+#[test]
+#[ignore = "opt-in inventory_growth.py measurements"]
+fn inventory_growth_report() {
+    let Some(mut f) = crate::growth::Fixture::get("sources") else {
+        return;
+    };
+    let directory = f.directory.clone();
+    let size = f.size;
+    let mut storage = f.measure("open_us", || {
+        let mut storage = Storage::open(&directory, false).unwrap();
+        storage.initialize().unwrap();
+        storage
+    });
+    if f.build {
+        f.measure("build_us", || {
+            for start in (1..=size).step_by(200) {
+                let rows: Vec<_> = (start..(start + 200).min(size + 1)).map(record).collect();
+                put(indexed(&mut storage), &rows, None).unwrap();
+            }
+        });
+    } else {
+        assert_eq!(storage.total().unwrap(), size);
+        f.measure("page_us", || {
+            let after = None;
+            let page = indexed(&mut storage)
+                .page(&crate::inventory::Query {
+                    start: single(PRIMARY),
+                    end: Some(single(PRIMARY + 1)),
+                    after,
+                    limit: 200,
+                    ..Default::default()
+                })
+                .unwrap();
+            assert_eq!(page.entries.len(), 200);
+        });
+        f.measure("pass_us", || {
+            storage.guard().unwrap();
+            assert_eq!(
+                storage
+                    .backlog()
+                    .get("state")
+                    .and_then(crate::json::Value::as_str),
+                Some("not_applicable")
+            );
+        });
+        f.measure("update_us", || {
+            let mut row = storage.row(&record(size).id).unwrap().unwrap();
+            row.enabled = !row.enabled;
+            storage.commit(row).unwrap();
+        });
+        let mut after = None;
+        let mut count = 0;
+        f.measure("walk_us", || {
+            loop {
+                let page = indexed(&mut storage)
+                    .page(&crate::inventory::Query {
+                        start: single(PRIMARY),
+                        end: Some(single(PRIMARY + 1)),
+                        after,
+                        limit: 200,
+                        ..Default::default()
+                    })
+                    .unwrap();
+                count += page.entries.len() as u64;
+                after = page.next;
+                if after.is_none() {
+                    break;
+                }
+            }
+        });
+        assert_eq!(count, size);
+    }
+    f.finish();
+}

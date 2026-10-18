@@ -700,3 +700,55 @@ fn irc_backlog_excludes_decisions_and_routes_and_keeps_original_wait_age() {
         Some(&Value::from("500"))
     );
 }
+
+#[test]
+#[ignore = "opt-in inventory_growth.py measurements"]
+fn inventory_growth_report() {
+    let Some(mut f) = crate::growth::Fixture::get("irc") else {
+        return;
+    };
+    let directory = f.directory.clone();
+    let size = f.size;
+    let mut store = f.measure("open_us", || {
+        let mut store = open(&directory, false);
+        store.state.bindings.insert("local".into(), "1".repeat(64));
+        store.initialize().unwrap();
+        store
+    });
+    if f.build {
+        f.measure("build_us", || {
+            for start in (1..=size).step_by(100) {
+                let rows: Vec<_> = (start..(start + 100).min(size + 1))
+                    .map(|n| row(n, true))
+                    .collect();
+                store.save_rows(&rows).unwrap();
+            }
+        });
+    } else {
+        f.measure("page_us", || {
+            assert_eq!(store.page(2, None, 200).unwrap().0.len(), 200);
+        });
+        f.measure("pass_us", || {
+            assert_eq!(store.page(3, None, 200).unwrap().0.len(), 200);
+        });
+        f.measure("update_us", || {
+            let mut changed = row(size, true);
+            changed.revision += 1;
+            store.save_rows(&[changed]).unwrap();
+        });
+        let mut after = None;
+        let mut count = 0;
+        f.measure("walk_us", || {
+            loop {
+                let (rows, next) = store.page(2, after, 200).unwrap();
+                count += rows.len() as u64;
+                after = next;
+                if after.is_none() {
+                    break;
+                }
+            }
+        });
+        assert_eq!(count, size);
+    }
+    f.finish();
+}

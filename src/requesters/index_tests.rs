@@ -729,3 +729,64 @@ fn requester_backlog_migration_keeps_unknown_wait_times_and_exact_legacy_backup(
     ));
     assert_eq!(fs::read(backup).unwrap(), bytes);
 }
+
+#[test]
+#[ignore = "opt-in inventory_growth.py measurements"]
+fn inventory_growth_report() {
+    let Some(mut f) = crate::growth::Fixture::get("requesters") else {
+        return;
+    };
+    let directory = f.directory.clone();
+    let size = f.size;
+    let config = config(&directory);
+    let mut store = f.measure("open_us", || {
+        let mut store = RequesterStore::open(&directory, &config, false).unwrap();
+        store.initialize().unwrap();
+        store
+    });
+    if f.build {
+        f.measure("build_us", || {
+            for start in (1..=size).step_by(100) {
+                let mut patch = store.state.clone();
+                for n in start..(start + 100).min(size + 1) {
+                    let row = demand(&config, n, 1400);
+                    patch.demands.insert(row.id.clone(), row);
+                    patch.operator_jobs.insert(format!("{n:032x}"));
+                }
+                store.save_patch(patch).unwrap();
+            }
+        });
+    } else {
+        assert_eq!(store.count("fixture", None).unwrap(), size);
+        f.measure("page_us", || {
+            assert_eq!(store.demands_page(None, 200).unwrap().0.len(), 200);
+        });
+        f.measure("pass_us", || {
+            assert_eq!(store.queue_page("pending", None, 64).unwrap().0.len(), 64);
+        });
+        f.measure("update_us", || {
+            let mut row = store
+                .demand(&demand(&config, size, 1400).id)
+                .unwrap()
+                .unwrap();
+            row.origins.insert("synthetic:point-update".into());
+            let mut patch = store.state.clone();
+            patch.demands.insert(row.id.clone(), row);
+            store.save_patch(patch).unwrap();
+        });
+        let mut after = None;
+        let mut count = 0;
+        f.measure("walk_us", || {
+            loop {
+                let (rows, next) = store.demands_page(after, 200).unwrap();
+                count += rows.len() as u64;
+                after = next;
+                if after.is_none() {
+                    break;
+                }
+            }
+        });
+        assert_eq!(count, size);
+    }
+    f.finish();
+}

@@ -1525,3 +1525,91 @@ mod tests {
         panic!("migration fixture exceeded its durability boundary budget");
     }
 }
+
+#[cfg(test)]
+mod growth_report {
+    use super::*;
+    #[test]
+    #[ignore = "opt-in inventory_growth.py measurements"]
+    fn inventory_growth_report() {
+        let Some(mut f) = crate::growth::Fixture::get("transfers") else {
+            return;
+        };
+        let directory = f.directory.clone();
+        let size = f.size;
+        let mut config = DownloadConfig {
+            data_dir: directory.join("data"),
+            state_dir: directory.join("state"),
+            listen_port: 0,
+            seed: false,
+            dht: false,
+            pex: false,
+            max_active: 1,
+            max_peers: 1,
+        };
+        mkdir_private(&config.state_dir).unwrap();
+        mkdir_private(&config.data_dir).unwrap();
+        let mut index = f.measure("open_us", || TransferIndex::open(&mut config).unwrap());
+        if f.build {
+            f.measure("build_us", || {
+                for n in 1..=size {
+                    let id = format!("{n:040x}");
+                    let record = Record {
+                        status: DownloadStatus {
+                            id: id.clone(),
+                            progress: 0.0,
+                            ready: false,
+                            selected_ready: false,
+                            files: Vec::new(),
+                            available_files: Vec::new(),
+                            message: "synthetic".into(),
+                        },
+                        control: TorrentControl::new(id, n).unwrap(),
+                        paused: false,
+                        failed: false,
+                        v1: Some(decode_hex(&format!("{n:040x}")).unwrap()),
+                        v2: None,
+                        cross_seed: false,
+                        current: true,
+                        session: index.session,
+                    };
+                    index.save_record(&record).unwrap();
+                }
+            });
+        } else {
+            assert_eq!(index.aggregates().unwrap().0, size);
+            f.measure("page_us", || {
+                let (ids, _, _, _) = index.page(None, 200).unwrap();
+                assert_eq!(ids.len(), 200);
+                for id in ids {
+                    index.get(&id).unwrap().unwrap();
+                }
+            });
+            f.measure("pass_us", || {
+                assert_eq!(index.queue(64).unwrap().len(), 64);
+            });
+            f.measure("update_us", || {
+                let mut row = index.get(&format!("{:040x}", size)).unwrap().unwrap();
+                row.control.priority += 1;
+                index.save_record(&row).unwrap();
+            });
+            let mut after = None;
+            let mut count = 0;
+            f.measure("walk_us", || {
+                loop {
+                    let (ids, next, _, _) = index.page(after.as_deref(), 200).unwrap();
+                    count += ids.len() as u64;
+                    for id in ids {
+                        index.get(&id).unwrap().unwrap();
+                    }
+                    after = next;
+                    if after.is_none() {
+                        break;
+                    }
+                }
+            });
+            assert_eq!(count, size);
+        }
+        f.finish();
+    }
+}
