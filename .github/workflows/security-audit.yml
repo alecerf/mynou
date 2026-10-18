@@ -35,7 +35,7 @@ jobs:
         run: python3 .github/scripts/secret_audit.py history --output "$RUNNER_TEMP/source-audit.json"
       - name: Preserve redacted source coverage
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: security-source-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/source-audit.json
@@ -62,7 +62,7 @@ jobs:
         run: python3 .github/scripts/secret_audit.py logs --output "$RUNNER_TEMP/actions-audit.json"
       - name: Preserve redacted log coverage
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: security-actions-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/actions-audit.json
