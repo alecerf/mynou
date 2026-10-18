@@ -281,14 +281,14 @@ fn selector_edits_invalidate_pending_grabs_and_review_guards_without_reinterpret
     let row = receive(&e, "1234567890abcdef1234567890abcdef12345678", 7);
     let review = irc_support::reviewed(&e, row_id(&row), "acknowledge");
     let original = e.irc_announcement(row_id(&row)).unwrap();
-    let before = irc_support::bytes(&cfg.store_dir);
+    let before = state_except_irc_freshness(&cfg.store_dir);
     drop(e);
     cfg.irc.rules[0].requester = Some("bob".into());
     let e = Engine::open(cfg.clone()).unwrap();
     assert_eq!(outcome(&e.irc_route_pending().unwrap()), "idle");
     assert!(e.irc_control(row_id(&row), &review).is_err());
     assert_eq!(e.irc_announcement(row_id(&row)).unwrap(), original);
-    assert_eq!(irc_support::bytes(&cfg.store_dir), before);
+    assert_eq!(state_except_irc_freshness(&cfg.store_dir), before);
     no_candidate_work(&e, &id);
 }
 

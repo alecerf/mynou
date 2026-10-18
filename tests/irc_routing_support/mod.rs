@@ -11,7 +11,7 @@ use std::{
     fs,
     io::{Read, Write},
     net::{Shutdown, TcpListener, TcpStream},
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -245,4 +245,57 @@ impl Drop for MetadataGate {
             h.join().unwrap();
         }
     }
+}
+
+// A successful filtered scheduler pass may checkpoint its one freshness key.
+// Compare every other indexed value and every other store's exact bytes.
+// A private copy lets the reader respect the running writer's ownership lock.
+type FileBytes = std::collections::BTreeMap<PathBuf, Vec<u8>>;
+type IndexedValues = std::collections::BTreeMap<[u8; 64], Vec<u8>>;
+pub fn state_except_irc_freshness(root: &Path) -> (FileBytes, IndexedValues) {
+    use mynou::inventory::{Index, Query};
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    let directory = root.join("announcements.idx").canonicalize().unwrap();
+    let mut files = crate::irc_support::bytes(root);
+    let fixture = crate::library_support::Directory::new();
+    let copy = fixture.0.join("announcements.idx");
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(copy.join("objects"))
+        .unwrap();
+    for (path, bytes) in &files {
+        if let Ok(relative) = path.strip_prefix(&directory) {
+            let target = copy.join(relative);
+            fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(target.parent().unwrap())
+                .unwrap();
+            fs::write(&target, bytes).unwrap();
+            fs::set_permissions(target, fs::Permissions::from_mode(0o600)).unwrap();
+        }
+    }
+    files.retain(|path, _| !path.starts_with(&directory));
+    let mut index = Index::open(&copy, true).unwrap();
+    let mut entries = IndexedValues::new();
+    let mut after = None;
+    loop {
+        let page = index
+            .page(&Query {
+                after,
+                limit: 200,
+                ..Query::default()
+            })
+            .unwrap();
+        entries.extend(page.entries);
+        after = page.next;
+        if after.is_none() {
+            break;
+        }
+    }
+    let mut freshness = [0; 64];
+    freshness[0] = 244;
+    entries.remove(&freshness);
+    (files, entries)
 }
