@@ -14,7 +14,7 @@ commit only: an earlier green run does not validate later changes.
 | Mynou CI | Pull requests; manual dispatch; a pushed `v<version>` tag | Select tests, macOS arm64 build/demo and packaging from the diff; tags and manual runs validate everything |
 | Repository checks | Pull requests; manual dispatch | Python tooling and scheduler tests when their inputs change |
 | Release policy | Pull requests | Version changes only in a release PR |
-| CodeQL | Default setup until the migration below is activated | Required code security analysis; prepared workflow selects Rust and JavaScript by diff |
+| CodeQL | Pull requests, pushes to `trunk`, weekly schedule, manual dispatch | Required security analysis; Rust and JavaScript selected by diff |
 | WireGuard interoperability | Manual dispatch only | Optional isolated independent-peer test |
 
 ## Mynou CI
@@ -89,13 +89,15 @@ WireGuard interoperability remains manual only.
 
 ## Activating selective CodeQL
 
-As inspected on 2026-10-18, GitHub default setup owns CodeQL, scanning Actions,
-JavaScript/TypeScript and Rust with the default suite and a weekly schedule.
-Changing CI YAML alone cannot change those automatic scans.
-[codeql.yml](../.github/workflows/codeql.yml) prepares advanced setup and stays
-inactive until repository variable `MYNOU_CODEQL_ADVANCED` equals `true`.
+Advanced setup was activated on 2026-10-18 after
+[PR #264](https://github.com/alecerf/mynou/pull/264) passed every required check
+and was merged. Default setup is disabled and repository variable
+`MYNOU_CODEQL_ADVANCED` is `true`.
+[The full baseline run](https://github.com/alecerf/mynou/actions/runs/39121048647)
+analyzes Actions, JavaScript/TypeScript and Rust on `trunk` with the default suite.
+[codeql.yml](../.github/workflows/codeql.yml) now owns triggers and selection.
 
-The prepared workflow selects Rust for `.rs`, Cargo, toolchain and `.cargo`
+The workflow selects Rust for `.rs`, Cargo, toolchain and `.cargo`
 changes; JavaScript/TypeScript for its sources/manifests; and both when the
 CodeQL configuration or shared selector changes. Each selected language scans
 the complete codebase, with build mode `none`, the default queries and the
@@ -108,7 +110,7 @@ job named `CodeQL` cannot replace that app's check. This small scan keeps an
 actual security check while avoiding the Rust/JavaScript scans on doc-only PRs.
 No branch protection changes or synthetic security verdicts are used.
 
-Activation is a separate repository operation, after publishing these files:
+For a fresh installation, activate advanced setup after publishing the workflow:
 
 1. Keep default setup enabled while reviewing/merging the workflow change.
 2. Switch CodeQL from default to advanced setup in repository security settings,
@@ -121,9 +123,8 @@ Activation is a separate repository operation, after publishing these files:
    if the former default configuration is still expected; do not weaken branch
    protection to bypass a missing analysis.
 
-Until activation, the current automatic CodeQL scans continue unchanged.
-To roll back, unset the variable and restore default setup. This change does
-not alter repository settings, protection, existing alerts or their triage.
+To roll back, unset the variable and restore default setup. The migration
+preserves branch protection, existing alerts and their triage.
 
 ## Test harnesses
 
