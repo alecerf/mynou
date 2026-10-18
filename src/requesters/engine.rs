@@ -570,6 +570,9 @@ impl Engine {
         cancel_unwanted(ledger, jobs, &self.config, false)?;
         self.pause_unwanted_transfers(jobs)?;
         self.retire_previous_transfers(jobs)?;
+        if !self.stopped.load(Ordering::Acquire) {
+            ledger.finish_backlog_pass(store::now())?;
+        }
         Ok(())
     }
     pub(crate) fn requester_reconcile(&self) -> Result<()> {

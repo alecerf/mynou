@@ -864,6 +864,9 @@ impl Engine {
         report.insert("routed", false);
         let Some(record) = record else {
             report.insert("outcome", "idle");
+            if !self.stopped.load(Ordering::Acquire) {
+                lock(&self.irc_store)?.finish_backlog_pass(crate::store::now())?;
+            }
             return Ok(report);
         };
         report.insert("announcement_id", record.id.clone());
@@ -899,9 +902,13 @@ impl Engine {
         runtime.outcomes.insert(record.id.clone(), outcome.into());
         runtime.back_off(record.id, Instant::now());
         report.insert("outcome", outcome);
-        if let Ok((job, routed)) = result {
-            report.insert("routed", routed);
-            report.insert("job_id", job.id);
+        if let Ok((job, routed)) = &result {
+            report.insert("routed", *routed);
+            report.insert("job_id", job.id.clone());
+        }
+        drop(runtime);
+        if result.is_ok() && !self.stopped.load(Ordering::Acquire) {
+            lock(&self.irc_store)?.finish_backlog_pass(crate::store::now())?;
         }
         // Protocol and discovery errors may contain credentials; reports use fixed outcomes.
         Ok(report)

@@ -142,6 +142,9 @@ impl SourceStore {
     pub(crate) fn storage(&self) -> crate::json::Value {
         self.storage.report()
     }
+    pub(crate) fn backlog(&self) -> Value {
+        self.storage.backlog()
+    }
     fn row(&mut self, id: &str) -> Result<Record> {
         self.storage
             .row(id)?

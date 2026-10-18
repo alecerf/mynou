@@ -251,6 +251,21 @@ fn verify(index: &mut Index, original: Option<&Legacy>) -> Result<()> {
 
 impl Storage {
     /// Index size and state for diagnostics, from the durable root only.
+    pub(super) fn backlog(&self) -> crate::json::Value {
+        if self.available().is_err()
+            || matches!(&self.backend, Backend::Ready(index) if index.sequence().is_err())
+        {
+            return crate::inventory::backlog::unavailable();
+        }
+        let mut value =
+            crate::inventory::backlog::inactive("not_applicable", "source_policy_control", None);
+        value.insert("due", crate::json::Value::Null);
+        value.insert(
+            "reason",
+            "Source policies are operator controls with no periodic worker",
+        );
+        value
+    }
     pub(super) fn report(&self) -> crate::json::Value {
         match &self.backend {
             Backend::Absent => crate::inventory::report("empty", None),

@@ -2051,6 +2051,15 @@ impl Client {
             }
         }
     }
+    pub(crate) fn backlog(&self, at: u64) -> crate::json::Value {
+        match self.index.try_lock() {
+            Ok(mut index) => index
+                .backlog(at)
+                .unwrap_or_else(|_| crate::inventory::backlog::unavailable()),
+            Err(std::sync::TryLockError::WouldBlock) => crate::inventory::report("busy", None),
+            Err(std::sync::TryLockError::Poisoned(_)) => crate::inventory::backlog::unavailable(),
+        }
+    }
     pub fn aggregate_stats(&self) -> Result<(u64, u64, u64)> {
         let jobs = self
             .jobs
@@ -2588,6 +2597,9 @@ fn manager_loop(
                     let (tail, next) = catalog.queue_page(queue_cursor.as_deref(), 32)?;
                     let mut present: BTreeSet<_> = head.iter().cloned().collect();
                     head.extend(tail.into_iter().filter(|id| present.insert(id.clone())));
+                    if !stop.load(Ordering::Acquire) {
+                        catalog.finish_backlog_pass(crate::store::now())?;
+                    }
                     Ok((head, next))
                 });
             match candidates {

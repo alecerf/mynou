@@ -17,7 +17,8 @@ use std::{
     path::{Path, PathBuf},
 };
 const MAX_LEGACY_BYTES: usize = 16 * 1024 * 1024;
-const MARKER: &[u8; 8] = b"MYNOUR03";
+const OLD_MARKER: &[u8; 8] = b"MYNOUR03";
+const MARKER: &[u8; 8] = b"MYNOUR04";
 const INDEX: &str = "requesters.idx";
 const STAGING: &str = "requesters.idx.staging";
 
@@ -139,10 +140,29 @@ impl RequesterStore {
             Backend::Ready(index) => crate::inventory::report("index", Some(index)),
         }
     }
+    pub(crate) fn backlog(&self, at: u64) -> Result<crate::json::Value> {
+        self.available()?;
+        match &mut *self.backend.borrow_mut() {
+            Backend::Ready(index) => {
+                crate::inventory::backlog::read(index, "requester_admission_scan", at)
+            }
+            Backend::Legacy { .. } => Err("Backlog requires writable preparation".into()),
+        }
+    }
+    pub(crate) fn finish_backlog_pass(&mut self, at: u64) -> Result<()> {
+        self.available()?;
+        if self.read_only {
+            return Err("Backlog is read-only".into());
+        }
+        match &mut *self.backend.borrow_mut() {
+            Backend::Ready(index) => crate::inventory::backlog::finish(index, at),
+            Backend::Legacy { .. } => Err("Backlog requires writable preparation".into()),
+        }
+    }
     pub(crate) fn open(directory: &Path, config: &Config, read_only: bool) -> Result<Self> {
         let bytes = read(&directory.join("requesters.bin"))?;
         let (backend, mut state) = if let Some(bytes) = &bytes
-            && bytes.starts_with(MARKER)
+            && (bytes.starts_with(MARKER) || bytes.starts_with(OLD_MARKER))
         {
             if bytes.len() != 72 || sha256(&bytes[..40]).as_slice() != &bytes[40..] {
                 return Err("Requester: corrupt index marker".into());
@@ -270,6 +290,16 @@ impl RequesterStore {
                     return Err(error);
                 }
             }
+        }
+        if let Backend::Ready(index) = &mut *self.backend.borrow_mut() {
+            let path = self.directory.join("requesters.bin");
+            if read(&path)?.is_some_and(|bytes| bytes.starts_with(OLD_MARKER)) {
+                let mut marker = MARKER.to_vec();
+                marker.extend_from_slice(&index.identity());
+                marker.extend_from_slice(&sha256(&marker));
+                replace(&self.directory, &path, &marker)?;
+            }
+            index::prepare_backlog(index)?;
         }
         if self.dirty {
             self.save_patch(self.state.clone())?;

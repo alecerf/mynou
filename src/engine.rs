@@ -107,7 +107,7 @@ pub fn lock<T>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>> {
 }
 
 /// `None` while another thread holds the lock, for reports that must not wait.
-fn try_lock<T>(mutex: &Mutex<T>) -> Result<Option<MutexGuard<'_, T>>> {
+pub(crate) fn try_lock<T>(mutex: &Mutex<T>) -> Result<Option<MutexGuard<'_, T>>> {
     match mutex.try_lock() {
         Ok(guard) => Ok(Some(guard)),
         Err(std::sync::TryLockError::WouldBlock) => Ok(None),
@@ -542,6 +542,49 @@ impl Engine {
         inventory.insert("series", series_backlog);
         inventory.insert("library", library_backlog);
         inventory.insert("jobs", job_backlog);
+        let at = store::now();
+        let requesters = match try_lock(&self.requester_store)? {
+            Some(ledger) => ledger
+                .backlog(at)
+                .unwrap_or_else(|_| crate::inventory::backlog::unavailable()),
+            None => crate::inventory::report("busy", None),
+        };
+        let irc = match try_lock(&self.irc_store)? {
+            Some(ledger) => {
+                let mut value = ledger
+                    .backlog(at)
+                    .unwrap_or_else(|_| crate::inventory::backlog::unavailable());
+                if !crate::irc::routing::enabled(&self.config)
+                    && value.get("state").and_then(Value::as_str) == Some("ready")
+                {
+                    value.insert("state", "disabled");
+                    value.insert("due", "0");
+                    value.insert("oldest_due_at", Value::Null);
+                    value.insert("oldest_due_age_secs", Value::Null);
+                }
+                value
+            }
+            None => crate::inventory::report("busy", None),
+        };
+        let policies = match try_lock(&self.indexer_store)? {
+            Some(store) => store.backlog(),
+            None => crate::inventory::report("busy", None),
+        };
+        inventory.insert("requesters", requesters);
+        inventory.insert("irc", irc);
+        inventory.insert(
+            "feeds",
+            self.feed_backlog(at)
+                .unwrap_or_else(|_| crate::inventory::backlog::unavailable()),
+        );
+        inventory.insert("source_policies", policies);
+        inventory.insert(
+            "transfers",
+            self.downloads.get().map_or_else(
+                || crate::inventory::report("not_started", None),
+                |client| client.backlog(at),
+            ),
+        );
         v.insert("inventory", inventory);
         v.insert(
             "series_unreadable",

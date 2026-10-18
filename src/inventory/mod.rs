@@ -4,6 +4,7 @@
 //! migrates the legacy request journal. See docs/inventory-storage.md for the
 //! commit/recovery protocol and the remaining integration work.
 
+pub(crate) mod backlog;
 mod persistence;
 mod tree;
 #[cfg(test)]

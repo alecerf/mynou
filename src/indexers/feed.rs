@@ -223,6 +223,12 @@ impl FeedStore {
     pub(crate) fn storage(&self) -> crate::json::Value {
         self.storage.report()
     }
+    pub(crate) fn last_pass(&mut self) -> Result<Option<u64>> {
+        self.storage.last_pass()
+    }
+    pub(crate) fn finish_pass(&mut self, at: u64) -> Result<()> {
+        self.storage.finish_pass(at)
+    }
     pub(crate) fn open(dir: &Path, config: &Config, read_only: bool) -> Result<Self> {
         let mut storage = storage::Storage::open(dir, read_only)?;
         let mut watched = BTreeMap::new();

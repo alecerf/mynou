@@ -154,3 +154,16 @@ index summaries without job/history payloads. Writable startup adds the wake
 index in resumable pages; older binaries reject the new job format, so keep a
 complete stopped-store backup for downgrade ([storage guide](/docs/inventory-storage.md#job-backlog-and-claim-scan-freshness)).
 This delivers #275, the jobs/history portion of #246; five integrations remain.
+
+
+## Added: Complete inventory backlog and pass diagnostics
+
+Service status now includes requester admission, IRC routing, feed scheduling,
+source-policy non-applicability and native transfer queue diagnostics alongside
+jobs, series and library monitoring. Counts use bounded index reads or the
+bounded configured-source schedule; successful-pass checkpoints survive restart.
+Unknown wait times in migrated requester/transfer queues remain explicit, and
+busy/unavailable stores do not publish guessed counts. Writable startup prepares
+derived indexes in resumable pages; keep a complete stopped-store backup before
+upgrading for downgrade ([storage guide](/docs/inventory-storage.md#requester-irc-feed-source-policy-and-transfer-diagnostics)).
+This completes #246; the increasing-size evidence in #217 is still required for #106.

@@ -16,7 +16,8 @@ const SEED: u8 = 20;
 const WIRE: u8 = 21;
 const ALL_ORDERED: u8 = 22;
 const DISCOVERY: u8 = 23;
-const FORMAT: &[u8] = b"mynou-transfers/1";
+const OLD_FORMAT: &[u8] = b"mynou-transfers/1";
+const FORMAT: &[u8] = b"mynou-transfers/2";
 const BUILDING: &[u8] = b"mynou-transfers/1-building";
 const SENTINEL: &str = "0000000000000000000000000000000000000000.torrent";
 const SNAPSHOT_LIMIT: usize = 64 * 1024 * 1024;
@@ -357,7 +358,7 @@ impl TransferIndex {
             _ownership: ownership,
         };
         match store.index.get(&HEADER)?.as_deref() {
-            Some(FORMAT) => {}
+            Some(FORMAT) | Some(OLD_FORMAT) => {}
             Some(BUILDING) if !published => store.migrate(config)?,
             _ => return Err("Unsupported transfer catalog format".into()),
         }
@@ -367,7 +368,41 @@ impl TransferIndex {
             marker_bytes[40..].copy_from_slice(&digest);
             atomic_write(&marker, &marker_bytes)?;
         }
+        if store.index.get(&HEADER)?.as_deref() != Some(FORMAT) {
+            store
+                .index
+                .commit(vec![Change::PutInline(HEADER, FORMAT.to_vec())])?;
+        }
+        crate::inventory::backlog::prepare(
+            &mut store.index,
+            single(PRIMARY),
+            single(PRIMARY + 1),
+            |index, key, _| {
+                let id = key_id(key, 1)?;
+                let bytes = index
+                    .get(&id_key(PRIMARY, &id)?)?
+                    .ok_or("Missing transfer during backlog preparation")?;
+                let digest: [u8; 32] = bytes
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| "Invalid transfer digest")?;
+                let record = Record::decode(&checked_read(
+                    &store
+                        .directory
+                        .join("transfer-snapshots")
+                        .join(hex(&digest)),
+                    SNAPSHOT_LIMIT,
+                )?)?;
+                Ok((record.queued(), None))
+            },
+        )?;
         Ok(store)
+    }
+    pub(super) fn backlog(&mut self, at: u64) -> Result<crate::json::Value> {
+        crate::inventory::backlog::read(&mut self.index, "transfer_queue_scan", at)
+    }
+    pub(super) fn finish_backlog_pass(&mut self, at: u64) -> Result<()> {
+        crate::inventory::backlog::finish(&mut self.index, at)
     }
     fn counts(&mut self) -> Result<Counts> {
         Counts::decode(
@@ -579,16 +614,22 @@ impl TransferIndex {
         counts.order = counts.order.max(record.control.queue_order);
         changes.insert(primary, Some(digest.to_vec()));
         changes.insert(COUNTS, Some(counts.encode()));
-        self.index.commit(
-            changes
-                .into_iter()
-                .map(|(k, v)| match v {
-                    Some(v) if v.len() <= 32 => Change::PutInline(k, v),
-                    Some(v) => Change::Put(k, v),
-                    None => Change::Delete(k),
-                })
-                .collect(),
+        let mut changes: Vec<_> = changes
+            .into_iter()
+            .map(|(k, v)| match v {
+                Some(v) if v.len() <= 32 => Change::PutInline(k, v),
+                Some(v) => Change::Put(k, v),
+                None => Change::Delete(k),
+            })
+            .collect();
+        crate::inventory::backlog::maintain(
+            &mut self.index,
+            &mut changes,
+            &primary,
+            record.queued(),
+            crate::store::now(),
         )?;
+        self.index.commit(changes)?;
         if let Some(old_digest) = old_digest {
             let path = snapshots.join(hex(&old_digest));
             fs::remove_file(path).map_err(|_| "Cannot remove superseded transfer snapshot")?;
@@ -1133,6 +1174,52 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn transfer_backlog_follows_pause_failure_completion_and_restart() {
+        use crate::json::Value as Json;
+        let mut fixture = Fixture::new();
+        let first = fixture.source(1, Some(1));
+        fixture.source(2, Some(2));
+        let mut index = TransferIndex::open(&mut fixture.config).unwrap();
+        assert_eq!(
+            index.backlog(u64::MAX).unwrap().get("due"),
+            Some(&Json::from("2"))
+        );
+        assert_eq!(
+            index.backlog(u64::MAX).unwrap().get("unknown_due_times"),
+            Some(&Json::from("2"))
+        );
+        assert_eq!(
+            index.backlog(u64::MAX).unwrap().get("oldest_due_at"),
+            Some(&Json::Null)
+        );
+        let mut record = index.get(&first).unwrap().unwrap();
+        record.paused = true;
+        index.save_record(&record).unwrap();
+        assert_eq!(
+            index.backlog(u64::MAX).unwrap().get("due"),
+            Some(&Json::from("1"))
+        );
+        record.paused = false;
+        index.save_record(&record).unwrap();
+        index.finish_backlog_pass(100).unwrap();
+        drop(index);
+        let mut index = TransferIndex::open(&mut fixture.config).unwrap();
+        let value = index.backlog(u64::MAX).unwrap();
+        assert_eq!(value.get("due"), Some(&Json::from("2")));
+        assert_eq!(
+            value.get("last_completed_pass_at"),
+            Some(&Json::from("100"))
+        );
+        index.mark_failed(&first, "synthetic failure").unwrap();
+        let mut other = index.get(&format!("{:040x}", 2)).unwrap().unwrap();
+        other.status.selected_ready = true;
+        index.save_record(&other).unwrap();
+        let value = index.backlog(u64::MAX).unwrap();
+        assert_eq!(value.get("due"), Some(&Json::from("0")));
+        assert_eq!(value.get("oldest_due_at"), Some(&Json::Null));
     }
 
     #[test]

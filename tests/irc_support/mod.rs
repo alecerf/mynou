@@ -166,7 +166,7 @@ pub fn bytes(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
 }
 pub fn snapshot(root: &Path) -> Value {
     let b = fs::read(root.join("announcements.bin")).unwrap();
-    if b.starts_with(b"MYNOUI04") {
+    if b.starts_with(b"MYNOUI05") {
         let mut index =
             mynou::inventory::Index::open(&root.join("announcements.idx"), true).unwrap();
         let mut v =

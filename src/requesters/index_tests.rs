@@ -647,3 +647,85 @@ fn full_disk_at_every_migration_flush_preserves_legacy_and_restarts() {
     }
     panic!("migration fixture exceeded its durability boundary budget");
 }
+
+#[test]
+fn requester_backlog_tracks_admission_states_and_survives_restart() {
+    let directory = Directory::new();
+    let config = config(&directory.0);
+    let mut store = RequesterStore::open(&directory.0, &config, false).unwrap();
+    store.initialize().unwrap();
+    let mut patch = store.state.clone();
+    for n in 0..200 {
+        let row = demand(&config, n, 1);
+        patch.demands.insert(row.id.clone(), row);
+    }
+    store.save_patch(patch).unwrap();
+    let value = store.backlog(u64::MAX).unwrap();
+    assert_eq!(value.get("due"), Some(&json::Value::from("200")));
+    assert_eq!(
+        value.get("last_completed_pass_at"),
+        Some(&json::Value::Null)
+    );
+    let oldest = value.get("oldest_due_at").cloned();
+    let mut row = demand(&config, 0, 1);
+    row.state = "conflict".into();
+    row.outcome = "conflict".into();
+    let mut patch = store.state.clone();
+    patch.demands.insert(row.id.clone(), row.clone());
+    store.save_patch(patch).unwrap();
+    assert_eq!(
+        store
+            .backlog(u64::MAX)
+            .unwrap()
+            .get("oldest_due_at")
+            .cloned(),
+        oldest
+    );
+    row.state = "removed".into();
+    row.outcome = "removed".into();
+    row.origins.clear();
+    let mut patch = store.state.clone();
+    patch.demands.insert(row.id.clone(), row);
+    store.save_patch(patch).unwrap();
+    store.finish_backlog_pass(80).unwrap();
+    drop(store);
+    let store = RequesterStore::open(&directory.0, &config, true).unwrap();
+    let value = store.backlog(u64::MAX).unwrap();
+    assert_eq!(value.get("due"), Some(&json::Value::from("199")));
+    assert_eq!(
+        value.get("last_completed_pass_at"),
+        Some(&json::Value::from("80"))
+    );
+}
+
+#[test]
+fn requester_backlog_migration_keeps_unknown_wait_times_and_exact_legacy_backup() {
+    let directory = Directory::new();
+    let config = config(&directory.0);
+    let store = RequesterStore::open(&directory.0, &config, false).unwrap();
+    let mut state = store.state.clone();
+    for n in 0..3 {
+        let row = demand(&config, n, 1);
+        state.demands.insert(row.id.clone(), row);
+    }
+    drop(store);
+    let bytes = legacy_bytes(&state);
+    write_private(&directory.0.join("requesters.bin"), &bytes);
+    let store = RequesterStore::open(&directory.0, &config, true).unwrap();
+    assert!(store.backlog(100).is_err());
+    drop(store);
+    let mut store = RequesterStore::open(&directory.0, &config, false).unwrap();
+    store.initialize().unwrap();
+    let value = store.backlog(100).unwrap();
+    assert_eq!(value.get("due"), Some(&json::Value::from("3")));
+    assert_eq!(
+        value.get("unknown_due_times"),
+        Some(&json::Value::from("3"))
+    );
+    assert_eq!(value.get("oldest_due_at"), Some(&json::Value::Null));
+    let backup = directory.0.join(format!(
+        "requesters.legacy-{}.bin",
+        super::digest(&sha256(&bytes))
+    ));
+    assert_eq!(fs::read(backup).unwrap(), bytes);
+}

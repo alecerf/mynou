@@ -47,6 +47,11 @@ pub(super) fn schedule(index: &mut Index) -> Result<String> {
 pub(super) fn upgrade(index: &mut Index) -> Result<()> {
     match index.get(&HEADER)?.as_deref() {
         Some(FORMAT) => Ok(()),
+        Some(ROUTING_FORMAT) => {
+            check(index)?;
+            index.commit(vec![Change::PutInline(HEADER, FORMAT.to_vec())])?;
+            Ok(())
+        }
         Some(OLD_FORMAT) => {
             check(index)?;
             index.commit(vec![
@@ -125,7 +130,7 @@ pub(super) fn cancel(index: &mut Index, id: &str) -> Result<Vec<Change>> {
     Ok(changes)
 }
 impl Storage {
-    fn writable_index(&mut self) -> Result<&mut Index> {
+    pub(super) fn writable_index(&mut self) -> Result<&mut Index> {
         self.available()?;
         if self.read_only || self.upgrade {
             return Err("Feed routing: writable upgraded storage required".into());

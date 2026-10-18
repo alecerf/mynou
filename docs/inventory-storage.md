@@ -73,9 +73,8 @@ somebody who can replace state and its checksums.
 
 `inventory::Index::range_summary(start, end)` returns an exact key count and
 first key for `[start, end)`; `None` means no upper bound. An equal start/end
-is empty; a reversed range is refused. Series and library monitoring use this
-primitive for #246; other stores' due-work definitions, last-pass timestamps
-and status exposure remain pending. A tree entry can be a secondary key, so its count is not
+is empty; a reversed range is refused. The scheduled job, library, series, requester, IRC and transfer diagnostics use
+this primitive for #246; feeds use bounded configured-source scheduling metadata. A tree entry can be a secondary key, so its count is not
 necessarily a count of jobs, episodes or transfers.
 
 New branch pages (`MYNOUIN2`) carry an optional checked cardinality beside
@@ -686,7 +685,7 @@ a staging directory that cannot be safely reused is preserved under a unique
 `requesters.idx.abandoned-*` name. Every primary, secondary key and count is
 verified before promotion. An already promoted index must match the exact
 legacy image before marker publication; a restored older snapshot cannot rewrite
-acknowledged index changes. `requesters.bin` then becomes the `MYNOUR03` marker,
+acknowledged index changes. `requesters.bin` then becomes the `MYNOUR04` marker,
 bound to the verified index identity, which earlier binaries refuse.
 
 Read-only opens never migrate or repair. Legacy listings remain readable before
@@ -773,22 +772,13 @@ admission/monitoring and transfer scheduling, paginated views, startup validatio
 and storage-size/error diagnostics are also delivered. Their operation bounds
 remain intentional; a retained inventory is not truncated to those windows.
 
-Two acceptance steps remain:
-
-- [#246](https://github.com/alecerf/mynou/issues/246): complete per-store due
-  backlog, oldest unserved age and last completed pass readings alongside
-  [storage diagnostics](#storage-diagnostics-and-errors). Series (#271) and
-  library monitoring (#273) are delivered under `inventory.series` and
-  `inventory.library`; jobs/history is delivered by #275 under `inventory.jobs`.
-  Requester demand, feeds, source policies, IRC announcements and transfers remain. Feed routing counts alone are not
-  the complete common diagnostics. Migration-exhaustion fixtures and their
-  store-named full-disk error correction are already delivered.
-- [#217](https://github.com/alecerf/mynou/issues/217), after #246: record disk
-  size, open/startup time, a routine pass, a point update, a page read and peak
-  resident memory at three or more increasing sizes for every indexed store on
-  native macOS arm64; publish the acceptance table and audit remaining bounds.
-  Existing series measurements and bounded-window tests do not establish this
-  evidence for all stores, so no overall scalability claim is made here.
+Per-store diagnostics (#246) are delivered. The remaining acceptance step is
+[#217](https://github.com/alecerf/mynou/issues/217): record disk size, open/startup
+time, a routine pass, a point update, a page read and peak resident memory at
+three or more increasing sizes for every indexed store on native macOS arm64;
+publish the acceptance table and audit remaining bounds. Existing series
+measurements and bounded-window tests do not establish this evidence for all
+stores, so #106 stays open and no overall scalability claim is made here.
 
 Use synthetic fixtures and relevant native local validation, followed by the
 required GitHub Actions checks. Removing inventory caps does not remove physical
@@ -906,7 +896,7 @@ before resuming; every original primary row, secondary entry, metadata value and
 count is verified before promotion. Extra, changed or foreign entries are
 refused. An interrupted promotion is reverified before publishing the marker.
 
-`announcements.bin` becomes a checked `MYNOUI04` marker bound to the index
+`announcements.bin` becomes a checked `MYNOUI05` marker bound to the index
 identity. Older binaries reject it. Read-only inspection never initializes,
 migrates, recovers redo, changes permissions or writes decisions. A pending
 index transaction requires writable recovery; corruption, public permissions,
@@ -1014,8 +1004,8 @@ or substitute an inventory scan. Failure preserves recovery data and requires a
 writable restart. The [range-count downgrade rules](#exact-range-summaries) apply:
 keep a complete stopped-store backup before upgrading; earlier binaries that
 predate counted branch pages refuse the new format. Existing migration backups
-are preserved. This delivery leaves #246 and #106 open for the remaining stores
-and measured acceptance.
+are preserved. The other #246 integrations are described below; #106 still
+requires the measured acceptance in #217.
 
 
 ### Job backlog and claim-scan freshness
@@ -1064,7 +1054,83 @@ upgrading, and restore that consistent backup to downgrade, losing subsequent
 changes. Missing legacy branch counts use the existing explicit resumable
 writable preparation; status never substitutes an inventory scan.
 
-This closes the jobs/history portion of #246 only. Requester demand, feeds,
-source policies, IRC announcements and transfers remain, followed by #217's
-increasing-size measurements before #106 can close. Source policies have no
-periodic worker and must receive explicit non-applicability semantics.
+The remaining #246 integrations are described below. Increasing-size evidence
+and the final acceptance table remain #217 before #106 can close.
+
+### Requester, IRC, feed, source-policy and transfer diagnostics
+
+Service status completes `inventory` with the following explicit scheduled units:
+
+| Field | Unit and due membership | Successful bounded pass |
+| --- | --- | --- |
+| `requesters` | `requester_admission_scan`: retained pending, reserved and conflicting demand, before enabled-account, current-origin and compatibility checks | The admission window (at most 200 examined / 64 admitted), outcome window, bounded origin cleanup and cancellation reconciliation finish without error or shutdown |
+| `irc` | `irc_routing_scan`: the durable pending routing table, before current rule/fingerprint, requester eligibility and transient retry checks | One scheduling page (up to 200 rows) is examined; idle/filtered passes succeed, a selected announcement must route or settle availability successfully |
+| `feeds` | `feed_source_pass`: configured, enabled watched sources due under the watcher's actual monotonic schedule, including pending-generation continuation | An automatic unforced all-source window (up to four sources) completes with every attempted source returning `ok`; an empty window also completes |
+| `source_policies` | `source_policy_control`: no periodic worker; `state: not_applicable`, null count, ages and freshness | None; operator controls are not background passes |
+| `transfers` | `transfer_queue_scan`: unpaused, nonfailed, nonlimited transfers still needing selected payload or metadata, including running transfers retained in the durable queue | Both bounded head and rotating queue windows are read successfully, before hydration, admission and worker execution |
+
+These queues describe scheduled work, not successful acquisition. Requester
+counts may include demand awaiting bounded origin cleanup or account policy
+checks. Active/ready demand follows job execution and is not new admission
+backlog; upstream watchlist sweep progress remains in the requester report.
+IRC counts include ineligible and temporarily backed-off candidates until their
+durable decision/route removes them; no claim of immediately actionable routing
+is made. Completed transfers retained for seeding are not unfinished download
+backlog; tracker/DHT timers apply to the bounded live seed window, not every
+retained transfer on every tick. A transfer client that has not opened reports
+`state: not_started` without guessed counts. Disabled IRC routing and feeds
+report zero due work and preserve existing pass freshness. Source-policy storage
+failures still report `unavailable` even though scheduling is not applicable.
+
+Requester, IRC and transfer membership and wait times change atomically with
+their authoritative records. Status reads one format point, two exact tree
+range summaries and one last-pass point per queue, without hydrating a record,
+scanning the inventory or writing. A work item that remains in the queue keeps
+its age; leaving and re-entering begins a new wait. Queue members are due
+immediately: clock rollback keeps the count and clamps a future observation's
+reported due time to now, with zero lateness. IRC can recover wait times from
+immutable `first_seen` timestamps. Older requester/transfer records have no
+original queue-entry timestamp: they are counted exactly, `unknown_due_times`
+counts them, and both oldest fields remain null while any such record remains.
+No historical time is fabricated. New entries have known wall-clock wait times.
+
+Feed status performs at most 64 point lookups into the bounded configured-source
+runtime map plus one durable freshness lookup. It never reads retained feed
+observations, generations or candidate payloads. A source's pending generation
+is served instead of a new poll, using the same source scheduling slot; captured
+entry/generation counts remain in the detailed feed report. Source intervals,
+cooldowns and ten-second retry rests remain effective. The polling schedule is
+intentionally volatile: restart makes configured sources due again, and wait
+age begins at the new process's scheduling observation. A source re-enabled
+after suspension has an unknown wait time until the next scheduling observation;
+`unknown_due_times` makes that explicit. Durable successful-pass
+freshness survives restart. Manual forced/targeted polls never advance the
+automatic freshness field.
+
+Successful requester, IRC, feed and transfer passes checkpoint freshness at most
+once per 60 wall-clock seconds (also exposed as `freshness_checkpoint_secs`),
+including successful idle passes. Clock rollback allows a fresh checkpoint.
+The value is the last durable checkpoint, not the latest in-memory tick, a
+whole-inventory traversal, or completed network work. Failed operations,
+interrupted passes and shutdown preserve it. A failed commit may recover its
+whole WAL transaction; an uncertain store becomes unavailable until reopened.
+Busy stores/runtime maps report `busy`; unprepared, uncertain or unreadable
+indexes report `unavailable` with a fixed recovery hint and no counts. Status
+publishes no account names, media titles, paths, source payloads or credentials.
+
+The first writable startup adds requester/IRC/transfer membership in resumable
+pages of at most 200 primary rows, with the page and continuation committed
+together. Legacy migrations first prove their exact original contents, then
+prepare derived backlog indexes. Legacy range cardinalities are explicitly
+prepared in batches of 64. Read-only status never performs either upgrade.
+Existing backups and primary records are preserved. The requester and IRC
+markers advance to `MYNOUR04` and `MYNOUI05`; the transfer header advances to
+`mynou-transfers/2` before derived preparation, fencing older writers even when
+preparation is interrupted. Feed format `mynou-feeds/3` adds optional durable
+pass metadata without enumerating retained observations. Earlier binaries
+refuse these new formats. Keep a complete stopped-store backup before upgrading;
+downgrade requires restoring that consistent backup and loses subsequent changes.
+
+Migration-exhaustion regression fixtures remain for all seven stores. These
+readings complete #246; measured growth evidence and parent acceptance remain
+#217 and #106.
