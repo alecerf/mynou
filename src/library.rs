@@ -216,10 +216,12 @@ impl Engine {
             .collect::<Vec<_>>();
         let eligible = window.jobs;
         let mut queued = 0_u32;
+        let mut completed = true;
         for job in eligible.into_iter().take(self.config.monitoring.max_checks) {
             if self.stopped.load(Ordering::Acquire) || started.elapsed() >= Duration::from_secs(90)
             {
                 limited = true;
+                completed = false;
                 break;
             }
             if apply {
@@ -261,6 +263,7 @@ impl Engine {
             ) {
                 Ok(selected) => selected,
                 Err(_) => {
+                    completed = false;
                     entries.push(entry(&job, "search_unavailable"));
                     continue;
                 }
@@ -325,6 +328,15 @@ impl Engine {
                 Err(error) => return Err(error),
             }
             entries.push(item);
+        }
+        if apply
+            && !force
+            && self.config.monitoring.enabled
+            && completed
+            && !self.stopped.load(Ordering::Acquire)
+            && started.elapsed() < Duration::from_secs(90)
+        {
+            lock(&self.store)?.finish_library_pass(store::now())?;
         }
         let mut value = report(
             apply,

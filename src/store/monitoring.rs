@@ -293,6 +293,88 @@ pub(super) fn stage(
 }
 
 impl Store {
+    /// Exact automatic monitoring backlog, using at most three range summaries
+    /// and one metadata lookup. No library/job payload is loaded here.
+    pub(crate) fn library_backlog(
+        &mut self,
+        at: u64,
+        interval: u64,
+        enabled: bool,
+    ) -> Result<crate::json::Value> {
+        fn report(
+            at: u64,
+            enabled: bool,
+            count: u64,
+            oldest: Option<u64>,
+            last: Option<u64>,
+        ) -> crate::json::Value {
+            let mut value = crate::json::Value::object();
+            let number =
+                |n: Option<u64>| n.map_or(crate::json::Value::Null, |n| n.to_string().into());
+            value.insert("state", if enabled { "ready" } else { "disabled" });
+            value.insert("due", count.to_string());
+            value.insert("oldest_due_at", number(oldest));
+            value.insert(
+                "oldest_due_age_secs",
+                number(oldest.map(|oldest| at.saturating_sub(oldest))),
+            );
+            value.insert("last_completed_pass_at", number(last));
+            value
+        }
+        self.read(report(at, enabled, 0, None, None), |db| {
+            let last =
+                db.0.get(&LIBRARY_LAST_PASS_KEY)?
+                    .map(|bytes| ops::array(&bytes).map(u64::from_be_bytes))
+                    .transpose()?;
+            if !enabled {
+                return Ok(report(at, false, 0, None, last));
+            }
+            let mut count = 0_u64;
+            let mut oldest = None;
+            let mut add = |start, end, delay: u64| -> Result<()> {
+                let summary = db.0.range_summary(start, end)?;
+                count = count
+                    .checked_add(summary.count)
+                    .ok_or("Library backlog count overflow")?;
+                if let Some(first) = summary.first {
+                    let scheduled = u64::from_be_bytes(ops::key_part(&first, 1)?)
+                        .saturating_add(delay)
+                        .min(at);
+                    oldest = Some(oldest.map_or(scheduled, |oldest: u64| oldest.min(scheduled)));
+                }
+                Ok(())
+            };
+            // Never checked tips are due from their creation time. A future
+            // creation/check time is due now, matching clock-rollback scheduling.
+            let (start, end) = prefix_range(&[T_MONITOR_UNCHECKED]);
+            add(start, end, 0)?;
+            let (start, end) = prefix_range(&[T_MONITOR_DUE]);
+            if let Some(cutoff) = at.checked_sub(interval) {
+                let due_end = cutoff
+                    .checked_add(1)
+                    .map(|next| key(&[&[T_MONITOR_DUE], &next.to_be_bytes()]))
+                    .or(end);
+                add(start, due_end, interval)?;
+            }
+            if let Some(next) = at.checked_add(1) {
+                add(key(&[&[T_MONITOR_DUE], &next.to_be_bytes()]), end, 0)?;
+            }
+            Ok(report(at, true, count, oldest, last))
+        })
+    }
+
+    /// Called only after a successful bounded automatic pass. A preview,
+    /// manual check, cancellation or failed search must preserve the timestamp.
+    pub(crate) fn finish_library_pass(&mut self, at: u64) -> Result<()> {
+        self.mutate(|db| {
+            db.0.commit(vec![Change::PutInline(
+                LIBRARY_LAST_PASS_KEY,
+                at.to_be_bytes().to_vec(),
+            )])?;
+            Ok(())
+        })
+    }
+
     pub(crate) fn monitoring_counts(&mut self) -> Result<[u64; 5]> {
         self.read([0; 5], |db| counts(db.0))
     }

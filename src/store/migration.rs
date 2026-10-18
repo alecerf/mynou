@@ -80,6 +80,11 @@ fn ready(
     super::monitoring::upgrade(&mut index, read_only, directory)?;
     super::children::upgrade(&mut index, read_only, directory)?;
     super::ownership::upgrade(&mut index, read_only)?;
+    // Status must never repair metadata or fall back to scanning old branches.
+    // Each batch is independently durable and resumes after interruption.
+    if !read_only {
+        while !index.prepare_range_counts(64)? {}
+    }
     Ok(Store::from_parts(
         directory,
         lock,

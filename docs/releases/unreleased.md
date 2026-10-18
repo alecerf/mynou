@@ -118,7 +118,7 @@ the migration can resume after the storage problem is fixed.
 
 ## Changed: Prepare exact bounded inventory backlog counts
 
-The storage index can now count a key range exactly and find its oldest key without scanning the range or reading record values. This is the index prerequisite for per-store backlog diagnostics; status exposure remains pending. New writes use counted branch pages that earlier binaries reject, so keep a complete stopped-store backup for downgrade ([storage guide](/docs/inventory-storage.md#exact-range-summaries)).
+The storage index can now count a key range exactly and find its oldest key without scanning the range or reading record values. Series and library status use it for backlog diagnostics; other stores remain pending. New writes use counted branch pages that earlier binaries reject, so keep a complete stopped-store backup for downgrade ([storage guide](/docs/inventory-storage.md#exact-range-summaries)).
 
 ## Added: Series backlog and pass freshness
 
@@ -128,4 +128,16 @@ background pass under `inventory.series`. Busy or unavailable readings remain
 explicit. Status does bounded index reads without loading series or episode
 records. Writable startup prepares older series indexes in resumable batches;
 read-only commands never migrate them. This delivers the series portion of #246;
-other stores' backlog diagnostics remain pending.
+library monitoring is delivered below and six other integrations remain pending.
+
+## Added: Library backlog and pass freshness
+
+Service status now reports the exact automatic library-check backlog, the oldest
+due check's lateness and the durable completion time of the last successful
+bounded background pass under `inventory.library`. Disabled monitoring, busy
+storage and unavailable readings are explicit. Manual previews and forced checks,
+failed searches and interrupted passes do not advance freshness. Status reads
+bounded index summaries without loading jobs. Writable startup prepares missing
+legacy job-index cardinalities in resumable batches; keep a stopped-store backup
+before upgrading if downgrade may be needed ([storage guide](/docs/inventory-storage.md#library-backlog-and-pass-freshness)).
+This delivers #273, the library portion of #246; six other integrations remain.

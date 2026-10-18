@@ -73,6 +73,7 @@ pub(super) const WATCHLIST_CURSOR_KEY: Key = single(T_META, 6);
 pub(super) const CLAIM_CURSOR_KEY: Key = single(T_META, 7);
 pub(super) const REQUESTER_SWEEP_CURSOR_KEY: Key = single(T_META, 8);
 pub(super) const OWNERSHIP_CURSOR_KEY: Key = single(T_META, 9);
+pub(super) const LIBRARY_LAST_PASS_KEY: Key = single(T_META, 10);
 pub(super) const MIGRATION_SOURCE_KEY: Key = single(T_MIGRATION, 0);
 pub(super) const MIGRATION_CURSOR_KEY: Key = single(T_MIGRATION, 1);
 
