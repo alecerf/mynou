@@ -90,9 +90,30 @@ actual peer image ID, kernel, architecture, scenario outcomes, durations and
 observation sources. QA and Security must read a real green run before adding
 this job to required checks in a separate reviewed change.
 
-The independent-interoperability delivery gate in
-[the design](/docs/wireguard-design.md) remains unresolved until a real green
-Actions run is recorded and reviewed. Local results alone do not resolve it.
+## Reviewed Actions evidence
+
+[Actions run 39033029167](https://github.com/alecerf/mynou/actions/runs/39033029167),
+job `independent-peer`, passed on 2026-10-17 at Mynou revision
+`7c41ae1944757ca62502e86a00621f33ffc5a052`. Its recorded result is **all 13
+required scenarios passed**, with no failed or ignored Rust tests (172.16 s).
+The peer was wireguard-go `0.0.20250522` at the module/source pin above,
+built with Go 1.26.4 from the digest-pinned images above. The runner recorded
+Linux kernel `6.17.0-1022-azure`, architecture `x86_64`, and peer image ID
+`sha256:57893542323c11c2ffd2a0d958b2d7874986de8cfa6cb6c32abef3231eb58584`;
+the isolated traffic was IPv4
+inside and outside the tunnel, over loopback.
+
+The [Security review](https://github.com/alecerf/mynou/pull/257#issuecomment-6237176037)
+and [QA review](https://github.com/alecerf/mynou/pull/257#issuecomment-6237176297)
+read that real run and independently reproduced all 13 scenarios locally.
+QA's rejection concerned the missing evidence handoff in these documents;
+it found no product implementation defect. Those verdicts cover the recorded
+revision only; revised PR heads still require fresh QA and Security verdicts.
+
+This evidence satisfies the independent-interoperability gate in
+[the design](/docs/wireguard-design.md) within the boundary below. The job
+remains non-required; adding a required branch check is a separate reviewed
+change. This evidence does not resolve any other protected-delivery gate.
 
 The evidence covers one peer version on Linux/Docker, IPv4 inner and outer
 traffic, and loopback without real loss or path MTU. It proves nothing about

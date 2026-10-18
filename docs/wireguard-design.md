@@ -209,7 +209,7 @@ accounts or real notifications. New CI/tooling changes require their own review.
 | Gate | Required evidence |
 | --- | --- |
 | Primitives/protocol | Public vectors with provenance, keyed and boundary cases, negative AEAD/low-order DH cases, fresh-session/counter/replay/timer/cookie/clock fixtures. |
-| Independent interoperability | An independently implemented controlled WireGuard peer exchanges authenticated handshake/data in both directions, including rekey/PSK/cookie cases. Same-code loopback fixtures and vectors alone are not interoperability evidence. Record its origin/version and exact test limits. If unavailable, this gate stays unresolved; do not invent success. |
+| Independent interoperability | Satisfied within the [recorded fixture boundary](/docs/wireguard-interop.md#reviewed-actions-evidence): [Actions run 39033029167](https://github.com/alecerf/mynou/actions/runs/39033029167) passed all 13 scenarios at `7c41ae1944757ca62502e86a00621f33ffc5a052` against independent wireguard-go `0.0.20250522`, including both handshake/data roles, rekey, PSK, cookie under load and wrong-key refusal. Linux/Docker, IPv4 inner/outer, loopback only; no macOS, torrent isolation, leak or universal compatibility claim. |
 | Stack and DNS | Deterministic loss/reordering/corruption/flow/window/MTU/fragment cases, TCP listener/close, UDP checksums, DNS spoof/compression/truncation and bounded exhaustion. |
 | Complete network inventory | CI source-policy checks cover physical sockets, host DNS and default HTTP/TLS construction, including aliases/helpers and inspection/orchestration callers. Negative fixtures demonstrate checker failures. These checks aid call-graph review and are not a formal proof of arbitrary Rust programs. |
 | Isolation | Controlled ordinary-path trap endpoints and observable tunnel egress for TCP peers, inbound seeds, UDP/HTTP/HTTPS trackers, DHT/PEX, magnet names, metadata inspections and remote torrent files. Test redirects, environment proxies, literal/answered IPv6, loopback/LAN references and malformed endpoints. Observe attempted lookups as well as successful connections. |
@@ -218,8 +218,10 @@ accounts or real notifications. New CI/tooling changes require their own review.
 
 The [independent peer fixture](/docs/wireguard-interop.md) records the approved
 wireguard-go pin, confinement, scenarios and evidence limits. Its separate CI job
-is not a required branch check. This gate remains unresolved until a real green
-Actions run is recorded and reviewed.
+is not a required branch check. The green run and its QA/Security review are
+[recorded with their limits](/docs/wireguard-interop.md#reviewed-actions-evidence);
+only the independent-interoperability gate is satisfied within that boundary.
+All other protected-delivery gates remain separate.
 
 Include separate isolation/revocation fixtures for pack inspection, library
 group replacement previews and IRC-triggered metadata lookup, including their
