@@ -509,7 +509,11 @@ fn live_irc_receivers_and_background_routing_complete_an_existing_request() {
         irc_support::closed(&mut stream);
     });
     let workers = engine.start();
-    irc_support::wait(|| job(&engine, &admitted.id).state == "ready");
+    // This live flow includes worker polling, metadata, transfer and import.
+    // Its usual ~3 s leaves too little scheduling headroom in the 5 s protocol wait.
+    irc_support::wait_for(std::time::Duration::from_secs(30), || {
+        job(&engine, &admitted.id).state == "ready"
+    });
     assert!(job(&engine, &admitted.id).irc_origin.is_some());
     drop(workers);
     receiver.join().unwrap();

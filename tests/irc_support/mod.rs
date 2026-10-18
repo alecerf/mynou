@@ -245,10 +245,17 @@ pub fn no_credentials(v: &Value) {
         assert!(!text.contains(s));
     }
 }
-pub fn wait(mut f: impl FnMut() -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(5);
+pub fn wait(f: impl FnMut() -> bool) {
+    wait_for(Duration::from_secs(5), f);
+}
+/// Allow a whole live journey more headroom than a single protocol exchange.
+pub fn wait_for(timeout: Duration, mut f: impl FnMut() -> bool) {
+    let deadline = Instant::now() + timeout;
     while !f() {
-        assert!(Instant::now() < deadline, "IRC fixture deadline exceeded");
+        assert!(
+            Instant::now() < deadline,
+            "IRC fixture deadline exceeded ({timeout:?})"
+        );
         thread::sleep(Duration::from_millis(5));
     }
 }
