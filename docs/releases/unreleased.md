@@ -115,3 +115,7 @@ product dependencies, runtime and release version are unchanged.
 When a storage migration runs out of disk space, the error now names the affected
 store and asks you to free space and restart. Legacy data remains preserved so
 the migration can resume after the storage problem is fixed.
+
+## Changed: Prepare exact bounded inventory backlog counts
+
+The storage index can now count a key range exactly and find its oldest key without scanning the range or reading record values. This is the index prerequisite for per-store backlog diagnostics; status exposure remains pending. New writes use counted branch pages that earlier binaries reject, so keep a complete stopped-store backup for downgrade ([storage guide](/docs/inventory-storage.md#exact-range-summaries)).

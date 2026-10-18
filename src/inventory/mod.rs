@@ -64,6 +64,13 @@ pub struct Page {
     pub sequence: u64,
 }
 
+/// Exact cardinality and first key of a half-open range. Values are not read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RangeSummary {
+    pub count: u64,
+    pub first: Option<Key>,
+}
+
 /// One owner, bounded tree paths and bounded response/transaction buffers.
 /// Use `create` for a new directory and `open` for this format only.
 pub struct Index {
@@ -191,6 +198,69 @@ impl Index {
         value
             .map(|value| persistence::read_value(&self.directory, &self.header, key, value))
             .transpose()
+    }
+
+    /// Exact [start, end) count and first key, in at most three tree paths.
+    /// None means an unbounded end. Legacy branches require the explicit
+    /// `prepare_range_counts` upgrade; this read never migrates or scans.
+    pub fn range_summary(&mut self, start: Key, end: Option<Key>) -> Result<RangeSummary> {
+        self.available()?;
+        #[cfg(test)]
+        {
+            self.requests += 1;
+        }
+        let mut tree = Tree::new(&mut self.tree, self.header, &mut self.cache);
+        let result = tree.summary(start, end);
+        #[cfg(test)]
+        {
+            self.last_page_reads = tree.reads;
+        }
+        result
+    }
+
+    /// Explicit resumable upgrade of legacy branch counts. Returns true when
+    /// complete. Each call visits at most (budget + height) * 32 children and
+    /// commits at most budget + height pages through the ordinary WAL, with
+    /// no record changes. Open/read-only paths never call this automatically.
+    /// Keep a stopped-store backup for downgrade before starting the upgrade.
+    pub fn prepare_range_counts(&mut self, budget: usize) -> Result<bool> {
+        self.available()?;
+        if self.read_only {
+            return Err(format!(
+                "{} is open read-only; range counts were not upgraded",
+                self.name
+            ));
+        }
+        if !(1..=256).contains(&budget) {
+            return Err("Inventory range-count upgrade budget must be 1..=256".into());
+        }
+        let mut tree = Tree::new(&mut self.tree, self.header, &mut self.cache);
+        let complete = tree.prepare_counts(budget)?;
+        #[cfg(test)]
+        {
+            self.last_page_reads = tree.reads;
+            self.last_staged_nodes = tree.dirty.len();
+        }
+        if tree.dirty.is_empty() {
+            return Ok(complete);
+        }
+        tree.header.sequence = self
+            .header
+            .sequence
+            .checked_add(1)
+            .ok_or("Inventory sequence overflow")?;
+        let transaction = persistence::Transaction {
+            before: self.header,
+            after: tree.header,
+            pages: tree.dirty,
+            actions: Vec::new(),
+        };
+        let bytes = transaction.encode()?;
+        self.cache.clear();
+        persistence::publish_and_apply(self, &transaction, &bytes)
+            .map_err(|failure| failure.explain(self.name))?;
+        self.header = transaction.after;
+        Ok(complete)
     }
 
     pub fn page(&mut self, query: &Query) -> Result<Page> {
