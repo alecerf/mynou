@@ -17,6 +17,7 @@ import time
 
 MAX_MANIFEST_BYTES = 32 * 1024 * 1024
 MAX_LOG_BYTES = 16 * 1024 * 1024
+MAX_LIBRARY_GROUP_TESTS = 32
 RESULT = re.compile(
     r"test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored; "
     r"\d+ measured; (\d+) filtered out; finished in ([0-9.]+)s"
@@ -29,12 +30,14 @@ class Target:
     executable: Path
     tests: tuple[str, ...] = ()
     total_tests: int = 0
+    batch: int = 0
 
     @property
     def label(self):
         if not self.tests:
             return self.source
-        return self.source + "::" + self.tests[0].split("::")[0]
+        label = self.source + "::" + self.tests[0].split("::")[0]
+        return label + (f":{self.batch}" if self.batch else "")
 
 
 def library_shards(targets, root):
@@ -73,7 +76,15 @@ def library_shards(targets, root):
         if len(groups) > 128:
             raise ValueError("Library discovery exceeds 128 module groups")
         for group in sorted(groups):
-            planned.append(Target(target.source, target.executable, tuple(sorted(groups[group])), len(names)))
+            tests = sorted(groups[group])
+            # Growing storage coverage must not accumulate in one timed harness.
+            # Keep the same deadline and execute every exact name once.
+            for start in range(0, len(tests), MAX_LIBRARY_GROUP_TESTS):
+                batch = start // MAX_LIBRARY_GROUP_TESTS + 1 if len(tests) > MAX_LIBRARY_GROUP_TESTS else 0
+                planned.append(Target(
+                    target.source, target.executable,
+                    tuple(tests[start:start + MAX_LIBRARY_GROUP_TESTS]), len(names), batch,
+                ))
     return planned
 
 

@@ -135,6 +135,25 @@ class SchedulerTests(unittest.TestCase):
         self.assertTrue(report["success"])
         self.assertEqual(report["counts"], {"passed": 3, "failed": 0, "ignored": 0, "filtered": 0})
 
+    def test_large_module_batches_keep_complete_exact_coverage_and_unique_labels(self):
+        for size in (32, 33, 94):
+            with self.subTest(size=size):
+                names = [f"store::tests::case_{n:03d}" for n in range(size)]
+                target = self.library(list(reversed(names)))
+                shards = runner.library_shards([target], self.root)
+                self.assertEqual(len(shards), (size + 31) // 32)
+                self.assertEqual(len({s.label for s in shards}), len(shards))
+                self.assertTrue(all(1 <= len(s.tests) <= 32 for s in shards))
+                self.assertEqual([name for s in shards for name in s.tests], names)
+                report = runner.schedule(shards, self.root, self.root / f"logs-{size}", 2, 1, 3, {})
+                self.assertTrue(report["success"])
+                self.assertEqual(report["counts"], {"passed": size, "failed": 0, "ignored": 0, "filtered": 0})
+                if len(shards) > 1:
+                    for plan in (shards[:-1], shards + shards[:1]):
+                        with self.assertRaises(ValueError):
+                            runner.schedule(plan, self.root, self.root / "invalid", 2, 1, 3, {})
+                self.assertFalse((self.root / "invalid").exists())
+
     def test_library_discovery_rejects_empty_duplicate_malformed_or_failed_lists(self):
         bodies = ["pass", "print('a: test\\na: test')", "print('a: benchmark')",
                   "print('not a listing')", "print('a: test'); raise SystemExit(1)"]
