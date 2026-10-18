@@ -59,8 +59,11 @@ measured (there is no retained-policy listing endpoint). Routine pass means:
 
 Point update changes one existing row with the normal store operation. The full
 walk follows cursors to exhaustion, drops each page before the next and verifies
-that the visited row count equals the constructed inventory. History remains
-per-job bounded; total history grows with the jobs. The minimum fixture sizes
+that the visited row count equals the constructed inventory. Jobs/library also
+verify one full-size event per initial job, time a history page and full history
+walk (`history_page_us`/`history_walk_us` in raw JSON), and check the event total
+again after updates. History remains per-job bounded; total history grows with
+the jobs. The minimum fixture sizes
 exceed the old job count and aggregate snapshot/journal sizes, series scope/
 episode/snapshot limits, requester count/bytes, feed count/bytes, policy count/
 bytes and IRC count/bytes. Transfers had no previous fixed count cap: their
@@ -77,8 +80,14 @@ to the required test suite.
 
 ## Results
 
-Pending the measured Actions run. No capacity acceptance is asserted until the
-results and the successful required checks are linked here.
+The permanent numeric tables, measured commit/environment and Actions run links
+are published on [#217](https://github.com/alecerf/mynou/issues/217). The final
+criterion-by-criterion acceptance decision is posted on its parent
+[#106](https://github.com/alecerf/mynou/issues/106), with links to the successful
+required checks. The workflow artifact is named `inventory-growth-COMMIT_SHA`.
+Raw Actions artifacts have a 30-day retention period; the tables and acceptance
+comments remain on the issues, and this harness makes the experiment repeatable.
+An unmerged PR or an incomplete/failed Actions run is not an acceptance result.
 
 ## Remaining-bounds source audit
 
