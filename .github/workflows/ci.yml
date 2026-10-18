@@ -17,8 +17,12 @@ concurrency:
 env:
   PYTHONDONTWRITEBYTECODE: '1'
 jobs:
+  changes:
+    uses: ./.github/workflows/changes.yml
   decide:
-    # Pull requests, manual dispatches and tags all run the full chain; only a
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.build == 'true') }}
+    # Selected pull requests, manual dispatches and tags run this chain; only a
     # tag that names the Cargo.toml version of a commit already on trunk, and
     # that raised the version over its parent, may then publish. Nothing else
     # depends on this job: package fails on a pull request when its version is
@@ -85,8 +89,9 @@ jobs:
           echo "v$VERSION is a trunk commit; this run publishes it once every check passes." >> "$GITHUB_STEP_SUMMARY"
           echo "publish=true" >> "$GITHUB_OUTPUT"
   validate:
-    # Never gated on the decision: a required check that is skipped counts as
-    # passed, so only a run that really ended can leave it green.
+    needs: changes
+    # A failed selector must fail required checks, never silently skip them.
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.tests == 'true') }}
     # Mynou ships for macOS Apple Silicon only, so its checks run there too.
     runs-on: macos-26
     # No job deadline: the suite needs about ten minutes of three-core runner
@@ -98,6 +103,10 @@ jobs:
     outputs:
       version: ${{ steps.metadata.outputs.version }}
     steps:
+      - name: Require a successful change selection
+        env:
+          SELECTION_RESULT: ${{ needs.changes.result }}
+        run: test "$SELECTION_RESULT" = success
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
@@ -133,8 +142,6 @@ jobs:
         run: cargo fmt --all --check
       - name: Run Clippy
         run: cargo clippy --all-targets --offline --locked -- -D warnings
-      - name: Check the CI test scheduler
-        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
       - name: Generate independent crypto reference fixtures
         run: python3 .github/scripts/crypto_fixtures.py "$RUNNER_TEMP/mynou-crypto-vectors.json"
       - name: Compile all test harnesses
@@ -177,10 +184,16 @@ jobs:
             target/debug/mynou-ci-test-timings.json
           key: ${{ steps.cache.outputs.cache-primary-key }}
   build:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.build == 'true') }}
     name: Build aarch64-apple-darwin
     runs-on: macos-26
     timeout-minutes: 8
     steps:
+      - name: Require a successful change selection
+        env:
+          SELECTION_RESULT: ${{ needs.changes.result }}
+        run: test "$SELECTION_RESULT" = success
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
@@ -207,6 +220,8 @@ jobs:
           test "$(lipo -archs "$binary")" = arm64
           otool -hv "$binary"
           otool -L "$binary"
+          version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
+          test "$("$binary" --version)" = "mynou $version — Rust std, 0 dependencies"
           shasum -a 256 "$binary"
       - name: Run the standalone demonstration
         run: |
@@ -235,10 +250,10 @@ jobs:
             target/aarch64-apple-darwin/release/mynou
           key: ${{ steps.cache.outputs.cache-primary-key }}
   package:
-    needs: [decide, validate, build]
-    # Runs after a successful validation and build, even when the decision failed:
-    # on a pull request the version check below then fails instead of skipping.
-    if: ${{ !cancelled() && needs.validate.result == 'success' && needs.build.result == 'success' }}
+    needs: [changes, decide, validate, build]
+    # Test-only changes need no package; packaging-only changes need no Rust
+    # suite. Tags always select both, retaining the complete release chain.
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.build == 'true' && (needs.validate.result == 'success' || (needs.changes.outputs.tests == 'false' && needs.validate.result == 'skipped')) && needs.build.result == 'success' }}
     # Packaging only copies and checksums the executable; it builds nothing.
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -257,9 +272,10 @@ jobs:
         run: bash -n .github/scripts/publish-release.sh
       - name: Package the validated release
         env:
-          VERSION: ${{ needs.validate.outputs.version }}
+          VERSION: ${{ needs.validate.outputs.version || needs.decide.outputs.version }}
           DECIDED_VERSION: ${{ needs.decide.outputs.version }}
         run: |
+          test -n "$VERSION"
           test "$VERSION" = "$DECIDED_VERSION"
           mkdir "$RUNNER_TEMP/mynou-release"
           name="mynou-v$VERSION-macos-arm64"

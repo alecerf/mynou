@@ -1,0 +1,31 @@
+name: Select CI work
+on:
+  workflow_call:
+    outputs:
+      tests:
+        value: ${{ jobs.changes.outputs.tests }}
+      build:
+        value: ${{ jobs.changes.outputs.build }}
+      tooling:
+        value: ${{ jobs.changes.outputs.tooling }}
+      languages:
+        value: ${{ jobs.changes.outputs.languages }}
+permissions:
+  contents: read
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tests: ${{ steps.select.outputs.tests }}
+      build: ${{ steps.select.outputs.build }}
+      tooling: ${{ steps.select.outputs.tooling }}
+      languages: ${{ steps.select.outputs.languages }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select checks from the complete diff
+        id: select
+        run: python3 .github/scripts/ci_changes.py
