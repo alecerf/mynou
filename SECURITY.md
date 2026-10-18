@@ -7,9 +7,8 @@ a private channel with the repository owner before sending sensitive details.
 A credential found in public history or logs must be revoked or rotated. Removing
 its current occurrence does not revoke it or erase copies.
 
-The required `source-history` check scans reachable Git objects on pull requests
-and trunk pushes, publishing redacted findings only. Scheduled Actions-log
-audits have been removed.
+CodeQL runs in CI and remains a required check. The custom source-history and
+scheduled Actions-log scanners have been removed.
 Check repository-native secret protections in GitHub Settings/Security; do not
 assume they are enabled. Keep credentials outside the checkout and logs.
 The release workflow publishes only validated tagged source with a scoped token.
