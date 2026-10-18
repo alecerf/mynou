@@ -80,6 +80,7 @@ fn ready(
     super::monitoring::upgrade(&mut index, read_only, directory)?;
     super::children::upgrade(&mut index, read_only, directory)?;
     super::ownership::upgrade(&mut index, read_only)?;
+    super::backlog::upgrade(&mut index, read_only)?;
     // Status must never repair metadata or fall back to scanning old branches.
     // Each batch is independently durable and resumes after interruption.
     if !read_only {
@@ -177,7 +178,9 @@ fn check_format(index: &mut Index, read_only: bool) -> Result<()> {
                 || value == super::children::FORMAT
                 || value == super::children::PENDING
                 || value == super::ownership::FORMAT
-                || value == super::ownership::PENDING =>
+                || value == super::ownership::PENDING
+                || value == super::backlog::FORMAT
+                || value == super::backlog::PENDING =>
         {
             Db(index).counts().map(|_| ())
         }

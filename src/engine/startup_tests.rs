@@ -83,3 +83,30 @@ fn a_failed_transfers_stage_leaves_no_native_client_running() {
     assert!(engine.downloads.get().is_none());
     assert!(engine.transfer(&"ab".repeat(20)).is_err());
 }
+
+#[test]
+fn job_backlog_status_does_not_wait_for_held_storage() {
+    use crate::json::Value;
+    let directory = Directory::new();
+    let engine = Engine::open_for_management(config(&directory)).unwrap();
+    let inventory = |status: Value| {
+        status
+            .get("inventory")
+            .unwrap()
+            .get("jobs")
+            .unwrap()
+            .clone()
+    };
+    let value = inventory(engine.status().unwrap());
+    assert_eq!(value.get("state"), Some(&Value::from("ready")));
+    assert_eq!(value.get("due"), Some(&Value::from("0")));
+    let guard = lock(&engine.store).unwrap();
+    let value = inventory(engine.status().unwrap());
+    assert_eq!(value.get("state"), Some(&Value::from("busy")));
+    assert!(value.get("due").is_none());
+    drop(guard);
+    assert_eq!(
+        inventory(engine.status().unwrap()).get("state"),
+        Some(&Value::from("ready"))
+    );
+}

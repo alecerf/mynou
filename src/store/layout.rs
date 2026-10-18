@@ -61,6 +61,7 @@ pub(super) const T_MEDIA_READY: u8 = 0x43;
 pub(super) const T_MEDIA_RECENT: u8 = 0x44;
 pub(super) const T_MEDIA_BASE: u8 = 0x45;
 pub(super) const T_PENDING_CHILD: u8 = 0x46;
+pub(super) const T_JOB_DUE: u8 = 0x47;
 
 pub(super) const FORMAT_KEY: Key = single(T_META, 0);
 pub(super) const COUNTS_KEY: Key = single(T_META, 1);
@@ -74,6 +75,8 @@ pub(super) const CLAIM_CURSOR_KEY: Key = single(T_META, 7);
 pub(super) const REQUESTER_SWEEP_CURSOR_KEY: Key = single(T_META, 8);
 pub(super) const OWNERSHIP_CURSOR_KEY: Key = single(T_META, 9);
 pub(super) const LIBRARY_LAST_PASS_KEY: Key = single(T_META, 10);
+pub(super) const JOB_BACKLOG_CURSOR_KEY: Key = single(T_META, 11);
+pub(super) const JOB_LAST_PASS_KEY: Key = single(T_META, 12);
 pub(super) const MIGRATION_SOURCE_KEY: Key = single(T_MIGRATION, 0);
 pub(super) const MIGRATION_CURSOR_KEY: Key = single(T_MIGRATION, 1);
 
@@ -504,6 +507,16 @@ pub(super) fn wake(job: &Job) -> u64 {
     } else {
         job.next_attempt_at
     }
+}
+
+/// Unlike the promotion queue, this index always retains the scheduled wake
+/// time, including when the clock moves backwards after promotion.
+pub(super) fn job_due_key(job: &Job) -> Result<Key> {
+    Ok(key(&[
+        &[T_JOB_DUE],
+        &wake(job).to_be_bytes(),
+        &id_bytes(&job.id)?,
+    ]))
 }
 
 pub(super) fn pending_upgrade(job: &Job) -> bool {

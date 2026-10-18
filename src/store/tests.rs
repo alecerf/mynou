@@ -991,7 +991,7 @@ fn pending_monitoring_upgrade_is_read_only_safe_and_recovers_each_crash_boundary
         };
         assert_eq!(
             index.get(&layout::FORMAT_KEY).unwrap().unwrap(),
-            ownership::FORMAT
+            backlog::FORMAT
         );
         assert!(index.get(&layout::MONITOR_CURSOR_KEY).unwrap().is_none());
         for table in [layout::T_MONITOR_REF, layout::T_MONITOR_UNCHECKED] {
@@ -2893,7 +2893,7 @@ fn imported_child_index_upgrade_rebuilds_after_interruption_and_refuses_read_onl
     let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
     assert_eq!(
         index.get(&layout::FORMAT_KEY).unwrap().unwrap(),
-        ownership::FORMAT
+        backlog::FORMAT
     );
     assert!(index.get(&layout::CHILD_CURSOR_KEY).unwrap().is_none());
     assert_eq!(count(&mut index), 110);
@@ -3451,7 +3451,7 @@ fn transfer_ownership_upgrade_resumes_and_refuses_read_only() {
     let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
     assert_eq!(
         index.get(&layout::FORMAT_KEY).unwrap().unwrap(),
-        ownership::FORMAT
+        backlog::FORMAT
     );
     assert!(index.get(&layout::OWNERSHIP_CURSOR_KEY).unwrap().is_none());
     assert_eq!(ownership_entries(&mut index), expected);
@@ -4411,6 +4411,335 @@ fn library_backlog_status_reports_busy_and_redacted_failure() {
     let report = crate::json::stringify(backlog);
     assert!(!report.contains(directory.0.to_str().unwrap()));
     assert!(!report.contains("Synthetic"));
+    assert!(report.contains("restart with write access"));
+    assert!(status.get("version").is_some());
+}
+
+fn assert_job_backlog(store: &mut Store, at: u64, due: u64, oldest: Option<u64>) -> Value {
+    let before = match &store.backend {
+        Backend::Ready(index) => (index.sequence().unwrap(), index.requests()),
+        _ => unreachable!(),
+    };
+    let value = store.job_backlog(at).unwrap();
+    let number = |n: Option<u64>| n.map_or(Value::Null, |n| n.to_string().into());
+    assert_eq!(value.get("state"), Some(&Value::from("ready")));
+    assert_eq!(value.get("due"), Some(&Value::from(due.to_string())));
+    assert_eq!(value.get("oldest_due_at"), Some(&number(oldest)));
+    assert_eq!(
+        value.get("oldest_due_age_secs"),
+        Some(&number(oldest.map(|oldest| at.saturating_sub(oldest))))
+    );
+    if let Backend::Ready(index) = &store.backend {
+        assert_eq!(index.sequence().unwrap(), before.0, "status wrote storage");
+        assert!(index.requests() - before.1 <= 3, "status loaded records");
+        assert!(index.last_page_reads() <= 24, "status scanned tree pages");
+    }
+    value
+}
+
+#[test]
+fn job_backlog_counts_unpromoted_growth_leases_retries_and_cancellation() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    assert_job_backlog(&mut store, 100, 0, None);
+    let mut jobs: Vec<_> = (1..=5_001)
+        .map(|n| {
+            let mut job = raw_job(n, n);
+            job.next_attempt_at = 100;
+            job
+        })
+        .collect();
+    jobs[0].next_attempt_at = 0;
+    jobs[1].next_attempt_at = 200;
+    jobs[2].state = "failed".into();
+    jobs[2].next_attempt_at = 0; // Exhausted retries are retained history.
+    jobs[3].state = "cancelled".into();
+    jobs[4].state = "staged".into();
+    jobs[5].lease_id = Some("fixture-lease".into());
+    jobs[5].lease_until = 150;
+    bulk(&mut store, jobs.clone());
+    assert_job_backlog(&mut store, 99, 1, Some(0));
+    assert_job_backlog(&mut store, 100, 4_996, Some(0));
+    // The oldest job leaves the due range when claimed, then returns on expiry.
+    let claimed = store
+        .claim_filtered(100, 20, |j| Ok(j.id == jobs[0].id))
+        .unwrap()
+        .unwrap();
+    assert_job_backlog(&mut store, 119, 4_995, Some(100));
+    assert_job_backlog(&mut store, 120, 4_996, Some(100));
+    store
+        .renew(&claimed.id, claimed.lease_id.as_deref().unwrap(), 119, 100)
+        .unwrap();
+    assert_job_backlog(&mut store, 120, 4_995, Some(100));
+    store
+        .release_lease(&claimed.id, claimed.lease_id.as_deref().unwrap())
+        .unwrap();
+    store.cancel(&claimed.id).unwrap();
+    assert_job_backlog(&mut store, 120, 4_995, Some(100));
+    // Retry rescheduling updates the diagnostic entry in the same transaction.
+    let mut retry = store.get(&jobs[6].id).unwrap().unwrap();
+    retry.state = "failed".into();
+    retry.next_attempt_at = 300;
+    store.update(retry.clone()).unwrap();
+    assert_job_backlog(&mut store, 120, 4_994, Some(100));
+    retry.next_attempt_at = 0;
+    store.update(retry).unwrap();
+    assert_job_backlog(&mut store, u64::MAX, 4_996, Some(100));
+    // Status reads the derived index, even if a primary payload is damaged.
+    let record = Store::record_key(&jobs[7].id).unwrap();
+    assert!(crate::inventory::damage_record(&directory.0.join("jobs.idx"), &record) > 0);
+    drop(store);
+    let mut store = Store::open_read_only(&directory.0).unwrap();
+    let before = flushes();
+    assert_job_backlog(&mut store, 120, 4_994, Some(100));
+    assert_eq!(flushes(), before);
+}
+
+#[test]
+fn job_backlog_matches_wake_times_after_promotion_and_clock_rollback() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let times = [0, 100, 101, u64::MAX];
+    let jobs: Vec<_> = times
+        .into_iter()
+        .enumerate()
+        .map(|(n, time)| {
+            let mut job = raw_job(n as u64 + 1, 1);
+            job.next_attempt_at = time;
+            job
+        })
+        .collect();
+    bulk(&mut store, jobs);
+    store
+        .claim_filtered(u64::MAX - 1, 1, |_| Ok(false))
+        .unwrap();
+    for (at, count) in [(0, 1), (99, 1), (100, 2), (101, 3), (u64::MAX, 4)] {
+        assert_job_backlog(&mut store, at, count, Some(0));
+    }
+    store.cancel(&format!("{:032x}", 1)).unwrap();
+    assert_job_backlog(&mut store, 99, 0, None);
+}
+
+#[test]
+fn job_claim_freshness_checkpoints_success_without_idle_write_amplification() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    assert_eq!(
+        store.job_backlog(10).unwrap().get("last_completed_pass_at"),
+        Some(&Value::Null)
+    );
+    store.claim(10, 1).unwrap(); // An empty successful scan is a completed pass.
+    let before = flushes();
+    store.claim(11, 1).unwrap();
+    assert_eq!(flushes(), before);
+    assert_eq!(
+        store.job_backlog(11).unwrap().get("last_completed_pass_at"),
+        Some(&Value::from("10"))
+    );
+    let at = 10 + CLAIM_CHECKPOINT_SECS;
+    store.claim(at, 1).unwrap();
+    assert_eq!(
+        store.job_backlog(at).unwrap().get("last_completed_pass_at"),
+        Some(&Value::from(at.to_string()))
+    );
+    bulk(&mut store, vec![raw_job(1, 1)]);
+    let failing = at + CLAIM_CHECKPOINT_SECS;
+    assert!(
+        store
+            .claim_filtered(failing, 1, |_| Err("synthetic eligibility failure".into()))
+            .is_err()
+    );
+    assert_eq!(
+        store
+            .job_backlog(failing)
+            .unwrap()
+            .get("last_completed_pass_at"),
+        Some(&Value::from(at.to_string()))
+    );
+    let claimed = store.claim(failing, 1).unwrap().unwrap();
+    assert_eq!(
+        store
+            .job_backlog(failing)
+            .unwrap()
+            .get("last_completed_pass_at"),
+        Some(&Value::from(failing.to_string()))
+    );
+    drop(store);
+    let mut store = Store::open_read_only(&directory.0).unwrap();
+    assert_eq!(
+        store
+            .job_backlog(failing)
+            .unwrap()
+            .get("last_completed_pass_at"),
+        Some(&Value::from(failing.to_string()))
+    );
+    assert!(store.get(&claimed.id).unwrap().is_some());
+}
+
+fn old_job_backlog_fixture(store: &mut Store) {
+    store
+        .mutate(|db| {
+            let mut changes = Vec::new();
+            let mut after = None;
+            loop {
+                let page = db.scan(&[layout::T_JOB_DUE], after, MAX_PAGE_ROWS)?;
+                changes.extend(page.entries.iter().map(|(key, _)| Change::Delete(*key)));
+                after = page.next;
+                if after.is_none() {
+                    break;
+                }
+            }
+            changes.push(Change::PutInline(
+                layout::FORMAT_KEY,
+                ownership::FORMAT.to_vec(),
+            ));
+            db.0.commit(changes)?;
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn job_backlog_upgrade_is_read_only_safe_and_resumes_each_commit_boundary() {
+    for fault in [
+        Fault::Staged,
+        Fault::Published,
+        Fault::FirstRecord,
+        Fault::FirstPage,
+        Fault::Applied,
+        Fault::Unlinked,
+    ] {
+        let directory = Directory::new();
+        let mut store = Store::open(&directory.0).unwrap();
+        let jobs: Vec<_> = (1..=401).map(|n| raw_job(n, n)).collect();
+        bulk(&mut store, jobs.clone());
+        old_job_backlog_fixture(&mut store);
+        drop(store);
+        let before = contents(&directory.0);
+        let error = Store::open_read_only(&directory.0).err().unwrap();
+        assert!(error.contains("writable restart"), "{error}");
+        assert_eq!(contents(&directory.0), before);
+        let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
+        // Interrupt a page while an explicit upgrade is in progress.
+        index
+            .commit(vec![Change::PutInline(
+                layout::FORMAT_KEY,
+                backlog::PENDING.to_vec(),
+            )])
+            .unwrap();
+        index.inject(Some(fault));
+        assert!(backlog::upgrade(&mut index, false).is_err());
+        drop(index);
+        let mut store = Store::open(&directory.0).unwrap();
+        assert_job_backlog(&mut store, 1, 401, Some(0));
+        for job in &jobs {
+            assert_eq!(store.get(&job.id).unwrap().as_ref(), Some(job));
+        }
+        if let Backend::Ready(index) = &mut store.backend {
+            assert!(
+                index
+                    .get(&layout::JOB_BACKLOG_CURSOR_KEY)
+                    .unwrap()
+                    .is_none()
+            );
+        }
+    }
+}
+
+#[test]
+fn job_backlog_upgrade_survives_full_disk_and_prepares_legacy_range_counts() {
+    let directory = Directory::new();
+    let jobs: Vec<_> = (1..=401).map(|n| raw_job(n, n)).collect();
+    write_legacy(&directory.0, &jobs, &[], 0);
+    let mut store = Store::open(&directory.0).unwrap();
+    assert_job_backlog(&mut store, 1, 401, Some(0));
+    old_job_backlog_fixture(&mut store);
+    drop(store);
+    let before = contents(&directory.0);
+    let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
+    assert!(with_full_disk_after(0, || backlog::upgrade(&mut index, false)).is_err());
+    drop(index);
+    let mut store = Store::open(&directory.0).unwrap();
+    assert_job_backlog(&mut store, 1, 401, Some(0));
+    for (path, bytes) in before
+        .iter()
+        .filter(|(path, _)| path.to_string_lossy().contains(".legacy-"))
+    {
+        assert_eq!(contents(&directory.0).get(path), Some(bytes));
+    }
+    if let Backend::Ready(index) = &mut store.backend {
+        crate::inventory::legacy_range_index(index);
+    }
+    drop(store);
+    let before = contents(&directory.0);
+    let mut store = Store::open_read_only(&directory.0).unwrap();
+    assert!(
+        store
+            .job_backlog(1)
+            .unwrap_err()
+            .contains("explicit writable upgrade")
+    );
+    drop(store);
+    assert_eq!(contents(&directory.0), before);
+    let mut store = Store::open(&directory.0).unwrap();
+    assert_job_backlog(&mut store, 1, 401, Some(0));
+}
+
+#[test]
+fn job_claim_freshness_recovers_atomically_with_the_claim_cursor() {
+    for fault in [
+        Fault::Staged,
+        Fault::Published,
+        Fault::FirstPage,
+        Fault::Applied,
+        Fault::Unlinked,
+    ] {
+        let directory = Directory::new();
+        let mut store = Store::open(&directory.0).unwrap();
+        store.claim(10, 1).unwrap();
+        if let Backend::Ready(index) = &mut store.backend {
+            index.inject(Some(fault));
+        }
+        assert!(store.claim(10 + CLAIM_CHECKPOINT_SECS, 1).is_err());
+        assert!(store.job_backlog(100).is_err());
+        drop(store);
+        let mut store = Store::open(&directory.0).unwrap();
+        let expected = if fault == Fault::Staged {
+            10
+        } else {
+            10 + CLAIM_CHECKPOINT_SECS
+        };
+        assert_eq!(
+            store
+                .job_backlog(100)
+                .unwrap()
+                .get("last_completed_pass_at"),
+            Some(&Value::from(expected.to_string()))
+        );
+    }
+}
+
+#[test]
+fn job_backlog_status_redacts_storage_failure_and_keeps_other_fields() {
+    use crate::engine::{Engine, lock};
+    let directory = Directory::new();
+    let mut config =
+        crate::config::from_json(&crate::config::default_json(), &directory.0).unwrap();
+    config.downloads_enabled = false;
+    let engine = Engine::open_for_management(config).unwrap();
+    {
+        let mut store = lock(&engine.store).unwrap();
+        if let Backend::Ready(index) = &mut store.backend {
+            index.inject(Some(Fault::Published));
+        }
+        assert!(store.claim(10, 1).is_err());
+    }
+    let status = engine.status().unwrap();
+    let value = status.get("inventory").unwrap().get("jobs").unwrap();
+    assert_eq!(value.get("state"), Some(&Value::from("unavailable")));
+    assert!(value.get("due").is_none());
+    let report = crate::json::stringify(value);
+    assert!(!report.contains(directory.0.to_str().unwrap()));
     assert!(report.contains("restart with write access"));
     assert!(status.get("version").is_some());
 }

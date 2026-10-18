@@ -14,7 +14,11 @@ pub(super) const PENDING: &[u8] = b"mynou-jobs/3-building";
 /// Called only after the monitoring upgrade, which leaves `mynou-jobs/2`.
 pub(super) fn upgrade(index: &mut Index, read_only: bool, directory: &Path) -> Result<()> {
     let format = index.get(&FORMAT_KEY)?.ok_or("Missing job index format")?;
-    if format == FORMAT || format == super::ownership::FORMAT || format == super::ownership::PENDING
+    if format == FORMAT
+        || format == super::ownership::FORMAT
+        || format == super::ownership::PENDING
+        || format == super::backlog::FORMAT
+        || format == super::backlog::PENDING
     {
         return Ok(());
     }
