@@ -306,7 +306,6 @@ fn full_disk_at_every_migration_flush_preserves_legacy_and_restarts() {
 }
 
 #[test]
-#[ignore = "opt-in inventory_growth.py measurements"]
 fn inventory_growth_report() {
     let Some(mut f) = crate::growth::Fixture::get("sources") else {
         return;

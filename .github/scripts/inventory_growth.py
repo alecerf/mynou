@@ -12,8 +12,8 @@ import tempfile
 # Each baseline exceeds the former total count/bytes with the fixture shape.
 # Transfers had no count cap; these sizes exercise more than one listing page.
 CASES = {
-    "jobs": ("store::tests", 16000),
-    "library": ("store::tests", 16000),
+    "jobs": ("store::tests", 17000),
+    "library": ("store::tests", 17000),
     "series": ("series::tests", 256),
     "requesters": ("requesters::index_tests", 11000),
     "feeds": ("indexers::feed::storage::tests", 11000),
@@ -68,7 +68,7 @@ def main():
                                MYNOU_GROWTH_PHASE=phase)
                     command = ["/usr/bin/time", "-l", "-o", str(timing), str(harness),
                                f"{module}::inventory_growth_report", "--exact", "--nocapture",
-                               "--ignored", "--test-threads=1"]
+                               "--test-threads=1"]
                     print(label, flush=True)
                     with log.open("w") as stream:
                         subprocess.run(command, env=env, stdout=stream, stderr=subprocess.STDOUT,

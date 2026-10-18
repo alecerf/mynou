@@ -34,7 +34,7 @@ jobs:
           PY
           )
           test -x "$harness"
-          python3 .github/scripts/inventory_growth.py "$harness" --output "$RUNNER_TEMP/inventory-growth" > "$RUNNER_TEMP/inventory-growth-console.log"
+          python3 .github/scripts/inventory_growth.py "$harness" --output "$RUNNER_TEMP/inventory-growth" | tee "$RUNNER_TEMP/inventory-growth-console.log"
           cat "$RUNNER_TEMP/inventory-growth/summary.md" >> "$GITHUB_STEP_SUMMARY"
       - name: Preserve measurements, environment and raw process logs
         if: always()

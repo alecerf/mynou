@@ -19,7 +19,7 @@ as migration inputs or preserved recovery copies, not as current inventory caps.
 
 Per-record, page, transaction and configured-source bounds still apply; see
 [limits](limits.md). Removing total inventory caps does not establish scalability:
-[remaining delivery](#remaining-delivery) tracks diagnostics and measured evidence.
+[capacity acceptance](#capacity-acceptance) tracks diagnostics and measured evidence.
 
 ## Ownership and format
 
@@ -116,7 +116,7 @@ check equal timestamps and cold-page read bounds; and cover explicit legacy
 upgrade, restart between batches, read-only preservation, forged metadata redo,
 interruption and storage exhaustion at WAL, directory and tree stages. These
 synthetic checks establish correctness and operation bounds, not the multi-store
-macOS RSS/timing evidence still required by #217.
+macOS RSS/timing evidence recorded separately in [inventory-growth.md](inventory-growth.md).
 
 ## Value log
 
@@ -419,6 +419,10 @@ the window holds at most 20,000 rows). Loading one scope reads its header and
 blocks (at most the per-plan bounds).
 
 ### Measured behavior
+
+For native macOS arm64 measurements of every indexed store, see the
+[capacity evidence record](inventory-growth.md). The figures below are the
+earlier series-only Linux experiment.
 
 One hand-run of the `series_scale_report` harness (release build, Linux
 container on overlayfs, synthetic scopes of 3 seasons x 30 episodes, one reading
@@ -763,7 +767,9 @@ stage again, since the stores may have changed while Mynou was stopped.
 Command-line management and previews still complete the same stages before
 they act.
 
-## Remaining delivery
+<a id="remaining-delivery"></a>
+
+## Capacity acceptance
 
 [Issue #106](https://github.com/alecerf/mynou/issues/106) remains open. Indexed
 retention is delivered for all seven stores, including IRC announcements and

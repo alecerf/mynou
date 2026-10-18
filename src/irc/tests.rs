@@ -702,7 +702,6 @@ fn irc_backlog_excludes_decisions_and_routes_and_keeps_original_wait_age() {
 }
 
 #[test]
-#[ignore = "opt-in inventory_growth.py measurements"]
 fn inventory_growth_report() {
     let Some(mut f) = crate::growth::Fixture::get("irc") else {
         return;

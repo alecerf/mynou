@@ -760,7 +760,6 @@ fn feed_backlog_freshness_recovers_without_changing_observations() {
 }
 
 #[test]
-#[ignore = "opt-in inventory_growth.py measurements"]
 fn inventory_growth_report() {
     let Some(mut f) = crate::growth::Fixture::get("feeds") else {
         return;

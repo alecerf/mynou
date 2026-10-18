@@ -731,7 +731,6 @@ fn requester_backlog_migration_keeps_unknown_wait_times_and_exact_legacy_backup(
 }
 
 #[test]
-#[ignore = "opt-in inventory_growth.py measurements"]
 fn inventory_growth_report() {
     let Some(mut f) = crate::growth::Fixture::get("requesters") else {
         return;
