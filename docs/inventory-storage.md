@@ -779,8 +779,8 @@ Two acceptance steps remain:
   backlog, oldest unserved age and last completed pass readings alongside
   [storage diagnostics](#storage-diagnostics-and-errors). Series (#271) and
   library monitoring (#273) are delivered under `inventory.series` and
-  `inventory.library`; jobs/history, requester demand, feeds, source policies,
-  IRC announcements and transfers remain. Feed routing counts alone are not
+  `inventory.library`; jobs/history is delivered by #275 under `inventory.jobs`.
+  Requester demand, feeds, source policies, IRC announcements and transfers remain. Feed routing counts alone are not
   the complete common diagnostics. Migration-exhaustion fixtures and their
   store-named full-disk error correction are already delivered.
 - [#217](https://github.com/alecerf/mynou/issues/217), after #246: record disk
@@ -1016,3 +1016,55 @@ keep a complete stopped-store backup before upgrading; earlier binaries that
 predate counted branch pages refuse the new format. Existing migration backups
 are preserved. This delivery leaves #246 and #106 open for the remaining stores
 and measured acceptance.
+
+
+### Job backlog and claim-scan freshness
+
+`GET /api/status` and `mynou status` expose `inventory.jobs` (#275) using the
+same decimal-string fields as series/library. The scheduled unit, explicitly
+reported as `unit: job_claim_scan`, is one bounded claim attempt: at most one
+promotion page and 256 examined queue entries. It measures the scheduler's
+progress, before execution and current requester, IRC, shared-group or upgrade
+eligibility checks. It does not assert that a download or import succeeded.
+Retained ready, cancelled, staged and exhausted failed jobs are not periodic work.
+
+`due` counts open jobs with `wake <= now`, including jobs still awaiting bounded
+promotion. `wake` is `next_attempt_at`, or its maximum with `lease_until` while
+a lease exists. Active leases and future retries are excluded until their wake;
+expired leases rejoin automatically. `oldest_due_at` is the earliest scheduled
+wake, and `oldest_due_age_secs` is its lateness; both are null when no job is due.
+Zero is a valid immediate wake in the job format and is reported literally,
+including its elapsed age; it is not replaced by a guessed creation time.
+Clock rollback excludes future wake times even after a job has been promoted.
+
+`last_completed_pass_at` is the durable completion time of a successful bounded
+claim scan, not a completed job. Acquiring a lease records it in the same
+transaction. Successful idle or eligibility-filtered scans record it with the
+existing durable claim cursor, at most once per `freshness_checkpoint_secs`
+(currently 60 seconds) per worker process. Between checkpoints a newer scan may
+have finished; the field reports the last recorded successful scan. Restart
+records the first successful scan immediately. Failed eligibility/storage reads
+and invalid claims do not advance it; a failed commit may recover its entire
+transaction as described above. Older stores report null until the first
+successful checkpoint. Idle polls within the interval do not add durable writes.
+
+A dedicated wake-ordered secondary index changes atomically with job updates,
+lease renewal/release, retries and cancellation. Status needs one exact range
+summary plus two metadata point reads, never job/history payloads, queue
+promotion, writes or a scan of due entries. Busy/unavailable states use the same
+fixed recovery hint and omit counts; raw storage errors are not published here.
+
+The first writable open upgrades `mynou-jobs/4` to `mynou-jobs/5`, adding the
+secondary entries in resumable pages of at most 200 jobs. Each page and its
+continuation commit together. Primary records, history and existing legacy
+backups are preserved. Read-only commands refuse an unprepared format; they
+never migrate. Interrupted or full-disk upgrades resume after storage recovery.
+Earlier binaries reject format 5: keep a complete stopped-store backup before
+upgrading, and restore that consistent backup to downgrade, losing subsequent
+changes. Missing legacy branch counts use the existing explicit resumable
+writable preparation; status never substitutes an inventory scan.
+
+This closes the jobs/history portion of #246 only. Requester demand, feeds,
+source policies, IRC announcements and transfers remain, followed by #217's
+increasing-size measurements before #106 can close. Source policies have no
+periodic worker and must receive explicit non-applicability semantics.

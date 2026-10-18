@@ -131,6 +131,8 @@ pub(super) fn upgrade(index: &mut Index, read_only: bool, directory: &Path) -> R
         || format == super::children::PENDING
         || format == super::ownership::FORMAT
         || format == super::ownership::PENDING
+        || format == super::backlog::FORMAT
+        || format == super::backlog::PENDING
     {
         return verify_counts(index);
     }

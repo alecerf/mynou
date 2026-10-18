@@ -20,6 +20,7 @@ use std::io::Read;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+mod backlog;
 mod children;
 mod groups;
 mod irc;
@@ -2519,6 +2520,7 @@ impl Store {
                     let mut changes =
                         db.stage(std::slice::from_ref(&job), "processing lease acquired")?;
                     changes.push(Change::Delete(layout::CLAIM_CURSOR_KEY));
+                    changes.push(backlog::completed(at));
                     db.0.commit(changes)?;
                     (next, saved) = (Some(None), true);
                     return Ok(Some(job));
@@ -2527,7 +2529,11 @@ impl Store {
                 if !more || examined >= CLAIM_SCAN {
                     let position = more.then_some(cursor).flatten();
                     if checkpoint {
-                        db.save_cursor(layout::CLAIM_CURSOR_KEY, position)?;
+                        let change = position
+                            .map_or(Change::Delete(layout::CLAIM_CURSOR_KEY), |cursor| {
+                                Change::Put(layout::CLAIM_CURSOR_KEY, cursor.to_vec())
+                            });
+                        db.0.commit(vec![change, backlog::completed(at)])?;
                     }
                     (next, saved) = (Some(position), checkpoint);
                     return Ok(None);

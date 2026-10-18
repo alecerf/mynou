@@ -128,7 +128,7 @@ background pass under `inventory.series`. Busy or unavailable readings remain
 explicit. Status does bounded index reads without loading series or episode
 records. Writable startup prepares older series indexes in resumable batches;
 read-only commands never migrate them. This delivers the series portion of #246;
-library monitoring is delivered below and six other integrations remain pending.
+library monitoring is delivered below and the remaining integrations are tracked in #246.
 
 ## Added: Library backlog and pass freshness
 
@@ -140,4 +140,17 @@ failed searches and interrupted passes do not advance freshness. Status reads
 bounded index summaries without loading jobs. Writable startup prepares missing
 legacy job-index cardinalities in resumable batches; keep a stopped-store backup
 before upgrading if downgrade may be needed ([storage guide](/docs/inventory-storage.md#library-backlog-and-pass-freshness)).
-This delivers #273, the library portion of #246; six other integrations remain.
+This delivers #273, the library portion of #246; the remaining integrations are tracked in #246.
+
+
+## Added: Job backlog and claim-scan freshness
+
+Service status now reports exact scheduled job backlog, oldest wake lateness and
+persisted bounded claim-scan freshness under `inventory.jobs`. It includes work
+not yet promoted and excludes active leases and future retries. Freshness records
+successful scheduler scans, before job execution; idle scans checkpoint at the
+existing 60-second cadence without writing on every poll. Status reads bounded
+index summaries without job/history payloads. Writable startup adds the wake
+index in resumable pages; older binaries reject the new job format, so keep a
+complete stopped-store backup for downgrade ([storage guide](/docs/inventory-storage.md#job-backlog-and-claim-scan-freshness)).
+This delivers #275, the jobs/history portion of #246; five integrations remain.

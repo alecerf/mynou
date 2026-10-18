@@ -682,9 +682,16 @@ impl Db<'_> {
             Some(previous) => owned(previous, &pair.root)?,
             None => BTreeMap::new(),
         };
+        // Keep the diagnostic wake key independent of queue promotion. Do not
+        // add it to legacy migration's `owned` layout: old staged migrations
+        // must still verify before the explicit format-5 upgrade runs.
+        if open(&pair.job) {
+            desired.insert(job_due_key(&pair.job)?, Entry::Inline(Vec::new()));
+        }
         if let Some(previous) = &pair.previous
             && open(previous)
         {
+            current.insert(job_due_key(previous)?, Entry::Inline(Vec::new()));
             // A job that was promoted to the due queue has no wait entry.
             let queued = queue_key(previous.created_at, &id);
             if self.exists(&queued)? {

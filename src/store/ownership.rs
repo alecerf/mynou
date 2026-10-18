@@ -17,7 +17,7 @@ pub(super) const PENDING: &[u8] = b"mynou-jobs/4-building";
 /// Called only after the imported-child upgrade, which leaves `mynou-jobs/3`.
 pub(super) fn upgrade(index: &mut Index, read_only: bool) -> Result<()> {
     let format = index.get(&FORMAT_KEY)?.ok_or("Missing job index format")?;
-    if format == FORMAT {
+    if format == FORMAT || format == super::backlog::FORMAT || format == super::backlog::PENDING {
         return Ok(());
     }
     if format != super::children::FORMAT && format != PENDING {
