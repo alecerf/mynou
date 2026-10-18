@@ -120,7 +120,7 @@ the migration can resume after the storage problem is fixed.
 
 The storage index can now count a key range exactly and find its oldest key without scanning the range or reading record values. This is the index prerequisite for per-store backlog diagnostics; status exposure remains pending. New writes use counted branch pages that earlier binaries reject, so keep a complete stopped-store backup for downgrade ([storage guide](/docs/inventory-storage.md#exact-range-summaries)).
 
-## Diagnostics: Series backlog and pass freshness
+## Added: Series backlog and pass freshness
 
 Service status now reports the exact number of due monitored series, the oldest
 scheduled check's lateness and the persisted time of the last successful bounded
