@@ -3010,6 +3010,15 @@ fn status_reports_held_and_failed_stores_without_waiting_or_failing() {
     assert_eq!(state(&status, "series"), "busy");
     assert_eq!(
         status
+            .get("inventory")
+            .unwrap()
+            .get("series")
+            .unwrap()
+            .get("state"),
+        Some(&Value::from("busy"))
+    );
+    assert_eq!(
+        status
             .get("series_storage")
             .and_then(|storage| storage.get("state"))
             .and_then(Value::as_str),

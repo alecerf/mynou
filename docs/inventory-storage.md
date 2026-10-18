@@ -920,3 +920,47 @@ receipts, decisions and origins; requester and job stores must come from the
 same stopped-store backup so their provenance still agrees. Merely restoring
 legacy bytes alongside an acknowledged index is refused. A full backup made
 before upgrade is the safest recovery point.
+
+### Series backlog and pass freshness
+
+`GET /api/status` and `mynou status` expose `inventory.series` alongside the
+existing `storage` sizes. This is the first store integration of #246 (#271);
+other stores do not yet have this diagnostic. A ready reading contains:
+
+- `due`: exact number of monitored scopes whose `next_check_at <= now`;
+- `oldest_due_at` and `oldest_due_age_secs`: the earliest due timestamp and
+  its elapsed wall-clock seconds, or `null` when no scope is due;
+- `last_completed_pass_at`: the persisted completion time of the last
+  successful bounded background series pass, or `null` before the first one.
+
+Counts and timestamps are decimal strings to preserve all 64 bits. Zero is a
+valid due timestamp. Age measures lateness from the scheduled check, not the
+age of the media or of its last catalog response. Clock rollback excludes
+future due keys; no negative age is returned. A pass is the scheduler's
+bounded unit (at most four refresh attempts / 400 examined due keys), not a
+promise that the entire inventory was checked. An empty successful pass also
+advances freshness. Errors, unreadable scopes (including cached skips), shutdown
+and deadline expiry preserve the previous successful-pass time. The scheduling
+checkpoint and completion timestamp share one durable transaction. The reading
+contains no titles, paths, provider responses or credentials.
+
+Status reads use the timestamp-ordered due index: at most three tree paths for
+range cardinality and the first key, plus one point lookup for pass freshness.
+They never load series headers or episode records, scan due rows or write data.
+Unmonitoring/rescheduling removes the old due entry atomically with the scope's
+update, so counts and oldest time follow ordinary writes and survive restart.
+These are index scheduling diagnostics; they do not certify record health or
+network availability. A held store reports `state: busy`. A legacy, unprepared,
+uncertain or unreadable store reports `state: unavailable` with a fixed recovery
+hint rather than a guessed zero, scan, or raw error; other status fields remain
+available. Only `state: ready` readings carry counts and timestamps.
+
+Writable series-store startup now explicitly prepares missing legacy branch
+cardinalities through `prepare_range_counts(64)` batches after the existing
+snapshot migration/identity checks. Each batch is resumable through the ordinary
+WAL; failed preparation prevents writable startup until recovery succeeds.
+Read-only startup and status do not perform this upgrade. See the range-count
+upgrade and **Downgrade** rules above: keep a stopped-store backup before the
+first writable upgrade; binaries predating `MYNOUIN2` must not open it for writes.
+Existing series snapshot migration backups are preserved. Old stores have no
+successful-pass timestamp until a new successful background pass completes.

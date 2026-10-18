@@ -1088,7 +1088,7 @@ fn store_names_come_from_the_index_directory() {
 
 /// Synthetic pre-count index: preserve every key/value and encode branches
 /// using their original 72-byte links. Production never strips summaries.
-fn legacy_range_index(index: &mut Index) {
+pub(crate) fn legacy_range_index(index: &mut Index) {
     for id in 1..index.header.next {
         let bytes = tree::read_page(&mut index.tree, id).unwrap();
         let mut node = tree::Node::decode(

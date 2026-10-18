@@ -1315,6 +1315,7 @@ fn series_due_pass_bounds_corrupt_prefix_and_resumes_after_restart() {
         let mut store = lock(&engine.series_store).unwrap();
         store.save(records[0].clone()).unwrap();
         insert_many(ready(&mut store), &records[1..]).unwrap();
+        store.finish_due_pass(None, Some(123)).unwrap();
     }
     drop(engine);
     // More damaged scopes than both the former 128-scope inventory limit
@@ -1380,6 +1381,13 @@ fn series_due_pass_bounds_corrupt_prefix_and_resumes_after_restart() {
     let mut series = lock(&engine.series_store).unwrap();
     assert_eq!(series.due_pass, [8, 400, 0]);
     assert!(ready(&mut series).requests() - before <= 20);
+    assert_eq!(
+        series
+            .backlog(crate::store::now())
+            .unwrap()
+            .get("last_completed_pass_at"),
+        Some(&Value::from("123"))
+    );
 }
 
 #[test]
@@ -1427,4 +1435,241 @@ fn full_disk_at_every_migration_flush_preserves_legacy_and_restarts() {
         assert_consistent(&mut store, &records);
     }
     panic!("migration fixture exceeded its durability boundary budget");
+}
+
+fn assert_backlog(store: &mut SeriesStore, now: u64, count: u64, oldest: Option<u64>) {
+    let sequence = store.sequence().unwrap();
+    let before = match &store.backend {
+        Backend::Ready(index) => index.requests(),
+        _ => 0,
+    };
+    let backlog = store.backlog(now).unwrap();
+    assert_eq!(backlog.get("state").and_then(Value::as_str), Some("ready"));
+    assert_eq!(backlog.get("due"), Some(&Value::from(count.to_string())));
+    let value = |n: Option<u64>| n.map_or(Value::Null, |n| Value::from(n.to_string()));
+    assert_eq!(backlog.get("oldest_due_at"), Some(&value(oldest)));
+    assert_eq!(
+        backlog.get("oldest_due_age_secs"),
+        Some(&value(oldest.map(|at| now - at)))
+    );
+    if let Backend::Ready(index) = &store.backend {
+        assert_eq!(index.requests() - before, 2, "status enumerated records");
+        assert!(
+            index.last_page_reads() <= 18,
+            "status read {} pages",
+            index.last_page_reads()
+        );
+    }
+    assert_eq!(store.sequence().unwrap(), sequence, "status wrote storage");
+}
+
+#[test]
+fn series_backlog_is_bounded_after_growth_removal_restart_and_clock_boundaries() {
+    let directory = Directory::new();
+    let mut store = SeriesStore::open(&directory.0, false).unwrap();
+    assert_backlog(&mut store, 0, 0, None);
+    let mut records: Vec<_> = (0..5000).map(|n| record(n, 1, 1, 4)).collect();
+    // Multiple identities at exactly the same due time, including zero/MAX.
+    for (n, row) in records.iter_mut().enumerate() {
+        row.next_check_at = match n {
+            0 => 0,
+            4999 => u64::MAX,
+            _ => 1000 + n as u64 / 2,
+        };
+    }
+    store.save(records[0].clone()).unwrap();
+    for chunk in records[1..].chunks(250) {
+        insert_many(ready(&mut store), chunk).unwrap();
+    }
+    assert_backlog(&mut store, 0, 1, Some(0));
+    assert_backlog(&mut store, 999, 1, Some(0));
+    assert_backlog(&mut store, 1001, 4, Some(0));
+    assert_backlog(&mut store, u64::MAX, 5000, Some(0));
+    records[0].monitored = false;
+    store.save(records[0].clone()).unwrap();
+    assert_backlog(&mut store, 1001, 3, Some(1000));
+    records[1].next_check_at = 5000;
+    store.save(records[1].clone()).unwrap();
+    assert_backlog(&mut store, 1001, 2, Some(1001));
+    store.finish_due_pass(None, Some(1234)).unwrap();
+    drop(store);
+    let before = contents(&directory.0);
+    let mut store = SeriesStore::open(&directory.0, true).unwrap();
+    assert_backlog(&mut store, 1001, 2, Some(1001));
+    assert_backlog(&mut store, 999, 0, None); // wall clock rollback
+    assert_eq!(
+        store.backlog(1001).unwrap().get("last_completed_pass_at"),
+        Some(&Value::from("1234"))
+    );
+    drop(store);
+    assert_eq!(contents(&directory.0), before);
+}
+
+#[test]
+fn series_backlog_survives_snapshot_and_legacy_branch_upgrades() {
+    for schema in [1, 2] {
+        let directory = Directory::new();
+        let records = sample();
+        let original = write_legacy(&directory.0, &records, schema);
+        let before = contents(&directory.0);
+        let mut preview = SeriesStore::open(&directory.0, true).unwrap();
+        assert!(preview.backlog(u64::MAX).is_err());
+        drop(preview);
+        assert_eq!(contents(&directory.0), before);
+        let mut store = SeriesStore::open(&directory.0, false).unwrap();
+        let monitored: Vec<_> = records.iter().filter(|r| r.monitored).collect();
+        assert_backlog(
+            &mut store,
+            u64::MAX,
+            monitored.len() as u64,
+            monitored.iter().map(|r| r.next_check_at).min(),
+        );
+        assert_eq!(
+            store.backlog(10000).unwrap().get("last_completed_pass_at"),
+            Some(&Value::Null)
+        );
+        assert_eq!(
+            fs::read(directory.0.join(&store.migration.as_ref().unwrap().backup)).unwrap(),
+            original
+        );
+    }
+    let directory = Directory::new();
+    let mut store = SeriesStore::open(&directory.0, false).unwrap();
+    let records: Vec<_> = (1..400).map(|n| record(n, 1, 1, 4)).collect();
+    store.save(records[0].clone()).unwrap();
+    insert_many(ready(&mut store), &records[1..]).unwrap();
+    crate::inventory::legacy_range_index(ready(&mut store));
+    drop(store);
+    let before = contents(&directory.0);
+    let mut preview = SeriesStore::open(&directory.0, true).unwrap();
+    assert!(
+        preview
+            .backlog(u64::MAX)
+            .unwrap_err()
+            .contains("explicit writable upgrade")
+    );
+    drop(preview);
+    assert_eq!(contents(&directory.0), before);
+    // Fail the first upgrade flush, then resume via normal writable startup.
+    assert!(
+        crate::store::with_full_disk_after(0, || SeriesStore::open(&directory.0, false)).is_err()
+    );
+    let mut store = SeriesStore::open(&directory.0, false).unwrap();
+    assert_backlog(&mut store, u64::MAX, 399, Some(1001));
+    for row in &records {
+        assert_eq!(store.get(&row.id).unwrap().unwrap(), *row);
+    }
+}
+
+#[test]
+fn series_pass_freshness_advances_only_for_success_and_is_durable() {
+    use crate::engine::{Engine, lock};
+    let directory = Directory::new();
+    let mut config =
+        crate::config::from_json(&crate::config::default_json(), &directory.0).unwrap();
+    config.downloads_enabled = false;
+    let engine = Engine::open_for_management(config.clone()).unwrap();
+    engine.refresh_series_due().unwrap(); // a completed empty pass is a success
+    let read = |engine: &Engine| {
+        engine
+            .status()
+            .unwrap()
+            .get("inventory")
+            .unwrap()
+            .get("series")
+            .unwrap()
+            .get("last_completed_pass_at")
+            .unwrap()
+            .clone()
+    };
+    assert_ne!(read(&engine), Value::Null);
+    {
+        let mut store = lock(&engine.series_store).unwrap();
+        // A fixed older success distinguishes subsequent calls in the same second.
+        store.finish_due_pass(None, Some(123)).unwrap();
+        let mut row = record(1, 1, 1, 1);
+        row.next_check_at = 0;
+        store.save(row).unwrap();
+    }
+    assert!(engine.refresh_series_due().is_err()); // no catalog credentials
+    assert_eq!(read(&engine), Value::from("123"));
+    engine.refresh_series_due_before(Instant::now()).unwrap();
+    assert_eq!(read(&engine), Value::from("123"));
+    engine
+        .stopped
+        .store(true, std::sync::atomic::Ordering::Release);
+    engine.refresh_series_due().unwrap();
+    assert_eq!(read(&engine), Value::from("123"));
+    drop(engine);
+    let engine = Engine::open_for_management(config).unwrap();
+    assert_eq!(read(&engine), Value::from("123"));
+}
+
+#[test]
+fn series_pass_checkpoint_and_freshness_recover_as_one_commit() {
+    for fault in [
+        Fault::Staged,
+        Fault::Published,
+        Fault::FirstPage,
+        Fault::Applied,
+        Fault::Unlinked,
+    ] {
+        let directory = Directory::new();
+        let mut store = SeriesStore::open(&directory.0, false).unwrap();
+        let row = record(1, 1, 1, 1);
+        store.save(row.clone()).unwrap();
+        store.finish_due_pass(None, Some(10)).unwrap();
+        let due = super::storage::Due {
+            id: row.id,
+            next_check_at: row.next_check_at,
+        };
+        ready(&mut store).inject(Some(fault));
+        assert!(store.finish_due_pass(Some(&due), Some(20)).is_err());
+        drop(store);
+        let mut store = SeriesStore::open(&directory.0, false).unwrap();
+        let published = fault != Fault::Staged;
+        assert_eq!(
+            store.due_cursor(u64::MAX).unwrap(),
+            published.then_some(due)
+        );
+        assert_eq!(
+            store
+                .backlog(u64::MAX)
+                .unwrap()
+                .get("last_completed_pass_at"),
+            Some(&Value::from(if published { "20" } else { "10" }))
+        );
+    }
+}
+
+#[test]
+fn series_backlog_status_is_explicit_and_redacted_when_unavailable() {
+    use crate::engine::{Engine, lock};
+    let directory = Directory::new();
+    let mut config =
+        crate::config::from_json(&crate::config::default_json(), &directory.0).unwrap();
+    config.downloads_enabled = false;
+    let engine = Engine::open_for_management(config).unwrap();
+    {
+        let mut store = lock(&engine.series_store).unwrap();
+        store.save(record(1, 1, 1, 1)).unwrap();
+        ready(&mut store).inject(Some(Fault::Published));
+        assert!(store.finish_due_pass(None, Some(10)).is_err());
+    }
+    let status = engine.status().unwrap();
+    let backlog = status.get("inventory").unwrap().get("series").unwrap();
+    assert_eq!(backlog.get("state"), Some(&Value::from("unavailable")));
+    assert!(backlog.get("due").is_none());
+    let report = json::stringify(backlog);
+    assert!(!report.contains(directory.0.to_str().unwrap()));
+    assert!(!report.contains("Synthetic"));
+    assert!(
+        backlog
+            .get("error")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .contains("restart with write access")
+    );
+    assert!(status.get("version").is_some());
 }

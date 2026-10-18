@@ -499,18 +499,32 @@ impl Engine {
                 .map_or(Value::Null, Value::String),
         );
         v.insert("monitoring_enabled", self.config.monitoring.enabled);
-        let (monitored, series_storage) = match try_lock(&self.series_store)? {
+        let (monitored, series_storage, series_backlog) = match try_lock(&self.series_store)? {
             Some(mut series) => (
                 series
                     .counts()
                     .map_err(|error| errors.push(error))
                     .map_or(Value::Null, |counts| Value::Number(counts.monitored as f64)),
                 series.describe(),
+                series.backlog(store::now()).unwrap_or_else(|_| {
+                    // A status read never publishes record contents or raw I/O
+                    // errors. Other status fields remain available on failure.
+                    let mut value = crate::inventory::report("unavailable", None);
+                    value.insert("error", "Series backlog unavailable; restart with write access to prepare index counts or recover storage");
+                    value
+                }),
             ),
-            None => (Value::Null, crate::inventory::report("busy", None)),
+            None => (
+                Value::Null,
+                crate::inventory::report("busy", None),
+                crate::inventory::report("busy", None),
+            ),
         };
         v.insert("monitored_series", monitored);
         v.insert("series_storage", series_storage);
+        let mut inventory = Value::object();
+        inventory.insert("series", series_backlog);
+        v.insert("inventory", inventory);
         v.insert(
             "series_unreadable",
             Value::Number(self.series_unreadable_count() as f64),
