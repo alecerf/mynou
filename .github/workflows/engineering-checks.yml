@@ -10,12 +10,22 @@ concurrency:
 env:
   PYTHONDONTWRITEBYTECODE: '1'
 jobs:
+  changes:
+    uses: ./.github/workflows/changes.yml
   organization:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.tooling == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Require a successful change selection
+        env:
+          SELECTION_RESULT: ${{ needs.changes.result }}
+        run: test "$SELECTION_RESULT" = success
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - name: Exercise release tooling and optional interoperability driver
         run: python3 -m unittest discover -s .github/scripts/tests -p 'test_*.py' -v
+      - name: Exercise the CI test scheduler
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v

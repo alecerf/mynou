@@ -11,18 +11,19 @@ commit only: an earlier green run does not validate later changes.
 
 | Workflow | Runs on | Purpose |
 | --- | --- | --- |
-| Mynou CI | Pull requests; a pushed `v<version>` tag | Dependency graph, format, Clippy, all tests, the macOS arm64 build and demo; a version tag publishes after the same checks |
-| Repository checks | Pull requests | Release tooling and optional interoperability driver tests |
+| Mynou CI | Pull requests; manual dispatch; a pushed `v<version>` tag | Select tests, macOS arm64 build/demo and packaging from the diff; tags and manual runs validate everything |
+| Repository checks | Pull requests; manual dispatch | Python tooling and scheduler tests when their inputs change |
 | Release policy | Pull requests | Version changes only in a release PR |
-| CodeQL | Repository-configured CI | Required code security analysis |
+| CodeQL | Default setup until the migration below is activated | Required code security analysis; prepared workflow selects Rust and JavaScript by diff |
 | WireGuard interoperability | Manual dispatch only | Optional isolated independent-peer test |
 
 ## Mynou CI
 
 The workflow in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) has
-five jobs. Mynou ships for macOS on Apple Silicon only, so `validate` and `build`
+a shared change selector and five validation/release jobs. Mynou ships for macOS
+on Apple Silicon only, so `validate` and `build`
 run on an Apple Silicon `macos-26` runner. A small Linux **decide** job runs
-beside the checks. Nothing runs for a commit pushed to `trunk`: protection
+beside the checks. The native CI does not run for a commit pushed to `trunk`: protection
 requires an up-to-date branch and signed fast-forward integration, so `trunk` holds the tree its
 pull request already validated. Pushing the tag `v<version>` runs every check
 again on the tagged commit, and the release job publishes only when the tag
@@ -30,25 +31,99 @@ equals the `Cargo.toml` version (the binary reports that version), the commit is
 on `trunk`, and it raised the version over its parent. A failed decision publishes nothing, and on a pull request it fails `package`.
 
 1. **validate** checks the Cargo graph offline (exactly one package, `mynou`,
-   with no dependencies), formatting, Clippy with warnings denied, the test
-   scheduler. Release tooling tests run in the Linux `organization` check.
+   with no dependencies), formatting and Clippy with warnings denied. Scheduler
+   and release tooling tests run in the Linux `organization` check.
    It then runs every Cargo test harness,
    using the physical runner directory as temporary directory because Mynou refuses the
    symbolic link behind macOS's default one.
 2. **build** produces the published `aarch64-apple-darwin` executable. CI checks
    that the binary has the exact target architecture and runs the standalone
    demo, which must reach `ready` with simulated Plex confirmation.
-3. **package** waits for validation and the build of the same commit. It checks
+3. **package** waits for the build and any selected validation of the same
+   commit. It checks
    the release script's syntax, copies the checked executable under its release
    name, compares the copy byte for byte and writes `SHA256SUMS`. It only copies
    and checksums, so it runs on a Linux runner.
 4. **release** runs only for a pushed version tag that passed the decision, after
    validate, build and package succeeded on the tagged commit.
 
-Pull request runs validate, build and package but cannot publish. A newer pull
+Pull requests run only the selected checks and cannot publish. A newer pull
 request head cancels the older run; tag runs are never cancelled, so a later
 push cannot interrupt a publication. Network tests use synthetic media, loopback peers and simulated
 services; CI never acquires public media.
+
+## Selecting checks from changes
+
+[changes.yml](../.github/workflows/changes.yml) uses
+[ci_changes.py](../.github/scripts/ci_changes.py) in each calling workflow.
+PR selection compares the merge base with the current PR head, using the full
+history and both sides of renames/deletions. It has no GitHub path-filter
+300-file limit. The checks run against the usual checkout merge commit.
+
+| Changed inputs | Rust validation | Native build/demo + package | Python checks |
+| --- | --- | --- | --- |
+| Markdown under `docs/`, root Markdown files, issue templates | Skip | Skip | Skip |
+| `src/**`, `examples/**`, Cargo manifests/lockfile, Rust toolchain/configuration, `build.rs` | Run | Run | Skip |
+| `tests/**` only | Run | Skip | Skip |
+| CI scheduler, release tooling, interoperability driver, Python tests | Skip | Skip | Run |
+| Crypto fixture generator | Run | Skip | Run |
+| Release publisher shell script | Skip | Run | Run |
+| Native CI workflow or shared selector | Run | Run | Run |
+| Other workflows/actions | Skip | Skip | Run |
+| Unknown inputs | Run | Run | Run |
+| Version tags or manual dispatch | Run | Run | Run when that workflow is dispatched |
+
+The selection is additive. Embedded UI files, certificates and demo media are
+build/test inputs even when no `.rs` file changes. Test-only changes do not
+produce an unused release artifact. A packaging-only change checks the native
+binary and its reported version before packaging. Tags always retain the full
+validation, build, version comparison and publication checks.
+
+Workflows remain triggered on every PR so their existing required job names
+are reported even when skipped. Workflow-level `paths` filters can leave required
+checks pending ([GitHub workflow syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax)).
+An unreadable diff selects all work. A selector job failure makes the required
+native/Python checks fail. Release policy intentionally still runs on every PR,
+including label changes: it checks version changes and unreleased-note policy.
+WireGuard interoperability remains manual only.
+
+## Activating selective CodeQL
+
+As inspected on 2026-10-18, GitHub default setup owns CodeQL, scanning Actions,
+JavaScript/TypeScript and Rust with the default suite and a weekly schedule.
+Changing CI YAML alone cannot change those automatic scans.
+[codeql.yml](../.github/workflows/codeql.yml) prepares advanced setup and stays
+inactive until repository variable `MYNOU_CODEQL_ADVANCED` equals `true`.
+
+The prepared workflow selects Rust for `.rs`, Cargo, toolchain and `.cargo`
+changes; JavaScript/TypeScript for its sources/manifests; and both when the
+CodeQL configuration or shared selector changes. Each selected language scans
+the complete codebase, with build mode `none`, the default queries and the
+existing `/language:<language>` categories. Pushes to `trunk` update only the
+changed languages' baselines; weekly and manual runs scan all three languages.
+
+PRs retain a real Actions scan even for documentation-only changes. `trunk`
+requires the `CodeQL` check from GitHub's code-scanning app (57789); an Actions
+job named `CodeQL` cannot replace that app's check. This small scan keeps an
+actual security check while avoiding the Rust/JavaScript scans on doc-only PRs.
+No branch protection changes or synthetic security verdicts are used.
+
+Activation is a separate repository operation, after publishing these files:
+
+1. Keep default setup enabled while reviewing/merging the workflow change.
+2. Switch CodeQL from default to advanced setup in repository security settings,
+   then set `MYNOU_CODEQL_ADVANCED=true`. GitHub requires default setup to be
+   disabled before advanced results can be uploaded
+   ([advanced setup documentation](https://docs.github.com/en/code-security/how-tos/find-and-fix-code-vulnerabilities/configure-code-scanning/configuring-advanced-setup-for-code-scanning)).
+3. Dispatch `Selective CodeQL` on `trunk` to establish all three baselines.
+4. Verify Rust, JavaScript and documentation-only PRs, including the required
+   app-owned `CodeQL` check. Inspect stale configurations in the tool-status page
+   if the former default configuration is still expected; do not weaken branch
+   protection to bypass a missing analysis.
+
+Until activation, the current automatic CodeQL scans continue unchanged.
+To roll back, unset the variable and restore default setup. This change does
+not alter repository settings, protection, existing alerts or their triage.
 
 ## Test harnesses
 

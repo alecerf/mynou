@@ -1,0 +1,48 @@
+name: Selective CodeQL
+on:
+  pull_request:
+  push:
+    branches: [trunk]
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: selective-codeql-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  changes:
+    # Activate only after switching off GitHub's default setup. See validation.md.
+    if: vars.MYNOU_CODEQL_ADVANCED == 'true'
+    uses: ./.github/workflows/changes.yml
+  analyze:
+    needs: changes
+    if: ${{ !cancelled() && vars.MYNOU_CODEQL_ADVANCED == 'true' && (needs.changes.result != 'success' || needs.changes.outputs.languages != '[]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ${{ fromJSON(needs.changes.outputs.languages || '["actions", "javascript-typescript", "rust"]') }}
+    steps:
+      - name: Require a successful change selection
+        env:
+          SELECTION_RESULT: ${{ needs.changes.result }}
+        run: test "$SELECTION_RESULT" = success
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+      - name: Analyze and upload
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}
