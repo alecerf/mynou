@@ -1048,3 +1048,71 @@ fn an_entry_outside_the_capture_bounds_is_skipped_without_blocking_its_window() 
     assert_eq!(stored(&engine, &job.id).acquisition_url, Some(magnet(3)));
     assert_eq!(text(&engine.feeds().unwrap(), "pending_generations"), "0");
 }
+
+#[test]
+fn feed_backlog_uses_source_schedule_and_durable_successful_automatic_passes() {
+    let dir = Directory::new();
+    let feed = Feed::open(rss(&[]));
+    feed.respond(503, "", String::new());
+    let engine = open(&dir, vec![source("feed-a", &feed, "rss")]);
+    engine.feeds_poll(None, false).unwrap();
+    assert_eq!(
+        engine
+            .status()
+            .unwrap()
+            .get("inventory")
+            .unwrap()
+            .get("feeds")
+            .unwrap()
+            .get("last_completed_pass_at"),
+        Some(&Value::Null)
+    );
+    drop(engine);
+    feed.set(rss(&[]));
+    let engine = open(&dir, vec![source("feed-a", &feed, "rss")]);
+    let backlog = || {
+        engine
+            .status()
+            .unwrap()
+            .get("inventory")
+            .unwrap()
+            .get("feeds")
+            .unwrap()
+            .clone()
+    };
+    let initial = backlog();
+    assert_eq!(initial.get("due"), Some(&Value::from("1")));
+    assert_eq!(initial.get("last_completed_pass_at"), Some(&Value::Null));
+    engine.feeds_poll(None, false).unwrap();
+    let value = backlog();
+    assert_eq!(value.get("due"), Some(&Value::from("0")));
+    assert_eq!(value.get("oldest_due_at"), Some(&Value::Null));
+    assert!(
+        value
+            .get("last_completed_pass_at")
+            .unwrap()
+            .as_str()
+            .is_some()
+    );
+    let last = value.get("last_completed_pass_at").cloned();
+    // A manual failure cannot refresh the durable successful-pass checkpoint.
+    feed.reply.lock().unwrap().status = 503;
+    engine.feeds_poll(None, true).unwrap();
+    assert_eq!(backlog().get("last_completed_pass_at").cloned(), last);
+    drop(engine);
+    let engine = open(&dir, vec![source("feed-a", &feed, "rss")]);
+    let value = engine
+        .status()
+        .unwrap()
+        .get("inventory")
+        .unwrap()
+        .get("feeds")
+        .unwrap()
+        .clone();
+    assert_eq!(
+        value.get("due"),
+        Some(&Value::from("1")),
+        "restart resets the volatile polling schedule"
+    );
+    assert_eq!(value.get("last_completed_pass_at").cloned(), last);
+}

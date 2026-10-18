@@ -731,3 +731,30 @@ fn full_disk_at_every_migration_flush_preserves_legacy_and_restarts() {
     }
     panic!("migration fixture exceeded its durability boundary budget");
 }
+
+#[test]
+fn feed_backlog_freshness_recovers_without_changing_observations() {
+    for fault in [
+        Fault::Staged,
+        Fault::Published,
+        Fault::FirstPage,
+        Fault::Applied,
+        Fault::Unlinked,
+    ] {
+        let directory = Directory::new();
+        let mut storage = Storage::open(&directory.0, false).unwrap();
+        storage.initialize().unwrap();
+        storage.commit(record(1)).unwrap();
+        storage.finish_pass(10).unwrap();
+        index(&mut storage).inject(Some(fault));
+        assert!(storage.finish_pass(80).is_err());
+        drop(storage);
+        let mut storage = Storage::open(&directory.0, false).unwrap();
+        storage.initialize().unwrap();
+        assert_eq!(
+            storage.last_pass().unwrap(),
+            Some(if fault == Fault::Staged { 10 } else { 80 })
+        );
+        assert_eq!(storage.row(&record(1).id).unwrap(), Some(record(1)));
+    }
+}

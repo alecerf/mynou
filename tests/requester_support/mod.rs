@@ -342,7 +342,7 @@ pub fn ready(engine: &Engine, id: &str) -> Job {
 // Synthetic fixtures may materialize the complete ledger to exercise legacy recovery.
 pub fn read_snapshot(directory: &Path) -> Value {
     let bytes = fs::read(directory.join("requesters.bin")).unwrap();
-    if !bytes.starts_with(b"MYNOUR03") {
+    if !bytes.starts_with(b"MYNOUR04") {
         return json::parse(std::str::from_utf8(&bytes[16..bytes.len() - 32]).unwrap()).unwrap();
     }
     use mynou::inventory::{Index, MAX_VALUE_BYTES, Query};

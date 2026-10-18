@@ -646,6 +646,7 @@ pub(super) fn commit_poll(
             .ok_or("Requester: patch byte count overflow")?;
     }
     let mut changes = BTreeMap::new();
+    let mut backlog_changes = Vec::new();
     let mut counters = BTreeMap::<Key, u64>::new();
     let mut ids = BTreeSet::new();
     for demand in demands {
@@ -659,6 +660,13 @@ pub(super) fn commit_poll(
         if demand.revision > account.revision {
             return Err("Requester: demand policy revision exceeds account".into());
         }
+        crate::inventory::backlog::maintain(
+            index,
+            &mut backlog_changes,
+            &primary_cursor(&demand.id)?,
+            matches!(demand.state.as_str(), "pending" | "reserved" | "conflict"),
+            crate::store::now(),
+        )?;
         let before = get(index, &demand.id)?;
         if let Some(before) = &before {
             for key in entries(before)?.into_keys() {
@@ -776,19 +784,36 @@ pub(super) fn commit_poll(
         HEADER,
         Some(json::stringify(&header.to_json()).into_bytes()),
     );
-    index.commit(
-        changes
-            .into_iter()
-            .map(|(key, value)| match value {
-                None => Change::Delete(key),
-                Some(value) if value.len() <= crate::inventory::MAX_INLINE_BYTES => {
-                    Change::PutInline(key, value)
-                }
-                Some(value) => Change::Put(key, value),
-            })
-            .collect(),
-    )?;
+    let mut changes: Vec<_> = changes
+        .into_iter()
+        .map(|(key, value)| match value {
+            None => Change::Delete(key),
+            Some(value) if value.len() <= crate::inventory::MAX_INLINE_BYTES => {
+                Change::PutInline(key, value)
+            }
+            Some(value) => Change::Put(key, value),
+        })
+        .collect();
+    changes.extend(backlog_changes);
+    index.commit(changes)?;
     Ok(())
+}
+
+pub(super) fn prepare_backlog(index: &mut Index) -> Result<()> {
+    crate::inventory::backlog::prepare(
+        index,
+        prefix(DEMAND, &[]),
+        prefix(DEMAND + 1, &[]),
+        |index, key, _| {
+            let id = hex(&key[1..33]);
+            let demand =
+                get(index, &id)?.ok_or("Requester: missing demand during backlog upgrade")?;
+            Ok((
+                matches!(demand.state.as_str(), "pending" | "reserved" | "conflict"),
+                None,
+            ))
+        },
+    )
 }
 
 #[cfg(test)]

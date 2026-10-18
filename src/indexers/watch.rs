@@ -5,7 +5,7 @@ use super::feed;
 use crate::{
     Result,
     config::{Config, Source},
-    engine::{Engine, lock},
+    engine::{Engine, lock, try_lock},
     integrations::{self, FeedEntry, WatchCandidate},
     json::Value,
     requesters::engine::interest,
@@ -29,13 +29,22 @@ const BUSY_RETRY: Duration = Duration::from_secs(10);
 const MAX_RETRY: Duration = Duration::from_secs(3_600);
 
 /// Volatile health: it resets when the service restarts, unlike the cursor.
-#[derive(Default)]
 pub(crate) struct Runtime {
     sources: BTreeMap<String, State>,
+    started_at: u64,
+}
+impl Default for Runtime {
+    fn default() -> Self {
+        Self {
+            sources: BTreeMap::new(),
+            started_at: store::now(),
+        }
+    }
 }
 #[derive(Default)]
 struct State {
     next_due: Option<Instant>,
+    next_due_at: Option<u64>,
     outcome: &'static str,
     last_attempt_at: u64,
     polls: u64,
@@ -143,6 +152,53 @@ fn delay(source: &Source, outcome: &str, failures: u32) -> Duration {
 }
 
 impl Engine {
+    /// Only configured scheduling metadata (at most MAX_WATCHED point
+    /// lookups), never retained observations or captured candidate payloads.
+    pub(crate) fn feed_backlog(&self, at: u64) -> Result<Value> {
+        let Some(mut feeds) = try_lock(&self.feed_store)? else {
+            return Ok(crate::inventory::report("busy", None));
+        };
+        let Some(runtime) = try_lock(&self.feed_runtime)? else {
+            return Ok(crate::inventory::report("busy", None));
+        };
+        let last = match feeds.last_pass() {
+            Ok(last) => last,
+            Err(_) => return Ok(crate::inventory::backlog::unavailable()),
+        };
+        let mut count = 0;
+        let mut unknown = 0_u64;
+        let mut oldest = None;
+        let mut enabled = false;
+        let now = Instant::now();
+        for source in &self.config.sources {
+            if !self.config.downloads_enabled || !source.options.watched() {
+                continue;
+            }
+            enabled = true;
+            let state = runtime.sources.get(&feed::source_id(source));
+            if state.and_then(|s| s.next_due).is_none_or(|due| due <= now) {
+                count += 1;
+                match state.map_or(Some(runtime.started_at), |state| state.next_due_at) {
+                    Some(due) => {
+                        let due = due.min(at);
+                        oldest = Some(oldest.map_or(due, |old: u64| old.min(due)));
+                    }
+                    None => unknown += 1,
+                }
+            }
+        }
+        let mut report =
+            crate::inventory::backlog::report("feed_source_pass", at, count, oldest, last);
+        report.insert("unknown_due_times", unknown.to_string());
+        if unknown > 0 {
+            report.insert("oldest_due_at", Value::Null);
+            report.insert("oldest_due_age_secs", Value::Null);
+        }
+        if !enabled {
+            report.insert("state", "disabled");
+        }
+        Ok(report)
+    }
     pub fn feeds_retained(&self, query: &str) -> Result<Value> {
         let (after, limit) = feed::retained_query(query)?;
         lock(&self.feed_store)?.retained(after.as_deref(), limit)
@@ -176,6 +232,7 @@ impl Engine {
         }
         let mut reports = Vec::new();
         let mut not_due = 0_u32;
+        let mut completed = true;
         for (id, source) in sources {
             if only.is_some_and(|only| only != id) {
                 continue;
@@ -186,10 +243,12 @@ impl Engine {
                     Ok(_) => "disabled",
                     Err(_) => "storage_failed",
                 };
+                completed &= outcome != "storage_failed";
                 let mut state = lock(&self.feed_runtime)?;
                 let state = state.sources.entry(id.clone()).or_default();
                 state.outcome = outcome;
                 state.next_due = None;
+                state.next_due_at = None;
                 continue;
             }
             // Captured work is due at once after a restart and while it advances;
@@ -220,6 +279,16 @@ impl Engine {
         let mut report = Value::object();
         report.insert("polled", reports.len() as u32);
         report.insert("not_due", not_due);
+        if completed
+            && only.is_none()
+            && !force
+            && !self.stopped.load(Ordering::Acquire)
+            && reports
+                .iter()
+                .all(|r| r.get("outcome").and_then(Value::as_str) == Some("ok"))
+        {
+            lock(&self.feed_store)?.finish_pass(store::now())?;
+        }
         report.insert("sources", Value::Array(reports));
         Ok(report)
     }
@@ -255,6 +324,7 @@ impl Engine {
                 delay(source, outcome, state.consecutive_failures.max(1))
             };
             state.next_due = Some(Instant::now() + wait);
+            state.next_due_at = Some(store::now().saturating_add(wait.as_secs()));
         }
         let mut report = Value::object();
         report.insert("id", id);

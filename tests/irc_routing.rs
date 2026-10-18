@@ -32,6 +32,59 @@ fn outcome(report: &Value) -> &str {
     report.get("outcome").unwrap().as_str().unwrap()
 }
 
+// A successful filtered scheduler pass may checkpoint its one freshness key.
+// Compare every other indexed value and every other store's exact bytes.
+// A private copy lets the reader respect the running writer's ownership lock.
+type FileBytes = std::collections::BTreeMap<PathBuf, Vec<u8>>;
+type IndexedValues = std::collections::BTreeMap<[u8; 64], Vec<u8>>;
+fn state_except_irc_freshness(root: &std::path::Path) -> (FileBytes, IndexedValues) {
+    use mynou::inventory::{Index, Query};
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    let directory = root.join("announcements.idx").canonicalize().unwrap();
+    let mut files = irc_support::bytes(root);
+    let fixture = Directory::new();
+    let copy = fixture.0.join("announcements.idx");
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(copy.join("objects"))
+        .unwrap();
+    for (path, bytes) in &files {
+        if let Ok(relative) = path.strip_prefix(&directory) {
+            let target = copy.join(relative);
+            fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(target.parent().unwrap())
+                .unwrap();
+            fs::write(&target, bytes).unwrap();
+            fs::set_permissions(target, fs::Permissions::from_mode(0o600)).unwrap();
+        }
+    }
+    files.retain(|path, _| !path.starts_with(&directory));
+    let mut index = Index::open(&copy, true).unwrap();
+    let mut entries = IndexedValues::new();
+    let mut after = None;
+    loop {
+        let page = index
+            .page(&Query {
+                after,
+                limit: 200,
+                ..Query::default()
+            })
+            .unwrap();
+        entries.extend(page.entries);
+        after = page.next;
+        if after.is_none() {
+            break;
+        }
+    }
+    let mut freshness = [0; 64];
+    freshness[0] = 244;
+    entries.remove(&freshness);
+    (files, entries)
+}
+
 #[test]
 fn strict_templates_are_pure_bounded_and_grabs_require_explicit_discovery() {
     let dir = Directory::new();
@@ -140,7 +193,7 @@ fn admitted_jobs_wait_for_irc_and_metadata_precedes_selective_payload_and_exact_
     assert_eq!(irc_support::bytes(&cfg.store_dir), before);
     assert_eq!(
         &fs::read(cfg.store_dir.join("announcements.bin")).unwrap()[..8],
-        b"MYNOUI04"
+        b"MYNOUI05"
     );
     drop(engine);
     let engine = Engine::open(cfg).unwrap();
@@ -205,7 +258,7 @@ fn first_claim_cannot_be_rewritten_into_a_grab_and_wrong_titles_or_years_stop_be
                 "unmatched"
             })
         );
-        let before = irc_support::bytes(&cfg.store_dir);
+        let before = state_except_irc_freshness(&cfg.store_dir);
         assert_eq!(
             outcome(&engine.irc_route_pending().unwrap()),
             expected_outcome
@@ -223,7 +276,7 @@ fn first_claim_cannot_be_rewritten_into_a_grab_and_wrong_titles_or_years_stop_be
             route_phase(&engine.irc_announcement(row_id(&row)).unwrap()),
             None
         );
-        assert_eq!(irc_support::bytes(&cfg.store_dir), before);
+        assert_eq!(state_except_irc_freshness(&cfg.store_dir), before);
         no_candidate_work(&engine, &admitted.id);
     }
 }
@@ -245,9 +298,9 @@ fn conflicting_rules_and_reviewed_decisions_never_route() {
             let q = irc_support::reviewed(&engine, row_id(&row), mode);
             engine.irc_control(row_id(&row), &q).unwrap();
         }
-        let before = irc_support::bytes(&cfg.store_dir);
+        let before = state_except_irc_freshness(&cfg.store_dir);
         assert_eq!(outcome(&engine.irc_route_pending().unwrap()), "idle");
-        assert_eq!(before, irc_support::bytes(&cfg.store_dir));
+        assert_eq!(before, state_except_irc_freshness(&cfg.store_dir));
         no_candidate_work(&engine, &admitted.id);
     }
 }
@@ -434,13 +487,13 @@ fn edited_templates_or_profiles_do_not_rebind_old_claims() {
             _ => changed.irc.sources[0].enabled = false,
         }
         let engine = Engine::open(changed).unwrap();
-        let before = irc_support::bytes(&cfg.store_dir);
+        let before = state_except_irc_freshness(&cfg.store_dir);
         assert_eq!(outcome(&engine.irc_route_pending().unwrap()), "idle");
         assert_eq!(
             route_phase(&engine.irc_announcement(row_id(&row)).unwrap()),
             None
         );
-        assert_eq!(before, irc_support::bytes(&cfg.store_dir));
+        assert_eq!(before, state_except_irc_freshness(&cfg.store_dir));
         no_candidate_work(&engine, &admitted.id);
     }
 }

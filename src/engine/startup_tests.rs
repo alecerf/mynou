@@ -110,3 +110,40 @@ fn job_backlog_status_does_not_wait_for_held_storage() {
         Some(&Value::from("ready"))
     );
 }
+
+#[test]
+fn all_inventory_backlogs_answer_while_each_scheduler_store_is_held() {
+    use crate::json::Value;
+    let directory = Directory::new();
+    let engine = Engine::open_for_management(config(&directory)).unwrap();
+    let state = |name: &str| {
+        engine
+            .status()
+            .unwrap()
+            .get("inventory")
+            .unwrap()
+            .get(name)
+            .unwrap()
+            .get("state")
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(state("source_policies"), Value::from("not_applicable"));
+    assert_eq!(state("feeds"), Value::from("disabled"));
+    assert_eq!(state("irc"), Value::from("disabled"));
+    let guard = lock(&engine.requester_store).unwrap();
+    assert_eq!(state("requesters"), Value::from("busy"));
+    drop(guard);
+    let guard = lock(&engine.irc_store).unwrap();
+    assert_eq!(state("irc"), Value::from("busy"));
+    drop(guard);
+    let guard = lock(&engine.feed_store).unwrap();
+    assert_eq!(state("feeds"), Value::from("busy"));
+    drop(guard);
+    let guard = lock(&engine.feed_runtime).unwrap();
+    assert_eq!(state("feeds"), Value::from("busy"));
+    drop(guard);
+    let guard = lock(&engine.indexer_store).unwrap();
+    assert_eq!(state("source_policies"), Value::from("busy"));
+    drop(guard);
+}

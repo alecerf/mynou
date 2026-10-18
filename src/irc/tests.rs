@@ -671,3 +671,32 @@ fn full_disk_at_every_migration_flush_preserves_legacy_and_restarts() {
     }
     panic!("migration fixture exceeded its durability boundary budget");
 }
+
+#[test]
+fn irc_backlog_excludes_decisions_and_routes_and_keeps_original_wait_age() {
+    let directory = Directory::new();
+    legacy(
+        &directory.0,
+        &state((1..206).map(|n| row(n, false)).collect()),
+    );
+    let mut store = open(&directory.0, false);
+    store.initialize().unwrap();
+    let value = store.backlog(500).unwrap();
+    assert_eq!(value.get("due"), Some(&Value::from("205")));
+    assert_eq!(value.get("oldest_due_at"), Some(&Value::from("1")));
+    let mut decided = store.get(&row(1, false).id).unwrap().unwrap();
+    decided.decision = "dismissed".into();
+    decided.decided_at = Some(400);
+    decided.revision += 1;
+    store.save_rows(&[decided]).unwrap();
+    store.finish_backlog_pass(500).unwrap();
+    drop(store);
+    let store = open(&directory.0, true);
+    let value = store.backlog(500).unwrap();
+    assert_eq!(value.get("due"), Some(&Value::from("204")));
+    assert_eq!(value.get("oldest_due_at"), Some(&Value::from("2")));
+    assert_eq!(
+        value.get("last_completed_pass_at"),
+        Some(&Value::from("500"))
+    );
+}

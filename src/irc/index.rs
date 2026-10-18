@@ -109,6 +109,7 @@ pub(super) fn commit(
         HEADER,
         json::stringify(&header.to_json()).into_bytes(),
     )];
+    let mut backlog_changes = Vec::new();
     let mut total = count(index)?;
     let mut ids = std::collections::BTreeSet::new();
     for r in rows {
@@ -132,6 +133,13 @@ pub(super) fn commit(
         } else {
             total = total.checked_add(1).ok_or("IRC: history count overflow")?;
         }
+        crate::inventory::backlog::maintain(
+            index,
+            &mut backlog_changes,
+            &primary(&r.id)?,
+            pending(r),
+            r.first_seen,
+        )?;
         for (key, value) in entries(r)? {
             changes.push(Change::Put(key, value));
         }
@@ -147,7 +155,9 @@ pub(super) fn commit(
         };
         unique.insert(key, change);
     }
-    index.commit(unique.into_values().collect())?;
+    let mut changes: Vec<_> = unique.into_values().collect();
+    changes.extend(backlog_changes);
+    index.commit(changes)?;
     Ok(())
 }
 pub(super) fn page(
@@ -231,4 +241,11 @@ pub(super) fn parse_cursor(text: &str) -> Result<Key> {
 
 pub(super) fn pending_cursor(r: &Record) -> Result<Key> {
     secondary(r, 3)
+}
+
+pub(super) fn prepare_backlog(index: &mut Index) -> Result<()> {
+    crate::inventory::backlog::prepare(index, prefix(1), prefix(2), |_, _, bytes| {
+        let record = decode(bytes)?;
+        Ok((pending(&record), Some(record.first_seen)))
+    })
 }

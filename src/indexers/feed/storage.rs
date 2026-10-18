@@ -17,7 +17,8 @@ use std::{
 
 const MARKER: &[u8; 8] = b"MYNOUF02";
 const OLD_FORMAT: &[u8] = b"mynou-feeds/1";
-const FORMAT: &[u8] = b"mynou-feeds/2";
+const ROUTING_FORMAT: &[u8] = b"mynou-feeds/2";
+const FORMAT: &[u8] = b"mynou-feeds/3";
 const ROUTING: Key = single(4);
 const SCHEDULE: Key = single(5);
 mod routing;
@@ -236,18 +237,24 @@ fn check(index: &mut Index) -> Result<()> {
     let format = index
         .get(&HEADER)?
         .ok_or("Feed state: missing index format")?;
-    if format != FORMAT && format != OLD_FORMAT {
+    if format != FORMAT && format != ROUTING_FORMAT && format != OLD_FORMAT {
         return Err("Feed state: unsupported index format".into());
     }
     let (total, active) = counters(index)?;
-    let (metadata, generations, entries) = if format == FORMAT {
+    let (metadata, generations, entries) = if format == FORMAT || format == ROUTING_FORMAT {
         let (generations, entries) = routing::counts(index)?;
         routing::schedule(index)?;
         (5, generations, entries)
     } else {
         (3, 0, 0)
     };
-    let metadata = metadata + u64::from(index.get(&CURSOR)?.is_some());
+    let metadata = metadata
+        + u64::from(index.get(&CURSOR)?.is_some())
+        + if format == FORMAT {
+            u64::from(crate::inventory::backlog::last(index)?.is_some())
+        } else {
+            0
+        };
     let expected = metadata
         .checked_add(total)
         .and_then(|count| count.checked_add(active))
@@ -363,7 +370,10 @@ fn verify(index: &mut Index, original: Option<&Legacy>) -> Result<()> {
             }
         }
     }
-    let metadata = if index.get(&HEADER)?.as_deref() == Some(FORMAT) {
+    let metadata = if matches!(
+        index.get(&HEADER)?.as_deref(),
+        Some(FORMAT) | Some(ROUTING_FORMAT)
+    ) {
         if routing::counts(index)? != (0, 0) || !routing::schedule(index)?.is_empty() {
             return Err("Feed state: migration contains runtime routing state".into());
         }
@@ -388,6 +398,17 @@ impl Storage {
             Backend::Ready(index) => crate::inventory::report("index", Some(index)),
         }
     }
+    pub(super) fn last_pass(&mut self) -> Result<Option<u64>> {
+        self.available()?;
+        match &mut self.backend {
+            Backend::Ready(index) if !self.upgrade => crate::inventory::backlog::last(index),
+            _ => Err("Feed backlog requires writable preparation".into()),
+        }
+    }
+    pub(super) fn finish_pass(&mut self, at: u64) -> Result<()> {
+        let index = self.writable_index()?;
+        crate::inventory::backlog::finish(index, at)
+    }
     pub(super) fn open(directory: &Path, read_only: bool) -> Result<Self> {
         let path = directory.join("feeds.bin");
         let indexed = exists(&directory.join("feeds.idx"))?;
@@ -408,7 +429,7 @@ impl Storage {
                 let mut index =
                     Index::open_bound(&directory.join("feeds.idx"), read_only, identity)?;
                 check(&mut index)?;
-                upgrade = index.get(&HEADER)?.as_deref() == Some(OLD_FORMAT);
+                upgrade = index.get(&HEADER)?.as_deref() != Some(FORMAT);
                 if read_only && upgrade {
                     return Err("Feed state: writable routing format upgrade required".into());
                 }
