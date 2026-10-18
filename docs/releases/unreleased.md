@@ -101,3 +101,10 @@ The jobs search box and state buttons in the web interface now search the whole 
 ## Added: Follow storage migration progress
 
 Storage migrations and index upgrades now report their stage and records done out of the known total, and whether they resumed. Commands print it on standard error; while `mynou serve` opens or migrates storage, `mynou status` and `GET /api/status` already answer with this progress and other routes report that the service is starting ([guide](/docs/inventory-storage.md#migration-progress)).
+
+## Changed: Simpler native development
+
+Routine validation uses installed Rust and Python directly. Removed container-based
+repository checks, scheduled history/log audits and local agent delegation hooks.
+The isolated independent WireGuard peer remains an optional manually run fixture;
+product dependencies, runtime and release version are unchanged.

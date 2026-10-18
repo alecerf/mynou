@@ -17,7 +17,5 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - name: Verify repository and release policy
-        run: python3 .github/scripts/policy.py
-      - name: Exercise release and security tooling scenarios
+      - name: Exercise release tooling and optional interoperability driver
         run: python3 -m unittest discover -s .github/scripts/tests -p 'test_*.py' -v

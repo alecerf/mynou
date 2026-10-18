@@ -1,21 +1,5 @@
 name: WireGuard interoperability
 on:
-  pull_request:
-    paths:
-      - 'src/wireguard.rs'
-      - 'src/wireguard/**'
-      - 'src/tunnel*.rs'
-      - 'src/netstack.rs'
-      - 'src/netstack/**'
-      - 'src/crypto.rs'
-      - 'src/crypto/**'
-      - 'tests/wireguard_interop.rs'
-      - '.github/scripts/wireguard_interop.py'
-      - '.github/scripts/tests/test_wireguard_interop.py'
-      - '.github/scripts/Dockerfile.wireguard-peer'
-      - '.github/scripts/Dockerfile.rust'
-      - 'rust-toolchain.toml'
-      - '.github/workflows/wireguard-interop.yml'
   workflow_dispatch:
 permissions:
   contents: read

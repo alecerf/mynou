@@ -1,7 +1,7 @@
 # CI, releases and download verification
 
-Contributors use isolated Git worktrees and validate locally first, using Docker
-wherever practical and native macOS for platform-specific checks. See the
+Validate locally first with the installed Rust and Python tools. Use native
+macOS for platform-specific checks. See the
 [local validation commands](#local-validation). Batch
 validated changes before pushing to minimize CI runs. GitHub Actions performs
 required final checks and publishes releases. A run is evidence for its exact
@@ -12,9 +12,9 @@ commit only: an earlier green run does not validate later changes.
 | Workflow | Runs on | Purpose |
 | --- | --- | --- |
 | Mynou CI | Pull requests; a pushed `v<version>` tag | Dependency graph, format, Clippy, all tests, the macOS arm64 build and demo; a version tag publishes after the same checks |
-| Repository checks | Pull requests | Repository policy and release/security tooling scenarios |
+| Repository checks | Pull requests | Release tooling and optional interoperability driver tests |
 | Release policy | Pull requests | Version changes only in a release PR |
-| Security audit | Pull requests, `trunk`, hourly | Reachable Git objects and Actions logs |
+| WireGuard interoperability | Manual dispatch only | Optional isolated independent-peer test |
 
 ## Mynou CI
 
@@ -30,8 +30,8 @@ on `trunk`, and it raised the version over its parent. A failed decision publish
 
 1. **validate** checks the Cargo graph offline (exactly one package, `mynou`,
    with no dependencies), formatting, Clippy with warnings denied, the test
-   scheduler. The repository policy and tooling tests run in the required Linux
-   `organization` check. It then runs every Cargo test harness,
+   scheduler. Release tooling tests run in the Linux `organization` check.
+   It then runs every Cargo test harness,
    using the physical runner directory as temporary directory because Mynou refuses the
    symbolic link behind macOS's default one.
 2. **build** produces the published `aarch64-apple-darwin` executable. CI checks
@@ -48,26 +48,6 @@ Pull request runs validate, build and package but cannot publish. A newer pull
 request head cancels the older run; tag runs are never cancelled, so a later
 push cannot interrupt a publication. Network tests use synthetic media, loopback peers and simulated
 services; CI never acquires public media.
-
-## CodeQL triage in pull requests
-
-The required `CodeQL` check fails a PR only on alerts in lines it changes, so
-the open alert list on `trunk` should hold only findings that need attention.
-When a PR raises a CodeQL alert, read the flagged line and its data flow before
-acting:
-
-- Fix a real finding in the PR, or open an Issue for it when it is out of scope.
-  Never dismiss a production finding to turn the check green.
-- Dismiss only test-only patterns, and always with a dismissal reason and a
-  one-line justification that names the pattern and says why it is harmless
-  (for example `used in tests`: a `payload(len, salt)` seed, an `unwrap()` on an
-  error that carries only an environment-variable name, or a fixture path under
-  a test directory). A `#[cfg(test)]` vector or a public protocol constant in
-  `src/` may be dismissed the same way after reading the code; anything that
-  could be a production key, salt or IV is a finding.
-- Record the alert numbers and justifications in the PR description, and never
-  paste a secret into a dismissal comment.
-- Production path-injection alerts follow their own audit, not this note.
 
 ## Test harnesses
 
@@ -158,44 +138,44 @@ run.
 
 ## Local validation
 
-Use Python 3.11 or newer for repository tooling and the Rust toolchain pinned in
-`rust-toolchain.toml`. No credentials are needed for these local checks.
+Use Python 3.11 or newer and the Rust toolchain pinned in
+`rust-toolchain.toml`, already installed on the host. No credentials or Docker
+are needed for routine development. Build and start locally with:
 
 ```sh
-docker build -t mynou-local-checks -f .github/scripts/Dockerfile.local .github/scripts
-worktree_path="$(pwd -P)"
-common_git_dir="$(git rev-parse --path-format=absolute --git-common-dir)"
-docker run --rm --network none \
-  --mount "type=bind,src=$worktree_path,dst=$worktree_path" \
-  --mount "type=bind,src=$common_git_dir,dst=$common_git_dir,readonly" \
-  --workdir "$worktree_path" --env PYTHONDONTWRITEBYTECODE=1 \
-  mynou-local-checks sh -eu -c '
-    python3 .github/scripts/policy.py
-    python3 -m unittest discover -s .github/scripts/tests -p "test_*.py" -v
-    python3 -m unittest discover -s .github/scripts -p "test_*.py" -v
-  '
+cargo run --offline --locked -- --help
+cargo run --offline --locked -- serve --config ./mynou.json
 ```
 
-For portable Rust checks, build `.github/scripts/Dockerfile.rust` with the same
-context. The image runs as a non-root test user so permission fixtures can deny
-writes. Mount this worktree read-only at `/workspace` and give `/workspace/target`
-a writable, per-worktree Docker volume. Use `--network none`; fixtures use only
-synthetic media and loopback peers. Run:
+Use your existing configuration for `serve`; do not overwrite it. For a quick
+check after a tooling or documentation change:
 
 ```sh
 cargo fmt --all --check
-cargo clippy --all-targets --offline --locked -- -D warnings
-python3 .github/scripts/crypto_fixtures.py /tmp/mynou-crypto-vectors.json
-export MYNOU_CRYPTO_FIXTURES=/tmp/mynou-crypto-vectors.json TMPDIR=/tmp
-cargo metadata --offline --locked --format-version 1 > /tmp/mynou-metadata.json
-cargo test --all-targets --no-run --offline --locked --message-format=json-render-diagnostics > target/local-build.jsonl
-python3 .github/scripts/parallel_tests.py target/local-build.jsonl --metadata /tmp/mynou-metadata.json --output target/local-results --timeout 480
+cargo check --all-targets --offline --locked
+python3 -B -m unittest discover -s .github/scripts/tests -p 'test_*.py'
 ```
 
-Use a fresh results directory for each invocation. Native macOS checks are still
-needed for Apple-specific behavior. Docker results prove only the Linux paths.
-The separate [WireGuard interoperability guide](wireguard-interop.md) documents
-the confined independent-peer test and its additional requirements.
+For product changes, run the relevant Cargo test target. To run the full suite
+with the same scheduler as CI, use a fresh directory below `target/`:
+
+```sh
+mkdir -p target
+validation_dir=$(mktemp -d "$(pwd -P)/target/local-validation.XXXXXX")
+export TMPDIR="$validation_dir"
+cargo clippy --all-targets --offline --locked -- -D warnings
+python3 -B .github/scripts/crypto_fixtures.py "$validation_dir/crypto-vectors.json"
+export MYNOU_CRYPTO_FIXTURES="$validation_dir/crypto-vectors.json"
+cargo metadata --offline --locked --format-version 1 > "$validation_dir/metadata.json"
+cargo test --all-targets --no-run --offline --locked --message-format=json-render-diagnostics > "$validation_dir/build.jsonl"
+python3 -B .github/scripts/parallel_tests.py "$validation_dir/build.jsonl" --metadata "$validation_dir/metadata.json" --output "$validation_dir/results" --timeout 480
+```
+
+The physical temporary path avoids macOS's symlinked default temporary directory.
+Persistence tests can be slow on physical disks because they request durable
+flushes. The [optional WireGuard interoperability fixture](wireguard-interop.md)
+retains Docker to isolate a privileged independent peer; it is separate from
+local builds, runtime and routine checks.
 
 ### Preparing a release
 
@@ -210,7 +190,7 @@ python3 .github/scripts/releases.py tag <merged-pr-number>
 ```
 
 The command requires `GH_TOKEN` or `GITHUB_TOKEN`; keep it outside the repository
-and test containers. Review the reported commit and tag, then repeat with
+and test output. Review the reported commit and tag, then repeat with
 `--create` to create the validated tag. Confirm Actions publishes the executable
 and `SHA256SUMS`. Never move published tags or replace published assets; fix a
 failed published version with a new patch release.

@@ -98,7 +98,6 @@ jobs:
     outputs:
       version: ${{ steps.metadata.outputs.version }}
     steps:
-      # Security audit's source-history job scans every reachable object.
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false

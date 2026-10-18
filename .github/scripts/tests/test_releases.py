@@ -60,8 +60,8 @@ class ReleasePullRequests(unittest.TestCase):
                                                   files=release_files("0.22.35"))[0])
 
     def test_a_release_pr_changes_only_the_version_and_notes(self):
-        files = dict(release_files(), **{"src/lib.rs": "modified", ".github/scripts/policy.py": "added"})
-        self.assertIn("move these to their own PRs: .github/scripts/policy.py, src/lib.rs", " ".join(self.check(files=files)))
+        files = dict(release_files(), **{"src/lib.rs": "modified", ".github/scripts/releases.py": "added"})
+        self.assertIn("move these to their own PRs: .github/scripts/releases.py, src/lib.rs", " ".join(self.check(files=files)))
         # A rename's old path counts: moving product code into docs/releases/ is not a release.
         renamed = dict(release_files(), **{"src/old.rs": "removed"})
         self.assertIn("src/old.rs", " ".join(self.check(files=renamed)))
@@ -114,7 +114,7 @@ class Cadence(unittest.TestCase):
         same = manifest()
         for path in ["src/main.rs", "examples/demo.mp4", "rust-toolchain.toml"]:
             self.assertTrue(releases.shipped({path}, False, same, same), path)
-        docs = {"docs/ci.md", ".github/scripts/policy.py", ".github/workflows/ci.yml", "AGENTS.md", "Cargo.lock"}
+        docs = {"docs/ci.md", ".github/scripts/releases.py", ".github/workflows/ci.yml", "AGENTS.md", "Cargo.lock"}
         self.assertFalse(releases.shipped(docs, False, same, manifest("0.22.35")))
         self.assertTrue(releases.shipped(docs, True, same, same))
         self.assertTrue(releases.shipped(docs, False, same, manifest(lto="fat")))

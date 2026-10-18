@@ -82,7 +82,7 @@ python3 .github/scripts/wireguard_interop.py --target-volume mynou-rust-220
 ```
 
 The separate [WireGuard interoperability workflow](/.github/workflows/wireguard-interop.yml)
-runs on relevant pull requests and manual dispatch, on `ubuntu-24.04` with
+runs only on manual dispatch, on `ubuntu-24.04` with
 read-only workflow permissions and checkout credentials disabled. It has a
 20-minute job timeout and is deliberately **not a required branch check**.
 Its step summary records module version/hashes, Go version, base-image digests,
