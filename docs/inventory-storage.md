@@ -1,10 +1,25 @@
 # Inventory storage
 
 The `mynou::inventory::Index` Rust API is the storage foundation for
-[growing inventories](https://github.com/alecerf/mynou/issues/106). Series,
-episode and numbering storage uses it (see [Series storage](#series-storage)).
-Jobs and requester demand also use private disk indexes. Retained feed state and source policy use their own indexes. IRC
-snapshots retain their own files and fixed limits; see [limits](limits.md).
+[growing inventories](https://github.com/alecerf/mynou/issues/106). Jobs and
+history, series and numbering, requester demand, retained feeds, source policies,
+IRC announcements and native transfers use private disk indexes. Library tips
+and their monitoring entries share the job index. Legacy snapshots remain only
+as migration inputs or preserved recovery copies, not as current inventory caps.
+
+| Store | Recovery and downgrade guidance |
+| --- | --- |
+| Jobs, history and library tips | [Job migration and downgrade](#job-migration-and-downgrade), [index upgrades](#indexed-library-monitoring) |
+| Series, episodes and numbering | [Downgrade and recovery](#downgrade-and-recovery) |
+| Requester demand and operator interests | [Requester migration and downgrade](#requester-migration-and-downgrade) |
+| Retained feeds and captured routing | [Feed storage](#feed-storage), [captured feed routing](#captured-feed-routing) |
+| Source policies | [Source policy storage](#source-policy-storage) |
+| IRC announcements | [IRC announcement storage](#irc-announcement-storage) |
+| Native transfers | [Transfer storage migration and downgrade](transfers.md#storage-migration-and-downgrade) |
+
+Per-record, page, transaction and configured-source bounds still apply; see
+[limits](limits.md). Removing total inventory caps does not establish scalability:
+[remaining delivery](#remaining-delivery) tracks diagnostics and measured evidence.
 
 ## Ownership and format
 
@@ -345,8 +360,10 @@ changes and fits one transaction; a CI test saves a record of exactly that shape
 and then changes every date (about 6,000 changes), each in one commit.
 
 Reads touch only what they need: summaries are cursor pages of at most 200
-headers; one due-work pass reads one tree path plus its (at most four) rows;
-scope and TMDB lookups read their own entries; calendar windows are cursor
+headers. A scheduled due-work pass reads 50-row index pages, visits at most
+400 due scopes (including unreadable ones) and attempts at most four refreshes
+within its time budget. Its durable cursor resumes after restart. Scope and
+TMDB lookups read their own entries; calendar windows are cursor
 pages over the date entries (an `offset` of at most 20,000 skips rows, an
 `after` cursor reaches any later row, and the exact `total` is reported only when
 the window holds at most 20,000 rows). Loading one scope reads its header and
@@ -457,8 +474,9 @@ position is written at most once a minute, so a backlog of ineligible jobs does
 not cost a durable commit per attempt; a restart resumes from the last
 checkpoint, which a new process writes on its first attempt. Requester
 cancellation sweeps keep a durable cursor that advances only after a page
-settles, so a restart resumes where the last settled page ended; feed routing
-retains an in-memory cursor. Transfer retirement settles at most 64 jobs (up to
+settles, so a restart resumes where the last settled page ended. Feed routing
+commits its cursor with the [captured generation](#captured-feed-routing).
+Transfer retirement settles at most 64 jobs (up to
 eight transfer debts each) per pass. Ownership lookups read at most two index
 entries and verify each against its job record (see
 [Job migration and downgrade](#job-migration-and-downgrade)); an entry its
@@ -563,9 +581,9 @@ Before upgrading, make a complete stopped-store backup if downgrade may be
 needed. Earlier binaries reject formats 2 to 4 and the pending markers.
 Downgrade requires restoring that complete pre-upgrade backup, or the matching
 original legacy snapshots as described above; subsequent changes are only in the newer
-index. Never edit the index marker to bypass this rejection. Feed routing still
-needs a durable captured routing generation: merely moving its library cursor
-would lose transient releases after the feed marks them seen.
+index. Never edit the index marker to bypass this rejection. Feed routing uses
+a [durable captured generation](#captured-feed-routing), committing candidates
+with seen state before routing and resuming checkpoints after restart.
 
 ## Requester storage
 
@@ -639,8 +657,9 @@ in the preserved index. Never mix backup generations or downgrade live storage.
 identities per source, without the former 1,000-source / 4 MiB aggregate limit.
 Historical sources stay on disk; startup checks configured bindings with point
 reads and reconciles only active baselines. Configuration still allows at most
-64 watched sources. Network, per-poll entry/routing and separate `indexers.bin`
-policy snapshot bounds remain in force.
+64 watched sources. Network and per-poll entry/routing bounds remain in force;
+[source policies](#source-policy-storage) use their own index, with no fixed
+retained-policy count or aggregate-byte cap.
 
 `mynou feeds --retained --limit 1..200 --after CURSOR` and
 `GET /api/feeds/retained?limit=200&after=CURSOR` list retained summaries, including
@@ -674,8 +693,8 @@ before removing the marker. Later observations exist only in the index and are
 lost by restoring the old snapshot; keep it separately for recovery. Never mix
 backup generations or edit markers to bypass rejection.
 
-Durable captured routing generations are still required to route transient
-announcements across every inventory page.
+[Captured routing generations](#captured-feed-routing) persist transient
+announcements and routing progress across every inventory page and restart.
 
 ## Startup validation
 
@@ -697,13 +716,31 @@ they act.
 
 ## Remaining delivery
 
-Issue #106 still needs fair bounded scheduling across remaining
-admission/monitoring paths, upstream paging and IRC inventory migration, and
-backlog and freshness diagnostics (due backlog, oldest unserved entry, last
-completed pass) beyond the [storage diagnostics](#storage-diagnostics-and-errors). Jobs, series and requester demand have left their
-fixed total inventory limits; IRC and source snapshots retain their documented
-bounds. Validation uses original synthetic fixtures in GitHub Actions on the
-supported macOS target.
+[Issue #106](https://github.com/alecerf/mynou/issues/106) remains open. Indexed
+retention is delivered for all seven stores, including IRC announcements and
+source policies. Captured feed routing, resumable upstream paging, bounded
+admission/monitoring and transfer scheduling, paginated views, startup validation
+and storage-size/error diagnostics are also delivered. Their operation bounds
+remain intentional; a retained inventory is not truncated to those windows.
+
+Two acceptance steps remain:
+
+- [#246](https://github.com/alecerf/mynou/issues/246): complete per-store due
+  backlog, oldest unserved age and last completed pass readings alongside
+  [storage diagnostics](#storage-diagnostics-and-errors). Current library
+  `oldest_checked_at` and feed routing counts are partial readings, not the
+  complete common diagnostics. Migration-exhaustion fixtures and their
+  store-named full-disk error correction are already delivered.
+- [#217](https://github.com/alecerf/mynou/issues/217), after #246: record disk
+  size, open/startup time, a routine pass, a point update, a page read and peak
+  resident memory at three or more increasing sizes for every indexed store on
+  native macOS arm64; publish the acceptance table and audit remaining bounds.
+  Existing series measurements and bounded-window tests do not establish this
+  evidence for all stores, so no overall scalability claim is made here.
+
+Use synthetic fixtures and relevant native local validation, followed by the
+required GitHub Actions checks. Removing inventory caps does not remove physical
+storage or compute limits.
 
 ## Captured feed routing
 

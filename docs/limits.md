@@ -357,13 +357,22 @@ IRC announcements:
   change no permissions, repair nothing and still exclude a concurrent writer.
   After an interrupted write they ask for writable recovery, which the next
   service start performs.
-- IRC and source data live in separate private snapshots, written
-  through a temporary file, synchronization and an atomic rename. Series,
-  jobs and requester demand live in checksummed disk indexes with a write-ahead log
-  ([details](inventory-storage.md)). Checksums detect corruption; they do not
-  authenticate against someone who can rewrite the files. When a write's
-  durability is uncertain, that store refuses further changes until the service
-  restarts.
+- Jobs/history, library tips, series, requester demand, feeds, source policies,
+  IRC announcements and native transfers use private checksummed disk indexes
+  with write-ahead recovery. Retained inventories have no fixed total count or
+  aggregate-byte cap; per-record, page, transaction, configured-source and
+  concurrency bounds remain. Legacy snapshot bounds apply to migration inputs,
+  and physical disk and compute resources still constrain growth. Recovery and
+  downgrade guidance for every store is linked in the
+  [storage overview](inventory-storage.md). Checksums detect corruption; they do
+  not authenticate against someone who can rewrite the files. After an uncertain
+  write, reads and writes of that index pause until writable recovery on restart.
+- `mynou status` and `GET /api/status` report per-store sizes and recovery state,
+  with unavailable counts for busy or failed stores. Complete common backlog
+  and freshness diagnostics remain #246; increasing-size macOS memory/timing
+  evidence remains #217 ([remaining delivery](inventory-storage.md#remaining-delivery)).
+  These storage readings and operation bounds are not a measured scalability
+  guarantee.
 - Series data moves from `series.json` to `series.idx` on the first start with
   write access; the previous snapshot is kept as `series.legacy-*.json` and
   `series.json` becomes a marker that older versions refuse. Going back means
