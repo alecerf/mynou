@@ -15,7 +15,7 @@ offline on every run (see [CI](validation.md#mynou-ci)).
 | Former component | Rust replacement |
 | --- | --- |
 | Go BitTorrent engine | `src/torrent.rs` and `src/torrent/` |
-| SQLite | Disk-resident job and series indexes in `src/inventory/`, `src/store/` and `src/series/` |
+| SQLite | Disk-resident index API in `src/inventory/`, used by the job, series, requester, feed, source-policy, IRC and transfer stores |
 | ffprobe | Container parsers in `src/media.rs` and `src/media/` |
 | HTTP/TLS libraries | `src/net.rs`, `src/tls.rs` and `src/pki/` |
 | JSON, bencode and XML | Bounded parsers in `src/json.rs`, `src/bencode.rs` and `src/xml.rs` |
@@ -36,7 +36,7 @@ CLI / API            Plex watchlists   IRC announcements
         |                    |                  |
         +------------- Requests ----------------+
                            |
-                  Journal and snapshots
+              Disk indexes and recovery log
                            |
                   Workers with leases
                            |
@@ -77,23 +77,27 @@ CLI / API            Plex watchlists   IRC announcements
   profile; automatic acquisition and search previews share that code, and
   previews never take the journal owner lock or create a job.
 - `indexers::feed` and `indexers::watch` poll opted-in RSS and Torznab sources
-  independently of IRC and of per-title search. The cursor and a bounded window
-  of entry identities are checked and synchronized before a poll is routed or
-  reported. Routing only selects a release for demand that already exists: it
-  rechecks the job and its admitted requester demand under the same locks that
+  independently of IRC and of per-title search. Observation state and bounded
+  captured candidates commit together in `feeds.idx` before routing; durable
+  generation checkpoints resume job/library pages after restart. Routing only
+  selects a release for demand that already exists: it rechecks the job and its
+  admitted requester demand under the same locks that
   workers, upgrade checks and IRC admission use, so the first selection wins.
 - `irc` runs one receiver per source with strict framing and verified TLS, keeps
-  a checked announcement history, and routes hash-pinned candidates to existing
-  jobs. Source I/O holds no storage lock. Admission takes locks in IRC, requester,
-  job order and rechecks demand after network I/O; recovery completes committed
+  indexed announcement history in `announcements.idx`, and routes hash-pinned
+  candidates to existing jobs. Source I/O holds no storage lock. Admission takes
+  locks in IRC, requester, job order and rechecks demand after network I/O; recovery completes committed
   origins and aborts uncommitted reservations without replaying them.
 - `requesters` keeps Plex account bindings, policies, poll cursors and shared
-  canonical demand in a private checked snapshot. Network I/O stays outside
-  requester and job locks, which are taken in requester, job order. Startup
-  validates the requester snapshot against the journal before transfers start.
-- `series` keeps catalog plans and monitoring revisions in a private verified
-  snapshot under the journal directory owner. A refresh captures the policy,
-  fetches outside storage locks, verifies numbering and identities, and drops its
+  canonical demand in `requesters.idx`. Watchlist sweeps stage bounded pages and
+  resume from durable progress. Network I/O stays outside requester and job
+  locks, which are taken in requester, job order. Startup validates requester
+  and IRC provenance against jobs in bounded pages before workers or transfers
+  start; the API reports that progress while serving reads.
+- `series` keeps catalog plans, episode blocks, numbering and monitoring revisions
+  in `series.idx` under the job-store directory owner. Due-work and calendar
+  indexes provide bounded scheduled windows and cursor pages. A refresh captures
+  the policy, fetches outside storage locks, verifies numbering and identities, and drops its
   result if the revision changed meanwhile. Submission batches lock series, then
   requests, and deduplicate by media identity. `numbering` holds explicit source
   labels, kept separate from the fixed library numbers, and `series::numbering`
@@ -104,8 +108,10 @@ CLI / API            Plex watchlists   IRC announcements
   range of episodes. `library` builds the owned-library view and upgrade
   decisions; `library::groups` and `store::groups` handle whole-group baselines,
   replacements and atomic promotion.
-- `torrent` verifies metadata and pieces, rechecks data after restart and only
-  then reports a transfer ready; bytes on disk are never enough. One coordinator
+- `torrent` retains its catalog in `transfers.idx`; startup and scheduling read
+  bounded windows instead of enumerating all retained transfers. It verifies
+  metadata and pieces, rechecks data after restart and only then reports a
+  transfer ready; bytes on disk are never enough. One coordinator
   per transfer owns piece claims, verified writes and completion, and hands
   pieces to a bounded set of peer workers. `torrent::control` holds durable
   pause, priority, selection and policy state; `torrent::selection` holds file
