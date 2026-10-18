@@ -4126,3 +4126,291 @@ fn full_disk_at_every_migration_flush_preserves_legacy_and_restarts() {
     }
     panic!("migration fixture exceeded its durability boundary budget");
 }
+
+fn assert_library_backlog(
+    store: &mut Store,
+    at: u64,
+    interval: u64,
+    due: u64,
+    oldest: Option<u64>,
+) {
+    let before = match &store.backend {
+        Backend::Ready(index) => (index.sequence().unwrap(), index.requests()),
+        _ => unreachable!(),
+    };
+    let value = store.library_backlog(at, interval, true).unwrap();
+    let number = |n: Option<u64>| n.map_or(Value::Null, |n| n.to_string().into());
+    assert_eq!(value.get("state"), Some(&Value::from("ready")));
+    assert_eq!(value.get("due"), Some(&Value::from(due.to_string())));
+    assert_eq!(value.get("oldest_due_at"), Some(&number(oldest)));
+    assert_eq!(
+        value.get("oldest_due_age_secs"),
+        Some(&number(oldest.map(|oldest| at.saturating_sub(oldest))))
+    );
+    if let Backend::Ready(index) = &store.backend {
+        assert_eq!(index.sequence().unwrap(), before.0, "status wrote storage");
+        assert!(index.requests() - before.1 <= 4, "status loaded records");
+        assert!(index.last_page_reads() <= 24, "status scanned tree pages");
+    }
+}
+
+#[test]
+fn library_backlog_counts_growth_rescheduling_removal_and_restart_without_payload_reads() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    assert_library_backlog(&mut store, 100, 60, 0, None);
+    let mut jobs: Vec<_> = (1..=5_001).map(|n| monitored_fixture(n, 150)).collect();
+    jobs[0].monitor_checked_at = 0;
+    jobs[1].monitor_checked_at = 100;
+    jobs[2].monitor_checked_at = 101;
+    jobs[3].monitor_checked_at = 101;
+    jobs[0].created_at = 1;
+    jobs[0].updated_at = 1;
+    bulk(&mut store, jobs.clone());
+    assert_library_backlog(&mut store, 160, 60, 2, Some(1));
+    assert_library_backlog(&mut store, 161, 60, 4, Some(1));
+    // A point update removes the unchecked row from the current due range.
+    store.record_monitor_check(&jobs[0].id, 161).unwrap();
+    assert_library_backlog(&mut store, 161, 60, 3, Some(160));
+    store.set_monitored(&jobs[1].id, false).unwrap();
+    assert_library_backlog(&mut store, 161, 60, 2, Some(161));
+    store.finish_library_pass(123).unwrap();
+    // Damage an otherwise due primary record. Reading status must not touch it.
+    let record = Store::record_key(&jobs[2].id).unwrap();
+    assert!(crate::inventory::damage_record(&directory.0.join("jobs.idx"), &record) > 0);
+    assert_library_backlog(&mut store, 161, 60, 2, Some(161));
+    drop(store);
+    let mut store = Store::open_read_only(&directory.0).unwrap();
+    let before = flushes();
+    assert_library_backlog(&mut store, 161, 60, 2, Some(161));
+    assert_eq!(
+        store
+            .library_backlog(161, 60, true)
+            .unwrap()
+            .get("last_completed_pass_at"),
+        Some(&Value::from("123"))
+    );
+    let disabled = store.library_backlog(161, 60, false).unwrap();
+    assert_eq!(disabled.get("state"), Some(&Value::from("disabled")));
+    assert_eq!(disabled.get("due"), Some(&Value::from("0")));
+    assert_eq!(disabled.get("oldest_due_at"), Some(&Value::Null));
+    assert_eq!(
+        disabled.get("last_completed_pass_at"),
+        Some(&Value::from("123"))
+    );
+    assert_eq!(flushes(), before);
+}
+
+#[test]
+fn library_backlog_matches_interval_edges_and_clock_rollback_scheduling() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let mut future = monitored_fixture(4, 0);
+    future.created_at = u64::MAX;
+    future.updated_at = u64::MAX;
+    bulk(
+        &mut store,
+        vec![
+            monitored_fixture(1, 100),
+            monitored_fixture(2, 101),
+            monitored_fixture(3, u64::MAX),
+            future,
+        ],
+    );
+    assert_library_backlog(&mut store, 159, 60, 2, Some(159));
+    assert_library_backlog(&mut store, 160, 60, 3, Some(160));
+    assert_library_backlog(&mut store, 161, 60, 4, Some(160));
+    assert_library_backlog(&mut store, 0, 60, 4, Some(0));
+    assert_library_backlog(&mut store, 100, 0, 4, Some(100));
+    assert_library_backlog(&mut store, u64::MAX, 60, 3, Some(160));
+    assert_library_backlog(&mut store, u64::MAX, 0, 4, Some(100));
+    assert_library_backlog(&mut store, 1, u64::MAX, 4, Some(1));
+    // The independently implemented scheduler agrees on the due identities.
+    for at in [0, 100, 159, 160, 161, u64::MAX] {
+        let window = store.monitoring_due(at, 60, false, 10).unwrap();
+        let value = store.library_backlog(at, 60, true).unwrap();
+        assert_eq!(
+            value.get("due"),
+            Some(&Value::from(window.jobs.len().to_string()))
+        );
+    }
+}
+
+#[test]
+fn library_backlog_prepares_legacy_counts_only_on_writable_startup() {
+    let directory = Directory::new();
+    let jobs: Vec<_> = (1..=401).map(|n| monitored_fixture(n, 100)).collect();
+    write_legacy(&directory.0, &jobs, &[], 0);
+    drop(secure_file(&directory.0.join(".lock")).unwrap());
+    let mut preview = Store::open_read_only(&directory.0).unwrap();
+    assert!(preview.library_backlog(160, 60, true).is_err());
+    drop(preview);
+    let mut store = Store::open(&directory.0).unwrap();
+    assert_library_backlog(&mut store, 160, 60, 401, Some(160));
+    if let Backend::Ready(index) = &mut store.backend {
+        crate::inventory::legacy_range_index(index);
+    }
+    drop(store);
+    let snapshot = contents(&directory.0);
+    let mut preview = Store::open_read_only(&directory.0).unwrap();
+    let before = preview.sequence().unwrap();
+    assert!(
+        preview
+            .library_backlog(160, 60, true)
+            .unwrap_err()
+            .contains("explicit writable upgrade")
+    );
+    assert_eq!(preview.sequence().unwrap(), before);
+    drop(preview);
+    assert_eq!(contents(&directory.0), snapshot);
+    // Target the count-upgrade commit, rather than the store's opening flush.
+    {
+        let mut index = Index::open(&directory.0.join("jobs.idx"), false).unwrap();
+        assert!(with_full_disk_after(0, || index.prepare_range_counts(1)).is_err());
+    }
+    let mut store = Store::open(&directory.0).unwrap();
+    assert_library_backlog(&mut store, 160, 60, 401, Some(160));
+    for row in jobs {
+        assert_eq!(store.get(&row.id).unwrap().unwrap(), row);
+    }
+}
+
+#[test]
+fn library_pass_freshness_recovers_at_every_commit_boundary() {
+    for fault in [
+        Fault::Staged,
+        Fault::Published,
+        Fault::FirstPage,
+        Fault::Applied,
+        Fault::Unlinked,
+    ] {
+        let directory = Directory::new();
+        let mut store = Store::open(&directory.0).unwrap();
+        store.finish_library_pass(10).unwrap();
+        if let Backend::Ready(index) = &mut store.backend {
+            index.inject(Some(fault));
+        }
+        assert!(store.finish_library_pass(20).is_err());
+        assert!(store.library_backlog(30, 60, true).is_err());
+        drop(store);
+        let mut store = Store::open(&directory.0).unwrap();
+        let expected = if fault == Fault::Staged { "10" } else { "20" };
+        assert_eq!(
+            store
+                .library_backlog(30, 60, true)
+                .unwrap()
+                .get("last_completed_pass_at"),
+            Some(&Value::from(expected))
+        );
+    }
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    store.finish_library_pass(10).unwrap();
+    assert!(with_full_disk_after(0, || store.finish_library_pass(20)).is_err());
+    drop(store);
+    let mut store = Store::open(&directory.0).unwrap();
+    assert_eq!(
+        store
+            .library_backlog(30, 60, true)
+            .unwrap()
+            .get("last_completed_pass_at"),
+        Some(&Value::from("10"))
+    );
+}
+
+#[test]
+fn library_pass_freshness_excludes_manual_preview_failure_and_stop() {
+    use crate::engine::{Engine, lock};
+    let directory = Directory::new();
+    let mut config =
+        crate::config::from_json(&crate::config::default_json(), &directory.0).unwrap();
+    config.downloads_enabled = false;
+    config.monitoring.enabled = true;
+    let engine = Engine::open_for_management(config.clone()).unwrap();
+    let read = |engine: &Engine| {
+        engine
+            .status()
+            .unwrap()
+            .get("inventory")
+            .unwrap()
+            .get("library")
+            .unwrap()
+            .get("last_completed_pass_at")
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(read(&engine), Value::Null);
+    engine.check_due_upgrades().unwrap(); // a completed empty automatic pass
+    assert_ne!(read(&engine), Value::Null);
+    lock(&engine.store)
+        .unwrap()
+        .finish_library_pass(123)
+        .unwrap();
+    engine.check_upgrades(false).unwrap();
+    engine.check_upgrades(true).unwrap();
+    assert_eq!(read(&engine), Value::from("123"));
+    engine.stopped.store(true, Ordering::Release);
+    engine.check_due_upgrades().unwrap();
+    assert_eq!(read(&engine), Value::from("123"));
+    engine.stopped.store(false, Ordering::Release);
+    // A valid local import reaches search; absent indexers make it unavailable.
+    let path = directory.0.join("synthetic.mp4");
+    fs::write(&path, include_bytes!("../../examples/demo.mp4")).unwrap();
+    let mut job = monitored_fixture(1, 0);
+    job.imports = vec![path.to_str().unwrap().into()];
+    bulk(&mut lock(&engine.store).unwrap(), vec![job.clone()]);
+    let report = engine.check_due_upgrades().unwrap();
+    assert!(crate::json::stringify(&report).contains("search_unavailable"));
+    assert_eq!(read(&engine), Value::from("123"));
+    // A bounded successful pass may still have more due work after its window.
+    let mut rows: Vec<_> = (2..=35).map(|n| monitored_fixture(n, 0)).collect();
+    rows.iter_mut().for_each(|row| row.created_at = 1);
+    bulk(&mut lock(&engine.store).unwrap(), rows);
+    let report = engine.check_due_upgrades().unwrap();
+    assert_eq!(report.get("limited"), Some(&Value::Bool(true)));
+    assert_ne!(read(&engine), Value::from("123")); // missing imports are settled skips
+    let last = read(&engine);
+    drop(engine);
+    let engine = Engine::open_for_management(config).unwrap();
+    assert_eq!(read(&engine), last);
+}
+
+#[test]
+fn library_backlog_status_reports_busy_and_redacted_failure() {
+    use crate::engine::{Engine, lock};
+    let directory = Directory::new();
+    let mut config =
+        crate::config::from_json(&crate::config::default_json(), &directory.0).unwrap();
+    config.downloads_enabled = false;
+    config.monitoring.enabled = true;
+    let engine = Engine::open_for_management(config).unwrap();
+    {
+        let _guard = lock(&engine.store).unwrap();
+        let status = engine.status().unwrap();
+        assert_eq!(
+            status
+                .get("inventory")
+                .unwrap()
+                .get("library")
+                .unwrap()
+                .get("state"),
+            Some(&Value::from("busy"))
+        );
+    }
+    {
+        let mut store = lock(&engine.store).unwrap();
+        if let Backend::Ready(index) = &mut store.backend {
+            index.inject(Some(Fault::Published));
+        }
+        assert!(store.finish_library_pass(10).is_err());
+    }
+    let status = engine.status().unwrap();
+    let backlog = status.get("inventory").unwrap().get("library").unwrap();
+    assert_eq!(backlog.get("state"), Some(&Value::from("unavailable")));
+    assert!(backlog.get("due").is_none());
+    let report = crate::json::stringify(backlog);
+    assert!(!report.contains(directory.0.to_str().unwrap()));
+    assert!(!report.contains("Synthetic"));
+    assert!(report.contains("restart with write access"));
+    assert!(status.get("version").is_some());
+}

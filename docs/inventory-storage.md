@@ -73,9 +73,9 @@ somebody who can replace state and its checksums.
 
 `inventory::Index::range_summary(start, end)` returns an exact key count and
 first key for `[start, end)`; `None` means no upper bound. An equal start/end
-is empty; a reversed range is refused. This is an index primitive for #246:
-per-store due-work definitions, last-pass timestamps and status exposure are
-still pending. A tree entry can be a secondary key, so its count is not
+is empty; a reversed range is refused. Series and library monitoring use this
+primitive for #246; other stores' due-work definitions, last-pass timestamps
+and status exposure remain pending. A tree entry can be a secondary key, so its count is not
 necessarily a count of jobs, episodes or transfers.
 
 New branch pages (`MYNOUIN2`) carry an optional checked cardinality beside
@@ -90,8 +90,8 @@ Old branches remain readable by point/page APIs, with unknown counts kept
 explicit. Reading a range that needs unknown counts returns an upgrade error
 instead of a partial count or a scan. Opening an index does not migrate it.
 An ordinary write can fill counts along the path it already changes; completing
-legacy counts is an explicit `prepare_range_counts(budget)` operation for the
-future store integration. There is no new CLI migration command in this increment.
+legacy counts is an explicit `prepare_range_counts(budget)` operation used by
+writable series and job-store startup. There is no separate CLI migration command.
 
 The caller repeats this operation until it returns `true`, with a branch-page
 budget of 1–256. Each batch stages at most budget plus tree height branch pages;
@@ -777,9 +777,11 @@ Two acceptance steps remain:
 
 - [#246](https://github.com/alecerf/mynou/issues/246): complete per-store due
   backlog, oldest unserved age and last completed pass readings alongside
-  [storage diagnostics](#storage-diagnostics-and-errors). Current library
-  `oldest_checked_at` and feed routing counts are partial readings, not the
-  complete common diagnostics. Migration-exhaustion fixtures and their
+  [storage diagnostics](#storage-diagnostics-and-errors). Series (#271) and
+  library monitoring (#273) are delivered under `inventory.series` and
+  `inventory.library`; jobs/history, requester demand, feeds, source policies,
+  IRC announcements and transfers remain. Feed routing counts alone are not
+  the complete common diagnostics. Migration-exhaustion fixtures and their
   store-named full-disk error correction are already delivered.
 - [#217](https://github.com/alecerf/mynou/issues/217), after #246: record disk
   size, open/startup time, a routine pass, a point update, a page read and peak
@@ -925,7 +927,7 @@ before upgrade is the safest recovery point.
 
 `GET /api/status` and `mynou status` expose `inventory.series` alongside the
 existing `storage` sizes. This is the first store integration of #246 (#271);
-other stores do not yet have this diagnostic. A ready reading contains:
+library monitoring is described below. A ready reading contains:
 
 - `due`: exact number of monitored scopes whose `next_check_at <= now`;
 - `oldest_due_at` and `oldest_due_age_secs`: the earliest due timestamp and
@@ -964,3 +966,53 @@ upgrade and **Downgrade** rules above: keep a stopped-store backup before the
 first writable upgrade; binaries predating `MYNOUIN2` must not open it for writes.
 Existing series snapshot migration backups are preserved. Old stores have no
 successful-pass timestamp until a new successful background pass completes.
+
+### Library backlog and pass freshness
+
+`GET /api/status` and `mynou status` also expose `inventory.library` (#273),
+using the same decimal-string fields as series: `due`, `oldest_due_at`,
+`oldest_due_age_secs` and `last_completed_pass_at`. The unit is an eligible
+current library tip, as defined by [indexed library monitoring](#indexed-library-monitoring).
+Unmonitored tips, missing release baselines, unsupported media kinds and shared
+files requiring the explicit group workflow are excluded from this automatic
+queue. History and replaced versions are excluded as well.
+
+A never-checked tip is due from its creation time. A previously checked tip is
+due when `monitor_checked_at + monitoring.interval_secs <= now`. Future check
+or creation times are due immediately for clock-rollback correction; their due
+time is reported as `now`, so their lateness is zero. The oldest time is the
+minimum across these disjoint queues, with no negative age. This is scheduled
+work, before per-entry checks such as a missing local import or an existing
+upgrade. When monitoring is disabled, `state: disabled` reports zero due work,
+null oldest fields and the preserved last successful-pass time.
+
+An automatic pass completes after successfully handling its bounded window,
+even when `limited` says there are more entries. Settled skips, such as missing
+imports, are handled work. An empty pass also completes. Shutdown, a 90-second
+deadline, search failure or a storage error preserves the last successful-pass
+time; manual forced checks and previews never advance it. A successful pass
+writes its completion time through the ordinary durable job-index transaction
+protocol after the window has completed. A write error can have an uncertain
+outcome, as described under [transaction and recovery](#transaction-and-recovery).
+The timestamp survives restart and stays null in older stores until the first
+successful automatic pass. It does not claim that every library entry was checked.
+
+Status uses at most three exact range summaries plus one point lookup for the
+completion time. It never reads job payloads, walks the library or writes data.
+Rescheduling, unmonitoring and replacing tips update the existing scheduling
+indexes in the same transaction as the tip change. Busy storage reports
+`state: busy`; a legacy, unprepared, uncertain or unreadable index reports
+`state: unavailable` with a fixed recovery hint and no counts. Diagnostics contain
+no titles, local paths, source payloads or credentials. The upgrade report's
+`oldest_checked_at` remains a bounded-window reading; the service's
+`inventory.library` reports the complete automatic due backlog.
+
+Writable job-store startup prepares missing branch cardinalities in resumable
+`prepare_range_counts(64)` metadata batches after the existing format/provenance
+checks and scheduling upgrades. Read-only opening and status never prepare them
+or substitute an inventory scan. Failure preserves recovery data and requires a
+writable restart. The [range-count downgrade rules](#exact-range-summaries) apply:
+keep a complete stopped-store backup before upgrading; earlier binaries that
+predate counted branch pages refuse the new format. Existing migration backups
+are preserved. This delivery leaves #246 and #106 open for the remaining stores
+and measured acceptance.

@@ -462,12 +462,23 @@ impl Engine {
     /// report; `storage` says why and `storage_errors` lists the failures.
     pub fn status(&self) -> Result<Value> {
         let mut errors = Vec::new();
-        let (counts, maintenance_error) = match try_lock(&self.store)? {
+        let (counts, maintenance_error, library_backlog) = match try_lock(&self.store)? {
             Some(mut store) => (
                 store.counts().map_err(|error| errors.push(error)).ok(),
                 store.maintenance_error().map(str::to_owned),
+                store
+                    .library_backlog(
+                        store::now(),
+                        self.config.monitoring.interval_secs,
+                        self.config.monitoring.enabled,
+                    )
+                    .unwrap_or_else(|_| {
+                        let mut value = crate::inventory::report("unavailable", None);
+                        value.insert("error", "Library backlog unavailable; restart with write access to prepare index counts or recover storage");
+                        value
+                    }),
             ),
-            None => (None, None),
+            None => (None, None, crate::inventory::report("busy", None)),
         };
         let count = |read: fn(&store::Counts) -> u64| {
             counts
@@ -524,6 +535,7 @@ impl Engine {
         v.insert("series_storage", series_storage);
         let mut inventory = Value::object();
         inventory.insert("series", series_backlog);
+        inventory.insert("library", library_backlog);
         v.insert("inventory", inventory);
         v.insert(
             "series_unreadable",
