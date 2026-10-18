@@ -368,11 +368,12 @@ IRC announcements:
   not authenticate against someone who can rewrite the files. After an uncertain
   write, reads and writes of that index pause until writable recovery on restart.
 - `mynou status` and `GET /api/status` report per-store sizes and recovery state,
-  with unavailable counts for busy or failed stores. Complete common backlog
-  and freshness diagnostics remain #246; increasing-size macOS memory/timing
-  evidence remains #217 ([remaining delivery](inventory-storage.md#remaining-delivery)).
-  These storage readings and operation bounds are not a measured scalability
-  guarantee.
+  with unavailable counts for busy or failed stores. Common backlog/freshness
+  diagnostics are delivered; increasing-size native macOS arm64 disk/time/RSS
+  evidence, remaining intentional bounds and the acceptance mapping are linked
+  from [the capacity evidence record](inventory-growth.md).
+  These readings cover their stated synthetic workloads, not arbitrary network
+  throughput, long-term churn or infinite hardware capacity.
 - Series data moves from `series.json` to `series.idx` on the first start with
   write access; the previous snapshot is kept as `series.legacy-*.json` and
   `series.json` becomes a marker that older versions refuse. Going back means

@@ -771,24 +771,25 @@ they act.
 
 ## Capacity acceptance
 
-[Issue #106](https://github.com/alecerf/mynou/issues/106) remains open. Indexed
-retention is delivered for all seven stores, including IRC announcements and
-source policies. Captured feed routing, resumable upstream paging, bounded
+Indexed retention is delivered for all seven stores, including IRC announcements
+and source policies. Captured feed routing, resumable upstream paging, bounded
 admission/monitoring and transfer scheduling, paginated views, startup validation
-and storage-size/error diagnostics are also delivered. Their operation bounds
-remain intentional; a retained inventory is not truncated to those windows.
+and per-store storage/backlog/freshness/error diagnostics are also delivered.
+Their operation bounds remain intentional; a retained inventory is not truncated
+to those windows.
 
-Per-store diagnostics (#246) are delivered. The remaining acceptance step is
-[#217](https://github.com/alecerf/mynou/issues/217): record disk size, open/startup
-time, a routine pass, a point update, a page read and peak resident memory at
-three or more increasing sizes for every indexed store on native macOS arm64;
-publish the acceptance table and audit remaining bounds. Existing series
-measurements and bounded-window tests do not establish this evidence for all
-stores, so #106 stays open and no overall scalability claim is made here.
+The [native macOS arm64 evidence record](inventory-growth.md) describes the
+three-size experiment for jobs/history, library tips, series, requesters, feeds,
+source policies, IRC and transfers, including disk size, open time, a routine
+storage pass, a point update, a page read and separate build/read peak RSS. It
+also maps each parent acceptance criterion to its regression test and audits the
+remaining intentional bounds. Numeric results and Actions links are retained on
+[#217](https://github.com/alecerf/mynou/issues/217); the final acceptance table and
+decision are on [#106](https://github.com/alecerf/mynou/issues/106).
 
-Use synthetic fixtures and relevant native local validation, followed by the
-required GitHub Actions checks. Removing inventory caps does not remove physical
-storage or compute limits.
+These observations cover the stated synthetic workloads, not arbitrary long-term
+churn, network throughput or infinite hardware capacity. Removing inventory caps
+does not remove physical storage or compute limits.
 
 ## Captured feed routing
 
@@ -1011,7 +1012,7 @@ writable restart. The [range-count downgrade rules](#exact-range-summaries) appl
 keep a complete stopped-store backup before upgrading; earlier binaries that
 predate counted branch pages refuse the new format. Existing migration backups
 are preserved. The other #246 integrations are described below; #106 still
-requires the measured acceptance in #217.
+links its measured acceptance through #217 and [the evidence record](inventory-growth.md).
 
 
 ### Job backlog and claim-scan freshness
@@ -1061,7 +1062,7 @@ changes. Missing legacy branch counts use the existing explicit resumable
 writable preparation; status never substitutes an inventory scan.
 
 The remaining #246 integrations are described below. Increasing-size evidence
-and the final acceptance table remain #217 before #106 can close.
+and the final acceptance table are linked from [the evidence record](inventory-growth.md).
 
 ### Requester, IRC, feed, source-policy and transfer diagnostics
 
@@ -1138,5 +1139,5 @@ refuse these new formats. Keep a complete stopped-store backup before upgrading;
 downgrade requires restoring that consistent backup and loses subsequent changes.
 
 Migration-exhaustion regression fixtures remain for all seven stores. These
-readings complete #246; measured growth evidence and parent acceptance remain
-#217 and #106.
+readings complete #246; measured growth evidence and parent acceptance are
+recorded in [the capacity evidence](inventory-growth.md), #217 and #106.
