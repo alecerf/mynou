@@ -8,6 +8,8 @@ mod persistence;
 mod tree;
 #[cfg(test)]
 pub(crate) use persistence::{Fault, damage_record};
+#[cfg(test)]
+pub(crate) use tests::legacy_range_index;
 
 use crate::Result;
 use std::{collections::BTreeSet, fs::File, path::PathBuf};

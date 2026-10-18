@@ -119,3 +119,13 @@ the migration can resume after the storage problem is fixed.
 ## Changed: Prepare exact bounded inventory backlog counts
 
 The storage index can now count a key range exactly and find its oldest key without scanning the range or reading record values. This is the index prerequisite for per-store backlog diagnostics; status exposure remains pending. New writes use counted branch pages that earlier binaries reject, so keep a complete stopped-store backup for downgrade ([storage guide](/docs/inventory-storage.md#exact-range-summaries)).
+
+## Diagnostics: Series backlog and pass freshness
+
+Service status now reports the exact number of due monitored series, the oldest
+scheduled check's lateness and the persisted time of the last successful bounded
+background pass under `inventory.series`. Busy or unavailable readings remain
+explicit. Status does bounded index reads without loading series or episode
+records. Writable startup prepares older series indexes in resumable batches;
+read-only commands never migrate them. This delivers the series portion of #246;
+other stores' backlog diagnostics remain pending.

@@ -129,6 +129,10 @@ impl Engine {
         self.refresh_series_before(id, Instant::now() + Duration::from_secs(90))
     }
     pub(crate) fn refresh_series_due(&self) -> Result<Value> {
+        self.refresh_series_due_before(Instant::now() + Duration::from_secs(90))
+    }
+
+    pub(super) fn refresh_series_due_before(&self, deadline: Instant) -> Result<Value> {
         let _refresh = match self.series_refresh_lock.try_lock() {
             Ok(guard) => guard,
             Err(TryLockError::WouldBlock) => {
@@ -144,12 +148,12 @@ impl Engine {
         // unreadable scopes. The durable cursor continues past a bad prefix
         // on the next pass and after restart, then wraps at the end.
         let now = store::now();
-        let deadline = Instant::now() + Duration::from_secs(90);
         let mut reports = Vec::new();
         let mut first_error = None;
         let mut attempts = 0;
         let mut scanned = 0;
         let mut pages = 0;
+        let mut skipped_unreadable = false;
         let mut cursor = lock(&self.series_store)?.due_cursor(now)?;
         'pass: loop {
             let page = lock(&self.series_store)?.due_after(now, cursor.as_ref(), SCAN_PAGE)?;
@@ -164,6 +168,7 @@ impl Engine {
                 cursor = Some(record.clone());
                 scanned += 1;
                 if self.series_is_unreadable(&record.id) {
+                    skipped_unreadable = true;
                     continue;
                 }
                 let probe = lock(&self.series_store)?.get(&record.id);
@@ -214,7 +219,11 @@ impl Engine {
         {
             let mut series = lock(&self.series_store)?;
             series.due_pass = [pages, scanned, attempts];
-            series.save_due_cursor(cursor.as_ref())?;
+            let completed = first_error.is_none()
+                && !skipped_unreadable
+                && !self.stopped.load(Ordering::Acquire)
+                && Instant::now() < deadline;
+            series.finish_due_pass(cursor.as_ref(), completed.then(store::now))?;
         }
         if let Some(error) = first_error {
             return Err(error);

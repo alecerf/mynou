@@ -210,6 +210,12 @@ const DUE_CURSOR_KEY: Key = {
     key[1] = 2;
     key
 };
+const LAST_PASS_KEY: Key = {
+    let mut key = [0; 64];
+    key[0] = T_META;
+    key[1] = 3;
+    key
+};
 pub(super) const MIGRATION_SOURCE_KEY: [u8; 64] = {
     let mut key = [0; 64];
     key[0] = T_MIGRATION;
@@ -918,7 +924,13 @@ pub(super) fn clear_cursor() -> Change {
 
 impl SeriesStore {
     pub(crate) fn open(directory: &Path, read_only: bool) -> Result<Self> {
-        migration::open(directory, read_only)
+        let mut store = migration::open(directory, read_only)?;
+        // Metadata-only batches resume after interruption. Status never upgrades
+        // counts or substitutes a scan when opening an old index read-only.
+        if !read_only && let Backend::Ready(index) = &mut store.backend {
+            while !index.prepare_range_counts(64)? {}
+        }
+        Ok(store)
     }
 
     pub(super) fn from_parts(
@@ -1212,7 +1224,18 @@ impl SeriesStore {
     /// An interrupted pass replays its last uncheckpointed rows. Refreshes
     /// retain their revision fences and already-rescheduled scopes leave the
     /// old due range, so checkpoints never grant acquisition authority.
+    #[cfg(test)]
     pub(crate) fn save_due_cursor(&mut self, due: Option<&Due>) -> Result<()> {
+        self.finish_due_pass(due, None)
+    }
+
+    /// Publish the scheduling checkpoint and successful bounded-pass time
+    /// together. None preserves the last success after failure/interruption.
+    pub(crate) fn finish_due_pass(
+        &mut self,
+        due: Option<&Due>,
+        completed_at: Option<u64>,
+    ) -> Result<()> {
         self.check_writable()?;
         let bytes = due
             .map(|due| {
@@ -1225,16 +1248,60 @@ impl SeriesStore {
             Some(index) => index.get(&DUE_CURSOR_KEY)?,
             None => None,
         };
-        if previous != bytes {
+        if previous != bytes || completed_at.is_some() {
             self.guarded(|index| {
-                index.commit(vec![match bytes {
+                let mut changes = vec![match bytes {
                     Some(bytes) => Change::PutInline(DUE_CURSOR_KEY, bytes),
                     None => Change::Delete(DUE_CURSOR_KEY),
-                }])?;
+                }];
+                if let Some(at) = completed_at {
+                    changes.push(Change::PutInline(LAST_PASS_KEY, at.to_be_bytes().to_vec()));
+                }
+                index.commit(changes)?;
                 Ok(())
             })?;
         }
         Ok(())
+    }
+
+    /// Exact due keys, at most three tree paths and one metadata lookup.
+    /// Does not load series headers, episodes, or values in the due range.
+    pub(crate) fn backlog(&mut self, now: u64) -> Result<Value> {
+        let mut value = Value::object();
+        let (count, oldest, last) = match self.reader()? {
+            None => (0, None, None),
+            Some(index) => {
+                let end = now.checked_add(1).map_or_else(
+                    || prefix_range(&[T_DUE]).1,
+                    |next| Some(key(&[&[T_DUE], &next.to_be_bytes()])),
+                );
+                let summary = index.range_summary(key(&[&[T_DUE]]), end)?;
+                let oldest = summary.first.map(|key| {
+                    u64::from_be_bytes(key[1..9].try_into().expect("eight-byte timestamp"))
+                });
+                let last = index
+                    .get(&LAST_PASS_KEY)?
+                    .map(|bytes| {
+                        bytes
+                            .as_slice()
+                            .try_into()
+                            .map(u64::from_be_bytes)
+                            .map_err(|_| "Series storage: invalid last pass time".to_owned())
+                    })
+                    .transpose()?;
+                (summary.count, oldest, last)
+            }
+        };
+        let number = |n: Option<u64>| n.map_or(Value::Null, |n| Value::String(n.to_string()));
+        value.insert("state", "ready");
+        value.insert("due", count.to_string());
+        value.insert("oldest_due_at", number(oldest));
+        value.insert(
+            "oldest_due_age_secs",
+            number(oldest.map(|at| now.saturating_sub(at))),
+        );
+        value.insert("last_completed_pass_at", number(last));
+        Ok(value)
     }
 
     /// The same order continued after an earlier entry (`after` is exclusive).
