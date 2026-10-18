@@ -758,3 +758,64 @@ fn feed_backlog_freshness_recovers_without_changing_observations() {
         assert_eq!(storage.row(&record(1).id).unwrap(), Some(record(1)));
     }
 }
+
+#[test]
+#[ignore = "opt-in inventory_growth.py measurements"]
+fn inventory_growth_report() {
+    let Some(mut f) = crate::growth::Fixture::get("feeds") else {
+        return;
+    };
+    let directory = f.directory.clone();
+    let size = f.size;
+    let mut storage = f.measure("open_us", || {
+        let mut storage = Storage::open(&directory, false).unwrap();
+        storage.initialize().unwrap();
+        storage
+    });
+    if f.build {
+        f.measure("build_us", || {
+            for start in (1..=size).step_by(200) {
+                let rows: Vec<_> = (start..(start + 200).min(size + 1))
+                    .map(|n| {
+                        let row = record(n);
+                        let mut row = row;
+                        row.baselined = true;
+                        row.seen = (0..16).map(|id| format!("{id:032x}")).collect();
+                        row.cursor = row.seen.last().unwrap().clone();
+                        row
+                    })
+                    .collect();
+                put(index(&mut storage), &rows, None).unwrap();
+            }
+        });
+    } else {
+        assert_eq!(storage.total().unwrap(), size);
+        f.measure("page_us", || {
+            let after = None;
+            let page = storage.page(after, 200).unwrap();
+            assert_eq!(page.rows.len(), 200);
+        });
+        f.measure("pass_us", || {
+            assert_eq!(storage.active(None).unwrap().0.len(), 200);
+        });
+        f.measure("update_us", || {
+            let mut row = storage.row(&record(size).id).unwrap().unwrap();
+            row.successes -= 1;
+            storage.commit(row).unwrap();
+        });
+        let mut after = None;
+        let mut count = 0;
+        f.measure("walk_us", || {
+            loop {
+                let page = storage.page(after, 200).unwrap();
+                count += page.rows.len() as u64;
+                after = page.next;
+                if after.is_none() {
+                    break;
+                }
+            }
+        });
+        assert_eq!(count, size);
+    }
+    f.finish();
+}

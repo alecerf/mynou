@@ -1673,3 +1673,53 @@ fn series_backlog_status_is_explicit_and_redacted_when_unavailable() {
     );
     assert!(status.get("version").is_some());
 }
+
+#[test]
+#[ignore = "opt-in inventory_growth.py measurements"]
+fn inventory_growth_report() {
+    let Some(mut f) = crate::growth::Fixture::get("series") else {
+        return;
+    };
+    let directory = f.directory.clone();
+    let size = f.size;
+    let mut store = f.measure("open_us", || SeriesStore::open(&directory, false).unwrap());
+    if f.build {
+        f.measure("build_us", || {
+            store.save(record(1, 3, 30, 300)).unwrap();
+            for start in (2..=size).step_by(20) {
+                let rows: Vec<_> = (start..(start + 20).min(size + 1))
+                    .map(|n| record(n, 3, 30, 300))
+                    .collect();
+                insert_many(ready(&mut store), &rows).unwrap();
+            }
+        });
+    } else {
+        assert_eq!(store.counts().unwrap().series, size);
+        f.measure("page_us", || {
+            assert_eq!(store.page(None, 200).unwrap().series.len(), 200);
+        });
+        f.measure("pass_us", || {
+            assert_eq!(store.due(u64::MAX, 4).unwrap().len(), 4);
+        });
+        f.measure("update_us", || {
+            let mut row = store.get(&identifier(size)).unwrap().unwrap();
+            row.revision += 1;
+            row.next_check_at += 1;
+            store.save(row).unwrap();
+        });
+        let mut cursor = None;
+        let mut count = 0;
+        f.measure("walk_us", || {
+            loop {
+                let page = store.page(cursor.as_deref(), 200).unwrap();
+                count += page.series.len() as u64;
+                cursor = page.next;
+                if cursor.is_none() {
+                    break;
+                }
+            }
+        });
+        assert_eq!(count, size);
+    }
+    f.finish();
+}

@@ -4743,3 +4743,98 @@ fn job_backlog_status_redacts_storage_failure_and_keeps_other_fields() {
     assert!(report.contains("restart with write access"));
     assert!(status.get("version").is_some());
 }
+
+#[test]
+#[ignore = "opt-in inventory_growth.py measurements"]
+fn inventory_growth_report() {
+    for name in ["jobs", "library"] {
+        let Some(mut f) = crate::growth::Fixture::get(name) else {
+            continue;
+        };
+        let directory = f.directory.clone();
+        let size = f.size;
+        let library = name == "library";
+        let mut store = f.measure("open_us", || Store::open(&directory).unwrap());
+        if f.build {
+            f.measure("build_us", || {
+                for start in (1..=size).step_by(100) {
+                    let rows: Vec<Job> = (start..(start + 100).min(size + 1))
+                        .map(|n| {
+                            if library {
+                                monitored_fixture(n, n)
+                            } else {
+                                raw_job(n, n)
+                            }
+                        })
+                        .collect();
+                    // Keep aggregate history above the former 64 MiB journal bound,
+                    // using the existing per-event 4,096-byte message limit.
+                    store
+                        .mutate(|db| {
+                            let changes = db.stage(&rows, &"h".repeat(4096))?;
+                            db.0.commit(changes)?;
+                            Ok(())
+                        })
+                        .unwrap();
+                }
+            });
+        } else {
+            assert_eq!(store.counts().unwrap().jobs, size);
+            let mut cursor = None;
+            let mut count = 0;
+            // First page is cold after open; the complete walk is timed separately.
+            f.measure("page_us", || {
+                let page = if library {
+                    store.library_page(None, 200)
+                } else {
+                    store.page(None, 200)
+                }
+                .unwrap();
+                assert_eq!(page.jobs.len(), 200);
+            });
+            f.measure("pass_us", || {
+                if library {
+                    assert_eq!(
+                        store
+                            .monitoring_due(u64::MAX, 60, false, 4)
+                            .unwrap()
+                            .jobs
+                            .len(),
+                        4
+                    );
+                } else {
+                    assert!(store.claim(crate::store::now(), 60).unwrap().is_some());
+                }
+            });
+            f.measure("update_us", || {
+                let mut job = store.get(&format!("{:032x}", size)).unwrap().unwrap();
+                if library {
+                    store
+                        .record_monitor_check(&job.id, job.monitor_checked_at + 1)
+                        .unwrap();
+                } else {
+                    job.attempts += 1;
+                    store.update(job).unwrap();
+                }
+            });
+            f.measure("walk_us", || {
+                loop {
+                    let page = if library {
+                        store.library_page(cursor.as_deref(), 200)
+                    } else {
+                        store.page(cursor.as_deref(), 200)
+                    }
+                    .unwrap();
+                    count += page.jobs.len() as u64;
+                    cursor = page.next;
+                    if cursor.is_none() {
+                        break;
+                    }
+                }
+            });
+            assert_eq!(count, size);
+            assert!(!store.events(&format!("{:032x}", size)).unwrap().is_empty());
+        }
+        f.finish();
+    }
+}

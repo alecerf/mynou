@@ -34,3 +34,6 @@ pub mod ws;
 mod xml;
 
 pub type Result<T> = std::result::Result<T, String>;
+
+#[cfg(test)]
+mod growth;
