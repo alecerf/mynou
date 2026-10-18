@@ -393,7 +393,12 @@ fn live_authentication_reconnect_and_restart_repeat_the_handshake_before_duplica
         Some(true)
     );
     assert_eq!(rows(&engine).len(), 1);
-    let before = bytes(&cfg.store_dir);
+    // Idle job claim scans now persist independent scheduler freshness.
+    // Duplicate receipt handling must still leave the entire IRC index and
+    // its identity marker byte-for-byte unchanged, without creating jobs.
+    let receipts = cfg.store_dir.join("announcements.idx");
+    let before = bytes(&receipts);
+    let marker = fs::read(cfg.store_dir.join("announcements.bin")).unwrap();
     no_secrets(&engine.irc_sources().unwrap());
     no_secrets(&rows(&engine)[0]);
     no_jobs(&engine);
@@ -406,7 +411,11 @@ fn live_authentication_reconnect_and_restart_repeat_the_handshake_before_duplica
     let engine = Engine::open(cfg.clone()).unwrap();
     let workers = engine.start();
     wait(|| health(&engine).get("received").unwrap().as_str() == Some("1"));
-    assert_eq!(bytes(&cfg.store_dir), before);
+    assert_eq!(bytes(&receipts), before);
+    assert_eq!(
+        fs::read(cfg.store_dir.join("announcements.bin")).unwrap(),
+        marker
+    );
     assert_eq!(
         health(&engine).get("duplicates").unwrap().as_str(),
         Some("1")

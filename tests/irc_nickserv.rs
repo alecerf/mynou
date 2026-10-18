@@ -270,7 +270,12 @@ fn live_reconnect_and_restart_repeat_identification_and_retain_first_receipts() 
         Some(true)
     );
     assert_eq!(rows(&e).len(), 1);
-    let before = bytes(&cfg.store_dir);
+    // Idle job claim scans now persist independent scheduler freshness.
+    // Duplicate receipt handling must still leave the entire IRC index and
+    // its identity marker byte-for-byte unchanged, without creating jobs.
+    let receipts = cfg.store_dir.join("announcements.idx");
+    let before = bytes(&receipts);
+    let marker = fs::read(cfg.store_dir.join("announcements.bin")).unwrap();
     private(&e.irc_sources().unwrap());
     no_jobs(&e);
     drop(workers);
@@ -283,7 +288,11 @@ fn live_reconnect_and_restart_repeat_identification_and_retain_first_receipts() 
     let workers = e.start();
     wait(|| health(&e).get("received").unwrap().as_str() == Some("1"));
     assert_eq!(health(&e).get("duplicates").unwrap().as_str(), Some("1"));
-    assert_eq!(bytes(&cfg.store_dir), before);
+    assert_eq!(bytes(&receipts), before);
+    assert_eq!(
+        fs::read(cfg.store_dir.join("announcements.bin")).unwrap(),
+        marker
+    );
     no_jobs(&e);
     drop(workers);
     peer.join().unwrap();
