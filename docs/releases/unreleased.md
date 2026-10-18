@@ -105,6 +105,7 @@ Storage migrations and index upgrades now report their stage and records done ou
 ## Changed: Simpler native development
 
 Routine validation uses installed Rust and Python directly. Removed container-based
-repository checks, scheduled history/log audits and local agent delegation hooks.
+repository checks, scheduled log audits and local agent delegation hooks.
+The source-history credential check remains required by branch protection.
 The isolated independent WireGuard peer remains an optional manually run fixture;
 product dependencies, runtime and release version are unchanged.

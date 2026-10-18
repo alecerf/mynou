@@ -1,0 +1,32 @@
+name: Source history
+on:
+  pull_request:
+  push:
+    branches: [trunk]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mynou-source-history-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+jobs:
+  source-history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scan reachable Git objects without exposing findings
+        run: python3 .github/scripts/source_history.py --output "$RUNNER_TEMP/source-audit.json"
+      - name: Preserve redacted source coverage
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: security-source-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/source-audit.json
+          retention-days: 14
+          if-no-files-found: error

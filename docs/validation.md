@@ -14,6 +14,7 @@ commit only: an earlier green run does not validate later changes.
 | Mynou CI | Pull requests; a pushed `v<version>` tag | Dependency graph, format, Clippy, all tests, the macOS arm64 build and demo; a version tag publishes after the same checks |
 | Repository checks | Pull requests | Release tooling and optional interoperability driver tests |
 | Release policy | Pull requests | Version changes only in a release PR |
+| Source history | Pull requests; `trunk`; manual dispatch | Required bounded credential scan of reachable Git objects |
 | WireGuard interoperability | Manual dispatch only | Optional isolated independent-peer test |
 
 ## Mynou CI
