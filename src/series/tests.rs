@@ -1675,7 +1675,6 @@ fn series_backlog_status_is_explicit_and_redacted_when_unavailable() {
 }
 
 #[test]
-#[ignore = "opt-in inventory_growth.py measurements"]
 fn inventory_growth_report() {
     let Some(mut f) = crate::growth::Fixture::get("series") else {
         return;

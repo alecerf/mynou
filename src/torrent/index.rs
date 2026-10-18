@@ -1530,7 +1530,6 @@ mod tests {
 mod growth_report {
     use super::*;
     #[test]
-    #[ignore = "opt-in inventory_growth.py measurements"]
     fn inventory_growth_report() {
         let Some(mut f) = crate::growth::Fixture::get("transfers") else {
             return;

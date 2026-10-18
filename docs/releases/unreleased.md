@@ -168,7 +168,7 @@ derived indexes in resumable pages; keep a complete stopped-store backup before
 upgrading for downgrade ([storage guide](/docs/inventory-storage.md#requester-irc-feed-source-policy-and-transfer-diagnostics)).
 This completes #246; the increasing-size evidence in #217 is still required for #106.
 
-## Documentation: Reproducible inventory growth evidence
+## Added: Reproducible inventory growth evidence
 
 Add an opt-in macOS arm64 measurement workflow for jobs/history, library tips,
 series, requester demands, retained feeds, source policies, IRC history and

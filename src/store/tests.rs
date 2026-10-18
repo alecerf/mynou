@@ -4745,7 +4745,6 @@ fn job_backlog_status_redacts_storage_failure_and_keeps_other_fields() {
 }
 
 #[test]
-#[ignore = "opt-in inventory_growth.py measurements"]
 fn inventory_growth_report() {
     for name in ["jobs", "library"] {
         let Some(mut f) = crate::growth::Fixture::get(name) else {
@@ -4767,11 +4766,33 @@ fn inventory_growth_report() {
                             }
                         })
                         .collect();
-                    // Keep aggregate history above the former 64 MiB journal bound,
-                    // using the existing per-event 4,096-byte message limit.
+                    // New-row fixture loader: stage() records one transaction event,
+                    // then add one identically encoded event for each remaining job.
+                    // This is bounded to 100 new jobs, never existing-row history.
                     store
                         .mutate(|db| {
-                            let changes = db.stage(&rows, &"h".repeat(4096))?;
+                            let message = "h".repeat(4096);
+                            let mut changes = db.stage(&rows, &message)?;
+                            let position = changes.iter().position(|change| {
+                                matches!(change, Change::PutInline(key, _) if *key == layout::COUNTS_KEY)
+                            }).unwrap();
+                            let Change::PutInline(_, bytes) = &changes[position] else { unreachable!() };
+                            let mut counts = Counts::decode(bytes)?;
+                            for job in rows.iter().skip(1) {
+                                let raw = layout::id_bytes(&job.id)?;
+                                assert!(db.get(&job.id)?.is_none());
+                                counts.events += 1;
+                                let event = Event {
+                                    id: counts.events, job_id: job.id.clone(), state: job.state.clone(),
+                                    message: message.clone(), at: job.updated_at,
+                                };
+                                let mut metadata = 1_u64.to_le_bytes().to_vec();
+                                metadata.extend_from_slice(&event.id.to_le_bytes());
+                                changes.push(Change::PutInline(layout::events_key(&raw, 0), metadata));
+                                changes.push(Change::Put(layout::events_key(&raw, event.id), ops::encode_event(&event)));
+                                changes.push(Change::PutInline(layout::sequence_key(event.id), raw.to_vec()));
+                            }
+                            changes[position] = Change::PutInline(layout::COUNTS_KEY, counts.encode());
                             db.0.commit(changes)?;
                             Ok(())
                         })
@@ -4779,7 +4800,12 @@ fn inventory_growth_report() {
                 }
             });
         } else {
-            assert_eq!(store.counts().unwrap().jobs, size);
+            let counts = store.counts().unwrap();
+            assert_eq!(counts.jobs, size);
+            assert_eq!(counts.events, size);
+            let history = store.events(&format!("{size:032x}")).unwrap();
+            assert_eq!(history.len(), 1);
+            assert_eq!(history[0].message.len(), 4096);
             let mut cursor = None;
             let mut count = 0;
             // First page is cold after open; the complete walk is timed separately.
@@ -4791,6 +4817,9 @@ fn inventory_growth_report() {
                 }
                 .unwrap();
                 assert_eq!(page.jobs.len(), 200);
+            });
+            f.measure("history_page_us", || {
+                assert_eq!(store.event_feed(None, 200).unwrap().0.len(), 200);
             });
             f.measure("pass_us", || {
                 if library {
@@ -4833,7 +4862,19 @@ fn inventory_growth_report() {
                 }
             });
             assert_eq!(count, size);
-            assert!(!store.events(&format!("{:032x}", size)).unwrap().is_empty());
+            let mut after = None;
+            let mut events = 0;
+            f.measure("history_walk_us", || {
+                loop {
+                    let (page, next) = store.event_feed(after, 200).unwrap();
+                    events += page.len() as u64;
+                    after = next;
+                    if after.is_none() {
+                        break;
+                    }
+                }
+            });
+            assert_eq!(events, store.counts().unwrap().events);
         }
         f.finish();
     }
