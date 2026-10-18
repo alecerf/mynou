@@ -82,6 +82,9 @@ fn grows_past_old_caps_and_pages_every_record_after_restart() {
             .commit((start..(start + 256).min(10_241)).rev().map(put).collect())
             .unwrap();
         let count = index.len().unwrap();
+        let summary = index.range_summary(key(0), None).unwrap();
+        assert_eq!(summary.count, count);
+        assert_eq!(summary.first, Some(key(0)));
         if count == 256 || count == 2048 || count == 8192 || count == 10_241 {
             eprintln!(
                 "inventory-growth records={count} elapsed_ms={} interval_ms={} staged_nodes={} height={}",
@@ -553,6 +556,9 @@ fn unordered_churn_matches_independent_ordered_reference_and_range_scans() {
             .map(|(key, value)| (*key, value.clone()))
             .collect::<Vec<_>>();
         assert_eq!(rows, reference);
+        let summary = index.range_summary(key(50), Some(key(351))).unwrap();
+        assert_eq!(summary.count, reference.len() as u64);
+        assert_eq!(summary.first, reference.first().map(|(key, _)| *key));
     }
     drop(index);
     let mut index = Index::open(&directory.0, true).unwrap();
@@ -1078,4 +1084,405 @@ fn store_names_come_from_the_index_directory() {
         super::persistence::explain_open(Path::new("feeds.idx"), "other".into()),
         "other"
     );
+}
+
+/// Synthetic pre-count index: preserve every key/value and encode branches
+/// using their original 72-byte links. Production never strips summaries.
+fn legacy_range_index(index: &mut Index) {
+    for id in 1..index.header.next {
+        let bytes = tree::read_page(&mut index.tree, id).unwrap();
+        let mut node = tree::Node::decode(
+            &bytes,
+            id,
+            bytes[16],
+            index.header.next,
+            index.header.identity,
+        )
+        .unwrap();
+        if let tree::Items::Branch(links) = &mut node.items {
+            for link in links {
+                link.count = None;
+            }
+            index
+                .tree
+                .seek(SeekFrom::Start(tree::offset(id).unwrap()))
+                .unwrap();
+            index.tree.write_all(&node.encode().unwrap()).unwrap();
+        }
+    }
+    index.tree.sync_all().unwrap();
+    index.cache.clear();
+}
+
+fn assert_range(
+    index: &mut Index,
+    start: u64,
+    end: Option<u64>,
+    rows: &std::collections::BTreeSet<u64>,
+) {
+    index.cache.clear(); // Measure cold reads, including both rank boundaries.
+    let expected: Vec<_> = rows
+        .iter()
+        .copied()
+        .filter(|id| *id >= start && end.is_none_or(|end| *id < end))
+        .collect();
+    let summary = index.range_summary(key(start), end.map(key)).unwrap();
+    assert_eq!(summary.count, expected.len() as u64, "{start}..{end:?}");
+    assert_eq!(summary.first, expected.first().copied().map(key));
+    assert!(
+        index.last_page_reads() <= 3 * (usize::from(index.header.level) + 1),
+        "{} reads at height {}",
+        index.last_page_reads(),
+        index.header.level + 1
+    );
+}
+
+#[test]
+fn range_summaries_are_exact_and_bounded_through_growth_replacement_and_root_collapse() {
+    let directory = Directory::new();
+    let mut index = Index::create(&directory.0).unwrap();
+    let mut rows = std::collections::BTreeSet::new();
+    assert_range(&mut index, 0, None, &rows);
+    for start in (0..4096).step_by(256) {
+        index
+            .commit((start..start + 256).rev().map(put).collect())
+            .unwrap();
+        rows.extend(start..start + 256);
+        for (start, end) in [
+            (0, None),
+            (13, Some(317)),
+            (317, Some(317)),
+            (4096, None),
+            (97, Some(4096)),
+        ] {
+            assert_range(&mut index, start, end, &rows);
+        }
+    }
+    // A replacement and deleting an absent key leave cardinalities unchanged.
+    index
+        .commit(vec![put(17), Change::Delete(key(5000))])
+        .unwrap();
+    assert_range(&mut index, 0, None, &rows);
+    assert!(index.range_summary(key(10), Some(key(9))).is_err());
+    drop(index);
+    let mut index = Index::open(&directory.0, false).unwrap();
+    assert_range(&mut index, 17, Some(4095), &rows);
+    for start in (0..4096).step_by(256) {
+        index
+            .commit(
+                (start..start + 256)
+                    .map(|id| Change::Delete(key(id)))
+                    .collect(),
+            )
+            .unwrap();
+        for id in start..start + 256 {
+            rows.remove(&id);
+        }
+        assert_range(&mut index, 0, None, &rows);
+        assert_range(&mut index, 31, Some(2049), &rows);
+    }
+    assert_eq!(index.header.root, 0);
+    index.commit(vec![put(42)]).unwrap();
+    rows.insert(42);
+    assert_range(&mut index, 0, None, &rows);
+}
+
+#[test]
+fn range_summaries_keep_equal_time_boundaries_and_do_not_read_values() {
+    fn due(table: u8, at: u64, id: u64) -> Key {
+        let mut key = key(id);
+        key[0] = table;
+        key[1..9].copy_from_slice(&at.to_be_bytes());
+        key
+    }
+    let directory = Directory::new();
+    let mut index = Index::create(&directory.0).unwrap();
+    index.legacy_records = true;
+    index
+        .commit(
+            (0..200)
+                .map(|id| Change::Put(due(7, id / 100, id), vec![42; 40]))
+                .collect(),
+        )
+        .unwrap();
+    assert_eq!(
+        index
+            .range_summary(due(7, 0, 0), Some(due(7, 1, 0)))
+            .unwrap(),
+        super::RangeSummary {
+            count: 100,
+            first: Some(due(7, 0, 0))
+        }
+    );
+    assert_eq!(
+        index
+            .range_summary(due(7, 1, 0), Some(due(8, 0, 0)))
+            .unwrap()
+            .count,
+        100
+    );
+    assert_eq!(index.range_summary(due(7, 2, 0), None).unwrap().count, 0);
+    let damaged = super::damage_record(&directory.0, &due(7, 0, 0));
+    assert_eq!(damaged, 1);
+    assert!(index.get(&due(7, 0, 0)).is_err());
+    assert_eq!(index.range_summary(due(7, 0, 0), None).unwrap().count, 200);
+    drop(index);
+    let before = contents(&directory.0);
+    let mut index = Index::open(&directory.0, true).unwrap();
+    assert_eq!(index.range_summary(due(7, 0, 0), None).unwrap().count, 200);
+    assert!(
+        index
+            .prepare_range_counts(1)
+            .unwrap_err()
+            .contains("read-only")
+    );
+    drop(index);
+    assert_eq!(contents(&directory.0), before);
+}
+
+#[test]
+fn legacy_range_upgrade_is_explicit_bounded_resumable_and_preserves_values() {
+    let directory = Directory::new();
+    let mut index = Index::create(&directory.0).unwrap();
+    index.commit((0..2049).map(put).collect()).unwrap();
+    legacy_range_index(&mut index);
+    let original = index.stats();
+    drop(index);
+    let before = contents(&directory.0);
+    let mut index = Index::open(&directory.0, true).unwrap();
+    assert!(
+        index
+            .range_summary(key(0), None)
+            .unwrap_err()
+            .contains("explicit writable upgrade")
+    );
+    assert_eq!(
+        index
+            .page(&Query {
+                limit: 1,
+                ..Query::default()
+            })
+            .unwrap()
+            .entries[0]
+            .0,
+        key(0)
+    );
+    drop(index);
+    assert_eq!(contents(&directory.0), before);
+    let mut calls = 0;
+    loop {
+        let mut index = Index::open(&directory.0, false).unwrap();
+        assert!(index.prepare_range_counts(0).is_err());
+        assert!(index.prepare_range_counts(257).is_err());
+        let complete = index.prepare_range_counts(1).unwrap();
+        calls += 1;
+        assert!(calls < 100);
+        assert!(index.last_staged_nodes <= 1 + usize::from(index.header.level));
+        assert!(index.last_page_reads() <= 32 * (1 + usize::from(index.header.level)) + 1);
+        let stats = index.stats();
+        assert_eq!(
+            (
+                stats.entries,
+                stats.index_bytes,
+                stats.log_bytes,
+                stats.live_bytes
+            ),
+            (
+                original.entries,
+                original.index_bytes,
+                original.log_bytes,
+                original.live_bytes
+            )
+        );
+        if complete {
+            assert_eq!(
+                index.range_summary(key(17), Some(key(2000))).unwrap().count,
+                1983
+            );
+            for id in 0..2049 {
+                assert_eq!(
+                    index.get(&key(id)).unwrap(),
+                    Some(id.to_be_bytes().to_vec())
+                );
+            }
+            let sequence = index.sequence().unwrap();
+            assert!(index.prepare_range_counts(1).unwrap());
+            assert_eq!(index.sequence().unwrap(), sequence);
+            // Subsequent ordinary changes maintain upgraded summaries.
+            index
+                .commit(vec![Change::Delete(key(42)), put(4097)])
+                .unwrap();
+            assert_eq!(
+                index.range_summary(key(42), Some(key(2049))).unwrap().count,
+                2006
+            );
+            break;
+        }
+    }
+    assert!(calls > 1);
+    let mut index = Index::open(&directory.0, true).unwrap();
+    assert_eq!(index.range_summary(key(0), None).unwrap().count, 2049);
+}
+
+#[test]
+fn interrupted_or_full_disk_range_upgrades_recover_without_record_loss() {
+    use super::persistence::Stage;
+    for fault in [
+        Fault::Staged,
+        Fault::Published,
+        Fault::FirstPage,
+        Fault::Applied,
+        Fault::Unlinked,
+        Fault::Full(Stage::Wal),
+        Fault::Full(Stage::Directory),
+        Fault::Full(Stage::Tree),
+    ] {
+        let directory = Directory::new();
+        let mut index = Index::create(&directory.0).unwrap();
+        index.commit((0..200).map(put).collect()).unwrap();
+        legacy_range_index(&mut index);
+        index.inject(Some(fault));
+        let error = index.prepare_range_counts(1).unwrap_err();
+        assert!(!error.contains(directory.0.to_str().unwrap()));
+        assert!(!index.is_usable());
+        assert!(index.range_summary(key(0), None).is_err());
+        drop(index);
+        let mut index = Index::open(&directory.0, false).unwrap();
+        assert!(index.prepare_range_counts(1).unwrap());
+        assert_eq!(
+            index.range_summary(key(3), Some(key(197))).unwrap().count,
+            194
+        );
+        for id in 0..200 {
+            assert_eq!(
+                index.get(&key(id)).unwrap(),
+                Some(id.to_be_bytes().to_vec())
+            );
+        }
+    }
+}
+
+#[test]
+fn counted_branches_reject_overflow_and_inconsistent_cardinalities() {
+    let directory = Directory::new();
+    let mut index = Index::create(&directory.0).unwrap();
+    index.commit((0..200).map(put).collect()).unwrap();
+    let bytes = tree::read_page(&mut index.tree, index.header.root).unwrap();
+    assert_eq!(&bytes[..8], b"MYNOUIN2"); // Older readers reject this version.
+    let mut node = tree::Node::decode(
+        &bytes,
+        index.header.root,
+        index.header.level,
+        index.header.next,
+        index.header.identity,
+    )
+    .unwrap();
+    let tree::Items::Branch(links) = &mut node.items else {
+        panic!("branch required")
+    };
+    links[0].count = Some(u64::MAX);
+    assert!(node.encode().unwrap_err().contains("overflow"));
+    let tree::Items::Branch(links) = &mut node.items else {
+        unreachable!()
+    };
+    links[0].count = Some(1);
+    index
+        .tree
+        .seek(SeekFrom::Start(tree::offset(index.header.root).unwrap()))
+        .unwrap();
+    index.tree.write_all(&node.encode().unwrap()).unwrap();
+    index.cache.clear();
+    assert!(
+        index
+            .range_summary(key(0), None)
+            .unwrap_err()
+            .contains("disagrees")
+    );
+}
+
+#[test]
+fn forged_count_upgrade_wal_is_rejected_before_writing_any_state() {
+    for change_entries in [false, true] {
+        let directory = Directory::new();
+        let mut index = Index::create(&directory.0).unwrap();
+        index.commit((0..200).map(put).collect()).unwrap();
+        legacy_range_index(&mut index);
+        let mut staged = tree::Tree::new(&mut index.tree, index.header, &mut index.cache);
+        assert!(staged.prepare_counts(1).unwrap());
+        let root = staged.dirty.get_mut(&index.header.root).unwrap();
+        let tree::Items::Branch(links) = &mut root.items else {
+            unreachable!()
+        };
+        if change_entries {
+            links[0].key[63] ^= 1;
+        } else {
+            // Keep the root total valid while lying about two subtrees.
+            links[0].count = links[0].count.map(|count| count + 1);
+            links[1].count = links[1].count.map(|count| count - 1);
+        }
+        staged.header.sequence += 1;
+        let transaction = super::persistence::Transaction {
+            before: index.header,
+            after: staged.header,
+            pages: staged.dirty,
+            actions: Vec::new(),
+        };
+        let wal = transaction.encode().unwrap();
+        drop(index);
+        let path = directory.0.join("transaction.bin");
+        fs::write(&path, wal).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        let before = contents(&directory.0);
+        assert!(Index::open(&directory.0, false).is_err());
+        assert_eq!(contents(&directory.0), before);
+    }
+}
+
+#[test]
+fn partial_range_upgrade_redo_repairs_a_torn_branch_and_resumes_after_mutations() {
+    let directory = Directory::new();
+    let mut index = Index::create(&directory.0).unwrap();
+    index.commit((0..2049).map(put).collect()).unwrap();
+    legacy_range_index(&mut index);
+    let root = tree::read_page(&mut index.tree, index.header.root).unwrap();
+    let root = tree::Node::decode(
+        &root,
+        index.header.root,
+        index.header.level,
+        index.header.next,
+        index.header.identity,
+    )
+    .unwrap();
+    let tree::Items::Branch(links) = root.items else {
+        unreachable!()
+    };
+    let first_branch = links[0].page;
+    index.inject(Some(Fault::Published));
+    assert!(index.prepare_range_counts(1).is_err());
+    drop(index);
+    let before = contents(&directory.0);
+    assert!(Index::open(&directory.0, true).is_err());
+    assert_eq!(contents(&directory.0), before);
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .open(directory.0.join("tree.bin"))
+        .unwrap();
+    file.seek(SeekFrom::Start(tree::offset(first_branch).unwrap()))
+        .unwrap();
+    file.write_all(&[0; 128]).unwrap();
+    file.sync_all().unwrap();
+    let mut index = Index::open(&directory.0, false).unwrap();
+    // A saved count stays correct even if ordinary operations run between
+    // upgrade batches. Unknown siblings remain explicitly unknown.
+    index
+        .commit(vec![Change::Delete(key(13)), put(4097)])
+        .unwrap();
+    while !index.prepare_range_counts(1).unwrap() {}
+    assert_eq!(index.range_summary(key(0), None).unwrap().count, 2049);
+    assert_eq!(
+        index.range_summary(key(0), Some(key(100))).unwrap().count,
+        99
+    );
+    assert_eq!(index.get(&key(13)).unwrap(), None);
+    assert!(index.get(&key(4097)).unwrap().is_some());
 }

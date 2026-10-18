@@ -69,6 +69,56 @@ readable, and replacing or deleting such a key removes its file. Reads never
 list a directory. Checksums detect corruption, not malicious rewrites by
 somebody who can replace state and its checksums.
 
+## Exact range summaries
+
+`inventory::Index::range_summary(start, end)` returns an exact key count and
+first key for `[start, end)`; `None` means no upper bound. An equal start/end
+is empty; a reversed range is refused. This is an index primitive for #246:
+per-store due-work definitions, last-pass timestamps and status exposure are
+still pending. A tree entry can be a secondary key, so its count is not
+necessarily a count of jobs, episodes or transfers.
+
+New branch pages (`MYNOUIN2`) carry an optional checked cardinality beside
+each child reference; leaves retain `MYNOUIN1`. Inserts, replacements,
+splits, deletions and root collapse maintain known cardinalities in the same
+WAL transaction as the records. The range read subtracts two ranks and reads
+the first key, at most three root-to-leaf paths with at most 32 links per node.
+It does not read values, enumerate files, or scan all the rows of the range.
+Counts describe index keys; they do not verify the contents of record values.
+
+Old branches remain readable by point/page APIs, with unknown counts kept
+explicit. Reading a range that needs unknown counts returns an upgrade error
+instead of a partial count or a scan. Opening an index does not migrate it.
+An ordinary write can fill counts along the path it already changes; completing
+legacy counts is an explicit `prepare_range_counts(budget)` operation for the
+future store integration. There is no new CLI migration command in this increment.
+
+The caller repeats this operation until it returns `true`, with a branch-page
+budget of 1–256. Each batch stages at most budget plus tree height branch pages;
+child visits and redo validation cost `O(32 * (budget + height))`. Completed
+subtree totals and partial parents persist, so a restart resumes rather than
+rescanning completed subtrees. The operation writes metadata-only WAL batches,
+keeps the root allocation, records and value-log bytes unchanged, and advances
+the sequence. Redo validates that existing keys/pointers are unchanged and that
+new counts match their child nodes. An uncertain write pauses reads and writes
+until writable recovery, as for ordinary transactions. Read-only callers never
+upgrade. A completed upgrade is a no-op when repeated.
+
+**Downgrade:** earlier binaries reject the new branch-page magic (including
+inside a pending WAL); they must not write a partially or fully upgraded store.
+Keep a complete stopped-store backup before a new binary writes to an index or
+before explicitly upgrading counts. Downgrading requires stopping Mynou and
+restoring that consistent backup, which loses later changes. This increment
+does not touch live stores or existing migration backups.
+
+Regression tests compare ranges to independent ordered collections through
+growth, unordered churn, replacement, deletion, root collapse and restart;
+check equal timestamps and cold-page read bounds; and cover explicit legacy
+upgrade, restart between batches, read-only preservation, forged metadata redo,
+interruption and storage exhaustion at WAL, directory and tree stages. These
+synthetic checks establish correctness and operation bounds, not the multi-store
+macOS RSS/timing evidence still required by #217.
+
 ## Value log
 
 On Apple platforms every durability flush is an `F_FULLFSYNC`, which flushes

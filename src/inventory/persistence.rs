@@ -164,8 +164,19 @@ impl Transaction {
             }
         }
         let count = reader.u32()? as usize;
-        if count == 0 || count > MAX_CHANGES {
+        if count > MAX_CHANGES {
             return Err("Invalid inventory WAL action count".into());
+        }
+        // Range-count upgrades only replace branch metadata. They leave the
+        // root, allocation, records and value log unchanged, and advance the
+        // sequence once like every other recoverable transaction.
+        if count == 0 {
+            let mut unchanged = after;
+            unchanged.sequence = before.sequence;
+            if unchanged != before || pages.is_empty() || pages.values().any(|node| node.level == 0)
+            {
+                return Err("Invalid inventory metadata-only WAL".into());
+            }
         }
         let mut actions = Vec::new();
         let mut keys = BTreeSet::new();
@@ -259,6 +270,9 @@ impl Transaction {
         let mut cache = tree::Cache::new();
         let mut overlay = Tree::new(file, self.after, &mut cache);
         overlay.dirty = self.pages.clone();
+        if self.actions.is_empty() {
+            overlay.validate_count_upgrade()?;
+        }
         for action in &self.actions {
             if overlay.find(&action.key)? != action.reference()? {
                 return Err("Inventory WAL records disagree with its tree pages".into());

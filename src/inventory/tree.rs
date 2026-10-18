@@ -11,6 +11,7 @@ const FANOUT: usize = 32;
 /// Operation bound on the distinct pages one transaction may rewrite.
 pub(super) const MAX_DIRTY_PAGES: usize = 16_384;
 const NODE_MAGIC: &[u8; 8] = b"MYNOUIN1";
+const COUNTED_MAGIC: &[u8; 8] = b"MYNOUIN2";
 const HEADER_MAGIC: &[u8; 8] = b"MYNOUI01";
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -194,6 +195,8 @@ impl ValueRef {
 pub(super) struct Link {
     pub key: Key,
     pub page: u64,
+    /// None in legacy branches, until explicitly upgraded. Never guess zero.
+    pub count: Option<u64>,
 }
 
 #[derive(Clone, Debug)]
@@ -211,6 +214,28 @@ pub(super) struct Node {
 }
 
 impl Node {
+    pub(super) fn count(&self) -> Result<Option<u64>> {
+        match &self.items {
+            Items::Leaf(items) => Ok(Some(items.len() as u64)),
+            Items::Branch(items) => {
+                let mut total = 0_u64;
+                let mut complete = true;
+                for link in items {
+                    let Some(count) = link.count else {
+                        complete = false;
+                        continue;
+                    };
+                    if count == 0 {
+                        return Err("Empty inventory subtree count".into());
+                    }
+                    total = total
+                        .checked_add(count)
+                        .ok_or("Inventory subtree count overflow")?;
+                }
+                Ok(complete.then_some(total))
+            }
+        }
+    }
     fn len(&self) -> usize {
         match &self.items {
             Items::Leaf(items) => items.len(),
@@ -236,7 +261,9 @@ impl Node {
             return Err("Invalid inventory node size".into());
         }
         let mut bytes = [0; PAGE_SIZE];
-        bytes[..8].copy_from_slice(NODE_MAGIC);
+        let counted = matches!(&self.items, Items::Branch(items) if items.iter().any(|link| link.count.is_some()));
+        bytes[..8].copy_from_slice(if counted { COUNTED_MAGIC } else { NODE_MAGIC });
+        self.count()?;
         bytes[8..16].copy_from_slice(&self.id.to_le_bytes());
         bytes[16] = self.level;
         bytes[17..19].copy_from_slice(&(self.len() as u16).to_le_bytes());
@@ -256,7 +283,11 @@ impl Node {
                 for link in items {
                     bytes[cursor..cursor + 64].copy_from_slice(&link.key);
                     bytes[cursor + 64..cursor + 72].copy_from_slice(&link.page.to_le_bytes());
-                    cursor += 72;
+                    if counted {
+                        bytes[cursor + 72..cursor + 80]
+                            .copy_from_slice(&link.count.unwrap_or(0).to_le_bytes());
+                    }
+                    cursor += if counted { 80 } else { 72 };
                 }
             }
         }
@@ -264,7 +295,11 @@ impl Node {
         Ok(bytes)
     }
     pub fn decode(bytes: &[u8], id: u64, level: u8, next: u64, identity: [u8; 32]) -> Result<Self> {
-        check(bytes, NODE_MAGIC)?;
+        let counted = bytes.get(..8) == Some(COUNTED_MAGIC.as_slice());
+        check(bytes, if counted { COUNTED_MAGIC } else { NODE_MAGIC })?;
+        if counted && level == 0 {
+            return Err("Invalid counted inventory leaf".into());
+        }
         let count = u16::from_le_bytes(bytes[17..19].try_into().map_err(|_| "Invalid node count")?)
             as usize;
         if integer(bytes, 8)? != id
@@ -329,14 +364,23 @@ impl Node {
                 if page == 0 || page >= next || page == id {
                     return Err("Invalid inventory child reference".into());
                 }
-                branches.push(Link { key, page });
-                cursor += 72;
+                let count = if counted {
+                    integer(bytes, cursor + 72)?
+                } else {
+                    0
+                };
+                branches.push(Link {
+                    key,
+                    page,
+                    count: (count != 0).then_some(count),
+                });
+                cursor += if counted { 80 } else { 72 };
             }
         }
         if bytes[cursor..PAGE_SIZE - 32].iter().any(|byte| *byte != 0) {
             return Err("Invalid inventory node padding".into());
         }
-        Ok(Self {
+        let node = Self {
             identity,
             id,
             level,
@@ -345,7 +389,9 @@ impl Node {
             } else {
                 Items::Branch(branches)
             },
-        })
+        };
+        node.count()?;
+        Ok(node)
     }
 }
 
@@ -353,6 +399,7 @@ impl Node {
 struct Bounds {
     upper: Option<Key>,
     lower: Option<Key>,
+    count: Option<u64>,
 }
 
 /// Decoded pages that were verified against their checksum and are still
@@ -402,6 +449,9 @@ impl<'a> Tree<'a> {
         };
         if node.level != level
             || bounds
+                .count
+                .is_some_and(|count| node.count().ok() != Some(Some(count)))
+            || bounds
                 .upper
                 .is_some_and(|key| node.last().ok() != Some(key))
             || bounds
@@ -434,6 +484,7 @@ impl<'a> Tree<'a> {
                     };
                     id = link.page;
                     bounds = Bounds {
+                        count: link.count,
                         upper: Some(link.key),
                         lower: if index == 0 {
                             bounds.lower
@@ -446,6 +497,225 @@ impl<'a> Tree<'a> {
         }
         Err("Invalid inventory traversal".into())
     }
+    /// Count keys strictly below a boundary, following one tree path.
+    fn rank(&mut self, key: &Key) -> Result<u64> {
+        let mut id = self.header.root;
+        let mut bounds = Bounds {
+            count: Some(self.header.count),
+            ..Bounds::default()
+        };
+        let mut rank = 0_u64;
+        for level in (0..=self.header.level).rev() {
+            let node = self.node(id, level, bounds)?;
+            match node.items {
+                Items::Leaf(items) => {
+                    return rank
+                        .checked_add(items.partition_point(|(found, _)| found < key) as u64)
+                        .ok_or_else(|| "Inventory rank overflow".into());
+                }
+                Items::Branch(items) => {
+                    let mut next = None;
+                    let mut lower = bounds.lower;
+                    for child in items {
+                        if child.key < *key {
+                            rank = rank
+                                .checked_add(child.count.ok_or(
+                                    "Inventory range counts need an explicit writable upgrade",
+                                )?)
+                                .filter(|rank| *rank <= self.header.count)
+                                .ok_or("Inventory rank overflow")?;
+                        } else {
+                            next = Some((
+                                child.page,
+                                Bounds {
+                                    upper: Some(child.key),
+                                    lower,
+                                    count: child.count,
+                                },
+                            ));
+                            break;
+                        }
+                        lower = Some(child.key);
+                    }
+                    let Some((page, child_bounds)) = next else {
+                        return Ok(rank);
+                    };
+                    id = page;
+                    bounds = child_bounds;
+                }
+            }
+        }
+        Err("Invalid inventory rank traversal".into())
+    }
+
+    pub(super) fn summary(&mut self, start: Key, end: Option<Key>) -> Result<super::RangeSummary> {
+        if end.is_some_and(|end| end < start) {
+            return Err("Invalid inventory summary range".into());
+        }
+        if self.header.root == 0 || end == Some(start) {
+            return Ok(super::RangeSummary {
+                count: 0,
+                first: None,
+            });
+        }
+        let root = self.node(self.header.root, self.header.level, Bounds::default())?;
+        if root.count()?.is_none() {
+            return Err("Inventory range counts need an explicit writable upgrade".into());
+        }
+        if root.count()? != Some(self.header.count) {
+            return Err("Inventory subtree count disagrees with the root".into());
+        }
+        let lower = self.rank(&start)?;
+        let upper = end.map_or(Ok(self.header.count), |end| self.rank(&end))?;
+        let count = upper
+            .checked_sub(lower)
+            .ok_or("Invalid inventory range ranks")?;
+        let first = if count == 0 {
+            None
+        } else {
+            Some(
+                self.range(
+                    &Query {
+                        start,
+                        end,
+                        limit: 1,
+                        ..Query::default()
+                    },
+                    1,
+                )?
+                .first()
+                .ok_or("Inventory range count disagrees with its first key")?
+                .0,
+            )
+        };
+        Ok(super::RangeSummary { count, first })
+    }
+
+    /// Only missing summaries are visited. Partial parents are saved too, so
+    /// restart skips completed subtrees. At most budget + tree height branch
+    /// pages are dirtied; each has at most FANOUT children.
+    pub(super) fn prepare_counts(&mut self, budget: usize) -> Result<bool> {
+        if self.header.root == 0 {
+            return Ok(true);
+        }
+        let count = self.upgrade_counts(
+            self.header.root,
+            self.header.level,
+            Bounds::default(),
+            budget,
+        )?;
+        if count.is_some_and(|count| count != self.header.count) {
+            return Err("Inventory subtree count disagrees with the root".into());
+        }
+        Ok(count.is_some())
+    }
+
+    /// A metadata-only redo may add counts, but may not change any branch
+    /// identity, key or child pointer. A torn page is restored from the
+    /// checksummed WAL as with record transactions.
+    pub(super) fn validate_count_upgrade(&mut self) -> Result<()> {
+        for (id, node) in &self.dirty {
+            let Items::Branch(new) = &node.items else {
+                return Err("Invalid inventory count-upgrade page".into());
+            };
+            let bytes = read_page(self.file, *id)?;
+            if let Ok(old) = Node::decode(
+                &bytes,
+                *id,
+                node.level,
+                self.header.next,
+                self.header.identity,
+            ) {
+                let Items::Branch(old) = old.items else {
+                    return Err("Inventory count upgrade changed a leaf".into());
+                };
+                if old.len() != new.len()
+                    || old.iter().zip(new).any(|(old, new)| {
+                        old.key != new.key
+                            || old.page != new.page
+                            || old.count.is_some_and(|count| Some(count) != new.count)
+                    })
+                {
+                    return Err("Inventory count upgrade changed existing entries".into());
+                }
+            }
+        }
+        let upgraded = self.dirty.values().cloned().collect::<Vec<_>>();
+        for node in upgraded {
+            let Items::Branch(links) = node.items else {
+                unreachable!("checked above")
+            };
+            let mut lower = None;
+            for child in links {
+                if child.count.is_some() {
+                    self.node(
+                        child.page,
+                        node.level - 1,
+                        Bounds {
+                            upper: Some(child.key),
+                            lower,
+                            count: child.count,
+                        },
+                    )?;
+                }
+                lower = Some(child.key);
+            }
+        }
+        if self.header.root != 0 {
+            let root = self.node(self.header.root, self.header.level, Bounds::default())?;
+            if root
+                .count()?
+                .is_some_and(|count| count != self.header.count)
+            {
+                return Err("Inventory subtree count disagrees with the root".into());
+            }
+        }
+        Ok(())
+    }
+
+    fn upgrade_counts(
+        &mut self,
+        id: u64,
+        level: u8,
+        bounds: Bounds,
+        budget: usize,
+    ) -> Result<Option<u64>> {
+        let mut node = self.node(id, level, bounds)?;
+        if let Some(count) = node.count()? {
+            return Ok(Some(count));
+        }
+        let Items::Branch(items) = &mut node.items else {
+            unreachable!("leaves have counts")
+        };
+        let mut changed = false;
+        let mut lower = bounds.lower;
+        for child in items {
+            if child.count.is_none() {
+                if self.dirty.len() >= budget {
+                    break;
+                }
+                child.count = self.upgrade_counts(
+                    child.page,
+                    level - 1,
+                    Bounds {
+                        upper: Some(child.key),
+                        lower,
+                        count: None,
+                    },
+                    budget,
+                )?;
+                // A partially upgraded child is also durable progress, even
+                // when its total is not yet known.
+                changed |= child.count.is_some();
+            }
+            lower = Some(child.key);
+        }
+        let count = node.count()?;
+        if changed {
+            self.dirty.insert(id, node);
+        }
+        Ok(count)
+    }
     pub fn range(&mut self, query: &Query, limit: usize) -> Result<Vec<(Key, ValueRef)>> {
         let mut rows = Vec::new();
         if self.header.root != 0 {
@@ -453,6 +723,7 @@ impl<'a> Tree<'a> {
                 Link {
                     key: [255; 64],
                     page: self.header.root,
+                    count: Some(self.header.count),
                 },
                 self.header.level,
                 Bounds::default(),
@@ -504,6 +775,7 @@ impl<'a> Tree<'a> {
                             child,
                             level - 1,
                             Bounds {
+                                count: child.count,
                                 upper: Some(child.key),
                                 lower,
                             },
@@ -545,6 +817,7 @@ impl<'a> Tree<'a> {
                 vec![Link {
                     key: *key,
                     page: id,
+                    count: Some(1),
                 }]
             } else {
                 Vec::new()
@@ -643,6 +916,7 @@ impl<'a> Tree<'a> {
                     child.page,
                     level - 1,
                     Bounds {
+                        count: child.count,
                         upper: Some(child.key),
                         lower: if index == 0 {
                             bounds.lower
@@ -676,6 +950,7 @@ impl<'a> Tree<'a> {
             links.push(Link {
                 key: right.last()?,
                 page: new_id,
+                count: right.count()?,
             });
             self.dirty.insert(new_id, right);
         }
@@ -684,6 +959,7 @@ impl<'a> Tree<'a> {
             Link {
                 key: node.last()?,
                 page: id,
+                count: node.count()?,
             },
         );
         self.dirty.insert(id, node);
