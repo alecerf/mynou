@@ -2,7 +2,7 @@
 
 Contributors use isolated Git worktrees and validate locally first, using Docker
 wherever practical and native macOS for platform-specific checks. See the
-[local validation commands](../engineering/README.md#local-validation). Batch
+[local validation commands](#local-validation). Batch
 validated changes before pushing to minimize CI runs. GitHub Actions performs
 required final checks and publishes releases. A run is evidence for its exact
 commit only: an earlier green run does not validate later changes.
@@ -12,10 +12,9 @@ commit only: an earlier green run does not validate later changes.
 | Workflow | Runs on | Purpose |
 | --- | --- | --- |
 | Mynou CI | Pull requests; a pushed `v<version>` tag | Dependency graph, format, Clippy, all tests, the macOS arm64 build and demo; a version tag publishes after the same checks |
-| Engineering checks | Pull requests | Organization policy and engineering tooling scenarios |
+| Repository checks | Pull requests | Repository policy and release/security tooling scenarios |
 | Release policy | Pull requests | Version changes only in a release PR |
 | Security audit | Pull requests, `trunk`, hourly | Reachable Git objects and Actions logs |
-| Format source branches | Pushes to `format/**` | Runs rustfmt with Rust 1.99.0 and commits the edits; validates and publishes nothing |
 
 ## Mynou CI
 
@@ -31,7 +30,7 @@ on `trunk`, and it raised the version over its parent. A failed decision publish
 
 1. **validate** checks the Cargo graph offline (exactly one package, `mynou`,
    with no dependencies), formatting, Clippy with warnings denied, the test
-   scheduler. The engineering policy and its tests run in the required Linux
+   scheduler. The repository policy and tooling tests run in the required Linux
    `organization` check. It then runs every Cargo test harness,
    using the physical runner directory as temporary directory because Mynou refuses the
    symbolic link behind macOS's default one.
@@ -115,8 +114,7 @@ bumps the version and deletes `docs/releases/unreleased.md`, the one file that
 holds the notes of everything not yet released; once it is merged, pushing the tag
 `v<version>` publishes it with a changelog generated from those notes, grouped by
 category (Added, Changed, Deprecated, Removed, Fixed, Security) and ending with a
-link to the full comparison; see the
-[engineering runbook](../engineering/README.md#releases). The `Release policy`
+link to the full comparison. The `Release policy`
 check refuses version changes anywhere else.
 
 The release job runs
@@ -157,3 +155,62 @@ execute after failure.
 Checksums establish integrity relative to the same release's manifest, not Apple
 signing or publisher identity. Review the exact source and successful Actions
 run.
+
+## Local validation
+
+Use Python 3.11 or newer for repository tooling and the Rust toolchain pinned in
+`rust-toolchain.toml`. No credentials are needed for these local checks.
+
+```sh
+docker build -t mynou-local-checks -f .github/scripts/Dockerfile.local .github/scripts
+worktree_path="$(pwd -P)"
+common_git_dir="$(git rev-parse --path-format=absolute --git-common-dir)"
+docker run --rm --network none \
+  --mount "type=bind,src=$worktree_path,dst=$worktree_path" \
+  --mount "type=bind,src=$common_git_dir,dst=$common_git_dir,readonly" \
+  --workdir "$worktree_path" --env PYTHONDONTWRITEBYTECODE=1 \
+  mynou-local-checks sh -eu -c '
+    python3 .github/scripts/policy.py
+    python3 -m unittest discover -s .github/scripts/tests -p "test_*.py" -v
+    python3 -m unittest discover -s .github/scripts -p "test_*.py" -v
+  '
+```
+
+For portable Rust checks, build `.github/scripts/Dockerfile.rust` with the same
+context. The image runs as a non-root test user so permission fixtures can deny
+writes. Mount this worktree read-only at `/workspace` and give `/workspace/target`
+a writable, per-worktree Docker volume. Use `--network none`; fixtures use only
+synthetic media and loopback peers. Run:
+
+```sh
+cargo fmt --all --check
+cargo clippy --all-targets --offline --locked -- -D warnings
+python3 .github/scripts/crypto_fixtures.py /tmp/mynou-crypto-vectors.json
+export MYNOU_CRYPTO_FIXTURES=/tmp/mynou-crypto-vectors.json TMPDIR=/tmp
+cargo metadata --offline --locked --format-version 1 > /tmp/mynou-metadata.json
+cargo test --all-targets --no-run --offline --locked --message-format=json-render-diagnostics > target/local-build.jsonl
+python3 .github/scripts/parallel_tests.py target/local-build.jsonl --metadata /tmp/mynou-metadata.json --output target/local-results --timeout 480
+```
+
+Use a fresh results directory for each invocation. Native macOS checks are still
+needed for Apple-specific behavior. Docker results prove only the Linux paths.
+The separate [WireGuard interoperability guide](wireguard-interop.md) documents
+the confined independent-peer test and its additional requirements.
+
+### Preparing a release
+
+Use a separate PR labeled `release` with one signed commit that changes only the
+version in `Cargo.toml` and `Cargo.lock` and deletes `docs/releases/unreleased.md`.
+Keep weekly cadence and shipped-change checks; `release-now` is reserved for a
+security fix or explicit owner request. After review, green required checks and
+integration into `trunk`, plan the tag with:
+
+```sh
+python3 .github/scripts/releases.py tag <merged-pr-number>
+```
+
+The command requires `GH_TOKEN` or `GITHUB_TOKEN`; keep it outside the repository
+and test containers. Review the reported commit and tag, then repeat with
+`--create` to create the validated tag. Confirm Actions publishes the executable
+and `SHA256SUMS`. Never move published tags or replace published assets; fix a
+failed published version with a new patch release.

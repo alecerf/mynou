@@ -9,7 +9,7 @@ The peer is the WireGuard project's independently authored
 [wireguard-go](https://git.zx2c4.com/wireguard-go), MIT licensed, tag
 `0.0.20250522`, commit `f333402bd9cbe0f3eeb02507bd14e23d7d639280`.
 It has separate Noise, cookie, timer and replay implementations. The
-[peer Dockerfile](/engineering/Dockerfile.wireguard-peer) pins:
+[peer Dockerfile](/.github/scripts/Dockerfile.wireguard-peer) pins:
 
 - Go module `golang.zx2c4.com/wireguard@v0.0.0-20250521234502-f333402bd9cb`,
   `h1:whnFRlWMcXI9d+ZbWg+4sHnLp52d5yiIPUxMBSt4X9A=` (Go checksum
@@ -76,9 +76,9 @@ scenario run is clearly marked diagnostic and never gate evidence.
 From the Issue worktree, with Docker available:
 
 ```sh
-docker build -t mynou-wireguard-peer -f engineering/Dockerfile.wireguard-peer engineering
-docker build -t mynou-local-rust -f engineering/Dockerfile.rust engineering
-python3 engineering/wireguard_interop.py --target-volume mynou-rust-220
+docker build -t mynou-wireguard-peer -f .github/scripts/Dockerfile.wireguard-peer .github/scripts
+docker build -t mynou-local-rust -f .github/scripts/Dockerfile.rust .github/scripts
+python3 .github/scripts/wireguard_interop.py --target-volume mynou-rust-220
 ```
 
 The separate [WireGuard interoperability workflow](/.github/workflows/wireguard-interop.yml)

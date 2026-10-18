@@ -1,4 +1,4 @@
-"""Small bounded GitHub REST client for engineering tooling; Python std only."""
+"""Small bounded GitHub REST client for release tooling; Python std only."""
 import json
 import os
 from pathlib import Path
@@ -6,7 +6,7 @@ import re
 import urllib.error
 import urllib.request
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 MAX_RESPONSE = 4 * 1024 * 1024
 MAX_REQUESTS = 200
 # Content-addressed reads whose answer can never change: one fetch per process.
@@ -27,10 +27,10 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def config(root=ROOT):
-    value = json.loads((root / ".github/engineering.json").read_text())
-    if value.get("schema") != 2:
-        raise ValueError("Unsupported engineering configuration schema")
-    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", value.get("repository") or ""):
+    value = json.loads((root / ".github/release-policy.json").read_text())
+    if value.get("schema") != 1:
+        raise ValueError("Unsupported release configuration schema")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}", value.get("repository") or ""):
         raise ValueError("Invalid GitHub repository")
     return value
 
@@ -64,7 +64,7 @@ class GitHub:
         request = urllib.request.Request("https://api.github.com" + path, data=data, method=method,
             headers={"Authorization": "Bearer " + self.token, "Accept": "application/vnd.github+json",
                 "X-GitHub-Api-Version": "2022-11-28", "Content-Type": "application/json",
-                "User-Agent": "mynou-engineering"})
+                "User-Agent": "mynou-release"})
         # Claims and verdicts must be current: ask caches to revalidate.
         if method == "GET":
             request.add_header("Cache-Control", "no-cache")

@@ -9,7 +9,19 @@ import re
 import sys
 
 from github import APIError, GitHub, config
-from protocol import instant, labels as label_names, stamp
+def instant(value):
+    if not isinstance(value, str):
+        raise ValueError("GitHub timestamp is missing")
+    return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+
+
+def stamp(value):
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def label_names(item):
+    return {label["name"] for label in item.get("labels", [])}
+
 
 PRODUCT_DIRS = ("src/", "examples/", ".cargo/")
 PRODUCT_FILES = {"build.rs", "rust-toolchain.toml"}

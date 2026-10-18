@@ -32,7 +32,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Audit all reachable Git objects without exposing findings
-        run: python3 engineering/secret_audit.py history --output "$RUNNER_TEMP/source-audit.json"
+        run: python3 .github/scripts/secret_audit.py history --output "$RUNNER_TEMP/source-audit.json"
       - name: Preserve redacted source coverage
         if: always()
         uses: actions/upload-artifact@v7.0.1
@@ -59,7 +59,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MYNOU_FULL_LOG_AUDIT: ${{ github.event_name == 'workflow_dispatch' && inputs.full_log_audit }}
-        run: python3 engineering/secret_audit.py logs --output "$RUNNER_TEMP/actions-audit.json"
+        run: python3 .github/scripts/secret_audit.py logs --output "$RUNNER_TEMP/actions-audit.json"
       - name: Preserve redacted log coverage
         if: always()
         uses: actions/upload-artifact@v7.0.1

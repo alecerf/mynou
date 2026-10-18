@@ -7,7 +7,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from github import APIError
-import protocol
+
 import releases
 
 AT = datetime(2026, 10, 16, 12, 0, tzinfo=timezone.utc)
@@ -60,8 +60,8 @@ class ReleasePullRequests(unittest.TestCase):
                                                   files=release_files("0.22.35"))[0])
 
     def test_a_release_pr_changes_only_the_version_and_notes(self):
-        files = dict(release_files(), **{"src/lib.rs": "modified", "engineering/board.py": "added"})
-        self.assertIn("move these to their own PRs: engineering/board.py, src/lib.rs", " ".join(self.check(files=files)))
+        files = dict(release_files(), **{"src/lib.rs": "modified", ".github/scripts/policy.py": "added"})
+        self.assertIn("move these to their own PRs: .github/scripts/policy.py, src/lib.rs", " ".join(self.check(files=files)))
         # A rename's old path counts: moving product code into docs/releases/ is not a release.
         renamed = dict(release_files(), **{"src/old.rs": "removed"})
         self.assertIn("src/old.rs", " ".join(self.check(files=renamed)))
@@ -114,7 +114,7 @@ class Cadence(unittest.TestCase):
         same = manifest()
         for path in ["src/main.rs", "examples/demo.mp4", "rust-toolchain.toml"]:
             self.assertTrue(releases.shipped({path}, False, same, same), path)
-        docs = {"docs/ci.md", "engineering/board.py", ".github/workflows/ci.yml", "AGENTS.md", "Cargo.lock"}
+        docs = {"docs/ci.md", ".github/scripts/policy.py", ".github/workflows/ci.yml", "AGENTS.md", "Cargo.lock"}
         self.assertFalse(releases.shipped(docs, False, same, manifest("0.22.35")))
         self.assertTrue(releases.shipped(docs, True, same, same))
         self.assertTrue(releases.shipped(docs, False, same, manifest(lto="fat")))
@@ -146,7 +146,7 @@ class FakeAPI:
         if path in ("contents/docs/releases/unreleased.md?ref=" + BASE, "contents/docs/releases/unreleased.md?ref=" + HEAD):
             return text_file(self.notes)
         if path == "releases/latest":
-            return {"tag_name": "v0.22.34", "published_at": protocol.stamp(AT - timedelta(days=8))}
+            return {"tag_name": "v0.22.34", "published_at": releases.stamp(AT - timedelta(days=8))}
         if path == "git/ref/tags/v0.23.0":
             raise APIError(404)
         if path == "compare/v0.22.34..." + HEAD:
@@ -261,7 +261,7 @@ class TagAPI:
                 raise APIError(404)
             return text_file(self.notes)
         if path == "releases/latest":
-            return {"tag_name": self.latest["tag"], "published_at": protocol.stamp(self.latest["published_at"])}
+            return {"tag_name": self.latest["tag"], "published_at": releases.stamp(self.latest["published_at"])}
         if path == "git/ref/tags/v0.23.0":
             if self.exists:
                 return {"ref": "refs/tags/v0.23.0"}

@@ -1,6 +1,6 @@
 name: Add or improve something
-description: Provide product intent; the organization owns scope, decisions, implementation and review.
-labels: ['agent-work', 'enhancement', 'origin:user', 'status:inbox']
+description: Suggest an improvement to Mynou.
+labels: ['enhancement']
 body:
   - type: textarea
     id: intent

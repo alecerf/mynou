@@ -10,10 +10,10 @@ on:
       - 'src/crypto.rs'
       - 'src/crypto/**'
       - 'tests/wireguard_interop.rs'
-      - 'engineering/wireguard_interop.py'
-      - 'engineering/tests/test_wireguard_interop.py'
-      - 'engineering/Dockerfile.wireguard-peer'
-      - 'engineering/Dockerfile.rust'
+      - '.github/scripts/wireguard_interop.py'
+      - '.github/scripts/tests/test_wireguard_interop.py'
+      - '.github/scripts/Dockerfile.wireguard-peer'
+      - '.github/scripts/Dockerfile.rust'
       - 'rust-toolchain.toml'
       - '.github/workflows/wireguard-interop.yml'
   workflow_dispatch:
@@ -32,7 +32,7 @@ jobs:
           persist-credentials: false
       - name: Build the checksum-verified independent peer and Rust test image
         run: |
-          docker build -t mynou-wireguard-peer -f engineering/Dockerfile.wireguard-peer engineering
-          docker build -t mynou-local-rust -f engineering/Dockerfile.rust engineering
+          docker build -t mynou-wireguard-peer -f .github/scripts/Dockerfile.wireguard-peer .github/scripts
+          docker build -t mynou-local-rust -f .github/scripts/Dockerfile.rust .github/scripts
       - name: Exercise every required interoperability scenario
-        run: python3 engineering/wireguard_interop.py --target-volume mynou-rust-220
+        run: python3 .github/scripts/wireguard_interop.py --target-volume mynou-rust-220

@@ -1,7 +1,7 @@
 name: Something is broken
-description: Describe the problem; the engineering organization owns investigation and delivery.
+description: Report unexpected behavior.
 title: "Bug: "
-labels: ['agent-work', 'bug', 'origin:user', 'status:inbox']
+labels: ['bug']
 body:
   - type: textarea
     id: intent

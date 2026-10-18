@@ -81,7 +81,7 @@ jobs:
           if sys.argv[3] and parse(sys.argv[3]) >= parse(sys.argv[2]):
               sys.exit("The version does not exceed the latest release " + sys.argv[3] + ".")
           RAISED
-          git show "$GITHUB_SHA^:docs/releases/unreleased.md" | env -u GH_TOKEN python3 engineering/releases.py notes --tag "$GITHUB_REF_NAME" > /dev/null
+          git show "$GITHUB_SHA^:docs/releases/unreleased.md" | env -u GH_TOKEN python3 .github/scripts/releases.py notes --tag "$GITHUB_REF_NAME" > /dev/null
           echo "v$VERSION is a trunk commit; this run publishes it once every check passes." >> "$GITHUB_STEP_SUMMARY"
           echo "publish=true" >> "$GITHUB_OUTPUT"
   validate:

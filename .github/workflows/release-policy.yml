@@ -23,4 +23,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: python3 engineering/releases.py check-pr "$PR_NUMBER"
+        run: python3 .github/scripts/releases.py check-pr "$PR_NUMBER"

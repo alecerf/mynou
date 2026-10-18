@@ -1,15 +1,10 @@
-Describe the problem and resulting user behavior.
+Describe the problem and resulting behavior.
 
 Closes #ISSUE
 
-Implementation and decisions: explain only what helps assess the change.
+Explain relevant decisions and limitations.
 
-Verification: state the checked commit, local commands, Docker/native environment,
-results and coverage gaps; link actual required Actions runs and behavior evidence.
-Batch locally validated changes before pushing. Do not claim unfinished checks passed.
+Validation: commands, environment, results and any coverage gaps.
 
-Checklist: one Issue, one branch, one isolated worktree, this one PR. Commits use
-signed Conventional Commits (`<type>(<scope>): <summary>`), with GitHub `Verified`
-status checked for every commit. Work PRs keep the version and add
-user-facing notes to `docs/releases/unreleased.md` (`## <Category>: <Title>`); only a PR labeled
-`release` bumps it. When ready, comment `/wait qa`.
+Keep version changes in a release PR. Add user-facing changes to
+`docs/releases/unreleased.md` using `## <Category>: <Title>`.

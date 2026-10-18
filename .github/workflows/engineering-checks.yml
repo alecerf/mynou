@@ -1,4 +1,4 @@
-name: Engineering checks
+name: Repository checks
 on:
   pull_request:
   workflow_dispatch:
@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - name: Verify policy, Skills and engineering tooling
-        run: python3 engineering/policy.py
-      - name: Exercise coordination and release-policy scenarios
-        run: python3 -m unittest discover -s engineering/tests -p 'test_*.py' -v
+      - name: Verify repository and release policy
+        run: python3 .github/scripts/policy.py
+      - name: Exercise release and security tooling scenarios
+        run: python3 -m unittest discover -s .github/scripts/tests -p 'test_*.py' -v

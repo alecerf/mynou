@@ -83,15 +83,15 @@ class Transport(unittest.TestCase):
         with self.assertRaises(ValueError):
             client.request("GET", "repos/original/mynou")
 
-    def test_configuration_requires_the_comment_protocol_schema_and_a_token(self):
+    def test_configuration_requires_the_release_configuration_schema_and_a_token(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / ".github").mkdir()
-            for value in [{"schema": 1, "repository": "original/mynou"}, {"schema": 2, "repository": "not a repo"}]:
-                (root / ".github/engineering.json").write_text(json.dumps(value))
+            for value in [{"schema": 2, "repository": "original/mynou"}, {"schema": 2, "repository": "not a repo"}]:
+                (root / ".github/release-policy.json").write_text(json.dumps(value))
                 with self.subTest(value=value), self.assertRaises(ValueError):
                     github.config(root)
-            (root / ".github/engineering.json").write_text(json.dumps(dict(CFG, schema=2)))
+            (root / ".github/release-policy.json").write_text(json.dumps(dict(CFG, schema=1)))
             self.assertEqual(github.config(root)["repository"], "original/mynou")
         with patch.dict(os.environ, {}, clear=True), self.assertRaises(ValueError):
             GitHub(CFG)

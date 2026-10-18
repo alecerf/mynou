@@ -16,8 +16,8 @@ import sys
 import tempfile
 import time
 
-ROOT = Path(__file__).resolve().parent.parent
-DOCKERFILE = ROOT / "engineering/Dockerfile.wireguard-peer"
+ROOT = Path(__file__).resolve().parents[2]
+DOCKERFILE = ROOT / ".github/scripts/Dockerfile.wireguard-peer"
 SCENARIOS = (
     "mynou-initiator",
     "peer-initiator",

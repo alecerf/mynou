@@ -11,7 +11,7 @@ import re
 import urllib.parse
 import zipfile
 
-SCANNER = "engineering/secret_audit.py"
+SCANNER = ".github/scripts/secret_audit.py"
 WORKFLOW = ".github/workflows/security-audit.yml"
 MAX_RECEIPT = 16 * 1024 * 1024
 MAX_SOURCE = 128 * 1024

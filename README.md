@@ -305,8 +305,6 @@ without tokens, private paths or media names.
 
 - [Architecture](docs/architecture.md): how a request flows through the modules.
 - [CI, releases and download verification](docs/validation.md).
-- Agents build Mynou through GitHub Issues and pull requests; see
-  [AGENTS.md](AGENTS.md) and the [engineering runbook](engineering/README.md).
 
 ## Build from source
 
