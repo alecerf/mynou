@@ -1,6 +1,6 @@
 //! Outer-UDP tunnel runtime: one owner drives the offline WireGuard `Peer` and
 //! the virtual IPv4/UDP/DNS/TCP stack over a single physical UDP socket, behind
-//! one generation fence. It has no torrent caller, profile or user-visible
+//! one generation fence. It has no torrent caller or user-visible
 //! protection, and its loopback tests are not interoperability evidence; see
 //! docs/tunnel.md for the boundary and the remaining gates.
 

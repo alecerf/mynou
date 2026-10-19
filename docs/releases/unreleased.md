@@ -1,3 +1,11 @@
+## Added: Validate WireGuard profiles offline
+
+The Rust library can now parse a bounded subset of WireGuard `.conf` profiles
+and construct tunnel runtime settings, rejecting hooks, unsupported routing,
+hostname endpoints and malformed keys with redacted errors. This is preparation
+for private profile import: there is no CLI/API activation or torrent VPN
+protection yet ([scope and supported settings](/docs/wireguard-profiles.md)).
+
 ## Added: Connect any JSON indexer with a mapping
 
 A `json` source can now carry a `mapping` that tells Mynou where results, titles, download addresses and seeders are in the indexer's response, which parameter names to send (or leave out), the category to use for movies and episodes, and fixed parameters such as a page size. Indexers that offer Torznab, RSS or a JSON search API can be connected from `mynou.json` alone, without provider-specific code. Sources without a `mapping` behave as before, and unsupported cases (HTML pages, several result pages, header API keys) are listed in [the guide](/docs/sources.md#connecting-any-indexer).

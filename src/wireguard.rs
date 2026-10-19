@@ -15,6 +15,8 @@ mod cookie;
 mod handshake;
 #[path = "wireguard/peer.rs"]
 mod peer;
+#[path = "wireguard/profile.rs"]
+pub mod profile;
 #[path = "wireguard/timers.rs"]
 mod timers;
 pub use cookie::{

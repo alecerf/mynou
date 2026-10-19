@@ -119,6 +119,9 @@ partial routes, `ListenPort`, scripts/hooks and unsupported directives fail
 explicitly. Configuration import performs no DNS, subprocess or network work.
 Final parser byte/line/list and MTU/keepalive bounds must be specified and tested
 in its implementation Issue; a design does not claim importer compatibility.
+The [offline parser](wireguard-profiles.md) now implements this `.conf` subset
+and documents its bounds. Private-file import, persistence and operator controls
+remain #222, after transport integration #221; parsing does not activate protection.
 
 Credentials use private configuration/environment references and never enter
 public diagnostics, URLs, raw profile dumps or `Debug` output. Use the existing
