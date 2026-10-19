@@ -322,7 +322,7 @@ impl Engine {
                 return Err("Shared replacement must use a different acquisition source".into());
             }
             // Authenticated metadata only; do not queue transfers or fetch payload.
-            let metadata = inspect_metadata(source, deadline)?;
+            let metadata = inspect_metadata(&*self.torrent_network, source, deadline)?;
             let path = query
                 .file_path
                 .as_deref()

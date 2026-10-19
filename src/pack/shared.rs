@@ -330,7 +330,7 @@ impl Engine {
             }
         }
         // Metadata-only I/O precedes both storage locks. No transfer or payload is scheduled.
-        let metadata = inspect_metadata(&query.source_url, deadline)?;
+        let metadata = inspect_metadata(&*self.torrent_network, &query.source_url, deadline)?;
         if Instant::now() >= deadline {
             return Err("Shared-file metadata deadline exceeded".into());
         }

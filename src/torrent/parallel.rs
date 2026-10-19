@@ -2,7 +2,7 @@
 
 use super::{
     DownloadConfig, Jobs, Meta, PolicyRuntime, Source, TransferCounters, discovery, mkdir_private,
-    persist_meta, read_piece, update, verified_piece_bytes, wire, write_piece,
+    persist_meta, read_piece, transport::Network, update, verified_piece_bytes, wire, write_piece,
 };
 use crate::Result;
 use std::{
@@ -211,6 +211,7 @@ struct PeerTask {
     counters: Arc<TransferCounters>,
     download_gate: Arc<super::RateGate>,
     local_download_gate: Arc<super::RateGate>,
+    network: Arc<dyn Network>,
     stop: Arc<AtomicBool>,
     corrupt: Arc<AtomicBool>,
     commands: Receiver<Command>,
@@ -258,6 +259,7 @@ fn peer_worker(mut task: PeerTask) {
                 counters: task.counters.clone(),
                 download_gate: task.download_gate.clone(),
                 local_download_gate: task.local_download_gate.clone(),
+                network: &*task.network,
             },
             &task.stop,
         )?;
@@ -448,8 +450,10 @@ fn metadata(context: MetadataContext<'_>, addresses: &mut BTreeSet<SocketAddr>) 
             next_dht = Instant::now() + Duration::from_secs(60);
             let cancel = group.discovery_stop.clone();
             let port = config.listen_port;
+            let network = policy.network.clone();
             group.discovery = Some(thread::spawn(move || {
-                discovery::dht_lookup(&hash, port, false, &cancel, &[]).unwrap_or_default()
+                discovery::dht_lookup(&*network, &hash, port, false, &cancel, &[])
+                    .unwrap_or_default()
             }));
         }
         let Some(address) = select_address(addresses, &[], &quarantine, &retries, cursor) else {
@@ -470,6 +474,7 @@ fn metadata(context: MetadataContext<'_>, addresses: &mut BTreeSet<SocketAddr>) 
                 counters: counters.clone(),
                 download_gate: policy.download.clone(),
                 local_download_gate: gate,
+                network: &*policy.network,
             },
             stop,
         )
@@ -606,8 +611,10 @@ pub(super) fn download(
             next_dht = Instant::now() + Duration::from_secs(60);
             let cancel = group.discovery_stop.clone();
             let port = config.listen_port;
+            let network = policy.network.clone();
             group.discovery = Some(thread::spawn(move || {
-                discovery::dht_lookup(&hash, port, true, &cancel, &[]).unwrap_or_default()
+                discovery::dht_lookup(&*network, &hash, port, true, &cancel, &[])
+                    .unwrap_or_default()
             }));
         }
         // At most one connection and one exclusive claim exist per slot. A
@@ -637,6 +644,7 @@ pub(super) fn download(
                     counters: counters.clone(),
                     download_gate: policy.download.clone(),
                     local_download_gate: local_gate.clone(),
+                    network: policy.network.clone(),
                     stop: cancel.clone(),
                     commands: command_receiver,
                     events: events.clone(),

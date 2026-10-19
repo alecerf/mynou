@@ -1,7 +1,8 @@
+use super::transport::Network;
 use crate::{Result, bencode::Value, net::NetworkDatagram};
 use std::{
     collections::BTreeSet,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs, UdpSocket},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
@@ -136,11 +137,21 @@ pub fn query_url(url: &str, request: &TrackerRequest<'_>) -> String {
     query
 }
 
-pub fn tracker(url: &str, request: &TrackerRequest<'_>) -> Result<TrackerReply> {
-    tracker_before(url, request, Instant::now() + Duration::from_secs(8))
+pub fn tracker(
+    network: &dyn Network,
+    url: &str,
+    request: &TrackerRequest<'_>,
+) -> Result<TrackerReply> {
+    tracker_before(
+        network,
+        url,
+        request,
+        Instant::now() + Duration::from_secs(8),
+    )
 }
 
 pub fn tracker_before(
+    network: &dyn Network,
     url: &str,
     request: &TrackerRequest<'_>,
     deadline: Instant,
@@ -152,12 +163,13 @@ pub fn tracker_before(
         return Err("Tracker announcement cannot use port zero".into());
     }
     if url.starts_with("udp://") {
-        return udp_tracker(url, request, deadline);
+        return udp_tracker(network, url, request, deadline);
     }
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err("Unsupported tracker protocol".into());
     }
-    let response = crate::net::HttpClient::new()
+    let response = network
+        .http()
         .with_timeout(
             deadline
                 .checked_duration_since(Instant::now())
@@ -271,31 +283,25 @@ fn udp_exchange(
     }
     Err("UDP tracker did not respond".into())
 }
-fn udp_tracker(url: &str, request: &TrackerRequest<'_>, deadline: Instant) -> Result<TrackerReply> {
+fn udp_tracker(
+    network: &dyn Network,
+    url: &str,
+    request: &TrackerRequest<'_>,
+    deadline: Instant,
+) -> Result<TrackerReply> {
     let rest = url.strip_prefix("udp://").ok_or("Invalid UDP tracker")?;
     let authority = rest.split('/').next().ok_or("Invalid UDP tracker")?;
     if authority.contains('@') {
         return Err("Invalid UDP tracker address".into());
     }
-    let (socket, address) = udp_dial(authority)?;
-    udp_announce(&*socket, address, request, deadline)
-}
-
-/// The ordinary-network site of the UDP tracker: host resolution and a direct
-/// socket. The BEP 15 exchange runs on any datagram socket.
-fn udp_dial(authority: &str) -> Result<(Box<dyn NetworkDatagram>, SocketAddr)> {
-    let address = authority
-        .to_socket_addrs()
+    let address = network
+        .resolve(authority, deadline)
         .map_err(|_| "Could not resolve tracker address")?
+        .into_iter()
         .next()
         .ok_or("Tracker has no address")?;
-    let socket = UdpSocket::bind(if address.is_ipv4() {
-        "0.0.0.0:0"
-    } else {
-        "[::]:0"
-    })
-    .map_err(|_| "Could not create UDP socket")?;
-    Ok((Box::new(socket), address))
+    let socket = network.datagram(address.is_ipv6())?;
+    udp_announce(&*socket, address, request, deadline)
 }
 
 fn udp_announce(
@@ -347,40 +353,30 @@ fn udp_announce(
 // A bounded iterative Kademlia lookup. Unknown metadata only performs get_peers;
 // announcing is allowed after the caller established that the torrent is public.
 pub fn dht_lookup(
+    network: &dyn Network,
     hash: &[u8; 20],
     port: u16,
     announce: bool,
     stop: &AtomicBool,
     seeds: &[SocketAddr],
 ) -> Result<Vec<SocketAddr>> {
-    let socket = dht_socket()?;
+    let socket = network
+        .datagram(false)
+        .map_err(|_| "Could not create DHT socket")?;
+    let deadline = Instant::now() + Duration::from_secs(5);
     let mut nodes: Vec<SocketAddr> = seeds.iter().copied().filter(SocketAddr::is_ipv4).collect();
     if seeds.is_empty() {
-        nodes.extend(dht_bootstrap());
-    }
-    let deadline = Instant::now() + Duration::from_secs(5);
-    dht_search(&*socket, hash, port, announce, stop, nodes, deadline)
-}
-
-/// The ordinary-network sites of the DHT: a direct socket and the system
-/// resolver for the bootstrap names. The lookup runs on any datagram socket.
-fn dht_socket() -> Result<Box<dyn NetworkDatagram>> {
-    let socket = UdpSocket::bind("0.0.0.0:0").map_err(|_| "Could not create DHT socket")?;
-    Ok(Box::new(socket))
-}
-
-fn dht_bootstrap() -> Vec<SocketAddr> {
-    let mut nodes = Vec::new();
-    for host in [
-        "router.bittorrent.com:6881",
-        "router.utorrent.com:6881",
-        "dht.transmissionbt.com:6881",
-    ] {
-        if let Ok(addresses) = host.to_socket_addrs() {
-            nodes.extend(addresses.filter(SocketAddr::is_ipv4).take(2));
+        for host in [
+            "router.bittorrent.com:6881",
+            "router.utorrent.com:6881",
+            "dht.transmissionbt.com:6881",
+        ] {
+            if let Ok(addresses) = network.resolve(host, deadline) {
+                nodes.extend(addresses.into_iter().filter(SocketAddr::is_ipv4).take(2));
+            }
         }
     }
-    nodes
+    dht_search(&*socket, hash, port, announce, stop, nodes, deadline)
 }
 
 fn dht_search(
@@ -514,12 +510,16 @@ pub fn value_field<'a>(v: &'a Value, key: &[u8]) -> Option<&'a Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::torrent::transport::Direct;
     use std::{
         collections::VecDeque,
         io::{Error, ErrorKind},
-        sync::Mutex,
+        net::UdpSocket,
+        sync::{Arc, Mutex},
     };
 
+    /// Host, port and request bytes of every HTTP connection.
+    type HttpLog = Arc<Mutex<Vec<(String, u16, Vec<u8>)>>>;
     type Responder = Box<dyn FnMut(&[u8], SocketAddr) -> Vec<(Vec<u8>, SocketAddr)> + Send>;
 
     /// A non-socket datagram transport: every sent packet is recorded and the
@@ -569,6 +569,142 @@ mod tests {
 
         fn set_write_timeout(&self, _: Option<Duration>) -> std::io::Result<()> {
             Ok(())
+        }
+    }
+
+    impl NetworkDatagram for Arc<Memory> {
+        fn send_to(&self, packet: &[u8], target: SocketAddr) -> std::io::Result<usize> {
+            (**self).send_to(packet, target)
+        }
+
+        fn recv_from(&self, buf: &mut [u8]) -> std::io::Result<(usize, SocketAddr)> {
+            (**self).recv_from(buf)
+        }
+
+        fn set_read_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
+            (**self).set_read_timeout(timeout)
+        }
+
+        fn set_write_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
+            (**self).set_write_timeout(timeout)
+        }
+    }
+
+    /// A non-socket torrent network: names resolve from a fixed table, the one
+    /// datagram socket is a `Memory`, and HTTP answers with a canned response.
+    /// It records every request, so a test sees each network operation.
+    struct Fake {
+        names: Vec<(&'static str, SocketAddr)>,
+        socket: Arc<Memory>,
+        http_reply: Vec<u8>,
+        resolved: Mutex<Vec<String>>,
+        datagrams: Mutex<Vec<bool>>,
+        http: HttpLog,
+    }
+
+    impl Fake {
+        fn new(names: Vec<(&'static str, SocketAddr)>, responder: Responder) -> Self {
+            Self {
+                names,
+                socket: Arc::new(Memory::new(responder)),
+                http_reply: Vec::new(),
+                resolved: Mutex::new(Vec::new()),
+                datagrams: Mutex::new(Vec::new()),
+                http: Arc::new(Mutex::new(Vec::new())),
+            }
+        }
+    }
+
+    struct Canned {
+        reply: std::io::Cursor<Vec<u8>>,
+        log: HttpLog,
+    }
+
+    impl std::io::Read for Canned {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            self.reply.read(buf)
+        }
+    }
+
+    impl std::io::Write for Canned {
+        fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+            if let Some(last) = self.log.lock().unwrap().last_mut() {
+                last.2.extend_from_slice(data);
+            }
+            Ok(data.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl crate::net::NetworkStream for Canned {
+        fn set_read_timeout(&self, _: Option<Duration>) -> std::io::Result<()> {
+            Ok(())
+        }
+
+        fn set_write_timeout(&self, _: Option<Duration>) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    struct CannedConnector {
+        reply: Vec<u8>,
+        log: HttpLog,
+    }
+
+    impl crate::net::HttpConnector for CannedConnector {
+        fn connect(
+            &self,
+            host: &str,
+            port: u16,
+            _: Instant,
+        ) -> Result<Box<dyn crate::net::NetworkStream>> {
+            self.log
+                .lock()
+                .unwrap()
+                .push((host.to_owned(), port, Vec::new()));
+            Ok(Box::new(Canned {
+                reply: std::io::Cursor::new(self.reply.clone()),
+                log: self.log.clone(),
+            }))
+        }
+    }
+
+    impl Network for Fake {
+        fn connect(
+            &self,
+            _: SocketAddr,
+            _: Duration,
+        ) -> Result<Box<dyn crate::net::NetworkStream>> {
+            Err("No peer connection in this fixture".into())
+        }
+
+        fn resolve(&self, authority: &str, _: Instant) -> Result<Vec<SocketAddr>> {
+            self.resolved.lock().unwrap().push(authority.to_owned());
+            let found: Vec<_> = self
+                .names
+                .iter()
+                .filter(|(name, _)| *name == authority)
+                .map(|(_, address)| *address)
+                .collect();
+            if found.is_empty() {
+                return Err("Unknown name".into());
+            }
+            Ok(found)
+        }
+
+        fn datagram(&self, ipv6: bool) -> Result<Box<dyn NetworkDatagram>> {
+            self.datagrams.lock().unwrap().push(ipv6);
+            Ok(Box::new(self.socket.clone()))
+        }
+
+        fn http(&self) -> crate::net::HttpClient {
+            crate::net::HttpClient::new().with_connector(Arc::new(CannedConnector {
+                reply: self.http_reply.clone(),
+                log: self.http.clone(),
+            }))
         }
     }
 
@@ -716,6 +852,148 @@ mod tests {
     }
 
     #[test]
+    fn udp_tracker_resolves_and_opens_its_socket_only_through_the_network() {
+        let tracker: SocketAddr = "192.0.2.1:6969".parse().unwrap();
+        let network = Fake::new(
+            vec![("tracker.invalid:6969", tracker)],
+            Box::new(move |packet, target| {
+                assert_eq!(target, tracker);
+                let mut reply = Vec::new();
+                if packet.len() == 16 {
+                    reply.extend_from_slice(&0u32.to_be_bytes());
+                    reply.extend_from_slice(&packet[12..16]);
+                    reply.extend_from_slice(&17u64.to_be_bytes());
+                } else {
+                    reply.extend_from_slice(&1u32.to_be_bytes());
+                    reply.extend_from_slice(&packet[12..16]);
+                    reply.extend_from_slice(&30u32.to_be_bytes());
+                    reply.extend_from_slice(&[0; 8]);
+                    reply.extend_from_slice(&[198, 51, 100, 7, 0x1a, 0xe1]);
+                }
+                vec![(reply, tracker)]
+            }),
+        );
+        let reply = tracker_before(
+            &network,
+            "udp://tracker.invalid:6969/announce",
+            &request(),
+            Instant::now() + Duration::from_secs(5),
+        )
+        .unwrap();
+        assert_eq!(reply.peers, vec!["198.51.100.7:6881".parse().unwrap()]);
+        assert_eq!(*network.resolved.lock().unwrap(), ["tracker.invalid:6969"]);
+        assert_eq!(*network.datagrams.lock().unwrap(), [false]);
+        assert_eq!(network.socket.sent().len(), 2);
+
+        // A name the network cannot resolve fails without any socket.
+        let unknown = Fake::new(Vec::new(), Box::new(|_, _| Vec::new()));
+        let error = tracker_before(
+            &unknown,
+            "udp://other.invalid:6969/announce",
+            &request(),
+            Instant::now() + Duration::from_secs(5),
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Could not resolve tracker address")
+        );
+        assert!(unknown.datagrams.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn http_tracker_uses_the_client_of_its_network() {
+        let body = crate::bencode::encode(&dict(&[
+            (b"interval", Value::Int(45)),
+            (b"peers", Value::Bytes(vec![198, 51, 100, 8, 0x1a, 0xe1])),
+        ]));
+        let mut network = Fake::new(Vec::new(), Box::new(|_, _| Vec::new()));
+        network.http_reply =
+            format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len()).into_bytes();
+        network.http_reply.extend_from_slice(&body);
+        let reply = tracker_before(
+            &network,
+            "http://tracker.invalid:8080/announce?passkey=fixture",
+            &request(),
+            Instant::now() + Duration::from_secs(5),
+        )
+        .unwrap();
+        assert_eq!(reply.peers, vec!["198.51.100.8:6881".parse().unwrap()]);
+        assert_eq!(reply.interval, Duration::from_secs(45));
+        let http = network.http.lock().unwrap();
+        assert_eq!(http.len(), 1);
+        assert_eq!((http[0].0.as_str(), http[0].1), ("tracker.invalid", 8080));
+        let sent = String::from_utf8_lossy(&http[0].2);
+        assert!(sent.starts_with("GET /announce?passkey=fixture&info_hash="));
+        assert!(network.resolved.lock().unwrap().is_empty());
+        assert!(network.datagrams.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn dht_bootstrap_names_and_socket_come_from_the_network() {
+        let router: SocketAddr = "192.0.2.10:6881".parse().unwrap();
+        let network = Fake::new(
+            vec![
+                ("router.bittorrent.com:6881", router),
+                (
+                    "router.bittorrent.com:6881",
+                    "[2001:db8::1]:6881".parse().unwrap(),
+                ),
+            ],
+            Box::new(move |packet, target| {
+                let query = crate::bencode::parse(packet).unwrap();
+                let t = value_bytes(field(&query, b"t")).unwrap().to_vec();
+                let reply = dict(&[
+                    (b"t", Value::Bytes(t)),
+                    (b"y", Value::Bytes(b"r".to_vec())),
+                    (
+                        b"r",
+                        dict(&[(
+                            b"values",
+                            Value::List(vec![Value::Bytes(vec![203, 0, 113, 9, 0x1a, 0xe1])]),
+                        )]),
+                    ),
+                ]);
+                vec![(crate::bencode::encode(&reply), target)]
+            }),
+        );
+        let peers = dht_lookup(
+            &network,
+            &[7; 20],
+            6882,
+            false,
+            &AtomicBool::new(false),
+            &[],
+        )
+        .unwrap();
+        assert_eq!(peers, vec!["203.0.113.9:6881".parse().unwrap()]);
+        assert_eq!(
+            *network.resolved.lock().unwrap(),
+            [
+                "router.bittorrent.com:6881",
+                "router.utorrent.com:6881",
+                "dht.transmissionbt.com:6881"
+            ]
+        );
+        assert_eq!(*network.datagrams.lock().unwrap(), [false]);
+        let targets: Vec<_> = network.socket.sent().iter().map(|(_, to)| *to).collect();
+        assert_eq!(targets, vec![router]);
+
+        // Explicit seeds need no name resolution.
+        let seeded = Fake::new(Vec::new(), Box::new(|_, _| Vec::new()));
+        let _ = dht_lookup(
+            &seeded,
+            &[7; 20],
+            6882,
+            false,
+            &AtomicBool::new(true),
+            &[router],
+        );
+        assert!(seeded.resolved.lock().unwrap().is_empty());
+    }
+
+    #[test]
     fn dht_search_over_a_datagram_stops_on_cancellation_and_deadline() {
         let node: SocketAddr = "192.0.2.10:6881".parse().unwrap();
         let socket = Memory::new(Box::new(|_, _| Vec::new()));
@@ -809,8 +1087,15 @@ mod tests {
                     );
                 }
             });
-            let peers = dht_lookup(&hash, 6881, announce, &AtomicBool::new(false), &[address])
-                .expect("discovery");
+            let peers = dht_lookup(
+                &Direct,
+                &hash,
+                6881,
+                announce,
+                &AtomicBool::new(false),
+                &[address],
+            )
+            .expect("discovery");
             assert_eq!(peers, vec!["127.0.0.1:6881".parse().expect("peer")]);
             worker.join().expect("server");
         }
@@ -926,6 +1211,7 @@ mod tests {
         });
         for (event, _) in events {
             let reply = tracker(
+                &Direct,
                 &format!("http://{address}/announce?passkey=fixture#ignored"),
                 &TrackerRequest {
                     hash: &[7; 20],
@@ -986,6 +1272,7 @@ mod tests {
             TrackerEvent::Stopped,
         ] {
             let reply = tracker(
+                &Direct,
                 &format!("udp://{address}/announce"),
                 &TrackerRequest {
                     hash: &[7; 20],
@@ -1039,6 +1326,7 @@ mod tests {
         });
         assert_eq!(
             tracker(
+                &Direct,
                 &format!("udp://{address}/announce"),
                 &TrackerRequest {
                     hash: &hash,

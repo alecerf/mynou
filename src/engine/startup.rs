@@ -240,6 +240,7 @@ impl Engine {
                     };
                     Ok(!store.transfer_cancelled(id)? || store.transfer_has_owner(id)?)
                 }),
+                Arc::clone(&self.torrent_network),
             )?;
             let mut sweep = lock(&self.transfer_sweep)?;
             cancel_orphaned_transfers(&client, &mut *lock(&self.store)?, &mut sweep)?;

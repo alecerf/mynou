@@ -15,6 +15,8 @@ mod metainfo;
 mod parallel;
 #[path = "torrent/selection.rs"]
 mod selection;
+#[path = "torrent/transport.rs"]
+pub mod transport;
 #[path = "torrent/wire.rs"]
 mod wire;
 use control::RateGate;
@@ -131,6 +133,8 @@ struct PolicyRuntime {
     policy: TransferPolicy,
     download: Arc<RateGate>,
     upload: Arc<RateGate>,
+    /// Every outbound peer, tracker and DHT exchange of the client.
+    network: Arc<dyn transport::Network>,
 }
 pub(crate) fn add_payload(counter: &AtomicU64, bytes: u64) {
     let _ = counter.try_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
@@ -1257,26 +1261,30 @@ impl Client {
     pub fn open(config: DownloadConfig) -> Result<Self> {
         Self::open_with_policy(config, TransferPolicy::default())
     }
+    /// An explicitly unprotected client on the ordinary network.
     pub fn open_with_policy(config: DownloadConfig, policy: TransferPolicy) -> Result<Self> {
-        Self::open_internal(config, policy, None)
+        Self::open_internal(config, policy, None, transport::direct())
     }
     pub fn open_with_policy_and_admission(
         config: DownloadConfig,
         policy: TransferPolicy,
         admission: AdmissionGate,
+        network: Arc<dyn transport::Network>,
     ) -> Result<Self> {
-        Self::open_internal(config, policy, Some(admission))
+        Self::open_internal(config, policy, Some(admission), network)
     }
     fn open_internal(
         mut config: DownloadConfig,
         policy: TransferPolicy,
         admission: Option<AdmissionGate>,
+        network: Arc<dyn transport::Network>,
     ) -> Result<Self> {
         policy.validate()?;
         let policy = Arc::new(PolicyRuntime {
             download: Arc::new(RateGate::new(policy.download_limit_bps)?),
             upload: Arc::new(RateGate::new(policy.upload_limit_bps)?),
             policy,
+            network,
         });
         if config.max_active == 0 || config.max_active > 128 {
             return Err("Invalid active download count".into());
@@ -2319,7 +2327,13 @@ fn select_announce(
     }
     None
 }
-fn announce(task: AnnounceTask, port: u16, peer_id: [u8; 20], jobs: &Jobs) {
+fn announce(
+    network: &dyn transport::Network,
+    task: AnnounceTask,
+    port: u16,
+    peer_id: [u8; 20],
+    jobs: &Jobs,
+) {
     let reuse = jobs
         .lock()
         .ok()
@@ -2363,7 +2377,7 @@ fn announce(task: AnnounceTask, port: u16, peer_id: [u8; 20], jobs: &Jobs) {
         uploaded: task.uploaded,
         event: task.event,
     };
-    let result = discovery::tracker(&task.url, &request);
+    let result = discovery::tracker(network, &task.url, &request);
     if let Ok(mut jobs) = jobs.lock()
         && let Some(job) = jobs.get_mut(&task.id)
         && (job.cross_seed.is_none() || Arc::ptr_eq(&job.cancel, &task.cancel))
@@ -2450,7 +2464,7 @@ fn select_seed_dht(
     }
     None
 }
-fn announce_seed_dht(task: DhtTask, port: u16, jobs: &Jobs) {
+fn announce_seed_dht(network: &dyn transport::Network, task: DhtTask, port: u16, jobs: &Jobs) {
     let reuse = jobs
         .lock()
         .ok()
@@ -2483,7 +2497,7 @@ fn announce_seed_dht(task: DhtTask, port: u16, jobs: &Jobs) {
             return;
         }
     }
-    let result = discovery::dht_lookup(&task.hash, port, true, &task.cancel, &[]);
+    let result = discovery::dht_lookup(network, &task.hash, port, true, &task.cancel, &[]);
     if let Ok(mut jobs) = jobs.lock()
         && let Some(job) = jobs.get_mut(&task.id)
     {
@@ -2766,9 +2780,10 @@ fn manager_loop(
             dht_turn = !dht_turn;
             let jobs = jobs.clone();
             let port = config.listen_port;
+            let network = policy.network.clone();
             announcements.push(thread::spawn(move || match task {
-                DiscoveryTask::Tracker(task) => announce(task, port, peer_id, &jobs),
-                DiscoveryTask::Dht(task) => announce_seed_dht(task, port, &jobs),
+                DiscoveryTask::Tracker(task) => announce(&*network, task, port, peer_id, &jobs),
+                DiscoveryTask::Dht(task) => announce_seed_dht(&*network, task, port, &jobs),
             }));
         }
         if let Ok(mut map) = jobs.lock() {
@@ -2990,7 +3005,14 @@ fn download_sequential(
             && (known || (source.trackers.is_empty() && source.peers.is_empty()))
         {
             next_dht = Instant::now() + Duration::from_secs(60);
-            if let Ok(peers) = discovery::dht_lookup(&hash, config.listen_port, known, stop, &[]) {
+            if let Ok(peers) = discovery::dht_lookup(
+                &*policy.network,
+                &hash,
+                config.listen_port,
+                known,
+                stop,
+                &[],
+            ) {
                 merge_peers(&mut addresses, peers);
             }
         }
@@ -3023,6 +3045,7 @@ fn download_sequential(
                         .ok_or("Download no longer exists")?
                         .download_gate
                         .clone(),
+                    network: &*policy.network,
                 },
             ) {
                 Ok(p) => p,
@@ -4223,6 +4246,7 @@ mod control_runtime_tests {
             config.clone(),
             TransferPolicy::default(),
             denied,
+            transport::direct(),
         )
         .unwrap();
         let id = "0123456789012345678901234567890123456789";

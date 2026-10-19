@@ -6,7 +6,7 @@ use automatic_pack_support::Provider;
 use mynou::{
     bencode::{self, Value as Bencode},
     crypto::{sha1, sha256},
-    torrent::inspect_metadata,
+    torrent::{inspect_metadata, transport::Direct},
 };
 use std::{
     collections::BTreeMap,
@@ -32,6 +32,7 @@ fn explicit_magnet_inspection_authenticates_metadata_without_requesting_payload_
     let seed = Seeder::open(&scratch.0.join("seed"), &[&torrent]);
     let proxy = RecordingProxy::open(seed.client.listen_port());
     let metadata = inspect_metadata(
+        &Direct,
         &torrent.magnet(proxy.port),
         Instant::now() + Duration::from_secs(5),
     )
@@ -42,6 +43,7 @@ fn explicit_magnet_inspection_authenticates_metadata_without_requesting_payload_
     assert!(proxy.requests.lock().unwrap().is_empty());
     assert!(!scratch.0.join("client").exists());
     let known = inspect_metadata(
+        &Direct,
         torrent.path.to_str().unwrap(),
         Instant::now() + Duration::from_secs(5),
     )
@@ -70,7 +72,8 @@ fn http_tracker_lookup_uses_only_stopped_events_and_never_claims_payload_or_comp
         "magnet:?xt=urn:btih:{}&tr={}/tracker",
         torrent.id, provider.url
     );
-    let metadata = inspect_metadata(&magnet, Instant::now() + Duration::from_secs(5)).unwrap();
+    let metadata =
+        inspect_metadata(&Direct, &magnet, Instant::now() + Duration::from_secs(5)).unwrap();
     assert_eq!(metadata.id, torrent.id);
     let requests = provider.calls.lock().unwrap();
     assert_eq!(requests.len(), 1);
@@ -123,7 +126,7 @@ fn udp_tracker_metadata_discovery_preserves_transaction_ids_and_zero_payload_cou
         torrent.id
     );
     assert_eq!(
-        inspect_metadata(&magnet, Instant::now() + Duration::from_secs(5))
+        inspect_metadata(&Direct, &magnet, Instant::now() + Duration::from_secs(5))
             .unwrap()
             .id,
         torrent.id
@@ -188,7 +191,7 @@ fn v2_and_hybrid_metadata_inspection_keep_the_authenticated_source_alias_without
         let proxy = RecordingProxy::open(seed.client.listen_port());
         let magnet = format!("magnet:?xt=urn:btmh:1220{v2}&x.pe=127.0.0.1:{}", proxy.port);
         assert_eq!(
-            inspect_metadata(&magnet, Instant::now() + Duration::from_secs(5))
+            inspect_metadata(&Direct, &magnet, Instant::now() + Duration::from_secs(5))
                 .unwrap()
                 .id,
             v2
@@ -196,6 +199,7 @@ fn v2_and_hybrid_metadata_inspection_keep_the_authenticated_source_alias_without
         if hybrid {
             assert_eq!(
                 inspect_metadata(
+                    &Direct,
                     &torrent.magnet(proxy.port).replace(&torrent.id, &v1),
                     Instant::now() + Duration::from_secs(5)
                 )
@@ -220,6 +224,7 @@ fn inspection_file_limits_expired_deadlines_and_bad_hashes_fail_without_payload(
     );
     assert!(
         inspect_metadata(
+            &Direct,
             huge.path.to_str().unwrap(),
             Instant::now() + Duration::from_secs(5)
         )
@@ -228,6 +233,7 @@ fn inspection_file_limits_expired_deadlines_and_bad_hashes_fail_without_payload(
     );
     assert!(
         inspect_metadata(
+            &Direct,
             huge.path.to_str().unwrap(),
             Instant::now() - Duration::from_secs(1)
         )
@@ -236,6 +242,7 @@ fn inspection_file_limits_expired_deadlines_and_bad_hashes_fail_without_payload(
     );
     assert!(
         inspect_metadata(
+            &Direct,
             "magnet:?xt=urn:btih:bad",
             Instant::now() + Duration::from_secs(5)
         )
@@ -243,6 +250,7 @@ fn inspection_file_limits_expired_deadlines_and_bad_hashes_fail_without_payload(
     );
     assert!(
         inspect_metadata(
+            &Direct,
             &format!("magnet:?xt=urn:btih:{}", "1".repeat(40)),
             Instant::now() + Duration::from_secs(5)
         )

@@ -1,5 +1,7 @@
 //! Metadata-only discovery: no transfer queue, payload request, or disk write.
-use super::{RateGate, Source, TransferCounters, discovery, metainfo::Meta, wire};
+use super::{
+    RateGate, Source, TransferCounters, discovery, metainfo::Meta, transport::Network, wire,
+};
 use crate::Result;
 use std::{
     collections::BTreeSet,
@@ -69,7 +71,11 @@ fn report(meta: Meta, id: String, deadline: Instant) -> Result<TorrentMetadata> 
 /// Tracker lookups use stopped events, zero counters, and an ephemeral port; they
 /// never advertise payload or completion. Trackers may decline metadata-only queries.
 /// Unknown privacy never enables DHT or PEX discovery in this inspection path.
-pub fn inspect_metadata(source: &str, deadline: Instant) -> Result<TorrentMetadata> {
+pub fn inspect_metadata(
+    network: &dyn Network,
+    source: &str,
+    deadline: Instant,
+) -> Result<TorrentMetadata> {
     remaining(deadline)?;
     let mut source = Source::parse_with_deadline(source, Some(deadline))
         .map_err(|_| "Torrent source metadata could not be read or authenticated")?;
@@ -115,6 +121,7 @@ pub fn inspect_metadata(source: &str, deadline: Instant) -> Result<TorrentMetada
                     counters: counters.clone(),
                     download_gate: gate.clone(),
                     local_download_gate: gate.clone(),
+                    network,
                 },
                 attempt_end,
             )
@@ -135,6 +142,7 @@ pub fn inspect_metadata(source: &str, deadline: Instant) -> Result<TorrentMetada
                 event: discovery::TrackerEvent::Stopped,
             };
             if let Ok(reply) = discovery::tracker_before(
+                network,
                 url,
                 &request,
                 deadline.min(Instant::now() + Duration::from_secs(5)),

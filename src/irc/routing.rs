@@ -963,7 +963,7 @@ impl Engine {
             &record.announcement.info_hash,
         )?;
         // Metadata I/O happens before admission and outside every persistent-store lock.
-        let metadata = crate::torrent::inspect_metadata(&magnet, deadline)
+        let metadata = crate::torrent::inspect_metadata(&*self.torrent_network, &magnet, deadline)
             .map_err(|_| "IRC: metadata unavailable or unauthenticated")?;
         if metadata.id != record.announcement.info_hash {
             return Err("IRC: metadata identity differs".into());

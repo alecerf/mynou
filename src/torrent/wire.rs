@@ -6,7 +6,7 @@ use crate::{Result, bencode::Value, net::NetworkStream};
 use std::{
     collections::BTreeMap,
     io::Read,
-    net::{SocketAddr, TcpStream},
+    net::SocketAddr,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -24,6 +24,8 @@ pub struct PeerSettings<'a> {
     pub counters: Arc<super::TransferCounters>,
     pub download_gate: Arc<super::RateGate>,
     pub local_download_gate: Arc<super::RateGate>,
+    /// The only way this peer reaches the network.
+    pub network: &'a dyn super::transport::Network,
 }
 pub struct Peer {
     pub stream: Box<dyn NetworkStream>,
@@ -321,17 +323,6 @@ fn validate_bitfield(bitfield: &[u8], count: Option<usize>) -> Result<()> {
     Ok(())
 }
 
-/// The only ordinary-network site of the wire protocol: an outgoing direct
-/// TCP connection. Everything after it runs on any deadline-capable stream.
-fn dial(address: SocketAddr, timeout: Duration) -> Result<Box<dyn NetworkStream>> {
-    let stream =
-        TcpStream::connect_timeout(&address, timeout).map_err(|_| "Could not connect to peer")?;
-    stream
-        .set_nodelay(true)
-        .map_err(|_| "Could not configure TCP")?;
-    Ok(Box::new(stream))
-}
-
 impl Peer {
     pub fn connect(
         address: SocketAddr,
@@ -378,6 +369,7 @@ impl Peer {
             counters,
             download_gate,
             local_download_gate,
+            network,
         } = settings;
         // Standard-library connects cannot be cancelled in flight. One
         // bounded attempt avoids resetting the handshake on slower networks;
@@ -399,7 +391,7 @@ impl Peer {
             ),
             None => connect_timeout,
         };
-        let connection = dial(address, connect_timeout);
+        let connection = network.connect(address, connect_timeout);
         if stop.is_some_and(|flag| flag.load(Ordering::Acquire)) {
             return Err("Download interrupted".into());
         }
@@ -1017,6 +1009,7 @@ mod tests {
             counters: Arc::new(super::super::TransferCounters::default()),
             download_gate: Arc::new(super::super::RateGate::default()),
             local_download_gate: Arc::new(super::super::RateGate::default()),
+            network: &crate::torrent::transport::Direct,
         };
         let listener = TcpListener::bind("127.0.0.1:0").expect("listener");
         listener
@@ -1371,6 +1364,99 @@ mod tests {
         }
     }
 
+    /// A network that hands out one scripted `MemoryStream` and records the
+    /// requested peer and timeout; it has no resolver, UDP or HTTP.
+    struct Scripted {
+        reply: Vec<u8>,
+        dialed: std::sync::Mutex<Vec<(SocketAddr, Duration)>>,
+    }
+
+    impl super::super::transport::Network for Scripted {
+        fn connect(
+            &self,
+            address: SocketAddr,
+            timeout: Duration,
+        ) -> Result<Box<dyn NetworkStream>> {
+            self.dialed.lock().unwrap().push((address, timeout));
+            Ok(Box::new(MemoryStream {
+                input: self.reply.clone(),
+                output: Vec::new(),
+            }))
+        }
+
+        fn resolve(&self, _: &str, _: Instant) -> Result<Vec<SocketAddr>> {
+            Err("No resolver in this fixture".into())
+        }
+
+        fn datagram(&self, _: bool) -> Result<Box<dyn crate::net::NetworkDatagram>> {
+            Err("No UDP in this fixture".into())
+        }
+
+        fn http(&self) -> crate::net::HttpClient {
+            unreachable!("peer connections never use HTTP")
+        }
+    }
+
+    #[test]
+    fn peer_connections_dial_only_through_their_network() {
+        let hash = [7; 20];
+        let mut reply = vec![19];
+        reply.extend_from_slice(b"BitTorrent protocol");
+        reply.extend_from_slice(&[0; 8]);
+        reply.extend_from_slice(&hash);
+        reply.extend_from_slice(&[9; 20]);
+        let network = Scripted {
+            reply,
+            dialed: std::sync::Mutex::new(Vec::new()),
+        };
+        // A documentation address: an ordinary dial could not reach it.
+        let address: SocketAddr = "192.0.2.1:6881".parse().unwrap();
+        let peer = Peer::connect_before(
+            address,
+            &hash,
+            &[1; 20],
+            PeerSettings {
+                meta: None,
+                port: 6881,
+                pex: false,
+                v2_wire: false,
+                counters: Arc::new(super::super::TransferCounters::default()),
+                download_gate: Arc::new(super::super::RateGate::default()),
+                local_download_gate: Arc::new(super::super::RateGate::default()),
+                network: &network,
+            },
+            Instant::now() + Duration::from_millis(1500),
+        )
+        .unwrap();
+        assert!(!peer.extensions);
+        let dialed = network.dialed.lock().unwrap();
+        assert_eq!(dialed.len(), 1);
+        assert_eq!(dialed[0].0, address);
+        assert!(dialed[0].1 <= Duration::from_millis(1500));
+        drop(dialed);
+
+        // A cancelled connection never asks the network for a stream.
+        let stop = AtomicBool::new(true);
+        let refused = Peer::connect_cancellable(
+            address,
+            &hash,
+            &[1; 20],
+            PeerSettings {
+                meta: None,
+                port: 6881,
+                pex: false,
+                v2_wire: false,
+                counters: Arc::new(super::super::TransferCounters::default()),
+                download_gate: Arc::new(super::super::RateGate::default()),
+                local_download_gate: Arc::new(super::super::RateGate::default()),
+                network: &network,
+            },
+            &stop,
+        );
+        assert!(refused.is_err());
+        assert_eq!(network.dialed.lock().unwrap().len(), 1);
+    }
+
     #[test]
     fn malicious_hash_request_is_rejected() {
         let info = value_dict(&[
@@ -1432,6 +1518,7 @@ mod tests {
                     counters: Arc::new(super::super::TransferCounters::default()),
                     download_gate: Arc::new(super::super::RateGate::default()),
                     local_download_gate: Arc::new(super::super::RateGate::default()),
+                    network: &crate::torrent::transport::Direct,
                 },
             )
             .expect("peer");

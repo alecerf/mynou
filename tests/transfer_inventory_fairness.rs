@@ -83,6 +83,7 @@ fn admission_denied_head_windows_do_not_starve_an_eligible_tail() {
         fixture.config.clone(),
         TransferPolicy::default(),
         Arc::new(move |id| Ok(id == admitted)),
+        mynou::torrent::transport::direct(),
     )
     .unwrap();
     // The worker creates this directory. Reading a point status here would
@@ -100,6 +101,7 @@ fn damaged_cold_heads_are_quarantined_without_starving_a_healthy_tail() {
         fixture.config.clone(),
         TransferPolicy::default(),
         Arc::new(|_| Ok(false)),
+        mynou::torrent::transport::direct(),
     )
     .unwrap();
     drop(client);
@@ -118,6 +120,7 @@ fn damaged_cold_heads_are_quarantined_without_starving_a_healthy_tail() {
         fixture.config.clone(),
         TransferPolicy::default(),
         Arc::new(move |id| Ok(id == admitted)),
+        mynou::torrent::transport::direct(),
     )
     .unwrap();
     fixture.wait_for_worker(&tail);

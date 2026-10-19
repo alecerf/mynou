@@ -58,6 +58,12 @@ Source audit: `1e9d6b5fb8e6d48d495387a4018663f90db169ba`, read only.
 | `src/engine.rs`, construction and worker startup | Validate private VPN configuration and acquire one context before any torrent-specific networking. Pass it to inspection paths even when download workers are not started. |
 
 These are migration obligations; the current APIs still use ordinary sockets.
+Outbound peer connections, HTTP/UDP tracker announces and DHT lookups, including
+those of metadata inspection, now receive the engine-owned
+`torrent::transport::Network`. Its `Direct` implementation holds their only
+ordinary sockets, host resolver and default HTTP client. The listener, magnet
+`x.pe` resolution, remote `.torrent` fetch and the inspection listener do not
+use it yet.
 Review the complete reachable call graph again when integration changes it.
 
 ## Transport and generation ownership

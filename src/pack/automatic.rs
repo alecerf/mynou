@@ -509,6 +509,7 @@ impl Engine {
                 cached.clone()
             } else {
                 let fetched = inspect_metadata(
+                    &*self.torrent_network,
                     &candidate.url,
                     deadline.min(Instant::now() + Duration::from_secs(10)),
                 );

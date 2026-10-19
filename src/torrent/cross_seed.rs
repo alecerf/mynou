@@ -751,7 +751,7 @@ mod tests {
         assert!(select_seed_dht(&config, &jobs, &mut None).is_none());
         let task = select_announce(&config, &jobs, &mut None).unwrap();
         retire_proof(jobs.lock().unwrap().get_mut(&id).unwrap());
-        announce(task, 6881, [0; 20], &jobs);
+        announce(&super::super::transport::Direct, task, 6881, [0; 20], &jobs);
         assert_eq!(
             listener.accept().unwrap_err().kind(),
             std::io::ErrorKind::WouldBlock

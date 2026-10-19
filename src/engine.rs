@@ -76,6 +76,8 @@ pub struct Engine {
     /// Scopes whose records could not be read, skipped until the instant.
     pub(crate) series_unreadable: Mutex<std::collections::BTreeMap<String, std::time::Instant>>,
     downloads: OnceLock<Client>,
+    /// The one network of torrent transfers and metadata inspection.
+    pub(crate) torrent_network: Arc<dyn crate::torrent::transport::Network>,
     start_downloads: bool,
     startup: Mutex<startup::Startup>,
     startup_runner: Mutex<()>,
@@ -169,6 +171,8 @@ impl Engine {
             series_refresh_lock: Mutex::new(()),
             series_unreadable: Mutex::new(std::collections::BTreeMap::new()),
             downloads: OnceLock::new(),
+            // Protection is not selectable yet (#222): engines are unprotected.
+            torrent_network: crate::torrent::transport::direct(),
             start_downloads,
             startup: Mutex::new(startup::Startup::default()),
             startup_runner: Mutex::new(()),
