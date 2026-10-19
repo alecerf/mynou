@@ -1,3 +1,11 @@
+## Added: Supply an HTTP connector backed by the native tunnel
+
+The Rust library can run HTTP streams and their DNS through one native tunnel
+owner, with bounded commands, deadlines, cancellation and captured generations.
+Redirects retain the same connector; there is no direct or proxy fallback in
+this adapter. This prerequisite does not activate torrent VPN protection
+([API, fixture boundary and limits](/docs/tunnel-http.md)).
+
 ## Changed: Accept only literal WireGuard endpoints in the tunnel runtime
 
 The Rust library's tunnel runtime no longer resolves endpoint hostnames through

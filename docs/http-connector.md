@@ -31,8 +31,9 @@ the same connector. Debug output reports only that a connector is present.
 The connector owns resolution, destination policy and connection admission.
 For a tunnel this includes IPv4/IPv6 support, loopback/LAN policy, captured
 generations, cancellation and revocation. HTTP deliberately has no fallback
-policy and supplies no tunnel implementation in this increment. Every redirect
-is a new admission decision through the connector. Connector errors propagate
+policy. The separate [native tunnel adapter](tunnel-http.md) now supplies a
+generation-bound implementation; production torrent integration remains pending.
+Every redirect is a new admission decision through the connector. Connector errors propagate
 to the caller, so implementations must redact credentials and provider payloads
 from their errors.
 
@@ -65,3 +66,6 @@ application data, key updates and rejection of invalid authentication, names and
 trust anchors. End-to-end HTTPS verifies the URL hostname and rejects a redirect
 to plaintext HTTP. These fixtures validate the connector seam, not torrent
 isolation or interoperability with a VPN server.
+
+The [native tunnel HTTP driver](tunnel-http.md), delivered separately by #286,
+implements this seam for virtual TCP and DNS. It does not complete #221.
