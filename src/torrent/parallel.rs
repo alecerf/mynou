@@ -274,7 +274,7 @@ fn peer_worker(mut task: PeerTask) {
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     if keepalive.elapsed() >= Duration::from_secs(5) {
                         wire::write_all_deadline(
-                            &mut peer.stream,
+                            &mut *peer.stream,
                             &[0; 4],
                             Some(&task.stop),
                             Instant::now() + Duration::from_secs(5),

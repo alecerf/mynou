@@ -3075,7 +3075,7 @@ fn download_sequential(
                         )?;
                         if peer.extensions {
                             wire::write_message(
-                                &mut peer.stream,
+                                &mut *peer.stream,
                                 20,
                                 &wire::extended_handshake(Some(&m), config.listen_port, config.pex),
                                 Some(stop),

@@ -20,14 +20,4 @@ src/torrent/discovery.rs	udp_tracker	to_socket_addrs	1
 src/torrent/inspection.rs	<module>	TcpListener	1
 src/torrent/inspection.rs	inspect_metadata	TcpListener	1
 src/torrent/wire.rs	<module>	TcpStream	1
-src/torrent/wire.rs	Peer	TcpStream	1
-src/torrent/wire.rs	Peer::connect_with_stop	TcpStream	1
-src/torrent/wire.rs	handshake_deadline	TcpStream	1
-src/torrent/wire.rs	read_exact_deadline	TcpStream	1
-src/torrent/wire.rs	read_message	TcpStream	1
-src/torrent/wire.rs	read_message_deadline	TcpStream	1
-src/torrent/wire.rs	reserve_payload	TcpStream	1
-src/torrent/wire.rs	write_all_deadline	TcpStream	1
-src/torrent/wire.rs	write_message	TcpStream	1
-src/torrent/wire.rs	write_message_deadline	TcpStream	1
-src/torrent/wire.rs	write_payload_message	TcpStream	1
+src/torrent/wire.rs	dial	TcpStream	1

@@ -2,10 +2,10 @@ use super::{
     discovery::{value_dict, value_field},
     metainfo::{BLOCK, MAX_META, Meta, pair, zero_hash},
 };
-use crate::{Result, bencode::Value};
+use crate::{Result, bencode::Value, net::NetworkStream};
 use std::{
     collections::BTreeMap,
-    io::{Read, Write},
+    io::Read,
     net::{SocketAddr, TcpStream},
     sync::{
         Arc,
@@ -26,7 +26,7 @@ pub struct PeerSettings<'a> {
     pub local_download_gate: Arc<super::RateGate>,
 }
 pub struct Peer {
-    pub stream: TcpStream,
+    pub stream: Box<dyn NetworkStream>,
     pub metadata_id: Option<u8>,
     pub pex_id: Option<u8>,
     pub metadata_size: Option<usize>,
@@ -46,7 +46,7 @@ pub struct Peer {
 
 #[cfg(test)]
 pub fn handshake(
-    stream: &mut TcpStream,
+    stream: &mut dyn NetworkStream,
     hash: &[u8; 20],
     id: &[u8; 20],
     outgoing: bool,
@@ -62,7 +62,7 @@ pub fn handshake(
 }
 
 fn handshake_deadline(
-    stream: &mut TcpStream,
+    stream: &mut dyn NetworkStream,
     hash: &[u8; 20],
     id: &[u8; 20],
     outgoing: bool,
@@ -92,14 +92,14 @@ fn handshake_deadline(
 }
 
 pub fn read_exact_deadline(
-    stream: &mut TcpStream,
+    stream: &mut dyn NetworkStream,
     mut buffer: &mut [u8],
     stop: Option<&AtomicBool>,
     deadline: Instant,
 ) -> Result<()> {
     stream
         .set_read_timeout(Some(Duration::from_millis(100)))
-        .map_err(|_| "Could not configure TCP reads")?;
+        .map_err(|_| "Could not configure peer reads")?;
     while !buffer.is_empty() {
         if stop.is_some_and(|s| s.load(Ordering::Acquire)) {
             return Err("Download interrupted".into());
@@ -126,14 +126,14 @@ pub fn read_exact_deadline(
     Ok(())
 }
 pub fn write_all_deadline(
-    stream: &mut TcpStream,
+    stream: &mut dyn NetworkStream,
     mut buffer: &[u8],
     stop: Option<&AtomicBool>,
     deadline: Instant,
 ) -> Result<()> {
     stream
         .set_write_timeout(Some(Duration::from_millis(100)))
-        .map_err(|_| "Could not configure TCP writes")?;
+        .map_err(|_| "Could not configure peer writes")?;
     while !buffer.is_empty() {
         if stop.is_some_and(|s| s.load(Ordering::Acquire)) {
             return Err("Download interrupted".into());
@@ -157,7 +157,7 @@ pub fn write_all_deadline(
     Ok(())
 }
 pub fn write_message(
-    stream: &mut TcpStream,
+    stream: &mut dyn NetworkStream,
     id: u8,
     payload: &[u8],
     stop: Option<&AtomicBool>,
@@ -172,7 +172,7 @@ pub fn write_message(
 }
 
 fn write_message_deadline(
-    stream: &mut TcpStream,
+    stream: &mut dyn NetworkStream,
     id: u8,
     payload: &[u8],
     stop: Option<&AtomicBool>,
@@ -187,7 +187,7 @@ fn write_message_deadline(
 /// Count payload bytes only after the socket accepts them, including a partial
 /// write before a later network failure. Protocol headers are never charged.
 pub fn write_payload_message(
-    stream: &mut TcpStream,
+    stream: &mut dyn NetworkStream,
     header: &[u8],
     mut payload: &[u8],
     stop: &AtomicBool,
@@ -205,7 +205,7 @@ pub fn write_payload_message(
     write_all_deadline(stream, header, Some(stop), deadline)?;
     stream
         .set_write_timeout(Some(Duration::from_millis(100)))
-        .map_err(|_| "Could not configure TCP writes")?;
+        .map_err(|_| "Could not configure peer writes")?;
     while !payload.is_empty() {
         if stop.load(Ordering::Acquire) {
             return Err("Download interrupted".into());
@@ -232,7 +232,7 @@ pub fn write_payload_message(
     Ok(())
 }
 pub fn reserve_payload(
-    stream: &mut TcpStream,
+    stream: &mut dyn NetworkStream,
     aggregate: &super::RateGate,
     local: &super::RateGate,
     bytes: u64,
@@ -252,12 +252,15 @@ pub fn reserve_payload(
         Ok(())
     })
 }
-pub fn read_message(stream: &mut TcpStream, stop: Option<&AtomicBool>) -> Result<(u8, Vec<u8>)> {
+pub fn read_message(
+    stream: &mut dyn NetworkStream,
+    stop: Option<&AtomicBool>,
+) -> Result<(u8, Vec<u8>)> {
     read_message_deadline(stream, stop, Instant::now() + Duration::from_secs(15))
 }
 
 fn read_message_deadline(
-    stream: &mut TcpStream,
+    stream: &mut dyn NetworkStream,
     stop: Option<&AtomicBool>,
     deadline: Instant,
 ) -> Result<(u8, Vec<u8>)> {
@@ -316,6 +319,17 @@ fn validate_bitfield(bitfield: &[u8], count: Option<usize>) -> Result<()> {
         return Err("Bitfield does not match metadata piece count".into());
     }
     Ok(())
+}
+
+/// The only ordinary-network site of the wire protocol: an outgoing direct
+/// TCP connection. Everything after it runs on any deadline-capable stream.
+fn dial(address: SocketAddr, timeout: Duration) -> Result<Box<dyn NetworkStream>> {
+    let stream =
+        TcpStream::connect_timeout(&address, timeout).map_err(|_| "Could not connect to peer")?;
+    stream
+        .set_nodelay(true)
+        .map_err(|_| "Could not configure TCP")?;
+    Ok(Box::new(stream))
 }
 
 impl Peer {
@@ -385,28 +399,25 @@ impl Peer {
             ),
             None => connect_timeout,
         };
-        let connection = TcpStream::connect_timeout(&address, connect_timeout);
+        let connection = dial(address, connect_timeout);
         if stop.is_some_and(|flag| flag.load(Ordering::Acquire)) {
             return Err("Download interrupted".into());
         }
-        let mut stream = connection.map_err(|_| "Could not connect to peer")?;
-        stream
-            .set_nodelay(true)
-            .map_err(|_| "Could not configure TCP")?;
+        let mut stream = connection?;
         let deadline = end
             .unwrap_or(Instant::now() + Duration::from_secs(5))
             .min(Instant::now() + Duration::from_secs(5));
-        let extensions = handshake_deadline(&mut stream, hash, id, true, stop, deadline)?;
+        let extensions = handshake_deadline(&mut *stream, hash, id, true, stop, deadline)?;
         if extensions {
             write_message_deadline(
-                &mut stream,
+                &mut *stream,
                 20,
                 &extended_handshake(meta, port, pex),
                 stop,
                 deadline,
             )?;
         }
-        write_message_deadline(&mut stream, 2, &[], stop, deadline)?;
+        write_message_deadline(&mut *stream, 2, &[], stop, deadline)?;
         Ok(Self {
             stream,
             v2_wire,
@@ -440,7 +451,7 @@ impl Peer {
             if !self.choked {
                 return Ok(());
             }
-            let (id, payload) = read_message_deadline(&mut self.stream, Some(stop), deadline)?;
+            let (id, payload) = read_message_deadline(&mut *self.stream, Some(stop), deadline)?;
             self.ancillary(id, &payload)?;
         }
         Err("Peer keeps the download choked".into())
@@ -572,7 +583,7 @@ impl Peer {
                 break;
             }
             let (id, payload) = read_message_deadline(
-                &mut self.stream,
+                &mut *self.stream,
                 Some(stop),
                 deadline.unwrap_or(Instant::now() + Duration::from_secs(5)),
             )?;
@@ -592,7 +603,7 @@ impl Peer {
             let mut request_bytes = vec![ext];
             request_bytes.extend(crate::bencode::encode(&request));
             write_message_deadline(
-                &mut self.stream,
+                &mut *self.stream,
                 20,
                 &request_bytes,
                 Some(stop),
@@ -604,7 +615,7 @@ impl Peer {
                     return Err("Download interrupted".into());
                 }
                 let (id, payload) = read_message_deadline(
-                    &mut self.stream,
+                    &mut *self.stream,
                     Some(stop),
                     deadline.unwrap_or(Instant::now() + Duration::from_secs(5)),
                 )?;
@@ -707,7 +718,7 @@ impl Peer {
                 let length = (n - offset).min(BLOCK);
                 let waiting = Instant::now();
                 reserve_payload(
-                    &mut self.stream,
+                    &mut *self.stream,
                     &self.download_gate,
                     &self.local_download_gate,
                     length as u64,
@@ -722,12 +733,12 @@ impl Peer {
                 request.extend_from_slice(&(index as u32).to_be_bytes());
                 request.extend_from_slice(&(offset as u32).to_be_bytes());
                 request.extend_from_slice(&(length as u32).to_be_bytes());
-                write_message(&mut self.stream, 6, &request, Some(stop))?;
+                write_message(&mut *self.stream, 6, &request, Some(stop))?;
                 next += 1;
                 pending += 1;
             }
             let reading = Instant::now();
-            let (id, payload) = read_message(&mut self.stream, Some(stop))?;
+            let (id, payload) = read_message(&mut *self.stream, Some(stop))?;
             if id == 255 && reading.elapsed() >= Duration::from_secs(1) {
                 // A deliberately paced peer keeps its connection alive while
                 // waiting for payload credit. Rapid keepalives still consume
@@ -777,7 +788,7 @@ impl Peer {
         // A peer may close after sending its final permitted block. HAVE is an
         // advisory announcement and cannot invalidate the verified payload.
         let _ = write_message(
-            &mut self.stream,
+            &mut *self.stream,
             4,
             &(index as u32).to_be_bytes(),
             Some(stop),
@@ -807,12 +818,12 @@ impl Peer {
         request.extend_from_slice(&(first as u32).to_be_bytes());
         request.extend_from_slice(&2u32.to_be_bytes());
         request.extend_from_slice(&proof.to_be_bytes());
-        write_message(&mut self.stream, 21, &request, Some(stop))?;
+        write_message(&mut *self.stream, 21, &request, Some(stop))?;
         for _ in 0..128 {
             if stop.load(Ordering::Relaxed) {
                 return Err("Download interrupted".into());
             }
-            let (id, payload) = read_message(&mut self.stream, Some(stop))?;
+            let (id, payload) = read_message(&mut *self.stream, Some(stop))?;
             if id == 23 && payload == request {
                 return Err("Peer rejected v2 proof request".into());
             }
@@ -955,6 +966,7 @@ pub fn hash_response(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{io::Write, net::TcpStream};
 
     fn peer_pair(meta: Option<&Meta>) -> (Peer, TcpStream) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listener");
@@ -962,7 +974,7 @@ mod tests {
         let (remote, _) = listener.accept().expect("peer");
         (
             Peer {
-                stream,
+                stream: Box::new(stream),
                 metadata_id: None,
                 pex_id: None,
                 metadata_size: None,
@@ -1197,7 +1209,7 @@ mod tests {
             });
             let counters = Arc::new(super::super::TransferCounters::default());
             let mut peer = Peer {
-                stream,
+                stream: Box::new(stream),
                 metadata_id: None,
                 pex_id: None,
                 metadata_size: None,
@@ -1223,7 +1235,7 @@ mod tests {
                 expected.len() as u64
             );
             assert!(
-                write_message(&mut peer.stream, 4, &0u32.to_be_bytes(), None).is_err(),
+                write_message(&mut *peer.stream, 4, &0u32.to_be_bytes(), None).is_err(),
                 "the write half must remain unavailable for HAVE"
             );
         }
@@ -1273,6 +1285,92 @@ mod tests {
             server.join().expect("server");
         }
     }
+    /// A non-socket stream: scripted input in small chunks, captured output,
+    /// and `WouldBlock` once the input is exhausted, like an idle peer.
+    struct MemoryStream {
+        input: Vec<u8>,
+        output: Vec<u8>,
+    }
+
+    impl std::io::Read for MemoryStream {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            if self.input.is_empty() {
+                std::thread::sleep(Duration::from_millis(1));
+                return Err(std::io::ErrorKind::WouldBlock.into());
+            }
+            let n = buffer.len().min(self.input.len()).min(7);
+            buffer[..n].copy_from_slice(&self.input[..n]);
+            self.input.drain(..n);
+            Ok(n)
+        }
+    }
+
+    impl Write for MemoryStream {
+        fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+            let n = buffer.len().min(5);
+            self.output.extend_from_slice(&buffer[..n]);
+            Ok(n)
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl NetworkStream for MemoryStream {
+        fn set_read_timeout(&self, _: Option<Duration>) -> std::io::Result<()> {
+            Ok(())
+        }
+
+        fn set_write_timeout(&self, _: Option<Duration>) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn wire_protocol_runs_over_a_non_socket_stream() {
+        let hash = [7; 20];
+        let mut reply = vec![19];
+        reply.extend_from_slice(b"BitTorrent protocol");
+        reply.extend_from_slice(&[0, 0, 0, 0, 0, 0x10, 0, 0]);
+        reply.extend_from_slice(&hash);
+        reply.extend_from_slice(&[9; 20]);
+        reply.extend_from_slice(&[0, 0, 0, 3, 5, 0xa0, 0x40]);
+        let mut stream: Box<dyn NetworkStream> = Box::new(MemoryStream {
+            input: reply,
+            output: Vec::new(),
+        });
+        let deadline = Instant::now() + Duration::from_secs(5);
+        assert!(handshake_deadline(&mut *stream, &hash, &[1; 20], true, None, deadline).unwrap());
+        assert_eq!(
+            read_message_deadline(&mut *stream, None, deadline).unwrap(),
+            (5, vec![0xa0, 0x40])
+        );
+        write_message_deadline(&mut *stream, 2, &[], None, deadline).unwrap();
+
+        // An idle stream ends at the absolute deadline, and promptly on stop.
+        for stop in [false, true] {
+            let flag = AtomicBool::new(stop);
+            let started = Instant::now();
+            let deadline = started
+                + if stop {
+                    Duration::from_secs(30)
+                } else {
+                    Duration::from_millis(50)
+                };
+            let error = read_message_deadline(&mut *stream, Some(&flag), deadline)
+                .unwrap_err()
+                .to_string();
+            let expected = if stop {
+                "Download interrupted"
+            } else {
+                "Peer exceeded read deadline"
+            };
+            assert_eq!(error, expected);
+            assert!(started.elapsed() < Duration::from_secs(1));
+        }
+    }
+
     #[test]
     fn malicious_hash_request_is_rejected() {
         let info = value_dict(&[
@@ -1337,7 +1435,7 @@ mod tests {
                 },
             )
             .expect("peer");
-            let (id, body) = read_message(&mut peer.stream, None).expect("pex");
+            let (id, body) = read_message(&mut *peer.stream, None).expect("pex");
             peer.ancillary(id, &body).expect("accept");
             if private {
                 assert!(peer.discovered.is_empty());
