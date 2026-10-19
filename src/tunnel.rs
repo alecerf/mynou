@@ -14,11 +14,9 @@ use crate::wireguard::{
     Entropy, Load, MAX_DATAGRAM, MAX_QUEUED_PAYLOADS, Peer, PeerClock, PeerOutput, PeerStatus,
 };
 use std::io::ErrorKind;
-use std::net::{Ipv4Addr, SocketAddr, ToSocketAddrs, UdpSocket};
+use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 use std::time::{Duration, Instant, SystemTime};
 
-/// Longest accepted endpoint host name, as for DNS.
-pub const MAX_ENDPOINT_NAME: usize = 253;
 /// Width of the window in which handshake messages are counted for `Load`.
 pub const LOAD_WINDOW: Duration = Duration::from_secs(1);
 /// Larger than any acceptable outer datagram, so oversize input is detected
@@ -61,43 +59,28 @@ impl Clock for SystemClock {
     }
 }
 
-/// The pinned outer peer. A name is resolved only by [`resolve_endpoint`],
-/// explicitly, when a tunnel is created or its endpoint is replaced.
+/// The pinned outer peer: a literal address only. The runtime never consults
+/// the host resolver, so the first profile subset needs no DNS bootstrap.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Endpoint {
     Address(SocketAddr),
-    Name { host: String, port: u16 },
 }
 
-/// The one ordinary-path lookup of the runtime. Only a usable IPv4 unicast
-/// answer is accepted; IPv6 is refused rather than tried.
-pub fn resolve_endpoint(endpoint: &Endpoint) -> Result<SocketAddr, TunnelError> {
-    let usable = |address: &SocketAddr| match address {
-        SocketAddr::V4(v4) => {
-            let ip = v4.ip();
-            v4.port() != 0
-                && !ip.is_unspecified()
-                && !ip.is_multicast()
-                && !ip.is_broadcast()
-                && ip.octets()[0] < 240
+/// Checks the pinned endpoint without any network work. Only a usable IPv4
+/// unicast address with a nonzero port is accepted; IPv6 is refused.
+pub fn validate_endpoint(endpoint: &Endpoint) -> Result<SocketAddr, TunnelError> {
+    let Endpoint::Address(address) = endpoint;
+    match address {
+        SocketAddr::V4(v4)
+            if v4.port() != 0
+                && !v4.ip().is_unspecified()
+                && !v4.ip().is_multicast()
+                && !v4.ip().is_broadcast()
+                && v4.ip().octets()[0] < 240 =>
+        {
+            Ok(*address)
         }
-        SocketAddr::V6(_) => false,
-    };
-    match endpoint {
-        Endpoint::Address(address) if usable(address) => Ok(*address),
-        Endpoint::Address(_) => Err(TunnelError::Endpoint("unusable endpoint address".into())),
-        Endpoint::Name { host, port } => {
-            if host.is_empty() || host.len() > MAX_ENDPOINT_NAME || *port == 0 {
-                return Err(TunnelError::Endpoint("invalid endpoint name".into()));
-            }
-            let answers = (host.as_str(), *port)
-                .to_socket_addrs()
-                .map_err(|error| TunnelError::Endpoint(error.to_string()))?;
-            answers
-                .take(16)
-                .find(usable)
-                .ok_or_else(|| TunnelError::Endpoint("no usable IPv4 endpoint address".into()))
-        }
+        _ => Err(TunnelError::Endpoint("unusable endpoint address".into())),
     }
 }
 
@@ -382,11 +365,11 @@ fn transmit(socket: &UdpSocket, remote: SocketAddr, datagrams: Vec<Vec<u8>>, sta
 }
 
 impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
-    /// Validates, resolves the endpoint, binds the one outer socket and starts
+    /// Validates the config and endpoint, binds the one outer socket and starts
     /// the first generation. Nothing else touches the ordinary network.
     pub fn new(config: TunnelConfig, entropy: E, clock: C) -> Result<Self, TunnelError> {
         config.validate()?;
-        let endpoint = resolve_endpoint(&config.endpoint)?;
+        let endpoint = validate_endpoint(&config.endpoint)?;
         let socket =
             UdpSocket::bind(config.bind).map_err(|error| TunnelError::Io(error.to_string()))?;
         let window = clock.now();
@@ -829,12 +812,12 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
     }
 
     /// Replaces the pinned endpoint: the generation is revoked and a fresh one
-    /// starts toward the newly resolved address.
+    /// starts toward the new address.
     pub fn set_endpoint(&mut self, endpoint: Endpoint) -> Result<(), TunnelError> {
         if self.state == TunnelState::Closed {
             return Err(TunnelError::Unavailable);
         }
-        let address = resolve_endpoint(&endpoint)?;
+        let address = validate_endpoint(&endpoint)?;
         self.revoke();
         self.config.endpoint = endpoint;
         self.endpoint = address;

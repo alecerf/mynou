@@ -980,30 +980,13 @@ fn configuration_and_endpoint_are_validated() {
         Endpoint::Address("127.0.0.1:0".parse().unwrap()),
         Endpoint::Address("0.0.0.0:51820".parse().unwrap()),
         Endpoint::Address("224.0.0.1:51820".parse().unwrap()),
-        Endpoint::Name {
-            host: String::new(),
-            port: 51820,
-        },
-        Endpoint::Name {
-            host: "127.0.0.1".into(),
-            port: 0,
-        },
-        Endpoint::Name {
-            host: "::1".into(),
-            port: 51820,
-        },
-        Endpoint::Name {
-            host: "a".repeat(254),
-            port: 51820,
-        },
+        Endpoint::Address("255.255.255.255:51820".parse().unwrap()),
+        Endpoint::Address("240.0.0.1:51820".parse().unwrap()),
     ] {
         assert!(matches!(endpoint(refused), Err(TunnelError::Endpoint(_))));
     }
-    let literal = Endpoint::Name {
-        host: "127.0.0.1".into(),
-        port: 51820,
-    };
-    assert_eq!(resolve_endpoint(&literal), Ok(target));
+    let literal = Endpoint::Address(target);
+    assert_eq!(validate_endpoint(&literal), Ok(target));
 }
 
 #[test]

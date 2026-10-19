@@ -1,3 +1,10 @@
+## Changed: Accept only literal WireGuard endpoints in the tunnel runtime
+
+The Rust library's tunnel runtime no longer resolves endpoint hostnames through
+the host resolver, which had no deadline or cancellation. It accepts only a
+usable literal IPv4 endpoint, matching the supported profile subset. Torrent VPN
+protection remains unavailable ([runtime boundary](/docs/tunnel.md#ownership)).
+
 ## Added: Supply an explicit HTTP transport connector
 
 The Rust library's HTTP client can use a caller-supplied stream for every HTTP

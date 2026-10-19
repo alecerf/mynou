@@ -40,7 +40,7 @@ Usable addresses exclude `0.0.0.0/8`, loopback, multicast and reserved class E
 The interface prefix is retained by `address_prefix()`; it does not change the
 full IPv4 route from `AllowedIPs` or create a host route. Inner DNS uses the
 explicit resolvers; no host resolver is consulted. Endpoint hostnames and IPv6
-are rejected, so conversion cannot construct `Endpoint::Name`.
+are rejected; the tunnel runtime itself accepts only a literal IPv4 endpoint.
 
 All fields are unique: repeated `DNS` or `AllowedIPs` lines are rejected too.
 Unknown fields, additional peers/addresses, partial routes, `ListenPort`,

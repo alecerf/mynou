@@ -13,10 +13,11 @@ Parent [#111](https://github.com/alecerf/mynou/issues/111) stays open.
 One `Tunnel` is the single owner of:
 
 - the outer UDP socket, bound once to an IPv4 address (IPv6 is refused);
-- the pinned endpoint, resolved by `resolve_endpoint` only when the tunnel is
-  created or `set_endpoint` replaces it. A literal address needs no lookup; a
-  name uses the host resolver once and keeps only a usable IPv4 answer. This is
-  the runtime's only ordinary-path traffic besides the encrypted datagrams;
+- the pinned endpoint, a literal IPv4 address checked by `validate_endpoint`
+  when the tunnel is created or `set_endpoint` replaces it. Hostnames are not
+  accepted and the host resolver is never consulted, so the encrypted outer
+  datagrams are the runtime's only ordinary-path traffic. Accepting names later
+  needs a design change with a bounded, cancellable lookup;
 - the clock (`Clock`: monotonic elapsed time and the wall time for handshake
   timestamps; `SystemClock` in production);
 - the handshake load verdict: more than `handshake_load` handshake messages
