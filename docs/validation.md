@@ -31,7 +31,8 @@ equals the `Cargo.toml` version (the binary reports that version), the commit is
 on `trunk`, and it raised the version over its parent. A failed decision publishes nothing, and on a pull request it fails `package`.
 
 1. **validate** checks the Cargo graph offline (exactly one package, `mynou`,
-   with no dependencies), formatting and Clippy with warnings denied. Scheduler
+   with no dependencies), formatting, the
+   [torrent network inventory](network-inventory.md) and Clippy with warnings denied. Scheduler
    and release tooling tests run in the Linux `organization` check.
    It then runs every Cargo test harness,
    using the physical runner directory as temporary directory because Mynou refuses the
@@ -231,6 +232,7 @@ check after a tooling or documentation change:
 cargo fmt --all --check
 cargo check --all-targets --offline --locked
 python3 -B -m unittest discover -s .github/scripts/tests -p 'test_*.py'
+python3 -B .github/scripts/network_inventory.py
 ```
 
 For product changes, run the relevant Cargo test target. To run the full suite

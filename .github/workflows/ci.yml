@@ -140,6 +140,8 @@ jobs:
           cargo tree --all-features --target all --edges all --offline --locked
       - name: Check formatting
         run: cargo fmt --all --check
+      - name: Check the torrent network inventory
+        run: python3 -B .github/scripts/network_inventory.py
       - name: Run Clippy
         run: cargo clippy --all-targets --offline --locked -- -D warnings
       - name: Generate independent crypto reference fixtures
