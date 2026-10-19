@@ -3,6 +3,7 @@ use crate::Result;
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{IpAddr, TcpStream, ToSocketAddrs};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const MAX_HEADER: usize = 65_536;
@@ -158,12 +159,51 @@ pub struct Response {
     pub body: Vec<u8>,
 }
 
-#[derive(Clone, Debug)]
+/// A byte stream whose I/O obeys the configured timeouts. Implementations must
+/// also reject I/O after their owning transport is revoked; HTTP cannot enforce
+/// transport admission or cancel an implementation that ignores its timeouts.
+pub trait NetworkStream: Read + Write + Send {
+    fn set_read_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()>;
+    fn set_write_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()>;
+}
+
+impl NetworkStream for TcpStream {
+    fn set_read_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
+        TcpStream::set_read_timeout(self, timeout)
+    }
+
+    fn set_write_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
+        TcpStream::set_write_timeout(self, timeout)
+    }
+}
+
+/// Owns resolution and connection policy for every HTTP(S) hop. The deadline
+/// covers resolution, connect, TLS, redirects and response I/O. Implementations
+/// must bound their own work by it and validate destinations and generations.
+/// An error is final: HTTP never retries through the default network path.
+pub trait HttpConnector: Send + Sync {
+    fn connect(&self, host: &str, port: u16, deadline: Instant) -> Result<Box<dyn NetworkStream>>;
+}
+
+#[derive(Clone)]
 pub struct HttpClient {
     timeout: Duration,
     max_body: usize,
     redirects: usize,
     environment_proxy: bool,
+    connector: Option<Arc<dyn HttpConnector>>,
+}
+
+impl std::fmt::Debug for HttpClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HttpClient")
+            .field("timeout", &self.timeout)
+            .field("max_body", &self.max_body)
+            .field("redirects", &self.redirects)
+            .field("environment_proxy", &self.environment_proxy)
+            .field("custom_connector", &self.connector.is_some())
+            .finish()
+    }
 }
 
 impl Default for HttpClient {
@@ -179,6 +219,7 @@ impl HttpClient {
             max_body: 16 * 1024 * 1024,
             redirects: 5,
             environment_proxy: true,
+            connector: None,
         }
     }
 
@@ -200,6 +241,15 @@ impl HttpClient {
 
     /// Ignore HTTP_PROXY/HTTPS_PROXY/NO_PROXY, useful for isolated local peers.
     pub fn without_proxy(mut self) -> Self {
+        self.environment_proxy = false;
+        self
+    }
+
+    /// Use only this connector, including after redirects and underneath TLS.
+    /// Environment proxies are ignored. This supplies a transport seam; it does
+    /// not enable torrent protection or replace the caller's admission policy.
+    pub fn with_connector(mut self, connector: Arc<dyn HttpConnector>) -> Self {
+        self.connector = Some(connector);
         self.environment_proxy = false;
         self
     }
@@ -309,12 +359,37 @@ impl HttpClient {
         body: &[u8],
         deadline: Instant,
     ) -> Result<Response> {
-        let proxy = if self.environment_proxy {
+        let proxy = if self.connector.is_none() && self.environment_proxy {
             environment_proxy(url)?
         } else {
             None
         };
         let endpoint = proxy.as_ref().unwrap_or(url);
+        let mut stream = if let Some(connector) = &self.connector {
+            if Instant::now() >= deadline {
+                return Err("HTTP deadline exceeded".into());
+            }
+            DeadlineStream::from_stream(
+                connector.connect(&endpoint.host, endpoint.port, deadline)?,
+                deadline,
+            )
+        } else {
+            self.direct_stream(endpoint, deadline)?
+        };
+        if proxy.is_some() && url.scheme == "https" {
+            connect_tunnel(&mut stream, url)?;
+        }
+        let mut transport = if url.scheme == "https" {
+            Transport::Tls(Box::new(crate::tls::TlsStream::connect_stream(
+                stream, &url.host,
+            )?))
+        } else {
+            Transport::Tcp(stream)
+        };
+        self.exchange(method, url, headers, body, proxy.is_some(), &mut transport)
+    }
+
+    fn direct_stream(&self, endpoint: &Url, deadline: Instant) -> Result<DeadlineStream> {
         let addresses = (endpoint.host.as_str(), endpoint.port)
             .to_socket_addrs()
             .map_err(|_| "Unable to resolve DNS")?;
@@ -335,17 +410,18 @@ impl HttpClient {
             .and_then(|()| stream.set_write_timeout(Some(self.timeout)))
             .map_err(|_| "Unable to configure network timeouts")?;
         let _ = stream.set_nodelay(true);
-        let mut stream = DeadlineStream::new(stream, deadline);
-        if proxy.is_some() && url.scheme == "https" {
-            connect_tunnel(&mut stream, url)?;
-        }
-        let mut transport = if url.scheme == "https" {
-            Transport::Tls(Box::new(crate::tls::TlsStream::connect_stream(
-                stream, &url.host,
-            )?))
-        } else {
-            Transport::Tcp(stream)
-        };
+        Ok(DeadlineStream::new(stream, deadline))
+    }
+
+    fn exchange(
+        &self,
+        method: &str,
+        url: &Url,
+        headers: &[(String, String)],
+        body: &[u8],
+        proxy: bool,
+        transport: &mut Transport,
+    ) -> Result<Response> {
         let host = if url.host.contains(':') {
             format!("[{}]", url.host)
         } else {
@@ -358,7 +434,7 @@ impl HttpClient {
         } else {
             format!("{host}:{}", url.port)
         };
-        let target = if proxy.is_some() && url.scheme == "http" {
+        let target = if proxy && url.scheme == "http" {
             url.as_string()
         } else {
             url.path.clone()
@@ -539,12 +615,16 @@ enum Transport {
 
 /// Bounds complete I/O operations, including peers that send a byte at a time.
 pub(crate) struct DeadlineStream {
-    stream: TcpStream,
+    stream: Box<dyn NetworkStream>,
     deadline: Instant,
 }
 
 impl DeadlineStream {
     pub(crate) fn new(stream: TcpStream, deadline: Instant) -> Self {
+        Self::from_stream(Box::new(stream), deadline)
+    }
+
+    pub(crate) fn from_stream(stream: Box<dyn NetworkStream>, deadline: Instant) -> Self {
         Self { stream, deadline }
     }
 
@@ -581,6 +661,7 @@ impl Write for DeadlineStream {
         self.stream.write(data)
     }
     fn flush(&mut self) -> std::io::Result<()> {
+        self.stream.set_write_timeout(Some(self.remaining()?))?;
         self.stream.flush()
     }
 }

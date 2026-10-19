@@ -816,6 +816,8 @@ mod tests {
         CertificateVerify,
         Finished,
         Application,
+        HttpOk,
+        HttpDowngrade,
     }
 
     fn local_server(fault: Fault) -> (SocketAddr, JoinHandle<Result<()>>) {
@@ -951,6 +953,29 @@ mod tests {
                 "c ap traffic",
                 &transcript.clone().finalize(),
             )?)?;
+            if matches!(fault, Fault::HttpOk | Fault::HttpDowngrade) {
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    let (header, payload) = read_record(&mut stream)?;
+                    let (kind, fragment) = receive.open(&header, &payload)?;
+                    if kind != 23 || request.len() + fragment.len() > 65_536 {
+                        return Err("Invalid synthetic HTTPS request".into());
+                    }
+                    request.extend(fragment);
+                }
+                if !request.starts_with(b"GET /private HTTP/1.1\r\n") {
+                    return Err("Unexpected synthetic HTTPS target".into());
+                }
+                let response: &[u8] = if matches!(fault, Fault::HttpDowngrade) {
+                    b"HTTP/1.1 302 Found\r\nLocation: http://downgrade.invalid/\r\nContent-Length: 0\r\n\r\n"
+                } else {
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\npong"
+                };
+                stream
+                    .write_all(&send.seal(23, response)?)
+                    .map_err(|e| e.to_string())?;
+                return Ok(());
+            }
             let (header, payload) = read_record(&mut stream)?;
             let (kind, request) = receive.open(&header, &payload)?;
             if kind != 23 || request != b"ping" {
@@ -999,6 +1024,153 @@ mod tests {
             hostname,
             roots,
         )
+    }
+
+    // A custom stream has no TcpStream API; deliberately fragment I/O so TLS
+    // must use the supplied Read/Write implementation throughout the session.
+    struct Fragmented(TcpStream);
+
+    impl Read for Fragmented {
+        fn read(&mut self, data: &mut [u8]) -> io::Result<usize> {
+            let count = data.len().min(7);
+            self.0.read(&mut data[..count])
+        }
+    }
+
+    impl Write for Fragmented {
+        fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+            self.0.write(&data[..data.len().min(11)])
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.0.flush()
+        }
+    }
+
+    impl crate::net::NetworkStream for Fragmented {
+        fn set_read_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
+            self.0.set_read_timeout(timeout)
+        }
+
+        fn set_write_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
+            self.0.set_write_timeout(timeout)
+        }
+    }
+
+    fn connect_custom(address: SocketAddr, hostname: &str, roots: &[u8]) -> Result<TlsStream> {
+        let stream = TcpStream::connect(address).map_err(|e| e.to_string())?;
+        TlsStream::connect_with_roots(
+            DeadlineStream::from_stream(
+                Box::new(Fragmented(stream)),
+                Instant::now() + Duration::from_secs(10),
+            ),
+            hostname,
+            roots,
+        )
+    }
+
+    #[test]
+    fn supplied_stream_authenticates_and_handles_application_data_and_key_updates() {
+        let (address, server) = local_server(Fault::None);
+        let mut stream = connect_custom(address, "localhost", test_fixture::ROOT_PEM).unwrap();
+        stream.write_all(b"ping").unwrap();
+        let mut response = Vec::new();
+        stream.read_to_end(&mut response).unwrap();
+        assert_eq!(response, b"pong");
+        server.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn supplied_stream_rejects_forged_handshakes_wrong_names_and_untrusted_roots() {
+        for fault in [Fault::CertificateVerify, Fault::Finished] {
+            let (address, server) = local_server(fault);
+            assert!(connect_custom(address, "localhost", test_fixture::ROOT_PEM).is_err());
+            let _ = server.join().unwrap();
+        }
+        let (address, server) = local_server(Fault::None);
+        assert!(connect_custom(address, "other.test", test_fixture::ROOT_PEM).is_err());
+        let _ = server.join().unwrap();
+        let (address, server) = local_server(Fault::None);
+        assert!(connect_custom(address, "localhost", b"untrusted").is_err());
+        let _ = server.join().unwrap();
+    }
+
+    #[test]
+    fn https_connector_authenticates_the_url_host_and_rejects_downgrades() {
+        use crate::net::{HttpClient, HttpConnector, NetworkStream};
+        use std::sync::{Arc, Mutex};
+        const CHILD: &str = "MYNOU_HTTPS_CONNECTOR_FIXTURE";
+        if std::env::var_os(CHILD).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "tls::tests::https_connector_authenticates_the_url_host_and_rejects_downgrades",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .env(
+                    "MYNOU_CA_FILE",
+                    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .join("src/pki/fixtures/rsa-root.pem"),
+                )
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr),
+            );
+            return;
+        }
+        struct Mapped {
+            address: SocketAddr,
+            hosts: Mutex<Vec<String>>,
+        }
+        impl HttpConnector for Mapped {
+            fn connect(
+                &self,
+                host: &str,
+                _port: u16,
+                deadline: Instant,
+            ) -> Result<Box<dyn NetworkStream>> {
+                self.hosts.lock().unwrap().push(host.into());
+                let timeout = deadline
+                    .checked_duration_since(Instant::now())
+                    .ok_or("Synthetic connect deadline expired")?;
+                let stream = TcpStream::connect_timeout(&self.address, timeout)
+                    .map_err(|e| e.to_string())?;
+                Ok(Box::new(Fragmented(stream)))
+            }
+        }
+        for (fault, host, expected) in [
+            (Fault::HttpOk, "localhost", None),
+            (
+                Fault::HttpDowngrade,
+                "localhost",
+                Some("HTTPS to HTTP redirect rejected"),
+            ),
+            (Fault::HttpOk, "wrong.invalid", Some("hostname")),
+        ] {
+            let (address, server) = local_server(fault);
+            let connector = Arc::new(Mapped {
+                address,
+                hosts: Mutex::new(Vec::new()),
+            });
+            let result = HttpClient::new()
+                .with_connector(connector.clone())
+                .get(&format!("https://{host}/private"));
+            if let Some(message) = expected {
+                assert!(result.unwrap_err().contains(message));
+            } else {
+                assert_eq!(result.unwrap().body, b"pong");
+            }
+            assert_eq!(*connector.hosts.lock().unwrap(), vec![host]);
+            let outcome = server.join().unwrap();
+            if host == "localhost" {
+                outcome.unwrap();
+            }
+        }
     }
 
     #[test]

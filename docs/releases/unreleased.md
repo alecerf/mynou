@@ -1,3 +1,12 @@
+## Added: Supply an explicit HTTP transport connector
+
+The Rust library's HTTP client can use a caller-supplied stream for every HTTP
+or authenticated HTTPS hop, including redirects, without host resolution,
+environment proxies or direct-connection fallback in that path. Connector
+implementations own deadlines, destination policy and revocation. This is a
+transport prerequisite; torrent VPN protection remains unavailable
+([API contract and limits](/docs/http-connector.md)).
+
 ## Added: Read WireGuard profiles from private files
 
 The Rust library can read a bounded WireGuard profile from a private regular
