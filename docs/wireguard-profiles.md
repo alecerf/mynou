@@ -9,7 +9,7 @@ socket creation, tunnel startup or configuration changes.
 This delivers [#279](https://github.com/alecerf/mynou/issues/279), a prerequisite
 of [#222](https://github.com/alecerf/mynou/issues/222). There is no CLI/API import
 or VPN setting yet. Torrent transport integration remains
-[#221](https://github.com/alecerf/mynou/issues/221); lifecycle, private-file import
+[#221](https://github.com/alecerf/mynou/issues/221); lifecycle, operator import
 and persistence remain #222; isolation/race/resource evidence and the macOS
 migration guide remain [#224](https://github.com/alecerf/mynou/issues/224).
 Mynou torrent traffic is still unprotected. Existing VPN deployments must stay
@@ -67,10 +67,41 @@ names appear in errors. Do not log the caller's original profile text or extract
 and log keys from the resulting `TunnelConfig`. Safe Rust does not guarantee
 key zeroization after disposal; no constant-time or audited-crypto claim is made.
 
-This parser accepts in-memory text only. Future durable import must use the
-existing private regular-file, permission and link/race checks before reading
-or saving secrets; it must redact CLI/API output. Passing validation is not
-permission to create a protected engine before the remaining delivery gates.
+The parser accepts in-memory text. The separate read-only API below loads private
+files; durable import and CLI/API handling remain future work. Passing validation
+is not permission to create a protected engine before the remaining delivery gates.
+
+## Read a private file
+
+`mynou::wireguard::profile::read_private_file(&Path)` delivers the file-reading
+prerequisite [#281](https://github.com/alecerf/mynou/issues/281) and returns the
+same secret-bearing `Profile`. It accepts an existing regular file with mode
+`0400` or `0600`, one hard link, and no symbolic links in its path. Parent (`..`)
+components are rejected so ancestor checks cannot hide a symbolic link. Use a
+physical path (for example `/private/tmp`, rather than macOS's `/tmp` alias).
+The function leaves source bytes and permissions untouched and writes no
+configuration, backups or temporary files. It performs no network activity.
+
+Loading uses the repository's `O_NOFOLLOW | O_NONBLOCK` open flags, then checks
+the descriptor against the inspected device/inode before reading. Descriptor
+and path checks before and after reading compare mode, link count, owner/group,
+size and modification/change timestamps. A read consumes at most 16,385 bytes
+(the parser limit plus one detection byte); initially oversized files fail
+before reading. Invalid UTF-8 fails explicitly, and parser rules remain intact.
+
+`ImportError` has typed file, change, size, encoding and parser reasons. Its
+`Display`, `Debug` and error chain retain no paths, input bytes or OS error
+payloads. File errors deliberately do not reproduce the underlying OS message;
+parser failures keep their redacted `ProfileError` line and reason. Callers must
+also avoid logging the original path/text or extracting secret fields.
+
+These safe-std checks detect observed substitutions and changes; they are not
+an atomic filesystem snapshot or an OS sandbox. Keep the file and its parent
+directories under trusted control. A process able to mutate them can race
+ancestor traversal, restore a path between checks or modify a file after the
+last check. The API does not establish current-user ownership or guarantee
+memory zeroization. It does not persist credentials, enable protection or
+supply the lifecycle/revocation fences still required by #222.
 
 ## Validation
 
@@ -81,3 +112,8 @@ key encoding and low-order/self peers, numeric bounds and redacted diagnostics.
 They use synthetic values and RFC 7748 test material, without provider accounts
 or network access. The protocol tests continue to use the independent vectors
 from `.github/scripts/crypto_fixtures.py`; see [local validation](validation.md#local-validation).
+
+Private-file fixtures additionally cover read-only/read-write private modes,
+unchanged source bytes/metadata, unsafe modes, hard/symbolic links and ancestor
+links, non-regular/missing paths, deterministic replacements and content/mode/link
+changes around open/read, exact file-size bounds, encoding and error redaction.

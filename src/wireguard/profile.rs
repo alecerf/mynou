@@ -1,11 +1,16 @@
 //! Offline parser for the first supported WireGuard profile subset.
-//! No file access, host resolution, sockets, persistence or protection activation.
+//! Parsing is pure; optional private-file loading performs bounded read-only I/O.
+//! No host resolution, sockets, persistence or protection activation.
 
 use crate::{
     netstack::{Ipv4Config, MAX_MTU, MAX_RESOLVERS, MIN_MTU, TcpConfig},
     tunnel::{Endpoint, TunnelConfig},
 };
 use std::{fmt, net::Ipv4Addr, net::SocketAddrV4, time::Duration};
+
+#[path = "profile_file.rs"]
+mod file;
+pub use file::{ImportError, read_private_file};
 
 pub const MAX_PROFILE_BYTES: usize = 16_384;
 pub const MAX_PROFILE_LINES: usize = 256;

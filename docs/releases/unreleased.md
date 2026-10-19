@@ -1,3 +1,10 @@
+## Added: Read WireGuard profiles from private files
+
+The Rust library can read a bounded WireGuard profile from a private regular
+file, rejecting links, unsafe permissions and observed file changes while
+keeping errors free of paths and credentials. This read-only prerequisite does
+not activate torrent VPN protection or save configuration ([API and limits](/docs/wireguard-profiles.md#read-a-private-file)).
+
 ## Added: Validate WireGuard profiles offline
 
 The Rust library can now parse a bounded subset of WireGuard `.conf` profiles
