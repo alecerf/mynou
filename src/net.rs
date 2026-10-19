@@ -2,7 +2,7 @@
 use crate::Result;
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{IpAddr, TcpStream, ToSocketAddrs};
+use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -174,6 +174,34 @@ impl NetworkStream for TcpStream {
 
     fn set_write_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
         TcpStream::set_write_timeout(self, timeout)
+    }
+}
+
+/// A datagram socket whose I/O obeys the configured timeouts. Like
+/// `NetworkStream`, implementations must reject I/O after their owning
+/// transport is revoked; callers check the source of every received datagram.
+pub trait NetworkDatagram: Send {
+    fn send_to(&self, packet: &[u8], target: SocketAddr) -> std::io::Result<usize>;
+    fn recv_from(&self, buf: &mut [u8]) -> std::io::Result<(usize, SocketAddr)>;
+    fn set_read_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()>;
+    fn set_write_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()>;
+}
+
+impl NetworkDatagram for UdpSocket {
+    fn send_to(&self, packet: &[u8], target: SocketAddr) -> std::io::Result<usize> {
+        UdpSocket::send_to(self, packet, target)
+    }
+
+    fn recv_from(&self, buf: &mut [u8]) -> std::io::Result<(usize, SocketAddr)> {
+        UdpSocket::recv_from(self, buf)
+    }
+
+    fn set_read_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
+        UdpSocket::set_read_timeout(self, timeout)
+    }
+
+    fn set_write_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
+        UdpSocket::set_write_timeout(self, timeout)
     }
 }
 

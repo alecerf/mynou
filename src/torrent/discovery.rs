@@ -1,4 +1,4 @@
-use crate::{Result, bencode::Value};
+use crate::{Result, bencode::Value, net::NetworkDatagram};
 use std::{
     collections::BTreeSet,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs, UdpSocket},
@@ -232,7 +232,8 @@ fn nonce() -> Result<u32> {
     Ok(u32::from_be_bytes(crate::crypto::random_bytes::<4>()?))
 }
 fn udp_exchange(
-    socket: &UdpSocket,
+    socket: &dyn NetworkDatagram,
+    address: SocketAddr,
     packet: &[u8],
     action: u32,
     tx: u32,
@@ -251,10 +252,10 @@ fn udp_exchange(
             .set_write_timeout(Some(remaining.min(Duration::from_secs(2))))
             .map_err(|_| "Could not configure UDP timeout")?;
         socket
-            .send(packet)
+            .send_to(packet, address)
             .map_err(|_| "Could not send UDP tracker request")?;
-        match socket.recv(&mut buf) {
-            Ok(n) if n >= 8 && buf[4..8] == tx.to_be_bytes() => {
+        match socket.recv_from(&mut buf) {
+            Ok((n, from)) if from == address && n >= 8 && buf[4..8] == tx.to_be_bytes() => {
                 if u32::from_be_bytes(buf[..4].try_into().map_err(|_| "Invalid UDP response")?) == 3
                 {
                     return Err("UDP tracker rejected announcement".into());
@@ -276,6 +277,13 @@ fn udp_tracker(url: &str, request: &TrackerRequest<'_>, deadline: Instant) -> Re
     if authority.contains('@') {
         return Err("Invalid UDP tracker address".into());
     }
+    let (socket, address) = udp_dial(authority)?;
+    udp_announce(&*socket, address, request, deadline)
+}
+
+/// The ordinary-network site of the UDP tracker: host resolution and a direct
+/// socket. The BEP 15 exchange runs on any datagram socket.
+fn udp_dial(authority: &str) -> Result<(Box<dyn NetworkDatagram>, SocketAddr)> {
     let address = authority
         .to_socket_addrs()
         .map_err(|_| "Could not resolve tracker address")?
@@ -287,18 +295,21 @@ fn udp_tracker(url: &str, request: &TrackerRequest<'_>, deadline: Instant) -> Re
         "[::]:0"
     })
     .map_err(|_| "Could not create UDP socket")?;
-    socket
-        .connect(address)
-        .map_err(|_| "Could not connect to UDP tracker")?;
-    socket
-        .set_read_timeout(Some(Duration::from_secs(2)))
-        .map_err(|_| "Could not configure UDP timeout")?;
+    Ok((Box::new(socket), address))
+}
+
+fn udp_announce(
+    socket: &dyn NetworkDatagram,
+    address: SocketAddr,
+    request: &TrackerRequest<'_>,
+    deadline: Instant,
+) -> Result<TrackerReply> {
     let tx = nonce()?;
     let mut connect = Vec::with_capacity(16);
     connect.extend_from_slice(&0x41727101980u64.to_be_bytes());
     connect.extend_from_slice(&0u32.to_be_bytes());
     connect.extend_from_slice(&tx.to_be_bytes());
-    let response = udp_exchange(&socket, &connect, 0, tx, deadline)?;
+    let response = udp_exchange(socket, address, &connect, 0, tx, deadline)?;
     if response.len() != 16 {
         return Err("Invalid UDP connection response".into());
     }
@@ -317,7 +328,7 @@ fn udp_tracker(url: &str, request: &TrackerRequest<'_>, deadline: Instant) -> Re
     announce.extend_from_slice(&session_key(request).to_be_bytes());
     announce.extend_from_slice(&100i32.to_be_bytes());
     announce.extend_from_slice(&request.port.to_be_bytes());
-    let response = udp_exchange(&socket, &announce, 1, tx, deadline)?;
+    let response = udp_exchange(socket, address, &announce, 1, tx, deadline)?;
     if response.len() < 20 {
         return Err("Truncated UDP announcement response".into());
     }
@@ -342,27 +353,52 @@ pub fn dht_lookup(
     stop: &AtomicBool,
     seeds: &[SocketAddr],
 ) -> Result<Vec<SocketAddr>> {
+    let socket = dht_socket()?;
+    let mut nodes: Vec<SocketAddr> = seeds.iter().copied().filter(SocketAddr::is_ipv4).collect();
+    if seeds.is_empty() {
+        nodes.extend(dht_bootstrap());
+    }
+    let deadline = Instant::now() + Duration::from_secs(5);
+    dht_search(&*socket, hash, port, announce, stop, nodes, deadline)
+}
+
+/// The ordinary-network sites of the DHT: a direct socket and the system
+/// resolver for the bootstrap names. The lookup runs on any datagram socket.
+fn dht_socket() -> Result<Box<dyn NetworkDatagram>> {
     let socket = UdpSocket::bind("0.0.0.0:0").map_err(|_| "Could not create DHT socket")?;
+    Ok(Box::new(socket))
+}
+
+fn dht_bootstrap() -> Vec<SocketAddr> {
+    let mut nodes = Vec::new();
+    for host in [
+        "router.bittorrent.com:6881",
+        "router.utorrent.com:6881",
+        "dht.transmissionbt.com:6881",
+    ] {
+        if let Ok(addresses) = host.to_socket_addrs() {
+            nodes.extend(addresses.filter(SocketAddr::is_ipv4).take(2));
+        }
+    }
+    nodes
+}
+
+fn dht_search(
+    socket: &dyn NetworkDatagram,
+    hash: &[u8; 20],
+    port: u16,
+    announce: bool,
+    stop: &AtomicBool,
+    mut nodes: Vec<SocketAddr>,
+    deadline: Instant,
+) -> Result<Vec<SocketAddr>> {
     socket
         .set_read_timeout(Some(Duration::from_millis(250)))
         .map_err(|_| "Could not configure DHT timeout")?;
     let id = crate::crypto::random_bytes::<20>()?;
-    let mut nodes: Vec<SocketAddr> = seeds.iter().copied().filter(SocketAddr::is_ipv4).collect();
-    if seeds.is_empty() {
-        for host in [
-            "router.bittorrent.com:6881",
-            "router.utorrent.com:6881",
-            "dht.transmissionbt.com:6881",
-        ] {
-            if let Ok(addresses) = host.to_socket_addrs() {
-                nodes.extend(addresses.filter(SocketAddr::is_ipv4).take(2));
-            }
-        }
-    }
     let mut seen = BTreeSet::new();
     let mut peers = BTreeSet::new();
     let mut tx = nonce()?;
-    let deadline = Instant::now() + Duration::from_secs(5);
     for index in 0..64 {
         if stop.load(Ordering::Relaxed) || Instant::now() >= deadline || index >= nodes.len() {
             break;
@@ -478,6 +514,234 @@ pub fn value_field<'a>(v: &'a Value, key: &[u8]) -> Option<&'a Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        collections::VecDeque,
+        io::{Error, ErrorKind},
+        sync::Mutex,
+    };
+
+    type Responder = Box<dyn FnMut(&[u8], SocketAddr) -> Vec<(Vec<u8>, SocketAddr)> + Send>;
+
+    /// A non-socket datagram transport: every sent packet is recorded and the
+    /// responder queues the replies that later receives return.
+    struct Memory {
+        sent: Mutex<Vec<(Vec<u8>, SocketAddr)>>,
+        inbox: Mutex<VecDeque<(Vec<u8>, SocketAddr)>>,
+        responder: Mutex<Responder>,
+    }
+
+    impl Memory {
+        fn new(responder: Responder) -> Self {
+            Self {
+                sent: Mutex::new(Vec::new()),
+                inbox: Mutex::new(VecDeque::new()),
+                responder: Mutex::new(responder),
+            }
+        }
+
+        fn sent(&self) -> Vec<(Vec<u8>, SocketAddr)> {
+            self.sent.lock().unwrap().clone()
+        }
+    }
+
+    impl NetworkDatagram for Memory {
+        fn send_to(&self, packet: &[u8], target: SocketAddr) -> std::io::Result<usize> {
+            self.sent.lock().unwrap().push((packet.to_vec(), target));
+            let replies = (self.responder.lock().unwrap())(packet, target);
+            self.inbox.lock().unwrap().extend(replies);
+            Ok(packet.len())
+        }
+
+        fn recv_from(&self, buf: &mut [u8]) -> std::io::Result<(usize, SocketAddr)> {
+            let (packet, from) = self
+                .inbox
+                .lock()
+                .unwrap()
+                .pop_front()
+                .ok_or_else(|| Error::from(ErrorKind::TimedOut))?;
+            buf[..packet.len()].copy_from_slice(&packet);
+            Ok((packet.len(), from))
+        }
+
+        fn set_read_timeout(&self, _: Option<Duration>) -> std::io::Result<()> {
+            Ok(())
+        }
+
+        fn set_write_timeout(&self, _: Option<Duration>) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn request() -> TrackerRequest<'static> {
+        TrackerRequest {
+            hash: &[7; 20],
+            peer_id: &[9; 20],
+            port: 6882,
+            left: 23,
+            downloaded: 17,
+            uploaded: 19,
+            event: TrackerEvent::Started,
+        }
+    }
+
+    #[test]
+    fn udp_tracker_runs_over_a_non_socket_datagram_and_ignores_foreign_sources() {
+        let tracker: SocketAddr = "192.0.2.1:6969".parse().unwrap();
+        let foreign: SocketAddr = "192.0.2.2:6969".parse().unwrap();
+        let mut forged = false;
+        let socket = Memory::new(Box::new(move |packet, target| {
+            assert_eq!(target, tracker);
+            let mut reply = Vec::new();
+            if packet.len() == 16 {
+                reply.extend_from_slice(&0u32.to_be_bytes());
+                reply.extend_from_slice(&packet[12..16]);
+                reply.extend_from_slice(&17u64.to_be_bytes());
+            } else {
+                assert_eq!(packet.len(), 98);
+                assert_eq!(&packet[..8], &17u64.to_be_bytes());
+                reply.extend_from_slice(&1u32.to_be_bytes());
+                reply.extend_from_slice(&packet[12..16]);
+                reply.extend_from_slice(&30u32.to_be_bytes());
+                reply.extend_from_slice(&[0; 8]);
+                reply.extend_from_slice(&[198, 51, 100, 7, 0x1a, 0xe1]);
+            }
+            // The first connect answer comes from another host with the right
+            // transaction; it must be dropped and the request sent again.
+            let from = if forged { tracker } else { foreign };
+            forged = true;
+            vec![(reply, from)]
+        }));
+        let reply = udp_announce(
+            &socket,
+            tracker,
+            &request(),
+            Instant::now() + Duration::from_secs(5),
+        )
+        .unwrap();
+        assert_eq!(reply.peers, vec!["198.51.100.7:6881".parse().unwrap()]);
+        assert_eq!(reply.interval, Duration::from_secs(30));
+        let sent = socket.sent();
+        assert_eq!(sent.len(), 3);
+        assert_eq!(sent[0].0, sent[1].0);
+        assert!(sent.iter().all(|(_, target)| *target == tracker));
+    }
+
+    #[test]
+    fn udp_tracker_over_a_datagram_honours_its_deadline_and_silence() {
+        let tracker: SocketAddr = "192.0.2.1:6969".parse().unwrap();
+        let silent = Memory::new(Box::new(|_, _| Vec::new()));
+        let expired = udp_announce(&silent, tracker, &request(), Instant::now()).unwrap_err();
+        assert!(expired.to_string().contains("deadline exceeded"));
+        assert!(silent.sent().is_empty());
+        let unanswered = udp_announce(
+            &silent,
+            tracker,
+            &request(),
+            Instant::now() + Duration::from_secs(5),
+        )
+        .unwrap_err();
+        assert!(unanswered.to_string().contains("did not respond"));
+        assert_eq!(silent.sent().len(), 2);
+    }
+
+    #[test]
+    fn dht_search_runs_over_a_non_socket_datagram() {
+        let first: SocketAddr = "192.0.2.10:6881".parse().unwrap();
+        let second: SocketAddr = "192.0.2.11:6881".parse().unwrap();
+        let socket = Memory::new(Box::new(move |packet, target| {
+            let query = crate::bencode::parse(packet).unwrap();
+            if value_bytes(field(&query, b"q")) != Some(b"get_peers".as_slice()) {
+                return Vec::new();
+            }
+            let t = value_bytes(field(&query, b"t")).unwrap().to_vec();
+            if target == second {
+                // A reply for the second node delivered from the first must
+                // not count as the second node's answer.
+                let reply = dict(&[
+                    (b"t", Value::Bytes(t)),
+                    (b"y", Value::Bytes(b"r".to_vec())),
+                    (
+                        b"r",
+                        dict(&[(
+                            b"values",
+                            Value::List(vec![Value::Bytes(vec![203, 0, 113, 9, 0, 9])]),
+                        )]),
+                    ),
+                ]);
+                return vec![(crate::bencode::encode(&reply), first)];
+            }
+            let mut node = vec![1; 20];
+            node.extend_from_slice(&[192, 0, 2, 11, 0x1a, 0xe1]);
+            let reply = dict(&[
+                (b"t", Value::Bytes(t)),
+                (b"y", Value::Bytes(b"r".to_vec())),
+                (
+                    b"r",
+                    dict(&[
+                        (
+                            b"values",
+                            Value::List(vec![Value::Bytes(vec![198, 51, 100, 7, 0x1a, 0xe1])]),
+                        ),
+                        (b"nodes", Value::Bytes(node)),
+                        (b"token", Value::Bytes(b"tok".to_vec())),
+                    ]),
+                ),
+            ]);
+            vec![(crate::bencode::encode(&reply), target)]
+        }));
+        let stop = AtomicBool::new(false);
+        let peers = dht_search(
+            &socket,
+            &[7; 20],
+            6882,
+            true,
+            &stop,
+            vec![first],
+            Instant::now() + Duration::from_secs(5),
+        )
+        .unwrap();
+        assert_eq!(peers, vec!["198.51.100.7:6881".parse().unwrap()]);
+        let sent = socket.sent();
+        let targets: Vec<_> = sent.iter().map(|(_, target)| *target).collect();
+        assert_eq!(targets, vec![first, first, second]);
+        let announce = crate::bencode::parse(&sent[1].0).unwrap();
+        assert_eq!(
+            value_bytes(field(&announce, b"q")),
+            Some(b"announce_peer".as_slice())
+        );
+        assert_eq!(
+            value_bytes(field(field(&announce, b"a").unwrap(), b"token")),
+            Some(b"tok".as_slice())
+        );
+    }
+
+    #[test]
+    fn dht_search_over_a_datagram_stops_on_cancellation_and_deadline() {
+        let node: SocketAddr = "192.0.2.10:6881".parse().unwrap();
+        let socket = Memory::new(Box::new(|_, _| Vec::new()));
+        let stopped = AtomicBool::new(true);
+        let later = Instant::now() + Duration::from_secs(5);
+        assert!(
+            dht_search(&socket, &[7; 20], 6882, true, &stopped, vec![node], later)
+                .unwrap()
+                .is_empty()
+        );
+        let running = AtomicBool::new(false);
+        assert!(
+            dht_search(
+                &socket,
+                &[7; 20],
+                6882,
+                true,
+                &running,
+                vec![node],
+                Instant::now()
+            )
+            .unwrap()
+            .is_empty()
+        );
+        assert!(socket.sent().is_empty());
+    }
     #[test]
     fn compact_peers_are_bounded() {
         assert_eq!(
