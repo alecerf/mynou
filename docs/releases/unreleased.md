@@ -272,7 +272,7 @@ This supplies a bounded evidence increment for #224; complete isolation, race
 and resource gates and the migration guide remain pending. Product networking
 and installed services are unchanged ([mechanism and limits](../host-io-observer.md)).
 
-## Verification: Observe WireGuard races and recovery on native macOS
+## Changed: Observe WireGuard races and recovery on native macOS
 
 The required macOS arm64 host-I/O checks now observe nineteen synthetic scenarios,
 including concurrent publication revocation, no-worker authentication failure,
