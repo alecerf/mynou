@@ -271,7 +271,7 @@ impl NetworkDatagram for Datagram {
             let received =
                 self.connector
                     .owner
-                    .call(Some(self.connector.generation), deadline, move |r| {
+                    .wait(Some(self.connector.generation), deadline, move |r| {
                         r.tunnel.udp_recv(socket).map_err(failed)
                     })?;
             if let Some(received) = received {

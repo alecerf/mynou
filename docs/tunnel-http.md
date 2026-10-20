@@ -83,17 +83,22 @@ stripping remain in the shared client.
 
 | Bound | Behavior |
 | --- | --- |
-| Owner command queue | 32 commands; full queue fails immediately |
+| Owner command queue | 32 commands. Status, telemetry, listener accepts and datagram sends fail immediately (`WouldBlock`) when it is full; connects, lookups, stream reads/writes/flushes and datagram reads retry every 2 ms until their deadline |
 | Commands between timed pumps | At most 8; a zero-wait timer pump also precedes each command |
 | Outer pump wait / caller polling interval | At most 2 ms per turn, subject to OS scheduling |
 | Stream command payload/result | At most 16 KiB; standard partial read/write semantics |
 | DNS/flows/packet buffers | Existing `TunnelConfig` and virtual stack bounds |
-| Connect / RPC wait | Supplied absolute deadline; expired queued commands do no work |
+| Connect / RPC wait | Supplied absolute deadline; expired or abandoned queued commands do no work. A command the owner has already started always returns its result, even after the deadline |
 | Stream read/write/flush | Configured nonzero timeout; `None` uses a 20 s safety bound |
 | Startup acknowledgement | 5 s wait, followed by owner cleanup on failure |
 
-These are work/queue limits, not hard real-time scheduling or measured CPU,
-RSS or throughput guarantees. Safe std Rust cannot preempt OS calls, allocation,
+A started command can consume received bytes or accept bytes for sending, so
+its result is never dropped for lateness: the caller would otherwise lose data
+or resend it ([#313](https://github.com/alecerf/mynou/issues/313)). The extra wait is one owner
+action, which never blocks on the network.
+
+These are work/queue limits, not hard real-time scheduling or CPU, RSS or
+throughput guarantees; [tunnel load evidence](tunnel-load.md) records measured values. Safe std Rust cannot preempt OS calls, allocation,
 entropy reads or thread scheduling. Final-owner cleanup joins the thread; its
 duration is not guaranteed by the startup acknowledgement timeout. No runtime
 helper, FFI, `unsafe` code or external dependency is used.

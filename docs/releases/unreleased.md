@@ -1,3 +1,12 @@
+## Fixed: Keep tunnel stream bytes intact under load
+
+When many connections shared the library tunnel network, a read or write whose
+deadline expired while the tunnel was running it could lose received bytes or
+send them twice, and a full command queue made callers retry in a busy loop.
+Started operations now always return their result, and stream operations wait
+for queue space until their deadline. Torrent VPN protection remains
+unavailable ([measurements and limits](/docs/tunnel-load.md)).
+
 ## Fixed: Bound tunnel network admission before dispatch
 
 The library tunnel network now rejects expired literal-address resolutions and

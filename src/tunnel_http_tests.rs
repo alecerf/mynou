@@ -520,6 +520,95 @@ fn replaced_generations_refuse_old_connectors_and_prune_live_stale_leases() {
 }
 
 #[test]
+fn stream_operations_wait_for_queue_space_until_their_deadline() {
+    let (sender, receiver) = mpsc::sync_channel(QUEUE);
+    let owner = Owner {
+        identity: 1,
+        sender,
+        cancelled: Arc::new(AtomicBool::new(false)),
+        generation: Arc::new(AtomicU64::new(1)),
+        publication: Arc::new(RwLock::new(())),
+        thread: Mutex::new(None),
+    };
+    for _ in 0..QUEUE {
+        owner
+            .sender
+            .try_send(Command {
+                deadline: end(),
+                generation: Some(1),
+                task: Box::new(|_| {}),
+            })
+            .unwrap();
+    }
+    let started = Instant::now();
+    let refused = owner.wait(Some(1), Instant::now() + Duration::from_millis(30), |_| {
+        Ok(())
+    });
+    assert_eq!(refused.unwrap_err().kind(), io::ErrorKind::TimedOut);
+    assert!(started.elapsed() < Duration::from_millis(500));
+    // Space appears later: the waiting call is queued and answered, not refused.
+    let drainer = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(50));
+        while let Ok(command) = receiver.recv_timeout(Duration::from_secs(1)) {
+            (command.task)(Err(io::Error::other("drained")));
+        }
+    });
+    let answered = owner.wait(Some(1), end(), |_| Ok(()));
+    assert_eq!(answered.unwrap_err().to_string(), "drained");
+    drop(owner);
+    drainer.join().unwrap();
+}
+
+#[test]
+fn a_claimed_action_returns_its_result_after_the_caller_deadline() {
+    // A stream read that already consumed bytes must not be reported as a
+    // timeout: the caller would lose them, or resend accepted writes.
+    let f = Fixture::new();
+    let runs = Arc::new(AtomicUsize::new(0));
+    let counted = runs.clone();
+    let result = f.driver.owner.call(
+        None,
+        Instant::now() + Duration::from_millis(50),
+        move |_| {
+            thread::sleep(Duration::from_millis(150));
+            Ok(counted.fetch_add(1, Ordering::AcqRel) + 1)
+        },
+    );
+    assert_eq!(result.unwrap(), 1);
+    assert_eq!(runs.load(Ordering::Acquire), 1);
+}
+
+#[test]
+fn an_abandoned_queued_action_never_runs() {
+    let f = Fixture::new();
+    let busy = f.driver.clone();
+    let blocker = thread::spawn(move || {
+        busy.owner.call(None, end(), |_| {
+            thread::sleep(Duration::from_millis(300));
+            Ok(())
+        })
+    });
+    thread::sleep(Duration::from_millis(50));
+    let touched = Arc::new(AtomicBool::new(false));
+    let touched_task = touched.clone();
+    let started = Instant::now();
+    let result = f.driver.owner.call(
+        None,
+        Instant::now() + Duration::from_millis(50),
+        move |_| {
+            touched_task.store(true, Ordering::Release);
+            Ok(())
+        },
+    );
+    assert_eq!(result.unwrap_err().kind(), io::ErrorKind::TimedOut);
+    assert!(started.elapsed() < Duration::from_millis(250));
+    blocker.join().unwrap().unwrap();
+    // The owner reaches the abandoned command after the blocker and skips it.
+    f.driver.owner.call(None, end(), |_| Ok(())).unwrap();
+    assert!(!touched.load(Ordering::Acquire));
+}
+
+#[test]
 fn expired_queued_work_is_refused_before_side_effects() {
     let f = Fixture::new();
     let (send, recv) = mpsc::sync_channel(1);
@@ -677,6 +766,9 @@ fn writes_are_chunked_and_backpressure_respects_the_write_timeout() {
 #[path = "tunnel_network_tests.rs"]
 mod network;
 
+#[path = "tunnel_load_tests.rs"]
+mod load;
+
 /// Two native owners, used by the torrent protocol acceptance fixtures. Only
 /// their WireGuard UDP endpoints exist on the host; every service is virtual.
 pub(crate) struct Pair {
@@ -704,17 +796,27 @@ impl Pair {
             .unwrap();
     }
     pub fn new() -> Self {
+        Self::with(|_, _| {})
+    }
+    /// Adjusts the client and server configurations before either starts.
+    pub fn with(configure: impl FnOnce(&mut TunnelConfig, &mut TunnelConfig)) -> Self {
         // Own even the temporary startup endpoint: the observer includes
         // datagrams sent before the client endpoint has been installed.
         let startup = UdpSocket::bind("127.0.0.1:0").unwrap();
         let startup_endpoint = startup.local_addr().unwrap();
         allow_outer(startup_endpoint);
-        let server = HttpTunnel::start(config(startup_endpoint, true)).unwrap();
+        let (mut client_config, mut server_config) = (
+            config(startup_endpoint, false),
+            config(startup_endpoint, true),
+        );
+        configure(&mut client_config, &mut server_config);
+        let server = HttpTunnel::start(server_config).unwrap();
         let endpoint = server
             .owner
             .call(None, end(), |r| r.tunnel.local_addr().map_err(failed))
             .unwrap();
-        let client = HttpTunnel::start(config(endpoint, false)).unwrap();
+        client_config.endpoint = Endpoint::Address(endpoint);
+        let client = HttpTunnel::start(client_config).unwrap();
         let client_address = client
             .owner
             .call(None, end(), |r| r.tunnel.local_addr().map_err(failed))
