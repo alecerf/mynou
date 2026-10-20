@@ -6,6 +6,8 @@ use crate::{
 };
 use std::{collections::BTreeSet, path::Path};
 mod automatic;
+#[cfg(test)]
+mod network_tests;
 mod shared;
 pub(crate) use automatic::season_title_matches;
 pub use automatic::{AutoPackRequest, PackOrigin};

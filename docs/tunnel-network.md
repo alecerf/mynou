@@ -64,6 +64,17 @@ to a newer generation or to the ordinary network: obtain a fresh network after
 recovery. A literal-address resolution checks the generation before and after,
 like a lookup.
 
+`generation` reports the captured generation while it is current and fails
+afterwards; `Direct` reports none. Metadata inspection for IRC routing,
+shared-group replacement, shared-file packs and automatic season packs reads it
+before lookup and checks it with `transport::unchanged` under the same locks as
+their policy and identity checks, before any store write: a result of a lost,
+replaced or cancelled generation creates no job, route or replacement.
+Shared-group replacement and shared-file preview plan identifiers include the
+protected generation, so a preview of an old generation cannot authorize an
+apply in a newer one. This fences publication only; transfers started later
+still use their own generation-bound handles.
+
 Dropped streams, datagram sockets and listeners are reclaimed by the owner on
 its next turn, as described in [Bounds and cleanup](tunnel-http.md#bounds-and-cleanup).
 Resources of an old generation are released when the generation changes. Weak
@@ -82,8 +93,7 @@ and names are absent from it. This is a synthetic loopback fixture, not
 production isolation evidence.
 
 The tunnel code is outside the [network inventory](network-inventory.md) scope,
-so the inventory is unchanged. Engine construction with this network,
-generation publication fences in orchestration and inspection, and the
+so the inventory is unchanged. Engine construction with this network and the
 complete torrent acceptance scenarios remain
 [#221](https://github.com/alecerf/mynou/issues/221). Operator lifecycle remains
 [#222](https://github.com/alecerf/mynou/issues/222); isolation, race and

@@ -4414,6 +4414,9 @@ mod control_runtime_tests {
                 self.inbound.lock().unwrap().take(),
             ))))
         }
+        fn generation(&self) -> Result<Option<u64>> {
+            Ok(None)
+        }
     }
 
     #[test]

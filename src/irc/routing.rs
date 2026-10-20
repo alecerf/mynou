@@ -963,7 +963,11 @@ impl Engine {
             &record.announcement.info_hash,
         )?;
         // Metadata I/O happens before admission and outside every persistent-store lock.
-        let metadata = crate::torrent::inspect_metadata(&*self.torrent_network, &magnet, deadline)
+        let network = Arc::clone(&self.torrent_network);
+        let generation = network
+            .generation()
+            .map_err(|_| "IRC: torrent network unavailable")?;
+        let metadata = crate::torrent::inspect_metadata(&*network, &magnet, deadline)
             .map_err(|_| "IRC: metadata unavailable or unauthenticated")?;
         if metadata.id != record.announcement.info_hash {
             return Err("IRC: metadata identity differs".into());
@@ -993,6 +997,9 @@ impl Engine {
         if &current != record || self.stopped.load(Ordering::Acquire) {
             return Err("IRC: admission changed or stopped".into());
         }
+        // A result of a revoked network generation cannot reserve a route.
+        crate::torrent::transport::unchanged(&*network, generation)
+            .map_err(|_| "IRC: torrent network changed during metadata inspection")?;
         let current_rule = matched_rule(&self.config, &current, fingerprint)?;
         let requesters = lock(&self.requester_store)?;
         let mut jobs = lock(&self.store)?;

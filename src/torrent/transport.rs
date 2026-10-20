@@ -26,6 +26,19 @@ pub trait Network: Send + Sync {
     fn http(&self) -> HttpClient;
     /// A listener bound to `address` of this network; port 0 picks a port.
     fn listen(&self, address: SocketAddr) -> Result<Box<dyn NetworkListener>>;
+    /// The protected tunnel generation this network captured, `None` for the
+    /// ordinary network. Fails once that generation is lost, replaced or
+    /// cancelled.
+    fn generation(&self) -> Result<Option<u64>>;
+}
+
+/// Fails unless `network` still holds `captured`, the generation observed
+/// before a lookup: a result of a revoked generation is not published.
+pub fn unchanged(network: &dyn Network, captured: Option<u64>) -> Result<()> {
+    if network.generation().ok() != Some(captured) {
+        return Err("Torrent network changed during metadata inspection".into());
+    }
+    Ok(())
 }
 
 /// Inbound peer connections of one `Network`.
@@ -84,6 +97,10 @@ impl Network for Direct {
             .set_nonblocking(true)
             .map_err(|_| "Could not configure the BitTorrent port")?;
         Ok(Box::new(DirectListener { listener, port }))
+    }
+
+    fn generation(&self) -> Result<Option<u64>> {
+        Ok(None)
     }
 }
 

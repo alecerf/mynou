@@ -1,5 +1,5 @@
 use super::*;
-use crate::torrent::transport::Network;
+use crate::torrent::transport::{self, Network};
 use std::net::SocketAddr;
 
 fn network(f: &Fixture) -> Arc<dyn Network> {
@@ -217,6 +217,8 @@ fn loss_and_cancellation_fence_every_handle_without_fallback() {
         .connect("10.7.0.1:6881".parse().unwrap(), Duration::from_secs(3))
         .unwrap();
     let old_generation = f.driver.status(end()).unwrap().generation;
+    assert_eq!(network.generation(), Ok(old_generation));
+    assert!(transport::unchanged(&*network, old_generation).is_ok());
     f.driver
         .owner
         .call(None, end(), |r| {
@@ -248,6 +250,10 @@ fn loss_and_cancellation_fence_every_handle_without_fallback() {
     assert!(network.listen(SocketAddr::from(([0, 0, 0, 0], 0))).is_err());
     assert!(network.http().get("http://10.7.0.1:8080/").is_err());
     assert_eq!(leases(&f), 0, "old generation resources are dropped");
+    // Results obtained through the old network can no longer be published.
+    assert!(network.generation().is_err());
+    assert!(transport::unchanged(&*network, old_generation).is_err());
+    assert!(fresh.generation().unwrap() > old_generation);
 
     // The fresh generation works until cancellation, then fails the same way.
     let fresh_socket = fresh.datagram(false).unwrap();
@@ -260,6 +266,7 @@ fn loss_and_cancellation_fence_every_handle_without_fallback() {
     assert!(fresh_socket.send_to(b"late", tracker).is_err());
     assert!(fresh.connect(tracker, Duration::from_secs(1)).is_err());
     assert!(fresh.resolve("10.7.0.1:6881", end()).is_err());
+    assert!(fresh.generation().is_err());
 }
 
 #[test]

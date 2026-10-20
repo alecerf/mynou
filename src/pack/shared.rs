@@ -330,7 +330,9 @@ impl Engine {
             }
         }
         // Metadata-only I/O precedes both storage locks. No transfer or payload is scheduled.
-        let metadata = inspect_metadata(&*self.torrent_network, &query.source_url, deadline)?;
+        let network = self.torrent_network.clone();
+        let generation = network.generation()?;
+        let metadata = inspect_metadata(&*network, &query.source_url, deadline)?;
         if Instant::now() >= deadline {
             return Err("Shared-file metadata deadline exceeded".into());
         }
@@ -356,6 +358,8 @@ impl Engine {
             );
         }
         let mut store = lock(&self.store)?;
+        // A revoked generation's metadata cannot bind or submit shared owners.
+        crate::torrent::transport::unchanged(&*network, generation)?;
         let mut episodes = query.episodes.clone();
         episodes.sort_unstable();
         let known = store.shared_binding(&metadata.id, &query.file_path)?;
@@ -441,6 +445,9 @@ impl Engine {
                     .collect(),
             ),
         );
+        if let Some(generation) = generation {
+            fence.insert("network_generation", generation.to_string());
+        }
         let plan_id: String = sha256(json::stringify(&fence).as_bytes())
             .iter()
             .map(|b| format!("{b:02x}"))

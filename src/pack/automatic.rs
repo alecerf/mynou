@@ -500,6 +500,8 @@ impl Engine {
         let mut decisions = Vec::new();
         let mut selected = None;
         let mut metadata_cache = BTreeMap::<String, Result<TorrentMetadata>>::new();
+        let network = self.torrent_network.clone();
+        let generation = network.generation()?;
         report.insert("metadata_candidate_limit", 8_u32);
         for mut candidate in candidates {
             if self.stopped.load(Ordering::Acquire) || Instant::now() >= deadline {
@@ -509,7 +511,7 @@ impl Engine {
                 cached.clone()
             } else {
                 let fetched = inspect_metadata(
-                    &*self.torrent_network,
+                    &*network,
                     &candidate.url,
                     deadline.min(Instant::now() + Duration::from_secs(10)),
                 );
@@ -600,6 +602,8 @@ impl Engine {
                     "Pack catalog or request scope changed; search result discarded".into(),
                 );
             }
+            // A revoked generation's metadata cannot select or submit a pack.
+            crate::torrent::transport::unchanged(&*network, generation)?;
         }
         if let Some(expected) = &query.candidate_id
             && selected

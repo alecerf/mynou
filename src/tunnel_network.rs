@@ -193,6 +193,15 @@ impl Network for TunnelNetwork {
     fn listen(&self, address: SocketAddr) -> crate::Result<Box<dyn NetworkListener>> {
         Ok(Box::new(self.bind_listener(address).map_err(message)?))
     }
+
+    fn generation(&self) -> crate::Result<Option<u64>> {
+        let generation = self.connector.generation;
+        self.connector
+            .owner
+            .admit(Some(generation))
+            .map_err(|_| "Torrent network generation revoked")?;
+        Ok(Some(generation))
+    }
 }
 
 struct Datagram {

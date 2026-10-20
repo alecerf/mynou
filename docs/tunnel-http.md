@@ -124,8 +124,8 @@ production isolation proof, independent interoperability or complete end-to-end
 HTTPS server fixture through the tunnel.
 
 The same owner also supplies a [torrent network](tunnel-network.md) with
-virtual peers, listeners and UDP. Engine integration, and inspection and
-orchestration publication fences remain
+virtual peers, listeners and UDP, whose generation also fences
+metadata-inspection publication. Engine integration remains
 [#221](https://github.com/alecerf/mynou/issues/221). The
 [source inventory check](network-inventory.md) now guards the existing direct
 sites; migration must remove their entries as it converts them. Operator

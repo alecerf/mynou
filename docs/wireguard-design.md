@@ -74,9 +74,10 @@ explicit nonzero port and an ASCII hostname, IPv4 or bracketed IPv6 address.
 Resolution failures now occur during active work, rather than source admission.
 A tunnel-backed `Network` for one protected generation is delivered as a
 library ([torrent network through the tunnel](tunnel-network.md)); the engine
-does not construct it yet. Engine integration and complete generation
-publication fences remain undelivered; these seams do not activate torrent
-protection.
+does not construct it yet. Metadata-inspection callers fence their results by
+the captured network generation before publication
+([generations](tunnel-network.md#generations)). Engine integration remains
+undelivered; these seams do not activate torrent protection.
 Review the complete reachable call graph again when integration changes it.
 
 ## Transport and generation ownership

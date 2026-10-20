@@ -310,6 +310,8 @@ impl Engine {
             .shared_file
             .as_ref()
             .ok_or("Missing shared-group binding")?;
+        let network = self.torrent_network.clone();
+        let mut inspected = None;
         let binding = if query.action == "replace" {
             let source = query
                 .source_url
@@ -322,7 +324,9 @@ impl Engine {
                 return Err("Shared replacement must use a different acquisition source".into());
             }
             // Authenticated metadata only; do not queue transfers or fetch payload.
-            let metadata = inspect_metadata(&*self.torrent_network, source, deadline)?;
+            let generation = network.generation()?;
+            let metadata = inspect_metadata(&*network, source, deadline)?;
+            inspected = Some(generation);
             let path = query
                 .file_path
                 .as_deref()
@@ -373,6 +377,10 @@ impl Engine {
         if store.current_shared_group(id)? != initial {
             return Err("Shared-group owners changed during review; preview again".into());
         }
+        // A revoked generation's preview cannot authorize a replacement.
+        if let Some(generation) = inspected {
+            crate::torrent::transport::unchanged(&*network, generation)?;
+        }
         let known = if let Some(file) = &binding {
             store.check_group_replacement(&initial, file, &requests, &release)?
         } else {
@@ -398,6 +406,9 @@ impl Engine {
             "existing",
             Value::Array(known.iter().map(Job::to_json).collect()),
         );
+        if let Some(Some(generation)) = inspected {
+            fence.insert("network_generation", generation.to_string());
+        }
         let plan_id: String = sha256(json::stringify(&fence).as_bytes())
             .iter()
             .map(|b| format!("{b:02x}"))

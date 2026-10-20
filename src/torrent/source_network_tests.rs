@@ -91,6 +91,9 @@ impl transport::Network for Fake {
     fn http(&self) -> HttpClient {
         HttpClient::new().with_connector(self.http.clone())
     }
+    fn generation(&self) -> Result<Option<u64>> {
+        Ok(None)
+    }
 }
 
 fn end() -> Instant {

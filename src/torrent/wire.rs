@@ -1402,6 +1402,9 @@ mod tests {
         ) -> Result<Box<dyn super::super::transport::NetworkListener>> {
             Err("No listener in this fixture".into())
         }
+        fn generation(&self) -> Result<Option<u64>> {
+            Ok(None)
+        }
     }
 
     #[test]
