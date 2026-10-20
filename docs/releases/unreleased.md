@@ -279,3 +279,13 @@ including concurrent publication revocation, no-worker authentication failure,
 restart, retained download state and rejection of delayed old-generation work.
 This adds bounded evidence for #224; complete isolation, resource measurements
 and the migration guide remain pending. Existing Gluetun deployments are untouched.
+
+## Changed: Observe shared-pack metadata inspection through the native tunnel
+
+Required macOS host-I/O checks now also cover explicit shared-file pack previews
+and guarded application with download workers disabled, plus cancellation during
+a pending metadata response. Only declared fixture outer UDP is accepted; late
+responses and retries cannot publish owners after cancellation. This adds bounded
+evidence for #224, which remains open for automatic pack search, group replacement,
+IRC, remaining races, resources and the gated migration guide. See the
+[observation scope](../host-io-observer.md).
