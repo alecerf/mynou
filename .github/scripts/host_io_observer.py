@@ -136,7 +136,7 @@ def run(build, output):
         if name + ": test\n" not in listing:
             raise ValueError("missing fixture: " + name)
     summary = {"platform": "macOS arm64", "fixtures": {}, "negative_controls": {}}
-    rows = capture([executable, "--exact", NEGATIVE, "--ignored", "--nocapture"],
+    rows = capture([executable, "--exact", NEGATIVE, "--nocapture"],
                    "negative-rust-stdlib", library, output)
     counts = Counter(r["op"] for r in rows)
     for op in ("loaded", "socket", "bind", "connect", "sendto", "getaddrinfo"):

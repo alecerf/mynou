@@ -4,11 +4,10 @@ use super::*;
 use crate::{bencode, config, engine::Engine, tunnel_http::tests::Pair};
 use std::io;
 
-/// Invoked explicitly by the macOS observer runner, never by the routine suite.
+/// Also invoked explicitly by the macOS observer runner with interception active.
 /// The observer must reject this process even though these attempts fail or
 /// remain on host loopback. No remote service or external name is used.
 #[test]
-#[ignore = "negative control for host_io_observer.py"]
 fn host_io_observer_negative_controls() {
     use std::net::{TcpListener, UdpSocket};
     use transport::Network;
