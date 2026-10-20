@@ -4,9 +4,9 @@
 currently protected tunnel generation. It is the `Tunnel` counterpart of
 `Direct` in [#221](https://github.com/alecerf/mynou/issues/221), delivered by
 [#302](https://github.com/alecerf/mynou/issues/302). It runs on the same
-[native owner](tunnel-http.md) as the HTTP connector. The engine does not use
-it yet: there is no CLI/API VPN activation and no protection claim in this
-increment.
+[native owner](tunnel-http.md) as the HTTP connector. The library engine accepts it through `Engine::open_with_network`; see the
+[construction and publication contract](torrent-transport.md). CLI/API VPN
+activation and the complete isolation evidence remain pending.
 
 ```rust,no_run
 # fn example(driver: mynou::tunnel_http::HttpTunnel) -> Result<(), Box<dyn std::error::Error>> {
@@ -81,10 +81,9 @@ listeners. The relay sees only WireGuard messages: peer and tracker payloads
 and names are absent from it. This is a synthetic loopback fixture, not
 production isolation evidence.
 
-The tunnel code is outside the [network inventory](network-inventory.md) scope,
-so the inventory is unchanged. Engine construction with this network,
-generation publication fences in orchestration and inspection, and the
-complete torrent acceptance scenarios remain
-[#221](https://github.com/alecerf/mynou/issues/221). Operator lifecycle remains
+The [torrent acceptance record](torrent-transport.md#acceptance-evidence) covers
+engine construction, generation publication fences, actual BitTorrent metadata
+and payload, seeding, tracker protocols and DHT over two native owners. The
+[inventory](network-inventory.md) now rejects direct sites outside Direct. Operator lifecycle remains
 [#222](https://github.com/alecerf/mynou/issues/222); isolation, race and
 resource evidence remain [#224](https://github.com/alecerf/mynou/issues/224).

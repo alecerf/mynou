@@ -156,7 +156,38 @@ impl TunnelNetwork {
     }
 }
 
+struct PublicationLease<'a> {
+    _guard: std::sync::RwLockReadGuard<'a, ()>,
+}
+impl crate::torrent::transport::Publication for PublicationLease<'_> {}
+
 impl Network for TunnelNetwork {
+    fn generation(&self) -> crate::Result<Option<String>> {
+        self.connector
+            .owner
+            .admit(Some(self.connector.generation))
+            .map_err(message)?;
+        Ok(Some(format!(
+            "{:032x}:{}",
+            self.connector.owner.identity, self.connector.generation
+        )))
+    }
+
+    fn publication(&self) -> crate::Result<Box<dyn crate::torrent::transport::Publication + '_>> {
+        let owner = &self.connector.owner;
+        owner
+            .admit(Some(self.connector.generation))
+            .map_err(message)?;
+        let lease = owner
+            .publication
+            .read()
+            .map_err(|_| "Tunnel publication lock poisoned")?;
+        owner
+            .admit(Some(self.connector.generation))
+            .map_err(message)?;
+        Ok(Box::new(PublicationLease { _guard: lease }))
+    }
+
     fn connect(
         &self,
         address: SocketAddr,

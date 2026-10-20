@@ -962,6 +962,7 @@ impl Engine {
                 .ok_or("IRC: missing magnet template")?,
             &record.announcement.info_hash,
         )?;
+        self.torrent_publication()?;
         // Metadata I/O happens before admission and outside every persistent-store lock.
         let metadata = crate::torrent::inspect_metadata(&*self.torrent_network, &magnet, deadline)
             .map_err(|_| "IRC: metadata unavailable or unauthenticated")?;
@@ -988,6 +989,7 @@ impl Engine {
                 profile: rule.profile.clone(),
             },
         };
+        let _publication = self.torrent_publication()?;
         let mut ledger = lock(&self.irc_store)?;
         let current = ledger.get(&record.id)?.ok_or("IRC: missing claim")?;
         if &current != record || self.stopped.load(Ordering::Acquire) {

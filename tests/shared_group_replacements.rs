@@ -4,6 +4,7 @@ mod jobs_state;
 mod library_support;
 mod series_support;
 mod shared_group_support;
+mod torrent_network_support;
 #[allow(dead_code)]
 mod transfer_support;
 use automatic_pack_support::{Provider, no_sources, snapshot};
@@ -643,4 +644,66 @@ fn native_shared_replacement_waits_for_every_exact_plex_path_across_restart() {
             .join("Pack/untouched.txt")
             .exists()
     );
+}
+
+#[test]
+fn revoked_torrent_results_cannot_publish_a_group_replacement_preview_or_apply_without_workers() {
+    for do_apply in [false, true] {
+        let directory = Directory::new();
+        let fixture = Fixture::new(&directory, 2);
+        let provider = Provider::open();
+        let gate = std::sync::Arc::new(torrent_network_support::Revocable::default());
+        let engine = Engine::open_with_network(
+            fixture.cfg.clone(),
+            torrent_network_support::network(&gate),
+            false,
+        )
+        .unwrap();
+        let parents = fixture.parents(&engine);
+        let owner = parents[0].id.clone();
+        baseline(&engine, &owner);
+        let mut query = fixture.replacement_query();
+        query.source_url = Some(
+            provider.metadata_url("replacement", fs::read(&fixture.replacement.path).unwrap()),
+        );
+        if do_apply {
+            query = guarded(&engine, &owner, &query);
+        }
+        let before = snapshot(&fixture.cfg.store_dir);
+        gate.arm();
+        let worker = {
+            let engine = engine.clone();
+            thread::spawn(move || engine.library_group(&owner, &query))
+        };
+        gate.wait();
+        gate.revoke_and_release();
+        assert!(worker.join().unwrap().is_err());
+        assert_eq!(snapshot(&fixture.cfg.store_dir), before);
+    }
+}
+
+#[test]
+fn group_replacement_preview_cannot_authorize_apply_in_a_replacement_torrent_generation() {
+    let directory = Directory::new();
+    let fixture = Fixture::new(&directory, 2);
+    let gate = std::sync::Arc::new(torrent_network_support::Revocable::default());
+    let engine = Engine::open_with_network(
+        fixture.cfg.clone(),
+        torrent_network_support::network(&gate),
+        false,
+    )
+    .unwrap();
+    let parents = fixture.parents(&engine);
+    let owner = &parents[0].id;
+    baseline(&engine, owner);
+    let query = guarded(&engine, owner, &fixture.replacement_query());
+    let before = snapshot(&fixture.cfg.store_dir);
+    gate.generation.fetch_add(1, Ordering::AcqRel);
+    assert!(
+        engine
+            .library_group(owner, &query)
+            .unwrap_err()
+            .contains("preview changed")
+    );
+    assert_eq!(snapshot(&fixture.cfg.store_dir), before);
 }

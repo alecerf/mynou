@@ -453,6 +453,15 @@ def main(argv=None):
         args.inventory.write_text(render(counts))
         return 0
     problems = compare(counts, read_inventory(args.inventory))
+    # After the migration, updating the inventory must not authorize a new
+    # ordinary-network site elsewhere in the torrent boundary.
+    for key in sorted(counts):
+        file, item, _ = key
+        if file != "src/torrent/transport.rs" or not (
+            item in {"<module>", "Direct", "DirectListener"}
+            or item.startswith(("Direct::", "DirectListener::"))
+        ):
+            problems.append(f"direct site outside Direct: {' | '.join(key)} ({counts[key]})")
     for problem in problems:
         key = tuple(problem.split(": ", 1)[1].rsplit(" (", 1)[0].split(" | "))
         where = f"{key[0]}:{lines[key]}: " if key in lines else ""

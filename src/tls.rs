@@ -803,7 +803,7 @@ impl<'a> Decoder<'a> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::pki::{sign_pss_sha256_for_test, test_fixture};
     use std::net::{SocketAddr, TcpListener};
@@ -811,7 +811,7 @@ mod tests {
     use std::time::Duration;
 
     #[derive(Clone, Copy)]
-    enum Fault {
+    pub(crate) enum Fault {
         None,
         CertificateVerify,
         Finished,
@@ -824,191 +824,206 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let thread = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().map_err(|e| e.to_string())?;
+            let (stream, _) = listener.accept().map_err(|e| e.to_string())?;
             stream
                 .set_read_timeout(Some(Duration::from_secs(10)))
                 .map_err(|e| e.to_string())?;
             stream
                 .set_write_timeout(Some(Duration::from_secs(10)))
                 .map_err(|e| e.to_string())?;
-            let (header, client) = read_record(&mut stream)?;
-            if header[0] != 22 || client.first() != Some(&1) {
-                return Err("ClientHello expected".into());
-            }
-            let mut data = Decoder::new(&client[4..]);
-            data.bytes(34)?;
-            let length = data.u8()? as usize;
-            let session = data.bytes(length)?.to_vec();
-            let length = data.u16()? as usize;
-            data.bytes(length)?;
-            let length = data.u8()? as usize;
-            data.bytes(length)?;
-            let length = data.u16()? as usize;
-            let mut extensions = Decoder::new(data.bytes(length)?);
-            let mut peer = None;
-            while !extensions.empty() {
-                let kind = extensions.u16()?;
-                let length = extensions.u16()? as usize;
-                let value = extensions.bytes(length)?;
-                if kind == 51 && value.len() == 38 {
-                    peer = Some(value[6..].try_into().map_err(|_| "Invalid client key")?);
-                }
-            }
-            let secret = [0x42; 32];
-            let public = x25519_public_key(secret);
-            let shared = x25519(secret, peer.ok_or("Missing client key")?)?;
-            let mut hello = vec![3, 3];
-            hello.extend_from_slice(&[0x73; 32]);
-            hello.push(session.len() as u8);
-            hello.extend_from_slice(&session);
-            hello.extend_from_slice(&[0x13, 3, 0]);
-            let mut ext = Vec::new();
-            extension(&mut ext, 43, &[3, 4])?;
-            let mut share = vec![0, 29, 0, 32];
-            share.extend_from_slice(&public);
-            extension(&mut ext, 51, &share)?;
-            hello.extend_from_slice(&(ext.len() as u16).to_be_bytes());
-            hello.extend_from_slice(&ext);
-            let hello = handshake_message(2, &hello)?;
-            write_plain_record(&mut stream, 22, &hello)?;
-            let mut transcript = Sha256::new();
-            transcript.update(&client);
-            transcript.update(&hello);
-            let early = hkdf_extract(&[0; 32], &[0; 32]);
-            let derived = derive_secret(&early, "derived", &sha256(&[]))?;
-            let handshake = hkdf_extract(&derived, &shared);
-            let send_secret =
-                derive_secret(&handshake, "s hs traffic", &transcript.clone().finalize())?;
-            let receive_secret =
-                derive_secret(&handshake, "c hs traffic", &transcript.clone().finalize())?;
-            let mut send_hs = RecordKeys::new(send_secret)?;
-            let mut receive_hs = RecordKeys::new(receive_secret)?;
-            let ee = handshake_message(8, &[0, 0])?;
-            transcript.update(&ee);
-            let mut cert_entries = Vec::new();
-            let length = (test_fixture::LEAF_DER.len() as u32).to_be_bytes();
-            cert_entries.extend_from_slice(&length[1..]);
-            cert_entries.extend_from_slice(test_fixture::LEAF_DER);
-            cert_entries.extend_from_slice(&[0, 0]);
-            let mut certificates = vec![0];
-            let length = (cert_entries.len() as u32).to_be_bytes();
-            certificates.extend_from_slice(&length[1..]);
-            certificates.extend_from_slice(&cert_entries);
-            let certificates = handshake_message(11, &certificates)?;
-            transcript.update(&certificates);
-            let mut signed = vec![b' '; 64];
-            signed.extend_from_slice(b"TLS 1.3, server CertificateVerify\0");
-            signed.extend_from_slice(&transcript.clone().finalize());
-            let mut signature = sign_pss_sha256_for_test(
-                test_fixture::MODULUS,
-                test_fixture::PRIVATE_EXPONENT,
-                &signed,
-            )?;
-            if matches!(fault, Fault::CertificateVerify) {
-                signature[0] ^= 1;
-            }
-            let mut cv = vec![8, 4];
-            cv.extend_from_slice(&(signature.len() as u16).to_be_bytes());
-            cv.extend_from_slice(&signature);
-            let cv = handshake_message(15, &cv)?;
-            transcript.update(&cv);
-            let key = expand_label(&send_secret, "finished", &[], 32)?;
-            let mut verify = hmac_sha256(&key, &transcript.clone().finalize());
-            if matches!(fault, Fault::Finished) {
-                verify[0] ^= 1;
-            }
-            let finished = handshake_message(20, &verify)?;
-            transcript.update(&finished);
-            // Split messages across authenticated records, including a split header.
-            let mut flight = Vec::new();
-            for message in [&ee, &certificates, &cv, &finished] {
-                flight.extend_from_slice(message);
-            }
-            for fragment in flight.chunks(73) {
-                stream
-                    .write_all(&send_hs.seal(22, fragment)?)
-                    .map_err(|e| e.to_string())?;
-            }
-            let (header, payload) = read_record(&mut stream)?;
-            let (kind, client_finish) = receive_hs.open(&header, &payload)?;
-            if kind != 22 || client_finish.len() != 36 || client_finish[0] != 20 {
-                return Err("Invalid client Finished".into());
-            }
-            let finish_key = expand_label(&receive_secret, "finished", &[], 32)?;
-            if !constant_time_equal(
-                &client_finish[4..],
-                &hmac_sha256(&finish_key, &transcript.clone().finalize()),
-            ) {
-                return Err("Client Finished authentication failed".into());
-            }
-            let derived = derive_secret(&handshake, "derived", &sha256(&[]))?;
-            let master = hkdf_extract(&derived, &[0; 32]);
-            let mut send = RecordKeys::new(derive_secret(
-                &master,
-                "s ap traffic",
-                &transcript.clone().finalize(),
-            )?)?;
-            let mut receive = RecordKeys::new(derive_secret(
-                &master,
-                "c ap traffic",
-                &transcript.clone().finalize(),
-            )?)?;
-            if matches!(fault, Fault::HttpOk | Fault::HttpDowngrade) {
-                let mut request = Vec::new();
-                while !request.ends_with(b"\r\n\r\n") {
-                    let (header, payload) = read_record(&mut stream)?;
-                    let (kind, fragment) = receive.open(&header, &payload)?;
-                    if kind != 23 || request.len() + fragment.len() > 65_536 {
-                        return Err("Invalid synthetic HTTPS request".into());
-                    }
-                    request.extend(fragment);
-                }
-                if !request.starts_with(b"GET /private HTTP/1.1\r\n") {
-                    return Err("Unexpected synthetic HTTPS target".into());
-                }
-                let response: &[u8] = if matches!(fault, Fault::HttpDowngrade) {
-                    b"HTTP/1.1 302 Found\r\nLocation: http://downgrade.invalid/\r\nContent-Length: 0\r\n\r\n"
-                } else {
-                    b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\npong"
-                };
-                stream
-                    .write_all(&send.seal(23, response)?)
-                    .map_err(|e| e.to_string())?;
-                return Ok(());
-            }
-            let (header, payload) = read_record(&mut stream)?;
-            let (kind, request) = receive.open(&header, &payload)?;
-            if kind != 23 || request != b"ping" {
-                return Err("Invalid client data".into());
-            }
-            if matches!(fault, Fault::Application) {
-                let mut record = send.seal(23, b"pong")?;
-                record[5] ^= 1;
-                stream.write_all(&record).map_err(|e| e.to_string())?;
-                return Ok(());
-            }
-            let ticket = handshake_message(4, &[0, 0, 0, 60, 0, 0, 0, 1, 0, 0, 1, 9, 0, 0])?;
-            stream
-                .write_all(&send.seal(22, &ticket)?)
-                .map_err(|e| e.to_string())?;
-            stream
-                .write_all(&send.seal(22, &[24, 0, 0, 1, 1])?)
-                .map_err(|e| e.to_string())?;
-            send.update()?;
-            stream
-                .write_all(&send.seal(23, b"pong")?)
-                .map_err(|e| e.to_string())?;
-            stream
-                .write_all(&send.seal(21, &[1, 0])?)
-                .map_err(|e| e.to_string())?;
-            let (header, payload) = read_record(&mut stream)?;
-            let (kind, reply) = receive.open(&header, &payload)?;
-            if kind != 22 || reply != [24, 0, 0, 1, 0] {
-                return Err("Missing KeyUpdate acknowledgment".into());
-            }
-            Ok(())
+            serve_fixture(stream, fault, None)
         });
         (address, thread)
+    }
+
+    /// The original authenticated synthetic TLS server on any supplied stream.
+    pub(crate) fn serve_fixture<S: Read + Write>(
+        mut stream: S,
+        fault: Fault,
+        http: Option<(&[u8], &[u8])>,
+    ) -> Result<()> {
+        let (header, client) = read_record(&mut stream)?;
+        if header[0] != 22 || client.first() != Some(&1) {
+            return Err("ClientHello expected".into());
+        }
+        let mut data = Decoder::new(&client[4..]);
+        data.bytes(34)?;
+        let length = data.u8()? as usize;
+        let session = data.bytes(length)?.to_vec();
+        let length = data.u16()? as usize;
+        data.bytes(length)?;
+        let length = data.u8()? as usize;
+        data.bytes(length)?;
+        let length = data.u16()? as usize;
+        let mut extensions = Decoder::new(data.bytes(length)?);
+        let mut peer = None;
+        while !extensions.empty() {
+            let kind = extensions.u16()?;
+            let length = extensions.u16()? as usize;
+            let value = extensions.bytes(length)?;
+            if kind == 51 && value.len() == 38 {
+                peer = Some(value[6..].try_into().map_err(|_| "Invalid client key")?);
+            }
+        }
+        let secret = [0x42; 32];
+        let public = x25519_public_key(secret);
+        let shared = x25519(secret, peer.ok_or("Missing client key")?)?;
+        let mut hello = vec![3, 3];
+        hello.extend_from_slice(&[0x73; 32]);
+        hello.push(session.len() as u8);
+        hello.extend_from_slice(&session);
+        hello.extend_from_slice(&[0x13, 3, 0]);
+        let mut ext = Vec::new();
+        extension(&mut ext, 43, &[3, 4])?;
+        let mut share = vec![0, 29, 0, 32];
+        share.extend_from_slice(&public);
+        extension(&mut ext, 51, &share)?;
+        hello.extend_from_slice(&(ext.len() as u16).to_be_bytes());
+        hello.extend_from_slice(&ext);
+        let hello = handshake_message(2, &hello)?;
+        write_plain_record(&mut stream, 22, &hello)?;
+        let mut transcript = Sha256::new();
+        transcript.update(&client);
+        transcript.update(&hello);
+        let early = hkdf_extract(&[0; 32], &[0; 32]);
+        let derived = derive_secret(&early, "derived", &sha256(&[]))?;
+        let handshake = hkdf_extract(&derived, &shared);
+        let send_secret =
+            derive_secret(&handshake, "s hs traffic", &transcript.clone().finalize())?;
+        let receive_secret =
+            derive_secret(&handshake, "c hs traffic", &transcript.clone().finalize())?;
+        let mut send_hs = RecordKeys::new(send_secret)?;
+        let mut receive_hs = RecordKeys::new(receive_secret)?;
+        let ee = handshake_message(8, &[0, 0])?;
+        transcript.update(&ee);
+        let mut cert_entries = Vec::new();
+        let length = (test_fixture::LEAF_DER.len() as u32).to_be_bytes();
+        cert_entries.extend_from_slice(&length[1..]);
+        cert_entries.extend_from_slice(test_fixture::LEAF_DER);
+        cert_entries.extend_from_slice(&[0, 0]);
+        let mut certificates = vec![0];
+        let length = (cert_entries.len() as u32).to_be_bytes();
+        certificates.extend_from_slice(&length[1..]);
+        certificates.extend_from_slice(&cert_entries);
+        let certificates = handshake_message(11, &certificates)?;
+        transcript.update(&certificates);
+        let mut signed = vec![b' '; 64];
+        signed.extend_from_slice(b"TLS 1.3, server CertificateVerify\0");
+        signed.extend_from_slice(&transcript.clone().finalize());
+        let mut signature = sign_pss_sha256_for_test(
+            test_fixture::MODULUS,
+            test_fixture::PRIVATE_EXPONENT,
+            &signed,
+        )?;
+        if matches!(fault, Fault::CertificateVerify) {
+            signature[0] ^= 1;
+        }
+        let mut cv = vec![8, 4];
+        cv.extend_from_slice(&(signature.len() as u16).to_be_bytes());
+        cv.extend_from_slice(&signature);
+        let cv = handshake_message(15, &cv)?;
+        transcript.update(&cv);
+        let key = expand_label(&send_secret, "finished", &[], 32)?;
+        let mut verify = hmac_sha256(&key, &transcript.clone().finalize());
+        if matches!(fault, Fault::Finished) {
+            verify[0] ^= 1;
+        }
+        let finished = handshake_message(20, &verify)?;
+        transcript.update(&finished);
+        // Split messages across authenticated records, including a split header.
+        let mut flight = Vec::new();
+        for message in [&ee, &certificates, &cv, &finished] {
+            flight.extend_from_slice(message);
+        }
+        for fragment in flight.chunks(73) {
+            stream
+                .write_all(&send_hs.seal(22, fragment)?)
+                .map_err(|e| e.to_string())?;
+        }
+        let (header, payload) = read_record(&mut stream)?;
+        let (kind, client_finish) = receive_hs.open(&header, &payload)?;
+        if kind != 22 || client_finish.len() != 36 || client_finish[0] != 20 {
+            return Err("Invalid client Finished".into());
+        }
+        let finish_key = expand_label(&receive_secret, "finished", &[], 32)?;
+        if !constant_time_equal(
+            &client_finish[4..],
+            &hmac_sha256(&finish_key, &transcript.clone().finalize()),
+        ) {
+            return Err("Client Finished authentication failed".into());
+        }
+        let derived = derive_secret(&handshake, "derived", &sha256(&[]))?;
+        let master = hkdf_extract(&derived, &[0; 32]);
+        let mut send = RecordKeys::new(derive_secret(
+            &master,
+            "s ap traffic",
+            &transcript.clone().finalize(),
+        )?)?;
+        let mut receive = RecordKeys::new(derive_secret(
+            &master,
+            "c ap traffic",
+            &transcript.clone().finalize(),
+        )?)?;
+        if http.is_some() || matches!(fault, Fault::HttpOk | Fault::HttpDowngrade) {
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                let (header, payload) = read_record(&mut stream)?;
+                let (kind, fragment) = receive.open(&header, &payload)?;
+                if kind != 23 || request.len() + fragment.len() > 65_536 {
+                    return Err("Invalid synthetic HTTPS request".into());
+                }
+                request.extend(fragment);
+            }
+            if !request.starts_with(
+                http.map_or(b"GET /private HTTP/1.1\r\n".as_slice(), |(target, _)| {
+                    target
+                }),
+            ) {
+                return Err("Unexpected synthetic HTTPS target".into());
+            }
+            let response: &[u8] = if let Some((_, response)) = http {
+                response
+            } else if matches!(fault, Fault::HttpDowngrade) {
+                b"HTTP/1.1 302 Found\r\nLocation: http://downgrade.invalid/\r\nContent-Length: 0\r\n\r\n"
+            } else {
+                b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\npong"
+            };
+            stream
+                .write_all(&send.seal(23, response)?)
+                .map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+        let (header, payload) = read_record(&mut stream)?;
+        let (kind, request) = receive.open(&header, &payload)?;
+        if kind != 23 || request != b"ping" {
+            return Err("Invalid client data".into());
+        }
+        if matches!(fault, Fault::Application) {
+            let mut record = send.seal(23, b"pong")?;
+            record[5] ^= 1;
+            stream.write_all(&record).map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+        let ticket = handshake_message(4, &[0, 0, 0, 60, 0, 0, 0, 1, 0, 0, 1, 9, 0, 0])?;
+        stream
+            .write_all(&send.seal(22, &ticket)?)
+            .map_err(|e| e.to_string())?;
+        stream
+            .write_all(&send.seal(22, &[24, 0, 0, 1, 1])?)
+            .map_err(|e| e.to_string())?;
+        send.update()?;
+        stream
+            .write_all(&send.seal(23, b"pong")?)
+            .map_err(|e| e.to_string())?;
+        stream
+            .write_all(&send.seal(21, &[1, 0])?)
+            .map_err(|e| e.to_string())?;
+        let (header, payload) = read_record(&mut stream)?;
+        let (kind, reply) = receive.open(&header, &payload)?;
+        if kind != 22 || reply != [24, 0, 0, 1, 0] {
+            return Err("Missing KeyUpdate acknowledgment".into());
+        }
+        Ok(())
     }
 
     fn connect_local(address: SocketAddr, hostname: &str, roots: &[u8]) -> Result<TlsStream> {

@@ -407,9 +407,11 @@ fn full_queue_is_fail_fast_and_dropped_last_owner_joins() {
     // No worker consuming: deterministic saturation without timing races.
     let (sender, receiver) = mpsc::sync_channel(QUEUE);
     let owner = Owner {
+        identity: 1,
         sender,
         cancelled: Arc::new(AtomicBool::new(false)),
         generation: Arc::new(AtomicU64::new(1)),
+        publication: Arc::new(RwLock::new(())),
         thread: Mutex::new(None),
     };
     for _ in 0..QUEUE {
@@ -641,3 +643,195 @@ fn writes_are_chunked_and_backpressure_respects_the_write_timeout() {
 
 #[path = "tunnel_network_tests.rs"]
 mod network;
+
+/// Two native owners, used by the torrent protocol acceptance fixtures. Only
+/// their WireGuard UDP endpoints exist on the host; every service is virtual.
+pub(crate) struct Pair {
+    pub client: HttpTunnel,
+    pub server: HttpTunnel,
+    pub client_network: Arc<dyn crate::torrent::transport::Network>,
+    pub server_network: Arc<dyn crate::torrent::transport::Network>,
+    pub dns: Arc<AtomicUsize>,
+    dns_worker: Option<JoinHandle<()>>,
+}
+impl Pair {
+    pub fn new() -> Self {
+        let server = HttpTunnel::start(config("127.0.0.1:9".parse().unwrap(), true)).unwrap();
+        let endpoint = server
+            .owner
+            .call(None, end(), |r| r.tunnel.local_addr().map_err(failed))
+            .unwrap();
+        let client = HttpTunnel::start(config(endpoint, false)).unwrap();
+        let client_address = client
+            .owner
+            .call(None, end(), |r| r.tunnel.local_addr().map_err(failed))
+            .unwrap();
+        server
+            .owner
+            .call(None, end(), move |r| {
+                r.tunnel
+                    .set_endpoint(Endpoint::Address(client_address))
+                    .map_err(failed)
+            })
+            .unwrap();
+        client
+            .owner
+            .call(None, end(), move |r| {
+                r.tunnel
+                    .set_endpoint(Endpoint::Address(endpoint))
+                    .map_err(failed)
+            })
+            .unwrap();
+        let deadline = end();
+        let client_network = loop {
+            if let Ok(network) = client.network(deadline) {
+                break network;
+            }
+            pause(deadline).unwrap();
+        };
+        let server_network = loop {
+            if let Ok(network) = server.network(deadline) {
+                break network;
+            }
+            pause(deadline).unwrap();
+        };
+        let socket = server
+            .owner
+            .call(None, end(), |r| r.tunnel.udp_bind(53).map_err(failed))
+            .unwrap();
+        let dns = Arc::new(AtomicUsize::new(0));
+        let driver = server.clone();
+        let count = dns.clone();
+        let dns_worker = thread::spawn(move || {
+            while !driver.owner.cancelled.load(Ordering::Acquire) {
+                let count = count.clone();
+                let result = driver.owner.call(None, end(), move |r| {
+                    if let Some(query) = r.tunnel.udp_recv(socket).map_err(failed)? {
+                        count.fetch_add(1, Ordering::Relaxed);
+                        let mut answer = query.payload[..2].to_vec();
+                        answer.extend_from_slice(&[0x81, 0x80, 0, 1, 0, 1, 0, 0, 0, 0]);
+                        answer.extend_from_slice(&query.payload[12..]);
+                        answer.extend_from_slice(&[0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4]);
+                        answer.extend_from_slice(&SERVER.octets());
+                        r.tunnel
+                            .udp_send_to(socket, (query.source, query.source_port), &answer)
+                            .map_err(failed)?;
+                    }
+                    Ok(())
+                });
+                if result.is_err() {
+                    break;
+                }
+                thread::sleep(TICK);
+            }
+        });
+        Self {
+            client,
+            server,
+            client_network,
+            server_network,
+            dns,
+            dns_worker: Some(dns_worker),
+        }
+    }
+}
+impl Drop for Pair {
+    fn drop(&mut self) {
+        self.client.cancel();
+        self.server.cancel();
+        if let Some(worker) = self.dns_worker.take() {
+            worker.join().unwrap();
+        }
+    }
+}
+
+pub(crate) fn udp_protocol_server(driver: &HttpTunnel) -> (u16, JoinHandle<()>) {
+    let socket = driver
+        .owner
+        .call(None, end(), |r| r.tunnel.udp_bind(0).map_err(failed))
+        .unwrap();
+    let port = socket.port();
+    let driver = driver.clone();
+    let worker = thread::spawn(move || {
+        for step in 0..4 {
+            let deadline = end();
+            loop {
+                let done = driver
+                    .owner
+                    .call(None, deadline, move |r| {
+                        let Some(query) = r.tunnel.udp_recv(socket).map_err(failed)? else {
+                            return Ok(false);
+                        };
+                        let bytes = &query.payload;
+                        let reply = match step {
+                            0 => {
+                                assert_eq!(bytes.len(), 16);
+                                let mut reply = 0_u32.to_be_bytes().to_vec();
+                                reply.extend_from_slice(&bytes[12..16]);
+                                reply.extend_from_slice(&12345_u64.to_be_bytes());
+                                reply
+                            }
+                            1 => {
+                                assert_eq!(bytes.len(), 98);
+                                assert_eq!(&bytes[56..64], &0_u64.to_be_bytes());
+                                assert_eq!(&bytes[64..72], &1_u64.to_be_bytes());
+                                assert_eq!(&bytes[80..84], &3_u32.to_be_bytes());
+                                let mut reply = 1_u32.to_be_bytes().to_vec();
+                                reply.extend_from_slice(&bytes[12..16]);
+                                reply.extend_from_slice(&1800_u32.to_be_bytes());
+                                reply.extend_from_slice(&[0; 8]);
+                                reply.extend_from_slice(&[10, 7, 0, 1, 0x1a, 0xe1]);
+                                reply
+                            }
+                            2 => {
+                                use crate::bencode::Value;
+                                let value = crate::bencode::parse(bytes).unwrap();
+                                let Value::Dict(fields) = value else { panic!() };
+                                assert_eq!(
+                                    fields.get(b"q".as_slice()),
+                                    Some(&Value::Bytes(b"get_peers".to_vec()))
+                                );
+                                crate::bencode::encode(&Value::Dict(BTreeMap::from([
+                                    (b"t".to_vec(), fields[b"t".as_slice()].clone()),
+                                    (b"y".to_vec(), Value::Bytes(b"r".to_vec())),
+                                    (
+                                        b"r".to_vec(),
+                                        Value::Dict(BTreeMap::from([
+                                            (
+                                                b"values".to_vec(),
+                                                Value::List(vec![Value::Bytes(vec![
+                                                    10, 7, 0, 1, 0x1a, 0xe1,
+                                                ])]),
+                                            ),
+                                            (b"token".to_vec(), Value::Bytes(b"token".to_vec())),
+                                        ])),
+                                    ),
+                                ])))
+                            }
+                            _ => {
+                                let value = crate::bencode::parse(bytes).unwrap();
+                                let crate::bencode::Value::Dict(fields) = value else {
+                                    panic!()
+                                };
+                                assert_eq!(
+                                    fields.get(b"q".as_slice()),
+                                    Some(&crate::bencode::Value::Bytes(b"announce_peer".to_vec()))
+                                );
+                                return Ok(true);
+                            }
+                        };
+                        r.tunnel
+                            .udp_send_to(socket, (query.source, query.source_port), &reply)
+                            .map_err(failed)?;
+                        Ok(true)
+                    })
+                    .unwrap();
+                if done {
+                    break;
+                }
+                pause(deadline).unwrap();
+            }
+        }
+    });
+    (port, worker)
+}

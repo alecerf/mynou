@@ -369,6 +369,7 @@ impl Engine {
                 request.source_url = Some(source.clone());
             }
         }
+        let _publication = self.torrent_publication()?;
         let mut store = lock(&self.store)?;
         if store.current_shared_group(id)? != initial {
             return Err("Shared-group owners changed during review; preview again".into());
@@ -383,6 +384,9 @@ impl Engine {
         proposal.apply = false;
         proposal.plan_id = None;
         fence.insert("query", proposal.to_json());
+        if let Some(generation) = self.torrent_network.generation()? {
+            fence.insert("torrent_generation", generation);
+        }
         fence.insert(
             "parents",
             Value::Array(initial.iter().map(Job::to_json).collect()),

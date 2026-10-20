@@ -499,6 +499,7 @@ impl Engine {
         report.insert("selected_candidate_id", Value::Null);
         let mut decisions = Vec::new();
         let mut selected = None;
+        self.torrent_publication()?;
         let mut metadata_cache = BTreeMap::<String, Result<TorrentMetadata>>::new();
         report.insert("metadata_candidate_limit", 8_u32);
         for mut candidate in candidates {
@@ -525,6 +526,9 @@ impl Engine {
                 Ok((metadata, mappings)) => {
                     let mut bound = Value::object();
                     bound.insert("scope_id", scope.id.clone());
+                    if let Some(generation) = self.torrent_network.generation()? {
+                        bound.insert("torrent_generation", generation);
+                    }
                     bound.insert("release_id", candidate.id.clone());
                     bound.insert("torrent_id", metadata.id.clone());
                     bound.insert(
@@ -586,6 +590,7 @@ impl Engine {
                 break;
             }
         }
+        let _publication = self.torrent_publication()?;
         report.insert("metadata_decisions", Value::Array(decisions));
         // Recheck catalog content as well as revision: refreshes can change a plan without settings changes.
         {

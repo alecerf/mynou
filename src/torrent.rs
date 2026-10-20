@@ -1421,7 +1421,9 @@ impl Client {
         selection: FileSelection,
         expected: Option<&str>,
     ) -> Result<DownloadStatus> {
+        self.policy.network.publication()?;
         let mut source = Source::parse(&*self.policy.network, source)?;
+        let _publication = self.policy.network.publication()?;
         if expected.is_some_and(|hash| !source.matches_identity(hash)) {
             return Err("Torrent identity differs from the accepted pack metadata".into());
         }
@@ -2411,6 +2413,11 @@ fn announce(
         event: task.event,
     };
     let result = discovery::tracker(network, &task.url, &request);
+    let publication = network.publication();
+    let result = result.and_then(|reply| {
+        publication.as_ref().map_err(Clone::clone)?;
+        Ok(reply)
+    });
     if let Ok(mut jobs) = jobs.lock()
         && let Some(job) = jobs.get_mut(&task.id)
         && (job.cross_seed.is_none() || Arc::ptr_eq(&job.cancel, &task.cancel))
@@ -2531,6 +2538,11 @@ fn announce_seed_dht(network: &dyn transport::Network, task: DhtTask, port: u16,
         }
     }
     let result = discovery::dht_lookup(network, &task.hash, port, true, &task.cancel, &[]);
+    let publication = network.publication();
+    let result = result.and_then(|reply| {
+        publication.as_ref().map_err(Clone::clone)?;
+        Ok(reply)
+    });
     if let Ok(mut jobs) = jobs.lock()
         && let Some(job) = jobs.get_mut(&task.id)
     {
@@ -2913,6 +2925,7 @@ fn download(
     peer_id: &[u8; 20],
     policy: &PolicyRuntime,
 ) -> Result<()> {
+    policy.network.publication()?;
     let seed_only = jobs
         .lock()
         .map_err(|_| "BitTorrent state lock is poisoned")?
@@ -3014,6 +3027,7 @@ fn download_sequential(
                 let mut complete = meta.take().ok_or("Missing metadata")?;
                 authenticate_v2(&mut complete, &base, stop)?;
                 sync_files(&complete, &base, stop)?;
+                let _publication = policy.network.publication()?;
                 persist_meta(config, id, &complete)?;
                 update(
                     (jobs, stop),
@@ -3090,6 +3104,7 @@ fn download_sequential(
             if meta.is_none() {
                 match peer.metadata(source.v1, source.v2, stop) {
                     Ok(m) => {
+                        let publication = policy.network.publication()?;
                         let untrusted_private =
                             m.private && source.trackers.is_empty() && source.peers.is_empty();
                         source.v1 = m.v1;
@@ -3132,6 +3147,7 @@ fn download_sequential(
                             "Torrent metadata authenticated",
                             config,
                         )?;
+                        drop(publication);
                         if peer.extensions {
                             wire::write_message(
                                 &mut *peer.stream,
@@ -3176,6 +3192,7 @@ fn download_sequential(
                 };
                 match peer.fetch_piece(m, i, stop) {
                     Ok(data) => {
+                        let _publication = policy.network.publication()?;
                         write_piece(m, &base, i, &data)?;
                         have[i] = true;
                         counters
@@ -4470,3 +4487,7 @@ mod control_runtime_tests {
         fs::remove_dir_all(root).unwrap();
     }
 }
+
+#[cfg(test)]
+#[path = "torrent/tunnel_tests.rs"]
+mod tunnel_tests;

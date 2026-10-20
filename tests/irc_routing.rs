@@ -4,6 +4,7 @@ mod irc_support;
 mod jobs_state;
 mod library_support;
 mod requester_support;
+mod torrent_network_support;
 #[allow(dead_code)]
 mod transfer_support;
 use irc_routing_support::*;
@@ -954,4 +955,33 @@ fn an_origin_cannot_create_its_own_admission_in_journal_replay() {
     jobs_state::write_private(&cfg.store_dir.join("journal.bin"), &journal);
     assert!(Engine::open(cfg.clone()).is_err());
     assert!(!cfg.downloads.data_dir.join(&torrent.id).exists());
+}
+
+#[test]
+fn revoked_torrent_generation_discards_delayed_irc_metadata_without_a_transfer_worker() {
+    let dir = Directory::new();
+    let torrent = movie(&dir, "Fixture.Movie.2024.1080p.mp4");
+    let seed = Seeder::open(&dir.0.join("seed"), &[&torrent]);
+    let cfg = configuration(&dir.0.join("engine"), seed.client.listen_port());
+    let gate = std::sync::Arc::new(torrent_network_support::Revocable::default());
+    let engine =
+        Engine::open_with_network(cfg, torrent_network_support::network(&gate), false).unwrap();
+    let admitted = engine.submit(request(7)).unwrap().remove(0);
+    let row = receive(&engine, &torrent.id, 7);
+    gate.arm();
+    let worker = {
+        let engine = engine.clone();
+        thread::spawn(move || engine.irc_route_pending().unwrap())
+    };
+    gate.wait();
+    gate.revoke_and_release();
+    assert!(!routing(&worker.join().unwrap()));
+    assert_eq!(
+        route_phase(&engine.irc_announcement(row_id(&row)).unwrap()),
+        None
+    );
+    let job = job(&engine, &admitted.id);
+    assert!(job.irc_origin.is_none());
+    assert!(job.download_id.is_none());
+    assert!(engine.transfers().is_err());
 }

@@ -2,7 +2,7 @@
 //! code receives a `Network` explicitly and never opens a socket, resolves a
 //! name or builds a default HTTP client itself; inbound peers arrive through a
 //! listener of the same network. `Direct` is today's unprotected
-//! ordinary network; a protected engine will supply a tunnel implementation.
+//! ordinary network; an explicitly constructed engine can supply a tunnel.
 use crate::{
     Result,
     net::{HttpClient, NetworkDatagram, NetworkStream},
@@ -14,7 +14,27 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// A local publication lease. Dropping it lets revocation finish. It must not
+/// span network I/O; implementations can serialize it with generation loss.
+pub trait Publication {}
+impl Publication for () {}
+
 pub trait Network: Send + Sync {
+    /// Opaque captured protected generation, including the owner identity, or
+    /// None for an unprotected transport. New owners must not reuse tokens.
+    /// A protected implementation must reject a revoked generation.
+    fn generation(&self) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    /// Admit publication of metadata/results from this captured generation.
+    /// Direct and synthetic networks have no revocation by default. Protected
+    /// implementations must fence old generations and serialize cancellation
+    /// with leases already admitted. No sockets or DNS may be used here.
+    fn publication(&self) -> Result<Box<dyn Publication + '_>> {
+        Ok(Box::new(()))
+    }
+
     /// One outgoing peer TCP connection, bounded by `timeout`. No retry.
     fn connect(&self, address: SocketAddr, timeout: Duration) -> Result<Box<dyn NetworkStream>>;
     /// Resolves a `host:port` authority. Implementations bound the lookup by

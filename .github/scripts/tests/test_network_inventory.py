@@ -130,8 +130,15 @@ class Drift(unittest.TestCase):
         self.fixture = Fixture(self, CLEAN + SITES["TcpStream"])
         self.current = self.fixture.scan()
 
-    def test_matching_inventory_passes(self):
-        self.assertEqual(self.fixture.check(inventory.render(self.current))[0], 0)
+    def test_matching_inventory_cannot_authorize_a_site_outside_direct(self):
+        status, errors = self.fixture.check(inventory.render(self.current))
+        self.assertEqual(status, 1)
+        self.assertIn("direct site outside Direct", errors)
+
+    def test_only_the_direct_implementation_can_match_its_inventory(self):
+        fixture = Fixture(self, "mod transport;", {"src/torrent/transport.rs":
+            "impl Direct { fn connect() { std::net::TcpStream::connect(\"x\"); } }"})
+        self.assertEqual(fixture.check(inventory.render(fixture.scan()))[0], 0)
 
     def test_increased_site_count_fails(self):
         fixture = Fixture(self, CLEAN + SITES["TcpStream"].replace(");", "); std::net::TcpStream::connect(\"y\");"))

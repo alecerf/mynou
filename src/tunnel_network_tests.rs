@@ -384,3 +384,70 @@ fn full_owner_queue_does_not_prevent_dropped_udp_and_listener_cleanup() {
     }
     assert!(network.listen("0.0.0.0:42044".parse().unwrap()).is_ok());
 }
+
+#[test]
+fn cancellation_closes_publication_admission_then_waits_for_an_admitted_commit() {
+    let f = Fixture::new();
+    let network = network(&f);
+    let publication = network.publication().unwrap();
+    let (send, recv) = mpsc::sync_channel(1);
+    let driver = f.driver.clone();
+    let worker = thread::spawn(move || {
+        driver.cancel();
+        send.send(()).unwrap();
+    });
+    let deadline = end();
+    while !f.driver.owner.cancelled.load(Ordering::Acquire) {
+        pause(deadline).unwrap();
+    }
+    assert!(network.publication().is_err());
+    assert!(matches!(recv.try_recv(), Err(mpsc::TryRecvError::Empty)));
+    drop(publication);
+    recv.recv_timeout(Duration::from_secs(1)).unwrap();
+    worker.join().unwrap();
+    assert!(network.publication().is_err());
+}
+
+#[test]
+fn generation_replacement_waits_for_old_publications_and_rejects_late_results() {
+    let f = Fixture::new();
+    let network = network(&f);
+    let publication = network.publication().unwrap();
+    let generation = f.driver.owner.generation.load(Ordering::Acquire);
+    let driver = f.driver.clone();
+    let (send, recv) = mpsc::sync_channel(1);
+    let worker = thread::spawn(move || {
+        let result = driver.owner.call(None, end(), |r| {
+            let endpoint = r.tunnel.status().remote.unwrap();
+            r.tunnel
+                .set_endpoint(Endpoint::Address(endpoint))
+                .map_err(failed)
+        });
+        send.send(result).unwrap();
+    });
+    let deadline = end();
+    while f.driver.owner.generation.load(Ordering::Acquire) == generation {
+        pause(deadline).unwrap();
+    }
+    assert!(network.publication().is_err());
+    assert!(matches!(recv.try_recv(), Err(mpsc::TryRecvError::Empty)));
+    drop(publication);
+    recv.recv_timeout(Duration::from_secs(1)).unwrap().unwrap();
+    worker.join().unwrap();
+    assert!(network.publication().is_err());
+}
+
+#[test]
+fn protected_generation_tokens_name_the_owner_and_refuse_revocation() {
+    use crate::torrent::transport::Direct;
+    let first = Fixture::new();
+    let second = Fixture::new();
+    let a = network(&first);
+    let b = network(&second);
+    assert_eq!(Direct.generation().unwrap(), None);
+    assert!(a.generation().unwrap().is_some());
+    assert_ne!(a.generation().unwrap(), b.generation().unwrap());
+    first.driver.cancel();
+    assert!(a.generation().is_err());
+    assert!(b.generation().is_ok());
+}

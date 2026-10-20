@@ -2,6 +2,7 @@
 mod automatic_pack_support;
 mod library_support;
 mod series_support;
+mod torrent_network_support;
 #[allow(dead_code)]
 mod transfer_support;
 use automatic_pack_support::*;
@@ -744,4 +745,62 @@ fn series_pack_preference_is_strictly_optional_and_disabled_for_legacy_configura
         value.insert("series_packs", mynou::json::parse(text).unwrap());
         assert!(mynou::config::from_json(&value, std::path::Path::new(".")).is_err());
     }
+}
+
+#[test]
+fn a_revoked_torrent_generation_discards_delayed_pack_previews_and_acquisition_without_workers() {
+    for apply in [false, true] {
+        let directory = Directory::new();
+        let catalog = catalog();
+        let provider = Provider::open();
+        let complete = torrent(&directory, "complete", &[1, 2]);
+        let url = provider.metadata_url("complete", fs::read(&complete.path).unwrap());
+        provider.releases(vec![release("Fixture.Series.S01.Complete.1080p", &url, 2)]);
+        let cfg = configure(catalog.config(&directory.0.join("engine")), &provider, "{}");
+        let gate = std::sync::Arc::new(torrent_network_support::Revocable::default());
+        let engine =
+            Engine::open_with_network(cfg.clone(), torrent_network_support::network(&gate), false)
+                .unwrap();
+        let series = tracked(&engine);
+        let mut query = preview(1);
+        query.apply = apply;
+        let before = snapshot(&cfg.store_dir);
+        gate.arm();
+        let worker = {
+            let engine = engine.clone();
+            thread::spawn(move || engine.search_packs(&series, &query))
+        };
+        gate.wait();
+        gate.revoke_and_release();
+        assert!(worker.join().unwrap().is_err());
+        assert_eq!(snapshot(&cfg.store_dir), before);
+        assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
+    }
+}
+
+#[test]
+fn automatic_pack_candidate_cannot_authorize_apply_in_a_replacement_torrent_generation() {
+    let directory = Directory::new();
+    let catalog = catalog();
+    let provider = Provider::open();
+    let complete = torrent(&directory, "complete", &[1, 2]);
+    let url = provider.metadata_url("complete", fs::read(&complete.path).unwrap());
+    provider.releases(vec![release("Fixture.Series.S01.Complete.1080p", &url, 2)]);
+    let cfg = configure(catalog.config(&directory.0.join("engine")), &provider, "{}");
+    let gate = std::sync::Arc::new(torrent_network_support::Revocable::default());
+    let engine =
+        Engine::open_with_network(cfg.clone(), torrent_network_support::network(&gate), false)
+            .unwrap();
+    let series = tracked(&engine);
+    let report = engine.search_packs(&series, &preview(1)).unwrap();
+    let query = apply(&report);
+    let before = snapshot(&cfg.store_dir);
+    gate.generation.fetch_add(1, Ordering::AcqRel);
+    assert!(
+        engine
+            .search_packs(&series, &query)
+            .unwrap_err()
+            .contains("candidate changed")
+    );
+    assert_eq!(snapshot(&cfg.store_dir), before);
 }

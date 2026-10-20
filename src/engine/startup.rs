@@ -250,6 +250,7 @@ impl Engine {
             if !self.read_only {
                 retire_transfers(Some(&client), &mut *lock(&self.store)?)?;
             }
+            let _publication = self.torrent_publication()?;
             self.downloads
                 .set(client)
                 .map_err(|_| "Native transfers already started")?;

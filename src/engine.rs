@@ -130,12 +130,26 @@ impl Engine {
     /// Loads existing storage without creating, repairing, or changing its permissions.
     pub fn open_for_preview(config: Config) -> Result<Arc<Self>> {
         let store = Store::open_read_only(&config.store_dir)?;
-        Self::from_store(config, store, false, true, false)
+        Self::from_store(
+            config,
+            store,
+            false,
+            true,
+            false,
+            crate::torrent::transport::direct(),
+        )
     }
 
     fn open_with_downloads(config: Config, start_downloads: bool) -> Result<Arc<Self>> {
         let store = Store::prepare(&config.store_dir, &config)?;
-        Self::from_store(config, store, start_downloads, false, false)
+        Self::from_store(
+            config,
+            store,
+            start_downloads,
+            false,
+            false,
+            crate::torrent::transport::direct(),
+        )
     }
 
     /// Opens the service journal without waiting for startup validation:
@@ -143,7 +157,43 @@ impl Engine {
     /// transfers wait until `start` has completed every bounded startup stage.
     pub fn open_serving(config: Config) -> Result<Arc<Self>> {
         let store = Store::prepare(&config.store_dir, &config)?;
-        Self::from_store(config, store, true, false, true)
+        Self::from_store(
+            config,
+            store,
+            true,
+            false,
+            true,
+            crate::torrent::transport::direct(),
+        )
+    }
+
+    /// Constructs an engine with exactly the supplied torrent network. No
+    /// ordinary transport is constructed on this path. `start_downloads=false`
+    /// supports metadata-only management without a native transfer worker.
+    /// The network is immutable for this engine's lifetime: stop/drop the old
+    /// engine before opening another generation or changing protection mode.
+    /// Operator profile and lifecycle controls are tracked separately in #222.
+    pub fn open_with_network(
+        config: Config,
+        network: Arc<dyn crate::torrent::transport::Network>,
+        start_downloads: bool,
+    ) -> Result<Arc<Self>> {
+        network.publication()?;
+        let store = Store::prepare(&config.store_dir, &config)?;
+        Self::from_store(config, store, start_downloads, false, false, network)
+    }
+
+    /// Checks stop/revocation under the transport's publication lease. Keep
+    /// this lease through publishing a report or committing inspected metadata;
+    /// never hold it while doing network I/O.
+    pub(crate) fn torrent_publication(
+        &self,
+    ) -> Result<Box<dyn crate::torrent::transport::Publication + '_>> {
+        let publication = self.torrent_network.publication()?;
+        if self.stopped.load(Ordering::Acquire) {
+            return Err("Torrent operation stopped".into());
+        }
+        Ok(publication)
     }
 
     fn from_store(
@@ -152,6 +202,7 @@ impl Engine {
         start_downloads: bool,
         read_only: bool,
         defer: bool,
+        torrent_network: Arc<dyn crate::torrent::transport::Network>,
     ) -> Result<Arc<Self>> {
         let indexer_store =
             crate::indexers::policy::SourceStore::open(&config.store_dir, &config, read_only)?;
@@ -171,8 +222,7 @@ impl Engine {
             series_refresh_lock: Mutex::new(()),
             series_unreadable: Mutex::new(std::collections::BTreeMap::new()),
             downloads: OnceLock::new(),
-            // Protection is not selectable yet (#222): engines are unprotected.
-            torrent_network: crate::torrent::transport::direct(),
+            torrent_network,
             start_downloads,
             startup: Mutex::new(startup::Startup::default()),
             startup_runner: Mutex::new(()),

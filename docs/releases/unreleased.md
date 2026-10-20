@@ -239,3 +239,15 @@ context; lookup failures are reported during that operation. Peer authorities
 require an explicit nonzero port and an ASCII hostname, IPv4 or bracketed IPv6
 address. This is transport preparation; integrated VPN protection remains
 unavailable while tunnel and lifecycle integration are pending.
+
+## Added: Explicit torrent engine transport and revocation fences
+
+Library callers can construct an engine with one supplied torrent network for
+transfers and metadata-only operations, including management without download
+workers. Tunnel generation loss or cancellation rejects late metadata and peer
+results before publication. CI refuses direct networking outside Direct, even
+if added to the inventory. Native tunnel fixtures exercise BitTorrent metadata,
+payload/seeding, HTTP/HTTPS/UDP trackers, DHT and remote metadata redirects.
+This completes the transport boundary of #221; operator VPN controls (#222) and
+full isolation/race/resource evidence (#224) are still required before an
+integrated VPN or migration guide is available. See [the transport contract](../torrent-transport.md).

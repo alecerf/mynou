@@ -481,6 +481,7 @@ fn metadata(context: MetadataContext<'_>, addresses: &mut BTreeSet<SocketAddr>) 
         .and_then(|mut peer| peer.metadata(source.v1, source.v2, stop));
         match result {
             Ok(meta) => {
+                let _publication = policy.network.publication()?;
                 group.discovery_stop.store(true, Ordering::Release);
                 if meta.private && source.trackers.is_empty() && source.peers.is_empty() {
                     addresses.clear();
@@ -681,6 +682,7 @@ pub(super) fn download(
                     availability,
                     peers,
                 } => {
+                    let _publication = policy.network.publication()?;
                     let worker = group.workers[event.slot]
                         .as_mut()
                         .ok_or("Peer worker unavailable")?;
@@ -711,6 +713,7 @@ pub(super) fn download(
                     {
                         retire_peer(&mut group, event.slot, &mut quarantine, &mut retries, true);
                     } else {
+                        let _publication = policy.network.publication()?;
                         commit_piece(
                             jobs, stop, id, &meta, &base, index, &data, &mut have, &selected,
                         )?;
@@ -815,6 +818,7 @@ pub(super) fn download(
         stop,
         (!full).then_some(selected.files.as_slice()),
     )?;
+    let _publication = policy.network.publication()?;
     with_generation(jobs, stop, id, |job| {
         super::sync_selected_files(
             &meta,

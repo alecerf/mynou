@@ -303,6 +303,7 @@ impl Engine {
         query: &SharedFileRequest,
         deadline: Instant,
     ) -> Result<Value> {
+        self.torrent_publication()?;
         query.validate()?;
         if query.apply && self.read_only {
             return Err("Shared-file acquisition requires writable storage".into());
@@ -345,6 +346,7 @@ impl Engine {
                 "Shared video path is absent, empty or ambiguous in authenticated metadata".into(),
             );
         }
+        let _publication = self.torrent_publication()?;
         let mut series = lock(&self.series_store)?;
         if query.apply {
             series.check_writable()?;
@@ -424,6 +426,9 @@ impl Engine {
         let existing = store.check_shared_submission(&file, &requests)?;
         let mut fence = Value::object();
         fence.insert("series", record.to_json());
+        if let Some(generation) = self.torrent_network.generation()? {
+            fence.insert("torrent_generation", generation);
+        }
         fence.insert("today", today);
         fence.insert("binding", file.to_json());
         fence.insert("source_url", query.source_url.clone());

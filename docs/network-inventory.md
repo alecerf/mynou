@@ -4,7 +4,8 @@
 source-policy part of the "Complete network inventory" gate in the
 [WireGuard design](wireguard-design.md#verification-gates-before-protected-delivery).
 It lists every place where torrent code still reaches the ordinary network
-directly. CI fails when that list changes without review.
+directly. CI rejects every finding outside the `Direct` implementation, even
+when it is added to the inventory, and checks the remaining Direct sites for drift.
 
 The script uses only the Python standard library. The `validate` job of Mynou CI
 runs it on every product change. The Repository checks workflow runs its
@@ -54,13 +55,15 @@ counts the findings and compares them with the reviewed list in
 [`network_inventory.tsv`](../.github/scripts/network_inventory.tsv):
 
 - a new key, or a higher count, fails as `new direct site`;
-- a missing key, or a lower count, fails as `stale inventory entry`.
+- a missing key, or a lower count, fails as `stale inventory entry`;
+- any site outside `src/torrent/transport.rs` imports, `Direct` and
+  `DirectListener` fails as `direct site outside Direct`, even if inventoried.
 
-A conversion in #221 must therefore remove its entries in the same change. A
-reviewer sees a new direct site as a diff of that file. After converting a site
-or deliberately accepting one, regenerate the file with `--write` and review the
-diff. The list is not an allowlist to grow freely: the protected transport needs
-it to reach zero for every site the design requires to move.
+The migration leaves 11 findings, all in `Direct` and its listener, including
+imports and socket fields. No inspected torrent, pack, library-group, IRC-routing
+or engine caller has a direct site. `--write` updates the inventory but cannot
+authorize a site outside Direct. Review any change to Direct against the
+[transport contract](torrent-transport.md).
 
 ## Limits
 

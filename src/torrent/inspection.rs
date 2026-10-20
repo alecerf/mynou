@@ -76,11 +76,13 @@ pub fn inspect_metadata(
     source: &str,
     deadline: Instant,
 ) -> Result<TorrentMetadata> {
+    network.publication()?;
     remaining(deadline)?;
     let mut source = Source::parse_with_deadline(network, source, Some(deadline))
         .map_err(|_| "Torrent source metadata could not be read or authenticated")?;
     let id = source.id();
     if let Some(meta) = source.meta.take() {
+        let _publication = network.publication()?;
         return report(meta, id, deadline);
     }
     let peer_id = crate::crypto::random_bytes::<20>()?;
@@ -130,6 +132,7 @@ pub fn inspect_metadata(
                 peer.metadata_before(source.v1, source.v2, &stop, Some(attempt_end))
             });
             if let Ok(meta) = result {
+                let _publication = network.publication()?;
                 return report(meta, id, deadline);
             }
         } else if let Some(url) = trackers.next() {

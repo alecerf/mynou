@@ -1,6 +1,6 @@
 //! Bounded native owner for the non-Send tunnel, its generation-bound HTTP
-//! streams and a torrent `Network` (see `network`). Library only: production
-//! torrent traffic is not wired to this adapter.
+//! streams and a torrent `Network` (see `network`). The library engine can
+//! receive this network explicitly; operator activation remains separate.
 use crate::{
     net::{HttpConnector, NetworkStream},
     netstack::{Read as TcpRead, TcpState},
@@ -14,7 +14,7 @@ use std::{
     io::{self, Read, Write},
     net::{IpAddr, Ipv4Addr},
     sync::{
-        Arc, Mutex, Weak,
+        Arc, Mutex, RwLock, Weak,
         atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc::{self, Receiver, SyncSender, TryRecvError},
     },
@@ -105,9 +105,11 @@ impl Runtime {
 }
 
 struct Owner {
+    identity: u128,
     sender: SyncSender<Command>,
     cancelled: Arc<AtomicBool>,
     generation: Arc<AtomicU64>,
+    publication: Arc<RwLock<()>>,
     thread: Mutex<Option<JoinHandle<()>>>,
 }
 impl Drop for Owner {
@@ -139,6 +141,7 @@ impl Owner {
         self.admit(generation)?;
         let (send, recv) = mpsc::sync_channel(1);
         let epoch = self.generation.clone();
+        let publication = self.publication.clone();
         self.sender
             .try_send(Command {
                 deadline,
@@ -148,7 +151,7 @@ impl Owner {
                         let result = action(runtime);
                         // An operation can itself observe expiry in flush().
                         // Publish that loss before making its result visible.
-                        publish(runtime, &epoch);
+                        publish(runtime, &epoch, &publication);
                         if generation.is_some_and(|g| epoch.load(Ordering::Acquire) != g) {
                             Err(error(io::ErrorKind::PermissionDenied))
                         } else {
@@ -174,29 +177,32 @@ impl Owner {
     }
 }
 
-fn publish(runtime: &Runtime, generation: &AtomicU64) {
+fn publish(runtime: &Runtime, generation: &AtomicU64, publication: &RwLock<()>) {
     let status = runtime.tunnel.status();
-    generation.store(
-        if status.state == TunnelState::Protected {
-            status.generation.unwrap_or(0)
-        } else {
-            0
-        },
-        Ordering::Release,
-    );
+    let next = if status.state == TunnelState::Protected {
+        status.generation.unwrap_or(0)
+    } else {
+        0
+    };
+    if generation.swap(next, Ordering::AcqRel) != next {
+        // Close admission first, then wait for already admitted local commits.
+        // No new commands are dispatched while an old publication completes.
+        let _fence = publication.write().unwrap_or_else(|e| e.into_inner());
+    }
 }
 fn run(
     mut runtime: Runtime,
     receiver: Receiver<Command>,
     cancelled: &AtomicBool,
     generation: &AtomicU64,
+    publication: &RwLock<()>,
 ) {
     while !cancelled.load(Ordering::Acquire) {
         runtime.collect();
         if runtime.tunnel.pump(TICK).is_err() {
             break;
         }
-        publish(&runtime, generation);
+        publish(&runtime, generation, publication);
         for _ in 0..BATCH {
             if cancelled.load(Ordering::Acquire) {
                 break;
@@ -211,7 +217,7 @@ fn run(
             };
             // Observe timers/session loss before each command, even under load.
             let pumped = runtime.tunnel.pump(Duration::ZERO).map_err(failed);
-            publish(&runtime, generation);
+            publish(&runtime, generation, publication);
             let admission = pumped
                 .and_then(|_| remaining(command.deadline).map(|_| ()))
                 .and_then(|_| {
@@ -230,6 +236,7 @@ fn run(
     }
     cancelled.store(true, Ordering::Release);
     generation.store(0, Ordering::Release);
+    let _fence = publication.write().unwrap_or_else(|e| e.into_inner());
     runtime.tunnel.cancel();
     // Dropping the receiver wakes pending callers; dropping the tunnel closes
     // its sole outer socket. No task or inner I/O can select a direct transport.
@@ -253,12 +260,17 @@ impl HttpTunnel {
         if !matches!(config.endpoint, Endpoint::Address(a) if a.is_ipv4()) {
             return Err(error(io::ErrorKind::InvalidInput));
         }
+        let identity = u128::from_be_bytes(
+            crate::crypto::random_bytes::<16>().map_err(|_| error(io::ErrorKind::Other))?,
+        );
         let (sender, receiver) = mpsc::sync_channel(QUEUE);
         let cancelled = Arc::new(AtomicBool::new(false));
         let generation = Arc::new(AtomicU64::new(0));
+        let publication = Arc::new(RwLock::new(()));
         let (ready, started) = mpsc::sync_channel(1);
         let stop = cancelled.clone();
         let epoch = generation.clone();
+        let fence = publication.clone();
         let handle = thread::Builder::new()
             .name("mynou-tunnel-http".into())
             .spawn(move || {
@@ -279,14 +291,17 @@ impl HttpTunnel {
                         receiver,
                         &stop,
                         &epoch,
+                        &fence,
                     );
                 }
             })
             .map_err(|_| error(io::ErrorKind::Other))?;
         let owner = Arc::new(Owner {
+            identity,
             sender,
             cancelled,
             generation,
+            publication,
             thread: Mutex::new(Some(handle)),
         });
         started
@@ -324,10 +339,17 @@ impl HttpTunnel {
             generation,
         })
     }
-    /// Fence callers immediately; the owner then revokes and closes the tunnel.
+    /// Close admission immediately and wait for admitted local publications,
+    /// then let the owner revoke and close the tunnel. Do not call this while
+    /// holding a `Network::publication` lease on the same thread.
     pub fn cancel(&self) {
         self.owner.cancelled.store(true, Ordering::Release);
         self.owner.generation.store(0, Ordering::Release);
+        let _fence = self
+            .owner
+            .publication
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
     }
 }
 
@@ -569,4 +591,4 @@ mod network;
 
 #[cfg(test)]
 #[path = "tunnel_http_tests.rs"]
-mod tests;
+pub(crate) mod tests;

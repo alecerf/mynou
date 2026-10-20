@@ -3,6 +3,7 @@ mod automatic_pack_support;
 mod jobs_state;
 mod library_support;
 mod series_support;
+mod torrent_network_support;
 #[allow(dead_code)]
 mod transfer_support;
 use automatic_pack_support::{Provider, no_sources, snapshot};
@@ -850,4 +851,69 @@ fn missing_empty_nonconsecutive_or_independently_owned_files_never_create_shared
             .contains("unrelated episode request")
     );
     assert_eq!(lock(&engine.store).unwrap().list().unwrap().len(), 1);
+}
+
+#[test]
+fn revoked_torrent_metadata_cannot_publish_a_shared_file_preview_or_commit_without_workers() {
+    for apply in [false, true] {
+        let directory = Directory::new();
+        let catalog = catalog(2);
+        let provider = Provider::open();
+        let media = torrent(&directory, "shared");
+        let url = provider.metadata_url("shared", fs::read(&media.path).unwrap());
+        let cfg = catalog.config(&directory.0.join("engine"));
+        let gate = std::sync::Arc::new(torrent_network_support::Revocable::default());
+        let engine =
+            Engine::open_with_network(cfg.clone(), torrent_network_support::network(&gate), false)
+                .unwrap();
+        let series = id(&engine
+            .track_series_with_policy(&request(), false, false, false)
+            .unwrap())
+        .to_owned();
+        let mut query = query(&url);
+        if apply {
+            let preview = engine.shared_file(&series, &query).unwrap();
+            query.plan_id = Some(preview.get("plan_id").unwrap().as_str().unwrap().into());
+            query.apply = true;
+        }
+        let before = snapshot(&cfg.store_dir);
+        gate.arm();
+        let worker = {
+            let engine = engine.clone();
+            thread::spawn(move || engine.shared_file(&series, &query))
+        };
+        gate.wait();
+        gate.revoke_and_release();
+        assert!(worker.join().unwrap().is_err());
+        assert_eq!(snapshot(&cfg.store_dir), before);
+    }
+}
+
+#[test]
+fn shared_file_preview_cannot_authorize_apply_in_a_replacement_torrent_generation() {
+    let directory = Directory::new();
+    let catalog = catalog(2);
+    let media = torrent(&directory, "shared");
+    let cfg = catalog.config(&directory.0.join("engine"));
+    let gate = std::sync::Arc::new(torrent_network_support::Revocable::default());
+    let engine =
+        Engine::open_with_network(cfg.clone(), torrent_network_support::network(&gate), false)
+            .unwrap();
+    let series = id(&engine
+        .track_series_with_policy(&request(), false, false, false)
+        .unwrap())
+    .to_owned();
+    let mut query = query(media.path.to_str().unwrap());
+    let preview = engine.shared_file(&series, &query).unwrap();
+    query.plan_id = Some(preview.get("plan_id").unwrap().as_str().unwrap().into());
+    query.apply = true;
+    let before = snapshot(&cfg.store_dir);
+    gate.generation.fetch_add(1, Ordering::AcqRel);
+    assert!(
+        engine
+            .shared_file(&series, &query)
+            .unwrap_err()
+            .contains("preview changed")
+    );
+    assert_eq!(snapshot(&cfg.store_dir), before);
 }
