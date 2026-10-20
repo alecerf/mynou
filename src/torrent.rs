@@ -18,7 +18,7 @@ mod selection;
 #[path = "torrent/transport.rs"]
 pub mod transport;
 #[path = "torrent/wire.rs"]
-mod wire;
+pub(crate) mod wire;
 use control::RateGate;
 pub use control::{FilePriority, TorrentControl, TransferPolicy};
 pub use cross_seed::{CrossSeedRequest, MAX_CROSS_SEED_METADATA};

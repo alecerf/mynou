@@ -15,7 +15,7 @@ use std::{
     net::{IpAddr, Ipv4Addr},
     sync::{
         Arc, Mutex, RwLock, Weak,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
         mpsc::{self, Receiver, SyncSender, TryRecvError},
     },
     thread::{self, JoinHandle},
@@ -27,6 +27,9 @@ const BATCH: usize = 8;
 const CHUNK: usize = 16 * 1024;
 const TICK: Duration = Duration::from_millis(2);
 const START_TIMEOUT: Duration = Duration::from_secs(5);
+const QUEUED: u8 = 0;
+const CLAIMED: u8 = 1;
+const ABANDONED: u8 = 2;
 type Native = Tunnel<OsEntropy, SystemClock>;
 type Task = Box<dyn FnOnce(io::Result<&mut Runtime>) + Send>;
 
@@ -131,10 +134,30 @@ impl Owner {
         }
         Ok(())
     }
+    /// Fail-fast: a full queue is `WouldBlock`.
     fn call<T: Send + 'static>(
         &self,
         generation: Option<u64>,
         deadline: Instant,
+        action: impl FnOnce(&mut Runtime) -> io::Result<T> + Send + 'static,
+    ) -> io::Result<T> {
+        self.dispatch(generation, deadline, false, action)
+    }
+    /// Stream operations wait for queue space until `deadline`, pausing
+    /// between attempts, so saturated callers do not spin on `WouldBlock`.
+    fn wait<T: Send + 'static>(
+        &self,
+        generation: Option<u64>,
+        deadline: Instant,
+        action: impl FnOnce(&mut Runtime) -> io::Result<T> + Send + 'static,
+    ) -> io::Result<T> {
+        self.dispatch(generation, deadline, true, action)
+    }
+    fn dispatch<T: Send + 'static>(
+        &self,
+        generation: Option<u64>,
+        deadline: Instant,
+        patient: bool,
         action: impl FnOnce(&mut Runtime) -> io::Result<T> + Send + 'static,
     ) -> io::Result<T> {
         remaining(deadline)?;
@@ -142,36 +165,67 @@ impl Owner {
         let (send, recv) = mpsc::sync_channel(1);
         let epoch = self.generation.clone();
         let publication = self.publication.clone();
-        self.sender
-            .try_send(Command {
-                deadline,
-                generation,
-                task: Box::new(move |runtime| {
-                    let result = runtime.and_then(|runtime| {
-                        let result = action(runtime);
-                        // An operation can itself observe expiry in flush().
-                        // Publish that loss before making its result visible.
-                        publish(runtime, &epoch, &publication);
-                        if generation.is_some_and(|g| epoch.load(Ordering::Acquire) != g) {
-                            Err(error(io::ErrorKind::PermissionDenied))
-                        } else {
-                            result
-                        }
-                    });
-                    let _ = send.send(result);
-                }),
-            })
-            .map_err(|e| match e {
-                mpsc::TrySendError::Full(_) => error(io::ErrorKind::WouldBlock),
-                mpsc::TrySendError::Disconnected(_) => error(io::ErrorKind::ConnectionAborted),
-            })?;
-        let result = recv
-            .recv_timeout(remaining(deadline)?)
-            .map_err(|e| match e {
-                mpsc::RecvTimeoutError::Timeout => error(io::ErrorKind::TimedOut),
-                mpsc::RecvTimeoutError::Disconnected => error(io::ErrorKind::ConnectionAborted),
-            })?;
-        remaining(deadline)?;
+        // QUEUED until the owner claims it or the caller gives up. A claimed
+        // action may consume or accept stream bytes, so its result is always
+        // returned: dropping it would lose reads or duplicate retried writes.
+        let claim = Arc::new(AtomicU8::new(QUEUED));
+        let owner_claim = claim.clone();
+        let mut command = Command {
+            deadline,
+            generation,
+            task: Box::new(move |runtime| {
+                let runtime = runtime.and_then(|runtime| {
+                    owner_claim
+                        .compare_exchange(QUEUED, CLAIMED, Ordering::AcqRel, Ordering::Acquire)
+                        .map(|_| runtime)
+                        .map_err(|_| error(io::ErrorKind::TimedOut))
+                });
+                let result = runtime.and_then(|runtime| {
+                    let result = action(runtime);
+                    // An operation can itself observe expiry in flush().
+                    // Publish that loss before making its result visible.
+                    publish(runtime, &epoch, &publication);
+                    if generation.is_some_and(|g| epoch.load(Ordering::Acquire) != g) {
+                        Err(error(io::ErrorKind::PermissionDenied))
+                    } else {
+                        result
+                    }
+                });
+                let _ = send.send(result);
+            }),
+        };
+        loop {
+            match self.sender.try_send(command) {
+                Ok(()) => break,
+                Err(mpsc::TrySendError::Full(returned)) if patient => {
+                    pause(deadline)?;
+                    self.admit(generation)?;
+                    command = returned;
+                }
+                Err(mpsc::TrySendError::Full(_)) => return Err(error(io::ErrorKind::WouldBlock)),
+                Err(mpsc::TrySendError::Disconnected(_)) => {
+                    return Err(error(io::ErrorKind::ConnectionAborted));
+                }
+            }
+        }
+        let wait = remaining(deadline).unwrap_or(Duration::ZERO);
+        let result = match recv.recv_timeout(wait) {
+            Ok(result) => result,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if claim
+                    .compare_exchange(QUEUED, ABANDONED, Ordering::AcqRel, Ordering::Acquire)
+                    .is_ok()
+                {
+                    return Err(error(io::ErrorKind::TimedOut));
+                }
+                // Claimed: owner actions are short and non-blocking.
+                recv.recv()
+                    .map_err(|_| error(io::ErrorKind::ConnectionAborted))?
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(error(io::ErrorKind::ConnectionAborted));
+            }
+        };
         self.admit(generation)?;
         result
     }
@@ -386,7 +440,7 @@ impl Connector {
         let lease = Arc::new(());
         let weak = Arc::downgrade(&lease);
         let name = host.to_owned();
-        let lookup = self.owner.call(Some(self.generation), deadline, move |r| {
+        let lookup = self.owner.wait(Some(self.generation), deadline, move |r| {
             let lookup = r.tunnel.resolve(&name).map_err(failed)?;
             r.leases.push((
                 r.tunnel.status().generation.unwrap_or(0),
@@ -396,7 +450,7 @@ impl Connector {
             Ok(lookup)
         })?;
         loop {
-            let result = self.owner.call(Some(self.generation), deadline, move |r| {
+            let result = self.owner.wait(Some(self.generation), deadline, move |r| {
                 let result = r.tunnel.lookup_result(lookup).map_err(failed)?;
                 if result.is_some() {
                     r.leases.retain(|(_, _, resource)| !matches!(resource, Resource::Lookup(id) if *id == lookup));
@@ -421,7 +475,7 @@ impl Connector {
     fn open(&self, address: Ipv4Addr, port: u16, deadline: Instant) -> io::Result<Stream> {
         let lease = Arc::new(());
         let weak = Arc::downgrade(&lease);
-        let flow = self.owner.call(Some(self.generation), deadline, move |r| {
+        let flow = self.owner.wait(Some(self.generation), deadline, move |r| {
             let flow = r.tunnel.tcp_connect(address, port).map_err(failed)?;
             r.leases.push((
                 r.tunnel.status().generation.unwrap_or(0),
@@ -432,7 +486,7 @@ impl Connector {
         })?;
         let stream = Stream::new(self, flow, lease);
         loop {
-            let state = self.owner.call(Some(self.generation), deadline, move |r| {
+            let state = self.owner.wait(Some(self.generation), deadline, move |r| {
                 r.tunnel.tcp_state(flow).map_err(failed)
             })?;
             match state {
@@ -520,7 +574,7 @@ impl Read for Stream {
         let flow = self.flow;
         let max = buffer.len().min(CHUNK);
         loop {
-            let (read, data) = self.owner.call(Some(self.generation), deadline, move |r| {
+            let (read, data) = self.owner.wait(Some(self.generation), deadline, move |r| {
                 let mut data = vec![0; max];
                 let read = r.tunnel.tcp_recv(flow, &mut data).map_err(failed)?;
                 if let TcpRead::Data(n) = read {
@@ -557,7 +611,7 @@ impl Write for Stream {
         let bytes = &buffer[..buffer.len().min(CHUNK)];
         loop {
             let data = bytes.to_vec();
-            let sent = self.owner.call(Some(self.generation), deadline, move |r| {
+            let sent = self.owner.wait(Some(self.generation), deadline, move |r| {
                 r.tunnel.tcp_send(flow, &data).map_err(failed)
             })?;
             if sent != 0 {
@@ -570,7 +624,7 @@ impl Write for Stream {
         // tcp_send queues bytes like an OS TCP send; pump drives transmission.
         // There is no additional userspace stream buffer to flush.
         let flow = self.flow;
-        self.owner.call(
+        self.owner.wait(
             Some(self.generation),
             Self::deadline(
                 *self
