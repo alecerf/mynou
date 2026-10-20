@@ -80,6 +80,20 @@ Both operations and subsequent preview/application retries fail without committi
 owners or enabling Direct. The accepted catalog remains unchanged. These tests exercise the explicit
 shared-file path, not automatic pack search or other orchestration paths.
 
+The library group replacement increment
+[#317](https://github.com/alecerf/mynou/issues/317) adds two observed scenarios,
+bringing the required runner to twenty-three. An engine with download workers
+disabled first builds an imported, monitored two-owner shared group with a
+recorded baseline, its original metadata fetched through the tunnel. A quality
+replacement then inspects new synthetic metadata through tunnel DNS and a
+cross-name HTTP redirect. Preview leaves the job store unchanged; guarded
+application creates only the two queued replacement owners bound to the new
+torrent, with no transfer state, payload or change to the original import. The
+second scenario holds the replacement metadata response for preview and then
+application, cancels the native owner and releases it. Both operations and later
+retries fail without creating owners or enabling Direct; the original group and
+its import are unchanged.
+
 ```sh
 TMPDIR=/private/tmp cargo test --lib --no-run --offline --locked \
   --message-format=json > /private/tmp/mynou-observer-build.jsonl
@@ -110,8 +124,8 @@ loader policy; loader failure is a failed check, never skipped evidence.
 
 The observer does not inspect encrypted datagram content, prove server privacy,
 exercise real provider connectivity, alter host routes or supply increasing-load
-CPU/RSS/timing evidence. Additional orchestration paths (automatic pack search,
-group replacement and IRC),
+CPU/RSS/timing evidence. Additional orchestration paths (automatic pack search
+and IRC),
 the remaining concurrent expiry/roaming/restart matrix,
 resource measurements and the gated macOS guide remain #224. Existing protocol,
 generation and operator fixtures retain their own documented scope.

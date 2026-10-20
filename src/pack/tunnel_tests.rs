@@ -21,13 +21,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-fn deadline() -> Instant {
+pub(crate) fn deadline() -> Instant {
     Instant::now() + Duration::from_secs(10)
 }
 
-struct Directory(PathBuf);
+pub(crate) struct Directory(pub(crate) PathBuf);
 impl Directory {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let id = crate::crypto::random_bytes::<16>().unwrap();
         let directory = std::env::temp_dir().join(format!("mynou-pack-tunnel-{id:x?}"));
         fs::create_dir(&directory).unwrap();
@@ -40,8 +40,15 @@ impl Drop for Directory {
     }
 }
 
-fn engine(directory: &Directory, network: Arc<dyn Network>) -> (Arc<Engine>, String) {
-    let mut settings = config::default_json();
+pub(crate) fn engine(directory: &Directory, network: Arc<dyn Network>) -> (Arc<Engine>, String) {
+    engine_with(directory, network, config::default_json())
+}
+
+pub(crate) fn engine_with(
+    directory: &Directory,
+    network: Arc<dyn Network>,
+    mut settings: Value,
+) -> (Arc<Engine>, String) {
     settings
         .get_mut("downloads")
         .unwrap()
@@ -87,11 +94,16 @@ fn dictionary(fields: &[(&[u8], B)]) -> B {
     ))
 }
 
-fn metadata() -> (Vec<u8>, String) {
+pub(crate) fn metadata() -> (Vec<u8>, String) {
+    marked_metadata(7)
+}
+
+/// A one-file `Pack/shared.mp4` torrent; distinct markers give distinct ids.
+pub(crate) fn marked_metadata(marker: u8) -> (Vec<u8>, String) {
     let info = dictionary(&[
         (b"name", B::Bytes(b"Pack".to_vec())),
         (b"piece length", B::Int(16384)),
-        (b"pieces", B::Bytes(vec![7; 20])),
+        (b"pieces", B::Bytes(vec![marker; 20])),
         (
             b"files",
             B::List(vec![dictionary(&[
@@ -107,7 +119,7 @@ fn metadata() -> (Vec<u8>, String) {
     (bencode::encode(&dictionary(&[(b"info", info)])), hash)
 }
 
-fn accept(listener: &dyn NetworkListener) -> Box<dyn NetworkStream> {
+pub(crate) fn accept(listener: &dyn NetworkListener) -> Box<dyn NetworkStream> {
     let end = deadline();
     loop {
         match listener.accept() {
@@ -129,7 +141,7 @@ fn accept(listener: &dyn NetworkListener) -> Box<dyn NetworkStream> {
     }
 }
 
-fn request(stream: &mut dyn NetworkStream) -> Vec<u8> {
+pub(crate) fn request(stream: &mut dyn NetworkStream) -> Vec<u8> {
     let mut request = Vec::new();
     while !request.ends_with(b"\r\n\r\n") {
         let mut byte = [0];
@@ -141,14 +153,17 @@ fn request(stream: &mut dyn NetworkStream) -> Vec<u8> {
     request
 }
 
-fn response(body: &[u8]) -> Vec<u8> {
+pub(crate) fn response(body: &[u8]) -> Vec<u8> {
     let mut reply =
         format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len()).into_bytes();
     reply.extend_from_slice(body);
     reply
 }
 
-fn server(network: &dyn Network, replies: Vec<Vec<u8>>) -> (u16, JoinHandle<Vec<Vec<u8>>>) {
+pub(crate) fn server(
+    network: &dyn Network,
+    replies: Vec<Vec<u8>>,
+) -> (u16, JoinHandle<Vec<Vec<u8>>>) {
     let listener = network.listen("0.0.0.0:0".parse().unwrap()).unwrap();
     let port = listener.port();
     let worker = thread::spawn(move || {

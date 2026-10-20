@@ -1,5 +1,7 @@
 //! Owned library versions and controlled upgrades. Network I/O never holds the journal lock.
 mod groups;
+#[cfg(test)]
+mod tunnel_tests;
 use crate::{
     Result,
     engine::{Engine, lock, public_job},
