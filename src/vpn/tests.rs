@@ -385,7 +385,7 @@ fn real_native_owner_is_used_for_protected_startup_dns_and_revocation() {
     drop(engine);
     let engine = Engine::open_for_management(directory.config()).unwrap();
     assert_eq!(state(&engine.vpn_status()), "blocked");
-    assert_eq!(
+    assert!(
         engine
             .store
             .lock()
@@ -394,8 +394,9 @@ fn real_native_owner_is_used_for_protected_startup_dns_and_revocation() {
             .unwrap()
             .unwrap()
             .request
-            .title,
-        job.request.title
+            .title
+            == "Synthetic preserved request",
+        "Synthetic request was not retained"
     );
     assert!(engine.torrent_network.generation().is_err());
     assert!(!generation.is_empty());
@@ -439,8 +440,14 @@ fn owner_loss_never_replaces_a_captured_engine_transport_with_direct() {
         .get(&queued.id)
         .unwrap()
         .unwrap();
-    assert_eq!(retained.attempts, 0);
-    assert_eq!(retained.state, "queued");
+    assert!(
+        retained.attempts == 0,
+        "Suspension consumed a fixture retry"
+    );
+    assert!(
+        retained.state == "queued",
+        "Suspension changed the fixture state"
+    );
     assert!(engine.vpn_needs_reload());
     assert!(engine.torrent_network.publication().is_err());
     assert!(engine.torrent_network.datagram(false).is_err());
