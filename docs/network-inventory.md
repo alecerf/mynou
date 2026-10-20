@@ -86,3 +86,6 @@ attempted-socket and name-lookup observation in #224. The fixtures in
 show the check failing on each reported construct, on aliases, on a glob, on a
 new site, on a higher count and on a stale entry. They also show that comments,
 literals, connector-backed clients and test-only code are ignored.
+
+The operator VPN module is also in the scanned scope; its closed gate must not
+open an unrestricted socket or use an HTTP client without a connector.

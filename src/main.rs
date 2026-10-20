@@ -20,6 +20,9 @@ use std::{
 
 const HELP: &str = "Mynou — media automation using Rust std only
 
+  vpn [--action status|import|enable|disable|revoke|reconnect]
+      [--profile PRIVATE.conf | --settings PRIVATE.json] [--config FILE]
+
   init [--config mynou.json]
   analyze FILE [--json]
   doctor [--config mynou.json]
@@ -124,6 +127,7 @@ impl Args {
             | "cancel" | "healthcheck" | "monitor" | "unmonitor" => &["config", "help"],
             "jobs" | "library" => &["config", "help", "after", "limit", "query", "state"],
             "requesters" | "requester-sync" => &["config", "help"],
+            "vpn" => &["config", "help", "action", "profile", "settings"],
             "indexers" => &["config", "help"],
             "feeds" => &["config", "help", "retained", "after", "limit"],
             "indexer-control" => &["config", "help", "action", "apply", "plan-id"],
@@ -590,11 +594,49 @@ fn execute(args: Args) -> Result<()> {
             startup.address()?
         );
         let engine = Engine::open_serving(config)?;
-        let api = startup.serve(engine.clone())?;
-        let _workers = engine.start();
-        return api.run();
+        let api = startup.serve(engine)?;
+        return api.run_supervised();
     }
     let online = args.command != "irc-preview" && running(&config);
+    if args.command == "vpn" {
+        let action = args.value("action", "status");
+        if action != "import"
+            && (args.options.contains_key("profile") || args.options.contains_key("settings"))
+        {
+            return Err("Profile files are only accepted by import".into());
+        }
+        let mut body = Value::object();
+        body.insert("action", action);
+        if action == "import" {
+            let (file, structured) =
+                match (args.options.get("profile"), args.options.get("settings")) {
+                    (Some(file), None) => (file, false),
+                    (None, Some(file)) => (file, true),
+                    _ => {
+                        return Err(
+                            "Import requires exactly one --profile or --settings private file"
+                                .into(),
+                        );
+                    }
+                };
+            body = mynou::vpn::import_request(Path::new(file), structured)?;
+        }
+        if online {
+            output(&if action == "status" {
+                call(&config, &path, "GET", "/api/vpn", None)?
+            } else {
+                call(&config, &path, "POST", "/api/vpn/control", Some(&body))?
+            });
+        } else {
+            let engine = Engine::open_for_management(config)?;
+            output(&if action == "status" {
+                engine.vpn_status()
+            } else {
+                engine.vpn_control(&body)?
+            });
+        }
+        return Ok(());
+    }
     match args.command.as_str() {
         "cross-seed" => {
             if !online {

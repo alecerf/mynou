@@ -86,10 +86,18 @@ pub fn read_private_file(path: &Path) -> Result<Profile, ImportError> {
     read_checked(path, |_| {})
 }
 
-fn read_checked(
+fn read_checked(path: &Path, checkpoint: impl FnMut(Checkpoint)) -> Result<Profile, ImportError> {
+    parse(&read_text_checked(path, checkpoint)?).map_err(ImportError::Parse)
+}
+
+pub(crate) fn read_private_text(path: &Path) -> Result<String, ImportError> {
+    read_text_checked(path, |_| {})
+}
+
+fn read_text_checked(
     path: &Path,
     mut checkpoint: impl FnMut(Checkpoint),
-) -> Result<Profile, ImportError> {
+) -> Result<String, ImportError> {
     let before = inspect(path)?;
     private(&before)?;
     if before.len() > MAX_PROFILE_BYTES as u64 {
@@ -117,7 +125,7 @@ fn read_checked(
         return Err(ImportError::ProfileLimit);
     }
     let input = std::str::from_utf8(&bytes).map_err(|_| ImportError::Encoding)?;
-    parse(input).map_err(ImportError::Parse)
+    Ok(input.to_owned())
 }
 
 #[cfg(test)]

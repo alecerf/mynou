@@ -309,6 +309,19 @@ impl HttpTunnel {
             .map_err(|_| error(io::ErrorKind::TimedOut))??;
         Ok(Self { owner })
     }
+    /// Redacted operator telemetry, queried on the owner thread.
+    pub fn telemetry(
+        &self,
+        deadline: Instant,
+    ) -> io::Result<(Status, crate::tunnel::Stats, Option<Duration>)> {
+        self.owner.call(None, deadline, |r| {
+            Ok((
+                r.tunnel.status(),
+                r.tunnel.stats(),
+                r.tunnel.handshake_age(),
+            ))
+        })
+    }
     pub fn status(&self, deadline: Instant) -> io::Result<Status> {
         self.owner.call(None, deadline, |r| Ok(r.tunnel.status()))
     }

@@ -12,7 +12,8 @@ ROOT = Path(__file__).resolve().parents[2]
 INVENTORY = Path(__file__).with_name("network_inventory.tsv")
 # Torrent modules and the inspection/orchestration callers of the design table.
 SCOPE = ("src/torrent.rs", "src/torrent/", "src/pack/shared.rs", "src/pack/automatic.rs",
-         "src/library/groups.rs", "src/irc/routing.rs", "src/engine.rs", "src/engine/")
+         "src/library/groups.rs", "src/irc/routing.rs", "src/engine.rs", "src/engine/",
+         "src/vpn.rs", "src/vpn/")
 CRATE_ROOTS = ("src/lib.rs", "src/main.rs")
 SOCKETS = {"TcpStream", "TcpListener", "UdpSocket", "ToSocketAddrs"}
 RESOLVERS = {"to_socket_addrs"}

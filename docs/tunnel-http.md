@@ -6,7 +6,8 @@ thread. It constructs the non-`Send` tunnel inside that thread and exposes a
 Rust library prerequisite for [#221](https://github.com/alecerf/mynou/issues/221),
 delivered by [#286](https://github.com/alecerf/mynou/issues/286). Production torrent
 traffic, listeners and metadata inspection still use their existing paths.
-There is no CLI/API VPN activation or protection claim in this increment.
+The separate [operator layer](wireguard-operator.md) supplies CLI/API controls;
+this transport alone does not establish a complete isolation claim.
 
 ## Use
 
@@ -124,13 +125,9 @@ production isolation proof, independent interoperability or complete end-to-end
 HTTPS server fixture through the tunnel.
 
 The same owner also supplies a [torrent network](tunnel-network.md) with
-virtual peers, listeners and UDP. Engine integration, and inspection and
-orchestration publication fences remain
-[#221](https://github.com/alecerf/mynou/issues/221). The
-[source inventory check](network-inventory.md) now guards the existing direct
-sites; migration must remove their entries as it converts them. Operator
-lifecycle and persistent profiles remain
-[#222](https://github.com/alecerf/mynou/issues/222).
+virtual peers, listeners and UDP. Engine integration and inspection/orchestration publication fences are delivered
+by #221. The [source inventory check](network-inventory.md) guards Direct sites.
+[Operator lifecycle and private profiles](wireguard-operator.md) are provided by #222.
 Production isolation/races/resource measurements and the macOS migration guide
 remain [#224](https://github.com/alecerf/mynou/issues/224); parent
 [#111](https://github.com/alecerf/mynou/issues/111) stays open. The running Gluetun

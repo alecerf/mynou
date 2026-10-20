@@ -192,3 +192,12 @@ previous executable with compatible data: some versions change storage formats
 that older versions refuse (see [limits](limits.md#persistence-and-platform)).
 Never delete older executables or user data automatically. Data from the former
 Go release (SQLite) is not imported: keep it in a separate folder.
+
+## Native WireGuard controls
+
+Private profile import, redacted status and explicit lifecycle controls are
+available through `mynou vpn` and the authenticated API. See the
+[operator reference](wireguard-operator.md) for supported settings, startup and
+restart behavior, file permissions and limitations. Complete isolation/race and
+resource evidence is still tracked in #224. Keep the existing Gluetun deployment
+until those gates and the separate migration guide are delivered.

@@ -91,6 +91,15 @@ class Constructs(unittest.TestCase):
                 self.assertIn(f"new direct site: src/torrent.rs", errors)
                 self.assertIn(construct, errors)
 
+    def test_vpn_control_plane_cannot_open_an_unrestricted_torrent_socket(self):
+        fixture = Fixture(self, CLEAN, {
+            "src/lib.rs": LIB + "mod vpn;\n",
+            "src/vpn.rs": SITES["TcpStream"],
+        })
+        status, errors = fixture.check(inventory.render(fixture.scan()))
+        self.assertEqual(status, 1)
+        self.assertIn("direct site outside Direct: src/vpn.rs", errors)
+
     def test_aliases_report_the_canonical_construct(self):
         cases = {"use std::net::{TcpStream as Socket};\nfn peer(s: Socket) {}": ("peer", "TcpStream"),
                  "type Socket = std::net::TcpStream;\nfn peer(s: Socket) {}": ("peer", "TcpStream"),

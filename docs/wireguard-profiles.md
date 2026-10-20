@@ -6,14 +6,10 @@ with `into_tunnel_config()` produces the existing userspace runtime's
 configuration. Both operations are offline: they perform no file access, DNS,
 socket creation, tunnel startup or configuration changes.
 
-This delivers [#279](https://github.com/alecerf/mynou/issues/279), a prerequisite
-of [#222](https://github.com/alecerf/mynou/issues/222). There is no CLI/API import
-or VPN setting yet. Torrent transport integration remains
-[#221](https://github.com/alecerf/mynou/issues/221); lifecycle, operator import
-and persistence remain #222; isolation/race/resource evidence and the macOS
-migration guide remain [#224](https://github.com/alecerf/mynou/issues/224).
-Mynou torrent traffic is still unprotected. Existing VPN deployments must stay
-in place. See the [design](wireguard-design.md) for the intended boundary.
+The offline parser (#279) and private-file reader (#281) are reused by the
+[operator import and lifecycle controls](wireguard-operator.md) of #222. The
+parser itself still performs no networking or persistence. Complete
+isolation/race/resource evidence and the Gluetun migration guide remain #224.
 
 ## Accepted subset
 
@@ -68,8 +64,8 @@ and log keys from the resulting `TunnelConfig`. Safe Rust does not guarantee
 key zeroization after disposal; no constant-time or audited-crypto claim is made.
 
 The parser accepts in-memory text. The separate read-only API below loads private
-files; durable import and CLI/API handling remain future work. Passing validation
-is not permission to create a protected engine before the remaining delivery gates.
+files; the operator layer separately implements durable import and CLI/API controls.
+Passing validation alone does not establish a protected connection.
 
 ## Read a private file
 
@@ -101,7 +97,7 @@ directories under trusted control. A process able to mutate them can race
 ancestor traversal, restore a path between checks or modify a file after the
 last check. The API does not establish current-user ownership or guarantee
 memory zeroization. It does not persist credentials, enable protection or
-supply the lifecycle/revocation fences still required by #222.
+supply operator lifecycle fences; those belong to the separate operator layer.
 
 ## Validation
 

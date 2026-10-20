@@ -10,6 +10,7 @@ use std::{fmt, net::Ipv4Addr, net::SocketAddrV4, time::Duration};
 
 #[path = "profile_file.rs"]
 mod file;
+pub(crate) use file::read_private_text;
 pub use file::{ImportError, read_private_file};
 
 pub const MAX_PROFILE_BYTES: usize = 16_384;
@@ -78,6 +79,55 @@ impl Profile {
     /// Retained interface CIDR prefix; AllowedIPs independently supplies the route.
     pub fn address_prefix(&self) -> u8 {
         self.prefix
+    }
+
+    /// Private persistence representation. Contains keys; never log or return it.
+    pub(crate) fn private_document(&self) -> String {
+        fn key(bytes: &[u8]) -> String {
+            const ALPHABET: &[u8] =
+                b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            let mut text = String::new();
+            for chunk in bytes.chunks(3) {
+                let n = (u32::from(chunk[0]) << 16)
+                    | (u32::from(*chunk.get(1).unwrap_or(&0)) << 8)
+                    | u32::from(*chunk.get(2).unwrap_or(&0));
+                for shift in [18, 12] {
+                    text.push(ALPHABET[((n >> shift) & 63) as usize] as char);
+                }
+                text.push(if chunk.len() > 1 {
+                    ALPHABET[((n >> 6) & 63) as usize] as char
+                } else {
+                    '='
+                });
+                text.push(if chunk.len() > 2 {
+                    ALPHABET[(n & 63) as usize] as char
+                } else {
+                    '='
+                });
+            }
+            text
+        }
+        let mut text = format!(
+            "[Interface]\nPrivateKey = {}\nAddress = {}/{}\nDNS = {}\nMTU = {}\n[Peer]\nPublicKey = {}\nAllowedIPs = 0.0.0.0/0\nEndpoint = {}\n",
+            key(&self.secret),
+            self.ip.local(),
+            self.prefix,
+            self.dns
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", "),
+            self.mtu,
+            key(&self.public),
+            self.endpoint
+        );
+        if let Some(psk) = self.psk {
+            text.push_str(&format!("PresharedKey = {}\n", key(&psk)));
+        }
+        if let Some(interval) = self.keepalive {
+            text.push_str(&format!("PersistentKeepalive = {}\n", interval.as_secs()));
+        }
+        text
     }
 
     /// Only constructs configuration: does not start a driver or resolve names.
@@ -292,3 +342,32 @@ pub fn parse(input: &str) -> Result<Profile, ProfileError> {
 #[cfg(test)]
 #[path = "profile_tests.rs"]
 mod tests;
+
+/// Equivalent structured settings use the supported WireGuard directive names.
+/// Every value is a single string; no raw value or unknown key enters errors.
+pub fn from_settings(value: &crate::json::Value) -> Result<Profile, String> {
+    let fields = value
+        .as_object()
+        .ok_or("WireGuard settings must be an object")?;
+    if fields.keys().any(|key| !FIELDS.contains(&key.as_str())) {
+        return Err("WireGuard settings contain an unsupported directive".into());
+    }
+    let mut text = String::from("[Interface]\n");
+    for (index, field) in FIELDS.iter().enumerate() {
+        if index == 4 {
+            text.push_str("[Peer]\n");
+        }
+        if let Some(value) = fields.get(*field) {
+            let value = value
+                .as_str()
+                .filter(|v| {
+                    v.len() <= MAX_LINE_BYTES - 32
+                        && v.bytes().all(|b| (b' '..=b'~').contains(&b))
+                        && !v.contains('#')
+                })
+                .ok_or("Invalid WireGuard structured setting")?;
+            text.push_str(&format!("{field} = {value}\n"));
+        }
+    }
+    parse(&text).map_err(|error| error.to_string())
+}

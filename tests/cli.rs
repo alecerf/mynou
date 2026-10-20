@@ -278,3 +278,58 @@ fn cli_demo_completes_with_native_torrent_and_local_plex_fixture() {
             .success()
     );
 }
+
+#[test]
+fn private_vpn_import_and_explicit_controls_survive_offline_cli_restart_with_redacted_output() {
+    use std::os::unix::fs::PermissionsExt;
+    let directory = Directory::new();
+    success(command(&directory.0, &["init"]));
+    let config_path = directory.0.join("mynou.json");
+    let mut value = json::parse(&fs::read_to_string(&config_path).unwrap()).unwrap();
+    value.insert("listen", "127.0.0.1:0");
+    fs::write(&config_path, json::stringify(&value)).unwrap();
+    let profile = directory.0.join("private.conf");
+    fs::write(&profile, "[Interface]\nPrivateKey = AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=\nAddress = 10.23.0.2/24\nDNS = 10.23.0.1\n[Peer]\nPublicKey = CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nAllowedIPs = 0.0.0.0/0\nEndpoint = 192.0.2.10:51820\n").unwrap();
+    fs::set_permissions(&profile, fs::Permissions::from_mode(0o600)).unwrap();
+    let output = command(
+        &directory.0,
+        &[
+            "vpn",
+            "--action",
+            "import",
+            "--profile",
+            profile.to_str().unwrap(),
+        ],
+    );
+    assert!(output.status.success());
+    for bytes in [&output.stdout, &output.stderr] {
+        let text = String::from_utf8_lossy(bytes);
+        assert!(!text.contains("AQEBAQE"));
+        assert!(!text.contains("192.0.2.10"));
+        assert!(!text.contains(profile.to_str().unwrap()));
+    }
+    let status = parse(command(&directory.0, &["vpn"]));
+    assert_eq!(status.get("state").and_then(Value::as_str), Some("blocked"));
+    assert_eq!(status.get("enabled").and_then(Value::as_bool), Some(true));
+    for action in ["revoke", "enable", "reconnect", "disable"] {
+        parse(command(&directory.0, &["vpn", "--action", action]));
+    }
+    assert_eq!(
+        parse(command(&directory.0, &["vpn"]))
+            .get("state")
+            .and_then(Value::as_str),
+        Some("disabled")
+    );
+    let failed = command(
+        &directory.0,
+        &[
+            "vpn",
+            "--action",
+            "import",
+            "--profile",
+            "absent-secret-file",
+        ],
+    );
+    assert!(!failed.status.success());
+    assert!(!String::from_utf8_lossy(&failed.stderr).contains("absent-secret-file"));
+}
