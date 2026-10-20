@@ -61,9 +61,12 @@ fn assert_redacted(value: &Value) {
         assert!(!text.contains(secret), "report leaked a private value");
     }
 }
-fn submitted(engine: &Engine, request: Request) -> Vec<crate::store::Job> {
+fn submitted(engine: &Engine, request: Request) -> crate::store::Job {
     match engine.submit(request) {
-        Ok(jobs) => jobs,
+        Ok(jobs) => match jobs.into_iter().next() {
+            Some(job) => job,
+            None => panic!("Synthetic VPN fixture request was not created"),
+        },
         // Discard the error explicitly: no Result panic/debug wrapper may
         // format a credential-bearing storage or requester diagnostic.
         Err(_) => panic!("Synthetic VPN fixture request submission failed"),
@@ -376,8 +379,7 @@ fn real_native_owner_is_used_for_protected_startup_dns_and_revocation() {
             source_url: None,
             source_numbering: None,
         },
-    )
-    .remove(0);
+    );
     let report = engine.vpn_control(&body("revoke")).unwrap();
     assert_redacted(&report);
     assert!(engine.torrent_network.publication().is_err());
@@ -429,8 +431,7 @@ fn owner_loss_never_replaces_a_captured_engine_transport_with_direct() {
             source_url: None,
             source_numbering: None,
         },
-    )
-    .remove(0);
+    );
     pair.client.cancel();
     assert!(!engine.tick().unwrap());
     let retained = engine
