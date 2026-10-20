@@ -104,7 +104,7 @@ flows, fixed in the same change:
   `src/tunnel_tests.rs` covers loss, reordering and duplication without timing.
 - Individual runs, not percentiles or throughput guarantees. The owner is a
   single thread: throughput falls above about 32 flows as commands queue.
-- Not an engine-level measurement: no torrent metadata, piece verification,
+- Not an engine-level measurement (see [torrent engine load](torrent-load.md)): no torrent metadata, piece verification,
   disk writes, trackers or DHT. Torrent downloads are additionally limited by
   their configured peer and transfer concurrency.
 - UDP datagram, DNS and listener load, and memory over hours of operation, are
@@ -112,7 +112,5 @@ flows, fixed in the same change:
 
 ## Remaining for #224
 
-Engine-level torrent load through the protected network; the remaining
-orchestration, expiry, roaming and restart scenarios; independent QA/Security
-reading of current-head CI and the supported-subset limits; and the gated
-macOS installation and migration guide.
+Engine-level torrent load is recorded in [torrent engine load](torrent-load.md)
+(#320). What remains for #224 is listed there.

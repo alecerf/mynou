@@ -1,0 +1,55 @@
+name: Torrent engine load evidence
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/torrent-load.yml'
+      - '.github/scripts/torrent_load.py'
+      - 'src/torrent.rs'
+      - 'src/torrent/**'
+      - 'src/tunnel.rs'
+      - 'src/tunnel_http.rs'
+      - 'src/tunnel_network.rs'
+      - 'src/netstack.rs'
+      - 'src/netstack/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: torrent-load-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  measure:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.99.0
+        run: rustup toolchain install 1.99.0 --profile minimal
+      - name: Compile the optimized load harness
+        run: cargo +1.99.0 test --release --lib --no-run --offline --locked --message-format=json > "$RUNNER_TEMP/load-build.jsonl"
+      - name: Measure increasing synthetic engine-level torrent load
+        run: |
+          harness=$(python3 - "$RUNNER_TEMP/load-build.jsonl" <<'PY'
+          import json, sys
+          for line in open(sys.argv[1]):
+              row = json.loads(line)
+              if row.get("reason") == "compiler-artifact" and row.get("executable") and row["target"]["kind"] == ["lib"]:
+                  print(row["executable"])
+          PY
+          )
+          test -x "$harness"
+          python3 .github/scripts/torrent_load.py "$harness" --output "$RUNNER_TEMP/torrent-load" | tee "$RUNNER_TEMP/torrent-load-console.log"
+          cat "$RUNNER_TEMP/torrent-load/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve measurements, environment and raw process logs
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: torrent-load-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/torrent-load
+            ${{ runner.temp }}/torrent-load-console.log
+            ${{ runner.temp }}/load-build.jsonl
+          if-no-files-found: error
+          retention-days: 30
