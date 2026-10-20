@@ -10,6 +10,22 @@ const CLIENT: Ipv4Addr = Ipv4Addr::new(10, 7, 0, 2);
 const SERVER: Ipv4Addr = Ipv4Addr::new(10, 7, 0, 1);
 const CLIENT_KEY: [u8; 32] = [13; 32];
 const SERVER_KEY: [u8; 32] = [27; 32];
+
+/// Explicit fixture authorization for the optional macOS host-I/O observer.
+/// One append per record also works across the isolated HTTPS subprocess.
+fn allow_outer(address: SocketAddr) {
+    use std::io::Write;
+    if let Some(path) = std::env::var_os("MYNOU_HOST_IO_TRACE") {
+        assert!(address.is_ipv4() && address.ip().is_loopback());
+        let mut file = std::fs::OpenOptions::new().append(true).open(path).unwrap();
+        let line = format!(
+            "{{\"op\":\"allow\",\"pid\":{},\"port\":{}}}\n",
+            std::process::id(),
+            address.port()
+        );
+        assert_eq!(file.write(line.as_bytes()).unwrap(), line.len());
+    }
+}
 fn end() -> Instant {
     Instant::now() + Duration::from_secs(5)
 }
@@ -55,6 +71,7 @@ impl Fixture {
         let relay = UdpSocket::bind("127.0.0.1:0").unwrap();
         relay.set_nonblocking(true).unwrap();
         let endpoint = relay.local_addr().unwrap();
+        allow_outer(endpoint);
         let (ready, started) = mpsc::sync_channel(1);
         let stop = Arc::new(AtomicBool::new(false));
         let block = Arc::new(AtomicBool::new(false));
@@ -73,6 +90,7 @@ impl Fixture {
                 let mut tunnel =
                     Native::new(config(endpoint, true), OsEntropy, SystemClock::new()).unwrap();
                 let server_outer = tunnel.local_addr().unwrap();
+                allow_outer(server_outer);
                 let mut client_outer = None;
                 // Reserve virtual services before pumping any handshake/data.
                 // A key confirmation and first TCP SYN can arrive in one batch;
@@ -215,6 +233,12 @@ impl Fixture {
         };
         started.recv_timeout(Duration::from_secs(5)).unwrap();
         let driver = HttpTunnel::start(config(endpoint, false)).unwrap();
+        allow_outer(
+            driver
+                .owner
+                .call(None, end(), |r| r.tunnel.local_addr().map_err(failed))
+                .unwrap(),
+        );
         let deadline = end();
         let connector = loop {
             if let Ok(connector) = driver.connector(deadline) {
@@ -671,7 +695,12 @@ impl Pair {
             .unwrap();
     }
     pub fn new() -> Self {
-        let server = HttpTunnel::start(config("127.0.0.1:9".parse().unwrap(), true)).unwrap();
+        // Own even the temporary startup endpoint: the observer includes
+        // datagrams sent before the client endpoint has been installed.
+        let startup = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let startup_endpoint = startup.local_addr().unwrap();
+        allow_outer(startup_endpoint);
+        let server = HttpTunnel::start(config(startup_endpoint, true)).unwrap();
         let endpoint = server
             .owner
             .call(None, end(), |r| r.tunnel.local_addr().map_err(failed))
@@ -681,6 +710,8 @@ impl Pair {
             .owner
             .call(None, end(), |r| r.tunnel.local_addr().map_err(failed))
             .unwrap();
+        allow_outer(endpoint);
+        allow_outer(client_address);
         server
             .owner
             .call(None, end(), move |r| {

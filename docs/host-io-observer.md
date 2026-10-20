@@ -1,0 +1,83 @@
+# Native macOS host-I/O observation
+
+The test-only observer in `.github/scripts/host_io_observer.py` supplies the
+attempted ordinary-I/O increment [#309](https://github.com/alecerf/mynou/issues/309)
+under [#224](https://github.com/alecerf/mynou/issues/224). It does not complete
+#224 or the parent #111, certify universal isolation or authorize migration
+away from the existing Gluetun deployment.
+
+## Mechanism and checks
+
+On native macOS arm64, the runner compiles `host_io_observer.c` with the installed
+Clang into a temporary dylib. `DYLD_INSERT_LIBRARIES` loads it only into selected
+compiled test harness processes and their fixture children. Mach-O interposition
+records libc `socket`, `bind`, `connect`, `sendto`, `sendmsg` and `getaddrinfo`
+calls. Connect, bind, datagram-send and lookup records are appended before the
+real call, so refusal and failed resolution remain visible. Socket records
+include the returned descriptor, including failure; successful binds also record
+the assigned local port. Names, credentials and payload bytes are never logged.
+The observer preserves errno and exits with failure if its log cannot be written.
+
+Fixture code explicitly declares its owned loopback outer-UDP ports. The runner
+checks the complete trace, including startup, shutdown and fixture subprocesses:
+
+- Only IPv4 datagram sockets bound to `127.0.0.1:0` and assigned a declared
+  outer port are allowed. Every observed socket must reach an authorized bind.
+- Sends must originate from those observed sockets and target a declared
+  loopback outer port in the same fixture process. Other UDP, all TCP and host
+  name lookups fail validation, whether or not the underlying call succeeded.
+- Missing loader records, missing declarations, empty/incomplete observation,
+  unexpected events and truncated JSON fail validation. An exact test name must
+  appear in the compiled harness list before the runner invokes it.
+
+Negative controls run first. Actual Rust std/Direct calls attempt refused TCP,
+host `localhost` resolution, a direct loopback UDP send and default HTTP to a
+closed loopback port. A separate tiny C fixture requires `getaddrinfo` failure
+with `AI_NUMERICHOST`, which cannot issue an external DNS query. The runner
+requires the corresponding observations; Python negative tests separately prove
+that each forbidden event and undeclared endpoint is rejected. These controls
+also detect stripped or ineffective dylib injection on the exercised symbols.
+
+## Scenarios and reproduction
+
+Observed fixtures cover sequential/parallel BitTorrent metadata and payload,
+incoming seeding with PEX enabled, HTTP/authenticated HTTPS/UDP trackers, DHT
+get/announce, magnet peer names, remote torrent cross-name redirects, tunnel DNS,
+hostile destinations/redirects, proxy environment variables, unsupported IPv6,
+and handle revocation after loss/cancellation. The protocol fixtures assert
+their successful protected exchanges as well as the host-I/O trace checks.
+
+```sh
+TMPDIR=/private/tmp cargo test --lib --no-run --offline --locked \
+  --message-format=json > /private/tmp/mynou-observer-build.jsonl
+TMPDIR=/private/tmp python3 -B .github/scripts/host_io_observer.py \
+  --build-json /private/tmp/mynou-observer-build.jsonl \
+  --output /private/tmp/mynou-observer-results
+```
+
+Use a fresh output directory for every run. `summary.json` records scenario
+counts; per-process event traces and fixture output remain beside it. Required
+native CI runs the observer after the ordinary Rust suite and uploads its output
+with the existing test-results artifact, including logs on failure. Changes to
+the observer select native validation rather than only the Python tooling checks.
+No system setting, route, privilege, global tool or installed service changes.
+The dylib and C control are test instrumentation, never linked into or started by
+the product. Product Rust remains safe, std-only and dependency-free.
+
+## Evidence boundary
+
+This is dynamic observation of the listed libc entry points in the selected
+synthetic processes, combined with the existing source inventory gate. It is
+not a kernel syscall monitor or an OS network sandbox. It cannot see arbitrary
+raw syscalls, uninstrumented external programs, a different resolver ABI, writes
+to inherited sockets or code deliberately evading the harness. The scope assumes
+the reviewed std-only implementation; future networking APIs require extending
+both the observer and its negative controls. Dylib injection depends on macOS
+loader policy; loader failure is a failed check, never skipped evidence.
+
+The observer does not inspect encrypted datagram content, prove server privacy,
+exercise real provider connectivity, alter host routes or supply increasing-load
+CPU/RSS/timing evidence. Complete orchestration paths (including no-worker and
+delayed results), the remaining concurrent expiry/roaming/restart matrix,
+resource measurements and the gated macOS guide remain #224. Existing protocol,
+generation and operator fixtures retain their own documented scope.
