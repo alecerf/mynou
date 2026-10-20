@@ -261,4 +261,4 @@ the old engine before replacement. Explicit disable is required for Direct;
 failed protection never falls back automatically. Redacted status includes
 handshake age and counters. Verified bytes and transfer controls are retained.
 Complete isolation/race/resource evidence and the Gluetun migration guide remain
-#224; existing Gluetun is untouched. See the [operator reference](../wireguard-operator.md).
+issue #224; existing Gluetun is untouched. See the [operator reference](../wireguard-operator.md).
