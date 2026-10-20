@@ -60,10 +60,10 @@ Source audit: `1e9d6b5fb8e6d48d495387a4018663f90db169ba`, read only.
 These are migration obligations; the current APIs still use ordinary sockets.
 Outbound peer connections, HTTP/UDP tracker announces and DHT lookups, including
 those of metadata inspection, now receive the engine-owned
-`torrent::transport::Network`. Its `Direct` implementation holds their only
-ordinary sockets, host resolver and default HTTP client. The listener, magnet
-`x.pe` resolution, remote `.torrent` fetch and the inspection listener do not
-use it yet.
+`torrent::transport::Network`, and so do the client listener with its inbound
+peers and the inspection port reservation. Its `Direct` implementation holds
+their only ordinary sockets, listeners, host resolver and default HTTP client.
+Magnet `x.pe` resolution and the remote `.torrent` fetch do not use it yet.
 Review the complete reachable call graph again when integration changes it.
 
 ## Transport and generation ownership

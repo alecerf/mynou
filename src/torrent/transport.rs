@@ -1,13 +1,15 @@
 //! The network a torrent operation runs on. Outbound peer, tracker and DHT
 //! code receives a `Network` explicitly and never opens a socket, resolves a
-//! name or builds a default HTTP client itself. `Direct` is today's unprotected
+//! name or builds a default HTTP client itself; inbound peers arrive through a
+//! listener of the same network. `Direct` is today's unprotected
 //! ordinary network; a protected engine will supply a tunnel implementation.
 use crate::{
     Result,
     net::{HttpClient, NetworkDatagram, NetworkStream},
 };
 use std::{
-    net::{SocketAddr, TcpStream, ToSocketAddrs, UdpSocket},
+    io,
+    net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs, UdpSocket},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -22,10 +24,21 @@ pub trait Network: Send + Sync {
     fn datagram(&self, ipv6: bool) -> Result<Box<dyn NetworkDatagram>>;
     /// The HTTP client of tracker requests, before per-request limits.
     fn http(&self) -> HttpClient;
+    /// A listener bound to `address` of this network; port 0 picks a port.
+    fn listen(&self, address: SocketAddr) -> Result<Box<dyn NetworkListener>>;
+}
+
+/// Inbound peer connections of one `Network`.
+pub trait NetworkListener: Send {
+    /// One pending connection without blocking: `WouldBlock` when none is
+    /// waiting. Accepted streams block until their configured timeouts.
+    fn accept(&self) -> io::Result<(Box<dyn NetworkStream>, SocketAddr)>;
+    /// The bound port, which peers and trackers are told about.
+    fn port(&self) -> u16;
 }
 
 /// The ordinary network of an explicitly unprotected engine. These are the
-/// only outbound peer, tracker and DHT socket sites of the torrent client.
+/// only peer, listener, tracker and DHT socket sites of the torrent client.
 pub struct Direct;
 
 pub fn direct() -> Arc<dyn Network> {
@@ -59,5 +72,34 @@ impl Network for Direct {
 
     fn http(&self) -> HttpClient {
         HttpClient::new()
+    }
+
+    fn listen(&self, address: SocketAddr) -> Result<Box<dyn NetworkListener>> {
+        let listener = TcpListener::bind(address).map_err(|_| "BitTorrent port unavailable")?;
+        let port = listener
+            .local_addr()
+            .map_err(|_| "BitTorrent address unavailable")?
+            .port();
+        listener
+            .set_nonblocking(true)
+            .map_err(|_| "Could not configure the BitTorrent port")?;
+        Ok(Box::new(DirectListener { listener, port }))
+    }
+}
+
+struct DirectListener {
+    listener: TcpListener,
+    port: u16,
+}
+
+impl NetworkListener for DirectListener {
+    fn accept(&self) -> io::Result<(Box<dyn NetworkStream>, SocketAddr)> {
+        let (stream, address) = self.listener.accept()?;
+        crate::net::blocking(&stream).map_err(io::Error::other)?;
+        Ok((Box::new(stream), address))
+    }
+
+    fn port(&self) -> u16 {
+        self.port
     }
 }

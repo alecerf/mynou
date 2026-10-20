@@ -1,20 +1,16 @@
 # Direct torrent network sites; regenerate with network_inventory.py --write.
 # file	item	construct	count
-src/torrent.rs	<module>	TcpListener	1
-src/torrent.rs	<module>	TcpStream	1
 src/torrent.rs	<module>	ToSocketAddrs	1
-src/torrent.rs	Client::open_internal	TcpListener	1
 src/torrent.rs	Source::parse_magnet_with_deadline	to_socket_addrs	1
 src/torrent.rs	Source::parse_with_deadline	HttpClient::new	1
-src/torrent.rs	listen_loop	TcpListener	1
-src/torrent.rs	serve_peer	TcpStream	1
-src/torrent.rs	serve_peer	net::blocking	1
-src/torrent/inspection.rs	<module>	TcpListener	1
-src/torrent/inspection.rs	inspect_metadata	TcpListener	1
+src/torrent/transport.rs	<module>	TcpListener	1
 src/torrent/transport.rs	<module>	TcpStream	1
 src/torrent/transport.rs	<module>	ToSocketAddrs	1
 src/torrent/transport.rs	<module>	UdpSocket	1
 src/torrent/transport.rs	Direct::connect	TcpStream	1
 src/torrent/transport.rs	Direct::datagram	UdpSocket	1
 src/torrent/transport.rs	Direct::http	HttpClient::new	1
+src/torrent/transport.rs	Direct::listen	TcpListener	1
 src/torrent/transport.rs	Direct::resolve	to_socket_addrs	1
+src/torrent/transport.rs	DirectListener	TcpListener	1
+src/torrent/transport.rs	DirectListener::accept	net::blocking	1

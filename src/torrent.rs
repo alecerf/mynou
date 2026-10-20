@@ -31,7 +31,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
-    net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs},
+    net::{SocketAddr, ToSocketAddrs},
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
@@ -1294,15 +1294,10 @@ impl Client {
         }
         mkdir_private(&config.state_dir)?;
         mkdir_private(&config.data_dir)?;
-        let listener = TcpListener::bind(("0.0.0.0", config.listen_port))
-            .map_err(|_| "BitTorrent port unavailable")?;
-        config.listen_port = listener
-            .local_addr()
-            .map_err(|_| "BitTorrent address unavailable")?
-            .port();
-        listener
-            .set_nonblocking(true)
-            .map_err(|_| "Could not configure the BitTorrent port")?;
+        let listener = policy
+            .network
+            .listen(SocketAddr::from(([0, 0, 0, 0], config.listen_port)))?;
+        config.listen_port = listener.port();
         let index = Arc::new(Mutex::new(index::TransferIndex::open(&mut config)?));
         let map = BTreeMap::new();
         let jobs = Arc::new(Mutex::new(map));
@@ -3434,7 +3429,7 @@ fn persist_meta(config: &DownloadConfig, id: &str, meta: &Meta) -> Result<()> {
 }
 
 fn listen_loop(
-    listener: TcpListener,
+    listener: Box<dyn transport::NetworkListener>,
     config: DownloadConfig,
     jobs: Jobs,
     stop: Arc<AtomicBool>,
@@ -3557,7 +3552,7 @@ fn reserve_upload(
     })
 }
 fn serve_peer(
-    mut stream: TcpStream,
+    mut stream: Box<dyn crate::net::NetworkStream>,
     config: &DownloadConfig,
     jobs: &Jobs,
     stop: &AtomicBool,
@@ -3566,7 +3561,6 @@ fn serve_peer(
     catalog: (&Arc<Mutex<index::TransferIndex>>, Option<&AdmissionGate>),
 ) -> Result<()> {
     let (index, admission) = catalog;
-    crate::net::blocking(&stream)?;
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
         .map_err(|_| "Could not configure TCP")?;
@@ -3896,7 +3890,7 @@ mod control_runtime_tests {
                 .meta
                 .is_some()
         );
-        let trap = TcpListener::bind("127.0.0.1:0").unwrap();
+        let trap = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         trap.set_nonblocking(true).unwrap();
         for location in [
             path.to_str().unwrap().to_owned(),
@@ -4276,6 +4270,157 @@ mod control_runtime_tests {
         assert!(job.paused);
         assert!(!job.running);
         drop(map);
+        drop(client);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// One scripted inbound connection; records how much was read and when the
+    /// client drops it.
+    struct Inbound {
+        input: Vec<u8>,
+        read: Arc<AtomicU64>,
+        dropped: Arc<AtomicBool>,
+    }
+
+    impl Read for Inbound {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            if self.input.is_empty() {
+                return Ok(0);
+            }
+            let n = buffer.len().min(self.input.len());
+            buffer[..n].copy_from_slice(&self.input[..n]);
+            self.input.drain(..n);
+            self.read.fetch_add(n as u64, Ordering::SeqCst);
+            Ok(n)
+        }
+    }
+
+    impl Write for Inbound {
+        fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+            Ok(buffer.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl crate::net::NetworkStream for Inbound {
+        fn set_read_timeout(&self, _: Option<Duration>) -> std::io::Result<()> {
+            Ok(())
+        }
+
+        fn set_write_timeout(&self, _: Option<Duration>) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl Drop for Inbound {
+        fn drop(&mut self) {
+            self.dropped.store(true, Ordering::SeqCst);
+        }
+    }
+
+    struct InboundListener(Mutex<Option<Inbound>>);
+
+    impl transport::NetworkListener for InboundListener {
+        fn accept(&self) -> std::io::Result<(Box<dyn crate::net::NetworkStream>, SocketAddr)> {
+            match self.0.lock().unwrap().take() {
+                Some(stream) => Ok((Box::new(stream), "198.51.100.9:6881".parse().unwrap())),
+                None => Err(std::io::ErrorKind::WouldBlock.into()),
+            }
+        }
+
+        fn port(&self) -> u16 {
+            51413
+        }
+    }
+
+    /// A network with only a listener: any outbound attempt is an error.
+    struct ListenOnly {
+        bound: Mutex<Vec<SocketAddr>>,
+        inbound: Mutex<Option<Inbound>>,
+    }
+
+    impl transport::Network for ListenOnly {
+        fn connect(
+            &self,
+            _: SocketAddr,
+            _: Duration,
+        ) -> Result<Box<dyn crate::net::NetworkStream>> {
+            Err("No peer connection in this fixture".into())
+        }
+
+        fn resolve(&self, _: &str, _: Instant) -> Result<Vec<SocketAddr>> {
+            Err("No resolver in this fixture".into())
+        }
+
+        fn datagram(&self, _: bool) -> Result<Box<dyn crate::net::NetworkDatagram>> {
+            Err("No UDP in this fixture".into())
+        }
+
+        fn http(&self) -> crate::net::HttpClient {
+            unreachable!("the listener fixture never uses HTTP")
+        }
+
+        fn listen(&self, address: SocketAddr) -> Result<Box<dyn transport::NetworkListener>> {
+            self.bound.lock().unwrap().push(address);
+            Ok(Box::new(InboundListener(Mutex::new(
+                self.inbound.lock().unwrap().take(),
+            ))))
+        }
+    }
+
+    #[test]
+    fn inbound_peers_arrive_through_the_client_network() {
+        let root = std::env::temp_dir().join(format!(
+            "mynou-inbound-network-{}-{}",
+            std::process::id(),
+            hex(&crate::crypto::random_bytes::<8>().unwrap())
+        ));
+        let config = DownloadConfig {
+            data_dir: root.join("data"),
+            state_dir: root.join("state"),
+            listen_port: 6999,
+            seed: true,
+            dht: false,
+            pex: false,
+            max_active: 1,
+            max_peers: 1,
+        };
+        let mut handshake = vec![19];
+        handshake.extend_from_slice(b"BitTorrent protocol");
+        handshake.extend_from_slice(&[0; 8]);
+        handshake.extend_from_slice(&[0x5a; 20]);
+        handshake.extend_from_slice(&[0x33; 20]);
+        let read = Arc::new(AtomicU64::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let network = Arc::new(ListenOnly {
+            bound: Mutex::new(Vec::new()),
+            inbound: Mutex::new(Some(Inbound {
+                input: handshake,
+                read: read.clone(),
+                dropped: dropped.clone(),
+            })),
+        });
+        let client = Client::open_with_policy_and_admission(
+            config,
+            TransferPolicy::default(),
+            Arc::new(|_| Ok(true)),
+            network.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            *network.bound.lock().unwrap(),
+            vec![SocketAddr::from(([0, 0, 0, 0], 6999))]
+        );
+        assert_eq!(client.listen_port(), 51413);
+        let end = Instant::now() + Duration::from_secs(5);
+        while !dropped.load(Ordering::SeqCst) && Instant::now() < end {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(dropped.load(Ordering::SeqCst));
+        assert_eq!(read.load(Ordering::SeqCst), 68);
         drop(client);
         fs::remove_dir_all(root).unwrap();
     }

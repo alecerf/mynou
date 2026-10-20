@@ -167,6 +167,16 @@ pub trait NetworkStream: Read + Write + Send {
     fn set_write_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()>;
 }
 
+impl<S: NetworkStream + ?Sized> NetworkStream for Box<S> {
+    fn set_read_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
+        (**self).set_read_timeout(timeout)
+    }
+
+    fn set_write_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
+        (**self).set_write_timeout(timeout)
+    }
+}
+
 impl NetworkStream for TcpStream {
     fn set_read_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
         TcpStream::set_read_timeout(self, timeout)

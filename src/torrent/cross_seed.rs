@@ -714,7 +714,7 @@ mod tests {
             max_peers: 1,
         };
         fs::create_dir_all(&config.state_dir).unwrap();
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let info = Value::Dict(BTreeMap::from([
             (b"name".to_vec(), Value::Bytes(b"empty.bin".to_vec())),

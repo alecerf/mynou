@@ -5,7 +5,7 @@ use super::{
 use crate::Result;
 use std::{
     collections::BTreeSet,
-    net::TcpListener,
+    net::SocketAddr,
     sync::{Arc, atomic::AtomicBool},
     time::{Duration, Instant},
 };
@@ -91,12 +91,10 @@ pub fn inspect_metadata(
     let mut peers: BTreeSet<_> = source.peers.iter().copied().collect();
     let mut tried = BTreeSet::new();
     let mut trackers = source.trackers.iter().take(4);
-    let listener = TcpListener::bind("127.0.0.1:0")
+    let listener = network
+        .listen(SocketAddr::from(([127, 0, 0, 1], 0)))
         .map_err(|_| "Cannot reserve the metadata inspection port")?;
-    let port = listener
-        .local_addr()
-        .map_err(|_| "Cannot read the metadata inspection port")?
-        .port();
+    let port = listener.port();
     loop {
         remaining(deadline)?;
         if tried.len() >= 8 {

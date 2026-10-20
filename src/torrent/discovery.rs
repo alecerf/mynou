@@ -706,6 +706,13 @@ mod tests {
                 log: self.http.clone(),
             }))
         }
+
+        fn listen(
+            &self,
+            _: SocketAddr,
+        ) -> Result<Box<dyn super::super::transport::NetworkListener>> {
+            Err("No listener in this fixture".into())
+        }
     }
 
     fn request() -> TrackerRequest<'static> {

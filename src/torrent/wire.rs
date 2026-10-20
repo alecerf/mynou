@@ -1395,6 +1395,13 @@ mod tests {
         fn http(&self) -> crate::net::HttpClient {
             unreachable!("peer connections never use HTTP")
         }
+
+        fn listen(
+            &self,
+            _: SocketAddr,
+        ) -> Result<Box<dyn super::super::transport::NetworkListener>> {
+            Err("No listener in this fixture".into())
+        }
     }
 
     #[test]
