@@ -391,12 +391,14 @@ fn persist(path: &Path, data: &[u8]) -> Result<()> {
             .map(|b| format!("{b:02x}"))
             .collect::<String>()
     ));
+    let mut created = false;
     let result = (|| {
         let mut file = crate::store::private_options()
             .write(true)
             .create_new(true)
             .open(&temporary)
             .map_err(|_| STORAGE)?;
+        created = true;
         file.write_all(data)
             .and_then(|()| crate::store::sync_file(&file))
             .map_err(|_| STORAGE)?;
@@ -404,7 +406,7 @@ fn persist(path: &Path, data: &[u8]) -> Result<()> {
         crate::store::sync_directory(parent).map_err(|_| STORAGE)?;
         Ok(())
     })();
-    if result.is_err() {
+    if result.is_err() && created {
         let _ = fs::remove_file(temporary);
     }
     result
