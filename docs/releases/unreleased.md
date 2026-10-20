@@ -237,8 +237,8 @@ including HTTP redirects and HTTPS. Magnet peer names are kept without DNS at
 admission and restart, then resolved by the active transfer or inspection
 context; lookup failures are reported during that operation. Peer authorities
 require an explicit nonzero port and an ASCII hostname, IPv4 or bracketed IPv6
-address. This is transport preparation; integrated VPN protection remains
-unavailable while tunnel and lifecycle integration are pending.
+address. Native VPN controls use this transport preparation; complete
+isolation/race/resource evidence is still required before migration.
 
 ## Added: Explicit torrent engine transport and revocation fences
 
@@ -248,9 +248,9 @@ workers. Tunnel generation loss or cancellation rejects late metadata and peer
 results before publication. CI refuses direct networking outside Direct, even
 if added to the inventory. Native tunnel fixtures exercise BitTorrent metadata,
 payload/seeding, HTTP/HTTPS/UDP trackers, DHT and remote metadata redirects.
-This completes the transport boundary of #221; operator VPN controls (#222) and
-full isolation/race/resource evidence (#224) are still required before an
-integrated VPN or migration guide is available. See [the transport contract](../torrent-transport.md).
+This completes the transport boundary of #221 used by the operator VPN controls
+below (#222). Full isolation/race/resource evidence (#224) is still required
+before the migration guide is available. See [the transport contract](../torrent-transport.md).
 
 ## Added: Private WireGuard profiles and operator lifecycle
 
