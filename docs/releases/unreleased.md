@@ -251,3 +251,14 @@ payload/seeding, HTTP/HTTPS/UDP trackers, DHT and remote metadata redirects.
 This completes the transport boundary of #221; operator VPN controls (#222) and
 full isolation/race/resource evidence (#224) are still required before an
 integrated VPN or migration guide is available. See [the transport contract](../torrent-transport.md).
+
+## Added: Private WireGuard profiles and operator lifecycle
+
+Import a private WireGuard profile or equivalent structured settings with
+`mynou vpn` and the authenticated API. Intent survives restart; startup waits
+for the protected tunnel, and profile changes, revocation and recovery retire
+the old engine before replacement. Explicit disable is required for Direct;
+failed protection never falls back automatically. Redacted status includes
+handshake age and counters. Verified bytes and transfer controls are retained.
+Complete isolation/race/resource evidence and the Gluetun migration guide remain
+#224; existing Gluetun is untouched. See the [operator reference](../wireguard-operator.md).

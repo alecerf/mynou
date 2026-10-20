@@ -1,0 +1,698 @@
+use super::*;
+use crate::{config, engine::Engine, json, store::Request};
+use std::{
+    os::unix::fs::{PermissionsExt, symlink},
+    sync::mpsc,
+    thread,
+};
+
+const PROFILE: &str = "[Interface]\nPrivateKey = AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=\nAddress = 10.23.0.2/24\nDNS = 10.23.0.1\nMTU = 1280\n[Peer]\nPublicKey = CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nPresharedKey = //////////////////////////////////////////8=\nAllowedIPs = 0.0.0.0/0\nEndpoint = 192.0.2.10:51820\nPersistentKeepalive = 25\n";
+struct Directory(PathBuf);
+impl Directory {
+    fn new() -> Self {
+        let path = std::env::temp_dir().join(format!(
+            "mynou-vpn-{}",
+            crate::crypto::random_bytes::<16>()
+                .unwrap()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>()
+        ));
+        fs::create_dir(&path).unwrap();
+        Self(path)
+    }
+    fn config(&self) -> crate::config::Config {
+        let mut v = config::default_json();
+        let downloads = v.get_mut("downloads").unwrap();
+        downloads.insert("listen_port", 0_u32);
+        downloads.insert("dht", false);
+        config::from_json(&v, &self.0).unwrap()
+    }
+}
+impl Drop for Directory {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+fn body(action: &str) -> Value {
+    let mut v = Value::object();
+    v.insert("action", action);
+    v
+}
+fn import() -> Value {
+    let mut v = body("import");
+    v.insert("profile", PROFILE);
+    v
+}
+fn state(value: &Value) -> &str {
+    value.get("state").and_then(Value::as_str).unwrap()
+}
+fn assert_redacted(value: &Value) {
+    let text = json::stringify(value);
+    for secret in [
+        "AQEBAQE",
+        "////////",
+        "PrivateKey",
+        "PresharedKey",
+        "192.0.2.10",
+        "10.23.0.1",
+        "vpn.conf",
+    ] {
+        assert!(!text.contains(secret), "report leaked a private value");
+    }
+}
+fn stored(config: &crate::config::Config) -> PathBuf {
+    config.store_dir.join("vpn.conf")
+}
+
+#[test]
+fn canonical_private_document_and_structured_settings_preserve_the_supported_profile() {
+    let original = profile::parse(PROFILE).unwrap();
+    let document = original.private_document();
+    let roundtrip = profile::parse(&document).unwrap().into_tunnel_config();
+    let original = original.into_tunnel_config();
+    assert_eq!(roundtrip.secret, original.secret);
+    assert_eq!(roundtrip.peer_public, original.peer_public);
+    assert_eq!(roundtrip.psk, original.psk);
+    assert_eq!(roundtrip.endpoint, original.endpoint);
+    assert_eq!(roundtrip.ip, original.ip);
+    assert_eq!(roundtrip.mtu, original.mtu);
+    assert_eq!(roundtrip.keepalive, original.keepalive);
+    assert_eq!(
+        roundtrip.dns.unwrap().resolvers,
+        original.dns.unwrap().resolvers
+    );
+    let mut settings = Value::object();
+    for line in PROFILE.lines().filter_map(|s| s.split_once(" = ")) {
+        settings.insert(line.0, line.1);
+    }
+    assert_eq!(
+        profile::from_settings(&settings)
+            .unwrap()
+            .private_document(),
+        document
+    );
+    for value in [
+        "PostUp = secret-command",
+        "secret\n[Peer]",
+        "secret\r\n",
+        "#secret",
+        "é",
+        "\t",
+    ] {
+        settings.insert("PrivateKey", value);
+        assert!(
+            !profile::from_settings(&settings)
+                .err()
+                .unwrap()
+                .contains(value)
+        );
+    }
+    settings.insert("hostile-secret-key", "value");
+    assert!(
+        !profile::from_settings(&settings)
+            .err()
+            .unwrap()
+            .contains("hostile-secret-key")
+    );
+}
+
+#[test]
+fn intent_survives_import_revoke_enable_and_explicit_disable_without_network_io() {
+    let directory = Directory::new();
+    let config = directory.config();
+    let engine = Engine::open_for_management(config.clone()).unwrap();
+    assert_eq!(state(&engine.vpn_status()), "disabled");
+    let result = engine.vpn_control(&import()).unwrap();
+    assert_eq!(state(&result), "blocked");
+    assert_redacted(&result);
+    assert!(engine.torrent_publication().is_err());
+    drop(engine);
+    let path = stored(&config);
+    assert_eq!(
+        fs::metadata(&path).unwrap().permissions().mode() & 0o7777,
+        0o600
+    );
+    for (action, mode) in [
+        ("revoke", Mode::Revoked),
+        ("enable", Mode::Enabled),
+        ("disable", Mode::Disabled),
+    ] {
+        let engine = Engine::open_for_management(config.clone()).unwrap();
+        assert_redacted(&engine.vpn_status());
+        engine.vpn_control(&body(action)).unwrap();
+        drop(engine);
+        let intent = Intent::decode(&profile::read_private_text(&path).unwrap()).unwrap();
+        assert!(intent.mode == mode);
+        assert!(intent.profile.is_some());
+    }
+    let engine = Engine::open_for_management(config).unwrap();
+    assert_eq!(state(&engine.vpn_status()), "disabled");
+    assert!(engine.torrent_publication().is_ok());
+}
+
+#[test]
+fn invalid_import_and_unknown_controls_leave_current_authority_intact_and_redact_errors() {
+    let directory = Directory::new();
+    let engine = Engine::open_for_management(directory.config()).unwrap();
+    for mut value in [body("secret-unknown-action"), import(), body("disable")] {
+        if value.get("profile").is_some() {
+            value.insert("profile", "[Interface]\nPrivateKey = secret-invalid-key");
+        } else if value.get("action").and_then(Value::as_str) == Some("disable") {
+            value.insert("secret-key", "secret-value");
+        }
+        let error = engine.vpn_control(&value).unwrap_err();
+        assert!(!error.contains("secret"));
+        assert!(engine.torrent_publication().is_ok());
+    }
+    assert!(!stored(&engine.config).exists());
+    let mut value = import();
+    value.insert("settings", Value::object());
+    assert!(engine.vpn_control(&value).is_err());
+    assert!(engine.torrent_publication().is_ok());
+}
+
+#[test]
+fn corrupt_or_shared_persistent_intent_blocks_every_network_entry_including_metadata() {
+    for corrupt in [true, false] {
+        let directory = Directory::new();
+        let config = directory.config();
+        let engine = Engine::open_for_management(config.clone()).unwrap();
+        engine.vpn_control(&import()).unwrap();
+        drop(engine);
+        let path = stored(&config);
+        if corrupt {
+            fs::write(&path, "secret-corrupt-document").unwrap();
+        } else {
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        }
+        let engine = Engine::open_for_management(config).unwrap();
+        assert_eq!(state(&engine.vpn_status()), "error");
+        assert_redacted(&engine.vpn_status());
+        let network = &engine.torrent_network;
+        assert!(network.generation().is_err());
+        assert!(network.publication().is_err());
+        assert!(
+            network
+                .resolve("secret.invalid:80", Instant::now() + Duration::from_secs(1))
+                .is_err()
+        );
+        assert!(
+            network
+                .connect("127.0.0.1:9".parse().unwrap(), Duration::from_secs(1))
+                .is_err()
+        );
+        assert!(network.listen("0.0.0.0:0".parse().unwrap()).is_err());
+        assert!(network.datagram(false).is_err());
+        assert!(network.datagram(true).is_err());
+        assert!(network.http().get("http://127.0.0.1:9/").is_err());
+    }
+}
+
+#[test]
+fn failed_persistence_retires_authority_and_keeps_the_previous_durable_intent() {
+    let directory = Directory::new();
+    let config = directory.config();
+    let engine = Engine::open_for_management(config.clone()).unwrap();
+    engine.vpn_control(&import()).unwrap();
+    drop(engine);
+    let path = stored(&config);
+    let before = fs::read(&path).unwrap();
+    let engine = Engine::open_for_management(config.clone()).unwrap();
+    let error =
+        crate::store::with_full_disk_after(0, || engine.vpn_control(&body("disable"))).unwrap_err();
+    assert_eq!(error, STORAGE);
+    assert!(engine.torrent_publication().is_err());
+    assert_eq!(state(&engine.vpn_status()), "error");
+    assert!(!engine.vpn_needs_reload());
+    assert_eq!(fs::read(&path).unwrap(), before);
+    assert!(!fs::read_dir(&config.store_dir).unwrap().any(|e| {
+        e.unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".vpn-")
+    }));
+    drop(engine);
+    let engine = Engine::open_for_management(config).unwrap();
+    assert_eq!(engine.vpn_status().get("enabled"), Some(&Value::Bool(true)));
+    assert!(engine.torrent_publication().is_err());
+}
+
+#[test]
+fn persistence_refuses_links_without_touching_the_target_and_read_only_controls_refuse_writes() {
+    let directory = Directory::new();
+    let config = directory.config();
+    let engine = Engine::open_for_management(config.clone()).unwrap();
+    let target = directory.0.join("unrelated");
+    fs::write(&target, "preserved").unwrap();
+    symlink(&target, stored(&config)).unwrap();
+    assert!(engine.vpn_control(&import()).is_err());
+    assert_eq!(fs::read_to_string(&target).unwrap(), "preserved");
+    drop(engine);
+    let engine = Engine::open_for_preview(config).unwrap();
+    assert!(engine.vpn_control(&body("disable")).is_err());
+    assert_eq!(fs::read_to_string(&target).unwrap(), "preserved");
+}
+
+#[test]
+fn revoke_closes_admission_before_waiting_for_an_existing_publication() {
+    let directory = Directory::new();
+    let engine = Engine::open_for_management(directory.config()).unwrap();
+    let publication = engine.torrent_publication().unwrap();
+    let gate = engine.vpn_gate.as_ref().unwrap().clone();
+    let other = engine.clone();
+    let (send, recv) = mpsc::channel();
+    let worker = thread::spawn(move || {
+        send.send(other.vpn_control(&import())).unwrap();
+    });
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !gate.retired.load(Ordering::Acquire) {
+        assert!(Instant::now() < deadline);
+        thread::yield_now();
+    }
+    assert!(gate.generation().is_err());
+    assert!(matches!(recv.try_recv(), Err(mpsc::TryRecvError::Empty)));
+    drop(publication);
+    recv.recv_timeout(Duration::from_secs(3)).unwrap().unwrap();
+    worker.join().unwrap();
+    assert!(engine.torrent_publication().is_err());
+}
+
+#[test]
+fn revoked_startup_keeps_workers_and_listeners_closed_but_allows_recovery_controls() {
+    let directory = Directory::new();
+    let config = directory.config();
+    let engine = Engine::open_for_management(config.clone()).unwrap();
+    engine.vpn_control(&import()).unwrap();
+    drop(engine);
+    let engine = Engine::open_for_management(config.clone()).unwrap();
+    engine.vpn_control(&body("revoke")).unwrap();
+    drop(engine);
+    let engine = Engine::open_serving(config).unwrap();
+    for _ in 0..20 {
+        assert!(!engine.startup_step().unwrap());
+    }
+    assert!(engine.starting.load(Ordering::Acquire));
+    assert_eq!(
+        crate::server::route(&engine, "POST", "/api/jobs", b"{}")
+            .unwrap()
+            .0,
+        503
+    );
+    let report = crate::server::route(&engine, "GET", "/api/vpn", &[])
+        .unwrap()
+        .1;
+    assert_eq!(state(&report), "blocked");
+    assert_redacted(&report);
+    assert!(engine.transfer(&"ab".repeat(20)).is_err());
+    assert_eq!(
+        crate::server::route(
+            &engine,
+            "POST",
+            "/api/vpn/control",
+            b"{\"action\":\"disable\"}"
+        )
+        .unwrap()
+        .0,
+        202
+    );
+    assert!(engine.vpn_needs_reload());
+}
+
+fn native_operator(directory: &Directory, driver: HttpTunnel) -> Arc<Operator> {
+    let config = directory.config();
+    let engine = Engine::open_for_management(config.clone()).unwrap();
+    engine.vpn_control(&import()).unwrap();
+    drop(engine);
+    let operator = Operator::load(&config.store_dir, false);
+    operator.state.lock().unwrap().driver = Some(driver);
+    operator
+}
+
+#[test]
+fn real_native_owner_is_used_for_protected_startup_dns_and_revocation() {
+    let directory = Directory::new();
+    let pair = crate::tunnel_http::tests::Pair::new();
+    let operator = native_operator(&directory, pair.client.clone());
+    let engine =
+        Engine::open_operator(directory.config(), true, false, true, Some(operator)).unwrap();
+    while !engine.startup_step().unwrap() {}
+    assert_eq!(state(&engine.vpn_status()), "protected");
+    assert_redacted(&engine.vpn_status());
+    assert!(
+        engine
+            .vpn_status()
+            .get("handshake_age_secs")
+            .and_then(Value::as_str)
+            .is_some()
+    );
+    let generation = engine.torrent_network.generation().unwrap().unwrap();
+    assert_eq!(
+        engine
+            .torrent_network
+            .resolve("fixture.test:80", Instant::now() + Duration::from_secs(3))
+            .unwrap(),
+        vec!["10.7.0.1:80".parse::<SocketAddr>().unwrap()]
+    );
+    assert!(pair.dns.load(Ordering::Relaxed) > 0);
+    let job = engine
+        .submit(Request {
+            kind: "movie".into(),
+            title: "Synthetic preserved request".into(),
+            year: 2026,
+            season: 0,
+            episode: 0,
+            tmdb_id: Some(7),
+            source_path: None,
+            source_url: None,
+            source_numbering: None,
+        })
+        .unwrap()
+        .remove(0);
+    let report = engine.vpn_control(&body("revoke")).unwrap();
+    assert_redacted(&report);
+    assert!(engine.torrent_network.publication().is_err());
+    assert!(pair.client_network.publication().is_err());
+    drop(engine);
+    let engine = Engine::open_for_management(directory.config()).unwrap();
+    assert_eq!(state(&engine.vpn_status()), "blocked");
+    assert_eq!(
+        engine
+            .store
+            .lock()
+            .unwrap()
+            .get(&job.id)
+            .unwrap()
+            .unwrap()
+            .request
+            .title,
+        job.request.title
+    );
+    assert!(engine.torrent_network.generation().is_err());
+    assert!(!generation.is_empty());
+}
+
+#[test]
+fn owner_loss_never_replaces_a_captured_engine_transport_with_direct() {
+    let directory = Directory::new();
+    let pair = crate::tunnel_http::tests::Pair::new();
+    let operator = native_operator(&directory, pair.client.clone());
+    let engine = Engine::open_operator(
+        directory.config(),
+        true,
+        false,
+        true,
+        Some(operator.clone()),
+    )
+    .unwrap();
+    while !engine.startup_step().unwrap() {}
+    let queued = engine
+        .submit(Request {
+            kind: "movie".into(),
+            title: "Synthetic suspended demand".into(),
+            year: 2026,
+            season: 0,
+            episode: 0,
+            tmdb_id: Some(9),
+            source_path: None,
+            source_url: None,
+            source_numbering: None,
+        })
+        .unwrap()
+        .remove(0);
+    pair.client.cancel();
+    assert!(!engine.tick().unwrap());
+    let retained = engine
+        .store
+        .lock()
+        .unwrap()
+        .get(&queued.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(retained.attempts, 0);
+    assert_eq!(retained.state, "queued");
+    assert!(engine.vpn_needs_reload());
+    assert!(engine.torrent_network.publication().is_err());
+    assert!(engine.torrent_network.datagram(false).is_err());
+    drop(engine);
+    let replacement =
+        Engine::open_operator(directory.config(), true, false, true, Some(operator)).unwrap();
+    for _ in 0..14 {
+        assert!(!replacement.startup_step().unwrap());
+    }
+    assert!(replacement.torrent_publication().is_err());
+    assert_eq!(
+        replacement.vpn_status().get("enabled"),
+        Some(&Value::Bool(true))
+    );
+}
+
+#[test]
+fn supervisor_replaces_retired_generations_and_keeps_management_api_reachable() {
+    let directory = Directory::new();
+    let pair = crate::tunnel_http::tests::Pair::new();
+    let operator = native_operator(&directory, pair.client.clone());
+    let mut config = directory.config();
+    config.listen = "127.0.0.1:0".into();
+    let engine = Engine::open_operator(config.clone(), true, false, true, Some(operator)).unwrap();
+    let api = crate::server::Api::bind(engine, "0123456789abcdef0123456789abcdef".into()).unwrap();
+    let url = format!("http://{}", api.address().unwrap());
+    let worker = thread::spawn(move || api.run_supervised());
+    let client = HttpClient::new()
+        .without_proxy()
+        .with_timeout(Duration::from_secs(10));
+    let call = |method: &str, path: &str, data: &str| {
+        client
+            .request(
+                method,
+                &format!("{url}{path}"),
+                &[
+                    (
+                        "Authorization".into(),
+                        "Bearer 0123456789abcdef0123456789abcdef".into(),
+                    ),
+                    ("Content-Type".into(), "application/json".into()),
+                ],
+                data.as_bytes(),
+            )
+            .unwrap()
+    };
+    assert_eq!(
+        client
+            .request(
+                "POST",
+                &format!("{url}/api/vpn/control"),
+                &[("Content-Type".into(), "application/json".into())],
+                b"{\"action\":\"disable\"}"
+            )
+            .unwrap()
+            .status,
+        401
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let response = call("GET", "/api/status", "");
+        let value = json::parse(std::str::from_utf8(&response.body).unwrap()).unwrap();
+        if value
+            .get("startup")
+            .unwrap()
+            .get("state")
+            .and_then(Value::as_str)
+            == Some("ready")
+        {
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(
+        call("POST", "/api/vpn/control", "{\"action\":\"revoke\"}").status,
+        202
+    );
+    loop {
+        let response = call("GET", "/api/vpn", "");
+        let value = json::parse(std::str::from_utf8(&response.body).unwrap()).unwrap();
+        if value.get("reason").and_then(Value::as_str) == Some("Profile revoked by operator") {
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(call("GET", "/readyz", "").status, 503);
+    assert_eq!(
+        call("POST", "/api/vpn/control", "{\"action\":\"disable\"}").status,
+        202
+    );
+    loop {
+        if call("GET", "/readyz", "").status == 200 {
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(20));
+    }
+    let response = call("GET", "/api/vpn", "");
+    let value = json::parse(std::str::from_utf8(&response.body).unwrap()).unwrap();
+    assert_eq!(state(&value), "disabled");
+    assert_eq!(call("POST", "/api/shutdown", "{}").status, 200);
+    worker.join().unwrap().unwrap();
+    assert!(
+        Intent::decode(&profile::read_private_text(&stored(&config)).unwrap())
+            .unwrap()
+            .mode
+            == Mode::Disabled
+    );
+}
+
+#[test]
+fn unauthenticated_startup_stays_closed_even_without_download_workers_and_restart_keeps_intent() {
+    use std::net::UdpSocket;
+    let directory = Directory::new();
+    let endpoint = UdpSocket::bind("127.0.0.1:0").unwrap();
+    endpoint
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    let mut config = profile::parse(PROFILE).unwrap().into_tunnel_config();
+    config.endpoint = crate::tunnel::Endpoint::Address(endpoint.local_addr().unwrap());
+    let driver = HttpTunnel::start(config).unwrap();
+    let mut bytes = [0; 2048];
+    let (_, remote) = endpoint.recv_from(&mut bytes).unwrap();
+    endpoint.send_to(&[1; 148], remote).unwrap();
+    let operator = native_operator(&directory, driver);
+    let mut config = directory.config();
+    config.downloads_enabled = false;
+    let engine = Engine::open_operator(config.clone(), true, false, true, Some(operator)).unwrap();
+    for _ in 0..15 {
+        assert!(!engine.startup_step().unwrap());
+    }
+    assert_eq!(state(&engine.vpn_status()), "connecting");
+    assert_redacted(&engine.vpn_status());
+    assert!(engine.torrent_publication().is_err());
+    assert!(engine.torrent_network.datagram(false).is_err());
+    assert!(!engine.tick().unwrap());
+    drop(engine);
+    let engine = Engine::open_for_management(config).unwrap();
+    assert_eq!(engine.vpn_status().get("enabled"), Some(&Value::Bool(true)));
+    assert!(engine.torrent_publication().is_err());
+}
+
+#[test]
+fn verified_bytes_user_pause_and_priorities_survive_owner_loss_and_a_new_protected_engine() {
+    use crate::bencode::{self, Value as B};
+    use std::collections::BTreeMap;
+    let directory = Directory::new();
+    let pair = crate::tunnel_http::tests::Pair::new();
+    let payload = vec![7_u8; 32_000];
+    let pieces = payload
+        .chunks(16_384)
+        .flat_map(crate::crypto::sha1)
+        .collect();
+    let info = B::Dict(BTreeMap::from([
+        (b"name".to_vec(), B::Bytes(b"fixture.bin".to_vec())),
+        (b"length".to_vec(), B::Int(payload.len() as i64)),
+        (b"piece length".to_vec(), B::Int(16_384)),
+        (b"pieces".to_vec(), B::Bytes(pieces)),
+    ]));
+    let hash: String = crate::crypto::sha1(&bencode::encode(&info))
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let source = directory.0.join("fixture.torrent");
+    fs::write(
+        &source,
+        bencode::encode(&B::Dict(BTreeMap::from([(b"info".to_vec(), info)]))),
+    )
+    .unwrap();
+    let config = directory.config();
+    let data = config.downloads.data_dir.join(&hash).join("fixture.bin");
+    fs::create_dir_all(data.parent().unwrap()).unwrap();
+    fs::write(&data, &payload).unwrap();
+    let operator = native_operator(&directory, pair.client.clone());
+    let engine = Engine::open_operator(config.clone(), true, false, true, Some(operator)).unwrap();
+    while !engine.startup_step().unwrap() {}
+    engine
+        .submit(Request {
+            kind: "movie".into(),
+            title: "Synthetic retained bytes".into(),
+            year: 2026,
+            season: 0,
+            episode: 0,
+            tmdb_id: Some(13),
+            source_path: None,
+            source_url: Some(source.to_str().unwrap().into()),
+            source_numbering: None,
+        })
+        .unwrap();
+    engine.tick().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while engine.transfer(&hash).unwrap().get("ready") != Some(&Value::Bool(true)) {
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(10));
+    }
+    engine.pause_transfer(&hash).unwrap();
+    engine.set_transfer_priority(&hash, 7).unwrap();
+    engine
+        .set_file_priority(&hash, 0, crate::torrent::FilePriority::Low)
+        .unwrap();
+    let before = engine.transfer(&hash).unwrap();
+    pair.client.cancel();
+    assert!(engine.vpn_needs_reload());
+    drop(engine);
+    assert_eq!(fs::read(&data).unwrap(), payload);
+    let replacement_pair = crate::tunnel_http::tests::Pair::new();
+    let operator = Operator::load(&config.store_dir, false);
+    operator.state.lock().unwrap().driver = Some(replacement_pair.client.clone());
+    let engine = Engine::open_operator(config, true, false, true, Some(operator)).unwrap();
+    while !engine.startup_step().unwrap() {}
+    assert_eq!(state(&engine.vpn_status()), "protected");
+    let after = engine.transfer(&hash).unwrap();
+    assert_eq!(after.get("user_paused"), Some(&Value::Bool(true)));
+    assert_eq!(after.get("priority"), Some(&Value::Number(7.0)));
+    assert_eq!(after.get("file_priorities"), before.get("file_priorities"));
+    assert_eq!(after.get("failed"), Some(&Value::Bool(false)));
+    assert_eq!(fs::read(&data).unwrap(), payload);
+}
+
+#[test]
+fn recovered_owner_requires_a_new_engine_and_never_reauthorizes_delayed_old_work() {
+    let directory = Directory::new();
+    let pair = crate::tunnel_http::tests::Pair::new();
+    let operator = native_operator(&directory, pair.client.clone());
+    let engine = Engine::open_operator(
+        directory.config(),
+        true,
+        false,
+        true,
+        Some(operator.clone()),
+    )
+    .unwrap();
+    while !engine.startup_step().unwrap() {}
+    let old = engine.torrent_network.generation().unwrap().unwrap();
+    let captured = engine.torrent_network.clone();
+    pair.replace_client_generation();
+    assert!(engine.vpn_needs_reload());
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while pair.client.network(deadline).is_err() {
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(captured.publication().is_err());
+    assert_eq!(state(&engine.vpn_status()), "reconnecting");
+    engine.retire_vpn_generation();
+    drop(engine);
+    let engine =
+        Engine::open_operator(directory.config(), true, false, true, Some(operator)).unwrap();
+    while !engine.startup_step().unwrap() {
+        assert!(Instant::now() < deadline);
+    }
+    let new = engine.torrent_network.generation().unwrap().unwrap();
+    assert_ne!(old, new);
+    assert!(engine.torrent_publication().is_ok());
+    assert!(captured.publication().is_err());
+    assert_eq!(
+        engine
+            .torrent_network
+            .resolve("fixture.test:80", deadline)
+            .unwrap(),
+        vec!["10.7.0.1:80".parse::<SocketAddr>().unwrap()]
+    );
+}

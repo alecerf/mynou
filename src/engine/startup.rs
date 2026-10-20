@@ -82,6 +82,10 @@ impl Engine {
         if let Some(error) = current.error {
             return Err(error);
         }
+        if current.stage == 12 && self.start_downloads && !self.vpn_ready() {
+            self.wait(50);
+            return Ok(false);
+        }
         if current.stage < STAGES.len() {
             let page = self.startup_page(&current);
             let mut startup = lock(&self.startup)?;

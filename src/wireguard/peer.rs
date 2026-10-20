@@ -124,6 +124,13 @@ impl<E: Entropy> Peer<E> {
         })
     }
 
+    /// Age of the currently installed session, including successful rekeys.
+    pub(crate) fn session_age(&self, now: Duration) -> Option<Duration> {
+        self.keys
+            .current_created()
+            .and_then(|born| now.checked_sub(born))
+    }
+
     pub fn endpoint(&self) -> SocketAddr {
         self.endpoint
     }

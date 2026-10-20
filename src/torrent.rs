@@ -2582,6 +2582,12 @@ fn manager_loop(
     let mut seed_cursor = None;
     let mut seed_rotation = Instant::now();
     while !stop.load(Ordering::Acquire) {
+        if policy.network.generation().is_err() {
+            // Keep controls and verified data available for a new protected
+            // engine; generation loss is not a failed transfer.
+            thread::sleep(Duration::from_millis(30));
+            continue;
+        }
         if index
             .lock()
             .map_err(|_| "Native transfer index lock is poisoned".to_owned())
@@ -2782,8 +2788,13 @@ fn manager_loop(
                         && !st.load(Ordering::Acquire)
                         && Arc::ptr_eq(&job.cancel, &st)
                     {
-                        job.failed = true;
-                        job.status.message = error;
+                        if policy.network.generation().is_ok() {
+                            job.failed = true;
+                            job.status.message = error;
+                        } else {
+                            job.status.message =
+                                "Torrent network unavailable; waiting for recovery".into();
+                        }
                     }
                     if let Ok(mut jobs) = js.lock()
                         && let Some(job) = jobs.get_mut(&id)

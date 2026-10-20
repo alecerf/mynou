@@ -78,6 +78,8 @@ pub struct Engine {
     downloads: OnceLock<Client>,
     /// The one network of torrent transfers and metadata inspection.
     pub(crate) torrent_network: Arc<dyn crate::torrent::transport::Network>,
+    pub(crate) vpn: Option<Arc<crate::vpn::Operator>>,
+    pub(crate) vpn_gate: Option<Arc<crate::vpn::Gate>>,
     start_downloads: bool,
     startup: Mutex<startup::Startup>,
     startup_runner: Mutex<()>,
@@ -129,41 +131,43 @@ impl Engine {
 
     /// Loads existing storage without creating, repairing, or changing its permissions.
     pub fn open_for_preview(config: Config) -> Result<Arc<Self>> {
-        let store = Store::open_read_only(&config.store_dir)?;
-        Self::from_store(
-            config,
-            store,
-            false,
-            true,
-            false,
-            crate::torrent::transport::direct(),
-        )
+        Self::open_operator(config, false, true, false, None)
     }
 
     fn open_with_downloads(config: Config, start_downloads: bool) -> Result<Arc<Self>> {
-        let store = Store::prepare(&config.store_dir, &config)?;
+        Self::open_operator(config, start_downloads, false, false, None)
+    }
+
+    /// Opens storage behind the bounded validation and VPN readiness gates.
+    pub fn open_serving(config: Config) -> Result<Arc<Self>> {
+        Self::open_operator(config, true, false, true, None)
+    }
+
+    pub(crate) fn open_operator(
+        config: Config,
+        start_downloads: bool,
+        read_only: bool,
+        defer: bool,
+        operator: Option<Arc<crate::vpn::Operator>>,
+    ) -> Result<Arc<Self>> {
+        let store = if read_only {
+            Store::open_read_only(&config.store_dir)?
+        } else {
+            Store::prepare(&config.store_dir, &config)?
+        };
+        let operator = operator.unwrap_or_else(|| {
+            crate::vpn::Operator::load(&config.store_dir, start_downloads && !read_only)
+        });
+        let gate = operator.gate();
+        let network: Arc<dyn crate::torrent::transport::Network> = gate.clone();
         Self::from_store(
             config,
             store,
             start_downloads,
-            false,
-            false,
-            crate::torrent::transport::direct(),
-        )
-    }
-
-    /// Opens the service journal without waiting for startup validation:
-    /// the API answers reads at once, while mutations, workers and native
-    /// transfers wait until `start` has completed every bounded startup stage.
-    pub fn open_serving(config: Config) -> Result<Arc<Self>> {
-        let store = Store::prepare(&config.store_dir, &config)?;
-        Self::from_store(
-            config,
-            store,
-            true,
-            false,
-            true,
-            crate::torrent::transport::direct(),
+            read_only,
+            defer,
+            network,
+            Some((operator, gate)),
         )
     }
 
@@ -172,7 +176,7 @@ impl Engine {
     /// supports metadata-only management without a native transfer worker.
     /// The network is immutable for this engine's lifetime: stop/drop the old
     /// engine before opening another generation or changing protection mode.
-    /// Operator profile and lifecycle controls are tracked separately in #222.
+    /// Operator-managed engines instead use the supervised VPN control plane.
     pub fn open_with_network(
         config: Config,
         network: Arc<dyn crate::torrent::transport::Network>,
@@ -180,7 +184,7 @@ impl Engine {
     ) -> Result<Arc<Self>> {
         network.publication()?;
         let store = Store::prepare(&config.store_dir, &config)?;
-        Self::from_store(config, store, start_downloads, false, false, network)
+        Self::from_store(config, store, start_downloads, false, false, network, None)
     }
 
     /// Checks stop/revocation under the transport's publication lease. Keep
@@ -203,6 +207,7 @@ impl Engine {
         read_only: bool,
         defer: bool,
         torrent_network: Arc<dyn crate::torrent::transport::Network>,
+        operator: Option<(Arc<crate::vpn::Operator>, Arc<crate::vpn::Gate>)>,
     ) -> Result<Arc<Self>> {
         let indexer_store =
             crate::indexers::policy::SourceStore::open(&config.store_dir, &config, read_only)?;
@@ -215,6 +220,9 @@ impl Engine {
             crate::irc::AnnouncementStore::open(&config.store_dir, &config.irc, read_only)?;
         let store = Arc::new(Mutex::new(store));
         let irc_runtime = crate::irc::client::Runtime::new(&config.irc.sources);
+        let (vpn, vpn_gate) = operator.map_or((None, None), |(operator, gate)| {
+            (Some(operator), Some(gate))
+        });
         let engine = Arc::new(Self {
             config,
             store,
@@ -223,6 +231,8 @@ impl Engine {
             series_unreadable: Mutex::new(std::collections::BTreeMap::new()),
             downloads: OnceLock::new(),
             torrent_network,
+            vpn,
+            vpn_gate,
             start_downloads,
             startup: Mutex::new(startup::Startup::default()),
             startup_runner: Mutex::new(()),
@@ -545,6 +555,7 @@ impl Engine {
                 .map_or(Value::Null, |counts| Value::Number(read(counts) as f64))
         };
         let mut v = Value::object();
+        v.insert("vpn", self.vpn_status());
         v.insert("version", env!("CARGO_PKG_VERSION"));
         v.insert(
             "migrations",
@@ -804,6 +815,15 @@ impl Engine {
 
     /// Run one step and release the lease before waiting for the next poll.
     pub fn tick(self: &Arc<Self>) -> Result<bool> {
+        // A retired VPN generation suspends acquisition, not the request's
+        // retry budget. Its durable intent gates restart until protected again.
+        if self
+            .vpn_gate
+            .as_ref()
+            .is_some_and(|gate| crate::torrent::transport::Network::generation(&**gate).is_err())
+        {
+            return Ok(false);
+        }
         let Some(mut job) = self.claim_requester_job()? else {
             return Ok(false);
         };
@@ -825,6 +845,14 @@ impl Engine {
             }
             store.check_ready_promotion(&job)
         });
+        if result.is_err()
+            && self.vpn_gate.as_ref().is_some_and(|gate| {
+                crate::torrent::transport::Network::generation(&**gate).is_err()
+            })
+        {
+            store.release_lease(&job.id, &lease)?;
+            return Ok(false);
+        }
         if let Err(error) = result {
             job.attempts = job.attempts.saturating_add(1);
             job.last_error = Some(error);

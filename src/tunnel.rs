@@ -399,6 +399,10 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
             .map_err(|error| TunnelError::Io(error.to_string()))
     }
 
+    pub(crate) fn handshake_age(&self) -> Option<Duration> {
+        self.live.as_ref()?.peer.session_age(self.clock.now())
+    }
+
     pub fn stats(&self) -> Stats {
         self.stats
     }

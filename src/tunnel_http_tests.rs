@@ -655,6 +655,21 @@ pub(crate) struct Pair {
     dns_worker: Option<JoinHandle<()>>,
 }
 impl Pair {
+    pub(crate) fn replace_client_generation(&self) {
+        self.client
+            .owner
+            .call(None, end(), |r| {
+                let remote = r
+                    .tunnel
+                    .status()
+                    .remote
+                    .ok_or_else(|| error(io::ErrorKind::NotConnected))?;
+                r.tunnel
+                    .set_endpoint(Endpoint::Address(remote))
+                    .map_err(failed)
+            })
+            .unwrap();
+    }
     pub fn new() -> Self {
         let server = HttpTunnel::start(config("127.0.0.1:9".parse().unwrap(), true)).unwrap();
         let endpoint = server

@@ -5,16 +5,17 @@ library engine with exactly the supplied `Arc<dyn torrent::transport::Network>`.
 Passing `HttpTunnel::network(deadline)?` supplies the native protected transport.
 This constructor does not construct Direct, and it fails if that captured tunnel
 generation is unavailable. `start_downloads=false` supports metadata management
-without a torrent client or listener worker. Existing `open`, `open_serving`,
-`open_for_management` and `open_for_preview` retain explicit unprotected Direct
-behavior. This is a library API; no operator setting activates a VPN yet (#222).
+without a torrent client or listener worker. The standard `open`, `open_serving`,
+`open_for_management` and `open_for_preview` constructors honor the
+[persisted operator VPN intent](wireguard-operator.md). Without that intent,
+they retain unprotected Direct behavior.
 
 The engine owns an immutable network for its lifetime. Its transfer client and
 all metadata callers share that network. There is no runtime transport setter
 or automatic fallback. To change transport or generation, stop/join workers and
 drop the old engine/client before constructing its replacement. Existing Direct
-connections cannot be converted in place. Durable operator state, pause/resume
-and restart controls remain #222; the generic constructor trusts the caller's
+connections cannot be converted in place. Durable operator state and supervised engine replacement are described in the
+[operator reference](wireguard-operator.md); the generic constructor trusts the caller's
 Network implementation and does not certify a custom network as protected.
 
 ## Converted call sites
@@ -67,8 +68,8 @@ and revocation; no hard wall-time or resource claim is established here.
 Streams and sockets keep their own generation checks on every owner operation.
 Transfer admission, authenticated metadata, verified peer-piece results and
 completion publication are checked; retained verified bytes are not deleted.
-A stopped engine rejects new metadata publications. Operator-driven stopping
-and durable recovery remain the lifecycle work in #222.
+A stopped engine rejects new metadata publications. Operator-driven stopping and durable recovery use the separate operator layer
+(#222); full isolation/race/resource evidence remains #224.
 
 ## Acceptance evidence
 

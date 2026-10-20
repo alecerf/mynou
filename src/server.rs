@@ -181,9 +181,39 @@ impl Api {
     pub fn address(&self) -> Result<SocketAddr> {
         self.listener.local_addr().map_err(|e| e.to_string())
     }
+    /// Serve a caller-managed engine. VPN changes retire it; the caller must
+    /// reopen it. The standalone service uses `run_supervised` instead.
     pub fn run(self) -> Result<()> {
+        self.run_inner(false)
+    }
+
+    /// Own service workers and replace entire immutable engine generations.
+    pub fn run_supervised(self) -> Result<()> {
+        self.run_inner(true)
+    }
+
+    fn run_inner(mut self, supervised: bool) -> Result<()> {
+        let mut workers = supervised.then(|| self.engine.start());
         let mut threads: Vec<JoinHandle<()>> = Vec::new();
         while !self.engine.stopped.load(Ordering::Acquire) {
+            if supervised && self.engine.vpn_needs_reload() {
+                // Close admission, finish API work and worker shutdown, then
+                // drop the old client/listener before constructing its successor.
+                self.engine.retire_vpn_generation();
+                self.engine.stopped.store(true, Ordering::Release);
+                for handle in threads.drain(..) {
+                    let _ = handle.join();
+                }
+                drop(workers.take());
+                let config = self.engine.config.clone();
+                let operator = self.engine.vpn.as_ref().filter(|v| !v.changed()).cloned();
+                // Destroy the old Arc before reopening storage and its
+                // exclusive process lock.
+                drop(self.engine);
+                self.engine = Engine::open_operator(config, true, false, true, operator)?;
+                workers = Some(self.engine.start());
+                continue;
+            }
             let mut i = 0;
             while i < threads.len() {
                 if threads[i].is_finished() {
@@ -393,7 +423,10 @@ pub(crate) fn route(
 ) -> Result<(u16, Value)> {
     // Until every startup stage passed, only reads and shutdown are served.
     if method != "GET"
-        && (method, path) != ("POST", "/api/shutdown")
+        && !matches!(
+            (method, path),
+            ("POST", "/api/shutdown" | "/api/vpn/control")
+        )
         && engine.starting.load(Ordering::Acquire)
     {
         return Ok((
@@ -403,6 +436,15 @@ pub(crate) fn route(
     }
     match (method, path) {
         ("GET", "/api/status") => Ok((200, engine.status()?)),
+        ("GET", "/api/vpn") => Ok((200, engine.vpn_status())),
+        ("POST", "/api/vpn/control") => {
+            if body.len() > 32_768 {
+                return Err("VPN control exceeds size limit".into());
+            }
+            let text = std::str::from_utf8(body).map_err(|_| "Invalid VPN control encoding")?;
+            let value = json::parse(text).map_err(|_| "Invalid VPN control JSON")?;
+            Ok((202, engine.vpn_control(&value)?))
+        }
         ("GET", "/api/indexers") => Ok((200, engine.indexers()?)),
         ("GET", "/api/feeds") => Ok((200, engine.feeds()?)),
         ("GET", "/api/feeds/retained") => Ok((200, engine.feeds_retained("")?)),
