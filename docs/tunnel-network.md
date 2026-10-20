@@ -25,7 +25,7 @@ let socket = network.datagram(false)?;
 | `Network` call | Through the tunnel |
 | --- | --- |
 | `connect` | Virtual TCP to a usable IPv4 address, bounded by the timeout. |
-| `resolve` | `host:port` through the tunnel DNS client only; a literal IPv4 needs no lookup. At most 16 answers. |
+| `resolve` | `host:port` through the tunnel DNS client only; a literal IPv4 needs no lookup. At most 16 answers; expired deadlines fail for literals too. |
 | `datagram` | A virtual UDP socket on a random ephemeral port. IPv6 is refused. |
 | `http` | The shared HTTP client over the generation-bound [tunnel connector](tunnel-http.md). |
 | `listen` | A virtual TCP listener. Port 0 picks a random free port from 49152 upwards (at most 32 tries). `accept` does not block: `WouldBlock` when no peer is waiting. |
@@ -44,7 +44,14 @@ refused.
 Datagrams behave like an OS socket: a long datagram is truncated to the
 receive buffer, and a read without a datagram fails with `TimedOut` at its
 read timeout (20 seconds when none is set). A send can fail when the tunnel's
-outbound queue is full; it is not retried.
+outbound queue is full; it is not retried. Before copying a send payload or
+queueing a command, the adapter rejects payloads larger than the stack's maximum
+unfragmented IPv4 UDP payload (maximum MTU minus IPv4 and UDP headers). The
+native socket also applies the configured MTU and any smaller path MTU.
+
+Resolution requires an ASCII decimal nonzero port; signs and whitespace are
+rejected before DNS. The supplied deadline is checked before resolution and
+before returning answers, including literal IPv4 results.
 
 ## Generations
 
@@ -59,7 +66,8 @@ like a lookup.
 
 Dropped streams, datagram sockets and listeners are reclaimed by the owner on
 its next turn, as described in [Bounds and cleanup](tunnel-http.md#bounds-and-cleanup).
-Resources of an old generation are released when the generation changes.
+Resources of an old generation are released when the generation changes. Weak
+leases require no Drop commands; a full owner queue does not prevent cleanup.
 
 ## Evidence and remaining work
 

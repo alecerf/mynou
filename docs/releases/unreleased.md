@@ -1,3 +1,10 @@
+## Fixed: Bound tunnel network admission before dispatch
+
+The library tunnel network now rejects expired literal-address resolutions and
+malformed authority ports before DNS, and refuses oversized UDP payloads before
+copying or enqueueing them. This preserves the adapter's deadline and command
+memory bounds; production VPN activation remains pending ([scope](/docs/tunnel-network.md)).
+
 ## Added: Supply a torrent network backed by the native tunnel
 
 The Rust library can give the torrent engine a network whose peer connections,

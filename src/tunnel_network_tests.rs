@@ -287,3 +287,100 @@ fn dropped_datagram_sockets_and_listeners_are_reclaimed() {
         .listen(SocketAddr::from(([0, 0, 0, 0], 7001)))
         .unwrap();
 }
+
+#[test]
+fn literal_resolution_rejects_an_expired_deadline_without_dns() {
+    let f = Fixture::new();
+    let network = network(&f);
+    assert_eq!(
+        network
+            .resolve("10.7.0.1:6881", Instant::now())
+            .unwrap_err(),
+        "Tunnel operation deadline exceeded"
+    );
+    assert_eq!(f.dns.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn authority_ports_require_ascii_digits_before_any_lookup() {
+    let f = Fixture::new();
+    let network = network(&f);
+    for authority in [
+        "10.7.0.1:+6881",
+        "peer.example:+6881",
+        "peer.example: 6881",
+        "peer.example:",
+    ] {
+        assert!(network.resolve(authority, end()).is_err(), "{authority}");
+    }
+    assert_eq!(f.dns.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn oversized_udp_payloads_are_refused_before_owner_admission() {
+    let f = Fixture::new();
+    let network = network(&f);
+    let socket = network.datagram(false).unwrap();
+    let largest = crate::netstack::MAX_MTU
+        - crate::netstack::IPV4_HEADER_LEN
+        - crate::netstack::UDP_HEADER_LEN;
+    let packet = vec![0; largest + 1];
+    assert_eq!(
+        socket
+            .send_to(&packet, "10.7.0.1:6969".parse().unwrap())
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::InvalidInput
+    );
+}
+
+#[test]
+fn full_owner_queue_does_not_prevent_dropped_udp_and_listener_cleanup() {
+    let f = Fixture::new();
+    let network = f.driver.network(end()).unwrap();
+    let udp = network.datagram(false).unwrap();
+    let listener = network.listen("0.0.0.0:42044".parse().unwrap()).unwrap();
+    let (entered, pending) = mpsc::sync_channel(1);
+    let (release, resume) = mpsc::sync_channel(1);
+    f.driver
+        .owner
+        .sender
+        .try_send(Command {
+            deadline: end(),
+            generation: None,
+            task: Box::new(move |_| {
+                entered.send(()).unwrap();
+                // Bound the fixture stall even if its caller fails.
+                let _ = resume.recv_timeout(Duration::from_secs(3));
+            }),
+        })
+        .ok()
+        .unwrap();
+    pending.recv_timeout(Duration::from_secs(2)).unwrap();
+    for _ in 0..QUEUE {
+        f.driver
+            .owner
+            .sender
+            .try_send(Command {
+                deadline: end(),
+                generation: None,
+                task: Box::new(|_| {}),
+            })
+            .ok()
+            .unwrap();
+    }
+    // No owner command is needed to drop these handles with a full queue.
+    drop((udp, listener));
+    release.send(()).unwrap();
+    let deadline = end();
+    loop {
+        match f.driver.owner.call(None, deadline, |r| Ok(r.leases.len())) {
+            Ok(0) => break,
+            Ok(_) => {}
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
+            Err(e) => panic!("{e}"),
+        }
+        pause(deadline).unwrap();
+    }
+    assert!(network.listen("0.0.0.0:42044".parse().unwrap()).is_ok());
+}

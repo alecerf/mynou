@@ -2,7 +2,7 @@
 //! and listeners, virtual UDP and tunnel DNS, all through the native owner.
 //! Nothing here reaches the ordinary network: refused destinations and lost
 //! generations fail, and there is no `Direct` fallback.
-use super::{Connector, Resource, Stream, error, failed, pause, usable};
+use super::{Connector, Resource, Stream, error, failed, pause, remaining, usable};
 use crate::{
     net::{HttpClient, HttpConnector, NetworkDatagram, NetworkStream},
     netstack::{EPHEMERAL_START, TcpError},
@@ -48,9 +48,13 @@ impl TunnelNetwork {
     }
 
     fn resolve_authority(&self, authority: &str, deadline: Instant) -> io::Result<Vec<SocketAddr>> {
+        remaining(deadline)?;
         let (host, port) = authority
             .rsplit_once(':')
             .ok_or_else(|| error(io::ErrorKind::InvalidInput))?;
+        if !port.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(error(io::ErrorKind::InvalidInput));
+        }
         let port = port
             .parse::<u16>()
             .ok()
@@ -67,6 +71,7 @@ impl TunnelNetwork {
             .take(ANSWERS)
             .map(|ip| SocketAddr::from((ip, port)))
             .collect();
+        remaining(deadline)?;
         self.connector.owner.admit(generation)?;
         Ok(addresses)
     }
@@ -207,6 +212,14 @@ impl Datagram {
 impl NetworkDatagram for Datagram {
     fn send_to(&self, packet: &[u8], target: SocketAddr) -> io::Result<usize> {
         let target = destination(target)?;
+        // Bound the command allocation before copying a caller-supplied slice.
+        // The native socket additionally checks its configured/path MTU.
+        let max_payload = crate::netstack::MAX_MTU
+            - crate::netstack::IPV4_HEADER_LEN
+            - crate::netstack::UDP_HEADER_LEN;
+        if packet.len() > max_payload {
+            return Err(error(io::ErrorKind::InvalidInput));
+        }
         let deadline = Self::deadline(&self.write_timeout)?;
         let (socket, payload) = (self.socket, packet.to_vec());
         self.connector
