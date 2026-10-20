@@ -47,6 +47,27 @@ hostile destinations/redirects, proxy environment variables, unsupported IPv6,
 and handle revocation after loss/cancellation. The protocol fixtures assert
 their successful protected exchanges as well as the host-I/O trace checks.
 
+The race/recovery increment [#311](https://github.com/alecerf/mynou/issues/311)
+adds ten observed scenarios, bringing the required runner to nineteen:
+
+- Cancellation with an in-flight stream read and retained connectors; generation
+  replacement rejecting stale streams while a fresh HTTP connector succeeds;
+  loss detected inside an owner command rejecting its delayed result.
+- Cancellation and generation replacement concurrent with an admitted publication:
+  new publication admission closes before the old commit is released.
+- Native operator startup with tunnel DNS followed by durable revocation; owner
+  loss retaining queued demand without consuming attempts or enabling Direct.
+- Unauthenticated startup with download workers disabled, then restart preserving
+  protected intent and refusing publication. Both outer sockets are declared
+  from their owned local addresses, never inferred from intercepted traffic.
+- Verified bytes, explicit pause and priorities retained across owner loss and a
+  new protected engine; a recovered owner admits a new engine while captured old
+  engine authority remains revoked.
+
+These are deterministic synthetic scenarios with their existing behavioral
+assertions plus complete attempted host-I/O observation. They do not cover every
+possible scheduling interleaving or complete the remaining matrix in #224.
+
 ```sh
 TMPDIR=/private/tmp cargo test --lib --no-run --offline --locked \
   --message-format=json > /private/tmp/mynou-observer-build.jsonl
@@ -77,7 +98,7 @@ loader policy; loader failure is a failed check, never skipped evidence.
 
 The observer does not inspect encrypted datagram content, prove server privacy,
 exercise real provider connectivity, alter host routes or supply increasing-load
-CPU/RSS/timing evidence. Complete orchestration paths (including no-worker and
-delayed results), the remaining concurrent expiry/roaming/restart matrix,
+CPU/RSS/timing evidence. Additional orchestration paths (pack inspection, group replacement and IRC),
+the remaining concurrent expiry/roaming/restart matrix,
 resource measurements and the gated macOS guide remain #224. Existing protocol,
 generation and operator fixtures retain their own documented scope.

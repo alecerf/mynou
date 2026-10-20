@@ -22,6 +22,16 @@ FIXTURES = (
     "tunnel_http::tests::tunnel_http_ignores_environment_proxies",
     "tunnel_http::tests::network::unsupported_destinations_and_names_never_leave_the_tunnel",
     "tunnel_http::tests::network::loss_and_cancellation_fence_every_handle_without_fallback",
+    "tunnel_http::tests::cancellation_fences_existing_streams_cloned_connectors_and_inflight_reads",
+    "tunnel_http::tests::replaced_generations_refuse_old_connectors_and_prune_live_stale_leases",
+    "tunnel_http::tests::loss_observed_inside_a_command_fences_that_commands_result",
+    "tunnel_http::tests::network::cancellation_closes_publication_admission_then_waits_for_an_admitted_commit",
+    "tunnel_http::tests::network::generation_replacement_waits_for_old_publications_and_rejects_late_results",
+    "vpn::tests::real_native_owner_is_used_for_protected_startup_dns_and_revocation",
+    "vpn::tests::owner_loss_never_replaces_a_captured_engine_transport_with_direct",
+    "vpn::tests::unauthenticated_startup_stays_closed_even_without_download_workers_and_restart_keeps_intent",
+    "vpn::tests::verified_bytes_user_pause_and_priorities_survive_owner_loss_and_a_new_protected_engine",
+    "vpn::tests::recovered_owner_requires_a_new_engine_and_never_reauthorizes_delayed_old_work",
 )
 NEGATIVE = "torrent::tunnel_tests::host_io_observer_negative_controls"
 

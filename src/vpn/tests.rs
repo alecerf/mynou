@@ -570,8 +570,11 @@ fn unauthenticated_startup_stays_closed_even_without_download_workers_and_restar
         .set_read_timeout(Some(Duration::from_secs(3)))
         .unwrap();
     let mut config = profile::parse(PROFILE).unwrap().into_tunnel_config();
+    crate::tunnel_http::tests::allow_outer(endpoint.local_addr().unwrap());
+    config.bind = "127.0.0.1:0".parse().unwrap();
     config.endpoint = crate::tunnel::Endpoint::Address(endpoint.local_addr().unwrap());
     let driver = HttpTunnel::start(config).unwrap();
+    crate::tunnel_http::tests::allow_driver_outer(&driver);
     let mut bytes = [0; 2048];
     let (_, remote) = endpoint.recv_from(&mut bytes).unwrap();
     endpoint.send_to(&[1; 148], remote).unwrap();
