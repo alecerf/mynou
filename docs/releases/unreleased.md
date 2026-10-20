@@ -348,3 +348,16 @@ fresh generation and acquires its listener once, and authenticated endpoint
 roaming. Only declared fixture outer UDP is accepted. This adds bounded evidence
 for #224, which remains open for IRC orchestration, engine-level load and the
 gated migration guide. See the [observation scope](../host-io-observer.md).
+
+## Changed: Observe IRC-triggered metadata lookup through the native tunnel
+
+Required macOS host-I/O checks now also cover IRC orchestration: a live
+announcement received from a synthetic IRC server is routed to an admitted job
+with its metadata fetched only from a peer inside the tunnel, with download
+workers disabled, and cancellation during a pending metadata exchange refuses
+the late result and later announcements without reserving or routing anything.
+The IRC connection stays on the ordinary path by design and is accepted only as
+an explicitly declared loopback TCP service; host name lookups, other TCP and
+undeclared UDP still fail. This adds bounded evidence for #224, which remains
+open for remaining races, engine-level load and the gated migration guide. See
+the [observation scope](../host-io-observer.md).
