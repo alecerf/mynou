@@ -13,7 +13,7 @@ const SERVER_KEY: [u8; 32] = [27; 32];
 
 /// Explicit fixture authorization for the optional macOS host-I/O observer.
 /// One append per record also works across the isolated HTTPS subprocess.
-fn allow_outer(address: SocketAddr) {
+pub(crate) fn allow_outer(address: SocketAddr) {
     use std::io::Write;
     if let Some(path) = std::env::var_os("MYNOU_HOST_IO_TRACE") {
         assert!(address.is_ipv4() && address.ip().is_loopback());
@@ -25,6 +25,15 @@ fn allow_outer(address: SocketAddr) {
         );
         assert_eq!(file.write(line.as_bytes()).unwrap(), line.len());
     }
+}
+/// Declare the owned socket, never an address inferred from received traffic.
+pub(crate) fn allow_driver_outer(driver: &HttpTunnel) {
+    allow_outer(
+        driver
+            .owner
+            .call(None, end(), |r| r.tunnel.local_addr().map_err(failed))
+            .unwrap(),
+    );
 }
 fn end() -> Instant {
     Instant::now() + Duration::from_secs(5)
