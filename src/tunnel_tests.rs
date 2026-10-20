@@ -1353,3 +1353,47 @@ fn authenticated_icmp_advice_reaches_a_connected_udp_socket() {
     );
     assert_eq!(world.client.stats().inner_rejected, 0);
 }
+
+/// A clock that moves on every read, like the system clock: no two reads of
+/// one pump see the same instant.
+#[derive(Clone)]
+struct Ticking(Manual);
+
+impl Clock for Ticking {
+    fn now(&self) -> Duration {
+        self.0.advance(Duration::from_micros(1));
+        self.0.now()
+    }
+
+    fn wall(&self) -> SystemTime {
+        self.0.wall()
+    }
+}
+
+#[test]
+fn a_scheduled_reconnection_starts_its_generation_with_a_moving_clock() {
+    // A silent endpoint: the first generation gives up, then a retry is due.
+    let silent = UdpSocket::bind(loopback()).unwrap();
+    let clock = Ticking(Manual(Rc::new(Cell::new(Duration::from_secs(10)))));
+    let mut config = client_config(silent.local_addr().unwrap());
+    config.reconnect_initial = Duration::from_secs(1);
+    let mut client = Tunnel::new(config, Stream::new(10), clock.clone()).unwrap();
+    for _ in 0..200 {
+        if client.status().state == TunnelState::Reconnecting {
+            break;
+        }
+        clock.0.advance(Duration::from_secs(1));
+        client.pump(Duration::ZERO).unwrap();
+    }
+    let status = client.status();
+    assert_eq!(status.state, TunnelState::Reconnecting);
+    assert_eq!(status.reason, Some(Reason::GaveUp));
+    // The retry builds the fresh generation inside the timer pass; that pass
+    // must not then poll it at an instant before its construction.
+    clock.0.advance(Duration::from_secs(2));
+    client.pump(Duration::ZERO).unwrap();
+    let status = client.status();
+    assert_eq!(status.state, TunnelState::Connecting, "{status:?}");
+    assert_eq!(status.generation, Some(2));
+    assert_eq!(client.stats().generations, 2);
+}

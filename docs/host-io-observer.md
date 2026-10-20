@@ -116,6 +116,38 @@ it. Both operations and later retries fail without creating owners; the observed
 ordinary connections equal the indexer requests, so no metadata fetch fell back
 to the host network.
 
+The session timer and roaming increment
+[#321](https://github.com/alecerf/mynou/issues/321) adds three observed
+scenarios through the real `HttpTunnel` owner and its torrent network, bringing
+the required runner to twenty-eight. The client owner keeps OS entropy and the
+system clock, but a test-only forward skew of its monotonic time (`cfg(test)`,
+absent from the product) reaches WireGuard session ages without waiting:
+
+- Rekey: past the rekey age, new tunnel DNS, peer and HTTP operations run
+  concurrently with the time-based handshake. The new session completes in the
+  same generation; an existing stream and its handles keep working with verified
+  echoed bytes.
+- Expiry and reconnect: with the outer path silenced, a pending read and new
+  operations fail after the reject age and no network is issued while
+  unprotected. The returned path yields a fresh generation through a scheduled
+  retry. Old handles and the old listener stay refused, the same virtual listener
+  port is acquired once and a duplicate listen is refused, and the listener
+  accepts an inbound peer.
+- Roaming: authenticated server datagrams from a second declared relay source
+  move the client's remote without a new generation while a stream keeps intact
+  bytes. Later client datagrams go only to that source; a replayed authentic
+  datagram and a forgery from a third declared source are refused without
+  redirecting it.
+
+The expiry scenario found a product defect, fixed with it: a scheduled
+reconnection built its generation from a fresh clock read and was then polled
+at the timer pass's earlier instant. The monotonic fences revoked every retried
+generation, so automatic recovery after session loss always ended blocked. It
+failed closed. A deterministic core regression with a clock that moves on every
+read covers it. These scenarios exercise the owner and network, not engine-level
+durable pause or selection across these events, OS route changes or real
+provider roaming.
+
 ```sh
 TMPDIR=/private/tmp cargo test --lib --no-run --offline --locked \
   --message-format=json > /private/tmp/mynou-observer-build.jsonl
@@ -146,7 +178,7 @@ loader policy; loader failure is a failed check, never skipped evidence.
 
 The observer does not inspect encrypted datagram content, prove server privacy,
 exercise real provider connectivity, alter host routes or supply increasing-load
-CPU/RSS/timing evidence. IRC orchestration,
-the remaining concurrent expiry/roaming/restart matrix,
-resource measurements and the gated macOS guide remain #224. Existing protocol,
+CPU/RSS/timing evidence. IRC orchestration, engine-level state across rekey,
+expiry and roaming, host route changes, engine-level resource measurements and
+the gated macOS guide remain #224. Existing protocol,
 generation and operator fixtures retain their own documented scope.

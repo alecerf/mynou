@@ -33,13 +33,25 @@ pub trait Clock {
 
 pub struct SystemClock {
     start: Instant,
+    /// Test-only forward skew of the monotonic time, so native-owner fixtures
+    /// can reach WireGuard session ages without waiting. Not in the product.
+    #[cfg(test)]
+    skew: std::cell::Cell<Duration>,
 }
 
 impl SystemClock {
     pub fn new() -> Self {
         Self {
             start: Instant::now(),
+            #[cfg(test)]
+            skew: std::cell::Cell::new(Duration::ZERO),
         }
+    }
+
+    /// Moves this clock's monotonic time forward; wall time is unchanged.
+    #[cfg(test)]
+    pub(crate) fn skip(&self, by: Duration) {
+        self.skew.set(self.skew.get() + by);
     }
 }
 
@@ -51,7 +63,11 @@ impl Default for SystemClock {
 
 impl Clock for SystemClock {
     fn now(&self) -> Duration {
-        self.start.elapsed()
+        #[cfg(test)]
+        let skew = self.skew.get();
+        #[cfg(not(test))]
+        let skew = Duration::ZERO;
+        self.start.elapsed() + skew
     }
 
     fn wall(&self) -> SystemTime {
@@ -389,7 +405,7 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
             handshakes: 0,
             stats: Stats::default(),
         };
-        tunnel.start();
+        tunnel.start(tunnel.clock.now());
         Ok(tunnel)
     }
 
@@ -397,6 +413,11 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
         self.socket
             .local_addr()
             .map_err(|error| TunnelError::Io(error.to_string()))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn clock(&self) -> &C {
+        &self.clock
     }
 
     pub(crate) fn handshake_age(&self) -> Option<Duration> {
@@ -427,8 +448,10 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
     }
 
     /// Builds a complete fresh generation, or schedules the next attempt.
-    fn start(&mut self) {
-        let now = self.clock.now();
+    /// Builds a fresh generation at `now`. A timer pass passes its own instant:
+    /// a later fresh clock read would put the new state machines ahead of the
+    /// rest of that pass, whose earlier `now` their monotonic fences refuse.
+    fn start(&mut self, now: Duration) {
         self.generations += 1;
         let generation = self.generations;
         self.retry_at = None;
@@ -682,7 +705,7 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
     /// peer, encrypting whatever the stacks emit.
     fn maintain(&mut self, now: Duration) {
         if self.state == TunnelState::Reconnecting && self.retry_at.is_some_and(|at| now >= at) {
-            self.start();
+            self.start(now);
         }
         let Some(live) = self.live.as_mut() else {
             return;
@@ -827,7 +850,7 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
         self.endpoint = address;
         self.reason = Some(Reason::EndpointChanged);
         self.attempt = 0;
-        self.start();
+        self.start(self.clock.now());
         Ok(())
     }
 
@@ -849,7 +872,7 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
             return Err(TunnelError::Unavailable);
         }
         self.attempt = 0;
-        self.start();
+        self.start(self.clock.now());
         Ok(())
     }
 
