@@ -367,7 +367,7 @@ fn real_native_owner_is_used_for_protected_startup_dns_and_revocation() {
             source_url: None,
             source_numbering: None,
         })
-        .unwrap()
+        .unwrap_or_else(|_| panic!("Synthetic VPN fixture request submission failed"))
         .remove(0);
     let report = engine.vpn_control(&body("revoke")).unwrap();
     assert_redacted(&report);
@@ -418,7 +418,7 @@ fn owner_loss_never_replaces_a_captured_engine_transport_with_direct() {
             source_url: None,
             source_numbering: None,
         })
-        .unwrap()
+        .unwrap_or_else(|_| panic!("Synthetic VPN fixture request submission failed"))
         .remove(0);
     pair.client.cancel();
     assert!(!engine.tick().unwrap());
@@ -621,7 +621,7 @@ fn verified_bytes_user_pause_and_priorities_survive_owner_loss_and_a_new_protect
             source_url: Some(source.to_str().unwrap().into()),
             source_numbering: None,
         })
-        .unwrap();
+        .unwrap_or_else(|_| panic!("Synthetic VPN fixture request submission failed"));
     engine.tick().unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
     while engine.transfer(&hash).unwrap().get("ready") != Some(&Value::Bool(true)) {
