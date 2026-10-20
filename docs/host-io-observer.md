@@ -26,8 +26,8 @@ checks the complete trace, including startup, shutdown and fixture subprocesses:
 - Sends must originate from those observed sockets and target a declared
   loopback outer port in the same fixture process. Other UDP, undeclared TCP and host
   name lookups fail validation, whether or not the underlying call succeeded.
-- A fixture may also declare one ordinary-path loopback TCP service, such as a
-  synthetic indexer that by design never enters the tunnel. Then only that
+- A fixture may also declare one ordinary-path loopback TCP service (a synthetic
+  indexer or IRC server) that by design never enters the tunnel. Then only that
   process may create IPv4 stream sockets, bind one to `127.0.0.1:0` assigned the
   declared port, or connect to that port on `127.0.0.1`; their address-less
   stream sends must come from a connected client socket or from the declared
@@ -148,6 +148,22 @@ read covers it. These scenarios exercise the owner and network, not engine-level
 durable pause or selection across these events, OS route changes or real
 provider roaming.
 
+The IRC orchestration increment
+[#323](https://github.com/alecerf/mynou/issues/323) adds two observed scenarios,
+bringing the required runner to thirty. An engine with download workers
+disabled runs only its live IRC client against a declared synthetic IRC server
+on a literal loopback port (the only ordinary TCP). The server registers the
+client, joins the channel and announces a release matching an admitted movie
+job; a `grab` rule's pinned magnet names only a literal peer inside the tunnel.
+Routing fetches BEP 9 metadata from that peer and attaches the verified IRC
+origin (torrent, file and length) to the existing queued job, with no transfer
+state, payload or download directories. The second scenario holds the metadata
+piece, cancels the native owner and releases it: routing reports unavailable
+metadata and reserves nothing, and a later release announced over the same IRC
+session is refused before any metadata attempt. Each run observes exactly one
+ordinary connection, the IRC session, so no metadata lookup fell back to the
+host network.
+
 ```sh
 TMPDIR=/private/tmp cargo test --lib --no-run --offline --locked \
   --message-format=json > /private/tmp/mynou-observer-build.jsonl
@@ -178,7 +194,7 @@ loader policy; loader failure is a failed check, never skipped evidence.
 
 The observer does not inspect encrypted datagram content, prove server privacy,
 exercise real provider connectivity, alter host routes or supply increasing-load
-CPU/RSS/timing evidence. IRC orchestration, engine-level state across rekey,
-expiry and roaming, host route changes, engine-level resource measurements and
-the gated macOS guide remain #224. Existing protocol,
+CPU/RSS/timing evidence. Engine-level state across rekey, expiry and
+roaming, host route changes, engine-level resource measurements and the
+gated macOS guide remain #224. Existing protocol,
 generation and operator fixtures retain their own documented scope.

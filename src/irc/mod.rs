@@ -9,6 +9,8 @@ mod persistence;
 pub mod protocol;
 pub(crate) mod routing;
 pub(crate) mod sasl;
+#[cfg(test)]
+mod tunnel_tests;
 use crate::{Result, crypto::sha256, json::Value, selection::SelectionConfig, store::Request};
 pub use format::Delimited;
 pub use nickserv::Settings as NickServ;
