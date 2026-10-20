@@ -966,7 +966,10 @@ fn revoked_torrent_generation_discards_delayed_irc_metadata_without_a_transfer_w
     let gate = std::sync::Arc::new(torrent_network_support::Revocable::default());
     let engine =
         Engine::open_with_network(cfg, torrent_network_support::network(&gate), false).unwrap();
-    let admitted = engine.submit(request(7)).unwrap().remove(0);
+    let admitted = engine
+        .submit(request(7))
+        .unwrap_or_else(|_| panic!("Synthetic IRC request submission failed"))
+        .remove(0);
     let row = receive(&engine, &torrent.id, 7);
     gate.arm();
     let worker = {

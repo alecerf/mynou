@@ -885,7 +885,10 @@ pub(crate) mod tests {
         let mut transcript = Sha256::new();
         transcript.update(&client);
         transcript.update(&hello);
-        let early = hkdf_extract(&[0; 32], &[0; 32]);
+        // TLS 1.3 without a PSK starts with the specified all-zero value,
+        // not secret key material. Match the client key schedule explicitly.
+        let zeros = [0; 32];
+        let early = hkdf_extract(&zeros, &zeros);
         let derived = derive_secret(&early, "derived", &sha256(&[]))?;
         let handshake = hkdf_extract(&derived, &shared);
         let send_secret =

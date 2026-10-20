@@ -164,7 +164,7 @@ fn real_magnet_metadata_payload_and_inbound_seeding_use_only_the_native_network(
                 source_path: None,
                 source_numbering: None,
             })
-            .unwrap()
+            .unwrap_or_else(|_| panic!("Synthetic tunnel request submission failed"))
             .remove(0);
         engine.tick().unwrap();
         wait(|| {
