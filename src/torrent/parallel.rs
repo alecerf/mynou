@@ -24,7 +24,7 @@ use std::{
 // are separate. A single large metadata object is still permitted at limit one.
 const WORKER_MEMORY_BUDGET: usize = 128 * 1024 * 1024;
 const WIRE_MEMORY_ALLOWANCE: usize = 2 * (super::MAX_META + 1024);
-const CONNECTION_BUDGET: usize = 64;
+pub(super) const CONNECTION_BUDGET: usize = 64;
 const POLL: Duration = Duration::from_millis(20);
 const RETRY: Duration = Duration::from_secs(2);
 

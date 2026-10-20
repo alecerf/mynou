@@ -2842,20 +2842,29 @@ fn manager_loop(
                 DiscoveryTask::Dht(task) => announce_seed_dht(&*network, task, port, &jobs),
             }));
         }
-        if let Ok(mut map) = jobs.lock() {
+        let flush = if let Ok(mut map) = jobs.lock() {
             for job in map.values_mut() {
                 apply_seed_limits(job, &config, &policy.policy);
             }
-            if flushed.elapsed() >= Duration::from_secs(1) {
-                for job in map.values_mut() {
-                    if persist_control(&config, job).is_err() {
-                        job.failed = true;
-                        job.cancel.store(true, Ordering::Release);
-                        job.status.message = "Could not persist native transfer controls".into();
-                    }
+            (flushed.elapsed() >= Duration::from_secs(1))
+                .then(|| map.keys().cloned().collect::<Vec<_>>())
+        } else {
+            None
+        };
+        if let Some(ids) = flush {
+            // One job per lock hold: each save is several durable syncs, and
+            // peer workers, inbound peers and status calls need this lock.
+            for id in ids {
+                if let Ok(mut map) = jobs.lock()
+                    && let Some(job) = map.get_mut(&id)
+                    && persist_control(&config, job).is_err()
+                {
+                    job.failed = true;
+                    job.cancel.store(true, Ordering::Release);
+                    job.status.message = "Could not persist native transfer controls".into();
                 }
-                flushed = Instant::now();
             }
+            flushed = Instant::now();
         }
         thread::sleep(Duration::from_millis(30));
     }
@@ -4502,3 +4511,7 @@ mod control_runtime_tests {
 #[cfg(test)]
 #[path = "torrent/tunnel_tests.rs"]
 mod tunnel_tests;
+
+#[cfg(test)]
+#[path = "torrent/load_tests.rs"]
+mod load_tests;

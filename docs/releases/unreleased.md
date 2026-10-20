@@ -1,3 +1,12 @@
+## Fixed: Keep native transfers moving while their progress is saved
+
+Once a second the native torrent client saved every changed transfer while
+holding the lock its peer connections need to commit verified pieces, so
+several simultaneous downloads stalled on each other's disk flushes. It now
+releases the lock between transfers; what is saved and when is unchanged. In a
+synthetic 16-torrent run on macOS the transfer time fell from 92 s to 15 s.
+Torrent VPN protection remains unavailable ([measurements and limits](/docs/torrent-load.md)).
+
 ## Fixed: Keep tunnel stream bytes intact under load
 
 When many connections shared the library tunnel network, a read or write whose
