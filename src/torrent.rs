@@ -31,7 +31,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
-    net::{SocketAddr, ToSocketAddrs},
+    net::SocketAddr,
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
@@ -70,7 +70,8 @@ struct Source {
     v1: Option<[u8; 20]>,
     v2: Option<[u8; 32]>,
     trackers: Vec<String>,
-    peers: Vec<SocketAddr>,
+    // Unresolved authorities: persisted magnets are parsed without network I/O.
+    peers: Vec<String>,
     meta: Option<Meta>,
 }
 #[derive(Default)]
@@ -236,10 +237,14 @@ pub(crate) fn url_decode(s: &str) -> Result<String> {
 }
 
 impl Source {
-    fn parse(source: &str) -> Result<Self> {
-        Self::parse_with_deadline(source, None)
+    fn parse(network: &dyn transport::Network, source: &str) -> Result<Self> {
+        Self::parse_with_deadline(network, source, None)
     }
-    fn parse_with_deadline(source: &str, deadline: Option<Instant>) -> Result<Self> {
+    fn parse_with_deadline(
+        network: &dyn transport::Network,
+        source: &str,
+        deadline: Option<Instant>,
+    ) -> Result<Self> {
         if source.starts_with("magnet:?") {
             return Self::parse_magnet_with_deadline(source, deadline);
         }
@@ -258,7 +263,7 @@ impl Source {
             meta: None,
         };
         let encoded = if source.starts_with("http://") || source.starts_with("https://") {
-            let mut client = crate::net::HttpClient::new().with_max_body(MAX_META);
+            let mut client = network.http().with_max_body(MAX_META);
             if let Some(end) = deadline {
                 client = client.with_timeout(
                     end.checked_duration_since(Instant::now())
@@ -357,12 +362,18 @@ impl Source {
                     if result.peers.len() >= 256 {
                         return Err("Too many magnet peers".into());
                     }
-                    result.peers.extend(
-                        value
-                            .to_socket_addrs()
-                            .map_err(|_| "Invalid x.pe address")?
-                            .take(4),
-                    );
+                    // Validate syntax only. Resolution belongs to the active
+                    // transport, never to restore, admission or offline parsing.
+                    let (_, port) = value.rsplit_once(':').ok_or("Invalid x.pe address")?;
+                    if port.is_empty()
+                        || !port.bytes().all(|byte| byte.is_ascii_digit())
+                        || value.contains(['/', '?', '#'])
+                    {
+                        return Err("Invalid x.pe address".into());
+                    }
+                    crate::net::parse_url(&format!("http://{value}"))
+                        .map_err(|_| "Invalid x.pe address")?;
+                    result.peers.push(value);
                 }
                 _ => {}
             }
@@ -378,6 +389,33 @@ impl Source {
             return Err("Torrent metadata deadline exceeded".into());
         }
         Ok(result)
+    }
+    /// Resolve only when an active operation has its explicit network context.
+    fn peer_addresses(
+        &self,
+        network: &dyn transport::Network,
+        deadline: Instant,
+    ) -> Result<Vec<SocketAddr>> {
+        if Instant::now() >= deadline {
+            return Err("Torrent metadata deadline exceeded".into());
+        }
+        let mut addresses = Vec::new();
+        for authority in &self.peers {
+            if Instant::now() >= deadline {
+                return Err("Torrent metadata deadline exceeded".into());
+            }
+            let resolved = network
+                .resolve(authority, deadline)
+                .map_err(|_| "Could not resolve magnet peer")?;
+            if Instant::now() >= deadline {
+                return Err("Torrent metadata deadline exceeded".into());
+            }
+            addresses.extend(resolved.into_iter().take(4).take(256 - addresses.len()));
+            if addresses.len() == 256 {
+                break;
+            }
+        }
+        Ok(addresses)
     }
     fn matches_identity(&self, expected: &str) -> bool {
         self.v1.is_some_and(|hash| hex(&hash) == expected)
@@ -1383,7 +1421,7 @@ impl Client {
         selection: FileSelection,
         expected: Option<&str>,
     ) -> Result<DownloadStatus> {
-        let mut source = Source::parse(source)?;
+        let mut source = Source::parse(&*self.policy.network, source)?;
         if expected.is_some_and(|hash| !source.matches_identity(hash)) {
             return Err("Torrent identity differs from the accepted pack metadata".into());
         }
@@ -2923,7 +2961,10 @@ fn download_sequential(
     mkdir_private(&base)?;
     let mut have = Vec::new();
     let mut scanned = false;
-    let mut addresses: BTreeSet<SocketAddr> = source.peers.iter().copied().collect();
+    let mut addresses: BTreeSet<SocketAddr> = source
+        .peer_addresses(&*policy.network, Instant::now() + Duration::from_secs(20))?
+        .into_iter()
+        .collect();
     let hash = source.wire_hash();
     let v2_wire = source.v1.is_none();
     let mut next_dht = Instant::now();
@@ -3862,6 +3903,10 @@ fn serve_peer(
 }
 
 #[cfg(test)]
+#[path = "torrent/source_network_tests.rs"]
+mod source_network_tests;
+
+#[cfg(test)]
 mod control_runtime_tests {
     use super::*;
 
@@ -3885,7 +3930,7 @@ mod control_runtime_tests {
         )
         .unwrap();
         assert!(
-            Source::parse(path.to_str().unwrap())
+            Source::parse(&transport::Direct, path.to_str().unwrap())
                 .unwrap()
                 .meta
                 .is_some()

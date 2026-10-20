@@ -534,7 +534,10 @@ pub(super) fn download(
         ))
     })?;
     let mut addresses = BTreeSet::new();
-    super::merge_peers(&mut addresses, source.peers.iter().copied());
+    super::merge_peers(
+        &mut addresses,
+        source.peer_addresses(&*policy.network, Instant::now() + Duration::from_secs(20))?,
+    );
     let mut meta = match cached {
         Some(meta) => meta,
         None => metadata(

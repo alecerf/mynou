@@ -214,3 +214,13 @@ series, requester demands, retained feeds, source policies, IRC history and
 native transfers. It records disk use, storage operation times and separate
 construction/read peak RSS on synthetic inventories; operation bounds and
 physical resource limits still apply. See [the evidence record](../inventory-growth.md).
+
+## Changed: Use the torrent network for source metadata and magnet names
+
+Remote torrent metadata now uses the same network context as peer discovery,
+including HTTP redirects and HTTPS. Magnet peer names are kept without DNS at
+admission and restart, then resolved by the active transfer or inspection
+context; lookup failures are reported during that operation. Peer authorities
+require an explicit nonzero port and an ASCII hostname, IPv4 or bracketed IPv6
+address. This is transport preparation; integrated VPN protection remains
+unavailable while tunnel and lifecycle integration are pending.

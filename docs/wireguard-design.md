@@ -62,8 +62,18 @@ Outbound peer connections, HTTP/UDP tracker announces and DHT lookups, including
 those of metadata inspection, now receive the engine-owned
 `torrent::transport::Network`, and so do the client listener with its inbound
 peers and the inspection port reservation. Its `Direct` implementation holds
-their only ordinary sockets, listeners, host resolver and default HTTP client.
-Magnet `x.pe` resolution and the remote `.torrent` fetch do not use it yet.
+their only ordinary sockets, listeners, host resolver and default HTTP client. Remote `.torrent`
+fetches also use that network's HTTP client, including redirects and TLS.
+Magnet `x.pe` authorities are validated without network I/O, including at
+restart, and resolved through the active operation's network for sequential
+and parallel downloads and inspection. Each resolution keeps at most four
+answers, with at most 256 addresses in total, and checks the shared deadline
+before and after lookup. `Direct` still cannot interrupt the system resolver;
+late results are rejected after it returns. Syntax validation requires an
+explicit nonzero port and an ASCII hostname, IPv4 or bracketed IPv6 address.
+Resolution failures now occur during active work, rather than source admission.
+The Tunnel implementation and complete generation publication fences remain
+undelivered; these seams do not activate torrent protection.
 Review the complete reachable call graph again when integration changes it.
 
 ## Transport and generation ownership

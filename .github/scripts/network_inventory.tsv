@@ -1,8 +1,5 @@
 # Direct torrent network sites; regenerate with network_inventory.py --write.
 # file	item	construct	count
-src/torrent.rs	<module>	ToSocketAddrs	1
-src/torrent.rs	Source::parse_magnet_with_deadline	to_socket_addrs	1
-src/torrent.rs	Source::parse_with_deadline	HttpClient::new	1
 src/torrent/transport.rs	<module>	TcpListener	1
 src/torrent/transport.rs	<module>	TcpStream	1
 src/torrent/transport.rs	<module>	ToSocketAddrs	1

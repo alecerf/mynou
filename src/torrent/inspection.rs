@@ -77,7 +77,7 @@ pub fn inspect_metadata(
     deadline: Instant,
 ) -> Result<TorrentMetadata> {
     remaining(deadline)?;
-    let mut source = Source::parse_with_deadline(source, Some(deadline))
+    let mut source = Source::parse_with_deadline(network, source, Some(deadline))
         .map_err(|_| "Torrent source metadata could not be read or authenticated")?;
     let id = source.id();
     if let Some(meta) = source.meta.take() {
@@ -88,7 +88,10 @@ pub fn inspect_metadata(
     let counters = Arc::new(TransferCounters::default());
     let gate = Arc::new(RateGate::new(0)?);
     let stop = AtomicBool::new(false);
-    let mut peers: BTreeSet<_> = source.peers.iter().copied().collect();
+    let mut peers: BTreeSet<_> = source
+        .peer_addresses(network, deadline)?
+        .into_iter()
+        .collect();
     let mut tried = BTreeSet::new();
     let mut trackers = source.trackers.iter().take(4);
     let listener = network
