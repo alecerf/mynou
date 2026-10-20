@@ -26,6 +26,21 @@ pub(crate) fn allow_outer(address: SocketAddr) {
         assert_eq!(file.write(line.as_bytes()).unwrap(), line.len());
     }
 }
+/// Declares an ordinary-path loopback service (e.g. an indexer, which never
+/// enters the tunnel); the observer then allows only its listener and clients.
+pub(crate) fn allow_service(address: SocketAddr) {
+    use std::io::Write;
+    if let Some(path) = std::env::var_os("MYNOU_HOST_IO_TRACE") {
+        assert!(address.is_ipv4() && address.ip().is_loopback());
+        let mut file = std::fs::OpenOptions::new().append(true).open(path).unwrap();
+        let line = format!(
+            "{{\"op\":\"allow_tcp\",\"pid\":{},\"port\":{}}}\n",
+            std::process::id(),
+            address.port()
+        );
+        assert_eq!(file.write(line.as_bytes()).unwrap(), line.len());
+    }
+}
 /// Declare the owned socket, never an address inferred from received traffic.
 pub(crate) fn allow_driver_outer(driver: &HttpTunnel) {
     allow_outer(

@@ -19,6 +19,16 @@ def trace():
             event("socket"), event("bind", port=0), event("bound", port=0), event("sendto")]
 
 
+def service_trace():
+    """Outer UDP plus one declared loopback service: its listener, then a client."""
+    return trace()[:3] + [event("allow_tcp", port=4321)] + trace()[3:] + [
+        event("socket", fd=5, type=1), event("bind", fd=5, port=0),
+        event("bound", fd=5, source=4321, port=0), event("socket", fd=6, type=1),
+        event("connect", fd=6, source=0, port=4321),
+        event("sendto", fd=6, family=0, source=50000, ip="", port=0),
+        event("sendto", fd=9, family=0, source=4321, ip="", port=0)]
+
+
 class ObservationTests(unittest.TestCase):
     def test_accepts_only_explicit_fixture_udp(self):
         self.assertEqual(observer.validate(trace())["sendto"], 1)
@@ -52,6 +62,39 @@ class ObservationTests(unittest.TestCase):
     def test_subprocesses_cannot_borrow_parent_authorization(self):
         rows = trace() + [event("loaded", pid=8), event("sendto", pid=8)]
         with self.assertRaisesRegex(ValueError, "datagram outside"):
+            observer.validate(rows)
+
+    def test_declared_ordinary_service_allows_only_its_loopback_listener_and_connections(self):
+        rows = service_trace()
+        counts = observer.validate(rows)
+        self.assertEqual((counts["service_listen"], counts["service_connect"],
+                          counts["service_send"]), (1, 1, 2))
+        changes = [(3, "port", 0), (8, "family", 30), (8, "fd", -1), (9, "ip", "0.0.0.0"),
+                   (9, "port", 80), (10, "source", 9999), (12, "ip", "192.0.2.1"),
+                   (12, "port", 9999), (12, "family", 30), (12, "pid", 8),
+                   (13, "family", 2), (13, "port", 9999), (13, "fd", 5),
+                   (14, "source", 4322), (14, "port", 4321), (14, "pid", 8)]
+        for index, key, value in changes:
+            changed = copy.deepcopy(rows)
+            changed[index][key] = value
+            with self.subTest(index=index, key=key), self.assertRaises(ValueError):
+                observer.validate(changed)
+
+    def test_service_declaration_authorizes_no_lookup_udp_or_undeclared_process(self):
+        additions = [[event("getaddrinfo", fd=-1)],
+                     [event("sendto", fd=6, source=4321, port=4321)],
+                     [event("socket", fd=7, type=1)],
+                     [event("loaded", pid=8), event("socket", pid=8, fd=6, type=1),
+                      event("connect", pid=8, fd=6, port=4321)],
+                     [event("connect", fd=9, port=4321)],
+                     # A descriptor reused after the service connection is unauthorized.
+                     [event("socket", fd=6), event("sendto", fd=6, family=0, ip="", port=0)]]
+        for extra in additions:
+            with self.subTest(extra=extra), self.assertRaises(ValueError):
+                observer.validate(service_trace() + extra)
+        # Without a declaration, TCP stays refused exactly as before.
+        rows = [r for r in service_trace() if r["op"] != "allow_tcp"]
+        with self.assertRaises(ValueError):
             observer.validate(rows)
 
     def test_trace_reader_rejects_partial_json(self):

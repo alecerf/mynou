@@ -86,7 +86,7 @@ pub(crate) fn engine_with(
     (engine, series.id)
 }
 
-fn dictionary(fields: &[(&[u8], B)]) -> B {
+pub(crate) fn dictionary(fields: &[(&[u8], B)]) -> B {
     B::Dict(BTreeMap::from_iter(
         fields
             .iter()
@@ -193,7 +193,7 @@ fn query(port: u16) -> SharedFileRequest {
     }
 }
 
-fn no_acquisition(engine: &Engine) {
+pub(crate) fn no_acquisition(engine: &Engine) {
     assert!(lock(&engine.store).unwrap().list().unwrap().is_empty());
     assert_eq!(
         engine.transfers().unwrap_err(),
