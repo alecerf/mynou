@@ -32,6 +32,8 @@ FIXTURES = (
     "vpn::tests::unauthenticated_startup_stays_closed_even_without_download_workers_and_restart_keeps_intent",
     "vpn::tests::verified_bytes_user_pause_and_priorities_survive_owner_loss_and_a_new_protected_engine",
     "vpn::tests::recovered_owner_requires_a_new_engine_and_never_reauthorizes_delayed_old_work",
+    "pack::tunnel_tests::shared_pack_preview_and_guarded_apply_use_tunnel_metadata_without_workers",
+    "pack::tunnel_tests::cancellation_during_shared_pack_metadata_refuses_preview_apply_and_retry",
 )
 NEGATIVE = "torrent::tunnel_tests::host_io_observer_negative_controls"
 

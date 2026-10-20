@@ -68,6 +68,18 @@ These are deterministic synthetic scenarios with their existing behavioral
 assertions plus complete attempted host-I/O observation. They do not cover every
 possible scheduling interleaving or complete the remaining matrix in #224.
 
+The explicit shared-file pack increment
+[#314](https://github.com/alecerf/mynou/issues/314) adds two observed scenarios,
+bringing the required runner to twenty-one. An engine with download workers
+disabled inspects synthetic metadata through tunnel DNS and a cross-name HTTP
+redirect. Preview leaves the accepted catalog and job store unchanged; explicit
+guarded application creates only the two requested queued owners, with no
+transfer state or payload. The second scenario holds preview and application
+metadata responses in turn, cancels the native owner, then releases each response.
+Both operations and subsequent preview/application retries fail without committing
+owners or enabling Direct. The accepted catalog remains unchanged. These tests exercise the explicit
+shared-file path, not automatic pack search or other orchestration paths.
+
 ```sh
 TMPDIR=/private/tmp cargo test --lib --no-run --offline --locked \
   --message-format=json > /private/tmp/mynou-observer-build.jsonl
@@ -98,7 +110,8 @@ loader policy; loader failure is a failed check, never skipped evidence.
 
 The observer does not inspect encrypted datagram content, prove server privacy,
 exercise real provider connectivity, alter host routes or supply increasing-load
-CPU/RSS/timing evidence. Additional orchestration paths (pack inspection, group replacement and IRC),
+CPU/RSS/timing evidence. Additional orchestration paths (automatic pack search,
+group replacement and IRC),
 the remaining concurrent expiry/roaming/restart matrix,
 resource measurements and the gated macOS guide remain #224. Existing protocol,
 generation and operator fixtures retain their own documented scope.
