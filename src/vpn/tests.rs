@@ -61,6 +61,14 @@ fn assert_redacted(value: &Value) {
         assert!(!text.contains(secret), "report leaked a private value");
     }
 }
+fn submitted(engine: &Engine, request: Request) -> Vec<crate::store::Job> {
+    match engine.submit(request) {
+        Ok(jobs) => jobs,
+        // Discard the error explicitly: no Result panic/debug wrapper may
+        // format a credential-bearing storage or requester diagnostic.
+        Err(_) => panic!("Synthetic VPN fixture request submission failed"),
+    }
+}
 fn stored(config: &crate::config::Config) -> PathBuf {
     config.store_dir.join("vpn.conf")
 }
@@ -355,8 +363,9 @@ fn real_native_owner_is_used_for_protected_startup_dns_and_revocation() {
         vec!["10.7.0.1:80".parse::<SocketAddr>().unwrap()]
     );
     assert!(pair.dns.load(Ordering::Relaxed) > 0);
-    let job = engine
-        .submit(Request {
+    let job = submitted(
+        &engine,
+        Request {
             kind: "movie".into(),
             title: "Synthetic preserved request".into(),
             year: 2026,
@@ -366,9 +375,9 @@ fn real_native_owner_is_used_for_protected_startup_dns_and_revocation() {
             source_path: None,
             source_url: None,
             source_numbering: None,
-        })
-        .unwrap_or_else(|_| panic!("Synthetic VPN fixture request submission failed"))
-        .remove(0);
+        },
+    )
+    .remove(0);
     let report = engine.vpn_control(&body("revoke")).unwrap();
     assert_redacted(&report);
     assert!(engine.torrent_network.publication().is_err());
@@ -406,8 +415,9 @@ fn owner_loss_never_replaces_a_captured_engine_transport_with_direct() {
     )
     .unwrap();
     while !engine.startup_step().unwrap() {}
-    let queued = engine
-        .submit(Request {
+    let queued = submitted(
+        &engine,
+        Request {
             kind: "movie".into(),
             title: "Synthetic suspended demand".into(),
             year: 2026,
@@ -417,9 +427,9 @@ fn owner_loss_never_replaces_a_captured_engine_transport_with_direct() {
             source_path: None,
             source_url: None,
             source_numbering: None,
-        })
-        .unwrap_or_else(|_| panic!("Synthetic VPN fixture request submission failed"))
-        .remove(0);
+        },
+    )
+    .remove(0);
     pair.client.cancel();
     assert!(!engine.tick().unwrap());
     let retained = engine
@@ -609,8 +619,9 @@ fn verified_bytes_user_pause_and_priorities_survive_owner_loss_and_a_new_protect
     let operator = native_operator(&directory, pair.client.clone());
     let engine = Engine::open_operator(config.clone(), true, false, true, Some(operator)).unwrap();
     while !engine.startup_step().unwrap() {}
-    engine
-        .submit(Request {
+    submitted(
+        &engine,
+        Request {
             kind: "movie".into(),
             title: "Synthetic retained bytes".into(),
             year: 2026,
@@ -620,8 +631,8 @@ fn verified_bytes_user_pause_and_priorities_survive_owner_loss_and_a_new_protect
             source_path: None,
             source_url: Some(source.to_str().unwrap().into()),
             source_numbering: None,
-        })
-        .unwrap_or_else(|_| panic!("Synthetic VPN fixture request submission failed"));
+        },
+    );
     engine.tick().unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
     while engine.transfer(&hash).unwrap().get("ready") != Some(&Value::Bool(true)) {
