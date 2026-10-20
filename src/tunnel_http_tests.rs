@@ -41,6 +41,8 @@ struct Fixture {
     dns: Arc<AtomicUsize>,
     requests: Arc<Mutex<Vec<Vec<u8>>>>,
     wire: Arc<Mutex<Vec<Vec<u8>>>>,
+    /// Client listener ports the responder dials, then greets and echoes.
+    dial: Arc<Mutex<Vec<u16>>>,
     worker: Option<JoinHandle<()>>,
 }
 impl Fixture {
@@ -59,12 +61,14 @@ impl Fixture {
         let dns = Arc::new(AtomicUsize::new(0));
         let requests = Arc::new(Mutex::new(Vec::new()));
         let wire = Arc::new(Mutex::new(Vec::new()));
+        let dial = Arc::new(Mutex::new(Vec::new()));
         let worker = {
             let stop = stop.clone();
             let block = block.clone();
             let dns = dns.clone();
             let requests = requests.clone();
             let wire = wire.clone();
+            let dial = dial.clone();
             thread::spawn(move || {
                 let mut tunnel =
                     Native::new(config(endpoint, true), OsEntropy, SystemClock::new()).unwrap();
@@ -75,7 +79,11 @@ impl Fixture {
                 // binding only after Protected would already have reset the SYN.
                 let listener = tunnel.tcp_listen(8080).unwrap();
                 let resolver = tunnel.udp_bind(53).unwrap();
+                // A torrent-style peer (TCP echo) and tracker (UDP echo).
+                let peer = tunnel.tcp_listen(6881).unwrap();
+                let tracker = tunnel.udp_bind(6969).unwrap();
                 let mut flows = BTreeMap::new();
+                let mut echoes: Vec<(VirtualFlow, Vec<u8>)> = Vec::new();
                 ready.send(()).unwrap();
                 while !stop.load(Ordering::Acquire) {
                     let mut buffer = [0; 2048];
@@ -116,6 +124,47 @@ impl Fixture {
                                 .udp_send_to(resolver, (query.source, query.source_port), &answer)
                                 .unwrap();
                         }
+                        while let Some(datagram) = tunnel.udp_recv(tracker).unwrap() {
+                            let mut reply = b"echo:".to_vec();
+                            reply.extend_from_slice(&datagram.payload);
+                            tunnel
+                                .udp_send_to(
+                                    tracker,
+                                    (datagram.source, datagram.source_port),
+                                    &reply,
+                                )
+                                .unwrap();
+                        }
+                        while let Some(flow) = tunnel.tcp_accept(peer).unwrap() {
+                            echoes.push((flow, Vec::new()));
+                        }
+                        for port in dial.lock().unwrap().drain(..) {
+                            if let Ok(flow) = tunnel.tcp_connect(CLIENT, port) {
+                                echoes.push((flow, b"inbound-hello".to_vec()));
+                            }
+                        }
+                        echoes.retain_mut(|(flow, pending)| {
+                            match tunnel.tcp_state(*flow) {
+                                Ok(TcpState::Established) => {}
+                                Ok(TcpState::SynSent | TcpState::SynReceived) => return true,
+                                _ => return false,
+                            }
+                            let mut buffer = [0; 4096];
+                            match tunnel.tcp_recv(*flow, &mut buffer) {
+                                Ok(TcpRead::Data(n)) => pending.extend_from_slice(&buffer[..n]),
+                                Ok(TcpRead::WouldBlock) => {}
+                                _ => return false,
+                            }
+                            if !pending.is_empty() {
+                                match tunnel.tcp_send(*flow, pending) {
+                                    Ok(n) => {
+                                        pending.drain(..n);
+                                    }
+                                    Err(_) => return false,
+                                }
+                            }
+                            true
+                        });
                         while let Some(flow) = tunnel.tcp_accept(listener).unwrap() {
                             flows.insert(flow.remote(), (flow, Vec::new(), Vec::new()));
                         }
@@ -181,6 +230,7 @@ impl Fixture {
             dns,
             requests,
             wire,
+            dial,
             worker: Some(worker),
         }
     }
@@ -588,3 +638,6 @@ fn writes_are_chunked_and_backpressure_respects_the_write_timeout() {
     assert!(sent > 0);
     assert!(start.elapsed() < Duration::from_secs(2));
 }
+
+#[path = "tunnel_network_tests.rs"]
+mod network;

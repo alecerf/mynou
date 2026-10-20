@@ -1,10 +1,12 @@
-//! Bounded native owner for the non-Send tunnel and generation-bound HTTP streams.
-//! Library only: production torrent traffic is not wired to this adapter.
+//! Bounded native owner for the non-Send tunnel, its generation-bound HTTP
+//! streams and a torrent `Network` (see `network`). Library only: production
+//! torrent traffic is not wired to this adapter.
 use crate::{
     net::{HttpConnector, NetworkStream},
     netstack::{Read as TcpRead, TcpState},
     tunnel::{
         Endpoint, Lookup, Status, SystemClock, Tunnel, TunnelConfig, TunnelState, VirtualFlow,
+        VirtualListener, VirtualUdp,
     },
     wireguard::OsEntropy,
 };
@@ -61,6 +63,8 @@ struct Command {
 enum Resource {
     Flow(VirtualFlow),
     Lookup(Lookup),
+    Udp(VirtualUdp),
+    Listener(VirtualListener),
 }
 struct Runtime {
     tunnel: Native,
@@ -78,7 +82,7 @@ impl Runtime {
                 // timers. Do not retain an unbounded history of such leases.
                 return match resource {
                     Resource::Flow(flow) => self.tunnel.tcp_state(*flow).is_ok(),
-                    Resource::Lookup(_) => true,
+                    Resource::Lookup(_) | Resource::Udp(_) | Resource::Listener(_) => true,
                 };
             }
             match resource {
@@ -87,6 +91,12 @@ impl Runtime {
                 }
                 Resource::Lookup(lookup) => {
                     let _ = self.tunnel.cancel_lookup(*lookup);
+                }
+                Resource::Udp(socket) => {
+                    let _ = self.tunnel.udp_close(*socket);
+                }
+                Resource::Listener(listener) => {
+                    let _ = self.tunnel.tcp_unlisten(*listener);
                 }
             }
             false
@@ -290,16 +300,29 @@ impl HttpTunnel {
     /// Fail immediately until protected. A stale connector never switches to a
     /// new generation automatically; obtain a new one explicitly after recovery.
     pub fn connector(&self, deadline: Instant) -> io::Result<Arc<dyn HttpConnector>> {
+        Ok(Arc::new(self.protected(deadline)?))
+    }
+    /// The torrent network of the currently protected generation, with the
+    /// same admission as `connector`; see `docs/tunnel-network.md`.
+    pub fn network(
+        &self,
+        deadline: Instant,
+    ) -> io::Result<Arc<dyn crate::torrent::transport::Network>> {
+        Ok(Arc::new(network::TunnelNetwork::new(
+            self.protected(deadline)?,
+        )))
+    }
+    fn protected(&self, deadline: Instant) -> io::Result<Connector> {
         let status = self.status(deadline)?;
         let generation = status
             .generation
             .filter(|_| status.state == TunnelState::Protected)
             .ok_or_else(|| error(io::ErrorKind::PermissionDenied))?;
         self.owner.admit(Some(generation))?;
-        Ok(Arc::new(Connector {
+        Ok(Connector {
             owner: self.owner.clone(),
             generation,
-        }))
+        })
     }
     /// Fence callers immediately; the owner then revokes and closes the tunnel.
     pub fn cancel(&self) {
@@ -372,14 +395,7 @@ impl Connector {
             ));
             Ok(flow)
         })?;
-        let stream = Stream {
-            owner: self.owner.clone(),
-            generation: self.generation,
-            flow,
-            _lease: lease,
-            read_timeout: Mutex::new(None),
-            write_timeout: Mutex::new(None),
-        };
+        let stream = Stream::new(self, flow, lease);
         loop {
             let state = self.owner.call(Some(self.generation), deadline, move |r| {
                 r.tunnel.tcp_state(flow).map_err(failed)
@@ -438,6 +454,16 @@ struct Stream {
     write_timeout: Mutex<Option<Duration>>,
 }
 impl Stream {
+    fn new(connector: &Connector, flow: VirtualFlow, lease: Arc<()>) -> Self {
+        Self {
+            owner: connector.owner.clone(),
+            generation: connector.generation,
+            flow,
+            _lease: lease,
+            read_timeout: Mutex::new(None),
+            write_timeout: Mutex::new(None),
+        }
+    }
     fn deadline(timeout: Option<Duration>) -> io::Result<Instant> {
         Instant::now()
             .checked_add(timeout.unwrap_or(Duration::from_secs(20)))
@@ -537,6 +563,9 @@ fn set_timeout(slot: &Mutex<Option<Duration>>, timeout: Option<Duration>) -> io:
     *slot.lock().map_err(|_| error(io::ErrorKind::Other))? = timeout;
     Ok(())
 }
+
+#[path = "tunnel_network.rs"]
+mod network;
 
 #[cfg(test)]
 #[path = "tunnel_http_tests.rs"]

@@ -123,8 +123,9 @@ WireGuard messages; this is a synthetic loopback fixture, not a universal
 production isolation proof, independent interoperability or complete end-to-end
 HTTPS server fixture through the tunnel.
 
-Full torrent transport/context migration, UDP/listener adapters, and inspection
-and orchestration publication fences remain
+The same owner also supplies a [torrent network](tunnel-network.md) with
+virtual peers, listeners and UDP. Engine integration, and inspection and
+orchestration publication fences remain
 [#221](https://github.com/alecerf/mynou/issues/221). The
 [source inventory check](network-inventory.md) now guards the existing direct
 sites; migration must remove their entries as it converts them. Operator

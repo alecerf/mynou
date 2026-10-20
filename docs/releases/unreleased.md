@@ -1,3 +1,11 @@
+## Added: Supply a torrent network backed by the native tunnel
+
+The Rust library can give the torrent engine a network whose peer connections,
+listeners, UDP sockets, name lookups and HTTP all run through one protected
+tunnel generation, with IPv6 and unusable destinations refused and no direct
+fallback. The engine does not use it yet, so torrent VPN protection is still
+unavailable ([operations, generations and limits](/docs/tunnel-network.md)).
+
 ## Added: Supply an HTTP connector backed by the native tunnel
 
 The Rust library can run HTTP streams and their DNS through one native tunnel
