@@ -8,7 +8,7 @@ use std::{collections::BTreeSet, path::Path};
 mod automatic;
 mod shared;
 #[cfg(test)]
-mod tunnel_tests;
+pub(crate) mod tunnel_tests;
 pub(crate) use automatic::season_title_matches;
 pub use automatic::{AutoPackRequest, PackOrigin};
 pub use shared::{SharedFile, SharedFileRequest};

@@ -298,3 +298,14 @@ responses and retries cannot publish owners after cancellation. This adds bounde
 evidence for #224, which remains open for automatic pack search, group replacement,
 IRC, remaining races, resources and the gated migration guide. See the
 [observation scope](../host-io-observer.md).
+
+## Changed: Observe library group replacement through the native tunnel
+
+Required macOS host-I/O checks now also cover shared-group quality replacement:
+preview and guarded application fetch replacement metadata through the tunnel with
+download workers disabled, and cancellation during a pending metadata response
+refuses the late result and retries without creating owners or touching the
+original import. Only declared fixture outer UDP is accepted. This adds bounded
+evidence for #224, which remains open for automatic pack search, IRC, remaining
+races, engine-level load and the gated migration guide. See the
+[observation scope](../host-io-observer.md).

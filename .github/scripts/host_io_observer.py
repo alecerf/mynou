@@ -34,6 +34,8 @@ FIXTURES = (
     "vpn::tests::recovered_owner_requires_a_new_engine_and_never_reauthorizes_delayed_old_work",
     "pack::tunnel_tests::shared_pack_preview_and_guarded_apply_use_tunnel_metadata_without_workers",
     "pack::tunnel_tests::cancellation_during_shared_pack_metadata_refuses_preview_apply_and_retry",
+    "library::tunnel_tests::group_replacement_preview_and_guarded_apply_use_tunnel_metadata_without_workers",
+    "library::tunnel_tests::cancellation_during_group_replacement_metadata_refuses_preview_apply_and_retry",
 )
 NEGATIVE = "torrent::tunnel_tests::host_io_observer_negative_controls"
 
