@@ -19,7 +19,9 @@ def select(paths, full=False, pull_request=True):
         product = (rust and not path.startswith("tests/")) or path.startswith(("src/", "examples/"))
         control = path in CONTROL
         ci = path == ".github/workflows/ci.yml"
-        work["tests"] |= product or path.startswith("tests/") or ci or control or path == ".github/scripts/crypto_fixtures.py"
+        native_fixture = path in {".github/scripts/crypto_fixtures.py",
+                                  ".github/scripts/host_io_observer.py", ".github/scripts/host_io_observer.c"}
+        work["tests"] |= product or path.startswith("tests/") or ci or control or native_fixture
         work["build"] |= product or ci or control or path == ".github/scripts/publish-release.sh"
         work["tooling"] |= path.startswith((".github/scripts/", ".github/workflows/", ".github/actions/"))
         security = control or path.startswith(".github/codeql") or path == ".github/workflows/codeql.yml"

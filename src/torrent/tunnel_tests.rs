@@ -4,6 +4,39 @@ use super::*;
 use crate::{bencode, config, engine::Engine, tunnel_http::tests::Pair};
 use std::io;
 
+/// Invoked explicitly by the macOS observer runner, never by the routine suite.
+/// The observer must reject this process even though these attempts fail or
+/// remain on host loopback. No remote service or external name is used.
+#[test]
+#[ignore = "negative control for host_io_observer.py"]
+fn host_io_observer_negative_controls() {
+    use std::net::{TcpListener, UdpSocket};
+    use transport::Network;
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    drop(listener);
+    assert!(
+        transport::Direct
+            .connect(address, Duration::from_millis(100))
+            .is_err()
+    );
+    assert!(
+        !transport::Direct
+            .resolve("localhost:9", end())
+            .unwrap()
+            .is_empty()
+    );
+    let trap = UdpSocket::bind("127.0.0.1:0").unwrap();
+    let socket = transport::Direct.datagram(false).unwrap();
+    socket
+        .send_to(b"synthetic bypass", trap.local_addr().unwrap())
+        .unwrap();
+    let result = crate::net::HttpClient::new()
+        .without_proxy()
+        .get(&format!("http://{address}/"));
+    assert!(result.is_err());
+}
+
 struct Directory(PathBuf);
 impl Directory {
     fn new() -> Self {

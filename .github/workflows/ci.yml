@@ -166,6 +166,10 @@ jobs:
           # Growing-inventory regressions measured 358 seconds in the library
           # harness. Retain every case with a finite eight-minute budget.
           python3 .github/scripts/parallel_tests.py target/debug/mynou-ci-test-build.jsonl --metadata "$RUNNER_TEMP/metadata.json" --output "$RUNNER_TEMP/mynou-test-results" --timeout 480
+      - name: Observe attempted host I/O in native WireGuard fixtures
+        run: |
+          export TMPDIR="$(cd "$RUNNER_TEMP" && pwd -P)"
+          python3 .github/scripts/host_io_observer.py --build-json target/debug/mynou-ci-test-build.jsonl --output "$RUNNER_TEMP/mynou-test-results/host-io"
       - name: Preserve test timings and logs
         if: always()
         uses: actions/upload-artifact@v7.0.2

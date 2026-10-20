@@ -96,6 +96,12 @@ The four orchestration harnesses (`automatic_packs`, `shared_episode_files`,
 synthetic revocation and verify no report/admission/commit, without download
 workers; the existing Direct journeys remain regression coverage.
 
+The [native host-I/O observer](host-io-observer.md) additionally checks attempted
+ordinary libc networking in selected protocol fixtures, including failed calls;
+only explicitly declared fixture outer UDP endpoints are accepted. Its negative
+controls exercise actual Rust std/Direct bypasses and a failed host lookup.
+This bounded observation increment does not complete #224.
+
 The [inventory gate](network-inventory.md) rejects direct sites outside Direct,
 including an otherwise matching inventory; negative alias/helper fixtures run
 in CI. This lexical check and these bounded synthetic scenarios establish their

@@ -262,3 +262,12 @@ failed protection never falls back automatically. Redacted status includes
 handshake age and counters. Verified bytes and transfer controls are retained.
 Complete isolation/race/resource evidence and the Gluetun migration guide remain
 issue #224; existing Gluetun is untouched. See the [operator reference](../wireguard-operator.md).
+
+## Added: Observe attempted host networking in native tunnel tests
+
+Native macOS CI observes attempted ordinary socket and host-resolver calls in
+selected WireGuard torrent fixtures, with negative controls for direct bypasses
+and failed calls. Only declared fixture outer UDP endpoints are accepted.
+This supplies a bounded evidence increment for #224; complete isolation, race
+and resource gates and the migration guide remain pending. Product networking
+and installed services are unchanged ([mechanism and limits](../host-io-observer.md)).

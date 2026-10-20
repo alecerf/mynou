@@ -46,6 +46,8 @@ class SelectionTests(unittest.TestCase):
                 self.assertFalse(work["tests"] or work["build"])
         fixtures = ci.select([".github/scripts/crypto_fixtures.py"])
         self.assertTrue(fixtures["tooling"] and fixtures["tests"])
+        for path in (".github/scripts/host_io_observer.py", ".github/scripts/host_io_observer.c"):
+            self.assertTrue(ci.select([path])["tests"])
         package = ci.select([".github/scripts/publish-release.sh"])
         self.assertTrue(package["tooling"] and package["build"])
         self.assertFalse(package["tests"])
