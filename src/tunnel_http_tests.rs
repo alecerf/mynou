@@ -81,6 +81,13 @@ struct Fixture {
     dns: Arc<AtomicUsize>,
     requests: Arc<Mutex<Vec<Vec<u8>>>>,
     wire: Arc<Mutex<Vec<Vec<u8>>>>,
+    /// Datagrams relayed toward the client, for replay probes.
+    inbound: Arc<Mutex<Vec<Vec<u8>>>>,
+    /// Re-source server datagrams from `roamed`: the server endpoint roams.
+    roam: Arc<AtomicBool>,
+    roamed: SocketAddr,
+    /// Client datagrams that arrived at the original and the roamed source.
+    arrivals: Arc<[AtomicUsize; 2]>,
     /// Client listener ports the responder dials, then greets and echoes.
     dial: Arc<Mutex<Vec<u16>>>,
     worker: Option<JoinHandle<()>>,
@@ -96,6 +103,14 @@ impl Fixture {
         relay.set_nonblocking(true).unwrap();
         let endpoint = relay.local_addr().unwrap();
         allow_outer(endpoint);
+        // A second owned relay source, used only when a fixture roams.
+        let roamed_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+        roamed_socket.set_nonblocking(true).unwrap();
+        let roamed = roamed_socket.local_addr().unwrap();
+        allow_outer(roamed);
+        let inbound = Arc::new(Mutex::new(Vec::new()));
+        let roam = Arc::new(AtomicBool::new(false));
+        let arrivals = Arc::new([AtomicUsize::new(0), AtomicUsize::new(0)]);
         let (ready, started) = mpsc::sync_channel(1);
         let stop = Arc::new(AtomicBool::new(false));
         let block = Arc::new(AtomicBool::new(false));
@@ -110,6 +125,9 @@ impl Fixture {
             let requests = requests.clone();
             let wire = wire.clone();
             let dial = dial.clone();
+            let inbound = inbound.clone();
+            let roam = roam.clone();
+            let arrivals = arrivals.clone();
             thread::spawn(move || {
                 let mut tunnel =
                     Native::new(config(endpoint, true), OsEntropy, SystemClock::new()).unwrap();
@@ -129,24 +147,33 @@ impl Fixture {
                 ready.send(()).unwrap();
                 while !stop.load(Ordering::Acquire) {
                     let mut buffer = [0; 2048];
-                    for _ in 0..64 {
-                        let Ok((n, source)) = relay.recv_from(&mut buffer) else {
-                            break;
-                        };
-                        wire.lock().unwrap().push(buffer[..n].to_vec());
-                        if block.load(Ordering::Acquire) {
-                            continue;
-                        }
-                        let destination = if source == server_outer {
-                            let Some(client) = client_outer else {
-                                continue;
+                    for (index, socket) in [&relay, &roamed_socket].into_iter().enumerate() {
+                        for _ in 0..64 {
+                            let Ok((n, source)) = socket.recv_from(&mut buffer) else {
+                                break;
                             };
-                            client
-                        } else {
-                            client_outer = Some(source);
-                            server_outer
-                        };
-                        relay.send_to(&buffer[..n], destination).unwrap();
+                            wire.lock().unwrap().push(buffer[..n].to_vec());
+                            if block.load(Ordering::Acquire) {
+                                continue;
+                            }
+                            // The server always sees the original relay source.
+                            let (out, destination) = if source == server_outer {
+                                let Some(client) = client_outer else {
+                                    continue;
+                                };
+                                inbound.lock().unwrap().push(buffer[..n].to_vec());
+                                if roam.load(Ordering::Acquire) {
+                                    (&roamed_socket, client)
+                                } else {
+                                    (&relay, client)
+                                }
+                            } else {
+                                client_outer = Some(source);
+                                arrivals[index].fetch_add(1, Ordering::Relaxed);
+                                (&relay, server_outer)
+                            };
+                            out.send_to(&buffer[..n], destination).unwrap();
+                        }
                     }
                     tunnel.pump(Duration::ZERO).unwrap();
                     if tunnel.status().state == TunnelState::Protected {
@@ -278,6 +305,10 @@ impl Fixture {
             dns,
             requests,
             wire,
+            inbound,
+            roam,
+            roamed,
+            arrivals,
             dial,
             worker: Some(worker),
         }
@@ -783,6 +814,9 @@ mod network;
 
 #[path = "tunnel_load_tests.rs"]
 mod load;
+
+#[path = "tunnel_session_tests.rs"]
+mod sessions;
 
 /// Two native owners, used by the torrent protocol acceptance fixtures. Only
 /// their WireGuard UDP endpoints exist on the host; every service is virtual.

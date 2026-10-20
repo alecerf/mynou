@@ -321,3 +321,21 @@ explicitly declared loopback TCP service; host name lookups, other TCP and
 undeclared UDP still fail. This adds bounded evidence for #224, which remains
 open for IRC, remaining races, engine-level load and the gated migration guide.
 See the [observation scope](../host-io-observer.md).
+
+## Fixed: Let the native WireGuard tunnel reconnect after session loss
+
+After a WireGuard session expired or a handshake gave up, every scheduled
+reconnection of the native tunnel failed immediately and, after its retry budget,
+left the tunnel blocked until an explicit restart or reconnection. The retry now
+starts its fresh generation at the same instant as the rest of the timer pass,
+so it can complete a new handshake. The failure was closed: nothing fell back to
+the ordinary network. Torrent VPN protection is still not claimed complete.
+
+## Changed: Observe WireGuard rekey, expiry and roaming on native macOS
+
+Required macOS host-I/O checks now also cover session rekey concurrent with new
+lookups, connections and HTTP, session expiry with reconnection that requires a
+fresh generation and acquires its listener once, and authenticated endpoint
+roaming. Only declared fixture outer UDP is accepted. This adds bounded evidence
+for #224, which remains open for IRC orchestration, engine-level load and the
+gated migration guide. See the [observation scope](../host-io-observer.md).

@@ -38,6 +38,9 @@ FIXTURES = (
     "library::tunnel_tests::cancellation_during_group_replacement_metadata_refuses_preview_apply_and_retry",
     "pack::automatic_tunnel_tests::automatic_pack_preview_and_guarded_apply_use_tunnel_metadata_without_workers",
     "pack::automatic_tunnel_tests::cancellation_during_automatic_pack_metadata_refuses_preview_apply_and_retry",
+    "tunnel_http::tests::sessions::rekey_concurrent_with_new_operations_keeps_the_generation_and_stream_bytes",
+    "tunnel_http::tests::sessions::session_expiry_revokes_new_operations_and_reconnect_needs_a_fresh_single_listener",
+    "tunnel_http::tests::sessions::authenticated_roaming_moves_the_outer_endpoint_without_a_new_generation",
 )
 NEGATIVE = "torrent::tunnel_tests::host_io_observer_negative_controls"
 
