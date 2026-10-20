@@ -24,8 +24,16 @@ checks the complete trace, including startup, shutdown and fixture subprocesses:
 - Only IPv4 datagram sockets bound to `127.0.0.1:0` and assigned a declared
   outer port are allowed. Every observed socket must reach an authorized bind.
 - Sends must originate from those observed sockets and target a declared
-  loopback outer port in the same fixture process. Other UDP, all TCP and host
+  loopback outer port in the same fixture process. Other UDP, undeclared TCP and host
   name lookups fail validation, whether or not the underlying call succeeded.
+- A fixture may also declare one ordinary-path loopback TCP service, such as a
+  synthetic indexer that by design never enters the tunnel. Then only that
+  process may create IPv4 stream sockets, bind one to `127.0.0.1:0` assigned the
+  declared port, or connect to that port on `127.0.0.1`; their address-less
+  stream sends must come from a connected client socket or from the declared
+  local port. Fixtures without such a declaration keep the UDP-only rule, and
+  host name lookups stay forbidden everywhere. The summary counts service
+  listeners, connections and sends separately from outer datagrams.
 - Missing loader records, missing declarations, empty/incomplete observation,
   unexpected events and truncated JSON fail validation. An exact test name must
   appear in the compiled harness list before the runner invokes it.
@@ -94,6 +102,20 @@ application, cancels the native owner and releases it. Both operations and later
 retries fail without creating owners or enabling Direct; the original group and
 its import are unchanged.
 
+The automatic pack search increment
+[#319](https://github.com/alecerf/mynou/issues/319) adds two observed scenarios,
+bringing the required runner to twenty-five. An engine with download workers
+disabled searches a declared synthetic JSON indexer on a literal loopback port
+(the only ordinary TCP); the selected candidate's two-episode metadata arrives
+through tunnel DNS and a cross-name HTTP redirect. Preview leaves the job and
+series stores unchanged; guarded application with the returned scope and
+candidate guards creates only the two queued owners bound to that torrent, with
+no transfer state or payload. The second scenario holds the candidate metadata
+response for preview and then application, cancels the native owner and releases
+it. Both operations and later retries fail without creating owners; the observed
+ordinary connections equal the indexer requests, so no metadata fetch fell back
+to the host network.
+
 ```sh
 TMPDIR=/private/tmp cargo test --lib --no-run --offline --locked \
   --message-format=json > /private/tmp/mynou-observer-build.jsonl
@@ -124,8 +146,7 @@ loader policy; loader failure is a failed check, never skipped evidence.
 
 The observer does not inspect encrypted datagram content, prove server privacy,
 exercise real provider connectivity, alter host routes or supply increasing-load
-CPU/RSS/timing evidence. Additional orchestration paths (automatic pack search
-and IRC),
+CPU/RSS/timing evidence. IRC orchestration,
 the remaining concurrent expiry/roaming/restart matrix,
 resource measurements and the gated macOS guide remain #224. Existing protocol,
 generation and operator fixtures retain their own documented scope.

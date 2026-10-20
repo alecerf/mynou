@@ -6,6 +6,8 @@ use crate::{
 };
 use std::{collections::BTreeSet, path::Path};
 mod automatic;
+#[cfg(test)]
+mod automatic_tunnel_tests;
 mod shared;
 #[cfg(test)]
 pub(crate) mod tunnel_tests;

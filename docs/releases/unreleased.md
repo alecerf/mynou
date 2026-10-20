@@ -309,3 +309,15 @@ original import. Only declared fixture outer UDP is accepted. This adds bounded
 evidence for #224, which remains open for automatic pack search, IRC, remaining
 races, engine-level load and the gated migration guide. See the
 [observation scope](../host-io-observer.md).
+
+## Changed: Observe automatic pack search through the native tunnel
+
+Required macOS host-I/O checks now also cover automatic season-pack search:
+preview and guarded application fetch candidate metadata through the tunnel with
+download workers disabled, and cancellation during a pending metadata response
+refuses the late result and retries without creating owners. The indexer
+request stays on the ordinary path by design and is accepted only as an
+explicitly declared loopback TCP service; host name lookups, other TCP and
+undeclared UDP still fail. This adds bounded evidence for #224, which remains
+open for IRC, remaining races, engine-level load and the gated migration guide.
+See the [observation scope](../host-io-observer.md).

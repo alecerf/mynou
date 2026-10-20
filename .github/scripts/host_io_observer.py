@@ -36,23 +36,32 @@ FIXTURES = (
     "pack::tunnel_tests::cancellation_during_shared_pack_metadata_refuses_preview_apply_and_retry",
     "library::tunnel_tests::group_replacement_preview_and_guarded_apply_use_tunnel_metadata_without_workers",
     "library::tunnel_tests::cancellation_during_group_replacement_metadata_refuses_preview_apply_and_retry",
+    "pack::automatic_tunnel_tests::automatic_pack_preview_and_guarded_apply_use_tunnel_metadata_without_workers",
+    "pack::automatic_tunnel_tests::cancellation_during_automatic_pack_metadata_refuses_preview_apply_and_retry",
 )
 NEGATIVE = "torrent::tunnel_tests::host_io_observer_negative_controls"
 
 
 def validate(rows):
-    """Authorize only declared fixture UDP sockets and destinations, never TCP/DNS.
+    """Authorize only declared fixture UDP sockets and destinations, never DNS.
 
+    TCP is refused unless a fixture declares an ordinary-path loopback service
+    (`allow_tcp`, e.g. an indexer that never enters the tunnel); then only that
+    process may listen on or connect to exactly that service port.
     Declarations are made by fixture setup, not derived from intercepted traffic.
     Read the entire trace: setup, shutdown, errors and child processes count.
     """
     allowed = {(r["pid"], r["port"]) for r in rows if r["op"] == "allow"}
+    services = {(r["pid"], r["port"]) for r in rows if r["op"] == "allow_tcp"}
+    if any(not 0 < port <= 65535 for _, port in services):
+        raise ValueError("invalid ordinary service declaration")
     if not allowed or any(not 0 < port <= 65535 for _, port in allowed):
         raise ValueError("missing or invalid explicit outer endpoint declarations")
     loaded = {r["pid"] for r in rows if r["op"] == "loaded"}
     if not loaded:
         raise ValueError("observer was not loaded")
     pending, binding, bound = set(), set(), {}
+    streams, stream_binding, connected = set(), set(), set()
     counts = Counter()
     for row in rows:
         op, pid = row["op"], row["pid"]
@@ -60,9 +69,39 @@ def validate(rows):
             raise ValueError("event without a loaded observer")
         counts[op] += 1
         key = (pid, row.get("fd"))
-        if op in {"loaded", "allow"}:
+        if op in {"loaded", "allow", "allow_tcp"}:
             continue
         if op == "socket":
+            connected.discard(key)  # A reused descriptor starts unauthorized.
+        if op == "socket" and row["type"] == 1 and any(p == pid for p, _ in services):
+            # Darwin AF_INET/SOCK_STREAM, only in a process declaring a service.
+            if row["family"] != 2 or row["fd"] < 0 or key in pending or key in streams:
+                raise ValueError("unauthorized ordinary socket attempt")
+            streams.add(key)
+        elif op == "bind" and key in streams:
+            if row["family"] != 2 or row["ip"] != "127.0.0.1" or row["port"] != 0:
+                raise ValueError("unauthorized ordinary bind attempt")
+            stream_binding.add(key)
+        elif op == "bound" and key in stream_binding:
+            if (pid, row["source"]) not in services:
+                raise ValueError("listener bound outside declared ordinary services")
+            stream_binding.remove(key)
+            streams.remove(key)
+            counts["service_listen"] += 1
+        elif op == "connect" and key in streams and key not in stream_binding:
+            if row["family"] != 2 or row["ip"] != "127.0.0.1" or (pid, row["port"]) not in services:
+                raise ValueError("connection outside declared ordinary services")
+            streams.remove(key)
+            connected.add(key)
+            counts["service_connect"] += 1
+        elif op == "sendto" and (key in connected or (
+                key not in pending and key not in bound and (pid, row["source"]) in services)):
+            # Darwin libc sends stream bytes as sendto without an address: from a
+            # connected client, or from a socket accepted on the declared port.
+            if row["family"] != 0 or row["port"] != 0:
+                raise ValueError("connection outside declared ordinary services")
+            counts["service_send"] += 1
+        elif op == "socket":
             # Darwin AF_INET/SOCK_DGRAM. Errors, IPv6, stream/raw sockets fail.
             if row["family"] != 2 or row["type"] != 2 or row["fd"] < 0 or key in pending:
                 raise ValueError("unauthorized ordinary socket attempt")
@@ -85,7 +124,8 @@ def validate(rows):
         else:
             # Includes connect, getaddrinfo and sendmsg, even if their call fails.
             raise ValueError("unauthorized ordinary attempt: " + op)
-    if pending or binding or not counts["socket"] or not counts["sendto"]:
+    if (pending or binding or streams or stream_binding
+            or not counts["socket"] or not counts["sendto"]):
         raise ValueError("incomplete socket/outer-datagram observation")
     return dict(sorted(counts.items()))
 
@@ -170,7 +210,10 @@ def run(build, output):
         rows = capture([executable, "--exact", fixture, "--nocapture"],
                        f"fixture-{index:02d}", library, output)
         summary["fixtures"][fixture] = validate(rows)
-        print("Observed only authorized outer UDP: " + fixture, flush=True)
+        services = summary["fixtures"][fixture].get("service_connect", 0)
+        print("Observed only authorized outer UDP"
+              + (f" and {services} declared ordinary service connections" if services else "")
+              + ": " + fixture, flush=True)
     (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     return summary
 
