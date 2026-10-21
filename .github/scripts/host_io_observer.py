@@ -86,8 +86,9 @@ def validate(rows):
         if op == "close":
             if key in pending or key in binding or key in streams or key in stream_binding:
                 raise ValueError("socket closed before authorized bind or connection")
-            if key not in bound and key not in connected and (pid, row["source"]) not in services:
-                raise ValueError("unauthorized socket close")
+            # try_clone can close a duplicated descriptor without a socket()
+            # event. A close grants no authority; any send/connect still needs
+            # its own observed authorization. Retire known state on this fd.
             bound.pop(key, None)
             connected.discard(key)
             continue
@@ -214,7 +215,7 @@ def run(build, output):
     rows = capture([executable, "--exact", NEGATIVE, "--nocapture"],
                    "negative-rust-stdlib", library, output)
     counts = Counter(r["op"] for r in rows)
-    for op in ("loaded", "socket", "bind", "connect", "sendto", "getaddrinfo"):
+    for op in ("loaded", "socket", "bind", "connect", "sendto", "getaddrinfo", "close"):
         if not counts[op]:
             raise ValueError("Rust stdlib negative control did not observe " + op)
     # Give the validator a declaration so rejection cannot be just empty allowlist.
