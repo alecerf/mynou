@@ -11,12 +11,15 @@ away from the existing Gluetun deployment.
 On native macOS arm64, the runner compiles `host_io_observer.c` with the installed
 Clang into a temporary dylib. `DYLD_INSERT_LIBRARIES` loads it only into selected
 compiled test harness processes and their fixture children. Mach-O interposition
-records libc `socket`, `bind`, `connect`, `sendto`, `sendmsg` and `getaddrinfo`
+records libc `socket`, `bind`, `connect`, `sendto`, `sendmsg`, `getaddrinfo` and network `close`
 calls. Connect, bind, datagram-send and lookup records are appended before the
 real call, so refusal and failed resolution remain visible. Socket records
 include the returned descriptor, including failure; successful binds also record
 the assigned local port. Names, credentials and payload bytes are never logged.
 The observer preserves errno and exits with failure if its log cannot be written.
+Socket closes retire descriptor authorization before reuse, including reuse by
+an accepted TCP connection on a declared service. Closing an unauthorized or
+incompletely admitted socket does not turn it into accepted evidence.
 
 Fixture code explicitly declares its owned loopback outer-UDP ports. The runner
 checks the complete trace, including startup, shutdown and fixture subprocesses:
