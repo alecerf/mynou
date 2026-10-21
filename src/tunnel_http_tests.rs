@@ -19,8 +19,9 @@ pub(crate) fn allow_outer(address: SocketAddr) {
         assert!(address.is_ipv4() && address.ip().is_loopback());
         let mut file = std::fs::OpenOptions::new().append(true).open(path).unwrap();
         let line = format!(
-            "{{\"op\":\"allow\",\"pid\":{},\"port\":{}}}\n",
+            "{{\"op\":\"allow\",\"pid\":{},\"ip\":\"{}\",\"port\":{}}}\n",
             std::process::id(),
+            address.ip(),
             address.port()
         );
         assert_eq!(file.write(line.as_bytes()).unwrap(), line.len());
@@ -97,9 +98,12 @@ impl Fixture {
         Self::with_poll_interval(Duration::from_micros(200))
     }
     fn with_poll_interval(poll: Duration) -> Self {
+        Self::with_relay(poll, Ipv4Addr::LOCALHOST)
+    }
+    fn with_relay(poll: Duration, relay_ip: Ipv4Addr) -> Self {
         // The relay observes only WireGuard datagrams. All application/DNS
         // services are virtual; there is no host TCP listener at their ports.
-        let relay = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let relay = UdpSocket::bind((relay_ip, 0)).unwrap();
         relay.set_nonblocking(true).unwrap();
         let endpoint = relay.local_addr().unwrap();
         allow_outer(endpoint);

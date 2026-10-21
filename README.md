@@ -217,6 +217,11 @@ Mynou is young and deliberately explicit about its edges:
   covers the same journey with fewer options.
 - **Every feature has a stated bound**, and exceeding one produces a clear
   error instead of unbounded growth.
+- **Native WireGuard protects the supported IPv4 torrent paths.** The
+  [macOS installation and migration guide](docs/wireguard-macos-migration.md)
+  explains the traffic boundary, supported NAT-PMP forwarding and preserved
+  state; [controlled evidence and limits](docs/wireguard-acceptance.md) describe
+  what was verified.
 - **The network and cryptographic code is original** and has not had an
   independent review.
 

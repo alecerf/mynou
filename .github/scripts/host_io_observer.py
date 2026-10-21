@@ -62,11 +62,12 @@ def validate(rows):
     Declarations are made by fixture setup, not derived from intercepted traffic.
     Read the entire trace: setup, shutdown, errors and child processes count.
     """
-    allowed = {(r["pid"], r["port"]) for r in rows if r["op"] == "allow"}
+    allowed = {(r["pid"], r.get("ip", "127.0.0.1"), r["port"]) for r in rows if r["op"] == "allow"}
     services = {(r["pid"], r["port"]) for r in rows if r["op"] == "allow_tcp"}
     if any(not 0 < port <= 65535 for _, port in services):
         raise ValueError("invalid ordinary service declaration")
-    if not allowed or any(not 0 < port <= 65535 for _, port in allowed):
+    if not allowed or any(ip not in {"127.0.0.1", "127.0.0.2"} or not 0 < port <= 65535
+                          for _, ip, port in allowed):
         raise ValueError("missing or invalid explicit outer endpoint declarations")
     loaded = {r["pid"] for r in rows if r["op"] == "loaded"}
     if not loaded:
@@ -118,19 +119,20 @@ def validate(rows):
                 raise ValueError("unauthorized ordinary socket attempt")
             pending.add(key)
         elif op == "bind":
-            if key not in pending or row["family"] != 2 or row["ip"] != "127.0.0.1" or row["port"] != 0:
+            if (key not in pending or row["family"] != 2 or row["port"] != 0
+                    or not any(p == pid and ip == row["ip"] for p, ip, _ in allowed)):
                 raise ValueError("unauthorized ordinary bind attempt")
             binding.add(key)
         elif op == "bound":
-            if key not in binding or (pid, row["source"]) not in allowed:
+            if key not in binding or (pid, row["ip"], row["source"]) not in allowed:
                 raise ValueError("socket bound outside declared outer endpoints")
             binding.remove(key)
             pending.remove(key)
-            bound[key] = row["source"]
+            bound[key] = (row["ip"], row["source"])
         elif op == "sendto":
-            if (row["family"] != 2 or row["ip"] != "127.0.0.1"
-                    or bound.get(key) != row["source"]
-                    or (pid, row["source"]) not in allowed or (pid, row["port"]) not in allowed):
+            source = bound.get(key)
+            if (row["family"] != 2 or source is None or source[1] != row["source"]
+                    or (pid, *source) not in allowed or (pid, row["ip"], row["port"]) not in allowed):
                 raise ValueError("datagram outside declared outer endpoints")
         else:
             # Includes connect, getaddrinfo and sendmsg, even if their call fails.

@@ -2,7 +2,9 @@
 //! through the native owner. The client owner keeps OS entropy and the system
 //! clock; only its monotonic time is skewed forward (test-only) to reach
 //! session ages. Route loss is injected at the owner's outer socket calls; the
-//! host routing table is never changed. Every service is virtual behind the
+//! ordinary local tests never change host routes. A separate required CI runner
+//! repeats the route scenarios with real route changes on a disposable host.
+//! Every service is virtual behind the
 //! fixture relay, so the host sees only outer UDP.
 use super::*;
 use crate::{
@@ -34,13 +36,36 @@ fn skip(f: &Fixture, by: Duration) {
 }
 /// Emulates a host route change on the client owner's outer socket.
 fn lose_route(f: &Fixture, kind: Option<io::ErrorKind>) {
-    f.driver
-        .owner
-        .call(None, end(), move |r| {
-            r.tunnel.lose_route(kind);
-            Ok(())
-        })
-        .unwrap();
+    if let Some(directory) = std::env::var_os("MYNOU_OS_ROUTE_CONTROL") {
+        // The unprivileged test never executes a helper or edits host routes.
+        // Only the dedicated disposable-CI supervisor handles this protocol.
+        let directory = std::path::PathBuf::from(directory);
+        let state = if kind.is_some() { "lost" } else { "restored" };
+        std::fs::write(directory.join(format!("request-{state}")), b"ready").unwrap();
+        wait(|| directory.join(format!("ack-{state}")).is_file());
+    } else {
+        f.driver
+            .owner
+            .call(None, end(), move |r| {
+                r.tunnel.lose_route(kind);
+                Ok(())
+            })
+            .unwrap();
+    }
+    if kind.is_some() {
+        // A datagram sent before the socket/OS barrier may still be queued at
+        // the relay. Account for every successful pre-loss send before taking
+        // the no-new-arrivals baseline; scheduling is not evidence of a leak.
+        let sent = telemetry(f).1.sent;
+        wait(|| f.arrivals[0].load(Ordering::Relaxed) as u64 == sent);
+    }
+}
+fn route_fixture() -> Fixture {
+    if std::env::var_os("MYNOU_OS_ROUTE_CONTROL").is_some() {
+        Fixture::with_relay(Duration::from_micros(200), Ipv4Addr::new(127, 0, 0, 2))
+    } else {
+        Fixture::new()
+    }
 }
 fn kinds(f: &Fixture, kind: u8) -> usize {
     let wire = f.wire.lock().unwrap();
@@ -410,7 +435,7 @@ fn engine_pause_selection_and_verified_bytes_survive_expiry_and_replacement() {
 
 #[test]
 fn host_route_loss_shorter_than_the_session_keeps_the_generation_and_stream_bytes() {
-    let f = Fixture::new();
+    let f = route_fixture();
     let network = network(&f);
     let token = network.generation().unwrap();
     let mut stream = connect(&*network);
@@ -468,7 +493,7 @@ fn host_route_loss_shorter_than_the_session_keeps_the_generation_and_stream_byte
 
 #[test]
 fn host_route_loss_past_session_expiry_needs_a_fresh_generation_without_fallback() {
-    let f = Fixture::new();
+    let f = route_fixture();
     let network = network(&f);
     let listener = network
         .listen(SocketAddr::from(([0, 0, 0, 0], 7001)))

@@ -198,6 +198,8 @@ Go release (SQLite) is not imported: keep it in a separate folder.
 Private profile import, redacted status and explicit lifecycle controls are
 available through `mynou vpn` and the authenticated API. See the
 [operator reference](wireguard-operator.md) for supported settings, startup and
-restart behavior, file permissions and limitations. Complete isolation/race and
-resource evidence is still tracked in #224. Keep the existing Gluetun deployment
-until those gates and the separate migration guide are delivered.
+restart behavior, file permissions and limitations. The
+[WireGuard installation and migration guide](wireguard-macos-migration.md)
+covers private import before startup, backups, verification, recovery and
+rollback without changing the existing Gluetun deployment. Read the
+[evidence and supported-subset limits](wireguard-acceptance.md) before migrating.

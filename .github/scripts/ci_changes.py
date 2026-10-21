@@ -20,6 +20,7 @@ def select(paths, full=False, pull_request=True):
         control = path in CONTROL
         ci = path == ".github/workflows/ci.yml"
         native_fixture = path in {".github/scripts/crypto_fixtures.py",
+                                  ".github/scripts/host_route_observer.py",
                                   ".github/scripts/host_io_observer.py", ".github/scripts/host_io_observer.c"}
         work["tests"] |= product or path.startswith("tests/") or ci or control or native_fixture
         work["build"] |= product or ci or control or path == ".github/scripts/publish-release.sh"
