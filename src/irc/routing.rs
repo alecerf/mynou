@@ -270,6 +270,9 @@ impl Origin {
         }
         crate::pack::validate_file_path(&self.file)?;
         self.release.validate()?;
+        if super::lookup::metainfo_path(&self.magnet, &self.torrent_id) {
+            return Ok(());
+        }
         validate_magnet(&self.magnet, &self.torrent_id)
     }
     pub fn validate_job(&self, job: &Job) -> Result<()> {
@@ -404,7 +407,7 @@ pub(crate) fn enabled(config: &Config) -> bool {
                     .irc
                     .sources
                     .iter()
-                    .any(|s| s.id == r.source && s.enabled && s.magnet_template.is_some())
+                    .any(|s| s.id == r.source && s.enabled && s.can_acquire())
         })
 }
 pub(crate) fn eligible(job: &Job) -> bool {
@@ -436,9 +439,11 @@ pub(crate) fn selection_from_irc(
             && rule.kind == job.request.kind
             && rule.profile == name
             && config.selection.profiles.get(name) == Some(profile)
-            && config.irc.sources.iter().any(|source| {
-                source.id == rule.source && source.enabled && source.magnet_template.is_some()
-            })
+            && config
+                .irc
+                .sources
+                .iter()
+                .any(|source| source.id == rule.source && source.enabled && source.can_acquire())
             && selected_interest(config, rule, job, requesters)?
         {
             return Ok(true);
@@ -767,7 +772,7 @@ fn matched_rule<'a>(config: &'a Config, r: &Record, fingerprint: &str) -> Result
         return Err("IRC: claim is reviewed, stale, reserved or has conflicting rules".into());
     }
     let source = config.irc.source(&r.source_id)?;
-    if !source.enabled || source.binding() != r.binding || source.magnet_template.is_none() {
+    if !source.enabled || source.binding() != r.binding || !source.can_acquire() {
         return Err("IRC: acquisition source is disabled or changed".into());
     }
     let evaluation = r
@@ -958,13 +963,16 @@ impl Engine {
             self.requester_reconcile()?;
             return Ok((fulfilled, false));
         }
-        let magnet = render_template(
-            source
-                .magnet_template
-                .as_deref()
-                .ok_or("IRC: missing magnet template")?,
-            &record.announcement.info_hash,
-        )?;
+        let magnet = match &source.announcement_lookup {
+            Some(lookup) => self.irc_metainfo(lookup, &record.announcement, deadline)?,
+            None => render_template(
+                source
+                    .magnet_template
+                    .as_deref()
+                    .ok_or("IRC: missing magnet template")?,
+                &record.announcement.info_hash,
+            )?,
+        };
         self.torrent_publication()?;
         // Metadata I/O happens before admission and outside every persistent-store lock.
         let metadata = crate::torrent::inspect_metadata(&*self.torrent_network, &magnet, deadline)

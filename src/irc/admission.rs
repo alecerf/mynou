@@ -269,7 +269,7 @@ fn request_rule<'a>(config: &'a Config, r: &Record) -> Result<&'a Rule> {
         return Err("IRC: new demand requires an unreviewed current matched claim".into());
     }
     let source = config.irc.source(&r.source_id)?;
-    if !source.enabled || source.binding() != r.binding || source.magnet_template.is_none() {
+    if !source.enabled || source.binding() != r.binding || !source.can_acquire() {
         return Err("IRC: request source is disabled or changed".into());
     }
     config

@@ -1030,13 +1030,14 @@ pub(crate) fn catalog_canonical_before(
     }
 }
 
-/// One Torznab item, identified by its details page. GUIDs and download links,
-/// which may carry a passkey, are never read.
-#[derive(Debug, Default, PartialEq, Eq)]
+/// One Torznab item, identified by its details page. GUIDs are never read; the
+/// enclosure may carry a credential, so it is never displayed, stored or reported.
+#[derive(Default)]
 pub(crate) struct DetailsEntry {
     pub(crate) details: String,
     pub(crate) tmdb_ids: Vec<String>,
     pub(crate) info_hashes: Vec<String>,
+    pub(crate) enclosure: Option<String>,
 }
 
 /// One bounded Torznab text search; failures carry only fixed messages.
@@ -1076,6 +1077,10 @@ pub(crate) fn torznab_details_before(
                 details: item
                     .child("comments")
                     .map_or(String::new(), |c| c.text.trim().to_owned()),
+                enclosure: item
+                    .child("enclosure")
+                    .and_then(|e| e.attrs.get("url"))
+                    .cloned(),
                 ..DetailsEntry::default()
             };
             for attr in item.children.iter().filter(|c| c.local() == "attr") {
@@ -1092,6 +1097,21 @@ pub(crate) fn torznab_details_before(
     })();
     crate::indexers::parsed(source, entries.is_ok());
     entries
+}
+
+/// Download one `.torrent` from the indexer's own origin, without redirects.
+pub(crate) fn indexer_metainfo_before(
+    source: &Source,
+    url: &str,
+    deadline: Instant,
+) -> Result<Vec<u8>> {
+    let url = acquisition_url(url, &source.url).map_err(|_| "Indexer: invalid download")?;
+    if url.starts_with("magnet:") {
+        return Err("Indexer: invalid download".into());
+    }
+    let response = crate::indexers::fetch(source, &url, "application/x-bittorrent", deadline)?;
+    remaining_search_time(deadline)?;
+    Ok(response.body)
 }
 
 // Current UTC date, converted from Unix days to the Gregorian calendar.

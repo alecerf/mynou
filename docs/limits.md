@@ -216,6 +216,10 @@ IRC announcements:
   at most three times (30 seconds apart, ten-second budget each) and require
   one Torznab item for the exact details page, plus the TMDB catalog. Episodes
   need one `SxxEyy` marker; season packs are not supported.
+- A routed bracketed acquisition downloads one `.torrent` of at most 8 MiB
+  from the indexer's origin, within the ten-second routing budget and the
+  indexer's minimum request spacing. The verified files under `irc-metainfo/` are kept
+  with their transfers and are not pruned automatically.
 - Preview files and bodies are limited to 8 KiB; announcement lists return at
   most 200 entries per page.
 - Magnet templates contain `{xt}` once, at most four trackers and eight
