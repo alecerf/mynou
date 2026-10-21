@@ -24,6 +24,7 @@ pub mod requesters;
 pub mod selection;
 pub mod series;
 pub mod server;
+pub mod service;
 pub mod store;
 pub mod tls;
 pub mod torrent;

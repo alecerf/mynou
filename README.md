@@ -147,10 +147,11 @@ mynou serve
 `MYNOU_API_TOKEN` value in the `.env` file next to `mynou.json`.
 
 > [!NOTE]
-> Mynou reads only `MYNOU_API_TOKEN` from `.env`; every other secret comes from
-> the environment of the service. Restart the service after changing
-> `mynou.json`. Mynou does not install a background service: keeping it running
-> is up to you.
+> Foreground `serve` reads only `MYNOU_API_TOKEN` from `.env`; every other secret
+> comes from its environment. For unattended account-login startup, use the
+> [native launchd service](docs/macos-service.md), which injects a private snapshot
+> of the adjacent `.env`. Restart after configuration changes; reinstall the
+> registration after changing that secret snapshot.
 
 ## Web interface
 

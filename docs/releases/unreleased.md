@@ -7,6 +7,17 @@ hash and keeps it as a private file. Neither the download link nor the indexer
 key is stored, and the tracker passkey stays in the private transfer state
 ([details](/docs/sources.md#bracketed-announcements-resolved-by-lookup)).
 
+## Added: Native macOS account service
+
+`mynou service --action install|status|start|stop|uninstall --config /absolute/mynou.json`
+manages an account-owned launchd registration. The native executable starts
+directly after login and restarts after crashes, using a private `.env`
+credential snapshot, existing protected-startup gates and bounded fixed-code
+logs. Stop drains work through a PID-fenced authenticated shutdown; uninstall
+removes registration while preserving configuration, state, media and payloads.
+Missing configured roots prevent supervised startup. See the
+[installation, backup and recovery guide](/docs/macos-service.md).
+
 ## Added: Resolve bracketed tracker announcements through a Torznab lookup
 
 An IRC source can now read bracketed tracker announcements that carry only a
@@ -17,6 +28,7 @@ canonical title. Only then does the announcement enter the history, under the
 same rules, demand and metadata checks as before; an announcement still never
 creates a request. IRC episode titles may now omit the series year, but a
 different year is still rejected ([format](/docs/sources.md#bracketed-announcements-resolved-by-lookup)).
+
 
 ## Added: Deliver the native macOS WireGuard migration guide
 
