@@ -30,6 +30,18 @@ def service_trace():
 
 
 class ObservationTests(unittest.TestCase):
+    def test_closed_udp_descriptor_can_be_reused_by_an_accepted_service_stream(self):
+        rows = service_trace() + [event("close"),
+                                event("sendto", family=0, source=4321, ip="", port=0)]
+        self.assertEqual(observer.validate(rows)["service_send"], 3)
+        with self.assertRaises(ValueError):
+            observer.validate([r for r in rows if r["op"] != "close"])
+        for extra in ([event("close", fd=99, source=9999)],
+                      [event("socket", fd=10), event("close", fd=10)],
+                      [event("close"), event("sendto")]):
+            with self.subTest(extra=extra), self.assertRaises(ValueError):
+                observer.validate(service_trace() + extra)
+
     def test_route_relay_authorization_is_an_exact_address_and_port(self):
         rows = trace()
         for index in (2, 6):

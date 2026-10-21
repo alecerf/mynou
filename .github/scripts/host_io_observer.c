@@ -86,6 +86,16 @@ static int observed_getaddrinfo(const char *node, const char *service,
     record("getaddrinfo", -1, NULL, 0, 0);
     return getaddrinfo(node, service, hints, out);
 }
+static int observed_close(int fd) {
+    int saved = errno;
+    struct sockaddr_storage local;
+    socklen_t length = sizeof(local);
+    if (getsockname(fd, (struct sockaddr *)&local, &length) == 0 &&
+        (local.ss_family == AF_INET || local.ss_family == AF_INET6))
+        record("close", fd, NULL, 0, 0);
+    errno = saved;
+    return close(fd);
+}
 
 #define INTERPOSE(replacement, original) \
     __attribute__((used)) static const struct { \
@@ -99,3 +109,4 @@ INTERPOSE(observed_connect, connect);
 INTERPOSE(observed_sendto, sendto);
 INTERPOSE(observed_sendmsg, sendmsg);
 INTERPOSE(observed_getaddrinfo, getaddrinfo);
+INTERPOSE(observed_close, close);

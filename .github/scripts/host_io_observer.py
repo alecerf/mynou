@@ -83,6 +83,14 @@ def validate(rows):
         key = (pid, row.get("fd"))
         if op in {"loaded", "allow", "allow_tcp"}:
             continue
+        if op == "close":
+            if key in pending or key in binding or key in streams or key in stream_binding:
+                raise ValueError("socket closed before authorized bind or connection")
+            if key not in bound and key not in connected and (pid, row["source"]) not in services:
+                raise ValueError("unauthorized socket close")
+            bound.pop(key, None)
+            connected.discard(key)
+            continue
         if op == "socket":
             connected.discard(key)  # A reused descriptor starts unauthorized.
         if op == "socket" and row["type"] == 1 and any(p == pid for p, _ in services):
