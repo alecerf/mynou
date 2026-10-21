@@ -1022,6 +1022,14 @@ fn respond_within(
     limit: Duration,
 ) -> Result<()> {
     let body = json::stringify(&value);
+    respond_body_within(stream, status, &body, limit)
+}
+fn respond_body_within(
+    stream: &mut TcpStream,
+    status: u16,
+    body: &str,
+    limit: Duration,
+) -> Result<()> {
     let reason = match status {
         200 => "OK",
         201 => "Created",
@@ -1138,8 +1146,11 @@ mod tests {
     #[test]
     fn a_client_that_stops_reading_a_large_response_is_dropped_at_the_deadline() {
         let (mut server, client) = loopback();
+        // The limit starts after JSON encoding in production too. Measure
+        // socket writes, independently of encoding CPU contention on CI.
+        let body = json::stringify(&large_value());
         let started = Instant::now();
-        let result = respond_within(&mut server, 200, large_value(), Duration::from_millis(400));
+        let result = respond_body_within(&mut server, 200, &body, Duration::from_millis(400));
         let elapsed = started.elapsed();
         drop(client);
         assert!(result.is_err());
@@ -1149,6 +1160,7 @@ mod tests {
     #[test]
     fn a_client_that_reads_a_few_bytes_at_a_time_is_dropped_at_the_deadline() {
         let (mut server, mut client) = loopback();
+        let body = json::stringify(&large_value());
         let done = Arc::new(AtomicBool::new(false));
         let reading = done.clone();
         let reader = thread::spawn(move || {
@@ -1158,7 +1170,7 @@ mod tests {
             }
         });
         let started = Instant::now();
-        let result = respond_within(&mut server, 200, large_value(), Duration::from_millis(400));
+        let result = respond_body_within(&mut server, 200, &body, Duration::from_millis(400));
         let elapsed = started.elapsed();
         done.store(true, Ordering::Release);
         drop(server);
