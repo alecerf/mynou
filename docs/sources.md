@@ -359,6 +359,51 @@ rules, and IRC color and formatting codes are removed first. Announcements
 that lack a catalog ID or a hash cannot be described this way. Omit the format,
 or use `{"type": "json"}`, for the default.
 
+#### Bracketed announcements resolved by lookup
+
+Some trackers announce only a release name and the ID of its page:
+
+```text
+[NEW] [Films] [Example.Movie.2024.MULTi.1080p.WEB.x264-GROUP] [WEB-DL] [8.71 GiB] [0%] [pre 0h 1m 52s] par uploader -> https://tracker.example/torrents/123456
+```
+
+The `bracketed` format reads that grammar. The first group can be any tag (`NEW`,
+`EXCLUSiVE`…) and the `[pre …]` group is optional:
+
+```json
+"announcement_format": {
+  "type": "bracketed",
+  "lookup_indexer": "tracker",
+  "details_prefix": "https://tracker.example/torrents/",
+  "categories": {"Films": "movie", "Series": "episode"}
+}
+```
+
+- `lookup_indexer` is the `id` of a configured `torznab` indexer for the same
+  tracker, directly or through an aggregator such as Prowlarr.
+- `details_prefix` is the HTTPS address of the tracker's release pages, ending
+  with `/`. The announced address must be exactly this prefix followed by a
+  decimal ID.
+- `categories` maps the announced category labels (1 to 16) to `movie` or
+  `episode`. Any other category is rejected.
+
+A line is first only an **unverified candidate** held in memory. Mynou then
+searches the indexer for the release name and keeps the single item whose
+`comments` (details page) is the announced address. That item must carry one
+`tmdbid` and one `infohash`, either 40 or 64 hexadecimal digits or their
+hexadecimal ASCII encoding, as some aggregators return them. The
+TMDB catalog (`catalog` in `mynou.json`) then supplies the canonical title and year. Only then does
+the announcement enter the history, with the same duplicate detection, rules,
+profiles, admitted demand and metadata checks as any other. GUIDs and
+download links, which carry a passkey, are never read.
+
+Episodes need exactly one `S01E05` marker. Season packs, multi-episode labels
+and bare `E12` numbers are rejected, as are unknown details pages. When the item is
+not listed yet, or the indexer or catalog fails, the candidate retries up to
+three times, 30 seconds apart. A restart drops unresolved candidates instead
+of replaying them. `GET /api/irc/sources` reports the queue under `lookup`,
+and a preview only parses the candidate, without any lookup.
+
 Test a format without storage, network or acquisition:
 
 ```sh

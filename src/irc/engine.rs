@@ -43,6 +43,7 @@ impl Engine {
             super::routing::enabled(&self.config),
         );
         v.insert("routing", self.irc_routing_json()?);
+        v.insert("lookup", lock(&self.irc_lookup)?.to_json());
         Ok(v)
     }
     pub fn irc_announcements(&self, offset: usize, limit: usize) -> Result<Value> {
@@ -126,6 +127,9 @@ impl Engine {
         let Some(body) = source.wire_payload(text)? else {
             return Ok(None);
         };
+        if let Some(candidate) = source.lookup_candidate(&body)? {
+            return self.irc_queue_candidate(source, candidate).map(Some);
+        }
         self.irc_receive(
             source_id,
             sender,

@@ -91,6 +91,7 @@ pub struct Engine {
     pub(crate) irc_store: Mutex<crate::irc::AnnouncementStore>,
     pub(crate) irc_runtime: Mutex<crate::irc::client::Runtime>,
     pub(crate) irc_route_runtime: Mutex<crate::irc::routing::Runtime>,
+    pub(crate) irc_lookup: Mutex<crate::irc::lookup::Queue>,
     pub(crate) irc_route_lock: Mutex<()>,
     pub(crate) indexer_store: Mutex<crate::indexers::policy::SourceStore>,
     pub(crate) feed_store: Mutex<crate::indexers::feed::FeedStore>,
@@ -243,6 +244,7 @@ impl Engine {
             irc_store: Mutex::new(irc_store),
             irc_runtime: Mutex::new(irc_runtime),
             irc_route_runtime: Mutex::new(crate::irc::routing::Runtime::default()),
+            irc_lookup: Mutex::new(crate::irc::lookup::Queue::default()),
             irc_route_lock: Mutex::new(()),
             indexer_store: Mutex::new(indexer_store),
             feed_store: Mutex::new(feed_store),
@@ -750,6 +752,7 @@ impl Engine {
     fn spawn_workers(self: &Arc<Self>, handles: &mut Vec<JoinHandle<()>>) {
         crate::irc::client::start(self, handles);
         crate::irc::routing::start(self, handles);
+        crate::irc::lookup::start(self, handles);
         crate::indexers::watch::start(self, handles);
         if self.config.catalog.enabled {
             let engine = self.clone();

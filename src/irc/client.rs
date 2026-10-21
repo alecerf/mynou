@@ -394,6 +394,27 @@ fn connected(engine: &Engine, source: &Source) -> Result<()> {
                     ready = true;
                     health(engine, &source.id, "connected", None, 0);
                 }
+                Event::Announcement(body) if source.announcement_lookup.is_some() => {
+                    // Only an unverified candidate is kept; the lookup worker resolves it.
+                    match source.lookup_candidate(&body) {
+                        Ok(Some(candidate)) => {
+                            let report = engine.irc_queue_candidate(source, candidate)?;
+                            let mut runtime = lock(&engine.irc_runtime)?;
+                            if let Some(h) = runtime.health.get_mut(&source.id) {
+                                h.received = h.received.saturating_add(1);
+                                h.last_received = crate::store::now();
+                                if report.get("queued").and_then(Value::as_bool) != Some(true) {
+                                    h.duplicates = h.duplicates.saturating_add(1);
+                                }
+                            }
+                        }
+                        _ => {
+                            if let Some(h) = lock(&engine.irc_runtime)?.health.get_mut(&source.id) {
+                                h.rejected = h.rejected.saturating_add(1);
+                            }
+                        }
+                    }
+                }
                 Event::Announcement(body) => {
                     // Only a content error is recoverable: the sender is already
                     // authorized and the line framed. Storage and policy errors below

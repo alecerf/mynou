@@ -513,10 +513,13 @@ pub(crate) fn title_matches(request: &crate::store::Request, label: &str) -> boo
     }
     let mut suffix = &t[name.len()..];
     if request.year != 0 {
-        if suffix.first().and_then(|s| s.parse::<u32>().ok()) != Some(request.year) {
-            return false;
+        // Episode labels often omit the series year; a different year still fails.
+        match suffix.first().and_then(|s| s.parse::<u32>().ok()) {
+            Some(year) if year == request.year => suffix = &suffix[1..],
+            Some(year) if request.kind != "movie" && !(1888..=2200).contains(&year) => {}
+            None if request.kind != "movie" => {}
+            _ => return false,
         }
-        suffix = &suffix[1..];
     }
     if request.kind == "movie" {
         !suffix.iter().any(|s| {

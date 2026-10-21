@@ -1,3 +1,14 @@
+## Added: Resolve bracketed tracker announcements through a Torznab lookup
+
+An IRC source can now read bracketed tracker announcements that carry only a
+release name and the ID of its tracker page. Each line becomes an unverified
+candidate. The configured Torznab indexer must return exactly one item for that
+page, with a TMDB ID and an info hash, and the TMDB catalog supplies the
+canonical title. Only then does the announcement enter the history, under the
+same rules, demand and metadata checks as before; an announcement still never
+creates a request. IRC episode titles may now omit the series year, but a
+different year is still rejected ([format](/docs/sources.md#bracketed-announcements-resolved-by-lookup)).
+
 ## Added: Deliver the native macOS WireGuard migration guide
 
 The required native WireGuard checks now repeat both route-loss scenarios with

@@ -497,6 +497,18 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
     }) {
         return Err("IRC: rule requester is not configured".into());
     }
+    for lookup in irc
+        .sources
+        .iter()
+        .filter_map(|s| s.announcement_lookup.as_ref())
+    {
+        if !sources
+            .iter()
+            .any(|s| s.kind == "torznab" && s.options.id.as_deref() == Some(&lookup.indexer))
+        {
+            return Err("IRC: lookup_indexer must name a Torznab indexer with that id".into());
+        }
+    }
     Ok(Config {
         store_dir: path(&base, text(v, "store_dir", "state/jobs")?)?,
         listen,
