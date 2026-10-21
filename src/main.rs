@@ -27,6 +27,8 @@ const HELP: &str = "Mynou — media automation using Rust std only
   analyze FILE [--json]
   doctor [--config mynou.json]
   serve [--config mynou.json]
+  service --action install|status|start|stop|uninstall --config /absolute/mynou.json
+          [--label org.mynou.automation]
   submit --title TITLE [--kind movie|episode|series|file] [--year YEAR]
          [--season N --episode N] [--path FILE | --url MAGNET_OR_TORRENT]
          [--tmdb-id N] [--source-numbering JSON] [--config mynou.json]
@@ -123,8 +125,9 @@ impl Args {
             }
         }
         let allowed: &[&str] = match command.as_str() {
-            "init" | "doctor" | "serve" | "status" | "sync" | "show" | "events" | "retry"
-            | "cancel" | "healthcheck" | "monitor" | "unmonitor" => &["config", "help"],
+            "service" => &["config", "help", "action", "label"],
+            "init" | "doctor" | "serve" | "service-run" | "status" | "sync" | "show" | "events"
+            | "retry" | "cancel" | "healthcheck" | "monitor" | "unmonitor" => &["config", "help"],
             "jobs" | "library" => &["config", "help", "after", "limit", "query", "state"],
             "requesters" | "requester-sync" => &["config", "help"],
             "vpn" => &["config", "help", "action", "profile", "settings"],
@@ -537,7 +540,26 @@ fn execute(args: Args) -> Result<()> {
         _ => {}
     }
     let path = args.config_path();
+    let supervised = args.command == "service-run";
+    if supervised {
+        mynou::service::log(&path, "starting")?;
+        mynou::service::report_progress(&path);
+    }
     let config = config::load(&path)?;
+    if args.command == "service" {
+        output(&mynou::service::manage(
+            args.value("label", "org.mynou.automation"),
+            args.value("action", "status"),
+            &path,
+            &config,
+            |process_id| {
+                let mut expected = Value::object();
+                expected.insert("expected_pid", process_id);
+                call(&config, &path, "POST", "/api/shutdown", Some(&expected)).map(|_| ())
+            },
+        )?);
+        return Ok(());
+    }
     if args.command == "healthcheck" {
         let r = HttpClient::new()
             .without_proxy()
@@ -584,18 +606,27 @@ fn execute(args: Args) -> Result<()> {
         output(&v);
         return Ok(());
     }
-    if args.command == "serve" {
+    if args.command == "serve" || supervised {
+        if supervised {
+            mynou::service::preflight(&path, &config)?;
+        }
         let token = api_token(&config, &path)?;
         // The listener answers health and migration progress while storage opens.
         let startup = mynou::server::Startup::bind(&config, token)?;
-        eprintln!(
-            "mynou {} — API http://{}",
-            env!("CARGO_PKG_VERSION"),
-            startup.address()?
-        );
+        if !supervised {
+            eprintln!(
+                "mynou {} — API http://{}",
+                env!("CARGO_PKG_VERSION"),
+                startup.address()?
+            );
+        }
         let engine = Engine::open_serving(config)?;
         let api = startup.serve(engine)?;
-        return api.run_supervised();
+        let result = api.run_supervised();
+        if supervised && result.is_ok() {
+            mynou::service::log(&path, "stopped_cleanly")?;
+        }
+        return result;
     }
     let online = args.command != "irc-preview" && running(&config);
     if args.command == "vpn" {
@@ -1678,8 +1709,18 @@ fn page_query(args: &Args) -> Result<String> {
 
 fn main() {
     mynou::progress::set_reporter(|migration| eprintln!("mynou: {}", migration.describe()));
-    if let Err(error) = Args::parse().and_then(execute) {
-        eprintln!("mynou: {error}");
+    let args = Args::parse();
+    let service_path = args
+        .as_ref()
+        .ok()
+        .filter(|a| a.command == "service-run")
+        .map(Args::config_path);
+    if let Err(error) = args.and_then(execute) {
+        if let Some(path) = service_path {
+            let _ = mynou::service::log(&path, "runtime_failed");
+        } else {
+            eprintln!("mynou: {error}");
+        }
         std::process::exit(1);
     }
 }

@@ -512,6 +512,17 @@ pub(crate) fn route(
             Ok((200, v))
         }
         ("POST", "/api/shutdown") => {
+            if !body.is_empty() {
+                let expected = json::parse(
+                    std::str::from_utf8(body).map_err(|_| "Invalid shutdown request")?,
+                )?;
+                if expected.get("expected_pid").is_some()
+                    && expected.get("expected_pid").and_then(Value::as_u64)
+                        != Some(u64::from(std::process::id()))
+                {
+                    return Err("Shutdown refused: process identity changed".into());
+                }
+            }
             engine.stopped.store(true, Ordering::Release);
             let mut v = Value::object();
             v.insert("status", "stopping");

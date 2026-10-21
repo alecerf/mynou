@@ -401,6 +401,11 @@ IRC announcements:
 - Mynou installs no Unix signal handler. `POST /api/shutdown` stops gracefully;
   a forced stop relies on journal recovery. Security randomness needs
   `/dev/urandom`.
+- The optional [launchd service](macos-service.md) starts at account login, not
+  pre-login boot. It restarts unsuccessful exits with a 60-second throttle,
+  uses a private credential snapshot in the plist, and bounds its fixed-code
+  logs to two 64 KiB files. Native service registration does not change the VPN
+  protection boundary or authorize stopping the legacy stack.
 
 ## Not supported
 

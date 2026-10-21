@@ -178,6 +178,10 @@ service; local management commands bypass it.
 
 ## Back up and upgrade
 
+For unattended account-login startup, crash recovery and explicit graceful
+stop/start/uninstall commands, see the [native launchd service](macos-service.md).
+Its upgrade instructions also explain refreshing the private credential snapshot.
+
 Keep `mynou.json`, `.env`, the `state/` and `downloads/` folders and the library
 folders. For a consistent backup, stop the service before copying `state/`. The
 journal confirms each transaction on disk, and an interrupted final write is
