@@ -84,9 +84,14 @@ def exercise(executable, library, output, fixture):
                         raise ValueError("route fixture stopped or timed out before " + state)
                     time.sleep(0.01)
                 if state == "lost":
-                    route("change", "-host", DESTINATION, "127.0.0.1", "-reject")
+                    # macOS silently preserves LOCAL flags on RTM_CHANGE.
+                    # Replace our owned host route; acknowledge only after the
+                    # actual REJECT flags have been read back from the kernel.
+                    route("delete", "-host", DESTINATION)
+                    route("add", "-host", DESTINATION, "127.0.0.1", "-reject")
                 else:
-                    route("change", "-host", DESTINATION, "-interface", "lo0")
+                    route("delete", "-host", DESTINATION)
+                    route("add", "-host", DESTINATION, "-interface", "lo0")
                 snapshot(output, state, state == "lost")
                 (control / ("ack-" + state)).write_text("ready")
                 completed.append(state)
