@@ -505,6 +505,18 @@ fn host_route_loss_past_session_expiry_needs_a_fresh_generation_without_fallback
     // The route stays away until the session expires; the owner survives.
     lose_route(&f, Some(io::ErrorKind::NetworkUnreachable));
     let arrived = f.arrivals[0].load(Ordering::Relaxed);
+    // Unlike an injected read error, a real rejected UDP route need not
+    // report anything until a send. Prove the loss at the outer socket before
+    // advancing the session clock; the virtual operation cannot fall back.
+    let probe = network.datagram(false).unwrap();
+    let packet = b"route-loss-probe";
+    assert_eq!(
+        probe
+            .send_to(packet, "10.7.0.1:6969".parse().unwrap())
+            .unwrap(),
+        packet.len()
+    );
+    wait(|| telemetry(&f).1.send_errors > stats.send_errors);
     skip(&f, REJECT_AFTER_TIME + Duration::from_secs(1));
     let mut lost = None;
     wait(|| {

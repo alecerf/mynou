@@ -37,7 +37,8 @@ cleanup, which is why this must never run on a persistent operator machine.
 
 The short loss retains a live stream, verifies every byte and runs new TCP,
 DNS and HTTP work started during loss through the same generation after
-restoration. The long loss advances the owner's test clock past session expiry,
+restoration. The long loss first forces an encrypted UDP send and verifies the
+outer route error, then advances the owner's test clock past session expiry,
 refuses new work, restores the OS route, obtains a fresh generation and keeps
 old handles revoked; the virtual listener is acquired once. These repetitions
 never activate the injected-error seam. Ordinary local runs of the same tests
