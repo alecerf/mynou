@@ -73,6 +73,12 @@ fn plist_keeps_secrets_in_private_environment_and_confines_process_arguments() {
     #[cfg(target_os = "macos")]
     {
         use std::process::Stdio;
+        // Until exec, the child shares every descriptor in this test process.
+        // Use the same gate as the store fixtures so another test cannot take
+        // a new lock that survives its parent's close in the child.
+        let _spawning = store::SPAWNING
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut child = Command::new("/usr/bin/plutil")
             .args(["-lint", "-"])
             .stdin(Stdio::piped())

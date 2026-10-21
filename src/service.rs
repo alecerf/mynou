@@ -224,7 +224,7 @@ pub fn log(config: &Path, code: &str) -> Result<()> {
         }
         Err(_) => return Err("Service: event log unavailable".into()),
     };
-    file.try_lock().map_err(|_| "Service: event log busy")?;
+    store::try_lock_file(&file).map_err(|_| "Service: event log busy")?;
     let line = format!("{} {code}\n", store::now());
     if file
         .metadata()
