@@ -48,6 +48,7 @@ FIXTURES = (
     "tunnel_http::tests::sessions::host_route_loss_past_session_expiry_needs_a_fresh_generation_without_fallback",
     "irc::tunnel_tests::irc_announcement_routes_through_tunnel_metadata_without_workers",
     "irc::tunnel_tests::cancellation_during_irc_metadata_refuses_routing_and_later_announcements",
+    "vpn::tests::forwarded_port_is_listened_on_in_the_tunnel_then_renewed_changed_and_lost",
 )
 NEGATIVE = "torrent::tunnel_tests::host_io_observer_negative_controls"
 

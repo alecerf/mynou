@@ -45,8 +45,8 @@ profile, a redacted block reason, current installed-session handshake age and
 outer-datagram counters. Counts/ages are decimal strings. No profile, key, PSK,
 endpoint, DNS server, input path or provider payload is returned. A successful
 handshake means the runtime is `protected`; it does not certify the complete
-isolation gates. `complete_isolation_verified` remains false and forwarding is
-reported `unsupported` until the separate acceptance work is delivered.
+isolation gates. `complete_isolation_verified` remains false. Port forwarding
+is reported separately ([below](#port-forwarding)).
 
 ## State and recovery
 
@@ -95,9 +95,52 @@ configuration, deletion or replacement by a process with directory write access
 is outside the trust boundary. Safe std checks are not an OS sandbox, atomic
 snapshot against hostile writers, proof of file ownership or memory zeroization.
 
+## Port forwarding
+
+Inbound seeding through the tunnel can use a provider-forwarded port obtained
+with NAT-PMP ([RFC 6886](https://www.rfc-editor.org/rfc/rfc6886)), the method
+[ProtonVPN documents](https://protonvpn.com/support/port-forwarding-manual-setup)
+for its P2P servers ([#223](https://github.com/alecerf/mynou/issues/223)). Generate
+the WireGuard profile for a P2P server with "NAT-PMP (port forwarding)" enabled,
+import it, then opt in:
+
+```sh
+mynou vpn --action enable-forwarding --config mynou.json
+mynou vpn --action disable-forwarding --config mynou.json
+```
+
+The API equivalent is `{"action":"enable-forwarding"}` (or
+`disable-forwarding`). The choice is stored in the private intent and survives
+`revoke`, `enable` and restarts; a new import keeps it. The NAT-PMP gateway is
+the profile's first `DNS` server (`10.2.0.1` in Proton profiles), by owner
+decision; no provider name is interpreted. A profile without `DNS` cannot enable
+forwarding.
+
+Each protected engine generation requests the UDP then the TCP mapping exactly
+as documented (public port 1, private port 0, 60 seconds), as virtual UDP inside
+that generation only. Replies from other sources or not answering the request are
+ignored. Retransmission doubles from 250 ms within a 10-second budget. Startup
+waits for this first outcome. With a grant, the torrent listener opens on the
+public TCP port before any tracker, DHT or peer is told about it; otherwise
+it uses `downloads.listen_port` inside the tunnel. The lease is renewed at three
+quarters of its lifetime (45 of 60 seconds). A held port stays advertised until
+its lease expires; failed attempts then back off from 2 to 60 seconds.
+
+The status reports `forwarding` as `disabled`, `acquiring`, `active` with
+`forwarded_port`, or `unavailable` with `forwarding_reason`, apart from the
+tunnel `state`: a refused or expired lease never marks the VPN failed.
+When the leased port changes, expires or is first granted after startup, the
+service replaces the engine generation (as on session loss), so the listener
+and announces always name the current port. Transfers continue on outgoing
+connections without a forwarded port. Inbound reachability still depends on the
+provider and is not promised. NAT-PMP is the only supported method; PCP and
+provider HTTP APIs are not implemented.
+
+## Privacy boundary
+
 The VPN server and underlying ISP can observe the outer connection's source IP.
 These controls do not claim a universal zero-leak guarantee, audited crypto,
-constant-time behavior, provider forwarding, or an established resource bound.
+constant-time behavior or an established resource bound.
 OpenVPN is outside scope under the owner's 2026-10-10 decision.
 
 ## Validation boundary

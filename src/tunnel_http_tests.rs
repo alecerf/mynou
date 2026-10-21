@@ -951,6 +951,78 @@ impl Drop for Pair {
     }
 }
 
+/// A NAT-PMP gateway on virtual UDP 5351 of `driver`, answering mapping
+/// requests with `port` and a two-second lifetime; port 0 refuses (result 2).
+pub(crate) struct NatPmp {
+    pub port: Arc<std::sync::atomic::AtomicU16>,
+    pub requests: Arc<AtomicUsize>,
+    stop: Arc<AtomicBool>,
+    worker: Option<JoinHandle<()>>,
+}
+impl NatPmp {
+    pub(crate) fn start(driver: &HttpTunnel, port: u16) -> Self {
+        let socket = driver
+            .owner
+            .call(None, end(), |r| r.tunnel.udp_bind(5351).map_err(failed))
+            .unwrap();
+        let granted = Arc::new(std::sync::atomic::AtomicU16::new(port));
+        let requests = Arc::new(AtomicUsize::new(0));
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker = {
+            let (driver, granted, requests, stop) = (
+                driver.clone(),
+                granted.clone(),
+                requests.clone(),
+                stop.clone(),
+            );
+            thread::spawn(move || {
+                while !stop.load(Ordering::Acquire)
+                    && !driver.owner.cancelled.load(Ordering::Acquire)
+                {
+                    let (granted, requests) = (granted.clone(), requests.clone());
+                    let _ = driver.owner.call(None, end(), move |r| {
+                        let Some(query) = r.tunnel.udp_recv(socket).map_err(failed)? else {
+                            return Ok(());
+                        };
+                        let bytes = &query.payload;
+                        if bytes.len() != 12 || bytes[0] != 0 || !matches!(bytes[1], 1 | 2) {
+                            return Ok(());
+                        }
+                        requests.fetch_add(1, Ordering::Relaxed);
+                        let port = granted.load(Ordering::Acquire);
+                        let (code, lifetime) = if port == 0 { (2_u16, 0_u32) } else { (0, 2) };
+                        let mut reply = vec![0, 128 + bytes[1]];
+                        reply.extend_from_slice(&code.to_be_bytes());
+                        reply.extend_from_slice(&1_u32.to_be_bytes());
+                        reply.extend_from_slice(&[0, 0]);
+                        reply.extend_from_slice(&port.to_be_bytes());
+                        reply.extend_from_slice(&lifetime.to_be_bytes());
+                        r.tunnel
+                            .udp_send_to(socket, (query.source, query.source_port), &reply)
+                            .map_err(failed)?;
+                        Ok(())
+                    });
+                    thread::sleep(TICK);
+                }
+            })
+        };
+        Self {
+            port: granted,
+            requests,
+            stop,
+            worker: Some(worker),
+        }
+    }
+}
+impl Drop for NatPmp {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        if let Some(worker) = self.worker.take() {
+            worker.join().unwrap();
+        }
+    }
+}
+
 pub(crate) fn udp_protocol_server(driver: &HttpTunnel) -> (u16, JoinHandle<()>) {
     let socket = driver
         .owner

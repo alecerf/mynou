@@ -214,11 +214,12 @@ generation-bound virtual listener before advertising it. Expiry/failure stops
 advertising the stale port and reports forwarding unavailable while the tunnel
 can remain protected; no host listener or direct forwarding request replaces it.
 
-No provider forwarding protocol is established by the repository today. NAT-PMP,
-PCP or an HTTP API must not be assumed from provider names. Initial forwarding
-can be reported unsupported; a provider-specific increment requires authorized
-documentation and synthetic request/renewal/error fixtures. Its requests/DNS
-use the protected context too. Seeding through outgoing peer connections remains
+NAT-PMP is the one supported forwarding method, with ProtonVPN's public
+documentation and the owner's 2026-10-21 decision (#223): opt-in, gateway taken
+from the profile's DNS server, requests as virtual UDP of the protected
+generation only ([operator reference](wireguard-operator.md#port-forwarding)).
+PCP or an HTTP API must still not be assumed from provider names; another method
+requires its own authorized documentation and synthetic fixtures. Seeding through outgoing peer connections remains
 subject to the VPN/provider's reachability; do not promise inbound connectivity.
 
 ## Verification gates before protected delivery

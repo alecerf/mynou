@@ -7,6 +7,17 @@ session recover or reconnect when the route returns, still without any
 direct fallback. Torrent VPN protection remains unavailable
 ([observed scenarios and limits](/docs/host-io-observer.md)).
 
+## Added: Forward a VPN port with NAT-PMP for inbound seeding
+
+With a ProtonVPN-style profile generated for port forwarding, `mynou vpn
+--action enable-forwarding` requests a forwarded port from the tunnel gateway
+with NAT-PMP, only inside the tunnel. The torrent listener opens on that port
+before announcing it, and the lease is renewed automatically. The status reports
+forwarding apart from the VPN state: a refused or expired port never marks the
+VPN failed, and transfers continue without it. Inbound reachability is not
+promised, and torrent VPN protection remains gated by its isolation evidence
+([operator reference](/docs/wireguard-operator.md#port-forwarding)).
+
 ## Fixed: Keep native transfers moving while their progress is saved
 
 Once a second the native torrent client saved every changed transfer while
