@@ -188,7 +188,12 @@ fn setup() -> Setup {
     fixture.route("/api", 200, feed_empty());
     fixture.route("/api?t=search", 200, feed(&torrent.id, &download));
     let engine = Engine::open(cfg.clone()).unwrap();
-    let job = engine.submit(request()).unwrap().remove(0).id;
+    let job = match engine.submit(request()) {
+        Ok(mut jobs) => jobs.remove(0).id,
+        // Discard the error explicitly: no Result panic/debug wrapper may
+        // format a credential-bearing catalog diagnostic.
+        Err(_) => panic!("Synthetic lookup fixture request submission failed"),
+    };
     assert!(!engine.tick().unwrap());
     assert!(stored(&engine, &job).acquisition_url.is_none());
     let line = format!("[NEW] [Films] [{NAME}] [WEB] [1.2 MiB] [0%] par uploader -> {PREFIX}41");
