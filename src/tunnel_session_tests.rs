@@ -308,3 +308,90 @@ fn authenticated_roaming_moves_the_outer_endpoint_without_a_new_generation() {
     assert_eq!(after.generation, before.generation);
     assert_eq!(f.arrivals[0].load(Ordering::Relaxed), stale);
 }
+
+#[test]
+fn engine_pause_selection_and_verified_bytes_survive_rekey() {
+    let f = Fixture::new();
+    crate::vpn::tests::retained_engine_session_change(f.driver.clone(), false, |engine| {
+        let initiations = kinds(&f, 1);
+        skip(&f, REKEY_AFTER_TIME + Duration::from_secs(1));
+        assert_eq!(
+            engine
+                .torrent_network
+                .resolve("retained-rekey.example:6881", end())
+                .unwrap(),
+            [peer()]
+        );
+        echo(&mut *connect(&*engine.torrent_network), 7, 32 * 1024);
+        wait(|| {
+            kinds(&f, 1) > initiations
+                && f.driver
+                    .telemetry(end())
+                    .unwrap()
+                    .2
+                    .is_some_and(|age| age < REKEY_AFTER_TIME)
+        });
+        echo(&mut *connect(&*engine.torrent_network), 8, 8 * 1024);
+    });
+}
+
+#[test]
+fn engine_pause_selection_and_verified_bytes_survive_authenticated_roaming() {
+    let f = Fixture::new();
+    crate::vpn::tests::retained_engine_session_change(f.driver.clone(), false, |engine| {
+        let before = telemetry(&f).1.roamed;
+        let mut stream = connect(&*engine.torrent_network);
+        echo(&mut *stream, 9, 8 * 1024);
+        f.roam.store(true, Ordering::Release);
+        echo(&mut *stream, 10, 32 * 1024);
+        wait(|| telemetry(&f).0.remote == Some(f.roamed));
+        assert_eq!(telemetry(&f).1.roamed, before + 1);
+        assert_eq!(
+            engine
+                .torrent_network
+                .resolve("retained-roam.example:6881", end())
+                .unwrap(),
+            [peer()]
+        );
+        echo(&mut *connect(&*engine.torrent_network), 11, 8 * 1024);
+        assert!(f.arrivals[1].load(Ordering::Relaxed) > 0);
+    });
+}
+
+#[test]
+fn engine_pause_selection_and_verified_bytes_survive_expiry_and_replacement() {
+    let f = Fixture::new();
+    crate::vpn::tests::retained_engine_session_change(f.driver.clone(), true, |engine| {
+        let generation = telemetry(&f).0.generation;
+        f.block.store(true, Ordering::Release);
+        skip(&f, REJECT_AFTER_TIME + Duration::from_secs(1));
+        wait(|| telemetry(&f).0.generation != generation);
+        assert_eq!(telemetry(&f).0.reason, Some(Reason::Expired));
+        assert!(engine.vpn_needs_reload());
+        assert!(engine.torrent_publication().is_err());
+        assert!(!engine.tick().unwrap());
+        assert!(
+            engine
+                .torrent_network
+                .resolve("expired-retained.example:80", end())
+                .is_err()
+        );
+        assert!(
+            engine
+                .torrent_network
+                .connect(peer(), Duration::from_secs(1))
+                .is_err()
+        );
+        f.block.store(false, Ordering::Release);
+        wait(|| {
+            if telemetry(&f).0.state == TunnelState::Protected {
+                return true;
+            }
+            skip(&f, Duration::from_secs(1));
+            thread::sleep(Duration::from_millis(50));
+            false
+        });
+        assert!(telemetry(&f).0.generation > generation);
+        assert!(engine.torrent_publication().is_err());
+    });
+}

@@ -140,8 +140,8 @@ still saved atomically under the lock as before.
 
 ## Remaining for #224
 
-IRC orchestration observation; engine-level state (durable pause and
-selection) across rekey, expiry and roaming; host route changes; independent
-QA/Security reading of current-head CI and the supported-subset limits; and the
-gated macOS installation and migration guide. `complete_isolation_verified`
-stays false.
+Host route changes; independent QA/Security reading of current-head CI and the
+supported-subset limits; and the gated macOS installation and migration guide.
+IRC orchestration observation (#323) and retained engine pause/selection across
+session changes (#327) are recorded in [host-io-observer.md](host-io-observer.md).
+`complete_isolation_verified` stays false.

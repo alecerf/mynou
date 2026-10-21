@@ -164,6 +164,33 @@ session is refused before any metadata attempt. Each run observes exactly one
 ordinary connection, the IRC session, so no metadata lookup fell back to the
 host network.
 
+The retained-engine session increment
+[#327](https://github.com/alecerf/mynou/issues/327) adds three required observed
+scenarios, bringing the runner to thirty-three. A native client first verifies
+two pieces (32 KiB) of a two-file private torrent from synthetic local bytes;
+only that file is selected and the other file is absent. It persists an explicit
+user pause, transfer priority 7 and low priority for the selected file. A real
+operator-managed engine reopens this state on the controlled native owner.
+
+- Time-based rekey completes while the engine's captured network performs DNS
+  and verified echo traffic; the engine keeps its generation.
+- Authenticated endpoint roaming moves the outer destination while existing
+  stream bytes remain intact and new engine-network operations succeed, with
+  the same engine generation.
+- Session expiry with the relay silenced refuses engine publication and new
+  work. A scheduled reconnect yields a fresh generation, but the old engine
+  stays refused. It is retired and dropped before a successor opens its durable
+  torrent state; captured old authority remains refused after recovery.
+
+Each scenario checks the exact persisted pause, selection and transfer/file
+priorities, both selected-file flags, intact selected bytes and absence of the
+unselected file. It also checks exclusive ownership of the fixed virtual
+listener port, then retires/drops the engine and reopens the durable state again
+on that same port. These are retained, paused transfers, not active swarm
+downloads during the event; successful DNS and echo probes exercise the engine's network. Only
+the test owner's monotonic time is skewed. No host routes or provider services
+are changed; `complete_isolation_verified` remains false.
+
 ```sh
 TMPDIR=/private/tmp cargo test --lib --no-run --offline --locked \
   --message-format=json > /private/tmp/mynou-observer-build.jsonl
@@ -194,7 +221,8 @@ loader policy; loader failure is a failed check, never skipped evidence.
 
 The observer does not inspect encrypted datagram content, prove server privacy,
 exercise real provider connectivity, alter host routes or supply increasing-load
-CPU/RSS/timing evidence. Engine-level state across rekey, expiry and
-roaming, host route changes, engine-level resource measurements and the
-gated macOS guide remain #224. Existing protocol,
-generation and operator fixtures retain their own documented scope.
+CPU/RSS/timing evidence. Host route changes, the independent QA/Security read of
+current-head CI and supported-subset limits, and the gated macOS guide remain
+#224. Engine-level resource measurements are recorded separately in
+[torrent-load.md](torrent-load.md). Existing protocol, generation and operator
+fixtures retain their own documented scope.
