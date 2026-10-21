@@ -211,7 +211,11 @@ IRC announcements:
   each, separators of 1 to 16 ASCII bytes containing punctuation, and unique
   fields among the eight documented names. Pattern languages and URL fields are
   not supported. Announcements without a catalog ID and a hash, such as
-  title-only messages, cannot be used.
+  title-only messages, cannot be used, except through a `bracketed` lookup.
+- Bracketed lookups hold at most 64 unresolved candidates in memory, try each
+  at most three times (30 seconds apart, ten-second budget each) and require
+  one Torznab item for the exact details page, plus the TMDB catalog. Episodes
+  need one `SxxEyy` marker; season packs are not supported.
 - Preview files and bodies are limited to 8 KiB; announcement lists return at
   most 200 entries per page.
 - Magnet templates contain `{xt}` once, at most four trackers and eight

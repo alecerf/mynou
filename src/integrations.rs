@@ -1003,6 +1003,97 @@ fn fresh_catalog(
     Ok(value)
 }
 
+/// Canonical TMDB title and year of one movie or series identity.
+pub(crate) fn catalog_canonical_before(
+    config: &Config,
+    kind: &str,
+    id: u64,
+    deadline: Instant,
+) -> Result<(String, u32)> {
+    let tv = kind == "episode";
+    let value = fresh_catalog(
+        config,
+        &format!("{}/{id}", if tv { "tv" } else { "movie" }),
+        &[],
+        deadline,
+    )
+    .map_err(|_| "TMDB catalog: canonical identity unavailable")?;
+    let title = string(&value, if tv { "name" } else { "title" })
+        .map(str::trim)
+        .filter(|t| !t.is_empty() && t.len() <= 512 && !t.chars().any(char::is_control));
+    let year = string(&value, if tv { "first_air_date" } else { "release_date" })
+        .filter(|text| crate::date::day(text).is_ok())
+        .and_then(|text| text[..4].parse::<u32>().ok());
+    match (integer(&value, "id"), title, year) {
+        (Some(actual), Some(title), Some(year)) if actual == id => Ok((title.into(), year)),
+        _ => Err("TMDB catalog: canonical identity unavailable".into()),
+    }
+}
+
+/// One Torznab item, identified by its details page. GUIDs and download links,
+/// which may carry a passkey, are never read.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct DetailsEntry {
+    pub(crate) details: String,
+    pub(crate) tmdb_ids: Vec<String>,
+    pub(crate) info_hashes: Vec<String>,
+}
+
+/// One bounded Torznab text search; failures carry only fixed messages.
+pub(crate) fn torznab_details_before(
+    source: &Source,
+    text: &str,
+    deadline: Instant,
+) -> Result<Vec<DetailsEntry>> {
+    if source.kind != "torznab" {
+        return Err("Indexer: lookup requires a Torznab source".into());
+    }
+    let mut pairs = vec![("t", "search".to_owned()), ("q", text.to_owned())];
+    if let Some(key) = optional_secret(&source.api_key_env)? {
+        pairs.push(("apikey", key));
+    }
+    let url = query(&source.url, &pairs)?;
+    let response = crate::indexers::fetch(
+        source,
+        &url,
+        "application/rss+xml, application/xml",
+        deadline,
+    )?;
+    remaining_search_time(deadline)?;
+    let entries = (|| {
+        let text = std::str::from_utf8(&response.body).map_err(|_| "Indexer: invalid UTF-8")?;
+        let root = parse_xml(text)?;
+        let channel = (root.local() == "rss")
+            .then(|| root.child("channel"))
+            .flatten()
+            .ok_or("Torznab indexer: invalid response")?;
+        let mut out = Vec::new();
+        for item in channel.children.iter().filter(|c| c.local() == "item") {
+            if out.len() == MAX_FEED_ENTRIES {
+                return Err("Torznab indexer: too many lookup results".into());
+            }
+            let mut entry = DetailsEntry {
+                details: item
+                    .child("comments")
+                    .map_or(String::new(), |c| c.text.trim().to_owned()),
+                ..DetailsEntry::default()
+            };
+            for attr in item.children.iter().filter(|c| c.local() == "attr") {
+                let value = attr.attrs.get("value").cloned().unwrap_or_default();
+                match attr.attrs.get("name").map(String::as_str) {
+                    Some("tmdbid") => entry.tmdb_ids.push(value),
+                    Some("infohash") => entry.info_hashes.push(value),
+                    _ => {}
+                }
+            }
+            out.push(entry);
+        }
+        Ok(out)
+    })();
+    crate::indexers::parsed(source, entries.is_ok());
+    entries
+}
+
 // Current UTC date, converted from Unix days to the Gregorian calendar.
 fn today() -> String {
     let days = SystemTime::now()

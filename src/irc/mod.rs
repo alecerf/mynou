@@ -4,6 +4,7 @@ pub(crate) mod client;
 mod engine;
 pub(crate) mod format;
 mod index;
+pub(crate) mod lookup;
 mod nickserv;
 mod persistence;
 pub mod protocol;
@@ -13,6 +14,7 @@ pub(crate) mod sasl;
 mod tunnel_tests;
 use crate::{Result, crypto::sha256, json::Value, selection::SelectionConfig, store::Request};
 pub use format::Delimited;
+pub use lookup::{Candidate, Lookup};
 pub use nickserv::Settings as NickServ;
 pub(crate) use persistence::AnnouncementStore;
 pub use routing::Origin;
@@ -73,6 +75,17 @@ pub fn preview_text(config: &crate::config::Config, source_id: &str, text: &str)
     let body = source
         .wire_payload(text)?
         .ok_or("IRC: text does not match the configured format")?;
+    if let Some(candidate) = source.lookup_candidate(&body)? {
+        // No lookup runs here: the identity, hash and rules stay unevaluated.
+        let mut v = Value::object();
+        v.insert("source_id", source.id.clone());
+        v.insert("candidate", candidate.to_json());
+        v.insert("identity_verified", false);
+        v.insert("lookup_started", false);
+        v.insert("acquisition_started", false);
+        v.insert("persisted", false);
+        return Ok(v);
+    }
     preview(config, source_id, &source.decode_payload(&body)?.to_json())
 }
 fn text(v: &Value, key: &str) -> Result<String> {
@@ -186,6 +199,7 @@ pub struct Source {
     pub sasl: Option<Sasl>,
     pub nickserv: Option<NickServ>,
     pub announcement_format: Option<Delimited>,
+    pub announcement_lookup: Option<Lookup>,
     pub magnet_template: Option<String>,
     pub idle_timeout_secs: u64,
     pub reconnect_min_secs: u64,
@@ -239,6 +253,11 @@ impl Source {
                 "reconnect_max_secs",
             ],
         )?;
+        let lookup = v
+            .get("announcement_format")
+            .filter(|f| f.get("type").and_then(Value::as_str) == Some("bracketed"))
+            .map(Lookup::from_json)
+            .transpose()?;
         let s = Self {
             id: text(v, "id")?,
             url: text(v, "url")?,
@@ -260,8 +279,10 @@ impl Source {
             },
             announcement_format: match v.get("announcement_format") {
                 None | Some(Value::Null) => None,
+                Some(_) if lookup.is_some() => None,
                 Some(v) => Delimited::from_json(v)?,
             },
+            announcement_lookup: lookup,
             magnet_template: match v.get("magnet_template") {
                 None | Some(Value::Null) => None,
                 Some(v) => Some(
@@ -330,6 +351,9 @@ impl Source {
         if let Some(format) = &self.announcement_format {
             v.insert("announcement_format", format.configuration());
         }
+        if let Some(lookup) = &self.announcement_lookup {
+            v.insert("announcement_format", lookup.configuration());
+        }
         digest(crate::json::stringify(&v).as_bytes())
     }
     pub fn public_json(&self) -> Value {
@@ -343,6 +367,8 @@ impl Source {
             "announcement_format",
             if self.announcement_format.is_some() {
                 "delimited"
+            } else if self.announcement_lookup.is_some() {
+                "bracketed"
             } else {
                 "json"
             },
@@ -363,12 +389,18 @@ impl Source {
         if line.len() > protocol::MAX_LINE - 2 {
             return Err("IRC: announcement exceeds wire bounds".into());
         }
+        if let Some(lookup) = &self.announcement_lookup {
+            return lookup.payload(line);
+        }
         match &self.announcement_format {
             Some(format) => format.payload(line),
             None => Ok(line.strip_prefix("MYNOU ").map(str::to_owned)),
         }
     }
     pub(crate) fn decode_payload(&self, payload: &str) -> Result<Announcement> {
+        if self.announcement_lookup.is_some() {
+            return Err("IRC: this source announces candidates that require a lookup".into());
+        }
         match &self.announcement_format {
             Some(format) => format.decode(payload),
             None => Announcement::from_json(
