@@ -228,8 +228,13 @@ impl Engine {
     fn start_transfers(&self) -> Result<()> {
         if self.start_downloads && self.config.downloads_enabled && self.downloads.get().is_none() {
             let admission_store = Arc::clone(&self.store);
+            let mut downloads = self.config.downloads.clone();
+            // A forwarded port is listened on before any announce names it.
+            if let Some(port) = self.forwarded_port() {
+                downloads.listen_port = port;
+            }
             let client = Client::open_with_policy_and_admission(
-                self.config.downloads.clone(),
+                downloads,
                 self.config.download_policy.clone(),
                 Arc::new(move |id| {
                     // Client workers must never wait for the request journal

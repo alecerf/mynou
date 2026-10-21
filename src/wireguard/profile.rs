@@ -76,6 +76,11 @@ pub struct Profile {
 }
 
 impl Profile {
+    /// Inner DNS servers; the first is also the NAT-PMP forwarding gateway.
+    pub fn dns(&self) -> &[Ipv4Addr] {
+        &self.dns
+    }
+
     /// Retained interface CIDR prefix; AllowedIPs independently supplies the route.
     pub fn address_prefix(&self) -> u8 {
         self.prefix

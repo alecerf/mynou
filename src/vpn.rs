@@ -9,10 +9,11 @@ use crate::{
     tunnel_http::HttpTunnel,
     wireguard::profile::{self, Profile},
 };
+use forwarding::{Forwarder, Status as Forwarding};
 use std::{
     fs,
     io::Write,
-    net::SocketAddr,
+    net::{Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex, OnceLock, RwLock,
@@ -26,6 +27,8 @@ const STORAGE: &str = "Cannot persist private VPN intent; torrent networking rem
 const DISABLED: &str = "# mynou-vpn-v1 disabled\n";
 const ENABLED: &str = "# mynou-vpn-v1 enabled\n";
 const REVOKED: &str = "# mynou-vpn-v1 revoked\n";
+/// Opt-in NAT-PMP forwarding to the profile's DNS gateway (owner decision, #223).
+const FORWARDING: &str = "# mynou-forwarding natpmp\n";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
@@ -35,6 +38,7 @@ enum Mode {
 }
 struct Intent {
     mode: Mode,
+    forwarding: bool,
     profile: Option<Profile>,
 }
 impl Intent {
@@ -48,12 +52,23 @@ impl Intent {
         } else {
             return Err("Invalid private VPN intent".into());
         };
+        let (forwarding, rest) = match rest.strip_prefix(FORWARDING) {
+            Some(rest) => (true, rest),
+            None => (false, rest),
+        };
         let profile = if rest.is_empty() && mode == Mode::Disabled {
             None
         } else {
             Some(profile::parse(rest).map_err(|e| e.to_string())?)
         };
-        Ok(Self { mode, profile })
+        if forwarding && profile.is_none() {
+            return Err("Invalid private VPN intent".into());
+        }
+        Ok(Self {
+            mode,
+            forwarding,
+            profile,
+        })
     }
     fn document(&self) -> String {
         let mut text = match self.mode {
@@ -62,6 +77,9 @@ impl Intent {
             Mode::Revoked => REVOKED,
         }
         .to_owned();
+        if self.forwarding {
+            text.push_str(FORWARDING);
+        }
         if let Some(profile) = &self.profile {
             text.push_str(&profile.private_document());
         }
@@ -73,6 +91,8 @@ impl Intent {
 /// reconnects construct another engine rather than repointing outstanding work.
 pub(crate) struct Gate {
     inner: OnceLock<Arc<dyn Network>>,
+    /// This generation's forwarded-port lease, when forwarding is enabled.
+    forwarder: OnceLock<Forwarder>,
     retired: AtomicBool,
     fence: RwLock<()>,
 }
@@ -80,6 +100,7 @@ impl Gate {
     fn new() -> Self {
         Self {
             inner: OnceLock::new(),
+            forwarder: OnceLock::new(),
             retired: AtomicBool::new(false),
             fence: RwLock::new(()),
         }
@@ -92,10 +113,21 @@ impl Gate {
     }
     pub(crate) fn retire(&self) {
         self.retired.store(true, Ordering::Release);
+        if let Some(forwarder) = self.forwarder.get() {
+            forwarder.stop();
+        }
         let _fence = self.fence.write().unwrap_or_else(|e| e.into_inner());
     }
     fn assigned(&self) -> bool {
         self.inner.get().is_some()
+    }
+    /// The first lease attempt has an outcome, so the listener port is known.
+    fn settled(&self, gateway: Option<Ipv4Addr>) -> bool {
+        gateway.is_none()
+            || self
+                .forwarder
+                .get()
+                .is_some_and(|f| f.status() != Forwarding::Acquiring)
     }
 }
 struct Lease<'a> {
@@ -145,6 +177,9 @@ struct State {
     document: String,
     mode: Mode,
     driver: Option<HttpTunnel>,
+    /// NAT-PMP gateway of an enabled forwarding intent: the profile's DNS.
+    gateway: Option<Ipv4Addr>,
+    forwarding: bool,
     error: Option<&'static str>,
 }
 /// Shared across automatic engine recovery, never across a change in operator intent.
@@ -165,11 +200,20 @@ impl Operator {
             document: String::new(),
             mode: Mode::Revoked,
             driver: None,
+            gateway: None,
+            forwarding: false,
             error: None,
         };
         if let Some(intent) = intent {
             state.document = intent.document();
             state.mode = intent.mode;
+            state.forwarding = intent.forwarding;
+            if intent.forwarding {
+                state.gateway = intent
+                    .profile
+                    .as_ref()
+                    .and_then(|p| p.dns().first().copied());
+            }
             if intent.mode == Mode::Enabled && runtime {
                 state.driver = intent
                     .profile
@@ -197,25 +241,37 @@ impl Operator {
         }
         gate
     }
+    /// Protected, and with forwarding enabled, the first lease attempt done:
+    /// the torrent listener then opens on the granted port before announcing.
     pub(crate) fn ready(&self, gate: &Gate) -> bool {
-        if gate.assigned() {
-            return gate.publication().is_ok();
-        }
         let Ok(state) = self.state.lock() else {
             return false;
         };
-        if state.error.is_some() || self.changed.load(Ordering::Acquire) {
+        let gateway = state.gateway.filter(|_| state.mode == Mode::Enabled);
+        if !gate.assigned() {
+            if state.error.is_some() || self.changed.load(Ordering::Acquire) {
+                return false;
+            }
+            if let Some(driver) = &state.driver
+                && let Ok(network) = driver.network(Instant::now() + Duration::from_millis(100))
+            {
+                let _ = gate.inner.set(network);
+            }
+        }
+        drop(state);
+        if gate.publication().is_err() {
             return false;
         }
-        if let Some(driver) = &state.driver
-            && let Ok(network) = driver.network(Instant::now() + Duration::from_millis(100))
-        {
-            let _ = gate.inner.set(network);
+        if let (Some(gateway), Some(network)) = (gateway, gate.inner.get()) {
+            gate.forwarder.get_or_init(|| {
+                Forwarder::start(network.clone(), gateway, forwarding::Timing::default())
+            });
         }
-        gate.publication().is_ok()
+        gate.settled(gateway)
     }
     pub(crate) fn needs_reload(&self, gate: &Gate) -> bool {
         self.changed.load(Ordering::Acquire)
+            || gate.forwarder.get().is_some_and(Forwarder::stale)
             || (gate.assigned()
                 && gate.publication().is_err()
                 && self
@@ -229,13 +285,14 @@ impl Operator {
     pub(crate) fn report(&self, gate: &Gate) -> Value {
         let mut value = Value::object();
         value.insert("complete_isolation_verified", false);
-        value.insert("forwarding", "unsupported");
+        value.insert("forwarding", "disabled");
         value.insert("handshake_age_secs", Value::Null);
         let Ok(state) = self.state.try_lock() else {
             value.insert("state", "blocked");
             value.insert("reason", "VPN control is busy");
             return value;
         };
+        forwarding_json(&mut value, &state, gate);
         value.insert("enabled", state.mode != Mode::Disabled);
         value.insert("profile_present", state.document.contains("[Interface]"));
         if let Some(error) = state.error {
@@ -317,6 +374,7 @@ impl Operator {
         } else {
             Intent {
                 mode: Mode::Revoked,
+                forwarding: false,
                 profile: None,
             }
         };
@@ -333,6 +391,15 @@ impl Operator {
             }
             "disable" => {
                 intent.mode = Mode::Disabled;
+            }
+            "enable-forwarding" | "disable-forwarding" => {
+                let Some(profile) = &intent.profile else {
+                    return Err("Import a VPN profile first".into());
+                };
+                if profile.dns().is_empty() {
+                    return Err("Forwarding uses the profile DNS server as gateway".into());
+                }
+                intent.forwarding = action == "enable-forwarding";
             }
             "revoke" => {
                 if intent.profile.is_none() {
@@ -352,10 +419,35 @@ impl Operator {
             return Err(STORAGE.into());
         }
         state.mode = intent.mode;
+        state.forwarding = intent.forwarding;
         state.document = document;
         self.changed.store(true, Ordering::Release);
         drop(state);
         Ok(self.report(gate))
+    }
+}
+/// Forwarding is reported apart from the tunnel state: a missing lease is
+/// never a VPN failure. The port is what peers and trackers are told.
+fn forwarding_json(value: &mut Value, state: &State, gate: &Gate) {
+    if !state.forwarding {
+        return;
+    }
+    let status = match (state.gateway, gate.forwarder.get()) {
+        (None, _) => Forwarding::Unavailable("Profile has no DNS gateway"),
+        (Some(_), Some(forwarder)) => forwarder.status(),
+        (Some(_), None) if state.mode == Mode::Enabled => Forwarding::Acquiring,
+        (Some(_), None) => Forwarding::Unavailable("Protection is not enabled"),
+    };
+    match status {
+        Forwarding::Acquiring => value.insert("forwarding", "acquiring"),
+        Forwarding::Active(port) => {
+            value.insert("forwarding", "active");
+            value.insert("forwarded_port", port.to_string());
+        }
+        Forwarding::Unavailable(reason) => {
+            value.insert("forwarding", "unavailable");
+            value.insert("forwarding_reason", reason);
+        }
     }
 }
 fn counters_json(stats: Stats) -> Value {
@@ -412,6 +504,7 @@ fn persist(path: &Path, data: &[u8]) -> Result<()> {
     result
 }
 
+mod forwarding;
 #[cfg(test)]
 pub(crate) mod tests;
 
@@ -485,6 +578,13 @@ impl crate::engine::Engine {
             (Some(operator), Some(gate)) => operator.needs_reload(gate),
             _ => false,
         }
+    }
+    /// The forwarded port the torrent listener must take, if one is held.
+    pub(crate) fn forwarded_port(&self) -> Option<u16> {
+        self.vpn_gate
+            .as_ref()
+            .and_then(|gate| gate.forwarder.get())
+            .and_then(Forwarder::advertise)
     }
     pub(crate) fn retire_vpn_generation(&self) {
         if let Some(gate) = &self.vpn_gate {

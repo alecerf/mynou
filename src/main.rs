@@ -20,7 +20,7 @@ use std::{
 
 const HELP: &str = "Mynou — media automation using Rust std only
 
-  vpn [--action status|import|enable|disable|revoke|reconnect]
+  vpn [--action status|import|enable|disable|revoke|reconnect|enable-forwarding|disable-forwarding]
       [--profile PRIVATE.conf | --settings PRIVATE.json] [--config FILE]
 
   init [--config mynou.json]

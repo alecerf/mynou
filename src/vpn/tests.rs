@@ -888,3 +888,154 @@ pub(crate) fn retained_engine_session_change(
     startup(&engine);
     check(&engine);
 }
+
+fn wait(mut done: impl FnMut() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while !done() {
+        assert!(Instant::now() < deadline, "condition not reached");
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+/// The port peers and trackers are told, from the public engine status.
+fn peer_port(engine: &Engine) -> u16 {
+    match engine.status().unwrap().get("peer_port") {
+        Some(Value::Number(port)) => *port as u16,
+        other => panic!("no peer port: {other:?}"),
+    }
+}
+fn forwarding(value: &Value, field: &str) -> Option<String> {
+    value.get(field).and_then(Value::as_str).map(str::to_owned)
+}
+
+#[test]
+fn forwarding_intent_takes_the_profile_dns_as_gateway_and_survives_other_controls() {
+    let directory = Directory::new();
+    let config = directory.config();
+    let engine = Engine::open_for_management(config.clone()).unwrap();
+    assert!(engine.vpn_control(&body("enable-forwarding")).is_err());
+    engine.vpn_control(&import()).unwrap();
+    drop(engine);
+    for (action, enabled) in [
+        ("enable-forwarding", true),
+        ("revoke", true),
+        ("enable", true),
+        ("disable-forwarding", false),
+        ("enable-forwarding", true),
+    ] {
+        let engine = Engine::open_for_management(config.clone()).unwrap();
+        let report = engine.vpn_control(&body(action)).unwrap();
+        assert_redacted(&report);
+        drop(engine);
+        let text = profile::read_private_text(&stored(&config)).unwrap();
+        let intent = Intent::decode(&text).unwrap();
+        assert_eq!(intent.forwarding, enabled, "{action}");
+        let operator = Operator::load(&config.store_dir, false);
+        let gateway = operator.state.lock().unwrap().gateway;
+        assert_eq!(gateway, enabled.then(|| Ipv4Addr::new(10, 23, 0, 1)));
+    }
+    // Without the running service the lease is not attempted; forwarding is
+    // reported apart from the tunnel state and never names the gateway.
+    let engine = Engine::open_for_management(config.clone()).unwrap();
+    let status = engine.vpn_status();
+    assert_eq!(state(&status), "blocked");
+    assert_eq!(
+        forwarding(&status, "forwarding").as_deref(),
+        Some("acquiring")
+    );
+    assert_redacted(&status);
+    // A forwarding line without a profile is not a valid intent.
+    assert!(Intent::decode("# mynou-vpn-v1 disabled\n# mynou-forwarding natpmp\n").is_err());
+}
+
+#[test]
+fn forwarded_port_is_listened_on_in_the_tunnel_then_renewed_changed_and_lost() {
+    let directory = Directory::new();
+    let pair = crate::tunnel_http::tests::Pair::new();
+    let gateway = crate::tunnel_http::tests::NatPmp::start(&pair.server, 53186);
+    let config = directory.config();
+    let engine = Engine::open_for_management(config.clone()).unwrap();
+    engine.vpn_control(&import()).unwrap();
+    drop(engine);
+    let engine = Engine::open_for_management(config.clone()).unwrap();
+    engine.vpn_control(&body("enable-forwarding")).unwrap();
+    drop(engine);
+    let operator = Operator::load(&config.store_dir, false);
+    {
+        // The fixture's tunnel gateway and DNS server is 10.7.0.1.
+        let mut state = operator.state.lock().unwrap();
+        state.gateway = Some(Ipv4Addr::new(10, 7, 0, 1));
+        state.driver = Some(pair.client.clone());
+    }
+    let open = || {
+        let engine =
+            Engine::open_operator(config.clone(), true, false, true, Some(operator.clone()))
+                .unwrap();
+        while !engine.startup_step().unwrap() {}
+        engine
+    };
+    let inbound = |port: u16| {
+        pair.server_network
+            .connect(
+                SocketAddr::from(([10, 7, 0, 2], port)),
+                Duration::from_secs(2),
+            )
+            .is_ok()
+    };
+
+    // The listener opens on the granted port before anything announces it.
+    let engine = open();
+    let status = engine.vpn_status();
+    assert_eq!(state(&status), "protected");
+    assert_eq!(forwarding(&status, "forwarding").as_deref(), Some("active"));
+    assert_eq!(
+        forwarding(&status, "forwarded_port").as_deref(),
+        Some("53186")
+    );
+    assert_redacted(&status);
+    assert_eq!(peer_port(&engine), 53186);
+    assert!(inbound(53186));
+
+    // Renewals keep the port and the engine generation.
+    let requests = gateway.requests.load(Ordering::Relaxed);
+    wait(|| gateway.requests.load(Ordering::Relaxed) >= requests + 4);
+    assert!(!engine.vpn_needs_reload());
+
+    // A changed port retires this generation; its successor listens there.
+    gateway.port.store(53190, Ordering::Release);
+    wait(|| engine.vpn_needs_reload());
+    assert_eq!(
+        forwarding(&engine.vpn_status(), "forwarded_port").as_deref(),
+        Some("53190")
+    );
+    engine.retire_vpn_generation();
+    drop(engine);
+    let engine = open();
+    assert_eq!(peer_port(&engine), 53190);
+    assert!(inbound(53190));
+    assert!(!inbound(53186), "a stale forwarded listener remained");
+
+    // A refused renewal loses the port at expiry; the tunnel stays protected.
+    gateway.port.store(0, Ordering::Release);
+    wait(|| engine.vpn_needs_reload());
+    let refused = Some("Gateway refused forwarding; use a P2P server and profile".to_owned());
+    wait(|| forwarding(&engine.vpn_status(), "forwarding_reason") == refused);
+    let status = engine.vpn_status();
+    assert_eq!(state(&status), "protected");
+    assert_eq!(
+        forwarding(&status, "forwarding").as_deref(),
+        Some("unavailable")
+    );
+    assert_eq!(forwarding(&status, "forwarded_port"), None);
+    engine.retire_vpn_generation();
+    drop(engine);
+
+    // Its successor keeps outgoing operation on an ordinary virtual port.
+    let engine = open();
+    let port = peer_port(&engine);
+    assert_ne!(port, 53190);
+    assert!(!inbound(53190));
+    assert_eq!(state(&engine.vpn_status()), "protected");
+    assert!(!engine.vpn_needs_reload());
+    drop(engine);
+    drop(gateway);
+}

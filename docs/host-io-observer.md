@@ -220,6 +220,18 @@ wait instead of spinning; other read errors still stop the owner. A core
 regression covers each kind. Which error a given macOS route change reports, if
 any, is not established here.
 
+The port forwarding increment
+[#223](https://github.com/alecerf/mynou/issues/223) adds one required observed
+scenario, bringing the runner to thirty-six. A synthetic NAT-PMP gateway runs on
+virtual UDP 5351 of the controlled native server owner. An operator-managed
+engine with forwarding enabled obtains the UDP and TCP mappings inside the
+tunnel, opens its torrent listener on the granted port and accepts an inbound
+virtual connection there. Renewals keep the generation. A changed port makes
+the engine request replacement, and its successor listens on the new port while
+the old one is refused. A refused renewal ends the lease at expiry with the
+tunnel still protected, and the next engine uses an ordinary virtual port. No
+forwarding request, lookup or listener appears on the ordinary path.
+
 ```sh
 TMPDIR=/private/tmp cargo test --lib --no-run --offline --locked \
   --message-format=json > /private/tmp/mynou-observer-build.jsonl
