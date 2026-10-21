@@ -21,7 +21,8 @@ the torrent network inventory and Clippy, then all Rust harnesses. It runs the
 36 attempted-host-I/O scenarios with negative controls and repeats the two
 route-loss scenarios against real macOS routes. Its uploaded `mynou-tests-*`
 artifact contains `host-io/summary.json`, full per-scenario traces/logs and
-`host-routes/summary.json`. Under each route case, `before.txt`, `lost.txt` and
+`host-routes/summary.json`, with the ordinary harness report/logs under `rust/`.
+Under each route case, `before.txt`, `lost.txt` and
 `restored.txt` record the kernel's route flags, `trace.jsonl` records attempted
 ordinary I/O, `fixture.log` records the assertions and `cleanup.txt` confirms
 removal of the owned host route and alias. Missing observations or route transitions fail
