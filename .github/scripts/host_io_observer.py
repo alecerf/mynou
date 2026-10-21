@@ -44,6 +44,8 @@ FIXTURES = (
     "tunnel_http::tests::sessions::engine_pause_selection_and_verified_bytes_survive_rekey",
     "tunnel_http::tests::sessions::engine_pause_selection_and_verified_bytes_survive_authenticated_roaming",
     "tunnel_http::tests::sessions::engine_pause_selection_and_verified_bytes_survive_expiry_and_replacement",
+    "tunnel_http::tests::sessions::host_route_loss_shorter_than_the_session_keeps_the_generation_and_stream_bytes",
+    "tunnel_http::tests::sessions::host_route_loss_past_session_expiry_needs_a_fresh_generation_without_fallback",
     "irc::tunnel_tests::irc_announcement_routes_through_tunnel_metadata_without_workers",
     "irc::tunnel_tests::cancellation_during_irc_metadata_refuses_routing_and_later_announcements",
 )

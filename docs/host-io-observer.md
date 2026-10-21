@@ -191,6 +191,35 @@ downloads during the event; successful DNS and echo probes exercise the engine's
 the test owner's monotonic time is skewed. No host routes or provider services
 are changed; `complete_isolation_verified` remains false.
 
+The host route increment
+[#328](https://github.com/alecerf/mynou/issues/328) adds two observed scenarios
+through the real `HttpTunnel` owner, bringing the required runner to
+thirty-five. A test-only seam (`cfg(test)`, absent from the product) emulates a
+host route or interface change at the owner's outer socket calls: every outer
+send fails and every read reports `NetworkDown` or `NetworkUnreachable`. The
+host routing table is never changed; that would need root and touch the
+owner's machine.
+
+- Short loss: an existing stream's bytes and new DNS, peer and HTTP operations
+  started during the loss wait, then complete in the same generation once the
+  route returns, with verified echoed bytes. No client datagram leaves during
+  the loss and the owner keeps serving commands.
+- Loss past expiry: with the route still lost, the session expires; new
+  operations, the old listener and new networks are refused, and no client
+  datagram leaves. The returned route yields a fresh generation through a
+  scheduled retry; old handles stay refused and the listener port is acquired
+  exactly once and accepts an inbound peer.
+
+These scenarios found a product defect, fixed with them: any outer read error
+other than an ICMP refusal or reset stopped the native owner for good, so a
+route or interface error reported by the outer socket permanently blocked
+protection (fail closed) instead of letting the session timers recover it.
+Route-class read errors (`NetworkDown`, `NetworkUnreachable`, `HostUnreachable`,
+`AddrNotAvailable`) are now counted as outer path errors and keep the pump's
+wait instead of spinning; other read errors still stop the owner. A core
+regression covers each kind. Which error a given macOS route change reports, if
+any, is not established here.
+
 ```sh
 TMPDIR=/private/tmp cargo test --lib --no-run --offline --locked \
   --message-format=json > /private/tmp/mynou-observer-build.jsonl
@@ -221,7 +250,7 @@ loader policy; loader failure is a failed check, never skipped evidence.
 
 The observer does not inspect encrypted datagram content, prove server privacy,
 exercise real provider connectivity, alter host routes or supply increasing-load
-CPU/RSS/timing evidence. Host route changes, the independent QA/Security read of
+CPU/RSS/timing evidence. Real OS route-table changes, the independent QA/Security read of
 current-head CI and supported-subset limits, and the gated macOS guide remain
 #224. Engine-level resource measurements are recorded separately in
 [torrent-load.md](torrent-load.md). Existing protocol, generation and operator

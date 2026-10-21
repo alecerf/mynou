@@ -267,6 +267,8 @@ pub struct Stats {
     pub oversized: u64,
     /// Outer datagrams that arrived while no generation was live.
     pub unowned: u64,
+    /// Outer path errors: failed sends, and ICMP or route errors reported by
+    /// a later read.
     pub send_errors: u64,
     /// Decrypted inner packets that failed IPv4/UDP/TCP validation.
     pub inner_rejected: u64,
@@ -369,6 +371,9 @@ pub struct Tunnel<E: Entropy + Clone, C: Clock> {
     window: Duration,
     handshakes: u32,
     stats: Stats,
+    /// Test-only host route loss: every outer send and read fails.
+    #[cfg(test)]
+    route_lost: Option<ErrorKind>,
 }
 
 fn transmit(socket: &UdpSocket, remote: SocketAddr, datagrams: Vec<Vec<u8>>, stats: &mut Stats) {
@@ -404,6 +409,8 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
             window,
             handshakes: 0,
             stats: Stats::default(),
+            #[cfg(test)]
+            route_lost: None,
         };
         tunnel.start(tunnel.clock.now());
         Ok(tunnel)
@@ -413,6 +420,13 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
         self.socket
             .local_addr()
             .map_err(|error| TunnelError::Io(error.to_string()))
+    }
+
+    /// Emulates a host route or interface change at the outer socket call
+    /// boundary: while set, sends fail and every read returns `kind`.
+    #[cfg(test)]
+    pub(crate) fn lose_route(&mut self, kind: Option<ErrorKind>) {
+        self.route_lost = kind;
     }
 
     #[cfg(test)]
@@ -607,7 +621,15 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
             self.stats.roamed += 1;
         }
         live.next[0] = output.next;
-        transmit(&self.socket, live.remote, output.datagrams, &mut self.stats);
+        let datagrams = output.datagrams;
+        #[cfg(test)]
+        let datagrams = if self.route_lost.is_some() {
+            self.stats.send_errors += datagrams.len() as u64;
+            Vec::new()
+        } else {
+            datagrams
+        };
+        transmit(&self.socket, live.remote, datagrams, &mut self.stats);
         for payload in output.inner_payloads {
             dispatch(live, &self.config.ip, payload, now, &mut self.stats);
         }
@@ -778,6 +800,10 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
     /// outer datagrams, attempts at most `datagrams_per_pump` reads (including
     /// socket errors), then runs every due timer.
     pub fn pump(&mut self, max_wait: Duration) -> Result<Pumped, TunnelError> {
+        #[cfg(test)]
+        if let Some(kind) = self.route_lost {
+            return self.pump_with_receive(max_wait, move |_, _| Err(kind.into()));
+        }
         self.pump_with_receive(max_wait, |socket, buffer| socket.recv_from(buffer))
     }
 
@@ -826,6 +852,24 @@ impl<E: Entropy + Clone, C: Clock> Tunnel<E, C> {
                     if blocking {
                         break;
                     }
+                }
+                // A host route or interface change. The session's own timers
+                // decide whether it survives; never a reason to stop the owner.
+                // The path may stay down, so the wait is kept rather than spun.
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        ErrorKind::NetworkDown
+                            | ErrorKind::NetworkUnreachable
+                            | ErrorKind::HostUnreachable
+                            | ErrorKind::AddrNotAvailable
+                    ) =>
+                {
+                    self.stats.send_errors += 1;
+                    if blocking {
+                        std::thread::sleep(wait);
+                    }
+                    break;
                 }
                 Err(error) => return Err(io(error)),
             }

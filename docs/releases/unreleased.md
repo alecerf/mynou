@@ -1,3 +1,12 @@
+## Fixed: Keep the native tunnel alive through host route errors
+
+When the outer VPN socket reported a network-down or unreachable error, as a
+host route or interface change can, the native tunnel stopped for good and
+stayed blocked until restarted. It now counts these errors and lets the
+session recover or reconnect when the route returns, still without any
+direct fallback. Torrent VPN protection remains unavailable
+([observed scenarios and limits](/docs/host-io-observer.md)).
+
 ## Fixed: Keep native transfers moving while their progress is saved
 
 Once a second the native torrent client saved every changed transfer while

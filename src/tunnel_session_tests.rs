@@ -1,7 +1,9 @@
-//! WireGuard session timers and roaming through the native owner (#321).
-//! The client owner keeps OS entropy and the system clock; only its monotonic
-//! time is skewed forward (test-only) to reach session ages. Every service is
-//! virtual behind the fixture relay, so the host sees only outer UDP.
+//! WireGuard session timers and roaming (#321) and host route loss (#328)
+//! through the native owner. The client owner keeps OS entropy and the system
+//! clock; only its monotonic time is skewed forward (test-only) to reach
+//! session ages. Route loss is injected at the owner's outer socket calls; the
+//! host routing table is never changed. Every service is virtual behind the
+//! fixture relay, so the host sees only outer UDP.
 use super::*;
 use crate::{
     torrent::transport::Network,
@@ -26,6 +28,16 @@ fn skip(f: &Fixture, by: Duration) {
         .owner
         .call(None, end(), move |r| {
             r.tunnel.clock().skip(by);
+            Ok(())
+        })
+        .unwrap();
+}
+/// Emulates a host route change on the client owner's outer socket.
+fn lose_route(f: &Fixture, kind: Option<io::ErrorKind>) {
+    f.driver
+        .owner
+        .call(None, end(), move |r| {
+            r.tunnel.lose_route(kind);
             Ok(())
         })
         .unwrap();
@@ -394,4 +406,154 @@ fn engine_pause_selection_and_verified_bytes_survive_expiry_and_replacement() {
         assert!(telemetry(&f).0.generation > generation);
         assert!(engine.torrent_publication().is_err());
     });
+}
+
+#[test]
+fn host_route_loss_shorter_than_the_session_keeps_the_generation_and_stream_bytes() {
+    let f = Fixture::new();
+    let network = network(&f);
+    let token = network.generation().unwrap();
+    let mut stream = connect(&*network);
+    echo(&mut *stream, 1, 8 * 1024);
+    let (before, stats) = telemetry(&f);
+    assert_eq!(before.state, TunnelState::Protected);
+
+    // The route disappears: outer sends fail and reads report the network
+    // down. New operations and stream bytes are started during the loss.
+    lose_route(&f, Some(io::ErrorKind::NetworkDown));
+    let arrived = f.arrivals[0].load(Ordering::Relaxed);
+    let workers: Vec<_> = (0..3)
+        .map(|index| {
+            let network = network.clone();
+            let connector = f.connector.clone();
+            thread::spawn(move || match index {
+                0 => assert_eq!(
+                    network.resolve("route.example:6881", end()).unwrap(),
+                    [peer()]
+                ),
+                1 => echo(&mut *connect(&*network), 2, 8 * 1024),
+                _ => assert_eq!(get(connector).unwrap(), b"protected-http-body"),
+            })
+        })
+        .collect();
+    let pending = thread::spawn(move || {
+        echo(&mut *stream, 3, 32 * 1024);
+        stream
+    });
+    wait(|| telemetry(&f).1.send_errors >= stats.send_errors + 8);
+    thread::sleep(Duration::from_millis(200));
+    // Nothing left the outer socket; the owner is still serving commands.
+    assert_eq!(f.arrivals[0].load(Ordering::Relaxed), arrived);
+    let (lost, _) = telemetry(&f);
+    assert_eq!(lost.generation, before.generation);
+
+    // The route returns within the session: the same generation carries the
+    // pending stream bytes and the operations started during the loss.
+    lose_route(&f, None);
+    let mut stream = pending.join().unwrap();
+    for worker in workers {
+        worker.join().unwrap();
+    }
+    echo(&mut *stream, 4, 16 * 1024);
+    let (after, after_stats) = telemetry(&f);
+    assert_eq!(after.state, TunnelState::Protected);
+    assert_eq!(after.generation, before.generation);
+    assert_eq!(after_stats.generations, stats.generations);
+    assert_eq!(network.generation().unwrap(), token);
+    assert!(f.arrivals[0].load(Ordering::Relaxed) > arrived);
+    let wire = f.wire.lock().unwrap();
+    assert!(wire.iter().all(|d| matches!(d.first(), Some(1..=4))));
+    assert!(!wire.iter().any(|d| d.windows(5).any(|w| w == b"route")));
+}
+
+#[test]
+fn host_route_loss_past_session_expiry_needs_a_fresh_generation_without_fallback() {
+    let f = Fixture::new();
+    let network = network(&f);
+    let listener = network
+        .listen(SocketAddr::from(([0, 0, 0, 0], 7001)))
+        .unwrap();
+    echo(&mut *connect(&*network), 1, 8 * 1024);
+    let (before, stats) = telemetry(&f);
+    let generation = before.generation.unwrap();
+
+    // The route stays away until the session expires; the owner survives.
+    lose_route(&f, Some(io::ErrorKind::NetworkUnreachable));
+    let arrived = f.arrivals[0].load(Ordering::Relaxed);
+    skip(&f, REJECT_AFTER_TIME + Duration::from_secs(1));
+    let mut lost = None;
+    wait(|| {
+        let (status, _) = telemetry(&f);
+        let done = status.generation != Some(generation);
+        lost = Some(status);
+        done
+    });
+    let lost = lost.unwrap();
+    assert_ne!(lost.state, TunnelState::Protected);
+    assert_eq!(lost.reason, Some(Reason::Expired));
+
+    // New operations during the loss fail; nothing falls back or leaves.
+    assert!(network.connect(peer(), Duration::from_secs(1)).is_err());
+    assert!(network.resolve("lost.example:6881", end()).is_err());
+    assert!(network.datagram(false).is_err());
+    assert_ne!(
+        listener.accept().err().unwrap().kind(),
+        io::ErrorKind::WouldBlock
+    );
+    assert!(get(f.connector.clone()).is_err());
+    assert_eq!(
+        f.driver.network(end()).err().unwrap().kind(),
+        io::ErrorKind::PermissionDenied
+    );
+    assert_eq!(f.arrivals[0].load(Ordering::Relaxed), arrived);
+    assert!(telemetry(&f).1.send_errors > stats.send_errors);
+
+    // The route returns; a scheduled retry builds the fresh generation.
+    lose_route(&f, None);
+    wait(|| {
+        if telemetry(&f).0.state == TunnelState::Protected {
+            return true;
+        }
+        skip(&f, Duration::from_secs(1));
+        thread::sleep(Duration::from_millis(50));
+        false
+    });
+    let (after, after_stats) = telemetry(&f);
+    assert!(after.generation.unwrap() > generation);
+    assert!(after_stats.generations > stats.generations);
+    let fresh = f.driver.network(end()).unwrap();
+
+    // Old handles stay revoked; the listener port is acquired exactly once.
+    assert!(network.generation().is_err());
+    assert!(network.connect(peer(), Duration::from_secs(1)).is_err());
+    assert!(get(f.connector.clone()).is_err());
+    let single = fresh
+        .listen(SocketAddr::from(([0, 0, 0, 0], 7001)))
+        .unwrap();
+    assert!(
+        fresh
+            .listen(SocketAddr::from(([0, 0, 0, 0], 7001)))
+            .is_err(),
+        "duplicate listener"
+    );
+    f.dial.lock().unwrap().push(7001);
+    let mut inbound = None;
+    wait(|| {
+        inbound = single.accept().ok();
+        inbound.is_some()
+    });
+    let (mut inbound, _) = inbound.unwrap();
+    inbound
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    let mut hello = [0; 13];
+    inbound.read_exact(&mut hello).unwrap();
+    assert_eq!(&hello, b"inbound-hello");
+    echo(&mut *connect(&*fresh), 2, 32 * 1024);
+    assert_eq!(
+        get(f.driver.connector(end()).unwrap()).unwrap(),
+        b"protected-http-body"
+    );
+    let wire = f.wire.lock().unwrap();
+    assert!(wire.iter().all(|d| matches!(d.first(), Some(1..=4))));
 }
