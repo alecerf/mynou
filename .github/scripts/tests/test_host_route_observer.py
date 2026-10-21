@@ -88,8 +88,10 @@ class RouteTests(unittest.TestCase):
                 result = routes.exercise("harness", Path("observer"), output, "test")
                 self.assertEqual(result["states"], ["lost", "restored"])
                 self.assertEqual([call.args for call in command.call_args_list], [
-                    ("change", "-host", routes.DESTINATION, "127.0.0.1", "-reject"),
-                    ("change", "-host", routes.DESTINATION, "-interface", "lo0"),
+                    ("delete", "-host", routes.DESTINATION),
+                    ("add", "-host", routes.DESTINATION, "127.0.0.1", "-reject"),
+                    ("delete", "-host", routes.DESTINATION),
+                    ("add", "-host", routes.DESTINATION, "-interface", "lo0"),
                     ("delete", "-host", routes.DESTINATION)])
                 self.assertEqual([call.args[1:] for call in snapshot.call_args_list], [
                     ("before", False), ("lost", True), ("restored", False)])
