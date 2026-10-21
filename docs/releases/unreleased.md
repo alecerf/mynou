@@ -1,3 +1,12 @@
+## Added: Acquire IRC announcements from private trackers without a passkey in the configuration
+
+A `bracketed` IRC source can now use `grab` and `request` rules without a
+magnet template. When an announcement is routed to an admitted job, Mynou
+downloads the release's `.torrent` through the authenticated indexer, checks its
+hash and keeps it as a private file. Neither the download link nor the indexer
+key is stored, and the tracker passkey stays in the private transfer state
+([details](/docs/sources.md#bracketed-announcements-resolved-by-lookup)).
+
 ## Added: Resolve bracketed tracker announcements through a Torznab lookup
 
 An IRC source can now read bracketed tracker announcements that carry only a

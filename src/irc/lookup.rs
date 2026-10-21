@@ -409,6 +409,115 @@ impl Engine {
     }
 }
 
+/// Private `.torrent` files fetched for routed candidates; never a public path.
+pub(crate) const METAINFO_DIR: &str = "irc-metainfo";
+
+/// A routed metainfo is `<store>/irc-metainfo/<hash>.torrent`; it holds no link.
+pub(crate) fn metainfo_path(s: &str, hash: &str) -> bool {
+    let path = std::path::Path::new(s);
+    path.is_absolute()
+        && !path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        && path.file_name().and_then(|n| n.to_str()) == Some(&format!("{hash}.torrent"))
+        && path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            == Some(METAINFO_DIR)
+}
+
+fn private_directory(dir: &std::path::Path) -> Result<()> {
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    match std::fs::symlink_metadata(dir) {
+        Ok(m) if m.is_dir() && m.permissions().mode() & 0o077 == 0 => Ok(()),
+        Ok(_) => Err("IRC: metainfo directory is not private".into()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(dir)
+            .map_err(|_| "IRC: cannot create the metainfo directory".into()),
+        Err(_) => Err("IRC: metainfo directory is inaccessible".into()),
+    }
+}
+
+impl Engine {
+    /// The verified `.torrent` of a resolved release, downloaded once through the
+    /// authenticated indexer. Its announce list stays in private transfer state;
+    /// the download link is never kept.
+    pub(crate) fn irc_metainfo(
+        &self,
+        lookup: &Lookup,
+        a: &Announcement,
+        deadline: Instant,
+    ) -> Result<String> {
+        let unavailable = || "IRC: metadata unavailable or unauthenticated".to_owned();
+        let dir = self.config.store_dir.join(METAINFO_DIR);
+        private_directory(&dir)?;
+        let path = dir.join(format!("{}.torrent", a.info_hash));
+        let text = path.to_str().ok_or_else(unavailable)?.to_owned();
+        match std::fs::symlink_metadata(&path) {
+            Ok(m) if m.is_file() => return Ok(text),
+            Ok(_) => return Err(unavailable()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err(unavailable()),
+        }
+        let source = self
+            .config
+            .sources
+            .iter()
+            .find(|s| s.options.id.as_deref() == Some(&lookup.indexer))
+            .ok_or_else(unavailable)?;
+        let entries = crate::integrations::torznab_details_before(
+            source,
+            &a.title.replace(['.', '_'], " "),
+            deadline,
+        )
+        .map_err(|_| unavailable())?;
+        let mut found = entries.iter().filter(|e| {
+            e.details.starts_with(&lookup.details_prefix)
+                && matches!(e.info_hashes.as_slice(), [h] if info_hash(h).as_deref() == Some(&a.info_hash))
+        });
+        let url = match (found.next(), found.next()) {
+            (Some(e), None) => e.enclosure.clone().ok_or_else(unavailable)?,
+            _ => return Err(unavailable()),
+        };
+        // The search and the download share the source's minimum spacing.
+        let spacing = Duration::from_millis(source.options.min_interval_ms);
+        if Instant::now() + spacing >= deadline {
+            return Err(unavailable());
+        }
+        thread::sleep(spacing);
+        let body = crate::integrations::indexer_metainfo_before(source, &url, deadline)
+            .map_err(|_| unavailable())?;
+        let part = dir.join(format!("{}.part", a.info_hash));
+        let _ = std::fs::remove_file(&part);
+        let written = (|| {
+            use std::io::Write;
+            let mut file = crate::store::private_options()
+                .write(true)
+                .create_new(true)
+                .open(&part)
+                .map_err(|_| unavailable())?;
+            file.write_all(&body).map_err(|_| unavailable())?;
+            file.sync_all().map_err(|_| unavailable())?;
+            let metadata = crate::torrent::inspect_metadata(
+                &*self.torrent_network,
+                part.to_str().ok_or_else(unavailable)?,
+                deadline,
+            )
+            .map_err(|_| unavailable())?;
+            if metadata.id != a.info_hash {
+                return Err("IRC: metadata identity differs".to_owned());
+            }
+            std::fs::rename(&part, &path).map_err(|_| unavailable())
+        })();
+        if written.is_err() {
+            let _ = std::fs::remove_file(&part);
+        }
+        written.map(|()| text)
+    }
+}
+
 pub(crate) fn start(engine: &Arc<Engine>, handles: &mut Vec<JoinHandle<()>>) {
     if engine.read_only
         || !engine

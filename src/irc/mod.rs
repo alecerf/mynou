@@ -323,6 +323,10 @@ impl Source {
         }
         Ok(s)
     }
+    /// Acquisition needs pinned discovery or a lookup supplying verified metainfo.
+    pub fn can_acquire(&self) -> bool {
+        self.magnet_template.is_some() || self.announcement_lookup.is_some()
+    }
     pub fn binding(&self) -> String {
         let mut v = Value::object();
         for (k, s) in [
@@ -527,11 +531,10 @@ impl Settings {
                 {
                     return Err("IRC: duplicate rule or unknown source/profile".into());
                 }
-                if matches!(r.action.as_str(), "grab" | "request")
-                    && settings.source(&r.source)?.magnet_template.is_none()
-                {
+                let source = settings.source(&r.source)?;
+                if matches!(r.action.as_str(), "grab" | "request") && !source.can_acquire() {
                     return Err(
-                        "IRC: acquisition rules require a configured magnet template".into(),
+                        "IRC: acquisition rules require a magnet template or a lookup".into(),
                     );
                 }
                 settings.rules.push(r);

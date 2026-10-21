@@ -404,6 +404,19 @@ three times, 30 seconds apart. A restart drops unresolved candidates instead
 of replaying them. `GET /api/irc/sources` reports the queue under `lookup`,
 and a preview only parses the candidate, without any lookup.
 
+A `bracketed` source can also acquire with `grab` or `request` rules, without
+a `magnet_template`. That suits private trackers, whose torrents
+use neither DHT nor PEX. Once an announcement is routed to an admitted job,
+Mynou searches the indexer again and keeps the single item with the same
+decoded hash. It downloads its `.torrent` from the enclosure, on the indexer's
+own origin with its authentication and without redirects, and checks that the
+metadata has the announced hash. It then stores it once as a private file
+(`irc-metainfo/<hash>.torrent`, mode 0600, in a 0700 directory of the store).
+The routed job points to that file, so the download link and the indexer
+key are never kept. The tracker passkey in its announce list stays in
+that file and in the native transfer state. Any failure leaves no file and
+routes nothing.
+
 Test a format without storage, network or acquisition:
 
 ```sh
