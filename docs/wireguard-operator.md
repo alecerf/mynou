@@ -3,11 +3,10 @@
 Mynou can persist a private WireGuard profile and run torrent operations through
 its native userspace tunnel. This delivers the profile/lifecycle controls of
 [#222](https://github.com/alecerf/mynou/issues/222), following the transport of
-[#221](https://github.com/alecerf/mynou/issues/221). Complete attempted-I/O
-observation, isolation/race scenarios and increasing-load resource measurements
-remain [#224](https://github.com/alecerf/mynou/issues/224). Keep the existing
-Gluetun deployment until those gates and the migration guide are delivered.
-This document is the control reference, not a Gluetun migration procedure.
+[#221](https://github.com/alecerf/mynou/issues/221). The bounded attempted-I/O,
+isolation/race and increasing-load evidence for #224 is
+[recorded separately](wireguard-acceptance.md). For installation, preserved
+state and rollback, use the [macOS migration guide](wireguard-macos-migration.md).
 
 ## Import and inspect
 
@@ -45,8 +44,9 @@ profile, a redacted block reason, current installed-session handshake age and
 outer-datagram counters. Counts/ages are decimal strings. No profile, key, PSK,
 endpoint, DNS server, input path or provider payload is returned. A successful
 handshake means the runtime is `protected`; it does not certify the complete
-isolation gates. `complete_isolation_verified` remains false. Port forwarding
-is reported separately ([below](#port-forwarding)).
+isolation. `complete_isolation_verified` conservatively remains false: the
+controlled evidence is bounded, not a universal isolation guarantee. Port
+forwarding is reported separately ([below](#port-forwarding)).
 
 ## State and recovery
 
@@ -140,7 +140,8 @@ provider HTTP APIs are not implemented.
 
 The VPN server and underlying ISP can observe the outer connection's source IP.
 These controls do not claim a universal zero-leak guarantee, audited crypto,
-constant-time behavior or an established resource bound.
+constant-time behavior. Resource bounds and measured
+load levels are documented in the [delivery evidence](wireguard-acceptance.md).
 OpenVPN is outside scope under the owner's 2026-10-10 decision.
 
 ## Validation boundary

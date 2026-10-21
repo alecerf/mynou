@@ -1,9 +1,10 @@
 # WireGuard transport design
 
 This is the pre-implementation Security design for [#111](https://github.com/alecerf/mynou/issues/111),
-delivered by [#167](https://github.com/alecerf/mynou/issues/167). **Mynou currently
-has no VPN transport or VPN leak protection.** This document adds neither. The
-parent stays open until implementation and its verification gates are complete.
+delivered by [#167](https://github.com/alecerf/mynou/issues/167). It records the
+architecture and original delivery gates. Implementation and bounded native
+IPv4 verification are now delivered; see the [current evidence and owner
+decisions](wireguard-acceptance.md) and [macOS migration guide](wireguard-macos-migration.md).
 
 The recorded owner decisions are an integrated userspace WireGuard tunnel,
 WireGuard only, and native macOS on Apple Silicon. OpenVPN, Docker, kernel
@@ -240,7 +241,7 @@ accounts or real notifications.
 | Isolation | Controlled ordinary-path trap endpoints and observable tunnel egress for TCP peers, inbound seeds, UDP/HTTP/HTTPS trackers, DHT/PEX, magnet names, metadata inspections and remote torrent files. Test redirects, environment proxies, literal/answered IPv6, loopback/LAN references and malformed endpoints. Observe attempted lookups as well as successful connections. |
 | Races and restart | Concurrent new operations with session loss/expiry, route changes, roaming, reconnect, configuration revocation/restart and delayed old-generation results. Ordinary path sees only authorized outer VPN UDP; unsupported flows stay blocked. Verify retained bytes, durable pause/selection, no fallback acquisition and no duplicate listeners. |
 | Retained engine state | The [required native observer](/docs/host-io-observer.md) exercises exact partial selection, explicit pause, priorities and verified local bytes across time-based rekey, authenticated endpoint roaming and expiry/reconnect with engine replacement (#327). Old engine authority remains refused after recovery. This covers retained paused transfers; host route changes and arbitrary interleavings remain outside that evidence. |
-| Resources and claims | Measured increasing-load CPU/memory/timing and explicit queue/flow limits on macOS arm64. Independent QA/Security read the real current-head CI and supported-subset limits before a protected mode or installation guide ships. [Tunnel load evidence](/docs/tunnel-load.md) covers the tunnel owner's virtual TCP flows and limits on loopback; [torrent engine load evidence](/docs/torrent-load.md) covers the native client's metadata and payload transfers, `max_active`, peer and flow limits over that tunnel on a synthetic in-process swarm; the QA/Security read remains. |
+| Resources and claims | Measured increasing-load CPU/memory/timing and explicit queue/flow limits on macOS arm64. [Tunnel load evidence](/docs/tunnel-load.md) covers the tunnel owner's virtual TCP flows and limits on loopback; [torrent engine load evidence](/docs/torrent-load.md) covers the native client's metadata and payload transfers, `max_active`, peer and flow limits over that tunnel on a synthetic in-process swarm. The owner explicitly waived the originally required final independent QA/Security reading on 2026-10-21; this is a scope decision, not a review or audit. See the [delivery record](wireguard-acceptance.md). |
 
 The [independent peer fixture](/docs/wireguard-interop.md) records the approved
 wireguard-go pin, confinement, scenarios and evidence limits. Its separate CI job
@@ -267,12 +268,13 @@ It is not a universal zero-leak, constant-time or independently audited-crypto
 claim. A blocked gate keeps protection unavailable rather than silently using
 Direct. Existing unprotected behavior is documented explicitly until delivery.
 
-## Remaining delivery on #111
+## Delivery on #111
 
-After separate QA/Security approval of this design, deliver bounded increments
-for primitives; WireGuard session/datagram handling; IPv4/UDP/DNS; TCP/listener;
-the transport/HTTP/TLS/inspection integration; private profile and lifecycle
-controls; verified provider forwarding if supported; and full isolation/resource
-evidence with the macOS installation/migration guide. Create each implementation
-Issue when its prerequisites are executable. Do not remove the owner's existing
-protection or close #111 on this design or an isolated crypto increment.
+The primitives, protocol, IPv4/UDP/DNS/TCP stack, transport/HTTP/TLS/inspection
+integration, private profiles/lifecycle, bounded isolation/race/resource evidence
+and macOS guide are recorded in the [delivery evidence](wireguard-acceptance.md).
+Opt-in NAT-PMP provider forwarding is delivered by #223 / PR #331; PCP and
+provider HTTP APIs are unsupported. OpenVPN remains
+outside scope. The original no-dependency, safe-std-only constraints remain;
+existing Gluetun protection is untouched. Coverage and residual limits remain
+explicit rather than claiming universal isolation.

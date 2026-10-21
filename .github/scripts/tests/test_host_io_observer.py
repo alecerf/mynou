@@ -30,6 +30,24 @@ def service_trace():
 
 
 class ObservationTests(unittest.TestCase):
+    def test_route_relay_authorization_is_an_exact_address_and_port(self):
+        rows = trace()
+        for index in (2, 6):
+            rows[index]["ip"] = "127.0.0.2"
+        self.assertEqual(observer.validate(rows)["sendto"], 1)
+        for index, ip in ((2, "192.0.2.1"), (2, "127.0.0.3"), (6, "127.0.0.1")):
+            changed = copy.deepcopy(rows)
+            changed[index]["ip"] = ip
+            with self.subTest(index=index, ip=ip), self.assertRaises(ValueError):
+                observer.validate(changed)
+        # A relay bound on .2 must declare that exact source, too.
+        for index in (1, 4, 5):
+            rows[index]["ip"] = "127.0.0.2"
+        self.assertEqual(observer.validate(rows)["sendto"], 1)
+        rows[1]["ip"] = "127.0.0.1"
+        with self.assertRaises(ValueError):
+            observer.validate(rows)
+
     def test_accepts_only_explicit_fixture_udp(self):
         self.assertEqual(observer.validate(trace())["sendto"], 1)
         # Declarations may arrive after setup/handshake; no early events are cut.

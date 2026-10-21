@@ -149,6 +149,14 @@ jobs:
       - name: Compile all test harnesses
         if: steps.cache.outputs.cache-hit != 'true'
         run: cargo test --all-targets --no-run --offline --locked --message-format=json-render-diagnostics > target/debug/mynou-ci-test-build.jsonl
+      - name: Observe attempted host I/O in native WireGuard fixtures
+        run: |
+          export TMPDIR="$(cd "$RUNNER_TEMP" && pwd -P)"
+          python3 .github/scripts/host_io_observer.py --build-json target/debug/mynou-ci-test-build.jsonl --output "$RUNNER_TEMP/mynou-test-results/host-io"
+      - name: Observe real host route loss on the disposable macOS runner
+        run: |
+          export TMPDIR="$(cd "$RUNNER_TEMP" && pwd -P)"
+          python3 .github/scripts/host_route_observer.py --build-json target/debug/mynou-ci-test-build.jsonl --library "$RUNNER_TEMP/mynou-test-results/host-io/host_io_observer.dylib" --output "$RUNNER_TEMP/mynou-test-results/host-routes"
       - name: Run all Rust test harnesses in parallel
         env:
           MYNOU_CRYPTO_FIXTURES: ${{ runner.temp }}/mynou-crypto-vectors.json
@@ -166,10 +174,6 @@ jobs:
           # Growing-inventory regressions measured 358 seconds in the library
           # harness. Retain every case with a finite eight-minute budget.
           python3 .github/scripts/parallel_tests.py target/debug/mynou-ci-test-build.jsonl --metadata "$RUNNER_TEMP/metadata.json" --output "$RUNNER_TEMP/mynou-test-results" --timeout 480
-      - name: Observe attempted host I/O in native WireGuard fixtures
-        run: |
-          export TMPDIR="$(cd "$RUNNER_TEMP" && pwd -P)"
-          python3 .github/scripts/host_io_observer.py --build-json target/debug/mynou-ci-test-build.jsonl --output "$RUNNER_TEMP/mynou-test-results/host-io"
       - name: Preserve test timings and logs
         if: always()
         uses: actions/upload-artifact@v7.0.2

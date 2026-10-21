@@ -21,8 +21,9 @@ The observer preserves errno and exits with failure if its log cannot be written
 Fixture code explicitly declares its owned loopback outer-UDP ports. The runner
 checks the complete trace, including startup, shutdown and fixture subprocesses:
 
-- Only IPv4 datagram sockets bound to `127.0.0.1:0` and assigned a declared
-  outer port are allowed. Every observed socket must reach an authorized bind.
+- Only IPv4 datagram sockets bound to `127.0.0.1:0` (or the dedicated
+  `127.0.0.2:0` route fixture relay) and assigned a declared outer address/port
+  are allowed. Every observed socket must reach an authorized bind.
 - Sends must originate from those observed sockets and target a declared
   loopback outer port in the same fixture process. Other UDP, undeclared TCP and host
   name lookups fail validation, whether or not the underlying call succeeded.
@@ -197,8 +198,8 @@ through the real `HttpTunnel` owner, bringing the required runner to
 thirty-five. A test-only seam (`cfg(test)`, absent from the product) emulates a
 host route or interface change at the owner's outer socket calls: every outer
 send fails and every read reports `NetworkDown` or `NetworkUnreachable`. The
-host routing table is never changed; that would need root and touch the
-owner's machine.
+ordinary local tests never change the host routing table. A separate required
+CI step now repeats these scenarios against real OS routes as described below.
 
 - Short loss: an existing stream's bytes and new DNS, peer and HTTP operations
   started during the loss wait, then complete in the same generation once the
@@ -242,10 +243,19 @@ TMPDIR=/private/tmp python3 -B .github/scripts/host_io_observer.py \
 
 Use a fresh output directory for every run. `summary.json` records scenario
 counts; per-process event traces and fixture output remain beside it. Required
-native CI runs the observer after the ordinary Rust suite and uploads its output
+native CI runs the observer alongside the ordinary Rust suite and uploads its output
 with the existing test-results artifact, including logs on failure. Changes to
 the observer select native validation rather than only the Python tooling checks.
-No system setting, route, privilege, global tool or installed service changes.
+The ordinary local observer changes no system setting, route, privilege, global
+tool or installed service. The separate required
+[`host_route_observer.py`](../.github/scripts/host_route_observer.py) supervisor
+repeats the two route scenarios on a disposable GitHub-hosted macOS arm64 runner:
+it adds only a dedicated `127.0.0.2` loopback alias and its host route, changes the route to `REJECT`,
+restores it, records the OS route flags and removes its own route and alias on exit.
+The test stays unprivileged and uses the same libc observation and protocol
+assertions, with no injected socket errors. The supervisor refuses to operate
+on a persistent local machine or to replace an existing host route. See the
+[delivery evidence](wireguard-acceptance.md) for artifacts and cleanup limits.
 The dylib and C control are test instrumentation, never linked into or started by
 the product. Product Rust remains safe, std-only and dependency-free.
 
@@ -260,10 +270,11 @@ the reviewed std-only implementation; future networking APIs require extending
 both the observer and its negative controls. Dylib injection depends on macOS
 loader policy; loader failure is a failed check, never skipped evidence.
 
-The observer does not inspect encrypted datagram content, prove server privacy,
-exercise real provider connectivity, alter host routes or supply increasing-load
-CPU/RSS/timing evidence. Real OS route-table changes, the independent QA/Security read of
-current-head CI and supported-subset limits, and the gated macOS guide remain
-#224. Engine-level resource measurements are recorded separately in
-[torrent-load.md](torrent-load.md). Existing protocol, generation and operator
-fixtures retain their own documented scope.
+The observer does not inspect encrypted datagram content or prove server privacy
+or real provider connectivity. Real route checks cover one loopback host route,
+not every default route, interface replacement or provider deployment. Separate
+[tunnel](tunnel-load.md) and [engine](torrent-load.md) runs supply increasing-load
+CPU/RSS/timing evidence. The [delivery record](wireguard-acceptance.md) links
+required CI, the macOS migration guide and the owner's explicit waiver of final
+independent acceptance. Existing protocol, generation and operator fixtures
+retain their scope.

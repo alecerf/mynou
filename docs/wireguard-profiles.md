@@ -9,7 +9,8 @@ socket creation, tunnel startup or configuration changes.
 The offline parser (#279) and private-file reader (#281) are reused by the
 [operator import and lifecycle controls](wireguard-operator.md) of #222. The
 parser itself still performs no networking or persistence. Complete
-isolation/race/resource evidence and the Gluetun migration guide remain #224.
+isolation/race/resource evidence is [recorded here](wireguard-acceptance.md);
+the [macOS migration guide](wireguard-macos-migration.md) covers deployment.
 
 ## Accepted subset
 

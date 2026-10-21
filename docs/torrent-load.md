@@ -138,10 +138,12 @@ still saved atomically under the lock as before.
 - Memory over hours of operation, seed rotation and restart under load are
   not measured.
 
-## Remaining for #224
+## Delivery evidence for #224
 
-Host route changes; independent QA/Security reading of current-head CI and the
-supported-subset limits; and the gated macOS installation and migration guide.
-IRC orchestration observation (#323) and retained engine pause/selection across
-session changes (#327) are recorded in [host-io-observer.md](host-io-observer.md).
-`complete_isolation_verified` stays false.
+Real loopback host-route loss/restoration, IRC orchestration (#323) and retained
+engine pause/selection across session changes (#327) are recorded in
+[host-io-observer.md](host-io-observer.md). The final
+[delivery evidence](wireguard-acceptance.md) records required CI and the owner's
+waiver of final independent acceptance; the [macOS guide](wireguard-macos-migration.md)
+documents migration. `complete_isolation_verified` stays conservatively false;
+these measured levels are not a universal isolation or resource guarantee.

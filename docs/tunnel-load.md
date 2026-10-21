@@ -110,7 +110,8 @@ flows, fixed in the same change:
 - UDP datagram, DNS and listener load, and memory over hours of operation, are
   not measured.
 
-## Remaining for #224
+## Delivery evidence for #224
 
 Engine-level torrent load is recorded in [torrent engine load](torrent-load.md)
-(#320). What remains for #224 is listed there.
+(#320). The [delivery record](wireguard-acceptance.md) links final native
+validation, scope decisions and the macOS migration guide.

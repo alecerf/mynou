@@ -1,3 +1,14 @@
+## Added: Deliver the native macOS WireGuard migration guide
+
+The required native WireGuard checks now repeat both route-loss scenarios with
+a real, dedicated loopback host route rejected and restored on the disposable
+macOS runner, alongside attempted socket and DNS observation. No operator host
+route or service is changed. The [macOS installation/migration guide](/docs/wireguard-macos-migration.md)
+documents private import, the supported IPv4 subset, traffic/privacy boundaries,
+NAT-PMP forwarding and its limits, preserved transfers and rollback. The owner waived the
+final independent acceptance; no independent security audit or universal
+isolation guarantee is claimed ([evidence and limits](/docs/wireguard-acceptance.md)).
+
 ## Fixed: Keep the native tunnel alive through host route errors
 
 When the outer VPN socket reported a network-down or unreachable error, as a
