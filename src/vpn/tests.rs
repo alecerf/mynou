@@ -718,3 +718,173 @@ fn recovered_owner_requires_a_new_engine_and_never_reauthorizes_delayed_old_work
         vec!["10.7.0.1:80".parse::<SocketAddr>().unwrap()]
     );
 }
+
+/// Retained, partially selected torrent shared by the native session fixtures.
+/// Only selected.bin exists: expanding the selection or acquiring the other
+/// file is observable independently of the serialized control comparison.
+pub(crate) fn retained_engine_session_change(
+    driver: HttpTunnel,
+    replace: bool,
+    change: impl FnOnce(&Arc<Engine>),
+) {
+    use crate::{
+        bencode::{self, Value as B},
+        torrent::{Client, FilePriority, TransferPolicy},
+    };
+    use std::collections::BTreeMap;
+    let directory = Directory::new();
+    let mut config = directory.config();
+    config.downloads.listen_port = 7001;
+    let payload: Vec<u8> = (0..32_768).map(|n| (n % 251) as u8).collect();
+    let missing = vec![9_u8; 16_384];
+    let pieces = payload
+        .chunks(16_384)
+        .chain(missing.chunks(16_384))
+        .flat_map(crate::crypto::sha1)
+        .collect();
+    let file = |name: &[u8], size: usize| {
+        B::Dict(BTreeMap::from([
+            (b"length".to_vec(), B::Int(size as i64)),
+            (b"path".to_vec(), B::List(vec![B::Bytes(name.to_vec())])),
+        ]))
+    };
+    let info = B::Dict(BTreeMap::from([
+        (b"name".to_vec(), B::Bytes(b"retained".to_vec())),
+        (
+            b"files".to_vec(),
+            B::List(vec![
+                file(b"selected.bin", payload.len()),
+                file(b"unselected.bin", missing.len()),
+            ]),
+        ),
+        (b"piece length".to_vec(), B::Int(16_384)),
+        (b"pieces".to_vec(), B::Bytes(pieces)),
+        (b"private".to_vec(), B::Int(1)),
+    ]));
+    let hash: String = crate::crypto::sha1(&bencode::encode(&info))
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let source = directory.0.join("retained.torrent");
+    fs::write(
+        &source,
+        bencode::encode(&B::Dict(BTreeMap::from([(b"info".to_vec(), info)]))),
+    )
+    .unwrap();
+    let base = config.downloads.data_dir.join(&hash).join("retained");
+    fs::create_dir_all(&base).unwrap();
+    fs::write(base.join("selected.bin"), &payload).unwrap();
+    let network = driver
+        .network(Instant::now() + Duration::from_secs(5))
+        .unwrap();
+    let client = Client::open_with_policy_and_admission(
+        config.downloads.clone(),
+        TransferPolicy::default(),
+        Arc::new(|_| Ok(true)),
+        network,
+    )
+    .unwrap();
+    client
+        .ensure_files(source.to_str().unwrap(), &["retained/selected.bin".into()])
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !client.check(&hash).unwrap().selected_ready {
+        assert!(
+            Instant::now() < deadline,
+            "selected retained bytes were not verified"
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
+    client.pause(&hash).unwrap();
+    client.set_priority(&hash, 7).unwrap();
+    client
+        .set_file_priority(&hash, 0, FilePriority::Low)
+        .unwrap();
+    let before = client.transfer(&hash).unwrap();
+    assert_eq!(
+        before.get("verified_bytes").and_then(Value::as_str),
+        Some("32768")
+    );
+    drop(client);
+
+    let operator = native_operator(&directory, driver);
+    let mut engine =
+        Engine::open_operator(config.clone(), true, false, true, Some(operator.clone())).unwrap();
+    let startup = |engine: &Engine| {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !engine.startup_step().unwrap() {
+            assert!(
+                Instant::now() < deadline,
+                "retained engine startup timed out"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+    };
+    let check = |engine: &Engine| {
+        let after = engine.transfer(&hash).unwrap();
+        for key in [
+            "user_paused",
+            "priority",
+            "file_priorities",
+            "file_selection",
+        ] {
+            assert_eq!(
+                after.get(key),
+                before.get(key),
+                "changed retained control: {key}"
+            );
+        }
+        assert_eq!(after.get("user_paused"), Some(&Value::Bool(true)));
+        assert_eq!(after.get("failed"), Some(&Value::Bool(false)));
+        assert_eq!(after.get("running"), Some(&Value::Bool(false)));
+        let files = after.get("files").unwrap().as_array().unwrap();
+        assert_eq!(files.len(), 2);
+        assert_eq!(after.get("priority"), Some(&Value::Number(7.0)));
+        assert!(
+            engine
+                .torrent_network
+                .listen("0.0.0.0:7001".parse().unwrap())
+                .is_err(),
+            "the engine did not exclusively own its retained listener port"
+        );
+        assert_eq!(files[0].get("selected"), Some(&Value::Bool(true)));
+        assert_eq!(files[1].get("selected"), Some(&Value::Bool(false)));
+        assert_eq!(fs::read(base.join("selected.bin")).unwrap(), payload);
+        assert!(!base.join("unselected.bin").exists());
+        assert_eq!(state(&engine.vpn_status()), "protected");
+        assert_eq!(
+            engine.vpn_status().get("complete_isolation_verified"),
+            Some(&Value::Bool(false))
+        );
+    };
+    startup(&engine);
+    check(&engine);
+    let old = engine.torrent_network.clone();
+    let generation = old.generation().unwrap();
+    change(&engine);
+    assert_eq!(engine.vpn_needs_reload(), replace);
+    if replace {
+        assert!(old.publication().is_err());
+        engine.retire_vpn_generation();
+        drop(engine);
+        engine = Engine::open_operator(config.clone(), true, false, true, Some(operator.clone()))
+            .unwrap();
+        startup(&engine);
+        assert_ne!(engine.torrent_network.generation().unwrap(), generation);
+        assert!(old.publication().is_err());
+        assert!(
+            old.resolve("stale.example:80", Instant::now() + Duration::from_secs(1))
+                .is_err()
+        );
+    } else {
+        assert_eq!(engine.torrent_network.generation().unwrap(), generation);
+        assert!(old.publication().is_ok());
+    }
+    check(&engine);
+    // Drop the native client and reopen its durable index/control files too.
+    engine.retire_vpn_generation();
+    drop(engine);
+    let engine = Engine::open_operator(config, true, false, true, Some(operator)).unwrap();
+    startup(&engine);
+    check(&engine);
+}

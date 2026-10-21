@@ -413,7 +413,7 @@ fn persist(path: &Path, data: &[u8]) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 /// Builds a private request from a checked 0400/0600 import file. The returned
 /// value contains credentials and is only for the authenticated control call.
