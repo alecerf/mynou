@@ -173,7 +173,7 @@ jobs:
           test "$TMPDIR" = /Volumes/mynou-tests
           # Growing-inventory regressions measured 358 seconds in the library
           # harness. Retain every case with a finite eight-minute budget.
-          python3 .github/scripts/parallel_tests.py target/debug/mynou-ci-test-build.jsonl --metadata "$RUNNER_TEMP/metadata.json" --output "$RUNNER_TEMP/mynou-test-results" --timeout 480
+          python3 .github/scripts/parallel_tests.py target/debug/mynou-ci-test-build.jsonl --metadata "$RUNNER_TEMP/metadata.json" --output "$RUNNER_TEMP/mynou-test-results/rust" --timeout 480
       - name: Preserve test timings and logs
         if: always()
         uses: actions/upload-artifact@v7.0.2
