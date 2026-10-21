@@ -36,7 +36,8 @@ class ObservationTests(unittest.TestCase):
         self.assertEqual(observer.validate(rows)["service_send"], 3)
         with self.assertRaises(ValueError):
             observer.validate([r for r in rows if r["op"] != "close"])
-        for extra in ([event("close", fd=99, source=9999)],
+        self.assertEqual(observer.validate(service_trace() + [event("close", fd=99)])["close"], 1)
+        for extra in ([event("close", fd=99), event("sendto", fd=99)],
                       [event("socket", fd=10), event("close", fd=10)],
                       [event("close"), event("sendto")]):
             with self.subTest(extra=extra), self.assertRaises(ValueError):

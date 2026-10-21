@@ -20,6 +20,8 @@ The observer preserves errno and exits with failure if its log cannot be written
 Socket closes retire descriptor authorization before reuse, including reuse by
 an accepted TCP connection on a declared service. Closing an unauthorized or
 incompletely admitted socket does not turn it into accepted evidence.
+An untracked duplicated descriptor may close without granting any authorization
+to send or connect; `TcpStream::try_clone` does not create another socket.
 
 Fixture code explicitly declares its owned loopback outer-UDP ports. The runner
 checks the complete trace, including startup, shutdown and fixture subprocesses:
