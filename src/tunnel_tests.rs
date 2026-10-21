@@ -1176,6 +1176,41 @@ fn every_read_attempt_consumes_the_pump_budget() {
     }
 }
 
+#[test]
+fn route_errors_on_reads_are_transient_and_other_errors_stay_fatal() {
+    let mut world = World::new(|_, _| {});
+    world.connect(Duration::from_millis(100), 20);
+    let generation = world.client.status().generation;
+    // A host route or interface change surfaces on the one outer socket. The
+    // pump keeps its generation and waits instead of returning at once.
+    for error in [
+        ErrorKind::NetworkDown,
+        ErrorKind::NetworkUnreachable,
+        ErrorKind::HostUnreachable,
+        ErrorKind::AddrNotAvailable,
+    ] {
+        let before = world.client.stats();
+        let mut reads = 0;
+        let pumped = world
+            .client
+            .pump_with_receive(Duration::from_millis(1), |_, _| {
+                reads += 1;
+                Err(std::io::Error::from(error))
+            })
+            .unwrap();
+        assert_eq!(reads, 1);
+        assert_eq!(pumped.received, 0);
+        assert_eq!(pumped.status.generation, generation);
+        assert_eq!(world.client.stats().send_errors, before.send_errors + 1);
+    }
+    assert!(
+        world
+            .client
+            .pump_with_receive(Duration::ZERO, |_, _| Err(ErrorKind::InvalidInput.into()))
+            .is_err()
+    );
+}
+
 /// Huge monotonic values must not overflow the independent wall clock: the
 /// injectable Clock contract does not require these two epochs to coincide.
 #[derive(Clone)]
