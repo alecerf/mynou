@@ -221,6 +221,13 @@ fn metainfo(name: &str, files: &[(&str, &[u8])], tag: &str) -> (Vec<u8>, String)
     )
 }
 
+/// Deterministic synthetic bytes; each variant differs everywhere.
+fn content(length: usize, variant: usize) -> Vec<u8> {
+    (0..length)
+        .map(|index| ((index * 131 + variant * 17) % 251) as u8)
+        .collect()
+}
+
 fn transfer(engine: &Engine, id: &str) -> Option<Value> {
     engine.transfer(id).ok()
 }
@@ -246,8 +253,8 @@ struct Fixture {
 fn fixture(indexer: &Indexer) -> Fixture {
     let mut scratch = Scratch::new();
     scratch.0 = scratch.0.canonicalize().unwrap();
-    let video = payload(3 * BLOCK + 77, 1);
-    let nfo = payload(40, 2);
+    let video = content(3 * BLOCK + 77, 1);
+    let nfo = content(40, 2);
     let source = Torrent::multiple(
         &scratch.0,
         NAME,
@@ -310,7 +317,7 @@ fn feeds_and_completion_searches_register_only_verified_layouts_once() {
     // Reordered files under another source tag: a genuine cross-seed.
     let (good, good_id) = metainfo(NAME, &[("info.nfo", &f.nfo), ("ep.mkv", &f.video)], "B");
     // Same name and sizes, different bytes: only verification can tell.
-    let forged = payload(f.video.len(), 9);
+    let forged = content(f.video.len(), 9);
     let (bad, bad_id) = metainfo(NAME, &[("ep.mkv", &forged), ("info.nfo", &f.nfo)], "C");
     // Same name, different layout: refused before registration.
     let (other, other_id) = metainfo(NAME, &[("ep.mkv", &f.video[..BLOCK])], "D");
