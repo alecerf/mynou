@@ -68,6 +68,8 @@ impl Default for Watch {
 #[derive(Clone)]
 pub struct Options {
     pub id: Option<String>,
+    pub protection: crate::source_network::Protection,
+    pub(crate) network: Option<Arc<dyn crate::torrent::transport::Network>>,
     policy_initialized: Arc<AtomicBool>,
     policy_enabled: Arc<AtomicBool>,
     generation: Arc<AtomicU64>,
@@ -92,6 +94,8 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             id: None,
+            protection: crate::source_network::Protection::Direct,
+            network: None,
             policy_initialized: Arc::new(AtomicBool::new(false)),
             policy_enabled: Arc::new(AtomicBool::new(true)),
             generation: Arc::new(AtomicU64::new(0)),
@@ -108,6 +112,7 @@ impl Default for Options {
 #[derive(Default)]
 struct Runtime {
     session: Option<session::Session>,
+    network_generation: Option<String>,
     last_start: Option<Instant>,
     blocked_until: Option<Instant>,
     requests: u64,
@@ -183,6 +188,7 @@ impl Options {
         };
         let mut options = Self {
             id,
+            protection: crate::source_network::Protection::from_json(v)?,
             enabled,
             min_interval_ms: integer(v, "min_interval_ms", 0, 60_000)?,
             watch: watch(v)?,
@@ -306,8 +312,27 @@ pub(crate) fn fetch(
     accept: &str,
     deadline: Instant,
 ) -> Result<Response> {
+    source
+        .options
+        .protection
+        .check(source.options.network.as_ref())?;
     let runtime = &source.options.runtime;
     let mut state = runtime.try_lock().map_err(|_| "Indexer: source is busy")?;
+    let network_generation =
+        if source.options.protection == crate::source_network::Protection::Protected {
+            source
+                .options
+                .network
+                .as_ref()
+                .ok_or("Source: protected network unavailable")?
+                .generation()?
+        } else {
+            None
+        };
+    if state.network_generation != network_generation {
+        state.session = None;
+        state.network_generation = network_generation;
+    }
     let generation = source.options.generation.load(Ordering::Acquire);
     if !source.options.effective_enabled() {
         state.last_error = Some("disabled");
@@ -337,6 +362,15 @@ pub(crate) fn fetch(
         state.last_error = Some("policy_changed");
         result = Err("Indexer: source policy changed during the request".into());
     }
+    let publication = source
+        .options
+        .protection
+        .publication(source.options.network.as_ref());
+    if publication.is_err() {
+        state.session = None;
+        state.last_error = Some("protection_unavailable");
+        result = Err("Indexer: protected network unavailable".into());
+    }
     match &result {
         Ok(_) => {
             state.successes = state.successes.saturating_add(1);
@@ -350,6 +384,24 @@ pub(crate) fn fetch(
         }
     }
     result
+}
+fn source_client(source: &Source) -> Result<HttpClient> {
+    source
+        .options
+        .protection
+        .check(source.options.network.as_ref())?;
+    Ok(
+        if source.options.protection == crate::source_network::Protection::Protected {
+            source
+                .options
+                .network
+                .as_ref()
+                .ok_or("Source: protected network unavailable")?
+                .http()
+        } else {
+            crate::source_network::direct::http()
+        },
+    )
 }
 fn fetch_before(
     source: &Source,
@@ -403,7 +455,12 @@ fn fetch_before(
                     .is_none_or(|s| s.expires <= Instant::now())
                 {
                     state.session = None;
-                    state.session = Some(session::login(form, &source.url, deadline)?);
+                    state.session = Some(session::login(
+                        form,
+                        &source.url,
+                        deadline,
+                        source_client(source)?,
+                    )?);
                 }
                 headers.push((
                     "Cookie".into(),
@@ -415,7 +472,7 @@ fn fetch_before(
                 ));
             }
         }
-        let response = HttpClient::new()
+        let response = source_client(source)?
             .with_timeout(remaining(deadline)?.min(Duration::from_secs(20)))
             .with_max_body(8 * 1024 * 1024)
             .without_redirects()
@@ -481,6 +538,15 @@ pub fn report(sources: &[Source]) -> Value {
                     let mut v = Value::object();
                     v.insert("name", crate::integrations::report_text(&source.name, 128));
                     v.insert("kind", source.kind.clone());
+                    v.insert("protection", source.options.protection.name());
+                    v.insert(
+                        "protection_ready",
+                        source
+                            .options
+                            .protection
+                            .check(source.options.network.as_ref())
+                            .is_ok(),
+                    );
                     v.insert("enabled", source.options.effective_enabled());
                     v.insert("id", source.options.identity(source));
                     v.insert("authentication", source.options.authentication.mode());

@@ -13,6 +13,11 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = (
+    "source_network::tests::late_search_results_from_an_earlier_source_are_refused_after_owner_loss",
+    "source_network::tests::replaced_generation_requires_a_fresh_engine_and_ipv6_never_falls_back",
+    "source_network::tests::protected_authentication_search_feed_detail_and_metainfo_use_virtual_tls_dns",
+    "source_network::tests::protected_feed_cursors_and_pending_demand_survive_restart_and_loss_without_host_io",
+    "source_network::tests::protected_irc_tls_sasl_reconnect_restart_and_dedup_use_only_virtual_services",
     "torrent::tunnel_tests::real_magnet_metadata_payload_and_inbound_seeding_use_only_the_native_network",
     "torrent::tunnel_tests::torrent_http_tracker_and_redirected_remote_metadata_use_virtual_dns_and_http",
     "torrent::tunnel_tests::real_udp_tracker_and_dht_get_peers_and_announce_stay_inside_the_tunnel",

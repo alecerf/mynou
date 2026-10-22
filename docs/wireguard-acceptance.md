@@ -18,7 +18,7 @@ do not count as delivery evidence.
 
 The required `validate` job compiles the zero-dependency graph, runs formatting,
 the torrent network inventory and Clippy, then all Rust harnesses. It runs the
-36 attempted-host-I/O scenarios with negative controls and repeats the two
+41 attempted-host-I/O scenarios with negative controls and repeats the two
 route-loss scenarios against real macOS routes. Its uploaded `mynou-tests-*`
 artifact contains `host-io/summary.json`, full per-scenario traces/logs and
 `host-routes/summary.json`, with the ordinary harness report/logs under `rust/`.

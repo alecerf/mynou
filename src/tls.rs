@@ -842,6 +842,20 @@ pub(crate) mod tests {
         fault: Fault,
         http: Option<(&[u8], &[u8])>,
     ) -> Result<()> {
+        serve_fixture_inner(&mut stream, fault, http, None)
+    }
+    pub(crate) fn serve_dialogue<S: Read + Write>(
+        mut stream: S,
+        dialogue: &[(&[u8], &[u8])],
+    ) -> Result<()> {
+        serve_fixture_inner(&mut stream, Fault::HttpOk, None, Some(dialogue))
+    }
+    fn serve_fixture_inner<S: Read + Write>(
+        mut stream: S,
+        fault: Fault,
+        http: Option<(&[u8], &[u8])>,
+        dialogue: Option<&[(&[u8], &[u8])]>,
+    ) -> Result<()> {
         let (header, client) = read_record(&mut stream)?;
         if header[0] != 22 || client.first() != Some(&1) {
             return Err("ClientHello expected".into());
@@ -967,6 +981,29 @@ pub(crate) mod tests {
             "c ap traffic",
             &transcript.clone().finalize(),
         )?)?;
+        if let Some(dialogue) = dialogue {
+            let mut pending = Vec::new();
+            for (expected, reply) in dialogue {
+                while pending.len() < expected.len() {
+                    let (header, payload) = read_record(&mut stream)?;
+                    let (kind, fragment) = receive.open(&header, &payload)?;
+                    if kind != 23 || pending.len() + fragment.len() > 65536 {
+                        return Err("Invalid fixture dialogue".into());
+                    }
+                    pending.extend(fragment);
+                }
+                if !pending.starts_with(expected) {
+                    return Err("Unexpected fixture dialogue".into());
+                }
+                pending.drain(..expected.len());
+                if !reply.is_empty() {
+                    stream
+                        .write_all(&send.seal(23, reply)?)
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+            return Ok(());
+        }
         if http.is_some() || matches!(fault, Fault::HttpOk | Fault::HttpDowngrade) {
             let mut request = Vec::new();
             while !request.ends_with(b"\r\n\r\n") {

@@ -42,7 +42,12 @@ fn encode(s: &str) -> String {
     }
     out
 }
-pub(super) fn login(form: &Form, source: &str, deadline: Instant) -> Result<Session> {
+pub(super) fn login(
+    form: &Form,
+    source: &str,
+    deadline: Instant,
+    client: HttpClient,
+) -> Result<Session> {
     let src = net::parse_url(source)?;
     let login = net::parse_url(&form.login_url)?;
     if src.origin() != login.origin() {
@@ -55,7 +60,7 @@ pub(super) fn login(form: &Form, source: &str, deadline: Instant) -> Result<Sess
         form.password_field,
         encode(&secret(&form.password_env)?)
     );
-    let r = HttpClient::new()
+    let r = client
         .with_timeout(remaining(deadline)?.min(Duration::from_secs(10)))
         .with_max_body(65536)
         .without_redirects()

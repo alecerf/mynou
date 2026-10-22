@@ -56,13 +56,14 @@ automatic pack lookup and IRC-triggered torrent metadata use it even with no
 download workers. A lost or replaced generation blocks old handles and delayed
 results; recovery never switches those handles to Direct.
 
-Plex, catalog, indexer search/feed traffic, the IRC connection, management API
-and their ordinary DNS remain outside the torrent tunnel. In particular, a
-metadata fetch following an indexer/IRC result is protected, while that service's
-own connection is not. The local API is plain HTTP: retain loopback binding and
-authenticated local access, or use a trusted TLS reverse proxy for remote
-management. Environment HTTP proxies do not provide torrent protection; the
-protected HTTP connector ignores them.
+Indexer search/feed/authentication/detail traffic and IRC sessions can use the
+same native network with per-source `"protection": "protected"`. Migrating a
+Gluetun-protected source requires this explicit setting on every indexer and IRC
+source; an omitted field preserves ordinary discovery behavior. See
+[protected sources](protected-sources.md) for configuration, readiness and recovery.
+Plex, catalog and the management API retain ordinary/LAN networking. The local
+API is plain HTTP: retain authenticated loopback access or a trusted TLS reverse
+proxy for remote management. Protected connectors ignore environment HTTP proxies.
 
 The host sends outer encrypted UDP to the configured literal VPN endpoint.
 The VPN server and the ISP can see the outer connection's source IP. The VPN

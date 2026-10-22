@@ -12,7 +12,6 @@ use crate::{
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::{Read, Write},
-    net::{Shutdown, TcpStream, ToSocketAddrs},
     sync::{Arc, atomic::Ordering},
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -55,7 +54,7 @@ impl Health {
 }
 pub(crate) struct Runtime {
     pub health: BTreeMap<String, Health>,
-    sockets: BTreeMap<String, TcpStream>,
+    sockets: BTreeMap<String, crate::source_network::direct::Irc>,
     started: BTreeSet<String>,
     monitor_started: bool,
 }
@@ -137,7 +136,7 @@ pub(crate) fn start(engine: &Arc<Engine>, handles: &mut Vec<JoinHandle<()>>) {
             }
             if let Ok(r) = e.irc_runtime.lock() {
                 for socket in r.sockets.values() {
-                    let _ = socket.shutdown(Shutdown::Both);
+                    socket.shutdown();
                 }
             }
         }));
@@ -180,6 +179,54 @@ pub(crate) fn start(engine: &Arc<Engine>, handles: &mut Vec<JoinHandle<()>>) {
             }
             health(&engine, &source.id, "stopped", None, 0);
         }));
+    }
+}
+struct ProtectedStream {
+    stream: Box<dyn crate::net::NetworkStream>,
+    engine: std::sync::Weak<Engine>,
+    timeout: std::sync::Mutex<Option<Duration>>,
+}
+impl Read for ProtectedStream {
+    fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+        let timeout = *self.timeout.lock().map_err(|_| std::io::ErrorKind::Other)?;
+        let deadline = Instant::now() + timeout.unwrap_or(Duration::from_secs(180));
+        loop {
+            if self.engine.upgrade().is_none_or(|e| {
+                e.stopped.load(Ordering::Acquire) || e.torrent_network.generation().is_err()
+            }) {
+                return Err(std::io::ErrorKind::ConnectionAborted.into());
+            }
+            let remaining = deadline
+                .checked_duration_since(Instant::now())
+                .ok_or(std::io::ErrorKind::TimedOut)?;
+            self.stream
+                .set_read_timeout(Some(remaining.min(Duration::from_millis(100))))?;
+            match self.stream.read(bytes) {
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                    ) => {}
+                result => return result,
+            }
+        }
+    }
+}
+impl Write for ProtectedStream {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.stream.write(bytes)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.stream.flush()
+    }
+}
+impl crate::net::NetworkStream for ProtectedStream {
+    fn set_read_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
+        *self.timeout.lock().map_err(|_| std::io::ErrorKind::Other)? = timeout;
+        Ok(())
+    }
+    fn set_write_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
+        self.stream.set_write_timeout(timeout)
     }
 }
 enum Stream {
@@ -237,7 +284,8 @@ fn send(stream: &mut Stream, line: &str) -> Result<()> {
         .and_then(|()| stream.write_all(b"\r\n"))
         .map_err(|_| "IRC: cannot send command".into())
 }
-fn connected(engine: &Engine, source: &Source) -> Result<()> {
+fn connected(engine: &Arc<Engine>, source: &Source) -> Result<()> {
+    source.protection.check(Some(&engine.torrent_network))?;
     let password = credential(&source.password_env)?;
     let key = credential(&source.join_key_env)?;
     let mut authentication = source
@@ -252,44 +300,52 @@ fn connected(engine: &Engine, source: &Source) -> Result<()> {
         .transpose()?;
     let (url, tls) = source.endpoint()?;
     let deadline = Instant::now() + Duration::from_secs(10);
-    let mut socket = None;
-    for address in (url.host.as_str(), url.port)
-        .to_socket_addrs()
-        .map_err(|_| "IRC: hostname lookup failed")?
-        .take(8)
-    {
+    let stream = if source.protection == crate::source_network::Protection::Protected {
+        let network = &engine.torrent_network;
+        let authority = if url.host.contains(':') {
+            format!("[{}]:{}", url.host, url.port)
+        } else {
+            format!("{}:{}", url.host, url.port)
+        };
+        let mut connected = None;
+        for address in network.resolve(&authority, deadline)?.into_iter().take(8) {
+            let remaining = deadline
+                .checked_duration_since(Instant::now())
+                .ok_or("IRC: connection deadline exceeded")?;
+            if let Ok(stream) = network.connect(address, remaining) {
+                connected = Some(stream);
+                break;
+            }
+        }
+        DeadlineStream::from_stream(
+            Box::new(ProtectedStream {
+                stream: connected.ok_or("IRC: connection failed")?,
+                engine: Arc::downgrade(engine),
+                timeout: std::sync::Mutex::new(None),
+            }),
+            deadline,
+        )
+    } else {
+        let (stream, socket) = crate::source_network::direct::irc(&url.host, url.port, deadline)?;
+        let mut runtime = lock(&engine.irc_runtime)?;
+        runtime.sockets.insert(source.id.clone(), socket);
         if engine.stopped.load(Ordering::Acquire) {
+            runtime
+                .sockets
+                .get(&source.id)
+                .ok_or("IRC: shutdown handle unavailable")?
+                .shutdown();
             return Ok(());
         }
-        let remaining = deadline
-            .checked_duration_since(Instant::now())
-            .ok_or("IRC: connection deadline exceeded")?;
-        if let Ok(stream) = TcpStream::connect_timeout(&address, remaining) {
-            socket = Some(stream);
-            break;
-        }
-    }
-    let socket = socket.ok_or("IRC: connection failed")?;
-    socket
-        .set_nodelay(true)
-        .map_err(|_| "IRC: socket configuration failed")?;
-    lock(&engine.irc_runtime)?.sockets.insert(
-        source.id.clone(),
-        socket
-            .try_clone()
-            .map_err(|_| "IRC: shutdown handle unavailable")?,
-    );
-    if engine.stopped.load(Ordering::Acquire) {
-        let _ = socket.shutdown(Shutdown::Both);
-        return Ok(());
-    }
+        drop(runtime);
+        stream
+    };
     let mut stream = if tls {
         Stream::Tls(Box::new(crate::tls::TlsStream::connect_stream(
-            DeadlineStream::new(socket, deadline),
-            &url.host,
+            stream, &url.host,
         )?))
     } else {
-        Stream::Tcp(DeadlineStream::new(socket, deadline))
+        Stream::Tcp(stream)
     };
     health(engine, &source.id, "registering", None, 0);
     if let Some(password) = password {
