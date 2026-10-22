@@ -79,6 +79,48 @@ fn strict_templates_are_pure_bounded_and_grabs_require_explicit_discovery() {
 }
 
 #[test]
+fn title_binding_overrides_global_profile_for_irc_admission_after_restart() {
+    let dir = Directory::new();
+    let torrent = movie(&dir, "Fixture.Movie.2024.1080p.mp4");
+    let seed = Seeder::open(&dir.0.join("seed"), &[&torrent]);
+    let mut cfg = configuration(&dir.0.join("engine"), seed.client.listen_port());
+    let mut hd = cfg.selection.profiles["any"].clone();
+    hd.resolutions = vec![1080];
+    cfg.selection.profiles.insert("hd".into(), hd);
+    cfg.irc.rules[0].profile = "hd".into();
+    let engine = Engine::open(cfg.clone()).unwrap();
+    let admitted = engine.submit(request(7)).unwrap().remove(0);
+    let mut change = mynou::profiles::ControlRequest::from_json(
+        &mynou::json::parse(r#"{"action":"set","kind":"movie","tmdb_id":7,"profile":"hd"}"#)
+            .unwrap(),
+    )
+    .unwrap();
+    change.plan_id = Some(
+        engine
+            .title_profile_control(&change)
+            .unwrap()
+            .get("plan_id")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .into(),
+    );
+    change.apply = true;
+    engine.title_profile_control(&change).unwrap();
+    drop(engine);
+
+    let engine = Engine::open(cfg).unwrap();
+    // The global `any` profile would not match this rule and would claim the job.
+    assert!(!engine.tick().unwrap());
+    receive(&engine, &torrent.id, 7);
+    assert!(routing(&engine.irc_route_pending().unwrap()));
+    let selected = job(&engine, &admitted.id);
+    assert_eq!(selected.release.as_ref().unwrap().profile, "hd");
+    assert_eq!(selected.irc_origin.unwrap().torrent_id, torrent.id);
+    assert!(engine.transfers().unwrap().as_array().unwrap().is_empty());
+}
+
+#[test]
 fn admitted_jobs_wait_for_irc_and_metadata_precedes_selective_payload_and_exact_import() {
     let dir = Directory::new();
     let torrent = movie(&dir, "Fixture.Movie.2024.1080p.mp4");
