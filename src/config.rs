@@ -424,6 +424,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
                     "watch",
                     "mapping",
                     "protection",
+                    "cross_seed",
                 ],
             )?;
             let kind = text(source, "kind", "json")?;

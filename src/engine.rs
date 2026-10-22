@@ -97,6 +97,9 @@ pub struct Engine {
     pub(crate) feed_store: Mutex<crate::indexers::feed::FeedStore>,
     pub(crate) feed_runtime: Mutex<crate::indexers::watch::Runtime>,
     pub(crate) feed_lock: Mutex<()>,
+    pub(crate) cross_seed_store: Mutex<crate::indexers::cross_seed::store::DiscoveryStore>,
+    pub(crate) cross_seed_runtime: Mutex<crate::indexers::cross_seed::Runtime>,
+    pub(crate) cross_seed_lock: Mutex<()>,
     pub(crate) upgrade_lock: Mutex<()>,
     /// Leaf lock: per-title profile bindings, read while other locks are held.
     pub(crate) title_profiles: Mutex<crate::profiles::TitleProfiles>,
@@ -221,6 +224,8 @@ impl Engine {
             crate::indexers::feed::FeedStore::open(&config.store_dir, &config, read_only)?;
         let series_store = crate::series::SeriesStore::open(&config.store_dir, read_only)?;
         let title_profiles = crate::profiles::TitleProfiles::open(&config.store_dir, read_only)?;
+        let cross_seed_store =
+            crate::indexers::cross_seed::store::DiscoveryStore::open(&config.store_dir, read_only)?;
         let requester_store =
             crate::requesters::RequesterStore::open(&config.store_dir, &config, read_only)?;
         let irc_store =
@@ -256,6 +261,9 @@ impl Engine {
             feed_store: Mutex::new(feed_store),
             feed_runtime: Mutex::new(crate::indexers::watch::Runtime::default()),
             feed_lock: Mutex::new(()),
+            cross_seed_store: Mutex::new(cross_seed_store),
+            cross_seed_runtime: Mutex::new(crate::indexers::cross_seed::Runtime::default()),
+            cross_seed_lock: Mutex::new(()),
             upgrade_lock: Mutex::new(()),
             title_profiles: Mutex::new(title_profiles),
             read_only,
@@ -426,7 +434,7 @@ impl Engine {
         Ok(job)
     }
 
-    fn native_client(&self) -> Result<&Client> {
+    pub(crate) fn native_client(&self) -> Result<&Client> {
         self.downloads
             .get()
             .ok_or_else(|| "Native downloads are disabled".to_owned())
@@ -761,6 +769,7 @@ impl Engine {
         crate::irc::routing::start(self, handles);
         crate::irc::lookup::start(self, handles);
         crate::indexers::watch::start(self, handles);
+        crate::indexers::cross_seed::start(self, handles);
         if self.config.catalog.enabled {
             let engine = self.clone();
             handles.push(thread::spawn(move || {

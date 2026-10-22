@@ -448,6 +448,12 @@ pub(crate) fn route(
         ("GET", "/api/indexers") => Ok((200, engine.indexers()?)),
         ("GET", "/api/feeds") => Ok((200, engine.feeds()?)),
         ("GET", "/api/feeds/retained") => Ok((200, engine.feeds_retained("")?)),
+        ("GET", "/api/cross-seed/discovery") => Ok((200, engine.cross_seed_status()?)),
+        ("POST", "/api/cross-seed/discovery/run") => {
+            let value = control_body(body, &["dry_run", "force", "indexer", "transfer"], true)?;
+            let run = crate::indexers::cross_seed::Run::from_json(&value)?;
+            Ok((200, engine.cross_seed_discover(&run)?))
+        }
         ("GET", "/api/requesters") => Ok((200, engine.requesters()?)),
         ("GET", "/api/irc") => Ok((200, engine.irc_sources()?)),
         ("POST", "/api/requesters/sync") => {

@@ -58,6 +58,7 @@ const HELP: &str = "Mynou — media automation using Rust std only
   torrents [--limit N --after CURSOR] [--config mynou.json]   (a page of 50 by default)
   torrent ID [--config mynou.json]
   cross-seed SOURCE_ID --torrent FILE [--mapping '[0,2]'] [--config mynou.json]
+  cross-seed-discovery [--run [--dry-run] [--force] [--indexer ID] [--transfer ID]] [--config mynou.json]
   pause | resume ID [--config mynou.json]
   torrent-priority ID --priority N [--config mynou.json]
   file-priority ID --file N --priority low|normal|high [--config mynou.json]
@@ -113,6 +114,9 @@ impl Args {
                     "unmonitored",
                     "retained",
                     "clear",
+                    "run",
+                    "dry-run",
+                    "force",
                 ]
                 .contains(&key)
                 {
@@ -157,6 +161,9 @@ impl Args {
             "torrent-policy" => &["config", "help", "policy"],
             "torrent-select" => &["config", "help", "selection"],
             "cross-seed" => &["config", "help", "torrent", "mapping"],
+            "cross-seed-discovery" => &[
+                "config", "help", "run", "dry-run", "force", "indexer", "transfer",
+            ],
             "upgrades" => &["config", "help", "apply"],
             "baseline" => &["config", "help", "release-title"],
             "submit" => &[
@@ -717,6 +724,46 @@ fn execute(args: Args) -> Result<()> {
                 &format!("/api/transfers/{}/cross-seed", id.to_ascii_lowercase()),
                 Some(&body),
             )?);
+        }
+        "cross-seed-discovery" => {
+            let mut body = Value::object();
+            for (option, field) in [("dry-run", "dry_run"), ("force", "force")] {
+                if args.options.contains_key(option) {
+                    body.insert(field, true);
+                }
+            }
+            for name in ["indexer", "transfer"] {
+                if let Some(value) = args.options.get(name) {
+                    body.insert(name, value.as_str());
+                }
+            }
+            let run = args.options.contains_key("run");
+            if !run && body.as_object().is_some_and(|fields| !fields.is_empty()) {
+                return Err("Discovery options require --run".into());
+            }
+            if run {
+                if !online {
+                    return Err("Cross-seed discovery requires the running Mynou service".into());
+                }
+                mynou::indexers::cross_seed::Run::from_json(&body)?;
+                output(&call(
+                    &config,
+                    &path,
+                    "POST",
+                    "/api/cross-seed/discovery/run",
+                    Some(&body),
+                )?);
+            } else if online {
+                output(&call(
+                    &config,
+                    &path,
+                    "GET",
+                    "/api/cross-seed/discovery",
+                    None,
+                )?);
+            } else {
+                output(&Engine::open_for_preview(config)?.cross_seed_status()?);
+            }
         }
         "torrents" => {
             if !online {

@@ -668,6 +668,121 @@ pub(super) fn gate(client: &Client, id: &str) -> Result<Option<Arc<Mutex<()>>>> 
         .map(|reuse| reuse.activity.clone()))
 }
 
+/// A completed ordinary transfer that automatic discovery may compare with
+/// candidates. Only `ready` sources can be registered; the others wait for
+/// their next verification.
+pub struct ReuseSource {
+    pub id: String,
+    /// The metadata name: the single file or the root directory.
+    pub name: String,
+    /// Original non-padding metadata index, relative path and length.
+    pub files: Vec<(usize, PathBuf, u64)>,
+    pub total: u64,
+    pub ready: bool,
+    pub paused: bool,
+}
+
+/// The identity and payload layout of a supported cross-seed candidate.
+pub struct CandidateLayout {
+    pub id: String,
+    /// Relative path and length of each non-padding file, in metadata order.
+    pub files: Vec<(PathBuf, u64)>,
+}
+
+/// Parses candidate metadata under the manual cross-seed limits (v1 only).
+pub fn candidate_layout(metadata: &[u8]) -> Result<CandidateLayout> {
+    let meta = candidate(metadata)?;
+    Ok(CandidateLayout {
+        id: hex(&meta.v1.ok_or("Missing v1 cross-seed identity")?),
+        files: meta
+            .files
+            .iter()
+            .filter(|file| !file.padding)
+            .map(|file| (file.path.clone(), file.length))
+            .collect(),
+    })
+}
+
+impl Client {
+    /// Completed ordinary transfers in index order. Seed-only, failed and
+    /// unfinished transfers are omitted but still advance the cursor.
+    pub fn reuse_sources(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<(Vec<ReuseSource>, Option<String>)> {
+        let (ids, next, _, _) = self
+            .index
+            .lock()
+            .map_err(|_| "Native transfer index lock is poisoned")?
+            .page(after, limit)?;
+        let mut sources = Vec::with_capacity(ids.len());
+        for id in ids {
+            let Some(record) = self
+                .index
+                .lock()
+                .map_err(|_| "Native transfer index lock is poisoned")?
+                .get(&id)?
+            else {
+                continue;
+            };
+            if record.cross_seed || record.failed {
+                continue;
+            }
+            let resident = {
+                let jobs = self
+                    .jobs
+                    .lock()
+                    .map_err(|_| "BitTorrent state lock is poisoned")?;
+                jobs.get(&id).map(|job| {
+                    (
+                        job.meta.clone(),
+                        job.status.ready && !job.needs_rehash && !job.failed,
+                        job.paused || job.control.user_paused,
+                    )
+                })
+            };
+            // The index lags a resident verification by up to one save.
+            if !record.status.ready && !resident.as_ref().is_some_and(|state| state.1) {
+                continue;
+            }
+            let (meta, ready, paused) = match resident {
+                Some(state) => state,
+                // Damaged inactive metadata is reported by the transfer itself.
+                None => match super::load_job(&self.config, &id) {
+                    Ok(job) => (job.meta, false, false),
+                    Err(_) => continue,
+                },
+            };
+            let Some(meta) = meta else { continue };
+            let files: Vec<_> = meta
+                .files
+                .iter()
+                .enumerate()
+                .filter(|(_, file)| !file.padding)
+                .map(|(index, file)| (index, file.path.clone(), file.length))
+                .collect();
+            let Some(name) = meta
+                .files
+                .first()
+                .and_then(|file| file.path.components().next())
+                .and_then(|part| part.as_os_str().to_str())
+            else {
+                continue;
+            };
+            sources.push(ReuseSource {
+                id,
+                name: name.to_owned(),
+                total: files.iter().map(|file| file.2).sum(),
+                files,
+                ready,
+                paused: paused || record.paused || record.control.user_paused,
+            });
+        }
+        Ok((sources, next))
+    }
+}
+
 pub(super) fn retire_proof(job: &mut Job) {
     if job.cross_seed.is_some() {
         job.cancel.store(true, Ordering::Release);

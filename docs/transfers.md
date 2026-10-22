@@ -158,7 +158,8 @@ The Bearer-authenticated API is `POST /api/transfers/SOURCE_ID/cross-seed` with
 `{"metadata_hex":"...","mapping":[2,0]}`; `mapping` is optional. Send the
 hexadecimal torrent bytes, never a server path. The first increment supports
 distinct-infohash v1 candidates only, up to 256 KiB metadata and 1024 metadata
-files. V2/hybrid candidates, chained reuse and automatic discovery are excluded.
+files. V2/hybrid candidates and chained reuse are excluded;
+[automatic discovery](#automatic-cross-seed-discovery) uses the same path.
 
 Diagnostics include `seed_only: true` and `cross_seed_source_id`. A mismatch
 or missing/unsafe file shows `failed` with an error: there is no partial
@@ -188,6 +189,95 @@ are refused when migration, scheduling or point lookup reads that identity;
 they never convert into a download. The indexed transfer format rejects
 older binaries; follow the migration and downgrade procedure below. Keep the
 source media and native state while seeding.
+
+## Automatic cross-seed discovery
+
+Discovery finds candidates for completed ordinary transfers and registers them
+through manual cross-seeding, so the same verification applies: every piece is
+hashed from the existing bytes before any announce, and a mismatch fails the
+candidate without any download. It is opt-in per RSS or Torznab
+[source](sources.md) and needs `downloads.seed`:
+
+```json
+{
+  "id": "tracker-b",
+  "kind": "torznab",
+  "url": "https://indexer.example.test/api",
+  "cross_seed": {
+    "enabled": true,
+    "feed": true,
+    "interval_secs": 3600,
+    "search": true,
+    "search_interval_secs": null
+  }
+}
+```
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `feed` | `true` | Read the newest entries every `interval_secs` (60 to 86,400, default hourly) |
+| `search` | `true` for Torznab | Search by name once each completed transfer is verified (Torznab only) |
+| `search_interval_secs` | `null` | Repeat that search after this delay (3,600 to 31,536,000); `null` searches once |
+
+A pass runs every minute and handles one source at a time. For each offer:
+
+1. Its title must equal the name of a completed transfer once case,
+   separators and a video extension are ignored. A stated size larger than the
+   transfer's payload, or an advertised info hash that already exists, is
+   skipped without downloading anything.
+2. The `.torrent` is downloaded once through the source's authentication and
+   [protection](protected-sources.md), at most eight per source and pass, after
+   its minimum request spacing.
+3. Only v1 metadata within the manual limits is accepted. Every candidate file
+   needs a distinct source file of equal length; file names, then paths below
+   the root, break ties, and anything still ambiguous is refused. Candidates
+   may be a subset of the source and may rename or reorder files.
+4. The candidate is registered with that explicit mapping and verified before
+   it can be advertised.
+
+A source must be verified, not failed and not paused. Retained seeds that are
+waiting for their rehash are retried later. Season packs are compared like any
+other transfer; discovery has no pack-specific matching. Private candidates
+keep their own trackers, without DHT or PEX, and the protection of the transfer
+network applies as for any seed.
+
+Feed entries and completed searches are remembered in a private
+`cross-seed.idx` store, together with the provenance of each registered
+cross-seed (source transfer, indexer, `feed` or `completion` trigger and time),
+counters per result and reason, and the last 100 outcomes. A restart therefore
+neither repeats a registration nor downloads a remembered entry again. An entry
+without a matching completed transfer is remembered too: a transfer completed
+later is found by its completion search. Up to 2,048 entry identities are kept
+per source. Deleting the store makes discovery start over; registered
+cross-seeds are kept.
+
+```sh
+mynou cross-seed-discovery --config ./mynou.json
+mynou cross-seed-discovery --run --dry-run --config ./mynou.json
+mynou cross-seed-discovery --run --indexer tracker-b --transfer ID --config ./mynou.json
+```
+
+| CLI | API (Bearer token) |
+| --- | --- |
+| `cross-seed-discovery` | `GET /api/cross-seed/discovery` |
+| `cross-seed-discovery --run [...]` | `POST /api/cross-seed/discovery/run` with `{"dry_run": true, "force": false, "indexer": "ID", "transfer": "ID"}` (all optional) |
+
+`--dry-run` downloads and maps candidates but registers and remembers
+nothing. `--force` ignores the feed schedule and search delays, not the source's
+rate limits. The status lists the enabled sources and their schedule, counters,
+recent outcomes and registered cross-seeds. Reports name only transfer
+identities, source IDs and fixed reasons, never titles, links or credentials:
+
+| Result | Reasons |
+| --- | --- |
+| `added` | `verification_queued` |
+| `would_add` | `verified_layout` (dry run) |
+| `skipped` | `already_present`, `size_mismatch`, `source_paused` |
+| `rejected` | `layout_mismatch`, `ambiguous_layout`, `unsupported_metadata`, `metainfo_unavailable`, `registration_refused` |
+
+Network failures, rate limits and unverified sources leave the entry pending
+for a later pass and count as `deferred`. A pass report also counts unmatched
+offers, searches and downloaded metadata.
 
 ## Bandwidth and seeding
 

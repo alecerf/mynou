@@ -230,6 +230,12 @@ succeeded, how many polls, failures and new entries it saw, the last outcome
 rest. Last-outcome counters reset when the service restarts. Reports never show
 URLs, titles, entries or credentials.
 
+### Cross-seed discovery
+
+A source's `cross_seed` section enables automatic cross-seed discovery from
+its feed and, for Torznab, completion searches. It is independent of `watch`;
+see [automatic cross-seed discovery](transfers.md#automatic-cross-seed-discovery).
+
 ## IRC announcements
 
 IRC reception is opt-in. Each source connects out to one channel and accepts

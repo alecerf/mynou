@@ -2387,6 +2387,8 @@ fn plex_available_before(
 struct RssItem {
     guid: Option<String>,
     release: Release,
+    size: Option<u64>,
+    info_hash: Option<String>,
 }
 
 /// Valid items in document order, and the number of items without a usable
@@ -2424,6 +2426,16 @@ fn rss_items(text: &str, base: &str) -> Result<(Vec<RssItem>, u32)> {
             .child("seeders")
             .and_then(|v| v.text.trim().parse().ok())
             .unwrap_or(0);
+        let mut size = item
+            .child("size")
+            .and_then(|v| v.text.trim().parse().ok())
+            .or_else(|| {
+                item.child("enclosure")
+                    .and_then(|v| v.attrs.get("length"))
+                    .and_then(|v| v.parse().ok())
+            })
+            .filter(|size| *size > 0);
+        let mut info_hash = None;
         for attr in item.children.iter().filter(|child| child.local() == "attr") {
             match attr.attrs.get("name").map(String::as_str) {
                 Some("seeders") => {
@@ -2432,6 +2444,21 @@ fn rss_items(text: &str, base: &str) -> Result<(Vec<RssItem>, u32)> {
                         .get("value")
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(0)
+                }
+                Some("size") => {
+                    size = attr
+                        .attrs
+                        .get("value")
+                        .and_then(|v| v.parse().ok())
+                        .filter(|size| *size > 0)
+                        .or(size)
+                }
+                Some("infohash") => {
+                    info_hash = attr
+                        .attrs
+                        .get("value")
+                        .map(|v| v.trim().to_ascii_lowercase())
+                        .filter(|v| v.len() == 40 && v.bytes().all(|b| b.is_ascii_hexdigit()))
                 }
                 Some("magneturl") if url.is_none() => {
                     url = attr.attrs.get("value").map(String::as_str)
@@ -2459,6 +2486,8 @@ fn rss_items(text: &str, base: &str) -> Result<(Vec<RssItem>, u32)> {
                 url,
                 seeders,
             },
+            size,
+            info_hash,
         });
     }
     Ok((out, skipped))
@@ -2578,6 +2607,65 @@ pub(crate) fn poll_feed(
         .and_then(|text| feed_entries(text, &source.url).map_err(|_| "parse_rejected"));
     crate::indexers::parsed(source, parsed.is_ok());
     parsed
+}
+
+/// A release offered for cross-seed discovery. Its URL may carry a credential:
+/// it is used once for the metainfo download and never stored or reported.
+pub(crate) struct Offer {
+    pub(crate) id: String,
+    pub(crate) title: String,
+    pub(crate) url: String,
+    /// Payload bytes advertised by the source, when it states them.
+    pub(crate) size: Option<u64>,
+    pub(crate) info_hash: Option<String>,
+}
+
+/// One bounded feed read (`text` is `None`) or Torznab text search. Failures
+/// carry only a fixed outcome code.
+pub(crate) fn offers_before(
+    source: &Source,
+    text: Option<&str>,
+    deadline: Instant,
+) -> std::result::Result<Vec<Offer>, &'static str> {
+    match (source.kind.as_str(), text) {
+        ("torznab", _) | ("rss", None) => {}
+        _ => return Err("unsupported_format"),
+    }
+    let mut pairs: Vec<(&str, String)> = Vec::new();
+    if source.kind == "torznab" {
+        pairs.push(("t", "search".into()));
+    }
+    if let Some(text) = text {
+        pairs.push(("q", text.to_owned()));
+    }
+    if let Some(key) = optional_secret(&source.api_key_env).map_err(|_| "authentication_failed")? {
+        pairs.push(("apikey", key));
+    }
+    let url = query(&source.url, &pairs).map_err(|_| "request_failed")?;
+    let response = crate::indexers::fetch(
+        source,
+        &url,
+        "application/rss+xml, application/xml",
+        deadline,
+    )
+    .map_err(|error| fetch_outcome(&error))?;
+    remaining_search_time(deadline).map_err(|_| "timed_out")?;
+    let parsed = std::str::from_utf8(&response.body)
+        .map_err(|_| "parse_rejected")
+        .and_then(|text| rss_items(text, &source.url).map_err(|_| "parse_rejected"));
+    crate::indexers::parsed(source, parsed.is_ok());
+    Ok(parsed?
+        .0
+        .into_iter()
+        .take(MAX_FEED_ENTRIES)
+        .map(|item| Offer {
+            id: entry_identity(item.guid.as_deref(), &item.release),
+            title: item.release.title,
+            url: item.release.url,
+            size: item.size,
+            info_hash: item.info_hash,
+        })
+        .collect())
 }
 
 /// A watched release that satisfies the request's identity and profile gates.
