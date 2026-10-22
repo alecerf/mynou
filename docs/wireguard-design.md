@@ -1,5 +1,10 @@
 # WireGuard transport design
 
+Discovery extension (#337): indexer authentication/search/feeds/details and IRC
+sessions now have an explicit [protected source policy](protected-sources.md).
+The original torrent-only boundary described below remains the baseline for
+sources configured as direct; protected sources use the same immutable generation.
+
 This is the pre-implementation Security design for [#111](https://github.com/alecerf/mynou/issues/111),
 delivered by [#167](https://github.com/alecerf/mynou/issues/167). It records the
 architecture and original delivery gates. Implementation and bounded native

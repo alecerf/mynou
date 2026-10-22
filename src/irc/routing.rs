@@ -940,6 +940,7 @@ impl Engine {
             })?
         };
         let source = self.config.irc.source(&record.source_id)?;
+        drop(self.source_publication(source.protection)?);
         let deadline = Instant::now() + Duration::from_secs(10);
         let cfg = self.configuration_for(&job)?;
         let already_available = cfg.plex.enabled
@@ -951,6 +952,7 @@ impl Engine {
             )
             .map_err(|_| "IRC: availability could not be verified")?;
         if already_available {
+            let _publication = self.source_publication(source.protection)?;
             let ledger = lock(&self.irc_store)?;
             let current = ledger
                 .get(&record.id)?

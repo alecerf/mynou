@@ -283,3 +283,14 @@ CPU/RSS/timing evidence. The [delivery record](wireguard-acceptance.md) links
 required CI, the macOS migration guide and the owner's explicit waiver of final
 independent acceptance. Existing protocol, generation and operator fixtures
 retain their scope.
+
+## Protected discovery (#337)
+
+Five `source_network::tests` fixtures extend the required observer with virtual
+indexer authentication/feed/detail/private metainfo, redirect refusal, live IRC
+TLS/SASL with reconnect/restart deduplication, feed cursor retention and in-flight
+loss, generation replacement/IPv6 refusal and refusal of a delayed multi-source search result. They declare no ordinary service
+port: only the owned outer UDP endpoints are permitted. Each test asserts a
+positive protocol result before its failure cases. The TLS fixtures run in child
+processes with a fixture CA and unusable environment proxies, preserving observer
+instrumentation across that boundary. See [source policy](protected-sources.md).

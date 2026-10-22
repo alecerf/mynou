@@ -1,3 +1,11 @@
+## Added: Protect indexer and IRC discovery through native WireGuard
+
+Each indexer and IRC source accepts `"protection": "protected"` to route DNS,
+authentication, searches, feeds, details, private metainfo and IRC sessions through
+the native tunnel. Unready or retired generations refuse work without host fallback;
+source status reports protection readiness. Existing sources retain direct behavior
+until explicitly configured. [Migration and limits](/docs/protected-sources.md).
+
 ## Added: Choose the release profile of individual movies and series
 
 A movie or a tracked series can now keep its own selection profile, for example

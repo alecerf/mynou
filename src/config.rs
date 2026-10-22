@@ -423,6 +423,7 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
                     "id",
                     "watch",
                     "mapping",
+                    "protection",
                 ],
             )?;
             let kind = text(source, "kind", "json")?;
@@ -490,6 +491,17 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         Some(v) => crate::irc::Settings::from_json(v, &selection)?,
         None => crate::irc::Settings::default(),
     };
+    for source in &irc.sources {
+        if source.protection == crate::source_network::Protection::Protected
+            && let Some(lookup) = &source.announcement_lookup
+            && !sources.iter().any(|s| {
+                s.options.id.as_deref() == Some(&lookup.indexer)
+                    && s.options.protection == crate::source_network::Protection::Protected
+            })
+        {
+            return Err("IRC: protected lookup requires a protected indexer".into());
+        }
+    }
     if irc.rules.iter().any(|r| {
         r.requester
             .as_ref()

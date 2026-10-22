@@ -100,6 +100,24 @@ class Constructs(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertIn("direct site outside Direct: src/vpn.rs", errors)
 
+    def test_discovery_scopes_reject_unrestricted_sockets_even_when_inventoried(self):
+        for module, file in (("indexers", "src/indexers.rs"), ("source_network", "src/source_network.rs"), ("irc", "src/irc/mod.rs")):
+            with self.subTest(module=module):
+                fixture = Fixture(self, CLEAN, {"src/lib.rs": LIB + f"mod {module};\n", file: SITES["TcpStream"]})
+                status, errors = fixture.check(inventory.render(fixture.scan()))
+                self.assertEqual(status, 1)
+                self.assertIn("direct site outside Direct: " + file, errors)
+
+    def test_discovery_direct_boundary_cannot_authorize_new_items(self):
+        fixture = Fixture(self, CLEAN, {
+            "src/lib.rs": LIB + "mod source_network;\n",
+            "src/source_network.rs": "mod direct;\n",
+            "src/source_network/direct.rs": "fn unexpected() { std::net::TcpStream::connect(\"x\"); }",
+        })
+        status, errors = fixture.check(inventory.render(fixture.scan()))
+        self.assertEqual(status, 1)
+        self.assertIn("direct site outside Direct: src/source_network/direct.rs", errors)
+
     def test_aliases_report_the_canonical_construct(self):
         cases = {"use std::net::{TcpStream as Socket};\nfn peer(s: Socket) {}": ("peer", "TcpStream"),
                  "type Socket = std::net::TcpStream;\nfn peer(s: Socket) {}": ("peer", "TcpStream"),

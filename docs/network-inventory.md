@@ -1,10 +1,10 @@
-# Torrent network inventory
+# Torrent and discovery network inventory
 
 [`network_inventory.py`](../.github/scripts/network_inventory.py) is the
 source-policy part of the "Complete network inventory" gate in the
 [WireGuard design](wireguard-design.md#verification-gates-before-protected-delivery).
-It lists every place where torrent code still reaches the ordinary network
-directly. CI rejects every finding outside the `Direct` implementation, even
+It lists every place where torrent and discovery code reaches the ordinary network
+directly. CI rejects every finding outside the explicit Direct adapters, even
 when it is added to the inventory, and checks the remaining Direct sites for drift.
 
 The script uses only the Python standard library. The `validate` job of Mynou CI
@@ -19,6 +19,8 @@ python3 -B .github/scripts/network_inventory.py
 
 The script scans these files:
 
+- discovery: `src/source_network.rs`, `src/source_network/`, `src/indexers.rs`,
+  `src/indexers/` and `src/irc/`;
 - the torrent modules: `src/torrent.rs` and `src/torrent/`;
 - the inspection and orchestration callers named in the design table:
   `src/pack/shared.rs`, `src/pack/automatic.rs`, `src/library/groups.rs`,
@@ -30,8 +32,8 @@ exactly `#[cfg(test)]` or `#[test]`, and the files of `#[cfg(test)] mod name;`
 declarations. Other conditions, such as `cfg(not(test))` or
 `cfg(any(test, ...))`, are still scanned.
 
-Plex, catalog, indexer, IRC session, management and tunnel code are not in the
-scope. That traffic stays outside the tunnel.
+Plex, catalog, management and tunnel internals are outside this scanner.
+Indexer and IRC discovery follow their explicit [source policy](protected-sources.md).
 
 ## Reported constructs
 
@@ -57,11 +59,12 @@ counts the findings and compares them with the reviewed list in
 - a new key, or a higher count, fails as `new direct site`;
 - a missing key, or a lower count, fails as `stale inventory entry`;
 - any site outside `src/torrent/transport.rs` imports, `Direct` and
-  `DirectListener` fails as `direct site outside Direct`, even if inventoried.
+  `DirectListener`, or the reviewed `http`/`irc` adapter and socket wrapper in
+  `src/source_network/direct.rs`, fails as `direct site outside Direct`, even if inventoried.
 
-The migration leaves 11 findings, all in `Direct` and its listener, including
-imports and socket fields. No inspected torrent, pack, library-group, IRC-routing
-or engine caller has a direct site. `--write` updates the inventory but cannot
+There are 18 findings: 11 in torrent Direct/listener and seven in the ordinary
+discovery adapter, including imports and socket fields. No protected caller
+constructs a direct transport. `--write` updates the inventory but cannot
 authorize a site outside Direct. Review any change to Direct against the
 [transport contract](torrent-transport.md).
 

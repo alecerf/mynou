@@ -160,6 +160,15 @@ when absent, clamped to 1 to 3,600) and is never retried immediately. A second
 request to a busy source fails at once instead of waiting; other sources are
 unaffected.
 
+### Protect discovery through native WireGuard
+
+Each indexer and IRC source accepts `"protection": "protected"`. It covers
+source DNS, authentication, searches, feeds, details, metainfo and IRC sessions.
+Omitting the field retains direct discovery. A protected source refuses work
+until a protected network generation is ready, without proxy or host fallback.
+For a Gluetun migration, explicitly protect every corresponding source.
+[Configuration, status and recovery](protected-sources.md).
+
 ### Watching a feed
 
 Watching is opt-in per RSS or Torznab source and independent of IRC and of the
@@ -269,7 +278,7 @@ after any change.
   `reconnect_min_secs` (1 to 30) to `reconnect_max_secs` (1 to 300), doubling
   each time and resetting after a connection lasts 30 seconds.
 - A source `id` binds the endpoint, nickname, channel, sender, credential
-  variable names, authentication and announcement format. Rotating a credential
+  variable names, authentication, protection and announcement format. Rotating a credential
   value keeps the binding; any other change needs a new ID, and retired IDs stay
   reserved.
 

@@ -1889,9 +1889,11 @@ fn search_candidates_mode(
         configured: config.sources.len(),
         successful: 0,
     };
+    let mut used_sources = Vec::new();
     for source in &config.sources {
         remaining_search_time(deadline)?;
         if let Ok(releases) = source_releases(source, request, deadline) {
+            used_sources.push(source);
             result.successful += 1;
             // Hash and bound source metadata once, rather than duplicating an
             // arbitrarily long configured label for every indexer result.
@@ -1928,6 +1930,28 @@ fn search_candidates_mode(
     if result.successful == 0 {
         return Err("Search: no indexer returned a usable response".into());
     }
+    // A search can query several sources sharing one owner. Take its lease only
+    // once: recursively taking read leases can deadlock a waiting revocation.
+    let mut protected_networks = Vec::new();
+    for source in used_sources {
+        if source.options.protection == crate::source_network::Protection::Protected {
+            let network = source
+                .options
+                .network
+                .as_ref()
+                .ok_or("Source: protected network unavailable")?;
+            if !protected_networks
+                .iter()
+                .any(|previous| Arc::ptr_eq(previous, network))
+            {
+                protected_networks.push(network.clone());
+            }
+        }
+    }
+    let _publications: Vec<_> = protected_networks
+        .iter()
+        .map(|network| crate::source_network::Protection::Protected.publication(Some(network)))
+        .collect::<Result<_>>()?;
     Ok(result)
 }
 

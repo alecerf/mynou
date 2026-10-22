@@ -1,5 +1,10 @@
 # Torrent engine transport
 
+Discovery extension (#337): indexer authentication/search/feeds/details and IRC
+sessions now have an explicit [protected source policy](protected-sources.md).
+The original torrent-only boundary described below remains the baseline for
+sources configured as direct; protected sources use the same immutable generation.
+
 `Engine::open_with_network(config, network, start_downloads)` constructs a
 library engine with exactly the supplied `Arc<dyn torrent::transport::Network>`.
 Passing `HttpTunnel::network(deadline)?` supplies the native protected transport.

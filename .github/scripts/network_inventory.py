@@ -13,7 +13,8 @@ INVENTORY = Path(__file__).with_name("network_inventory.tsv")
 # Torrent modules and the inspection/orchestration callers of the design table.
 SCOPE = ("src/torrent.rs", "src/torrent/", "src/pack/shared.rs", "src/pack/automatic.rs",
          "src/library/groups.rs", "src/irc/routing.rs", "src/engine.rs", "src/engine/",
-         "src/vpn.rs", "src/vpn/")
+         "src/vpn.rs", "src/vpn/", "src/source_network.rs", "src/source_network/",
+         "src/indexers.rs", "src/indexers/", "src/irc/")
 CRATE_ROOTS = ("src/lib.rs", "src/main.rs")
 SOCKETS = {"TcpStream", "TcpListener", "UdpSocket", "ToSocketAddrs"}
 RESOLVERS = {"to_socket_addrs"}
@@ -458,10 +459,12 @@ def main(argv=None):
     # ordinary-network site elsewhere in the torrent boundary.
     for key in sorted(counts):
         file, item, _ = key
-        if file != "src/torrent/transport.rs" or not (
+        torrent_direct = file == "src/torrent/transport.rs" and (
             item in {"<module>", "Direct", "DirectListener"}
             or item.startswith(("Direct::", "DirectListener::"))
-        ):
+        )
+        source_direct = file == "src/source_network/direct.rs" and item in {"<module>", "Irc", "http", "irc"}
+        if not (torrent_direct or source_direct):
             problems.append(f"direct site outside Direct: {' | '.join(key)} ({counts[key]})")
     for problem in problems:
         key = tuple(problem.split(": ", 1)[1].rsplit(" (", 1)[0].split(" | "))
