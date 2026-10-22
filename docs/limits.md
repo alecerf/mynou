@@ -256,6 +256,11 @@ IRC announcements:
   if an indexer changed in between. Identical results from one source share a
   candidate ID and are listed once, while `candidate_count` counts every result.
 - Explicit `--url` and `--path` sources are not searched or ranked.
+- At most 100,000 per-title profile bindings, in `profiles.idx`, keyed by TMDB
+  ID; requests without a TMDB ID cannot be bound. An import file holds at most
+  5,000 titles and 256 source profile names of up to 128 bytes, and at most
+  1,000,000 bytes from the CLI. Previews list at most 200 changes and 200
+  unresolved titles, with full counts.
 
 ## Library and upgrades
 

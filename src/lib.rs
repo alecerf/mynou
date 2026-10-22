@@ -19,6 +19,7 @@ pub mod numbering;
 pub mod organizer;
 pub mod pack;
 pub mod pki;
+pub mod profiles;
 pub mod progress;
 pub mod requesters;
 pub mod selection;

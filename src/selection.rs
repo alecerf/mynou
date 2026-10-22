@@ -447,7 +447,7 @@ fn check_keys(value: &Value, allowed: &[&str]) -> Result<()> {
     }
     Ok(())
 }
-fn validate_profile_name(name: &str) -> Result<()> {
+pub(crate) fn validate_profile_name(name: &str) -> Result<()> {
     if name.is_empty()
         || name.len() > 64
         || !name

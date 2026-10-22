@@ -98,6 +98,8 @@ pub struct Engine {
     pub(crate) feed_runtime: Mutex<crate::indexers::watch::Runtime>,
     pub(crate) feed_lock: Mutex<()>,
     pub(crate) upgrade_lock: Mutex<()>,
+    /// Leaf lock: per-title profile bindings, read while other locks are held.
+    pub(crate) title_profiles: Mutex<crate::profiles::TitleProfiles>,
     pub(crate) read_only: bool,
     pub stopped: AtomicBool,
     pub last_sync_error: Mutex<Option<String>>,
@@ -215,6 +217,7 @@ impl Engine {
         let feed_store =
             crate::indexers::feed::FeedStore::open(&config.store_dir, &config, read_only)?;
         let series_store = crate::series::SeriesStore::open(&config.store_dir, read_only)?;
+        let title_profiles = crate::profiles::TitleProfiles::open(&config.store_dir, read_only)?;
         let requester_store =
             crate::requesters::RequesterStore::open(&config.store_dir, &config, read_only)?;
         let irc_store =
@@ -251,6 +254,7 @@ impl Engine {
             feed_runtime: Mutex::new(crate::indexers::watch::Runtime::default()),
             feed_lock: Mutex::new(()),
             upgrade_lock: Mutex::new(()),
+            title_profiles: Mutex::new(title_profiles),
             read_only,
             stopped: AtomicBool::new(false),
             last_sync_error: Mutex::new(None),
@@ -925,7 +929,7 @@ impl Engine {
     }
 
     fn advance(&self, job: &mut Job, active: &AtomicBool) -> Result<()> {
-        let config = self.configuration_for(job);
+        let config = self.configuration_for(job)?;
         if !active.load(Ordering::Acquire) {
             return Err("Processing interrupted".into());
         }
@@ -960,6 +964,7 @@ impl Engine {
             &self.config,
             job,
             &*lock(&self.requester_store)?,
+            self.title_binding(&job.request)?.as_deref(),
         )? {
             job.state = "queued".into();
             job.next_attempt_at = store::now().saturating_add(60);

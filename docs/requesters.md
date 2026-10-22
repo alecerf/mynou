@@ -123,7 +123,8 @@ polls every account now and needs the service.
   not used for this demand.
 - Accounts with identical profile definitions and destination share one job,
   each keeping its own interest. Incompatible demand stays visible as a
-  conflict.
+  conflict. A [per-title profile](selection.md#profiles-for-individual-titles)
+  takes precedence over every account's captured profile for that title.
 - Media already in Plex under the captured destination satisfies demand without
   a download. New requester imports need an exact Plex path confirmation.
 - A ready operator job can serve a new requester only when every import is an
