@@ -21,17 +21,12 @@ use crate::{
     store::{Request, reject_symlinks, sync_directory},
 };
 use std::{
-    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
 };
 
 /// Bindings retained in one store; see docs/limits.md.
 pub const MAX_BINDINGS: u64 = 100_000;
-/// Titles in one reviewed import plan, below the inventory transaction bound.
-pub const MAX_IMPORT_TITLES: usize = 5_000;
-const MAX_SOURCE_PROFILES: usize = 256;
-const MAX_SOURCE_NAME_BYTES: usize = 128;
 const INDEX: &str = "profiles.idx";
 const STAGING: &str = "profiles.idx.staging";
 const FORMAT: &[u8] = b"mynou-title-profiles/1";
@@ -125,7 +120,8 @@ fn valid_name(name: &str) -> bool {
 pub struct Binding {
     pub title: Title,
     pub profile: String,
-    /// `operator` for an explicit change, `migration` for an imported assignment.
+    /// `operator` for an explicit change; `migration` remains readable from
+    /// bindings stored by the removed import.
     pub origin: String,
     pub updated_at: u64,
 }
@@ -376,26 +372,15 @@ pub struct ControlRequest {
     pub action: String,
     pub title: Option<Title>,
     pub profile: Option<String>,
-    pub import: Option<Import>,
     pub apply: bool,
     pub plan_id: Option<String>,
-}
-
-/// Source-manager profile names mapped to Mynou profiles, and per-title assignments.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Import {
-    /// `None` leaves every title of that source profile explicitly unresolved.
-    pub profiles: BTreeMap<String, Option<String>>,
-    pub titles: Vec<(Title, String)>,
 }
 
 impl ControlRequest {
     pub fn from_json(v: &Value) -> Result<Self> {
         only(
             v,
-            &[
-                "action", "kind", "tmdb_id", "profile", "import", "apply", "plan_id",
-            ],
+            &["action", "kind", "tmdb_id", "profile", "apply", "plan_id"],
         )
         .map_err(|_| "Title profile: unknown control field")?;
         let action = v
@@ -413,7 +398,6 @@ impl ControlRequest {
             Some(Value::String(name)) if valid_name(name) => Some(name.clone()),
             Some(_) => return Err("Title profile: invalid profile name".into()),
         };
-        let import = v.get("import").map(Import::from_json).transpose()?;
         let apply = match v.get("apply") {
             None => false,
             Some(v) => v
@@ -433,20 +417,12 @@ impl ControlRequest {
             action,
             title,
             profile,
-            import,
             apply,
             plan_id,
         };
         let valid = match request.action.as_str() {
-            "set" => {
-                request.title.is_some() && request.profile.is_some() && request.import.is_none()
-            }
-            "clear" => {
-                request.title.is_some() && request.profile.is_none() && request.import.is_none()
-            }
-            "import" => {
-                request.title.is_none() && request.profile.is_none() && request.import.is_some()
-            }
+            "set" => request.title.is_some() && request.profile.is_some(),
+            "clear" => request.title.is_some() && request.profile.is_none(),
             _ => false,
         };
         if !valid || request.apply != request.plan_id.is_some() {
@@ -463,82 +439,12 @@ impl ControlRequest {
         if let Some(profile) = &self.profile {
             v.insert("profile", profile.clone());
         }
-        if let Some(import) = &self.import {
-            v.insert("import", import.to_json());
-        }
         v.insert("apply", self.apply);
         if let Some(id) = &self.plan_id {
             v.insert("plan_id", id.clone());
         }
         v
     }
-}
-
-impl Import {
-    pub fn from_json(v: &Value) -> Result<Self> {
-        only(v, &["profiles", "titles"]).map_err(|_| "Title profile import: unknown field")?;
-        let source = v
-            .get("profiles")
-            .and_then(Value::as_object)
-            .filter(|m| !m.is_empty() && m.len() <= MAX_SOURCE_PROFILES)
-            .ok_or("Title profile import: profiles must map 1 to 256 source names")?;
-        let mut profiles = BTreeMap::new();
-        for (name, target) in source {
-            if !valid_source_name(name) {
-                return Err("Title profile import: invalid source profile name".into());
-            }
-            let target = match target {
-                Value::Null => None,
-                Value::String(t) if valid_name(t) => Some(t.clone()),
-                _ => return Err("Title profile import: invalid target profile name".into()),
-            };
-            profiles.insert(name.clone(), target);
-        }
-        let rows = v
-            .get("titles")
-            .and_then(Value::as_array)
-            .filter(|rows| rows.len() <= MAX_IMPORT_TITLES)
-            .ok_or("Title profile import: titles must list at most 5000 assignments")?;
-        let mut titles = Vec::with_capacity(rows.len());
-        for row in rows {
-            only(row, &["kind", "tmdb_id", "profile"])
-                .map_err(|_| "Title profile import: unknown title field")?;
-            let profile = row
-                .get("profile")
-                .and_then(Value::as_str)
-                .filter(|name| valid_source_name(name))
-                .ok_or("Title profile import: invalid source profile name")?;
-            titles.push((Title::from_json(row)?, profile.to_owned()));
-        }
-        Ok(Self { profiles, titles })
-    }
-    fn to_json(&self) -> Value {
-        let mut profiles = Value::object();
-        for (name, target) in &self.profiles {
-            profiles.insert(
-                name.clone(),
-                target.clone().map_or(Value::Null, Value::String),
-            );
-        }
-        let titles = self
-            .titles
-            .iter()
-            .map(|(title, profile)| {
-                let mut v = Value::object();
-                title.insert(&mut v);
-                v.insert("profile", profile.clone());
-                v
-            })
-            .collect();
-        let mut v = Value::object();
-        v.insert("profiles", profiles);
-        v.insert("titles", Value::Array(titles));
-        v
-    }
-}
-
-fn valid_source_name(name: &str) -> bool {
-    !name.is_empty() && name.len() <= MAX_SOURCE_NAME_BYTES && !name.chars().any(char::is_control)
 }
 
 /// What a plan proposes for one title, and why an assignment stays unresolved.
@@ -549,8 +455,8 @@ enum Outcome {
 
 fn plan(config: &Config, request: &ControlRequest) -> Vec<Outcome> {
     let known = |name: &str| config.selection.profiles.contains_key(name);
-    match (request.action.as_str(), &request.title, &request.import) {
-        ("set", Some(title), _) => {
+    match (request.action.as_str(), &request.title) {
+        ("set", Some(title)) => {
             let name = request.profile.clone().unwrap_or_default();
             if known(&name) {
                 vec![Outcome::Change(*title, Some(name))]
@@ -558,40 +464,7 @@ fn plan(config: &Config, request: &ControlRequest) -> Vec<Outcome> {
                 vec![Outcome::Unresolved(*title, name, "unknown_profile")]
             }
         }
-        ("clear", Some(title), _) => vec![Outcome::Change(*title, None)],
-        ("import", _, Some(import)) => {
-            let mut assigned: BTreeMap<Title, BTreeSet<&str>> = BTreeMap::new();
-            for (title, source) in &import.titles {
-                assigned.entry(*title).or_default().insert(source);
-            }
-            assigned
-                .into_iter()
-                .map(|(title, sources)| {
-                    let source = sources.iter().next().copied().unwrap_or_default();
-                    if sources.len() > 1 {
-                        return Outcome::Unresolved(
-                            title,
-                            source.into(),
-                            "conflicting_assignments",
-                        );
-                    }
-                    match import.profiles.get(source) {
-                        None => {
-                            Outcome::Unresolved(title, source.into(), "unmapped_source_profile")
-                        }
-                        Some(None) => Outcome::Unresolved(
-                            title,
-                            source.into(),
-                            "source_profile_left_unresolved",
-                        ),
-                        Some(Some(name)) if !known(name) => {
-                            Outcome::Unresolved(title, source.into(), "unknown_profile")
-                        }
-                        Some(Some(name)) => Outcome::Change(title, Some(name.clone())),
-                    }
-                })
-                .collect()
-        }
+        ("clear", Some(title)) => vec![Outcome::Change(*title, None)],
         _ => Vec::new(),
     }
 }
@@ -711,11 +584,7 @@ pub fn control(
 ) -> Result<Value> {
     let outcomes = plan(config, request);
     let at = crate::store::now();
-    let origin = if request.action == "import" {
-        "migration"
-    } else {
-        "operator"
-    };
+    let origin = "operator";
     let mut changes = Vec::new();
     let mut rows = Vec::new();
     let mut unresolved = Vec::new();
@@ -793,7 +662,7 @@ pub fn control(
         .iter()
         .filter(|o| matches!(o, Outcome::Unresolved(..)))
         .count();
-    if request.action != "import" && unresolved_count > 0 {
+    if unresolved_count > 0 {
         return Err("Title profile: the selected profile is not configured".into());
     }
     if request.apply {

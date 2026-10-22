@@ -22,11 +22,10 @@ until explicitly configured. [Migration and limits](/docs/protected-sources.md).
 
 A movie or a tracked series can now keep its own selection profile, for example
 2160p for a few titles while the rest stay at 1080p. `mynou title-profile`
-previews and applies a binding by TMDB ID, `mynou title-profiles` lists them,
-and `mynou title-profile-import` maps the per-title profiles of a previous
-manager while leaving unknown ones unresolved. A binding takes precedence over
-requester and global profiles in searches, monitored episodes, feeds, IRC,
-season packs and upgrade cutoffs; releases already selected are kept
+previews and applies a binding by TMDB ID and `mynou title-profiles` lists them.
+A binding takes precedence over requester and global profiles in searches,
+monitored episodes, feeds, IRC, season packs and upgrade cutoffs; releases
+already selected are kept
 ([details](/docs/selection.md#profiles-for-individual-titles)).
 
 ## Added: Acquire IRC announcements from private trackers without a passkey in the configuration

@@ -350,89 +350,43 @@ fn reviewed_changes_preview_without_writing_and_apply_only_an_unchanged_plan() {
 }
 
 #[test]
-fn migration_maps_source_profiles_and_leaves_unknown_assignments_unresolved() {
+fn bindings_stored_by_the_removed_import_stay_usable_and_import_is_refused() {
     let directory = Directory::new();
     let config = config(&directory);
     let mut store = TitleProfiles::open(&directory.0, false).unwrap();
-    store.commit(&[binding(movie(5), "hd")]).unwrap();
-    let mapping = r#"{"action":"import","import":{
-        "profiles":{"HD-1080p":"hd","Ultra-HD":"uhd","Any":null,"SD":"retired"},
-        "titles":[
-            {"kind":"movie","tmdb_id":1,"profile":"HD-1080p"},
-            {"kind":"movie","tmdb_id":2,"profile":"Ultra-HD"},
-            {"kind":"series","tmdb_id":3,"profile":"Ultra-HD"},
-            {"kind":"series","tmdb_id":4,"profile":"HD-1080p"},
-            {"kind":"series","tmdb_id":4,"profile":"HD-1080p"},
-            {"kind":"movie","tmdb_id":5,"profile":"Custom"},
-            {"kind":"movie","tmdb_id":6,"profile":"Any"},
-            {"kind":"movie","tmdb_id":7,"profile":"SD"},
-            {"kind":"series","tmdb_id":8,"profile":"HD-1080p"},
-            {"kind":"series","tmdb_id":8,"profile":"Ultra-HD"}
-        ]}}"#;
-    let preview = control(&config, &mut store, &control_json(mapping)).unwrap();
-    assert_eq!(preview.get("bind").and_then(Value::as_u64), Some(4));
+    let (title, stored) = binding(movie(1), "uhd");
+    let mut stored = stored.unwrap();
+    stored.origin = "migration".into();
+    store.commit(&[(title, Some(stored))]).unwrap();
+    drop(store);
+    let mut store = TitleProfiles::open(&directory.0, true).unwrap();
+    let kept = store.get(&movie(1)).unwrap().unwrap();
     assert_eq!(
-        preview.get("unresolved_count").and_then(Value::as_u64),
-        Some(4)
+        (kept.profile.as_str(), kept.origin.as_str()),
+        ("uhd", "migration")
     );
-    let reasons: BTreeMap<u64, String> = preview
-        .get("unresolved")
-        .and_then(Value::as_array)
-        .unwrap()
-        .iter()
-        .map(|row| {
-            (
-                row.get("tmdb_id").and_then(Value::as_u64).unwrap(),
-                row.get("reason")
-                    .and_then(Value::as_str)
-                    .unwrap()
-                    .to_owned(),
-            )
-        })
-        .collect();
-    assert_eq!(
-        reasons,
-        BTreeMap::from([
-            (5, "unmapped_source_profile".into()),
-            (6, "source_profile_left_unresolved".into()),
-            (7, "unknown_profile".into()),
-            (8, "conflicting_assignments".into()),
-        ])
-    );
-    let plan = preview.get("plan_id").and_then(Value::as_str).unwrap();
-    let mut apply = json::parse(mapping).unwrap();
-    apply.insert("apply", true);
-    apply.insert("plan_id", plan);
-    let applied = control(
+    let listed = list(&config, &mut store, None, 10).unwrap();
+    let row = &listed.get("bindings").and_then(Value::as_array).unwrap()[0];
+    assert_eq!(row.get("resolved"), Some(&Value::Bool(true)));
+    drop(store);
+    // An explicit operator change replaces it like any other binding.
+    let mut store = TitleProfiles::open(&directory.0, false).unwrap();
+    let preview = control(
         &config,
         &mut store,
-        &ControlRequest::from_json(&apply).unwrap(),
+        &control_json(r#"{"action":"set","kind":"movie","tmdb_id":1,"profile":"hd"}"#),
     )
     .unwrap();
-    assert_eq!(applied.get("applied"), Some(&Value::Bool(true)));
-    for (title, expected) in [
-        (movie(1), Some("hd")),
-        (movie(2), Some("uhd")),
-        (series(3), Some("uhd")),
-        (series(4), Some("hd")),
-        // Unresolved assignments neither bind a default nor replace a binding.
-        (movie(5), Some("hd")),
-        (movie(6), None),
-        (movie(7), None),
-        (series(8), None),
+    assert_eq!(preview.get("rebind").and_then(Value::as_u64), Some(1));
+    for removed in [
+        r#"{"action":"import","import":{"profiles":{"A":"hd"},"titles":[]}}"#,
+        r#"{"action":"set","kind":"movie","tmdb_id":1,"profile":"hd","import":{}}"#,
     ] {
-        assert_eq!(
-            store.get(&title).unwrap().map(|b| b.profile).as_deref(),
-            expected,
-            "{title:?}"
+        assert!(
+            ControlRequest::from_json(&json::parse(removed).unwrap()).is_err(),
+            "{removed}"
         );
     }
-    assert_eq!(store.get(&movie(1)).unwrap().unwrap().origin, "migration");
-
-    // Re-importing the applied plan is idempotent.
-    let again = control(&config, &mut store, &control_json(mapping)).unwrap();
-    assert_eq!(again.get("unchanged").and_then(Value::as_u64), Some(4));
-    assert_eq!(again.get("bind").and_then(Value::as_u64), Some(0));
 }
 
 #[test]
