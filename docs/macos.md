@@ -48,9 +48,9 @@ described in [Configure Mynou](#configure-mynou). Use ordinary folders you own
 rather than paths through symbolic links: imports never overwrite files and
 refuse symbolic links.
 
-Mynou reads only `MYNOU_API_TOKEN` from the `.env` file beside the
-configuration. Export the other configured secrets (Plex, TMDB, sources) in the
-shell that starts the service, using your shell's quoting rules. Treat `.env`
+Foreground `serve` reads only `MYNOU_API_TOKEN` from the `.env` file beside
+the configuration. Export the other configured secrets (Plex, TMDB, sources)
+in the shell that starts `serve`, using your shell's quoting rules. Treat `.env`
 as data: sourcing it interprets its contents as shell code. For example, replace
 the placeholders below with shell-quoted values:
 
@@ -61,8 +61,10 @@ export MYNOU_TMDB_TOKEN='replace-with-your-TMDB-token'
 ```
 
 The API listens on `http://127.0.0.1:8787` and takes the API token as a Bearer
-token. Run the service as the user that owns its configuration, data and library. Mynou does
-not install a launch agent or background service; supervising it is up to you.
+token. Run Mynou as the user that owns its configuration, data and library.
+For unattended operation, the [native launchd service](macos-service.md) starts
+at account login, restarts after crashes and injects the configured secrets
+from a private snapshot of the adjacent `.env` file.
 
 ## Configure Mynou
 
