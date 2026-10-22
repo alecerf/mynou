@@ -222,6 +222,11 @@ IRC announcements:
   with their transfers and are not pruned automatically.
 - Preview files and bodies are limited to 8 KiB; announcement lists return at
   most 200 entries per page.
+- Automatic cross-seed discovery compares at most 50,000 completed transfers
+  per pass, reads at most 500 entries per feed or search, downloads at most
+  eight `.torrent` files and runs one completion search per source and pass,
+  with a 30-second budget per request. It remembers 2,048 entry identities per
+  source and the last 100 outcomes; counters keep 64 reasons per result.
 - Magnet templates contain `{xt}` once, at most four trackers and eight
   literal-IP `x.pe` peers. HTTPS and UDP trackers are supported; plain HTTP
   trackers only on loopback. Embedded credentials, host names in `x.pe`, zero
@@ -423,9 +428,9 @@ IRC announcements:
   logins and arbitrary cookie jars.
 - IRC pack or upgrade actions, broader announcement formats and interactive IRC
   authentication.
-- Automatic cross-seed discovery, v2/hybrid cross-seeding and further bulk
-  automation. See [the transfer guide](transfers.md#manual-cross-seeding) for
-  the limits of supported manual v1 cross-seeding.
+- V2/hybrid cross-seeding, chained reuse, pack-specific cross-seed matching
+  and further bulk automation. See [the transfer guide](transfers.md#manual-cross-seeding)
+  for the limits of supported manual and automatic v1 cross-seeding.
 - Automatic anime-order or episode-range inference, splitting or cutting
   videos, automatic search for shared groups, and renaming or deleting library
   files.

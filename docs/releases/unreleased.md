@@ -1,3 +1,15 @@
+## Added: Discover cross-seeds automatically from feeds and completed transfers
+
+An RSS or Torznab source can opt in with `"cross_seed": {"enabled": true}`.
+Mynou then reads its feed hourly and, for Torznab, searches once for each
+completed transfer. A candidate must carry the name of a completed transfer and
+a file layout with equal lengths; it is registered as a manual cross-seed with
+that mapping and verified piece by piece before any announce. Nothing is
+downloaded, copied or imported. `mynou cross-seed-discovery` and
+`/api/cross-seed/discovery` report the schedule, outcomes and provenance and run
+a pass, optionally as a dry run
+([details](/docs/transfers.md#automatic-cross-seed-discovery)).
+
 ## Added: Protect indexer and IRC discovery through native WireGuard
 
 Each indexer and IRC source accepts `"protection": "protected"` to route DNS,

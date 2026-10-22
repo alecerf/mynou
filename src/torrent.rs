@@ -21,7 +21,9 @@ pub mod transport;
 pub(crate) mod wire;
 use control::RateGate;
 pub use control::{FilePriority, TorrentControl, TransferPolicy};
-pub use cross_seed::{CrossSeedRequest, MAX_CROSS_SEED_METADATA};
+pub use cross_seed::{
+    CandidateLayout, CrossSeedRequest, MAX_CROSS_SEED_METADATA, ReuseSource, candidate_layout,
+};
 pub use inspection::{MetadataFile, TorrentMetadata, inspect_metadata};
 pub use selection::{FileSelection, SelectionUpdate};
 

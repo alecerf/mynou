@@ -1,4 +1,5 @@
 //! Native bounded source authentication. Sessions are ephemeral and origin-bound.
+pub mod cross_seed;
 pub(crate) mod feed;
 pub(crate) mod mapping;
 pub(crate) mod policy;
@@ -65,6 +66,29 @@ impl Default for Watch {
         }
     }
 }
+/// Opt-in automatic cross-seed discovery over this source.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CrossSeedDiscovery {
+    pub enabled: bool,
+    /// Read the feed every `interval_secs` for candidates of completed transfers.
+    pub feed: bool,
+    pub interval_secs: u64,
+    /// Search a Torznab source by name once a transfer completes.
+    pub search: bool,
+    /// Repeat that search after this delay; `None` searches once per transfer.
+    pub search_interval_secs: Option<u64>,
+}
+impl Default for CrossSeedDiscovery {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            feed: true,
+            interval_secs: 3_600,
+            search: false,
+            search_interval_secs: None,
+        }
+    }
+}
 #[derive(Clone)]
 pub struct Options {
     pub id: Option<String>,
@@ -78,6 +102,7 @@ pub struct Options {
     pub min_interval_ms: u64,
     pub authentication: Authentication,
     pub watch: Watch,
+    pub cross_seed: CrossSeedDiscovery,
     pub(crate) mapping: mapping::Mapping,
     runtime: Arc<Mutex<Runtime>>,
 }
@@ -104,6 +129,7 @@ impl Default for Options {
             min_interval_ms: 0,
             authentication: Authentication::None,
             watch: Watch::default(),
+            cross_seed: CrossSeedDiscovery::default(),
             mapping: mapping::Mapping::default(),
             runtime: Arc::new(Mutex::new(Runtime::default())),
         }
@@ -170,6 +196,52 @@ fn watch(v: &Value) -> Result<Watch> {
     }
     Ok(watch)
 }
+fn cross_seed(v: &Value) -> Result<CrossSeedDiscovery> {
+    let Some(section) = v.get("cross_seed") else {
+        return Ok(CrossSeedDiscovery::default());
+    };
+    crate::numbering::only(
+        section,
+        &[
+            "enabled",
+            "feed",
+            "interval_secs",
+            "search",
+            "search_interval_secs",
+        ],
+    )?;
+    let kind = v.get("kind").and_then(Value::as_str).unwrap_or("json");
+    let flag = |key: &str, default: bool| match section.get(key) {
+        None => Ok(default),
+        Some(Value::Bool(b)) => Ok(*b),
+        _ => Err(format!("Indexer: invalid cross_seed {key} flag")),
+    };
+    let discovery = CrossSeedDiscovery {
+        enabled: flag("enabled", false)?,
+        feed: flag("feed", true)?,
+        interval_secs: integer(section, "interval_secs", 3_600, 86_400)?,
+        search: flag("search", kind == "torznab")?,
+        search_interval_secs: match section.get("search_interval_secs") {
+            None | Some(Value::Null) => None,
+            Some(_) => Some(integer(section, "search_interval_secs", 0, 31_536_000)?),
+        },
+    };
+    if discovery.interval_secs < 60
+        || discovery
+            .search_interval_secs
+            .is_some_and(|secs| secs < 3_600)
+    {
+        return Err("Indexer: cross_seed interval_secs must be 60 to 86400 and search_interval_secs null or 3600 to 31536000".into());
+    }
+    if discovery.enabled
+        && (!matches!(kind, "rss" | "torznab")
+            || (discovery.search && kind != "torznab")
+            || !(discovery.feed || discovery.search))
+    {
+        return Err("Indexer: cross-seed discovery needs an rss or torznab source with feed or search; search needs Torznab".into());
+    }
+    Ok(discovery)
+}
 impl Options {
     /// A watched source is opted in and not paused.
     pub(crate) fn watched(&self) -> bool {
@@ -192,6 +264,7 @@ impl Options {
             enabled,
             min_interval_ms: integer(v, "min_interval_ms", 0, 60_000)?,
             watch: watch(v)?,
+            cross_seed: cross_seed(v)?,
             mapping: mapping::Mapping::from_json(v)?,
             ..Self::default()
         };

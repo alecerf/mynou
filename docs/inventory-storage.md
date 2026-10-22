@@ -3,8 +3,8 @@
 The `mynou::inventory::Index` Rust API is the storage foundation for
 [growing inventories](https://github.com/alecerf/mynou/issues/106). Jobs and
 history, series and numbering, requester demand, retained feeds, source policies,
-IRC announcements and native transfers use private disk indexes. Library tips
-and their monitoring entries share the job index. Legacy snapshots remain only
+IRC announcements, cross-seed discovery and native transfers use private disk
+indexes. Library tips and their monitoring entries share the job index. Legacy snapshots remain only
 as migration inputs or preserved recovery copies, not as current inventory caps.
 
 | Store | Recovery and downgrade guidance |
@@ -15,6 +15,7 @@ as migration inputs or preserved recovery copies, not as current inventory caps.
 | Retained feeds and captured routing | [Feed storage](#feed-storage), [captured feed routing](#captured-feed-routing) |
 | Source policies | [Source policy storage](#source-policy-storage) |
 | IRC announcements | [IRC announcement storage](#irc-announcement-storage) |
+| Cross-seed discovery | [Automatic cross-seed discovery](transfers.md#automatic-cross-seed-discovery) |
 | Native transfers | [Transfer storage migration and downgrade](transfers.md#storage-migration-and-downgrade) |
 
 Per-record, page, transaction and configured-source bounds still apply; see
