@@ -332,6 +332,62 @@ fn first_poll_baselines_and_later_polls_route_only_new_entries_to_existing_deman
 }
 
 #[test]
+fn title_profiles_select_distinct_feed_releases_after_restart() {
+    let dir = Directory::new();
+    let feed = Feed::open(rss(&[]));
+    let mut value = configuration(&dir, vec![source("feed-a", &feed, "rss")]);
+    value.insert(
+        "selection",
+        json::parse(
+            r#"{
+        "movie_profile":"hd", "episode_profile":"hd",
+        "profiles":{"hd":{"resolutions":[1080]},"uhd":{"resolutions":[2160]}}
+    }"#,
+        )
+        .unwrap(),
+    );
+    let cfg = config::from_json(&value, &dir.0).unwrap();
+    let engine = Engine::open_for_management(cfg.clone()).unwrap();
+    let first_job = submit(&engine, movie("First Movie", 7));
+    let second_job = submit(&engine, movie("Second Movie", 8));
+    let mut change = mynou::profiles::ControlRequest::from_json(
+        &json::parse(r#"{"action":"set","kind":"movie","tmdb_id":8,"profile":"uhd"}"#).unwrap(),
+    )
+    .unwrap();
+    change.plan_id = Some(
+        engine
+            .title_profile_control(&change)
+            .unwrap()
+            .get("plan_id")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .into(),
+    );
+    change.apply = true;
+    engine.title_profile_control(&change).unwrap();
+    engine.feeds_poll(None, true).unwrap();
+    drop(engine);
+
+    let engine = Engine::open_for_management(cfg).unwrap();
+    feed.set(rss(&[
+        item("First.Movie.2024.1080p.WEB-DL", 1, 5),
+        item("First.Movie.2024.2160p.WEB-DL", 2, 5),
+        item("Second.Movie.2024.1080p.WEB-DL", 3, 5),
+        item("Second.Movie.2024.2160p.WEB-DL", 4, 5),
+    ]));
+    assert_eq!(
+        num(first(&engine.feeds_poll(None, true).unwrap()), "routed"),
+        2
+    );
+    for (id, hash, profile) in [(&first_job.id, 1, "hd"), (&second_job.id, 4, "uhd")] {
+        let selected = stored(&engine, id);
+        assert_eq!(selected.acquisition_url, Some(magnet(hash)));
+        assert_eq!(selected.release.unwrap().profile, profile);
+    }
+}
+
+#[test]
 fn restart_keeps_the_cursor_and_never_replays_history() {
     let dir = Directory::new();
     let feed = Feed::open(rss(&[item("Fixture.Movie.2024.1080p.WEB-DL", 1, 5)]));
