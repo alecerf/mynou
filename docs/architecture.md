@@ -15,7 +15,7 @@ offline on every run (see [CI](validation.md#mynou-ci)).
 | Former component | Rust replacement |
 | --- | --- |
 | Go BitTorrent engine | `src/torrent.rs` and `src/torrent/` |
-| SQLite | Disk-resident index API in `src/inventory/`, used by the job, series, requester, feed, source-policy, IRC and transfer stores |
+| SQLite | Disk-resident index API in `src/inventory/`, used by the job, series, requester, feed, source-policy, IRC, transfer and title-profile stores |
 | ffprobe | Container parsers in `src/media.rs` and `src/media/` |
 | HTTP/TLS libraries | `src/net.rs`, `src/tls.rs` and `src/pki/` |
 | JSON, bencode and XML | Bounded parsers in `src/json.rs`, `src/bencode.rs` and `src/xml.rs` |
@@ -75,7 +75,10 @@ CLI / API            Plex watchlists   IRC announcements
   plans and candidates. `indexers` keeps source policy, authentication sessions
   and health. `selection` scores candidates against the movie or episode
   profile; automatic acquisition and search previews share that code, and
-  previews never take the journal owner lock or create a job.
+  previews never take the journal owner lock or create a job. `profiles`
+  keeps per-title profile bindings in `profiles.idx` behind a leaf lock that
+  callers may take while holding the requester or job locks;
+  `configuration_for` applies a binding over the requester capture.
 - `indexers::feed` and `indexers::watch` poll opted-in RSS and Torznab sources
   independently of IRC and of per-title search. Observation state and bounded
   captured candidates commit together in `feeds.idx` before routing; durable

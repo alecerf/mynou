@@ -498,7 +498,7 @@ impl Engine {
             let action = if progress.library {
                 self.attach_upgrade(source, header.policy_revision, job, &fresh)?
             } else if eligible {
-                let config = self.configuration_for(job);
+                let config = self.configuration_for(job)?;
                 match best(&config, &job.request, &fresh) {
                     Some(candidate) => self.attach_release(
                         source,
@@ -651,7 +651,7 @@ impl Engine {
         let Some(recorded) = &current.release else {
             return Ok(Attach::Changed);
         };
-        let config = self.configuration_for(&current);
+        let config = self.configuration_for(&current)?;
         let Ok((_, profile)) = config.selection.profile(&current.request.kind) else {
             return Ok(Attach::Changed);
         };

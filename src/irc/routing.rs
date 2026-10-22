@@ -418,19 +418,24 @@ pub(crate) fn waits_for_candidate(
     config: &Config,
     job: &Job,
     requesters: &impl crate::requesters::LedgerRead,
+    binding: Option<&str>,
 ) -> Result<bool> {
     // Plex jobs retain their ordinary availability check before waiting.
-    Ok(!config.plex.enabled && eligible(job) && selection_from_irc(config, job, requesters)?)
+    Ok(!config.plex.enabled
+        && eligible(job)
+        && selection_from_irc(config, job, requesters, binding)?)
 }
+/// `binding` is the job's title profile, which takes precedence over its capture.
 pub(crate) fn selection_from_irc(
     config: &Config,
     job: &Job,
     requesters: &impl crate::requesters::LedgerRead,
+    binding: Option<&str>,
 ) -> Result<bool> {
     if !unselected(job) || !enabled(config) {
         return Ok(false);
     }
-    let Ok((name, profile)) = admitted_profile(config, job) else {
+    let Ok((name, profile)) = admitted_profile(config, job, binding) else {
         return Ok(false);
     };
     for rule in &config.irc.rules {
@@ -492,12 +497,14 @@ fn selected_interest(
 fn admitted_profile<'a>(
     config: &'a Config,
     job: &'a Job,
+    binding: Option<&'a str>,
 ) -> Result<(&'a str, &'a crate::selection::Profile)> {
-    if let Some(p) = &job.requester {
-        Ok((&p.capture.profile_name, &p.capture.profile))
-    } else {
-        config.selection.profile(&job.request.kind)
-    }
+    crate::profiles::resolve(
+        config,
+        &job.request.kind,
+        job.requester.as_ref().map(|p| &p.capture),
+        binding,
+    )
 }
 
 fn video(path: &str) -> bool {
@@ -805,6 +812,7 @@ fn candidate(
     rule: &super::Rule,
     jobs: &mut Store,
     requesters: &impl crate::requesters::LedgerRead,
+    binding: &impl Fn(&crate::store::Request) -> Result<Option<String>>,
 ) -> Result<Job> {
     let matches = jobs.irc_candidates(&r.announcement.request)?;
     if matches.count == 0 && matches.available {
@@ -839,7 +847,8 @@ fn candidate(
     {
         return Err("IRC: claim differs from the admitted canonical title or source labels".into());
     }
-    let (name, profile) = admitted_profile(config, &job)?;
+    let bound = binding(&job.request)?;
+    let (name, profile) = admitted_profile(config, &job, bound.as_deref())?;
     if name != rule.profile
         || config.selection.profiles.get(name) != Some(profile)
         || !profile
@@ -926,12 +935,14 @@ impl Engine {
         let job = {
             let requesters = lock(&self.requester_store)?;
             let mut jobs = lock(&self.store)?;
-            candidate(&self.config, record, rule, &mut jobs, &*requesters)?
+            candidate(&self.config, record, rule, &mut jobs, &*requesters, &|r| {
+                self.title_binding(r)
+            })?
         };
         let source = self.config.irc.source(&record.source_id)?;
         drop(self.source_publication(source.protection)?);
         let deadline = Instant::now() + Duration::from_secs(10);
-        let cfg = self.configuration_for(&job);
+        let cfg = self.configuration_for(&job)?;
         let already_available = cfg.plex.enabled
             && crate::integrations::available_before(
                 &cfg,
@@ -951,7 +962,15 @@ impl Engine {
             }
             let requesters = lock(&self.requester_store)?;
             let mut jobs = lock(&self.store)?;
-            if candidate(&self.config, &current, rule, &mut jobs, &*requesters)? != job {
+            if candidate(
+                &self.config,
+                &current,
+                rule,
+                &mut jobs,
+                &*requesters,
+                &|r| self.title_binding(r),
+            )? != job
+            {
                 return Err("IRC: admitted job changed during metadata inspection".into());
             }
             let mut fulfilled = job;
@@ -1017,6 +1036,7 @@ impl Engine {
             current_rule,
             &mut jobs,
             &*requesters,
+            &|r| self.title_binding(r),
         )?;
         if current_job != job {
             return Err("IRC: admitted job changed during metadata inspection".into());

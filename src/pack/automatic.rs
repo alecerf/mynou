@@ -484,7 +484,11 @@ impl Engine {
             report.insert("rejected", Value::Array(Vec::new()));
             (report, Vec::new())
         } else {
-            integrations::search_pack_candidates(&self.config, &request, deadline)?
+            integrations::search_pack_candidates(
+                &self.configuration_for_request(&request)?,
+                &request,
+                deadline,
+            )?
         };
         report.insert("series_id", id.to_owned());
         report.insert("season", query.season);

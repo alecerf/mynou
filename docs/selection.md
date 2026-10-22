@@ -60,6 +60,84 @@ restriction on that attribute. Unsupported values are a configuration error.
 `cutoff_resolution` (default `null`) stops library upgrades once reached; see
 [quality cutoffs](library.md#quality-cutoffs).
 
+## Profiles for individual titles
+
+A movie or a tracked series can use its own profile, for example `uhd` for a
+few titles while the global profiles stay at `hd`. A binding names a configured
+profile and the TMDB ID of the movie or series; a series binding applies to all
+its episodes and season packs.
+
+```sh
+mynou title-profile --kind movie --tmdb-id 603 --profile uhd --config ./mynou.json
+mynou title-profile --kind movie --tmdb-id 603 --profile uhd --apply --plan-id PLAN_ID \
+  --config ./mynou.json
+mynou title-profile --kind series --tmdb-id 1399 --clear --config ./mynou.json
+mynou title-profiles --config ./mynou.json
+```
+
+Every change is reviewed: without `--apply` the command previews it and prints a
+`plan_id`; pass that ID with `--apply` to save it. A plan expires when any
+binding or the configured profiles change. Changes require the running service;
+previews and listings also work offline, read-only. The API equivalents are
+`POST /api/title-profiles/control` with
+`{"action": "set", "kind": "movie", "tmdb_id": 603, "profile": "uhd"}` (or
+`"clear"`, plus `"apply": true` and `"plan_id"`) and
+`GET /api/title-profiles?limit=N&after=CURSOR`, pages of up to 200 bindings in
+kind and TMDB order (100 by default).
+
+The profile used for a movie or an episode is, in order:
+
+1. the binding of its movie or series;
+2. the profile captured by the requester account that asked for it
+   ([requesters](requesters.md));
+3. the global `movie_profile` or `episode_profile`.
+
+The binding applies to search previews, initial searches, monitored missing
+episodes, feed and IRC routing, season-pack searches and library upgrades,
+including cutoffs. A binding stores only the profile name: editing that profile
+in `mynou.json` changes the bound titles too. If the profile is removed, the
+title's searches fail with `unknown profile` until you rebind or clear it; Mynou
+never falls back to the global profile. Requests without a TMDB ID, such as a
+`submit` without `--tmdb-id`, cannot be bound.
+
+A change applies to work that has not selected a release yet and to later
+upgrade checks. A release already selected, downloading or imported is kept,
+and nothing is cancelled. A recorded release outside the new profile becomes
+replaceable at the next upgrade check, like any release that no longer passes
+its profile. Several requester accounts can share one job, as before; when its
+title is bound, the binding decides for all of them.
+
+### Import assignments from another manager
+
+To keep the per-title choices of a previous manager, write a mapping from its
+profile names to yours and the assignment of each title:
+
+```json
+{
+  "profiles": {"HD-1080p": "hd", "Ultra-HD": "uhd", "Any": null},
+  "titles": [
+    {"kind": "movie", "tmdb_id": 603, "profile": "Ultra-HD"},
+    {"kind": "series", "tmdb_id": 1399, "profile": "HD-1080p"}
+  ]
+}
+```
+
+```sh
+mynou title-profile-import --mapping ./assignments.json --config ./mynou.json
+mynou title-profile-import --mapping ./assignments.json --apply --plan-id PLAN_ID \
+  --config ./mynou.json
+```
+
+The preview lists each binding to add, change or keep, and the unresolved
+titles with a reason: `unmapped_source_profile` (missing from `profiles`),
+`source_profile_left_unresolved` (mapped to `null`), `unknown_profile` (the
+target is not configured) or `conflicting_assignments` (one title listed with
+two profiles). Unresolved titles keep their current binding or stay unbound;
+none silently receives a default. Applying the same file again changes
+nothing. A file holds at most 5,000 titles: split a larger library into several
+files. Mynou does not read the previous manager itself; series must be listed
+by their TMDB IDs.
+
 ## How a candidate is judged
 
 Attributes come from the release title after the part that matches the
