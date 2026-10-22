@@ -1,5 +1,3 @@
-## Added: Acquire IRC announcements from private trackers without a passkey in the configuration
-
 ## Added: Protect indexer and IRC discovery through native WireGuard
 
 Each indexer and IRC source accepts `"protection": "protected"` to route DNS,
@@ -8,6 +6,7 @@ the native tunnel. Unready or retired generations refuse work without host fallb
 source status reports protection readiness. Existing sources retain direct behavior
 until explicitly configured. [Migration and limits](/docs/protected-sources.md).
 
+## Added: Acquire IRC announcements from private trackers without a passkey in the configuration
 
 A `bracketed` IRC source can now use `grab` and `request` rules without a
 magnet template. When an announcement is routed to an admitted job, Mynou
