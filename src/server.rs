@@ -490,12 +490,29 @@ pub(crate) fn route(
                 std::str::from_utf8(body).map_err(|_| "Request body is not valid UTF-8")?,
             )?;
             let request = Request::from_json(&value)?;
-            Ok((
-                200,
-                integrations::search_report_page(&engine.config, &request, &page)?,
-            ))
+            Ok((200, engine.search_preview(&request, &page)?))
         }
         ("GET", "/api/profiles") => Ok((200, engine.config.selection.to_json())),
+        ("GET", path)
+            if path == "/api/title-profiles" || path.starts_with("/api/title-profiles?") =>
+        {
+            let (after, limit) =
+                crate::profiles::page(path.split_once('?').map_or("", |(_, query)| query))?;
+            Ok((200, engine.title_profiles(after.as_ref(), limit)?))
+        }
+        ("POST", "/api/title-profiles/control") => {
+            let v = control_body(
+                body,
+                &[
+                    "action", "kind", "tmdb_id", "profile", "import", "apply", "plan_id",
+                ],
+                false,
+            )?;
+            Ok((
+                200,
+                engine.title_profile_control(&crate::profiles::ControlRequest::from_json(&v)?)?,
+            ))
+        }
         ("POST", "/api/jobs") => {
             let v = json::parse(
                 std::str::from_utf8(body).map_err(|_| "Request body is not valid UTF-8")?,

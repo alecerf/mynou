@@ -514,6 +514,7 @@ pub(crate) fn store_name(directory: &std::path::Path) -> &'static str {
         "indexers" => "Source policy storage",
         "feeds" => "Feed storage",
         "transfers" => "Transfer storage",
+        "profiles" => "Title profile storage",
         _ => "Inventory storage",
     }
 }

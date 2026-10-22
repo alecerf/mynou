@@ -154,11 +154,16 @@ fn requester_value(
 }
 
 impl Engine {
-    pub(crate) fn configuration_for(&self, job: &Job) -> crate::config::Config {
-        job.requester.as_ref().map_or_else(
+    /// Precedence: title binding, then the requester capture, then the global profile.
+    pub(crate) fn configuration_for(&self, job: &Job) -> Result<crate::config::Config> {
+        let mut config = job.requester.as_ref().map_or_else(
             || self.config.clone(),
             |p| p.capture.configuration(&self.config, &job.request.kind),
-        )
+        );
+        if let Some(name) = self.title_binding(&job.request)? {
+            crate::profiles::bind(&mut config, &job.request.kind, &name);
+        }
+        Ok(config)
     }
     pub fn requesters(&self) -> Result<Value> {
         let ledger = lock(&self.requester_store)?;
@@ -592,7 +597,12 @@ impl Engine {
         let ledger = lock(&self.requester_store)?;
         lock(&self.store)?.claim_filtered(store::now(), self.config.lease_duration_secs, |job| {
             Ok(interest(&*ledger, job, &self.config)?
-                && !crate::irc::routing::waits_for_candidate(&self.config, job, &*ledger)?)
+                && !crate::irc::routing::waits_for_candidate(
+                    &self.config,
+                    job,
+                    &*ledger,
+                    self.title_binding(&job.request)?.as_deref(),
+                )?)
         })
     }
     pub(crate) fn requester_operator_interest(&self, jobs: &[Job]) -> Result<()> {

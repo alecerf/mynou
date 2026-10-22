@@ -67,6 +67,10 @@ const HELP: &str = "Mynou — media automation using Rust std only
   requester ACCOUNT_ID [--offset N | --after CURSOR] [--limit N] [--config mynou.json]
   requester-control ACCOUNT_ID --mapping FILE [--apply --plan-id ID] [--config mynou.json]
   requester-sync [--config mynou.json]
+  title-profiles [--limit N --after CURSOR] [--config mynou.json]   (a page of 100 by default)
+  title-profile --kind movie|series --tmdb-id N (--profile NAME | --clear)
+                [--apply --plan-id ID] [--config mynou.json]
+  title-profile-import --mapping FILE [--apply --plan-id ID] [--config mynou.json]
   indexers [--config mynou.json]
   indexer-control SOURCE_ID --action enable|pause|reset_session|probe [--apply --plan-id ID] [--config mynou.json]
   feeds [--retained --limit N --after CURSOR] [--config mynou.json]
@@ -108,6 +112,7 @@ impl Args {
                     "include-specials",
                     "unmonitored",
                     "retained",
+                    "clear",
                 ]
                 .contains(&key)
                 {
@@ -140,6 +145,11 @@ impl Args {
             "irc-control" => &["config", "help", "action", "apply", "plan-id"],
             "requester" => &["config", "help", "offset", "after", "limit"],
             "requester-control" => &["config", "help", "mapping", "apply", "plan-id"],
+            "title-profiles" => &["config", "help", "after", "limit"],
+            "title-profile" => &[
+                "config", "help", "kind", "tmdb-id", "profile", "clear", "apply", "plan-id",
+            ],
+            "title-profile-import" => &["config", "help", "mapping", "apply", "plan-id"],
             "torrents" => &["config", "help", "limit", "after"],
             "torrent" | "pause" | "resume" => &["config", "help"],
             "torrent-priority" => &["config", "help", "priority"],
@@ -1150,6 +1160,96 @@ fn execute(args: Args) -> Result<()> {
                 output(&Engine::open_for_preview(config)?.requester_control(id, &query)?);
             }
         }
+        "title-profiles" => {
+            let limit = args.value("limit", "100");
+            let mut query = format!("limit={limit}");
+            if let Some(after) = args.options.get("after") {
+                query.push_str(&format!("&after={after}"));
+            }
+            if online {
+                output(&call(
+                    &config,
+                    &path,
+                    "GET",
+                    &format!("/api/title-profiles?{query}"),
+                    None,
+                )?);
+            } else {
+                let (after, limit) = mynou::profiles::page(&query)?;
+                let mut store = mynou::profiles::TitleProfiles::open(&config.store_dir, true)?;
+                output(&mynou::profiles::list(
+                    &config,
+                    &mut store,
+                    after.as_ref(),
+                    limit,
+                )?);
+            }
+        }
+        "title-profile" | "title-profile-import" => {
+            let mut value = if args.command == "title-profile" {
+                let mut value = Value::object();
+                let clear = args.options.contains_key("clear");
+                value.insert("action", if clear { "clear" } else { "set" });
+                value.insert("kind", args.value("kind", ""));
+                value.insert(
+                    "tmdb_id",
+                    Value::Number(
+                        args.options
+                            .get("tmdb-id")
+                            .ok_or("--tmdb-id is required")?
+                            .parse::<u64>()
+                            .map_err(|_| "Invalid --tmdb-id")? as f64,
+                    ),
+                );
+                if let Some(profile) = args.options.get("profile") {
+                    value.insert("profile", profile.clone());
+                }
+                value
+            } else {
+                let file = args
+                    .options
+                    .get("mapping")
+                    .ok_or("Specify --mapping FILE")?;
+                let mut bytes = Vec::new();
+                std::fs::File::open(file)
+                    .map_err(|_| "Cannot open title profile mapping")?
+                    .take(1_000_001)
+                    .read_to_end(&mut bytes)
+                    .map_err(|_| "Cannot read title profile mapping")?;
+                if bytes.len() > 1_000_000 {
+                    return Err("Title profile mapping exceeds 1,000,000 bytes".into());
+                }
+                let mut value = Value::object();
+                value.insert("action", "import");
+                value.insert(
+                    "import",
+                    json::parse(
+                        std::str::from_utf8(&bytes)
+                            .map_err(|_| "Title profile mapping is not UTF-8")?,
+                    )?,
+                );
+                value
+            };
+            value.insert("apply", args.options.contains_key("apply"));
+            if let Some(plan) = args.options.get("plan-id") {
+                value.insert("plan_id", plan.clone());
+            }
+            let query = mynou::profiles::ControlRequest::from_json(&value)?;
+            if online {
+                output(&call(
+                    &config,
+                    &path,
+                    "POST",
+                    "/api/title-profiles/control",
+                    Some(&query.to_json()),
+                )?);
+            } else if query.apply {
+                return Err("Title profile changes require a running Mynou service".into());
+            } else {
+                let mut store = mynou::profiles::TitleProfiles::open(&config.store_dir, true)?;
+                output(&mynou::profiles::control(&config, &mut store, &query)?);
+            }
+        }
         "requester-sync" => {
             if !online {
                 return Err("Requester polling requires a running Mynou service".into());
@@ -1241,6 +1341,10 @@ fn execute(args: Args) -> Result<()> {
                         .options
                         .get("release-title")
                         .ok_or("--release-title is required")?;
+                    let mut config = config.clone();
+                    if let Some(name) = mynou::profiles::stored_binding(&config, &job.request)? {
+                        mynou::profiles::bind(&mut config, &job.request.kind, &name);
+                    }
                     let release = mynou::library::validate_baseline(&config, &job, title)?;
                     store.set_baseline(id, release)?
                 } else {
@@ -1274,7 +1378,9 @@ fn execute(args: Args) -> Result<()> {
                     Some(&r.to_json()),
                 )?);
             } else {
-                output(&integrations::search_report_page(&config, &r, &page)?);
+                // Like the API preview, this opens no journal: only bindings, read-only.
+                let binding = mynou::profiles::stored_binding(&config, &r)?;
+                output(&mynou::profiles::preview(&config, &r, binding, &page)?);
             }
         }
         "series-numbering" => {
@@ -1505,10 +1611,10 @@ fn execute(args: Args) -> Result<()> {
                         let mut bytes = Vec::new();
                         fs::File::open(path)
                             .map_err(|_| "Cannot open pack mapping file")?
-                            .take(1_048_577)
+                            .take(1_000_001)
                             .read_to_end(&mut bytes)
                             .map_err(|_| "Cannot read pack mapping file")?;
-                        if bytes.len() > 1_048_576 {
+                        if bytes.len() > 1_000_000 {
                             return Err("Pack mapping file exceeds 1 MiB".into());
                         }
                         body.insert("source_url", source.clone());

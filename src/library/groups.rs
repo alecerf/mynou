@@ -281,7 +281,7 @@ impl Engine {
             );
         }
         let import_stamp = verify_import(&initial)?;
-        let config = self.configuration_for(&initial[0]);
+        let config = self.configuration_for(&initial[0])?;
         if initial.iter().any(|j| {
             j.requester.as_ref().map(|p| &p.capture)
                 != initial[0].requester.as_ref().map(|p| &p.capture)
