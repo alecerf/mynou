@@ -183,7 +183,7 @@ fn title_bindings_take_precedence_over_requester_captures_and_global_profiles() 
         "Selection: unknown profile removed"
     );
 
-    // A capture of the bound name keeps the profile body that was admitted.
+    // The title binding overrides even a capture of the same name.
     let mut edited = config.clone();
     edited.selection.profiles.insert(
         "sd".into(),
@@ -191,12 +191,65 @@ fn title_bindings_take_precedence_over_requester_captures_and_global_profiles() 
             .unwrap(),
     );
     let (_, profile) = resolve(&edited, "movie", Some(&capture), Some("sd")).unwrap();
-    assert_eq!(profile.resolutions, [720]);
+    assert_eq!(profile.resolutions, [480]);
+    edited.selection.profiles.remove("sd");
+    assert!(resolve(&edited, "movie", Some(&capture), Some("sd")).is_err());
 
     let mut bound = config.clone();
     bind(&mut bound, "episode", "uhd");
     assert_eq!(bound.selection.episode_profile, "uhd");
     assert_eq!(bound.selection.movie_profile, "hd");
+}
+
+#[test]
+fn bound_requester_jobs_use_current_profiles_and_keep_captured_destinations() {
+    let directory = Directory::new();
+    let original = config(&directory);
+    let capture = Capture::new(&original, &Policy::initial(&original), "movie").unwrap();
+    let mut edited = original.clone();
+    edited.movies_root = directory.0.join("new-movies");
+    edited.selection.profiles.insert(
+        "hd".into(),
+        Profile::from_json(&json::parse(r#"{"resolutions":[480]}"#).unwrap()).unwrap(),
+    );
+    let engine = Engine::open_for_management(edited.clone()).unwrap();
+    let mut job = lock(&engine.store)
+        .unwrap()
+        .submit(request("movie", "Captured Movie", Some(42), 0))
+        .unwrap();
+    job.requester = Some(crate::requesters::Provenance {
+        account_id: "fixture".into(),
+        demand_id: "fixture-demand".into(),
+        policy_revision: 1,
+        capture: capture.clone(),
+    });
+    let effective = engine.configuration_for(&job).unwrap();
+    assert_eq!(
+        effective.selection.profile("movie").unwrap().1.resolutions,
+        [1080]
+    );
+    lock(&engine.title_profiles)
+        .unwrap()
+        .commit(&[binding(movie(42), "hd")])
+        .unwrap();
+    let effective = engine.configuration_for(&job).unwrap();
+    assert_eq!(
+        effective.selection.profile("movie").unwrap().1.resolutions,
+        [480]
+    );
+    assert_eq!(effective.movies_root, PathBuf::from(&capture.movies_root));
+    drop(engine);
+
+    edited.selection.profiles.remove("hd");
+    edited.selection.movie_profile = "uhd".into();
+    edited.selection.episode_profile = "uhd".into();
+    let engine = Engine::open_for_management(edited).unwrap();
+    let effective = engine.configuration_for(&job).unwrap();
+    assert_eq!(
+        effective.selection.profile("movie").unwrap_err(),
+        "Selection: unknown profile hd"
+    );
+    assert_eq!(effective.movies_root, PathBuf::from(&capture.movies_root));
 }
 
 #[test]
