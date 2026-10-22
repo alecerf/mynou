@@ -71,7 +71,6 @@ const HELP: &str = "Mynou — media automation using Rust std only
   title-profiles [--limit N --after CURSOR] [--config mynou.json]   (a page of 100 by default)
   title-profile --kind movie|series --tmdb-id N (--profile NAME | --clear)
                 [--apply --plan-id ID] [--config mynou.json]
-  title-profile-import --mapping FILE [--apply --plan-id ID] [--config mynou.json]
   indexers [--config mynou.json]
   indexer-control SOURCE_ID --action enable|pause|reset_session|probe [--apply --plan-id ID] [--config mynou.json]
   feeds [--retained --limit N --after CURSOR] [--config mynou.json]
@@ -153,7 +152,6 @@ impl Args {
             "title-profile" => &[
                 "config", "help", "kind", "tmdb-id", "profile", "clear", "apply", "plan-id",
             ],
-            "title-profile-import" => &["config", "help", "mapping", "apply", "plan-id"],
             "torrents" => &["config", "help", "limit", "after"],
             "torrent" | "pause" | "resume" => &["config", "help"],
             "torrent-priority" => &["config", "help", "priority"],
@@ -1232,51 +1230,24 @@ fn execute(args: Args) -> Result<()> {
                 )?);
             }
         }
-        "title-profile" | "title-profile-import" => {
-            let mut value = if args.command == "title-profile" {
-                let mut value = Value::object();
-                let clear = args.options.contains_key("clear");
-                value.insert("action", if clear { "clear" } else { "set" });
-                value.insert("kind", args.value("kind", ""));
-                value.insert(
-                    "tmdb_id",
-                    Value::Number(
-                        args.options
-                            .get("tmdb-id")
-                            .ok_or("--tmdb-id is required")?
-                            .parse::<u64>()
-                            .map_err(|_| "Invalid --tmdb-id")? as f64,
-                    ),
-                );
-                if let Some(profile) = args.options.get("profile") {
-                    value.insert("profile", profile.clone());
-                }
-                value
-            } else {
-                let file = args
-                    .options
-                    .get("mapping")
-                    .ok_or("Specify --mapping FILE")?;
-                let mut bytes = Vec::new();
-                std::fs::File::open(file)
-                    .map_err(|_| "Cannot open title profile mapping")?
-                    .take(1_000_001)
-                    .read_to_end(&mut bytes)
-                    .map_err(|_| "Cannot read title profile mapping")?;
-                if bytes.len() > 1_000_000 {
-                    return Err("Title profile mapping exceeds 1,000,000 bytes".into());
-                }
-                let mut value = Value::object();
-                value.insert("action", "import");
-                value.insert(
-                    "import",
-                    json::parse(
-                        std::str::from_utf8(&bytes)
-                            .map_err(|_| "Title profile mapping is not UTF-8")?,
-                    )?,
-                );
-                value
-            };
+        "title-profile" => {
+            let mut value = Value::object();
+            let clear = args.options.contains_key("clear");
+            value.insert("action", if clear { "clear" } else { "set" });
+            value.insert("kind", args.value("kind", ""));
+            value.insert(
+                "tmdb_id",
+                Value::Number(
+                    args.options
+                        .get("tmdb-id")
+                        .ok_or("--tmdb-id is required")?
+                        .parse::<u64>()
+                        .map_err(|_| "Invalid --tmdb-id")? as f64,
+                ),
+            );
+            if let Some(profile) = args.options.get("profile") {
+                value.insert("profile", profile.clone());
+            }
             value.insert("apply", args.options.contains_key("apply"));
             if let Some(plan) = args.options.get("plan-id") {
                 value.insert("plan_id", plan.clone());

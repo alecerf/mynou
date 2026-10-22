@@ -109,37 +109,6 @@ replaceable at the next upgrade check, like any release that no longer passes
 its profile. Several requester accounts can share one job, as before; when its
 title is bound, the binding decides for all of them.
 
-### Import assignments from another manager
-
-To keep the per-title choices of a previous manager, write a mapping from its
-profile names to yours and the assignment of each title:
-
-```json
-{
-  "profiles": {"HD-1080p": "hd", "Ultra-HD": "uhd", "Any": null},
-  "titles": [
-    {"kind": "movie", "tmdb_id": 603, "profile": "Ultra-HD"},
-    {"kind": "series", "tmdb_id": 1399, "profile": "HD-1080p"}
-  ]
-}
-```
-
-```sh
-mynou title-profile-import --mapping ./assignments.json --config ./mynou.json
-mynou title-profile-import --mapping ./assignments.json --apply --plan-id PLAN_ID \
-  --config ./mynou.json
-```
-
-The preview lists each binding to add, change or keep, and the unresolved
-titles with a reason: `unmapped_source_profile` (missing from `profiles`),
-`source_profile_left_unresolved` (mapped to `null`), `unknown_profile` (the
-target is not configured) or `conflicting_assignments` (one title listed with
-two profiles). Unresolved titles keep their current binding or stay unbound;
-none silently receives a default. Applying the same file again changes
-nothing. A file holds at most 5,000 titles: split a larger library into several
-files. Mynou does not read the previous manager itself; series must be listed
-by their TMDB IDs.
-
 ## How a candidate is judged
 
 Attributes come from the release title after the part that matches the
