@@ -349,6 +349,7 @@ impl Engine {
         source: &Source,
         candidate: Candidate,
     ) -> Result<Value> {
+        let _publication = self.source_publication(source.protection)?;
         let queued = lock(&self.irc_lookup)?.push(&source.id, candidate.clone());
         let mut v = Value::object();
         v.insert("source_id", source.id.clone());

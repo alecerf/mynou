@@ -19,6 +19,11 @@ impl Engine {
                     .iter()
                     .map(|s| {
                         let mut v = s.public_json();
+                        v.insert("protection", s.protection.name());
+                        v.insert(
+                            "protection_ready",
+                            s.protection.check(Some(&self.torrent_network)).is_ok(),
+                        );
                         if let Some(h) = runtime.health.get(&s.id) {
                             v.insert("health", h.to_json());
                         }
@@ -156,6 +161,7 @@ impl Engine {
         {
             return Err("IRC: announcement source is not allowed".into());
         }
+        let _publication = self.source_publication(source.protection)?;
         let a = Announcement::from_json(value)?;
         let binding = source.binding();
         let id = a.id(&binding);

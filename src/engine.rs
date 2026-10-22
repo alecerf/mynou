@@ -202,7 +202,7 @@ impl Engine {
     }
 
     fn from_store(
-        config: Config,
+        mut config: Config,
         store: Store,
         start_downloads: bool,
         read_only: bool,
@@ -210,6 +210,9 @@ impl Engine {
         torrent_network: Arc<dyn crate::torrent::transport::Network>,
         operator: Option<(Arc<crate::vpn::Operator>, Arc<crate::vpn::Gate>)>,
     ) -> Result<Arc<Self>> {
+        for source in &mut config.sources {
+            source.options.network = Some(torrent_network.clone());
+        }
         let indexer_store =
             crate::indexers::policy::SourceStore::open(&config.store_dir, &config, read_only)?;
         let feed_store =
@@ -1028,17 +1031,25 @@ impl Engine {
             } else {
                 let client = self.downloads.get().ok_or("Downloads are disabled")?;
                 if job.acquisition_url.is_none() {
-                    job.acquisition_url = Some(match &job.request.source_url {
-                        Some(url) => url.clone(),
+                    let (url, release) = match &job.request.source_url {
+                        Some(url) => (url.clone(), None),
                         None => {
                             let selected = integrations::select_release(&config, &job.request)?;
-                            job.release = Some(RecordedRelease {
-                                title: selected.title,
-                                profile: selected.profile,
-                            });
-                            selected.url
+                            (
+                                selected.url,
+                                Some(RecordedRelease {
+                                    title: selected.title,
+                                    profile: selected.profile,
+                                }),
+                            )
                         }
-                    });
+                    };
+                    // Fence before mutating even the worker's copy: its error path is saved too.
+                    let _publication = self.torrent_publication()?;
+                    job.acquisition_url = Some(url);
+                    if let Some(release) = release {
+                        job.release = Some(release);
+                    }
                     // Persist the selection before performing network operations.
                     lock(&self.store)?.update(job.clone())?;
                 }

@@ -340,6 +340,10 @@ impl Engine {
         at: u64,
         tally: &mut Tally,
     ) -> std::result::Result<(), &'static str> {
+        drop(
+            self.source_publication(source.options.protection)
+                .map_err(|_| "protection_unavailable")?,
+        );
         let policy_revision = {
             let mut policy = lock(&self.indexer_store).map_err(|_| "storage_failed")?;
             let (enabled, revision) = policy.authorization(id).map_err(|_| "storage_failed")?;
@@ -376,6 +380,9 @@ impl Engine {
         let ids: Vec<&str> = poll.entries.iter().map(|entry| entry.id.as_str()).collect();
         // The authoritative source policy fences a pause/re-enable during I/O.
         let generation = {
+            let _publication = self
+                .source_publication(source.options.protection)
+                .map_err(|_| "protection_unavailable")?;
             let mut policy = lock(&self.indexer_store).map_err(|_| "storage_failed")?;
             let (enabled, revision) = policy.authorization(id).map_err(|_| "storage_failed")?;
             if !enabled || revision != policy_revision || !source.options.watched() {
@@ -574,6 +581,7 @@ impl Engine {
                 Err(_) => return Ok(Attach::Unverified),
             }
         }
+        let _publication = self.source_publication(source.options.protection)?;
         // Policy/control and requester locks fence the final job mutation.
         let mut policy = lock(&self.indexer_store)?;
         let (enabled, revision) = policy.authorization(&feed::source_id(source))?;
@@ -616,6 +624,7 @@ impl Engine {
         parent: &Job,
         fresh: &[&FeedEntry],
     ) -> Result<Attach> {
+        let _publication = self.source_publication(source.options.protection)?;
         let mut policy = lock(&self.indexer_store)?;
         let (enabled, revision) = policy.authorization(&feed::source_id(source))?;
         if !enabled || revision != policy_revision || !source.options.watched() {
@@ -703,6 +712,15 @@ impl Engine {
             v.insert("name", integrations::report_text(&source.name, 128));
             v.insert("kind", source.kind.clone());
             v.insert("watch_enabled", source.options.watch.enabled);
+            v.insert("protection", source.options.protection.name());
+            v.insert(
+                "protection_ready",
+                source
+                    .options
+                    .protection
+                    .check(source.options.network.as_ref())
+                    .is_ok(),
+            );
             v.insert("active", source.options.watched());
             v.insert(
                 "interval_secs",

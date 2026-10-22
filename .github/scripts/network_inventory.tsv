@@ -1,5 +1,12 @@
 # Direct torrent network sites; regenerate with network_inventory.py --write.
 # file	item	construct	count
+src/source_network/direct.rs	<module>	TcpStream	1
+src/source_network/direct.rs	<module>	ToSocketAddrs	1
+src/source_network/direct.rs	Irc	TcpStream	1
+src/source_network/direct.rs	http	HttpClient::new	1
+src/source_network/direct.rs	irc	DeadlineStream::new	1
+src/source_network/direct.rs	irc	TcpStream	1
+src/source_network/direct.rs	irc	to_socket_addrs	1
 src/torrent/transport.rs	<module>	TcpListener	1
 src/torrent/transport.rs	<module>	TcpStream	1
 src/torrent/transport.rs	<module>	ToSocketAddrs	1
