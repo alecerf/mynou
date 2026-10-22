@@ -181,10 +181,6 @@ pub(crate) fn resolve<'a>(
                 .profile(if kind == "series" { "episode" } else { kind }),
         };
     };
-    // A capture of the same name keeps the body the requester admitted.
-    if let Some(c) = capture.filter(|c| c.profile_name == name) {
-        return Ok((&c.profile_name, &c.profile));
-    }
     config
         .selection
         .profiles

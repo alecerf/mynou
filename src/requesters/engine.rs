@@ -161,6 +161,17 @@ impl Engine {
             |p| p.capture.configuration(&self.config, &job.request.kind),
         );
         if let Some(name) = self.title_binding(&job.request)? {
+            // The title policy overrides even a capture with the same name.
+            // Keep the captured destination, but resolve the profile from the
+            // current configuration; a removed name must remain unresolved.
+            if let Some(profile) = self.config.selection.profiles.get(&name) {
+                config
+                    .selection
+                    .profiles
+                    .insert(name.clone(), profile.clone());
+            } else {
+                config.selection.profiles.remove(&name);
+            }
             crate::profiles::bind(&mut config, &job.request.kind, &name);
         }
         Ok(config)

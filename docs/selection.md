@@ -97,7 +97,9 @@ episodes, feed and IRC routing, season-pack searches and library upgrades,
 including cutoffs. A binding stores only the profile name: editing that profile
 in `mynou.json` changes the bound titles too. If the profile is removed, the
 title's searches fail with `unknown profile` until you rebind or clear it; Mynou
-never falls back to the global profile. Requests without a TMDB ID, such as a
+never falls back to the global profile. This also applies when a requester
+captured an older definition under the same name; its captured destination is
+preserved. Requests without a TMDB ID, such as a
 `submit` without `--tmdb-id`, cannot be bound.
 
 A change applies to work that has not selected a release yet and to later
