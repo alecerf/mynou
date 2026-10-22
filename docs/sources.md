@@ -7,6 +7,9 @@ requests that already wait. **IRC announcement channels** push new releases as
 they appear; rules decide whether to keep them for review or route them to
 requests. Every candidate then goes through your [selection profiles](selection.md).
 Bounds for all of them are listed in [limits](limits.md#sources).
+For a deployment that must access providers without an adapter, use the
+[direct-source qualification guide](direct-source-qualification.md) to record
+and validate each provider's contract.
 
 ## Indexers
 
