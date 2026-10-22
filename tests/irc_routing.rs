@@ -89,7 +89,11 @@ fn title_binding_overrides_global_profile_for_irc_admission_after_restart() {
     cfg.selection.profiles.insert("hd".into(), hd);
     cfg.irc.rules[0].profile = "hd".into();
     let engine = Engine::open(cfg.clone()).unwrap();
-    let admitted = engine.submit(request(7)).unwrap().remove(0);
+    let admitted = engine
+        .submit(request(7))
+        .map_err(|_| ())
+        .expect("The fixture request was rejected")
+        .remove(0);
     let mut change = mynou::profiles::ControlRequest::from_json(
         &mynou::json::parse(r#"{"action":"set","kind":"movie","tmdb_id":7,"profile":"hd"}"#)
             .unwrap(),
