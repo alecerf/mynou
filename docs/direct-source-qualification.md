@@ -15,7 +15,7 @@ For each enabled source, record:
 
 | Contract | Evidence needed |
 | --- | --- |
-| Interface | Authorized provider documentation or sanitized response fixtures; distinguish the native endpoint from an adapter endpoint |
+| Interface | Provider documentation, request/response facts observed in public adapter definitions, or authorized sanitized fixtures; distinguish the native endpoint from an adapter endpoint |
 | Search | Movie and individual-episode query syntax, supported identifiers, categories and expected matching results |
 | Feed | Direct feed endpoint, ordering, entry identity and polling limits |
 | Details | Release identity and catalog/hash fields needed by any configured IRC lookup |
@@ -30,6 +30,14 @@ particular, HTML scraping, interactive challenges, arbitrary authentication
 headers and multiple result pages are not supplied by the existing JSON
 mapping. Record unsupported requirements as blockers; do not guess endpoints,
 copy an adapter implementation or call an adapter a direct source.
+
+The public [Prowlarr indexer definitions](https://github.com/Prowlarr/Indexers)
+are a useful starting point: they describe the underlying source requests and
+response fields, including native Torznab or JSON APIs. Record the definition
+path and exact commit in the private manifest. Cardigann use alone does not
+imply HTML scraping or a need for browser cookies. Inspecting these protocol
+facts does not establish deployed compatibility; use them to author native
+configurations and independent synthetic fixtures, then validate the source.
 
 ## Validate with fixtures
 
