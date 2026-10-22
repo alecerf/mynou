@@ -113,6 +113,7 @@ def main():
 
             subprocess.run(["/bin/launchctl", "kill", "SIGKILL", target], check=True)
             wait(lambda: pid() is not None and pid() != original, seconds=80)
+            wait(healthy)
             print("PASS supervised crash restart (60-second throttle)", flush=True)
 
             # Even a valid token must not shut down a different API process.
@@ -136,7 +137,7 @@ def main():
             assert not (root / "movies").exists()
             (root / "missing-movies").rename(root / "movies")
             service("start")
-            wait(lambda: service("status")["running"])
+            wait(healthy)
             assert service("uninstall")["installed"] is False
             service("uninstall")
             assert not registration.exists()
