@@ -56,3 +56,54 @@ fn native_peer_bounds_are_validated_before_creating_state_or_opening_ports() {
         assert!(error.to_ascii_lowercase().contains("peer"), "{error}");
     }
 }
+
+#[test]
+fn independent_download_and_seed_queue_limits_accept_zero_and_keep_legacy_defaults() {
+    let mut legacy = config::default_json();
+    if let Value::Object(downloads) = legacy.get_mut("downloads").unwrap() {
+        downloads.remove("max_seeding");
+    }
+    let cfg = config::from_json(&legacy, Path::new(".")).unwrap();
+    assert_eq!(
+        (cfg.downloads.max_active, cfg.downloads.max_seeding),
+        (2, 0)
+    );
+    for (downloads, seeds) in [(0, 0), (0, 3), (2, 0), (3, 1), (1000, 500)] {
+        let mut value = config::default_json();
+        value
+            .get_mut("downloads")
+            .unwrap()
+            .insert("max_active", downloads as u32);
+        value
+            .get_mut("downloads")
+            .unwrap()
+            .insert("max_seeding", seeds as u32);
+        let cfg = config::from_json(&value, Path::new(".")).unwrap();
+        assert_eq!(
+            (cfg.downloads.max_active, cfg.downloads.max_seeding),
+            (downloads, seeds)
+        );
+    }
+    for name in ["max_active", "max_seeding"] {
+        for text in [
+            "-1",
+            "0.5",
+            "null",
+            "true",
+            "[]",
+            "{}",
+            "\"0\"",
+            "4294967296",
+        ] {
+            let mut value = config::default_json();
+            value
+                .get_mut("downloads")
+                .unwrap()
+                .insert(name, json::parse(text).unwrap());
+            assert!(
+                config::from_json(&value, Path::new(".")).is_err(),
+                "{name} accepted {text}"
+            );
+        }
+    }
+}

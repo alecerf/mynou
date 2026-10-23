@@ -504,8 +504,8 @@ views.transfers = {
         $('.title', el).textContent = t.name ?? t.title ?? t.id;
         $('.sub', el).textContent = `${Math.round(fraction * 100)}% · ${formatBytes(t.verified_bytes)}${t.message ? ` · ${t.message}` : ''}`;
         const badge = $('.badge', el);
-        badge.textContent = t.status ?? 'unknown';
-        badge.dataset.tone = t.failed ? 'bad' : t.ready ? 'ok' : 'warn';
+        badge.textContent = t.status === 'queued_seed' ? 'Waiting to seed' : t.status ?? 'unknown';
+        badge.dataset.tone = t.failed ? 'bad' : t.seed_queued ? 'warn' : t.ready ? 'ok' : 'warn';
         $('.bar-fill', el).style.setProperty('--p', fraction);
         $('.bar-track', el).setAttribute('aria-valuenow', Math.round(fraction * 100));
         $('[data-act="pause"]', el).hidden = Boolean(t.paused);

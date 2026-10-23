@@ -152,6 +152,7 @@ fn download_config(root: &Path, seed: bool, max_active: usize, max_peers: usize)
         dht: false,
         pex: false,
         max_active,
+        max_seeding: 0,
         max_peers,
     }
 }
@@ -541,7 +542,7 @@ fn torrent_load_report() {
                 .sum::<u64>()
         })
         .sum();
-    let limit = (parallel::CONNECTION_BUDGET / max_active)
+    let limit = (parallel::CONNECTION_BUDGET / config.download_slots())
         .max(1)
         .min(max_peers);
     let mut completions: Vec<u128> = ready
@@ -616,9 +617,225 @@ fn torrent_load_report() {
     report.insert("client", counters);
     eprintln!("MYNOU_TORRENT_LOAD {}", json::stringify(&report));
     assert_eq!(verified, count);
-    assert!(max_running <= max_active);
-    assert!(flows.max_open <= flow_limit.min(max_active * limit));
+    assert!(max_running <= config.download_slots());
+    assert!(flows.max_open <= flow_limit.min(config.download_slots() * limit));
 }
 
 #[path = "representative_tests.rs"]
 mod representative;
+
+#[test]
+fn zero_download_queue_limit_runs_multiple_transfers_with_bounded_workers() {
+    let directory = scratch();
+    let pair = Pair::new();
+    let library = directory.0.join("library");
+    let torrents = torrents(&library, 3, 256 << 10, BLOCK);
+    let sources = seeds(&pair, &directory.0, &library, &torrents, 1);
+    for torrent in &torrents {
+        sources[0]
+            .set_policy(
+                &torrent.hash,
+                Some(TransferPolicy {
+                    upload_limit_bps: 64 << 10,
+                    ..TransferPolicy::default()
+                }),
+            )
+            .unwrap();
+    }
+    let config = download_config(&directory.0.join("download"), false, 0, 4);
+    let subject = Client::open_with_policy_and_admission(
+        config.clone(),
+        TransferPolicy::default(),
+        Arc::new(|_| Ok(true)),
+        pair.client_network.clone(),
+    )
+    .unwrap();
+    let sampler = Sampler::start(&subject);
+    for torrent in &torrents {
+        subject.ensure(&magnet(&torrent.hash, &sources)).unwrap();
+    }
+    wait_for(
+        Instant::now() + Duration::from_secs(45),
+        "unlimited queue downloads",
+        || {
+            torrents
+                .iter()
+                .all(|t| subject.check(&t.hash).unwrap().ready)
+        },
+    );
+    assert!(sampler.max_running.load(Ordering::Relaxed) >= 2);
+    assert!(sampler.max_running.load(Ordering::Relaxed) <= config.download_slots());
+    for torrent in &torrents {
+        assert!(same_file(
+            &config.data_dir.join(&torrent.hash).join(&torrent.name),
+            &torrent.file
+        ));
+        let value = subject.transfer(&torrent.hash).unwrap();
+        assert_eq!(
+            value.get("download_queue_limit").and_then(Json::as_str),
+            Some("0")
+        );
+    }
+}
+
+#[test]
+fn independent_seed_queue_enforces_fifo_priority_pause_and_restart_without_losing_payload() {
+    let directory = scratch();
+    let pair = Pair::new();
+    let library = directory.0.join("library");
+    let torrents = torrents(&library, 3, 128 << 10, BLOCK);
+    let mut config = download_config(&directory.0.join("subject"), true, 1, 2);
+    config.max_seeding = 1;
+    for torrent in &torrents {
+        let base = config.data_dir.join(&torrent.hash);
+        fs::create_dir_all(&base).unwrap();
+        fs::copy(&torrent.file, base.join(&torrent.name)).unwrap();
+    }
+    let open = || {
+        Client::open_with_policy_and_admission(
+            config.clone(),
+            TransferPolicy::default(),
+            Arc::new(|_| Ok(true)),
+            pair.client_network.clone(),
+        )
+        .unwrap()
+    };
+    let subject = open();
+    for torrent in &torrents {
+        subject
+            .ensure(
+                library
+                    .join(format!("{}.torrent", torrent.name))
+                    .to_str()
+                    .unwrap(),
+            )
+            .unwrap();
+    }
+    let queued = |client: &Client, n: usize| {
+        client
+            .transfer(&torrents[n].hash)
+            .unwrap()
+            .get("status")
+            .and_then(Json::as_str)
+            == Some("queued_seed")
+    };
+    wait_for(
+        Instant::now() + Duration::from_secs(30),
+        "seed queue publication",
+        || {
+            subject.check(&torrents[0].hash).unwrap().ready
+                && subject.policy.seed_queue.allowed(&torrents[0].hash)
+                && queued(&subject, 1)
+                && queued(&subject, 2)
+        },
+    );
+    assert!(subject.policy.seed_queue.allowed(&torrents[0].hash));
+    // A queued seed refuses an actual peer before advertising or sending data.
+    let mut stream = pair
+        .server_network
+        .connect(
+            SocketAddr::from(([10, 7, 0, 2], subject.listen_port())),
+            Duration::from_secs(5),
+        )
+        .unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    let mut handshake = [0; 68];
+    handshake[0] = 19;
+    handshake[1..20].copy_from_slice(b"BitTorrent protocol");
+    handshake[28..48].copy_from_slice(&decode_hex::<20>(&torrents[1].hash).unwrap());
+    stream.write_all(&handshake).unwrap();
+    assert!(stream.read_exact(&mut [0; 68]).is_err());
+    assert!(
+        !subject
+            .transfer(&torrents[1].hash)
+            .unwrap()
+            .get("failed")
+            .unwrap()
+            .as_bool()
+            .unwrap()
+    );
+    subject.pause(&torrents[0].hash).unwrap();
+    wait_for(
+        Instant::now() + Duration::from_secs(15),
+        "next FIFO seed",
+        || subject.policy.seed_queue.allowed(&torrents[1].hash),
+    );
+    subject.set_priority(&torrents[2].hash, 10).unwrap();
+    wait_for(
+        Instant::now() + Duration::from_secs(15),
+        "seed priority",
+        || subject.policy.seed_queue.allowed(&torrents[2].hash) && queued(&subject, 1),
+    );
+    drop(subject);
+    let subject = open();
+    wait_for(
+        Instant::now() + Duration::from_secs(30),
+        "restarted seed admission",
+        || subject.policy.seed_queue.allowed(&torrents[2].hash),
+    );
+    assert!(subject.controls(&torrents[0].hash).unwrap().user_paused);
+    assert_eq!(subject.controls(&torrents[2].hash).unwrap().priority, 10);
+    let before = subject
+        .controls(&torrents[1].hash)
+        .unwrap()
+        .seed_elapsed_secs;
+    let consumer = Client::open_with_policy_and_admission(
+        download_config(&directory.0.join("consumer"), false, 0, 1),
+        TransferPolicy {
+            download_limit_bps: 64 << 10,
+            ..TransferPolicy::default()
+        },
+        Arc::new(|_| Ok(true)),
+        pair.server_network.clone(),
+    )
+    .unwrap();
+    wait_for(
+        Instant::now() + Duration::from_secs(15),
+        "seed rehash",
+        || {
+            subject.check(&torrents[2].hash).unwrap().ready
+                && subject
+                    .jobs
+                    .lock()
+                    .unwrap()
+                    .get(&torrents[2].hash)
+                    .is_some_and(|j| !j.needs_rehash && !j.running)
+        },
+    );
+    consumer
+        .ensure(&format!(
+            "magnet:?xt=urn:btih:{}&x.pe=10.7.0.2:{}",
+            torrents[2].hash,
+            subject.listen_port()
+        ))
+        .unwrap();
+    wait_for(
+        Instant::now() + Duration::from_secs(30),
+        "admitted seed upload",
+        || consumer.check(&torrents[2].hash).unwrap().ready,
+    );
+    assert!(same_file(
+        &consumer
+            .config
+            .data_dir
+            .join(&torrents[2].hash)
+            .join(&torrents[2].name),
+        &torrents[2].file
+    ));
+    assert!(queued(&subject, 1));
+    assert_eq!(
+        subject
+            .controls(&torrents[1].hash)
+            .unwrap()
+            .seed_elapsed_secs,
+        before
+    );
+    for torrent in &torrents {
+        assert!(same_file(
+            &config.data_dir.join(&torrent.hash).join(&torrent.name),
+            &torrent.file
+        ));
+    }
+}

@@ -317,6 +317,7 @@ fn queued(
         retiring: false,
         admitted: true,
         needs_rehash: false,
+        seed_queued: false,
         source: Source {
             original: "cross-seed".into(),
             v1: meta.v1,
@@ -431,8 +432,8 @@ impl Client {
             &meta,
             request.mapping.as_deref(),
         )?;
-        trim_jobs(&self.config, &mut jobs, self.config.max_active + 31)?;
-        if jobs.len() >= self.config.max_active + 64 {
+        trim_jobs(&self.config, &mut jobs, self.config.download_slots() + 31)?;
+        if jobs.len() >= self.config.download_slots() + 64 {
             return Err("Native transfer working set is busy; retry later".into());
         }
         let order = self
@@ -826,6 +827,7 @@ mod tests {
             dht: true,
             pex: true,
             max_active: 1,
+            max_seeding: 0,
             max_peers: 1,
         };
         fs::create_dir_all(&config.state_dir).unwrap();

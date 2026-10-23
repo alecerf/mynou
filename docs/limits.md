@@ -39,9 +39,10 @@ a DHT client and PEX reception. Peer data uses TCP only.
 
 - **Peers**: `downloads.max_peers` (1 to 8, default 4) is a per-transfer
   ceiling. Outgoing workers per transfer are
-  `min(max_peers, max(1, 64 / max_active))`, so at most 64 across all active
-  transfers (direct Rust library callers can run up to 128 active transfers
-  with one worker each). Incoming seeding connections are limited to 32.
+  `min(max_peers, max(1, 64 / execution_slots))`, so at most 64 across active
+  downloads. Execution slots are at most 64; `max_active: 0` removes the user
+  download-queue limit while keeping this resource bound. The independent
+  `max_seeding` queue limit also accepts zero for no user limit. Incoming seeding connections are limited to 32.
   Concurrency is also reduced using a 128 MiB per-transfer memory estimate, with
   at least one worker; this is not a hard process memory limit. A peer pipelines
   up to 16 blocks, fewer when a rate limit applies. A peer count is not a

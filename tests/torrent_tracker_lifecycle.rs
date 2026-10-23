@@ -33,6 +33,7 @@ fn config(root: &std::path::Path, seed: bool) -> DownloadConfig {
         dht: false,
         pex: false,
         max_active: 2,
+        max_seeding: 0,
         max_peers: 4,
     }
 }

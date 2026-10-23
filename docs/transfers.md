@@ -17,16 +17,34 @@ commands need the running service.
 {
   "downloads": {
     "max_active": 2,
+    "max_seeding": 0,
     "max_peers": 4
   }
 }
 ```
 
-`max_active` (1 to 64, default 2) limits active transfers. `max_peers` (1 to 8,
-default 4) limits outgoing peer connections per transfer; set it to 1 for a
-single-peer baseline. Restart the service after a change. The peer count is a
-ceiling, not a promise: a transfer needs reachable peers that have the pieces it
-needs, and global worker and memory budgets can lower it further.
+`max_active` (default 2) controls the download queue and `max_seeding`
+(default 0) controls the seed queue independently. For either setting, `0`
+means no user-configured queue limit. A positive value admits that many
+transfers in descending priority, then arrival order. Seeds waiting for a
+slot keep their files and appear as `queued_seed` / **Waiting to seed**;
+this is different from a user pause or reaching a ratio/time policy. Idle
+eligible seeds count towards a positive seed limit. Pausing or reaching a
+seeding policy releases a slot. A queued seed neither serves payload nor
+consumes its seeding-time allowance.
+
+For example, `max_active: 2, max_seeding: 8` queues downloads and seeds
+separately, and `max_active: 0, max_seeding: 0` removes both user queue
+limits. Restart the service after changing these settings. A zero setting
+does not create one thread or connection per retained torrent: the existing
+64 outbound execution-slot resource budget, 32 inbound peer connections,
+memory checks and native tunnel flow bounds still apply. Additional work
+waits in the download queue. API transfer snapshots expose the configured
+queue limits and execution slots so these resource bounds remain visible.
+
+`max_peers` (1 to 8, default 4) limits outgoing peer connections per transfer;
+set it to 1 for a single-peer baseline. Reachable peers and the worker/memory
+budgets determine the actual connections and throughput.
 
 Retained transfers live in an on-disk index. Startup and routine scheduling read
 bounded windows rather than enumerating the entire transfer directory; inactive

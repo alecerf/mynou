@@ -254,6 +254,7 @@ fn transfer_admission_and_restart_keep_magnet_names_offline_and_use_custom_http(
         dht: false,
         pex: false,
         max_active: 1,
+        max_seeding: 0,
         max_peers: 1,
     };
     let network = Arc::new(Fake::default());

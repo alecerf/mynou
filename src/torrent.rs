@@ -13,6 +13,8 @@ mod inspection;
 mod metainfo;
 #[path = "torrent/parallel.rs"]
 mod parallel;
+#[path = "torrent/queue.rs"]
+mod queue;
 #[path = "torrent/selection.rs"]
 mod selection;
 #[path = "torrent/transport.rs"]
@@ -51,8 +53,21 @@ pub struct DownloadConfig {
     pub seed: bool,
     pub dht: bool,
     pub pex: bool,
+    /// User download queue limit; zero imposes no user queue limit.
     pub max_active: usize,
+    /// User seed queue limit; zero imposes no user queue limit.
+    pub max_seeding: usize,
     pub max_peers: usize,
+}
+impl DownloadConfig {
+    /// Execution remains bounded by the existing global peer resource budget.
+    /// A zero user queue limit does not allocate one thread per retained item.
+    fn download_slots(&self) -> usize {
+        match self.max_active {
+            0 => parallel::CONNECTION_BUDGET,
+            n => n.min(parallel::CONNECTION_BUDGET),
+        }
+    }
 }
 #[derive(Clone, Debug)]
 pub struct DownloadStatus {
@@ -107,6 +122,7 @@ struct Job {
     retiring: bool,
     admitted: bool,
     needs_rehash: bool,
+    seed_queued: bool,
     index: Option<Arc<Mutex<index::TransferIndex>>>,
     cross_seed: Option<Arc<cross_seed::CrossSeed>>,
     source: Source,
@@ -134,6 +150,7 @@ struct Job {
 }
 struct PolicyRuntime {
     policy: TransferPolicy,
+    seed_queue: queue::SeedQueue,
     download: Arc<RateGate>,
     upload: Arc<RateGate>,
     /// Every outbound peer, tracker and DHT exchange of the client.
@@ -793,6 +810,7 @@ fn limit_seed(job: &mut Job) {
 }
 fn apply_seed_limits(job: &mut Job, config: &DownloadConfig, defaults: &TransferPolicy) {
     if !job.status.ready
+        || job.seed_queued
         || job.retiring
         || job.needs_rehash
         || !config.seed
@@ -831,6 +849,8 @@ fn transfer_state(job: &Job) -> &'static str {
         "failed"
     } else if job.status.ready && job.control.seed_limited {
         "seed_limited"
+    } else if job.seed_queued {
+        "queued_seed"
     } else if job.status.ready {
         "ready"
     } else if job.status.selected_ready {
@@ -849,6 +869,7 @@ fn transfer_value(
     queue_position: usize,
     defaults: &TransferPolicy,
     config: &DownloadConfig,
+    seed_queue: &queue::SeedQueue,
 ) -> crate::json::Value {
     use crate::json::Value as Json;
     let mut value = snapshot_control(job).to_json();
@@ -863,11 +884,45 @@ fn transfer_value(
     value.insert("selected_ready", job.status.selected_ready);
     value.insert("running", job.running);
     value.insert("paused", job.paused || job.control.user_paused);
-    value.insert("status", transfer_state(job));
+    let seed_queued = config.seed
+        && (job.status.ready || job.needs_rehash)
+        && !seed_queue.allowed(&job.status.id);
+    value.insert("seed_queued", seed_queued);
+    value.insert(
+        "status",
+        if seed_queued
+            && !job.paused
+            && !job.control.user_paused
+            && !job.failed
+            && !job.control.seed_limited
+        {
+            "queued_seed"
+        } else {
+            transfer_state(job)
+        },
+    );
+    value.insert("download_queue_limit", config.max_active.to_string());
+    value.insert("seed_queue_limit", config.max_seeding.to_string());
+    value.insert(
+        "download_execution_slots",
+        config.download_slots().to_string(),
+    );
     value.insert("failed", job.failed);
     value.insert("queue_position", Json::Number(queue_position as f64));
     value.insert("progress", Json::Number(job.status.progress));
-    value.insert("message", job.status.message.clone());
+    value.insert(
+        "message",
+        if seed_queued
+            && !job.paused
+            && !job.control.user_paused
+            && !job.failed
+            && !job.control.seed_limited
+        {
+            "Waiting for a seed queue slot".into()
+        } else {
+            job.status.message.clone()
+        },
+    );
     value.insert(
         "verified_bytes",
         job.counters.verified.load(Ordering::Relaxed).to_string(),
@@ -1036,6 +1091,7 @@ fn load_job(config: &DownloadConfig, id: &str) -> Result<Job> {
                 retiring: false,
                 admitted: true,
                 needs_rehash: false,
+                seed_queued: false,
                 source,
                 cross_seed: None,
                 meta: Some(Arc::new(meta)),
@@ -1089,6 +1145,7 @@ fn load_job(config: &DownloadConfig, id: &str) -> Result<Job> {
                 retiring: false,
                 admitted: true,
                 needs_rehash: false,
+                seed_queued: false,
                 meta: None,
                 cross_seed: None,
                 source,
@@ -1321,14 +1378,12 @@ impl Client {
     ) -> Result<Self> {
         policy.validate()?;
         let policy = Arc::new(PolicyRuntime {
+            seed_queue: queue::SeedQueue::new(config.max_seeding),
             download: Arc::new(RateGate::new(policy.download_limit_bps)?),
             upload: Arc::new(RateGate::new(policy.upload_limit_bps)?),
             policy,
             network,
         });
-        if config.max_active == 0 || config.max_active > 128 {
-            return Err("Invalid active download count".into());
-        }
         if !(1..=8).contains(&config.max_peers) {
             return Err("Invalid peer connection count".into());
         }
@@ -1509,8 +1564,8 @@ impl Client {
             persist_index(job)?;
             return Ok(job.status.clone());
         }
-        trim_jobs(&self.config, &mut jobs, self.config.max_active + 31)?;
-        if jobs.len() >= self.config.max_active + 64 {
+        trim_jobs(&self.config, &mut jobs, self.config.download_slots() + 31)?;
+        if jobs.len() >= self.config.download_slots() + 64 {
             return Err("Native transfer working set is busy; retry later".into());
         }
         let status = DownloadStatus {
@@ -1564,6 +1619,7 @@ impl Client {
                 retiring: false,
                 admitted: true,
                 needs_rehash: false,
+                seed_queued: false,
                 meta: metadata,
                 cross_seed: None,
                 source,
@@ -1947,6 +2003,7 @@ impl Client {
             0,
             &self.policy.policy,
             &self.config,
+            &self.policy.seed_queue,
         ))
     }
     pub fn transfers(&self) -> Result<crate::json::Value> {
@@ -1975,6 +2032,7 @@ impl Client {
                     position,
                     &self.policy.policy,
                     &self.config,
+                    &self.policy.seed_queue,
                 ));
             } else {
                 match indexed_job(&self.config, &self.index, id, &self.policy.policy) {
@@ -1983,6 +2041,7 @@ impl Client {
                         position,
                         &self.policy.policy,
                         &self.config,
+                        &self.policy.seed_queue,
                     )),
                     Err(error) => {
                         // A damaged inactive metadata file must not hide every
@@ -2160,8 +2219,8 @@ impl Client {
     }
     fn load(&self, jobs: &mut BTreeMap<String, Job>, id: &str) -> Result<()> {
         if !jobs.contains_key(id) {
-            trim_jobs(&self.config, jobs, self.config.max_active + 31)?;
-            if jobs.len() >= self.config.max_active + 64 {
+            trim_jobs(&self.config, jobs, self.config.download_slots() + 31)?;
+            if jobs.len() >= self.config.download_slots() + 64 {
                 return Err("Native transfer working set is busy; retry later".into());
             }
             let mut job = indexed_job(&self.config, &self.index, id, &self.policy.policy)?;
@@ -2307,6 +2366,7 @@ fn select_announce(
             }
             let inactive = job.paused
                 || job.retiring
+                || job.seed_queued
                 || !job.admitted
                 || job.persistence_failed.load(Ordering::Acquire)
                 || job.cancel.load(Ordering::Acquire)
@@ -2481,6 +2541,7 @@ fn select_seed_dht(
     for id in ids[split..].iter().chain(&ids[..split]) {
         let job = jobs.get_mut(id)?;
         if !job.status.ready
+            || job.seed_queued
             || !job.admitted
             || job.persistence_failed.load(Ordering::Acquire)
             || job.retiring
@@ -2528,6 +2589,7 @@ fn announce_seed_dht(network: &dyn transport::Network, task: DhtTask, port: u16,
         };
         if !Arc::ptr_eq(&job.cancel, &task.cancel)
             || !job.status.ready
+            || job.seed_queued
             || job.failed
             || job.paused
             || job.control.user_paused
@@ -2583,6 +2645,7 @@ fn manager_loop(
     let mut queue_cursor = None;
     let mut seed_cursor = None;
     let mut seed_rotation = Instant::now();
+    let mut seed_scan = queue::SeedScan::default();
     while !stop.load(Ordering::Acquire) {
         if policy.network.generation().is_err() {
             // Keep controls and verified data available for a new protected
@@ -2609,7 +2672,35 @@ fn manager_loop(
             }
         }
         if let Ok(mut map) = jobs.lock() {
-            if let Err(error) = trim_jobs(&config, &mut map, config.max_active + 32) {
+            if let Err(error) =
+                policy
+                    .seed_queue
+                    .advance(&index, &mut seed_scan, admission.as_ref())
+            {
+                eprintln!("Could not read seed queue: {error}");
+                stop.store(true, Ordering::Release);
+                break;
+            }
+            for (id, job) in map.iter_mut() {
+                let queued = config.seed
+                    && (job.status.ready || job.needs_rehash)
+                    && !policy.seed_queue.allowed(id);
+                if queued != job.seed_queued {
+                    if queued {
+                        settle_seed_clock(job);
+                        job.cancel.store(true, Ordering::Release);
+                    } else if !job.paused
+                        && !job.control.user_paused
+                        && !job.retiring
+                        && !job.failed
+                        && !job.control.seed_limited
+                    {
+                        job.cancel = Arc::new(AtomicBool::new(false));
+                    }
+                    job.seed_queued = queued;
+                }
+            }
+            if let Err(error) = trim_jobs(&config, &mut map, config.download_slots() + 32) {
                 eprintln!("Could not retire indexed transfer: {error}");
             }
             if config.seed && seed_rotation.elapsed() >= Duration::from_secs(30) {
@@ -2660,7 +2751,7 @@ fn manager_loop(
                 .and_then(|mut catalog| {
                     // Refresh the leading window on every scheduling turn so
                     // completed jobs cannot leave holes in priority/FIFO order.
-                    let (mut head, _) = catalog.queue_page(None, config.max_active + 32)?;
+                    let (mut head, _) = catalog.queue_page(None, config.download_slots() + 32)?;
                     let (tail, next) = catalog.queue_page(queue_cursor.as_deref(), 32)?;
                     let mut present: BTreeSet<_> = head.iter().cloned().collect();
                     head.extend(tail.into_iter().filter(|id| present.insert(id.clone())));
@@ -2673,7 +2764,7 @@ fn manager_loop(
                 Ok((ids, next)) => {
                     queue_cursor = next;
                     for id in ids {
-                        if map.len() >= config.max_active + 64 {
+                        if map.len() >= config.download_slots() + 64 {
                             break;
                         }
                         if let std::collections::btree_map::Entry::Vacant(slot) =
@@ -2695,14 +2786,14 @@ fn manager_loop(
                 }
                 Err(error) => eprintln!("Could not read indexed queue: {error}"),
             }
-            if config.seed && map.len() < config.max_active + 32 {
+            if config.seed && map.len() < config.download_slots() + 32 {
                 let candidates = index
                     .lock()
                     .map_err(|_| "Native transfer index lock is poisoned".to_owned())
                     .and_then(|mut catalog| {
                         catalog.seeds_page(
                             seed_cursor.as_deref(),
-                            (config.max_active + 32 - map.len()).min(32),
+                            (config.download_slots() + 32 - map.len()).min(32),
                         )
                     });
                 match candidates {
@@ -2739,7 +2830,7 @@ fn manager_loop(
                 }
             }
         }
-        if workers.len() < config.max_active {
+        if workers.len() < config.download_slots() {
             let selected = jobs.lock().ok().and_then(|mut jobs| {
                 let id = jobs
                     .iter()
@@ -2747,6 +2838,7 @@ fn manager_loop(
                         j.admitted
                             && !j.persistence_failed.load(Ordering::Acquire)
                             && !j.retiring
+                            && !j.seed_queued
                             && !j.running
                             && !j.paused
                             && !j.control.user_paused
@@ -2819,7 +2911,7 @@ fn manager_loop(
             Tracker(AnnounceTask),
             Dht(DhtTask),
         }
-        while announcements.len() < config.max_active.min(4) {
+        while announcements.len() < config.download_slots().min(4) {
             let task = if dht_turn {
                 select_seed_dht(&config, &jobs, &mut dht_cursor)
                     .map(DiscoveryTask::Dht)
@@ -3588,6 +3680,7 @@ fn peer_available(
         return Err("Transfer ownership has not been admitted".into());
     }
     if job.paused
+        || job.seed_queued
         || job.control.user_paused
         || job.control.seed_limited
         || job.failed
@@ -3665,12 +3758,15 @@ fn serve_peer(
             .map_err(|_| "Native transfer index lock is poisoned")?
             .wire_alias(hash)?;
         if let Some(id) = owner {
+            if !policy.seed_queue.allowed(&id) {
+                return Err("Torrent is waiting in the seed queue".into());
+            }
             let mut map = jobs
                 .lock()
                 .map_err(|_| "BitTorrent state lock is poisoned")?;
             if !map.contains_key(&id) {
-                trim_jobs(config, &mut map, config.max_active + 31)?;
-                if map.len() >= config.max_active + 64 {
+                trim_jobs(config, &mut map, config.download_slots() + 31)?;
+                if map.len() >= config.download_slots() + 64 {
                     return Err("Native transfer working set is busy".into());
                 }
                 let mut job = indexed_job(config, index, &id, &policy.policy)?;
@@ -3696,6 +3792,7 @@ fn serve_peer(
                     || !job.admitted
                     || job.persistence_failed.load(Ordering::Acquire)
                     || job.retiring
+                    || job.seed_queued
                     || job.needs_rehash
                     || (job.cross_seed.is_some() && (!job.status.ready || !config.seed))
                     || job.control.user_paused
@@ -3858,6 +3955,9 @@ fn serve_peer(
                     }
                 }
                 let data = &cached_piece.as_ref().ok_or("Missing seeding piece")?.1;
+                // Hold only across the payload write, never while acquiring
+                // the job table or waiting for a rate reservation.
+                let seed_permit = policy.seed_queue.permit(&torrent_id)?;
                 wire::write_payload_message(
                     &mut stream,
                     &payload[..8],
@@ -3865,6 +3965,7 @@ fn serve_peer(
                     &cancel,
                     &counters.uploaded,
                 )?;
+                drop(seed_permit);
                 drop(reservation);
                 {
                     let mut map = jobs
@@ -4101,6 +4202,7 @@ mod control_runtime_tests {
             retiring: false,
             admitted: true,
             needs_rehash: false,
+            seed_queued: false,
             cross_seed: None,
             source: Source {
                 original: format!("magnet:?xt=urn:btih:{id}"),
@@ -4165,8 +4267,65 @@ mod control_runtime_tests {
             dht: true,
             pex: false,
             max_active: 1,
+            max_seeding: 0,
             max_peers: 4,
         }
+    }
+
+    #[test]
+    fn seed_queue_pages_past_paused_heads_and_reorders_without_payload_hydration() {
+        let root = std::env::temp_dir().join(format!(
+            "mynou-seed-queue-{}",
+            hex(&crate::crypto::random_bytes::<8>().unwrap())
+        ));
+        let mut config = discovery_configuration();
+        config.state_dir = root.join("state");
+        config.data_dir = root.join("data");
+        mkdir_private(&config.state_dir).unwrap();
+        mkdir_private(&config.data_dir).unwrap();
+        let mut index = index::TransferIndex::open(&mut config).unwrap();
+        for n in 1..=202u8 {
+            let mut job = discovery_job(n, 0);
+            job.status.ready = true;
+            job.control.user_paused = n <= 200;
+            index.save(&job).unwrap();
+        }
+        let index = Arc::new(Mutex::new(index));
+        let queue = queue::SeedQueue::new(1);
+        let mut scan = queue::SeedScan::default();
+        let first = discovery_job(201, 0).status.id;
+        let second = discovery_job(202, 0).status.id;
+        queue.advance(&index, &mut scan, None).unwrap();
+        assert!(!queue.allowed(&first));
+        queue.advance(&index, &mut scan, None).unwrap();
+        assert!(queue.allowed(&first));
+        assert!(!queue.allowed(&second));
+        let mut promoted = discovery_job(202, 0);
+        promoted.status.ready = true;
+        promoted.control.priority = 10;
+        index.lock().unwrap().save(&promoted).unwrap();
+        queue.advance(&index, &mut scan, None).unwrap();
+        assert!(queue.allowed(&second));
+        assert!(!queue.allowed(&first));
+        let busy: AdmissionGate = Arc::new(|_| Ok(false));
+        queue.advance(&index, &mut scan, Some(&busy)).unwrap();
+        assert!(queue.allowed(&second));
+        promoted.control.user_paused = true;
+        index.lock().unwrap().save(&promoted).unwrap();
+        queue.advance(&index, &mut scan, None).unwrap();
+        queue.advance(&index, &mut scan, None).unwrap();
+        assert!(queue.allowed(&first));
+        assert!(!queue.allowed(&second));
+        promoted.control.user_paused = false;
+        index.lock().unwrap().save(&promoted).unwrap();
+        let denied = second.clone();
+        let admission: AdmissionGate = Arc::new(move |id| Ok(id != denied));
+        queue.advance(&index, &mut scan, Some(&admission)).unwrap();
+        queue.advance(&index, &mut scan, Some(&admission)).unwrap();
+        assert!(queue.allowed(&first));
+        assert!(!queue.allowed(&second));
+        drop(index);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -4235,6 +4394,7 @@ mod control_runtime_tests {
             dht: false,
             pex: false,
             max_active: 1,
+            max_seeding: 0,
             max_peers: 1,
         };
         const RETAINED: usize = 384;
@@ -4276,7 +4436,7 @@ mod control_runtime_tests {
             }
         }
         assert_eq!(seen.len(), RETAINED);
-        assert!(client.jobs.lock().unwrap().len() <= config.max_active + 33);
+        assert!(client.jobs.lock().unwrap().len() <= config.download_slots() + 33);
         assert_eq!(
             client.aggregate_stats().unwrap(),
             (RETAINED as u64, (RETAINED * (RETAINED + 1) / 2) as u64, 0)
@@ -4317,6 +4477,7 @@ mod control_runtime_tests {
             dht: false,
             pex: false,
             max_active: 1,
+            max_seeding: 0,
             max_peers: 1,
         };
         let denied: AdmissionGate = Arc::new(|_| Ok(false));
@@ -4470,6 +4631,7 @@ mod control_runtime_tests {
             dht: false,
             pex: false,
             max_active: 1,
+            max_seeding: 0,
             max_peers: 1,
         };
         let mut handshake = vec![19];

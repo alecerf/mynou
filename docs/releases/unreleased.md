@@ -1,3 +1,12 @@
+## Added: Independent torrent download and seed queues
+
+`downloads.max_active` and the new `downloads.max_seeding` independently
+control active downloads and eligible seeds. Either accepts `0` for no
+user-configured queue limit. A waiting seed keeps its files and is shown as
+**Waiting to seed**; pauses, priorities and ratio/time policies remain intact.
+Existing configurations keep two download slots and unlimited seed admission.
+[Queue settings and resource bounds](/docs/transfers.md#peers-and-concurrency).
+
 ## Added: Discover cross-seeds from JSON indexers
 
 `cross_seed` discovery now accepts a `json` source: it reads the source's feed

@@ -49,6 +49,7 @@ pub fn configuration(root: &Path, max_active: usize, max_peers: usize) -> Downlo
         dht: false,
         pex: false,
         max_active,
+        max_seeding: 0,
         max_peers,
     }
 }
