@@ -64,3 +64,50 @@ provider validation. Do not publish the private manifest or run live probes as
 part of CI. Full replacement acceptance also needs the released binary and the
 authorized operator trial described in issues #335 and #344; passing source
 fixtures does not authorize a cutover.
+
+## Synthetic contracts of the replacement manifest
+
+The private manifest for issue #336 lists ten enabled sources. Their contracts
+are held by `src/indexers/contract_tests.rs`, which publishes only aliases,
+protocol families, parameter names, authentication placement and response
+fields. Hosts, paths, accounts and credentials stay private.
+
+| Family | Aliases | Configuration |
+| --- | --- | --- |
+| Bearer-authenticated JSON filter API | source-01, source-02, source-03 | `json` mapping with `tmdb_id`, season and episode roles, newest-first fixed parameters, `details`, `size`, `tmdb_id` and `info_hash` fields |
+| JSON search API with a query key | source-07 | `json` mapping with `tmdb_id`, season and episode roles, a fixed page size and the same item fields |
+| Native Torznab | source-04, source-05, source-06, source-08, source-09, source-10 | `torznab` source with a query key |
+
+Each contract checks the movie search by catalog ID or title, the episode
+search with season and episode, title filtering of returned releases, empty
+and malformed answers, the newest-entries read used by feed watching and
+cross-seed discovery, the cross-seed name search with size and hash, the
+details lookup used by bracketed IRC announcements, the authenticated
+same-origin `.torrent` download without redirects, denial without an
+anonymous fallback and a `429` rest without another request. Credentials never
+appear in reports.
+
+Pagination: every source answers one page. The JSON sources request their
+largest documented page (100 entries, newest first); per-title searches are
+narrowed by catalog ID, season and episode, and feeds read only the newest
+page. A Torznab source returns its own default page. A title with more matching
+releases than one page would be truncated; no source requires another page for
+the observed workflow.
+
+| Alias | Synthetic contract | Live API read (2026-10-22) | Live Mynou runtime |
+| --- | --- | --- | --- |
+| source-01 | Pass | Pass | Pending authorization |
+| source-02 | Pass | Pass | Pending authorization |
+| source-03 | Pass | Pass | Pending authorization |
+| source-04 | Pass | Pass | Pending authorization |
+| source-05 | Pass | Pass | Pending authorization |
+| source-06 | Pass | Pass | Pending authorization |
+| source-07 | Pass | Pass | Pending authorization |
+| source-08 | Pass | Pass | Pending authorization |
+| source-09 | Pass | Pass | Pending authorization |
+| source-10 | Pass | Pass | Pending authorization |
+
+The live API reads used each source's own interface once, with its configured
+credential, outside Mynou. A source qualifies only once the native runtime has
+also searched it, read its feed and, for source-02, resolved an announcement,
+in a separately authorized bounded run.
