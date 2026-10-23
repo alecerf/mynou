@@ -700,12 +700,9 @@ impl Engine {
         let mut feeds = lock(&self.feed_store)?;
         let runtime = lock(&self.feed_runtime)?;
         let mut rows = Vec::new();
-        for source in self
-            .config
-            .sources
-            .iter()
-            .filter(|source| matches!(source.kind.as_str(), "rss" | "torznab"))
-        {
+        for source in self.config.sources.iter().filter(|source| {
+            matches!(source.kind.as_str(), "rss" | "torznab") || source.options.watched()
+        }) {
             let id = feed::source_id(source);
             let mut v = Value::object();
             v.insert("id", id.clone());

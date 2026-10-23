@@ -1,3 +1,10 @@
+## Added: Watch JSON indexer feeds
+
+A `json` source now accepts `"watch": {"enabled": true}`. Each poll sends only
+the mapping's fixed parameters and API key, reads entries with the mapping and
+routes new ones to waiting demand like an RSS or Torznab feed
+([details](/docs/sources.md#watching-a-feed)).
+
 ## Changed: Search JSON indexers by catalog ID and send only meaningful numbers
 
 A JSON `mapping` can name a `tmdb_id` parameter: requests with a TMDB ID then

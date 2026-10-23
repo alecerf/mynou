@@ -2578,6 +2578,31 @@ fn feed_entries(text: &str, base: &str) -> Result<FeedPoll> {
     })
 }
 
+/// JSON entries carry no GUID: the title and acquisition URL identify them.
+fn json_feed_entries(text: &str, base: &str, mapping: &Mapping) -> Result<FeedPoll> {
+    let value = json::parse(text)?;
+    let listed = mapping
+        .list(&value)
+        .ok_or("JSON indexer: missing results/items list")?
+        .len();
+    let releases = json_releases(&value, base, mapping)?;
+    let skipped = (listed - releases.len()).min(u32::MAX as usize) as u32;
+    let truncated = releases.len() > MAX_FEED_ENTRIES;
+    let entries = releases
+        .into_iter()
+        .take(MAX_FEED_ENTRIES)
+        .map(|release| FeedEntry {
+            id: entry_identity(None, &release),
+            release,
+        })
+        .collect();
+    Ok(FeedPoll {
+        entries,
+        skipped,
+        truncated,
+    })
+}
+
 /// Fixed, redacted outcome for a failed source request.
 fn fetch_outcome(error: &str) -> &'static str {
     match error {
@@ -2595,36 +2620,56 @@ fn fetch_outcome(error: &str) -> &'static str {
     }
 }
 
-/// Fetches the newest entries of an RSS or Torznab source once. The result is
-/// bounded and holds no storage lock; failures carry only a fixed outcome code.
+/// Fetches the newest entries of an RSS, Torznab or JSON source once. The
+/// result is bounded and holds no storage lock; failures carry only a fixed
+/// outcome code.
 pub(crate) fn poll_feed(
     source: &Source,
     deadline: Instant,
 ) -> std::result::Result<FeedPoll, &'static str> {
-    if !matches!(source.kind.as_str(), "rss" | "torznab") {
-        return Err("unsupported_format");
-    }
-    let mut pairs: Vec<(&str, String)> = Vec::new();
-    if source.kind == "torznab" {
-        pairs.push(("t", "search".into()));
-    }
-    if let Some(key) = optional_secret(&source.api_key_env).map_err(|_| "authentication_failed")? {
-        pairs.push(("apikey", key));
-    }
-    let url = query(&source.url, &pairs).map_err(|_| "request_failed")?;
-    let response = crate::indexers::fetch(
-        source,
-        &url,
-        "application/rss+xml, application/xml",
-        deadline,
-    )
-    .map_err(|error| fetch_outcome(&error))?;
-    remaining_search_time(deadline).map_err(|_| "timed_out")?;
-    let parsed = std::str::from_utf8(&response.body)
+    let response = feed_response(source, deadline)?;
+    let parsed = std::str::from_utf8(&response)
         .map_err(|_| "parse_rejected")
-        .and_then(|text| feed_entries(text, &source.url).map_err(|_| "parse_rejected"));
+        .and_then(|text| {
+            if source.kind == "json" {
+                json_feed_entries(text, &source.url, &source.options.mapping)
+            } else {
+                feed_entries(text, &source.url)
+            }
+            .map_err(|_| "parse_rejected")
+        });
     crate::indexers::parsed(source, parsed.is_ok());
     parsed
+}
+
+/// One query-less read of a source's newest entries. A JSON source sends only
+/// its fixed parameters and API key, so its mapping decides the ordering.
+fn feed_response(source: &Source, deadline: Instant) -> std::result::Result<Vec<u8>, &'static str> {
+    let mut pairs: Vec<(&str, String)> = Vec::new();
+    let (key, accept) = match source.kind.as_str() {
+        "json" => {
+            let mapping = &source.options.mapping;
+            pairs.extend(mapping.fixed().iter().map(|(n, v)| (n.as_str(), v.clone())));
+            (mapping.parameter("api_key"), "application/json")
+        }
+        "torznab" => {
+            pairs.push(("t", "search".into()));
+            (Some("apikey"), "application/rss+xml, application/xml")
+        }
+        "rss" => (Some("apikey"), "application/rss+xml, application/xml"),
+        _ => return Err("unsupported_format"),
+    };
+    if let Some(name) = key
+        && let Some(key) =
+            optional_secret(&source.api_key_env).map_err(|_| "authentication_failed")?
+    {
+        pairs.push((name, key));
+    }
+    let url = query(&source.url, &pairs).map_err(|_| "request_failed")?;
+    let response = crate::indexers::fetch(source, &url, accept, deadline)
+        .map_err(|error| fetch_outcome(&error))?;
+    remaining_search_time(deadline).map_err(|_| "timed_out")?;
+    Ok(response.body)
 }
 
 /// A release offered for cross-seed discovery. Its URL may carry a credential:
