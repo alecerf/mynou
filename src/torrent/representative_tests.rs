@@ -2,15 +2,8 @@
 //! it is not a statement about the maximum supported inventory.
 use super::*;
 
-fn open(config: DownloadConfig, network: Arc<dyn Network>) -> Client {
-    Client::open_with_policy_and_admission(
-        config,
-        TransferPolicy::default(),
-        Arc::new(|_| Ok(true)),
-        network,
-    )
-    .unwrap()
-}
+#[path = "representative_engine_tests.rs"]
+mod engine;
 
 fn verify(client: &Client, torrents: &[Torrent], deadline: Instant) {
     // Point checks hydrate cold transfers and may schedule rehash. Walk once,
@@ -68,8 +61,24 @@ fn representative_load_report() {
         fs::create_dir_all(&base).unwrap();
         fs::copy(&torrent.file, base.join(&torrent.name)).unwrap();
     }
-    let subject = open(config.clone(), pair.client_network.clone());
-    for torrent in &inventory {
+    let fixture = std::env::var_os("MYNOU_REPRESENTATIVE_ENGINE")
+        .map(|_| engine::Fixture::new(&directory.0, &pair, &config, &library, &inventory));
+    let open = || {
+        engine::Subject::open(
+            config.clone(),
+            pair.client_network.clone(),
+            fixture.as_ref(),
+        )
+    };
+    let subject = open();
+    for (n, torrent) in inventory.iter().enumerate() {
+        let path = library.join(format!("{}.torrent", torrent.name));
+        if fixture.is_some() && n == 2 {
+            subject
+                .ensure_files(path.to_str().unwrap(), std::slice::from_ref(&torrent.name))
+                .unwrap();
+            continue;
+        }
         subject
             .ensure(
                 library
@@ -119,6 +128,7 @@ fn representative_load_report() {
             );
         }
     }
+    let mut subject = subject;
     let began = Instant::now();
     let (cpu_before, _) = usage();
     let mut rounds = 0;
@@ -128,7 +138,6 @@ fn representative_load_report() {
     let mut max_round_us = 0;
     let mut max_fds = 0;
     let mut max_consumers_running = 0;
-    let mut subject = subject;
     let mut restarted = false;
     let mut restart_us = 0;
     while began.elapsed() < Duration::from_secs(seconds) {
@@ -180,7 +189,12 @@ fn representative_load_report() {
         for torrent in &acquisitions {
             subject.ensure(&magnet(&torrent.hash, &sources)).unwrap();
         }
-        let deadline = Instant::now() + Duration::from_secs(60);
+        if let Some(fixture) = &fixture {
+            fixture.begin(&mut subject);
+        }
+        let round_seconds = if fixture.is_some() { 120 } else { 60 };
+        let deadline = Instant::now() + Duration::from_secs(round_seconds);
+        let mut exercised = false;
         loop {
             let at = Instant::now();
             let (page, _) = subject.statuses_page(None, 50).unwrap();
@@ -200,6 +214,7 @@ fn representative_load_report() {
                     .count(),
             );
             page_times.push(at.elapsed().as_micros());
+            subject.probe();
             let outgoing_done = acquisitions
                 .iter()
                 .all(|t| subject.check(&t.hash).unwrap().ready);
@@ -207,15 +222,27 @@ fn representative_load_report() {
                 .iter()
                 .zip(active_seeds)
                 .all(|(c, t)| c.check(&t.hash).unwrap().ready);
+            if !exercised
+                && incoming_done
+                && !outgoing_done
+                && let Some(fixture) = &fixture
+            {
+                fixture.exercise(&mut subject, rounds, &acquisitions, &pair, &open);
+                exercised = true;
+            }
             if outgoing_done && incoming_done {
                 break;
             }
             assert!(
                 Instant::now() < deadline,
-                "mixed load made insufficient progress in 60 seconds"
+                "mixed load made insufficient progress in {round_seconds} seconds"
             );
             thread::sleep(Duration::from_millis(100));
         }
+        assert!(
+            fixture.is_none() || exercised,
+            "full engine work must overlap acquisitions"
+        );
         verify(&subject, &acquisitions, deadline);
         for (consumer, torrent) in consumers.iter().zip(active_seeds) {
             verify(consumer, std::slice::from_ref(torrent), deadline);
@@ -235,7 +262,7 @@ fn representative_load_report() {
             drop(sources);
             let at = Instant::now();
             drop(subject);
-            subject = open(config.clone(), pair.client_network.clone());
+            subject = open();
             wait_for(
                 Instant::now() + Duration::from_secs(60),
                 "restarted seed queue",
@@ -284,8 +311,9 @@ fn representative_load_report() {
             &torrent.file,
         ));
     }
+    let added = fixture.as_ref().map_or(0, |f| f.finish(&subject));
     let (count, _, _) = subject.aggregate_stats().unwrap();
-    assert_eq!(count, (retained + rounds * 2) as u64);
+    assert_eq!(count, (retained + rounds * 2) as u64 + added);
     let (cpu_after, rss) = usage();
     page_times.sort_unstable();
     let mut report = Json::object();
@@ -313,6 +341,9 @@ fn representative_load_report() {
         ("rss_after_bytes", rss as u128),
     ] {
         report.insert(name, value.to_string());
+    }
+    if let Some(fixture) = &fixture {
+        fixture.report(&mut report);
     }
     report.insert("cpu_s", format!("{:.2}", cpu_after - cpu_before));
     report.insert("restart_preserved_pause_priority_payload", restarted);

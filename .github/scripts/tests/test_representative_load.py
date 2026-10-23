@@ -30,6 +30,21 @@ class Evidence(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 load.measurement(self.report(**change), 500, 600)
 
+    def test_full_engine_requires_observed_automation_and_incidents(self):
+        fields = dict(full_engine=True, retained_final="505", api_samples="40", api_p95_us="1000",
+                      api_max_us="2000", imports="4", import_max_us="3000", in_flight_restarts="1",
+                      port_changes="1", generation_changes="1", natpmp_requests="8",
+                      protected_source_requests="4", catalog_requests="4", cross_seed_added="1",
+                      monitoring_samples="4", monitoring_lag_max_us="1000000", protected_feed_successes="2")
+        self.assertTrue(load.measurement(self.report(**fields), 500, 600, engine=True)["full_engine"])
+        for change in [dict(full_engine=False), dict(api_samples="0"), dict(imports="3"),
+                       dict(in_flight_restarts="0"), dict(port_changes="0"), dict(generation_changes="0"),
+                       dict(protected_source_requests="0"), dict(cross_seed_added="0"), dict(monitoring_samples="3"), dict(protected_feed_successes="0")]:
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                load.measurement(self.report(**(fields | change)), 500, 600, engine=True)
+        with self.assertRaises(ValueError):
+            load.measurement(self.report(), 500, 600, engine=True)
+
     def test_missing_duplicate_or_failed_runs_cannot_pass(self):
         for text in ["", self.report() * 2, self.report().replace("1 passed; 0 failed", "0 passed; 1 failed")]:
             with self.subTest(text=text), self.assertRaises(ValueError):
