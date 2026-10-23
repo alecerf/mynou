@@ -165,8 +165,18 @@ struct Torrent {
 /// `count` single-file torrents of `bytes` distinct synthetic bytes, written
 /// once under `root`; seeds copy them (a clone on APFS).
 fn torrents(root: &Path, count: usize, bytes: usize, piece: usize) -> Vec<Torrent> {
+    torrents_from(root, count, bytes, piece, 0)
+}
+
+fn torrents_from(
+    root: &Path,
+    count: usize,
+    bytes: usize,
+    piece: usize,
+    offset: usize,
+) -> Vec<Torrent> {
     fs::create_dir_all(root).unwrap();
-    (0..count)
+    (offset..offset + count)
         .map(|n| {
             let payload: Vec<u8> = (0..bytes).map(|i| ((i * 7 + n * 13) % 251) as u8).collect();
             let pieces = payload
@@ -609,3 +619,6 @@ fn torrent_load_report() {
     assert!(max_running <= max_active);
     assert!(flows.max_open <= flow_limit.min(max_active * limit));
 }
+
+#[path = "representative_tests.rs"]
+mod representative;

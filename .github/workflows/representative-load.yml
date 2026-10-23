@@ -1,0 +1,52 @@
+name: Representative torrent load
+on:
+  workflow_dispatch:
+    inputs:
+      smoke:
+        description: Check the fixture only (16 retained, 2 seconds)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: representative-load-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  measure:
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install 1.99.0 --profile minimal
+      - name: Build the optimized native library harness
+        run: cargo +1.99.0 test --release --lib --no-run --offline --locked --message-format=json > "$RUNNER_TEMP/representative-build.jsonl"
+      - name: Measure a finite mixed workload
+        env:
+          SMOKE: ${{ inputs.smoke }}
+        run: |
+          harness=$(python3 - "$RUNNER_TEMP/representative-build.jsonl" <<'PY'
+          import json, sys
+          for line in open(sys.argv[1]):
+              row = json.loads(line)
+              if row.get("reason") == "compiler-artifact" and row.get("executable") and row["target"]["kind"] == ["lib"]:
+                  print(row["executable"])
+          PY
+          )
+          test -x "$harness"
+          args=()
+          if [ "$SMOKE" = true ]; then args+=(--smoke); fi
+          python3 .github/scripts/representative_load.py "$harness" --output "$RUNNER_TEMP/representative-load" "${args[@]}"
+          cat "$RUNNER_TEMP/representative-load/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve exact-commit measurements
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: representative-load-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/representative-load
+            ${{ runner.temp }}/representative-build.jsonl
+          if-no-files-found: error
+          retention-days: 30
