@@ -69,6 +69,14 @@ impl Deref for Subject {
     }
 }
 
+pub(super) fn acquiring(client: &Client, torrents: &[Torrent]) -> bool {
+    let jobs = client.jobs.lock().unwrap();
+    torrents.iter().any(|torrent| {
+        jobs.get(&torrent.hash)
+            .is_some_and(|job| job.running && !job.status.ready && job.status.progress > 0.0)
+    })
+}
+
 #[derive(Default)]
 struct Metrics {
     api_us: Vec<u128>,
@@ -280,10 +288,15 @@ impl Fixture {
         pair: &Pair,
         reopen: &impl Fn() -> Subject,
     ) {
+        assert!(
+            acquiring(subject, acquisitions),
+            "automation must overlap verified acquisition progress"
+        );
         let Subject::Engine(running) = subject else {
             return;
         };
-        // Incoming consumers have finished; acquisitions are still active.
+        // Port-changing incidents wait for incoming consumers to finish. Later
+        // rounds start automation as soon as acquisition progress is observed.
         let source_file = self
             .source_file
             .with_file_name(format!("synthetic-{round}.mp4"));
@@ -378,19 +391,7 @@ impl Fixture {
         running.engine.refresh_series(id).unwrap();
         if round < 3 {
             assert!(
-                acquisitions.iter().any(|torrent| {
-                    running
-                        .engine
-                        .native_client()
-                        .unwrap()
-                        .jobs
-                        .lock()
-                        .unwrap()
-                        .get(&torrent.hash)
-                        .is_some_and(|job| {
-                            job.running && !job.status.ready && job.status.progress > 0.0
-                        })
-                }),
+                acquiring(running.engine.native_client().unwrap(), acquisitions),
                 "incident must interrupt a download with verified payload progress"
             );
             match round {
