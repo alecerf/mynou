@@ -178,6 +178,25 @@ fn representative_load_report() {
             let at = Instant::now();
             drop(subject);
             subject = open(config.clone(), pair.client_network.clone());
+            // A restored ready flag alone is not proof that the worker
+            // finished its restart rehash. Observe each seed after hydration.
+            for torrent in active_seeds {
+                subject.check(&torrent.hash).unwrap();
+                wait_for(
+                    Instant::now() + Duration::from_secs(60),
+                    "restart seed rehash",
+                    || {
+                        subject
+                            .jobs
+                            .lock()
+                            .unwrap()
+                            .get(&torrent.hash)
+                            .is_some_and(|job| {
+                                job.status.ready && !job.needs_rehash && !job.running && !job.failed
+                            })
+                    },
+                );
+            }
             verify(
                 &subject,
                 active_seeds,
