@@ -183,7 +183,7 @@ fn protected_authentication_search_feed_detail_and_metainfo_use_virtual_tls_dns(
             .is_empty()
     );
     assert!(
-        integrations::torznab_details_before(s, "Fixture", deadline())
+        integrations::details_before(s, "Fixture", deadline())
             .unwrap()
             .is_empty()
     );

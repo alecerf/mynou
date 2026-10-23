@@ -1040,15 +1040,74 @@ pub(crate) struct DetailsEntry {
     pub(crate) enclosure: Option<String>,
 }
 
-/// One bounded Torznab text search; failures carry only fixed messages.
-pub(crate) fn torznab_details_before(
+/// One bounded text search of a Torznab source, or of a JSON source whose
+/// mapping describes details; failures carry only fixed messages.
+pub(crate) fn details_before(
     source: &Source,
     text: &str,
     deadline: Instant,
 ) -> Result<Vec<DetailsEntry>> {
-    if source.kind != "torznab" {
-        return Err("Indexer: lookup requires a Torznab source".into());
+    match source.kind.as_str() {
+        "torznab" => torznab_details_before(source, text, deadline),
+        "json" if source.options.mapping.describes_details() => {
+            json_details_before(source, text, deadline)
+        }
+        _ => Err("Indexer: lookup requires a Torznab source or a JSON mapping with details".into()),
     }
+}
+
+/// Only the text query, fixed parameters and API key are sent: the lookup
+/// names a release, not a catalog title.
+fn json_details_before(
+    source: &Source,
+    text: &str,
+    deadline: Instant,
+) -> Result<Vec<DetailsEntry>> {
+    let mapping = &source.options.mapping;
+    let mut pairs: Vec<(&str, String)> = Vec::new();
+    if let Some(name) = mapping.parameter("query") {
+        pairs.push((name, text.to_owned()));
+    }
+    pairs.extend(mapping.fixed().iter().map(|(n, v)| (n.as_str(), v.clone())));
+    if let Some(name) = mapping.parameter("api_key")
+        && let Some(key) = optional_secret(&source.api_key_env)?
+    {
+        pairs.push((name, key));
+    }
+    let url = query(&source.url, &pairs)?;
+    let response = crate::indexers::fetch(source, &url, "application/json", deadline)?;
+    remaining_search_time(deadline)?;
+    let entries = (|| {
+        let text = std::str::from_utf8(&response.body).map_err(|_| "Indexer: invalid UTF-8")?;
+        let value = json::parse(text)?;
+        let items = mapping
+            .list(&value)
+            .ok_or("JSON indexer: missing results/items list")?;
+        if items.len() > MAX_FEED_ENTRIES {
+            return Err("JSON indexer: too many lookup results".into());
+        }
+        Ok(items
+            .iter()
+            .map(|item| {
+                let (details, tmdb_ids, info_hashes) = mapping.details(item);
+                DetailsEntry {
+                    details: details.map_or(String::new(), |d| d.trim().to_owned()),
+                    tmdb_ids,
+                    info_hashes,
+                    enclosure: mapping.url(item).map(str::to_owned),
+                }
+            })
+            .collect())
+    })();
+    crate::indexers::parsed(source, entries.is_ok());
+    entries
+}
+
+fn torznab_details_before(
+    source: &Source,
+    text: &str,
+    deadline: Instant,
+) -> Result<Vec<DetailsEntry>> {
     let mut pairs = vec![("t", "search".to_owned()), ("q", text.to_owned())];
     if let Some(key) = optional_secret(&source.api_key_env)? {
         pairs.push(("apikey", key));
