@@ -17,7 +17,8 @@ import time
 
 MAX_MANIFEST_BYTES = 32 * 1024 * 1024
 MAX_LOG_BYTES = 16 * 1024 * 1024
-MAX_LIBRARY_GROUP_TESTS = 32
+# Keep growing-inventory cases from accumulating past a group's fixed deadline.
+MAX_LIBRARY_GROUP_TESTS = 16
 RESULT = re.compile(
     r"test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored; "
     r"\d+ measured; (\d+) filtered out; finished in ([0-9.]+)s"

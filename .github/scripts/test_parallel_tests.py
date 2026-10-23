@@ -136,14 +136,14 @@ class SchedulerTests(unittest.TestCase):
         self.assertEqual(report["counts"], {"passed": 3, "failed": 0, "ignored": 0, "filtered": 0})
 
     def test_large_module_batches_keep_complete_exact_coverage_and_unique_labels(self):
-        for size in (32, 33, 94):
+        for size in (16, 17, 32, 33, 94):
             with self.subTest(size=size):
                 names = [f"store::tests::case_{n:03d}" for n in range(size)]
                 target = self.library(list(reversed(names)))
                 shards = runner.library_shards([target], self.root)
-                self.assertEqual(len(shards), (size + 31) // 32)
+                self.assertEqual(len(shards), (size + 15) // 16)
                 self.assertEqual(len({s.label for s in shards}), len(shards))
-                self.assertTrue(all(1 <= len(s.tests) <= 32 for s in shards))
+                self.assertTrue(all(1 <= len(s.tests) <= 16 for s in shards))
                 self.assertEqual([name for s in shards for name in s.tests], names)
                 report = runner.schedule(shards, self.root, self.root / f"logs-{size}", 2, 1, 3, {})
                 self.assertTrue(report["success"])
