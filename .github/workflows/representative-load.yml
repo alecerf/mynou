@@ -6,6 +6,11 @@ on:
         description: Check the fixture only (16 retained, 2 seconds)
         type: boolean
         default: false
+      queue_mode:
+        description: Download/seed queues to measure
+        type: choice
+        options: [finite, unlimited, default]
+        default: finite
 permissions:
   contents: read
 concurrency:
@@ -26,6 +31,7 @@ jobs:
       - name: Measure a finite mixed workload
         env:
           SMOKE: ${{ inputs.smoke }}
+          QUEUE_MODE: ${{ inputs.queue_mode }}
         run: |
           harness=$(python3 - "$RUNNER_TEMP/representative-build.jsonl" <<'PY'
           import json, sys
@@ -38,7 +44,7 @@ jobs:
           test -x "$harness"
           args=()
           if [ "$SMOKE" = true ]; then args+=(--smoke); fi
-          python3 .github/scripts/representative_load.py "$harness" --output "$RUNNER_TEMP/representative-load" "${args[@]}"
+          python3 .github/scripts/representative_load.py "$harness" --output "$RUNNER_TEMP/representative-load" --queue-mode "$QUEUE_MODE" "${args[@]}"
           cat "$RUNNER_TEMP/representative-load/summary.md" >> "$GITHUB_STEP_SUMMARY"
       - name: Preserve exact-commit measurements
         if: always()

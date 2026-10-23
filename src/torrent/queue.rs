@@ -1,7 +1,7 @@
 //! Independent seed admission over the existing priority/FIFO catalog. No
 //! payload or persistent format changes. Scan at most one listing page per
 //! scheduling turn; publish a complete replacement set atomically.
-use super::{AdmissionGate, BTreeSet, Mutex, Result, index};
+use super::{AdmissionGate, BTreeSet, Job, Mutex, Result, index};
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 pub(super) struct SeedQueue {
@@ -25,6 +25,10 @@ impl SeedQueue {
 
     pub(super) fn allowed(&self, id: &str) -> bool {
         self.limit == 0 || self.selected.read().is_ok_and(|set| set.contains(id))
+    }
+
+    pub(super) fn waiting(&self, seed: bool, job: &Job) -> bool {
+        seed && (job.status.ready || job.needs_rehash) && !self.allowed(&job.status.id)
     }
 
     /// A replacement cannot admit a new seed while an old seed still writes a

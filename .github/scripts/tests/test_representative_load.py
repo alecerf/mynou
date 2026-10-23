@@ -15,6 +15,7 @@ class Evidence(unittest.TestCase):
     def report(self, **changes):
         row = dict(retained_initial="500", elapsed_us="600000000", rounds="2",
                    active_seed_torrents="8", concurrent_acquisitions="2", retained_final="504",
+                   download_queue_limit="2", seed_queue_limit="0",
                    uploaded_payload_bytes=str(16 << 20), downloaded_payload_bytes=str(4 << 20),
                    restart_preserved_pause_priority_payload=True)
         row.update(changes)
@@ -23,7 +24,7 @@ class Evidence(unittest.TestCase):
     def test_accepts_only_the_requested_observed_workload(self):
         self.assertEqual(load.measurement(self.report(), 500, 600)["rounds"], "2")
         for change in [dict(retained_initial="16"), dict(elapsed_us="1000000"),
-                       dict(rounds="0"), dict(retained_final="500"),
+                       dict(rounds="0"), dict(retained_final="500"), dict(download_queue_limit="0"), dict(seed_queue_limit="8"),
                        dict(uploaded_payload_bytes="0"), dict(downloaded_payload_bytes="0"),
                        dict(restart_preserved_pause_priority_payload=False)]:
             with self.subTest(change=change), self.assertRaises(ValueError):

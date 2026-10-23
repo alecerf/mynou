@@ -43,6 +43,14 @@ must complete in 60 seconds (source preparation is outside that deadline).
 This timeout is a fixture liveness check, not an agreed production service
 level. The setup and final verification can extend total process time.
 
+Use `--queue-mode finite` to exercise no configured download limit and an
+eight-seed queue (`max_active=0`, `max_seeding=8`); the eight offered seeds get
+higher priority than the cold retained inventory before the timed phase.
+`--queue-mode unlimited` uses zero for both queues. The default mode preserves
+the historical 2/0 workload for comparison. The runner verifies that the
+reported queue settings match the requested mode. The manual workflow defaults
+to `finite` and exposes the same choice.
+
 `--smoke` uses 16 retained torrents and a two-second window. It checks the
 fixture only. Ordinary tests skip the fixture unless its environment
 variables are present. The manual `Representative torrent load` workflow

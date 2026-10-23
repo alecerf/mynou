@@ -884,9 +884,7 @@ fn transfer_value(
     value.insert("selected_ready", job.status.selected_ready);
     value.insert("running", job.running);
     value.insert("paused", job.paused || job.control.user_paused);
-    let seed_queued = config.seed
-        && (job.status.ready || job.needs_rehash)
-        && !seed_queue.allowed(&job.status.id);
+    let seed_queued = seed_queue.waiting(config.seed, job);
     value.insert("seed_queued", seed_queued);
     value.insert(
         "status",
@@ -2228,6 +2226,10 @@ impl Client {
                 .admission
                 .as_ref()
                 .is_none_or(|gate| gate(id).unwrap_or(false));
+            job.seed_queued = self.policy.seed_queue.waiting(self.config.seed, &job);
+            if job.seed_queued {
+                job.cancel.store(true, Ordering::Release);
+            }
             persist_index(&job)?;
             jobs.insert(id.to_owned(), job);
         }
@@ -2681,10 +2683,8 @@ fn manager_loop(
                 stop.store(true, Ordering::Release);
                 break;
             }
-            for (id, job) in map.iter_mut() {
-                let queued = config.seed
-                    && (job.status.ready || job.needs_rehash)
-                    && !policy.seed_queue.allowed(id);
+            for job in map.values_mut() {
+                let queued = policy.seed_queue.waiting(config.seed, job);
                 if queued != job.seed_queued {
                     if queued {
                         settle_seed_clock(job);
@@ -2771,7 +2771,11 @@ fn manager_loop(
                             map.entry(id.clone())
                         {
                             match indexed_job(&config, &index, &id, &policy.policy) {
-                                Ok(job) => {
+                                Ok(mut job) => {
+                                    job.seed_queued = policy.seed_queue.waiting(config.seed, &job);
+                                    if job.seed_queued {
+                                        job.cancel.store(true, Ordering::Release);
+                                    }
                                     slot.insert(job);
                                 }
                                 Err(error) => {
@@ -2804,7 +2808,12 @@ fn manager_loop(
                                 map.entry(id.clone())
                             {
                                 match indexed_job(&config, &index, &id, &policy.policy) {
-                                    Ok(job) => {
+                                    Ok(mut job) => {
+                                        job.seed_queued =
+                                            policy.seed_queue.waiting(config.seed, &job);
+                                        if job.seed_queued {
+                                            job.cancel.store(true, Ordering::Release);
+                                        }
                                         slot.insert(job);
                                     }
                                     Err(error) => {
