@@ -122,14 +122,21 @@ impl Running {
                     ("Content-Type".into(), "application/json".into()),
                 ],
                 &bytes,
-            )
-            .unwrap();
+            );
+        let Ok(response) = response else {
+            panic!("Synthetic Engine API request failed");
+        };
         assert!(
             (200..300).contains(&response.status),
-            "load API {route}: {}",
-            response.status
+            "Synthetic Engine API request was rejected"
         );
-        json::parse(std::str::from_utf8(&response.body).unwrap()).unwrap()
+        let Ok(body) = std::str::from_utf8(&response.body) else {
+            panic!("Synthetic Engine API returned non-UTF-8 data");
+        };
+        let Ok(value) = json::parse(body) else {
+            panic!("Synthetic Engine API returned invalid JSON");
+        };
+        value
     }
 }
 impl Drop for Running {
