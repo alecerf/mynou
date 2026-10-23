@@ -49,8 +49,10 @@ preserves the results for its exact checked-out commit.
 Artifacts contain the source commit, dirty status, harness SHA-256, toolchain,
 finite workload, raw log, BSD process timing, JSON measurements and a summary.
 CPU, RSS and sampled descriptor counts include both tunnel owners and every
-fixture peer in the same process. The listing measurement is the native
-client's first page, not the HTTP API. Uploaded/downloaded payload totals
+fixture peer in the same process. The fields named `page_p95_us` and `page_max_us` time the combined probe:
+the native client's first page, descriptor sampling and acquisition of
+consumer-worker locks. These may wait for durable writes. They measure
+neither an isolated listing request nor the HTTP API. Uploaded/downloaded payload totals
 count fully verified rounds, not protocol overhead or an estimate from files
 merely marked ready. Each round adds two retained transfers. Restart timing
 includes reopening and verifying the eight active seeds, not a full-inventory
@@ -75,3 +77,28 @@ A measured no-go should identify a reproducible capacity blocker. A successful
 finite run should report only the measured workload, with no unlimited-capacity
 or full replacement claim. Preserve #342 and #344 until their remaining
 acceptance evidence exists.
+
+## Recorded finite run (2026-10-23)
+
+[Machine-readable evidence](representative-load-results.json) is from clean
+commit [`43fa485`](https://github.com/alecerf/mynou/commit/43fa485), an optimized
+Rust 1.99.0 library test harness on native macOS arm64.
+
+| Observation | Result |
+| --- | ---: |
+| Retained torrents, initial / final | 500 / 528 |
+| Verified rounds | 14 |
+| Window at last completed round | 603 s |
+| Phase including final verification / whole process | 653.37 / 741.43 s |
+| Verified payload served / acquired | 112 / 28 MiB |
+| Maximum sampled consumers running / descriptors | 8 / 45 |
+| Restart plus eight active seed rehashes | 7.11 s |
+| Phase CPU / whole-process CPU | 250.98 / 278.07 s |
+| Whole-process peak RSS | 21.88 MiB |
+| Combined status/diagnostic probe p95 / max | 2002.93 / 3309.08 ms |
+
+The pause, priority and all original payload checks passed after restart.
+The probe timings include diagnostic lock waits and cannot establish API
+responsiveness. No owner-approved production CPU/RSS/latency budget was
+asserted by this experiment. The result completes this finite client-stage
+experiment and leaves the remaining qualification listed above open.

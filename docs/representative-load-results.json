@@ -1,0 +1,47 @@
+{
+  "environment": {
+    "commit": "43fa4852a8401099ebd71788009e09eb61e2ff0d",
+    "dirty": false,
+    "harness_sha256": "4dcd395a7e116ce0df6f6b14d42d7def7ed4d5cd32e5ebefc7908aaf905aa5bf",
+    "os": "macOS-27.0.1-arm64-arm-64bit",
+    "cpus": 10,
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "retained": 500,
+    "seconds": 600,
+    "smoke": false,
+    "method": "native Client, two loopback WireGuard owners, 8 inbound consumers, 2 acquisitions per round, one populated restart; whole-process CPU/RSS/FD includes fixture peers",
+    "qualification": "partial: no automation/API/provider/NAT-PMP qualification"
+  },
+  "results": {
+    "active_seed_torrents": "8",
+    "concurrent_acquisitions": "2",
+    "cpu_s": "250.98",
+    "downloaded_payload_bytes": "29360128",
+    "elapsed_us": "653366599",
+    "max_peers": "4",
+    "max_round_us": "56556868",
+    "max_sampled_consumers_running": "8",
+    "max_sampled_fds": "45",
+    "page_max_us": "3309077",
+    "page_p95_us": "2002925",
+    "restart_preserved_pause_priority_payload": true,
+    "restart_rehash_us": "7110496",
+    "retained_final": "528",
+    "retained_initial": "500",
+    "rounds": "14",
+    "rss_after_bytes": "21872640",
+    "uploaded_payload_bytes": "117440512",
+    "real_s": 741.43,
+    "user_s": 115.57,
+    "sys_s": 162.5,
+    "peak_rss_bytes": 22937600
+  },
+  "scope_notes": [
+    "Partial synthetic native Client stage only; not a full issue #342 pass or an inventory ceiling.",
+    "14 completed rounds crossed 603 seconds; elapsed_us includes final verification, real_s also includes initial setup and teardown.",
+    "page_p95_us and page_max_us time the combined first-page, descriptor-count and consumer-worker-lock probe, not an isolated page request or HTTP API latency.",
+    "CPU, RSS and descriptor counts include all in-process fixture clients and both tunnel owners.",
+    "Restart was between completed rounds; restart_rehash_us includes actual rehash of eight active seeds, not full-inventory rehash.",
+    "All raw logs and timing retained locally; two earlier interrupted diagnostic attempts were invalidated and are excluded."
+  ]
+}
