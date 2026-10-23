@@ -88,6 +88,9 @@ pub(crate) struct Mapping {
     title: Option<Path>,
     urls: Vec<Path>,
     seeders: Option<Path>,
+    details: Option<Path>,
+    tmdb_id: Option<Path>,
+    info_hash: Option<Path>,
     names: Vec<(String, String)>,
     kinds: Vec<(String, String)>,
     fixed: Vec<(String, String)>,
@@ -106,6 +109,9 @@ impl Mapping {
                 "title",
                 "url",
                 "seeders",
+                "details",
+                "tmdb_id",
+                "info_hash",
                 "params",
                 "kind_values",
                 "fixed_params",
@@ -120,6 +126,9 @@ impl Mapping {
             title: single("title")?,
             urls: paths(v, "url", MAX_ALTERNATIVES)?,
             seeders: single("seeders")?,
+            details: single("details")?,
+            tmdb_id: single("tmdb_id")?,
+            info_hash: single("info_hash")?,
             ..Self::default()
         };
         if let Some(params) = v.get("params") {
@@ -242,6 +251,34 @@ impl Mapping {
                 .or_else(|| item.get("seeders_count").and_then(count)),
         }
         .unwrap_or(0)
+    }
+
+    /// Whether items carry the details page, TMDB ID and hash that an IRC
+    /// announcement lookup must confirm.
+    pub(crate) fn describes_details(&self) -> bool {
+        self.details.is_some() && self.tmdb_id.is_some() && self.info_hash.is_some()
+    }
+
+    /// The details page, TMDB IDs and info hashes of one item, as text. A
+    /// missing or non-scalar field yields nothing, which a lookup rejects.
+    pub(crate) fn details<'a>(
+        &self,
+        item: &'a Value,
+    ) -> (Option<&'a str>, Vec<String>, Vec<String>) {
+        let scalar = |path: &Option<Path>| -> Vec<String> {
+            match path.as_ref().and_then(|path| path.find(item)) {
+                Some(Value::String(text)) => vec![text.clone()],
+                Some(value) => value.as_u64().map(|n| n.to_string()).into_iter().collect(),
+                None => Vec::new(),
+            }
+        };
+        (
+            self.details
+                .as_ref()
+                .and_then(|path| path.find(item)?.as_str()),
+            scalar(&self.tmdb_id),
+            scalar(&self.info_hash),
+        )
     }
 }
 

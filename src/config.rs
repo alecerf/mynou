@@ -515,11 +515,12 @@ pub fn from_json(v: &Value, base: &Path) -> Result<Config> {
         .iter()
         .filter_map(|s| s.announcement_lookup.as_ref())
     {
-        if !sources
-            .iter()
-            .any(|s| s.kind == "torznab" && s.options.id.as_deref() == Some(&lookup.indexer))
-        {
-            return Err("IRC: lookup_indexer must name a Torznab indexer with that id".into());
+        if !sources.iter().any(|s| {
+            s.options.id.as_deref() == Some(&lookup.indexer)
+                && (s.kind == "torznab"
+                    || (s.kind == "json" && s.options.mapping.describes_details()))
+        }) {
+            return Err("IRC: lookup_indexer must name a Torznab indexer, or a JSON indexer whose mapping has details, tmdb_id and info_hash, with that id".into());
         }
     }
     Ok(Config {

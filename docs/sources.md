@@ -105,14 +105,17 @@ A `mapping` is a section of a `json` source. Every key is optional:
 }
 ```
 
-- `results`, `title`, `url` and `seeders` are dot-separated paths of up to eight
+- `results`, `title`, `url`, `seeders`, `details`, `tmdb_id` and `info_hash`
+  are dot-separated paths of up to eight
   parts through objects; a numeric part picks an array element (`links.0`).
   `url` accepts up to four paths and uses the first that holds a text value.
   Each part is made of letters, digits, `_` or `-`, so a key with a space or a
   dot cannot be mapped. An address that starts with `/` is resolved against the
   source's origin; any other relative address is skipped, like an entry without
   a title or without a valid magnet or HTTP(S) address. `seeders` may be a
-  number or numeric text (missing means 0).
+  number or numeric text (missing means 0). `details`, `tmdb_id` (text or a
+  number) and `info_hash` are read only by an
+  [IRC announcement lookup](#bracketed-announcements-resolved-by-lookup).
 - `params` renames what Mynou sends: `query`, `kind`, `year`, `season`,
   `episode`, `absolute` and `api_key` map to your parameter name, and an empty
   name leaves that parameter out. `tmdb_id` is sent only when you name it: a
@@ -407,8 +410,10 @@ The `bracketed` format reads that grammar. The first group can be any tag (`NEW`
 }
 ```
 
-- `lookup_indexer` is the `id` of a configured `torznab` indexer for the same
-  tracker, directly or through an aggregator such as Prowlarr.
+- `lookup_indexer` is the `id` of a configured indexer for the same tracker:
+  a `torznab` indexer, or a `json` indexer whose `mapping` names the
+  `details`, `tmdb_id` and `info_hash` fields. A JSON lookup sends the release
+  name as its `query` role, with only its fixed parameters and API key.
 - `details_prefix` is the HTTPS address of the tracker's release pages, ending
   with `/`. The announced address must be exactly this prefix followed by a
   decimal ID.
@@ -417,8 +422,9 @@ The `bracketed` format reads that grammar. The first group can be any tag (`NEW`
 
 A line is first only an **unverified candidate** held in memory. Mynou then
 searches the indexer for the release name and keeps the single item whose
-`comments` (details page) is the announced address. That item must carry one
-`tmdbid` and one `infohash`, either 40 or 64 hexadecimal digits or their
+`comments` (details page, or the mapped `details` field) is the announced
+address. That item must carry one `tmdbid` and one `infohash` (the mapped
+`tmdb_id` and `info_hash`), either 40 or 64 hexadecimal digits or their
 hexadecimal ASCII encoding, as some aggregators return them. The
 TMDB catalog (`catalog` in `mynou.json`) then supplies the canonical title and year. Only then does
 the announcement enter the history, with the same duplicate detection, rules,
@@ -436,7 +442,8 @@ A `bracketed` source can also acquire with `grab` or `request` rules, without
 a `magnet_template`. That suits private trackers, whose torrents
 use neither DHT nor PEX. Once an announcement is routed to an admitted job,
 Mynou searches the indexer again and keeps the single item with the same
-decoded hash. It downloads its `.torrent` from the enclosure, on the indexer's
+decoded hash. It downloads its `.torrent` from the enclosure (the mapped `url`
+of a JSON item), on the indexer's
 own origin with its authentication and without redirects, and checks that the
 metadata has the announced hash. It then stores it once as a private file
 (`irc-metainfo/<hash>.torrent`, mode 0600, in a 0700 directory of the store).

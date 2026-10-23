@@ -1,3 +1,11 @@
+## Added: Resolve bracketed IRC announcements through a JSON indexer
+
+A `json` indexer whose `mapping` names `details`, `tmdb_id` and `info_hash`
+can now serve as the `lookup_indexer` of a bracketed IRC source. Mynou searches
+it for the announced release, confirms the details page, catalog ID and hash,
+and downloads the private `.torrent` from the mapped link as for Torznab
+([details](/docs/sources.md#bracketed-announcements-resolved-by-lookup)).
+
 ## Added: Watch JSON indexer feeds
 
 A `json` source now accepts `"watch": {"enabled": true}`. Each poll sends only

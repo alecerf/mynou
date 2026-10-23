@@ -244,7 +244,7 @@ pub(crate) fn resolve(
         .find(|s| s.options.id.as_deref() == Some(&lookup.indexer))
         .ok_or("lookup_failed")?;
     let text = c.title.replace(['.', '_'], " ");
-    let entries = crate::integrations::torznab_details_before(source, &text, deadline)
+    let entries = crate::integrations::details_before(source, &text, deadline)
         .map_err(|_| "lookup_failed")?;
     let details = format!("{}{}", lookup.details_prefix, c.torrent_id);
     let mut found = entries.iter().filter(|e| e.details == details);
@@ -468,7 +468,7 @@ impl Engine {
             .iter()
             .find(|s| s.options.id.as_deref() == Some(&lookup.indexer))
             .ok_or_else(unavailable)?;
-        let entries = crate::integrations::torznab_details_before(
+        let entries = crate::integrations::details_before(
             source,
             &a.title.replace(['.', '_'], " "),
             deadline,

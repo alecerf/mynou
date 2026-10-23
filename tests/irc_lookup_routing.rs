@@ -111,7 +111,22 @@ fn feed(hash: &str, enclosure: &str) -> Vec<u8> {
 fn feed_empty() -> Vec<u8> {
     b"<?xml version=\"1.0\"?><rss><channel></channel></rss>".to_vec()
 }
-fn configuration(root: &Path, http: &str) -> Config {
+/// A UNIT3D-style JSON item: plain hash, numeric TMDB ID, absolute links.
+fn json_results(hash: &str, enclosure: &str) -> Vec<u8> {
+    let mut item = Value::object();
+    item.insert("name", NAME);
+    item.insert("details_link", format!("{PREFIX}41"));
+    item.insert("download_link", enclosure);
+    item.insert("tmdb_id", 603_u32);
+    item.insert("info_hash", hash);
+    let mut row = Value::object();
+    row.insert("attributes", item);
+    let mut v = Value::object();
+    v.insert("data", Value::Array(vec![row]));
+    json::stringify(&v).into_bytes()
+}
+const JSON_MAPPING: &str = r#"{"results":"data","title":"attributes.name","url":"attributes.download_link","details":"attributes.details_link","tmdb_id":"attributes.tmdb_id","info_hash":"attributes.info_hash","params":{"query":"name","kind":"","year":"","season":"seasonNumber","episode":"episodeNumber","absolute":"","api_key":"","tmdb_id":"tmdbId"},"fixed_params":{"perPage":"100"}}"#;
+fn configuration_with(root: &Path, http: &str, json_source: bool) -> Config {
     let mut v = transfer_support::configuration();
     v.insert("store_dir", root.join("jobs").to_str().unwrap());
     let mut settings = irc_support::settings("irc://127.0.0.1:1");
@@ -134,9 +149,12 @@ fn configuration(root: &Path, http: &str) -> Config {
     let mut indexer = Value::object();
     indexer.insert("id", "tracker");
     indexer.insert("name", "tracker");
-    indexer.insert("kind", "torznab");
+    indexer.insert("kind", if json_source { "json" } else { "torznab" });
     indexer.insert("url", format!("{http}/api"));
     indexer.insert("api_key_env", "MYNOU_ABSENT_IRC_LOOKUP_FIXTURE_KEY_334");
+    if json_source {
+        indexer.insert("mapping", json::parse(JSON_MAPPING).unwrap());
+    }
     v.insert("indexers", Value::Array(vec![indexer]));
     let catalog = v.get_mut("catalog").unwrap();
     catalog.insert("enabled", true);
@@ -167,6 +185,9 @@ struct Setup {
 }
 /// One admitted request and one recorded, resolved announcement for it.
 fn setup() -> Setup {
+    setup_with(false)
+}
+fn setup_with(json_source: bool) -> Setup {
     let dir = Directory::new();
     let torrent = Torrent::single(
         &dir.0.join("source"),
@@ -174,7 +195,7 @@ fn setup() -> Setup {
         include_bytes!("../examples/demo.mp4").to_vec(),
     );
     let fixture = Fixture::new();
-    let cfg = configuration(&dir.0.join("engine"), &fixture.url);
+    let cfg = configuration_with(&dir.0.join("engine"), &fixture.url, json_source);
     fixture.route(
         "/3/movie/603",
         200,
@@ -185,8 +206,13 @@ fn setup() -> Setup {
         fixture.url
     );
     // The ordinary search finds nothing, so the admitted job waits for IRC.
-    fixture.route("/api", 200, feed_empty());
-    fixture.route("/api?t=search", 200, feed(&torrent.id, &download));
+    if json_source {
+        fixture.route("/api", 200, br#"{"data":[]}"#.to_vec());
+        fixture.route("/api?name=", 200, json_results(&torrent.id, &download));
+    } else {
+        fixture.route("/api", 200, feed_empty());
+        fixture.route("/api?t=search", 200, feed(&torrent.id, &download));
+    }
     let engine = Engine::open(cfg.clone()).unwrap();
     // Neither the submission's result nor its error is formatted: the catalog
     // credential reaches it. The admitted job is read back from the store.
@@ -238,7 +264,61 @@ fn files_containing(root: &Path, needle: &[u8], found: &mut Vec<String>) {
 
 #[test]
 fn a_private_release_downloads_through_the_verified_indexer_metainfo() {
-    let s = setup();
+    private_release_downloads(setup());
+}
+
+#[test]
+fn a_json_indexer_mapping_details_resolves_and_downloads_the_release() {
+    let s = setup_with(true);
+    // The lookup searches the release name, with dots as spaces.
+    assert_eq!(
+        s.fixture
+            .hits("/api?name=Fixture%20Movie%202024%201080p%20mp4&perPage=100"),
+        1
+    );
+    private_release_downloads(s);
+}
+
+#[test]
+fn a_json_lookup_indexer_needs_details_identity_and_hash_paths() {
+    let dir = Directory::new();
+    let mut v = transfer_support::configuration();
+    v.insert("store_dir", dir.0.join("jobs").to_str().unwrap());
+    let mut settings = irc_support::settings("irc://127.0.0.1:1");
+    let Value::Array(sources) = settings.get_mut("sources").unwrap() else {
+        panic!()
+    };
+    let mut categories = Value::object();
+    categories.insert("Films", "movie");
+    let mut format = Value::object();
+    format.insert("type", "bracketed");
+    format.insert("lookup_indexer", "tracker");
+    format.insert("details_prefix", PREFIX);
+    format.insert("categories", categories);
+    sources[0].insert("announcement_format", format);
+    v.insert("irc", settings);
+    for missing in ["", "details", "tmdb_id", "info_hash"] {
+        let mut mapping = json::parse(JSON_MAPPING).unwrap();
+        let Value::Object(fields) = &mut mapping else {
+            panic!()
+        };
+        fields.remove(missing);
+        let mut indexer = Value::object();
+        indexer.insert("id", "tracker");
+        indexer.insert("name", "tracker");
+        indexer.insert("kind", "json");
+        indexer.insert("url", "http://127.0.0.1:9/api");
+        indexer.insert("mapping", mapping);
+        v.insert("indexers", Value::Array(vec![indexer]));
+        assert_eq!(
+            config::from_json(&v, &dir.0).is_ok(),
+            missing.is_empty(),
+            "{missing}"
+        );
+    }
+}
+
+fn private_release_downloads(s: Setup) {
     let seed = Seeder::open(&s.dir.0.join("seed"), &[&s.torrent]);
     let port = seed.client.listen_port();
     let mut peers = vec![127, 0, 0, 1];
