@@ -88,6 +88,7 @@ pub(crate) struct Mapping {
     title: Option<Path>,
     urls: Vec<Path>,
     seeders: Option<Path>,
+    size: Option<Path>,
     details: Option<Path>,
     tmdb_id: Option<Path>,
     info_hash: Option<Path>,
@@ -109,6 +110,7 @@ impl Mapping {
                 "title",
                 "url",
                 "seeders",
+                "size",
                 "details",
                 "tmdb_id",
                 "info_hash",
@@ -126,6 +128,7 @@ impl Mapping {
             title: single("title")?,
             urls: paths(v, "url", MAX_ALTERNATIVES)?,
             seeders: single("seeders")?,
+            size: single("size")?,
             details: single("details")?,
             tmdb_id: single("tmdb_id")?,
             info_hash: single("info_hash")?,
@@ -251,6 +254,15 @@ impl Mapping {
                 .or_else(|| item.get("seeders_count").and_then(count)),
         }
         .unwrap_or(0)
+    }
+
+    /// Advertised payload bytes, when mapped and positive.
+    pub(crate) fn size(&self, item: &Value) -> Option<u64> {
+        self.size
+            .as_ref()
+            .and_then(|path| path.find(item))
+            .and_then(count)
+            .filter(|size| *size > 0)
     }
 
     /// Whether items carry the details page, TMDB ID and hash that an IRC

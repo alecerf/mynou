@@ -250,7 +250,33 @@ struct Fixture {
     nfo: Vec<u8>,
 }
 
+/// The same items as a JSON response read through a mapping.
+fn json_items(items: &[Item]) -> String {
+    let rows: Vec<Value> = items
+        .iter()
+        .map(|(_, title, key, size, hash)| {
+            let mut row = Value::object();
+            row.insert("name", *title);
+            row.insert("download", format!("/dl/{key}"));
+            if let Some(size) = size {
+                row.insert("bytes", size.to_string());
+            }
+            if let Some(hash) = hash {
+                row.insert("hash", hash.to_ascii_uppercase());
+            }
+            row
+        })
+        .collect();
+    let mut v = Value::object();
+    v.insert("results", Value::Array(rows));
+    json::stringify(&v)
+}
+
 fn fixture(indexer: &Indexer) -> Fixture {
+    fixture_with(indexer, false)
+}
+
+fn fixture_with(indexer: &Indexer, json_source: bool) -> Fixture {
     let mut scratch = Scratch::new();
     scratch.0 = scratch.0.canonicalize().unwrap();
     let video = content(3 * BLOCK + 77, 1);
@@ -268,10 +294,15 @@ fn fixture(indexer: &Indexer) -> Fixture {
         panic!("downloads must be an object");
     };
     downloads.insert("seed".into(), true.into());
+    let format = if json_source {
+        r#""kind":"json","mapping":{"title":"name","url":"download","size":"bytes","info_hash":"hash","params":{"kind":"","year":""},"fixed_params":{"limit":"100"}}"#
+    } else {
+        r#""kind":"torznab""#
+    };
     settings.insert(
         "indexers",
         json::parse(&format!(
-            r#"[{{"name":"fixture","kind":"torznab","url":"{}/api","id":"tracker-b","api_key_env":"MYNOU_DISCOVERY_FIXTURE_KEY","cross_seed":{{"enabled":true}}}}]"#,
+            r#"[{{"name":"fixture",{format},"url":"{}/api","id":"tracker-b","api_key_env":"MYNOU_DISCOVERY_FIXTURE_KEY","cross_seed":{{"enabled":true}}}}]"#,
             indexer.url
         ))
         .unwrap(),
@@ -442,6 +473,49 @@ fn feeds_and_completion_searches_register_only_verified_layouts_once() {
         json::stringify(&paused)
     );
     assert!(transfer(&engine, &late_id).is_none());
+    drop(f.scratch);
+}
+
+#[test]
+fn a_json_source_feeds_and_searches_with_its_mapped_size_and_hash() {
+    let indexer = Indexer::open();
+    let f = fixture_with(&indexer, true);
+    let (good, good_id) = metainfo(NAME, &[("info.nfo", &f.nfo), ("ep.mkv", &f.video)], "B");
+    let (subset, subset_id) = metainfo(NAME, &[("ep.mkv", &f.video)], "E");
+    indexer.publish("good", &good);
+    indexer.publish("subset", &subset);
+    *indexer.feed.lock().unwrap() = json_items(&[
+        ("", TITLE, "good", None, None),
+        ("", TITLE, "missing", Some(1 << 40), None),
+    ]);
+    *indexer.search.lock().unwrap() = json_items(&[
+        ("", TITLE, "subset", None, None),
+        ("", TITLE, "good", None, Some(&good_id)),
+    ]);
+    let engine = open(&f);
+    let report = engine.cross_seed_discover(&Run::default()).unwrap();
+    let text = json::stringify(&report);
+    assert_eq!(number(&report, "added"), 2, "{text}");
+    assert_eq!(number(&report, "searches"), 1, "{text}");
+    // The oversized entry and the search result known by its hash were never
+    // downloaded.
+    assert_eq!(indexer.downloads(), 2);
+    let lines = indexer.lines.lock().unwrap().clone();
+    assert!(
+        lines.iter().any(|l| l.starts_with("GET /api?limit=100 ")),
+        "{lines:?}"
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.starts_with("GET /api?q=Show%20S01E01%201080p%20WEB-GRP&limit=100 ")),
+        "{lines:?}"
+    );
+    for id in [&good_id, &subset_id] {
+        wait(|| transfer(&engine, id).is_some_and(|t| flag(&t, "ready")));
+    }
+    assert_eq!(data_dirs(&f.cfg.downloads.data_dir), 1);
+    drop(engine);
     drop(f.scratch);
 }
 

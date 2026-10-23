@@ -1064,21 +1064,9 @@ fn json_details_before(
     deadline: Instant,
 ) -> Result<Vec<DetailsEntry>> {
     let mapping = &source.options.mapping;
-    let mut pairs: Vec<(&str, String)> = Vec::new();
-    if let Some(name) = mapping.parameter("query") {
-        pairs.push((name, text.to_owned()));
-    }
-    pairs.extend(mapping.fixed().iter().map(|(n, v)| (n.as_str(), v.clone())));
-    if let Some(name) = mapping.parameter("api_key")
-        && let Some(key) = optional_secret(&source.api_key_env)?
-    {
-        pairs.push((name, key));
-    }
-    let url = query(&source.url, &pairs)?;
-    let response = crate::indexers::fetch(source, &url, "application/json", deadline)?;
-    remaining_search_time(deadline)?;
+    let body = json_text_search(source, Some(text), deadline)?;
     let entries = (|| {
-        let text = std::str::from_utf8(&response.body).map_err(|_| "Indexer: invalid UTF-8")?;
+        let text = std::str::from_utf8(&body).map_err(|_| "Indexer: invalid UTF-8")?;
         let value = json::parse(text)?;
         let items = mapping
             .list(&value)
@@ -1101,6 +1089,27 @@ fn json_details_before(
     })();
     crate::indexers::parsed(source, entries.is_ok());
     entries
+}
+
+/// A JSON request with the text (when given) as its query role, the fixed
+/// parameters and the API key; no catalog role is sent.
+fn json_text_search(source: &Source, text: Option<&str>, deadline: Instant) -> Result<Vec<u8>> {
+    let mapping = &source.options.mapping;
+    let mut pairs: Vec<(&str, String)> = Vec::new();
+    if let (Some(name), Some(text)) = (mapping.parameter("query"), text) {
+        pairs.push((name, text.to_owned()));
+    }
+    pairs.extend(mapping.fixed().iter().map(|(n, v)| (n.as_str(), v.clone())));
+    if let Some(name) = mapping.parameter("api_key")
+        && let Some(key) = optional_secret(&source.api_key_env)
+            .map_err(|_| "Indexer: authentication unavailable")?
+    {
+        pairs.push((name, key));
+    }
+    let url = query(&source.url, &pairs)?;
+    let response = crate::indexers::fetch(source, &url, "application/json", deadline)?;
+    remaining_search_time(deadline).map_err(|_| "Indexer: request budget expired")?;
+    Ok(response.body)
 }
 
 fn torznab_details_before(
@@ -1456,27 +1465,21 @@ fn json_releases(value: &Value, base: &str, mapping: &Mapping) -> Result<Vec<Rel
     if items.len() > MAX_ITEMS {
         return Err("JSON indexer: too many results".into());
     }
-    let mut out = Vec::new();
-    for item in items {
-        let Some(title) = mapping.title(item) else {
-            continue;
-        };
-        if title.len() > 2_048 {
-            continue;
-        }
-        let Some(url) = mapping.url(item) else {
-            continue;
-        };
-        let Ok(url) = acquisition_url(url, base) else {
-            continue;
-        };
-        out.push(Release {
-            title: title.into(),
-            url,
-            seeders: mapping.seeders(item),
-        });
-    }
-    Ok(out)
+    Ok(items
+        .iter()
+        .filter_map(|item| json_release(item, base, mapping))
+        .collect())
+}
+
+/// An item without a bounded title or a valid acquisition address is skipped.
+fn json_release(item: &Value, base: &str, mapping: &Mapping) -> Option<Release> {
+    let title = mapping.title(item).filter(|title| title.len() <= 2_048)?;
+    let url = acquisition_url(mapping.url(item)?, base).ok()?;
+    Some(Release {
+        title: title.into(),
+        url,
+        seeders: mapping.seeders(item),
+    })
 }
 
 pub(crate) fn probe_source(source: &Source, request: &Request, deadline: Instant) -> bool {
@@ -2704,29 +2707,26 @@ pub(crate) fn poll_feed(
 /// One query-less read of a source's newest entries. A JSON source sends only
 /// its fixed parameters and API key, so its mapping decides the ordering.
 fn feed_response(source: &Source, deadline: Instant) -> std::result::Result<Vec<u8>, &'static str> {
+    if source.kind == "json" {
+        return json_text_search(source, None, deadline).map_err(|error| fetch_outcome(&error));
+    }
     let mut pairs: Vec<(&str, String)> = Vec::new();
-    let (key, accept) = match source.kind.as_str() {
-        "json" => {
-            let mapping = &source.options.mapping;
-            pairs.extend(mapping.fixed().iter().map(|(n, v)| (n.as_str(), v.clone())));
-            (mapping.parameter("api_key"), "application/json")
-        }
-        "torznab" => {
-            pairs.push(("t", "search".into()));
-            (Some("apikey"), "application/rss+xml, application/xml")
-        }
-        "rss" => (Some("apikey"), "application/rss+xml, application/xml"),
+    match source.kind.as_str() {
+        "torznab" => pairs.push(("t", "search".into())),
+        "rss" => {}
         _ => return Err("unsupported_format"),
-    };
-    if let Some(name) = key
-        && let Some(key) =
-            optional_secret(&source.api_key_env).map_err(|_| "authentication_failed")?
-    {
-        pairs.push((name, key));
+    }
+    if let Some(key) = optional_secret(&source.api_key_env).map_err(|_| "authentication_failed")? {
+        pairs.push(("apikey", key));
     }
     let url = query(&source.url, &pairs).map_err(|_| "request_failed")?;
-    let response = crate::indexers::fetch(source, &url, accept, deadline)
-        .map_err(|error| fetch_outcome(&error))?;
+    let response = crate::indexers::fetch(
+        source,
+        &url,
+        "application/rss+xml, application/xml",
+        deadline,
+    )
+    .map_err(|error| fetch_outcome(&error))?;
     remaining_search_time(deadline).map_err(|_| "timed_out")?;
     Ok(response.body)
 }
@@ -2751,6 +2751,7 @@ pub(crate) fn offers_before(
 ) -> std::result::Result<Vec<Offer>, &'static str> {
     match (source.kind.as_str(), text) {
         ("torznab", _) | ("rss", None) => {}
+        ("json", _) => return json_offers_before(source, text, deadline),
         _ => return Err("unsupported_format"),
     }
     let mut pairs: Vec<(&str, String)> = Vec::new();
@@ -2788,6 +2789,48 @@ pub(crate) fn offers_before(
             info_hash: item.info_hash,
         })
         .collect())
+}
+
+fn json_offers_before(
+    source: &Source,
+    text: Option<&str>,
+    deadline: Instant,
+) -> std::result::Result<Vec<Offer>, &'static str> {
+    let body = json_text_search(source, text, deadline).map_err(|error| fetch_outcome(&error))?;
+    let mapping = &source.options.mapping;
+    let parsed = (|| {
+        let value = json::parse(std::str::from_utf8(&body).map_err(|_| "Indexer: invalid UTF-8")?)?;
+        let items = mapping
+            .list(&value)
+            .ok_or("JSON indexer: missing results/items list")?;
+        if items.len() > MAX_ITEMS {
+            return Err("JSON indexer: too many results".to_owned());
+        }
+        let mut out = Vec::new();
+        for item in items {
+            if out.len() == MAX_FEED_ENTRIES {
+                break;
+            }
+            let Some(release) = json_release(item, &source.url, mapping) else {
+                continue;
+            };
+            let (_, _, hashes) = mapping.details(item);
+            out.push(Offer {
+                id: entry_identity(None, &release),
+                title: release.title,
+                url: release.url,
+                size: mapping.size(item),
+                info_hash: match hashes.as_slice() {
+                    [hash] => Some(hash.trim().to_ascii_lowercase())
+                        .filter(|v| v.len() == 40 && v.bytes().all(|b| b.is_ascii_hexdigit())),
+                    _ => None,
+                },
+            });
+        }
+        Ok(out)
+    })();
+    crate::indexers::parsed(source, parsed.is_ok());
+    parsed.map_err(|_: String| "parse_rejected")
 }
 
 /// A watched release that satisfies the request's identity and profile gates.
