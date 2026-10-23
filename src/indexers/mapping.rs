@@ -9,7 +9,8 @@ const MAX_ALTERNATIVES: usize = 4;
 const MAX_FIXED: usize = 8;
 const MAX_VALUE: usize = 256;
 /// Request roles that can be renamed or omitted, with the name used by default.
-const ROLES: [(&str, &str); 7] = [
+/// `tmdb_id` is sent only when configured.
+const ROLES: [(&str, &str); 8] = [
     ("query", "q"),
     ("kind", "kind"),
     ("year", "year"),
@@ -17,6 +18,7 @@ const ROLES: [(&str, &str); 7] = [
     ("episode", "episode"),
     ("absolute", "absolute"),
     ("api_key", "apikey"),
+    ("tmdb_id", ""),
 ];
 const LEGACY_URLS: [&str; 5] = ["download_url", "magnet", "magnet_url", "url", "link"];
 

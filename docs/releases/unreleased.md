@@ -1,3 +1,11 @@
+## Changed: Search JSON indexers by catalog ID and send only meaningful numbers
+
+A JSON `mapping` can name a `tmdb_id` parameter: requests with a TMDB ID then
+search by that ID instead of the title text. JSON searches now send `season`
+only for episodes and seasons and `episode` only for episodes, as Torznab
+searches do, instead of zeros for movies
+([details](/docs/sources.md#connecting-any-indexer)).
+
 ## Added: Discover cross-seeds automatically from feeds and completed transfers
 
 An RSS or Torznab source can opt in with `"cross_seed": {"enabled": true}`.
