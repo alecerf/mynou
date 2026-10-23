@@ -619,7 +619,7 @@ fn watch_configuration_is_strict_and_routing_needs_downloads() {
         config::from_json(&configuration(&dir, vec![s]), &dir.0)
     };
     assert!(build(&|_| {}).is_ok());
-    assert!(build(&|s| s.insert("kind", "json")).is_err());
+    assert!(build(&|s| s.insert("kind", "json")).is_ok());
     assert!(build(&|s| s.get_mut("watch").unwrap().insert("interval_secs", 59_u32)).is_err());
     assert!(
         build(&|s| s
@@ -673,6 +673,49 @@ fn torznab_polls_the_latest_feed_with_its_seeders() {
     let report = engine.feeds_poll(None, true).unwrap();
     assert_eq!(num(first(&report), "routed"), 1);
     assert_eq!(stored(&engine, &job.id).acquisition_url, Some(magnet(2)));
+}
+
+#[test]
+fn json_polls_only_its_fixed_parameters_and_routes_new_mapped_entries() {
+    let dir = Directory::new();
+    let entry = |title: &str, n: u64| {
+        format!(
+            r#"{{"attributes":{{"name":"{title}","download_link":"{}","seeders":"6"}}}}"#,
+            magnet(n)
+        )
+    };
+    let document = |items: &[String]| format!(r#"{{"data":[{}]}}"#, items.join(","));
+    let feed = Feed::open(document(&[entry("Fixture Movie 2024 1080p WEB-DL", 1)]));
+    let mut s = source("feed-a", &feed, "json");
+    s.insert(
+        "mapping",
+        json::parse(
+            r#"{"results":"data","title":"attributes.name","url":"attributes.download_link","seeders":"attributes.seeders","params":{"query":"name","api_key":""},"fixed_params":{"perPage":"100","sortField":"created_at","sortDirection":"desc"}}"#,
+        )
+        .unwrap(),
+    );
+    let engine = open(&dir, vec![s]);
+    let job = submit(&engine, movie("Fixture Movie", 7));
+    let report = engine.feeds_poll(None, true).unwrap();
+    assert_eq!(outcome(first(&report)), "ok");
+    assert_eq!(
+        feed.lines.lock().unwrap()[0],
+        "GET /feed?perPage=100&sortDirection=desc&sortField=created_at HTTP/1.1"
+    );
+    let feeds = engine.feeds().unwrap();
+    assert_eq!(text(first(&feeds), "kind"), "json");
+    feed.set(document(&[
+        entry("Fixture Movie 2024 2160p WEB-DL", 2),
+        r#"{"attributes":{"name":"Missing link"}}"#.into(),
+        entry("Fixture Movie 2024 1080p WEB-DL", 1),
+    ]));
+    let report = engine.feeds_poll(None, true).unwrap();
+    assert_eq!(num(first(&report), "routed"), 1);
+    assert_eq!(num(first(&report), "skipped"), 1);
+    assert_eq!(stored(&engine, &job.id).acquisition_url, Some(magnet(2)));
+    feed.set("{\"data\":".into());
+    let report = engine.feeds_poll(None, true).unwrap();
+    assert_eq!(outcome(first(&report)), "parse_rejected");
 }
 
 #[test]

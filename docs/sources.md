@@ -1,7 +1,7 @@
 # Sources: indexers and IRC announcements
 
 Mynou finds releases in three ways. **Indexers** are searched when a request
-needs a release: RSS, JSON and Torznab endpoints. An RSS or Torznab indexer can
+needs a release: RSS, JSON and Torznab endpoints. An indexer can
 also be **watched**: Mynou polls its feed for new releases and routes them to
 requests that already wait. **IRC announcement channels** push new releases as
 they appear; rules decide whether to keep them for review or route them to
@@ -179,8 +179,8 @@ For a Gluetun migration, explicitly protect every corresponding source.
 
 ### Watching a feed
 
-Watching is opt-in per RSS or Torznab source and independent of IRC and of the
-per-title search:
+Watching is opt-in per RSS, Torznab or JSON source and independent of IRC and
+of the per-title search:
 
 ```json
 {
@@ -193,9 +193,13 @@ per-title search:
 ```
 
 - `interval_secs` accepts 60 to 86,400 (default 900). At most 64 sources can be
-  watched. Watching needs downloads enabled, and a JSON source cannot be watched.
+  watched. Watching needs downloads enabled.
 - Each poll fetches the newest entries once: a Torznab source gets `t=search`
-  without a query and an RSS source is requested as configured. The source's
+  without a query and an RSS source is requested as configured. A JSON source
+  receives only its `fixed_params` and API key, without any search role, so
+  those parameters must make it list its newest releases first (for example a
+  sort by creation date and a page size); its entries are read with its
+  `mapping` and identified by title and download address. The source's
   authentication, `min_interval_ms`, busy state, `429` rest and `pause` apply as
   for a search. A search that finds the source busy fails at once, and a poll
   that finds it busy tries again after ten seconds.
@@ -229,7 +233,8 @@ per-title search:
 mynou feeds --config ./mynou.json
 ```
 
-`mynou feeds` and `GET /api/feeds` report, for every RSS or Torznab source,
+`mynou feeds` and `GET /api/feeds` report, for every RSS or Torznab source and
+every watched JSON source,
 whether it is watched and active, whether it has a baseline, when it last
 succeeded, how many polls, failures and new entries it saw, the last outcome
 (`ok`, `busy`, `disabled`, `rate_limited`, `authentication_failed`,

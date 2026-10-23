@@ -52,7 +52,7 @@ impl Authentication {
         }
     }
 }
-/// Opt-in bounded polling of an RSS or Torznab feed for new releases.
+/// Opt-in bounded polling of an RSS, Torznab or JSON feed for new releases.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Watch {
     pub enabled: bool,
@@ -191,8 +191,8 @@ fn watch(v: &Value) -> Result<Watch> {
         interval_secs: integer(section, "interval_secs", 900, 86_400)?,
     };
     let kind = v.get("kind").and_then(Value::as_str).unwrap_or("json");
-    if watch.interval_secs < 60 || (watch.enabled && !matches!(kind, "rss" | "torznab")) {
-        return Err("Indexer: watching requires an rss or torznab source and an interval of 60 to 86400 seconds".into());
+    if watch.interval_secs < 60 || (watch.enabled && !matches!(kind, "rss" | "torznab" | "json")) {
+        return Err("Indexer: watching requires an rss, torznab or json source and an interval of 60 to 86400 seconds".into());
     }
     Ok(watch)
 }

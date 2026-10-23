@@ -161,7 +161,7 @@ Indexers:
 
 Watched feeds:
 
-- At most 64 watched RSS or Torznab sources, polled every 60 to 86,400 seconds
+- At most 64 watched RSS, Torznab or JSON sources, polled every 60 to 86,400 seconds
   (default 900), at most four per pass, with a 30-second budget per poll.
 - A poll reads at most 500 entries, considers 200 unseen ones, and routes at
   most 32 jobs and 32 upgrades. The window keeps 1,024 identities per source.
