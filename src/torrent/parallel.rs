@@ -62,7 +62,7 @@ fn peer_limit(config: &DownloadConfig, meta: &Meta) -> usize {
         .max(1);
     config
         .max_peers
-        .min((CONNECTION_BUDGET / config.max_active).max(1))
+        .min((CONNECTION_BUDGET / config.download_slots()).max(1))
         .min((WORKER_MEMORY_BUDGET / footprint).max(1))
 }
 
@@ -911,6 +911,7 @@ mod tests {
             dht: false,
             pex: false,
             max_active: active,
+            max_seeding: 0,
             max_peers: 8,
         }
     }

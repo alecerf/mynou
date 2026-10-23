@@ -1146,6 +1146,7 @@ mod tests {
                 dht: false,
                 pex: false,
                 max_active: 1,
+                max_seeding: 0,
                 max_peers: 1,
             };
             mkdir_private(&config.state_dir).unwrap();
@@ -1544,6 +1545,7 @@ mod growth_report {
             dht: false,
             pex: false,
             max_active: 1,
+            max_seeding: 0,
             max_peers: 1,
         };
         mkdir_private(&config.state_dir).unwrap();

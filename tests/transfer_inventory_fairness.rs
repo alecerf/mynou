@@ -23,6 +23,7 @@ impl Fixture {
             dht: false,
             pex: false,
             max_active: 1,
+            max_seeding: 0,
             max_peers: 1,
         };
         fs::create_dir_all(&config.state_dir).unwrap();

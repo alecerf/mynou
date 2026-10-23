@@ -4,9 +4,11 @@ Inventory size and concurrently active work are different quantities. This
 fixture's 500 retained torrents are a **measurement point**, not a proposed
 inventory limit. A user setting of zero meaning no configured queue limit is
 a product requirement, not a claim that memory, CPU or peer capacity is infinite.
-The current implementation rejects `downloads.max_active = 0` and has no
-independent user-configured active-seed queue limit. Do not advertise that
-requirement as delivered by this harness.
+The [queue controls](transfers.md#peers-and-concurrency) accept zero for both
+`downloads.max_active` and `downloads.max_seeding`. Native regressions exercise
+concurrent zero-limit downloads and finite seed admission with priorities,
+pause, restart and queued-time accounting. The recorded run below predates
+these controls; it does not qualify their representative-load behavior.
 
 ## Native mixed-load stage
 
@@ -64,7 +66,8 @@ This stage must not close #342 alone. It does not yet exercise:
 
 - the owner's anonymized distribution or an accepted resource/response budget;
 - continuously overlapping seed traffic/acquisitions for large payloads or
-  fairness of slow/stalled torrents, or user-configured seed/download queues;
+  fairness of slow/stalled torrents, or the new configurable seed/download
+  queues at representative scale;
 - automatic cross-seeding, protected source polling and library/series
   monitoring in the same engine under this load;
 - authenticated HTTP API responsiveness or monitoring lag;
