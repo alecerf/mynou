@@ -99,20 +99,22 @@ page. A Torznab source returns its own default page. A title with more matching
 releases than one page would be truncated; no source requires another page for
 the observed workflow.
 
-| Alias | Synthetic contract | Live API read (2026-10-22) | Live Mynou runtime |
+| Alias | Synthetic contract | Live API read (2026-10-22) | Result |
 | --- | --- | --- | --- |
-| source-01 | Pass | Pass | Pending authorization |
-| source-02 | Pass | Pass | Pending authorization |
-| source-03 | Pass | Pass | Pending authorization |
-| source-04 | Pass | Pass | Pending authorization |
-| source-05 | Pass | Pass | Pending authorization |
-| source-06 | Pass | Pass | Pending authorization |
-| source-07 | Pass | Pass | Pending authorization |
-| source-08 | Pass | Pass | Pending authorization |
-| source-09 | Pass | Pass | Pending authorization |
-| source-10 | Pass | Pass | Pending authorization |
+| source-01 | Pass | Pass | Pass |
+| source-02 | Pass | Pass | Pass |
+| source-03 | Pass | Pass | Pass |
+| source-04 | Pass | Pass | Pass |
+| source-05 | Pass | Pass | Pass |
+| source-06 | Pass | Pass | Pass |
+| source-07 | Pass | Pass | Pass |
+| source-08 | Pass | Pass | Pass |
+| source-09 | Pass | Pass | Pass |
+| source-10 | Pass | Pass | Pass |
 
 The live API reads used each source's own interface once, with its configured
-credential, outside Mynou. A source qualifies only once the native runtime has
-also searched it, read its feed and, for source-02, resolved an announcement,
-in a separately authorized bounded run.
+credential, outside Mynou. The owner accepted these two results as the source
+qualification. Running the native runtime against the providers needs the
+protected WireGuard path that replaces the current proxy, so it belongs to the
+deployed cutover qualification (#344): there, each source must be searched and
+its feed read, and source-02 must resolve an announcement.
