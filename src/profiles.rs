@@ -447,25 +447,18 @@ impl ControlRequest {
     }
 }
 
-/// What a plan proposes for one title, and why an assignment stays unresolved.
-enum Outcome {
-    Change(Title, Option<String>),
-    Unresolved(Title, String, &'static str),
-}
-
-fn plan(config: &Config, request: &ControlRequest) -> Vec<Outcome> {
-    let known = |name: &str| config.selection.profiles.contains_key(name);
+/// The change a request proposes; an unknown profile is refused.
+fn plan(config: &Config, request: &ControlRequest) -> Result<Vec<(Title, Option<String>)>> {
     match (request.action.as_str(), &request.title) {
         ("set", Some(title)) => {
             let name = request.profile.clone().unwrap_or_default();
-            if known(&name) {
-                vec![Outcome::Change(*title, Some(name))]
-            } else {
-                vec![Outcome::Unresolved(*title, name, "unknown_profile")]
+            if !config.selection.profiles.contains_key(&name) {
+                return Err("Title profile: the selected profile is not configured".into());
             }
+            Ok(vec![(*title, Some(name))])
         }
-        ("clear", Some(title)) => vec![Outcome::Change(*title, None)],
-        _ => Vec::new(),
+        ("clear", Some(title)) => Ok(vec![(*title, None)]),
+        _ => Ok(Vec::new()),
     }
 }
 
@@ -582,73 +575,50 @@ pub fn control(
     store: &mut TitleProfiles,
     request: &ControlRequest,
 ) -> Result<Value> {
-    let outcomes = plan(config, request);
+    let planned = plan(config, request)?;
     let at = crate::store::now();
     let origin = "operator";
     let mut changes = Vec::new();
     let mut rows = Vec::new();
-    let mut unresolved = Vec::new();
     let mut counts = [0_u64; 4];
-    for outcome in &outcomes {
-        match outcome {
-            Outcome::Change(title, proposed) => {
-                let current = store.get(title)?.map(|b| b.profile);
-                let action = match (&current, proposed) {
-                    (a, b) if a == b => "unchanged",
-                    (None, Some(_)) => "bind",
-                    (Some(_), Some(_)) => "rebind",
-                    _ => "clear",
-                };
-                counts[match action {
-                    "unchanged" => 0,
-                    "bind" => 1,
-                    "rebind" => 2,
-                    _ => 3,
-                }] += 1;
-                let mut row = Value::object();
-                title.insert(&mut row);
-                row.insert(
-                    "current",
-                    current.clone().map_or(Value::Null, Value::String),
-                );
-                row.insert(
-                    "proposed",
-                    proposed.clone().map_or(Value::Null, Value::String),
-                );
-                row.insert("action", action);
-                if rows.len() < MAX_PAGE_ROWS {
-                    rows.push(row);
-                }
-                if action != "unchanged" {
-                    changes.push((
-                        *title,
-                        proposed.as_ref().map(|profile| Binding {
-                            title: *title,
-                            profile: profile.clone(),
-                            origin: origin.into(),
-                            updated_at: at,
-                        }),
-                    ));
-                }
-            }
-            Outcome::Unresolved(title, source, reason) => {
-                let mut row = Value::object();
-                title.insert(&mut row);
-                row.insert(
-                    "source_profile",
-                    crate::integrations::report_text(source, 128),
-                );
-                row.insert("reason", *reason);
-                row.insert(
-                    "current",
-                    store
-                        .get(title)?
-                        .map_or(Value::Null, |b| Value::String(b.profile)),
-                );
-                if unresolved.len() < MAX_PAGE_ROWS {
-                    unresolved.push(row);
-                }
-            }
+    for (title, proposed) in &planned {
+        let current = store.get(title)?.map(|b| b.profile);
+        let action = match (&current, proposed) {
+            (a, b) if a == b => "unchanged",
+            (None, Some(_)) => "bind",
+            (Some(_), Some(_)) => "rebind",
+            _ => "clear",
+        };
+        counts[match action {
+            "unchanged" => 0,
+            "bind" => 1,
+            "rebind" => 2,
+            _ => 3,
+        }] += 1;
+        let mut row = Value::object();
+        title.insert(&mut row);
+        row.insert(
+            "current",
+            current.clone().map_or(Value::Null, Value::String),
+        );
+        row.insert(
+            "proposed",
+            proposed.clone().map_or(Value::Null, Value::String),
+        );
+        row.insert("action", action);
+        if rows.len() < MAX_PAGE_ROWS {
+            rows.push(row);
+        }
+        if action != "unchanged" {
+            changes.push((
+                *title,
+                proposed.as_ref().map(|profile| Binding {
+                    title: *title,
+                    profile: profile.clone(),
+                    origin: origin.into(),
+                    updated_at: at,
+                }),
+            ));
         }
     }
     // The guard covers the request, the stored bindings and the profiles it names.
@@ -658,13 +628,6 @@ pub fn control(
     guard.insert("sequence", store.sequence()?.to_string());
     guard.insert("selection", config.selection.to_json());
     let plan_id = crate::requesters::digest(json::stringify(&guard).as_bytes());
-    let unresolved_count = outcomes
-        .iter()
-        .filter(|o| matches!(o, Outcome::Unresolved(..)))
-        .count();
-    if unresolved_count > 0 {
-        return Err("Title profile: the selected profile is not configured".into());
-    }
     if request.apply {
         if request.plan_id.as_deref() != Some(&plan_id) {
             return Err("Title profile: plan changed; preview again before applying".into());
@@ -679,9 +642,7 @@ pub fn control(
     for (name, count) in ["unchanged", "bind", "rebind", "clear"].iter().zip(counts) {
         v.insert(*name, Value::Number(count as f64));
     }
-    v.insert("unresolved_count", Value::Number(unresolved_count as f64));
     v.insert("changes", Value::Array(rows));
-    v.insert("unresolved", Value::Array(unresolved));
     v.insert(
         "effect",
         "Applies to work that has not selected a release and to later upgrade checks; \
