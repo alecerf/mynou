@@ -55,7 +55,12 @@ fn representative_load_report() {
     let library = directory.0.join("library");
     let mut inventory = torrents(&library, retained - 8, 4096, BLOCK);
     inventory.extend(torrents_from(&library, 8, 1 << 20, PIECE, retained - 8));
-    let config = download_config(&directory.0.join("subject"), true, 2, 4);
+    let download_limit =
+        std::env::var("MYNOU_REPRESENTATIVE_DOWNLOAD_LIMIT").map_or(2, |v| v.parse().unwrap());
+    let seed_limit =
+        std::env::var("MYNOU_REPRESENTATIVE_SEED_LIMIT").map_or(0, |v| v.parse().unwrap());
+    let mut config = download_config(&directory.0.join("subject"), true, download_limit, 4);
+    config.max_seeding = seed_limit;
     // All retained torrents have valid metainfo and payload, rather than being
     // synthetic index rows or hundreds of empty magnets.
     for torrent in &inventory {
@@ -82,6 +87,38 @@ fn representative_load_report() {
     let paused = &inventory[0].hash;
     subject.pause(paused).unwrap();
     subject.set_priority(paused, 7).unwrap();
+    // For a finite seed queue, offer the eight actual traffic targets first.
+    // The remaining retained payloads stay queued without losing readiness.
+    if seed_limit != 0 {
+        assert!(seed_limit >= 8);
+        for torrent in &inventory[retained - 8..] {
+            subject.set_priority(&torrent.hash, 10).unwrap();
+        }
+        wait_for(
+            Instant::now() + Duration::from_secs(60),
+            "finite seed admission",
+            || {
+                inventory[retained - 8..]
+                    .iter()
+                    .all(|t| subject.policy.seed_queue.allowed(&t.hash))
+            },
+        );
+        for torrent in &inventory[retained - 8..] {
+            subject.check(&torrent.hash).unwrap();
+            wait_for(
+                Instant::now() + Duration::from_secs(60),
+                "initial seed rehash",
+                || {
+                    subject
+                        .jobs
+                        .lock()
+                        .unwrap()
+                        .get(&torrent.hash)
+                        .is_some_and(|j| j.status.ready && !j.needs_rehash && !j.running)
+                },
+            );
+        }
+    }
     let began = Instant::now();
     let (cpu_before, _) = usage();
     let mut rounds = 0;
@@ -199,6 +236,15 @@ fn representative_load_report() {
             let at = Instant::now();
             drop(subject);
             subject = open(config.clone(), pair.client_network.clone());
+            wait_for(
+                Instant::now() + Duration::from_secs(60),
+                "restarted seed queue",
+                || {
+                    active_seeds
+                        .iter()
+                        .all(|t| subject.policy.seed_queue.allowed(&t.hash))
+                },
+            );
             // A restored ready flag alone is not proof that the worker
             // finished its restart rehash. Observe each seed after hydration.
             for torrent in active_seeds {
@@ -229,15 +275,15 @@ fn representative_load_report() {
             restarted = true;
         }
     }
-    verify(
-        &subject,
-        &inventory[1..],
-        Instant::now() + Duration::from_secs(300),
-    );
-    assert!(same_file(
-        &config.data_dir.join(paused).join(&inventory[0].name),
-        &inventory[0].file
-    ));
+    // Cold queued seeds must not be forced into active verification just to
+    // prove preservation. The admitted cohort was rehashed above; compare all
+    // retained payloads directly, including the deliberately paused torrent.
+    for torrent in &inventory {
+        assert!(same_file(
+            &config.data_dir.join(&torrent.hash).join(&torrent.name),
+            &torrent.file,
+        ));
+    }
     let (count, _, _) = subject.aggregate_stats().unwrap();
     assert_eq!(count, (retained + rounds * 2) as u64);
     let (cpu_after, rss) = usage();
@@ -249,6 +295,8 @@ fn representative_load_report() {
         ("active_seed_torrents", 8),
         ("concurrent_acquisitions", 2),
         ("max_peers", 4),
+        ("download_queue_limit", download_limit as u128),
+        ("seed_queue_limit", seed_limit as u128),
         ("rounds", rounds as u128),
         ("max_sampled_fds", max_fds as u128),
         (
