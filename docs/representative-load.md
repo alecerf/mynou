@@ -68,26 +68,31 @@ merely marked ready. Each round adds two retained transfers. Restart timing
 includes reopening and verifying the eight active seeds, not a full-inventory
 rehash. File descriptors are sampled at page calls, not continuously.
 
-## Remaining qualification
+## Qualification scope and owner acceptance
 
-This stage must not close #342 alone. It does not yet exercise:
+The historical Client stage alone does not qualify the full Engine. On
+2026-10-23, the owner explicitly selected the finite full Engine extension
+below as sufficient qualification for [#342](https://github.com/alecerf/mynou/issues/342):
+500 retained torrents, eight offered seed consumers, two acquisitions per
+round, independent 0/8 queues, at least ten minutes of mixed work, actual HTTP
+measurements, automation, monitoring and in-flight recovery. The issue may
+close after a successful exact-commit run, published evidence and the merged
+implementation with required checks satisfied. See
+[PR #355](https://github.com/alecerf/mynou/pull/355) for the evidence.
 
-- the owner's anonymized distribution or an accepted resource/response budget;
-- continuously overlapping seed traffic/acquisitions for large payloads or
-  fairness of slow/stalled torrents, or the new configurable seed/download
-  queues at representative scale;
-- automatic cross-seeding, protected source polling and library/series
-  monitoring in the same engine under this load;
-- authenticated HTTP API responsiveness or monitoring lag;
-- restart while transfers are in flight, tunnel renewal/loss/recovery or
-  NAT-PMP port changes during useful work;
-- provider or live-swarm operation, which remains separate from this native
-  synthetic experiment and from the final installation gate #344.
+That owner decision supersedes a private-deployment distribution and a
+separate numerical production resource budget as closure requirements for
+#342. The finite observation point remains distinct from a product capacity
+ceiling. Fixture deadlines remain test stop conditions, not service-level
+guarantees. Small payloads, controlled peers and whole-process measurements
+do not establish large-media, unthrottled or live-swarm throughput, fairness
+under hostile/stalled peers, or isolated Engine resource cost.
 
-A measured no-go should identify a reproducible capacity blocker. A successful
-finite run should report only the measured workload, with no unlimited-capacity
-or full replacement claim. Preserve #342 and #344 until their remaining
-acceptance evidence exists.
+The private migration manifest, provider/source operation, released binary,
+unattended deployed behavior and authorized cutover still belong to
+[#344](https://github.com/alecerf/mynou/issues/344). Parent #335 stays open
+until that installation gate succeeds. No failed or incomplete benchmark
+attempt may be counted as accepted evidence.
 
 ## Recorded finite run (2026-10-23)
 
@@ -158,7 +163,7 @@ allows 120 seconds for each finite round; this is a test liveness deadline,
 not an approved production response budget. Smoke mode checks one round and
 therefore does not qualify all three incidents.
 
-This extension supplies additional synthetic evidence. It does not establish
-the owner's private workload distribution, an agreed production resource
-budget, provider behavior or the final deployed installation gate #344.
-Record exact-commit results before changing any remaining #342 acceptance box.
+The owner accepted this finite synthetic experiment for #342. It does not
+establish a private workload distribution, a production resource guarantee,
+provider behavior or the final deployed installation gate #344. Record a
+successful exact-commit result and required checks before closing #342.
