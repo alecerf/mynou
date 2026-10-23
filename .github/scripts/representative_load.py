@@ -39,6 +39,8 @@ def main():
         parser.error("measurements require native macOS arm64")
     harness = args.harness.resolve(strict=True)
     retained, seconds = (16, 2) if args.smoke else (500, 600)
+    if args.output.exists() and any(args.output.iterdir()):
+        parser.error("output directory must be empty to preserve earlier evidence")
     args.output.mkdir(parents=True, exist_ok=True)
     environment = {
         "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),

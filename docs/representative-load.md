@@ -33,7 +33,8 @@ The observation window is 600 seconds, checked between complete rounds.
 The subject is restarted between rounds halfway through the window. The
 next round must seed through its replacement listener, while a paused
 transfer, its priority and all original payloads must survive. Every received
-payload is compared byte for byte; every round must complete in 60 seconds.
+payload is compared byte for byte; the concurrent peer phase of each round
+must complete in 60 seconds (source preparation is outside that deadline).
 This timeout is a fixture liveness check, not an agreed production service
 level. The setup and final verification can extend total process time.
 
