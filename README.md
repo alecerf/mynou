@@ -311,6 +311,7 @@ without tokens, private paths or media names.
 
 - [Architecture](docs/architecture.md): how a request flows through the modules.
 - [CI, releases and download verification](docs/validation.md).
+- [Plex-plus-Mynou cutover qualification](docs/stack-cutover.md).
 
 ## Build from source
 
