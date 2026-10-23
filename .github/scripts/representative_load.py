@@ -69,11 +69,11 @@ def main():
                f"{row['rounds']} verified rounds, {int(row['elapsed_us']) / 1e6:.2f} s.\n\n"
                f"Payload uploaded/downloaded: {int(row['uploaded_payload_bytes']) / 2**20:.0f} / "
                f"{int(row['downloaded_payload_bytes']) / 2**20:.0f} MiB. "
-               f"Listing p95/max: {int(row['page_p95_us']) / 1000:.2f} / {int(row['page_max_us']) / 1000:.2f} ms. "
+               f"Combined status/diagnostic probe p95/max: {int(row['page_p95_us']) / 1000:.2f} / {int(row['page_max_us']) / 1000:.2f} ms. "
                f"Restart plus selected seed rehash: {int(row['restart_rehash_us']) / 1e6:.2f} s. "
                f"Whole-process peak RSS: {row['peak_rss_bytes'] / 2**20:.2f} MiB.\n\n"
                "This measures a finite workload, not an inventory ceiling or a full #342 pass. "
-               "Listing is the native client page operation, not HTTP API latency.\n")
+               "Probe timing includes the native client page, descriptor sampling and consumer-worker locks; it is not isolated page or HTTP API latency.\n")
     (args.output / "summary.md").write_text(summary)
     print(summary, end="")
 
