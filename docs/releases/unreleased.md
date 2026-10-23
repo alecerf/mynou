@@ -499,3 +499,9 @@ an explicitly declared loopback TCP service; host name lookups, other TCP and
 undeclared UDP still fail. This adds bounded evidence for #224, which remains
 open for remaining races, engine-level load and the gated migration guide. See
 the [observation scope](../host-io-observer.md).
+
+## Changed: Measure the full Engine under retained torrent load
+
+The opt-in load harness can now run the Engine with authenticated HTTP API
+probes, synthetic automation and recovery checks during active downloads
+([details](/docs/representative-load.md#full-engine-extension), #342).

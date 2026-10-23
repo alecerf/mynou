@@ -1039,3 +1039,20 @@ fn forwarded_port_is_listened_on_in_the_tunnel_then_renewed_changed_and_lost() {
     drop(engine);
     drop(gateway);
 }
+
+/// Native load fixtures use a synthetic profile and the existing loopback owner.
+pub(crate) fn load_operator(config: &crate::config::Config, driver: HttpTunnel) -> Arc<Operator> {
+    let engine = Engine::open_for_management(config.clone()).unwrap();
+    engine.vpn_control(&import()).unwrap();
+    drop(engine);
+    let engine = Engine::open_for_management(config.clone()).unwrap();
+    engine.vpn_control(&body("enable-forwarding")).unwrap();
+    drop(engine);
+    let operator = Operator::load(&config.store_dir, false);
+    {
+        let mut state = operator.state.lock().unwrap();
+        state.gateway = Some(Ipv4Addr::new(10, 7, 0, 1));
+        state.driver = Some(driver);
+    }
+    operator
+}

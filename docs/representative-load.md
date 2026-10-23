@@ -7,8 +7,8 @@ a product requirement, not a claim that memory, CPU or peer capacity is infinite
 The [queue controls](transfers.md#peers-and-concurrency) accept zero for both
 `downloads.max_active` and `downloads.max_seeding`. Native regressions exercise
 concurrent zero-limit downloads and finite seed admission with priorities,
-pause, restart and queued-time accounting. The recorded run below predates
-these controls; it does not qualify their representative-load behavior.
+pause, restart and queued-time accounting. The historical run below predates
+these controls; the queue follow-up evidence is linked from #342.
 
 ## Native mixed-load stage
 
@@ -113,3 +113,49 @@ The probe timings include diagnostic lock waits and cannot establish API
 responsiveness. No owner-approved production CPU/RSS/latency budget was
 asserted by this experiment. The result completes this finite client-stage
 experiment and leaves the remaining qualification listed above open.
+
+## Full Engine extension
+
+Add `--engine --queue-mode finite` to run the same retained inventory through
+an actual `Engine`, its production workers and a local authenticated HTTP API.
+The manual workflow exposes this switch. Without it, the historical native
+client stage remains available.
+
+The extension uses a synthetic protected Torznab source served inside the
+loopback tunnel, an ordinary loopback catalog, a synthetic two-second NAT-PMP
+gateway lease, and generated media. The source publishes one distinct torrent
+identity over an actively admitted retained seed. The automatic discovery worker must
+register it exactly once. After traffic ends, the fixture raises its priority
+to verify its shared bytes within the finite seed queue. Each round uses a fresh local media source and submits a movie and episode
+through HTTP, repeats both submissions to check deduplication, waits for the
+workers to finish imports, and compares their bytes. Imports receive a release baseline at the configured
+quality cutoff and are monitored by the production library worker. The report
+records the delay until their first monitor check is observed (an upper bound
+including probe spacing). It subscribes to a future
+series episode and explicitly refreshes the catalog. Production feed,
+cross-seed, library and series workers run alongside transfers.
+
+The subject's download rate is limited to 64 KiB/s so acquisitions remain
+active after the eight inbound consumers finish. During the first three
+rounds, respectively, it restarts the populated Engine, changes the granted
+NAT-PMP port, and replaces the tunnel generation. Each incident must start
+while a download worker has verified part of an unfinished acquisition. Old generations are retired and dropped
+before reopening durable state. The following rounds offer fresh peers on the
+current listener; existing remote peers are not expected to discover a port
+change without an announce. Completed payloads, pauses, priorities, selected
+file interests and cross-seed provenance must survive. This uses a one-file
+selection; pack selection remains covered by its dedicated fixtures.
+
+The API latency samples time actual authenticated HTTP GET requests for
+transfers, jobs, library and monitored series, independently of the historical
+combined status/descriptor/worker-lock probe. Import latency includes HTTP
+submission and the wait for the worker's ready state. CPU, RSS and descriptor
+measurements still include every fixture service and peer. The extension
+allows 120 seconds for each finite round; this is a test liveness deadline,
+not an approved production response budget. Smoke mode checks one round and
+therefore does not qualify all three incidents.
+
+This extension supplies additional synthetic evidence. It does not establish
+the owner's private workload distribution, an agreed production resource
+budget, provider behavior or the final deployed installation gate #344.
+Record exact-commit results before changing any remaining #342 acceptance box.
