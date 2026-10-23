@@ -135,10 +135,13 @@ including probe spacing). It subscribes to a future
 series episode and explicitly refreshes the catalog. Production feed,
 cross-seed, library and series workers run alongside transfers.
 
-The subject's download rate is limited to 64 KiB/s so acquisitions remain
-active after the eight inbound consumers finish. During the first three
+The subject's download rate is limited to 64 KiB/s. Later rounds start
+automation as soon as verified acquisition progress is observed, allowing it
+to overlap slower incoming consumers. During the first three
 rounds, respectively, it restarts the populated Engine, changes the granted
-NAT-PMP port, and replaces the tunnel generation. Each incident must start
+NAT-PMP port, and replaces the tunnel generation. These three rounds wait
+for incoming consumers to finish before changing their listener; this ordering
+is not imposed on later rounds. Each incident must start
 while a download worker has verified part of an unfinished acquisition. Old generations are retired and dropped
 before reopening durable state. The following rounds offer fresh peers on the
 current listener; existing remote peers are not expected to discover a port

@@ -223,9 +223,10 @@ fn representative_load_report() {
                 .zip(active_seeds)
                 .all(|(c, t)| c.check(&t.hash).unwrap().ready);
             if !exercised
-                && incoming_done
+                && (incoming_done || rounds >= 3)
                 && !outgoing_done
                 && let Some(fixture) = &fixture
+                && engine::acquiring(&subject, &acquisitions)
             {
                 fixture.exercise(&mut subject, rounds, &acquisitions, &pair, &open);
                 exercised = true;
