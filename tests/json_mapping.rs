@@ -111,9 +111,7 @@ fn mapping_renames_parameters_and_reads_nested_fields_without_leaking_the_key() 
     let report = json::stringify(&integrations::search_report(&c, &movie()).unwrap());
     let line = server.join().unwrap();
     assert!(
-        line.starts_with(
-            "GET /api?search=Fixture%20Movie&category=2000&season=0&episode=0&limit=50&key="
-        ),
+        line.starts_with("GET /api?search=Fixture%20Movie&category=2000&limit=50&key="),
         "unexpected request: {line}"
     );
     assert!(!line.contains("year=") && !line.contains("apikey="));
@@ -139,7 +137,7 @@ fn a_source_without_mapping_keeps_the_built_in_names() {
     let report = json::stringify(&integrations::search_report(&c, &movie()).unwrap());
     assert_eq!(
         server.join().unwrap(),
-        "GET /api?q=Fixture%20Movie&kind=movie&year=2024&season=0&episode=0 HTTP/1.1"
+        "GET /api?q=Fixture%20Movie&kind=movie&year=2024 HTTP/1.1"
     );
     assert!(report.contains("Fixture.Movie.2024.1080p"));
 }
@@ -207,9 +205,7 @@ fn the_default_key_name_carries_a_real_key_last() {
     let _ = integrations::search_report(&c, &movie());
     let line = server.join().unwrap();
     assert!(
-        line.starts_with(
-            "GET /api?q=Fixture%20Movie&kind=movie&year=2024&season=0&episode=0&apikey="
-        ),
+        line.starts_with("GET /api?q=Fixture%20Movie&kind=movie&year=2024&apikey="),
         "unexpected request: {line}"
     );
     assert!(!line.contains("&key="));
@@ -238,7 +234,55 @@ fn absolute_numbering_uses_the_mapped_names() {
     let _ = integrations::search_report(&c, &episode);
     assert_eq!(
         server.join().unwrap(),
-        "GET /api?search=Fixture%20Series%20013&kind=episode&year=2024&season=0&episode=0&abs=13&limit=50 HTTP/1.1"
+        "GET /api?search=Fixture%20Series%20013&kind=episode&year=2024&abs=13&limit=50 HTTP/1.1"
+    );
+}
+
+fn catalog_source(directory: &Directory, url: &str) -> config::Config {
+    let mut v = configuration(
+        directory,
+        url,
+        Some(
+            r#"{"params":{"query":"name","kind":"","year":"","season":"seasonNumber","episode":"episodeNumber","absolute":"","api_key":"","tmdb_id":"tmdbId"},"fixed_params":{"perPage":"100"}}"#,
+        ),
+    );
+    let Value::Array(list) = v.get_mut("indexers").unwrap() else {
+        panic!()
+    };
+    list[0].insert("api_key_env", "MYNOU_ABSENT_MAPPING_FIXTURE_KEY_5521");
+    config::from_json(&v, &directory.0).unwrap()
+}
+
+#[test]
+fn a_mapped_catalog_id_replaces_the_text_query_and_numbers_follow_the_kind() {
+    let directory = Directory::new();
+    let (url, server) = serve("[]");
+    let c = catalog_source(&directory, &url);
+    let _ = integrations::search_report(&c, &movie());
+    assert_eq!(
+        server.join().unwrap(),
+        "GET /api?tmdbId=7&perPage=100 HTTP/1.1"
+    );
+    let (url, server) = serve("[]");
+    let c = catalog_source(&directory, &url);
+    let mut episode = movie();
+    episode.kind = "episode".into();
+    episode.title = "Fixture Series".into();
+    episode.season = 2;
+    episode.episode = 5;
+    let _ = integrations::search_report(&c, &episode);
+    assert_eq!(
+        server.join().unwrap(),
+        "GET /api?seasonNumber=2&episodeNumber=5&tmdbId=7&perPage=100 HTTP/1.1"
+    );
+    // Without a catalog identity, the title is searched as text.
+    let (url, server) = serve("[]");
+    let c = catalog_source(&directory, &url);
+    episode.tmdb_id = None;
+    let _ = integrations::search_report(&c, &episode);
+    assert_eq!(
+        server.join().unwrap(),
+        "GET /api?name=Fixture%20Series&seasonNumber=2&episodeNumber=5&perPage=100 HTTP/1.1"
     );
 }
 

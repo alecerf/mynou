@@ -82,6 +82,8 @@ Pick the first format your indexer offers:
    `results` / `items`) of objects with `title`, a download address
    (`download_url`, `magnet`, `magnet_url`, `url` or `link`) and `seeders`, and
    sends `q`, `kind`, `year`, `season`, `episode`, `absolute` and `apikey`.
+   As with Torznab, `season` is sent only for episodes and seasons, `episode`
+   only for episodes, and an absolute number replaces both.
 
 A `mapping` is a section of a `json` source. Every key is optional:
 
@@ -113,7 +115,10 @@ A `mapping` is a section of a `json` source. Every key is optional:
   number or numeric text (missing means 0).
 - `params` renames what Mynou sends: `query`, `kind`, `year`, `season`,
   `episode`, `absolute` and `api_key` map to your parameter name, and an empty
-  name leaves that parameter out. `kind_values` replaces the value sent for
+  name leaves that parameter out. `tmdb_id` is sent only when you name it: a
+  request with a TMDB ID (the series ID for episodes) then sends that ID instead
+  of the text query, except with absolute numbering. Returned titles are still
+  checked against the request. `kind_values` replaces the value sent for
   `movie`, `episode` and `series`, for indexers that expect a category.
 - `fixed_params` adds up to eight constant parameters, such as a category or a
   page size. They are written in `mynou.json` in clear: never put a credential

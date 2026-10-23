@@ -1462,19 +1462,37 @@ fn source_releases(source: &Source, request: &Request, deadline: Instant) -> Res
         }
     } else if source.kind == "json" {
         let mapping = &source.options.mapping;
-        if let Some(name) = mapping.parameter("query") {
-            pairs[0].0 = name;
-        } else {
-            pairs.clear();
+        // A catalog ID selects the title exactly; the text query would only add
+        // punctuation-sensitive filtering. Titles are still verified locally.
+        // Absolute numbers live in the text query, which they keep.
+        let catalog = request.tmdb_id.filter(|_| {
+            mapping.parameter("tmdb_id").is_some()
+                && !matches!(numbering, crate::numbering::SourceNumber::Absolute(_))
+        });
+        match mapping.parameter("query") {
+            Some(name) if catalog.is_none() => pairs[0].0 = name,
+            _ => pairs.clear(),
         }
         let mut extra = vec![
             ("kind", mapping.kind_value(&request.kind).to_owned()),
             ("year", request.year.to_string()),
-            ("season", season.to_string()),
-            ("episode", episode.to_string()),
         ];
-        if let crate::numbering::SourceNumber::Absolute(number) = numbering {
-            extra.push(("absolute", number.to_string()));
+        // As for Torznab, numbers are sent only where they identify an episode
+        // or a season: a zero would filter movies to a nonexistent season.
+        match numbering {
+            crate::numbering::SourceNumber::Absolute(number) => {
+                extra.push(("absolute", number.to_string()));
+            }
+            _ if matches!(request.kind.as_str(), "episode" | "series") => {
+                extra.push(("season", season.to_string()));
+                if request.kind == "episode" {
+                    extra.push(("episode", episode.to_string()));
+                }
+            }
+            _ => {}
+        }
+        if let Some(id) = catalog {
+            extra.push(("tmdb_id", id.to_string()));
         }
         for (role, value) in extra {
             if let Some(name) = mapping.parameter(role) {
