@@ -22,7 +22,10 @@ and generated payloads. Of these, 492 are 4 KiB and eight are 1 MiB. Each
 round has eight remote native clients fetch those eight seeds while the
 subject downloads two new 1 MiB torrents from another native seeder. Each
 consumer is limited to 128 KiB/s to offer overlapping inbound traffic during
-acquisition admission; this is not an unthrottled throughput ceiling. All
+acquisition admission; this is not an unthrottled throughput ceiling. Eight is
+the number of consumer torrents offered per round, not a measured guarantee
+that all eight transfer simultaneously. The report separately records the
+maximum sampled number of consumer download workers running together. All
 peer traffic crosses two native WireGuard owners over loopback UDP. The
 subject keeps `max_active=2`, `max_peers=4` and the default client tunnel
 limits; the responder has extra listeners/flows for the fixture clients.

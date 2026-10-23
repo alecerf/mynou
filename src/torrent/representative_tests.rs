@@ -13,12 +13,12 @@ fn open(config: DownloadConfig, network: Arc<dyn Network>) -> Client {
 }
 
 fn verify(client: &Client, torrents: &[Torrent], deadline: Instant) {
-    wait_for(deadline, "mixed-load payload verification", || {
-        torrents
-            .iter()
-            .all(|torrent| client.check(&torrent.hash).unwrap().ready)
-    });
-    for torrent in torrents {
+    // Point checks hydrate cold transfers and may schedule rehash. Walk once,
+    // waiting for each item, rather than repeatedly restarting a full scan.
+    for (n, torrent) in torrents.iter().enumerate() {
+        wait_for(deadline, "mixed-load payload verification", || {
+            client.check(&torrent.hash).unwrap().ready
+        });
         assert!(same_file(
             &client
                 .config
@@ -27,6 +27,13 @@ fn verify(client: &Client, torrents: &[Torrent], deadline: Instant) {
                 .join(&torrent.name),
             &torrent.file,
         ));
+        if (n + 1).is_multiple_of(100) {
+            eprintln!(
+                "MYNOU_REPRESENTATIVE_VERIFY payloads={}/{}",
+                n + 1,
+                torrents.len()
+            );
+        }
     }
 }
 
@@ -83,6 +90,7 @@ fn representative_load_report() {
     let mut downloaded = 0_u64;
     let mut max_round_us = 0;
     let mut max_fds = 0;
+    let mut max_consumers_running = 0;
     let mut subject = subject;
     let mut restarted = false;
     let mut restart_us = 0;
@@ -141,6 +149,19 @@ fn representative_load_report() {
             let (page, _) = subject.statuses_page(None, 50).unwrap();
             assert!((50.min(retained)..=50).contains(&page.len()));
             max_fds = max_fds.max(fs::read_dir("/dev/fd").unwrap().count());
+            max_consumers_running = max_consumers_running.max(
+                consumers
+                    .iter()
+                    .filter(|client| {
+                        client
+                            .jobs
+                            .lock()
+                            .unwrap()
+                            .values()
+                            .any(|job| job.running && !job.status.ready)
+                    })
+                    .count(),
+            );
             page_times.push(at.elapsed().as_micros());
             let outgoing_done = acquisitions
                 .iter()
@@ -230,6 +251,10 @@ fn representative_load_report() {
         ("max_peers", 4),
         ("rounds", rounds as u128),
         ("max_sampled_fds", max_fds as u128),
+        (
+            "max_sampled_consumers_running",
+            max_consumers_running as u128,
+        ),
         ("elapsed_us", began.elapsed().as_micros()),
         ("max_round_us", max_round_us),
         ("restart_rehash_us", restart_us),
