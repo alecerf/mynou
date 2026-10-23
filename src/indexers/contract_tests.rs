@@ -42,6 +42,8 @@ const CONTRACTS: [(&str, Family); 10] = [
     ("source-10", Family::Torznab),
 ];
 
+const TOKEN_SOURCE: &str = "source-03";
+const TOKEN: &str = r#"{"use_token":"1"}"#;
 const HASH: &str = "0123456789abcdef0123456789abcdef01234567";
 
 struct Directory(std::path::PathBuf);
@@ -152,7 +154,12 @@ fn configuration(alias: &str, family: Family, url: &str, dir: &Directory) -> Con
             auth.insert("method", "bearer");
             auth.insert("token_env", "PWD");
             source.insert("authentication", auth);
-            source.insert("mapping", json::parse(FILTER_API).unwrap());
+            let mut mapping = json::parse(FILTER_API).unwrap();
+            if alias == TOKEN_SOURCE {
+                // That source's current downloads spend a freeleech token.
+                mapping.insert("download_params", json::parse(TOKEN).unwrap());
+            }
+            source.insert("mapping", mapping);
         }
         Family::Flat => {
             source.insert("kind", "json");
@@ -475,21 +482,22 @@ fn contract(alias: &str, family: Family) {
     assert_eq!(details[0].details, format!("{url}/details/6"));
     assert_eq!(details[0].tmdb_ids, ["603"]);
     assert_eq!(details[0].info_hashes, [HASH]);
-    assert_eq!(
-        details[0].enclosure.as_deref(),
-        Some(&*format!("{url}/dl/6"))
-    );
+    let token = if alias == TOKEN_SOURCE {
+        "?use_token=1"
+    } else {
+        ""
+    };
+    let enclosure = format!("{url}/dl/6{token}");
+    assert_eq!(details[0].enclosure.as_deref(), Some(&*enclosure));
 
     // Authenticated metainfo: same origin, no redirects, failures rejected.
     f.reply(200, "", b"d4:infod4:name1:xee".to_vec());
-    let body =
-        integrations::indexer_metainfo_before(source(&c), &format!("{url}/dl/6"), deadline())
-            .unwrap();
+    let body = integrations::indexer_metainfo_before(source(&c), &enclosure, deadline()).unwrap();
     assert_eq!(body, b"d4:infod4:name1:xee");
     // The enclosure carries any query credential itself; only the header
     // authentication is added.
     let head = f.last();
-    assert!(head.starts_with("GET /dl/6 "), "{alias}");
+    assert!(head.starts_with(&format!("GET /dl/6{token} ")), "{alias}");
     assert_eq!(
         head.contains("Authorization: Bearer "),
         family == Family::Filter,

@@ -1082,13 +1082,25 @@ fn json_details_before(
                     details: details.map_or(String::new(), |d| d.trim().to_owned()),
                     tmdb_ids,
                     info_hashes,
-                    enclosure: mapping.url(item).map(str::to_owned),
+                    enclosure: json_download(item, &source.url, mapping),
                 }
             })
             .collect())
     })();
     crate::indexers::parsed(source, entries.is_ok());
     entries
+}
+
+/// The mapped acquisition address, with any download parameters appended to an
+/// HTTP(S) address; a magnet is left unchanged.
+fn json_download(item: &Value, base: &str, mapping: &Mapping) -> Option<String> {
+    let url = acquisition_url(mapping.url(item)?, base).ok()?;
+    let extra = mapping.download_params();
+    if extra.is_empty() || url.starts_with("magnet:") {
+        return Some(url);
+    }
+    let pairs: Vec<(&str, String)> = extra.iter().map(|(n, v)| (n.as_str(), v.clone())).collect();
+    query(&url, &pairs).ok()
 }
 
 /// A JSON request with the text (when given) as its query role, the fixed
@@ -1474,7 +1486,7 @@ fn json_releases(value: &Value, base: &str, mapping: &Mapping) -> Result<Vec<Rel
 /// An item without a bounded title or a valid acquisition address is skipped.
 fn json_release(item: &Value, base: &str, mapping: &Mapping) -> Option<Release> {
     let title = mapping.title(item).filter(|title| title.len() <= 2_048)?;
-    let url = acquisition_url(mapping.url(item)?, base).ok()?;
+    let url = json_download(item, base, mapping)?;
     Some(Release {
         title: title.into(),
         url,
