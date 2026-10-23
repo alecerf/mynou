@@ -20,6 +20,12 @@ the mapping's fixed parameters and API key, reads entries with the mapping and
 routes new ones to waiting demand like an RSS or Torznab feed
 ([details](/docs/sources.md#watching-a-feed)).
 
+## Added: Append constant parameters to JSON indexer download links
+
+A JSON `mapping` accepts `download_params`, up to four constant parameters
+added to each mapped HTTP(S) download address, such as a tracker's
+freeleech-token flag ([details](/docs/sources.md#connecting-any-indexer)).
+
 ## Changed: Search JSON indexers by catalog ID and send only meaningful numbers
 
 A JSON `mapping` can name a `tmdb_id` parameter: requests with a TMDB ID then

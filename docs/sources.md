@@ -130,6 +130,10 @@ A `mapping` is a section of a `json` source. Every key is optional:
   there. Credentials stay in environment variables (`api_key_env` and
   [authentication](#authentication)), and the API key is sent as a query
   parameter named by `params.api_key`.
+- `download_params` adds up to four constant parameters to every mapped HTTP(S)
+  download address (never to a magnet), for example `{"use_token": "1"}` for a
+  tracker that spends a freeleech token when asked in the download link. They
+  apply wherever Mynou downloads the source's `.torrent`.
 - All resulting parameter names must be distinct. Unknown keys, malformed paths
   and a `mapping` on a non-`json` source stop the service from starting.
 - A response that does not match the mapping is reported as a parse failure

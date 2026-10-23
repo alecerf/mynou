@@ -7,6 +7,7 @@ use crate::{Result, json::Value};
 const MAX_DEPTH: usize = 8;
 const MAX_ALTERNATIVES: usize = 4;
 const MAX_FIXED: usize = 8;
+const MAX_DOWNLOAD: usize = 4;
 const MAX_VALUE: usize = 256;
 /// Request roles that can be renamed or omitted, with the name used by default.
 /// `tmdb_id` is sent only when configured.
@@ -72,6 +73,26 @@ fn parameter(s: &str) -> bool {
                 .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.')))
 }
 
+/// Constant name/value pairs of an optional object section.
+fn constants(v: &Value, key: &str, limit: usize) -> Result<Vec<(String, String)>> {
+    let Some(section) = v.get(key) else {
+        return Ok(Vec::new());
+    };
+    let map = section
+        .as_object()
+        .filter(|map| map.len() <= limit)
+        .ok_or("Indexer: invalid fixed parameters")?;
+    let mut out = Vec::new();
+    for (name, value) in map {
+        let value = value.as_str().ok_or("Indexer: invalid fixed parameters")?;
+        if name.is_empty() || !parameter(name) || !plain(value) {
+            return Err("Indexer: invalid fixed parameters".into());
+        }
+        out.push((name.clone(), value.to_owned()));
+    }
+    Ok(out)
+}
+
 fn plain(s: &str) -> bool {
     s.len() <= MAX_VALUE && !s.chars().any(char::is_control)
 }
@@ -95,6 +116,7 @@ pub(crate) struct Mapping {
     names: Vec<(String, String)>,
     kinds: Vec<(String, String)>,
     fixed: Vec<(String, String)>,
+    download: Vec<(String, String)>,
     canonical: String,
 }
 
@@ -117,6 +139,7 @@ impl Mapping {
                 "params",
                 "kind_values",
                 "fixed_params",
+                "download_params",
             ],
         )?;
         if source.get("kind").and_then(Value::as_str).unwrap_or("json") != "json" {
@@ -159,19 +182,8 @@ impl Mapping {
                 }
             }
         }
-        if let Some(fixed) = v.get("fixed_params") {
-            let map = fixed
-                .as_object()
-                .filter(|map| map.len() <= MAX_FIXED)
-                .ok_or("Indexer: invalid fixed parameters")?;
-            for (name, value) in map {
-                let value = value.as_str().ok_or("Indexer: invalid fixed parameters")?;
-                if name.is_empty() || !parameter(name) || !plain(value) {
-                    return Err("Indexer: invalid fixed parameters".into());
-                }
-                mapping.fixed.push((name.clone(), value.to_owned()));
-            }
-        }
+        mapping.fixed = constants(v, "fixed_params", MAX_FIXED)?;
+        mapping.download = constants(v, "download_params", MAX_DOWNLOAD)?;
         let mut used: Vec<&str> = ROLES
             .iter()
             .filter_map(|(role, _)| mapping.parameter(role))
@@ -218,6 +230,11 @@ impl Mapping {
 
     pub(crate) fn fixed(&self) -> &[(String, String)] {
         &self.fixed
+    }
+
+    /// Constant parameters appended to every mapped HTTP(S) download address.
+    pub(crate) fn download_params(&self) -> &[(String, String)] {
+        &self.download
     }
 
     pub(crate) fn list<'a>(&self, root: &'a Value) -> Option<&'a [Value]> {
@@ -356,6 +373,24 @@ mod tests {
         assert_eq!(mapping.kind_value("movie"), "2000");
         assert_eq!(mapping.kind_value("episode"), "episode");
         assert_eq!(mapping.fixed(), [("limit".to_owned(), "100".to_owned())]);
+    }
+
+    #[test]
+    fn download_parameters_are_bounded_constants() {
+        let mapping =
+            Mapping::from_json(&source(r#"{"download_params":{"use_token":"1"}}"#)).unwrap();
+        assert_eq!(
+            mapping.download_params(),
+            [("use_token".to_owned(), "1".to_owned())]
+        );
+        for bad in [
+            r#"{"download_params":{"a":"1","b":"1","c":"1","d":"1","e":"1"}}"#,
+            r#"{"download_params":{"use_token":1}}"#,
+            r#"{"download_params":{"":"1"}}"#,
+            r#"{"download_params":"use_token=1"}"#,
+        ] {
+            assert!(Mapping::from_json(&source(bad)).is_err(), "{bad}");
+        }
     }
 
     #[test]

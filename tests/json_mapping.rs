@@ -287,6 +287,43 @@ fn a_mapped_catalog_id_replaces_the_text_query_and_numbers_follow_the_kind() {
 }
 
 #[test]
+fn download_parameters_extend_http_links_but_not_magnets() {
+    let directory = Directory::new();
+    for (body, expected) in [
+        (
+            r#"[{"title":"Fixture.Movie.2024.1080p","url":"/dl/1.key","seeders":3}]"#,
+            "/dl/1.key?use_token=1",
+        ),
+        (
+            r#"[{"title":"Fixture.Movie.2024.1080p","url":"/dl/2?id=2","seeders":3}]"#,
+            "/dl/2?id=2&use_token=1",
+        ),
+        (
+            r#"[{"title":"Fixture.Movie.2024.1080p","url":"magnet:?xt=urn:btih:0123456789012345678901234567890123456789","seeders":3}]"#,
+            "magnet:?xt=urn:btih:0123456789012345678901234567890123456789",
+        ),
+    ] {
+        let (url, server) = serve(body);
+        let mut v = configuration(
+            &directory,
+            &url,
+            Some(r#"{"download_params":{"use_token":"1"}}"#),
+        );
+        let Value::Array(list) = v.get_mut("indexers").unwrap() else {
+            panic!()
+        };
+        list[0].insert("api_key_env", "MYNOU_ABSENT_MAPPING_FIXTURE_KEY_5521");
+        let c = config::from_json(&v, &directory.0).unwrap();
+        let selected = integrations::select_release(&c, &movie()).unwrap();
+        server.join().unwrap();
+        assert!(selected.url.ends_with(expected), "{}", selected.url);
+        if !expected.starts_with("magnet:") {
+            assert!(selected.url.starts_with(url.trim_end_matches("/api")));
+        }
+    }
+}
+
+#[test]
 fn a_mapping_changes_the_source_identity_and_its_absence_does_not() {
     let directory = Directory::new();
     let plain = sources(&directory, &mut |_| {});

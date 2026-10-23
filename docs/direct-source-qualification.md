@@ -74,7 +74,7 @@ fields. Hosts, paths, accounts and credentials stay private.
 
 | Family | Aliases | Configuration |
 | --- | --- | --- |
-| Bearer-authenticated JSON filter API | source-01, source-02, source-03 | `json` mapping with `tmdb_id`, season and episode roles, newest-first fixed parameters, `details`, `size`, `tmdb_id` and `info_hash` fields |
+| Bearer-authenticated JSON filter API | source-01, source-02, source-03 | `json` mapping with `tmdb_id`, season and episode roles, newest-first fixed parameters, `details`, `size`, `tmdb_id` and `info_hash` fields; source-03 adds its enabled freeleech-token download parameter |
 | JSON search API with a query key | source-07 | `json` mapping with `tmdb_id`, season and episode roles, a fixed page size and the same item fields |
 | Native Torznab | source-04, source-05, source-06, source-08, source-09, source-10 | `torznab` source with a query key |
 
@@ -86,6 +86,11 @@ details lookup used by bracketed IRC announcements, the authenticated
 same-origin `.torrent` download without redirects, denial without an
 anonymous fallback and a `429` rest without another request. Credentials never
 appear in reports.
+
+Behavior differences from the replaced adapter are explicit. Releases keep the
+source's own name, whereas the adapter showed the file name of single-file
+releases; its optional language rewrites of titles were disabled and are not
+reproduced.
 
 Pagination: every source answers one page. The JSON sources request their
 largest documented page (100 entries, newest first); per-title searches are
