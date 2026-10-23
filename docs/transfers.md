@@ -195,7 +195,7 @@ source media and native state while seeding.
 Discovery finds candidates for completed ordinary transfers and registers them
 through manual cross-seeding, so the same verification applies: every piece is
 hashed from the existing bytes before any announce, and a mismatch fails the
-candidate without any download. It is opt-in per RSS or Torznab
+candidate without any download. It is opt-in per RSS, Torznab or JSON
 [source](sources.md) and needs `downloads.seed`:
 
 ```json
@@ -216,8 +216,14 @@ candidate without any download. It is opt-in per RSS or Torznab
 | Field | Default | Meaning |
 | --- | --- | --- |
 | `feed` | `true` | Read the newest entries every `interval_secs` (60 to 86,400, default hourly) |
-| `search` | `true` for Torznab | Search by name once each completed transfer is verified (Torznab only) |
+| `search` | `true` for Torznab and JSON | Search by name once each completed transfer is verified (Torznab and JSON only) |
 | `search_interval_secs` | `null` | Repeat that search after this delay (3,600 to 31,536,000); `null` searches once |
+
+A JSON source reads its feed as a [watched feed](sources.md#watching-a-feed)
+does and searches with only the name as its `query` role, its fixed parameters
+and API key. Its `mapping` can name `size` (payload bytes, a number or numeric
+text) and `info_hash` (40 hexadecimal digits) so that offers are filtered before
+any download, as Torznab `size` and `infohash` attributes are.
 
 A pass runs every minute and handles one source at a time. For each offer:
 

@@ -102,7 +102,7 @@ fn run_requests_are_strict() {
 }
 
 #[test]
-fn configuration_requires_a_feed_or_torznab_search() {
+fn configuration_requires_a_feed_or_a_torznab_or_json_search() {
     let parse = |section: &str, kind: &str| {
         let value = json::parse(&format!(
             r#"{{"kind":"{kind}","url":"http://127.0.0.1/api","cross_seed":{section}}}"#
@@ -127,8 +127,10 @@ fn configuration_requires_a_feed_or_torznab_search() {
         (custom.feed, custom.search_interval_secs),
         (false, Some(86_400))
     );
+    let mapped = parse(r#"{"enabled":true}"#, "json").unwrap();
+    assert!(mapped.enabled && mapped.feed && mapped.search);
     for (bad, kind) in [
-        (r#"{"enabled":true}"#, "json"),
+        (r#"{"enabled":true,"feed":false,"search":false}"#, "json"),
         (r#"{"enabled":true,"search":true}"#, "rss"),
         (r#"{"enabled":true,"feed":false,"search":false}"#, "torznab"),
         (r#"{"interval_secs":59}"#, "torznab"),
@@ -139,7 +141,7 @@ fn configuration_requires_a_feed_or_torznab_search() {
         assert!(parse(bad, kind).is_err(), "{bad} {kind}");
     }
     // Disabled sections are validated but never require a capable source.
-    assert!(!parse(r#"{"enabled":false}"#, "json").unwrap().enabled);
+    assert!(!parse(r#"{"enabled":false}"#, "rss").unwrap().enabled);
 }
 
 struct Dir(PathBuf);

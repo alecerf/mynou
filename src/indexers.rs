@@ -220,7 +220,7 @@ fn cross_seed(v: &Value) -> Result<CrossSeedDiscovery> {
         enabled: flag("enabled", false)?,
         feed: flag("feed", true)?,
         interval_secs: integer(section, "interval_secs", 3_600, 86_400)?,
-        search: flag("search", kind == "torznab")?,
+        search: flag("search", matches!(kind, "torznab" | "json"))?,
         search_interval_secs: match section.get("search_interval_secs") {
             None | Some(Value::Null) => None,
             Some(_) => Some(integer(section, "search_interval_secs", 0, 31_536_000)?),
@@ -234,11 +234,11 @@ fn cross_seed(v: &Value) -> Result<CrossSeedDiscovery> {
         return Err("Indexer: cross_seed interval_secs must be 60 to 86400 and search_interval_secs null or 3600 to 31536000".into());
     }
     if discovery.enabled
-        && (!matches!(kind, "rss" | "torznab")
-            || (discovery.search && kind != "torznab")
+        && (!matches!(kind, "rss" | "torznab" | "json")
+            || (discovery.search && kind == "rss")
             || !(discovery.feed || discovery.search))
     {
-        return Err("Indexer: cross-seed discovery needs an rss or torznab source with feed or search; search needs Torznab".into());
+        return Err("Indexer: cross-seed discovery needs an rss, torznab or json source with feed or search; search needs Torznab or JSON".into());
     }
     Ok(discovery)
 }

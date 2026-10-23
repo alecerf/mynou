@@ -105,8 +105,8 @@ A `mapping` is a section of a `json` source. Every key is optional:
 }
 ```
 
-- `results`, `title`, `url`, `seeders`, `details`, `tmdb_id` and `info_hash`
-  are dot-separated paths of up to eight
+- `results`, `title`, `url`, `seeders`, `size`, `details`, `tmdb_id` and
+  `info_hash` are dot-separated paths of up to eight
   parts through objects; a numeric part picks an array element (`links.0`).
   `url` accepts up to four paths and uses the first that holds a text value.
   Each part is made of letters, digits, `_` or `-`, so a key with a space or a
@@ -114,8 +114,10 @@ A `mapping` is a section of a `json` source. Every key is optional:
   source's origin; any other relative address is skipped, like an entry without
   a title or without a valid magnet or HTTP(S) address. `seeders` may be a
   number or numeric text (missing means 0). `details`, `tmdb_id` (text or a
-  number) and `info_hash` are read only by an
-  [IRC announcement lookup](#bracketed-announcements-resolved-by-lookup).
+  number) and `info_hash` are read by an
+  [IRC announcement lookup](#bracketed-announcements-resolved-by-lookup);
+  `size` and `info_hash` by
+  [cross-seed discovery](transfers.md#automatic-cross-seed-discovery).
 - `params` renames what Mynou sends: `query`, `kind`, `year`, `season`,
   `episode`, `absolute` and `api_key` map to your parameter name, and an empty
   name leaves that parameter out. `tmdb_id` is sent only when you name it: a

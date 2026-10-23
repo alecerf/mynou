@@ -1,3 +1,10 @@
+## Added: Discover cross-seeds from JSON indexers
+
+`cross_seed` discovery now accepts a `json` source: it reads the source's feed
+and, by default, searches each completed transfer's name. A mapped `size` and
+`info_hash` skip oversized or already present offers before any download
+([details](/docs/transfers.md#automatic-cross-seed-discovery)).
+
 ## Added: Resolve bracketed IRC announcements through a JSON indexer
 
 A `json` indexer whose `mapping` names `details`, `tmdb_id` and `info_hash`
