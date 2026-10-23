@@ -1,4 +1,6 @@
 //! Native bounded source authentication. Sessions are ephemeral and origin-bound.
+#[cfg(test)]
+mod contract_tests;
 pub mod cross_seed;
 pub(crate) mod feed;
 pub(crate) mod mapping;
