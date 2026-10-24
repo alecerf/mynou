@@ -137,7 +137,7 @@ fn command(directory: &Directory, home: &std::path::Path, arguments: &[&str]) ->
     let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .current_dir(&directory.0)
         .env("MYNOU_HOME", home)
-        .env_remove("MYNOU_API_TOKEN")
+        .env("MYNOU_API_TOKEN", TOKEN)
         .env_remove("MYNOU_PLEX_TOKEN")
         .args(arguments)
         .stdout(Stdio::piped())
@@ -247,7 +247,6 @@ fn cli_offline_preview_preserves_storage_and_online_apply_requires_its_guard() {
     assert_eq!(provider.calls.lock().unwrap().len(), calls);
     let server = Server::open(cfg.clone());
     home_support::serve_here(&home, &server.authority);
-    fs::write(home.join(".env"), format!("MYNOU_API_TOKEN={TOKEN}\n")).unwrap();
     let applied = success(command(
         &directory,
         &home,

@@ -33,17 +33,20 @@ enabled globally.
 
 ## Configure and start
 
-Create the data directory and start the service:
+Start the service:
 
 ```sh
-"$HOME/.local/bin/mynou" init &&
-  "$HOME/.local/bin/mynou" serve
+"$HOME/.local/bin/mynou" serve
 ```
 
-`init` creates `~/Library/Application Support/Mynou` with a private `.env`
-holding a random API token. Open <http://127.0.0.1:8787/>, paste the
-`MYNOU_API_TOKEN` value from that `.env` file, and set Mynou up in the
-**Settings** view: library folders, downloads, Plex, TMDB, sources and their
+The first start creates `~/Library/Application Support/Mynou`, private to your
+account. Open <http://127.0.0.1:8787/> and create your access token: Mynou
+shows it once and keeps only its SHA-256 digest, so keep it safe. The first
+visit can create it only from this Mac, while Mynou listens on a loopback
+address; otherwise, and whenever the token is lost, stop Mynou and run
+`mynou token --reset`, which prints a new token once. Commands that reach the
+running service read the token from `MYNOU_API_TOKEN`, which you set the way
+you prefer. Then set Mynou up in the **Settings** view: library folders, downloads, Plex, TMDB, sources and their
 tokens. Plex and TMDB start disabled. Use ordinary folders you own rather than
 paths through symbolic links: imports never overwrite files and refuse
 symbolic links.
@@ -98,7 +101,6 @@ fallback:
 
 | Secret | Used for |
 | --- | --- |
-| `MYNOU_API_TOKEN` | API Bearer token; always in `.env` or the environment, never in the store |
 | `MYNOU_PLEX_TOKEN` | Plex server and its watchlist |
 | `MYNOU_TMDB_TOKEN` or `MYNOU_TMDB_API_KEY` | TMDB catalog |
 | `MYNOU_INDEXER_API_KEY` | Default API key of sources |
@@ -151,7 +153,7 @@ Mynou validates its storage after a start, `/readyz` answers 503 `starting`
 `startup` in `/api/status` shows the stage and rows checked; requests, workers
 and transfers begin once it is `ready`. `mynou healthcheck` exits with an error unless the running service answers `/readyz`
 (it bypasses any proxy). `/api` routes need
-`Authorization: Bearer` with the API token. For remote access, put a TLS reverse
+`Authorization: Bearer` with the access token. For remote access, put a TLS reverse
 proxy in front and keep the plain listener private.
 
 Port 6881/TCP accepts BitTorrent peers; whether peers can reach it depends on
@@ -183,10 +185,9 @@ service; local management commands bypass it.
 
 For unattended account-login startup, crash recovery and explicit graceful
 stop/start/uninstall commands, see the [native launchd service](macos-service.md).
-Its upgrade instructions also explain refreshing the private credential snapshot.
 
-Keep the data directory (its `.env`, `state/` and `downloads/` folders, which
-hold every setting and saved secret) and the library folders. For a consistent backup, stop the service before copying `state/`. The
+Keep the data directory (its `state/` and `downloads/` folders, which hold
+every setting, saved secret and the access token digest) and the library folders. For a consistent backup, stop the service before copying `state/`. The
 journal confirms each transaction on disk, and an interrupted final write is
 recovered at the next start. `POST /api/shutdown` lets running work finish;
 stopping the process instead relies on that recovery.

@@ -1,7 +1,6 @@
 //! Account-owned launchd registration. No shell or companion runtime process.
 use crate::{Result, config::Config, json::Value, store};
 use std::{
-    collections::BTreeMap,
     fs,
     io::{Read, Write},
     os::unix::fs::{DirBuilderExt, MetadataExt},
@@ -69,6 +68,15 @@ fn create(path: &Path, bytes: &[u8]) -> Result<()> {
         .map_err(|_| "Service: private file write failed".into())
 }
 
+/// The data directory identifies the installation: a real, private directory.
+fn installation(path: &Path) -> Result<fs::Metadata> {
+    absolute(path)?;
+    match fs::symlink_metadata(path) {
+        Ok(m) if m.is_dir() && m.mode() & 0o077 == 0 => Ok(m),
+        _ => Err("Service: the data directory must be an existing private (0700) directory; run `mynou serve` once to create it".into()),
+    }
+}
+
 fn directory(path: &Path) -> Result<()> {
     absolute(path)?;
     match fs::symlink_metadata(path) {
@@ -94,50 +102,8 @@ fn escape(text: &str) -> Result<String> {
         .replace('\'', "&apos;"))
 }
 
-fn environment(text: &str) -> Result<BTreeMap<String, String>> {
-    let mut values = BTreeMap::new();
-    for line in text
-        .lines()
-        .filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#'))
-    {
-        let (key, value) = line
-            .split_once('=')
-            .ok_or("Service: .env requires unquoted NAME=value lines")?;
-        if key.is_empty()
-            || key.len() > 128
-            || value.len() > 4096
-            || !key
-                .bytes()
-                .enumerate()
-                .all(|(i, b)| b == b'_' || b.is_ascii_uppercase() || i > 0 && b.is_ascii_digit())
-            || value.chars().any(char::is_control)
-            || key.starts_with("DYLD_")
-            || key.starts_with("LD_")
-            || matches!(key, "HOME" | "PATH" | "TMPDIR")
-            || values.insert(key.into(), value.into()).is_some()
-        {
-            return Err("Service: invalid, duplicate or reserved .env entry".into());
-        }
-    }
-    Ok(values)
-}
-
-fn plist(
-    label: &str,
-    binary: &Path,
-    data_dir: &Path,
-    home: &Path,
-    values: &BTreeMap<String, String>,
-) -> Result<String> {
+fn plist(label: &str, binary: &Path, data_dir: &Path, home: &Path) -> Result<String> {
     let text = |p: &Path| escape(p.to_str().ok_or("Service: paths must be UTF-8")?);
-    let mut env = String::new();
-    for (k, v) in values {
-        env.push_str(&format!(
-            "<key>{}</key><string>{}</string>",
-            escape(k)?,
-            escape(v)?
-        ));
-    }
     Ok(format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
         <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
@@ -145,7 +111,7 @@ fn plist(
         <key>Label</key><string>{label}</string>\n\
         <key>ProgramArguments</key><array><string>{}</string><string>service-run</string><string>--dir</string><string>{}</string></array>\n\
         <key>WorkingDirectory</key><string>{}</string>\n\
-        <key>EnvironmentVariables</key><dict><key>HOME</key><string>{}</string>{env}</dict>\n\
+        <key>EnvironmentVariables</key><dict><key>HOME</key><string>{}</string></dict>\n\
         <key>RunAtLoad</key><true/>\n\
         <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>\n\
         <key>ThrottleInterval</key><integer>60</integer>\n\
@@ -164,7 +130,7 @@ fn plist(
 /// Refuse missing volumes before any engine opens or creates storage. Missing
 /// mounts must never become newly created local directories under /Volumes.
 pub fn preflight(data_dir: &Path, config: &Config) -> Result<()> {
-    private(&data_dir.join(".env"))?;
+    installation(data_dir)?;
     for (code, root) in [
         ("media_volume_unavailable", &config.movies_root),
         ("media_volume_unavailable", &config.series_root),
@@ -318,9 +284,7 @@ pub fn manage(
     {
         return Err("Service: label must start with org.mynou. and contain only letters, digits, dots and hyphens".into());
     }
-    // The private .env identifies the installation and its owner.
-    let identity = data_dir.join(".env");
-    private(&identity)?;
+    let identity = installation(data_dir)?;
     let home = PathBuf::from(std::env::var_os("HOME").ok_or("Service: HOME is missing")?);
     absolute(&home)?;
     let agents = home.join("Library/LaunchAgents");
@@ -350,7 +314,7 @@ pub fn manage(
         .map_err(|_| "Service: cannot inspect account")?
         .uid();
     fs::remove_file(&probe).map_err(|_| "Service: cannot remove account probe")?;
-    if private(&identity)?.uid() != uid
+    if identity.uid() != uid
         || fs::metadata(&home)
             .map_err(|_| "Service: HOME unavailable")?
             .uid()
@@ -389,15 +353,9 @@ pub fn manage(
     }
     if action == "install" {
         preflight(data_dir, config)?;
-        let values = environment(&read(&identity, 65_536)?)?;
-        if !values.get(crate::config::API_TOKEN_ENV).is_some_and(|v| {
-            (32..=4096).contains(&v.len()) && v.bytes().all(|b| b.is_ascii_graphic())
-        }) {
-            return Err("Service: .env must contain the API token (32–4096 graphic bytes)".into());
-        }
         let binary = std::env::current_exe().map_err(|_| "Service: executable unavailable")?;
         absolute(&binary)?;
-        let document = plist(label, &binary, data_dir, &home, &values)?;
+        let document = plist(label, &binary, data_dir, &home)?;
         if registered {
             if read(&registration, 524_288)? != document {
                 return Err("Service: existing registration differs; stop and uninstall it before reinstalling".into());

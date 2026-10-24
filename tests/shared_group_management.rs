@@ -138,7 +138,7 @@ fn command(directory: &Directory, home: &std::path::Path, args: &[&str]) -> Outp
     let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .current_dir(&directory.0)
         .env("MYNOU_HOME", home)
-        .env_remove("MYNOU_API_TOKEN")
+        .env("MYNOU_API_TOKEN", TOKEN)
         .env_remove("MYNOU_PLEX_TOKEN")
         .args(args)
         .stdout(Stdio::piped())
@@ -228,7 +228,6 @@ fn cli_offline_preview_preserves_state_and_service_apply_uses_the_same_guard() {
     );
     let server = Server::open(fixture.cfg.clone());
     home_support::serve_here(&home, &server.authority);
-    fs::write(home.join(".env"), format!("MYNOU_API_TOKEN={TOKEN}\n")).unwrap();
     let created = success(command(
         &directory,
         &home,

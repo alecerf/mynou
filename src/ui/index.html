@@ -133,12 +133,32 @@
   <dialog id="login" aria-labelledby="login-title">
     <form method="dialog" id="login-form" class="sheet">
       <h2 id="login-title">Connect to Mynou</h2>
-      <p class="muted">Paste the API token. It stays in this tab only and is sent as a WebSocket subprotocol, never in a URL.</p>
-      <label class="field">API token
+      <p class="muted">Paste your access token. It stays in this tab only and is sent as a WebSocket subprotocol, never in a URL. Lost it? Stop Mynou and run <code>mynou token --reset</code>.</p>
+      <label class="field">Access token
         <input name="token" type="password" autocomplete="off" required minlength="32" spellcheck="false">
       </label>
       <p id="login-error" class="error" role="alert"></p>
       <div class="actions"><button class="primary" value="ok">Connect</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="first-start" aria-labelledby="first-start-title">
+    <form method="dialog" id="first-start-form" class="sheet">
+      <h2 id="first-start-title">Welcome to Mynou</h2>
+      <div id="first-start-create">
+        <p class="muted">Create the access token that protects this interface and the API.</p>
+        <p id="first-start-error" class="error" role="alert"></p>
+        <div class="actions"><button type="button" class="primary" id="first-start-button">Create my access token</button></div>
+      </div>
+      <div id="first-start-created" hidden>
+        <p><strong>Keep this token safe</strong>, for example in your password manager. Mynou keeps only a fingerprint of it and can never show it again.</p>
+        <label class="field">Your access token
+          <input id="first-start-token" readonly autocomplete="off" spellcheck="false">
+        </label>
+        <p class="muted">The command line reads it from the <code>MYNOU_API_TOKEN</code> environment variable. If you lose it, stop Mynou and run <code>mynou token --reset</code>.</p>
+        <label class="field check"><input type="checkbox" id="first-start-saved"> I saved my access token</label>
+        <div class="actions"><button type="button" id="first-start-copy" class="ghost">Copy</button><button class="primary" id="first-start-continue" value="ok" disabled>Continue</button></div>
+      </div>
     </form>
   </dialog>
 

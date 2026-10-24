@@ -147,7 +147,7 @@ fn command(directory: &Path, arguments: &[&str]) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .current_dir(directory)
         .env("MYNOU_HOME", directory)
-        .env_remove("MYNOU_API_TOKEN")
+        .env("MYNOU_API_TOKEN", TOKEN)
         .env_remove("MYNOU_PLEX_TOKEN")
         .env_remove("MYNOU_DEMO_TOKEN")
         .args(arguments)
@@ -218,11 +218,6 @@ fn offline_cli_preview_is_read_only_and_online_guarded_apply_uses_the_live_servi
     assert_eq!(snapshot(&cfg.store_dir), before);
     let server = Server::open(cfg.clone());
     home_support::serve_here(&home, &server.authority);
-    fs::write(
-        home.join(".env"),
-        format!("{}={TOKEN}\n", mynou::config::API_TOKEN_ENV),
-    )
-    .unwrap();
     let online = success(command(
         &home,
         &["series-pack-search", &series, "--season", "1"],

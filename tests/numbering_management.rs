@@ -88,7 +88,7 @@ fn command(directory: &Directory, args: &[&str]) -> std::process::Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .current_dir(&directory.0)
         .env("MYNOU_HOME", &directory.0)
-        .env_remove("MYNOU_API_TOKEN")
+        .env("MYNOU_API_TOKEN", TOKEN)
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -128,11 +128,6 @@ fn cli_numbering_previews_applies_and_rejects_stale_or_unreviewed_changes() {
         .unwrap();
     let id = id(&record);
     home_support::serve_here(&directory.0, &server.authority);
-    fs::write(
-        directory.0.join(".env"),
-        format!("MYNOU_API_TOKEN={TOKEN}\n"),
-    )
-    .unwrap();
     fs::write(directory.0.join("numbering.json"), json::stringify(&body())).unwrap();
     let initial = server.engine.series_record(id).unwrap();
     let report = parse_output(&command(

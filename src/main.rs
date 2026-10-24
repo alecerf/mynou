@@ -2,7 +2,6 @@
 use mynou::{
     Result,
     config::{self, Config},
-    crypto,
     engine::{Engine, public_job},
     integrations,
     json::{self, Value},
@@ -23,7 +22,7 @@ const HELP: &str = "Mynou — media automation using Rust std only
   vpn [--action status|import|enable|disable|revoke|reconnect|enable-forwarding|disable-forwarding]
       [--profile PRIVATE.conf | --settings PRIVATE.json] [--dir DIR]
 
-  init [--dir DIR]
+  token --reset [--dir DIR]   (while Mynou is stopped: creates a new access token and prints it once)
   settings [--save] [--dir DIR]   (--save reads the settings document from standard input)
   secrets [--set NAME | --delete NAME] [--dir DIR]   (--set reads the value from standard input)
   analyze FILE [--json]
@@ -90,8 +89,9 @@ const HELP: &str = "Mynou — media automation using Rust std only
   version
 
 DIR is the data directory: --dir, else MYNOU_HOME, else ~/Library/Application Support/Mynou.
-It holds the API token (.env) and the storage, which keeps every setting and saved secret:
-configure Mynou from the web interface, the API or `mynou settings`.
+Its storage keeps every setting and saved secret: run `mynou serve`, open the web interface
+to create the access token, and configure Mynou there, through the API or `mynou settings`.
+Commands that reach the running service read the access token from MYNOU_API_TOKEN.
 Search previews profile decisions without submitting or downloading media.
 Management commands use the API while the service is running, otherwise the local journal.
 The demo uses only synthetic media and local services.
@@ -122,6 +122,7 @@ impl Args {
                     "dry-run",
                     "force",
                     "save",
+                    "reset",
                 ]
                 .contains(&key)
                 {
@@ -140,7 +141,7 @@ impl Args {
         }
         let allowed: &[&str] = match command.as_str() {
             "service" => &["dir", "help", "action", "label"],
-            "init" | "doctor" | "serve" | "service-run" | "status" | "sync" | "show" | "events"
+            "doctor" | "serve" | "service-run" | "status" | "sync" | "show" | "events"
             | "retry" | "cancel" | "healthcheck" | "monitor" | "unmonitor" => &["dir", "help"],
             "jobs" | "library" => &["dir", "help", "after", "limit", "query", "state"],
             "requesters" | "requester-sync" => &["dir", "help"],
@@ -228,6 +229,7 @@ impl Args {
                 "after",
             ],
             "settings" => &["dir", "help", "save"],
+            "token" => &["dir", "help", "reset"],
             "secrets" => &["dir", "help", "set", "delete"],
             "analyze" => &["json", "help"],
             "demo" => &["dir", "help"],
@@ -323,42 +325,18 @@ fn private_write(path: &Path, data: &[u8]) -> Result<()> {
         .and_then(|()| file.sync_all())
         .map_err(|e| e.to_string())
 }
-fn random_token() -> Result<String> {
-    Ok(crypto::random_bytes::<32>()?
-        .iter()
-        .map(|v| format!("{v:02x}"))
-        .collect())
-}
-/// The API token: the environment, else `.env` in the data directory.
-fn api_token(path: &Path) -> Result<String> {
-    if std::env::var_os(config::API_TOKEN_ENV).is_some_and(|v| !v.is_empty()) {
-        return config::secret(config::API_TOKEN_ENV);
-    }
-    let file = path.join(".env");
-    use std::io::Read;
-    let mut data = String::new();
-    fs::File::open(file)
-        .and_then(|f| f.take(65_537).read_to_string(&mut data))
-        .map_err(|_| {
+/// The access token of the running service, which the user provides in
+/// `MYNOU_API_TOKEN`; Mynou keeps only its digest.
+fn api_token() -> Result<String> {
+    std::env::var(config::API_TOKEN_ENV)
+        .ok()
+        .filter(|token| !token.is_empty())
+        .ok_or_else(|| {
             format!(
-                "Missing secret {}; set the environment variable or run init",
+                "Set {} to the access token shown when Mynou was set up; `mynou token --reset` replaces a lost one",
                 config::API_TOKEN_ENV
             )
-        })?;
-    if data.len() > 65_536 {
-        return Err(".env file is too large".into());
-    }
-    for line in data.lines() {
-        if let Some((key, value)) = line.split_once('=')
-            && key == config::API_TOKEN_ENV
-            && value.len() >= 32
-            && value.len() <= 4096
-            && value.bytes().all(|b| b.is_ascii_graphic())
-        {
-            return Ok(value.into());
-        }
-    }
-    Err(format!("Missing secret {}", config::API_TOKEN_ENV))
+        })
 }
 fn endpoint(config: &Config) -> Result<String> {
     let addr = config
@@ -413,7 +391,7 @@ fn served(path: &Path) -> Option<(String, Value)> {
         .get(&format!("{url}/healthz"))
         .ok()
         .filter(|r| r.status == 200)?;
-    let reply = call(&probe, path, "GET", "/api/settings", None).ok()?;
+    let reply = call(&probe, "GET", "/api/settings", None).ok()?;
     (reply.get("data_dir").and_then(Value::as_str) == path.to_str()).then_some((address, reply))
 }
 /// The settings the running service uses, else the saved ones, and whether
@@ -431,14 +409,8 @@ fn context(path: &Path) -> Result<(Config, bool)> {
     config.listen = address;
     Ok((config, true))
 }
-fn call(
-    config: &Config,
-    path: &Path,
-    method: &str,
-    route: &str,
-    body: Option<&Value>,
-) -> Result<Value> {
-    let token = api_token(path)?;
+fn call(config: &Config, method: &str, route: &str, body: Option<&Value>) -> Result<Value> {
+    let token = api_token()?;
     let url = format!("{}{route}", endpoint(config)?);
     let bytes = body.map_or_else(Vec::new, |v| json::stringify(v).into_bytes());
     let response = HttpClient::new()
@@ -511,9 +483,8 @@ fn request(args: &Args) -> Result<Request> {
     request.validate()?;
     Ok(request)
 }
-/// Creates the data directory and its private `.env` with a new API token.
-/// Settings start as the defaults and are changed from the interface.
-fn init(path: &Path) -> Result<()> {
+/// Creates the data directory, private to its owner, when it is missing.
+fn ensure_data_dir(path: &Path) -> Result<()> {
     let mut builder = fs::DirBuilder::new();
     builder.recursive(true);
     #[cfg(unix)]
@@ -523,15 +494,7 @@ fn init(path: &Path) -> Result<()> {
     }
     builder
         .create(path)
-        .map_err(|e| format!("Cannot create {}: {e}", path.display()))?;
-    let env = path.join(".env");
-    if env.exists() {
-        return Err(".env already exists; refusing to overwrite".into());
-    }
-    private_write(
-        &env,
-        format!("{}={}\n", config::API_TOKEN_ENV, random_token()?).as_bytes(),
-    )
+        .map_err(|e| format!("Cannot create {}: {e}", path.display()))
 }
 /// A settings document from standard input, for `mynou settings --save`.
 fn read_document() -> Result<Value> {
@@ -615,11 +578,23 @@ fn execute(args: Args) -> Result<()> {
             ))?);
             return Ok(());
         }
-        "init" => {
+        "token" => {
+            if !args.options.contains_key("reset") {
+                return Err("Use `mynou token --reset` to replace the access token".into());
+            }
             let path = args.data_dir()?;
-            init(&path)?;
+            ensure_data_dir(&path)?;
+            let config = config::load(&path).map_err(|e| {
+                if e.contains("already open") {
+                    "Stop Mynou before replacing its access token".to_owned()
+                } else {
+                    e
+                }
+            })?;
+            let (token, digest) = mynou::access::generate()?;
+            Store::open_for_management(&config)?.save_access(&digest)?;
             println!(
-                "Created {} with the API token in its .env file.\nRun `mynou serve`, open http://127.0.0.1:8787/ and paste the MYNOU_API_TOKEN value to set up Mynou.",
+                "{token}\nThis is the new access token of {}. Keep it safe: Mynou shows it only now.",
                 path.display()
             );
             return Ok(());
@@ -643,7 +618,7 @@ fn execute(args: Args) -> Result<()> {
             if online {
                 let mut body = Value::object();
                 body.insert("settings", document);
-                output(&call(&config, &path, "POST", "/api/settings", Some(&body))?);
+                output(&call(&config, "POST", "/api/settings", Some(&body))?);
             } else {
                 config::from_json(&document, &path)?;
                 Store::open_for_management(&config)?.save_settings(&document)?;
@@ -652,7 +627,7 @@ fn execute(args: Args) -> Result<()> {
                 output(&reply);
             }
         } else if online {
-            let reply = call(&config, &path, "GET", "/api/settings", None)?;
+            let reply = call(&config, "GET", "/api/settings", None)?;
             output(reply.get("settings").unwrap_or(&Value::Null));
         } else {
             output(&config.document);
@@ -679,8 +654,8 @@ fn execute(args: Args) -> Result<()> {
         };
         if online {
             output(&match &update {
-                Some(body) => call(&config, &path, "POST", "/api/secrets", Some(body))?,
-                None => call(&config, &path, "GET", "/api/secrets", None)?,
+                Some(body) => call(&config, "POST", "/api/secrets", Some(body))?,
+                None => call(&config, "GET", "/api/secrets", None)?,
             });
         } else {
             let mut store = if update.is_some() {
@@ -715,7 +690,7 @@ fn execute(args: Args) -> Result<()> {
             |process_id| {
                 let mut expected = Value::object();
                 expected.insert("expected_pid", process_id);
-                call(&config, &path, "POST", "/api/shutdown", Some(&expected)).map(|_| ())
+                call(&config, "POST", "/api/shutdown", Some(&expected)).map(|_| ())
             },
         )?);
         return Ok(());
@@ -737,7 +712,7 @@ fn execute(args: Args) -> Result<()> {
         v.insert("configuration", "valid");
         v.insert(
             "api_token",
-            if api_token(&path).is_ok() {
+            if api_token().is_ok() {
                 "present"
             } else {
                 "absent"
@@ -764,9 +739,10 @@ fn execute(args: Args) -> Result<()> {
         if supervised {
             mynou::service::preflight(&path, &config)?;
         }
-        let token = api_token(&path)?;
+        ensure_data_dir(&path)?;
+        let access = mynou::access::Access::new(mynou::access::stored(&config.store_dir)?);
         // The listener answers health and migration progress while storage opens.
-        let startup = mynou::server::Startup::bind(&config, token)?;
+        let startup = mynou::server::Startup::bind(&config, access)?;
         record_endpoint(&path, startup.address()?)?;
         if !supervised {
             eprintln!(
@@ -811,9 +787,9 @@ fn execute(args: Args) -> Result<()> {
         }
         if online {
             output(&if action == "status" {
-                call(&config, &path, "GET", "/api/vpn", None)?
+                call(&config, "GET", "/api/vpn", None)?
             } else {
-                call(&config, &path, "POST", "/api/vpn/control", Some(&body))?
+                call(&config, "POST", "/api/vpn/control", Some(&body))?
             });
         } else {
             let engine = Engine::open_for_management(config)?;
@@ -859,7 +835,6 @@ fn execute(args: Args) -> Result<()> {
             mynou::torrent::CrossSeedRequest::from_json(&body)?;
             output(&call(
                 &config,
-                &path,
                 "POST",
                 &format!("/api/transfers/{}/cross-seed", id.to_ascii_lowercase()),
                 Some(&body),
@@ -888,19 +863,12 @@ fn execute(args: Args) -> Result<()> {
                 mynou::indexers::cross_seed::Run::from_json(&body)?;
                 output(&call(
                     &config,
-                    &path,
                     "POST",
                     "/api/cross-seed/discovery/run",
                     Some(&body),
                 )?);
             } else if online {
-                output(&call(
-                    &config,
-                    &path,
-                    "GET",
-                    "/api/cross-seed/discovery",
-                    None,
-                )?);
+                output(&call(&config, "GET", "/api/cross-seed/discovery", None)?);
             } else {
                 output(&Engine::open_for_preview(config)?.cross_seed_status()?);
             }
@@ -924,7 +892,7 @@ fn execute(args: Args) -> Result<()> {
             } else {
                 format!("/api/transfers?{query}")
             };
-            output(&call(&config, &path, "GET", &route, None)?);
+            output(&call(&config, "GET", &route, None)?);
         }
         "torrent" | "pause" | "resume" | "torrent-priority" | "file-priority"
         | "torrent-policy" | "torrent-select" => {
@@ -1000,7 +968,6 @@ fn execute(args: Args) -> Result<()> {
             };
             output(&call(
                 &config,
-                &path,
                 if action.is_empty() { "GET" } else { "POST" },
                 &route,
                 if action.is_empty() { None } else { Some(&body) },
@@ -1012,7 +979,6 @@ fn execute(args: Args) -> Result<()> {
             if online {
                 output(&call(
                     &config,
-                    &path,
                     "GET",
                     &format!("/api/library?{query}"),
                     None,
@@ -1034,7 +1000,7 @@ fn execute(args: Args) -> Result<()> {
             if online {
                 let mut body = Value::object();
                 body.insert("apply", apply);
-                output(&call(&config, &path, "POST", "/api/upgrades", Some(&body))?);
+                output(&call(&config, "POST", "/api/upgrades", Some(&body))?);
             } else if apply {
                 output(&Engine::open_for_management(config)?.check_upgrades(true)?);
             } else if Store::directory_exists(&config.store_dir)? {
@@ -1060,7 +1026,6 @@ fn execute(args: Args) -> Result<()> {
             body.insert("file_path", file_path.clone());
             output(&call(
                 &config,
-                &path,
                 "POST",
                 &format!("/api/jobs/{id}/pack-mapping"),
                 Some(&body),
@@ -1068,14 +1033,14 @@ fn execute(args: Args) -> Result<()> {
         }
         "requesters" => {
             if online {
-                output(&call(&config, &path, "GET", "/api/requesters", None)?);
+                output(&call(&config, "GET", "/api/requesters", None)?);
             } else {
                 output(&Engine::open_for_preview(config)?.requesters()?);
             }
         }
         "indexers" => {
             if online {
-                output(&call(&config, &path, "GET", "/api/indexers", None)?);
+                output(&call(&config, "GET", "/api/indexers", None)?);
             } else {
                 output(&Engine::open_for_preview(config)?.indexers()?);
             }
@@ -1094,7 +1059,6 @@ fn execute(args: Args) -> Result<()> {
                 if online {
                     output(&call(
                         &config,
-                        &path,
                         "GET",
                         &format!("/api/feeds/retained?{query}"),
                         None,
@@ -1105,7 +1069,7 @@ fn execute(args: Args) -> Result<()> {
             } else if args.options.contains_key("limit") || args.options.contains_key("after") {
                 return Err("Feed pages require --retained".into());
             } else if online {
-                output(&call(&config, &path, "GET", "/api/feeds", None)?);
+                output(&call(&config, "GET", "/api/feeds", None)?);
             } else {
                 output(&Engine::open_for_preview(config)?.feeds()?);
             }
@@ -1129,7 +1093,6 @@ fn execute(args: Args) -> Result<()> {
             if online {
                 output(&call(
                     &config,
-                    &path,
                     "POST",
                     &format!("/api/indexers/{id}/control"),
                     Some(&q.to_json()),
@@ -1143,7 +1106,7 @@ fn execute(args: Args) -> Result<()> {
         }
         "irc" => {
             if online {
-                output(&call(&config, &path, "GET", "/api/irc", None)?);
+                output(&call(&config, "GET", "/api/irc", None)?);
             } else {
                 output(&Engine::open_for_preview(config)?.irc_sources()?);
             }
@@ -1171,7 +1134,6 @@ fn execute(args: Args) -> Result<()> {
             if online {
                 output(&call(
                     &config,
-                    &path,
                     "GET",
                     &format!("/api/irc/announcements?{query}"),
                     None,
@@ -1195,7 +1157,6 @@ fn execute(args: Args) -> Result<()> {
             if online {
                 output(&call(
                     &config,
-                    &path,
                     "GET",
                     &format!("/api/irc/announcements/{id}"),
                     None,
@@ -1253,7 +1214,6 @@ fn execute(args: Args) -> Result<()> {
             if online {
                 output(&call(
                     &config,
-                    &path,
                     "POST",
                     &format!("/api/irc/announcements/{id}/control"),
                     Some(&query.to_json()),
@@ -1284,7 +1244,6 @@ fn execute(args: Args) -> Result<()> {
             if online {
                 output(&call(
                     &config,
-                    &path,
                     "GET",
                     &format!("/api/requesters/{id}?{query}"),
                     None,
@@ -1336,7 +1295,6 @@ fn execute(args: Args) -> Result<()> {
             if online {
                 output(&call(
                     &config,
-                    &path,
                     "POST",
                     &format!("/api/requesters/{id}/control"),
                     Some(&query.to_json()),
@@ -1356,7 +1314,6 @@ fn execute(args: Args) -> Result<()> {
             if online {
                 output(&call(
                     &config,
-                    &path,
                     "GET",
                     &format!("/api/title-profiles?{query}"),
                     None,
@@ -1398,7 +1355,6 @@ fn execute(args: Args) -> Result<()> {
             if online {
                 output(&call(
                     &config,
-                    &path,
                     "POST",
                     "/api/title-profiles/control",
                     Some(&query.to_json()),
@@ -1416,7 +1372,6 @@ fn execute(args: Args) -> Result<()> {
             }
             output(&call(
                 &config,
-                &path,
                 "POST",
                 "/api/requesters/sync",
                 Some(&Value::object()),
@@ -1458,7 +1413,6 @@ fn execute(args: Args) -> Result<()> {
             if online {
                 output(&call(
                     &config,
-                    &path,
                     "POST",
                     &format!("/api/library/{id}/group"),
                     Some(&query.to_json()),
@@ -1492,7 +1446,7 @@ fn execute(args: Args) -> Result<()> {
                     "/api/library/{id}/{}",
                     if baseline { "baseline" } else { "monitor" }
                 );
-                output(&call(&config, &path, "POST", &route, Some(&body))?);
+                output(&call(&config, "POST", &route, Some(&body))?);
             } else {
                 let mut store = Store::open_for_management(&config)?;
                 let job = if baseline {
@@ -1528,7 +1482,6 @@ fn execute(args: Args) -> Result<()> {
             if online {
                 output(&call(
                     &config,
-                    &path,
                     "POST",
                     &if query.is_empty() {
                         "/api/search".to_owned()
@@ -1581,7 +1534,6 @@ fn execute(args: Args) -> Result<()> {
             if online {
                 output(&call(
                     &config,
-                    &path,
                     "POST",
                     &format!("/api/series/{id}/numbering"),
                     Some(&body),
@@ -1636,7 +1588,6 @@ fn execute(args: Args) -> Result<()> {
             if online {
                 output(&call(
                     &config,
-                    &path,
                     "POST",
                     &format!("/api/series/{id}/shared-file"),
                     Some(&body),
@@ -1668,7 +1619,6 @@ fn execute(args: Args) -> Result<()> {
             if online {
                 output(&call(
                     &config,
-                    &path,
                     "POST",
                     &format!("/api/series/{id}/pack-search"),
                     Some(&body),
@@ -1697,7 +1647,7 @@ fn execute(args: Args) -> Result<()> {
                 );
                 body.insert("future_only", args.options.contains_key("future-only"));
                 body.insert("enabled", !args.options.contains_key("unmonitored"));
-                output(&call(&config, &path, "POST", "/api/series", Some(&body))?);
+                output(&call(&config, "POST", "/api/series", Some(&body))?);
             } else if args.command == "calendar" {
                 let mut checked = mynou::series::CalendarQuery::new(
                     args.options.get("from").map(String::as_str),
@@ -1729,7 +1679,6 @@ fn execute(args: Args) -> Result<()> {
                 mynou::series::CalendarQuery::parse(&query)?;
                 output(&call(
                     &config,
-                    &path,
                     "GET",
                     &format!("/api/calendar?{query}"),
                     None,
@@ -1747,7 +1696,6 @@ fn execute(args: Args) -> Result<()> {
                 mynou::series::SeriesPageQuery::parse(&query)?;
                 output(&call(
                     &config,
-                    &path,
                     "GET",
                     &format!("/api/series?{query}"),
                     None,
@@ -1808,7 +1756,6 @@ fn execute(args: Args) -> Result<()> {
                 };
                 output(&call(
                     &config,
-                    &path,
                     method,
                     &route,
                     (method == "POST").then_some(&body),
@@ -1818,13 +1765,7 @@ fn execute(args: Args) -> Result<()> {
         "submit" => {
             let r = request(&args)?;
             if online {
-                output(&call(
-                    &config,
-                    &path,
-                    "POST",
-                    "/api/jobs",
-                    Some(&r.to_json()),
-                )?);
+                output(&call(&config, "POST", "/api/jobs", Some(&r.to_json()))?);
             } else {
                 if r.kind == "series" {
                     let engine = Engine::open_for_management(config.clone())?;
@@ -1846,13 +1787,7 @@ fn execute(args: Args) -> Result<()> {
             let query = page_query(&args)?;
             let page = mynou::store::JobQuery::parse(&query)?;
             if online {
-                output(&call(
-                    &config,
-                    &path,
-                    "GET",
-                    &format!("/api/jobs?{query}"),
-                    None,
-                )?);
+                output(&call(&config, "GET", &format!("/api/jobs?{query}"), None)?);
             } else if Store::directory_exists(&config.store_dir)? {
                 let mut store = Store::open_read_only(&config.store_dir)?;
                 output(&mynou::engine::jobs_query_value(&mut store, &page)?);
@@ -1867,7 +1802,7 @@ fn execute(args: Args) -> Result<()> {
         }
         "status" => {
             if online {
-                output(&call(&config, &path, "GET", "/api/status", None)?);
+                output(&call(&config, "GET", "/api/status", None)?);
             } else {
                 let jobs = if Store::directory_exists(&config.store_dir)? {
                     Store::open_read_only(&config.store_dir)?.counts()?.jobs
@@ -1882,7 +1817,7 @@ fn execute(args: Args) -> Result<()> {
         }
         "sync" => {
             if online {
-                output(&call(&config, &path, "POST", "/api/sync", None)?);
+                output(&call(&config, "POST", "/api/sync", None)?);
             } else {
                 let engine = Engine::open(config)?;
                 let mut v = Value::object();
@@ -1906,7 +1841,7 @@ fn execute(args: Args) -> Result<()> {
                 } else {
                     "GET"
                 };
-                output(&call(&config, &path, method, &route, None)?);
+                output(&call(&config, method, &route, None)?);
             } else {
                 let mut store = if matches!(args.command.as_str(), "show" | "events") {
                     Store::open_read_only(&config.store_dir)?

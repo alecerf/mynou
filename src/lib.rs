@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod access;
 pub mod bencode;
 pub mod config;
 pub mod crypto;

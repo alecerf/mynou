@@ -64,7 +64,6 @@ impl Server {
 
     fn record_endpoint(&self, directory: &Path) {
         home_support::serve_here(directory, self.origin.strip_prefix("http://").unwrap());
-        fs::write(directory.join(".env"), format!("MYNOU_API_TOKEN={TOKEN}\n")).unwrap();
     }
 }
 
@@ -102,7 +101,7 @@ fn command(directory: &Path, args: &[&str]) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_mynou"))
         .current_dir(directory)
         .env("MYNOU_HOME", directory)
-        .env_remove("MYNOU_API_TOKEN")
+        .env("MYNOU_API_TOKEN", TOKEN)
         .env_remove("MYNOU_PLEX_TOKEN")
         .env_remove("MYNOU_DEMO_TOKEN")
         .env_remove("MYNOU_LIBRARY_ABSENT_FIXTURE_KEY_592744")

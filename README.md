@@ -111,18 +111,18 @@ The directory must not exist yet. Delete it whenever you like.
 Mynou keeps its settings in its own storage and you set it up from the web
 interface.
 
-**1. Create the data directory and start Mynou:**
+**1. Start Mynou:**
 
 ```sh
-mynou init && mynou serve
+mynou serve
 ```
 
-`init` creates `~/Library/Application Support/Mynou` (use `--dir DIR` or
-`MYNOU_HOME` for another place) with a private `.env` holding a random API
-token.
+It keeps its data in `~/Library/Application Support/Mynou` (use `--dir DIR` or
+`MYNOU_HOME` for another place) and creates that folder on first start.
 
-**2. Open <http://127.0.0.1:8787/>** and paste the token: it is the
-`MYNOU_API_TOKEN` value in that `.env` file.
+**2. Open <http://127.0.0.1:8787/>** and create your access token. Mynou shows
+it only once: keep it safe, for example in your password manager, since Mynou
+keeps only a fingerprint of it.
 
 **3. Open the Settings view** and turn on what you use. Plex and TMDB start
 disabled:
@@ -189,7 +189,10 @@ Commands use the default data directory, or add `--dir DIR`.
 there is one and otherwise read the local journal; series, calendar and
 transfer commands need the service.
 
-Everything is also available over HTTP: `/api` routes take the API token as an
+Commands that reach the running service read your access token from the
+`MYNOU_API_TOKEN` environment variable; set it the way you prefer (your shell
+profile, your keychain, a file your own tooling loads). Everything is also
+available over HTTP: `/api` routes take the access token as an
 `Authorization: Bearer` header, and `/healthz` and `/readyz` report health.
 
 ## Features
@@ -252,10 +255,10 @@ the previous demo directory.
 </details>
 
 <details>
-<summary><strong>Where is my API token?</strong></summary>
+<summary><strong>I lost my access token</strong></summary>
 
-In the `.env` file that `mynou init` created in the data directory
-(`~/Library/Application Support/Mynou` by default), as `MYNOU_API_TOKEN`. Treat that file as data: do not `source` it.
+Mynou cannot show it again. Stop Mynou, run `mynou token --reset` to create a
+new one (it is printed once), then start Mynou and sign in with it.
 </details>
 
 <details>
@@ -277,7 +280,7 @@ another prefix, add a path mapping as described in
 <details>
 <summary><strong>How do I upgrade or back up?</strong></summary>
 
-Stop the service, back up the data directory (its `.env`, `state/` and
+Stop the service, back up the data directory (its `state/` and
 `downloads/` folders, which also hold your settings) and your library, then verify and install the new executable at the
 same path. The details, including rolling back, are in
 [Back up and upgrade](docs/macos.md#back-up-and-upgrade).

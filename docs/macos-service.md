@@ -16,12 +16,9 @@ or inputs are in protected folders. Grant any necessary volume/privacy access
 to the deployed executable yourself in System Settings. Do not disable macOS
 privacy controls or give the service root privileges.
 
-For a new installation, create the data directory, then set Mynou up from the
-web interface of a foreground `mynou serve` (see [Configure Mynou](macos.md#configure-mynou)):
-
-```sh
-mynou init
-```
+For a new installation, first start a foreground `mynou serve` once: it creates
+the private data directory, and its web interface creates the access token and
+sets Mynou up (see [Configure Mynou](macos.md#configure-mynou)).
 
 Configure the library and downloads before installation. Every path must
 resolve to an existing absolute directory without symlinks; relative settings
@@ -31,17 +28,11 @@ media volumes first. Installation and supervised startup refuse missing roots
 instead of creating local replacements for absent volumes. Do not copy the
 owner's real inventory or credentials into an example configuration.
 
-The data directory's `.env` must be a regular mode-0600 file, owned by the
-account, without hardlinks or symlinked path components, and must hold the API
-token. Other credentials are best saved in Mynou's storage from the Settings
-view or `mynou secrets --set`; entries added to `.env` are injected as
-environment variables, which saved secrets take precedence over. Its syntax
-is **literal unquoted `NAME=value`**, one entry per line, uppercase names, at
-most 64 KiB total and 4096 bytes per value. Blank lines and `#` comments are
-accepted. Quotes, dollars and backticks are literal; nothing is evaluated.
-Duplicate names, control characters, loader injection variables and overrides
-of HOME/PATH/TMPDIR are rejected. Credentials exported only in your terminal
-are not copied into the service.
+The data directory identifies the installation: it must be an existing
+directory owned by the account, private (mode 0700) and without symlinked path
+components. Save credentials in Mynou's storage from the Settings view or
+`mynou secrets --set`: the service reads them there. Credentials exported only
+in your terminal are not copied into the service.
 
 ## Install and inspect
 
@@ -69,14 +60,11 @@ different registration or operate on another data directory's job. Repeating
 an identical install does not restart an already running process. An unavailable
 login session is an error, distinct from an absent job.
 
-The **private plist contains a snapshot of `.env` credentials** in its launchd
-environment; its arguments contain only the binary, internal `service-run`
-command and data directory. Never publish the plist, `.env` or raw
-`launchctl print` output: the latter includes the environment. Management
-commands return fixed fields and suppress that raw output. Settings and saved
-secrets apply while the service runs. Changing `.env` requires stopping,
-uninstalling and reinstalling the registration, so the snapshot is refreshed;
-uninstall does not delete `.env`.
+The private plist holds no credentials: its arguments contain only the binary,
+internal `service-run` command and data directory, and its environment only
+`HOME`. Management commands return fixed fields and suppress raw `launchctl`
+output. Settings and saved secrets apply while the service runs; uninstall
+leaves the data directory untouched.
 
 Persisted protected VPN intent is handled by the existing native startup gate.
 Installing a service neither enables nor disables that protection. Import and
@@ -130,9 +118,9 @@ not make detached disks reliable. Remount the same volume and inspect state
 before resuming. Do not create replacement directories at a missing mount.
 
 For a coherent backup: stop, verify `service status` is unloaded, then back up
-the data directory (`.env` and all stores, including settings, secrets and VPN policy/profile material),
+the data directory (all stores, including settings, secrets, the access token digest and VPN policy/profile material),
 downloads and media according to your retention policy. Keep credentials and
-backups private. Uninstall before changing the binary path or `.env` snapshot.
+backups private. Uninstall before changing the binary path.
 Download and checksum-verify the new binary, preserve the previous executable,
 install at the same stable path, reinstall/start, then verify health, pending
 work and VPN intent. No work PR changes the package version.
