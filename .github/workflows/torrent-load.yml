@@ -25,10 +25,10 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - name: Install Rust 1.99.0
-        run: rustup toolchain install 1.99.0 --profile minimal
+      - name: Install Rust 1.99.1
+        run: rustup toolchain install 1.99.1 --profile minimal
       - name: Compile the optimized load harness
-        run: cargo +1.99.0 test --release --lib --no-run --offline --locked --message-format=json > "$RUNNER_TEMP/load-build.jsonl"
+        run: cargo +1.99.1 test --release --lib --no-run --offline --locked --message-format=json > "$RUNNER_TEMP/load-build.jsonl"
       - name: Measure increasing synthetic engine-level torrent load
         run: |
           harness=$(python3 - "$RUNNER_TEMP/load-build.jsonl" <<'PY'

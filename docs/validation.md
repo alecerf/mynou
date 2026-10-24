@@ -11,7 +11,7 @@ commit only: an earlier green run does not validate later changes.
 
 | Workflow | Runs on | Purpose |
 | --- | --- | --- |
-| Mynou CI | Pull requests; manual dispatch; a pushed `v<version>` tag | Select tests, macOS arm64 build/demo and packaging from the diff; tags and manual runs validate everything |
+| Mynou CI | Pull requests; manual dispatch; a pushed `v<version>` tag | Select tests, macOS arm64 build/demo and packaging from the diff; manual runs validate everything, releases only build and publish |
 | Repository checks | Pull requests; manual dispatch | Python tooling and scheduler tests when their inputs change |
 | Release policy | Pull requests | Version changes only in a release PR |
 | CodeQL | Pull requests, pushes to `trunk`, weekly schedule, manual dispatch | Required security analysis; Rust and JavaScript selected by diff |
@@ -25,8 +25,10 @@ on Apple Silicon only, so `validate` and `build`
 run on an Apple Silicon `macos-26` runner. A small Linux **decide** job runs
 beside the checks. The native CI does not run for a commit pushed to `trunk`: protection
 requires an up-to-date branch and signed fast-forward integration, so `trunk` holds the tree its
-pull request already validated. Pushing the tag `v<version>` runs every check
-again on the tagged commit, and the release job publishes only when the tag
+pull request already validated. A release changes nothing but the version, so
+its PR and the tag `v<version>` run no tests, demo or Rust and JavaScript
+CodeQL: they build the tagged commit, check the binary's architecture and
+version, package and publish. The release job publishes only when the tag
 equals the `Cargo.toml` version (the binary reports that version), the commit is
 on `trunk`, and it raised the version over its parent. A failed decision publishes nothing, and on a pull request it fails `package`.
 
@@ -46,7 +48,7 @@ on `trunk`, and it raised the version over its parent. A failed decision publish
    name, compares the copy byte for byte and writes `SHA256SUMS`. It only copies
    and checksums, so it runs on a Linux runner.
 4. **release** runs only for a pushed version tag that passed the decision, after
-   validate, build and package succeeded on the tagged commit.
+   build and package succeeded on the tagged commit.
 
 Pull requests run only the selected checks and cannot publish. A newer pull
 request head cancels the older run; tag runs are never cancelled, so a later
@@ -72,13 +74,15 @@ history and both sides of renames/deletions. It has no GitHub path-filter
 | Native CI workflow or shared selector | Run | Run | Run |
 | Other workflows/actions | Skip | Skip | Run |
 | Unknown inputs | Run | Run | Run |
-| Version tags or manual dispatch | Run | Run | Run when that workflow is dispatched |
+| Release: only the package version in `Cargo.toml`/`Cargo.lock`, with `docs/releases/unreleased.md` deleted, or a version tag | Skip | Build + package, no demo | Skip |
+| Manual dispatch | Run | Run | Run when that workflow is dispatched |
 
 The selection is additive. Embedded UI files, certificates and demo media are
 build/test inputs even when no `.rs` file changes. Test-only changes do not
 produce an unused release artifact. A packaging-only change checks the native
-binary and its reported version before packaging. Tags always retain the full
-validation, build, version comparison and publication checks.
+binary and its reported version before packaging. A release keeps the build,
+binary, version and publication checks; on its PR, CodeQL scans only the
+workflows, because the branch rules require a CodeQL result.
 
 Workflows remain triggered on every PR so their existing required job names
 are reported even when skipped. Workflow-level `paths` filters can leave required

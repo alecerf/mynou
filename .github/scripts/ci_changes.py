@@ -2,11 +2,22 @@
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 
 KEYS = ("tests", "build", "tooling")
 RUST_CONFIG = {"Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rust-toolchain", "build.rs"}
 CONTROL = {".github/scripts/ci_changes.py", ".github/workflows/changes.yml"}
+RELEASE_FILES = {"Cargo.toml", "Cargo.lock", "docs/releases/unreleased.md"}
+VERSION_LINE = re.compile(r'[+-]version = "[0-9]+\.[0-9]+\.[0-9]+"')
+
+
+def release(pull_request):
+    """A release only builds and publishes a tree trunk already validated: no
+    tests and no demonstration. The branch rules require the CodeQL app on pull
+    requests, so the quick Actions scan stays there."""
+    return {"tests": False, "build": True, "tooling": False, "release": True,
+            "languages": ["actions"] if pull_request else []}
 
 
 def select(paths, full=False, pull_request=True):
@@ -41,7 +52,7 @@ def select(paths, full=False, pull_request=True):
         if not known:
             work.update(dict.fromkeys(KEYS, True))
     # Packaging needs a native executable, so it follows build, not test-only changes.
-    return {**work, "languages": sorted(languages)}
+    return {**work, "release": False, "languages": sorted(languages)}
 
 
 def changed_paths(base, head):
@@ -51,26 +62,45 @@ def changed_paths(base, head):
     return [os.fsdecode(path) for path in raw.split(b"\0") if path]
 
 
+def version_only(base, head, paths):
+    """Whether a diff only raises the package version and consumes the notes."""
+    if "Cargo.toml" not in paths or not set(paths) <= RELEASE_FILES:
+        return False
+    raw = subprocess.check_output(["git", "diff", "-U0", "--no-renames", f"{base}...{head}", "--", "Cargo.toml", "Cargo.lock"])
+    lines = [line for line in raw.decode().splitlines()
+             if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))]
+    return bool(lines) and all(VERSION_LINE.fullmatch(line) for line in lines)
+
+
 def main():
     event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
     kind = os.environ["GITHUB_EVENT_NAME"]
-    paths = []
+    paths, span = [], None
+    tag = kind == "push" and os.environ.get("GITHUB_REF_TYPE") == "tag"
     try:
         if kind == "pull_request":
             pr = event["pull_request"]
-            paths = changed_paths(pr["base"]["sha"], pr["head"]["sha"])
-        elif kind == "push" and os.environ.get("GITHUB_REF_TYPE") != "tag":
+            span = pr["base"]["sha"], pr["head"]["sha"]
+            paths = changed_paths(*span)
+        elif kind == "push" and not tag:
             # Push baselines must cover every commit since the preceding push.
-            raw = subprocess.check_output(["git", "diff", "--name-only", "--no-renames", "-z", event["before"], event["after"], "--"])
+            span = event["before"], event["after"]
+            raw = subprocess.check_output(["git", "diff", "--name-only", "--no-renames", "-z", *span, "--"])
             paths = [os.fsdecode(path) for path in raw.split(b"\0") if path]
-        full = kind not in {"pull_request", "push"} or os.environ.get("GITHUB_REF_TYPE") == "tag"
-        work = select(paths, full=full, pull_request=kind == "pull_request")
+        # A version tag publishes the release commit, whose parent trunk
+        # validated; the decide job checks that the tagged commit raised the version.
+        if tag or (span and version_only(*span, paths)):
+            work = release(kind == "pull_request")
+        else:
+            full = kind not in {"pull_request", "push"}
+            work = select(paths, full=full, pull_request=kind == "pull_request")
     except (KeyError, OSError, subprocess.CalledProcessError):
         print("::warning::Cannot determine the complete diff; running all checks.")
         work = select([], full=True)
     with open(os.environ["GITHUB_OUTPUT"], "a") as stream:
         for key in KEYS:
             print(f"{key}={str(work[key]).lower()}", file=stream)
+        print(f"release={str(work['release']).lower()}", file=stream)
         print("languages=" + json.dumps(work["languages"]), file=stream)
     with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as stream:
         print("CI selection: `" + json.dumps(work) + "`", file=stream)
