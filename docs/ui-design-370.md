@@ -34,13 +34,11 @@ Les affiches distantes et leur cache serveur restent une dépendance distincte d
 
 La demande utilisateur précise que la marque doit être un chat pixel art original. La proposition locale utilise une grille de 28 × 28 unités, une silhouette assise entière, une queue droite relevée et des yeux asymétriques. Son accent citron sur fond encré devient olive sur papier clair. Le dessin est un SVG local, net à toutes les tailles, sans police ni image distante. Les traits orange et la composition de Mistral ne sont pas repris ; cette description porte sur les choix graphiques, sans constituer une validation juridique.
 
-Source du dessin : `src/ui/prototype-370/assets/mynou-cat.svg`. Le même tracé est inclus dans le sprite du prototype pour adapter sa couleur au thème. La page Settings montre la signature en grand.
+Source du dessin : le symbole `i-logo` du sprite de `src/ui/index.html`, repris dans `src/ui/favicon.svg`. Dans le sprite, sa couleur suit le thème.
 
-## Prototype local
+## Prototype
 
-Commande : `python3 -m http.server 8370 --bind 127.0.0.1 --directory src/ui/prototype-370`. Les paramètres `?variant=A`, `B` et `C` comparent respectivement Cinema club (grille éditoriale sombre), The paper archive (rail et catalogue en listes), The screening room (masthead horizontal et scène large). Les routes `#dashboard` et `#library` sont les surfaces principales à juger ; les six autres vues donnent le contexte d'utilisation.
-
-La direction A (Cinema club) a été validée le 24 octobre 2026, puis reprise dans l'interface embarquée (`src/ui/index.html`, `app.css`, `app.js`, `favicon.svg`). Le prototype reste une étude jetable, hors du binaire.
+Trois directions ont été comparées dans un prototype jetable : Cinema club (grille éditoriale sombre), The paper archive (rail et catalogue en listes) et The screening room (masthead horizontal et scène large). La direction A (Cinema club) a été validée le 24 octobre 2026, puis reprise dans l'interface embarquée (`src/ui/index.html`, `app.css`, `app.js`, `js/`, `favicon.svg`). Le prototype a ensuite été retiré du dépôt.
 
 ## Intégration
 
